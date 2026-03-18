@@ -9,7 +9,7 @@ Read this FIRST at the start of every session. Update LAST before ending.
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 41 tests passing (39 unit + 2 integration)
+- [x] Core library + CLI compiling, 86 tests passing (84 unit + 2 integration)
 
 ### Phase 1: Foundation
 Goal: Load an STL, drop a ball cutter onto it, emit G-code.
@@ -36,7 +36,7 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] 2.3 Pocket clearing (contour-parallel offset pattern)
 - [x] 2.4 Profile cutting with tool radius compensation
 - [x] 2.5 Zigzag/raster clearing pattern
-- [ ] 2.6 Depth stepping (multi-pass)
+- [x] 2.6 Depth stepping (multi-pass)
 - [ ] 2.7 SVG input (usvg)
 - [ ] 2.8 DXF input (dxf crate)
 - [ ] 2.9 Helix/ramp entry

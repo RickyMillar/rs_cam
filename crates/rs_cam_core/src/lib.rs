@@ -9,3 +9,4 @@ pub mod polygon;
 pub mod pocket;
 pub mod profile;
 pub mod zigzag;
+pub mod depth;
