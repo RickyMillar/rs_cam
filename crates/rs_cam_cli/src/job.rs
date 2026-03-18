@@ -35,7 +35,7 @@ use std::path::{Path, PathBuf};
 use rs_cam_core::{
     adaptive::{AdaptiveParams, adaptive_toolpath},
     depth::{DepthStepping, depth_stepped_toolpath},
-    dressup::{EntryStyle, apply_entry, apply_tabs, even_tabs},
+    dressup::{EntryStyle, apply_dogbones, apply_entry, apply_tabs, even_tabs},
     gcode::get_post_processor,
     pocket::{PocketParams, pocket_toolpath},
     polygon::Polygon2,
@@ -119,6 +119,9 @@ pub struct OperationDef {
     pub tabs: Option<usize>,
     pub tab_width: Option<f64>,
     pub tab_height: Option<f64>,
+
+    // Dogbone
+    pub dogbone: Option<bool>,
 
     // Adaptive-specific
     pub tolerance: Option<f64>,
@@ -267,6 +270,9 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<Toolpath> {
                         tp = apply_entry(&tp, style, plunge_rate);
                     }
                 }
+                if op.dogbone.unwrap_or(false) {
+                    tp = apply_dogbones(&tp, tool_radius, 170.0);
+                }
                 tp
             }
 
@@ -308,6 +314,9 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<Toolpath> {
                     let th = op.tab_height.unwrap_or(2.0);
                     let tab_list = even_tabs(num_tabs, tw, th);
                     tp = apply_tabs(&tp, &tab_list, -depth);
+                }
+                if op.dogbone.unwrap_or(false) {
+                    tp = apply_dogbones(&tp, tool_radius, 170.0);
                 }
                 tp
             }

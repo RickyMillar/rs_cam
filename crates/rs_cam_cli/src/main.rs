@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use rs_cam_core::{
     arcfit::fit_arcs,
     depth::{DepthStepping, depth_stepped_toolpath},
-    dressup::{EntryStyle, apply_entry, apply_tabs, even_tabs},
+    dressup::{EntryStyle, apply_dogbones, apply_entry, apply_tabs, even_tabs},
     dropcutter::batch_drop_cutter,
     geo::BoundingBox3,
     gcode::{emit_gcode, get_post_processor},
@@ -161,6 +161,10 @@ enum Commands {
         #[arg(long)]
         climb: bool,
 
+        /// Add dogbone overcuts at inside corners
+        #[arg(long)]
+        dogbone: bool,
+
         /// Entry style: plunge, ramp, helix
         #[arg(long, default_value = "plunge")]
         entry: String,
@@ -230,6 +234,10 @@ enum Commands {
         /// Use climb milling (CW direction)
         #[arg(long)]
         climb: bool,
+
+        /// Add dogbone overcuts at inside corners
+        #[arg(long)]
+        dogbone: bool,
 
         /// Number of holding tabs (0 to disable)
         #[arg(long, default_value = "0")]
@@ -693,7 +701,7 @@ fn main() -> Result<()> {
 
         Commands::Pocket {
             input, tool, stepover, depth, depth_per_pass, feed_rate, plunge_rate,
-            spindle_speed, safe_z, pattern, angle, climb, entry, post, output, svg, view,
+            spindle_speed, safe_z, pattern, angle, climb, dogbone, entry, post, output, svg, view,
             simulate, sim_resolution,
         } => {
             let cutter = parse_tool(&tool)?;
@@ -753,6 +761,12 @@ fn main() -> Result<()> {
                 toolpath = apply_entry(&toolpath, entry_style, plunge_rate);
             }
 
+            // Apply dogbone dressup
+            if dogbone {
+                eprintln!("Applying dogbone overcuts...");
+                toolpath = apply_dogbones(&toolpath, tool_radius, 170.0);
+            }
+
             let elapsed = start.elapsed();
             eprintln!(
                 "Generated {} moves, cutting={:.1}mm, rapid={:.1}mm in {:.2}s",
@@ -794,7 +808,7 @@ fn main() -> Result<()> {
 
         Commands::Profile {
             input, tool, depth, depth_per_pass, side, feed_rate, plunge_rate,
-            spindle_speed, safe_z, climb, tabs, tab_width, tab_height,
+            spindle_speed, safe_z, climb, dogbone, tabs, tab_width, tab_height,
             entry, post, output, svg, view, simulate, sim_resolution,
         } => {
             let cutter = parse_tool(&tool)?;
@@ -851,6 +865,12 @@ fn main() -> Result<()> {
                 eprintln!("Adding {} tabs ({}mm wide, {}mm high)...", tabs, tab_width, tab_height);
                 let tab_list = even_tabs(tabs, tab_width, tab_height);
                 toolpath = apply_tabs(&toolpath, &tab_list, -depth);
+            }
+
+            // Apply dogbone dressup
+            if dogbone {
+                eprintln!("Applying dogbone overcuts...");
+                toolpath = apply_dogbones(&toolpath, tool_radius, 170.0);
             }
 
             let elapsed = start.elapsed();

@@ -406,6 +406,112 @@ pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath
     result
 }
 
+// ---------------------------------------------------------------------------
+// Dogbone / overcut dressup
+// ---------------------------------------------------------------------------
+
+/// Insert dogbone overcuts at inside corners of a toolpath.
+///
+/// At each corner sharper than `max_angle_deg`, a small extension is cut
+/// along the corner bisector so that a mating part with a sharp corner can
+/// fit into the CNC-cut pocket. The overcut distance is `tool_radius`,
+/// creating a clearance notch at each inside corner.
+///
+/// Only operates on consecutive linear feed moves at the same Z.
+pub fn apply_dogbones(
+    toolpath: &Toolpath,
+    tool_radius: f64,
+    max_angle_deg: f64,
+) -> Toolpath {
+    let max_angle_rad = max_angle_deg.to_radians();
+    let mut result = Toolpath::new();
+
+    let moves = &toolpath.moves;
+    if moves.len() < 3 {
+        return toolpath.clone();
+    }
+
+    result.moves.push(moves[0].clone());
+
+    for i in 1..moves.len() - 1 {
+        result.moves.push(moves[i].clone());
+
+        // Only process consecutive linear feed moves at the same Z
+        let is_linear = |m: &Move| matches!(m.move_type, MoveType::Linear { .. });
+        if !is_linear(&moves[i - 1]) || !is_linear(&moves[i]) || !is_linear(&moves[i + 1]) {
+            continue;
+        }
+
+        let a = moves[i - 1].target;
+        let b = moves[i].target;
+        let c = moves[i + 1].target;
+
+        // Must be at same Z (cutting depth)
+        if (a.z - b.z).abs() > 0.01 || (b.z - c.z).abs() > 0.01 {
+            continue;
+        }
+
+        // Compute edge vectors
+        let v1x = b.x - a.x;
+        let v1y = b.y - a.y;
+        let v2x = c.x - b.x;
+        let v2y = c.y - b.y;
+        let len1 = (v1x * v1x + v1y * v1y).sqrt();
+        let len2 = (v2x * v2x + v2y * v2y).sqrt();
+
+        if len1 < 1e-10 || len2 < 1e-10 {
+            continue;
+        }
+
+        // Normalize
+        let u1x = v1x / len1;
+        let u1y = v1y / len1;
+        let u2x = v2x / len2;
+        let u2y = v2y / len2;
+
+        // Corner angle via dot product of forward directions
+        let dot = u1x * u2x + u1y * u2y;
+        let angle = dot.clamp(-1.0, 1.0).acos(); // 0 = straight, π = U-turn
+
+        // Skip if not a sharp enough corner
+        if angle < (std::f64::consts::PI - max_angle_rad) {
+            continue;
+        }
+
+        // Bisector direction: average of the two "away from B" directions
+        // Points into the material at the corner
+        let bx = -u1x + u2x;
+        let by = -u1y + u2y;
+        let blen = (bx * bx + by * by).sqrt();
+        if blen < 1e-10 {
+            continue; // degenerate (straight line or U-turn)
+        }
+
+        // Dogbone direction is OPPOSITE to the bisector of the forward vectors
+        // (pointing into the outside of the corner, i.e., into material)
+        let dx = -(bx / blen);
+        let dy = -(by / blen);
+
+        let feed_rate = match moves[i].move_type {
+            MoveType::Linear { feed_rate } => feed_rate,
+            _ => 1000.0,
+        };
+
+        // Cut to overcut point and back
+        let overcut_x = b.x + dx * tool_radius;
+        let overcut_y = b.y + dy * tool_radius;
+        result.feed_to(P3::new(overcut_x, overcut_y, b.z), feed_rate);
+        result.feed_to(b, feed_rate);
+    }
+
+    // Add last move
+    if moves.len() >= 2 {
+        result.moves.push(moves[moves.len() - 1].clone());
+    }
+
+    result
+}
+
 /// Generate evenly-spaced tabs around a perimeter.
 pub fn even_tabs(count: usize, width: f64, height: f64) -> Vec<Tab> {
     (0..count)
@@ -670,6 +776,103 @@ mod tests {
             }
         }
         assert!(found_step_up, "Should have at least one sharp step-up move");
+    }
+
+    // --- Dogbone tests ---
+
+    fn square_profile_toolpath() -> Toolpath {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp.feed_to(P3::new(0.0, 0.0, -3.0), 500.0);
+        // Square at Z=-3
+        tp.feed_to(P3::new(50.0, 0.0, -3.0), 1000.0);
+        tp.feed_to(P3::new(50.0, 50.0, -3.0), 1000.0);
+        tp.feed_to(P3::new(0.0, 50.0, -3.0), 1000.0);
+        tp.feed_to(P3::new(0.0, 0.0, -3.0), 1000.0);
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp
+    }
+
+    #[test]
+    fn test_dogbone_adds_overcuts() {
+        let tp = square_profile_toolpath();
+        let result = apply_dogbones(&tp, 3.0, 170.0);
+
+        // Should have more moves than original (overcut + return at each corner)
+        assert!(
+            result.moves.len() > tp.moves.len(),
+            "Dogbones should add moves: {} vs {}",
+            result.moves.len(),
+            tp.moves.len()
+        );
+    }
+
+    #[test]
+    fn test_dogbone_overcut_distance() {
+        let tp = square_profile_toolpath();
+        let tool_radius = 3.0;
+        let result = apply_dogbones(&tp, tool_radius, 170.0);
+
+        // Find overcut moves (moves that go away from the path)
+        // At corner (50, 0): the overcut should be ~tool_radius from the corner
+        for i in 1..result.moves.len() {
+            let prev = result.moves[i - 1].target;
+            let curr = result.moves[i].target;
+            // Look for moves where next move returns to the same point (overcut + return)
+            if i + 1 < result.moves.len() {
+                let next = result.moves[i + 1].target;
+                if (prev.x - next.x).abs() < 0.01
+                    && (prev.y - next.y).abs() < 0.01
+                    && (prev.z - curr.z).abs() < 0.01
+                {
+                    // This is an overcut: prev → curr → next where prev ≈ next
+                    let dist = ((curr.x - prev.x).powi(2) + (curr.y - prev.y).powi(2)).sqrt();
+                    assert!(
+                        (dist - tool_radius).abs() < 0.5,
+                        "Overcut distance should be ~{}, got {}",
+                        tool_radius,
+                        dist
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_dogbone_preserves_straight_segments() {
+        // Straight line — no corners, no dogbones
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp.feed_to(P3::new(0.0, 0.0, -3.0), 500.0);
+        tp.feed_to(P3::new(50.0, 0.0, -3.0), 1000.0);
+        tp.feed_to(P3::new(100.0, 0.0, -3.0), 1000.0);
+        tp.rapid_to(P3::new(100.0, 0.0, 10.0));
+
+        let result = apply_dogbones(&tp, 3.0, 170.0);
+        assert_eq!(
+            result.moves.len(),
+            tp.moves.len(),
+            "Straight path should have no dogbones added"
+        );
+    }
+
+    #[test]
+    fn test_dogbone_respects_angle_threshold() {
+        // Shallow angle (170°) — should not trigger with default 170° threshold
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp.feed_to(P3::new(0.0, 0.0, -3.0), 500.0);
+        tp.feed_to(P3::new(50.0, 0.0, -3.0), 1000.0);
+        // Very slight turn (~5°)
+        tp.feed_to(P3::new(100.0, 5.0, -3.0), 1000.0);
+        tp.rapid_to(P3::new(100.0, 5.0, 10.0));
+
+        let result = apply_dogbones(&tp, 3.0, 100.0); // threshold 100°
+        assert_eq!(
+            result.moves.len(),
+            tp.moves.len(),
+            "Shallow angle should not trigger dogbone"
+        );
     }
 
     #[test]
