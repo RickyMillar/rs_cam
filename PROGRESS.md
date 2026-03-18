@@ -9,7 +9,7 @@ Read this FIRST at the start of every session. Update LAST before ending.
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 236 tests passing (234 unit + 2 integration)
+- [x] Core library + CLI compiling, 254 tests passing (252 unit + 2 integration)
 - [x] Phase 1 complete: STL → drop-cutter → G-code pipeline with 3D HTML viewer
 - [x] Phase 2 complete: 2.5D operations (pocket, profile, zigzag, depth stepping, SVG/DXF input, dressups, CLI)
 - [x] Phase 3 complete: Advanced tools (BullNose, VBit, TaperedBall), push-cutter, waterline, arc fitting, G2/G3
@@ -63,7 +63,11 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] CLI: all 5 tool types parseable (ball, flat, bullnose, vbit, tapered_ball)
 
 ### Phase 4: High-Value Features
-- [ ] 4.1 Adaptive clearing (constant engagement)
+- [x] 4.1 Adaptive clearing (constant engagement) — grid-based engagement, direction smoothing, idle detection, CLI subcommand (adaptive.rs)
+- [ ] 4.1a Adaptive: interpolation-based angle search (see Adaptive Refinements below)
+- [ ] 4.1b Adaptive: boundary walking for entry points (see Adaptive Refinements below)
+- [ ] 4.1c Adaptive: exact sweep-line area calculation (see Adaptive Refinements below)
+- [ ] 4.1d Adaptive: link vs retract logic (see Adaptive Refinements below)
 - [ ] 4.2 V-carving
 - [ ] 4.3 Rest machining
 - [ ] 4.4 TOML job file parsing
@@ -99,7 +103,8 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 | pushcutter | `rs_cam_core/src/pushcutter.rs` | push_cutter_triangle, batch_push_cutter (rayon) |
 | waterline | `rs_cam_core/src/waterline.rs` | waterline_contours, waterline_toolpath (multi-Z) |
 | arcfit | `rs_cam_core/src/arcfit.rs` | fit_arcs (biarc fitting, linear → G2/G3) |
-| CLI | `rs_cam_cli/src/main.rs` | drop-cutter, pocket, profile, waterline subcommands |
+| adaptive | `rs_cam_core/src/adaptive.rs` | Adaptive clearing: MaterialGrid, engagement, direction search, path generation |
+| CLI | `rs_cam_cli/src/main.rs` | drop-cutter, pocket, profile, adaptive, waterline subcommands |
 
 ## Decisions Log
 
@@ -142,3 +147,61 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - `rs_cam_core/src/polygon.rs` — Polygon2 offset infrastructure for adaptive engagement
 - `rs_cam_core/src/tool/vbit.rs` — V-bit geometry needed for V-carving
 - `rs_cam_core/src/depth.rs` — depth_stepped_toolpath pattern for composing operations
+
+## Adaptive Clearing Refinements (from FreeCAD/Freesteel research)
+
+Current implementation (4.1) uses grid-based engagement sampling and brute-force angle sweep.
+The following refinements are based on analysis of FreeCAD's Path Adaptive (libactp/Adaptive2d.cpp)
+and Freesteel's approach. Each is independent and can be done in any order.
+
+### 4.1a — Interpolation-Based Angle Search
+**What**: Replace brute-force sweep (19+36 candidates) with history-predicted interpolation.
+**How (from Freesteel)**: Maintain an `angleHistory` of the last 3 angles. Predict the next
+deflection angle from the trend. Use the `Interpolation` class to do bracketed linear
+interpolation on `(angle → area_error)`, converging on the target cut area in 2–4 iterations
+instead of 19+36 brute-force candidates. Essentially bisection search with linear interpolation
+hints that converges fast.
+**Impact**: Faster (fewer engagement evaluations per step) AND smoother (continuous angle
+function rather than discrete candidates). Medium effort.
+
+### 4.1b — Boundary Walking for Entry Points
+**What**: Replace nearest-material grid scan with systematic boundary traversal.
+**How (from Freesteel)**: The `EngagePoint` class walks along the tool boundary paths (the
+offset contour where the tool center can legally be). It maintains a position via path index,
+segment index, and parameter. `moveForward()` advances along the boundary by a step distance.
+`nextEngagePoint()` iterates forward, calling `CalcCutArea()` at each candidate position to
+test if there's enough uncleared material to engage. Threshold is `ENGAGE_AREA_THR_FACTOR *
+optimalCutAreaPD` (~30% of optimal cut area). When all boundary points are exhausted, it checks
+for remaining internal uncleared paths and processes those as sub-regions. `ResetPasses()` is
+called after a successful pass to allow re-scanning.
+**Impact**: More systematic entry point discovery, no missed regions. Medium effort.
+
+### 4.1c — Exact Sweep-Line Area Calculation
+**What**: Replace grid sampling engagement with exact geometric area calculation.
+**How (from FreeCAD `CalcCutArea()` at line 1427)**: Two circles represent the tool at old
+position (c1) and new position (c2), both with `toolRadiusScaled` radius. Cleared polygons are
+fetched from a cached bounding-box lookup (`GetBoundedClearedAreaClipped`). They compute all
+x-coordinates of interest: polygon vertices, line-circle intersections (tool circles vs polygon
+edges), circle-circle intersections (c1 vs c2), and tangent points. For each x-interval between
+sorted coordinates, cast a vertical line through the midpoint, find all y-intersections with
+polygons and circles, sort by y, compute exact area — using circular segments (sector minus
+triangle) for circle crossings and trapezoids for polygon crossings. Result is the exact boolean
+area of `(c2 minus c1 minus cleared_polygons)` — the new material the tool will remove.
+`outsideCount` is a sweep-line winding number tracking inside/outside the cut region. Much more
+precise than grid sampling and the key to consistent engagement.
+**Impact**: Precise engagement → consistent chip load → better surface finish. High effort
+(polygon boolean ops, circle-polygon intersections, sweep-line area). Could use ClipperLib
+(clipper2-rust already in deps) for polygon operations.
+
+### 4.1d — Link vs Retract Logic
+**What**: Keep tool down between passes when safe, instead of always retracting.
+**How (from Freesteel)**: `keepToolDownDistRatio` defaults to 3.0 — keep the tool down if the
+safe-travel path length is less than 3× the direct straight-line distance between points.
+`ResolveLinkPath()` tries to find a clear path between two points by walking along previously-
+cleared contours, using `IsClearPath()` to verify safety. Has a time limit
+(`keepToolDownDistRatio * CLOCKS_PER_SEC / 6`) to prevent spending too long searching. If the
+path length exceeds `keepToolDownDistRatio * directDistance`, give up and retract. Path-finding
+works by offsetting the cleared area boundary and testing progressively larger offsets to find
+a walkable corridor.
+**Impact**: Fewer rapids and retracts → faster cycle time, less tool wear from plunging.
+Medium effort. Requires tracking cleared polygon contours (not just grid cells).
