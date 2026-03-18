@@ -111,6 +111,14 @@ impl Polygon2 {
     pub fn perimeter(&self) -> f64 {
         ring_perimeter(&self.exterior)
     }
+
+    /// Test if a point is inside this polygon (inside exterior, not inside any hole).
+    pub fn contains_point(&self, p: &P2) -> bool {
+        if !point_in_polygon(p, &self.exterior) {
+            return false;
+        }
+        !self.holes.iter().any(|h| point_in_polygon(p, h))
+    }
 }
 
 /// Offset a polygon by `distance`.

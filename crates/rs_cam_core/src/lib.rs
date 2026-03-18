@@ -16,5 +16,6 @@ pub mod dressup;
 pub mod fiber;
 pub mod pushcutter;
 pub mod waterline;
+pub mod adaptive;
 pub mod arcfit;
 pub mod simulation;
