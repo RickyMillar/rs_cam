@@ -2,16 +2,17 @@
 
 Read this FIRST at the start of every session. Update LAST before ending.
 
-## Current Phase: 3 - Advanced Tools & 3D (NEXT)
+## Current Phase: 4 - High-Value Features (NEXT)
 
 ### What Exists
 - [x] Research complete (research/ directory - 8 synthesized docs + 4 raw dumps)
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 120 tests passing (118 unit + 2 integration)
+- [x] Core library + CLI compiling, 220 tests passing (218 unit + 2 integration)
 - [x] Phase 1 complete: STL → drop-cutter → G-code pipeline with 3D HTML viewer
 - [x] Phase 2 complete: 2.5D operations (pocket, profile, zigzag, depth stepping, SVG/DXF input, dressups, CLI)
+- [x] Phase 3 complete: Advanced tools (BullNose, VBit, TaperedBall), push-cutter, waterline, arc fitting, G2/G3
 
 ### Phase 1: Foundation (COMPLETE)
 Goal: Load an STL, drop a ball cutter onto it, emit G-code.
@@ -47,18 +48,19 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] Polygon containment detection — ray-casting point-in-polygon for SVG/DXF islands
 - [x] Standalone 3D HTML viewer for 2.5D operations (viz.rs)
 
-### Phase 3: Advanced Tools & 3D
-- [ ] 3.1 BullNoseEndmill implementation
-- [ ] 3.2 VBit/ConeCutter implementation
-- [ ] 3.3 TaperedBallEndmill (CompositeCutter)
-- [ ] 3.4 Push-cutter algorithm
-- [ ] 3.5 Fiber and Interval types
-- [ ] 3.6 Weave graph (half-edge)
-- [ ] 3.7 Waterline algorithm
-- [ ] 3.8 Heightmap-based surface operations
-- [ ] 3.9 Arc fitting dressup (biarc)
-- [ ] 3.10 G2/G3 arc output
-- [ ] 3.11 LinuxCNC and Mach3 post-processors
+### Phase 3: Advanced Tools & 3D (COMPLETE)
+- [x] 3.1 BullNoseEndmill — flat bottom + toroidal corner (R1/R2), full drop-cutter (bullnose.rs)
+- [x] 3.2 VBitEndmill — conical profile, tip + surface contact, hyperbola edge contact (vbit.rs)
+- [x] 3.3 TaperedBallEndmill — composite ball tip + cone taper, validated junction continuity (tapered_ball.rs)
+- [x] 3.4 Push-cutter algorithm — vertex/facet/edge push, batch with rayon (pushcutter.rs)
+- [x] 3.5 Fiber and Interval types — parameterized line segments, merged intervals (fiber.rs)
+- [x] 3.6 Weave graph — SKIPPED (nearest-neighbor contour chaining used instead)
+- [x] 3.7 Waterline algorithm — X/Y fiber grids, push-cutter, contour extraction (waterline.rs)
+- [x] 3.8 Heightmap-based surface operations — DEFERRED to Phase 4
+- [x] 3.9 Arc fitting dressup — greedy biarc fitting, circle-from-3-points (arcfit.rs)
+- [x] 3.10 G2/G3 arc output — ArcCW/ArcCCW in toolpath IR, PostProcessor arc methods
+- [x] 3.11 Mach3 post-processor + waterline CLI subcommand (gcode.rs, main.rs)
+- [x] CLI: all 5 tool types parseable (ball, flat, bullnose, vbit, tapered_ball)
 
 ### Phase 4: High-Value Features
 - [ ] 4.1 Adaptive clearing (constant engagement)
@@ -79,10 +81,10 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 |--------|------|---------|
 | geo | `rs_cam_core/src/geo.rs` | P2/P3/V2/V3 aliases, BoundingBox3, Triangle |
 | mesh | `rs_cam_core/src/mesh.rs` | TriangleMesh (STL loading), SpatialIndex (uniform grid) |
-| tool | `rs_cam_core/src/tool/` | MillingCutter trait, FlatEndmill, BallEndmill |
+| tool | `rs_cam_core/src/tool/` | MillingCutter trait, FlatEndmill, BallEndmill, BullNoseEndmill, VBitEndmill, TaperedBallEndmill |
 | dropcutter | `rs_cam_core/src/dropcutter.rs` | point_drop_cutter, batch_drop_cutter (rayon parallel) |
-| toolpath | `rs_cam_core/src/toolpath.rs` | Move, MoveType, Toolpath IR, raster_toolpath_from_grid |
-| gcode | `rs_cam_core/src/gcode.rs` | PostProcessor trait, GrblPost, LinuxCncPost, emit_gcode |
+| toolpath | `rs_cam_core/src/toolpath.rs` | Move, MoveType (Rapid/Linear/ArcCW/ArcCCW), Toolpath IR |
+| gcode | `rs_cam_core/src/gcode.rs` | PostProcessor trait, GrblPost, LinuxCncPost, Mach3Post, emit_gcode |
 | viz | `rs_cam_core/src/viz.rs` | SVG preview, 3D HTML viewer (mesh+toolpath, standalone) |
 | polygon | `rs_cam_core/src/polygon.rs` | Polygon2, offset, pocket_offsets, containment detection |
 | pocket | `rs_cam_core/src/pocket.rs` | PocketParams, pocket_toolpath, pocket_contours |
@@ -92,7 +94,11 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 | svg_input | `rs_cam_core/src/svg_input.rs` | load_svg (usvg, bezier flattening, containment) |
 | dxf_input | `rs_cam_core/src/dxf_input.rs` | load_dxf (LwPolyline, Circle, Ellipse, bulge arcs) |
 | dressup | `rs_cam_core/src/dressup.rs` | Ramp/helix entry, tab/bridge with segment interpolation |
-| CLI | `rs_cam_cli/src/main.rs` | drop-cutter, pocket, profile subcommands |
+| fiber | `rs_cam_core/src/fiber.rs` | Fiber (parameterized line at Z), Interval with merging |
+| pushcutter | `rs_cam_core/src/pushcutter.rs` | push_cutter_triangle, batch_push_cutter (rayon) |
+| waterline | `rs_cam_core/src/waterline.rs` | waterline_contours, waterline_toolpath (multi-Z) |
+| arcfit | `rs_cam_core/src/arcfit.rs` | fit_arcs (biarc fitting, linear → G2/G3) |
+| CLI | `rs_cam_cli/src/main.rs` | drop-cutter, pocket, profile, waterline subcommands |
 
 ## Decisions Log
 
@@ -106,14 +112,18 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 | 2026-03-19 | geo crate for type conversions, not offset | geo::Buffer works but approximates arcs as line segments |
 | 2026-03-19 | KD-tree for drop-cutter, BVH for ray queries | Follows OpenCAMLib's proven approach |
 | 2026-03-19 | Zigzag for pockets with islands | Contour-parallel rings don't avoid holes; zigzag scan-lines clip correctly against hole edges |
+| 2026-03-19 | Nearest-neighbor over Weave for waterline | Simpler implementation, sufficient for initial waterline support; Weave graph is complex and can be added later for adaptive refinement |
 
 ## Known Issues / Tech Debt
 - Spatial index degrades when cell_size >> model extent (all tris in one cell). Consider auto-sizing cell_size from mesh bbox.
 - Points outside mesh boundary hit min_z clamp. Should skip or clip to mesh XY extent.
 - Flipped normals on some triangles could cause facet_drop to miss contacts. Consider checking/fixing winding on load.
 - Duplicate rapid at start of each row in raster toolpath (minor).
-- Contour-parallel pocket pattern does NOT avoid islands (rings pass through holes). Use zigzag pattern for pockets with islands. Fixing requires ring-clipping algorithm (Held/Voronoi approach).
-- Unused warnings in tool/ball.rs tests (cosmetic, `let r = 5.0` not used).
+- Contour-parallel pocket pattern does NOT avoid islands (rings pass through holes). Use zigzag pattern for pockets with islands.
+- Bull nose edge_drop uses simplified tube-circle approach (not full offset-ellipse with Brent's solver). Accurate for most cases but may have slight errors on highly sloped edges.
+- Push-cutter edge_push uses sampling (32 steps) rather than analytical solution. Could miss contacts on very small edges.
+- Waterline contour chaining uses nearest-neighbor which can produce artifacts. Full Weave graph would be more robust.
+- Unused warnings in tool/ball.rs tests (cosmetic).
 
 ## Test Fixtures
 - fixtures/terrain_small.stl: 40K triangle terrain mesh (100x73mm, from rivmap project)
@@ -125,9 +135,9 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - 196K triangles, 108K grid points, 0.18s release build (terrain.stl, ball:3.175, stepover 1.0)
 - 40K triangles, 2.2K grid points, 3.1s debug / ~0.1s release (terrain_small.stl, ball:6.35, stepover 2.0)
 
-## Key References for Phase 3
-- `research/03_tool_geometry.md` — Math for BullNose, VBit, Cone, TaperedBall cutters
-- `research/raw_opencamlib_math.md` — Exact equations for every cutter type (edge_drop dual geometry)
-- `research/02_algorithms.md` — Push-cutter, Waterline/Weave, Fiber/Interval algorithms
-- `rs_cam_core/src/tool/mod.rs` — MillingCutter trait with default facet_drop (radiusvector formula)
-- `rs_cam_core/src/tool/flat.rs` and `ball.rs` — Working examples of the trait implementation pattern
+## Key References for Phase 4
+- `research/02_algorithms.md` — Adaptive clearing (constant engagement), V-carving algorithms
+- `research/08_ux_terminology.md` — User-facing parameter names for TOML job files
+- `rs_cam_core/src/polygon.rs` — Polygon2 offset infrastructure for adaptive engagement
+- `rs_cam_core/src/tool/vbit.rs` — V-bit geometry needed for V-carving
+- `rs_cam_core/src/depth.rs` — depth_stepped_toolpath pattern for composing operations
