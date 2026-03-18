@@ -33,6 +33,8 @@ pub fn load_svg_data(data: &[u8], tolerance: f64) -> Result<Vec<Polygon2>, SvgEr
     let tree = usvg::Tree::from_data(data, &opt)?;
     let mut polygons = Vec::new();
     visit_group(tree.root(), tolerance, &mut polygons);
+    // Detect containment: inner shapes become holes of outer shapes
+    let polygons = crate::polygon::detect_containment(polygons);
     Ok(polygons)
 }
 
@@ -276,6 +278,38 @@ mod tests {
         assert!(
             polys[0].exterior.len() > 10,
             "Flattened bezier should have many points"
+        );
+    }
+
+    #[test]
+    fn test_containment_rect_with_circle_hole() {
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 80 80">
+            <rect x="5" y="5" width="70" height="70" rx="8" ry="8"/>
+            <circle cx="40" cy="40" r="12"/>
+        </svg>"#;
+        let polys = load_svg_data(svg, 0.5).unwrap();
+        assert_eq!(polys.len(), 1, "Circle inside rect should be detected as hole");
+        assert_eq!(polys[0].holes.len(), 1, "Should have 1 hole");
+
+        // Area with hole should be less than the exterior alone
+        let exterior_area = polys[0].signed_area().abs();
+        let net_area = polys[0].area();
+        assert!(
+            net_area < exterior_area,
+            "Net area {} should be less than exterior area {}",
+            net_area,
+            exterior_area
+        );
+
+        // Net area should be approximately rect - circle
+        // rect ≈ 70*70 = 4900 (rounded corners slightly less)
+        // circle = pi * 12^2 ≈ 452
+        let expected_approx = 4900.0 - 452.0;
+        assert!(
+            (net_area - expected_approx).abs() < 200.0,
+            "Net area {} should be near {} (rect minus circle)",
+            net_area,
+            expected_approx
         );
     }
 

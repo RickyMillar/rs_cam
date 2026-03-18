@@ -88,6 +88,7 @@ Record non-obvious decisions here so future sessions don't re-debate them.
 - Points outside mesh boundary hit min_z clamp. Should skip or clip to mesh XY extent.
 - Flipped normals on some triangles could cause facet_drop to miss contacts. Consider checking/fixing winding on load.
 - Duplicate rapid at start of each row in raster toolpath (minor).
+- [x] FIXED: SVG/DXF containment detection — inner shapes auto-detected as holes via ray-casting point-in-polygon.
 
 ## Test Fixtures
 - fixtures/terrain_small.stl: 40K triangle terrain mesh (100x73mm, from rivmap project)

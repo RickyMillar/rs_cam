@@ -27,6 +27,13 @@ pub fn load_dxf(path: &Path, arc_tolerance_deg: f64) -> Result<Vec<Polygon2>, Dx
 
 /// Load closed polygon entities from a DXF Drawing.
 pub fn extract_polygons(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<Polygon2> {
+    let raw = extract_polygons_flat(drawing, arc_tolerance_deg);
+    // Detect containment: inner shapes become holes of outer shapes
+    crate::polygon::detect_containment(raw)
+}
+
+/// Extract polygons without containment detection (flat list).
+fn extract_polygons_flat(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<Polygon2> {
     let mut polygons = Vec::new();
     let arc_step_rad = arc_tolerance_deg.to_radians();
 

@@ -202,6 +202,123 @@ pub fn pocket_offsets(polygon: &Polygon2, stepover: f64) -> Vec<Vec<Polygon2>> {
     layers
 }
 
+/// Detect containment among a flat list of polygons and nest inner polygons
+/// as holes of their containing polygon.
+///
+/// Given polygons from an SVG or DXF where separate shapes may represent
+/// an outer boundary with interior islands, this function:
+/// 1. Sorts polygons by area (largest first)
+/// 2. For each smaller polygon, checks if it's fully inside a larger one
+/// 3. If so, converts it to a hole of that polygon
+///
+/// Returns the nested polygons (outer boundaries with holes attached).
+pub fn detect_containment(mut polygons: Vec<Polygon2>) -> Vec<Polygon2> {
+    if polygons.len() <= 1 {
+        return polygons;
+    }
+
+    // Ensure all have correct winding before containment test
+    for poly in &mut polygons {
+        poly.ensure_winding();
+    }
+
+    // Sort by area descending (largest = outer boundaries)
+    polygons.sort_by(|a, b| b.area().partial_cmp(&a.area()).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Track which polygons have been consumed as holes
+    let mut consumed = vec![false; polygons.len()];
+    // Track holes to add to each polygon
+    let mut holes_for: Vec<Vec<usize>> = vec![Vec::new(); polygons.len()];
+
+    // For each polygon (smallest first), check if it's inside a larger one
+    for i in (0..polygons.len()).rev() {
+        if consumed[i] {
+            continue;
+        }
+        // Check against all larger polygons
+        for j in 0..i {
+            if consumed[j] {
+                continue;
+            }
+            if polygon_contains_polygon(&polygons[j], &polygons[i]) {
+                holes_for[j].push(i);
+                consumed[i] = true;
+                break; // Only nest one level deep (innermost containing polygon)
+            }
+        }
+    }
+
+    // Build result: outer polygons with their holes attached
+    let mut result = Vec::new();
+    for (i, poly) in polygons.iter().enumerate() {
+        if consumed[i] {
+            continue;
+        }
+        let mut outer = poly.clone();
+        for &hole_idx in &holes_for[i] {
+            let mut hole_pts = polygons[hole_idx].exterior.clone();
+            // Holes must be CW (reverse if CCW)
+            if shoelace_area(&hole_pts) > 0.0 {
+                hole_pts.reverse();
+            }
+            outer.holes.push(hole_pts);
+        }
+        result.push(outer);
+    }
+
+    result
+}
+
+/// Test if all vertices of `inner` are inside `outer`'s exterior boundary.
+fn polygon_contains_polygon(outer: &Polygon2, inner: &Polygon2) -> bool {
+    // Quick bbox check
+    let outer_bb = polygon_bbox(&outer.exterior);
+    let inner_bb = polygon_bbox(&inner.exterior);
+    if inner_bb.0 < outer_bb.0 || inner_bb.1 < outer_bb.1
+        || inner_bb.2 > outer_bb.2 || inner_bb.3 > outer_bb.3
+    {
+        return false;
+    }
+
+    // Check that all inner vertices are inside the outer polygon (ray casting)
+    inner.exterior.iter().all(|p| point_in_polygon(p, &outer.exterior))
+}
+
+/// Ray-casting point-in-polygon test.
+fn point_in_polygon(point: &P2, polygon: &[P2]) -> bool {
+    let n = polygon.len();
+    if n < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let mut j = n - 1;
+    for i in 0..n {
+        let pi = &polygon[i];
+        let pj = &polygon[j];
+        if ((pi.y > point.y) != (pj.y > point.y))
+            && (point.x < (pj.x - pi.x) * (point.y - pi.y) / (pj.y - pi.y) + pi.x)
+        {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
+fn polygon_bbox(pts: &[P2]) -> (f64, f64, f64, f64) {
+    let mut x_min = f64::INFINITY;
+    let mut y_min = f64::INFINITY;
+    let mut x_max = f64::NEG_INFINITY;
+    let mut y_max = f64::NEG_INFINITY;
+    for p in pts {
+        x_min = x_min.min(p.x);
+        y_min = y_min.min(p.y);
+        x_max = x_max.max(p.x);
+        y_max = y_max.max(p.y);
+    }
+    (x_min, y_min, x_max, y_max)
+}
+
 // --- helpers ---
 
 fn shoelace_area(pts: &[P2]) -> f64 {
@@ -519,5 +636,77 @@ mod tests {
             );
             prev_area = layer_area;
         }
+    }
+
+    // --- containment detection tests ---
+
+    #[test]
+    fn test_containment_rect_with_hole() {
+        let outer = Polygon2::rectangle(0.0, 0.0, 50.0, 50.0);
+        let inner = Polygon2::rectangle(15.0, 15.0, 35.0, 35.0);
+
+        let result = detect_containment(vec![outer, inner]);
+        assert_eq!(result.len(), 1, "Inner should become a hole, not a separate polygon");
+        assert_eq!(result[0].holes.len(), 1, "Outer should have 1 hole");
+        assert_relative_eq!(
+            result[0].area(),
+            50.0 * 50.0 - 20.0 * 20.0,
+            epsilon = 1.0
+        );
+    }
+
+    #[test]
+    fn test_containment_no_nesting() {
+        let a = Polygon2::rectangle(0.0, 0.0, 20.0, 20.0);
+        let b = Polygon2::rectangle(30.0, 0.0, 50.0, 20.0);
+
+        let result = detect_containment(vec![a, b]);
+        assert_eq!(result.len(), 2, "Separate polygons should stay separate");
+        assert!(result[0].holes.is_empty());
+        assert!(result[1].holes.is_empty());
+    }
+
+    #[test]
+    fn test_containment_multiple_holes() {
+        let outer = Polygon2::rectangle(0.0, 0.0, 100.0, 100.0);
+        let hole1 = Polygon2::rectangle(10.0, 10.0, 30.0, 30.0);
+        let hole2 = Polygon2::rectangle(50.0, 50.0, 70.0, 70.0);
+
+        let result = detect_containment(vec![hole1, outer, hole2]);
+        assert_eq!(result.len(), 1, "Both inner rects should become holes");
+        assert_eq!(result[0].holes.len(), 2);
+    }
+
+    #[test]
+    fn test_containment_preserves_winding() {
+        let outer = Polygon2::rectangle(0.0, 0.0, 50.0, 50.0);
+        let inner = Polygon2::rectangle(10.0, 10.0, 40.0, 40.0);
+
+        let result = detect_containment(vec![outer, inner]);
+        assert!(result[0].signed_area() > 0.0, "Outer should be CCW");
+        // Holes should be CW (negative area)
+        let hole_area = shoelace_area(&result[0].holes[0]);
+        assert!(hole_area < 0.0, "Hole should be CW, got area {}", hole_area);
+    }
+
+    #[test]
+    fn test_containment_single_polygon() {
+        let poly = Polygon2::rectangle(0.0, 0.0, 10.0, 10.0);
+        let result = detect_containment(vec![poly.clone()]);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].holes.is_empty());
+    }
+
+    #[test]
+    fn test_point_in_polygon_basic() {
+        let square = vec![
+            P2::new(0.0, 0.0),
+            P2::new(10.0, 0.0),
+            P2::new(10.0, 10.0),
+            P2::new(0.0, 10.0),
+        ];
+        assert!(point_in_polygon(&P2::new(5.0, 5.0), &square));
+        assert!(!point_in_polygon(&P2::new(15.0, 5.0), &square));
+        assert!(!point_in_polygon(&P2::new(-1.0, 5.0), &square));
     }
 }
