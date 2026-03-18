@@ -407,6 +407,137 @@ pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath
 }
 
 // ---------------------------------------------------------------------------
+// Lead-in / Lead-out dressup
+// ---------------------------------------------------------------------------
+
+/// Insert arc lead-in and lead-out moves at the start/end of cutting passes.
+///
+/// A "cutting pass" is a sequence of feed moves at the same Z bounded by
+/// rapids or plunges. The lead-in is a quarter-circle arc that approaches
+/// the first cut point tangentially (avoiding a witness mark from a direct
+/// plunge). The lead-out is a matching arc departing the last cut point.
+///
+/// `radius` is the arc radius in mm (typically 1-3mm or ~half the tool radius).
+pub fn apply_lead_in_out(toolpath: &Toolpath, radius: f64) -> Toolpath {
+    let mut result = Toolpath::new();
+    let moves = &toolpath.moves;
+    if moves.is_empty() {
+        return result;
+    }
+
+    let mut i = 0;
+    while i < moves.len() {
+        // Detect the start of a cutting pass: a plunge (downward feed) followed
+        // by horizontal feed moves at the same Z.
+        if i > 0 && is_plunge(&moves[i - 1], &moves[i]) {
+            let cut_z = moves[i].target.z;
+            let plunge_end = moves[i].target;
+
+            // Find next horizontal cutting move to determine lead-in direction
+            if let Some(first_cut_idx) = (i + 1..moves.len()).find(|&j| {
+                matches!(moves[j].move_type, MoveType::Linear { .. })
+                    && (moves[j].target.z - cut_z).abs() < 0.01
+            }) {
+                let cut_dir_x = moves[first_cut_idx].target.x - plunge_end.x;
+                let cut_dir_y = moves[first_cut_idx].target.y - plunge_end.y;
+                let cut_dir_len = (cut_dir_x * cut_dir_x + cut_dir_y * cut_dir_y).sqrt();
+
+                if cut_dir_len > 0.1 {
+                    let ux = cut_dir_x / cut_dir_len;
+                    let uy = cut_dir_y / cut_dir_len;
+
+                    // Lead-in: approach from the side, quarter-circle arc
+                    // Start point is offset perpendicular to cut direction
+                    let perp_x = -uy;
+                    let perp_y = ux;
+                    let lead_start = P3::new(
+                        plunge_end.x + perp_x * radius - ux * radius,
+                        plunge_end.y + perp_y * radius - uy * radius,
+                        cut_z,
+                    );
+
+                    let feed_rate = match moves[i].move_type {
+                        MoveType::Linear { feed_rate } => feed_rate,
+                        _ => 500.0,
+                    };
+
+                    // Plunge to lead-in start instead of original plunge point
+                    result.feed_to(lead_start, feed_rate);
+
+                    // Arc from lead_start to plunge_end (quarter circle)
+                    let arc_steps = 8;
+                    for s in 1..=arc_steps {
+                        let t = s as f64 / arc_steps as f64;
+                        let angle = std::f64::consts::FRAC_PI_2 * t;
+                        let ax = plunge_end.x + perp_x * radius * (1.0 - angle.sin())
+                            - ux * radius * (1.0 - angle.cos());
+                        let ay = plunge_end.y + perp_y * radius * (1.0 - angle.sin())
+                            - uy * radius * (1.0 - angle.cos());
+                        result.feed_to(P3::new(ax, ay, cut_z), feed_rate);
+                    }
+
+                    i += 1;
+                    continue;
+                }
+            }
+        }
+
+        // Detect end of a cutting pass: feed at cut_z followed by retract (rapid up)
+        if i + 1 < moves.len()
+            && matches!(moves[i].move_type, MoveType::Linear { .. })
+            && moves[i + 1].move_type == MoveType::Rapid
+            && moves[i + 1].target.z > moves[i].target.z + 1.0
+        {
+            let cut_z = moves[i].target.z;
+            let cut_end = moves[i].target;
+
+            // Find the direction of the last cutting segment
+            if i > 0 {
+                let prev = moves[i - 1].target;
+                let dir_x = cut_end.x - prev.x;
+                let dir_y = cut_end.y - prev.y;
+                let dir_len = (dir_x * dir_x + dir_y * dir_y).sqrt();
+
+                if dir_len > 0.1 && (prev.z - cut_z).abs() < 0.01 {
+                    let ux = dir_x / dir_len;
+                    let uy = dir_y / dir_len;
+                    let perp_x = -uy;
+                    let perp_y = ux;
+
+                    let feed_rate = match moves[i].move_type {
+                        MoveType::Linear { feed_rate } => feed_rate,
+                        _ => 1000.0,
+                    };
+
+                    // Emit the original cut endpoint
+                    result.moves.push(moves[i].clone());
+
+                    // Lead-out: quarter-circle arc departing tangentially
+                    let arc_steps = 8;
+                    for s in 1..=arc_steps {
+                        let t = s as f64 / arc_steps as f64;
+                        let angle = std::f64::consts::FRAC_PI_2 * t;
+                        let ax = cut_end.x + ux * radius * angle.sin()
+                            + perp_x * radius * (1.0 - angle.cos());
+                        let ay = cut_end.y + uy * radius * angle.sin()
+                            + perp_y * radius * (1.0 - angle.cos());
+                        result.feed_to(P3::new(ax, ay, cut_z), feed_rate);
+                    }
+
+                    i += 1;
+                    continue;
+                }
+            }
+        }
+
+        result.moves.push(moves[i].clone());
+        i += 1;
+    }
+
+    result
+}
+
+// ---------------------------------------------------------------------------
 // Dogbone / overcut dressup
 // ---------------------------------------------------------------------------
 
@@ -776,6 +907,46 @@ mod tests {
             }
         }
         assert!(found_step_up, "Should have at least one sharp step-up move");
+    }
+
+    // --- Lead-in/out tests ---
+
+    #[test]
+    fn test_lead_in_adds_arc_moves() {
+        let tp = simple_plunge_toolpath();
+        let result = apply_lead_in_out(&tp, 2.0);
+
+        // Should have more moves than original (arc segments added)
+        assert!(
+            result.moves.len() > tp.moves.len(),
+            "Lead-in should add arc moves: {} vs {}",
+            result.moves.len(),
+            tp.moves.len()
+        );
+    }
+
+    #[test]
+    fn test_lead_in_reaches_cut_point() {
+        let tp = simple_plunge_toolpath();
+        let result = apply_lead_in_out(&tp, 2.0);
+
+        // The cut moves at x=50, y=10, z=-3 should still be reachable
+        let has_first_cut = result.moves.iter().any(|m| {
+            (m.target.z - (-3.0)).abs() < 0.01
+                && (m.target.x - 10.0).abs() < 3.0
+                && (m.target.y - 10.0).abs() < 3.0
+        });
+        assert!(has_first_cut, "Lead-in should arrive near the first cut point");
+    }
+
+    #[test]
+    fn test_lead_in_preserves_rapids() {
+        let tp = simple_plunge_toolpath();
+        let result = apply_lead_in_out(&tp, 2.0);
+
+        // Should still have a rapid move
+        let has_rapid = result.moves.iter().any(|m| m.move_type == MoveType::Rapid);
+        assert!(has_rapid, "Lead-in should preserve rapid moves");
     }
 
     // --- Dogbone tests ---
