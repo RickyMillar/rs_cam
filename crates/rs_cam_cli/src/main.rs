@@ -9,7 +9,7 @@ use rs_cam_core::{
     pocket::{PocketParams, pocket_toolpath},
     polygon::Polygon2,
     profile::{ProfileParams, ProfileSide, profile_toolpath},
-    tool::{BallEndmill, FlatEndmill, MillingCutter},
+    tool::{BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill},
     toolpath::{Toolpath, raster_toolpath_from_grid},
     zigzag::{ZigzagParams, zigzag_toolpath},
 };
@@ -238,8 +238,11 @@ enum Commands {
 
 fn parse_tool(spec: &str) -> Result<Box<dyn MillingCutter>> {
     let parts: Vec<&str> = spec.split(':').collect();
-    if parts.len() != 2 {
-        bail!("Tool spec must be type:diameter (e.g., ball:6.35)");
+    if parts.len() < 2 {
+        bail!(
+            "Tool spec must be type:diameter[:params] (e.g., ball:6.35, \
+             bullnose:10:2, vbit:10:90, tapered_ball:6:10:12)"
+        );
     }
 
     let diameter: f64 = parts[1]
@@ -251,7 +254,44 @@ fn parse_tool(spec: &str) -> Result<Box<dyn MillingCutter>> {
     match parts[0] {
         "ball" => Ok(Box::new(BallEndmill::new(diameter, cutting_length))),
         "flat" => Ok(Box::new(FlatEndmill::new(diameter, cutting_length))),
-        _ => bail!("Unknown tool type '{}'. Supported: ball, flat", parts[0]),
+        "bullnose" => {
+            // bullnose:diameter:corner_radius
+            let corner_radius: f64 = parts
+                .get(2)
+                .context("Bull nose needs corner radius: bullnose:10:2")?
+                .parse()
+                .context("Invalid corner radius")?;
+            Ok(Box::new(BullNoseEndmill::new(diameter, corner_radius, cutting_length)))
+        }
+        "vbit" => {
+            // vbit:diameter:included_angle_deg
+            let angle: f64 = parts
+                .get(2)
+                .context("V-bit needs included angle: vbit:10:90")?
+                .parse()
+                .context("Invalid included angle")?;
+            Ok(Box::new(VBitEndmill::new(diameter, angle, cutting_length)))
+        }
+        "tapered_ball" => {
+            // tapered_ball:ball_diameter:taper_half_angle:shaft_diameter
+            let taper_angle: f64 = parts
+                .get(2)
+                .context("Tapered ball needs taper angle and shaft diameter: tapered_ball:6:10:12")?
+                .parse()
+                .context("Invalid taper half-angle")?;
+            let shaft_diameter: f64 = parts
+                .get(3)
+                .context("Tapered ball needs shaft diameter: tapered_ball:6:10:12")?
+                .parse()
+                .context("Invalid shaft diameter")?;
+            Ok(Box::new(TaperedBallEndmill::new(
+                diameter, taper_angle, shaft_diameter, cutting_length,
+            )))
+        }
+        _ => bail!(
+            "Unknown tool type '{}'. Supported: ball, flat, bullnose, vbit, tapered_ball",
+            parts[0]
+        ),
     }
 }
 

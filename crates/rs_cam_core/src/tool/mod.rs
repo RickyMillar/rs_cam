@@ -8,9 +8,15 @@
 
 mod flat;
 mod ball;
+mod bullnose;
+mod vbit;
+mod tapered_ball;
 
 pub use flat::FlatEndmill;
 pub use ball::BallEndmill;
+pub use bullnose::BullNoseEndmill;
+pub use vbit::VBitEndmill;
+pub use tapered_ball::TaperedBallEndmill;
 
 use crate::geo::{P3, Triangle};
 
