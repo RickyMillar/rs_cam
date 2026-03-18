@@ -763,8 +763,8 @@ pub fn simulation_3d_html(
 <div id="controls">
   <button id="replayBtn">&#9654; Replay</button>
   <button id="skipBtn">&#9646;&#9646; End</button>
-  <label>Speed: <input type="range" id="speedRange" min="1" max="100" value="30">
-  <span id="speedVal">30</span>x</label>
+  <label>Speed: <input type="range" id="speedRange" min="0" max="100" value="40" step="1">
+  <span id="speedVal">1.0</span>x</label>
   <div id="progressBar"><div id="progressFill"></div></div>
   <span id="moveInfo">Complete</span>
 </div>
@@ -1015,7 +1015,9 @@ for (let i = 1; i < animMoveCount; i++) {{
 const baseSpeed = Math.max(totalDist / 20, 10); // complete in ~20s at 1x
 
 function processFrame(dt) {{
-  const speed = baseSpeed * parseFloat(document.getElementById('speedRange').value);
+  const sliderVal = parseFloat(document.getElementById('speedRange').value);
+  const speedMult = Math.pow(10, (sliderVal - 50) / 30); // 0→0.04x, 50→1x, 100→215x
+  const speed = baseSpeed * speedMult;
   let budget = speed * dt; // mm to advance this frame
   let meshDirty = false;
 
@@ -1081,8 +1083,11 @@ document.getElementById('skipBtn').addEventListener('click', () => {{
 }});
 
 document.getElementById('speedRange').addEventListener('input', (e) => {{
-  document.getElementById('speedVal').textContent = e.target.value;
+  const mult = Math.pow(10, (parseFloat(e.target.value) - 50) / 30);
+  document.getElementById('speedVal').textContent = mult < 1 ? mult.toFixed(2) : mult.toFixed(0);
 }});
+// Set initial label
+document.getElementById('speedVal').textContent = '1.0';
 
 window.addEventListener('resize', () => {{
   camera.aspect = window.innerWidth / window.innerHeight;
