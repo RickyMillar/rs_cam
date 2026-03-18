@@ -463,7 +463,7 @@ fn adaptive_segments(
     let max_passes = 500; // safety limit
     let mut pass_count = 0;
 
-    while grid.material_fraction() > 0.005 && pass_count < max_passes {
+    while grid.material_fraction() > 0.01 && pass_count < max_passes {
         pass_count += 1;
 
         // Find entry point
@@ -534,12 +534,20 @@ fn adaptive_segments(
             prev_angle = angle;
         }
 
+        let was_idle = idle_count > 15;
+
         if path.len() >= 2 {
             last_pos = Some(*path.last().unwrap());
             segments.push(AdaptiveSegment::Cut(path));
         } else {
-            // Single point — clear material at entry but no useful path
             last_pos = Some(entry);
+        }
+
+        // If the pass ended due to idle detection, the remaining material
+        // nearby is too small or inaccessible. Force-clear a wider area
+        // around the last position to prevent revisiting the same spot.
+        if was_idle {
+            grid.clear_circle(cx, cy, tool_radius * 2.0);
         }
     }
 
