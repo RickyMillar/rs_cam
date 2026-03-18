@@ -13,3 +13,6 @@ pub mod depth;
 pub mod svg_input;
 pub mod dxf_input;
 pub mod dressup;
+pub mod fiber;
+pub mod pushcutter;
+pub mod waterline;
