@@ -9,7 +9,7 @@ Read this FIRST at the start of every session. Update LAST before ending.
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 254 tests passing (252 unit + 2 integration)
+- [x] Core library + CLI compiling, 261 tests passing (259 unit + 2 integration)
 - [x] Phase 1 complete: STL → drop-cutter → G-code pipeline with 3D HTML viewer
 - [x] Phase 2 complete: 2.5D operations (pocket, profile, zigzag, depth stepping, SVG/DXF input, dressups, CLI)
 - [x] Phase 3 complete: Advanced tools (BullNose, VBit, TaperedBall), push-cutter, waterline, arc fitting, G2/G3
@@ -70,9 +70,9 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [ ] 4.1d Adaptive: link vs retract logic (see Adaptive Refinements below)
 - [ ] 4.2 V-carving
 - [ ] 4.3 Rest machining
-- [ ] 4.4 TOML job file parsing
-- [ ] 4.5 Dogbone dressup
-- [ ] 4.6 Lead-in/lead-out dressup
+- [x] 4.4 TOML job file parsing — multi-tool, multi-operation job files with per-op overrides (job.rs, demo_job.toml)
+- [x] 4.5 Dogbone dressup — inside corner overcuts with configurable angle threshold (dressup.rs)
+- [x] 4.6 Lead-in/lead-out dressup — quarter-circle arc entry/exit for clean profile cuts (dressup.rs)
 
 ### Phase 5: Visualization & Polish
 - [ ] 5.1 egui + wgpu 3D viewer (rs_cam_viz crate)
