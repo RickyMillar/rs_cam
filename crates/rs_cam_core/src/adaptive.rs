@@ -348,6 +348,18 @@ pub(crate) fn search_direction(
     fallback.or(fallback2)
 }
 
+/// Average a buffer of angles, handling wraparound correctly.
+/// Uses vector averaging: sum unit vectors, then take atan2.
+fn average_angles(angles: &[f64]) -> f64 {
+    let mut sx = 0.0;
+    let mut sy = 0.0;
+    for &a in angles {
+        sx += a.cos();
+        sy += a.sin();
+    }
+    sy.atan2(sx)
+}
+
 /// Normalize an angle difference to [-π, π].
 fn angle_diff(a: f64, b: f64) -> f64 {
     let mut d = a - b;
@@ -492,10 +504,22 @@ fn adaptive_segments(
         // Clear material at entry position
         grid.clear_circle(cx, cy, tool_radius);
 
+        // Direction smoothing buffer (gyro) — average last N directions
+        // for smooth curves instead of jagged steps. Inspired by Freesteel.
+        const SMOOTH_BUF_LEN: usize = 3;
+        let mut angle_buf: Vec<f64> = Vec::with_capacity(SMOOTH_BUF_LEN);
+
         let max_steps = 5000;
         let mut idle_count = 0;
         for _ in 0..max_steps {
             let before = grid.material_count;
+
+            // Smoothed direction: average recent angles for prev_angle hint
+            let smoothed_angle = if angle_buf.len() >= 2 {
+                average_angles(&angle_buf)
+            } else {
+                prev_angle
+            };
 
             // Search for next direction
             let angle = match search_direction(
@@ -506,7 +530,7 @@ fn adaptive_segments(
                 tool_radius,
                 step_len,
                 target_frac,
-                prev_angle,
+                smoothed_angle,
             ) {
                 Some(a) => a,
                 None => break,
@@ -519,6 +543,12 @@ fn adaptive_segments(
 
             // Clear material at new position
             grid.clear_circle(cx, cy, tool_radius);
+
+            // Update direction smoothing buffer
+            if angle_buf.len() >= SMOOTH_BUF_LEN {
+                angle_buf.remove(0);
+            }
+            angle_buf.push(angle);
 
             // Idle detection: if no material was cleared for many steps, we're
             // going in circles over already-cleared area.
