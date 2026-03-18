@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use rs_cam_core::{
+    arcfit::fit_arcs,
     depth::{DepthStepping, depth_stepped_toolpath},
     dressup::{EntryStyle, apply_entry, apply_tabs, even_tabs},
     dropcutter::batch_drop_cutter,
@@ -11,6 +12,7 @@ use rs_cam_core::{
     profile::{ProfileParams, ProfileSide, profile_toolpath},
     tool::{BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill},
     toolpath::{Toolpath, raster_toolpath_from_grid},
+    waterline::{WaterlineParams, waterline_toolpath},
     zigzag::{ZigzagParams, zigzag_toolpath},
 };
 use std::path::PathBuf;
@@ -219,6 +221,76 @@ enum Commands {
         entry: String,
 
         /// Post-processor: grbl, linuxcnc
+        #[arg(long, default_value = "grbl")]
+        post: String,
+
+        /// Output G-code file
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Optional SVG preview output
+        #[arg(long)]
+        svg: Option<PathBuf>,
+
+        /// Optional 3D HTML viewer output
+        #[arg(long)]
+        view: Option<PathBuf>,
+    },
+
+    /// Generate 3D waterline (constant-Z contour) toolpath from STL
+    Waterline {
+        /// Input STL file
+        input: PathBuf,
+
+        /// STL units: mm (default), m, cm, inch
+        #[arg(long, default_value = "mm")]
+        units: String,
+
+        /// Custom scale factor (overrides --units if set)
+        #[arg(long)]
+        scale: Option<f64>,
+
+        /// Tool specification: type:diameter (e.g., ball:6.35)
+        #[arg(long)]
+        tool: String,
+
+        /// Z step between waterline passes (mm)
+        #[arg(long, default_value = "1.0")]
+        z_step: f64,
+
+        /// Fiber sampling spacing (mm, smaller = more accurate)
+        #[arg(long, default_value = "1.0")]
+        sampling: f64,
+
+        /// Start Z height (top of cut)
+        #[arg(long)]
+        start_z: Option<f64>,
+
+        /// Final Z height (bottom of cut)
+        #[arg(long)]
+        final_z: Option<f64>,
+
+        /// Feed rate in mm/min
+        #[arg(long, default_value = "1000.0")]
+        feed_rate: f64,
+
+        /// Plunge rate in mm/min
+        #[arg(long, default_value = "500.0")]
+        plunge_rate: f64,
+
+        /// Spindle speed in RPM
+        #[arg(long, default_value = "18000")]
+        spindle_speed: u32,
+
+        /// Safe Z height for rapid moves
+        #[arg(long, default_value = "10.0")]
+        safe_z: f64,
+
+        /// Fit G2/G3 arcs (tolerance in mm, 0 to disable)
+        #[arg(long, default_value = "0.0")]
+        arc_tolerance: f64,
+
+        /// Post-processor: grbl, linuxcnc, mach3
         #[arg(long, default_value = "grbl")]
         post: String,
 
@@ -586,6 +658,73 @@ fn main() -> Result<()> {
                 std::fs::write(&view_path, &html)
                     .context("Failed to write 3D viewer file")?;
                 eprintln!("Wrote 3D viewer to {}", view_path.display());
+            }
+        }
+
+        Commands::Waterline {
+            input, units, scale, tool, z_step, sampling, start_z, final_z,
+            feed_rate, plunge_rate, spindle_speed, safe_z, arc_tolerance,
+            post, output, svg, view,
+        } => {
+            let scale_factor = match scale {
+                Some(s) => s,
+                None => match units.to_lowercase().as_str() {
+                    "mm" => 1.0,
+                    "m" => 1000.0,
+                    "cm" => 10.0,
+                    "inch" | "in" => 25.4,
+                    _ => bail!("Unknown unit '{}'. Supported: mm, m, cm, inch", units),
+                },
+            };
+
+            eprintln!("Loading STL: {} (units: {}, scale: {:.4})", input.display(), units, scale_factor);
+            let mesh = TriangleMesh::from_stl_scaled(&input, scale_factor)
+                .context("Failed to load STL")?;
+            eprintln!("  {} vertices, {} triangles", mesh.vertices.len(), mesh.faces.len());
+
+            let cutter = parse_tool(&tool)?;
+            eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
+
+            eprintln!("Building spatial index...");
+            let cell_size = cutter.diameter() * 2.0;
+            let index = SpatialIndex::build(&mesh, cell_size);
+
+            let sz = start_z.unwrap_or(mesh.bbox.max.z);
+            let fz = final_z.unwrap_or(mesh.bbox.min.z);
+            eprintln!("Waterline: z={:.1} to {:.1}, step={:.1}mm, sampling={:.1}mm", sz, fz, z_step, sampling);
+
+            let params = WaterlineParams {
+                sampling,
+                feed_rate,
+                plunge_rate,
+                safe_z,
+            };
+
+            let start = std::time::Instant::now();
+            let mut toolpath = waterline_toolpath(&mesh, &index, cutter.as_ref(), sz, fz, z_step, &params);
+            let elapsed = start.elapsed();
+
+            // Apply arc fitting if requested
+            if arc_tolerance > 0.0 {
+                let before = toolpath.moves.len();
+                toolpath = fit_arcs(&toolpath, arc_tolerance);
+                eprintln!("Arc fitting: {} → {} moves (tolerance={:.3}mm)", before, toolpath.moves.len(), arc_tolerance);
+            }
+
+            eprintln!(
+                "Generated {} moves, cutting={:.1}mm, rapid={:.1}mm in {:.2}s",
+                toolpath.moves.len(), toolpath.total_cutting_distance(),
+                toolpath.total_rapid_distance(), elapsed.as_secs_f64()
+            );
+
+            emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
+
+            if let Some(view_path) = view {
+                eprintln!("Generating 3D viewer...");
+                let html = rs_cam_core::viz::toolpath_to_3d_html(&mesh, &toolpath);
+                std::fs::write(&view_path, &html)
+                    .context("Failed to write 3D viewer file")?;
+                eprintln!("Wrote 3D viewer to {} ({:.1} MB)", view_path.display(), html.len() as f64 / 1_048_576.0);
             }
         }
     }
