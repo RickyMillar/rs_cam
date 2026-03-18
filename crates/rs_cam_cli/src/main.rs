@@ -1,3 +1,5 @@
+mod job;
+
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use rs_cam_core::{
@@ -18,7 +20,7 @@ use rs_cam_core::{
     waterline::{WaterlineParams, waterline_toolpath},
     zigzag::{ZigzagParams, zigzag_toolpath},
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(name = "rs_cam", about = "3-axis wood router CAM toolpath generator")]
@@ -37,6 +39,12 @@ enum ClearingPattern {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Run a TOML job file with multiple tools and operations
+    Job {
+        /// Path to the .toml job file
+        input: PathBuf,
+    },
+
     /// Generate 3D finishing toolpath using drop-cutter algorithm
     #[command(name = "drop-cutter")]
     DropCutter {
@@ -554,6 +562,69 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Job { input } => {
+            let job_path = input.canonicalize()
+                .context(format!("Job file not found: {}", input.display()))?;
+            let job_dir = job_path.parent().unwrap_or(Path::new("."));
+            eprintln!("Loading job file: {}", job_path.display());
+
+            let job_file = job::parse_job_file(&job_path)?;
+            eprintln!(
+                "Job: {} tool(s), {} operation(s), output={}",
+                job_file.tools.len(),
+                job_file.operation.len(),
+                job_file.job.output.display()
+            );
+
+            let toolpath = job::execute_job(&job_file, job_dir)?;
+            eprintln!(
+                "Total: {} moves, cutting={:.1}mm, rapid={:.1}mm",
+                toolpath.moves.len(),
+                toolpath.total_cutting_distance(),
+                toolpath.total_rapid_distance()
+            );
+
+            let spindle_speed = job_file.job.spindle_speed;
+            let output = if job_file.job.output.is_absolute() {
+                job_file.job.output.clone()
+            } else {
+                job_dir.join(&job_file.job.output)
+            };
+            let svg = job_file.job.svg.as_ref().map(|p| {
+                if p.is_absolute() { p.clone() } else { job_dir.join(p) }
+            });
+
+            emit_and_write(&toolpath, &job_file.job.post, spindle_speed, &output, &svg)?;
+
+            if let Some(view) = &job_file.job.view {
+                let view_path = if view.is_absolute() { view.clone() } else { job_dir.join(view) };
+                let html = if job_file.job.simulate {
+                    // For job files, build sim from first 2D operation's tool
+                    let first_tool_name = &job_file.operation[0].tool;
+                    let tool_def = &job_file.tools[first_tool_name];
+                    let cutter = job::build_tool_pub(tool_def)?;
+                    let tp_bbox = toolpath_bbox(&toolpath);
+                    let margin = cutter.radius();
+                    let sim_bbox = BoundingBox3 {
+                        min: rs_cam_core::geo::P3::new(
+                            tp_bbox.min.x - margin, tp_bbox.min.y - margin, tp_bbox.min.z,
+                        ),
+                        max: rs_cam_core::geo::P3::new(
+                            tp_bbox.max.x + margin, tp_bbox.max.y + margin, 0.0,
+                        ),
+                    };
+                    let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), job_file.job.sim_resolution);
+                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
+                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, None, cutter.as_ref())
+                } else {
+                    rs_cam_core::viz::toolpath_standalone_3d_html(&toolpath, None)
+                };
+                std::fs::write(&view_path, &html)
+                    .context("Failed to write 3D viewer file")?;
+                eprintln!("Wrote 3D viewer to {}", view_path.display());
+            }
+        }
+
         Commands::DropCutter {
             input, units, scale, tool, stepover, feed_rate, plunge_rate,
             spindle_speed, safe_z, min_z, post, output, svg, view,

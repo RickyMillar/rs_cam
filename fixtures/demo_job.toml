@@ -1,0 +1,41 @@
+# rs_cam demo job file
+# Run with: rs_cam job fixtures/demo_job.toml
+
+[job]
+output = "../demos/job_output.nc"
+post = "grbl"
+spindle_speed = 18000
+safe_z = 10.0
+view = "../demos/job_output.html"
+simulate = true
+sim_resolution = 0.5
+
+[tools.flat_6mm]
+type = "flat"
+diameter = 6.35
+
+[tools.flat_3mm]
+type = "flat"
+diameter = 3.175
+
+# First: rough out the pocket with the bigger tool
+[[operation]]
+type = "adaptive"
+input = "demo_pocket.svg"
+tool = "flat_6mm"
+stepover = 2.0
+depth = 6.0
+depth_per_pass = 3.0
+feed_rate = 2000
+plunge_rate = 500
+
+# Then: finish the pocket walls with the smaller tool
+[[operation]]
+type = "profile"
+input = "demo_pocket.svg"
+tool = "flat_3mm"
+depth = 6.0
+depth_per_pass = 2.0
+side = "inside"
+feed_rate = 1000
+plunge_rate = 400
