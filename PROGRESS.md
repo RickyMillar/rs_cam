@@ -35,7 +35,7 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] 2.2 Polygon offsetting (cavalier_contours, arc-preserving)
 - [x] 2.3 Pocket clearing (contour-parallel offset pattern)
 - [x] 2.4 Profile cutting with tool radius compensation
-- [ ] 2.5 Zigzag/raster clearing pattern
+- [x] 2.5 Zigzag/raster clearing pattern
 - [ ] 2.6 Depth stepping (multi-pass)
 - [ ] 2.7 SVG input (usvg)
 - [ ] 2.8 DXF input (dxf crate)
