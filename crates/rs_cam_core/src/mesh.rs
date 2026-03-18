@@ -24,7 +24,8 @@ pub struct TriangleMesh {
 impl TriangleMesh {
     /// Load from an STL file (binary or ASCII auto-detected).
     /// stl_io::read_stl already returns an IndexedMesh with welded vertices.
-    pub fn from_stl(path: &Path) -> Result<Self, MeshError> {
+    /// `scale` multiplies all vertex positions (e.g., 1000.0 to convert meters to mm).
+    pub fn from_stl_scaled(path: &Path, scale: f64) -> Result<Self, MeshError> {
         let mut file = std::fs::OpenOptions::new().read(true).open(path)?;
         let stl = stl_io::read_stl(&mut file)?;
 
@@ -36,7 +37,7 @@ impl TriangleMesh {
         let vertices: Vec<P3> = stl
             .vertices
             .iter()
-            .map(|v| P3::new(v.0[0] as f64, v.0[1] as f64, v.0[2] as f64))
+            .map(|v| P3::new(v.0[0] as f64 * scale, v.0[1] as f64 * scale, v.0[2] as f64 * scale))
             .collect();
 
         // Convert stl_io indexed triangles ([usize; 3]) to our [u32; 3]
@@ -66,6 +67,11 @@ impl TriangleMesh {
             faces,
             bbox,
         })
+    }
+
+    /// Load from an STL file assuming mm (scale=1.0).
+    pub fn from_stl(path: &Path) -> Result<Self, MeshError> {
+        Self::from_stl_scaled(path, 1.0)
     }
 
     /// Build from raw vertices and triangle indices (for testing).

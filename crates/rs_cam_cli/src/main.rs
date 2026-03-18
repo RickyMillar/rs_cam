@@ -24,6 +24,14 @@ enum Commands {
         /// Input STL file
         input: PathBuf,
 
+        /// STL units: mm (default), m, cm, inch. Scales vertices to mm.
+        #[arg(long, default_value = "mm")]
+        units: String,
+
+        /// Custom scale factor (overrides --units if set)
+        #[arg(long)]
+        scale: Option<f64>,
+
         /// Tool specification: type:diameter (e.g., ball:6.35, flat:6.35)
         #[arg(long)]
         tool: String,
@@ -59,6 +67,10 @@ enum Commands {
         /// Output G-code file
         #[arg(short, long)]
         output: PathBuf,
+
+        /// Optional SVG preview output (top-down toolpath visualization)
+        #[arg(long)]
+        svg: Option<PathBuf>,
     },
 }
 
@@ -94,6 +106,8 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::DropCutter {
             input,
+            units,
+            scale,
             tool,
             stepover,
             feed_rate,
@@ -103,9 +117,21 @@ fn main() -> Result<()> {
             min_z,
             post,
             output,
+            svg,
         } => {
-            eprintln!("Loading STL: {}", input.display());
-            let mesh = TriangleMesh::from_stl(&input)
+            let scale_factor = match scale {
+                Some(s) => s,
+                None => match units.to_lowercase().as_str() {
+                    "mm" => 1.0,
+                    "m" => 1000.0,
+                    "cm" => 10.0,
+                    "inch" | "in" => 25.4,
+                    "ft" | "foot" | "feet" => 304.8,
+                    _ => bail!("Unknown unit '{}'. Supported: mm, m, cm, inch, ft", units),
+                },
+            };
+            eprintln!("Loading STL: {} (units: {}, scale: {:.4})", input.display(), units, scale_factor);
+            let mesh = TriangleMesh::from_stl_scaled(&input, scale_factor)
                 .context("Failed to load STL")?;
             eprintln!(
                 "  {} vertices, {} triangles",
@@ -155,6 +181,13 @@ fn main() -> Result<()> {
             std::fs::write(&output, &gcode)
                 .context("Failed to write output file")?;
             eprintln!("Wrote {} bytes to {}", gcode.len(), output.display());
+
+            if let Some(svg_path) = svg {
+                let svg_content = rs_cam_core::viz::toolpath_to_svg(&toolpath, 800.0, 600.0);
+                std::fs::write(&svg_path, &svg_content)
+                    .context("Failed to write SVG file")?;
+                eprintln!("Wrote SVG preview to {}", svg_path.display());
+            }
         }
     }
 

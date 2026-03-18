@@ -4,3 +4,4 @@ pub mod tool;
 pub mod dropcutter;
 pub mod toolpath;
 pub mod gcode;
+pub mod viz;
