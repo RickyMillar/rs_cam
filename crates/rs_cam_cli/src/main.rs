@@ -71,6 +71,10 @@ enum Commands {
         /// Optional SVG preview output (top-down toolpath visualization)
         #[arg(long)]
         svg: Option<PathBuf>,
+
+        /// Optional 3D HTML viewer output (mesh + toolpath, opens in browser)
+        #[arg(long)]
+        view: Option<PathBuf>,
     },
 }
 
@@ -118,6 +122,7 @@ fn main() -> Result<()> {
             post,
             output,
             svg,
+            view,
         } => {
             let scale_factor = match scale {
                 Some(s) => s,
@@ -187,6 +192,14 @@ fn main() -> Result<()> {
                 std::fs::write(&svg_path, &svg_content)
                     .context("Failed to write SVG file")?;
                 eprintln!("Wrote SVG preview to {}", svg_path.display());
+            }
+
+            if let Some(view_path) = view {
+                eprintln!("Generating 3D viewer...");
+                let html = rs_cam_core::viz::toolpath_to_3d_html(&mesh, &toolpath);
+                std::fs::write(&view_path, &html)
+                    .context("Failed to write 3D viewer file")?;
+                eprintln!("Wrote 3D viewer to {} ({:.1} MB)", view_path.display(), html.len() as f64 / 1_048_576.0);
             }
         }
     }
