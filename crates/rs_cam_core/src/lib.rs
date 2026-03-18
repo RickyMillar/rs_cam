@@ -6,3 +6,5 @@ pub mod toolpath;
 pub mod gcode;
 pub mod viz;
 pub mod polygon;
+pub mod pocket;
+pub mod profile;

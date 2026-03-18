@@ -2,14 +2,14 @@
 
 Read this FIRST at the start of every session. Update LAST before ending.
 
-## Current Phase: 1 - Foundation (IN PROGRESS)
+## Current Phase: 2 - 2.5D Operations (IN PROGRESS)
 
 ### What Exists
 - [x] Research complete (research/ directory - 8 synthesized docs + 4 raw dumps)
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 22 tests passing
+- [x] Core library + CLI compiling, 41 tests passing (39 unit + 2 integration)
 
 ### Phase 1: Foundation
 Goal: Load an STL, drop a ball cutter onto it, emit G-code.
@@ -28,13 +28,14 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] 1.12 G-code emitter (G0/G1, GRBL + LinuxCNC post-processors)
 - [x] 1.13 CLI skeleton: `rs_cam drop-cutter input.stl --tool ball:6.35 --stepover 1.0 -o output.nc`
 - [x] 1.14 End-to-end test: STL -> drop-cutter -> G-code file (terrain_small.stl fixture + hemisphere)
+- [x] 1.15 SVG 2D toolpath preview and interactive 3D HTML viewer
 
 ### Phase 2: 2.5D Operations
-- [ ] 2.1 Polygon2 type with geo-types conversion
-- [ ] 2.2 Polygon offsetting (cavalier_contours or clipper2-rust)
-- [ ] 2.3 Pocket clearing (offset pattern)
-- [ ] 2.4 Profile cutting with tool radius compensation
-- [ ] 2.5 Zigzag infill pattern
+- [x] 2.1 Polygon2 type with geo-types conversion
+- [x] 2.2 Polygon offsetting (cavalier_contours, arc-preserving)
+- [x] 2.3 Pocket clearing (contour-parallel offset pattern)
+- [x] 2.4 Profile cutting with tool radius compensation
+- [ ] 2.5 Zigzag/raster clearing pattern
 - [ ] 2.6 Depth stepping (multi-pass)
 - [ ] 2.7 SVG input (usvg)
 - [ ] 2.8 DXF input (dxf crate)
@@ -77,6 +78,8 @@ Record non-obvious decisions here so future sessions don't re-debate them.
 | 2026-03-19 | Toolpath IR not raw G-code | Enables dressups, viz, analysis without G-code parsing |
 | 2026-03-19 | "Toolpath" in UX, "Operation" in code | Target audience is hobbyist wood CNC operators |
 | 2026-03-19 | F3D output not feasible | Proprietary format, no public spec |
+| 2026-03-19 | cavalier_contours for polygon offset | Arc-preserving (G2/G3 compatible), Shape API handles holes, purpose-built for CAM |
+| 2026-03-19 | geo crate for type conversions, not offset | geo::Buffer works but approximates arcs as line segments |
 | 2026-03-19 | KD-tree for drop-cutter, BVH for ray queries | Follows OpenCAMLib's proven approach |
 
 ## Known Issues / Tech Debt
