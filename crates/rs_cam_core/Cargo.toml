@@ -1,0 +1,18 @@
+[package]
+name = "rs_cam_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core CAM library for 3-axis wood router toolpath generation"
+
+[dependencies]
+nalgebra = { workspace = true }
+stl_io = { workspace = true }
+kiddo = { workspace = true }
+rayon = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+approx = "0.5"

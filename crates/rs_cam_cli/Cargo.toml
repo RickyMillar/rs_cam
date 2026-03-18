@@ -1,0 +1,13 @@
+[package]
+name = "rs_cam_cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "CLI for rs_cam 3-axis wood router CAM"
+
+[dependencies]
+rs_cam_core = { path = "../rs_cam_core" }
+clap = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

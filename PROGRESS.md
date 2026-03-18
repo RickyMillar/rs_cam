@@ -2,32 +2,32 @@
 
 Read this FIRST at the start of every session. Update LAST before ending.
 
-## Current Phase: 0 - Pre-Implementation
+## Current Phase: 1 - Foundation (IN PROGRESS)
 
 ### What Exists
 - [x] Research complete (research/ directory - 8 synthesized docs + 4 raw dumps)
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
-- [ ] Cargo workspace initialized
-- [ ] Any Rust code
+- [x] Cargo workspace initialized
+- [x] Core library + CLI compiling, 22 tests passing
 
-### Phase 1: Foundation (NEXT)
+### Phase 1: Foundation
 Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 
-- [ ] 1.1 Cargo workspace setup (core, cli crates)
-- [ ] 1.2 Type aliases (P2, P3, V2, V3) and basic geometry (BoundingBox3, Triangle)
-- [ ] 1.3 STL loading -> indexed TriangleMesh
-- [ ] 1.4 KD-tree spatial index over triangles
-- [ ] 1.5 MillingCutter trait definition
-- [ ] 1.6 FlatEndmill implementation (height/width/vertex_drop/facet_drop/edge_drop)
-- [ ] 1.7 BallEndmill implementation
-- [ ] 1.8 PointDropCutter algorithm (single point against mesh)
-- [ ] 1.9 BatchDropCutter with rayon (parallel grid)
-- [ ] 1.10 Toolpath IR types (Move, MoveType, Toolpath)
-- [ ] 1.11 Raster/parallel toolpath from drop-cutter grid
-- [ ] 1.12 G-code emitter (G0/G1, GRBL post-processor)
-- [ ] 1.13 CLI skeleton: `rs_cam drop-cutter input.stl --tool ball:6.35 --stepover 1.0 -o output.nc`
-- [ ] 1.14 End-to-end test: STL -> drop-cutter -> G-code file
+- [x] 1.1 Cargo workspace setup (core, cli crates)
+- [x] 1.2 Type aliases (P2, P3, V2, V3) and basic geometry (BoundingBox3, Triangle)
+- [x] 1.3 STL loading -> indexed TriangleMesh (via stl_io IndexedMesh)
+- [x] 1.4 Spatial index over triangles (uniform grid, not KD-tree yet - works fine)
+- [x] 1.5 MillingCutter trait definition
+- [x] 1.6 FlatEndmill implementation (height/width/vertex_drop/facet_drop/edge_drop)
+- [x] 1.7 BallEndmill implementation
+- [x] 1.8 PointDropCutter algorithm (single point against mesh)
+- [x] 1.9 BatchDropCutter with rayon (parallel grid)
+- [x] 1.10 Toolpath IR types (Move, MoveType, Toolpath)
+- [x] 1.11 Raster/parallel toolpath from drop-cutter grid (zigzag pattern)
+- [x] 1.12 G-code emitter (G0/G1, GRBL + LinuxCNC post-processors)
+- [x] 1.13 CLI skeleton: `rs_cam drop-cutter input.stl --tool ball:6.35 --stepover 1.0 -o output.nc`
+- [ ] 1.14 End-to-end test: STL -> drop-cutter -> G-code file (needs a test STL fixture)
 
 ### Phase 2: 2.5D Operations
 - [ ] 2.1 Polygon2 type with geo-types conversion
