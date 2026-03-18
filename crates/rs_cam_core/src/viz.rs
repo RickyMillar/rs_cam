@@ -51,7 +51,7 @@ pub fn toolpath_to_svg(toolpath: &Toolpath, width: f64, height: f64) -> String {
             MoveType::Rapid => {
                 writeln!(svg, "<line x1='{x1:.1}' y1='{y1:.1}' x2='{x2:.1}' y2='{y2:.1}' stroke='#333' stroke-width='0.3' stroke-dasharray='2,2'/>").unwrap();
             }
-            MoveType::Linear { .. } => {
+            MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
                 // Color by Z: low=deep blue, high=bright cyan/white
                 let t = ((to.z - z_min) / z_range).clamp(0.0, 1.0);
                 let r = (t * 100.0) as u8;
@@ -121,7 +121,7 @@ pub fn toolpath_to_3d_html(mesh: &TriangleMesh, toolpath: &Toolpath) -> String {
                 write!(rapid_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
                     from.x, from.y, from.z, to.x, to.y, to.z).unwrap();
             }
-            MoveType::Linear { .. } => {
+            MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
                 write!(cut_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
                     from.x, from.y, from.z, to.x, to.y, to.z).unwrap();
                 // Color both endpoints by their Z
@@ -358,7 +358,7 @@ pub fn toolpath_standalone_3d_html(toolpath: &Toolpath, stock_bounds: Option<[f6
                 write!(rapid_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
                     from.x, from.y, from.z, to.x, to.y, to.z).unwrap();
             }
-            MoveType::Linear { .. } => {
+            MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
                 let dz = (to.z - from.z).abs();
                 let dxy = ((to.x - from.x).powi(2) + (to.y - from.y).powi(2)).sqrt();
 

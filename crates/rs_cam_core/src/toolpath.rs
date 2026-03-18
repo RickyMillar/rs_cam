@@ -13,6 +13,18 @@ pub enum MoveType {
     Rapid,
     /// Linear feed move (G1) at specified feed rate (mm/min).
     Linear { feed_rate: f64 },
+    /// Clockwise arc (G2) in the XY plane. I/J are offsets from start to center.
+    ArcCW {
+        i: f64,
+        j: f64,
+        feed_rate: f64,
+    },
+    /// Counter-clockwise arc (G3) in the XY plane. I/J are offsets from start to center.
+    ArcCCW {
+        i: f64,
+        j: f64,
+        feed_rate: f64,
+    },
 }
 
 /// A single toolpath move to a target position.
@@ -47,13 +59,30 @@ impl Toolpath {
         });
     }
 
+    pub fn arc_cw_to(&mut self, target: P3, i: f64, j: f64, feed_rate: f64) {
+        self.moves.push(Move {
+            target,
+            move_type: MoveType::ArcCW { i, j, feed_rate },
+        });
+    }
+
+    pub fn arc_ccw_to(&mut self, target: P3, i: f64, j: f64, feed_rate: f64) {
+        self.moves.push(Move {
+            target,
+            move_type: MoveType::ArcCCW { i, j, feed_rate },
+        });
+    }
+
     pub fn total_cutting_distance(&self) -> f64 {
         let mut dist = 0.0;
         for i in 1..self.moves.len() {
-            if let MoveType::Linear { .. } = self.moves[i].move_type {
-                let p1 = &self.moves[i - 1].target;
-                let p2 = &self.moves[i].target;
-                dist += (p2 - p1).norm();
+            match self.moves[i].move_type {
+                MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
+                    let p1 = &self.moves[i - 1].target;
+                    let p2 = &self.moves[i].target;
+                    dist += (p2 - p1).norm();
+                }
+                _ => {}
             }
         }
         dist

@@ -10,6 +10,8 @@ pub trait PostProcessor {
     fn postamble(&self) -> String;
     fn rapid(&self, x: f64, y: f64, z: f64) -> String;
     fn linear(&self, x: f64, y: f64, z: f64, feed: f64) -> String;
+    fn arc_cw(&self, x: f64, y: f64, z: f64, i: f64, j: f64, feed: f64) -> String;
+    fn arc_ccw(&self, x: f64, y: f64, z: f64, i: f64, j: f64, feed: f64) -> String;
     fn comment(&self, text: &str) -> String;
     fn decimal_places(&self) -> usize { 3 }
 }
@@ -42,6 +44,14 @@ impl PostProcessor for GrblPost {
 
     fn linear(&self, x: f64, y: f64, z: f64, feed: f64) -> String {
         format!("G1 X{x:.3} Y{y:.3} Z{z:.3} F{feed:.0}\n")
+    }
+
+    fn arc_cw(&self, x: f64, y: f64, z: f64, i: f64, j: f64, feed: f64) -> String {
+        format!("G2 X{x:.3} Y{y:.3} Z{z:.3} I{i:.3} J{j:.3} F{feed:.0}\n")
+    }
+
+    fn arc_ccw(&self, x: f64, y: f64, z: f64, i: f64, j: f64, feed: f64) -> String {
+        format!("G3 X{x:.3} Y{y:.3} Z{z:.3} I{i:.3} J{j:.3} F{feed:.0}\n")
     }
 
     fn comment(&self, text: &str) -> String {
@@ -80,6 +90,14 @@ impl PostProcessor for LinuxCncPost {
         format!("G1 X{x:.4} Y{y:.4} Z{z:.4} F{feed:.1}\n")
     }
 
+    fn arc_cw(&self, x: f64, y: f64, z: f64, i: f64, j: f64, feed: f64) -> String {
+        format!("G2 X{x:.4} Y{y:.4} Z{z:.4} I{i:.4} J{j:.4} F{feed:.1}\n")
+    }
+
+    fn arc_ccw(&self, x: f64, y: f64, z: f64, i: f64, j: f64, feed: f64) -> String {
+        format!("G3 X{x:.4} Y{y:.4} Z{z:.4} I{i:.4} J{j:.4} F{feed:.1}\n")
+    }
+
     fn comment(&self, text: &str) -> String {
         format!("({text})\n")
     }
@@ -106,7 +124,6 @@ pub fn emit_gcode(
                 last_feed = None;
             }
             MoveType::Linear { feed_rate } => {
-                // Only emit F if it changed (most controllers are modal)
                 if last_feed != Some(feed_rate) {
                     output.push_str(&post.linear(
                         m.target.x,
@@ -116,7 +133,6 @@ pub fn emit_gcode(
                     ));
                     last_feed = Some(feed_rate);
                 } else {
-                    // Omit F for modal feed rate
                     let dp = post.decimal_places();
                     write!(
                         output,
@@ -125,6 +141,18 @@ pub fn emit_gcode(
                     )
                     .unwrap();
                 }
+            }
+            MoveType::ArcCW { i, j, feed_rate } => {
+                output.push_str(&post.arc_cw(
+                    m.target.x, m.target.y, m.target.z, i, j, feed_rate,
+                ));
+                last_feed = Some(feed_rate);
+            }
+            MoveType::ArcCCW { i, j, feed_rate } => {
+                output.push_str(&post.arc_ccw(
+                    m.target.x, m.target.y, m.target.z, i, j, feed_rate,
+                ));
+                last_feed = Some(feed_rate);
             }
         }
     }
