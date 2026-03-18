@@ -5,11 +5,13 @@ use rs_cam_core::{
     depth::{DepthStepping, depth_stepped_toolpath},
     dressup::{EntryStyle, apply_entry, apply_tabs, even_tabs},
     dropcutter::batch_drop_cutter,
+    geo::BoundingBox3,
     gcode::{emit_gcode, get_post_processor},
     mesh::{SpatialIndex, TriangleMesh},
     pocket::{PocketParams, pocket_toolpath},
     polygon::Polygon2,
     profile::{ProfileParams, ProfileSide, profile_toolpath},
+    simulation::{Heightmap, simulate_toolpath},
     tool::{BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill},
     toolpath::{Toolpath, raster_toolpath_from_grid},
     waterline::{WaterlineParams, waterline_toolpath},
@@ -91,6 +93,14 @@ enum Commands {
         /// Optional 3D HTML viewer output (mesh + toolpath, opens in browser)
         #[arg(long)]
         view: Option<PathBuf>,
+
+        /// Enable material removal simulation in viewer (requires --view)
+        #[arg(long)]
+        simulate: bool,
+
+        /// Simulation grid resolution in mm (default 0.25)
+        #[arg(long, default_value = "0.25")]
+        sim_resolution: f64,
     },
 
     /// Clear a 2D pocket from SVG or DXF boundary
@@ -161,6 +171,14 @@ enum Commands {
         /// Optional 3D HTML viewer output
         #[arg(long)]
         view: Option<PathBuf>,
+
+        /// Enable material removal simulation in viewer (requires --view)
+        #[arg(long)]
+        simulate: bool,
+
+        /// Simulation grid resolution in mm (default 0.25)
+        #[arg(long, default_value = "0.25")]
+        sim_resolution: f64,
     },
 
     /// Cut along a 2D profile from SVG or DXF boundary
@@ -235,6 +253,14 @@ enum Commands {
         /// Optional 3D HTML viewer output
         #[arg(long)]
         view: Option<PathBuf>,
+
+        /// Enable material removal simulation in viewer (requires --view)
+        #[arg(long)]
+        simulate: bool,
+
+        /// Simulation grid resolution in mm (default 0.25)
+        #[arg(long, default_value = "0.25")]
+        sim_resolution: f64,
     },
 
     /// Generate 3D waterline (constant-Z contour) toolpath from STL
@@ -305,6 +331,14 @@ enum Commands {
         /// Optional 3D HTML viewer output
         #[arg(long)]
         view: Option<PathBuf>,
+
+        /// Enable material removal simulation in viewer (requires --view)
+        #[arg(long)]
+        simulate: bool,
+
+        /// Simulation grid resolution in mm (default 0.25)
+        #[arg(long, default_value = "0.25")]
+        sim_resolution: f64,
     },
 }
 
@@ -407,6 +441,14 @@ fn load_polygons(path: &PathBuf) -> Result<Vec<Polygon2>> {
     }
 }
 
+fn toolpath_bbox(toolpath: &Toolpath) -> BoundingBox3 {
+    let mut bbox = BoundingBox3::empty();
+    for m in &toolpath.moves {
+        bbox.expand_to(m.target);
+    }
+    bbox
+}
+
 fn emit_and_write(
     toolpath: &Toolpath,
     post: &str,
@@ -448,6 +490,7 @@ fn main() -> Result<()> {
         Commands::DropCutter {
             input, units, scale, tool, stepover, feed_rate, plunge_rate,
             spindle_speed, safe_z, min_z, post, output, svg, view,
+            simulate, sim_resolution,
         } => {
             let scale_factor = match scale {
                 Some(s) => s,
@@ -495,8 +538,15 @@ fn main() -> Result<()> {
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
             if let Some(view_path) = view {
-                eprintln!("Generating 3D viewer...");
-                let html = rs_cam_core::viz::toolpath_to_3d_html(&mesh, &toolpath);
+                let html = if simulate {
+                    eprintln!("Running simulation (resolution={:.2}mm)...", sim_resolution);
+                    let mut hm = Heightmap::from_bounds(&mesh.bbox, None, sim_resolution);
+                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
+                    eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
+                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, Some(&mesh), cutter.as_ref())
+                } else {
+                    rs_cam_core::viz::toolpath_to_3d_html(&mesh, &toolpath)
+                };
                 std::fs::write(&view_path, &html)
                     .context("Failed to write 3D viewer file")?;
                 eprintln!("Wrote 3D viewer to {} ({:.1} MB)", view_path.display(), html.len() as f64 / 1_048_576.0);
@@ -506,6 +556,7 @@ fn main() -> Result<()> {
         Commands::Pocket {
             input, tool, stepover, depth, depth_per_pass, feed_rate, plunge_rate,
             spindle_speed, safe_z, pattern, angle, climb, entry, post, output, svg, view,
+            simulate, sim_resolution,
         } => {
             let cutter = parse_tool(&tool)?;
             let tool_radius = cutter.diameter() / 2.0;
@@ -574,8 +625,29 @@ fn main() -> Result<()> {
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
             if let Some(view_path) = view {
-                eprintln!("Generating 3D viewer...");
-                let html = rs_cam_core::viz::toolpath_standalone_3d_html(&toolpath, None);
+                let html = if simulate {
+                    eprintln!("Running simulation (resolution={:.2}mm)...", sim_resolution);
+                    let tp_bbox = toolpath_bbox(&toolpath);
+                    let margin = cutter.radius();
+                    let sim_bbox = BoundingBox3 {
+                        min: rs_cam_core::geo::P3::new(
+                            tp_bbox.min.x - margin,
+                            tp_bbox.min.y - margin,
+                            tp_bbox.min.z,
+                        ),
+                        max: rs_cam_core::geo::P3::new(
+                            tp_bbox.max.x + margin,
+                            tp_bbox.max.y + margin,
+                            0.0,
+                        ),
+                    };
+                    let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_resolution);
+                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
+                    eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
+                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, None, cutter.as_ref())
+                } else {
+                    rs_cam_core::viz::toolpath_standalone_3d_html(&toolpath, None)
+                };
                 std::fs::write(&view_path, &html)
                     .context("Failed to write 3D viewer file")?;
                 eprintln!("Wrote 3D viewer to {}", view_path.display());
@@ -585,7 +657,7 @@ fn main() -> Result<()> {
         Commands::Profile {
             input, tool, depth, depth_per_pass, side, feed_rate, plunge_rate,
             spindle_speed, safe_z, climb, tabs, tab_width, tab_height,
-            entry, post, output, svg, view,
+            entry, post, output, svg, view, simulate, sim_resolution,
         } => {
             let cutter = parse_tool(&tool)?;
             let tool_radius = cutter.diameter() / 2.0;
@@ -653,8 +725,29 @@ fn main() -> Result<()> {
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
             if let Some(view_path) = view {
-                eprintln!("Generating 3D viewer...");
-                let html = rs_cam_core::viz::toolpath_standalone_3d_html(&toolpath, None);
+                let html = if simulate {
+                    eprintln!("Running simulation (resolution={:.2}mm)...", sim_resolution);
+                    let tp_bbox = toolpath_bbox(&toolpath);
+                    let margin = cutter.radius();
+                    let sim_bbox = BoundingBox3 {
+                        min: rs_cam_core::geo::P3::new(
+                            tp_bbox.min.x - margin,
+                            tp_bbox.min.y - margin,
+                            tp_bbox.min.z,
+                        ),
+                        max: rs_cam_core::geo::P3::new(
+                            tp_bbox.max.x + margin,
+                            tp_bbox.max.y + margin,
+                            0.0,
+                        ),
+                    };
+                    let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_resolution);
+                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
+                    eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
+                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, None, cutter.as_ref())
+                } else {
+                    rs_cam_core::viz::toolpath_standalone_3d_html(&toolpath, None)
+                };
                 std::fs::write(&view_path, &html)
                     .context("Failed to write 3D viewer file")?;
                 eprintln!("Wrote 3D viewer to {}", view_path.display());
@@ -664,7 +757,7 @@ fn main() -> Result<()> {
         Commands::Waterline {
             input, units, scale, tool, z_step, sampling, start_z, final_z,
             feed_rate, plunge_rate, spindle_speed, safe_z, arc_tolerance,
-            post, output, svg, view,
+            post, output, svg, view, simulate, sim_resolution,
         } => {
             let scale_factor = match scale {
                 Some(s) => s,
@@ -720,8 +813,15 @@ fn main() -> Result<()> {
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
             if let Some(view_path) = view {
-                eprintln!("Generating 3D viewer...");
-                let html = rs_cam_core::viz::toolpath_to_3d_html(&mesh, &toolpath);
+                let html = if simulate {
+                    eprintln!("Running simulation (resolution={:.2}mm)...", sim_resolution);
+                    let mut hm = Heightmap::from_bounds(&mesh.bbox, None, sim_resolution);
+                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
+                    eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
+                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, Some(&mesh), cutter.as_ref())
+                } else {
+                    rs_cam_core::viz::toolpath_to_3d_html(&mesh, &toolpath)
+                };
                 std::fs::write(&view_path, &html)
                     .context("Failed to write 3D viewer file")?;
                 eprintln!("Wrote 3D viewer to {} ({:.1} MB)", view_path.display(), html.len() as f64 / 1_048_576.0);

@@ -5,6 +5,8 @@
 
 use crate::geo::BoundingBox3;
 use crate::mesh::TriangleMesh;
+use crate::simulation::{Heightmap, heightmap_to_mesh, linearize_arc};
+use crate::tool::MillingCutter;
 use crate::toolpath::{MoveType, Toolpath};
 use std::fmt::Write;
 
@@ -384,7 +386,7 @@ pub fn toolpath_standalone_3d_html(toolpath: &Toolpath, stock_bounds: Option<[f6
     write!(html, r##"<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
-<title>rs_cam 2.5D Toolpath Viewer</title>
+<title>rs_cam Toolpath Viewer</title>
 <style>
   body {{ margin: 0; overflow: hidden; background: #1a1a2e; }}
   #info {{
@@ -552,6 +554,611 @@ animate();
         plunge_verts_data = plunge_verts.trim_end_matches(','),
         rapid_verts_data = rapid_verts.trim_end_matches(','),
         grid_size = extent * 1.2,
+    ).unwrap();
+
+    html
+}
+
+/// Generate a 3D HTML viewer showing the simulated heightmap surface + toolpath lines,
+/// with animated replay support.
+///
+/// The heightmap mesh is rendered with vertex colors (wood tones) and the toolpath
+/// is overlaid as colored lines. A "Replay" button lets the user watch the tool
+/// cut the material in real-time with a 3D tool model. An optional ghost source mesh
+/// can be shown for 3D operations (drop-cutter, waterline).
+pub fn simulation_3d_html(
+    heightmap: &Heightmap,
+    toolpath: &Toolpath,
+    source_mesh: Option<&TriangleMesh>,
+    cutter: &dyn MillingCutter,
+) -> String {
+    let hm_mesh = heightmap_to_mesh(heightmap);
+    let hm_bbox = heightmap.bbox();
+
+    let center = hm_bbox.center();
+    let extent = (hm_bbox.max.x - hm_bbox.min.x)
+        .max(hm_bbox.max.y - hm_bbox.min.y)
+        .max((hm_bbox.max.z - hm_bbox.min.z).abs().max(1.0));
+    let cam_dist = extent * 1.5;
+
+    // Serialize heightmap mesh (final state)
+    let mut hm_verts = String::new();
+    for v in hm_mesh.vertices.chunks(3) {
+        write!(hm_verts, "{},{},{},", v[0], v[1], v[2]).unwrap();
+    }
+    let mut hm_colors = String::new();
+    for c in hm_mesh.colors.chunks(3) {
+        write!(hm_colors, "{:.3},{:.3},{:.3},", c[0], c[1], c[2]).unwrap();
+    }
+    let mut hm_indices = String::new();
+    for idx in &hm_mesh.indices {
+        write!(hm_indices, "{},", idx).unwrap();
+    }
+
+    // Serialize toolpath lines for display
+    let mut cut_verts = String::new();
+    let mut cut_colors = String::new();
+    let mut rapid_verts = String::new();
+
+    let mut z_min = f64::INFINITY;
+    let mut z_max = f64::NEG_INFINITY;
+    for m in &toolpath.moves {
+        match m.move_type {
+            MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
+                z_min = z_min.min(m.target.z);
+                z_max = z_max.max(m.target.z);
+            }
+            _ => {}
+        }
+    }
+    let z_range = (z_max - z_min).max(1e-6);
+
+    for i in 1..toolpath.moves.len() {
+        let from = &toolpath.moves[i - 1].target;
+        let to = &toolpath.moves[i].target;
+
+        match toolpath.moves[i].move_type {
+            MoveType::Rapid => {
+                write!(rapid_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                    from.x, from.y, from.z, to.x, to.y, to.z).unwrap();
+            }
+            MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
+                write!(cut_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                    from.x, from.y, from.z, to.x, to.y, to.z).unwrap();
+                for z in [from.z, to.z] {
+                    let t = ((z - z_min) / z_range).clamp(0.0, 1.0) as f32;
+                    let r = 0.1 + t * 0.1;
+                    let g = 0.3 + t * 0.6;
+                    let b = 0.9 + t * 0.1;
+                    write!(cut_colors, "{:.3},{:.3},{:.3},", r, g, b).unwrap();
+                }
+            }
+        }
+    }
+
+    // Optional source mesh (ghost)
+    let mut src_mesh_verts = String::new();
+    let mut src_mesh_indices = String::new();
+    let has_source_mesh = source_mesh.is_some();
+    if let Some(mesh) = source_mesh {
+        for v in &mesh.vertices {
+            write!(src_mesh_verts, "{:.4},{:.4},{:.4},", v.x, v.y, v.z).unwrap();
+        }
+        for tri in &mesh.triangles {
+            write!(src_mesh_indices, "{},{},{},", tri[0], tri[1], tri[2]).unwrap();
+        }
+    }
+
+    // Serialize tool profile as lookup table (sampled at 50 radii)
+    let num_profile_samples = 50;
+    let tool_radius = cutter.radius();
+    let mut tool_profile = String::new();
+    for i in 0..=num_profile_samples {
+        let r = (i as f64 / num_profile_samples as f64) * tool_radius;
+        let h = cutter.height_at_radius(r).unwrap_or(-1.0);
+        write!(tool_profile, "{:.4},", h).unwrap();
+    }
+
+    // Serialize linearized toolpath for animation (arcs pre-linearized)
+    // Format: flat array [x, y, z, type, x, y, z, type, ...]
+    // type: 0 = rapid, 1 = cutting
+    let mut anim_tp = String::new();
+    let mut anim_move_count: usize = 0;
+    if !toolpath.moves.is_empty() {
+        let first = &toolpath.moves[0].target;
+        write!(anim_tp, "{:.3},{:.3},{:.3},0,", first.x, first.y, first.z).unwrap();
+        anim_move_count += 1;
+
+        for i in 1..toolpath.moves.len() {
+            let start = toolpath.moves[i - 1].target;
+            let end = toolpath.moves[i].target;
+
+            match toolpath.moves[i].move_type {
+                MoveType::Rapid => {
+                    write!(anim_tp, "{:.3},{:.3},{:.3},0,", end.x, end.y, end.z).unwrap();
+                    anim_move_count += 1;
+                }
+                MoveType::Linear { .. } => {
+                    write!(anim_tp, "{:.3},{:.3},{:.3},1,", end.x, end.y, end.z).unwrap();
+                    anim_move_count += 1;
+                }
+                MoveType::ArcCW { i, j, .. } => {
+                    let points = linearize_arc(start, end, i, j, true, heightmap.cell_size);
+                    for p in points.iter().skip(1) {
+                        write!(anim_tp, "{:.3},{:.3},{:.3},1,", p.x, p.y, p.z).unwrap();
+                        anim_move_count += 1;
+                    }
+                }
+                MoveType::ArcCCW { i, j, .. } => {
+                    let points = linearize_arc(start, end, i, j, false, heightmap.cell_size);
+                    for p in points.iter().skip(1) {
+                        write!(anim_tp, "{:.3},{:.3},{:.3},1,", p.x, p.y, p.z).unwrap();
+                        anim_move_count += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // Build Three.js LatheGeometry profile points for the tool model
+    let mut lathe_profile = String::new();
+    // Profile curve from center outward
+    for i in 0..=num_profile_samples {
+        let r = (i as f64 / num_profile_samples as f64) * tool_radius;
+        if let Some(h) = cutter.height_at_radius(r) {
+            write!(lathe_profile, "new THREE.Vector2({:.3},{:.4}),", r, h).unwrap();
+        }
+    }
+    // Shaft extending upward
+    let shaft_h = tool_radius * 4.0;
+    write!(lathe_profile, "new THREE.Vector2({:.3},{:.3}),", tool_radius, shaft_h).unwrap();
+    write!(lathe_profile, "new THREE.Vector2(0,{:.3}),", shaft_h).unwrap();
+
+    let mut html = String::with_capacity(2 * 1024 * 1024);
+
+    write!(html, r##"<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>rs_cam Simulation Viewer</title>
+<style>
+  body {{ margin: 0; overflow: hidden; background: #1a1a2e; }}
+  #info {{
+    position: absolute; top: 10px; left: 10px; color: #ccc;
+    font: 13px monospace; background: rgba(0,0,0,0.6); padding: 8px 12px;
+    border-radius: 4px; pointer-events: none;
+  }}
+  #legend {{
+    position: absolute; bottom: 10px; left: 10px; color: #aaa;
+    font: 12px monospace; background: rgba(0,0,0,0.6); padding: 8px 12px;
+    border-radius: 4px;
+  }}
+  #controls {{
+    position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
+    color: #ccc; font: 13px monospace; background: rgba(0,0,0,0.75);
+    padding: 10px 18px; border-radius: 6px; display: flex; align-items: center; gap: 14px;
+    user-select: none;
+  }}
+  #controls button {{
+    background: #445; border: 1px solid #667; color: #ddd; padding: 5px 14px;
+    border-radius: 4px; cursor: pointer; font: 13px monospace;
+  }}
+  #controls button:hover {{ background: #556; }}
+  #controls button.active {{ background: #664; border-color: #aa8; }}
+  #speedRange {{ width: 100px; cursor: pointer; }}
+  #progressBar {{
+    width: 200px; height: 6px; background: #333; border-radius: 3px;
+    cursor: pointer; position: relative;
+  }}
+  #progressFill {{
+    height: 100%; background: #6a6; border-radius: 3px; width: 100%;
+    pointer-events: none;
+  }}
+</style>
+</head><body>
+<div id="info">
+  Simulation: {hm_rows}x{hm_cols} heightmap ({cell_size:.2}mm resolution)<br>
+  Toolpath: {tp_moves} moves ({anim_moves} linearized), {tp_cut:.0}mm cutting<br>
+  Z range: {z_min:.2} to {z_max:.2} mm
+</div>
+<div id="controls">
+  <button id="replayBtn">&#9654; Replay</button>
+  <button id="skipBtn">&#9646;&#9646; End</button>
+  <label>Speed: <input type="range" id="speedRange" min="1" max="100" value="30">
+  <span id="speedVal">30</span>x</label>
+  <div id="progressBar"><div id="progressFill"></div></div>
+  <span id="moveInfo">Complete</span>
+</div>
+<div id="legend">
+  <span style="color:#c49a6c">&#9632;</span> Uncut &nbsp;
+  <span style="color:#73401a">&#9632;</span> Cut &nbsp;
+  <span style="color:#3388ff">&#9632;</span> Toolpath &nbsp;
+  <span style="color:#ff4444">&#9632;</span> Rapid &nbsp;
+  <span style="color:#aabbcc">&#9632;</span> Tool &nbsp;
+  {ghost_legend}
+  Mouse: orbit | Scroll: zoom | Right-click: pan
+</div>
+
+<script type="importmap">
+{{
+  "imports": {{
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }}
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import {{ OrbitControls }} from 'three/addons/controls/OrbitControls.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100000);
+camera.position.set({cx:.3} + {cd:.3} * 0.5, {cy:.3} - {cd:.3} * 0.8, {cz:.3} + {cd:.3} * 1.0);
+
+const renderer = new THREE.WebGLRenderer({{ antialias: true }});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set({cx:.3}, {cy:.3}, {cz:.3});
+controls.enableDamping = true;
+
+// Lighting
+scene.add(new THREE.AmbientLight(0x666666));
+const dir1 = new THREE.DirectionalLight(0xffffff, 0.9);
+dir1.position.set(1, 1, 2);
+scene.add(dir1);
+const dir2 = new THREE.DirectionalLight(0x4488aa, 0.3);
+dir2.position.set(-1, -0.5, 0.5);
+scene.add(dir2);
+
+// --- Final heightmap mesh data (for restoring after animation) ---
+const finalVerts = new Float32Array([{hm_verts_data}]);
+const finalColors = new Float32Array([{hm_colors_data}]);
+
+// --- Heightmap surface ---
+const hmVerts = new Float32Array(finalVerts);
+const hmColors = new Float32Array(finalColors);
+const hmIdx = new Uint32Array([{hm_idx_data}]);
+const hmGeo = new THREE.BufferGeometry();
+hmGeo.setAttribute('position', new THREE.BufferAttribute(hmVerts, 3));
+hmGeo.setAttribute('color', new THREE.BufferAttribute(hmColors, 3));
+hmGeo.setIndex(new THREE.BufferAttribute(hmIdx, 1));
+hmGeo.computeVertexNormals();
+
+const hmMat = new THREE.MeshPhongMaterial({{
+  vertexColors: true,
+  side: THREE.DoubleSide,
+  flatShading: false,
+  shininess: 20,
+}});
+scene.add(new THREE.Mesh(hmGeo, hmMat));
+
+// --- Ghost source mesh ---
+{ghost_mesh_js}
+
+// --- Cutting toolpath ---
+const cutVerts = new Float32Array([{cut_verts_data}]);
+const cutColors = new Float32Array([{cut_colors_data}]);
+if (cutVerts.length > 0) {{
+  const cutGeo = new THREE.BufferGeometry();
+  cutGeo.setAttribute('position', new THREE.BufferAttribute(cutVerts, 3));
+  cutGeo.setAttribute('color', new THREE.BufferAttribute(cutColors, 3));
+  const cutMat = new THREE.LineBasicMaterial({{ vertexColors: true, linewidth: 1, transparent: true, opacity: 0.4 }});
+  scene.add(new THREE.LineSegments(cutGeo, cutMat));
+}}
+
+// --- Rapid toolpath ---
+const rapidVerts = new Float32Array([{rapid_verts_data}]);
+if (rapidVerts.length > 0) {{
+  const rapidGeo = new THREE.BufferGeometry();
+  rapidGeo.setAttribute('position', new THREE.BufferAttribute(rapidVerts, 3));
+  const rapidMat = new THREE.LineBasicMaterial({{ color: 0xff4444, linewidth: 1, transparent: true, opacity: 0.2 }});
+  scene.add(new THREE.LineSegments(rapidGeo, rapidMat));
+}}
+
+// --- Grid helper ---
+const gridSize = {grid_size:.0};
+const grid = new THREE.GridHelper(gridSize, 20, 0x333355, 0x222244);
+grid.rotation.x = Math.PI / 2;
+grid.position.set({cx:.3}, {cy:.3}, {grid_z:.3});
+scene.add(grid);
+
+// --- Axes ---
+const axes = new THREE.AxesHelper(gridSize * 0.3);
+axes.position.set({bbox_min_x:.3}, {bbox_min_y:.3}, {bbox_min_z:.3});
+scene.add(axes);
+
+// ====== ANIMATION ENGINE ======
+
+// Tool profile lookup table (sampled at equal radii from 0 to toolRadius)
+const toolProfile = new Float32Array([{tool_profile_data}]);
+const toolRadius = {tool_radius:.4};
+const numProfileSamples = {num_profile_samples};
+
+// Heightmap grid params
+const hmRows = {hm_rows};
+const hmCols = {hm_cols};
+const originX = {origin_x:.4};
+const originY = {origin_y:.4};
+const cellSize = {cell_size_val:.4};
+const stockTopZ = {stock_top_z:.4};
+const zRange = {z_range_val:.6};
+
+// Working heightmap grid (for animation stamping)
+const hmGrid = new Float64Array(hmRows * hmCols);
+
+// Linearized toolpath: flat [x,y,z,type, x,y,z,type, ...]
+// type: 0=rapid, 1=cutting
+const animTP = new Float32Array([{anim_tp_data}]);
+const animMoveCount = {anim_move_count};
+
+// Tool 3D model (LatheGeometry from profile)
+const profilePts = [{lathe_profile_data}];
+const toolGeo = new THREE.LatheGeometry(profilePts, 24);
+toolGeo.rotateX(-Math.PI / 2);
+const toolMat = new THREE.MeshPhongMaterial({{
+  color: 0xaabbcc, transparent: true, opacity: 0.7,
+  side: THREE.DoubleSide, shininess: 60,
+}});
+const toolMesh = new THREE.Mesh(toolGeo, toolMat);
+toolMesh.visible = false;
+scene.add(toolMesh);
+
+// Animation state
+let playing = false;
+let moveIdx = 1;
+let lastTime = 0;
+
+function heightAtRadius(r) {{
+  if (r > toolRadius) return -1;
+  const t = (r / toolRadius) * numProfileSamples;
+  const i = Math.min(Math.floor(t), numProfileSamples - 1);
+  const f = t - i;
+  const h0 = toolProfile[i], h1 = toolProfile[i + 1];
+  if (h0 < 0 || h1 < 0) return -1;
+  return h0 * (1 - f) + h1 * f;
+}}
+
+function stampToolAt(cx, cy, tipZ) {{
+  const rSq = toolRadius * toolRadius;
+  const colMin = Math.max(0, Math.floor((cx - toolRadius - originX) / cellSize));
+  const colMax = Math.min(hmCols - 1, Math.ceil((cx + toolRadius - originX) / cellSize));
+  const rowMin = Math.max(0, Math.floor((cy - toolRadius - originY) / cellSize));
+  const rowMax = Math.min(hmRows - 1, Math.ceil((cy + toolRadius - originY) / cellSize));
+
+  for (let row = rowMin; row <= rowMax; row++) {{
+    const cellY = originY + row * cellSize;
+    const dy = cellY - cy;
+    const dySq = dy * dy;
+    if (dySq > rSq) continue;
+    for (let col = colMin; col <= colMax; col++) {{
+      const cellX = originX + col * cellSize;
+      const dx = cellX - cx;
+      const distSq = dx * dx + dySq;
+      if (distSq > rSq) continue;
+      const h = heightAtRadius(Math.sqrt(distSq));
+      if (h >= 0) {{
+        const idx = row * hmCols + col;
+        const cutZ = tipZ + h;
+        if (cutZ < hmGrid[idx]) hmGrid[idx] = cutZ;
+      }}
+    }}
+  }}
+}}
+
+function stampSegment(x0, y0, z0, x1, y1, z1) {{
+  const dx = x1-x0, dy = y1-y0, dz = z1-z0;
+  const len = Math.sqrt(dx*dx + dy*dy + dz*dz);
+  const samples = Math.max(1, Math.ceil(len / cellSize));
+  for (let i = 0; i <= samples; i++) {{
+    const t = i / samples;
+    stampToolAt(x0 + t*dx, y0 + t*dy, z0 + t*dz);
+  }}
+}}
+
+function updateMeshFromGrid() {{
+  const pos = hmGeo.attributes.position.array;
+  const col = hmGeo.attributes.color.array;
+  for (let row = 0; row < hmRows; row++) {{
+    for (let c = 0; c < hmCols; c++) {{
+      const idx = row * hmCols + c;
+      const z = hmGrid[idx];
+      pos[idx * 3 + 2] = z;
+      const depthT = Math.max(0, Math.min(1, (stockTopZ - z) / zRange));
+      col[idx * 3]     = 0.76 + (0.45 - 0.76) * depthT;
+      col[idx * 3 + 1] = 0.60 + (0.25 - 0.60) * depthT;
+      col[idx * 3 + 2] = 0.42 + (0.10 - 0.42) * depthT;
+    }}
+  }}
+  hmGeo.attributes.position.needsUpdate = true;
+  hmGeo.attributes.color.needsUpdate = true;
+  hmGeo.computeVertexNormals();
+}}
+
+function restoreFinalState() {{
+  hmGeo.attributes.position.array.set(finalVerts);
+  hmGeo.attributes.color.array.set(finalColors);
+  hmGeo.attributes.position.needsUpdate = true;
+  hmGeo.attributes.color.needsUpdate = true;
+  hmGeo.computeVertexNormals();
+  toolMesh.visible = false;
+  moveIdx = animMoveCount;
+  updateUI();
+}}
+
+function resetToStock() {{
+  hmGrid.fill(stockTopZ);
+  for (let i = 0; i < hmRows * hmCols; i++) {{
+    hmGeo.attributes.position.array[i * 3 + 2] = stockTopZ;
+    hmGeo.attributes.color.array[i * 3]     = 0.76;
+    hmGeo.attributes.color.array[i * 3 + 1] = 0.60;
+    hmGeo.attributes.color.array[i * 3 + 2] = 0.42;
+  }}
+  hmGeo.attributes.position.needsUpdate = true;
+  hmGeo.attributes.color.needsUpdate = true;
+  hmGeo.computeVertexNormals();
+  moveIdx = 1;
+}}
+
+// Compute total path distance for speed calibration
+let totalDist = 0;
+for (let i = 1; i < animMoveCount; i++) {{
+  const b = i * 4;
+  const pb = (i-1) * 4;
+  const dx = animTP[b] - animTP[pb], dy = animTP[b+1] - animTP[pb+1], dz = animTP[b+2] - animTP[pb+2];
+  totalDist += Math.sqrt(dx*dx + dy*dy + dz*dz);
+}}
+const baseSpeed = Math.max(totalDist / 20, 10); // complete in ~20s at 1x
+
+function processFrame(dt) {{
+  const speed = baseSpeed * parseFloat(document.getElementById('speedRange').value);
+  let budget = speed * dt; // mm to advance this frame
+  let meshDirty = false;
+
+  while (budget > 0 && moveIdx < animMoveCount) {{
+    const b = moveIdx * 4;
+    const pb = (moveIdx - 1) * 4;
+    const x0 = animTP[pb], y0 = animTP[pb+1], z0 = animTP[pb+2];
+    const x1 = animTP[b], y1 = animTP[b+1], z1 = animTP[b+2];
+    const isRapid = animTP[b+3] === 0;
+
+    const dx = x1-x0, dy = y1-y0, dz = z1-z0;
+    const segLen = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+    if (!isRapid && segLen > 0.001) {{
+      stampSegment(x0, y0, z0, x1, y1, z1);
+      meshDirty = true;
+    }}
+
+    // Position tool at end of this move
+    toolMesh.position.set(x1, y1, z1);
+    toolMesh.visible = true;
+
+    budget -= isRapid ? segLen * 0.1 : segLen; // rapids are fast
+    moveIdx++;
+  }}
+
+  if (meshDirty) updateMeshFromGrid();
+
+  if (moveIdx >= animMoveCount) {{
+    playing = false;
+    restoreFinalState();
+    document.getElementById('replayBtn').textContent = '\u25B6 Replay';
+  }}
+  updateUI();
+}}
+
+function updateUI() {{
+  const pct = animMoveCount > 1 ? ((moveIdx - 1) / (animMoveCount - 1)) * 100 : 100;
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('moveInfo').textContent =
+    playing ? (moveIdx + ' / ' + animMoveCount) : 'Complete';
+}}
+
+// UI event handlers
+document.getElementById('replayBtn').addEventListener('click', () => {{
+  if (playing) {{
+    playing = false;
+    document.getElementById('replayBtn').textContent = '\u25B6 Resume';
+  }} else {{
+    if (moveIdx >= animMoveCount) {{
+      resetToStock();
+    }}
+    playing = true;
+    lastTime = performance.now() / 1000;
+    document.getElementById('replayBtn').textContent = '\u23F8 Pause';
+  }}
+}});
+
+document.getElementById('skipBtn').addEventListener('click', () => {{
+  playing = false;
+  restoreFinalState();
+  document.getElementById('replayBtn').textContent = '\u25B6 Replay';
+}});
+
+document.getElementById('speedRange').addEventListener('input', (e) => {{
+  document.getElementById('speedVal').textContent = e.target.value;
+}});
+
+window.addEventListener('resize', () => {{
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}});
+
+const clock = new THREE.Clock();
+function animate() {{
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  if (playing) processFrame(Math.min(dt, 0.05));
+  controls.update();
+  renderer.render(scene, camera);
+}}
+animate();
+</script>
+</body></html>"##,
+        hm_rows = heightmap.rows,
+        hm_cols = heightmap.cols,
+        cell_size = heightmap.cell_size,
+        tp_moves = toolpath.moves.len(),
+        anim_moves = anim_move_count,
+        tp_cut = toolpath.total_cutting_distance(),
+        z_min = z_min,
+        z_max = z_max,
+        ghost_legend = if has_source_mesh {
+            "<span style=\"color:#88aa88\">&#9632;</span> Source mesh &nbsp;"
+        } else {
+            ""
+        },
+        cx = center.x,
+        cy = center.y,
+        cz = center.z,
+        cd = cam_dist,
+        hm_verts_data = hm_verts.trim_end_matches(','),
+        hm_colors_data = hm_colors.trim_end_matches(','),
+        hm_idx_data = hm_indices.trim_end_matches(','),
+        ghost_mesh_js = if has_source_mesh {
+            format!(
+                r#"const srcVerts = new Float32Array([{}]);
+const srcIdx = new Uint32Array([{}]);
+const srcGeo = new THREE.BufferGeometry();
+srcGeo.setAttribute('position', new THREE.BufferAttribute(srcVerts, 3));
+srcGeo.setIndex(new THREE.BufferAttribute(srcIdx, 1));
+srcGeo.computeVertexNormals();
+const srcMat = new THREE.MeshPhongMaterial({{
+  color: 0x88aa88, transparent: true, opacity: 0.2,
+  side: THREE.DoubleSide, depthWrite: false,
+}});
+scene.add(new THREE.Mesh(srcGeo, srcMat));"#,
+                src_mesh_verts.trim_end_matches(','),
+                src_mesh_indices.trim_end_matches(','),
+            )
+        } else {
+            String::new()
+        },
+        cut_verts_data = cut_verts.trim_end_matches(','),
+        cut_colors_data = cut_colors.trim_end_matches(','),
+        rapid_verts_data = rapid_verts.trim_end_matches(','),
+        tool_profile_data = tool_profile.trim_end_matches(','),
+        tool_radius = tool_radius,
+        num_profile_samples = num_profile_samples,
+        origin_x = heightmap.origin_x,
+        origin_y = heightmap.origin_y,
+        cell_size_val = heightmap.cell_size,
+        stock_top_z = heightmap.stock_top_z,
+        z_range_val = (heightmap.stock_top_z - hm_bbox.min.z).max(1e-6),
+        anim_tp_data = anim_tp.trim_end_matches(','),
+        anim_move_count = anim_move_count,
+        lathe_profile_data = lathe_profile.trim_end_matches(','),
+        grid_size = extent * 1.2,
+        grid_z = hm_bbox.min.z - 0.1,
+        bbox_min_x = hm_bbox.min.x,
+        bbox_min_y = hm_bbox.min.y,
+        bbox_min_z = hm_bbox.min.z,
     ).unwrap();
 
     html
