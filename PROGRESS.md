@@ -9,7 +9,7 @@ Read this FIRST at the start of every session. Update LAST before ending.
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 220 tests passing (218 unit + 2 integration)
+- [x] Core library + CLI compiling, 236 tests passing (234 unit + 2 integration)
 - [x] Phase 1 complete: STL → drop-cutter → G-code pipeline with 3D HTML viewer
 - [x] Phase 2 complete: 2.5D operations (pocket, profile, zigzag, depth stepping, SVG/DXF input, dressups, CLI)
 - [x] Phase 3 complete: Advanced tools (BullNose, VBit, TaperedBall), push-cutter, waterline, arc fitting, G2/G3
@@ -72,7 +72,7 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 
 ### Phase 5: Visualization & Polish
 - [ ] 5.1 egui + wgpu 3D viewer (rs_cam_viz crate)
-- [ ] 5.2 Material removal simulation
+- [x] 5.2 Material removal simulation — heightmap stamping, wood-tone mesh, animated 3D replay with tool model (simulation.rs, viz.rs)
 - [ ] 5.3 Inlay operations
 
 ## Module Map (for new agents)
@@ -85,7 +85,8 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 | dropcutter | `rs_cam_core/src/dropcutter.rs` | point_drop_cutter, batch_drop_cutter (rayon parallel) |
 | toolpath | `rs_cam_core/src/toolpath.rs` | Move, MoveType (Rapid/Linear/ArcCW/ArcCCW), Toolpath IR |
 | gcode | `rs_cam_core/src/gcode.rs` | PostProcessor trait, GrblPost, LinuxCncPost, Mach3Post, emit_gcode |
-| viz | `rs_cam_core/src/viz.rs` | SVG preview, 3D HTML viewer (mesh+toolpath, standalone) |
+| viz | `rs_cam_core/src/viz.rs` | SVG preview, 3D HTML viewer (mesh+toolpath, standalone, simulation w/ animation) |
+| simulation | `rs_cam_core/src/simulation.rs` | Heightmap, tool stamping, arc linearization, heightmap-to-mesh export |
 | polygon | `rs_cam_core/src/polygon.rs` | Polygon2, offset, pocket_offsets, containment detection |
 | pocket | `rs_cam_core/src/pocket.rs` | PocketParams, pocket_toolpath, pocket_contours |
 | profile | `rs_cam_core/src/profile.rs` | ProfileParams, ProfileSide, profile_toolpath |
