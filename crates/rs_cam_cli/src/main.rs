@@ -155,6 +155,10 @@ enum Commands {
         /// Optional SVG preview output
         #[arg(long)]
         svg: Option<PathBuf>,
+
+        /// Optional 3D HTML viewer output
+        #[arg(long)]
+        view: Option<PathBuf>,
     },
 
     /// Cut along a 2D profile from SVG or DXF boundary
@@ -225,6 +229,10 @@ enum Commands {
         /// Optional SVG preview output
         #[arg(long)]
         svg: Option<PathBuf>,
+
+        /// Optional 3D HTML viewer output
+        #[arg(long)]
+        view: Option<PathBuf>,
     },
 }
 
@@ -385,7 +393,7 @@ fn main() -> Result<()> {
 
         Commands::Pocket {
             input, tool, stepover, depth, depth_per_pass, feed_rate, plunge_rate,
-            spindle_speed, safe_z, pattern, angle, climb, entry, post, output, svg,
+            spindle_speed, safe_z, pattern, angle, climb, entry, post, output, svg, view,
         } => {
             let cutter = parse_tool(&tool)?;
             let tool_radius = cutter.diameter() / 2.0;
@@ -452,12 +460,20 @@ fn main() -> Result<()> {
             );
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
+
+            if let Some(view_path) = view {
+                eprintln!("Generating 3D viewer...");
+                let html = rs_cam_core::viz::toolpath_standalone_3d_html(&toolpath, None);
+                std::fs::write(&view_path, &html)
+                    .context("Failed to write 3D viewer file")?;
+                eprintln!("Wrote 3D viewer to {}", view_path.display());
+            }
         }
 
         Commands::Profile {
             input, tool, depth, depth_per_pass, side, feed_rate, plunge_rate,
             spindle_speed, safe_z, climb, tabs, tab_width, tab_height,
-            entry, post, output, svg,
+            entry, post, output, svg, view,
         } => {
             let cutter = parse_tool(&tool)?;
             let tool_radius = cutter.diameter() / 2.0;
@@ -523,6 +539,14 @@ fn main() -> Result<()> {
             );
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
+
+            if let Some(view_path) = view {
+                eprintln!("Generating 3D viewer...");
+                let html = rs_cam_core::viz::toolpath_standalone_3d_html(&toolpath, None);
+                std::fs::write(&view_path, &html)
+                    .context("Failed to write 3D viewer file")?;
+                eprintln!("Wrote 3D viewer to {}", view_path.display());
+            }
         }
     }
 

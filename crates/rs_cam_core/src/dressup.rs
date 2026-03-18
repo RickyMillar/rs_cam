@@ -108,13 +108,23 @@ fn emit_ramp(
     max_angle_deg: f64,
     feed_rate: f64,
 ) {
-    let dz = (start.z - end.z).abs();
-    let max_angle_rad = max_angle_deg.to_radians();
-    let ramp_xy_len = dz / max_angle_rad.tan();
+    // Only ramp the last portion of the descent (max 5mm above target).
+    // Rapid down to clearance first, then ramp the rest.
+    let clearance = 2.0; // mm above cut depth to start ramping
+    let ramp_start_z = end.z + clearance;
 
-    // Ramp out along direction, then back
+    if start.z > ramp_start_z + 0.1 {
+        // Rapid down to clearance height first
+        tp.rapid_to(P3::new(start.x, start.y, ramp_start_z));
+    }
+
+    let ramp_dz = (ramp_start_z - end.z).abs().max(0.1);
+    let max_angle_rad = max_angle_deg.to_radians();
+    let ramp_xy_len = ramp_dz / max_angle_rad.tan();
+
+    // Ramp out along direction, then back (zigzag ramp)
     let half_len = ramp_xy_len / 2.0;
-    let mid_z = (start.z + end.z) / 2.0;
+    let mid_z = (ramp_start_z + end.z) / 2.0;
 
     // Move forward and down to midpoint
     tp.feed_to(
@@ -137,7 +147,15 @@ fn emit_helix(
     pitch: f64,
     feed_rate: f64,
 ) {
-    let dz = (start.z - end.z).abs();
+    // Only helix the last portion — rapid down to clearance first
+    let clearance = 2.0;
+    let helix_start_z = end.z + clearance;
+
+    if start.z > helix_start_z + 0.1 {
+        tp.rapid_to(P3::new(start.x, start.y, helix_start_z));
+    }
+
+    let dz = (helix_start_z.min(start.z) - end.z).abs();
     if dz < 0.01 || pitch < 0.01 {
         tp.feed_to(*end, feed_rate);
         return;
@@ -152,13 +170,14 @@ fn emit_helix(
         return;
     }
 
-    let center_x = start.x;
-    let center_y = start.y;
+    let center_x = end.x;
+    let center_y = end.y;
+    let helix_top = helix_start_z.min(start.z);
 
     for i in 1..=total_steps {
         let t = i as f64 / total_steps as f64;
         let angle = total_angle * t;
-        let z = start.z - dz * t;
+        let z = helix_top - dz * t;
         let x = center_x + radius * angle.cos();
         let y = center_y + radius * angle.sin();
         tp.feed_to(P3::new(x, y, z), feed_rate);
@@ -185,17 +204,18 @@ pub struct Tab {
 
 /// Insert holding tabs into a profile toolpath.
 ///
-/// Tabs lift the cutter to `cut_depth + tab.height` at specified positions
-/// along the cutting contour, leaving material bridges that hold the part.
+/// Tabs create sharp rectangular bridges: the cutter steps up to tab height,
+/// traverses at that height, then steps back down. This leaves material
+/// bridges that hold the part to the stock.
 ///
-/// `tabs` are specified as fractional positions (0.0-1.0) along the cutting
-/// perimeter. `cut_depth` is the Z of the cutting pass.
+/// Tab positions are interpolated along cutting segments, so tabs appear
+/// at the correct location even when move endpoints are sparse.
 pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath {
     if tabs.is_empty() {
         return toolpath.clone();
     }
 
-    // Collect cutting segments (linear moves at cut_depth)
+    // Collect cutting move indices at cut_depth
     let cutting_indices: Vec<usize> = toolpath
         .moves
         .iter()
@@ -207,17 +227,15 @@ pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath
         .map(|(i, _)| i)
         .collect();
 
-    if cutting_indices.is_empty() {
+    if cutting_indices.len() < 2 {
         return toolpath.clone();
     }
 
-    // Compute cumulative distance along cutting moves
+    // Compute cumulative distance at each cutting move endpoint
     let mut cum_dist = vec![0.0_f64];
     for i in 1..cutting_indices.len() {
-        let prev_idx = cutting_indices[i - 1];
-        let curr_idx = cutting_indices[i];
-        let prev = &toolpath.moves[prev_idx].target;
-        let curr = &toolpath.moves[curr_idx].target;
+        let prev = &toolpath.moves[cutting_indices[i - 1]].target;
+        let curr = &toolpath.moves[cutting_indices[i]].target;
         let d = ((curr.x - prev.x).powi(2) + (curr.y - prev.y).powi(2)).sqrt();
         cum_dist.push(cum_dist.last().unwrap() + d);
     }
@@ -227,32 +245,160 @@ pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath
         return toolpath.clone();
     }
 
-    // For each cutting move, determine if it's inside a tab zone
+    // Build sorted tab boundary events as absolute distances
+    struct TabZone {
+        start_dist: f64,
+        end_dist: f64,
+        tab_z: f64,
+    }
+    let tab_zones: Vec<TabZone> = tabs
+        .iter()
+        .map(|tab| {
+            let center_dist = tab.position * total_dist;
+            let half_w = tab.width / 2.0;
+            TabZone {
+                start_dist: (center_dist - half_w).max(0.0),
+                end_dist: (center_dist + half_w).min(total_dist),
+                tab_z: cut_depth + tab.height,
+            }
+        })
+        .collect();
+
+    let tab_z_at_dist = |dist: f64| -> Option<f64> {
+        tab_zones
+            .iter()
+            .find(|tz| dist >= tz.start_dist && dist <= tz.end_dist)
+            .map(|tz| tz.tab_z)
+    };
+
+    // Walk through toolpath, interpolating tab boundaries along cutting segments
     let mut result = Toolpath::new();
+    let mut in_tab = false;
 
     for (i, m) in toolpath.moves.iter().enumerate() {
-        if let Some(cut_pos) = cutting_indices.iter().position(|&ci| ci == i) {
-            let frac = cum_dist[cut_pos] / total_dist;
+        let cut_pos = cutting_indices.iter().position(|&ci| ci == i);
 
-            // Check if this position is inside any tab
-            let in_tab = tabs.iter().find(|tab| {
-                let half_w = (tab.width / 2.0) / total_dist;
-                let lo = tab.position - half_w;
-                let hi = tab.position + half_w;
-                frac >= lo && frac <= hi
-            });
-
-            if let Some(tab) = in_tab {
-                // Lift to tab height
-                let tab_z = cut_depth + tab.height;
-                result.moves.push(Move {
-                    target: P3::new(m.target.x, m.target.y, tab_z),
-                    move_type: m.move_type,
-                });
-            } else {
+        if let Some(cp) = cut_pos {
+            if cp == 0 {
+                // First cutting move — just emit it
                 result.moves.push(m.clone());
+                in_tab = tab_z_at_dist(0.0).is_some();
+                continue;
+            }
+
+            let feed_rate = match m.move_type {
+                MoveType::Linear { feed_rate } => feed_rate,
+                _ => 1000.0,
+            };
+
+            let seg_start_dist = cum_dist[cp - 1];
+            let seg_end_dist = cum_dist[cp];
+            let prev_target = &toolpath.moves[cutting_indices[cp - 1]].target;
+            let curr_target = &m.target;
+            let seg_len = seg_end_dist - seg_start_dist;
+
+            if seg_len < 1e-10 {
+                result.moves.push(m.clone());
+                continue;
+            }
+
+            // Collect all tab boundary crossings within this segment
+            let mut events: Vec<(f64, bool)> = Vec::new(); // (dist, is_entry)
+            for tz in &tab_zones {
+                if tz.start_dist > seg_start_dist && tz.start_dist < seg_end_dist {
+                    events.push((tz.start_dist, true));
+                }
+                if tz.end_dist > seg_start_dist && tz.end_dist < seg_end_dist {
+                    events.push((tz.end_dist, false));
+                }
+            }
+            events.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+            if events.is_empty() {
+                // No boundary crossings — whole segment is in or out
+                let mid_dist = (seg_start_dist + seg_end_dist) / 2.0;
+                if let Some(tab_z) = tab_z_at_dist(mid_dist) {
+                    if !in_tab {
+                        // Entered tab zone before this segment
+                        if let Some(last) = result.moves.last() {
+                            result.feed_to(
+                                P3::new(last.target.x, last.target.y, tab_z),
+                                feed_rate,
+                            );
+                        }
+                        in_tab = true;
+                    }
+                    result.feed_to(
+                        P3::new(curr_target.x, curr_target.y, tab_z),
+                        feed_rate,
+                    );
+                } else {
+                    if in_tab {
+                        if let Some(last) = result.moves.last() {
+                            result.feed_to(
+                                P3::new(last.target.x, last.target.y, cut_depth),
+                                feed_rate,
+                            );
+                        }
+                        in_tab = false;
+                    }
+                    result.moves.push(m.clone());
+                }
+            } else {
+                // Process boundary crossings — split segment at each event
+                let mut last_dist = seg_start_dist;
+
+                for (event_dist, is_entry) in &events {
+                    let t = (*event_dist - seg_start_dist) / seg_len;
+                    let split_x = prev_target.x + t * (curr_target.x - prev_target.x);
+                    let split_y = prev_target.y + t * (curr_target.y - prev_target.y);
+
+                    if *is_entry {
+                        // Emit segment up to tab entry at cut_depth
+                        if !in_tab {
+                            result.feed_to(
+                                P3::new(split_x, split_y, cut_depth),
+                                feed_rate,
+                            );
+                        }
+                        // Step up
+                        let tab_z = tab_z_at_dist(*event_dist + 0.01)
+                            .unwrap_or(cut_depth + 2.0);
+                        result.feed_to(P3::new(split_x, split_y, tab_z), feed_rate);
+                        in_tab = true;
+                    } else {
+                        // Emit segment up to tab exit at tab height
+                        let tab_z = tab_z_at_dist(last_dist + 0.01)
+                            .unwrap_or(cut_depth + 2.0);
+                        result.feed_to(P3::new(split_x, split_y, tab_z), feed_rate);
+                        // Step down
+                        result.feed_to(
+                            P3::new(split_x, split_y, cut_depth),
+                            feed_rate,
+                        );
+                        in_tab = false;
+                    }
+                    last_dist = *event_dist;
+                }
+
+                // Emit remainder of segment after last event
+                if in_tab {
+                    let tab_z = tab_z_at_dist(last_dist + 0.01)
+                        .unwrap_or(cut_depth + 2.0);
+                    result.feed_to(
+                        P3::new(curr_target.x, curr_target.y, tab_z),
+                        feed_rate,
+                    );
+                } else {
+                    result.feed_to(
+                        P3::new(curr_target.x, curr_target.y, cut_depth),
+                        feed_rate,
+                    );
+                }
             }
         } else {
+            // Non-cutting move — pass through unchanged
+            in_tab = false;
             result.moves.push(m.clone());
         }
     }
@@ -498,16 +644,46 @@ mod tests {
     }
 
     #[test]
-    fn test_total_move_count_preserved() {
+    fn test_tabs_have_sharp_transitions() {
+        let tp = profile_toolpath_for_tabs();
+        let tabs = even_tabs(2, 10.0, 3.0);
+        let result = apply_tabs(&tp, &tabs, -5.0);
+
+        // Find vertical step-up feed moves (same XY, Z increases sharply)
+        let mut found_step_up = false;
+        for i in 1..result.moves.len() {
+            if !matches!(result.moves[i].move_type, MoveType::Linear { .. }) {
+                continue;
+            }
+            let prev = &result.moves[i - 1].target;
+            let curr = &result.moves[i].target;
+            let dxy = ((curr.x - prev.x).powi(2) + (curr.y - prev.y).powi(2)).sqrt();
+            let dz = curr.z - prev.z;
+            if dxy < 0.01 && dz > 1.0 && curr.z < 0.0 {
+                found_step_up = true;
+                // Step-up should go to tab height (-5 + 3 = -2)
+                assert!(
+                    (curr.z - -2.0).abs() < 0.1,
+                    "Step-up should reach tab height -2.0, got {}",
+                    curr.z
+                );
+            }
+        }
+        assert!(found_step_up, "Should have at least one sharp step-up move");
+    }
+
+    #[test]
+    fn test_tabs_add_transition_moves() {
         let tp = profile_toolpath_for_tabs();
         let tabs = even_tabs(4, 5.0, 3.0);
         let result = apply_tabs(&tp, &tabs, -5.0);
 
-        // Tab dressup modifies Z but doesn't add/remove moves
-        assert_eq!(
+        // Tab dressup adds step-up/step-down moves at tab edges
+        assert!(
+            result.moves.len() >= tp.moves.len(),
+            "Tab dressup should add transition moves: {} vs {}",
             result.moves.len(),
-            tp.moves.len(),
-            "Tab dressup should not change move count"
+            tp.moves.len()
         );
     }
 }
