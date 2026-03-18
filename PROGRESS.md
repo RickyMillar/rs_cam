@@ -2,14 +2,15 @@
 
 Read this FIRST at the start of every session. Update LAST before ending.
 
-## Current Phase: 2 - 2.5D Operations (IN PROGRESS)
+## Current Phase: 2 - 2.5D Operations (COMPLETE)
 
 ### What Exists
 - [x] Research complete (research/ directory - 8 synthesized docs + 4 raw dumps)
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 86 tests passing (84 unit + 2 integration)
+- [x] Core library + CLI compiling, 112 tests passing (110 unit + 2 integration)
+- [x] Phase 2 complete: 2.5D operations (pocket, profile, zigzag, depth stepping, SVG/DXF input, dressups, CLI)
 
 ### Phase 1: Foundation
 Goal: Load an STL, drop a ball cutter onto it, emit G-code.
@@ -37,11 +38,11 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] 2.4 Profile cutting with tool radius compensation
 - [x] 2.5 Zigzag/raster clearing pattern
 - [x] 2.6 Depth stepping (multi-pass)
-- [ ] 2.7 SVG input (usvg)
-- [ ] 2.8 DXF input (dxf crate)
-- [ ] 2.9 Helix/ramp entry
-- [ ] 2.10 Tab/bridge dressup
-- [ ] 2.11 CLI: pocket/profile subcommands
+- [x] 2.7 SVG input (usvg, bezier flattening)
+- [x] 2.8 DXF input (LwPolyline, Circle, Ellipse, bulge arcs)
+- [x] 2.9 Helix/ramp entry dressup
+- [x] 2.10 Tab/bridge dressup
+- [x] 2.11 CLI: pocket/profile subcommands (with depth stepping, entry styles, tabs)
 
 ### Phase 3: Advanced Tools & 3D
 - [ ] 3.1 BullNoseEndmill implementation

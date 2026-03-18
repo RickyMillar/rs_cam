@@ -1,11 +1,17 @@
 use anyhow::{Context, Result, bail};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use rs_cam_core::{
+    depth::{DepthStepping, depth_stepped_toolpath},
+    dressup::{EntryStyle, apply_entry, apply_tabs, even_tabs},
     dropcutter::batch_drop_cutter,
     gcode::{emit_gcode, get_post_processor},
     mesh::{SpatialIndex, TriangleMesh},
+    pocket::{PocketParams, pocket_toolpath},
+    polygon::Polygon2,
+    profile::{ProfileParams, ProfileSide, profile_toolpath},
     tool::{BallEndmill, FlatEndmill, MillingCutter},
-    toolpath::raster_toolpath_from_grid,
+    toolpath::{Toolpath, raster_toolpath_from_grid},
+    zigzag::{ZigzagParams, zigzag_toolpath},
 };
 use std::path::PathBuf;
 
@@ -14,6 +20,14 @@ use std::path::PathBuf;
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+}
+
+#[derive(Clone, ValueEnum)]
+enum ClearingPattern {
+    /// Contour-parallel (concentric offset) pattern
+    Contour,
+    /// Zigzag/raster pattern
+    Zigzag,
 }
 
 #[derive(Subcommand)]
@@ -76,6 +90,142 @@ enum Commands {
         #[arg(long)]
         view: Option<PathBuf>,
     },
+
+    /// Clear a 2D pocket from SVG or DXF boundary
+    Pocket {
+        /// Input file (SVG or DXF)
+        input: PathBuf,
+
+        /// Tool specification: type:diameter (e.g., flat:6.35)
+        #[arg(long)]
+        tool: String,
+
+        /// Step-over distance in mm
+        #[arg(long, default_value = "2.0")]
+        stepover: f64,
+
+        /// Total depth in mm (positive, e.g. 12.0)
+        #[arg(long)]
+        depth: f64,
+
+        /// Maximum depth per pass in mm
+        #[arg(long, default_value = "3.0")]
+        depth_per_pass: f64,
+
+        /// Feed rate in mm/min
+        #[arg(long, default_value = "1000.0")]
+        feed_rate: f64,
+
+        /// Plunge rate in mm/min
+        #[arg(long, default_value = "500.0")]
+        plunge_rate: f64,
+
+        /// Spindle speed in RPM
+        #[arg(long, default_value = "18000")]
+        spindle_speed: u32,
+
+        /// Safe Z height for rapid moves
+        #[arg(long, default_value = "10.0")]
+        safe_z: f64,
+
+        /// Clearing pattern
+        #[arg(long, value_enum, default_value = "contour")]
+        pattern: ClearingPattern,
+
+        /// Zigzag angle in degrees (only for zigzag pattern)
+        #[arg(long, default_value = "0.0")]
+        angle: f64,
+
+        /// Use climb milling (CW direction)
+        #[arg(long)]
+        climb: bool,
+
+        /// Entry style: plunge, ramp, helix
+        #[arg(long, default_value = "plunge")]
+        entry: String,
+
+        /// Post-processor: grbl, linuxcnc
+        #[arg(long, default_value = "grbl")]
+        post: String,
+
+        /// Output G-code file
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Optional SVG preview output
+        #[arg(long)]
+        svg: Option<PathBuf>,
+    },
+
+    /// Cut along a 2D profile from SVG or DXF boundary
+    Profile {
+        /// Input file (SVG or DXF)
+        input: PathBuf,
+
+        /// Tool specification: type:diameter (e.g., flat:6.35)
+        #[arg(long)]
+        tool: String,
+
+        /// Total depth in mm (positive, e.g. 12.0)
+        #[arg(long)]
+        depth: f64,
+
+        /// Maximum depth per pass in mm
+        #[arg(long, default_value = "3.0")]
+        depth_per_pass: f64,
+
+        /// Cut side: inside or outside
+        #[arg(long, default_value = "outside")]
+        side: String,
+
+        /// Feed rate in mm/min
+        #[arg(long, default_value = "1000.0")]
+        feed_rate: f64,
+
+        /// Plunge rate in mm/min
+        #[arg(long, default_value = "500.0")]
+        plunge_rate: f64,
+
+        /// Spindle speed in RPM
+        #[arg(long, default_value = "18000")]
+        spindle_speed: u32,
+
+        /// Safe Z height for rapid moves
+        #[arg(long, default_value = "10.0")]
+        safe_z: f64,
+
+        /// Use climb milling (CW direction)
+        #[arg(long)]
+        climb: bool,
+
+        /// Number of holding tabs (0 to disable)
+        #[arg(long, default_value = "0")]
+        tabs: usize,
+
+        /// Tab width in mm
+        #[arg(long, default_value = "5.0")]
+        tab_width: f64,
+
+        /// Tab height in mm
+        #[arg(long, default_value = "2.0")]
+        tab_height: f64,
+
+        /// Entry style: plunge, ramp, helix
+        #[arg(long, default_value = "plunge")]
+        entry: String,
+
+        /// Post-processor: grbl, linuxcnc
+        #[arg(long, default_value = "grbl")]
+        post: String,
+
+        /// Output G-code file
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Optional SVG preview output
+        #[arg(long)]
+        svg: Option<PathBuf>,
+    },
 }
 
 fn parse_tool(spec: &str) -> Result<Box<dyn MillingCutter>> {
@@ -88,13 +238,80 @@ fn parse_tool(spec: &str) -> Result<Box<dyn MillingCutter>> {
         .parse()
         .context("Invalid tool diameter")?;
 
-    let cutting_length = diameter * 4.0; // reasonable default
+    let cutting_length = diameter * 4.0;
 
     match parts[0] {
         "ball" => Ok(Box::new(BallEndmill::new(diameter, cutting_length))),
         "flat" => Ok(Box::new(FlatEndmill::new(diameter, cutting_length))),
         _ => bail!("Unknown tool type '{}'. Supported: ball, flat", parts[0]),
     }
+}
+
+fn parse_entry_style(entry: &str) -> Result<Option<EntryStyle>> {
+    match entry {
+        "plunge" => Ok(None),
+        "ramp" => Ok(Some(EntryStyle::Ramp { max_angle_deg: 3.0 })),
+        "helix" => Ok(Some(EntryStyle::Helix {
+            radius: 2.0,
+            pitch: 1.0,
+        })),
+        _ => bail!("Unknown entry style '{}'. Supported: plunge, ramp, helix", entry),
+    }
+}
+
+fn load_polygons(path: &PathBuf) -> Result<Vec<Polygon2>> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    match ext.as_str() {
+        "svg" => {
+            let polys = rs_cam_core::svg_input::load_svg(path, 0.1)
+                .context("Failed to load SVG")?;
+            if polys.is_empty() {
+                bail!("No closed paths found in SVG file");
+            }
+            Ok(polys)
+        }
+        "dxf" => {
+            let polys = rs_cam_core::dxf_input::load_dxf(path, 5.0)
+                .context("Failed to load DXF")?;
+            if polys.is_empty() {
+                bail!("No closed entities found in DXF file");
+            }
+            Ok(polys)
+        }
+        _ => bail!("Unsupported input format '{}'. Supported: .svg, .dxf", ext),
+    }
+}
+
+fn emit_and_write(
+    toolpath: &Toolpath,
+    post: &str,
+    spindle_speed: u32,
+    output: &PathBuf,
+    svg_path: &Option<PathBuf>,
+) -> Result<()> {
+    let post_proc = get_post_processor(post)
+        .context(format!("Unknown post-processor '{}'. Supported: grbl, linuxcnc", post))?;
+
+    eprintln!("Emitting G-code ({})...", post_proc.name());
+    let gcode = emit_gcode(toolpath, post_proc.as_ref(), spindle_speed);
+
+    std::fs::write(output, &gcode)
+        .context("Failed to write output file")?;
+    eprintln!("Wrote {} bytes to {}", gcode.len(), output.display());
+
+    if let Some(svg_out) = svg_path {
+        let svg_content = rs_cam_core::viz::toolpath_to_svg(toolpath, 800.0, 600.0);
+        std::fs::write(svg_out, &svg_content)
+            .context("Failed to write SVG file")?;
+        eprintln!("Wrote SVG preview to {}", svg_out.display());
+    }
+
+    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -109,20 +326,8 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::DropCutter {
-            input,
-            units,
-            scale,
-            tool,
-            stepover,
-            feed_rate,
-            plunge_rate,
-            spindle_speed,
-            safe_z,
-            min_z,
-            post,
-            output,
-            svg,
-            view,
+            input, units, scale, tool, stepover, feed_rate, plunge_rate,
+            spindle_speed, safe_z, min_z, post, output, svg, view,
         } => {
             let scale_factor = match scale {
                 Some(s) => s,
@@ -138,11 +343,7 @@ fn main() -> Result<()> {
             eprintln!("Loading STL: {} (units: {}, scale: {:.4})", input.display(), units, scale_factor);
             let mesh = TriangleMesh::from_stl_scaled(&input, scale_factor)
                 .context("Failed to load STL")?;
-            eprintln!(
-                "  {} vertices, {} triangles",
-                mesh.vertices.len(),
-                mesh.faces.len()
-            );
+            eprintln!("  {} vertices, {} triangles", mesh.vertices.len(), mesh.faces.len());
             eprintln!(
                 "  Bounding box: ({:.2}, {:.2}, {:.2}) to ({:.2}, {:.2}, {:.2})",
                 mesh.bbox.min.x, mesh.bbox.min.y, mesh.bbox.min.z,
@@ -162,37 +363,16 @@ fn main() -> Result<()> {
             let elapsed = start.elapsed();
             eprintln!(
                 "  {}x{} grid ({} points) in {:.2}s",
-                grid.cols,
-                grid.rows,
-                grid.points.len(),
-                elapsed.as_secs_f64()
+                grid.cols, grid.rows, grid.points.len(), elapsed.as_secs_f64()
             );
 
-            eprintln!("Generating toolpath...");
             let toolpath = raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z);
             eprintln!(
                 "  {} moves, cutting={:.1}mm, rapid={:.1}mm",
-                toolpath.moves.len(),
-                toolpath.total_cutting_distance(),
-                toolpath.total_rapid_distance(),
+                toolpath.moves.len(), toolpath.total_cutting_distance(), toolpath.total_rapid_distance(),
             );
 
-            let post_proc = get_post_processor(&post)
-                .context(format!("Unknown post-processor '{}'. Supported: grbl, linuxcnc", post))?;
-
-            eprintln!("Emitting G-code ({})...", post_proc.name());
-            let gcode = emit_gcode(&toolpath, post_proc.as_ref(), spindle_speed);
-
-            std::fs::write(&output, &gcode)
-                .context("Failed to write output file")?;
-            eprintln!("Wrote {} bytes to {}", gcode.len(), output.display());
-
-            if let Some(svg_path) = svg {
-                let svg_content = rs_cam_core::viz::toolpath_to_svg(&toolpath, 800.0, 600.0);
-                std::fs::write(&svg_path, &svg_content)
-                    .context("Failed to write SVG file")?;
-                eprintln!("Wrote SVG preview to {}", svg_path.display());
-            }
+            emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
             if let Some(view_path) = view {
                 eprintln!("Generating 3D viewer...");
@@ -201,6 +381,148 @@ fn main() -> Result<()> {
                     .context("Failed to write 3D viewer file")?;
                 eprintln!("Wrote 3D viewer to {} ({:.1} MB)", view_path.display(), html.len() as f64 / 1_048_576.0);
             }
+        }
+
+        Commands::Pocket {
+            input, tool, stepover, depth, depth_per_pass, feed_rate, plunge_rate,
+            spindle_speed, safe_z, pattern, angle, climb, entry, post, output, svg,
+        } => {
+            let cutter = parse_tool(&tool)?;
+            let tool_radius = cutter.diameter() / 2.0;
+            eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
+
+            let polygons = load_polygons(&input)?;
+            eprintln!("Loaded {} polygon(s) from {}", polygons.len(), input.display());
+
+            let depth_stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
+            eprintln!(
+                "Depth: {:.1}mm total, {:.1}mm/pass ({} passes)",
+                depth, depth_per_pass, depth_stepping.roughing_pass_count()
+            );
+
+            let start = std::time::Instant::now();
+            let mut toolpath = Toolpath::new();
+
+            for (i, poly) in polygons.iter().enumerate() {
+                eprintln!("  Polygon {}: {} vertices, area={:.1}mm²", i, poly.exterior.len(), poly.area());
+
+                let poly_tp = depth_stepped_toolpath(&depth_stepping, safe_z, |z| {
+                    match pattern {
+                        ClearingPattern::Contour => pocket_toolpath(
+                            poly,
+                            &PocketParams {
+                                tool_radius,
+                                stepover,
+                                cut_depth: z,
+                                feed_rate,
+                                plunge_rate,
+                                safe_z,
+                                climb,
+                            },
+                        ),
+                        ClearingPattern::Zigzag => zigzag_toolpath(
+                            poly,
+                            &ZigzagParams {
+                                tool_radius,
+                                stepover,
+                                cut_depth: z,
+                                feed_rate,
+                                plunge_rate,
+                                safe_z,
+                                angle,
+                            },
+                        ),
+                    }
+                });
+
+                toolpath.moves.extend(poly_tp.moves);
+            }
+
+            // Apply entry dressup
+            if let Some(entry_style) = parse_entry_style(&entry)? {
+                eprintln!("Applying {} entry...", entry);
+                toolpath = apply_entry(&toolpath, entry_style, plunge_rate);
+            }
+
+            let elapsed = start.elapsed();
+            eprintln!(
+                "Generated {} moves, cutting={:.1}mm, rapid={:.1}mm in {:.2}s",
+                toolpath.moves.len(), toolpath.total_cutting_distance(),
+                toolpath.total_rapid_distance(), elapsed.as_secs_f64()
+            );
+
+            emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
+        }
+
+        Commands::Profile {
+            input, tool, depth, depth_per_pass, side, feed_rate, plunge_rate,
+            spindle_speed, safe_z, climb, tabs, tab_width, tab_height,
+            entry, post, output, svg,
+        } => {
+            let cutter = parse_tool(&tool)?;
+            let tool_radius = cutter.diameter() / 2.0;
+            eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
+
+            let profile_side = match side.to_lowercase().as_str() {
+                "outside" | "out" => ProfileSide::Outside,
+                "inside" | "in" => ProfileSide::Inside,
+                _ => bail!("Unknown side '{}'. Supported: inside, outside", side),
+            };
+
+            let polygons = load_polygons(&input)?;
+            eprintln!("Loaded {} polygon(s) from {}", polygons.len(), input.display());
+
+            let depth_stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
+            eprintln!(
+                "Depth: {:.1}mm total, {:.1}mm/pass ({} passes), side={}",
+                depth, depth_per_pass, depth_stepping.roughing_pass_count(), side
+            );
+
+            let start = std::time::Instant::now();
+            let mut toolpath = Toolpath::new();
+
+            for (i, poly) in polygons.iter().enumerate() {
+                eprintln!("  Polygon {}: {} vertices", i, poly.exterior.len());
+
+                let poly_tp = depth_stepped_toolpath(&depth_stepping, safe_z, |z| {
+                    profile_toolpath(
+                        poly,
+                        &ProfileParams {
+                            tool_radius,
+                            side: profile_side,
+                            cut_depth: z,
+                            feed_rate,
+                            plunge_rate,
+                            safe_z,
+                            climb,
+                        },
+                    )
+                });
+
+                toolpath.moves.extend(poly_tp.moves);
+            }
+
+            // Apply entry dressup
+            if let Some(entry_style) = parse_entry_style(&entry)? {
+                eprintln!("Applying {} entry...", entry);
+                toolpath = apply_entry(&toolpath, entry_style, plunge_rate);
+            }
+
+            // Apply tabs (on final depth pass only)
+            if tabs > 0 {
+                eprintln!("Adding {} tabs ({}mm wide, {}mm high)...", tabs, tab_width, tab_height);
+                let tab_list = even_tabs(tabs, tab_width, tab_height);
+                toolpath = apply_tabs(&toolpath, &tab_list, -depth);
+            }
+
+            let elapsed = start.elapsed();
+            eprintln!(
+                "Generated {} moves, cutting={:.1}mm, rapid={:.1}mm in {:.2}s",
+                toolpath.moves.len(), toolpath.total_cutting_distance(),
+                toolpath.total_rapid_distance(), elapsed.as_secs_f64()
+            );
+
+            emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
         }
     }
 

@@ -10,3 +10,6 @@ pub mod pocket;
 pub mod profile;
 pub mod zigzag;
 pub mod depth;
+pub mod svg_input;
+pub mod dxf_input;
+pub mod dressup;
