@@ -11,6 +11,7 @@ use rs_cam_core::{
     pocket::{PocketParams, pocket_toolpath},
     polygon::Polygon2,
     profile::{ProfileParams, ProfileSide, profile_toolpath},
+    adaptive::{AdaptiveParams, adaptive_toolpath},
     simulation::{Heightmap, simulate_toolpath},
     tool::{BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill},
     toolpath::{Toolpath, raster_toolpath_from_grid},
@@ -237,6 +238,72 @@ enum Commands {
         /// Entry style: plunge, ramp, helix
         #[arg(long, default_value = "plunge")]
         entry: String,
+
+        /// Post-processor: grbl, linuxcnc
+        #[arg(long, default_value = "grbl")]
+        post: String,
+
+        /// Output G-code file
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Optional SVG preview output
+        #[arg(long)]
+        svg: Option<PathBuf>,
+
+        /// Optional 3D HTML viewer output
+        #[arg(long)]
+        view: Option<PathBuf>,
+
+        /// Enable material removal simulation in viewer (requires --view)
+        #[arg(long)]
+        simulate: bool,
+
+        /// Simulation grid resolution in mm (default 0.25)
+        #[arg(long, default_value = "0.25")]
+        sim_resolution: f64,
+    },
+
+    /// Adaptive clearing with constant engagement from SVG or DXF boundary
+    Adaptive {
+        /// Input file (SVG or DXF)
+        input: PathBuf,
+
+        /// Tool specification: type:diameter (e.g., flat:6.35)
+        #[arg(long)]
+        tool: String,
+
+        /// Step-over distance in mm
+        #[arg(long, default_value = "2.0")]
+        stepover: f64,
+
+        /// Total depth in mm (positive, e.g. 12.0)
+        #[arg(long)]
+        depth: f64,
+
+        /// Maximum depth per pass in mm
+        #[arg(long, default_value = "3.0")]
+        depth_per_pass: f64,
+
+        /// Feed rate in mm/min
+        #[arg(long, default_value = "1000.0")]
+        feed_rate: f64,
+
+        /// Plunge rate in mm/min
+        #[arg(long, default_value = "500.0")]
+        plunge_rate: f64,
+
+        /// Spindle speed in RPM
+        #[arg(long, default_value = "18000")]
+        spindle_speed: u32,
+
+        /// Safe Z height for rapid moves
+        #[arg(long, default_value = "10.0")]
+        safe_z: f64,
+
+        /// Path tolerance in mm
+        #[arg(long, default_value = "0.1")]
+        tolerance: f64,
 
         /// Post-processor: grbl, linuxcnc
         #[arg(long, default_value = "grbl")]
@@ -713,6 +780,87 @@ fn main() -> Result<()> {
                 eprintln!("Adding {} tabs ({}mm wide, {}mm high)...", tabs, tab_width, tab_height);
                 let tab_list = even_tabs(tabs, tab_width, tab_height);
                 toolpath = apply_tabs(&toolpath, &tab_list, -depth);
+            }
+
+            let elapsed = start.elapsed();
+            eprintln!(
+                "Generated {} moves, cutting={:.1}mm, rapid={:.1}mm in {:.2}s",
+                toolpath.moves.len(), toolpath.total_cutting_distance(),
+                toolpath.total_rapid_distance(), elapsed.as_secs_f64()
+            );
+
+            emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
+
+            if let Some(view_path) = view {
+                let html = if simulate {
+                    eprintln!("Running simulation (resolution={:.2}mm)...", sim_resolution);
+                    let tp_bbox = toolpath_bbox(&toolpath);
+                    let margin = cutter.radius();
+                    let sim_bbox = BoundingBox3 {
+                        min: rs_cam_core::geo::P3::new(
+                            tp_bbox.min.x - margin,
+                            tp_bbox.min.y - margin,
+                            tp_bbox.min.z,
+                        ),
+                        max: rs_cam_core::geo::P3::new(
+                            tp_bbox.max.x + margin,
+                            tp_bbox.max.y + margin,
+                            0.0,
+                        ),
+                    };
+                    let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_resolution);
+                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
+                    eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
+                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, None, cutter.as_ref())
+                } else {
+                    rs_cam_core::viz::toolpath_standalone_3d_html(&toolpath, None)
+                };
+                std::fs::write(&view_path, &html)
+                    .context("Failed to write 3D viewer file")?;
+                eprintln!("Wrote 3D viewer to {}", view_path.display());
+            }
+        }
+
+        Commands::Adaptive {
+            input, tool, stepover, depth, depth_per_pass, feed_rate, plunge_rate,
+            spindle_speed, safe_z, tolerance, post, output, svg, view,
+            simulate, sim_resolution,
+        } => {
+            let cutter = parse_tool(&tool)?;
+            let tool_radius = cutter.diameter() / 2.0;
+            eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
+
+            let polygons = load_polygons(&input)?;
+            eprintln!("Loaded {} polygon(s) from {}", polygons.len(), input.display());
+
+            let depth_stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
+            eprintln!(
+                "Depth: {:.1}mm total, {:.1}mm/pass ({} passes)",
+                depth, depth_per_pass, depth_stepping.roughing_pass_count()
+            );
+
+            let start = std::time::Instant::now();
+            let mut toolpath = Toolpath::new();
+
+            for (i, poly) in polygons.iter().enumerate() {
+                eprintln!("  Polygon {}: {} vertices, area={:.1}mm²", i, poly.exterior.len(), poly.area());
+
+                let poly_tp = depth_stepped_toolpath(&depth_stepping, safe_z, |z| {
+                    adaptive_toolpath(
+                        poly,
+                        &AdaptiveParams {
+                            tool_radius,
+                            stepover,
+                            cut_depth: z,
+                            feed_rate,
+                            plunge_rate,
+                            safe_z,
+                            tolerance,
+                        },
+                    )
+                });
+
+                toolpath.moves.extend(poly_tp.moves);
             }
 
             let elapsed = start.elapsed();
