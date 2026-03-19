@@ -20,3 +20,4 @@ pub mod adaptive;
 pub mod arcfit;
 pub mod simulation;
 pub mod vcarve;
+pub mod rest;

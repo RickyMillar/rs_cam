@@ -40,6 +40,7 @@ use rs_cam_core::{
     pocket::{PocketParams, pocket_toolpath},
     polygon::Polygon2,
     profile::{ProfileParams, ProfileSide, profile_toolpath},
+    rest::{RestParams, rest_machining_toolpath},
     toolpath::Toolpath,
     zigzag::{ZigzagParams, zigzag_toolpath},
 };
@@ -127,6 +128,9 @@ pub struct OperationDef {
     pub tolerance: Option<f64>,
     pub slot_clearing: Option<bool>,
     pub min_cutting_radius: Option<f64>,
+
+    // Rest machining-specific
+    pub prev_tool: Option<String>,
 }
 
 // ── Parsing ────────────────────────────────────────────────────────────
@@ -349,7 +353,44 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<Toolpath> {
                 tp
             }
 
-            _ => bail!("Unknown operation type '{}'. Supported: pocket, profile, adaptive", op.op_type),
+            "rest" => {
+                let polygons = load_polygons_from(&input_path)?;
+                let depth = op.depth.context("Rest requires 'depth'")?;
+                let depth_per_pass = op.depth_per_pass.unwrap_or(3.0);
+                let stepover = op.stepover.unwrap_or(1.0);
+                let angle = op.angle.unwrap_or(0.0);
+                let stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
+
+                let prev_tool_name = op.prev_tool.as_ref()
+                    .context("Rest requires 'prev_tool' referencing the larger tool")?;
+                let prev_tool_def = job.tools.get(prev_tool_name)
+                    .context(format!("Rest 'prev_tool' references unknown tool '{}'", prev_tool_name))?;
+                let prev_cutter = build_tool(prev_tool_def)?;
+                let prev_tool_radius = prev_cutter.diameter() / 2.0;
+
+                eprintln!("  {} polygon(s), depth={:.1}mm, prev_tool={} ({:.1}mm)",
+                    polygons.len(), depth, prev_tool_name, prev_cutter.diameter());
+
+                let mut tp = Toolpath::new();
+                for poly in &polygons {
+                    let poly_tp = depth_stepped_toolpath(&stepping, safe_z, |z| {
+                        rest_machining_toolpath(poly, &RestParams {
+                            prev_tool_radius,
+                            tool_radius,
+                            cut_depth: z,
+                            stepover,
+                            feed_rate,
+                            plunge_rate,
+                            safe_z,
+                            angle,
+                        })
+                    });
+                    tp.moves.extend(poly_tp.moves);
+                }
+                tp
+            }
+
+            _ => bail!("Unknown operation type '{}'. Supported: pocket, profile, adaptive, rest", op.op_type),
         };
 
         eprintln!(

@@ -9,7 +9,7 @@ Read this FIRST at the start of every session. Update LAST before ending.
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 287 tests passing (285 unit + 2 integration)
+- [x] Core library + CLI compiling, 299 tests passing (297 unit + 2 integration)
 - [x] Phase 1 complete: STL → drop-cutter → G-code pipeline with 3D HTML viewer
 - [x] Phase 2 complete: 2.5D operations (pocket, profile, zigzag, depth stepping, SVG/DXF input, dressups, CLI)
 - [x] Phase 3 complete: Advanced tools (BullNose, VBit, TaperedBall), push-cutter, waterline, arc fitting, G2/G3
@@ -75,7 +75,7 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] 4.1c Adaptive: disk-area engagement — replaced 24-point circumference sampling with full disk-area cell counting for precise engagement
 - [x] 4.1d Adaptive: link vs retract logic — keep tool down between nearby passes when path is clear (56% rapid reduction)
 - [x] 4.2 V-carving — scan-line V-carve with exact Euclidean distance, variable Z, max depth clamp, CLI subcommand (vcarve.rs)
-- [ ] 4.3 Rest machining
+- [x] 4.3 Rest machining — geometric comparison (large vs small tool offset), masked zigzag scan lines, CLI + TOML integration (rest.rs)
 - [ ] 4.7 3D adaptive clearing (see 3D Adaptive Deep Dive below)
 - [x] 4.4 TOML job file parsing — multi-tool, multi-operation job files with per-op overrides (job.rs, demo_job.toml)
 - [x] 4.5 Dogbone dressup — inside corner overcuts with configurable angle threshold (dressup.rs)
@@ -112,7 +112,8 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 | arcfit | `rs_cam_core/src/arcfit.rs` | fit_arcs (biarc fitting, linear → G2/G3) |
 | adaptive | `rs_cam_core/src/adaptive.rs` | Adaptive clearing: MaterialGrid, engagement, direction search, path generation |
 | vcarve | `rs_cam_core/src/vcarve.rs` | V-carving: distance-to-boundary, variable-depth scan-line toolpath |
-| CLI | `rs_cam_cli/src/main.rs` | drop-cutter, pocket, profile, adaptive, vcarve, waterline subcommands |
+| rest | `rs_cam_core/src/rest.rs` | Rest machining: geometric comparison, masked zigzag in unreachable corners |
+| CLI | `rs_cam_cli/src/main.rs` | drop-cutter, pocket, profile, adaptive, vcarve, rest, waterline subcommands |
 
 ## Decisions Log
 
