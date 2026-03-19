@@ -1290,7 +1290,7 @@ fn main() -> Result<()> {
 
             if let Some(view_path) = view {
                 let html = if simulate {
-                    eprintln!("Running simulation (resolution={:.2}mm)...", sim_resolution);
+                    eprintln!("Running stacked simulation (resolution={:.2}mm)...", sim_resolution);
                     let tp_bbox = toolpath_bbox(&toolpath);
                     let margin = prev_cutter.radius();
                     let sim_bbox = BoundingBox3 {
@@ -1305,9 +1305,9 @@ fn main() -> Result<()> {
                             0.0,
                         ),
                     };
-                    let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_resolution);
 
-                    // First simulate the previous (large) tool doing a full pocket
+                    // Generate the previous (large) tool's pocket toolpath
+                    let mut prev_toolpath = Toolpath::new();
                     for poly in &polygons {
                         let prev_tp = depth_stepped_toolpath(&depth_stepping, safe_z, |z| {
                             zigzag_toolpath(
@@ -1323,13 +1323,30 @@ fn main() -> Result<()> {
                                 },
                             )
                         });
-                        simulate_toolpath(&prev_tp, prev_cutter.as_ref(), &mut hm);
+                        prev_toolpath.moves.extend(prev_tp.moves);
                     }
 
-                    // Then simulate the rest machining passes on top
+                    // Simulate both into the heightmap for final state
+                    let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_resolution);
+                    simulate_toolpath(&prev_toolpath, prev_cutter.as_ref(), &mut hm);
                     simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
-                    eprintln!("  {}x{} heightmap (prev tool + rest passes)", hm.cols, hm.rows);
-                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, None, cutter.as_ref())
+                    eprintln!("  {}x{} heightmap, 2 phases", hm.cols, hm.rows);
+
+                    // Stacked viewer: animates roughing then rest
+                    use rs_cam_core::viz::SimPhase;
+                    let phases = vec![
+                        SimPhase {
+                            toolpath: &prev_toolpath,
+                            cutter: prev_cutter.as_ref(),
+                            label: format!("Roughing ({:.2}mm {})", prev_cutter.diameter(), prev_tool),
+                        },
+                        SimPhase {
+                            toolpath: &toolpath,
+                            cutter: cutter.as_ref(),
+                            label: format!("Rest ({:.2}mm {})", cutter.diameter(), tool),
+                        },
+                    ];
+                    rs_cam_core::viz::stacked_simulation_3d_html(&phases, &hm, None)
                 } else {
                     rs_cam_core::viz::toolpath_standalone_3d_html(&toolpath, None)
                 };
