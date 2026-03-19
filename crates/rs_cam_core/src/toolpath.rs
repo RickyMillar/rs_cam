@@ -35,7 +35,7 @@ pub struct Move {
 }
 
 /// A complete toolpath: a sequence of moves.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Toolpath {
     pub moves: Vec<Move>,
 }

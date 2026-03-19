@@ -163,19 +163,19 @@ impl MillingCutter for TaperedBallEndmill {
             let cc_x = cl.x - r_ball * n.x;
             let cc_y = cl.y - r_ball * n.y;
 
-            if tri.contains_point_xy(cc_x, cc_y) {
-                if let Some(cc_z) = tri.z_at_xy(cc_x, cc_y) {
-                    let rv_z = r_ball * n.z;
-                    let tip_z = cc_z + rv_z - r_ball;
+            if tri.contains_point_xy(cc_x, cc_y)
+                && let Some(cc_z) = tri.z_at_xy(cc_x, cc_y)
+            {
+                let rv_z = r_ball * n.z;
+                let tip_z = cc_z + rv_z - r_ball;
 
-                    // Validate: CC must be in ball region (r <= r_contact from CL axis)
-                    let cc_dx = cc_x - cl.x;
-                    let cc_dy = cc_y - cl.y;
-                    let cc_r = (cc_dx * cc_dx + cc_dy * cc_dy).sqrt();
-                    if cc_r <= rc + 1e-8 {
-                        cl.update_z(tip_z);
-                        found = true;
-                    }
+                // Validate: CC must be in ball region (r <= r_contact from CL axis)
+                let cc_dx = cc_x - cl.x;
+                let cc_dy = cc_y - cl.y;
+                let cc_r = (cc_dx * cc_dx + cc_dy * cc_dy).sqrt();
+                if cc_r <= rc + 1e-8 {
+                    cl.update_z(tip_z);
+                    found = true;
                 }
             }
         }
@@ -187,29 +187,29 @@ impl MillingCutter for TaperedBallEndmill {
             let cc_x = cl.x - r_shaft * xy_nx;
             let cc_y = cl.y - r_shaft * xy_ny;
 
-            if tri.contains_point_xy(cc_x, cc_y) {
-                if let Some(cc_z) = tri.z_at_xy(cc_x, cc_y) {
-                    let cone_ch = r_shaft / self.alpha().tan() + self.cone_offset();
-                    let tip_z = cc_z - cone_ch;
+            if tri.contains_point_xy(cc_x, cc_y)
+                && let Some(cc_z) = tri.z_at_xy(cc_x, cc_y)
+            {
+                let cone_ch = r_shaft / self.alpha().tan() + self.cone_offset();
+                let tip_z = cc_z - cone_ch;
 
-                    // Validate: CC must be in cone region (r > r_contact from CL axis)
-                    let cc_dx = cc_x - cl.x;
-                    let cc_dy = cc_y - cl.y;
-                    let cc_r = (cc_dx * cc_dx + cc_dy * cc_dy).sqrt();
-                    if cc_r > rc - 1e-8 {
-                        cl.update_z(tip_z);
-                        found = true;
-                    }
+                // Validate: CC must be in cone region (r > r_contact from CL axis)
+                let cc_dx = cc_x - cl.x;
+                let cc_dy = cc_y - cl.y;
+                let cc_r = (cc_dx * cc_dx + cc_dy * cc_dy).sqrt();
+                if cc_r > rc - 1e-8 {
+                    cl.update_z(tip_z);
+                    found = true;
                 }
             }
         }
 
         // Region 2 also: Tip contact on horizontal surfaces (cone tip is the ball tip)
-        if tri.contains_point_xy(cl.x, cl.y) {
-            if let Some(cc_z) = tri.z_at_xy(cl.x, cl.y) {
-                cl.update_z(cc_z);
-                found = true;
-            }
+        if tri.contains_point_xy(cl.x, cl.y)
+            && let Some(cc_z) = tri.z_at_xy(cl.x, cl.y)
+        {
+            cl.update_z(cc_z);
+            found = true;
         }
 
         found
@@ -259,7 +259,7 @@ impl MillingCutter for TaperedBallEndmill {
                 let dt = s * cos_a / edge_len_xy;
                 let t = t_closest + dt;
 
-                if t < -1e-8 || t > 1.0 + 1e-8 {
+                if !(-1e-8..=1.0 + 1e-8).contains(&t) {
                     continue;
                 }
 
@@ -267,7 +267,7 @@ impl MillingCutter for TaperedBallEndmill {
                 // Contact point on edge at parameter t, distance from CL axis
                 let edge_x = p1.x + t * dx;
                 let edge_y = p1.y + t * dy;
-                let contact_r_from_cl = ((edge_x - cl.x).powi(2) + (edge_y - cl.y).powi(2)).sqrt();
+                let _contact_r_from_cl = ((edge_x - cl.x).powi(2) + (edge_y - cl.y).powi(2)).sqrt();
 
                 // The CC point on the ball at this contact should be within r_contact
                 // For ball: CC is at the point on the sphere closest to the edge
@@ -293,7 +293,7 @@ impl MillingCutter for TaperedBallEndmill {
                 let u = sign * xu;
                 let dt = u / edge_len_xy;
                 let t = t_closest + dt;
-                if t >= -1e-8 && t <= 1.0 + 1e-8 {
+                if (-1e-8..=1.0 + 1e-8).contains(&t) {
                     let cc_z = p1.z + t * dz;
                     let tip_z = cc_z - cone_ch;
                     cl.update_z(tip_z);
@@ -310,7 +310,7 @@ impl MillingCutter for TaperedBallEndmill {
                 for &ccu_signed in &[ccu, -ccu] {
                     let dt = ccu_signed / edge_len_xy;
                     let t = t_closest + dt;
-                    if t >= -1e-8 && t <= 1.0 + 1e-8 {
+                    if (-1e-8..=1.0 + 1e-8).contains(&t) {
                         let cc_z = p1.z + t * dz;
                         let r_contact_edge = (ccu_signed * ccu_signed + d_sq).sqrt();
                         // Must be in cone region

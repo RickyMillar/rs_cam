@@ -134,9 +134,9 @@ pub fn emit_gcode(
                     last_feed = Some(feed_rate);
                 } else {
                     let dp = post.decimal_places();
-                    write!(
+                    writeln!(
                         output,
-                        "G1 X{:.dp$} Y{:.dp$} Z{:.dp$}\n",
+                        "G1 X{:.dp$} Y{:.dp$} Z{:.dp$}",
                         m.target.x, m.target.y, m.target.z
                     )
                     .unwrap();

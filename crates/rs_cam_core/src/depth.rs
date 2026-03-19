@@ -199,10 +199,10 @@ where
         let finish_tp = finish_op(finish_z);
         if !finish_tp.moves.is_empty() {
             // Ensure retract before finish pass
-            if let Some(last) = tp.moves.last() {
-                if last.target.z < safe_z - 0.001 {
-                    tp.rapid_to(P3::new(last.target.x, last.target.y, safe_z));
-                }
+            if let Some(last) = tp.moves.last()
+                && last.target.z < safe_z - 0.001
+            {
+                tp.rapid_to(P3::new(last.target.x, last.target.y, safe_z));
             }
             tp.moves.extend(finish_tp.moves);
         }
@@ -224,12 +224,11 @@ where
         }
 
         // Ensure retract between levels (not before first)
-        if i > 0 {
-            if let Some(last) = tp.moves.last() {
-                if last.target.z < safe_z - 0.001 {
-                    tp.rapid_to(P3::new(last.target.x, last.target.y, safe_z));
-                }
-            }
+        if i > 0
+            && let Some(last) = tp.moves.last()
+            && last.target.z < safe_z - 0.001
+        {
+            tp.rapid_to(P3::new(last.target.x, last.target.y, safe_z));
         }
 
         tp.moves.extend(level_tp.moves);
@@ -707,17 +706,17 @@ mod tests {
         // Track deepest cutting Z seen so far
         let mut deepest_cut_z = 0.0_f64;
         for m in &tp.moves {
-            if let MoveType::Linear { feed_rate } = m.move_type {
-                if (feed_rate - 1000.0).abs() < 1e-10 {
-                    // This is a cutting move
-                    assert!(
-                        m.target.z <= deepest_cut_z + 0.01,
-                        "Cutting at z={} after already reaching z={}",
-                        m.target.z,
-                        deepest_cut_z
-                    );
-                    deepest_cut_z = deepest_cut_z.min(m.target.z);
-                }
+            if let MoveType::Linear { feed_rate } = m.move_type
+                && (feed_rate - 1000.0).abs() < 1e-10
+            {
+                // This is a cutting move
+                assert!(
+                    m.target.z <= deepest_cut_z + 0.01,
+                    "Cutting at z={} after already reaching z={}",
+                    m.target.z,
+                    deepest_cut_z
+                );
+                deepest_cut_z = deepest_cut_z.min(m.target.z);
             }
         }
     }

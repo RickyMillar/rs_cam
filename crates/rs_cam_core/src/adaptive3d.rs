@@ -27,20 +27,15 @@ use rayon::prelude::*;
 use std::f64::consts::{PI, TAU};
 
 /// Entry strategy for 3D adaptive (replaces vertical plunge).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum EntryStyle3d {
     /// Vertical plunge (default prior behavior).
+    #[default]
     Plunge,
     /// Helical entry: spiral down with given radius and pitch (mm/rev).
     Helix { radius: f64, pitch: f64 },
     /// Ramp entry: descend at a shallow angle along the next cutting direction.
     Ramp { max_angle_deg: f64 },
-}
-
-impl Default for EntryStyle3d {
-    fn default() -> Self {
-        EntryStyle3d::Plunge
-    }
 }
 
 /// Parameters for 3D adaptive clearing.
@@ -69,7 +64,6 @@ pub struct Adaptive3dParams {
 
 /// Precomputed mesh surface Z heights at grid resolution.
 /// One parallel batch of drop-cutter queries at init, then O(1) lookups.
-#[allow(dead_code)]
 struct SurfaceHeightmap {
     z_values: Vec<f64>,
     rows: usize,
@@ -122,7 +116,6 @@ impl SurfaceHeightmap {
     }
 
     /// Surface Z at world coordinates. Returns min representable for out-of-bounds.
-    #[allow(dead_code)]
     fn surface_z_at_world(&self, x: f64, y: f64) -> f64 {
         let col_f = (x - self.origin_x) / self.cell_size;
         let row_f = (y - self.origin_y) / self.cell_size;
@@ -374,52 +367,53 @@ fn search_direction_3d(
     }
 
     // Try bracket interpolation if we have both sides
-    if let (Some(lo), Some(hi)) = (bracket_lo, bracket_hi) {
-        if (hi.1 - lo.1).abs() > 0.001 {
-            let t = (target_frac - lo.1) / (hi.1 - lo.1);
-            let diff = angle_diff(hi.0, lo.0);
-            let interp_angle = lo.0 + t * diff;
+    if let (Some(lo), Some(hi)) = (bracket_lo, bracket_hi)
+        && (hi.1 - lo.1).abs() > 0.001
+    {
+        let t = (target_frac - lo.1) / (hi.1 - lo.1);
+        let diff = angle_diff(hi.0, lo.0);
+        let interp_angle = lo.0 + t * diff;
 
-            if let Some((score, z)) = evaluate(interp_angle) {
-                if best.is_none() || score < best.unwrap().0 {
-                    best = Some((score, interp_angle, z));
-                }
-            }
+        if let Some((score, z)) = evaluate(interp_angle)
+            && (best.is_none() || score < best.unwrap().0)
+        {
+            best = Some((score, interp_angle, z));
         }
     }
 
+
     // If narrow search found a good result, return it
-    if let Some((score, angle, z)) = best {
-        if score < 0.15 {
-            return Some((angle, z));
-        }
+    if let Some((score, angle, z)) = best
+        && score < 0.15
+    {
+        return Some((angle, z));
     }
 
     // Phase 2: Forward sweep +/-90 degrees (19 candidates)
     let mut fallback: Option<(f64, f64, f64)> = best;
     for i in 0..19 {
         let angle = prev_angle - PI / 2.0 + (i as f64 / 18.0) * PI;
-        if let Some((score, z)) = evaluate(angle) {
-            if fallback.is_none() || score < fallback.unwrap().0 {
-                fallback = Some((score, angle, z));
-            }
+        if let Some((score, z)) = evaluate(angle)
+            && (fallback.is_none() || score < fallback.unwrap().0)
+        {
+            fallback = Some((score, angle, z));
         }
     }
 
-    if let Some((score, angle, z)) = fallback {
-        if score < 0.3 {
-            return Some((angle, z));
-        }
+    if let Some((score, angle, z)) = fallback
+        && score < 0.3
+    {
+        return Some((angle, z));
     }
 
     // Phase 3: Full 360 (36 candidates, allows U-turns)
     let mut fallback2: Option<(f64, f64, f64)> = fallback;
     for i in 0..36 {
         let angle = (i as f64 / 36.0) * TAU;
-        if let Some((score, z)) = evaluate(angle) {
-            if fallback2.is_none() || score < fallback2.unwrap().0 {
-                fallback2 = Some((score, angle, z));
-            }
+        if let Some((score, z)) = evaluate(angle)
+            && (fallback2.is_none() || score < fallback2.unwrap().0)
+        {
+            fallback2 = Some((score, angle, z));
         }
     }
 
@@ -778,36 +772,36 @@ fn adaptive_3d_segments(
     }
 
     // Fix 4: Fine stepdown — insert intermediate Z levels between major levels
-    if let Some(fine_step) = params.fine_stepdown {
-        if fine_step > 0.0 && fine_step < params.depth_per_pass {
-            let major_levels = z_levels.clone();
-            let mut all_levels = Vec::new();
-            // Insert intermediates between stock_top and first level
-            let first_start = params.stock_top_z;
-            for window in std::iter::once(&first_start)
-                .chain(major_levels.iter())
-                .collect::<Vec<_>>()
-                .windows(2)
-            {
-                let z_top = *window[0];
-                let z_bot = *window[1];
-                let mut iz = z_top - fine_step;
-                while iz > z_bot + fine_step * 0.5 {
-                    all_levels.push(iz);
-                    iz -= fine_step;
-                }
-                all_levels.push(z_bot); // Always include the major level
+    if let Some(fine_step) = params.fine_stepdown
+        && fine_step > 0.0 && fine_step < params.depth_per_pass
+    {
+        let major_levels = z_levels.clone();
+        let mut all_levels = Vec::new();
+        // Insert intermediates between stock_top and first level
+        let first_start = params.stock_top_z;
+        for window in std::iter::once(&first_start)
+            .chain(major_levels.iter())
+            .collect::<Vec<_>>()
+            .windows(2)
+        {
+            let z_top = *window[0];
+            let z_bot = *window[1];
+            let mut iz = z_top - fine_step;
+            while iz > z_bot + fine_step * 0.5 {
+                all_levels.push(iz);
+                iz -= fine_step;
             }
-            all_levels.sort_by(|a, b| b.partial_cmp(a).unwrap());
-            all_levels.dedup_by(|a, b| (*a - *b).abs() < 0.01);
-            eprintln!(
-                "  Fine stepdown: {} -> {} Z levels (fine_step={:.1})",
-                z_levels.len(),
-                all_levels.len(),
-                fine_step
-            );
-            z_levels = all_levels;
+            all_levels.push(z_bot); // Always include the major level
         }
+        all_levels.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        all_levels.dedup_by(|a, b| (*a - *b).abs() < 0.01);
+        eprintln!(
+            "  Fine stepdown: {} -> {} Z levels (fine_step={:.1})",
+            z_levels.len(),
+            all_levels.len(),
+            fine_step
+        );
+        z_levels = all_levels;
     }
 
     eprintln!(
@@ -1276,7 +1270,7 @@ mod tests {
             for col in 1..shm.cols - 1 {
                 let z = shm.surface_z_at(row, col);
                 assert!(
-                    z >= -1.0 && z <= 1.0,
+                    (-1.0..=1.0).contains(&z),
                     "Interior flat mesh Z should be near 0, got {:.2} at ({}, {})",
                     z, row, col
                 );
@@ -1604,15 +1598,15 @@ mod tests {
 
         // All cutting moves should be at or above stock_to_leave
         for m in &tp.moves {
-            if let crate::toolpath::MoveType::Linear { .. } = m.move_type {
-                if m.target.z < params.safe_z - 1.0 {
-                    assert!(
-                        m.target.z >= params.stock_to_leave - 1.0,
-                        "Cut Z ({:.2}) should be >= stock_to_leave ({:.1}) - tolerance",
-                        m.target.z,
-                        params.stock_to_leave
-                    );
-                }
+            if let crate::toolpath::MoveType::Linear { .. } = m.move_type
+                && m.target.z < params.safe_z - 1.0
+            {
+                assert!(
+                    m.target.z >= params.stock_to_leave - 1.0,
+                    "Cut Z ({:.2}) should be >= stock_to_leave ({:.1}) - tolerance",
+                    m.target.z,
+                    params.stock_to_leave
+                );
             }
         }
     }

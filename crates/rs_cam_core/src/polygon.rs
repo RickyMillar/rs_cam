@@ -140,7 +140,7 @@ pub fn offset_polygon(polygon: &Polygon2, distance: f64) -> Vec<Polygon2> {
         // Simple case: just offset the exterior
         let pline = polygon.exterior_to_pline();
         let results = pline.parallel_offset(distance);
-        results.iter().map(|p| Polygon2::from_pline(p)).collect()
+        results.iter().map(Polygon2::from_pline).collect()
     } else {
         // Polygon with holes: use Shape to handle hole interaction
         use cavalier_contours::shape_algorithms::Shape;

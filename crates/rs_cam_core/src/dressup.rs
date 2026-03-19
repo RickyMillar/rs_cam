@@ -36,35 +36,35 @@ pub fn apply_entry(toolpath: &Toolpath, style: EntryStyle, plunge_rate: f64) -> 
         let m = &toolpath.moves[i];
 
         // Detect a plunge: Linear move that goes downward with no XY change
-        if let MoveType::Linear { feed_rate } = m.move_type {
-            if i > 0 && is_plunge(&toolpath.moves[i - 1], m) {
-                match style {
-                    EntryStyle::Ramp { max_angle_deg } => {
-                        // Look ahead for the next XY move to determine ramp direction
-                        let ramp_dir = find_next_xy_direction(&toolpath.moves, i);
-                        emit_ramp(
-                            &mut result,
-                            &toolpath.moves[i - 1].target,
-                            &m.target,
-                            ramp_dir,
-                            max_angle_deg,
-                            feed_rate.min(plunge_rate),
-                        );
-                    }
-                    EntryStyle::Helix { radius, pitch } => {
-                        emit_helix(
-                            &mut result,
-                            &toolpath.moves[i - 1].target,
-                            &m.target,
-                            radius,
-                            pitch,
-                            feed_rate.min(plunge_rate),
-                        );
-                    }
+        if let MoveType::Linear { feed_rate } = m.move_type
+            && i > 0 && is_plunge(&toolpath.moves[i - 1], m)
+        {
+            match style {
+                EntryStyle::Ramp { max_angle_deg } => {
+                    // Look ahead for the next XY move to determine ramp direction
+                    let ramp_dir = find_next_xy_direction(&toolpath.moves, i);
+                    emit_ramp(
+                        &mut result,
+                        &toolpath.moves[i - 1].target,
+                        &m.target,
+                        ramp_dir,
+                        max_angle_deg,
+                        feed_rate.min(plunge_rate),
+                    );
                 }
-                i += 1;
-                continue;
+                EntryStyle::Helix { radius, pitch } => {
+                    emit_helix(
+                        &mut result,
+                        &toolpath.moves[i - 1].target,
+                        &m.target,
+                        radius,
+                        pitch,
+                        feed_rate.min(plunge_rate),
+                    );
+                }
             }
+            i += 1;
+            continue;
         }
 
         result.moves.push(m.clone());

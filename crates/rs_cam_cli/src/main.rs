@@ -737,7 +737,7 @@ fn parse_entry_style(entry: &str) -> Result<Option<EntryStyle>> {
     }
 }
 
-fn load_polygons(path: &PathBuf) -> Result<Vec<Polygon2>> {
+fn load_polygons(path: &Path) -> Result<Vec<Polygon2>> {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())

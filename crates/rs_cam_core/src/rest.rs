@@ -90,7 +90,7 @@ pub fn rest_machining_toolpath(polygon: &Polygon2, params: &RestParams) -> Toolp
         );
     }
 
-    let sample_step = params.tool_radius.max(0.25).min(0.5);
+    let sample_step = params.tool_radius.clamp(0.25, 0.5);
 
     for line in &lines {
         let dx = line[1].x - line[0].x;

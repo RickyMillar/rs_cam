@@ -84,7 +84,7 @@ impl MillingCutter for VBitEndmill {
             return false;
         }
 
-        let alpha = self.half_angle();
+        let _alpha = self.half_angle();
         let big_r = self.radius();
         let nxy_len = (n.x * n.x + n.y * n.y).sqrt();
 
@@ -96,14 +96,12 @@ impl MillingCutter for VBitEndmill {
         let mut found = false;
 
         // Mode 1: Tip contact — CC at (cl.x, cl.y) projected onto triangle
-        if tri.contains_point_xy(cl.x, cl.y) {
-            if let Some(cc_z) = tri.z_at_xy(cl.x, cl.y) {
-                let tip_z = cc_z;
-                if tip_z > best_z {
-                    best_z = tip_z;
-                    found = true;
-                }
-            }
+        if tri.contains_point_xy(cl.x, cl.y)
+            && let Some(cc_z) = tri.z_at_xy(cl.x, cl.y)
+            && cc_z > best_z
+        {
+            best_z = cc_z;
+            found = true;
         }
 
         // Mode 2: Conical surface contact
@@ -120,15 +118,15 @@ impl MillingCutter for VBitEndmill {
             let cc_x = cl.x - big_r * xy_nx;
             let cc_y = cl.y - big_r * xy_ny;
 
-            if tri.contains_point_xy(cc_x, cc_y) {
-                if let Some(cc_z) = tri.z_at_xy(cc_x, cc_y) {
-                    // tip_z = cc_z + rv_z - center_height
-                    // rv_z = normal_length * n.z = 0
-                    let tip_z = cc_z - self.center_height();
-                    if tip_z > best_z {
-                        best_z = tip_z;
-                        found = true;
-                    }
+            if tri.contains_point_xy(cc_x, cc_y)
+                && let Some(cc_z) = tri.z_at_xy(cc_x, cc_y)
+            {
+                // tip_z = cc_z + rv_z - center_height
+                // rv_z = normal_length * n.z = 0
+                let tip_z = cc_z - self.center_height();
+                if tip_z > best_z {
+                    best_z = tip_z;
+                    found = true;
                 }
             }
         }
@@ -169,7 +167,7 @@ impl MillingCutter for VBitEndmill {
             return;
         }
 
-        let d = d_sq.sqrt();
+        let _d = d_sq.sqrt();
 
         // Edge slope
         let slope = dz / edge_len_xy; // dz per unit XY distance along edge
@@ -231,7 +229,7 @@ impl MillingCutter for VBitEndmill {
                 let dt = ccu_signed / edge_len_xy;
                 let t = t_closest + dt;
 
-                if t >= -1e-8 && t <= 1.0 + 1e-8 {
+                if (-1e-8..=1.0 + 1e-8).contains(&t) {
                     let cc_z = p1.z + t * dz;
                     // Distance from axis at contact
                     let r_contact = (ccu_signed * ccu_signed + d_sq).sqrt();
@@ -246,7 +244,7 @@ impl MillingCutter for VBitEndmill {
                     let ccu_neg = -ccu_signed;
                     let dt = ccu_neg / edge_len_xy;
                     let t = t_closest + dt;
-                    if t >= -1e-8 && t <= 1.0 + 1e-8 {
+                    if (-1e-8..=1.0 + 1e-8).contains(&t) {
                         let cc_z = p1.z + t * dz;
                         let r_contact = (ccu_neg * ccu_neg + d_sq).sqrt();
                         let h_contact = r_contact / tan_a;
@@ -263,7 +261,7 @@ impl MillingCutter for VBitEndmill {
             let u = sign * xu;
             let dt = u / edge_len_xy;
             let t = t_closest + dt;
-            if t >= -1e-8 && t <= 1.0 + 1e-8 {
+            if (-1e-8..=1.0 + 1e-8).contains(&t) {
                 let cc_z = p1.z + t * dz;
                 let tip_z = cc_z - ch;
                 cl.update_z(tip_z);

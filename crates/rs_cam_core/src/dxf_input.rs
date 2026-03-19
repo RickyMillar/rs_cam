@@ -266,9 +266,11 @@ mod tests {
 
     fn make_circle_drawing(cx: f64, cy: f64, radius: f64) -> dxf::Drawing {
         let mut drawing = dxf::Drawing::new();
-        let mut circle = dxf::entities::Circle::default();
-        circle.center = dxf::Point::new(cx, cy, 0.0);
-        circle.radius = radius;
+        let circle = dxf::entities::Circle {
+            center: dxf::Point::new(cx, cy, 0.0),
+            radius,
+            ..Default::default()
+        };
         drawing.add_entity(dxf::entities::Entity::new(
             dxf::entities::EntityType::Circle(circle),
         ));
@@ -373,9 +375,11 @@ mod tests {
         ));
 
         // Add a circle
-        let mut circle = dxf::entities::Circle::default();
-        circle.center = dxf::Point::new(50.0, 50.0, 0.0);
-        circle.radius = 20.0;
+        let circle = dxf::entities::Circle {
+            center: dxf::Point::new(50.0, 50.0, 0.0),
+            radius: 20.0,
+            ..Default::default()
+        };
         drawing.add_entity(dxf::entities::Entity::new(
             dxf::entities::EntityType::Circle(circle),
         ));

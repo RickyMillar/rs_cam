@@ -14,7 +14,7 @@ use crate::geo::P3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::pushcutter::batch_push_cutter;
 use crate::tool::MillingCutter;
-use crate::toolpath::{MoveType, Toolpath};
+use crate::toolpath::Toolpath;
 
 /// Parameters for waterline toolpath generation.
 pub struct WaterlineParams {
@@ -146,12 +146,7 @@ fn chain_contours(points: &[P3], max_gap: f64) -> Vec<Vec<P3>> {
     let mut used = vec![false; points.len()];
     let mut contours = Vec::new();
 
-    loop {
-        // Find first unused point
-        let start = match used.iter().position(|&u| !u) {
-            Some(i) => i,
-            None => break,
-        };
+    while let Some(start) = used.iter().position(|&u| !u) {
 
         let mut chain = vec![points[start]];
         used[start] = true;
@@ -206,6 +201,7 @@ mod tests {
     use super::*;
     use crate::mesh::{SpatialIndex, make_test_hemisphere};
     use crate::tool::BallEndmill;
+    use crate::toolpath::MoveType;
 
     #[test]
     fn test_waterline_hemisphere_midheight() {

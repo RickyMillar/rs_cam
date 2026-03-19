@@ -132,7 +132,7 @@ impl MillingCutter for BullNoseEndmill {
         if d < r1 + 1e-10 {
             let s = ((r1 * r1 - d_sq).max(0.0)).sqrt() / edge_len_xy;
             for &t in &[t_closest - s, t_closest + s] {
-                if t >= -1e-8 && t <= 1.0 + 1e-8 {
+                if (-1e-8..=1.0 + 1e-8).contains(&t) {
                     let z = p1.z + t * dz;
                     cl.update_z(z);
                 }
@@ -223,7 +223,7 @@ impl MillingCutter for BullNoseEndmill {
             let dt = s * cos_a / edge_len_xy;
             let t = t_closest + dt;
 
-            if t < -1e-8 || t > 1.0 + 1e-8 {
+            if !(-1e-8..=1.0 + 1e-8).contains(&t) {
                 continue;
             }
 
@@ -276,7 +276,7 @@ mod tests {
     fn test_bullnose_profile_torus_region() {
         let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
         let r2 = 2.0;
-        let r1 = 3.0;
+        let _r1 = 3.0;
 
         // At the edge (r=5.0 = R): height = R2 - sqrt(R2² - (R-R1)²) = 2 - sqrt(4-4) = 2
         let h = tool.height_at_radius(5.0).unwrap();

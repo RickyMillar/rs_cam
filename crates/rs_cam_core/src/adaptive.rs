@@ -389,7 +389,7 @@ pub(crate) fn compute_engagement(grid: &MaterialGrid, cx: f64, cy: f64, radius: 
 /// Then converts to fraction of full circle.
 pub(crate) fn target_engagement_fraction(stepover: f64, tool_radius: f64) -> f64 {
     let woc = stepover.min(2.0 * tool_radius);
-    let alpha = (1.0 - woc / tool_radius).max(-1.0).min(1.0).acos();
+    let alpha = (1.0 - woc / tool_radius).clamp(-1.0, 1.0).acos();
     alpha / TAU
 }
 
@@ -487,10 +487,10 @@ pub(crate) fn search_direction(
                     hi_bracket = Some((angle, eng));
                 }
 
-                if eng >= min_frac && eng <= max_frac {
-                    if best_good.is_none() || score < best_good.unwrap().0 {
-                        best_good = Some((score, angle));
-                    }
+                if eng >= min_frac && eng <= max_frac
+                    && (best_good.is_none() || score < best_good.unwrap().0)
+                {
+                    best_good = Some((score, angle));
                 }
             }
         }
@@ -503,10 +503,10 @@ pub(crate) fn search_direction(
                 let interp_angle = a_lo + t * angle_diff(a_hi, a_lo);
 
                 if let Some((eng, score)) = eval_candidate(interp_angle) {
-                    if eng >= min_frac && eng <= max_frac {
-                        if best_good.is_none() || score < best_good.unwrap().0 {
-                            best_good = Some((score, interp_angle));
-                        }
+                    if eng >= min_frac && eng <= max_frac
+                        && (best_good.is_none() || score < best_good.unwrap().0)
+                    {
+                        best_good = Some((score, interp_angle));
                     }
 
                     // Second refinement iteration
@@ -519,12 +519,11 @@ pub(crate) fn search_direction(
                     if delta2.abs() > 0.001 {
                         let t2 = ((target_frac - new_lo.1) / delta2).clamp(0.0, 1.0);
                         let refined = new_lo.0 + t2 * angle_diff(new_hi.0, new_lo.0);
-                        if let Some((eng2, score2)) = eval_candidate(refined) {
-                            if eng2 >= min_frac && eng2 <= max_frac {
-                                if best_good.is_none() || score2 < best_good.unwrap().0 {
-                                    best_good = Some((score2, refined));
-                                }
-                            }
+                        if let Some((eng2, score2)) = eval_candidate(refined)
+                            && eng2 >= min_frac && eng2 <= max_frac
+                            && (best_good.is_none() || score2 < best_good.unwrap().0)
+                        {
+                            best_good = Some((score2, refined));
                         }
                     }
                 }
@@ -547,10 +546,10 @@ pub(crate) fn search_direction(
             let angle = prev_angle - sweep / 2.0 + t * sweep;
 
             if let Some((eng, score)) = eval_candidate(angle) {
-                if eng >= min_frac && eng <= max_frac {
-                    if best_good.is_none() || score < best_good.unwrap().0 {
-                        best_good = Some((score, angle));
-                    }
+                if eng >= min_frac && eng <= max_frac
+                    && (best_good.is_none() || score < best_good.unwrap().0)
+                {
+                    best_good = Some((score, angle));
                 }
                 if best_any.is_none() || score < best_any.unwrap().0 {
                     best_any = Some((score, angle));
@@ -689,10 +688,10 @@ fn walk_boundary_for_entry(
             }
 
             let eng = compute_engagement(grid, x, y, tool_radius);
-            if eng > engage_threshold {
-                if best.is_none() || eng > best.unwrap().1 {
-                    best = Some((P2::new(x, y), eng));
-                }
+            if eng > engage_threshold
+                && (best.is_none() || eng > best.unwrap().1)
+            {
+                best = Some((P2::new(x, y), eng));
             }
         }
     }
@@ -737,10 +736,10 @@ pub(crate) fn find_entry_point(
             walk_step,
             pass_endpoints,
             min_endpoint_dist_sq,
-        ) {
-            if best_boundary.is_none() || eng > best_boundary.unwrap().1 {
-                best_boundary = Some((p, eng));
-            }
+        )
+            && (best_boundary.is_none() || eng > best_boundary.unwrap().1)
+        {
+            best_boundary = Some((p, eng));
         }
     }
 
@@ -1120,8 +1119,8 @@ pub(crate) fn simplify_path(points: &[P2], tolerance: f64) -> Vec<P2> {
     let mut max_idx = 0;
 
     if line_len > 1e-10 {
-        for i in 1..points.len() - 1 {
-            let d = ((points[i].x - first.x) * dy - (points[i].y - first.y) * dx).abs() / line_len;
+        for (i, pt) in points.iter().enumerate().take(points.len() - 1).skip(1) {
+            let d = ((pt.x - first.x) * dy - (pt.y - first.y) * dx).abs() / line_len;
             if d > max_dist {
                 max_dist = d;
                 max_idx = i;
@@ -1129,8 +1128,8 @@ pub(crate) fn simplify_path(points: &[P2], tolerance: f64) -> Vec<P2> {
         }
     } else {
         // Degenerate case: all points are close together
-        for i in 1..points.len() - 1 {
-            let d = ((points[i].x - first.x).powi(2) + (points[i].y - first.y).powi(2)).sqrt();
+        for (i, pt) in points.iter().enumerate().take(points.len() - 1).skip(1) {
+            let d = ((pt.x - first.x).powi(2) + (pt.y - first.y).powi(2)).sqrt();
             if d > max_dist {
                 max_dist = d;
                 max_idx = i;
@@ -1871,15 +1870,15 @@ mod tests {
 
         // All feed moves should be at cut_depth
         for m in &tp.moves {
-            if let crate::toolpath::MoveType::Linear { feed_rate } = m.move_type {
-                if feed_rate > 500.0 {
-                    // cutting move (not plunge)
-                    assert!(
-                        (m.target.z - (-5.0)).abs() < 1e-10,
-                        "Cutting move should be at cut_depth, got z={}",
-                        m.target.z
-                    );
-                }
+            if let crate::toolpath::MoveType::Linear { feed_rate } = m.move_type
+                && feed_rate > 500.0
+            {
+                // cutting move (not plunge)
+                assert!(
+                    (m.target.z - (-5.0)).abs() < 1e-10,
+                    "Cutting move should be at cut_depth, got z={}",
+                    m.target.z
+                );
             }
         }
     }
@@ -2019,7 +2018,7 @@ mod tests {
         let tp = adaptive_toolpath(&sq, &params);
 
         // Count rapid moves (retract + reposition)
-        let rapid_count = tp.moves.iter()
+        let _rapid_count = tp.moves.iter()
             .filter(|m| matches!(m.move_type, crate::toolpath::MoveType::Rapid))
             .count();
 

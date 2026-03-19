@@ -160,7 +160,7 @@ fn scan_line_intersections(
 
     let mut intersections = Vec::new();
 
-    for &(ref a, ref b) in edges {
+    for (a, b) in edges {
         // Project edge endpoints onto perpendicular axis
         let da = a.x * perp_x + a.y * perp_y - perp_pos;
         let db = b.x * perp_x + b.y * perp_y - perp_pos;
@@ -292,15 +292,15 @@ mod tests {
 
         // All cutting moves at cut_depth
         for m in &tp.moves {
-            if let MoveType::Linear { feed_rate } = m.move_type {
-                if (feed_rate - params.feed_rate).abs() < 1e-10 {
-                    assert!(
-                        (m.target.z - params.cut_depth).abs() < 1e-10,
-                        "Cutting at z={}, expected {}",
-                        m.target.z,
-                        params.cut_depth
-                    );
-                }
+            if let MoveType::Linear { feed_rate } = m.move_type
+                && (feed_rate - params.feed_rate).abs() < 1e-10
+            {
+                assert!(
+                    (m.target.z - params.cut_depth).abs() < 1e-10,
+                    "Cutting at z={}, expected {}",
+                    m.target.z,
+                    params.cut_depth
+                );
             }
         }
 

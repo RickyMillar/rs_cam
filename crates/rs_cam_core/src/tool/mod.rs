@@ -151,7 +151,6 @@ pub trait MillingCutter: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geo::P3;
 
     #[test]
     fn test_cl_point() {

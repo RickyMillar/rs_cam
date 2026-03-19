@@ -86,7 +86,7 @@ impl MillingCutter for FlatEndmill {
         let s = (r * r - d_sq).sqrt() / edge_len_xy;
 
         for &t in &[t_closest - s, t_closest + s] {
-            if t >= -1e-8 && t <= 1.0 + 1e-8 {
+            if (-1e-8..=1.0 + 1e-8).contains(&t) {
                 let z = p1.z + t * dz;
                 cl.update_z(z); // flat bottom: CL.z = CC.z
             }

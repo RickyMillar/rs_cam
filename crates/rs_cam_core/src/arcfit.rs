@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_fit_arc_straight_line_rejected() {
-        let pts = vec![
+        let pts = [
             P3::new(0.0, 0.0, 0.0),
             P3::new(1.0, 0.0, 0.0),
             P3::new(2.0, 0.0, 0.0),

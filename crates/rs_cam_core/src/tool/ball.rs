@@ -126,7 +126,7 @@ impl MillingCutter for BallEndmill {
             let t = t_closest + dt;
 
             // Check if within edge segment
-            if t < -1e-8 || t > 1.0 + 1e-8 {
+            if !(-1e-8..=1.0 + 1e-8).contains(&t) {
                 continue;
             }
 
@@ -177,7 +177,7 @@ mod tests {
     #[test]
     fn test_ball_vertex_drop_center() {
         let tool = BallEndmill::new(10.0, 25.0);
-        let r = 5.0;
+        let _r = 5.0;
 
         // Vertex directly below CL at z=10
         let mut cl = CLPoint::new(0.0, 0.0);
@@ -201,7 +201,7 @@ mod tests {
     #[test]
     fn test_ball_facet_drop_horizontal() {
         let tool = BallEndmill::new(10.0, 25.0);
-        let r = 5.0;
+        let _r = 5.0;
         let tri = Triangle::new(
             P3::new(-50.0, -50.0, 0.0),
             P3::new(50.0, -50.0, 0.0),
@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn test_ball_facet_drop_sloped() {
         let tool = BallEndmill::new(10.0, 25.0);
-        let r = 5.0;
+        let _r = 5.0;
 
         // 45-degree slope: z = x (for x >= 0)
         let tri = Triangle::new(
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn test_ball_edge_drop_horizontal_edge() {
         let tool = BallEndmill::new(10.0, 25.0);
-        let r = 5.0;
+        let _r = 5.0;
 
         // Horizontal edge along Y at x=3, z=0
         let p1 = P3::new(3.0, -10.0, 0.0);

@@ -38,7 +38,6 @@ use rs_cam_core::{
     depth::{DepthStepping, depth_stepped_toolpath},
     dressup::{EntryStyle, apply_dogbones, apply_entry, apply_tabs, even_tabs},
     dropcutter::batch_drop_cutter,
-    gcode::get_post_processor,
     mesh::{SpatialIndex, TriangleMesh},
     pocket::{PocketParams, pocket_toolpath},
     polygon::Polygon2,
@@ -110,6 +109,8 @@ pub struct OperationDef {
     pub feed_rate: Option<f64>,
     pub plunge_rate: Option<f64>,
     pub safe_z: Option<f64>,
+    // TODO: wire into per-operation spindle speed override
+    #[allow(dead_code)]
     pub spindle_speed: Option<u32>,
 
     // Pocket-specific
@@ -172,10 +173,6 @@ pub fn parse_job_file(path: &Path) -> Result<JobFile> {
 }
 
 // ── Tool construction ──────────────────────────────────────────────────
-
-pub fn build_tool_pub(def: &ToolDef) -> Result<Box<dyn rs_cam_core::tool::MillingCutter>> {
-    build_tool(def)
-}
 
 fn build_tool(def: &ToolDef) -> Result<Box<dyn rs_cam_core::tool::MillingCutter>> {
     use rs_cam_core::tool::*;
@@ -299,10 +296,10 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                 }
 
                 // Entry dressup
-                if let Some(entry) = &op.entry {
-                    if let Some(style) = parse_entry(entry)? {
-                        tp = apply_entry(&tp, style, plunge_rate);
-                    }
+                if let Some(entry) = &op.entry
+                    && let Some(style) = parse_entry(entry)?
+                {
+                    tp = apply_entry(&tp, style, plunge_rate);
                 }
                 if op.dogbone.unwrap_or(false) {
                     tp = apply_dogbones(&tp, tool_radius, 170.0);
@@ -335,10 +332,10 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                 }
 
                 // Entry dressup
-                if let Some(entry) = &op.entry {
-                    if let Some(style) = parse_entry(entry)? {
-                        tp = apply_entry(&tp, style, plunge_rate);
-                    }
+                if let Some(entry) = &op.entry
+                    && let Some(style) = parse_entry(entry)?
+                {
+                    tp = apply_entry(&tp, style, plunge_rate);
                 }
 
                 // Tabs
@@ -496,8 +493,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
 
                 let angle = op.angle.unwrap_or(0.0);
                 let grid = batch_drop_cutter(&mesh, &si, cutter.as_ref(), stepover, angle, min_z);
-                let tp = raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z);
-                tp
+                raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z)
             }
 
             _ => bail!("Unknown operation type '{}'. Supported: pocket, profile, adaptive, rest, adaptive3d, drop-cutter", op.op_type),

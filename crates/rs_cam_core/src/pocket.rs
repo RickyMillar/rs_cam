@@ -177,15 +177,15 @@ mod tests {
 
         // All cutting moves should be at cut_depth
         for m in &tp.moves {
-            if let MoveType::Linear { feed_rate } = m.move_type {
-                if feed_rate == params.feed_rate {
-                    assert!(
-                        (m.target.z - params.cut_depth).abs() < 1e-10,
-                        "Cutting move at z={} should be at cut_depth={}",
-                        m.target.z,
-                        params.cut_depth
-                    );
-                }
+            if let MoveType::Linear { feed_rate } = m.move_type
+                && feed_rate == params.feed_rate
+            {
+                assert!(
+                    (m.target.z - params.cut_depth).abs() < 1e-10,
+                    "Cutting move at z={} should be at cut_depth={}",
+                    m.target.z,
+                    params.cut_depth
+                );
             }
         }
 
@@ -308,17 +308,17 @@ mod tests {
 
         // No feed moves should be above cut_depth (except plunge which goes from safe_z to cut_depth)
         for i in 1..tp.moves.len() {
-            if let MoveType::Linear { feed_rate } = tp.moves[i].move_type {
-                if (feed_rate - params.feed_rate).abs() < 1e-10 {
-                    // This is a cutting move (not plunge) - must be at cut_depth
-                    assert!(
-                        (tp.moves[i].target.z - params.cut_depth).abs() < 1e-10,
-                        "Cutting move {} at z={} is not at cut_depth={}",
-                        i,
-                        tp.moves[i].target.z,
-                        params.cut_depth
-                    );
-                }
+            if let MoveType::Linear { feed_rate } = tp.moves[i].move_type
+                && (feed_rate - params.feed_rate).abs() < 1e-10
+            {
+                // This is a cutting move (not plunge) - must be at cut_depth
+                assert!(
+                    (tp.moves[i].target.z - params.cut_depth).abs() < 1e-10,
+                    "Cutting move {} at z={} is not at cut_depth={}",
+                    i,
+                    tp.moves[i].target.z,
+                    params.cut_depth
+                );
             }
         }
     }

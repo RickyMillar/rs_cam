@@ -197,7 +197,7 @@ fn facet_push(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn MillingCutter) {
     let rhs = -n.z * (z - v0.z - r2 * n.z + ch) - num0;
     let t = rhs / num_dt;
 
-    if t < -1e-8 || t > 1.0 + 1e-8 {
+    if !(-1e-8..=1.0 + 1e-8).contains(&t) {
         return;
     }
 

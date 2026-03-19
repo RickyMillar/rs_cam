@@ -199,15 +199,15 @@ mod tests {
 
         // All cutting moves at cut_depth
         for m in &tp.moves {
-            if let MoveType::Linear { feed_rate } = m.move_type {
-                if (feed_rate - params.feed_rate).abs() < 1e-10 {
-                    assert!(
-                        (m.target.z - params.cut_depth).abs() < 1e-10,
-                        "Cutting at z={}, expected {}",
-                        m.target.z,
-                        params.cut_depth
-                    );
-                }
+            if let MoveType::Linear { feed_rate } = m.move_type
+                && (feed_rate - params.feed_rate).abs() < 1e-10
+            {
+                assert!(
+                    (m.target.z - params.cut_depth).abs() < 1e-10,
+                    "Cutting at z={}, expected {}",
+                    m.target.z,
+                    params.cut_depth
+                );
             }
         }
 
