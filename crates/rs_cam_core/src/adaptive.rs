@@ -948,7 +948,9 @@ fn adaptive_segments(
         // Link or retract to entry point
         let max_link_dist = tool_radius * 6.0; // ~3 tool diameters
         if let Some(last) = last_pos {
-            let dist = ((entry.x - last.x).powi(2) + (entry.y - last.y).powi(2)).sqrt();
+            let dx = entry.x - last.x;
+            let dy = entry.y - last.y;
+            let dist = (dx * dx + dy * dy).sqrt();
             if dist < max_link_dist
                 && is_clear_path(&grid, &machinable_mask, last, entry, tool_radius)
             {
@@ -1129,7 +1131,9 @@ pub(crate) fn simplify_path(points: &[P2], tolerance: f64) -> Vec<P2> {
     } else {
         // Degenerate case: all points are close together
         for (i, pt) in points.iter().enumerate().take(points.len() - 1).skip(1) {
-            let d = ((pt.x - first.x).powi(2) + (pt.y - first.y).powi(2)).sqrt();
+            let ddx = pt.x - first.x;
+            let ddy = pt.y - first.y;
+            let d = (ddx * ddx + ddy * ddy).sqrt();
             if d > max_dist {
                 max_dist = d;
                 max_idx = i;
@@ -1689,7 +1693,9 @@ mod tests {
         assert!(e2.is_some());
         let e2 = e2.unwrap();
 
-        let dist = ((e2.x - e1.x).powi(2) + (e2.y - e1.y).powi(2)).sqrt();
+        let dx = e2.x - e1.x;
+        let dy = e2.y - e1.y;
+        let dist = (dx * dx + dy * dy).sqrt();
         // The second entry should be at least some distance from the first
         // (not right on top of it, though it may still be nearby if material is concentrated)
         assert!(

@@ -153,7 +153,7 @@ impl SurfaceHeightmap {
     fn min_z(&self) -> f64 {
         self.z_values
             .iter()
-            .cloned()
+            .copied()
             .fold(f64::INFINITY, f64::min)
     }
 }
@@ -464,8 +464,9 @@ fn search_direction_3d(
     // Evaluate a candidate direction: returns (score, z_at_next) or None if invalid.
     // Uses precomputed surface heightmap for Z lookups (O(1)) instead of drop-cutter queries.
     let evaluate = |angle: f64| -> Option<(f64, f64)> {
-        let nx = cx + step_len * angle.cos();
-        let ny = cy + step_len * angle.sin();
+        let (sin_a, cos_a) = angle.sin_cos();
+        let nx = cx + step_len * cos_a;
+        let ny = cy + step_len * sin_a;
 
         // Bounds check
         if nx < bbox_x_min || nx > bbox_x_max || ny < bbox_y_min || ny > bbox_y_max {
@@ -504,8 +505,9 @@ fn search_direction_3d(
 
     for &offset_deg in &narrow_offsets {
         let angle = prev_angle + offset_deg.to_radians();
-        let nx = cx + step_len * angle.cos();
-        let ny = cy + step_len * angle.sin();
+        let (sin_a, cos_a) = angle.sin_cos();
+        let nx = cx + step_len * cos_a;
+        let ny = cy + step_len * sin_a;
 
         if nx < bbox_x_min || nx > bbox_x_max || ny < bbox_y_min || ny > bbox_y_max {
             continue;
@@ -871,6 +873,8 @@ enum Adaptive3dSegment {
     Rapid(P3),
     /// Feed directly at cutting depth (no retract)
     Link(P3),
+    /// Annotation label at the current point in the toolpath
+    Label(String),
 }
 
 // ── Z-level clearing helper ──────────────────────────────────────────
@@ -982,15 +986,23 @@ fn clear_z_level(
             stamp_tool_at(material_hm, ctx.cutter, entry_xy.x, entry_xy.y, entry_z);
             for a in 0..8 {
                 let angle = (a as f64 / 8.0) * TAU;
-                let px = entry_xy.x + tool_radius * 0.5 * angle.cos();
-                let py = entry_xy.y + tool_radius * 0.5 * angle.sin();
+                let (sin_a, cos_a) = angle.sin_cos();
+                let px = entry_xy.x + tool_radius * 0.5 * cos_a;
+                let py = entry_xy.y + tool_radius * 0.5 * sin_a;
                 stamp_tool_at(material_hm, ctx.cutter, px, py, entry_z);
             }
             pass_endpoints.push(entry_xy);
             short_pass_streak += 1;
             skipped_preflight += 1;
+            segments.push(Adaptive3dSegment::Label(
+                format!("Pass {} — preflight skip (no viable direction)", pass_count)
+            ));
             continue;
         }
+
+        segments.push(Adaptive3dSegment::Label(
+            format!("Pass {} — entry at ({:.1}, {:.1}) Z {:.1}", pass_count, entry_xy.x, entry_xy.y, entry_z)
+        ));
 
         if let Some(last) = *last_pos {
             let dx = entry_3d.x - last.x;
@@ -1028,6 +1040,18 @@ fn clear_z_level(
 
         let max_steps = 5000;
         let mut idle_count = 0;
+        let mut step_count = 0u32;
+        let mut looped = false;
+
+        // Loop detection: after enough steps to form a meaningful loop,
+        // check if we've returned near the entry point. The minimum step
+        // threshold avoids false positives at the start of a pass.
+        let loop_min_steps = (tool_radius * 4.0 / ctx.step_len).ceil() as u32;
+        let loop_close_dist_sq = (tool_radius * 1.5) * (tool_radius * 1.5);
+        // Track the farthest we've been from entry — only trigger loop
+        // detection once we've actually moved away first.
+        let mut max_dist_from_entry_sq = 0.0f64;
+        let min_excursion_sq = (tool_radius * 4.0) * (tool_radius * 4.0);
 
         for _ in 0..max_steps {
             let local_before = local_material_sum(material_hm, cx, cy, tool_radius);
@@ -1048,8 +1072,9 @@ fn clear_z_level(
                 None => break,
             };
 
-            cx += ctx.step_len * angle.cos();
-            cy += ctx.step_len * angle.sin();
+            let (sin_a, cos_a) = angle.sin_cos();
+            cx += ctx.step_len * cos_a;
+            cy += ctx.step_len * sin_a;
             let max_z_step = ctx.depth_per_pass;
             cz = z_next.max(cz - max_z_step);
             path.push(P3::new(cx, cy, cz));
@@ -1060,6 +1085,22 @@ fn clear_z_level(
                 angle_buf.remove(0);
             }
             angle_buf.push(angle);
+            step_count += 1;
+
+            // Loop detection: have we returned near the entry after travelling far enough?
+            let dx_entry = cx - entry_xy.x;
+            let dy_entry = cy - entry_xy.y;
+            let dist_from_entry_sq = dx_entry * dx_entry + dy_entry * dy_entry;
+            if dist_from_entry_sq > max_dist_from_entry_sq {
+                max_dist_from_entry_sq = dist_from_entry_sq;
+            }
+            if step_count > loop_min_steps
+                && max_dist_from_entry_sq > min_excursion_sq
+                && dist_from_entry_sq < loop_close_dist_sq
+            {
+                looped = true;
+                break;
+            }
 
             let local_after = local_material_sum(material_hm, cx, cy, tool_radius);
             let local_delta = (local_before - local_after).abs();
@@ -1082,6 +1123,16 @@ fn clear_z_level(
         let was_idle = idle_count > 20;
 
         let pass_steps = path.len();
+        // Keep a reference to the path for post-pass widening before moving it
+        let should_widen = (looped || pass_steps >= min_productive_steps) && pass_steps >= 4;
+        let widen_path: Vec<P3> = if should_widen {
+            // Sample every few points to keep the widening cheap
+            let skip = 3.max(path.len() / 200);
+            path.iter().step_by(skip).copied().collect()
+        } else {
+            Vec::new()
+        };
+
         if pass_steps >= 2 {
             let endpoint = *path.last().expect("path is non-empty after loop");
             *last_pos = Some(endpoint);
@@ -1093,23 +1144,59 @@ fn clear_z_level(
         }
 
         total_steps += pass_steps as u64;
+        let exit_reason = if looped { "loop closed" } else if was_idle { "idle" } else { "no material" };
         if pass_steps < min_productive_steps {
             short_passes += 1;
             short_pass_streak += 1;
+            segments.push(Adaptive3dSegment::Label(
+                format!("Pass {} — short ({} steps, {})", pass_count, pass_steps, exit_reason)
+            ));
         } else {
             long_passes += 1;
             short_pass_streak = 0;
+            segments.push(Adaptive3dSegment::Label(
+                format!("Pass {} — {} steps ({})", pass_count, pass_steps, exit_reason)
+            ));
         }
 
         if was_idle {
             stamp_tool_at(material_hm, ctx.cutter, cx, cy, cz);
             for a in 0..8 {
                 let angle = (a as f64 / 8.0) * TAU;
-                let px = cx + tool_radius * angle.cos();
-                let py = cy + tool_radius * angle.sin();
+                let (sin_a, cos_a) = angle.sin_cos();
+                let px = cx + tool_radius * cos_a;
+                let py = cy + tool_radius * sin_a;
                 let surf_z = surface_hm.surface_z_at_world(px, py);
                 let pz = if surf_z == f64::NEG_INFINITY { cz } else { (surf_z + ctx.stock_to_leave).max(z_level) };
                 stamp_tool_at(material_hm, ctx.cutter, px, py, pz);
+            }
+        }
+
+        // Widen the cleared band after loop-close or long contour passes.
+        // Stamp perpendicular offsets along the path at stepover distance
+        // so adjacent parallel contours are also marked as cleared.
+        if !widen_path.is_empty() {
+            let widen_offset = ctx.step_len * 2.0; // ~1 stepover width on each side
+            for i in 1..widen_path.len() {
+                let prev = &widen_path[i - 1];
+                let curr = &widen_path[i];
+                let dx = curr.x - prev.x;
+                let dy = curr.y - prev.y;
+                let seg_len = (dx * dx + dy * dy).sqrt();
+                if seg_len < 1e-10 {
+                    continue;
+                }
+                let nx = -dy / seg_len;
+                let ny = dx / seg_len;
+                for &sign in &[1.0f64, -1.0] {
+                    let px = curr.x + sign * widen_offset * nx;
+                    let py = curr.y + sign * widen_offset * ny;
+                    let sz = surface_hm.surface_z_at_world(px, py);
+                    if sz != f64::NEG_INFINITY {
+                        let pz = (sz + ctx.stock_to_leave).max(z_level);
+                        stamp_tool_at(material_hm, ctx.cutter, px, py, pz);
+                    }
+                }
             }
         }
     }
@@ -1359,14 +1446,19 @@ fn adaptive_3d_segments(
                     z_max = format!("{:.1}", region.surface_z_max),
                     "Processing region"
                 );
+                segments.push(Adaptive3dSegment::Label(
+                    format!("Region {}/{} ({} cells)", region_idx + 1, regions.len(), region.cell_count)
+                ));
 
-                // Filter Z levels relevant to this region's surface Z range
                 let region_z_levels: Vec<f64> = z_levels.iter()
                     .copied()
                     .filter(|&z| z >= region.surface_z_min + params.stock_to_leave - 0.01)
                     .collect();
 
-                for &z_level in &region_z_levels {
+                for (li, &z_level) in region_z_levels.iter().enumerate() {
+                    segments.push(Adaptive3dSegment::Label(
+                        format!("Region {} — Z {:.1} ({}/{})", region_idx + 1, z_level, li + 1, region_z_levels.len())
+                    ));
                     clear_z_level(
                         &ctx,
                         &mut material_hm, &surface_hm, z_level,
@@ -1378,6 +1470,7 @@ fn adaptive_3d_segments(
 
             // Waterline cleanup once at bottom Z
             if let Some(&z_bottom_level) = z_levels.last() {
+                segments.push(Adaptive3dSegment::Label("Waterline cleanup".to_string()));
                 waterline_cleanup(
                     mesh, index, cutter,
                     &mut material_hm, z_bottom_level,
@@ -1388,6 +1481,9 @@ fn adaptive_3d_segments(
         }
         RegionOrdering::Global => {
             for (level_idx, &z_level) in z_levels.iter().enumerate() {
+                segments.push(Adaptive3dSegment::Label(
+                    format!("Adaptive Z {:.1} ({}/{})", z_level, level_idx + 1, z_levels.len())
+                ));
                 clear_z_level(
                     &ctx,
                     &mut material_hm, &surface_hm, z_level,
@@ -1397,6 +1493,7 @@ fn adaptive_3d_segments(
 
                 let is_last_level = level_idx == z_levels.len() - 1;
                 if is_last_level {
+                    segments.push(Adaptive3dSegment::Label("Waterline cleanup".to_string()));
                     waterline_cleanup(
                         mesh, index, cutter,
                         &mut material_hm, z_level,
@@ -1413,31 +1510,22 @@ fn adaptive_3d_segments(
 
 // ── Public API ────────────────────────────────────────────────────────
 
-/// Generate a 3D adaptive clearing toolpath for roughing a mesh surface.
-///
-/// Starting from flat stock at `stock_top_z`, roughs out material following
-/// the STL mesh surface with constant engagement control. Multi-level
-/// passes from top to bottom, waterline boundary cleanup at each level.
-#[tracing::instrument(skip(mesh, index, cutter, params), fields(tool_radius = params.tool_radius, stepover = params.stepover))]
-pub fn adaptive_3d_toolpath(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
+/// Convert segments to a toolpath and collect annotations.
+fn segments_to_toolpath(
+    segments: &[Adaptive3dSegment],
     params: &Adaptive3dParams,
-) -> Toolpath {
-    let segments = adaptive_3d_segments(mesh, index, cutter, params);
-
+) -> (Toolpath, Vec<(usize, String)>) {
     let mut tp = Toolpath::new();
-    if segments.is_empty() {
-        return tp;
-    }
+    let mut annotations = Vec::new();
 
-    for segment in &segments {
+    for segment in segments {
         match segment {
+            Adaptive3dSegment::Label(text) => {
+                annotations.push((tp.moves.len(), text.clone()));
+            }
             Adaptive3dSegment::Rapid(entry) => {
                 match params.entry_style {
                     EntryStyle3d::Plunge => {
-                        // Original: retract → rapid XY → plunge
                         tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
                         tp.feed_to(*entry, params.plunge_rate);
                     }
@@ -1460,10 +1548,8 @@ pub fn adaptive_3d_toolpath(
                 if path.len() < 2 {
                     continue;
                 }
-                // Simplify in 3D, then blend corners
                 let simplified = simplify_path_3d(path, params.tolerance);
                 let blended = blend_corners_3d(&simplified, params.min_cutting_radius);
-
                 for pt in blended.iter().skip(1) {
                     tp.feed_to(*pt, params.feed_rate);
                 }
@@ -1471,14 +1557,44 @@ pub fn adaptive_3d_toolpath(
         }
     }
 
-    // Final retract
     if let Some(last) = tp.moves.last() {
         tp.rapid_to(P3::new(last.target.x, last.target.y, params.safe_z));
     }
 
-    info!(moves = tp.moves.len(), cutting_mm = tp.total_cutting_distance(), rapid_mm = tp.total_rapid_distance(), "3D adaptive toolpath complete");
+    (tp, annotations)
+}
 
+/// Generate a 3D adaptive clearing toolpath for roughing a mesh surface.
+///
+/// Starting from flat stock at `stock_top_z`, roughs out material following
+/// the STL mesh surface with constant engagement control. Multi-level
+/// passes from top to bottom, waterline boundary cleanup at each level.
+#[tracing::instrument(skip(mesh, index, cutter, params), fields(tool_radius = params.tool_radius, stepover = params.stepover))]
+pub fn adaptive_3d_toolpath(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &Adaptive3dParams,
+) -> Toolpath {
+    let (tp, _) = adaptive_3d_toolpath_annotated(mesh, index, cutter, params);
     tp
+}
+
+/// Like `adaptive_3d_toolpath` but also returns annotations for simulation display.
+/// Each annotation is `(move_index, label)`.
+#[tracing::instrument(skip(mesh, index, cutter, params), fields(tool_radius = params.tool_radius, stepover = params.stepover))]
+pub fn adaptive_3d_toolpath_annotated(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &Adaptive3dParams,
+) -> (Toolpath, Vec<(usize, String)>) {
+    let segments = adaptive_3d_segments(mesh, index, cutter, params);
+    let (tp, annotations) = segments_to_toolpath(&segments, params);
+
+    info!(moves = tp.moves.len(), annotations = annotations.len(), cutting_mm = tp.total_cutting_distance(), rapid_mm = tp.total_rapid_distance(), "3D adaptive toolpath complete");
+
+    (tp, annotations)
 }
 
 #[cfg(test)]

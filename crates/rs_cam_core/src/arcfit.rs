@@ -155,7 +155,9 @@ fn try_fit_arc(points: &[&P3], tolerance: f64) -> Option<ArcParams> {
 
     // Check all intermediate points are within tolerance of the circle
     for &pt in points {
-        let dist = ((pt.x - cx).powi(2) + (pt.y - cy).powi(2)).sqrt();
+        let ddx = pt.x - cx;
+        let ddy = pt.y - cy;
+        let dist = (ddx * ddx + ddy * ddy).sqrt();
         if (dist - radius).abs() > tolerance {
             return None;
         }
@@ -199,7 +201,9 @@ fn circle_from_3_points(
 
     let cx = x1 - (a_sq * by - b_sq * ay) / det;
     let cy = y1 - (b_sq * ax - a_sq * bx) / det;
-    let radius = ((x1 - cx).powi(2) + (y1 - cy).powi(2)).sqrt();
+    let rdx = x1 - cx;
+    let rdy = y1 - cy;
+    let radius = (rdx * rdx + rdy * rdy).sqrt();
 
     Some((cx, cy, radius))
 }

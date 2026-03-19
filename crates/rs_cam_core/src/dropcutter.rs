@@ -8,12 +8,12 @@ use crate::tool::{CLPoint, MillingCutter};
 use rayon::prelude::*;
 
 /// Drop a single cutter at position (x, y) onto the mesh.
-pub fn point_drop_cutter(
+pub fn point_drop_cutter<C: MillingCutter + ?Sized>(
     x: f64,
     y: f64,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
+    cutter: &C,
 ) -> CLPoint {
     let mut cl = CLPoint::new(x, y);
     let tri_indices = index.query(x, y, cutter.radius());
@@ -49,10 +49,10 @@ impl DropCutterGrid {
 ///
 /// Generates a regular grid covering the mesh XY extent (plus one cutter radius margin),
 /// with the specified step-over distance.
-pub fn batch_drop_cutter(
+pub fn batch_drop_cutter<C: MillingCutter + ?Sized>(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
+    cutter: &C,
     step_over: f64,
     direction_deg: f64,
     min_z: f64,

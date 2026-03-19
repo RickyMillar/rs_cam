@@ -38,6 +38,7 @@ impl CLPoint {
         }
     }
 
+    #[inline]
     pub fn update_z(&mut self, z: f64) {
         if z > self.z {
             self.z = z;

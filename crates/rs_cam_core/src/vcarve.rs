@@ -337,8 +337,8 @@ mod tests {
 
         // Z should vary within the pass (not constant)
         if z_values.len() > 3 {
-            let z_min = z_values.iter().cloned().fold(f64::INFINITY, f64::min);
-            let z_max = z_values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let z_min = z_values.iter().copied().fold(f64::INFINITY, f64::min);
+            let z_max = z_values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
             assert!(
                 (z_max - z_min).abs() > 0.5,
                 "Z should vary along pass, range={:.2} ({:.2} to {:.2})",

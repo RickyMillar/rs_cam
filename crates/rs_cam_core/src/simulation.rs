@@ -92,7 +92,7 @@ impl Heightmap {
 
     /// Get the bounding box of the heightmap in world coordinates.
     pub fn bbox(&self) -> BoundingBox3 {
-        let z_min = self.cells.iter().cloned().fold(f64::INFINITY, f64::min);
+        let z_min = self.cells.iter().copied().fold(f64::INFINITY, f64::min);
         BoundingBox3 {
             min: P3::new(self.origin_x, self.origin_y, z_min),
             max: P3::new(
@@ -215,8 +215,9 @@ pub fn linearize_arc(
         } else {
             start_angle + t * sweep
         };
-        let x = cx + r * angle.cos();
-        let y = cy + r * angle.sin();
+        let (sin_a, cos_a) = angle.sin_cos();
+        let x = cx + r * cos_a;
+        let y = cy + r * sin_a;
         let z = start.z + t * (end.z - start.z);
         points.push(P3::new(x, y, z));
     }
@@ -286,7 +287,7 @@ pub fn heightmap_to_mesh(heightmap: &Heightmap) -> HeightmapMesh {
     let z_min = heightmap
         .cells
         .iter()
-        .cloned()
+        .copied()
         .fold(f64::INFINITY, f64::min);
     let z_range = (heightmap.stock_top_z - z_min).max(1e-6);
 

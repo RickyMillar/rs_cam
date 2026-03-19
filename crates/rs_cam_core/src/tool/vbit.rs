@@ -18,6 +18,9 @@ pub struct VBitEndmill {
     /// Full included angle in degrees (e.g., 90° V-bit has half_angle = 45°)
     pub included_angle_deg: f64,
     pub cutting_length: f64,
+    // Precomputed trig values
+    half_angle_rad: f64,
+    tan_half_angle: f64,
 }
 
 impl VBitEndmill {
@@ -27,21 +30,25 @@ impl VBitEndmill {
             "Included angle must be between 0 and 180 degrees, got {}",
             included_angle_deg
         );
+        let half_angle_rad = (included_angle_deg / 2.0).to_radians();
+        let tan_half_angle = half_angle_rad.tan();
         Self {
             diameter,
             included_angle_deg,
             cutting_length,
+            half_angle_rad,
+            tan_half_angle,
         }
     }
 
     /// Half-angle in radians.
     fn half_angle(&self) -> f64 {
-        (self.included_angle_deg / 2.0).to_radians()
+        self.half_angle_rad
     }
 
     /// Height of the cone at the full radius (where cone meets shaft).
     fn cone_height(&self) -> f64 {
-        self.radius() / self.half_angle().tan()
+        self.radius() / self.tan_half_angle
     }
 }
 
@@ -58,13 +65,13 @@ impl MillingCutter for VBitEndmill {
         if r > big_r + 1e-10 {
             None
         } else {
-            Some(r.min(big_r) / self.half_angle().tan())
+            Some(r.min(big_r) / self.tan_half_angle)
         }
     }
 
     fn width_at_height(&self, h: f64) -> f64 {
         let big_r = self.radius();
-        let w = h * self.half_angle().tan();
+        let w = h * self.tan_half_angle;
         w.min(big_r)
     }
 

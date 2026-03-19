@@ -24,14 +24,17 @@ impl Interval {
         }
     }
 
+    #[inline]
     pub fn contains(&self, t: f64) -> bool {
         t >= self.lower - 1e-10 && t <= self.upper + 1e-10
     }
 
+    #[inline]
     pub fn overlaps(&self, other: &Interval) -> bool {
         self.lower <= other.upper + 1e-10 && other.lower <= self.upper + 1e-10
     }
 
+    #[inline]
     pub fn merge(&self, other: &Interval) -> Interval {
         Interval::new(self.lower.min(other.lower), self.upper.max(other.upper))
     }

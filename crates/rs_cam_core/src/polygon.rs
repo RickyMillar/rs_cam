@@ -203,8 +203,8 @@ pub fn pocket_offsets(polygon: &Polygon2, stepover: f64) -> Vec<Vec<Polygon2>> {
         if next_layer.is_empty() {
             break;
         }
-        current = next_layer.clone();
-        layers.push(next_layer);
+        layers.push(next_layer.clone());
+        current = next_layer;
     }
 
     layers

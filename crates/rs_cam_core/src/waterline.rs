@@ -65,9 +65,11 @@ pub fn waterline_contours(
         })
         .collect();
 
-    // Run push-cutter on both fiber sets
-    batch_push_cutter(&mut x_fibers, mesh, index, cutter);
-    batch_push_cutter(&mut y_fibers, mesh, index, cutter);
+    // Run push-cutter on both fiber sets in parallel
+    rayon::join(
+        || batch_push_cutter(&mut x_fibers, mesh, index, cutter),
+        || batch_push_cutter(&mut y_fibers, mesh, index, cutter),
+    );
 
     // Extract CL boundary points from interval endpoints
     let mut boundary_points: Vec<P3> = Vec::new();
@@ -284,7 +286,11 @@ mod tests {
         // Check that points are approximately on a circle
         let radii: Vec<f64> = contour
             .iter()
-            .map(|p| ((p.x - cx).powi(2) + (p.y - cy).powi(2)).sqrt())
+            .map(|p| {
+                let dx = p.x - cx;
+                let dy = p.y - cy;
+                (dx * dx + dy * dy).sqrt()
+            })
             .collect();
         let mean_r = radii.iter().sum::<f64>() / radii.len() as f64;
 

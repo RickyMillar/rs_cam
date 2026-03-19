@@ -95,6 +95,7 @@ impl Triangle {
 
     /// Check if point (x,y) projected onto the triangle plane lands inside the triangle.
     /// Uses barycentric coordinates.
+    #[inline]
     pub fn contains_point_xy(&self, px: f64, py: f64) -> bool {
         let (x0, y0) = (self.v[0].x, self.v[0].y);
         let (x1, y1) = (self.v[1].x, self.v[1].y);
@@ -114,6 +115,7 @@ impl Triangle {
     }
 
     /// Compute Z on the triangle plane at (x, y). Returns None if nz ~ 0 (vertical triangle).
+    #[inline]
     pub fn z_at_xy(&self, x: f64, y: f64) -> Option<f64> {
         let nz = self.normal.z;
         if nz.abs() < 1e-15 {

@@ -77,9 +77,9 @@ pub fn apply_entry(toolpath: &Toolpath, style: EntryStyle, plunge_rate: f64) -> 
 fn is_plunge(prev: &Move, current: &Move) -> bool {
     if let MoveType::Linear { .. } = current.move_type {
         let dz = current.target.z - prev.target.z;
-        let dxy = ((current.target.x - prev.target.x).powi(2)
-            + (current.target.y - prev.target.y).powi(2))
-        .sqrt();
+        let pdx = current.target.x - prev.target.x;
+        let pdy = current.target.y - prev.target.y;
+        let dxy = (pdx * pdx + pdy * pdy).sqrt();
         // Downward move with negligible XY movement
         dz < -0.1 && dxy < 0.01
     } else {
@@ -181,8 +181,9 @@ pub(crate) fn emit_helix(
         let t = i as f64 / total_steps as f64;
         let angle = total_angle * t;
         let z = helix_top - dz * t;
-        let x = center_x + radius * angle.cos();
-        let y = center_y + radius * angle.sin();
+        let (sin_a, cos_a) = angle.sin_cos();
+        let x = center_x + radius * cos_a;
+        let y = center_y + radius * sin_a;
         tp.feed_to(P3::new(x, y, z), feed_rate);
     }
 
@@ -239,7 +240,9 @@ pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath
     for i in 1..cutting_indices.len() {
         let prev = &toolpath.moves[cutting_indices[i - 1]].target;
         let curr = &toolpath.moves[cutting_indices[i]].target;
-        let d = ((curr.x - prev.x).powi(2) + (curr.y - prev.y).powi(2)).sqrt();
+        let ddx = curr.x - prev.x;
+        let ddy = curr.y - prev.y;
+        let d = (ddx * ddx + ddy * ddy).sqrt();
         cum_dist.push(cum_dist.last().expect("cum_dist starts with [0.0]") + d);
     }
 
@@ -472,10 +475,11 @@ pub fn apply_lead_in_out(toolpath: &Toolpath, radius: f64) -> Toolpath {
                     for s in 1..=arc_steps {
                         let t = s as f64 / arc_steps as f64;
                         let angle = std::f64::consts::FRAC_PI_2 * t;
-                        let ax = plunge_end.x + perp_x * radius * (1.0 - angle.sin())
-                            - ux * radius * (1.0 - angle.cos());
-                        let ay = plunge_end.y + perp_y * radius * (1.0 - angle.sin())
-                            - uy * radius * (1.0 - angle.cos());
+                        let (sin_a, cos_a) = angle.sin_cos();
+                        let ax = plunge_end.x + perp_x * radius * (1.0 - sin_a)
+                            - ux * radius * (1.0 - cos_a);
+                        let ay = plunge_end.y + perp_y * radius * (1.0 - sin_a)
+                            - uy * radius * (1.0 - cos_a);
                         result.feed_to(P3::new(ax, ay, cut_z), feed_rate);
                     }
 
@@ -520,10 +524,11 @@ pub fn apply_lead_in_out(toolpath: &Toolpath, radius: f64) -> Toolpath {
                     for s in 1..=arc_steps {
                         let t = s as f64 / arc_steps as f64;
                         let angle = std::f64::consts::FRAC_PI_2 * t;
-                        let ax = cut_end.x + ux * radius * angle.sin()
-                            + perp_x * radius * (1.0 - angle.cos());
-                        let ay = cut_end.y + uy * radius * angle.sin()
-                            + perp_y * radius * (1.0 - angle.cos());
+                        let (sin_a, cos_a) = angle.sin_cos();
+                        let ax = cut_end.x + ux * radius * sin_a
+                            + perp_x * radius * (1.0 - cos_a);
+                        let ay = cut_end.y + uy * radius * sin_a
+                            + perp_y * radius * (1.0 - cos_a);
                         result.feed_to(P3::new(ax, ay, cut_z), feed_rate);
                     }
 
@@ -688,7 +693,9 @@ mod tests {
                 let prev = &result.moves[i - 1].target;
                 let curr = &result.moves[i].target;
                 let dz = (curr.z - prev.z).abs();
-                let dxy = ((curr.x - prev.x).powi(2) + (curr.y - prev.y).powi(2)).sqrt();
+                let tdx = curr.x - prev.x;
+                let tdy = curr.y - prev.y;
+                let dxy = (tdx * tdx + tdy * tdy).sqrt();
                 if dz > 1.0 {
                     assert!(
                         dxy > 0.1,
@@ -799,7 +806,9 @@ mod tests {
             .collect();
 
         for m in &helix_moves {
-            let dist = ((m.target.x - 10.0).powi(2) + (m.target.y - 10.0).powi(2)).sqrt();
+            let hdx = m.target.x - 10.0;
+            let hdy = m.target.y - 10.0;
+            let dist = (hdx * hdx + hdy * hdy).sqrt();
             assert!(
                 dist < 3.5,
                 "Helix point ({}, {}) is {} from center, expected ~3.0",
@@ -897,7 +906,9 @@ mod tests {
             }
             let prev = &result.moves[i - 1].target;
             let curr = &result.moves[i].target;
-            let dxy = ((curr.x - prev.x).powi(2) + (curr.y - prev.y).powi(2)).sqrt();
+            let sdx = curr.x - prev.x;
+            let sdy = curr.y - prev.y;
+            let dxy = (sdx * sdx + sdy * sdy).sqrt();
             let dz = curr.z - prev.z;
             if dxy < 0.01 && dz > 1.0 && curr.z < 0.0 {
                 found_step_up = true;
@@ -1000,7 +1011,9 @@ mod tests {
                     && (prev.z - curr.z).abs() < 0.01
                 {
                     // This is an overcut: prev → curr → next where prev ≈ next
-                    let dist = ((curr.x - prev.x).powi(2) + (curr.y - prev.y).powi(2)).sqrt();
+                    let odx = curr.x - prev.x;
+                    let ody = curr.y - prev.y;
+                    let dist = (odx * odx + ody * ody).sqrt();
                     assert!(
                         (dist - tool_radius).abs() < 0.5,
                         "Overcut distance should be ~{}, got {}",

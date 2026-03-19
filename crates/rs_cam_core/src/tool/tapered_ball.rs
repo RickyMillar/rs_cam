@@ -26,6 +26,11 @@ pub struct TaperedBallEndmill {
     /// Taper half-angle in degrees (from the tool axis)
     pub taper_half_angle_deg: f64,
     pub cutting_length: f64,
+    // Precomputed trig values
+    alpha_rad: f64,
+    tan_alpha: f64,
+    sin_alpha: f64,
+    cos_alpha: f64,
 }
 
 impl TaperedBallEndmill {
@@ -46,11 +51,18 @@ impl TaperedBallEndmill {
             shaft_diameter,
             ball_diameter
         );
+        let alpha_rad = taper_half_angle_deg.to_radians();
+        let (sin_alpha, cos_alpha) = alpha_rad.sin_cos();
+        let tan_alpha = alpha_rad.tan();
         Self {
             ball_diameter,
             shaft_diameter,
             taper_half_angle_deg,
             cutting_length,
+            alpha_rad,
+            tan_alpha,
+            sin_alpha,
+            cos_alpha,
         }
     }
 
@@ -63,22 +75,22 @@ impl TaperedBallEndmill {
     }
 
     fn alpha(&self) -> f64 {
-        self.taper_half_angle_deg.to_radians()
+        self.alpha_rad
     }
 
     /// Radius where ball meets cone tangentially.
     fn r_contact(&self) -> f64 {
-        self.ball_radius() * self.alpha().cos()
+        self.ball_radius() * self.cos_alpha
     }
 
     /// Height where ball meets cone tangentially.
     fn h_contact(&self) -> f64 {
-        self.ball_radius() * (1.0 - self.alpha().sin())
+        self.ball_radius() * (1.0 - self.sin_alpha)
     }
 
     /// Z offset applied to the cone region to ensure continuity.
     fn cone_offset(&self) -> f64 {
-        self.h_contact() - self.r_contact() / self.alpha().tan()
+        self.h_contact() - self.r_contact() / self.tan_alpha
     }
 }
 
@@ -105,7 +117,7 @@ impl MillingCutter for TaperedBallEndmill {
             Some(r_ball - (r_ball * r_ball - r_clamped * r_clamped).max(0.0).sqrt())
         } else {
             // Cone region
-            Some(r.min(r_max) / self.alpha().tan() + self.cone_offset())
+            Some(r.min(r_max) / self.tan_alpha + self.cone_offset())
         }
     }
 
@@ -125,7 +137,7 @@ impl MillingCutter for TaperedBallEndmill {
             }
         } else {
             // Cone region
-            let w = (h - self.cone_offset()) * self.alpha().tan();
+            let w = (h - self.cone_offset()) * self.tan_alpha;
             w.min(r_max)
         }
     }
@@ -190,7 +202,7 @@ impl MillingCutter for TaperedBallEndmill {
             if tri.contains_point_xy(cc_x, cc_y)
                 && let Some(cc_z) = tri.z_at_xy(cc_x, cc_y)
             {
-                let cone_ch = r_shaft / self.alpha().tan() + self.cone_offset();
+                let cone_ch = r_shaft / self.tan_alpha + self.cone_offset();
                 let tip_z = cc_z - cone_ch;
 
                 // Validate: CC must be in cone region (r > r_contact from CL axis)
@@ -267,7 +279,9 @@ impl MillingCutter for TaperedBallEndmill {
                 // Contact point on edge at parameter t, distance from CL axis
                 let edge_x = p1.x + t * dx;
                 let edge_y = p1.y + t * dy;
-                let _contact_r_from_cl = ((edge_x - cl.x).powi(2) + (edge_y - cl.y).powi(2)).sqrt();
+                let _rdx = edge_x - cl.x;
+                let _rdy = edge_y - cl.y;
+                let _contact_r_from_cl = (_rdx * _rdx + _rdy * _rdy).sqrt();
 
                 // The CC point on the ball at this contact should be within r_contact
                 // For ball: CC is at the point on the sphere closest to the edge

@@ -366,7 +366,9 @@ pub fn toolpath_standalone_3d_html(toolpath: &Toolpath, stock_bounds: Option<[f6
             }
             MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
                 let dz = (to.z - from.z).abs();
-                let dxy = ((to.x - from.x).powi(2) + (to.y - from.y).powi(2)).sqrt();
+                let vdx = to.x - from.x;
+                let vdy = to.y - from.y;
+                let dxy = (vdx * vdx + vdy * vdy).sqrt();
 
                 // Classify as plunge (mostly vertical) vs cutting (mostly horizontal)
                 if dz > 0.1 && dxy < 0.1 {
@@ -570,11 +572,14 @@ animate();
 /// is overlaid as colored lines. A "Replay" button lets the user watch the tool
 /// cut the material in real-time with a 3D tool model. An optional ghost source mesh
 /// can be shown for 3D operations (drop-cutter, waterline).
+/// `annotations`: optional `(move_index, label)` pairs shown during replay.
+/// The label for the highest move_index <= current moveIdx is displayed.
 pub fn simulation_3d_html(
     heightmap: &Heightmap,
     toolpath: &Toolpath,
     source_mesh: Option<&TriangleMesh>,
     cutter: &dyn MillingCutter,
+    annotations: &[(usize, String)],
 ) -> String {
     let hm_mesh = heightmap_to_mesh(heightmap);
     let hm_bbox = heightmap.bbox();
@@ -704,6 +709,17 @@ pub fn simulation_3d_html(
         }
     }
 
+    // Serialize annotations as JS array: [[moveIdx, "label"], ...]
+    let mut annotations_js = String::new();
+    if !annotations.is_empty() {
+        for (idx, label) in annotations {
+            let escaped = label.replace('\\', "\\\\").replace('\"', "\\\"");
+            let _ = write!(annotations_js, "[{idx},\"{escaped}\"],");
+        }
+        // Trim trailing comma
+        annotations_js = annotations_js.trim_end_matches(',').to_string();
+    }
+
     // Build Three.js LatheGeometry profile points for the tool model
     let mut lathe_profile = String::new();
     // Profile curve from center outward
@@ -771,6 +787,7 @@ pub fn simulation_3d_html(
   <span id="speedVal">1.0</span>x</label>
   <div id="progressBar"><div id="progressFill"></div></div>
   <span id="moveInfo">Complete</span>
+  <span id="annotLabel" style="margin-left:12px;color:#aef;font-weight:bold"></span>
 </div>
 <div id="legend">
   <span style="color:#c49a6c">&#9632;</span> Uncut &nbsp;
@@ -899,6 +916,9 @@ const hmGrid = new Float64Array(hmRows * hmCols);
 // type: 0=rapid, 1=cutting
 const animTP = new Float32Array([{anim_tp_data}]);
 const animMoveCount = {anim_move_count};
+
+// Annotations: [moveIdx, label] pairs sorted by moveIdx ascending
+const annotations = [{annotations_js}];
 
 // Tool 3D model (LatheGeometry from profile)
 const profilePts = [{lathe_profile_data}];
@@ -1058,11 +1078,23 @@ function processFrame(dt) {{
   updateUI();
 }}
 
+function currentAnnotation() {{
+  if (typeof annotations === 'undefined' || annotations.length === 0) return '';
+  let label = '';
+  for (let i = 0; i < annotations.length; i++) {{
+    if (annotations[i][0] <= moveIdx) label = annotations[i][1];
+    else break;
+  }}
+  return label;
+}}
+
 function updateUI() {{
   const pct = animMoveCount > 1 ? ((moveIdx - 1) / (animMoveCount - 1)) * 100 : 100;
   document.getElementById('progressFill').style.width = pct + '%';
   document.getElementById('moveInfo').textContent =
     playing ? (moveIdx + ' / ' + animMoveCount) : 'Complete';
+  const al = document.getElementById('annotLabel');
+  if (al) al.textContent = playing ? currentAnnotation() : '';
 }}
 
 // UI event handlers
@@ -1162,6 +1194,7 @@ scene.add(new THREE.Mesh(srcGeo, srcMat));"#,
         z_range_val = (heightmap.stock_top_z - hm_bbox.min.z).max(1e-6),
         anim_tp_data = anim_tp.trim_end_matches(','),
         anim_move_count = anim_move_count,
+        annotations_js = annotations_js,
         lathe_profile_data = lathe_profile.trim_end_matches(','),
         grid_size = extent * 1.2,
         grid_z = hm_bbox.min.z - 0.1,
@@ -1415,6 +1448,7 @@ pub fn stacked_simulation_3d_html(
   <span id="speedVal">1.0</span>x</label>
   <div id="progressBar"><div id="progressFill"></div></div>
   <span id="moveInfo">Complete</span>
+  <span id="annotLabel" style="margin-left:12px;color:#aef;font-weight:bold"></span>
 </div>
 <div id="legend">
   <span style="color:#c49a6c">&#9632;</span> Uncut &nbsp;

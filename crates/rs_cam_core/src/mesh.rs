@@ -109,6 +109,7 @@ pub struct SpatialIndex {
     cell_size: f64,
     origin_x: f64,
     origin_y: f64,
+    total_triangles: usize,
 }
 
 impl SpatialIndex {
@@ -151,6 +152,7 @@ impl SpatialIndex {
             cell_size,
             origin_x,
             origin_y,
+            total_triangles: mesh.faces.len(),
         }
     }
 
@@ -168,14 +170,14 @@ impl SpatialIndex {
         let y1 = (y1 as usize).min(self.cell_count_y.saturating_sub(1));
 
         let mut result = Vec::new();
-        let mut seen = Vec::new(); // could use a bitset for large meshes
+        let mut seen = vec![false; self.total_triangles];
 
         for cy_idx in y0..=y1 {
             for cx_idx in x0..=x1 {
                 let cell_idx = cy_idx * self.cell_count_x + cx_idx;
                 for &tri_idx in &self.cells[cell_idx] {
-                    if !seen.contains(&tri_idx) {
-                        seen.push(tri_idx);
+                    if !seen[tri_idx] {
+                        seen[tri_idx] = true;
                         result.push(tri_idx);
                     }
                 }
