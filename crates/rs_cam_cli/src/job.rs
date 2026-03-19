@@ -34,16 +34,17 @@ use std::path::{Path, PathBuf};
 
 use rs_cam_core::{
     adaptive::{AdaptiveParams, adaptive_toolpath},
-    adaptive3d::{Adaptive3dParams, adaptive_3d_toolpath},
+    adaptive3d::{Adaptive3dParams, EntryStyle3d, adaptive_3d_toolpath},
     depth::{DepthStepping, depth_stepped_toolpath},
     dressup::{EntryStyle, apply_dogbones, apply_entry, apply_tabs, even_tabs},
+    dropcutter::batch_drop_cutter,
     gcode::get_post_processor,
     mesh::{SpatialIndex, TriangleMesh},
     pocket::{PocketParams, pocket_toolpath},
     polygon::Polygon2,
     profile::{ProfileParams, ProfileSide, profile_toolpath},
     rest::{RestParams, rest_machining_toolpath},
-    toolpath::Toolpath,
+    toolpath::{Toolpath, raster_toolpath_from_grid},
     zigzag::{ZigzagParams, zigzag_toolpath},
 };
 
@@ -134,9 +135,16 @@ pub struct OperationDef {
     // Rest machining-specific
     pub prev_tool: Option<String>,
 
+    // STL scaling
+    pub scale: Option<f64>,
+
     // 3D adaptive-specific
     pub stock_top_z: Option<f64>,
     pub stock_to_leave: Option<f64>,
+    pub entry_style: Option<String>,
+    pub fine_stepdown: Option<f64>,
+    pub detect_flat_areas: Option<bool>,
+    pub max_stay_down_dist: Option<f64>,
 }
 
 // ── Parsing ────────────────────────────────────────────────────────────
@@ -223,8 +231,22 @@ fn load_polygons_from(path: &Path) -> Result<Vec<Polygon2>> {
 
 // ── Operation execution ────────────────────────────────────────────────
 
-pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<Toolpath> {
+/// Result of a single operation within a job.
+pub struct OpResult {
+    pub toolpath: Toolpath,
+    pub cutter: Box<dyn rs_cam_core::tool::MillingCutter>,
+    pub label: String,
+}
+
+/// Result of executing a full job: combined toolpath + per-operation results.
+pub struct JobResult {
+    pub combined: Toolpath,
+    pub phases: Vec<OpResult>,
+}
+
+pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
     let mut combined = Toolpath::new();
+    let mut phases = Vec::new();
 
     for (i, op) in job.operation.iter().enumerate() {
         eprintln!("=== Operation {} ({}) ===", i, op.op_type);
@@ -406,7 +428,8 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<Toolpath> {
                     bail!("adaptive3d requires STL input, got '.{}'", ext);
                 }
 
-                let mesh = TriangleMesh::from_stl_scaled(&input_path, 1.0)
+                let stl_scale = op.scale.unwrap_or(1.0);
+                let mesh = TriangleMesh::from_stl_scaled(&input_path, stl_scale)
                     .context("Failed to load STL for adaptive3d")?;
                 let si_cell = cutter.diameter() * 2.0;
                 let si = SpatialIndex::build(&mesh, si_cell);
@@ -421,8 +444,17 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<Toolpath> {
                 eprintln!("  STL: {} verts, {} tris, stock_top={:.1}, stl={:.1}",
                     mesh.vertices.len(), mesh.faces.len(), stock_top, stl);
 
+                let entry = match op.entry_style.as_deref().unwrap_or("plunge") {
+                    "helix" => EntryStyle3d::Helix {
+                        radius: tool_radius * 0.8,
+                        pitch: 1.0,
+                    },
+                    "ramp" => EntryStyle3d::Ramp { max_angle_deg: 3.0 },
+                    _ => EntryStyle3d::Plunge,
+                };
+
                 let params = Adaptive3dParams {
-                    tool_radius: tool_radius,
+                    tool_radius,
                     stepover,
                     depth_per_pass: depth_pp,
                     stock_to_leave: stl,
@@ -432,12 +464,43 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<Toolpath> {
                     tolerance,
                     min_cutting_radius: mcr,
                     stock_top_z: stock_top,
+                    entry_style: entry,
+                    fine_stepdown: op.fine_stepdown,
+                    detect_flat_areas: op.detect_flat_areas.unwrap_or(false),
+                    max_stay_down_dist: op.max_stay_down_dist,
                 };
 
                 adaptive_3d_toolpath(&mesh, &si, cutter.as_ref(), &params)
             }
 
-            _ => bail!("Unknown operation type '{}'. Supported: pocket, profile, adaptive, rest, adaptive3d", op.op_type),
+            "drop-cutter" | "drop_cutter" | "finish" => {
+                let ext = input_path.extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                if ext != "stl" {
+                    bail!("drop-cutter requires STL input, got '.{}'", ext);
+                }
+
+                let stl_scale = op.scale.unwrap_or(1.0);
+                let mesh = TriangleMesh::from_stl_scaled(&input_path, stl_scale)
+                    .context("Failed to load STL for drop-cutter")?;
+                let si_cell = cutter.diameter() * 2.0;
+                let si = SpatialIndex::build(&mesh, si_cell);
+
+                let stepover = op.stepover.unwrap_or(1.0);
+                let min_z = mesh.bbox.min.z;
+
+                eprintln!("  STL: {} verts, {} tris, stepover={:.1}",
+                    mesh.vertices.len(), mesh.faces.len(), stepover);
+
+                let angle = op.angle.unwrap_or(0.0);
+                let grid = batch_drop_cutter(&mesh, &si, cutter.as_ref(), stepover, angle, min_z);
+                let tp = raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z);
+                tp
+            }
+
+            _ => bail!("Unknown operation type '{}'. Supported: pocket, profile, adaptive, rest, adaptive3d, drop-cutter", op.op_type),
         };
 
         eprintln!(
@@ -445,10 +508,16 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<Toolpath> {
             tp.moves.len(), tp.total_cutting_distance(), tp.total_rapid_distance()
         );
 
-        combined.moves.extend(tp.moves);
+        combined.moves.extend(tp.moves.clone());
+
+        let label = format!("Op {} — {} ({:.2}mm {})",
+            i, op.op_type, tool_def.diameter, tool_def.tool_type);
+        // Build a fresh cutter for the phase (the original was consumed above)
+        let phase_cutter = build_tool(tool_def)?;
+        phases.push(OpResult { toolpath: tp, cutter: phase_cutter, label });
     }
 
-    Ok(combined)
+    Ok(JobResult { combined, phases })
 }
 
 fn parse_entry(entry: &str) -> Result<Option<EntryStyle>> {

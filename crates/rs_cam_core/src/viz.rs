@@ -899,7 +899,7 @@ const animMoveCount = {anim_move_count};
 // Tool 3D model (LatheGeometry from profile)
 const profilePts = [{lathe_profile_data}];
 const toolGeo = new THREE.LatheGeometry(profilePts, 24);
-toolGeo.rotateX(-Math.PI / 2);
+toolGeo.rotateX(Math.PI / 2);
 const toolMat = new THREE.MeshPhongMaterial({{
   color: 0xaabbcc, transparent: true, opacity: 0.7,
   side: THREE.DoubleSide, shininess: 60,
@@ -1517,7 +1517,7 @@ let toolMesh = null;
 function buildToolMesh(ti) {{
   if (toolMesh) scene.remove(toolMesh);
   const geo = new THREE.LatheGeometry(latheProfiles[ti]||latheProfiles[0], 24);
-  geo.rotateX(-Math.PI / 2);
+  geo.rotateX(Math.PI / 2);
   toolMesh = new THREE.Mesh(geo, toolMat);
   toolMesh.visible = false;
   scene.add(toolMesh);

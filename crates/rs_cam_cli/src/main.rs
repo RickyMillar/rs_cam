@@ -17,7 +17,7 @@ use rs_cam_core::{
     simulation::{Heightmap, simulate_toolpath},
     tool::{BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill},
     toolpath::{Toolpath, raster_toolpath_from_grid},
-    adaptive3d::{Adaptive3dParams, adaptive_3d_toolpath},
+    adaptive3d::{Adaptive3dParams, EntryStyle3d, adaptive_3d_toolpath},
     rest::{RestParams, rest_machining_toolpath},
     vcarve::{VCarveParams, vcarve_toolpath},
     waterline::{WaterlineParams, waterline_toolpath},
@@ -562,6 +562,22 @@ enum Commands {
         #[arg(long)]
         view: Option<PathBuf>,
 
+        /// Entry style: plunge, helix, ramp (default: plunge)
+        #[arg(long, default_value = "plunge")]
+        entry_style: String,
+
+        /// Fine stepdown interval in mm (default: disabled)
+        #[arg(long)]
+        fine_stepdown: Option<f64>,
+
+        /// Detect flat areas in mesh and add Z levels at shelf heights
+        #[arg(long)]
+        detect_flat_areas: bool,
+
+        /// Maximum stay-down distance between passes in mm (default: tool_radius * 6)
+        #[arg(long)]
+        max_stay_down_dist: Option<f64>,
+
         /// Enable material removal simulation in viewer (requires --view)
         #[arg(long)]
         simulate: bool,
@@ -809,7 +825,8 @@ fn main() -> Result<()> {
                 job_file.job.output.display()
             );
 
-            let toolpath = job::execute_job(&job_file, job_dir)?;
+            let job_result = job::execute_job(&job_file, job_dir)?;
+            let toolpath = &job_result.combined;
             eprintln!(
                 "Total: {} moves, cutting={:.1}mm, rapid={:.1}mm",
                 toolpath.moves.len(),
@@ -827,30 +844,74 @@ fn main() -> Result<()> {
                 if p.is_absolute() { p.clone() } else { job_dir.join(p) }
             });
 
-            emit_and_write(&toolpath, &job_file.job.post, spindle_speed, &output, &svg)?;
+            emit_and_write(toolpath, &job_file.job.post, spindle_speed, &output, &svg)?;
 
             if let Some(view) = &job_file.job.view {
                 let view_path = if view.is_absolute() { view.clone() } else { job_dir.join(view) };
                 let html = if job_file.job.simulate {
-                    // For job files, build sim from first 2D operation's tool
-                    let first_tool_name = &job_file.operation[0].tool;
-                    let tool_def = &job_file.tools[first_tool_name];
-                    let cutter = job::build_tool_pub(tool_def)?;
-                    let tp_bbox = toolpath_bbox(&toolpath);
-                    let margin = cutter.radius();
+                    // Stacked simulation: each operation is a phase with its own cutter
+                    let tp_bbox = toolpath_bbox(toolpath);
+                    let max_margin = job_result.phases.iter()
+                        .map(|p| p.cutter.radius())
+                        .fold(0.0_f64, f64::max);
+                    // Determine stock top: use stock_top_z from first 3D op, or bbox max + 5
+                    let stock_top = job_file.operation.iter()
+                        .find_map(|op| op.stock_top_z)
+                        .unwrap_or(tp_bbox.max.z + 5.0);
                     let sim_bbox = BoundingBox3 {
                         min: rs_cam_core::geo::P3::new(
-                            tp_bbox.min.x - margin, tp_bbox.min.y - margin, tp_bbox.min.z,
+                            tp_bbox.min.x - max_margin,
+                            tp_bbox.min.y - max_margin,
+                            tp_bbox.min.z,
                         ),
                         max: rs_cam_core::geo::P3::new(
-                            tp_bbox.max.x + margin, tp_bbox.max.y + margin, 0.0,
+                            tp_bbox.max.x + max_margin,
+                            tp_bbox.max.y + max_margin,
+                            stock_top,
                         ),
                     };
-                    let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), job_file.job.sim_resolution);
-                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
-                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, None, cutter.as_ref())
+                    let mut hm = Heightmap::from_bounds(
+                        &sim_bbox, Some(stock_top), job_file.job.sim_resolution,
+                    );
+
+                    eprintln!("Running stacked simulation ({} phases, resolution={:.2}mm)...",
+                        job_result.phases.len(), job_file.job.sim_resolution);
+
+                    // Simulate each phase with its own cutter
+                    for phase in &job_result.phases {
+                        simulate_toolpath(&phase.toolpath, phase.cutter.as_ref(), &mut hm);
+                    }
+                    eprintln!("  {}x{} heightmap, {} phases", hm.cols, hm.rows, job_result.phases.len());
+
+                    // Try to load source mesh for overlay (from first STL-based operation)
+                    let source_mesh = job_file.operation.iter().find_map(|op| {
+                        let p = if op.input.is_absolute() {
+                            op.input.clone()
+                        } else {
+                            job_dir.join(&op.input)
+                        };
+                        let ext = p.extension()?.to_str()?.to_lowercase();
+                        if ext == "stl" {
+                            rs_cam_core::mesh::TriangleMesh::from_stl_scaled(&p, 1.0).ok()
+                        } else {
+                            None
+                        }
+                    });
+
+                    use rs_cam_core::viz::SimPhase;
+                    let sim_phases: Vec<SimPhase> = job_result.phases.iter()
+                        .map(|p| SimPhase {
+                            toolpath: &p.toolpath,
+                            cutter: p.cutter.as_ref(),
+                            label: p.label.clone(),
+                        })
+                        .collect();
+
+                    rs_cam_core::viz::stacked_simulation_3d_html(
+                        &sim_phases, &hm, source_mesh.as_ref(),
+                    )
                 } else {
-                    rs_cam_core::viz::toolpath_standalone_3d_html(&toolpath, None)
+                    rs_cam_core::viz::toolpath_standalone_3d_html(toolpath, None)
                 };
                 std::fs::write(&view_path, &html)
                     .context("Failed to write 3D viewer file")?;
@@ -1442,7 +1503,8 @@ fn main() -> Result<()> {
         Commands::Adaptive3d {
             input, units, scale, tool, stepover, depth_per_pass,
             stock_top_z, stock_to_leave, feed_rate, plunge_rate, spindle_speed,
-            safe_z, tolerance, min_cutting_radius, post, output, svg, view,
+            safe_z, tolerance, min_cutting_radius, entry_style, fine_stepdown,
+            detect_flat_areas, max_stay_down_dist, post, output, svg, view,
             simulate, sim_resolution,
         } => {
             let scale_factor = match scale {
@@ -1474,6 +1536,15 @@ fn main() -> Result<()> {
                 stock_z, depth_per_pass, stock_to_leave, stepover
             );
 
+            let entry = match entry_style.to_lowercase().as_str() {
+                "helix" => EntryStyle3d::Helix {
+                    radius: cutter.radius() * 0.8,
+                    pitch: 1.0,
+                },
+                "ramp" => EntryStyle3d::Ramp { max_angle_deg: 3.0 },
+                _ => EntryStyle3d::Plunge,
+            };
+
             let params = Adaptive3dParams {
                 tool_radius: cutter.radius(),
                 stepover,
@@ -1485,6 +1556,10 @@ fn main() -> Result<()> {
                 tolerance,
                 min_cutting_radius,
                 stock_top_z: stock_z,
+                entry_style: entry,
+                fine_stepdown,
+                detect_flat_areas,
+                max_stay_down_dist,
             };
 
             let start = std::time::Instant::now();

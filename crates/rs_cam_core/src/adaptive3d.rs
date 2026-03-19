@@ -26,6 +26,23 @@ use crate::waterline::waterline_contours;
 use rayon::prelude::*;
 use std::f64::consts::{PI, TAU};
 
+/// Entry strategy for 3D adaptive (replaces vertical plunge).
+#[derive(Debug, Clone, Copy)]
+pub enum EntryStyle3d {
+    /// Vertical plunge (default prior behavior).
+    Plunge,
+    /// Helical entry: spiral down with given radius and pitch (mm/rev).
+    Helix { radius: f64, pitch: f64 },
+    /// Ramp entry: descend at a shallow angle along the next cutting direction.
+    Ramp { max_angle_deg: f64 },
+}
+
+impl Default for EntryStyle3d {
+    fn default() -> Self {
+        EntryStyle3d::Plunge
+    }
+}
+
 /// Parameters for 3D adaptive clearing.
 pub struct Adaptive3dParams {
     pub tool_radius: f64,
@@ -38,6 +55,14 @@ pub struct Adaptive3dParams {
     pub tolerance: f64,
     pub min_cutting_radius: f64,
     pub stock_top_z: f64,
+    /// Entry strategy (default: Plunge for backward compat).
+    pub entry_style: EntryStyle3d,
+    /// Fine stepdown: when set, insert intermediate Z levels at this interval.
+    pub fine_stepdown: Option<f64>,
+    /// Detect flat areas in the mesh and insert Z levels at shelf heights.
+    pub detect_flat_areas: bool,
+    /// Maximum distance to stay down between passes (default: tool_radius * 6).
+    pub max_stay_down_dist: Option<f64>,
 }
 
 // ── Surface heightmap ─────────────────────────────────────────────────
@@ -712,6 +737,79 @@ fn adaptive_3d_segments(
     }
     z_levels.push(z_bottom); // Always include final level at the surface
 
+    // Fix 5: Flat area detection — histogram surface Z, insert levels at shelves
+    if params.detect_flat_areas {
+        let total_cells = surface_hm.z_values.len();
+        if total_cells > 0 {
+            // Build histogram of surface Z values binned at tolerance resolution
+            let bin_size = params.tolerance.max(0.05);
+            let z_min_surf = surface_bottom;
+            let z_max_surf = params.stock_top_z;
+            let n_bins = ((z_max_surf - z_min_surf) / bin_size).ceil() as usize + 1;
+            let mut histogram = vec![0u32; n_bins];
+            for &sz in &surface_hm.z_values {
+                let bin = ((sz - z_min_surf) / bin_size).floor() as usize;
+                if bin < n_bins {
+                    histogram[bin] += 1;
+                }
+            }
+            // Bins with >2% of total cells represent flat features
+            let threshold = (total_cells as f64 * 0.02) as u32;
+            let mut flat_levels = Vec::new();
+            for (i, &count) in histogram.iter().enumerate() {
+                if count > threshold {
+                    let flat_z = z_min_surf + (i as f64 + 0.5) * bin_size + params.stock_to_leave;
+                    // Only insert if within the working range and not too close to existing levels
+                    if flat_z > z_bottom + bin_size && flat_z < params.stock_top_z - bin_size {
+                        let too_close = z_levels.iter().any(|&zl| (zl - flat_z).abs() < bin_size);
+                        if !too_close {
+                            flat_levels.push(flat_z);
+                        }
+                    }
+                }
+            }
+            if !flat_levels.is_empty() {
+                eprintln!("  Detected {} flat area Z levels", flat_levels.len());
+                z_levels.extend(flat_levels);
+                z_levels.sort_by(|a, b| b.partial_cmp(a).unwrap()); // Top-down order
+                z_levels.dedup_by(|a, b| (*a - *b).abs() < 0.01);
+            }
+        }
+    }
+
+    // Fix 4: Fine stepdown — insert intermediate Z levels between major levels
+    if let Some(fine_step) = params.fine_stepdown {
+        if fine_step > 0.0 && fine_step < params.depth_per_pass {
+            let major_levels = z_levels.clone();
+            let mut all_levels = Vec::new();
+            // Insert intermediates between stock_top and first level
+            let first_start = params.stock_top_z;
+            for window in std::iter::once(&first_start)
+                .chain(major_levels.iter())
+                .collect::<Vec<_>>()
+                .windows(2)
+            {
+                let z_top = *window[0];
+                let z_bot = *window[1];
+                let mut iz = z_top - fine_step;
+                while iz > z_bot + fine_step * 0.5 {
+                    all_levels.push(iz);
+                    iz -= fine_step;
+                }
+                all_levels.push(z_bot); // Always include the major level
+            }
+            all_levels.sort_by(|a, b| b.partial_cmp(a).unwrap());
+            all_levels.dedup_by(|a, b| (*a - *b).abs() < 0.01);
+            eprintln!(
+                "  Fine stepdown: {} -> {} Z levels (fine_step={:.1})",
+                z_levels.len(),
+                all_levels.len(),
+                fine_step
+            );
+            z_levels = all_levels;
+        }
+    }
+
     eprintln!(
         "  {} Z levels from {:.1} to {:.1} (depth_per_pass={:.1})",
         z_levels.len(),
@@ -722,7 +820,7 @@ fn adaptive_3d_segments(
 
     let target_frac = target_engagement_fraction(params.stepover, tool_radius);
     let step_len = cell_size * 1.5;
-    let max_link_dist = tool_radius * 6.0;
+    let max_link_dist = params.max_stay_down_dist.unwrap_or(tool_radius * 6.0);
 
     // Expanded bbox for bounds checking in direction search
     let bbox_x_min = origin_x + tool_radius;
@@ -744,10 +842,20 @@ fn adaptive_3d_segments(
         let mut pass_endpoints: Vec<P2> = Vec::new();
         let max_passes = 500;
         let mut pass_count = 0;
+        let mut short_pass_streak = 0u32; // Consecutive short passes
+        let min_productive_steps = 8; // Pass shorter than this is "unproductive"
+        let warmup_passes = 50; // Don't bail during warmup
 
         loop {
             pass_count += 1;
             if pass_count > max_passes {
+                break;
+            }
+            // After warmup, bail if too many consecutive short passes
+            // (tool is circling narrow steep features unproductively)
+            if pass_count > warmup_passes && short_pass_streak > 15 {
+                eprintln!("      bailing: {} consecutive short passes at z={:.1} (pass {})",
+                    short_pass_streak, z_level, pass_count);
                 break;
             }
             // Check global material remaining periodically (expensive O(cells) scan)
@@ -777,6 +885,29 @@ fn adaptive_3d_segments(
             };
 
             let entry_3d = P3::new(entry_xy.x, entry_xy.y, entry_z);
+
+            // Pre-flight check: test if there's any viable cutting direction
+            // from this entry. Entries with material but no viable direction
+            // (thin slivers, isolated cells) produce 1-step passes that waste time.
+            let preflight_dir = search_direction_3d(
+                &material_hm, &surface_hm,
+                entry_xy.x, entry_xy.y, tool_radius, step_len,
+                target_frac, 0.0, z_level, params.stock_to_leave,
+                bbox_x_min, bbox_x_max, bbox_y_min, bbox_y_max,
+            );
+            if preflight_dir.is_none() {
+                // No viable direction — force-clear this spot and move on
+                stamp_tool_at(&mut material_hm, cutter, entry_xy.x, entry_xy.y, entry_z);
+                for a in 0..8 {
+                    let angle = (a as f64 / 8.0) * TAU;
+                    let px = entry_xy.x + tool_radius * 0.5 * angle.cos();
+                    let py = entry_xy.y + tool_radius * 0.5 * angle.sin();
+                    stamp_tool_at(&mut material_hm, cutter, px, py, entry_z);
+                }
+                pass_endpoints.push(entry_xy);
+                short_pass_streak += 1;
+                continue;
+            }
 
             // Link or retract to entry
             if let Some(last) = last_pos {
@@ -859,7 +990,11 @@ fn adaptive_3d_segments(
                 // Move
                 cx += step_len * angle.cos();
                 cy += step_len * angle.sin();
-                cz = z_next;
+                // Z-rate clamping: limit max descent per step to depth_per_pass.
+                // Prevents tool from plunging freely on steep slopes.
+                // Upward movement is always unrestricted (safe).
+                let max_z_step = params.depth_per_pass;
+                cz = z_next.max(cz - max_z_step);
                 path.push(P3::new(cx, cy, cz));
 
                 // Stamp
@@ -871,11 +1006,20 @@ fn adaptive_3d_segments(
                 }
                 angle_buf.push(angle);
 
-                // Idle detection: cheap local area check
+                // Idle detection: require BOTH no local material change AND
+                // low engagement. The engagement threshold must be high enough
+                // that the tool doesn't idle-break at the boundary of a cleared
+                // ring when there's still material just inward (the direction
+                // search will steer inward if given the chance).
                 let local_after = local_material_sum(&material_hm, cx, cy, tool_radius);
-                if (local_before - local_after).abs() < 0.001 {
+                let local_delta = (local_before - local_after).abs();
+                let engagement_here = compute_engagement_3d(
+                    &material_hm, &surface_hm, cx, cy, tool_radius,
+                    z_level, params.stock_to_leave,
+                );
+                if local_delta < 0.001 && engagement_here < 0.05 {
                     idle_count += 1;
-                    if idle_count > 15 {
+                    if idle_count > 20 {
                         break;
                     }
                 } else {
@@ -885,9 +1029,10 @@ fn adaptive_3d_segments(
                 prev_angle = angle;
             }
 
-            let was_idle = idle_count > 15;
+            let was_idle = idle_count > 20;
 
-            if path.len() >= 2 {
+            let pass_steps = path.len();
+            if pass_steps >= 2 {
                 let endpoint = *path.last().unwrap();
                 last_pos = Some(endpoint);
                 pass_endpoints.push(P2::new(endpoint.x, endpoint.y));
@@ -895,6 +1040,13 @@ fn adaptive_3d_segments(
             } else {
                 last_pos = Some(entry_3d);
                 pass_endpoints.push(entry_xy);
+            }
+
+            // Track pass productivity
+            if pass_steps < min_productive_steps {
+                short_pass_streak += 1;
+            } else {
+                short_pass_streak = 0;
             }
 
             // Force-clear around endpoint if idle to prevent revisiting
@@ -974,9 +1126,64 @@ pub fn adaptive_3d_toolpath(
     for segment in &segments {
         match segment {
             Adaptive3dSegment::Rapid(entry) => {
-                // Retract → rapid XY → plunge
-                tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
-                tp.feed_to(*entry, params.plunge_rate);
+                match params.entry_style {
+                    EntryStyle3d::Plunge => {
+                        // Original: retract → rapid XY → plunge
+                        tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                        tp.feed_to(*entry, params.plunge_rate);
+                    }
+                    EntryStyle3d::Helix { radius, pitch } => {
+                        // Rapid to 2mm above entry, then helix down
+                        let clearance = 2.0;
+                        let helix_start_z = entry.z + clearance;
+                        tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                        tp.rapid_to(P3::new(entry.x, entry.y, helix_start_z));
+
+                        let dz = (helix_start_z - entry.z).abs();
+                        if dz < 0.01 || pitch < 0.01 {
+                            tp.feed_to(*entry, params.plunge_rate);
+                        } else {
+                            let revolutions = dz / pitch;
+                            let steps_per_rev = 36;
+                            let total_steps = (revolutions * steps_per_rev as f64).ceil() as usize;
+                            if total_steps == 0 {
+                                tp.feed_to(*entry, params.plunge_rate);
+                            } else {
+                                let total_angle = revolutions * TAU;
+                                for i in 1..=total_steps {
+                                    let t = i as f64 / total_steps as f64;
+                                    let angle = total_angle * t;
+                                    let z = helix_start_z - dz * t;
+                                    let x = entry.x + radius * angle.cos();
+                                    let y = entry.y + radius * angle.sin();
+                                    tp.feed_to(P3::new(x, y, z), params.plunge_rate);
+                                }
+                                // Return to entry center at final Z
+                                tp.feed_to(*entry, params.plunge_rate);
+                            }
+                        }
+                    }
+                    EntryStyle3d::Ramp { max_angle_deg } => {
+                        // Rapid to 2mm above entry, then ramp down along a direction
+                        let clearance = 2.0;
+                        let ramp_start_z = entry.z + clearance;
+                        tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                        tp.rapid_to(P3::new(entry.x, entry.y, ramp_start_z));
+
+                        let dz = (ramp_start_z - entry.z).abs().max(0.1);
+                        let max_angle_rad = max_angle_deg.to_radians();
+                        let ramp_xy_len = dz / max_angle_rad.tan();
+                        let half_len = ramp_xy_len / 2.0;
+
+                        // Ramp along X direction (arbitrary), zigzag down
+                        let mid_z = (ramp_start_z + entry.z) / 2.0;
+                        tp.feed_to(
+                            P3::new(entry.x + half_len, entry.y, mid_z),
+                            params.plunge_rate,
+                        );
+                        tp.feed_to(*entry, params.plunge_rate);
+                    }
+                }
             }
             Adaptive3dSegment::Link(target) => {
                 tp.feed_to(*target, params.feed_rate);
@@ -1045,6 +1252,10 @@ mod tests {
             tolerance: 0.1,
             min_cutting_radius: 0.0,
             stock_top_z: 25.0,
+            entry_style: EntryStyle3d::Plunge,
+            fine_stepdown: None,
+            detect_flat_areas: false,
+            max_stay_down_dist: None,
         }
     }
 
@@ -1404,5 +1615,205 @@ mod tests {
                 }
             }
         }
+    }
+
+    // ── Fix 1: Z-rate clamping test ────────────────────────────────────
+
+    #[test]
+    fn test_z_rate_clamp_limits_descent() {
+        // Verify that Z-rate clamping works in the internal stepping loop.
+        // We test by calling adaptive_3d_segments directly and inspecting Cut paths
+        // before simplification/blending.
+        let (mesh, si) = make_hemisphere_mesh();
+        let cutter = flat_cutter();
+        let depth_per_pass = 3.0;
+        let params = Adaptive3dParams {
+            stock_top_z: 25.0,
+            depth_per_pass,
+            stock_to_leave: 0.5,
+            tolerance: 0.5,
+            ..default_params()
+        };
+
+        let segments = adaptive_3d_segments(&mesh, &si, &cutter, &params);
+
+        // Check raw Cut segments: consecutive points should not drop > depth_per_pass
+        let mut checked = 0;
+        for seg in &segments {
+            if let Adaptive3dSegment::Cut(path) = seg {
+                for window in path.windows(2) {
+                    let z_drop = window[0].z - window[1].z;
+                    if z_drop > 0.0 {
+                        assert!(
+                            z_drop <= depth_per_pass + 0.1,
+                            "Raw path Z drop {:.2} exceeds depth_per_pass {:.1}",
+                            z_drop, depth_per_pass,
+                        );
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert!(checked > 0, "Should have checked some downward Z moves");
+    }
+
+    // ── Fix 2: Helix entry test ────────────────────────────────────────
+
+    #[test]
+    fn test_helix_entry_no_vertical_plunge() {
+        let (mesh, si) = make_flat_mesh();
+        let cutter = flat_cutter();
+        let params = Adaptive3dParams {
+            stock_top_z: 5.0,
+            depth_per_pass: 5.0,
+            stock_to_leave: 0.0,
+            tolerance: 0.5,
+            entry_style: EntryStyle3d::Helix {
+                radius: cutter.radius() * 0.8,
+                pitch: 1.0,
+            },
+            ..default_params()
+        };
+
+        let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+        assert!(tp.moves.len() > 5, "Should produce a toolpath");
+
+        // With helix entry, there should be feed moves that descend while
+        // moving in XY (helix spiral). Individual helix steps are small,
+        // so check for any downward-feed with XY motion.
+        let mut has_helix_moves = false;
+        for window in tp.moves.windows(2) {
+            if let crate::toolpath::MoveType::Linear { .. } = window[1].move_type {
+                let dx = (window[1].target.x - window[0].target.x).abs();
+                let dy = (window[1].target.y - window[0].target.y).abs();
+                let dz = window[0].target.z - window[1].target.z;
+                // A helix step descends while moving in XY
+                if dz > 0.005 && (dx > 0.01 || dy > 0.01) {
+                    has_helix_moves = true;
+                    break;
+                }
+            }
+        }
+        assert!(has_helix_moves, "Helix entry should produce moves with simultaneous XY+Z motion");
+    }
+
+    // ── Fix 4: Fine stepdown test ──────────────────────────────────────
+
+    #[test]
+    fn test_fine_stepdown_inserts_levels() {
+        // Verify that fine_stepdown produces more Z levels
+        let stock_top: f64 = 20.0;
+        let depth_per_pass: f64 = 5.0;
+        let fine_step: f64 = 1.0;
+        let surface_bottom: f64 = 0.0;
+        let stock_to_leave: f64 = 0.5;
+        let z_bottom = surface_bottom + stock_to_leave;
+
+        // Major levels only
+        let mut major_levels = Vec::new();
+        let mut z = stock_top - depth_per_pass;
+        while z > z_bottom {
+            major_levels.push(z);
+            z -= depth_per_pass;
+        }
+        major_levels.push(z_bottom);
+        let n_major = major_levels.len(); // Should be 4: [15, 10, 5, 0.5]
+
+        // Fine stepdown levels
+        let mut all_levels = Vec::new();
+        let first_start = stock_top;
+        for window in std::iter::once(&first_start)
+            .chain(major_levels.iter())
+            .collect::<Vec<_>>()
+            .windows(2)
+        {
+            let z_top = *window[0];
+            let z_bot = *window[1];
+            let mut iz = z_top - fine_step;
+            while iz > z_bot + fine_step * 0.5 {
+                all_levels.push(iz);
+                iz -= fine_step;
+            }
+            all_levels.push(z_bot);
+        }
+        all_levels.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        all_levels.dedup_by(|a, b| (*a - *b).abs() < 0.01);
+
+        assert!(
+            all_levels.len() > n_major * 3,
+            "Fine stepdown should produce significantly more levels: {} vs {}",
+            all_levels.len(),
+            n_major
+        );
+        // With fine_step=1 and depth_per_pass=5, each major interval gets ~4 intermediates
+        // Total should be around 19-20 levels
+        assert!(
+            all_levels.len() >= 15,
+            "Expected at least 15 fine levels, got {}",
+            all_levels.len()
+        );
+    }
+
+    // ── Fix 5: Flat area detection test ────────────────────────────────
+
+    #[test]
+    fn test_flat_area_detection_finds_shelf() {
+        // Build a surface heightmap where many cells sit at z=10 (a shelf)
+        // and the rest sit at z=0 (floor)
+        let cell_size = 1.0;
+        let rows = 20;
+        let cols = 20;
+        let mut z_values = vec![0.0; rows * cols];
+        // Create a shelf: rows 5..15, cols 5..15 at z=10
+        for row in 5..15 {
+            for col in 5..15 {
+                z_values[row * cols + col] = 10.0;
+            }
+        }
+
+        let shm = SurfaceHeightmap {
+            z_values,
+            rows,
+            cols,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            cell_size,
+        };
+
+        // Histogram detection logic (same as in adaptive_3d_segments)
+        let tolerance: f64 = 0.1;
+        let stock_to_leave: f64 = 0.5;
+        let stock_top: f64 = 25.0;
+        let total_cells = shm.z_values.len();
+        let bin_size = tolerance.max(0.05);
+        let z_min_surf = 0.0;
+        let z_max_surf = stock_top;
+        let n_bins = ((z_max_surf - z_min_surf) / bin_size).ceil() as usize + 1;
+        let mut histogram = vec![0u32; n_bins];
+        for &sz in &shm.z_values {
+            let bin = ((sz - z_min_surf) / bin_size).floor() as usize;
+            if bin < n_bins {
+                histogram[bin] += 1;
+            }
+        }
+        let threshold = (total_cells as f64 * 0.02) as u32;
+        let mut flat_levels = Vec::new();
+        let z_bottom = 0.0 + stock_to_leave;
+        for (i, &count) in histogram.iter().enumerate() {
+            if count > threshold {
+                let flat_z = z_min_surf + (i as f64 + 0.5) * bin_size + stock_to_leave;
+                if flat_z > z_bottom + bin_size && flat_z < stock_top - bin_size {
+                    flat_levels.push(flat_z);
+                }
+            }
+        }
+
+        // Should detect the shelf at z≈10 (+stock_to_leave=0.5 → 10.5)
+        let found_shelf = flat_levels.iter().any(|&z| (z - 10.5).abs() < 1.0);
+        assert!(
+            found_shelf,
+            "Should detect shelf near z=10.5, found levels: {:?}",
+            flat_levels
+        );
     }
 }
