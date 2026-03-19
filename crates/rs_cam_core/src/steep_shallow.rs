@@ -264,8 +264,9 @@ fn generate_shallow_passes(
                     for pt in &run[1..] {
                         tp.feed_to(*pt, feed_rate);
                     }
-                    let last = *run.last().unwrap();
-                    tp.rapid_to(P3::new(last.x, last.y, safe_z));
+                    if let Some(&last) = run.last() {
+                        tp.rapid_to(P3::new(last.x, last.y, safe_z));
+                    }
                 }
                 run.clear();
                 in_region = false;
@@ -279,8 +280,9 @@ fn generate_shallow_passes(
             for pt in &run[1..] {
                 tp.feed_to(*pt, feed_rate);
             }
-            let last = *run.last().unwrap();
-            tp.rapid_to(P3::new(last.x, last.y, safe_z));
+            if let Some(&last) = run.last() {
+                tp.rapid_to(P3::new(last.x, last.y, safe_z));
+            }
         }
     }
 

@@ -127,7 +127,7 @@ impl ParamContour {
             return self.points[0];
         }
         // Binary search for the segment containing t
-        let idx = match self.params.binary_search_by(|p| p.partial_cmp(&t).unwrap()) {
+        let idx = match self.params.binary_search_by(|p| p.partial_cmp(&t).unwrap_or(std::cmp::Ordering::Equal)) {
             Ok(i) => return self.points[i],
             Err(i) => i.saturating_sub(1),
         };
@@ -491,8 +491,9 @@ pub fn ramp_finish_toolpath(
         }
 
         // Retract
-        let last = path.last().unwrap();
-        tp.rapid_to(P3::new(last.x, last.y, params.safe_z));
+        if let Some(last) = path.last() {
+            tp.rapid_to(P3::new(last.x, last.y, params.safe_z));
+        }
     }
 
     if let Some(last) = tp.moves.last() {

@@ -146,8 +146,9 @@ pub fn vcarve_toolpath(polygon: &Polygon2, params: &VCarveParams) -> Toolpath {
         }
 
         // Retract
-        let last = points.last().unwrap();
-        tp.rapid_to(P3::new(last.x, last.y, params.safe_z));
+        if let Some(last) = points.last() {
+            tp.rapid_to(P3::new(last.x, last.y, params.safe_z));
+        }
     }
 
     tp

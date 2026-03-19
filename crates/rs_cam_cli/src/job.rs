@@ -109,8 +109,6 @@ pub struct OperationDef {
     pub feed_rate: Option<f64>,
     pub plunge_rate: Option<f64>,
     pub safe_z: Option<f64>,
-    // TODO: wire into per-operation spindle speed override
-    #[allow(dead_code)]
     pub spindle_speed: Option<u32>,
 
     // Pocket-specific
@@ -210,6 +208,7 @@ pub struct OpResult {
     pub toolpath: Toolpath,
     pub cutter: Box<dyn rs_cam_core::tool::MillingCutter>,
     pub label: String,
+    pub spindle_speed: u32,
 }
 
 /// Result of executing a full job: combined toolpath + per-operation results.
@@ -234,6 +233,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
         let safe_z = op.safe_z.unwrap_or(job.job.safe_z);
         let feed_rate = op.feed_rate.unwrap_or(1000.0);
         let plunge_rate = op.plunge_rate.unwrap_or(500.0);
+        let spindle_speed = op.spindle_speed.unwrap_or(job.job.spindle_speed);
 
         // Resolve input path relative to job file directory
         let input_path = if op.input.is_absolute() {
@@ -497,7 +497,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
             i, op.op_type, tool_def.diameter, tool_def.tool_type);
         // Build a fresh cutter for the phase (the original was consumed above)
         let phase_cutter = build_tool(tool_def)?;
-        phases.push(OpResult { toolpath: tp, cutter: phase_cutter, label });
+        phases.push(OpResult { toolpath: tp, cutter: phase_cutter, label, spindle_speed });
     }
 
     Ok(JobResult { combined, phases })

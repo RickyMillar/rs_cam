@@ -9,7 +9,7 @@ use rs_cam_core::{
     dressup::{apply_dogbones, apply_entry, apply_tabs, even_tabs},
     dropcutter::batch_drop_cutter,
     geo::BoundingBox3,
-    gcode::{emit_gcode, get_post_processor},
+    gcode::{emit_gcode, emit_gcode_phased, get_post_processor, GcodePhase},
     mesh::{SpatialIndex, TriangleMesh},
     pocket::{PocketParams, pocket_toolpath},
     profile::{ProfileParams, ProfileSide, profile_toolpath},
@@ -25,6 +25,8 @@ use rs_cam_core::{
     ramp_finish::{RampFinishParams, CutDirection, ramp_finish_toolpath},
     steep_shallow::{SteepShallowParams, steep_shallow_toolpath},
     scallop::{ScallopParams, ScallopDirection, scallop_toolpath},
+    pencil::{PencilParams, pencil_toolpath},
+    inlay::{InlayParams, inlay_toolpaths},
 };
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
@@ -784,6 +786,102 @@ enum Commands {
         sim_resolution: f64,
     },
 
+    /// Inlay operations — generate male and female V-carve toolpaths
+    #[command(name = "inlay")]
+    Inlay {
+        input: PathBuf,
+        #[arg(long)]
+        tool: String,
+        /// V-bit half-angle in degrees (e.g. 45 for 90° V-bit)
+        #[arg(long, default_value = "45.0")]
+        half_angle: f64,
+        /// Female pocket depth (mm)
+        #[arg(long, default_value = "3.0")]
+        pocket_depth: f64,
+        /// Glue gap between mating surfaces (mm)
+        #[arg(long, default_value = "0.1")]
+        glue_gap: f64,
+        /// Additional male depth below start surface (mm)
+        #[arg(long, default_value = "0.5")]
+        flat_depth: f64,
+        /// Margin around plug boundary (mm)
+        #[arg(long, default_value = "2.0")]
+        boundary_offset: f64,
+        /// Scan line spacing (mm)
+        #[arg(long, default_value = "0.5")]
+        stepover: f64,
+        /// Tool radius for flat area clearing (0 = skip)
+        #[arg(long, default_value = "0.0")]
+        flat_tool_radius: f64,
+        #[arg(long, default_value = "1000.0")]
+        feed_rate: f64,
+        #[arg(long, default_value = "500.0")]
+        plunge_rate: f64,
+        #[arg(long, default_value = "18000")]
+        spindle_speed: u32,
+        #[arg(long, default_value = "10.0")]
+        safe_z: f64,
+        #[arg(long, default_value = "grbl")]
+        post: String,
+        /// Output file for female pocket G-code
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Output file for male plug G-code (defaults to <output>_male.nc)
+        #[arg(long)]
+        male_output: Option<PathBuf>,
+        #[arg(long)]
+        svg: Option<PathBuf>,
+    },
+
+    /// Pencil finishing — trace concave edges (creases) on mesh surfaces
+    #[command(name = "pencil")]
+    Pencil {
+        input: PathBuf,
+        #[arg(long, default_value = "mm")]
+        units: String,
+        #[arg(long)]
+        scale: Option<f64>,
+        #[arg(long)]
+        tool: String,
+        /// Dihedral angle threshold (degrees). Edges below this are creases.
+        #[arg(long, default_value = "160.0")]
+        bitangency_angle: f64,
+        /// Minimum chain length to keep (mm)
+        #[arg(long, default_value = "5.0")]
+        min_cut_length: f64,
+        /// Number of offset passes on each side of centerline (0 = center only)
+        #[arg(long, default_value = "0")]
+        offset_passes: usize,
+        /// Offset stepover between parallel passes (mm)
+        #[arg(long, default_value = "1.5")]
+        offset_stepover: f64,
+        /// Point spacing along paths (mm)
+        #[arg(long, default_value = "0.5")]
+        sampling: f64,
+        #[arg(long, default_value = "0.0")]
+        stock_to_leave: f64,
+        #[arg(long, default_value = "1000.0")]
+        feed_rate: f64,
+        #[arg(long, default_value = "500.0")]
+        plunge_rate: f64,
+        #[arg(long, default_value = "18000")]
+        spindle_speed: u32,
+        #[arg(long, default_value = "10.0")]
+        safe_z: f64,
+        #[arg(long, default_value = "grbl")]
+        post: String,
+        #[arg(short, long)]
+        output: PathBuf,
+        #[arg(long)]
+        svg: Option<PathBuf>,
+        #[arg(long)]
+        view: Option<PathBuf>,
+        #[arg(long)]
+        simulate: bool,
+        #[arg(long, default_value = "0.25")]
+        sim_resolution: f64,
+    },
+
     /// Scallop finishing — constant scallop height with variable stepover
     #[command(name = "scallop")]
     Scallop {
@@ -1074,7 +1172,6 @@ fn main() -> Result<()> {
                 "Total toolpath"
             );
 
-            let spindle_speed = job_file.job.spindle_speed;
             let output = if job_file.job.output.is_absolute() {
                 job_file.job.output.clone()
             } else {
@@ -1084,7 +1181,28 @@ fn main() -> Result<()> {
                 if p.is_absolute() { p.clone() } else { job_dir.join(p) }
             });
 
-            emit_and_write(toolpath, &job_file.job.post, spindle_speed, &output, &svg)?;
+            // Emit G-code with per-operation spindle speed support
+            let post_proc = get_post_processor(&job_file.job.post)
+                .context(format!("Unknown post-processor '{}'. Supported: grbl, linuxcnc, mach3", job_file.job.post))?;
+            let phases: Vec<GcodePhase<'_>> = job_result.phases.iter().map(|p| {
+                GcodePhase {
+                    toolpath: &p.toolpath,
+                    spindle_rpm: p.spindle_speed,
+                    label: &p.label,
+                }
+            }).collect();
+            info!("Emitting G-code ({})...", post_proc.name());
+            let gcode = emit_gcode_phased(&phases, post_proc.as_ref());
+            std::fs::write(&output, &gcode)
+                .context("Failed to write output file")?;
+            info!(bytes = gcode.len(), path = %output.display(), "Wrote G-code");
+
+            if let Some(svg_out) = &svg {
+                let svg_content = rs_cam_core::viz::toolpath_to_svg(toolpath, 800.0, 600.0);
+                std::fs::write(svg_out, &svg_content)
+                    .context("Failed to write SVG file")?;
+                info!(path = %svg_out.display(), "Wrote SVG preview");
+            }
 
             if let Some(view) = &job_file.job.view {
                 let view_path = if view.is_absolute() { view.clone() } else { job_dir.join(view) };
@@ -1830,6 +1948,93 @@ fn main() -> Result<()> {
                 rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
                 elapsed_secs = format!("{:.2}", start.elapsed().as_secs_f64()),
                 "Generated steep & shallow toolpath"
+            );
+
+            emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
+            write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
+        }
+
+        Commands::Inlay {
+            input, tool, half_angle, pocket_depth, glue_gap, flat_depth,
+            boundary_offset, stepover, flat_tool_radius, feed_rate, plunge_rate,
+            spindle_speed, safe_z, post, output, male_output, svg,
+        } => {
+            let polygons = helpers::load_polygons(&input)?;
+            let _cutter = parse_tool(&tool)?;
+
+            let params = InlayParams {
+                half_angle: half_angle.to_radians(),
+                pocket_depth,
+                glue_gap,
+                flat_depth,
+                boundary_offset,
+                stepover,
+                flat_tool_radius,
+                feed_rate,
+                plunge_rate,
+                safe_z,
+                tolerance: 0.1,
+            };
+
+            for (i, poly) in polygons.iter().enumerate() {
+                let result = inlay_toolpaths(poly, &params);
+
+                info!(
+                    polygon = i,
+                    female_moves = result.female.moves.len(),
+                    male_moves = result.male.moves.len(),
+                    "Inlay toolpaths generated"
+                );
+
+                // Write female pocket
+                emit_and_write(&result.female, &post, spindle_speed, &output, &svg)?;
+
+                // Write male plug
+                let male_path = male_output.clone().unwrap_or_else(|| {
+                    let stem = output.file_stem().unwrap_or_default().to_string_lossy();
+                    let ext = output.extension().unwrap_or_default().to_string_lossy();
+                    output.with_file_name(format!("{}_male.{}", stem, ext))
+                });
+                emit_and_write(&result.male, &post, spindle_speed, &male_path, &None)?;
+                info!(
+                    female = %output.display(),
+                    male = %male_path.display(),
+                    "Wrote inlay G-code files"
+                );
+            }
+        }
+
+        Commands::Pencil {
+            input, units, scale, tool, bitangency_angle, min_cut_length,
+            offset_passes, offset_stepover, sampling, stock_to_leave,
+            feed_rate, plunge_rate, spindle_speed, safe_z, post, output,
+            svg, view, simulate, sim_resolution,
+        } => {
+            let scale_factor = parse_scale_factor(scale, &units)?;
+            let cutter = parse_tool(&tool)?;
+            let (mesh, index) = load_stl_with_index(&input, scale_factor, cutter.as_ref())?;
+
+            let params = PencilParams {
+                bitangency_angle,
+                min_cut_length,
+                hookup_distance: cutter.diameter() * 3.0,
+                num_offset_passes: offset_passes,
+                offset_stepover,
+                sampling,
+                feed_rate,
+                plunge_rate,
+                safe_z,
+                stock_to_leave,
+            };
+
+            let start = std::time::Instant::now();
+            let toolpath = pencil_toolpath(&mesh, &index, cutter.as_ref(), &params);
+            info!(
+                moves = toolpath.moves.len(),
+                cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
+                rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                elapsed_secs = format!("{:.2}", start.elapsed().as_secs_f64()),
+                "Generated pencil toolpath"
             );
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;

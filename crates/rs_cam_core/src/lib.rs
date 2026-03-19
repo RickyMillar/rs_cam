@@ -27,3 +27,6 @@ pub mod scallop_math;
 pub mod ramp_finish;
 pub mod steep_shallow;
 pub mod scallop;
+pub mod pencil;
+pub mod inlay;
+pub mod weave;

@@ -60,18 +60,77 @@ pub fn batch_drop_cutter<C: MillingCutter + ?Sized>(
     let r = cutter.radius();
     let bbox = mesh.bbox.expand_by(r);
 
-    // For now, only axis-aligned raster (direction = 0 or 90)
-    // TODO: support arbitrary angles
-    let _ = direction_deg;
+    let angle_rad = direction_deg.to_radians();
+    let cos_a = angle_rad.cos();
+    let sin_a = angle_rad.sin();
 
-    let x_start = bbox.min.x;
-    let x_end = bbox.max.x;
-    let y_start = bbox.min.y;
-    let y_end = bbox.max.y;
+    // For near-zero angles, skip rotation overhead
+    let use_rotation = direction_deg.abs() > 0.01
+        && (direction_deg - 90.0).abs() > 0.01
+        && (direction_deg - 180.0).abs() > 0.01;
 
-    let cols = ((x_end - x_start) / step_over).ceil() as usize + 1;
-    let rows = ((y_end - y_start) / step_over).ceil() as usize + 1;
+    if !use_rotation {
+        // Axis-aligned fast path (original behavior)
+        let x_start = bbox.min.x;
+        let x_end = bbox.max.x;
+        let y_start = bbox.min.y;
+        let y_end = bbox.max.y;
 
+        let cols = ((x_end - x_start) / step_over).ceil() as usize + 1;
+        let rows = ((y_end - y_start) / step_over).ceil() as usize + 1;
+        let total = rows * cols;
+
+        let points: Vec<CLPoint> = (0..total)
+            .into_par_iter()
+            .map(|i| {
+                let row = i / cols;
+                let col = i % cols;
+                let x = x_start + col as f64 * step_over;
+                let y = y_start + row as f64 * step_over;
+                let mut cl = point_drop_cutter(x, y, mesh, index, cutter);
+                if cl.z < min_z {
+                    cl.z = min_z;
+                }
+                cl
+            })
+            .collect();
+
+        return DropCutterGrid {
+            points,
+            rows,
+            cols,
+            x_start,
+            y_start,
+            x_step: step_over,
+            y_step: step_over,
+        };
+    }
+
+    // Rotated grid: transform bbox corners into rotated frame to find bounds
+    let corners = [
+        (bbox.min.x, bbox.min.y),
+        (bbox.max.x, bbox.min.y),
+        (bbox.max.x, bbox.max.y),
+        (bbox.min.x, bbox.max.y),
+    ];
+
+    let mut u_min = f64::INFINITY;
+    let mut u_max = f64::NEG_INFINITY;
+    let mut v_min = f64::INFINITY;
+    let mut v_max = f64::NEG_INFINITY;
+
+    for &(x, y) in &corners {
+        // Rotate into aligned frame (forward rotation)
+        let u = x * cos_a + y * sin_a;
+        let v = -x * sin_a + y * cos_a;
+        u_min = u_min.min(u);
+        u_max = u_max.max(u);
+        v_min = v_min.min(v);
+        v_max = v_max.max(v);
+    }
+
+    let cols = ((u_max - u_min) / step_over).ceil() as usize + 1;
+    let rows = ((v_max - v_min) / step_over).ceil() as usize + 1;
     let total = rows * cols;
 
     let points: Vec<CLPoint> = (0..total)
@@ -79,10 +138,14 @@ pub fn batch_drop_cutter<C: MillingCutter + ?Sized>(
         .map(|i| {
             let row = i / cols;
             let col = i % cols;
-            let x = x_start + col as f64 * step_over;
-            let y = y_start + row as f64 * step_over;
+            let u = u_min + col as f64 * step_over;
+            let v = v_min + row as f64 * step_over;
+
+            // Inverse rotation: (u,v) -> (x,y)
+            let x = u * cos_a - v * sin_a;
+            let y = u * sin_a + v * cos_a;
+
             let mut cl = point_drop_cutter(x, y, mesh, index, cutter);
-            // Clamp to minimum Z
             if cl.z < min_z {
                 cl.z = min_z;
             }
@@ -94,8 +157,8 @@ pub fn batch_drop_cutter<C: MillingCutter + ?Sized>(
         points,
         rows,
         cols,
-        x_start,
-        y_start,
+        x_start: u_min,
+        y_start: v_min,
         x_step: step_over,
         y_step: step_over,
     }
@@ -126,6 +189,45 @@ mod tests {
             (cl.z - 0.0).abs() < 0.5,
             "Center CL.z = {}, expected ~0.0",
             cl.z
+        );
+    }
+
+    #[test]
+    fn test_point_drop_cutter_contacted_flag() {
+        let mesh = make_test_flat(100.0);
+        let index = SpatialIndex::build(&mesh, 20.0);
+        let tool = BallEndmill::new(10.0, 25.0);
+
+        // Point over the mesh should be contacted
+        let cl = point_drop_cutter(0.0, 0.0, &mesh, &index, &tool);
+        assert!(cl.contacted, "Point over mesh should be contacted");
+        assert!(cl.z > f64::NEG_INFINITY, "Z should be finite");
+
+        // Point far outside mesh footprint should not be contacted
+        let cl_outside = point_drop_cutter(500.0, 500.0, &mesh, &index, &tool);
+        assert!(!cl_outside.contacted, "Point far outside mesh should not be contacted");
+    }
+
+    #[test]
+    fn test_batch_drop_cutter_rotated_45() {
+        let mesh = make_test_flat(100.0);
+        let index = SpatialIndex::build(&mesh, 20.0);
+        let tool = BallEndmill::new(10.0, 25.0);
+
+        let grid_0 = batch_drop_cutter(&mesh, &index, &tool, 5.0, 0.0, -100.0);
+        let grid_45 = batch_drop_cutter(&mesh, &index, &tool, 5.0, 45.0, -100.0);
+
+        // Both should produce valid grids
+        assert!(grid_0.rows > 0 && grid_0.cols > 0);
+        assert!(grid_45.rows > 0 && grid_45.cols > 0);
+
+        // The 45° grid should have contacted points over the mesh
+        let center = grid_45.get(grid_45.rows / 2, grid_45.cols / 2);
+        assert!(center.contacted, "Center of 45° grid should contact flat mesh");
+        assert!(
+            (center.z - 0.0).abs() < 0.5,
+            "Center CL.z on flat = {}, expected ~0.0",
+            center.z
         );
     }
 }

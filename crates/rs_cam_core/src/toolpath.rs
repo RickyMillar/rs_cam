@@ -110,9 +110,9 @@ pub fn raster_toolpath_from_grid(
 ) -> Toolpath {
     let mut tp = Toolpath::new();
 
-    // Start at safe Z
-    let first = &grid.points[0];
-    tp.rapid_to(P3::new(first.x, first.y, safe_z));
+    if grid.points.is_empty() {
+        return tp;
+    }
 
     for row in 0..grid.rows {
         // Zigzag: even rows go left-to-right, odd rows go right-to-left
@@ -123,6 +123,9 @@ pub fn raster_toolpath_from_grid(
         };
 
         let col_vec: Vec<usize> = cols.collect();
+        if col_vec.is_empty() {
+            continue;
+        }
         let first_col = col_vec[0];
         let first_pt = grid.get(row, first_col);
 
@@ -138,7 +141,7 @@ pub fn raster_toolpath_from_grid(
         }
 
         // Retract at end of row
-        let last_col = *col_vec.last().unwrap();
+        let last_col = col_vec[col_vec.len() - 1];
         let last_pt = grid.get(row, last_col);
         tp.rapid_to(P3::new(last_pt.x, last_pt.y, safe_z));
     }

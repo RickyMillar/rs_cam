@@ -211,6 +211,78 @@ impl PostProcessor for Mach3Post {
     fn decimal_places(&self) -> usize { 4 }
 }
 
+/// A phase in a multi-operation job: toolpath + spindle speed + label.
+pub struct GcodePhase<'a> {
+    pub toolpath: &'a Toolpath,
+    pub spindle_rpm: u32,
+    pub label: &'a str,
+}
+
+/// Emit G-code from multiple phases, inserting spindle speed changes between operations.
+pub fn emit_gcode_phased(
+    phases: &[GcodePhase<'_>],
+    post: &dyn PostProcessor,
+) -> String {
+    if phases.is_empty() {
+        return String::new();
+    }
+
+    let mut output = String::new();
+    let first_rpm = phases[0].spindle_rpm;
+    output.push_str(&post.preamble(first_rpm));
+
+    let mut current_rpm = first_rpm;
+    let mut last_feed: Option<f64> = None;
+
+    for phase in phases {
+        output.push_str(&post.comment(phase.label));
+
+        if phase.spindle_rpm != current_rpm {
+            let _ = writeln!(output, "M3 S{}", phase.spindle_rpm);
+            current_rpm = phase.spindle_rpm;
+        }
+
+        for m in &phase.toolpath.moves {
+            match m.move_type {
+                MoveType::Rapid => {
+                    output.push_str(&post.rapid(m.target.x, m.target.y, m.target.z));
+                    last_feed = None;
+                }
+                MoveType::Linear { feed_rate } => {
+                    if last_feed != Some(feed_rate) {
+                        output.push_str(&post.linear(
+                            m.target.x, m.target.y, m.target.z, feed_rate,
+                        ));
+                        last_feed = Some(feed_rate);
+                    } else {
+                        let dp = post.decimal_places();
+                        let _ = writeln!(
+                            output,
+                            "G1 X{:.dp$} Y{:.dp$} Z{:.dp$}",
+                            m.target.x, m.target.y, m.target.z
+                        );
+                    }
+                }
+                MoveType::ArcCW { i, j, feed_rate } => {
+                    output.push_str(&post.arc_cw(
+                        m.target.x, m.target.y, m.target.z, i, j, feed_rate,
+                    ));
+                    last_feed = Some(feed_rate);
+                }
+                MoveType::ArcCCW { i, j, feed_rate } => {
+                    output.push_str(&post.arc_ccw(
+                        m.target.x, m.target.y, m.target.z, i, j, feed_rate,
+                    ));
+                    last_feed = Some(feed_rate);
+                }
+            }
+        }
+    }
+
+    output.push_str(&post.postamble());
+    output
+}
+
 /// Get a post-processor by name.
 pub fn get_post_processor(name: &str) -> Option<Box<dyn PostProcessor>> {
     match name.to_lowercase().as_str() {
@@ -279,5 +351,54 @@ mod tests {
         assert!(get_post_processor("linuxcnc").is_some());
         assert!(get_post_processor("mach3").is_some());
         assert!(get_post_processor("unknown").is_none());
+    }
+
+    #[test]
+    fn test_emit_gcode_phased_same_spindle() {
+        let mut tp1 = Toolpath::new();
+        tp1.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp1.feed_to(P3::new(10.0, 0.0, 0.0), 1000.0);
+
+        let mut tp2 = Toolpath::new();
+        tp2.rapid_to(P3::new(20.0, 0.0, 10.0));
+        tp2.feed_to(P3::new(30.0, 0.0, 0.0), 800.0);
+
+        let phases = vec![
+            GcodePhase { toolpath: &tp1, spindle_rpm: 18000, label: "Op 0 — pocket" },
+            GcodePhase { toolpath: &tp2, spindle_rpm: 18000, label: "Op 1 — profile" },
+        ];
+        let gcode = emit_gcode_phased(&phases, &GrblPost);
+
+        // Should have one preamble with M3 S18000
+        assert!(gcode.contains("M3 S18000"));
+        // Should have both operations' comments
+        assert!(gcode.contains("(Op 0"));
+        assert!(gcode.contains("(Op 1"));
+        // No extra spindle speed change since both are 18000
+        let m3_count = gcode.matches("M3 S").count();
+        assert_eq!(m3_count, 1, "Same spindle speed should not emit extra M3");
+    }
+
+    #[test]
+    fn test_emit_gcode_phased_different_spindle() {
+        let mut tp1 = Toolpath::new();
+        tp1.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp1.feed_to(P3::new(10.0, 0.0, 0.0), 1000.0);
+
+        let mut tp2 = Toolpath::new();
+        tp2.rapid_to(P3::new(20.0, 0.0, 10.0));
+        tp2.feed_to(P3::new(30.0, 0.0, 0.0), 800.0);
+
+        let phases = vec![
+            GcodePhase { toolpath: &tp1, spindle_rpm: 18000, label: "Op 0 — rough" },
+            GcodePhase { toolpath: &tp2, spindle_rpm: 24000, label: "Op 1 — finish" },
+        ];
+        let gcode = emit_gcode_phased(&phases, &GrblPost);
+
+        // Should have preamble M3 S18000 + later M3 S24000
+        assert!(gcode.contains("M3 S18000"));
+        assert!(gcode.contains("M3 S24000"));
+        let m3_count = gcode.matches("M3 S").count();
+        assert_eq!(m3_count, 2, "Different spindle speeds should emit M3 for each");
     }
 }

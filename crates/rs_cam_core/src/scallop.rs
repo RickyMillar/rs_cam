@@ -222,7 +222,7 @@ fn closest_point_idx(ring: &[P3], target: &P3) -> usize {
         .min_by(|(_, a), (_, b)| {
             let da = (a.x - target.x).powi(2) + (a.y - target.y).powi(2);
             let db = (b.x - target.x).powi(2) + (b.y - target.y).powi(2);
-            da.partial_cmp(&db).unwrap()
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
         })
         .map(|(i, _)| i)
         .unwrap_or(0)

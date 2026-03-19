@@ -15,6 +15,7 @@ use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::pushcutter::batch_push_cutter;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
+use crate::weave::weave_contours;
 
 /// Parameters for waterline toolpath generation.
 pub struct WaterlineParams {
@@ -71,21 +72,8 @@ pub fn waterline_contours(
         || batch_push_cutter(&mut y_fibers, mesh, index, cutter),
     );
 
-    // Extract CL boundary points from interval endpoints
-    let mut boundary_points: Vec<P3> = Vec::new();
-    for fiber in &x_fibers {
-        boundary_points.extend(fiber.cl_points());
-    }
-    for fiber in &y_fibers {
-        boundary_points.extend(fiber.cl_points());
-    }
-
-    if boundary_points.is_empty() {
-        return Vec::new();
-    }
-
-    // Connect boundary points into closed loops using nearest-neighbor
-    chain_contours(&boundary_points, sampling * 2.0)
+    // Extract contour loops using the Weave graph (topologically correct)
+    weave_contours(&x_fibers, &y_fibers, z)
 }
 
 /// Generate waterline toolpaths at multiple Z heights.
@@ -139,6 +127,12 @@ pub fn waterline_toolpath(
 ///
 /// Points within `max_gap` distance are connected. Loops shorter than 3 points
 /// are discarded.
+///
+/// Public variant for use by the weave module's fallback path.
+pub fn chain_contours_pub(points: &[P3], max_gap: f64) -> Vec<Vec<P3>> {
+    chain_contours(points, max_gap)
+}
+
 fn chain_contours(points: &[P3], max_gap: f64) -> Vec<Vec<P3>> {
     if points.is_empty() {
         return Vec::new();

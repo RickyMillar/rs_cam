@@ -113,12 +113,37 @@ pub struct SpatialIndex {
 }
 
 impl SpatialIndex {
+    /// Build a spatial index with automatic cell size based on mesh extent.
+    ///
+    /// Picks a cell size that balances spatial locality vs overhead:
+    /// targets ~50 cells per axis, clamped to a minimum of 1.0mm.
+    pub fn build_auto(mesh: &TriangleMesh) -> Self {
+        let bbox = &mesh.bbox;
+        let extent_x = bbox.max.x - bbox.min.x;
+        let extent_y = bbox.max.y - bbox.min.y;
+        let max_extent = extent_x.max(extent_y);
+        let cell_size = (max_extent / 50.0).max(1.0);
+        Self::build(mesh, cell_size)
+    }
+
     /// Build a uniform grid spatial index over the mesh triangles.
     /// `cell_size` controls the grid resolution (should be ~2x cutter diameter).
+    /// If `cell_size` is larger than mesh extent / 4, it is clamped down to avoid
+    /// degenerate grids where all triangles land in one cell.
     pub fn build(mesh: &TriangleMesh, cell_size: f64) -> Self {
         let bbox = &mesh.bbox;
         let origin_x = bbox.min.x;
         let origin_y = bbox.min.y;
+
+        // Clamp cell_size so we get at least 4 cells per axis when possible
+        let extent_x = bbox.max.x - bbox.min.x;
+        let extent_y = bbox.max.y - bbox.min.y;
+        let max_extent = extent_x.max(extent_y);
+        let cell_size = if max_extent > 0.0 {
+            cell_size.min(max_extent / 4.0)
+        } else {
+            cell_size
+        };
 
         let cell_count_x = ((bbox.max.x - bbox.min.x) / cell_size).ceil() as usize + 1;
         let cell_count_y = ((bbox.max.y - bbox.min.y) / cell_size).ceil() as usize + 1;
@@ -273,6 +298,30 @@ mod tests {
         let idx = SpatialIndex::build(&mesh, 20.0);
         let tris = idx.query(0.0, 0.0, 5.0);
         // Both triangles should be found since they share the center
+        assert_eq!(tris.len(), 2);
+    }
+
+    #[test]
+    fn test_spatial_index_auto_sizing() {
+        let mesh = make_test_flat(100.0);
+        let idx = SpatialIndex::build_auto(&mesh);
+        // Should still find triangles near center
+        let tris = idx.query(0.0, 0.0, 5.0);
+        assert_eq!(tris.len(), 2, "Auto-sized index should find triangles");
+        // Auto-size should produce reasonable cell count (not 1 cell)
+        assert!(idx.cell_count_x >= 4, "Should have multiple X cells, got {}", idx.cell_count_x);
+        assert!(idx.cell_count_y >= 4, "Should have multiple Y cells, got {}", idx.cell_count_y);
+    }
+
+    #[test]
+    fn test_spatial_index_oversized_cell_clamped() {
+        // When user passes a cell_size larger than mesh, it should be clamped
+        let mesh = make_test_flat(100.0);
+        let idx = SpatialIndex::build(&mesh, 10000.0); // way too big
+        // Should still have multiple cells due to clamping
+        assert!(idx.cell_count_x >= 4, "Oversized cell should be clamped, got {} X cells", idx.cell_count_x);
+        // And still find triangles
+        let tris = idx.query(0.0, 0.0, 5.0);
         assert_eq!(tris.len(), 2);
     }
 }

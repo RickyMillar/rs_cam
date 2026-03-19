@@ -9,7 +9,7 @@ Read this FIRST at the start of every session. Update LAST before ending.
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 324 tests passing (322 unit + 2 integration)
+- [x] Core library + CLI compiling, 413 tests passing (411 unit + 2 integration)
 - [x] Phase 1 complete: STL → drop-cutter → G-code pipeline with 3D HTML viewer
 - [x] Phase 2 complete: 2.5D operations (pocket, profile, zigzag, depth stepping, SVG/DXF input, dressups, CLI)
 - [x] Phase 3 complete: Advanced tools (BullNose, VBit, TaperedBall), push-cutter, waterline, arc fitting, G2/G3
@@ -87,7 +87,9 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [ ] 5.1 egui + wgpu 3D viewer (rs_cam_viz crate)
 - [x] 5.2 Material removal simulation — heightmap stamping, wood-tone mesh, animated 3D replay with tool model (simulation.rs, viz.rs)
 - [x] 5.2a Simulation performance — swept segment stamping (10x), radial LUT (no sqrt), early-out skip, benchmarks (simulation.rs, adaptive3d.rs)
-- [ ] 5.3 Inlay operations
+- [x] 5.3 Inlay operations — female V-carve pocket, flat area clearing, male plug with glue gap, CLI subcommand (inlay.rs)
+- [x] 5.5 Pencil finishing — mesh edge dihedral angle analysis, concave edge chaining, offset passes, drop-cutter Z lift, CLI subcommand (pencil.rs)
+- [x] 5.4 Tech debt cleanup — removed all unwrap() from library code (partial_cmp NaN safety, last() safety), wired per-operation spindle speed, spatial index auto-sizing + cell clamp, CLPoint.contacted flag for boundary detection, fixed duplicate rapid in raster toolpath, emit_gcode_phased for multi-operation jobs
 
 ## Module Map (for new agents)
 
@@ -117,7 +119,9 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 | vcarve | `rs_cam_core/src/vcarve.rs` | V-carving: distance-to-boundary, variable-depth scan-line toolpath |
 | rest | `rs_cam_core/src/rest.rs` | Rest machining: geometric comparison, masked zigzag in unreachable corners |
 | adaptive3d | `rs_cam_core/src/adaptive3d.rs` | 3D adaptive clearing: heightmap material tracking, surface-following engagement, multi-level passes |
-| CLI | `rs_cam_cli/src/main.rs` | drop-cutter, pocket, profile, adaptive, adaptive3d, vcarve, rest, waterline subcommands |
+| pencil | `rs_cam_core/src/pencil.rs` | Pencil finishing: concave mesh edge detection, dihedral angle analysis, polyline chaining |
+| inlay | `rs_cam_core/src/inlay.rs` | Inlay operations: female V-carve pocket, male plug with inverted depth profile |
+| CLI | `rs_cam_cli/src/main.rs` | drop-cutter, pocket, profile, adaptive, adaptive3d, vcarve, rest, waterline, pencil, inlay subcommands |
 
 ## Decisions Log
 
@@ -134,10 +138,10 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 | 2026-03-19 | Nearest-neighbor over Weave for waterline | Simpler implementation, sufficient for initial waterline support; Weave graph is complex and can be added later for adaptive refinement |
 
 ## Known Issues / Tech Debt
-- Spatial index degrades when cell_size >> model extent (all tris in one cell). Consider auto-sizing cell_size from mesh bbox.
-- Points outside mesh boundary hit min_z clamp. Should skip or clip to mesh XY extent.
+- ~~Spatial index degrades when cell_size >> model extent~~ FIXED: `build()` auto-clamps oversized cells; `build_auto()` added.
+- ~~Points outside mesh boundary hit min_z clamp~~ FIXED: CLPoint now has `contacted` flag to detect no-contact points.
 - Flipped normals on some triangles could cause facet_drop to miss contacts. Consider checking/fixing winding on load.
-- Duplicate rapid at start of each row in raster toolpath (minor).
+- ~~Duplicate rapid at start of each row in raster toolpath~~ FIXED: removed duplicate initial rapid.
 - Contour-parallel pocket pattern does NOT avoid islands (rings pass through holes). Use zigzag pattern for pockets with islands.
 - Bull nose edge_drop uses simplified tube-circle approach (not full offset-ellipse with Brent's solver). Accurate for most cases but may have slight errors on highly sloped edges.
 - Push-cutter edge_push uses sampling (32 steps) rather than analytical solution. Could miss contacts on very small edges.

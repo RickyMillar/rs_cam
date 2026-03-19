@@ -148,8 +148,9 @@ fn emit_rest_segment(tp: &mut Toolpath, points: &[P2], params: &RestParams) {
         tp.feed_to(P3::new(p.x, p.y, z), params.feed_rate);
     }
     // Retract
-    let last = points.last().unwrap();
-    tp.rapid_to(P3::new(last.x, last.y, params.safe_z));
+    if let Some(last) = points.last() {
+        tp.rapid_to(P3::new(last.x, last.y, params.safe_z));
+    }
 }
 
 #[cfg(test)]

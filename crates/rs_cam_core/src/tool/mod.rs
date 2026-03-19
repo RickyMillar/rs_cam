@@ -27,6 +27,10 @@ pub struct CLPoint {
     pub x: f64,
     pub y: f64,
     pub z: f64,
+    /// True if at least one triangle contributed to this CL point's Z value.
+    /// When false, the point is outside the mesh footprint and Z is NEG_INFINITY
+    /// (or clamped by the caller).
+    pub contacted: bool,
 }
 
 impl CLPoint {
@@ -35,6 +39,7 @@ impl CLPoint {
             x,
             y,
             z: f64::NEG_INFINITY,
+            contacted: false,
         }
     }
 
@@ -42,6 +47,7 @@ impl CLPoint {
     pub fn update_z(&mut self, z: f64) {
         if z > self.z {
             self.z = z;
+            self.contacted = true;
         }
     }
 
