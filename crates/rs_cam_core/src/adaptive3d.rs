@@ -25,6 +25,7 @@ use crate::waterline::waterline_contours;
 
 use rayon::prelude::*;
 use std::f64::consts::{PI, TAU};
+use tracing::{info, debug};
 
 /// Entry strategy for 3D adaptive (replaces vertical plunge).
 #[derive(Debug, Clone, Copy, Default)]
@@ -707,7 +708,7 @@ fn adaptive_3d_segments(
         Heightmap::from_stock(origin_x, origin_y, extent_x, extent_y, params.stock_top_z, cell_size);
 
     // Precompute surface heightmap (rayon parallel drop-cutter)
-    eprintln!("  Precomputing surface heightmap ({} x {} cells)...", material_hm.cols, material_hm.rows);
+    debug!(cols = material_hm.cols, rows = material_hm.rows, "Precomputing surface heightmap");
     let surface_hm = SurfaceHeightmap::from_mesh(
         mesh,
         index,
@@ -763,7 +764,7 @@ fn adaptive_3d_segments(
                 }
             }
             if !flat_levels.is_empty() {
-                eprintln!("  Detected {} flat area Z levels", flat_levels.len());
+                debug!(count = flat_levels.len(), "Detected flat area Z levels");
                 z_levels.extend(flat_levels);
                 z_levels.sort_by(|a, b| b.partial_cmp(a).unwrap()); // Top-down order
                 z_levels.dedup_by(|a, b| (*a - *b).abs() < 0.01);
@@ -795,22 +796,11 @@ fn adaptive_3d_segments(
         }
         all_levels.sort_by(|a, b| b.partial_cmp(a).unwrap());
         all_levels.dedup_by(|a, b| (*a - *b).abs() < 0.01);
-        eprintln!(
-            "  Fine stepdown: {} -> {} Z levels (fine_step={:.1})",
-            z_levels.len(),
-            all_levels.len(),
-            fine_step
-        );
+        debug!(from = z_levels.len(), to = all_levels.len(), fine_step = fine_step, "Fine stepdown expanded Z levels");
         z_levels = all_levels;
     }
 
-    eprintln!(
-        "  {} Z levels from {:.1} to {:.1} (depth_per_pass={:.1})",
-        z_levels.len(),
-        z_levels.first().copied().unwrap_or(0.0),
-        z_levels.last().copied().unwrap_or(0.0),
-        params.depth_per_pass
-    );
+    info!(count = z_levels.len(), z_top = z_levels.first().copied().unwrap_or(0.0), z_bottom = z_levels.last().copied().unwrap_or(0.0), depth_per_pass = params.depth_per_pass, "Z levels computed");
 
     let target_frac = target_engagement_fraction(params.stepover, tool_radius);
     let step_len = cell_size * 1.5;
@@ -828,10 +818,10 @@ fn adaptive_3d_segments(
     for (level_idx, &z_level) in z_levels.iter().enumerate() {
         let remaining = material_remaining_at_level(&material_hm, &surface_hm, z_level, params.stock_to_leave);
         if remaining < 0.005 {
-            eprintln!("  Level {}: z={:.1}, skipping (no material)", level_idx, z_level);
+            debug!(level = level_idx, z = z_level, "Skipping level, no material");
             continue;
         }
-        eprintln!("  Level {}: z={:.1}, {:.1}% material remaining", level_idx, z_level, remaining * 100.0);
+        debug!(level = level_idx, z = z_level, remaining_pct = remaining * 100.0, "Starting Z level");
 
         let mut pass_endpoints: Vec<P2> = Vec::new();
         let max_passes = 500;
@@ -848,8 +838,7 @@ fn adaptive_3d_segments(
             // After warmup, bail if too many consecutive short passes
             // (tool is circling narrow steep features unproductively)
             if pass_count > warmup_passes && short_pass_streak > 15 {
-                eprintln!("      bailing: {} consecutive short passes at z={:.1} (pass {})",
-                    short_pass_streak, z_level, pass_count);
+                debug!(short_passes = short_pass_streak, z = z_level, pass = pass_count, "Bailing from Z level");
                 break;
             }
             // Check global material remaining periodically (expensive O(cells) scan)
@@ -1058,7 +1047,7 @@ fn adaptive_3d_segments(
             }
         }
 
-        eprintln!("    {} passes at z={:.1}", pass_count, z_level);
+        debug!(passes = pass_count, z = z_level, "Completed Z level");
 
         // Boundary cleanup: waterline contours at this z_level
         let sampling = cell_size * 2.0;
@@ -1104,6 +1093,7 @@ fn adaptive_3d_segments(
 /// Starting from flat stock at `stock_top_z`, roughs out material following
 /// the STL mesh surface with constant engagement control. Multi-level
 /// passes from top to bottom, waterline boundary cleanup at each level.
+#[tracing::instrument(skip(mesh, index, cutter, params), fields(tool_radius = params.tool_radius, stepover = params.stepover))]
 pub fn adaptive_3d_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -1202,12 +1192,7 @@ pub fn adaptive_3d_toolpath(
         tp.rapid_to(P3::new(last.target.x, last.target.y, params.safe_z));
     }
 
-    eprintln!(
-        "  Total: {} moves, cutting={:.1}mm, rapid={:.1}mm",
-        tp.moves.len(),
-        tp.total_cutting_distance(),
-        tp.total_rapid_distance()
-    );
+    info!(moves = tp.moves.len(), cutting_mm = tp.total_cutting_distance(), rapid_mm = tp.total_rapid_distance(), "3D adaptive toolpath complete");
 
     tp
 }

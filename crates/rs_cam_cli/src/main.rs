@@ -24,6 +24,7 @@ use rs_cam_core::{
     zigzag::{ZigzagParams, zigzag_toolpath},
 };
 use std::path::{Path, PathBuf};
+use tracing::{debug, info};
 
 #[derive(Parser)]
 #[command(name = "rs_cam", about = "3-axis wood router CAM toolpath generator")]
@@ -749,13 +750,13 @@ fn load_stl_with_index(
 ) -> Result<(TriangleMesh, SpatialIndex)> {
     let mesh = TriangleMesh::from_stl_scaled(path, scale)
         .context("Failed to load STL")?;
-    eprintln!("  {} vertices, {} triangles", mesh.vertices.len(), mesh.faces.len());
-    eprintln!(
-        "  Bounding box: ({:.2}, {:.2}, {:.2}) to ({:.2}, {:.2}, {:.2})",
-        mesh.bbox.min.x, mesh.bbox.min.y, mesh.bbox.min.z,
-        mesh.bbox.max.x, mesh.bbox.max.y, mesh.bbox.max.z,
+    debug!(vertices = mesh.vertices.len(), triangles = mesh.faces.len(), "Loaded mesh");
+    debug!(
+        min_x = mesh.bbox.min.x, min_y = mesh.bbox.min.y, min_z = mesh.bbox.min.z,
+        max_x = mesh.bbox.max.x, max_y = mesh.bbox.max.y, max_z = mesh.bbox.max.z,
+        "Bounding box"
     );
-    eprintln!("Building spatial index...");
+    debug!("Building spatial index...");
     let cell_size = cutter.diameter() * 2.0;
     let index = SpatialIndex::build(&mesh, cell_size);
     Ok((mesh, index))
@@ -773,7 +774,7 @@ fn write_3d_view(
 ) -> Result<()> {
     if let Some(view_path) = view {
         let html = if simulate {
-            eprintln!("Running simulation (resolution={:.2}mm)...", sim_res);
+            debug!(resolution_mm = sim_res, "Running simulation");
             let mut hm = Heightmap::from_stock(
                 mesh.bbox.min.x - cutter.radius(),
                 mesh.bbox.min.y - cutter.radius(),
@@ -783,14 +784,14 @@ fn write_3d_view(
                 sim_res,
             );
             simulate_toolpath(tp, cutter, &mut hm);
-            eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
+            debug!(cols = hm.cols, rows = hm.rows, "Heightmap generated");
             rs_cam_core::viz::simulation_3d_html(&hm, tp, Some(mesh), cutter)
         } else {
             rs_cam_core::viz::toolpath_to_3d_html(mesh, tp)
         };
         std::fs::write(view_path, &html)
             .context("Failed to write 3D viewer file")?;
-        eprintln!("Wrote 3D viewer to {} ({:.1} MB)", view_path.display(), html.len() as f64 / 1_048_576.0);
+        info!(path = %view_path.display(), size_mb = html.len() as f64 / 1_048_576.0, "Wrote 3D viewer");
     }
     Ok(())
 }
@@ -805,7 +806,7 @@ fn write_2d_view(
 ) -> Result<()> {
     if let Some(view_path) = view {
         let html = if simulate {
-            eprintln!("Running simulation (resolution={:.2}mm)...", sim_res);
+            debug!(resolution_mm = sim_res, "Running simulation");
             let tp_bbox = toolpath_bbox(tp);
             let margin = cutter.radius();
             let sim_bbox = BoundingBox3 {
@@ -822,14 +823,14 @@ fn write_2d_view(
             };
             let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_res);
             simulate_toolpath(tp, cutter, &mut hm);
-            eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
+            debug!(cols = hm.cols, rows = hm.rows, "Heightmap generated");
             rs_cam_core::viz::simulation_3d_html(&hm, tp, None, cutter)
         } else {
             rs_cam_core::viz::toolpath_standalone_3d_html(tp, None)
         };
         std::fs::write(view_path, &html)
             .context("Failed to write 3D viewer file")?;
-        eprintln!("Wrote 3D viewer to {}", view_path.display());
+        info!(path = %view_path.display(), "Wrote 3D viewer");
     }
     Ok(())
 }
@@ -852,18 +853,18 @@ fn emit_and_write(
     let post_proc = get_post_processor(post)
         .context(format!("Unknown post-processor '{}'. Supported: grbl, linuxcnc", post))?;
 
-    eprintln!("Emitting G-code ({})...", post_proc.name());
+    info!("Emitting G-code ({})...", post_proc.name());
     let gcode = emit_gcode(toolpath, post_proc.as_ref(), spindle_speed);
 
     std::fs::write(output, &gcode)
         .context("Failed to write output file")?;
-    eprintln!("Wrote {} bytes to {}", gcode.len(), output.display());
+    info!(bytes = gcode.len(), path = %output.display(), "Wrote G-code");
 
     if let Some(svg_out) = svg_path {
         let svg_content = rs_cam_core::viz::toolpath_to_svg(toolpath, 800.0, 600.0);
         std::fs::write(svg_out, &svg_content)
             .context("Failed to write SVG file")?;
-        eprintln!("Wrote SVG preview to {}", svg_out.display());
+        info!(path = %svg_out.display(), "Wrote SVG preview");
     }
 
     Ok(())
@@ -884,23 +885,23 @@ fn main() -> Result<()> {
             let job_path = input.canonicalize()
                 .context(format!("Job file not found: {}", input.display()))?;
             let job_dir = job_path.parent().unwrap_or(Path::new("."));
-            eprintln!("Loading job file: {}", job_path.display());
+            debug!(path = %job_path.display(), "Loading job file");
 
             let job_file = job::parse_job_file(&job_path)?;
-            eprintln!(
-                "Job: {} tool(s), {} operation(s), output={}",
-                job_file.tools.len(),
-                job_file.operation.len(),
-                job_file.job.output.display()
+            info!(
+                tools = job_file.tools.len(),
+                operations = job_file.operation.len(),
+                output = %job_file.job.output.display(),
+                "Job loaded"
             );
 
             let job_result = job::execute_job(&job_file, job_dir)?;
             let toolpath = &job_result.combined;
-            eprintln!(
-                "Total: {} moves, cutting={:.1}mm, rapid={:.1}mm",
-                toolpath.moves.len(),
-                toolpath.total_cutting_distance(),
-                toolpath.total_rapid_distance()
+            info!(
+                moves = toolpath.moves.len(),
+                cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
+                rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                "Total toolpath"
             );
 
             let spindle_speed = job_file.job.spindle_speed;
@@ -943,14 +944,13 @@ fn main() -> Result<()> {
                         &sim_bbox, Some(stock_top), job_file.job.sim_resolution,
                     );
 
-                    eprintln!("Running stacked simulation ({} phases, resolution={:.2}mm)...",
-                        job_result.phases.len(), job_file.job.sim_resolution);
+                    debug!(phases = job_result.phases.len(), resolution_mm = job_file.job.sim_resolution, "Running stacked simulation");
 
                     // Simulate each phase with its own cutter
                     for phase in &job_result.phases {
                         simulate_toolpath(&phase.toolpath, phase.cutter.as_ref(), &mut hm);
                     }
-                    eprintln!("  {}x{} heightmap, {} phases", hm.cols, hm.rows, job_result.phases.len());
+                    debug!(cols = hm.cols, rows = hm.rows, phases = job_result.phases.len(), "Heightmap generated");
 
                     // Try to load source mesh for overlay (from first STL-based operation)
                     let source_mesh = job_file.operation.iter().find_map(|op| {
@@ -984,7 +984,7 @@ fn main() -> Result<()> {
                 };
                 std::fs::write(&view_path, &html)
                     .context("Failed to write 3D viewer file")?;
-                eprintln!("Wrote 3D viewer to {}", view_path.display());
+                info!(path = %view_path.display(), "Wrote 3D viewer");
             }
         }
 
@@ -994,26 +994,29 @@ fn main() -> Result<()> {
             simulate, sim_resolution,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
-            eprintln!("Loading STL: {} (units: {}, scale: {:.4})", input.display(), units, scale_factor);
+            debug!(path = %input.display(), units = %units, scale = scale_factor, "Loading STL");
 
             let cutter = parse_tool(&tool)?;
-            eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
+            debug!(tool = %tool, diameter_mm = cutter.diameter(), "Tool");
 
             let (mesh, index) = load_stl_with_index(&input, scale_factor, cutter.as_ref())?;
 
-            eprintln!("Running drop-cutter (stepover={:.3}mm)...", stepover);
+            debug!(stepover_mm = stepover, "Running drop-cutter");
             let start = std::time::Instant::now();
             let grid = batch_drop_cutter(&mesh, &index, cutter.as_ref(), stepover, 0.0, min_z);
             let elapsed = start.elapsed();
-            eprintln!(
-                "  {}x{} grid ({} points) in {:.2}s",
-                grid.cols, grid.rows, grid.points.len(), elapsed.as_secs_f64()
+            debug!(
+                cols = grid.cols, rows = grid.rows, points = grid.points.len(),
+                elapsed_secs = format!("{:.2}", elapsed.as_secs_f64()),
+                "Drop-cutter grid"
             );
 
             let toolpath = raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z);
-            eprintln!(
-                "  {} moves, cutting={:.1}mm, rapid={:.1}mm",
-                toolpath.moves.len(), toolpath.total_cutting_distance(), toolpath.total_rapid_distance(),
+            info!(
+                moves = toolpath.moves.len(),
+                cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
+                rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                "Generated toolpath"
             );
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
@@ -1028,22 +1031,23 @@ fn main() -> Result<()> {
         } => {
             let cutter = parse_tool(&tool)?;
             let tool_radius = cutter.diameter() / 2.0;
-            eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
+            debug!(tool = %tool, diameter_mm = cutter.diameter(), "Tool");
 
             let polygons = helpers::load_polygons(&input)?;
-            eprintln!("Loaded {} polygon(s) from {}", polygons.len(), input.display());
+            debug!(count = polygons.len(), path = %input.display(), "Loaded polygons");
 
             let depth_stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
-            eprintln!(
-                "Depth: {:.1}mm total, {:.1}mm/pass ({} passes)",
-                depth, depth_per_pass, depth_stepping.roughing_pass_count()
+            debug!(
+                total_mm = depth, per_pass_mm = depth_per_pass,
+                passes = depth_stepping.roughing_pass_count(),
+                "Depth stepping"
             );
 
             let start = std::time::Instant::now();
             let mut toolpath = Toolpath::new();
 
             for (i, poly) in polygons.iter().enumerate() {
-                eprintln!("  Polygon {}: {} vertices, area={:.1}mm²", i, poly.exterior.len(), poly.area());
+                debug!(index = i, vertices = poly.exterior.len(), area_mm2 = format!("{:.1}", poly.area()), "Polygon");
 
                 let poly_tp = depth_stepped_toolpath(&depth_stepping, safe_z, |z| {
                     match pattern {
@@ -1079,21 +1083,23 @@ fn main() -> Result<()> {
 
             // Apply entry dressup
             if let Some(entry_style) = helpers::parse_entry_style(&entry)? {
-                eprintln!("Applying {} entry...", entry);
+                debug!("Applying {} entry...", entry);
                 toolpath = apply_entry(&toolpath, entry_style, plunge_rate);
             }
 
             // Apply dogbone dressup
             if dogbone {
-                eprintln!("Applying dogbone overcuts...");
+                debug!("Applying dogbone overcuts...");
                 toolpath = apply_dogbones(&toolpath, tool_radius, 170.0);
             }
 
             let elapsed = start.elapsed();
-            eprintln!(
-                "Generated {} moves, cutting={:.1}mm, rapid={:.1}mm in {:.2}s",
-                toolpath.moves.len(), toolpath.total_cutting_distance(),
-                toolpath.total_rapid_distance(), elapsed.as_secs_f64()
+            info!(
+                moves = toolpath.moves.len(),
+                cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
+                rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                elapsed_secs = format!("{:.2}", elapsed.as_secs_f64()),
+                "Generated toolpath"
             );
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
@@ -1108,7 +1114,7 @@ fn main() -> Result<()> {
         } => {
             let cutter = parse_tool(&tool)?;
             let tool_radius = cutter.diameter() / 2.0;
-            eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
+            debug!(tool = %tool, diameter_mm = cutter.diameter(), "Tool");
 
             let profile_side = match side.to_lowercase().as_str() {
                 "outside" | "out" => ProfileSide::Outside,
@@ -1117,19 +1123,20 @@ fn main() -> Result<()> {
             };
 
             let polygons = helpers::load_polygons(&input)?;
-            eprintln!("Loaded {} polygon(s) from {}", polygons.len(), input.display());
+            debug!(count = polygons.len(), path = %input.display(), "Loaded polygons");
 
             let depth_stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
-            eprintln!(
-                "Depth: {:.1}mm total, {:.1}mm/pass ({} passes), side={}",
-                depth, depth_per_pass, depth_stepping.roughing_pass_count(), side
+            debug!(
+                total_mm = depth, per_pass_mm = depth_per_pass,
+                passes = depth_stepping.roughing_pass_count(), side = %side,
+                "Depth stepping"
             );
 
             let start = std::time::Instant::now();
             let mut toolpath = Toolpath::new();
 
             for (i, poly) in polygons.iter().enumerate() {
-                eprintln!("  Polygon {}: {} vertices", i, poly.exterior.len());
+                debug!(index = i, vertices = poly.exterior.len(), "Polygon");
 
                 let poly_tp = depth_stepped_toolpath(&depth_stepping, safe_z, |z| {
                     profile_toolpath(
@@ -1151,28 +1158,30 @@ fn main() -> Result<()> {
 
             // Apply entry dressup
             if let Some(entry_style) = helpers::parse_entry_style(&entry)? {
-                eprintln!("Applying {} entry...", entry);
+                debug!("Applying {} entry...", entry);
                 toolpath = apply_entry(&toolpath, entry_style, plunge_rate);
             }
 
             // Apply tabs (on final depth pass only)
             if tabs > 0 {
-                eprintln!("Adding {} tabs ({}mm wide, {}mm high)...", tabs, tab_width, tab_height);
+                debug!(count = tabs, width_mm = tab_width, height_mm = tab_height, "Adding tabs");
                 let tab_list = even_tabs(tabs, tab_width, tab_height);
                 toolpath = apply_tabs(&toolpath, &tab_list, -depth);
             }
 
             // Apply dogbone dressup
             if dogbone {
-                eprintln!("Applying dogbone overcuts...");
+                debug!("Applying dogbone overcuts...");
                 toolpath = apply_dogbones(&toolpath, tool_radius, 170.0);
             }
 
             let elapsed = start.elapsed();
-            eprintln!(
-                "Generated {} moves, cutting={:.1}mm, rapid={:.1}mm in {:.2}s",
-                toolpath.moves.len(), toolpath.total_cutting_distance(),
-                toolpath.total_rapid_distance(), elapsed.as_secs_f64()
+            info!(
+                moves = toolpath.moves.len(),
+                cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
+                rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                elapsed_secs = format!("{:.2}", elapsed.as_secs_f64()),
+                "Generated toolpath"
             );
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
@@ -1187,22 +1196,23 @@ fn main() -> Result<()> {
         } => {
             let cutter = parse_tool(&tool)?;
             let tool_radius = cutter.diameter() / 2.0;
-            eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
+            debug!(tool = %tool, diameter_mm = cutter.diameter(), "Tool");
 
             let polygons = helpers::load_polygons(&input)?;
-            eprintln!("Loaded {} polygon(s) from {}", polygons.len(), input.display());
+            debug!(count = polygons.len(), path = %input.display(), "Loaded polygons");
 
             let depth_stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
-            eprintln!(
-                "Depth: {:.1}mm total, {:.1}mm/pass ({} passes)",
-                depth, depth_per_pass, depth_stepping.roughing_pass_count()
+            debug!(
+                total_mm = depth, per_pass_mm = depth_per_pass,
+                passes = depth_stepping.roughing_pass_count(),
+                "Depth stepping"
             );
 
             let start = std::time::Instant::now();
             let mut toolpath = Toolpath::new();
 
             for (i, poly) in polygons.iter().enumerate() {
-                eprintln!("  Polygon {}: {} vertices, area={:.1}mm²", i, poly.exterior.len(), poly.area());
+                debug!(index = i, vertices = poly.exterior.len(), area_mm2 = format!("{:.1}", poly.area()), "Polygon");
 
                 let poly_tp = depth_stepped_toolpath(&depth_stepping, safe_z, |z| {
                     adaptive_toolpath(
@@ -1225,10 +1235,12 @@ fn main() -> Result<()> {
             }
 
             let elapsed = start.elapsed();
-            eprintln!(
-                "Generated {} moves, cutting={:.1}mm, rapid={:.1}mm in {:.2}s",
-                toolpath.moves.len(), toolpath.total_cutting_distance(),
-                toolpath.total_rapid_distance(), elapsed.as_secs_f64()
+            info!(
+                moves = toolpath.moves.len(),
+                cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
+                rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                elapsed_secs = format!("{:.2}", elapsed.as_secs_f64()),
+                "Generated toolpath"
             );
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
@@ -1253,24 +1265,23 @@ fn main() -> Result<()> {
                 .context("Invalid V-bit angle")?;
             let half_angle = (included_angle_deg / 2.0).to_radians();
 
-            eprintln!("Tool: {} diameter={:.3}mm, half_angle={:.1}°",
-                tool, cutter.diameter(), half_angle.to_degrees());
+            debug!(tool = %tool, diameter_mm = cutter.diameter(), half_angle_deg = half_angle.to_degrees(), "Tool");
 
             let polygons = helpers::load_polygons(&input)?;
-            eprintln!("Loaded {} polygon(s) from {}", polygons.len(), input.display());
+            debug!(count = polygons.len(), path = %input.display(), "Loaded polygons");
 
             let effective_max_depth = if max_depth > 0.0 {
                 max_depth
             } else {
                 tool_radius / half_angle.tan()
             };
-            eprintln!("Max depth: {:.2}mm, stepover: {:.2}mm", effective_max_depth, stepover);
+            debug!(max_depth_mm = effective_max_depth, stepover_mm = stepover, "V-carve params");
 
             let start = std::time::Instant::now();
             let mut toolpath = Toolpath::new();
 
             for (i, poly) in polygons.iter().enumerate() {
-                eprintln!("  Polygon {}: {} vertices", i, poly.exterior.len());
+                debug!(index = i, vertices = poly.exterior.len(), "Polygon");
 
                 let poly_tp = vcarve_toolpath(poly, &VCarveParams {
                     half_angle,
@@ -1286,10 +1297,12 @@ fn main() -> Result<()> {
             }
 
             let elapsed = start.elapsed();
-            eprintln!(
-                "Generated {} moves, cutting={:.1}mm, rapid={:.1}mm in {:.2}s",
-                toolpath.moves.len(), toolpath.total_cutting_distance(),
-                toolpath.total_rapid_distance(), elapsed.as_secs_f64()
+            info!(
+                moves = toolpath.moves.len(),
+                cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
+                rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                elapsed_secs = format!("{:.2}", elapsed.as_secs_f64()),
+                "Generated toolpath"
             );
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
@@ -1314,23 +1327,24 @@ fn main() -> Result<()> {
                 );
             }
 
-            eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
-            eprintln!("Previous tool: {} diameter={:.3}mm", prev_tool, prev_cutter.diameter());
+            debug!(tool = %tool, diameter_mm = cutter.diameter(), "Tool");
+            debug!(prev_tool = %prev_tool, diameter_mm = prev_cutter.diameter(), "Previous tool");
 
             let polygons = helpers::load_polygons(&input)?;
-            eprintln!("Loaded {} polygon(s) from {}", polygons.len(), input.display());
+            debug!(count = polygons.len(), path = %input.display(), "Loaded polygons");
 
             let depth_stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
-            eprintln!(
-                "Depth: {:.1}mm total, {:.1}mm/pass ({} passes)",
-                depth, depth_per_pass, depth_stepping.roughing_pass_count()
+            debug!(
+                total_mm = depth, per_pass_mm = depth_per_pass,
+                passes = depth_stepping.roughing_pass_count(),
+                "Depth stepping"
             );
 
             let start = std::time::Instant::now();
             let mut toolpath = Toolpath::new();
 
             for (i, poly) in polygons.iter().enumerate() {
-                eprintln!("  Polygon {}: {} vertices, area={:.1}mm²", i, poly.exterior.len(), poly.area());
+                debug!(index = i, vertices = poly.exterior.len(), area_mm2 = format!("{:.1}", poly.area()), "Polygon");
 
                 let poly_tp = depth_stepped_toolpath(&depth_stepping, safe_z, |z| {
                     rest_machining_toolpath(
@@ -1352,17 +1366,19 @@ fn main() -> Result<()> {
             }
 
             let elapsed = start.elapsed();
-            eprintln!(
-                "Generated {} moves, cutting={:.1}mm, rapid={:.1}mm in {:.2}s",
-                toolpath.moves.len(), toolpath.total_cutting_distance(),
-                toolpath.total_rapid_distance(), elapsed.as_secs_f64()
+            info!(
+                moves = toolpath.moves.len(),
+                cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
+                rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                elapsed_secs = format!("{:.2}", elapsed.as_secs_f64()),
+                "Generated toolpath"
             );
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
             if let Some(view_path) = view {
                 let html = if simulate {
-                    eprintln!("Running stacked simulation (resolution={:.2}mm)...", sim_resolution);
+                    debug!(resolution_mm = sim_resolution, "Running stacked simulation");
                     let tp_bbox = toolpath_bbox(&toolpath);
                     let margin = prev_cutter.radius();
                     let sim_bbox = BoundingBox3 {
@@ -1402,7 +1418,7 @@ fn main() -> Result<()> {
                     let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_resolution);
                     simulate_toolpath(&prev_toolpath, prev_cutter.as_ref(), &mut hm);
                     simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
-                    eprintln!("  {}x{} heightmap, 2 phases", hm.cols, hm.rows);
+                    debug!(cols = hm.cols, rows = hm.rows, phases = 2, "Heightmap generated");
 
                     // Stacked viewer: animates roughing then rest
                     use rs_cam_core::viz::SimPhase;
@@ -1424,7 +1440,7 @@ fn main() -> Result<()> {
                 };
                 std::fs::write(&view_path, &html)
                     .context("Failed to write 3D viewer file")?;
-                eprintln!("Wrote 3D viewer to {}", view_path.display());
+                info!(path = %view_path.display(), "Wrote 3D viewer");
             }
         }
 
@@ -1436,17 +1452,18 @@ fn main() -> Result<()> {
             simulate, sim_resolution,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
-            eprintln!("Loading STL: {} (units: {}, scale: {:.4})", input.display(), units, scale_factor);
+            debug!(path = %input.display(), units = %units, scale = scale_factor, "Loading STL");
 
             let cutter = parse_tool(&tool)?;
-            eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
+            debug!(tool = %tool, diameter_mm = cutter.diameter(), "Tool");
 
             let (mesh, index) = load_stl_with_index(&input, scale_factor, cutter.as_ref())?;
 
             let stock_z = stock_top_z.unwrap_or(mesh.bbox.max.z + 5.0);
-            eprintln!(
-                "3D Adaptive: stock_top={:.1}, depth_per_pass={:.1}, stock_to_leave={:.1}, stepover={:.1}",
-                stock_z, depth_per_pass, stock_to_leave, stepover
+            debug!(
+                stock_top = stock_z, depth_per_pass = depth_per_pass,
+                stock_to_leave = stock_to_leave, stepover = stepover,
+                "3D Adaptive params"
             );
 
             let entry = match entry_style.to_lowercase().as_str() {
@@ -1479,10 +1496,12 @@ fn main() -> Result<()> {
             let toolpath = adaptive_3d_toolpath(&mesh, &index, cutter.as_ref(), &params);
             let elapsed = start.elapsed();
 
-            eprintln!(
-                "Generated {} moves, cutting={:.1}mm, rapid={:.1}mm in {:.2}s",
-                toolpath.moves.len(), toolpath.total_cutting_distance(),
-                toolpath.total_rapid_distance(), elapsed.as_secs_f64()
+            info!(
+                moves = toolpath.moves.len(),
+                cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
+                rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                elapsed_secs = format!("{:.2}", elapsed.as_secs_f64()),
+                "Generated toolpath"
             );
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
@@ -1496,16 +1515,16 @@ fn main() -> Result<()> {
             post, output, svg, view, simulate, sim_resolution,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
-            eprintln!("Loading STL: {} (units: {}, scale: {:.4})", input.display(), units, scale_factor);
+            debug!(path = %input.display(), units = %units, scale = scale_factor, "Loading STL");
 
             let cutter = parse_tool(&tool)?;
-            eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
+            debug!(tool = %tool, diameter_mm = cutter.diameter(), "Tool");
 
             let (mesh, index) = load_stl_with_index(&input, scale_factor, cutter.as_ref())?;
 
             let sz = start_z.unwrap_or(mesh.bbox.max.z);
             let fz = final_z.unwrap_or(mesh.bbox.min.z);
-            eprintln!("Waterline: z={:.1} to {:.1}, step={:.1}mm, sampling={:.1}mm", sz, fz, z_step, sampling);
+            debug!(start_z = sz, final_z = fz, z_step = z_step, sampling = sampling, "Waterline params");
 
             let params = WaterlineParams {
                 sampling,
@@ -1522,13 +1541,15 @@ fn main() -> Result<()> {
             if arc_tolerance > 0.0 {
                 let before = toolpath.moves.len();
                 toolpath = fit_arcs(&toolpath, arc_tolerance);
-                eprintln!("Arc fitting: {} → {} moves (tolerance={:.3}mm)", before, toolpath.moves.len(), arc_tolerance);
+                debug!(before = before, after = toolpath.moves.len(), tolerance_mm = arc_tolerance, "Arc fitting");
             }
 
-            eprintln!(
-                "Generated {} moves, cutting={:.1}mm, rapid={:.1}mm in {:.2}s",
-                toolpath.moves.len(), toolpath.total_cutting_distance(),
-                toolpath.total_rapid_distance(), elapsed.as_secs_f64()
+            info!(
+                moves = toolpath.moves.len(),
+                cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
+                rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                elapsed_secs = format!("{:.2}", elapsed.as_secs_f64()),
+                "Generated toolpath"
             );
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;

@@ -31,6 +31,7 @@ use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use tracing::{debug, info};
 
 use rs_cam_core::{
     adaptive::{AdaptiveParams, adaptive_toolpath},
@@ -221,13 +222,13 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
     let mut phases = Vec::new();
 
     for (i, op) in job.operation.iter().enumerate() {
-        eprintln!("=== Operation {} ({}) ===", i, op.op_type);
+        info!(index = i, op_type = %op.op_type, "=== Operation ===");
 
         let tool_def = &job.tools[&op.tool];
         let cutter = build_tool(tool_def)
             .context(format!("Building tool '{}' for operation {}", op.tool, i))?;
         let tool_radius = cutter.diameter() / 2.0;
-        eprintln!("  Tool: {} ({}mm {})", op.tool, tool_def.diameter, tool_def.tool_type);
+        debug!(tool = %op.tool, diameter_mm = tool_def.diameter, tool_type = %tool_def.tool_type, "Tool");
 
         let safe_z = op.safe_z.unwrap_or(job.job.safe_z);
         let feed_rate = op.feed_rate.unwrap_or(1000.0);
@@ -251,7 +252,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                 let angle = op.angle.unwrap_or(0.0);
                 let pattern = op.pattern.as_deref().unwrap_or("contour");
 
-                eprintln!("  {} polygon(s), depth={:.1}mm, pattern={}", polygons.len(), depth, pattern);
+                debug!(polygons = polygons.len(), depth_mm = depth, pattern = %pattern, "Pocket details");
 
                 let mut tp = Toolpath::new();
                 for poly in &polygons {
@@ -293,7 +294,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                     _ => ProfileSide::Outside,
                 };
 
-                eprintln!("  {} polygon(s), depth={:.1}mm, side={:?}", polygons.len(), depth, side);
+                debug!(polygons = polygons.len(), depth_mm = depth, side = ?side, "Profile details");
 
                 let mut tp = Toolpath::new();
                 for poly in &polygons {
@@ -337,7 +338,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                 let min_cutting_radius = op.min_cutting_radius.unwrap_or(0.0);
                 let stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
 
-                eprintln!("  {} polygon(s), depth={:.1}mm, stepover={:.1}mm", polygons.len(), depth, stepover);
+                debug!(polygons = polygons.len(), depth_mm = depth, stepover_mm = stepover, "Adaptive details");
 
                 let mut tp = Toolpath::new();
                 for poly in &polygons {
@@ -368,8 +369,9 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                 let prev_cutter = build_tool(prev_tool_def)?;
                 let prev_tool_radius = prev_cutter.diameter() / 2.0;
 
-                eprintln!("  {} polygon(s), depth={:.1}mm, prev_tool={} ({:.1}mm)",
-                    polygons.len(), depth, prev_tool_name, prev_cutter.diameter());
+                debug!(polygons = polygons.len(), depth_mm = depth,
+                    prev_tool = %prev_tool_name, prev_diameter_mm = prev_cutter.diameter(),
+                    "Rest details");
 
                 let mut tp = Toolpath::new();
                 for poly in &polygons {
@@ -413,8 +415,9 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                 let tolerance = op.tolerance.unwrap_or(0.1);
                 let mcr = op.min_cutting_radius.unwrap_or(0.0);
 
-                eprintln!("  STL: {} verts, {} tris, stock_top={:.1}, stl={:.1}",
-                    mesh.vertices.len(), mesh.faces.len(), stock_top, stl);
+                debug!(vertices = mesh.vertices.len(), triangles = mesh.faces.len(),
+                    stock_top = stock_top, stock_to_leave = stl,
+                    "Adaptive3d STL details");
 
                 let entry = match op.entry_style.as_deref().unwrap_or("plunge") {
                     "helix" => EntryStyle3d::Helix {
@@ -463,8 +466,8 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                 let stepover = op.stepover.unwrap_or(1.0);
                 let min_z = mesh.bbox.min.z;
 
-                eprintln!("  STL: {} verts, {} tris, stepover={:.1}",
-                    mesh.vertices.len(), mesh.faces.len(), stepover);
+                debug!(vertices = mesh.vertices.len(), triangles = mesh.faces.len(),
+                    stepover = stepover, "Drop-cutter STL details");
 
                 let angle = op.angle.unwrap_or(0.0);
                 let grid = batch_drop_cutter(&mesh, &si, cutter.as_ref(), stepover, angle, min_z);
@@ -474,9 +477,11 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
             _ => bail!("Unknown operation type '{}'. Supported: pocket, profile, adaptive, rest, adaptive3d, drop-cutter", op.op_type),
         };
 
-        eprintln!(
-            "  {} moves, cutting={:.1}mm, rapid={:.1}mm",
-            tp.moves.len(), tp.total_cutting_distance(), tp.total_rapid_distance()
+        info!(
+            moves = tp.moves.len(),
+            cutting_mm = format!("{:.1}", tp.total_cutting_distance()),
+            rapid_mm = format!("{:.1}", tp.total_rapid_distance()),
+            "Operation result"
         );
 
         combined.moves.extend(tp.moves.clone());
