@@ -17,6 +17,7 @@ use rs_cam_core::{
     simulation::{Heightmap, simulate_toolpath},
     tool::{BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill},
     toolpath::{Toolpath, raster_toolpath_from_grid},
+    vcarve::{VCarveParams, vcarve_toolpath},
     waterline::{WaterlineParams, waterline_toolpath},
     zigzag::{ZigzagParams, zigzag_toolpath},
 };
@@ -328,6 +329,68 @@ enum Commands {
         /// Minimum cutting radius: blend sharp corners with arcs (mm, 0=disabled)
         #[arg(long, default_value = "0.0")]
         min_cutting_radius: f64,
+
+        /// Post-processor: grbl, linuxcnc
+        #[arg(long, default_value = "grbl")]
+        post: String,
+
+        /// Output G-code file
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Optional SVG preview output
+        #[arg(long)]
+        svg: Option<PathBuf>,
+
+        /// Optional 3D HTML viewer output
+        #[arg(long)]
+        view: Option<PathBuf>,
+
+        /// Enable material removal simulation in viewer (requires --view)
+        #[arg(long)]
+        simulate: bool,
+
+        /// Simulation grid resolution in mm (default 0.25)
+        #[arg(long, default_value = "0.25")]
+        sim_resolution: f64,
+    },
+
+    /// V-carve engraving from SVG or DXF boundary
+    Vcarve {
+        /// Input file (SVG or DXF)
+        input: PathBuf,
+
+        /// Tool specification: vbit:diameter:included_angle (e.g., vbit:6.35:90)
+        #[arg(long)]
+        tool: String,
+
+        /// Maximum cut depth in mm (0 = full cone depth)
+        #[arg(long, default_value = "0.0")]
+        max_depth: f64,
+
+        /// Step-over distance between scan lines in mm
+        #[arg(long, default_value = "0.5")]
+        stepover: f64,
+
+        /// Feed rate in mm/min
+        #[arg(long, default_value = "1000.0")]
+        feed_rate: f64,
+
+        /// Plunge rate in mm/min
+        #[arg(long, default_value = "500.0")]
+        plunge_rate: f64,
+
+        /// Spindle speed in RPM
+        #[arg(long, default_value = "18000")]
+        spindle_speed: u32,
+
+        /// Safe Z height for rapid moves
+        #[arg(long, default_value = "10.0")]
+        safe_z: f64,
+
+        /// Path tolerance / sampling interval in mm
+        #[arg(long, default_value = "0.1")]
+        tolerance: f64,
 
         /// Post-processor: grbl, linuxcnc
         #[arg(long, default_value = "grbl")]
@@ -959,6 +1022,94 @@ fn main() -> Result<()> {
                             min_cutting_radius,
                         },
                     )
+                });
+
+                toolpath.moves.extend(poly_tp.moves);
+            }
+
+            let elapsed = start.elapsed();
+            eprintln!(
+                "Generated {} moves, cutting={:.1}mm, rapid={:.1}mm in {:.2}s",
+                toolpath.moves.len(), toolpath.total_cutting_distance(),
+                toolpath.total_rapid_distance(), elapsed.as_secs_f64()
+            );
+
+            emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
+
+            if let Some(view_path) = view {
+                let html = if simulate {
+                    eprintln!("Running simulation (resolution={:.2}mm)...", sim_resolution);
+                    let tp_bbox = toolpath_bbox(&toolpath);
+                    let margin = cutter.radius();
+                    let sim_bbox = BoundingBox3 {
+                        min: rs_cam_core::geo::P3::new(
+                            tp_bbox.min.x - margin,
+                            tp_bbox.min.y - margin,
+                            tp_bbox.min.z,
+                        ),
+                        max: rs_cam_core::geo::P3::new(
+                            tp_bbox.max.x + margin,
+                            tp_bbox.max.y + margin,
+                            0.0,
+                        ),
+                    };
+                    let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_resolution);
+                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
+                    eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
+                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, None, cutter.as_ref())
+                } else {
+                    rs_cam_core::viz::toolpath_standalone_3d_html(&toolpath, None)
+                };
+                std::fs::write(&view_path, &html)
+                    .context("Failed to write 3D viewer file")?;
+                eprintln!("Wrote 3D viewer to {}", view_path.display());
+            }
+        }
+
+        Commands::Vcarve {
+            input, tool, max_depth, stepover, feed_rate, plunge_rate,
+            spindle_speed, safe_z, tolerance, post, output, svg, view,
+            simulate, sim_resolution,
+        } => {
+            let cutter = parse_tool(&tool)?;
+            let tool_radius = cutter.diameter() / 2.0;
+
+            // Extract half-angle from the tool spec string
+            let tool_parts: Vec<&str> = tool.split(':').collect();
+            if tool_parts[0] != "vbit" || tool_parts.len() < 3 {
+                bail!("V-carve requires a V-bit tool (e.g., --tool vbit:6.35:90)");
+            }
+            let included_angle_deg: f64 = tool_parts[2].parse()
+                .context("Invalid V-bit angle")?;
+            let half_angle = (included_angle_deg / 2.0).to_radians();
+
+            eprintln!("Tool: {} diameter={:.3}mm, half_angle={:.1}°",
+                tool, cutter.diameter(), half_angle.to_degrees());
+
+            let polygons = load_polygons(&input)?;
+            eprintln!("Loaded {} polygon(s) from {}", polygons.len(), input.display());
+
+            let effective_max_depth = if max_depth > 0.0 {
+                max_depth
+            } else {
+                tool_radius / half_angle.tan()
+            };
+            eprintln!("Max depth: {:.2}mm, stepover: {:.2}mm", effective_max_depth, stepover);
+
+            let start = std::time::Instant::now();
+            let mut toolpath = Toolpath::new();
+
+            for (i, poly) in polygons.iter().enumerate() {
+                eprintln!("  Polygon {}: {} vertices", i, poly.exterior.len());
+
+                let poly_tp = vcarve_toolpath(poly, &VCarveParams {
+                    half_angle,
+                    max_depth: effective_max_depth,
+                    stepover,
+                    feed_rate,
+                    plunge_rate,
+                    safe_z,
+                    tolerance,
                 });
 
                 toolpath.moves.extend(poly_tp.moves);

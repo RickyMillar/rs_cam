@@ -9,7 +9,7 @@ Read this FIRST at the start of every session. Update LAST before ending.
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 276 tests passing (274 unit + 2 integration)
+- [x] Core library + CLI compiling, 287 tests passing (285 unit + 2 integration)
 - [x] Phase 1 complete: STL → drop-cutter → G-code pipeline with 3D HTML viewer
 - [x] Phase 2 complete: 2.5D operations (pocket, profile, zigzag, depth stepping, SVG/DXF input, dressups, CLI)
 - [x] Phase 3 complete: Advanced tools (BullNose, VBit, TaperedBall), push-cutter, waterline, arc fitting, G2/G3
@@ -74,7 +74,7 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [ ] 4.1b Adaptive: boundary walking for entry points (see Adaptive Refinements below)
 - [ ] 4.1c Adaptive: exact sweep-line area calculation (see Adaptive Refinements below)
 - [x] 4.1d Adaptive: link vs retract logic — keep tool down between nearby passes when path is clear (56% rapid reduction)
-- [ ] 4.2 V-carving
+- [x] 4.2 V-carving — scan-line V-carve with exact Euclidean distance, variable Z, max depth clamp, CLI subcommand (vcarve.rs)
 - [ ] 4.3 Rest machining
 - [ ] 4.7 3D adaptive clearing (see 3D Adaptive Deep Dive below)
 - [x] 4.4 TOML job file parsing — multi-tool, multi-operation job files with per-op overrides (job.rs, demo_job.toml)
@@ -111,7 +111,8 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 | waterline | `rs_cam_core/src/waterline.rs` | waterline_contours, waterline_toolpath (multi-Z) |
 | arcfit | `rs_cam_core/src/arcfit.rs` | fit_arcs (biarc fitting, linear → G2/G3) |
 | adaptive | `rs_cam_core/src/adaptive.rs` | Adaptive clearing: MaterialGrid, engagement, direction search, path generation |
-| CLI | `rs_cam_cli/src/main.rs` | drop-cutter, pocket, profile, adaptive, waterline subcommands |
+| vcarve | `rs_cam_core/src/vcarve.rs` | V-carving: distance-to-boundary, variable-depth scan-line toolpath |
+| CLI | `rs_cam_cli/src/main.rs` | drop-cutter, pocket, profile, adaptive, vcarve, waterline subcommands |
 
 ## Decisions Log
 
