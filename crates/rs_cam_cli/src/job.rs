@@ -34,9 +34,11 @@ use std::path::{Path, PathBuf};
 
 use rs_cam_core::{
     adaptive::{AdaptiveParams, adaptive_toolpath},
+    adaptive3d::{Adaptive3dParams, adaptive_3d_toolpath},
     depth::{DepthStepping, depth_stepped_toolpath},
     dressup::{EntryStyle, apply_dogbones, apply_entry, apply_tabs, even_tabs},
     gcode::get_post_processor,
+    mesh::{SpatialIndex, TriangleMesh},
     pocket::{PocketParams, pocket_toolpath},
     polygon::Polygon2,
     profile::{ProfileParams, ProfileSide, profile_toolpath},
@@ -131,6 +133,10 @@ pub struct OperationDef {
 
     // Rest machining-specific
     pub prev_tool: Option<String>,
+
+    // 3D adaptive-specific
+    pub stock_top_z: Option<f64>,
+    pub stock_to_leave: Option<f64>,
 }
 
 // ── Parsing ────────────────────────────────────────────────────────────
@@ -390,7 +396,48 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<Toolpath> {
                 tp
             }
 
-            _ => bail!("Unknown operation type '{}'. Supported: pocket, profile, adaptive, rest", op.op_type),
+            "adaptive3d" => {
+                // 3D adaptive requires STL input
+                let ext = input_path.extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                if ext != "stl" {
+                    bail!("adaptive3d requires STL input, got '.{}'", ext);
+                }
+
+                let mesh = TriangleMesh::from_stl_scaled(&input_path, 1.0)
+                    .context("Failed to load STL for adaptive3d")?;
+                let si_cell = cutter.diameter() * 2.0;
+                let si = SpatialIndex::build(&mesh, si_cell);
+
+                let depth_pp = op.depth_per_pass.unwrap_or(3.0);
+                let stepover = op.stepover.unwrap_or(2.0);
+                let stock_top = op.stock_top_z.unwrap_or(mesh.bbox.max.z + 5.0);
+                let stl = op.stock_to_leave.unwrap_or(0.5);
+                let tolerance = op.tolerance.unwrap_or(0.1);
+                let mcr = op.min_cutting_radius.unwrap_or(0.0);
+
+                eprintln!("  STL: {} verts, {} tris, stock_top={:.1}, stl={:.1}",
+                    mesh.vertices.len(), mesh.faces.len(), stock_top, stl);
+
+                let params = Adaptive3dParams {
+                    tool_radius: tool_radius,
+                    stepover,
+                    depth_per_pass: depth_pp,
+                    stock_to_leave: stl,
+                    feed_rate,
+                    plunge_rate,
+                    safe_z,
+                    tolerance,
+                    min_cutting_radius: mcr,
+                    stock_top_z: stock_top,
+                };
+
+                adaptive_3d_toolpath(&mesh, &si, cutter.as_ref(), &params)
+            }
+
+            _ => bail!("Unknown operation type '{}'. Supported: pocket, profile, adaptive, rest, adaptive3d", op.op_type),
         };
 
         eprintln!(

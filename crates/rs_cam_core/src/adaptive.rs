@@ -578,7 +578,7 @@ pub(crate) fn search_direction(
 
 /// Average a buffer of angles, handling wraparound correctly.
 /// Uses vector averaging: sum unit vectors, then take atan2.
-fn average_angles(angles: &[f64]) -> f64 {
+pub(crate) fn average_angles(angles: &[f64]) -> f64 {
     let mut sx = 0.0;
     let mut sy = 0.0;
     for &a in angles {
@@ -589,7 +589,7 @@ fn average_angles(angles: &[f64]) -> f64 {
 }
 
 /// Normalize an angle difference to [-π, π].
-fn angle_diff(a: f64, b: f64) -> f64 {
+pub(crate) fn angle_diff(a: f64, b: f64) -> f64 {
     let mut d = a - b;
     while d > PI {
         d -= TAU;
@@ -1104,7 +1104,7 @@ fn adaptive_segments(
 }
 
 /// Simplify a path using the Douglas-Peucker algorithm.
-fn simplify_path(points: &[P2], tolerance: f64) -> Vec<P2> {
+pub(crate) fn simplify_path(points: &[P2], tolerance: f64) -> Vec<P2> {
     if points.len() <= 2 {
         return points.to_vec();
     }
@@ -1154,7 +1154,7 @@ fn simplify_path(points: &[P2], tolerance: f64) -> Vec<P2> {
 /// For each interior vertex where consecutive segments form an angle sharper
 /// than what `min_radius` allows, inserts a smooth blend arc. This prevents
 /// chatter and improves surface finish at inside corners.
-fn blend_corners(path: &[P2], min_radius: f64) -> Vec<P2> {
+pub(crate) fn blend_corners(path: &[P2], min_radius: f64) -> Vec<P2> {
     if min_radius <= 0.0 || path.len() < 3 {
         return path.to_vec();
     }

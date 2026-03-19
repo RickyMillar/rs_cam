@@ -17,6 +17,7 @@ use rs_cam_core::{
     simulation::{Heightmap, simulate_toolpath},
     tool::{BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill},
     toolpath::{Toolpath, raster_toolpath_from_grid},
+    adaptive3d::{Adaptive3dParams, adaptive_3d_toolpath},
     rest::{RestParams, rest_machining_toolpath},
     vcarve::{VCarveParams, vcarve_toolpath},
     waterline::{WaterlineParams, waterline_toolpath},
@@ -464,6 +465,88 @@ enum Commands {
         angle: f64,
 
         /// Post-processor: grbl, linuxcnc
+        #[arg(long, default_value = "grbl")]
+        post: String,
+
+        /// Output G-code file
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Optional SVG preview output
+        #[arg(long)]
+        svg: Option<PathBuf>,
+
+        /// Optional 3D HTML viewer output
+        #[arg(long)]
+        view: Option<PathBuf>,
+
+        /// Enable material removal simulation in viewer (requires --view)
+        #[arg(long)]
+        simulate: bool,
+
+        /// Simulation grid resolution in mm (default 0.25)
+        #[arg(long, default_value = "0.25")]
+        sim_resolution: f64,
+    },
+
+    /// 3D adaptive clearing (constant engagement rough machining from STL)
+    Adaptive3d {
+        /// Input STL file
+        input: PathBuf,
+
+        /// STL units: mm (default), m, cm, inch
+        #[arg(long, default_value = "mm")]
+        units: String,
+
+        /// Custom scale factor (overrides --units if set)
+        #[arg(long)]
+        scale: Option<f64>,
+
+        /// Tool specification: type:diameter (e.g., flat:6.35)
+        #[arg(long)]
+        tool: String,
+
+        /// Step-over distance in mm
+        #[arg(long, default_value = "2.0")]
+        stepover: f64,
+
+        /// Maximum depth per pass in mm
+        #[arg(long, default_value = "3.0")]
+        depth_per_pass: f64,
+
+        /// Stock top Z (flat stock height, default: mesh max Z + 5)
+        #[arg(long)]
+        stock_top_z: Option<f64>,
+
+        /// Material to leave above mesh surface (mm)
+        #[arg(long, default_value = "0.5")]
+        stock_to_leave: f64,
+
+        /// Feed rate in mm/min
+        #[arg(long, default_value = "1000.0")]
+        feed_rate: f64,
+
+        /// Plunge rate in mm/min
+        #[arg(long, default_value = "500.0")]
+        plunge_rate: f64,
+
+        /// Spindle speed in RPM
+        #[arg(long, default_value = "18000")]
+        spindle_speed: u32,
+
+        /// Safe Z height for rapid moves
+        #[arg(long, default_value = "10.0")]
+        safe_z: f64,
+
+        /// Path tolerance in mm
+        #[arg(long, default_value = "0.1")]
+        tolerance: f64,
+
+        /// Minimum cutting radius (mm, 0=disabled)
+        #[arg(long, default_value = "0.0")]
+        min_cutting_radius: f64,
+
+        /// Post-processor: grbl, linuxcnc, mach3
         #[arg(long, default_value = "grbl")]
         post: String,
 
@@ -1353,6 +1436,89 @@ fn main() -> Result<()> {
                 std::fs::write(&view_path, &html)
                     .context("Failed to write 3D viewer file")?;
                 eprintln!("Wrote 3D viewer to {}", view_path.display());
+            }
+        }
+
+        Commands::Adaptive3d {
+            input, units, scale, tool, stepover, depth_per_pass,
+            stock_top_z, stock_to_leave, feed_rate, plunge_rate, spindle_speed,
+            safe_z, tolerance, min_cutting_radius, post, output, svg, view,
+            simulate, sim_resolution,
+        } => {
+            let scale_factor = match scale {
+                Some(s) => s,
+                None => match units.to_lowercase().as_str() {
+                    "mm" => 1.0,
+                    "m" => 1000.0,
+                    "cm" => 10.0,
+                    "inch" | "in" => 25.4,
+                    _ => bail!("Unknown unit '{}'. Supported: mm, m, cm, inch", units),
+                },
+            };
+
+            eprintln!("Loading STL: {} (units: {}, scale: {:.4})", input.display(), units, scale_factor);
+            let mesh = TriangleMesh::from_stl_scaled(&input, scale_factor)
+                .context("Failed to load STL")?;
+            eprintln!("  {} vertices, {} triangles", mesh.vertices.len(), mesh.faces.len());
+
+            let cutter = parse_tool(&tool)?;
+            eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
+
+            eprintln!("Building spatial index...");
+            let cell_size = cutter.diameter() * 2.0;
+            let index = SpatialIndex::build(&mesh, cell_size);
+
+            let stock_z = stock_top_z.unwrap_or(mesh.bbox.max.z + 5.0);
+            eprintln!(
+                "3D Adaptive: stock_top={:.1}, depth_per_pass={:.1}, stock_to_leave={:.1}, stepover={:.1}",
+                stock_z, depth_per_pass, stock_to_leave, stepover
+            );
+
+            let params = Adaptive3dParams {
+                tool_radius: cutter.radius(),
+                stepover,
+                depth_per_pass,
+                stock_to_leave,
+                feed_rate,
+                plunge_rate,
+                safe_z,
+                tolerance,
+                min_cutting_radius,
+                stock_top_z: stock_z,
+            };
+
+            let start = std::time::Instant::now();
+            let toolpath = adaptive_3d_toolpath(&mesh, &index, cutter.as_ref(), &params);
+            let elapsed = start.elapsed();
+
+            eprintln!(
+                "Generated {} moves, cutting={:.1}mm, rapid={:.1}mm in {:.2}s",
+                toolpath.moves.len(), toolpath.total_cutting_distance(),
+                toolpath.total_rapid_distance(), elapsed.as_secs_f64()
+            );
+
+            emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
+
+            if let Some(view_path) = view {
+                let html = if simulate {
+                    eprintln!("Running simulation (resolution={:.2}mm)...", sim_resolution);
+                    let mut hm = Heightmap::from_stock(
+                        mesh.bbox.min.x - cutter.radius(),
+                        mesh.bbox.min.y - cutter.radius(),
+                        mesh.bbox.max.x + cutter.radius(),
+                        mesh.bbox.max.y + cutter.radius(),
+                        stock_z,
+                        sim_resolution,
+                    );
+                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
+                    eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
+                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, Some(&mesh), cutter.as_ref())
+                } else {
+                    rs_cam_core::viz::toolpath_to_3d_html(&mesh, &toolpath)
+                };
+                std::fs::write(&view_path, &html)
+                    .context("Failed to write 3D viewer file")?;
+                eprintln!("Wrote 3D viewer to {} ({:.1} MB)", view_path.display(), html.len() as f64 / 1_048_576.0);
             }
         }
 
