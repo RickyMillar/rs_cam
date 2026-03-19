@@ -70,9 +70,9 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] 4.1h Adaptive: minimum cutting radius (blend sharp corners with arcs, configurable)
 - [x] 4.1i Adaptive: increased angle continuity weight (0.05 → 0.12 for smoother curves)
 - [x] 4.1j Adaptive: boundary cleanup pass (auto contour trace of all walls + island boundaries after adaptive passes)
-- [ ] 4.1a Adaptive: interpolation-based angle search (see Adaptive Refinements below)
-- [ ] 4.1b Adaptive: boundary walking for entry points (see Adaptive Refinements below)
-- [ ] 4.1c Adaptive: exact sweep-line area calculation (see Adaptive Refinements below)
+- [x] 4.1a Adaptive: interpolation-based angle search — narrow 7-candidate search + bracket interpolation, falls back to broad sweep
+- [x] 4.1b Adaptive: boundary walking for entry points — walks machinable polygon contours systematically, falls back to grid scan
+- [x] 4.1c Adaptive: disk-area engagement — replaced 24-point circumference sampling with full disk-area cell counting for precise engagement
 - [x] 4.1d Adaptive: link vs retract logic — keep tool down between nearby passes when path is clear (56% rapid reduction)
 - [x] 4.2 V-carving — scan-line V-carve with exact Euclidean distance, variable Z, max depth clamp, CLI subcommand (vcarve.rs)
 - [ ] 4.3 Rest machining

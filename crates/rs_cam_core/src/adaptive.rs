@@ -335,24 +335,52 @@ fn polygon_bbox(pts: &[P2]) -> (f64, f64, f64, f64) {
 
 // ── Engagement computation ─────────────────────────────────────────────
 
-/// Number of sample points around the tool circle for engagement calculation.
-const ENGAGEMENT_SAMPLES: usize = 24;
-
 /// Compute engagement fraction at position (cx, cy) with tool of given radius.
 ///
-/// Engagement = fraction of sample points on the tool circle that fall on
-/// uncut material cells. Returns a value in [0.0, 1.0].
+/// Uses disk-area sampling: counts the fraction of grid cells within the
+/// tool circle that contain uncut material. This is more precise than
+/// circumference-only sampling (which only measures the engagement angle)
+/// because it measures the actual cut area fraction.
+///
+/// Returns a value in [0.0, 1.0].
 pub(crate) fn compute_engagement(grid: &MaterialGrid, cx: f64, cy: f64, radius: f64) -> f64 {
-    let mut in_material = 0;
-    for i in 0..ENGAGEMENT_SAMPLES {
-        let angle = TAU * i as f64 / ENGAGEMENT_SAMPLES as f64;
-        let px = cx + radius * angle.cos();
-        let py = cy + radius * angle.sin();
-        if grid.is_material(px, py) {
-            in_material += 1;
+    let r_sq = radius * radius;
+    let col_min = ((cx - radius - grid.origin_x) / grid.cell_size).floor().max(0.0) as usize;
+    let col_max =
+        ((cx + radius - grid.origin_x) / grid.cell_size).ceil() as usize;
+    let row_min = ((cy - radius - grid.origin_y) / grid.cell_size).floor().max(0.0) as usize;
+    let row_max =
+        ((cy + radius - grid.origin_y) / grid.cell_size).ceil() as usize;
+
+    let col_max = col_max.min(grid.cols.saturating_sub(1));
+    let row_max = row_max.min(grid.rows.saturating_sub(1));
+
+    let mut material_cells = 0u32;
+    let mut total_cells = 0u32;
+
+    for row in row_min..=row_max {
+        let cell_y = grid.origin_y + row as f64 * grid.cell_size;
+        let dy = cell_y - cy;
+        let dy_sq = dy * dy;
+        if dy_sq > r_sq {
+            continue;
+        }
+        for col in col_min..=col_max {
+            let cell_x = grid.origin_x + col as f64 * grid.cell_size;
+            let dx = cell_x - cx;
+            if dx * dx + dy_sq <= r_sq {
+                total_cells += 1;
+                if grid.cells[row * grid.cols + col] == CELL_MATERIAL {
+                    material_cells += 1;
+                }
+            }
         }
     }
-    in_material as f64 / ENGAGEMENT_SAMPLES as f64
+
+    if total_cells == 0 {
+        return 0.0;
+    }
+    material_cells as f64 / total_cells as f64
 }
 
 /// Compute the target engagement fraction from stepover and tool radius.
@@ -370,9 +398,16 @@ pub(crate) fn target_engagement_fraction(stepover: f64, tool_radius: f64) -> f64
 /// Search for the best direction to move from (cx, cy) that produces
 /// engagement closest to `target_frac`.
 ///
-/// Two-pass search: first try ±90° (forward preference), then full 360°
-/// if no good direction found. Returns None only if no direction has
-/// any engagement at all.
+/// Three-phase search:
+/// 1. **Narrow interpolation** (7 candidates near prev_angle + bracket refinement)
+/// 2. **Forward sweep** ±90° (19 candidates) — fallback
+/// 3. **Full 360°** (36 candidates) — allows U-turns
+///
+/// Phase 1 uses history-predicted interpolation: tries a narrow spread
+/// around the previous angle, finds engagement brackets (one above target,
+/// one below), then linearly interpolates to converge in 2 extra evaluations.
+/// This produces smoother paths (continuous angle function) and typically
+/// needs only ~10 evaluations instead of 55.
 ///
 /// When near a wall (boundary_distance < 2 × tool_radius), a tangential
 /// bias steers the tool along the wall instead of into it.
@@ -393,81 +428,151 @@ pub(crate) fn search_direction(
 
     let wall_threshold = 2.0 * tool_radius;
 
-    // Evaluate a sweep and return the best angle
+    // Helper: evaluate a candidate angle, returns (engagement, score) or None
+    let eval_candidate = |angle: f64| -> Option<(f64, f64)> {
+        let nx = cx + step_len * angle.cos();
+        let ny = cy + step_len * angle.sin();
+
+        if !grid.is_machinable(machinable_mask, nx, ny) {
+            return None;
+        }
+
+        let engagement = compute_engagement(grid, nx, ny, tool_radius);
+        if engagement < 0.005 {
+            return None;
+        }
+
+        let error = (engagement - target_frac).abs();
+        let angle_penalty = angle_diff(angle, prev_angle).abs() / PI;
+
+        let wall_bias = {
+            let bd = grid.boundary_distance_at(boundary_distances, nx, ny);
+            if bd < wall_threshold {
+                let (gx, gy) = grid.boundary_gradient(boundary_distances, nx, ny);
+                let glen = (gx * gx + gy * gy).sqrt();
+                if glen > 1e-10 {
+                    let tx = -gy / glen;
+                    let ty = gx / glen;
+                    let alignment = (angle.cos() * tx + angle.sin() * ty).abs();
+                    (1.0 - alignment) * 0.15
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            }
+        };
+
+        let score = error + angle_penalty * 0.12 + wall_bias;
+        Some((engagement, score))
+    };
+
+    // ── Phase 1: Narrow interpolation search ──────────────────────────
+    // 7 candidates at ±0°, ±15°, ±30°, ±45° from prev_angle
+    {
+        let offsets = [0.0, PI / 12.0, -PI / 12.0, PI / 6.0, -PI / 6.0, PI / 4.0, -PI / 4.0];
+        let mut best_good: Option<(f64, f64)> = None; // (score, angle)
+        let mut lo_bracket: Option<(f64, f64)> = None; // (angle, engagement) below target
+        let mut hi_bracket: Option<(f64, f64)> = None; // (angle, engagement) above target
+
+        for &offset in &offsets {
+            let angle = prev_angle + offset;
+            if let Some((eng, score)) = eval_candidate(angle) {
+                // Track engagement brackets for interpolation
+                if eng < target_frac {
+                    if lo_bracket.is_none() || eng > lo_bracket.unwrap().1 {
+                        lo_bracket = Some((angle, eng));
+                    }
+                } else if hi_bracket.is_none() || eng < hi_bracket.unwrap().1 {
+                    hi_bracket = Some((angle, eng));
+                }
+
+                if eng >= min_frac && eng <= max_frac {
+                    if best_good.is_none() || score < best_good.unwrap().0 {
+                        best_good = Some((score, angle));
+                    }
+                }
+            }
+        }
+
+        // Interpolation refinement: if we have brackets, find the crossing
+        if let (Some((a_lo, e_lo)), Some((a_hi, e_hi))) = (lo_bracket, hi_bracket) {
+            let delta = e_hi - e_lo;
+            if delta.abs() > 0.001 {
+                let t = ((target_frac - e_lo) / delta).clamp(0.0, 1.0);
+                let interp_angle = a_lo + t * angle_diff(a_hi, a_lo);
+
+                if let Some((eng, score)) = eval_candidate(interp_angle) {
+                    if eng >= min_frac && eng <= max_frac {
+                        if best_good.is_none() || score < best_good.unwrap().0 {
+                            best_good = Some((score, interp_angle));
+                        }
+                    }
+
+                    // Second refinement iteration
+                    let (new_lo, new_hi) = if eng < target_frac {
+                        ((interp_angle, eng), (a_hi, e_hi))
+                    } else {
+                        ((a_lo, e_lo), (interp_angle, eng))
+                    };
+                    let delta2 = new_hi.1 - new_lo.1;
+                    if delta2.abs() > 0.001 {
+                        let t2 = ((target_frac - new_lo.1) / delta2).clamp(0.0, 1.0);
+                        let refined = new_lo.0 + t2 * angle_diff(new_hi.0, new_lo.0);
+                        if let Some((eng2, score2)) = eval_candidate(refined) {
+                            if eng2 >= min_frac && eng2 <= max_frac {
+                                if best_good.is_none() || score2 < best_good.unwrap().0 {
+                                    best_good = Some((score2, refined));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some((_, angle)) = best_good {
+            return Some(angle);
+        }
+    }
+
+    // ── Phase 2+3: Broad sweep fallback ───────────────────────────────
+    // Used when the narrow search fails (no engagement nearby, U-turn needed, etc.)
     let evaluate_sweep = |sweep: f64, n_candidates: usize| -> (Option<f64>, Option<f64>) {
-        let mut best_good: Option<(f64, f64)> = None; // (score, angle) - within tolerance
-        let mut best_any: Option<(f64, f64)> = None; // (score, angle) - any engagement
+        let mut best_good: Option<(f64, f64)> = None;
+        let mut best_any: Option<(f64, f64)> = None;
 
         for i in 0..n_candidates {
             let t = i as f64 / (n_candidates - 1) as f64;
             let angle = prev_angle - sweep / 2.0 + t * sweep;
 
-            let nx = cx + step_len * angle.cos();
-            let ny = cy + step_len * angle.sin();
-
-            if !grid.is_machinable(machinable_mask, nx, ny) {
-                continue;
-            }
-
-            let engagement = compute_engagement(grid, nx, ny, tool_radius);
-            if engagement < 0.005 {
-                continue;
-            }
-
-            let error = (engagement - target_frac).abs();
-            let angle_penalty = angle_diff(angle, prev_angle).abs() / PI; // 0..1
-
-            // Wall-tangent bias: penalize perpendicular movement near walls
-            let wall_bias = {
-                let bd = grid.boundary_distance_at(boundary_distances, nx, ny);
-                if bd < wall_threshold {
-                    let (gx, gy) = grid.boundary_gradient(boundary_distances, nx, ny);
-                    let glen = (gx * gx + gy * gy).sqrt();
-                    if glen > 1e-10 {
-                        // Wall tangent is perpendicular to gradient
-                        let tx = -gy / glen;
-                        let ty = gx / glen;
-                        let alignment = (angle.cos() * tx + angle.sin() * ty).abs();
-                        (1.0 - alignment) * 0.15
-                    } else {
-                        0.0
+            if let Some((eng, score)) = eval_candidate(angle) {
+                if eng >= min_frac && eng <= max_frac {
+                    if best_good.is_none() || score < best_good.unwrap().0 {
+                        best_good = Some((score, angle));
                     }
-                } else {
-                    0.0
                 }
-            };
-
-            let score = error + angle_penalty * 0.12 + wall_bias;
-
-            if engagement >= min_frac && engagement <= max_frac {
-                if best_good.is_none() || score < best_good.unwrap().0 {
-                    best_good = Some((score, angle));
+                if best_any.is_none() || score < best_any.unwrap().0 {
+                    best_any = Some((score, angle));
                 }
-            }
-            if best_any.is_none() || score < best_any.unwrap().0 {
-                best_any = Some((score, angle));
             }
         }
 
-        (
-            best_good.map(|(_, a)| a),
-            best_any.map(|(_, a)| a),
-        )
+        (best_good.map(|(_, a)| a), best_any.map(|(_, a)| a))
     };
 
-    // Pass 1: forward ±90°
+    // Phase 2: forward ±90°
     let (good, fallback) = evaluate_sweep(PI, 19);
     if let Some(angle) = good {
         return Some(angle);
     }
 
-    // Pass 2: full 360° (allows U-turns)
+    // Phase 3: full 360° (allows U-turns)
     let (good2, fallback2) = evaluate_sweep(TAU, 36);
     if let Some(angle) = good2 {
         return Some(angle);
     }
 
-    // Fallback: any direction with engagement
     fallback.or(fallback2)
 }
 
@@ -539,29 +644,117 @@ fn find_nearest_material_spread(
     best
 }
 
-/// Find an entry point: a position inside the machinable region
-/// that has uncut material nearby.
+/// Walk the machinable polygon boundary, sampling engagement at regular
+/// intervals. Returns the boundary position with the best engagement
+/// that isn't too close to a previous endpoint.
 ///
-/// Prefers positions with partial engagement (near the edge of uncut material)
-/// to avoid plunging into the middle of a large uncut block.
-/// Spreads entries away from previous pass endpoints to avoid corner clustering.
+/// This is more systematic than grid scanning — it checks positions
+/// directly on the tool's legal boundary contour, ensuring no regions
+/// are missed. Inspired by Freesteel's EngagePoint boundary traversal.
+fn walk_boundary_for_entry(
+    boundary: &[P2],
+    grid: &MaterialGrid,
+    tool_radius: f64,
+    step: f64,
+    pass_endpoints: &[P2],
+    min_endpoint_dist_sq: f64,
+) -> Option<(P2, f64)> {
+    let mut best: Option<(P2, f64)> = None; // (position, engagement)
+    let engage_threshold = 0.005;
+
+    for i in 0..boundary.len() {
+        let a = boundary[i];
+        let b = boundary[(i + 1) % boundary.len()];
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let len = (dx * dx + dy * dy).sqrt();
+        if len < 1e-10 {
+            continue;
+        }
+
+        let n_samples = (len / step).ceil() as usize;
+        for j in 0..=n_samples {
+            let t = j as f64 / n_samples.max(1) as f64;
+            let x = a.x + t * dx;
+            let y = a.y + t * dy;
+
+            // Skip if near a previous endpoint
+            let near = pass_endpoints.iter().any(|ep| {
+                let ex = x - ep.x;
+                let ey = y - ep.y;
+                ex * ex + ey * ey < min_endpoint_dist_sq
+            });
+            if near {
+                continue;
+            }
+
+            let eng = compute_engagement(grid, x, y, tool_radius);
+            if eng > engage_threshold {
+                if best.is_none() || eng > best.unwrap().1 {
+                    best = Some((P2::new(x, y), eng));
+                }
+            }
+        }
+    }
+
+    best
+}
+
+/// Find an entry point by walking the machinable boundary contours.
+///
+/// Uses systematic boundary traversal: walks the machinable polygon
+/// exterior and hole contours, checking engagement at each position.
+/// This ensures no uncleared regions along walls are missed.
+/// Falls back to grid scan for interior material not reachable from boundary.
 pub(crate) fn find_entry_point(
     grid: &MaterialGrid,
     machinable_mask: &[bool],
+    machinable: &Polygon2,
     tool_radius: f64,
     last_pos: Option<P2>,
     pass_endpoints: &[P2],
 ) -> Option<P2> {
-    // Find nearest material cell (to last_pos or grid center)
+    let min_endpoint_dist_sq = (tool_radius * 3.0) * (tool_radius * 3.0);
+    let walk_step = grid.cell_size * 2.0;
+
+    // Phase 1: Walk the machinable boundary contours
+    // Check exterior
+    let mut best_boundary: Option<(P2, f64)> = walk_boundary_for_entry(
+        &machinable.exterior,
+        grid,
+        tool_radius,
+        walk_step,
+        pass_endpoints,
+        min_endpoint_dist_sq,
+    );
+
+    // Check hole boundaries
+    for hole in &machinable.holes {
+        if let Some((p, eng)) = walk_boundary_for_entry(
+            hole,
+            grid,
+            tool_radius,
+            walk_step,
+            pass_endpoints,
+            min_endpoint_dist_sq,
+        ) {
+            if best_boundary.is_none() || eng > best_boundary.unwrap().1 {
+                best_boundary = Some((p, eng));
+            }
+        }
+    }
+
+    if let Some((p, _)) = best_boundary {
+        return Some(p);
+    }
+
+    // Phase 2: Fallback to grid scan for interior material
     let search_from = last_pos.unwrap_or_else(|| {
         let cx = grid.origin_x + (grid.cols as f64 * grid.cell_size) / 2.0;
         let cy = grid.origin_y + (grid.rows as f64 * grid.cell_size) / 2.0;
         P2::new(cx, cy)
     });
 
-    let min_endpoint_dist_sq = (tool_radius * 3.0) * (tool_radius * 3.0);
-
-    // Try to find material not near a previous endpoint first
     let (mx, my) = if !pass_endpoints.is_empty() {
         find_nearest_material_spread(
             grid,
@@ -575,13 +768,11 @@ pub(crate) fn find_entry_point(
         grid.find_nearest_material(search_from.x, search_from.y)
     }?;
 
-    // If the material cell is inside the machinable region, use it
     if grid.is_machinable(machinable_mask, mx, my) {
         return Some(P2::new(mx, my));
     }
 
-    // Material is outside the machinable region (near polygon boundary).
-    // Find the closest machinable cell with engagement near the material.
+    // Search nearby for a machinable cell
     let search_r = tool_radius * 3.0;
     let step = grid.cell_size;
     let mut best_dist_sq = f64::INFINITY;
@@ -746,6 +937,7 @@ fn adaptive_segments(
         let entry = match find_entry_point(
             &grid,
             &machinable_mask,
+            machinable,
             tool_radius,
             last_pos,
             &pass_endpoints,
@@ -1489,12 +1681,12 @@ mod tests {
         );
 
         // First entry: no previous endpoints
-        let e1 = find_entry_point(&grid, &mask, tool_radius, None, &[]);
+        let e1 = find_entry_point(&grid, &mask, &machinable[0], tool_radius, None, &[]);
         assert!(e1.is_some());
         let e1 = e1.unwrap();
 
         // Second entry: should avoid being close to the first
-        let e2 = find_entry_point(&grid, &mask, tool_radius, Some(e1), &[e1]);
+        let e2 = find_entry_point(&grid, &mask, &machinable[0], tool_radius, Some(e1), &[e1]);
         assert!(e2.is_some());
         let e2 = e2.unwrap();
 
