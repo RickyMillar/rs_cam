@@ -100,7 +100,10 @@ fn find_next_xy_direction(moves: &[Move], from_idx: usize) -> (f64, f64) {
     (1.0, 0.0) // fallback: ramp along X
 }
 
-fn emit_ramp(
+/// Clearance height (mm) above cut depth to start ramping/helixing.
+pub(crate) const ENTRY_CLEARANCE: f64 = 2.0;
+
+pub(crate) fn emit_ramp(
     tp: &mut Toolpath,
     start: &P3,
     end: &P3,
@@ -110,7 +113,7 @@ fn emit_ramp(
 ) {
     // Only ramp the last portion of the descent (max 5mm above target).
     // Rapid down to clearance first, then ramp the rest.
-    let clearance = 2.0; // mm above cut depth to start ramping
+    let clearance = ENTRY_CLEARANCE;
     let ramp_start_z = end.z + clearance;
 
     if start.z > ramp_start_z + 0.1 {
@@ -139,7 +142,7 @@ fn emit_ramp(
     tp.feed_to(P3::new(start.x, start.y, end.z), feed_rate);
 }
 
-fn emit_helix(
+pub(crate) fn emit_helix(
     tp: &mut Toolpath,
     start: &P3,
     end: &P3,
@@ -148,7 +151,7 @@ fn emit_helix(
     feed_rate: f64,
 ) {
     // Only helix the last portion — rapid down to clearance first
-    let clearance = 2.0;
+    let clearance = ENTRY_CLEARANCE;
     let helix_start_z = end.z + clearance;
 
     if start.z > helix_start_z + 0.1 {

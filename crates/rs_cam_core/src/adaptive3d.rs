@@ -1115,55 +1115,14 @@ pub fn adaptive_3d_toolpath(
                         tp.feed_to(*entry, params.plunge_rate);
                     }
                     EntryStyle3d::Helix { radius, pitch } => {
-                        // Rapid to 2mm above entry, then helix down
-                        let clearance = 2.0;
-                        let helix_start_z = entry.z + clearance;
                         tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
-                        tp.rapid_to(P3::new(entry.x, entry.y, helix_start_z));
-
-                        let dz = (helix_start_z - entry.z).abs();
-                        if dz < 0.01 || pitch < 0.01 {
-                            tp.feed_to(*entry, params.plunge_rate);
-                        } else {
-                            let revolutions = dz / pitch;
-                            let steps_per_rev = 36;
-                            let total_steps = (revolutions * steps_per_rev as f64).ceil() as usize;
-                            if total_steps == 0 {
-                                tp.feed_to(*entry, params.plunge_rate);
-                            } else {
-                                let total_angle = revolutions * TAU;
-                                for i in 1..=total_steps {
-                                    let t = i as f64 / total_steps as f64;
-                                    let angle = total_angle * t;
-                                    let z = helix_start_z - dz * t;
-                                    let x = entry.x + radius * angle.cos();
-                                    let y = entry.y + radius * angle.sin();
-                                    tp.feed_to(P3::new(x, y, z), params.plunge_rate);
-                                }
-                                // Return to entry center at final Z
-                                tp.feed_to(*entry, params.plunge_rate);
-                            }
-                        }
+                        let helix_start = P3::new(entry.x, entry.y, params.safe_z);
+                        crate::dressup::emit_helix(&mut tp, &helix_start, entry, radius, pitch, params.plunge_rate);
                     }
                     EntryStyle3d::Ramp { max_angle_deg } => {
-                        // Rapid to 2mm above entry, then ramp down along a direction
-                        let clearance = 2.0;
-                        let ramp_start_z = entry.z + clearance;
                         tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
-                        tp.rapid_to(P3::new(entry.x, entry.y, ramp_start_z));
-
-                        let dz = (ramp_start_z - entry.z).abs().max(0.1);
-                        let max_angle_rad = max_angle_deg.to_radians();
-                        let ramp_xy_len = dz / max_angle_rad.tan();
-                        let half_len = ramp_xy_len / 2.0;
-
-                        // Ramp along X direction (arbitrary), zigzag down
-                        let mid_z = (ramp_start_z + entry.z) / 2.0;
-                        tp.feed_to(
-                            P3::new(entry.x + half_len, entry.y, mid_z),
-                            params.plunge_rate,
-                        );
-                        tp.feed_to(*entry, params.plunge_rate);
+                        let ramp_start = P3::new(entry.x, entry.y, params.safe_z);
+                        crate::dressup::emit_ramp(&mut tp, &ramp_start, entry, (1.0, 0.0), max_angle_deg, params.plunge_rate);
                     }
                 }
             }
