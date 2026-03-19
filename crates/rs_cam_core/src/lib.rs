@@ -22,3 +22,5 @@ pub mod simulation;
 pub mod vcarve;
 pub mod rest;
 pub mod adaptive3d;
+pub mod slope;
+pub mod scallop_math;

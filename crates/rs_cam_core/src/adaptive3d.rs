@@ -19,11 +19,11 @@ use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::simulation::{stamp_tool_at, stamp_tool_at_lut, Heightmap, RadialProfileLUT};
+use crate::slope::SurfaceHeightmap;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 use crate::waterline::waterline_contours;
 
-use rayon::prelude::*;
 use std::collections::VecDeque;
 use std::f64::consts::{PI, TAU};
 use std::time::Instant;
@@ -79,84 +79,7 @@ pub struct Adaptive3dParams {
     pub region_ordering: RegionOrdering,
 }
 
-// ── Surface heightmap ─────────────────────────────────────────────────
-
-/// Precomputed mesh surface Z heights at grid resolution.
-/// One parallel batch of drop-cutter queries at init, then O(1) lookups.
-struct SurfaceHeightmap {
-    z_values: Vec<f64>,
-    rows: usize,
-    cols: usize,
-    origin_x: f64,
-    origin_y: f64,
-    cell_size: f64,
-}
-
-impl SurfaceHeightmap {
-    /// Build via rayon-parallelized drop-cutter queries at each grid cell.
-    fn from_mesh(
-        mesh: &TriangleMesh,
-        index: &SpatialIndex,
-        cutter: &dyn MillingCutter,
-        origin_x: f64,
-        origin_y: f64,
-        rows: usize,
-        cols: usize,
-        cell_size: f64,
-        min_z: f64,
-    ) -> Self {
-        let total = rows * cols;
-        let z_values: Vec<f64> = (0..total)
-            .into_par_iter()
-            .map(|i| {
-                let row = i / cols;
-                let col = i % cols;
-                let x = origin_x + col as f64 * cell_size;
-                let y = origin_y + row as f64 * cell_size;
-                let cl = point_drop_cutter(x, y, mesh, index, cutter);
-                cl.z.max(min_z)
-            })
-            .collect();
-
-        Self {
-            z_values,
-            rows,
-            cols,
-            origin_x,
-            origin_y,
-            cell_size,
-        }
-    }
-
-    /// O(1) surface Z lookup by cell indices.
-    #[inline]
-    fn surface_z_at(&self, row: usize, col: usize) -> f64 {
-        self.z_values[row * self.cols + col]
-    }
-
-    /// Surface Z at world coordinates. Returns min representable for out-of-bounds.
-    fn surface_z_at_world(&self, x: f64, y: f64) -> f64 {
-        let col_f = (x - self.origin_x) / self.cell_size;
-        let row_f = (y - self.origin_y) / self.cell_size;
-        if col_f < -0.5 || row_f < -0.5 {
-            return f64::NEG_INFINITY;
-        }
-        let col = col_f.round() as isize;
-        let row = row_f.round() as isize;
-        if col < 0 || row < 0 || col >= self.cols as isize || row >= self.rows as isize {
-            return f64::NEG_INFINITY;
-        }
-        self.z_values[row as usize * self.cols + col as usize]
-    }
-
-    /// Minimum surface Z across all cells (bottom of the mesh surface).
-    fn min_z(&self) -> f64 {
-        self.z_values
-            .iter()
-            .copied()
-            .fold(f64::INFINITY, f64::min)
-    }
-}
+// SurfaceHeightmap is now in crate::slope (shared across finishing strategies)
 
 /// Sum Z values in a local area around (cx, cy) within radius.
 /// Used for cheap O(local_cells) idle detection instead of summing entire grid.
