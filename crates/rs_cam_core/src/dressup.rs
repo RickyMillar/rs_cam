@@ -237,7 +237,7 @@ pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath
         let prev = &toolpath.moves[cutting_indices[i - 1]].target;
         let curr = &toolpath.moves[cutting_indices[i]].target;
         let d = ((curr.x - prev.x).powi(2) + (curr.y - prev.y).powi(2)).sqrt();
-        cum_dist.push(cum_dist.last().unwrap() + d);
+        cum_dist.push(cum_dist.last().expect("cum_dist starts with [0.0]") + d);
     }
 
     let total_dist = *cum_dist.last().unwrap_or(&0.0);
@@ -312,7 +312,7 @@ pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath
                     events.push((tz.end_dist, false));
                 }
             }
-            events.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+            events.sort_by(|a, b| a.0.total_cmp(&b.0));
 
             if events.is_empty() {
                 // No boundary crossings — whole segment is in or out

@@ -480,15 +480,15 @@ pub(crate) fn search_direction(
             if let Some((eng, score)) = eval_candidate(angle) {
                 // Track engagement brackets for interpolation
                 if eng < target_frac {
-                    if lo_bracket.is_none() || eng > lo_bracket.unwrap().1 {
+                    if lo_bracket.map_or(true, |b| eng > b.1) {
                         lo_bracket = Some((angle, eng));
                     }
-                } else if hi_bracket.is_none() || eng < hi_bracket.unwrap().1 {
+                } else if hi_bracket.map_or(true, |b| eng < b.1) {
                     hi_bracket = Some((angle, eng));
                 }
 
                 if eng >= min_frac && eng <= max_frac
-                    && (best_good.is_none() || score < best_good.unwrap().0)
+                    && best_good.map_or(true, |b| score < b.0)
                 {
                     best_good = Some((score, angle));
                 }
@@ -504,7 +504,7 @@ pub(crate) fn search_direction(
 
                 if let Some((eng, score)) = eval_candidate(interp_angle) {
                     if eng >= min_frac && eng <= max_frac
-                        && (best_good.is_none() || score < best_good.unwrap().0)
+                        && best_good.map_or(true, |b| score < b.0)
                     {
                         best_good = Some((score, interp_angle));
                     }
@@ -521,7 +521,7 @@ pub(crate) fn search_direction(
                         let refined = new_lo.0 + t2 * angle_diff(new_hi.0, new_lo.0);
                         if let Some((eng2, score2)) = eval_candidate(refined)
                             && eng2 >= min_frac && eng2 <= max_frac
-                            && (best_good.is_none() || score2 < best_good.unwrap().0)
+                            && best_good.map_or(true, |b| score2 < b.0)
                         {
                             best_good = Some((score2, refined));
                         }
@@ -547,11 +547,11 @@ pub(crate) fn search_direction(
 
             if let Some((eng, score)) = eval_candidate(angle) {
                 if eng >= min_frac && eng <= max_frac
-                    && (best_good.is_none() || score < best_good.unwrap().0)
+                    && best_good.map_or(true, |b| score < b.0)
                 {
                     best_good = Some((score, angle));
                 }
-                if best_any.is_none() || score < best_any.unwrap().0 {
+                if best_any.map_or(true, |b| score < b.0) {
                     best_any = Some((score, angle));
                 }
             }
@@ -689,7 +689,7 @@ fn walk_boundary_for_entry(
 
             let eng = compute_engagement(grid, x, y, tool_radius);
             if eng > engage_threshold
-                && (best.is_none() || eng > best.unwrap().1)
+                && best.map_or(true, |b| eng > b.1)
             {
                 best = Some((P2::new(x, y), eng));
             }
@@ -737,7 +737,7 @@ pub(crate) fn find_entry_point(
             pass_endpoints,
             min_endpoint_dist_sq,
         )
-            && (best_boundary.is_none() || eng > best_boundary.unwrap().1)
+            && best_boundary.map_or(true, |b| eng > b.1)
         {
             best_boundary = Some((p, eng));
         }
@@ -1041,7 +1041,7 @@ fn adaptive_segments(
         let was_idle = idle_count > 15;
 
         if path.len() >= 2 {
-            let endpoint = *path.last().unwrap();
+            let endpoint = *path.last().expect("path is non-empty after loop");
             last_pos = Some(endpoint);
             pass_endpoints.push(endpoint);
             segments.push(AdaptiveSegment::Cut(path));
@@ -1247,7 +1247,7 @@ pub(crate) fn blend_corners(path: &[P2], min_radius: f64) -> Vec<P2> {
         result.push(t2);
     }
 
-    result.push(*path.last().unwrap());
+    result.push(*path.last().expect("path has at least 3 elements"));
     result
 }
 

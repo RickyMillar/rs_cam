@@ -349,19 +349,17 @@ fn search_direction_3d(
         let ad = angle_diff(angle, prev_angle).abs() / PI;
         let score = error + ad * 0.12;
 
-        if best.is_none() || score < best.unwrap().0 {
+        if best.map_or(true, |b| score < b.0) {
             best = Some((score, angle, z));
         }
 
         // Track brackets for interpolation
         if eng < target_frac {
-            if bracket_lo.is_none()
-                || (eng - target_frac).abs() < (bracket_lo.unwrap().1 - target_frac).abs()
+            if bracket_lo.map_or(true, |b| (eng - target_frac).abs() < (b.1 - target_frac).abs())
             {
                 bracket_lo = Some((angle, eng, z));
             }
-        } else if bracket_hi.is_none()
-            || (eng - target_frac).abs() < (bracket_hi.unwrap().1 - target_frac).abs()
+        } else if bracket_hi.map_or(true, |b| (eng - target_frac).abs() < (b.1 - target_frac).abs())
         {
             bracket_hi = Some((angle, eng, z));
         }
@@ -376,7 +374,7 @@ fn search_direction_3d(
         let interp_angle = lo.0 + t * diff;
 
         if let Some((score, z)) = evaluate(interp_angle)
-            && (best.is_none() || score < best.unwrap().0)
+            && best.map_or(true, |b| score < b.0)
         {
             best = Some((score, interp_angle, z));
         }
@@ -395,7 +393,7 @@ fn search_direction_3d(
     for i in 0..19 {
         let angle = prev_angle - PI / 2.0 + (i as f64 / 18.0) * PI;
         if let Some((score, z)) = evaluate(angle)
-            && (fallback.is_none() || score < fallback.unwrap().0)
+            && fallback.map_or(true, |b| score < b.0)
         {
             fallback = Some((score, angle, z));
         }
@@ -412,7 +410,7 @@ fn search_direction_3d(
     for i in 0..36 {
         let angle = (i as f64 / 36.0) * TAU;
         if let Some((score, z)) = evaluate(angle)
-            && (fallback2.is_none() || score < fallback2.unwrap().0)
+            && fallback2.map_or(true, |b| score < b.0)
         {
             fallback2 = Some((score, angle, z));
         }
@@ -477,7 +475,7 @@ fn find_entry_3d(
             let dy = y - ref_pos.y;
             let dist_sq = dx * dx + dy * dy;
 
-            if best.is_none() || dist_sq < best.unwrap().0 {
+            if best.map_or(true, |b| dist_sq < b.0) {
                 best = Some((dist_sq, row, col));
             }
         }
@@ -500,7 +498,7 @@ fn find_entry_3d(
                 let dy = y - ref_pos.y;
                 let dist_sq = dx * dx + dy * dy;
 
-                if best.is_none() || dist_sq < best.unwrap().0 {
+                if best.map_or(true, |b| dist_sq < b.0) {
                     best = Some((dist_sq, row, col));
                 }
             }
@@ -766,7 +764,7 @@ fn adaptive_3d_segments(
             if !flat_levels.is_empty() {
                 debug!(count = flat_levels.len(), "Detected flat area Z levels");
                 z_levels.extend(flat_levels);
-                z_levels.sort_by(|a, b| b.partial_cmp(a).unwrap()); // Top-down order
+                z_levels.sort_by(|a, b| b.total_cmp(a)); // Top-down order
                 z_levels.dedup_by(|a, b| (*a - *b).abs() < 0.01);
             }
         }
@@ -794,7 +792,7 @@ fn adaptive_3d_segments(
             }
             all_levels.push(z_bot); // Always include the major level
         }
-        all_levels.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        all_levels.sort_by(|a, b| b.total_cmp(a));
         all_levels.dedup_by(|a, b| (*a - *b).abs() < 0.01);
         debug!(from = z_levels.len(), to = all_levels.len(), fine_step = fine_step, "Fine stepdown expanded Z levels");
         z_levels = all_levels;
@@ -1016,7 +1014,7 @@ fn adaptive_3d_segments(
 
             let pass_steps = path.len();
             if pass_steps >= 2 {
-                let endpoint = *path.last().unwrap();
+                let endpoint = *path.last().expect("path is non-empty after loop");
                 last_pos = Some(endpoint);
                 pass_endpoints.push(P2::new(endpoint.x, endpoint.y));
                 segments.push(Adaptive3dSegment::Cut(path));

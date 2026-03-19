@@ -2,6 +2,10 @@
 //!
 //! - SVG: 2D top-down toolpath preview
 //! - HTML: Interactive 3D viewer with mesh + toolpaths (three.js)
+//!
+//! Note: `let _ = write!(...)` is used throughout this module for writing to `String`.
+//! Writing to `String` is infallible (only fails on OOM, which panics regardless),
+//! so discarding the `Result` with `let _ =` is safe.
 
 use crate::geo::BoundingBox3;
 use crate::mesh::TriangleMesh;
@@ -35,8 +39,8 @@ pub fn toolpath_to_svg(toolpath: &Toolpath, width: f64, height: f64) -> String {
     let z_range = (bbox.max.z - bbox.min.z).max(1e-6);
 
     let mut svg = String::new();
-    writeln!(svg, "<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}' viewBox='0 0 {width} {height}'>").unwrap();
-    writeln!(svg, "<rect width='{width}' height='{height}' fill='#1a1a2e'/>").unwrap();
+    let _ = writeln!(svg, "<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}' viewBox='0 0 {width} {height}'>");
+    let _ = writeln!(svg, "<rect width='{width}' height='{height}' fill='#1a1a2e'/>");
 
     // Draw rapids as thin gray dashed lines
     // Draw feed moves as colored lines (Z-based color)
@@ -51,7 +55,7 @@ pub fn toolpath_to_svg(toolpath: &Toolpath, width: f64, height: f64) -> String {
 
         match toolpath.moves[i].move_type {
             MoveType::Rapid => {
-                writeln!(svg, "<line x1='{x1:.1}' y1='{y1:.1}' x2='{x2:.1}' y2='{y2:.1}' stroke='#333' stroke-width='0.3' stroke-dasharray='2,2'/>").unwrap();
+                let _ = writeln!(svg, "<line x1='{x1:.1}' y1='{y1:.1}' x2='{x2:.1}' y2='{y2:.1}' stroke='#333' stroke-width='0.3' stroke-dasharray='2,2'/>");
             }
             MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
                 // Color by Z: low=deep blue, high=bright cyan/white
@@ -59,16 +63,16 @@ pub fn toolpath_to_svg(toolpath: &Toolpath, width: f64, height: f64) -> String {
                 let r = (t * 100.0) as u8;
                 let g = (80.0 + t * 175.0) as u8;
                 let b = (180.0 + t * 75.0) as u8;
-                writeln!(svg, "<line x1='{x1:.1}' y1='{y1:.1}' x2='{x2:.1}' y2='{y2:.1}' stroke='#{r:02x}{g:02x}{b:02x}' stroke-width='0.5'/>").unwrap();
+                let _ = writeln!(svg, "<line x1='{x1:.1}' y1='{y1:.1}' x2='{x2:.1}' y2='{y2:.1}' stroke='#{r:02x}{g:02x}{b:02x}' stroke-width='0.5'/>");
             }
         }
     }
 
     // Add legend
-    writeln!(svg, "<text x='5' y='15' fill='white' font-size='10' font-family='monospace'>Z: {:.2} to {:.2} mm</text>", z_min, bbox.max.z).unwrap();
-    writeln!(svg, "<text x='5' y='27' fill='white' font-size='10' font-family='monospace'>{} moves, {:.0}mm cutting</text>", toolpath.moves.len(), toolpath.total_cutting_distance()).unwrap();
+    let _ = writeln!(svg, "<text x='5' y='15' fill='white' font-size='10' font-family='monospace'>Z: {:.2} to {:.2} mm</text>", z_min, bbox.max.z);
+    let _ = writeln!(svg, "<text x='5' y='27' fill='white' font-size='10' font-family='monospace'>{} moves, {:.0}mm cutting</text>", toolpath.moves.len(), toolpath.total_cutting_distance());
 
-    writeln!(svg, "</svg>").unwrap();
+    let _ = writeln!(svg, "</svg>");
     svg
 }
 
@@ -89,13 +93,13 @@ pub fn toolpath_to_3d_html(mesh: &TriangleMesh, toolpath: &Toolpath) -> String {
     // Serialize mesh vertices as flat f32 array [x0,y0,z0, x1,y1,z1, ...]
     let mut mesh_verts = String::new();
     for v in &mesh.vertices {
-        write!(mesh_verts, "{:.4},{:.4},{:.4},", v.x, v.y, v.z).unwrap();
+        let _ = write!(mesh_verts, "{:.4},{:.4},{:.4},", v.x, v.y, v.z);
     }
 
     // Serialize mesh triangle indices
     let mut mesh_indices = String::new();
     for tri in &mesh.triangles {
-        write!(mesh_indices, "{},{},{},", tri[0], tri[1], tri[2]).unwrap();
+        let _ = write!(mesh_indices, "{},{},{},", tri[0], tri[1], tri[2]);
     }
 
     // Serialize cutting path vertices + colors, and rapid path vertices separately
@@ -120,12 +124,12 @@ pub fn toolpath_to_3d_html(mesh: &TriangleMesh, toolpath: &Toolpath) -> String {
 
         match toolpath.moves[i].move_type {
             MoveType::Rapid => {
-                write!(rapid_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                    from.x, from.y, from.z, to.x, to.y, to.z).unwrap();
+                let _ = write!(rapid_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                    from.x, from.y, from.z, to.x, to.y, to.z);
             }
             MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
-                write!(cut_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                    from.x, from.y, from.z, to.x, to.y, to.z).unwrap();
+                let _ = write!(cut_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                    from.x, from.y, from.z, to.x, to.y, to.z);
                 // Color both endpoints by their Z
                 for z in [from.z, to.z] {
                     let t = ((z - z_min) / z_range).clamp(0.0, 1.0) as f32;
@@ -133,13 +137,13 @@ pub fn toolpath_to_3d_html(mesh: &TriangleMesh, toolpath: &Toolpath) -> String {
                     let r = 0.1 + t * 0.1;
                     let g = 0.3 + t * 0.6;
                     let b = 0.9 + t * 0.1;
-                    write!(cut_colors, "{:.3},{:.3},{:.3},", r, g, b).unwrap();
+                    let _ = write!(cut_colors, "{:.3},{:.3},{:.3},", r, g, b);
                 }
             }
         }
     }
 
-    write!(html, r##"<!DOCTYPE html>
+    let _ = write!(html, r##"<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
 <title>rs_cam 3D Toolpath Viewer</title>
@@ -299,7 +303,7 @@ animate();
         bbox_min_x = mesh.bbox.min.x,
         bbox_min_y = mesh.bbox.min.y,
         bbox_min_z = mesh.bbox.min.z,
-    ).unwrap();
+    );
 
     html
 }
@@ -357,8 +361,8 @@ pub fn toolpath_standalone_3d_html(toolpath: &Toolpath, stock_bounds: Option<[f6
 
         match toolpath.moves[i].move_type {
             MoveType::Rapid => {
-                write!(rapid_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                    from.x, from.y, from.z, to.x, to.y, to.z).unwrap();
+                let _ = write!(rapid_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                    from.x, from.y, from.z, to.x, to.y, to.z);
             }
             MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
                 let dz = (to.z - from.z).abs();
@@ -366,24 +370,24 @@ pub fn toolpath_standalone_3d_html(toolpath: &Toolpath, stock_bounds: Option<[f6
 
                 // Classify as plunge (mostly vertical) vs cutting (mostly horizontal)
                 if dz > 0.1 && dxy < 0.1 {
-                    write!(plunge_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                        from.x, from.y, from.z, to.x, to.y, to.z).unwrap();
+                    let _ = write!(plunge_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                        from.x, from.y, from.z, to.x, to.y, to.z);
                 } else {
-                    write!(cut_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                        from.x, from.y, from.z, to.x, to.y, to.z).unwrap();
+                    let _ = write!(cut_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                        from.x, from.y, from.z, to.x, to.y, to.z);
                     for z in [from.z, to.z] {
                         let t = ((z - z_min) / z_range).clamp(0.0, 1.0) as f32;
                         let r = 0.1 + t * 0.15;
                         let g = 0.3 + t * 0.6;
                         let b = 0.85 + t * 0.15;
-                        write!(cut_colors, "{:.3},{:.3},{:.3},", r, g, b).unwrap();
+                        let _ = write!(cut_colors, "{:.3},{:.3},{:.3},", r, g, b);
                     }
                 }
             }
         }
     }
 
-    write!(html, r##"<!DOCTYPE html>
+    let _ = write!(html, r##"<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
 <title>rs_cam Toolpath Viewer</title>
@@ -554,7 +558,7 @@ animate();
         plunge_verts_data = plunge_verts.trim_end_matches(','),
         rapid_verts_data = rapid_verts.trim_end_matches(','),
         grid_size = extent * 1.2,
-    ).unwrap();
+    );
 
     html
 }
@@ -584,15 +588,15 @@ pub fn simulation_3d_html(
     // Serialize heightmap mesh (final state)
     let mut hm_verts = String::new();
     for v in hm_mesh.vertices.chunks(3) {
-        write!(hm_verts, "{},{},{},", v[0], v[1], v[2]).unwrap();
+        let _ = write!(hm_verts, "{},{},{},", v[0], v[1], v[2]);
     }
     let mut hm_colors = String::new();
     for c in hm_mesh.colors.chunks(3) {
-        write!(hm_colors, "{:.3},{:.3},{:.3},", c[0], c[1], c[2]).unwrap();
+        let _ = write!(hm_colors, "{:.3},{:.3},{:.3},", c[0], c[1], c[2]);
     }
     let mut hm_indices = String::new();
     for idx in &hm_mesh.indices {
-        write!(hm_indices, "{},", idx).unwrap();
+        let _ = write!(hm_indices, "{},", idx);
     }
 
     // Serialize toolpath lines for display
@@ -619,18 +623,18 @@ pub fn simulation_3d_html(
 
         match toolpath.moves[i].move_type {
             MoveType::Rapid => {
-                write!(rapid_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                    from.x, from.y, from.z, to.x, to.y, to.z).unwrap();
+                let _ = write!(rapid_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                    from.x, from.y, from.z, to.x, to.y, to.z);
             }
             MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
-                write!(cut_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                    from.x, from.y, from.z, to.x, to.y, to.z).unwrap();
+                let _ = write!(cut_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                    from.x, from.y, from.z, to.x, to.y, to.z);
                 for z in [from.z, to.z] {
                     let t = ((z - z_min) / z_range).clamp(0.0, 1.0) as f32;
                     let r = 0.1 + t * 0.1;
                     let g = 0.3 + t * 0.6;
                     let b = 0.9 + t * 0.1;
-                    write!(cut_colors, "{:.3},{:.3},{:.3},", r, g, b).unwrap();
+                    let _ = write!(cut_colors, "{:.3},{:.3},{:.3},", r, g, b);
                 }
             }
         }
@@ -642,10 +646,10 @@ pub fn simulation_3d_html(
     let has_source_mesh = source_mesh.is_some();
     if let Some(mesh) = source_mesh {
         for v in &mesh.vertices {
-            write!(src_mesh_verts, "{:.4},{:.4},{:.4},", v.x, v.y, v.z).unwrap();
+            let _ = write!(src_mesh_verts, "{:.4},{:.4},{:.4},", v.x, v.y, v.z);
         }
         for tri in &mesh.triangles {
-            write!(src_mesh_indices, "{},{},{},", tri[0], tri[1], tri[2]).unwrap();
+            let _ = write!(src_mesh_indices, "{},{},{},", tri[0], tri[1], tri[2]);
         }
     }
 
@@ -656,7 +660,7 @@ pub fn simulation_3d_html(
     for i in 0..=num_profile_samples {
         let r = (i as f64 / num_profile_samples as f64) * tool_radius;
         let h = cutter.height_at_radius(r).unwrap_or(-1.0);
-        write!(tool_profile, "{:.4},", h).unwrap();
+        let _ = write!(tool_profile, "{:.4},", h);
     }
 
     // Serialize linearized toolpath for animation (arcs pre-linearized)
@@ -666,7 +670,7 @@ pub fn simulation_3d_html(
     let mut anim_move_count: usize = 0;
     if !toolpath.moves.is_empty() {
         let first = &toolpath.moves[0].target;
-        write!(anim_tp, "{:.3},{:.3},{:.3},0,", first.x, first.y, first.z).unwrap();
+        let _ = write!(anim_tp, "{:.3},{:.3},{:.3},0,", first.x, first.y, first.z);
         anim_move_count += 1;
 
         for i in 1..toolpath.moves.len() {
@@ -675,24 +679,24 @@ pub fn simulation_3d_html(
 
             match toolpath.moves[i].move_type {
                 MoveType::Rapid => {
-                    write!(anim_tp, "{:.3},{:.3},{:.3},0,", end.x, end.y, end.z).unwrap();
+                    let _ = write!(anim_tp, "{:.3},{:.3},{:.3},0,", end.x, end.y, end.z);
                     anim_move_count += 1;
                 }
                 MoveType::Linear { .. } => {
-                    write!(anim_tp, "{:.3},{:.3},{:.3},1,", end.x, end.y, end.z).unwrap();
+                    let _ = write!(anim_tp, "{:.3},{:.3},{:.3},1,", end.x, end.y, end.z);
                     anim_move_count += 1;
                 }
                 MoveType::ArcCW { i, j, .. } => {
                     let points = linearize_arc(start, end, i, j, true, heightmap.cell_size);
                     for p in points.iter().skip(1) {
-                        write!(anim_tp, "{:.3},{:.3},{:.3},1,", p.x, p.y, p.z).unwrap();
+                        let _ = write!(anim_tp, "{:.3},{:.3},{:.3},1,", p.x, p.y, p.z);
                         anim_move_count += 1;
                     }
                 }
                 MoveType::ArcCCW { i, j, .. } => {
                     let points = linearize_arc(start, end, i, j, false, heightmap.cell_size);
                     for p in points.iter().skip(1) {
-                        write!(anim_tp, "{:.3},{:.3},{:.3},1,", p.x, p.y, p.z).unwrap();
+                        let _ = write!(anim_tp, "{:.3},{:.3},{:.3},1,", p.x, p.y, p.z);
                         anim_move_count += 1;
                     }
                 }
@@ -706,17 +710,17 @@ pub fn simulation_3d_html(
     for i in 0..=num_profile_samples {
         let r = (i as f64 / num_profile_samples as f64) * tool_radius;
         if let Some(h) = cutter.height_at_radius(r) {
-            write!(lathe_profile, "new THREE.Vector2({:.3},{:.4}),", r, h).unwrap();
+            let _ = write!(lathe_profile, "new THREE.Vector2({:.3},{:.4}),", r, h);
         }
     }
     // Shaft extending upward
     let shaft_h = tool_radius * 4.0;
-    write!(lathe_profile, "new THREE.Vector2({:.3},{:.3}),", tool_radius, shaft_h).unwrap();
-    write!(lathe_profile, "new THREE.Vector2(0,{:.3}),", shaft_h).unwrap();
+    let _ = write!(lathe_profile, "new THREE.Vector2({:.3},{:.3}),", tool_radius, shaft_h);
+    let _ = write!(lathe_profile, "new THREE.Vector2(0,{:.3}),", shaft_h);
 
     let mut html = String::with_capacity(2 * 1024 * 1024);
 
-    write!(html, r##"<!DOCTYPE html>
+    let _ = write!(html, r##"<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
 <title>rs_cam Simulation Viewer</title>
@@ -1164,7 +1168,7 @@ scene.add(new THREE.Mesh(srcGeo, srcMat));"#,
         bbox_min_x = hm_bbox.min.x,
         bbox_min_y = hm_bbox.min.y,
         bbox_min_z = hm_bbox.min.z,
-    ).unwrap();
+    );
 
     html
 }
@@ -1198,15 +1202,15 @@ pub fn stacked_simulation_3d_html(
     // Serialize heightmap mesh (final state)
     let mut hm_verts = String::new();
     for v in hm_mesh.vertices.chunks(3) {
-        write!(hm_verts, "{},{},{},", v[0], v[1], v[2]).unwrap();
+        let _ = write!(hm_verts, "{},{},{},", v[0], v[1], v[2]);
     }
     let mut hm_colors = String::new();
     for c in hm_mesh.colors.chunks(3) {
-        write!(hm_colors, "{:.3},{:.3},{:.3},", c[0], c[1], c[2]).unwrap();
+        let _ = write!(hm_colors, "{:.3},{:.3},{:.3},", c[0], c[1], c[2]);
     }
     let mut hm_indices_str = String::new();
     for idx in &hm_mesh.indices {
-        write!(hm_indices_str, "{},", idx).unwrap();
+        let _ = write!(hm_indices_str, "{},", idx);
     }
 
     // Serialize combined toolpath lines for display (all phases)
@@ -1236,18 +1240,18 @@ pub fn stacked_simulation_3d_html(
             let to = &tp.moves[i].target;
             match tp.moves[i].move_type {
                 MoveType::Rapid => {
-                    write!(rapid_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                        from.x, from.y, from.z, to.x, to.y, to.z).unwrap();
+                    let _ = write!(rapid_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                        from.x, from.y, from.z, to.x, to.y, to.z);
                 }
                 MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
-                    write!(cut_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                        from.x, from.y, from.z, to.x, to.y, to.z).unwrap();
+                    let _ = write!(cut_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                        from.x, from.y, from.z, to.x, to.y, to.z);
                     for z in [from.z, to.z] {
                         let t = ((z - global_z_min) / z_range_tp).clamp(0.0, 1.0) as f32;
                         let r = 0.1 + t * 0.1;
                         let g = 0.3 + t * 0.6;
                         let b = 0.9 + t * 0.1;
-                        write!(cut_colors, "{:.3},{:.3},{:.3},", r, g, b).unwrap();
+                        let _ = write!(cut_colors, "{:.3},{:.3},{:.3},", r, g, b);
                     }
                 }
             }
@@ -1260,10 +1264,10 @@ pub fn stacked_simulation_3d_html(
     let has_source_mesh = source_mesh.is_some();
     if let Some(mesh) = source_mesh {
         for v in &mesh.vertices {
-            write!(src_mesh_verts, "{:.4},{:.4},{:.4},", v.x, v.y, v.z).unwrap();
+            let _ = write!(src_mesh_verts, "{:.4},{:.4},{:.4},", v.x, v.y, v.z);
         }
         for tri in &mesh.triangles {
-            write!(src_mesh_indices_str, "{},{},{},", tri[0], tri[1], tri[2]).unwrap();
+            let _ = write!(src_mesh_indices_str, "{},{},{},", tri[0], tri[1], tri[2]);
         }
     }
 
@@ -1276,30 +1280,30 @@ pub fn stacked_simulation_3d_html(
 
     for (ti, phase) in phases.iter().enumerate() {
         let r = phase.cutter.radius();
-        write!(tool_radii_js, "{:.4},", r).unwrap();
+        let _ = write!(tool_radii_js, "{:.4},", r);
 
         let mut profile = String::new();
         for i in 0..=num_profile_samples {
             let dist = (i as f64 / num_profile_samples as f64) * r;
             let h = phase.cutter.height_at_radius(dist).unwrap_or(-1.0);
-            write!(profile, "{:.4},", h).unwrap();
+            let _ = write!(profile, "{:.4},", h);
         }
-        write!(tool_profiles_js, "new Float32Array([{}]),",
-            profile.trim_end_matches(',')).unwrap();
+        let _ = write!(tool_profiles_js, "new Float32Array([{}]),",
+            profile.trim_end_matches(','));
 
         let mut lathe = String::new();
         for i in 0..=num_profile_samples {
             let dist = (i as f64 / num_profile_samples as f64) * r;
             if let Some(h) = phase.cutter.height_at_radius(dist) {
-                write!(lathe, "new THREE.Vector2({:.3},{:.4}),", dist, h).unwrap();
+                let _ = write!(lathe, "new THREE.Vector2({:.3},{:.4}),", dist, h);
             }
         }
         let shaft_h = r * 4.0;
-        write!(lathe, "new THREE.Vector2({:.3},{:.3}),", r, shaft_h).unwrap();
-        write!(lathe, "new THREE.Vector2(0,{:.3}),", shaft_h).unwrap();
-        write!(lathe_profiles_js, "[{}],", lathe.trim_end_matches(',')).unwrap();
+        let _ = write!(lathe, "new THREE.Vector2({:.3},{:.3}),", r, shaft_h);
+        let _ = write!(lathe, "new THREE.Vector2(0,{:.3}),", shaft_h);
+        let _ = write!(lathe_profiles_js, "[{}],", lathe.trim_end_matches(','));
 
-        write!(phase_labels_js, "\"Phase {}: {}\",", ti + 1, phase.label).unwrap();
+        let _ = write!(phase_labels_js, "\"Phase {}: {}\",", ti + 1, phase.label);
         let _ = ti; // suppress unused warning
     }
 
@@ -1316,11 +1320,11 @@ pub fn stacked_simulation_3d_html(
         if tp.moves.is_empty() { continue; }
 
         // Tool-change marker
-        write!(anim_tp, "0,0,0,{},", 3 + ti).unwrap();
+        let _ = write!(anim_tp, "0,0,0,{},", 3 + ti);
         anim_move_count += 1;
 
         let first = &tp.moves[0].target;
-        write!(anim_tp, "{:.3},{:.3},{:.3},0,", first.x, first.y, first.z).unwrap();
+        let _ = write!(anim_tp, "{:.3},{:.3},{:.3},0,", first.x, first.y, first.z);
         anim_move_count += 1;
 
         for i in 1..tp.moves.len() {
@@ -1328,24 +1332,24 @@ pub fn stacked_simulation_3d_html(
             let end = tp.moves[i].target;
             match tp.moves[i].move_type {
                 MoveType::Rapid => {
-                    write!(anim_tp, "{:.3},{:.3},{:.3},0,", end.x, end.y, end.z).unwrap();
+                    let _ = write!(anim_tp, "{:.3},{:.3},{:.3},0,", end.x, end.y, end.z);
                     anim_move_count += 1;
                 }
                 MoveType::Linear { .. } => {
-                    write!(anim_tp, "{:.3},{:.3},{:.3},1,", end.x, end.y, end.z).unwrap();
+                    let _ = write!(anim_tp, "{:.3},{:.3},{:.3},1,", end.x, end.y, end.z);
                     anim_move_count += 1;
                 }
                 MoveType::ArcCW { i: ai, j: aj, .. } => {
                     let points = linearize_arc(start, end, ai, aj, true, heightmap.cell_size);
                     for p in points.iter().skip(1) {
-                        write!(anim_tp, "{:.3},{:.3},{:.3},1,", p.x, p.y, p.z).unwrap();
+                        let _ = write!(anim_tp, "{:.3},{:.3},{:.3},1,", p.x, p.y, p.z);
                         anim_move_count += 1;
                     }
                 }
                 MoveType::ArcCCW { i: ai, j: aj, .. } => {
                     let points = linearize_arc(start, end, ai, aj, false, heightmap.cell_size);
                     for p in points.iter().skip(1) {
-                        write!(anim_tp, "{:.3},{:.3},{:.3},1,", p.x, p.y, p.z).unwrap();
+                        let _ = write!(anim_tp, "{:.3},{:.3},{:.3},1,", p.x, p.y, p.z);
                         anim_move_count += 1;
                     }
                 }
@@ -1356,7 +1360,7 @@ pub fn stacked_simulation_3d_html(
 
     let mut html = String::with_capacity(2 * 1024 * 1024);
 
-    write!(html, r##"<!DOCTYPE html>
+    let _ = write!(html, r##"<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
 <title>rs_cam Stacked Simulation</title>
@@ -1725,7 +1729,7 @@ scene.add(new THREE.Mesh(srcG,new THREE.MeshPhongMaterial({{
         bbox_min_x = hm_bbox.min.x,
         bbox_min_y = hm_bbox.min.y,
         bbox_min_z = hm_bbox.min.z,
-    ).unwrap();
+    );
 
     html
 }
