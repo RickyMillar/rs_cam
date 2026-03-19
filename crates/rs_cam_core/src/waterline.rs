@@ -66,11 +66,17 @@ pub fn waterline_contours(
         })
         .collect();
 
-    // Run push-cutter on both fiber sets in parallel
+    // Run push-cutter on both fiber sets
+    #[cfg(feature = "parallel")]
     rayon::join(
         || batch_push_cutter(&mut x_fibers, mesh, index, cutter),
         || batch_push_cutter(&mut y_fibers, mesh, index, cutter),
     );
+    #[cfg(not(feature = "parallel"))]
+    {
+        batch_push_cutter(&mut x_fibers, mesh, index, cutter);
+        batch_push_cutter(&mut y_fibers, mesh, index, cutter);
+    }
 
     // Extract contour loops using the Weave graph (topologically correct)
     weave_contours(&x_fibers, &y_fibers, z)

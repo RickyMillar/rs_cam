@@ -9,6 +9,7 @@ use crate::geo::V3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::MillingCutter;
 
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 // ── Surface heightmap ─────────────────────────────────────────────────
@@ -38,17 +39,18 @@ impl SurfaceHeightmap {
         min_z: f64,
     ) -> Self {
         let total = rows * cols;
-        let z_values: Vec<f64> = (0..total)
-            .into_par_iter()
-            .map(|i| {
-                let row = i / cols;
-                let col = i % cols;
-                let x = origin_x + col as f64 * cell_size;
-                let y = origin_y + row as f64 * cell_size;
-                let cl = point_drop_cutter(x, y, mesh, index, cutter);
-                cl.z.max(min_z)
-            })
-            .collect();
+        let compute_z = |i: usize| {
+            let row = i / cols;
+            let col = i % cols;
+            let x = origin_x + col as f64 * cell_size;
+            let y = origin_y + row as f64 * cell_size;
+            let cl = point_drop_cutter(x, y, mesh, index, cutter);
+            cl.z.max(min_z)
+        };
+        #[cfg(feature = "parallel")]
+        let z_values: Vec<f64> = (0..total).into_par_iter().map(compute_z).collect();
+        #[cfg(not(feature = "parallel"))]
+        let z_values: Vec<f64> = (0..total).map(compute_z).collect();
 
         Self {
             z_values,

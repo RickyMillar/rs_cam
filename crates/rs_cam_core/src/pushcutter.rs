@@ -63,11 +63,19 @@ pub fn batch_push_cutter(
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
 ) {
-    use rayon::prelude::*;
-
-    fibers.par_iter_mut().for_each(|fiber| {
-        push_cutter_fiber(fiber, mesh, index, cutter);
-    });
+    #[cfg(feature = "parallel")]
+    {
+        use rayon::prelude::*;
+        fibers.par_iter_mut().for_each(|fiber| {
+            push_cutter_fiber(fiber, mesh, index, cutter);
+        });
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        for fiber in fibers.iter_mut() {
+            push_cutter_fiber(fiber, mesh, index, cutter);
+        }
+    }
 }
 
 /// Vertex push: for each triangle vertex, compute the interval on the fiber

@@ -5,6 +5,7 @@
 
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::{CLPoint, MillingCutter};
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 /// Drop a single cutter at position (x, y) onto the mesh.
@@ -80,20 +81,22 @@ pub fn batch_drop_cutter<C: MillingCutter + ?Sized>(
         let rows = ((y_end - y_start) / step_over).ceil() as usize + 1;
         let total = rows * cols;
 
-        let points: Vec<CLPoint> = (0..total)
-            .into_par_iter()
-            .map(|i| {
-                let row = i / cols;
-                let col = i % cols;
-                let x = x_start + col as f64 * step_over;
-                let y = y_start + row as f64 * step_over;
-                let mut cl = point_drop_cutter(x, y, mesh, index, cutter);
-                if cl.z < min_z {
-                    cl.z = min_z;
-                }
-                cl
-            })
-            .collect();
+        let make_point = |i: usize| {
+            let row = i / cols;
+            let col = i % cols;
+            let x = x_start + col as f64 * step_over;
+            let y = y_start + row as f64 * step_over;
+            let mut cl = point_drop_cutter(x, y, mesh, index, cutter);
+            if cl.z < min_z {
+                cl.z = min_z;
+            }
+            cl
+        };
+
+        #[cfg(feature = "parallel")]
+        let points: Vec<CLPoint> = (0..total).into_par_iter().map(make_point).collect();
+        #[cfg(not(feature = "parallel"))]
+        let points: Vec<CLPoint> = (0..total).map(make_point).collect();
 
         return DropCutterGrid {
             points,
@@ -133,25 +136,27 @@ pub fn batch_drop_cutter<C: MillingCutter + ?Sized>(
     let rows = ((v_max - v_min) / step_over).ceil() as usize + 1;
     let total = rows * cols;
 
-    let points: Vec<CLPoint> = (0..total)
-        .into_par_iter()
-        .map(|i| {
-            let row = i / cols;
-            let col = i % cols;
-            let u = u_min + col as f64 * step_over;
-            let v = v_min + row as f64 * step_over;
+    let make_rotated_point = |i: usize| {
+        let row = i / cols;
+        let col = i % cols;
+        let u = u_min + col as f64 * step_over;
+        let v = v_min + row as f64 * step_over;
 
-            // Inverse rotation: (u,v) -> (x,y)
-            let x = u * cos_a - v * sin_a;
-            let y = u * sin_a + v * cos_a;
+        // Inverse rotation: (u,v) -> (x,y)
+        let x = u * cos_a - v * sin_a;
+        let y = u * sin_a + v * cos_a;
 
-            let mut cl = point_drop_cutter(x, y, mesh, index, cutter);
-            if cl.z < min_z {
-                cl.z = min_z;
-            }
-            cl
-        })
-        .collect();
+        let mut cl = point_drop_cutter(x, y, mesh, index, cutter);
+        if cl.z < min_z {
+            cl.z = min_z;
+        }
+        cl
+    };
+
+    #[cfg(feature = "parallel")]
+    let points: Vec<CLPoint> = (0..total).into_par_iter().map(make_rotated_point).collect();
+    #[cfg(not(feature = "parallel"))]
+    let points: Vec<CLPoint> = (0..total).map(make_rotated_point).collect();
 
     DropCutterGrid {
         points,

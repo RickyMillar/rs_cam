@@ -26,6 +26,7 @@ use crate::waterline::waterline_contours;
 
 use std::collections::VecDeque;
 use std::f64::consts::{PI, TAU};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use tracing::{info, debug};
 
@@ -928,6 +929,7 @@ fn clear_z_level(
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     let t_level = Instant::now();
     let mut pass_endpoints: Vec<P2> = Vec::new();
     let max_passes = 500;
@@ -1214,7 +1216,10 @@ fn clear_z_level(
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     let level_ms = t_level.elapsed().as_millis() as u64;
+    #[cfg(target_arch = "wasm32")]
+    let level_ms = 0u64;
     debug!(
         passes = pass_count, long = long_passes, short = short_passes,
         skipped = skipped_preflight, total_steps = total_steps,
@@ -1241,6 +1246,7 @@ fn waterline_cleanup(
     segments: &mut Vec<Adaptive3dSegment>,
     last_pos: &mut Option<P3>,
 ) {
+    #[cfg(not(target_arch = "wasm32"))]
     let t_waterline = Instant::now();
     let sampling = tool_radius.max(cell_size * 4.0);
     let contours = waterline_contours(mesh, index, cutter, z_level, sampling);
@@ -1296,8 +1302,12 @@ fn waterline_cleanup(
         traced += 1;
     }
     if !contours.is_empty() {
+        #[cfg(not(target_arch = "wasm32"))]
+        let wl_ms = t_waterline.elapsed().as_millis() as u64;
+        #[cfg(target_arch = "wasm32")]
+        let wl_ms = 0u64;
         debug!(total = contours.len(), traced = traced, z = z_level,
-            elapsed_ms = t_waterline.elapsed().as_millis() as u64, "Waterline cleanup (slope-filtered)");
+            elapsed_ms = wl_ms, "Waterline cleanup (slope-filtered)");
     }
 }
 
@@ -1325,6 +1335,7 @@ fn adaptive_3d_segments(
         Heightmap::from_stock(origin_x, origin_y, extent_x, extent_y, params.stock_top_z, cell_size);
 
     // Precompute surface heightmap (rayon parallel drop-cutter)
+    #[cfg(not(target_arch = "wasm32"))]
     let t_surface = Instant::now();
     debug!(cols = material_hm.cols, rows = material_hm.rows, "Precomputing surface heightmap");
     let surface_hm = SurfaceHeightmap::from_mesh(
@@ -1338,7 +1349,10 @@ fn adaptive_3d_segments(
         material_hm.cell_size,
         bbox.min.z,
     );
+    #[cfg(not(target_arch = "wasm32"))]
     info!(elapsed_ms = t_surface.elapsed().as_millis() as u64, "Surface heightmap complete");
+    #[cfg(target_arch = "wasm32")]
+    info!("Surface heightmap complete");
 
     // Compute slope map for slope-aware pre-stamping and selective waterline cleanup.
     let slope_map = surface_hm.slope_map();

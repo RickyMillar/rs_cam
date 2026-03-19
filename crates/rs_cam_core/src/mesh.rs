@@ -74,6 +74,49 @@ impl TriangleMesh {
         Self::from_stl_scaled(path, 1.0)
     }
 
+    /// Load from STL bytes in memory (for WASM or embedded use).
+    /// `data` should contain a complete STL file (binary or ASCII).
+    pub fn from_stl_bytes(data: &[u8], scale: f64) -> Result<Self, MeshError> {
+        let mut cursor = std::io::Cursor::new(data);
+        let stl = stl_io::read_stl(&mut cursor)?;
+
+        if stl.faces.is_empty() {
+            return Err(MeshError::EmptyMesh);
+        }
+
+        let vertices: Vec<P3> = stl
+            .vertices
+            .iter()
+            .map(|v| P3::new(v.0[0] as f64 * scale, v.0[1] as f64 * scale, v.0[2] as f64 * scale))
+            .collect();
+
+        let triangles: Vec<[u32; 3]> = stl
+            .faces
+            .iter()
+            .map(|f| [f.vertices[0] as u32, f.vertices[1] as u32, f.vertices[2] as u32])
+            .collect();
+
+        let faces: Vec<Triangle> = triangles
+            .iter()
+            .map(|tri| {
+                Triangle::new(
+                    vertices[tri[0] as usize],
+                    vertices[tri[1] as usize],
+                    vertices[tri[2] as usize],
+                )
+            })
+            .collect();
+
+        let bbox = BoundingBox3::from_points(vertices.iter().copied());
+
+        Ok(Self {
+            vertices,
+            triangles,
+            faces,
+            bbox,
+        })
+    }
+
     /// Build from raw vertices and triangle indices (for testing).
     pub fn from_raw(vertices: Vec<P3>, triangles: Vec<[u32; 3]>) -> Self {
         let faces: Vec<Triangle> = triangles

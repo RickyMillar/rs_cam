@@ -89,6 +89,7 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] 5.2a Simulation performance — swept segment stamping (10x), radial LUT (no sqrt), early-out skip, benchmarks (simulation.rs, adaptive3d.rs)
 - [x] 5.3 Inlay operations — female V-carve pocket, flat area clearing, male plug with glue gap, CLI subcommand (inlay.rs)
 - [x] 5.5 Pencil finishing — mesh edge dihedral angle analysis, concave edge chaining, offset passes, drop-cutter Z lift, CLI subcommand (pencil.rs)
+- [x] 5.6 WASM readiness — feature-gated rayon (`parallel` feature, default on), `std::time::Instant` gated for wasm32, `from_stl_bytes()` API for in-memory loading
 - [x] 5.4 Tech debt cleanup — removed all unwrap() from library code (partial_cmp NaN safety, last() safety), wired per-operation spindle speed, spatial index auto-sizing + cell clamp, CLPoint.contacted flag for boundary detection, fixed duplicate rapid in raster toolpath, emit_gcode_phased for multi-operation jobs
 
 ## Module Map (for new agents)
