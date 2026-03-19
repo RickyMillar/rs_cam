@@ -24,3 +24,4 @@ pub mod rest;
 pub mod adaptive3d;
 pub mod slope;
 pub mod scallop_math;
+pub mod ramp_finish;
