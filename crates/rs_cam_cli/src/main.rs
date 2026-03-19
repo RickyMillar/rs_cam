@@ -1,3 +1,4 @@
+mod helpers;
 mod job;
 
 use anyhow::{Context, Result, bail};
@@ -5,13 +6,12 @@ use clap::{Parser, Subcommand, ValueEnum};
 use rs_cam_core::{
     arcfit::fit_arcs,
     depth::{DepthStepping, depth_stepped_toolpath},
-    dressup::{EntryStyle, apply_dogbones, apply_entry, apply_tabs, even_tabs},
+    dressup::{apply_dogbones, apply_entry, apply_tabs, even_tabs},
     dropcutter::batch_drop_cutter,
     geo::BoundingBox3,
     gcode::{emit_gcode, get_post_processor},
     mesh::{SpatialIndex, TriangleMesh},
     pocket::{PocketParams, pocket_toolpath},
-    polygon::Polygon2,
     profile::{ProfileParams, ProfileSide, profile_toolpath},
     adaptive::{AdaptiveParams, adaptive_toolpath},
     simulation::{Heightmap, simulate_toolpath},
@@ -725,44 +725,113 @@ fn parse_tool(spec: &str) -> Result<Box<dyn MillingCutter>> {
     }
 }
 
-fn parse_entry_style(entry: &str) -> Result<Option<EntryStyle>> {
-    match entry {
-        "plunge" => Ok(None),
-        "ramp" => Ok(Some(EntryStyle::Ramp { max_angle_deg: 3.0 })),
-        "helix" => Ok(Some(EntryStyle::Helix {
-            radius: 2.0,
-            pitch: 1.0,
-        })),
-        _ => bail!("Unknown entry style '{}'. Supported: plunge, ramp, helix", entry),
+
+/// Parse STL scale factor from --scale override or --units string.
+fn parse_scale_factor(scale: Option<f64>, units: &str) -> Result<f64> {
+    match scale {
+        Some(s) => Ok(s),
+        None => match units.to_lowercase().as_str() {
+            "mm" => Ok(1.0),
+            "m" => Ok(1000.0),
+            "cm" => Ok(10.0),
+            "inch" | "in" => Ok(25.4),
+            "ft" | "foot" | "feet" => Ok(304.8),
+            _ => bail!("Unknown unit '{}'. Supported: mm, m, cm, inch, ft", units),
+        },
     }
 }
 
-fn load_polygons(path: &Path) -> Result<Vec<Polygon2>> {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
+/// Load an STL mesh with scale and build a spatial index for a given cutter.
+fn load_stl_with_index(
+    path: &Path,
+    scale: f64,
+    cutter: &dyn MillingCutter,
+) -> Result<(TriangleMesh, SpatialIndex)> {
+    let mesh = TriangleMesh::from_stl_scaled(path, scale)
+        .context("Failed to load STL")?;
+    eprintln!("  {} vertices, {} triangles", mesh.vertices.len(), mesh.faces.len());
+    eprintln!(
+        "  Bounding box: ({:.2}, {:.2}, {:.2}) to ({:.2}, {:.2}, {:.2})",
+        mesh.bbox.min.x, mesh.bbox.min.y, mesh.bbox.min.z,
+        mesh.bbox.max.x, mesh.bbox.max.y, mesh.bbox.max.z,
+    );
+    eprintln!("Building spatial index...");
+    let cell_size = cutter.diameter() * 2.0;
+    let index = SpatialIndex::build(&mesh, cell_size);
+    Ok((mesh, index))
+}
 
-    match ext.as_str() {
-        "svg" => {
-            let polys = rs_cam_core::svg_input::load_svg(path, 0.1)
-                .context("Failed to load SVG")?;
-            if polys.is_empty() {
-                bail!("No closed paths found in SVG file");
-            }
-            Ok(polys)
-        }
-        "dxf" => {
-            let polys = rs_cam_core::dxf_input::load_dxf(path, 5.0)
-                .context("Failed to load DXF")?;
-            if polys.is_empty() {
-                bail!("No closed entities found in DXF file");
-            }
-            Ok(polys)
-        }
-        _ => bail!("Unsupported input format '{}'. Supported: .svg, .dxf", ext),
+/// Write an optional 3D HTML viewer for mesh-based (3D) operations.
+fn write_3d_view(
+    view: &Option<PathBuf>,
+    tp: &Toolpath,
+    mesh: &TriangleMesh,
+    cutter: &dyn MillingCutter,
+    simulate: bool,
+    sim_res: f64,
+    stock_top: f64,
+) -> Result<()> {
+    if let Some(view_path) = view {
+        let html = if simulate {
+            eprintln!("Running simulation (resolution={:.2}mm)...", sim_res);
+            let mut hm = Heightmap::from_stock(
+                mesh.bbox.min.x - cutter.radius(),
+                mesh.bbox.min.y - cutter.radius(),
+                mesh.bbox.max.x + cutter.radius(),
+                mesh.bbox.max.y + cutter.radius(),
+                stock_top,
+                sim_res,
+            );
+            simulate_toolpath(tp, cutter, &mut hm);
+            eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
+            rs_cam_core::viz::simulation_3d_html(&hm, tp, Some(mesh), cutter)
+        } else {
+            rs_cam_core::viz::toolpath_to_3d_html(mesh, tp)
+        };
+        std::fs::write(view_path, &html)
+            .context("Failed to write 3D viewer file")?;
+        eprintln!("Wrote 3D viewer to {} ({:.1} MB)", view_path.display(), html.len() as f64 / 1_048_576.0);
     }
+    Ok(())
+}
+
+/// Write an optional 3D HTML viewer for 2.5D operations (no source mesh).
+fn write_2d_view(
+    view: &Option<PathBuf>,
+    tp: &Toolpath,
+    cutter: &dyn MillingCutter,
+    simulate: bool,
+    sim_res: f64,
+) -> Result<()> {
+    if let Some(view_path) = view {
+        let html = if simulate {
+            eprintln!("Running simulation (resolution={:.2}mm)...", sim_res);
+            let tp_bbox = toolpath_bbox(tp);
+            let margin = cutter.radius();
+            let sim_bbox = BoundingBox3 {
+                min: rs_cam_core::geo::P3::new(
+                    tp_bbox.min.x - margin,
+                    tp_bbox.min.y - margin,
+                    tp_bbox.min.z,
+                ),
+                max: rs_cam_core::geo::P3::new(
+                    tp_bbox.max.x + margin,
+                    tp_bbox.max.y + margin,
+                    0.0,
+                ),
+            };
+            let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_res);
+            simulate_toolpath(tp, cutter, &mut hm);
+            eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
+            rs_cam_core::viz::simulation_3d_html(&hm, tp, None, cutter)
+        } else {
+            rs_cam_core::viz::toolpath_standalone_3d_html(tp, None)
+        };
+        std::fs::write(view_path, &html)
+            .context("Failed to write 3D viewer file")?;
+        eprintln!("Wrote 3D viewer to {}", view_path.display());
+    }
+    Ok(())
 }
 
 fn toolpath_bbox(toolpath: &Toolpath) -> BoundingBox3 {
@@ -924,33 +993,13 @@ fn main() -> Result<()> {
             spindle_speed, safe_z, min_z, post, output, svg, view,
             simulate, sim_resolution,
         } => {
-            let scale_factor = match scale {
-                Some(s) => s,
-                None => match units.to_lowercase().as_str() {
-                    "mm" => 1.0,
-                    "m" => 1000.0,
-                    "cm" => 10.0,
-                    "inch" | "in" => 25.4,
-                    "ft" | "foot" | "feet" => 304.8,
-                    _ => bail!("Unknown unit '{}'. Supported: mm, m, cm, inch, ft", units),
-                },
-            };
+            let scale_factor = parse_scale_factor(scale, &units)?;
             eprintln!("Loading STL: {} (units: {}, scale: {:.4})", input.display(), units, scale_factor);
-            let mesh = TriangleMesh::from_stl_scaled(&input, scale_factor)
-                .context("Failed to load STL")?;
-            eprintln!("  {} vertices, {} triangles", mesh.vertices.len(), mesh.faces.len());
-            eprintln!(
-                "  Bounding box: ({:.2}, {:.2}, {:.2}) to ({:.2}, {:.2}, {:.2})",
-                mesh.bbox.min.x, mesh.bbox.min.y, mesh.bbox.min.z,
-                mesh.bbox.max.x, mesh.bbox.max.y, mesh.bbox.max.z,
-            );
 
             let cutter = parse_tool(&tool)?;
             eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
 
-            eprintln!("Building spatial index...");
-            let cell_size = cutter.diameter() * 2.0;
-            let index = SpatialIndex::build(&mesh, cell_size);
+            let (mesh, index) = load_stl_with_index(&input, scale_factor, cutter.as_ref())?;
 
             eprintln!("Running drop-cutter (stepover={:.3}mm)...", stepover);
             let start = std::time::Instant::now();
@@ -969,20 +1018,7 @@ fn main() -> Result<()> {
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
-            if let Some(view_path) = view {
-                let html = if simulate {
-                    eprintln!("Running simulation (resolution={:.2}mm)...", sim_resolution);
-                    let mut hm = Heightmap::from_bounds(&mesh.bbox, None, sim_resolution);
-                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
-                    eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
-                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, Some(&mesh), cutter.as_ref())
-                } else {
-                    rs_cam_core::viz::toolpath_to_3d_html(&mesh, &toolpath)
-                };
-                std::fs::write(&view_path, &html)
-                    .context("Failed to write 3D viewer file")?;
-                eprintln!("Wrote 3D viewer to {} ({:.1} MB)", view_path.display(), html.len() as f64 / 1_048_576.0);
-            }
+            write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
         }
 
         Commands::Pocket {
@@ -994,7 +1030,7 @@ fn main() -> Result<()> {
             let tool_radius = cutter.diameter() / 2.0;
             eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
 
-            let polygons = load_polygons(&input)?;
+            let polygons = helpers::load_polygons(&input)?;
             eprintln!("Loaded {} polygon(s) from {}", polygons.len(), input.display());
 
             let depth_stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
@@ -1042,7 +1078,7 @@ fn main() -> Result<()> {
             }
 
             // Apply entry dressup
-            if let Some(entry_style) = parse_entry_style(&entry)? {
+            if let Some(entry_style) = helpers::parse_entry_style(&entry)? {
                 eprintln!("Applying {} entry...", entry);
                 toolpath = apply_entry(&toolpath, entry_style, plunge_rate);
             }
@@ -1062,34 +1098,7 @@ fn main() -> Result<()> {
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
-            if let Some(view_path) = view {
-                let html = if simulate {
-                    eprintln!("Running simulation (resolution={:.2}mm)...", sim_resolution);
-                    let tp_bbox = toolpath_bbox(&toolpath);
-                    let margin = cutter.radius();
-                    let sim_bbox = BoundingBox3 {
-                        min: rs_cam_core::geo::P3::new(
-                            tp_bbox.min.x - margin,
-                            tp_bbox.min.y - margin,
-                            tp_bbox.min.z,
-                        ),
-                        max: rs_cam_core::geo::P3::new(
-                            tp_bbox.max.x + margin,
-                            tp_bbox.max.y + margin,
-                            0.0,
-                        ),
-                    };
-                    let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_resolution);
-                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
-                    eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
-                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, None, cutter.as_ref())
-                } else {
-                    rs_cam_core::viz::toolpath_standalone_3d_html(&toolpath, None)
-                };
-                std::fs::write(&view_path, &html)
-                    .context("Failed to write 3D viewer file")?;
-                eprintln!("Wrote 3D viewer to {}", view_path.display());
-            }
+            write_2d_view(&view, &toolpath, cutter.as_ref(), simulate, sim_resolution)?;
         }
 
         Commands::Profile {
@@ -1107,7 +1116,7 @@ fn main() -> Result<()> {
                 _ => bail!("Unknown side '{}'. Supported: inside, outside", side),
             };
 
-            let polygons = load_polygons(&input)?;
+            let polygons = helpers::load_polygons(&input)?;
             eprintln!("Loaded {} polygon(s) from {}", polygons.len(), input.display());
 
             let depth_stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
@@ -1141,7 +1150,7 @@ fn main() -> Result<()> {
             }
 
             // Apply entry dressup
-            if let Some(entry_style) = parse_entry_style(&entry)? {
+            if let Some(entry_style) = helpers::parse_entry_style(&entry)? {
                 eprintln!("Applying {} entry...", entry);
                 toolpath = apply_entry(&toolpath, entry_style, plunge_rate);
             }
@@ -1168,34 +1177,7 @@ fn main() -> Result<()> {
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
-            if let Some(view_path) = view {
-                let html = if simulate {
-                    eprintln!("Running simulation (resolution={:.2}mm)...", sim_resolution);
-                    let tp_bbox = toolpath_bbox(&toolpath);
-                    let margin = cutter.radius();
-                    let sim_bbox = BoundingBox3 {
-                        min: rs_cam_core::geo::P3::new(
-                            tp_bbox.min.x - margin,
-                            tp_bbox.min.y - margin,
-                            tp_bbox.min.z,
-                        ),
-                        max: rs_cam_core::geo::P3::new(
-                            tp_bbox.max.x + margin,
-                            tp_bbox.max.y + margin,
-                            0.0,
-                        ),
-                    };
-                    let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_resolution);
-                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
-                    eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
-                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, None, cutter.as_ref())
-                } else {
-                    rs_cam_core::viz::toolpath_standalone_3d_html(&toolpath, None)
-                };
-                std::fs::write(&view_path, &html)
-                    .context("Failed to write 3D viewer file")?;
-                eprintln!("Wrote 3D viewer to {}", view_path.display());
-            }
+            write_2d_view(&view, &toolpath, cutter.as_ref(), simulate, sim_resolution)?;
         }
 
         Commands::Adaptive {
@@ -1207,7 +1189,7 @@ fn main() -> Result<()> {
             let tool_radius = cutter.diameter() / 2.0;
             eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
 
-            let polygons = load_polygons(&input)?;
+            let polygons = helpers::load_polygons(&input)?;
             eprintln!("Loaded {} polygon(s) from {}", polygons.len(), input.display());
 
             let depth_stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
@@ -1251,34 +1233,7 @@ fn main() -> Result<()> {
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
-            if let Some(view_path) = view {
-                let html = if simulate {
-                    eprintln!("Running simulation (resolution={:.2}mm)...", sim_resolution);
-                    let tp_bbox = toolpath_bbox(&toolpath);
-                    let margin = cutter.radius();
-                    let sim_bbox = BoundingBox3 {
-                        min: rs_cam_core::geo::P3::new(
-                            tp_bbox.min.x - margin,
-                            tp_bbox.min.y - margin,
-                            tp_bbox.min.z,
-                        ),
-                        max: rs_cam_core::geo::P3::new(
-                            tp_bbox.max.x + margin,
-                            tp_bbox.max.y + margin,
-                            0.0,
-                        ),
-                    };
-                    let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_resolution);
-                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
-                    eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
-                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, None, cutter.as_ref())
-                } else {
-                    rs_cam_core::viz::toolpath_standalone_3d_html(&toolpath, None)
-                };
-                std::fs::write(&view_path, &html)
-                    .context("Failed to write 3D viewer file")?;
-                eprintln!("Wrote 3D viewer to {}", view_path.display());
-            }
+            write_2d_view(&view, &toolpath, cutter.as_ref(), simulate, sim_resolution)?;
         }
 
         Commands::Vcarve {
@@ -1301,7 +1256,7 @@ fn main() -> Result<()> {
             eprintln!("Tool: {} diameter={:.3}mm, half_angle={:.1}°",
                 tool, cutter.diameter(), half_angle.to_degrees());
 
-            let polygons = load_polygons(&input)?;
+            let polygons = helpers::load_polygons(&input)?;
             eprintln!("Loaded {} polygon(s) from {}", polygons.len(), input.display());
 
             let effective_max_depth = if max_depth > 0.0 {
@@ -1339,34 +1294,7 @@ fn main() -> Result<()> {
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
-            if let Some(view_path) = view {
-                let html = if simulate {
-                    eprintln!("Running simulation (resolution={:.2}mm)...", sim_resolution);
-                    let tp_bbox = toolpath_bbox(&toolpath);
-                    let margin = cutter.radius();
-                    let sim_bbox = BoundingBox3 {
-                        min: rs_cam_core::geo::P3::new(
-                            tp_bbox.min.x - margin,
-                            tp_bbox.min.y - margin,
-                            tp_bbox.min.z,
-                        ),
-                        max: rs_cam_core::geo::P3::new(
-                            tp_bbox.max.x + margin,
-                            tp_bbox.max.y + margin,
-                            0.0,
-                        ),
-                    };
-                    let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_resolution);
-                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
-                    eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
-                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, None, cutter.as_ref())
-                } else {
-                    rs_cam_core::viz::toolpath_standalone_3d_html(&toolpath, None)
-                };
-                std::fs::write(&view_path, &html)
-                    .context("Failed to write 3D viewer file")?;
-                eprintln!("Wrote 3D viewer to {}", view_path.display());
-            }
+            write_2d_view(&view, &toolpath, cutter.as_ref(), simulate, sim_resolution)?;
         }
 
         Commands::Rest {
@@ -1389,7 +1317,7 @@ fn main() -> Result<()> {
             eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
             eprintln!("Previous tool: {} diameter={:.3}mm", prev_tool, prev_cutter.diameter());
 
-            let polygons = load_polygons(&input)?;
+            let polygons = helpers::load_polygons(&input)?;
             eprintln!("Loaded {} polygon(s) from {}", polygons.len(), input.display());
 
             let depth_stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
@@ -1507,28 +1435,13 @@ fn main() -> Result<()> {
             detect_flat_areas, max_stay_down_dist, post, output, svg, view,
             simulate, sim_resolution,
         } => {
-            let scale_factor = match scale {
-                Some(s) => s,
-                None => match units.to_lowercase().as_str() {
-                    "mm" => 1.0,
-                    "m" => 1000.0,
-                    "cm" => 10.0,
-                    "inch" | "in" => 25.4,
-                    _ => bail!("Unknown unit '{}'. Supported: mm, m, cm, inch", units),
-                },
-            };
-
+            let scale_factor = parse_scale_factor(scale, &units)?;
             eprintln!("Loading STL: {} (units: {}, scale: {:.4})", input.display(), units, scale_factor);
-            let mesh = TriangleMesh::from_stl_scaled(&input, scale_factor)
-                .context("Failed to load STL")?;
-            eprintln!("  {} vertices, {} triangles", mesh.vertices.len(), mesh.faces.len());
 
             let cutter = parse_tool(&tool)?;
             eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
 
-            eprintln!("Building spatial index...");
-            let cell_size = cutter.diameter() * 2.0;
-            let index = SpatialIndex::build(&mesh, cell_size);
+            let (mesh, index) = load_stl_with_index(&input, scale_factor, cutter.as_ref())?;
 
             let stock_z = stock_top_z.unwrap_or(mesh.bbox.max.z + 5.0);
             eprintln!(
@@ -1574,27 +1487,7 @@ fn main() -> Result<()> {
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
-            if let Some(view_path) = view {
-                let html = if simulate {
-                    eprintln!("Running simulation (resolution={:.2}mm)...", sim_resolution);
-                    let mut hm = Heightmap::from_stock(
-                        mesh.bbox.min.x - cutter.radius(),
-                        mesh.bbox.min.y - cutter.radius(),
-                        mesh.bbox.max.x + cutter.radius(),
-                        mesh.bbox.max.y + cutter.radius(),
-                        stock_z,
-                        sim_resolution,
-                    );
-                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
-                    eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
-                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, Some(&mesh), cutter.as_ref())
-                } else {
-                    rs_cam_core::viz::toolpath_to_3d_html(&mesh, &toolpath)
-                };
-                std::fs::write(&view_path, &html)
-                    .context("Failed to write 3D viewer file")?;
-                eprintln!("Wrote 3D viewer to {} ({:.1} MB)", view_path.display(), html.len() as f64 / 1_048_576.0);
-            }
+            write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, stock_z)?;
         }
 
         Commands::Waterline {
@@ -1602,28 +1495,13 @@ fn main() -> Result<()> {
             feed_rate, plunge_rate, spindle_speed, safe_z, arc_tolerance,
             post, output, svg, view, simulate, sim_resolution,
         } => {
-            let scale_factor = match scale {
-                Some(s) => s,
-                None => match units.to_lowercase().as_str() {
-                    "mm" => 1.0,
-                    "m" => 1000.0,
-                    "cm" => 10.0,
-                    "inch" | "in" => 25.4,
-                    _ => bail!("Unknown unit '{}'. Supported: mm, m, cm, inch", units),
-                },
-            };
-
+            let scale_factor = parse_scale_factor(scale, &units)?;
             eprintln!("Loading STL: {} (units: {}, scale: {:.4})", input.display(), units, scale_factor);
-            let mesh = TriangleMesh::from_stl_scaled(&input, scale_factor)
-                .context("Failed to load STL")?;
-            eprintln!("  {} vertices, {} triangles", mesh.vertices.len(), mesh.faces.len());
 
             let cutter = parse_tool(&tool)?;
             eprintln!("Tool: {} diameter={:.3}mm", tool, cutter.diameter());
 
-            eprintln!("Building spatial index...");
-            let cell_size = cutter.diameter() * 2.0;
-            let index = SpatialIndex::build(&mesh, cell_size);
+            let (mesh, index) = load_stl_with_index(&input, scale_factor, cutter.as_ref())?;
 
             let sz = start_z.unwrap_or(mesh.bbox.max.z);
             let fz = final_z.unwrap_or(mesh.bbox.min.z);
@@ -1655,20 +1533,7 @@ fn main() -> Result<()> {
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
-            if let Some(view_path) = view {
-                let html = if simulate {
-                    eprintln!("Running simulation (resolution={:.2}mm)...", sim_resolution);
-                    let mut hm = Heightmap::from_bounds(&mesh.bbox, None, sim_resolution);
-                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
-                    eprintln!("  {}x{} heightmap", hm.cols, hm.rows);
-                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, Some(&mesh), cutter.as_ref())
-                } else {
-                    rs_cam_core::viz::toolpath_to_3d_html(&mesh, &toolpath)
-                };
-                std::fs::write(&view_path, &html)
-                    .context("Failed to write 3D viewer file")?;
-                eprintln!("Wrote 3D viewer to {} ({:.1} MB)", view_path.display(), html.len() as f64 / 1_048_576.0);
-            }
+            write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
         }
     }
 

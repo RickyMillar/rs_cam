@@ -36,11 +36,10 @@ use rs_cam_core::{
     adaptive::{AdaptiveParams, adaptive_toolpath},
     adaptive3d::{Adaptive3dParams, EntryStyle3d, adaptive_3d_toolpath},
     depth::{DepthStepping, depth_stepped_toolpath},
-    dressup::{EntryStyle, apply_dogbones, apply_entry, apply_tabs, even_tabs},
+    dressup::{apply_dogbones, apply_entry, apply_tabs, even_tabs},
     dropcutter::batch_drop_cutter,
     mesh::{SpatialIndex, TriangleMesh},
     pocket::{PocketParams, pocket_toolpath},
-    polygon::Polygon2,
     profile::{ProfileParams, ProfileSide, profile_toolpath},
     rest::{RestParams, rest_machining_toolpath},
     toolpath::{Toolpath, raster_toolpath_from_grid},
@@ -202,30 +201,6 @@ fn build_tool(def: &ToolDef) -> Result<Box<dyn rs_cam_core::tool::MillingCutter>
     }
 }
 
-// ── Polygon loading ────────────────────────────────────────────────────
-
-fn load_polygons_from(path: &Path) -> Result<Vec<Polygon2>> {
-    let ext = path.extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    match ext.as_str() {
-        "svg" => {
-            let polys = rs_cam_core::svg_input::load_svg(path, 0.1)
-                .context("Failed to load SVG")?;
-            if polys.is_empty() { bail!("No closed paths found in SVG file"); }
-            Ok(polys)
-        }
-        "dxf" => {
-            let polys = rs_cam_core::dxf_input::load_dxf(path, 5.0)
-                .context("Failed to load DXF")?;
-            if polys.is_empty() { bail!("No closed entities found in DXF file"); }
-            Ok(polys)
-        }
-        _ => bail!("Unsupported input format '{}'. Supported: .svg, .dxf", ext),
-    }
-}
-
 // ── Operation execution ────────────────────────────────────────────────
 
 /// Result of a single operation within a job.
@@ -267,7 +242,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
 
         let tp = match op.op_type.as_str() {
             "pocket" => {
-                let polygons = load_polygons_from(&input_path)?;
+                let polygons = crate::helpers::load_polygons(&input_path)?;
                 let depth = op.depth.context("Pocket requires 'depth'")?;
                 let depth_per_pass = op.depth_per_pass.unwrap_or(3.0);
                 let stepover = op.stepover.unwrap_or(2.0);
@@ -297,7 +272,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
 
                 // Entry dressup
                 if let Some(entry) = &op.entry
-                    && let Some(style) = parse_entry(entry)?
+                    && let Some(style) = crate::helpers::parse_entry_style(entry)?
                 {
                     tp = apply_entry(&tp, style, plunge_rate);
                 }
@@ -308,7 +283,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
             }
 
             "profile" => {
-                let polygons = load_polygons_from(&input_path)?;
+                let polygons = crate::helpers::load_polygons(&input_path)?;
                 let depth = op.depth.context("Profile requires 'depth'")?;
                 let depth_per_pass = op.depth_per_pass.unwrap_or(3.0);
                 let stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
@@ -333,7 +308,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
 
                 // Entry dressup
                 if let Some(entry) = &op.entry
-                    && let Some(style) = parse_entry(entry)?
+                    && let Some(style) = crate::helpers::parse_entry_style(entry)?
                 {
                     tp = apply_entry(&tp, style, plunge_rate);
                 }
@@ -353,7 +328,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
             }
 
             "adaptive" => {
-                let polygons = load_polygons_from(&input_path)?;
+                let polygons = crate::helpers::load_polygons(&input_path)?;
                 let depth = op.depth.context("Adaptive requires 'depth'")?;
                 let depth_per_pass = op.depth_per_pass.unwrap_or(3.0);
                 let stepover = op.stepover.unwrap_or(2.0);
@@ -379,7 +354,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
             }
 
             "rest" => {
-                let polygons = load_polygons_from(&input_path)?;
+                let polygons = crate::helpers::load_polygons(&input_path)?;
                 let depth = op.depth.context("Rest requires 'depth'")?;
                 let depth_per_pass = op.depth_per_pass.unwrap_or(3.0);
                 let stepover = op.stepover.unwrap_or(1.0);
@@ -516,11 +491,3 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
     Ok(JobResult { combined, phases })
 }
 
-fn parse_entry(entry: &str) -> Result<Option<EntryStyle>> {
-    match entry {
-        "plunge" => Ok(None),
-        "ramp" => Ok(Some(EntryStyle::Ramp { max_angle_deg: 3.0 })),
-        "helix" => Ok(Some(EntryStyle::Helix { radius: 2.0, pitch: 1.0 })),
-        _ => bail!("Unknown entry style '{}'. Supported: plunge, ramp, helix", entry),
-    }
-}
