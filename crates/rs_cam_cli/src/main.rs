@@ -17,11 +17,14 @@ use rs_cam_core::{
     simulation::{Heightmap, simulate_toolpath},
     tool::{BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill},
     toolpath::{Toolpath, raster_toolpath_from_grid},
-    adaptive3d::{Adaptive3dParams, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath},
+    adaptive3d::{Adaptive3dParams, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath_annotated},
     rest::{RestParams, rest_machining_toolpath},
     vcarve::{VCarveParams, vcarve_toolpath},
     waterline::{WaterlineParams, waterline_toolpath},
     zigzag::{ZigzagParams, zigzag_toolpath},
+    ramp_finish::{RampFinishParams, CutDirection, ramp_finish_toolpath},
+    steep_shallow::{SteepShallowParams, steep_shallow_toolpath},
+    scallop::{ScallopParams, ScallopDirection, scallop_toolpath},
 };
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
@@ -669,6 +672,168 @@ enum Commands {
         #[arg(long, default_value = "0.25")]
         sim_resolution: f64,
     },
+
+    /// Ramp finishing — continuous descent on steep walls (no Z-level witness marks)
+    #[command(name = "ramp-finish")]
+    RampFinish {
+        input: PathBuf,
+        #[arg(long, default_value = "mm")]
+        units: String,
+        #[arg(long)]
+        scale: Option<f64>,
+        #[arg(long)]
+        tool: String,
+        /// Maximum Z stepdown per revolution (mm)
+        #[arg(long, default_value = "1.0")]
+        max_stepdown: f64,
+        /// Only machine slopes steeper than this (degrees from horizontal)
+        #[arg(long, default_value = "0.0")]
+        slope_from: f64,
+        /// Only machine slopes shallower than this (degrees from horizontal)
+        #[arg(long, default_value = "90.0")]
+        slope_to: f64,
+        /// Cutting direction: climb, conventional, both
+        #[arg(long, default_value = "climb")]
+        direction: String,
+        /// Order passes bottom-up instead of top-down
+        #[arg(long)]
+        bottom_up: bool,
+        #[arg(long, default_value = "1000.0")]
+        feed_rate: f64,
+        #[arg(long, default_value = "500.0")]
+        plunge_rate: f64,
+        #[arg(long, default_value = "18000")]
+        spindle_speed: u32,
+        #[arg(long, default_value = "10.0")]
+        safe_z: f64,
+        /// Fiber sampling spacing (mm)
+        #[arg(long, default_value = "1.0")]
+        sampling: f64,
+        #[arg(long, default_value = "0.0")]
+        stock_to_leave: f64,
+        #[arg(long, default_value = "0.05")]
+        tolerance: f64,
+        #[arg(long, default_value = "grbl")]
+        post: String,
+        #[arg(short, long)]
+        output: PathBuf,
+        #[arg(long)]
+        svg: Option<PathBuf>,
+        #[arg(long)]
+        view: Option<PathBuf>,
+        #[arg(long)]
+        simulate: bool,
+        #[arg(long, default_value = "0.25")]
+        sim_resolution: f64,
+    },
+
+    /// Steep and Shallow finishing — hybrid waterline + parallel for mixed terrain
+    #[command(name = "steep-shallow")]
+    SteepShallow {
+        input: PathBuf,
+        #[arg(long, default_value = "mm")]
+        units: String,
+        #[arg(long)]
+        scale: Option<f64>,
+        #[arg(long)]
+        tool: String,
+        /// Threshold angle (degrees from horizontal, default 40)
+        #[arg(long, default_value = "40.0")]
+        threshold_angle: f64,
+        /// Overlap distance between steep/shallow regions (mm)
+        #[arg(long, default_value = "4.0")]
+        overlap_distance: f64,
+        /// Shallow passes stay this far from steep walls (mm)
+        #[arg(long, default_value = "2.0")]
+        wall_clearance: f64,
+        /// Machine steep regions before shallow
+        #[arg(long)]
+        steep_first: bool,
+        /// Stepover for parallel passes in shallow regions (mm)
+        #[arg(long, default_value = "1.0")]
+        stepover: f64,
+        /// Z step for waterline passes in steep regions (mm)
+        #[arg(long, default_value = "1.0")]
+        z_step: f64,
+        /// Fiber sampling spacing (mm)
+        #[arg(long, default_value = "1.0")]
+        sampling: f64,
+        #[arg(long, default_value = "0.0")]
+        stock_to_leave: f64,
+        #[arg(long, default_value = "0.05")]
+        tolerance: f64,
+        #[arg(long, default_value = "1000.0")]
+        feed_rate: f64,
+        #[arg(long, default_value = "500.0")]
+        plunge_rate: f64,
+        #[arg(long, default_value = "18000")]
+        spindle_speed: u32,
+        #[arg(long, default_value = "10.0")]
+        safe_z: f64,
+        #[arg(long, default_value = "grbl")]
+        post: String,
+        #[arg(short, long)]
+        output: PathBuf,
+        #[arg(long)]
+        svg: Option<PathBuf>,
+        #[arg(long)]
+        view: Option<PathBuf>,
+        #[arg(long)]
+        simulate: bool,
+        #[arg(long, default_value = "0.25")]
+        sim_resolution: f64,
+    },
+
+    /// Scallop finishing — constant scallop height with variable stepover
+    #[command(name = "scallop")]
+    Scallop {
+        input: PathBuf,
+        #[arg(long, default_value = "mm")]
+        units: String,
+        #[arg(long)]
+        scale: Option<f64>,
+        #[arg(long)]
+        tool: String,
+        /// Target scallop height (mm) — PRIMARY parameter
+        #[arg(long, default_value = "0.01")]
+        scallop_height: f64,
+        /// Direction: outside-in or inside-out
+        #[arg(long, default_value = "outside-in")]
+        direction: String,
+        /// Connect rings into continuous spiral (fewer retracts)
+        #[arg(long)]
+        continuous: bool,
+        /// Only machine slopes steeper than this (degrees)
+        #[arg(long, default_value = "0.0")]
+        slope_from: f64,
+        /// Only machine slopes shallower than this (degrees)
+        #[arg(long, default_value = "90.0")]
+        slope_to: f64,
+        #[arg(long, default_value = "0.0")]
+        stock_to_leave: f64,
+        #[arg(long, default_value = "0.05")]
+        tolerance: f64,
+        #[arg(long, default_value = "1000.0")]
+        feed_rate: f64,
+        #[arg(long, default_value = "500.0")]
+        plunge_rate: f64,
+        #[arg(long, default_value = "18000")]
+        spindle_speed: u32,
+        #[arg(long, default_value = "10.0")]
+        safe_z: f64,
+        #[arg(long, default_value = "grbl")]
+        post: String,
+        #[arg(short, long)]
+        output: PathBuf,
+        #[arg(long)]
+        svg: Option<PathBuf>,
+        #[arg(long)]
+        view: Option<PathBuf>,
+        #[arg(long)]
+        simulate: bool,
+        #[arg(long, default_value = "0.25")]
+        sim_resolution: f64,
+    },
 }
 
 fn parse_tool(spec: &str) -> Result<Box<dyn MillingCutter>> {
@@ -789,7 +954,7 @@ fn write_3d_view(
             );
             simulate_toolpath(tp, cutter, &mut hm);
             debug!(cols = hm.cols, rows = hm.rows, "Heightmap generated");
-            rs_cam_core::viz::simulation_3d_html(&hm, tp, Some(mesh), cutter)
+            rs_cam_core::viz::simulation_3d_html(&hm, tp, Some(mesh), cutter, &[])
         } else {
             rs_cam_core::viz::toolpath_to_3d_html(mesh, tp)
         };
@@ -828,7 +993,7 @@ fn write_2d_view(
             let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_res);
             simulate_toolpath(tp, cutter, &mut hm);
             debug!(cols = hm.cols, rows = hm.rows, "Heightmap generated");
-            rs_cam_core::viz::simulation_3d_html(&hm, tp, None, cutter)
+            rs_cam_core::viz::simulation_3d_html(&hm, tp, None, cutter, &[])
         } else {
             rs_cam_core::viz::toolpath_standalone_3d_html(tp, None)
         };
@@ -1504,7 +1669,7 @@ fn main() -> Result<()> {
             };
 
             let start = std::time::Instant::now();
-            let toolpath = adaptive_3d_toolpath(&mesh, &index, cutter.as_ref(), &params);
+            let (toolpath, annotations) = adaptive_3d_toolpath_annotated(&mesh, &index, cutter.as_ref(), &params);
             let elapsed = start.elapsed();
 
             info!(
@@ -1517,7 +1682,27 @@ fn main() -> Result<()> {
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
-            write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, stock_z)?;
+            // Use annotated viewer for adaptive3d
+            if let Some(view_path) = &view {
+                let html = if simulate {
+                    debug!(resolution_mm = sim_resolution, "Running simulation");
+                    let mut hm = Heightmap::from_stock(
+                        mesh.bbox.min.x - cutter.radius(),
+                        mesh.bbox.min.y - cutter.radius(),
+                        mesh.bbox.max.x + cutter.radius(),
+                        mesh.bbox.max.y + cutter.radius(),
+                        stock_z,
+                        sim_resolution,
+                    );
+                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
+                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, Some(&mesh), cutter.as_ref(), &annotations)
+                } else {
+                    rs_cam_core::viz::toolpath_to_3d_html(&mesh, &toolpath)
+                };
+                std::fs::write(view_path, &html)
+                    .context("Failed to write 3D viewer file")?;
+                info!(path = %view_path.display(), size_mb = html.len() as f64 / 1_048_576.0, "Wrote 3D viewer");
+            }
         }
 
         Commands::Waterline {
@@ -1565,6 +1750,131 @@ fn main() -> Result<()> {
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
+            write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
+        }
+
+        Commands::RampFinish {
+            input, units, scale, tool, max_stepdown, slope_from, slope_to,
+            direction, bottom_up, feed_rate, plunge_rate, spindle_speed, safe_z,
+            sampling, stock_to_leave, tolerance, post, output, svg, view,
+            simulate, sim_resolution,
+        } => {
+            let scale_factor = parse_scale_factor(scale, &units)?;
+            let cutter = parse_tool(&tool)?;
+            let (mesh, index) = load_stl_with_index(&input, scale_factor, cutter.as_ref())?;
+
+            let dir = match direction.as_str() {
+                "conventional" => CutDirection::Conventional,
+                "both" => CutDirection::BothWays,
+                _ => CutDirection::Climb,
+            };
+
+            let params = RampFinishParams {
+                max_stepdown,
+                slope_from,
+                slope_to,
+                direction: dir,
+                order_bottom_up: bottom_up,
+                feed_rate,
+                plunge_rate,
+                safe_z,
+                sampling,
+                stock_to_leave,
+                tolerance,
+            };
+
+            let start = std::time::Instant::now();
+            let toolpath = ramp_finish_toolpath(&mesh, &index, cutter.as_ref(), &params);
+            info!(
+                moves = toolpath.moves.len(),
+                cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
+                rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                elapsed_secs = format!("{:.2}", start.elapsed().as_secs_f64()),
+                "Generated ramp finish toolpath"
+            );
+
+            emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
+            write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
+        }
+
+        Commands::SteepShallow {
+            input, units, scale, tool, threshold_angle, overlap_distance,
+            wall_clearance, steep_first, stepover, z_step, sampling,
+            stock_to_leave, tolerance, feed_rate, plunge_rate, spindle_speed,
+            safe_z, post, output, svg, view, simulate, sim_resolution,
+        } => {
+            let scale_factor = parse_scale_factor(scale, &units)?;
+            let cutter = parse_tool(&tool)?;
+            let (mesh, index) = load_stl_with_index(&input, scale_factor, cutter.as_ref())?;
+
+            let params = SteepShallowParams {
+                threshold_angle,
+                overlap_distance,
+                wall_clearance,
+                steep_first,
+                stepover,
+                z_step,
+                feed_rate,
+                plunge_rate,
+                safe_z,
+                sampling,
+                stock_to_leave,
+                tolerance,
+            };
+
+            let start = std::time::Instant::now();
+            let toolpath = steep_shallow_toolpath(&mesh, &index, cutter.as_ref(), &params);
+            info!(
+                moves = toolpath.moves.len(),
+                cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
+                rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                elapsed_secs = format!("{:.2}", start.elapsed().as_secs_f64()),
+                "Generated steep & shallow toolpath"
+            );
+
+            emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
+            write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
+        }
+
+        Commands::Scallop {
+            input, units, scale, tool, scallop_height, direction, continuous,
+            slope_from, slope_to, stock_to_leave, tolerance, feed_rate,
+            plunge_rate, spindle_speed, safe_z, post, output, svg, view,
+            simulate, sim_resolution,
+        } => {
+            let scale_factor = parse_scale_factor(scale, &units)?;
+            let cutter = parse_tool(&tool)?;
+            let (mesh, index) = load_stl_with_index(&input, scale_factor, cutter.as_ref())?;
+
+            let dir = match direction.as_str() {
+                "inside-out" => ScallopDirection::InsideOut,
+                _ => ScallopDirection::OutsideIn,
+            };
+
+            let params = ScallopParams {
+                scallop_height,
+                tolerance,
+                direction: dir,
+                continuous,
+                slope_from,
+                slope_to,
+                feed_rate,
+                plunge_rate,
+                safe_z,
+                stock_to_leave,
+            };
+
+            let start = std::time::Instant::now();
+            let toolpath = scallop_toolpath(&mesh, &index, cutter.as_ref(), &params);
+            info!(
+                moves = toolpath.moves.len(),
+                cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
+                rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                elapsed_secs = format!("{:.2}", start.elapsed().as_secs_f64()),
+                "Generated scallop toolpath"
+            );
+
+            emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
             write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
         }
     }
