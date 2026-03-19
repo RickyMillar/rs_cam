@@ -9,7 +9,7 @@ Read this FIRST at the start of every session. Update LAST before ending.
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 428 tests passing (426 unit + 2 integration)
+- [x] Core library + CLI compiling, 435 tests passing (433 unit + 2 integration)
 - [x] Phase 1 complete: STL → drop-cutter → G-code pipeline with 3D HTML viewer
 - [x] Phase 2 complete: 2.5D operations (pocket, profile, zigzag, depth stepping, SVG/DXF input, dressups, CLI)
 - [x] Phase 3 complete: Advanced tools (BullNose, VBit, TaperedBall), push-cutter, waterline, arc fitting, G2/G3
@@ -92,6 +92,7 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] 5.6 WASM readiness — feature-gated rayon (`parallel` feature, default on), `std::time::Instant` gated for wasm32, `from_stl_bytes()` API for in-memory loading
 - [x] 5.7 Collision detection MVP — tool holder/shank collision check via drop-cutter at larger radii, penetration depth + min safe stickout (collision.rs)
 - [x] 5.8 Pipeline cache foundation — dirty-flag invalidation cache for mesh + surface heightmap across multi-operation jobs (pipeline.rs)
+- [x] 5.9 Feed rate optimization — RCTF chip thinning compensation, heightmap engagement estimation, forward/backward smoothing, post-process dressup for any operation (feedopt.rs)
 - [x] 5.4 Tech debt cleanup — removed all unwrap() from library code (partial_cmp NaN safety, last() safety), wired per-operation spindle speed, spatial index auto-sizing + cell clamp, CLPoint.contacted flag for boundary detection, fixed duplicate rapid in raster toolpath, emit_gcode_phased for multi-operation jobs
 
 ## Module Map (for new agents)

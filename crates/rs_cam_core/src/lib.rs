@@ -32,3 +32,4 @@ pub mod inlay;
 pub mod weave;
 pub mod collision;
 pub mod pipeline;
+pub mod feedopt;
