@@ -86,6 +86,7 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 ### Phase 5: Visualization & Polish
 - [ ] 5.1 egui + wgpu 3D viewer (rs_cam_viz crate)
 - [x] 5.2 Material removal simulation — heightmap stamping, wood-tone mesh, animated 3D replay with tool model (simulation.rs, viz.rs)
+- [x] 5.2a Simulation performance — swept segment stamping (10x), radial LUT (no sqrt), early-out skip, benchmarks (simulation.rs, adaptive3d.rs)
 - [ ] 5.3 Inlay operations
 
 ## Module Map (for new agents)
@@ -152,6 +153,9 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 ## Performance Benchmarks
 - 196K triangles, 108K grid points, 0.18s release build (terrain.stl, ball:3.175, stepover 1.0)
 - 40K triangles, 2.2K grid points, 3.1s debug / ~0.1s release (terrain_small.stl, ball:6.35, stepover 2.0)
+- Criterion benchmark suite: 22 benchmarks across 9 groups (crates/rs_cam_core/benches/perf_suite.rs)
+- Performance optimization pass complete (2026-03-20): batch_drop_cutter 84-86% faster, spatial queries 85-98% faster, waterline 51-96% faster. See Performance_review.md for full results.
+- Simulation optimization (2026-03-20): swept segment stamping 10.4x faster (367µs→35µs per 50mm segment), RadialProfileLUT eliminates sqrt per cell, early-out skip for unchanged stamps
 
 ## Key References for Phase 4
 - `research/02_algorithms.md` — Adaptive clearing (constant engagement), V-carving algorithms

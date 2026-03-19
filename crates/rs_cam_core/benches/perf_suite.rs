@@ -9,7 +9,7 @@ use std::path::Path;
 use rs_cam_core::dropcutter::{batch_drop_cutter, point_drop_cutter};
 use rs_cam_core::mesh::{make_test_hemisphere, SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::{offset_polygon, pocket_offsets, Polygon2};
-use rs_cam_core::simulation::{stamp_tool_at, Heightmap};
+use rs_cam_core::simulation::{simulate_toolpath, stamp_linear_segment, stamp_tool_at, Heightmap};
 use rs_cam_core::tool::{BallEndmill, FlatEndmill};
 use rs_cam_core::waterline::waterline_contours;
 use rs_cam_core::arcfit::fit_arcs;
@@ -229,6 +229,44 @@ fn bench_arc_fitting(c: &mut Criterion) {
     group.finish();
 }
 
+// ── 7. Simulation benchmarks ────────────────────────────────────────────
+
+fn bench_stamp_linear_segment(c: &mut Criterion) {
+    let mut group = c.benchmark_group("stamp_linear_segment");
+    group.sample_size(20);
+
+    let ball = BallEndmill::new(6.0, 25.0);
+    let mut hm = Heightmap::from_stock(0.0, 0.0, 60.0, 10.0, 10.0, 0.25);
+    let start = P3::new(5.0, 5.0, -2.0);
+    let end = P3::new(55.0, 5.0, -2.0);
+
+    group.bench_function("50mm_ball6_cs025", |b| {
+        b.iter(|| stamp_linear_segment(&mut hm, &ball, black_box(start), black_box(end)))
+    });
+
+    group.finish();
+}
+
+fn bench_simulate_toolpath(c: &mut Criterion) {
+    let mut group = c.benchmark_group("simulate_toolpath");
+    group.sample_size(10);
+
+    let ball = BallEndmill::new(6.0, 25.0);
+    let tp = make_linear_toolpath(2000);
+    let mut hm = Heightmap::from_stock(0.0, 0.0, 1050.0, 20.0, 10.0, 0.25);
+
+    group.bench_function("2000moves_ball6_cs025", |b| {
+        // Reset heightmap before each iteration
+        b.iter(|| {
+            hm.cells.fill(hm.stock_top_z);
+            simulate_toolpath(&tp, &ball, &mut hm);
+            black_box(&hm);
+        })
+    });
+
+    group.finish();
+}
+
 // ── Group all benchmarks ─────────────────────────────────────────────────
 
 criterion_group!(
@@ -240,5 +278,7 @@ criterion_group!(
     bench_waterline,
     bench_polygon_ops,
     bench_arc_fitting,
+    bench_stamp_linear_segment,
+    bench_simulate_toolpath,
 );
 criterion_main!(benches);

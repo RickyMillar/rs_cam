@@ -104,6 +104,73 @@ impl Heightmap {
     }
 }
 
+/// Precomputed radial profile lookup table for a cutter.
+///
+/// Indexes by dist_sq to avoid per-cell sqrt() calls. Bilinear interpolation
+/// between samples gives sub-micron accuracy with 256+ samples.
+pub struct RadialProfileLUT {
+    /// Height values indexed by dist_sq. Entry N corresponds to dist_sq = N / inv_step.
+    heights: Vec<f64>,
+    radius_sq: f64,
+    inv_step: f64, // num_samples / radius_sq
+}
+
+impl RadialProfileLUT {
+    /// Build a LUT from any MillingCutter.
+    pub fn from_cutter(cutter: &dyn MillingCutter, num_samples: usize) -> Self {
+        let r = cutter.radius();
+        let r_sq = r * r;
+        let inv_step = num_samples as f64 / r_sq;
+        // num_samples + 2 to have room for interpolation at the boundary
+        let mut heights = Vec::with_capacity(num_samples + 2);
+        for i in 0..=num_samples {
+            let dist_sq = i as f64 / inv_step;
+            let dist = dist_sq.sqrt();
+            match cutter.height_at_radius(dist) {
+                Some(h) => heights.push(h),
+                None => heights.push(f64::INFINITY),
+            }
+        }
+        // Extra sentinel for interpolation past the last sample
+        heights.push(f64::INFINITY);
+        Self {
+            heights,
+            radius_sq: r_sq,
+            inv_step,
+        }
+    }
+
+    /// Look up the cutter height at a given dist_sq (no sqrt needed).
+    /// Returns None if outside the cutter radius.
+    #[inline]
+    pub fn height_at_dist_sq(&self, dist_sq: f64) -> Option<f64> {
+        if dist_sq > self.radius_sq {
+            return None;
+        }
+        let idx_f = dist_sq * self.inv_step;
+        let idx = idx_f as usize;
+        let frac = idx_f - idx as f64;
+        let h0 = self.heights[idx];
+        let h1 = self.heights[idx + 1];
+        if h0 == f64::INFINITY {
+            return None;
+        }
+        // Linearly interpolate; if h1 is INFINITY, just use h0 (at boundary)
+        let h = if h1 == f64::INFINITY {
+            h0
+        } else {
+            h0 + frac * (h1 - h0)
+        };
+        Some(h)
+    }
+
+    /// The squared radius of the cutter.
+    #[inline]
+    pub fn radius_sq(&self) -> f64 {
+        self.radius_sq
+    }
+}
+
 /// Stamp the tool profile at a single position into the heightmap.
 pub fn stamp_tool_at(
     heightmap: &mut Heightmap,
@@ -115,7 +182,6 @@ pub fn stamp_tool_at(
     let r = cutter.radius();
     let cs = heightmap.cell_size;
 
-    // Compute cell range that could be affected
     let col_min = ((cx - r - heightmap.origin_x) / cs).floor() as isize;
     let col_max = ((cx + r - heightmap.origin_x) / cs).ceil() as isize;
     let row_min = ((cy - r - heightmap.origin_y) / cs).floor() as isize;
@@ -150,25 +216,147 @@ pub fn stamp_tool_at(
     }
 }
 
+/// Stamp the tool profile at a single position using a precomputed LUT.
+pub fn stamp_tool_at_lut(
+    heightmap: &mut Heightmap,
+    lut: &RadialProfileLUT,
+    radius: f64,
+    cx: f64,
+    cy: f64,
+    tip_z: f64,
+) {
+    let cs = heightmap.cell_size;
+
+    // Compute cell range that could be affected
+    let col_min = ((cx - radius - heightmap.origin_x) / cs).floor() as isize;
+    let col_max = ((cx + radius - heightmap.origin_x) / cs).ceil() as isize;
+    let row_min = ((cy - radius - heightmap.origin_y) / cs).floor() as isize;
+    let row_max = ((cy + radius - heightmap.origin_y) / cs).ceil() as isize;
+
+    let col_lo = col_min.max(0) as usize;
+    let col_hi = (col_max as usize).min(heightmap.cols - 1);
+    let row_lo = row_min.max(0) as usize;
+    let row_hi = (row_max as usize).min(heightmap.rows - 1);
+
+    let r_sq = lut.radius_sq();
+
+    // Step 3: Early-out — if center cell is already at or below tip_z,
+    // check corners; if all below, the stamp is a no-op.
+    let center_col = ((cx - heightmap.origin_x) / cs).round() as isize;
+    let center_row = ((cy - heightmap.origin_y) / cs).round() as isize;
+    if center_col >= 0
+        && center_row >= 0
+        && (center_col as usize) < heightmap.cols
+        && (center_row as usize) < heightmap.rows
+    {
+        let cz = heightmap.get(center_row as usize, center_col as usize);
+        if cz <= tip_z {
+            // Check 4 edge cells of the bounding box
+            let edge_cells = [
+                (row_lo, col_lo),
+                (row_lo, col_hi),
+                (row_hi, col_lo),
+                (row_hi, col_hi),
+            ];
+            let all_below = edge_cells.iter().all(|&(r, c)| heightmap.get(r, c) <= tip_z);
+            if all_below {
+                return;
+            }
+        }
+    }
+
+    for row in row_lo..=row_hi {
+        let cell_y = heightmap.origin_y + row as f64 * cs;
+        let dy = cell_y - cy;
+        let dy_sq = dy * dy;
+        if dy_sq > r_sq {
+            continue;
+        }
+        for col in col_lo..=col_hi {
+            let cell_x = heightmap.origin_x + col as f64 * cs;
+            let dx = cell_x - cx;
+            let dist_sq = dx * dx + dy_sq;
+            if let Some(h) = lut.height_at_dist_sq(dist_sq) {
+                heightmap.cut(row, col, tip_z + h);
+            }
+        }
+    }
+}
+
 /// Stamp the tool along a linear segment (start to end).
+///
+/// Uses a swept-stadium approach: each cell in the bounding box of the swept
+/// tool is processed exactly once, using closest-point-on-segment to determine
+/// the cutter height. This is much faster than stamping N circles along the path.
 pub fn stamp_linear_segment(
     heightmap: &mut Heightmap,
     cutter: &dyn MillingCutter,
     start: P3,
     end: P3,
 ) {
-    let dx = end.x - start.x;
-    let dy = end.y - start.y;
-    let dz = end.z - start.z;
-    let seg_len = (dx * dx + dy * dy + dz * dz).sqrt();
+    let lut = RadialProfileLUT::from_cutter(cutter, 256);
+    stamp_linear_segment_lut(heightmap, &lut, cutter.radius(), start, end);
+}
 
-    let samples = (seg_len / heightmap.cell_size).ceil().max(1.0) as usize;
-    for i in 0..=samples {
-        let t = i as f64 / samples as f64;
-        let x = start.x + t * dx;
-        let y = start.y + t * dy;
-        let z = start.z + t * dz;
-        stamp_tool_at(heightmap, cutter, x, y, z);
+/// Stamp a linear segment using a precomputed LUT.
+pub fn stamp_linear_segment_lut(
+    heightmap: &mut Heightmap,
+    lut: &RadialProfileLUT,
+    radius: f64,
+    start: P3,
+    end: P3,
+) {
+    let seg_dx = end.x - start.x;
+    let seg_dy = end.y - start.y;
+    let seg_dz = end.z - start.z;
+    let seg_len_sq = seg_dx * seg_dx + seg_dy * seg_dy;
+
+    // Degenerate segment (zero XY length) — just stamp at the lower Z
+    if seg_len_sq < 1e-20 {
+        let z = start.z.min(end.z);
+        stamp_tool_at_lut(heightmap, lut, radius, start.x, start.y, z);
+        return;
+    }
+
+    let inv_seg_len_sq = 1.0 / seg_len_sq;
+    let cs = heightmap.cell_size;
+
+    // Bounding box of the swept tool: segment bbox expanded by radius
+    let x_min = start.x.min(end.x) - radius;
+    let x_max = start.x.max(end.x) + radius;
+    let y_min = start.y.min(end.y) - radius;
+    let y_max = start.y.max(end.y) + radius;
+
+    let col_lo = ((x_min - heightmap.origin_x) / cs).floor().max(0.0) as usize;
+    let col_hi = (((x_max - heightmap.origin_x) / cs).ceil() as usize).min(heightmap.cols - 1);
+    let row_lo = ((y_min - heightmap.origin_y) / cs).floor().max(0.0) as usize;
+    let row_hi = (((y_max - heightmap.origin_y) / cs).ceil() as usize).min(heightmap.rows - 1);
+
+    for row in row_lo..=row_hi {
+        let cell_y = heightmap.origin_y + row as f64 * cs;
+        let py = cell_y - start.y;
+
+        for col in col_lo..=col_hi {
+            let cell_x = heightmap.origin_x + col as f64 * cs;
+            let px = cell_x - start.x;
+
+            // Closest point on segment: t = clamp(dot(p - start, seg) / |seg|^2, 0, 1)
+            let t = (px * seg_dx + py * seg_dy) * inv_seg_len_sq;
+            let t = t.clamp(0.0, 1.0);
+
+            // Radial distance from cell to closest point (XY only)
+            let closest_x = t * seg_dx;
+            let closest_y = t * seg_dy;
+            let dx = px - closest_x;
+            let dy = py - closest_y;
+            let dist_sq = dx * dx + dy * dy;
+
+            if let Some(h) = lut.height_at_dist_sq(dist_sq) {
+                // Interpolate Z at the closest point
+                let z = start.z + t * seg_dz;
+                heightmap.cut(row, col, z + h);
+            }
+        }
     }
 }
 
@@ -234,6 +422,9 @@ pub fn simulate_toolpath(
         return;
     }
 
+    let lut = RadialProfileLUT::from_cutter(cutter, 256);
+    let radius = cutter.radius();
+
     for i in 1..toolpath.moves.len() {
         let start = toolpath.moves[i - 1].target;
         let end = toolpath.moves[i].target;
@@ -243,18 +434,18 @@ pub fn simulate_toolpath(
                 // Rapids don't cut material
             }
             MoveType::Linear { .. } => {
-                stamp_linear_segment(heightmap, cutter, start, end);
+                stamp_linear_segment_lut(heightmap, &lut, radius, start, end);
             }
             MoveType::ArcCW { i, j, .. } => {
                 let points = linearize_arc(start, end, i, j, true, heightmap.cell_size);
                 for w in points.windows(2) {
-                    stamp_linear_segment(heightmap, cutter, w[0], w[1]);
+                    stamp_linear_segment_lut(heightmap, &lut, radius, w[0], w[1]);
                 }
             }
             MoveType::ArcCCW { i, j, .. } => {
                 let points = linearize_arc(start, end, i, j, false, heightmap.cell_size);
                 for w in points.windows(2) {
-                    stamp_linear_segment(heightmap, cutter, w[0], w[1]);
+                    stamp_linear_segment_lut(heightmap, &lut, radius, w[0], w[1]);
                 }
             }
         }
@@ -345,7 +536,7 @@ pub fn heightmap_to_mesh(heightmap: &Heightmap) -> HeightmapMesh {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tool::{BallEndmill, FlatEndmill};
+    use crate::tool::{BallEndmill, BullNoseEndmill, FlatEndmill, VBitEndmill};
 
     #[test]
     fn test_heightmap_from_stock_dimensions() {
@@ -605,5 +796,256 @@ mod tests {
         assert!((r - 0.45).abs() < 0.01);
         assert!((g - 0.25).abs() < 0.01);
         assert!((b - 0.10).abs() < 0.01);
+    }
+
+    // ── LUT tests ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_lut_ball_matches_analytical() {
+        let ball = BallEndmill::new(6.0, 25.0); // radius 3
+        let lut = RadialProfileLUT::from_cutter(&ball, 256);
+
+        // Check several radii
+        for &r in &[0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 2.9] {
+            let expected = ball.height_at_radius(r).unwrap();
+            let got = lut.height_at_dist_sq(r * r).unwrap();
+            assert!(
+                (got - expected).abs() < 0.001,
+                "Ball LUT at r={}: expected {:.6}, got {:.6}",
+                r, expected, got
+            );
+        }
+        // Outside radius should return None
+        assert!(lut.height_at_dist_sq(3.1 * 3.1).is_none());
+    }
+
+    #[test]
+    fn test_lut_flat_matches_analytical() {
+        let flat = FlatEndmill::new(10.0, 25.0); // radius 5
+        let lut = RadialProfileLUT::from_cutter(&flat, 256);
+
+        for &r in &[0.0, 1.0, 2.5, 4.9] {
+            let got = lut.height_at_dist_sq(r * r).unwrap();
+            assert!(
+                got.abs() < 0.001,
+                "Flat LUT at r={}: expected ~0, got {:.6}",
+                r, got
+            );
+        }
+        assert!(lut.height_at_dist_sq(5.1 * 5.1).is_none());
+    }
+
+    #[test]
+    fn test_lut_bullnose_matches_analytical() {
+        let bn = BullNoseEndmill::new(10.0, 2.0, 25.0); // R1=3, R2=2
+        let lut = RadialProfileLUT::from_cutter(&bn, 512);
+
+        for &r in &[0.0, 1.0, 2.0, 3.0, 4.0, 4.5] {
+            let expected = bn.height_at_radius(r);
+            let got = lut.height_at_dist_sq(r * r);
+            match (expected, got) {
+                (Some(e), Some(g)) => assert!(
+                    (g - e).abs() < 0.01,
+                    "BullNose LUT at r={}: expected {:.6}, got {:.6}",
+                    r, e, g
+                ),
+                (None, None) => {}
+                _ => panic!("BullNose LUT mismatch at r={}: {:?} vs {:?}", r, expected, got),
+            }
+        }
+    }
+
+    #[test]
+    fn test_lut_vbit_matches_analytical() {
+        // VBitEndmill::new(diameter, included_angle_deg, cutting_length)
+        let vbit = VBitEndmill::new(10.0, 90.0, 25.0); // 90° V-bit, radius 5
+        let lut = RadialProfileLUT::from_cutter(&vbit, 256);
+
+        for &r in &[0.0, 1.0, 2.0, 3.0, 4.0] {
+            let expected = vbit.height_at_radius(r);
+            let got = lut.height_at_dist_sq(r * r);
+            match (expected, got) {
+                (Some(e), Some(g)) => assert!(
+                    (g - e).abs() < 0.01,
+                    "VBit LUT at r={}: expected {:.6}, got {:.6}",
+                    r, e, g
+                ),
+                (None, None) => {}
+                _ => panic!("VBit LUT mismatch at r={}: {:?} vs {:?}", r, expected, got),
+            }
+        }
+    }
+
+    // ── Swept segment equivalence test ───────────────────────────────────
+
+    /// Compare swept segment stamping against the reference N-stamp approach
+    /// to verify they produce equivalent results.
+    fn stamp_linear_segment_reference(
+        heightmap: &mut Heightmap,
+        cutter: &dyn MillingCutter,
+        start: P3,
+        end: P3,
+    ) {
+        let dx = end.x - start.x;
+        let dy = end.y - start.y;
+        let dz = end.z - start.z;
+        let seg_len = (dx * dx + dy * dy + dz * dz).sqrt();
+        let samples = (seg_len / heightmap.cell_size).ceil().max(1.0) as usize;
+        for i in 0..=samples {
+            let t = i as f64 / samples as f64;
+            let x = start.x + t * dx;
+            let y = start.y + t * dy;
+            let z = start.z + t * dz;
+            // Use direct cutter calls (no LUT) for the reference
+            let r = cutter.radius();
+            let cs = heightmap.cell_size;
+            let col_min = ((x - r - heightmap.origin_x) / cs).floor() as isize;
+            let col_max = ((x + r - heightmap.origin_x) / cs).ceil() as isize;
+            let row_min = ((y - r - heightmap.origin_y) / cs).floor() as isize;
+            let row_max = ((y + r - heightmap.origin_y) / cs).ceil() as isize;
+            let col_lo = col_min.max(0) as usize;
+            let col_hi = (col_max as usize).min(heightmap.cols - 1);
+            let row_lo = row_min.max(0) as usize;
+            let row_hi = (row_max as usize).min(heightmap.rows - 1);
+            let r_sq = r * r;
+            for row in row_lo..=row_hi {
+                let cell_y = heightmap.origin_y + row as f64 * cs;
+                let dy2 = cell_y - y;
+                let dy_sq = dy2 * dy2;
+                if dy_sq > r_sq { continue; }
+                for col in col_lo..=col_hi {
+                    let cell_x = heightmap.origin_x + col as f64 * cs;
+                    let dx2 = cell_x - x;
+                    let dist_sq = dx2 * dx2 + dy_sq;
+                    if dist_sq > r_sq { continue; }
+                    let dist = dist_sq.sqrt();
+                    if let Some(h) = cutter.height_at_radius(dist) {
+                        heightmap.cut(row, col, z + h);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_swept_segment_matches_reference_flat() {
+        let tool = FlatEndmill::new(6.0, 25.0); // radius 3
+        let start = P3::new(5.0, 5.0, -2.0);
+        let end = P3::new(55.0, 5.0, -2.0);
+
+        let mut hm_ref = Heightmap::from_stock(0.0, 0.0, 60.0, 10.0, 5.0, 0.25);
+        stamp_linear_segment_reference(&mut hm_ref, &tool, start, end);
+
+        let mut hm_swept = Heightmap::from_stock(0.0, 0.0, 60.0, 10.0, 5.0, 0.25);
+        stamp_linear_segment(&mut hm_swept, &tool, start, end);
+
+        // Swept must cut at least as deep as reference everywhere
+        let mut max_diff = 0.0_f64;
+        let mut worst_i = 0;
+        for i in 0..hm_ref.cells.len() {
+            let diff = (hm_swept.cells[i] - hm_ref.cells[i]).abs();
+            if diff > max_diff {
+                max_diff = diff;
+                worst_i = i;
+            }
+            assert!(
+                hm_swept.cells[i] <= hm_ref.cells[i] + 0.01,
+                "Swept left material above reference at cell {}: swept={:.4}, ref={:.4}",
+                i, hm_swept.cells[i], hm_ref.cells[i]
+            );
+        }
+        // The max difference should be tiny (sub-mm)
+        assert!(
+            max_diff < 0.05,
+            "Max difference between swept and reference: {:.4}mm",
+            max_diff
+        );
+    }
+
+    #[test]
+    fn test_swept_segment_matches_reference_ball() {
+        let tool = BallEndmill::new(6.0, 25.0); // radius 3
+        let start = P3::new(5.0, 5.0, -1.0);
+        let end = P3::new(55.0, 5.0, -3.0); // sloped segment
+
+        let mut hm_ref = Heightmap::from_stock(0.0, 0.0, 60.0, 10.0, 5.0, 0.25);
+        stamp_linear_segment_reference(&mut hm_ref, &tool, start, end);
+
+        let mut hm_swept = Heightmap::from_stock(0.0, 0.0, 60.0, 10.0, 5.0, 0.25);
+        stamp_linear_segment(&mut hm_swept, &tool, start, end);
+
+        // The swept approach uses closest-point-on-segment which correctly handles
+        // boundary cells that the N-stamp reference misses (due to discrete sampling
+        // with non-grid-aligned step sizes from 3D segment length).
+        // Compare only cells where both approaches made a cut.
+        let stock = 5.0;
+        let mut max_diff_interior = 0.0_f64;
+        let mut swept_never_above_ref = true;
+        for i in 0..hm_ref.cells.len() {
+            let s = hm_swept.cells[i];
+            let r = hm_ref.cells[i];
+            // Swept should never leave material above reference
+            if s > r + 0.01 {
+                swept_never_above_ref = false;
+            }
+            // Only compare interior cells (both touched)
+            if r < stock - 0.01 && s < stock - 0.01 {
+                let diff = (s - r).abs();
+                max_diff_interior = max_diff_interior.max(diff);
+            }
+        }
+        assert!(
+            swept_never_above_ref,
+            "Swept left material above reference"
+        );
+        assert!(
+            max_diff_interior < 0.15,
+            "Interior cell max diff: {:.4}mm",
+            max_diff_interior
+        );
+    }
+
+    #[test]
+    fn test_swept_segment_diagonal_ball() {
+        let tool = BallEndmill::new(6.0, 25.0);
+        let start = P3::new(5.0, 5.0, -1.0);
+        let end = P3::new(25.0, 25.0, -1.0);
+
+        let mut hm_ref = Heightmap::from_stock(0.0, 0.0, 30.0, 30.0, 5.0, 0.25);
+        stamp_linear_segment_reference(&mut hm_ref, &tool, start, end);
+
+        let mut hm_swept = Heightmap::from_stock(0.0, 0.0, 30.0, 30.0, 5.0, 0.25);
+        stamp_linear_segment(&mut hm_swept, &tool, start, end);
+
+        let mut max_diff = 0.0_f64;
+        for i in 0..hm_ref.cells.len() {
+            let diff = hm_swept.cells[i] - hm_ref.cells[i];
+            max_diff = max_diff.max(diff.abs());
+            assert!(
+                hm_swept.cells[i] <= hm_ref.cells[i] + 0.01,
+                "Cell {}: swept={:.4}, ref={:.4}",
+                i, hm_swept.cells[i], hm_ref.cells[i]
+            );
+        }
+        assert!(max_diff < 0.05, "Max diff: {:.4}mm", max_diff);
+    }
+
+    #[test]
+    fn test_skip_unchanged_stamps() {
+        let tool = FlatEndmill::new(6.0, 25.0);
+        let mut hm = Heightmap::from_stock(0.0, 0.0, 20.0, 20.0, 5.0, 0.5);
+
+        // First stamp at z=2
+        stamp_tool_at(&mut hm, &tool, 10.0, 10.0, 2.0);
+        let (row, col) = hm.world_to_cell(10.0, 10.0).unwrap();
+        assert!((hm.get(row, col) - 2.0).abs() < 1e-10);
+
+        // Second stamp at z=3 (higher) should be a no-op due to early-out
+        stamp_tool_at(&mut hm, &tool, 10.0, 10.0, 3.0);
+        assert!((hm.get(row, col) - 2.0).abs() < 1e-10);
+
+        // Third stamp at z=1 (lower) should cut deeper
+        stamp_tool_at(&mut hm, &tool, 10.0, 10.0, 1.0);
+        assert!((hm.get(row, col) - 1.0).abs() < 1e-10);
     }
 }

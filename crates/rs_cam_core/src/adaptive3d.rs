@@ -18,7 +18,7 @@ use crate::adaptive::{
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::simulation::{stamp_tool_at, Heightmap};
+use crate::simulation::{stamp_tool_at, stamp_tool_at_lut, Heightmap, RadialProfileLUT};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 use crate::waterline::waterline_contours;
@@ -885,7 +885,9 @@ struct ClearZLevelContext<'a> {
     mesh: &'a TriangleMesh,
     index: &'a SpatialIndex,
     cutter: &'a dyn MillingCutter,
+    lut: &'a RadialProfileLUT,
     tool_radius: f64,
+    stepover: f64,
     stock_to_leave: f64,
     depth_per_pass: f64,
     target_frac: f64,
@@ -895,6 +897,50 @@ struct ClearZLevelContext<'a> {
     bbox_x_max: f64,
     bbox_y_min: f64,
     bbox_y_max: f64,
+}
+
+/// Pre-stamp thin material bands that appear at each Z level on steep walls.
+///
+/// After cutting at a previous Z level, wall cells retain material_z equal to that
+/// level. At the new (lower) Z level, these cells have a thin band of material
+/// (material_z - effective_floor) that is technically real but produces unproductive
+/// contour passes. This function directly cuts those thin bands at the cell level,
+/// leaving waterline cleanup to handle the actual wall boundaries.
+///
+/// Returns the number of cells pre-stamped.
+fn pre_stamp_thin_bands(
+    material_hm: &mut Heightmap,
+    surface_hm: &SurfaceHeightmap,
+    z_level: f64,
+    stock_to_leave: f64,
+    depth_per_pass: f64,
+    region: Option<&MaterialRegion>,
+) -> u32 {
+    let thin_threshold = depth_per_pass * 0.3;
+    let mut stamped = 0u32;
+
+    let (row_min, row_max, col_min, col_max) = if let Some(r) = region {
+        (r.row_min, r.row_max.min(material_hm.rows - 1), r.col_min, r.col_max.min(material_hm.cols - 1))
+    } else {
+        (0, material_hm.rows - 1, 0, material_hm.cols - 1)
+    };
+
+    for row in row_min..=row_max {
+        let base = row * material_hm.cols;
+        for col in col_min..=col_max {
+            let i = base + col;
+            let mat_z = material_hm.cells[i];
+            let surf_z = surface_hm.z_values[i];
+            let effective_floor = (surf_z + stock_to_leave).max(z_level);
+            let thickness = mat_z - effective_floor;
+            if thickness > 0.01 && thickness < thin_threshold {
+                material_hm.cells[i] = effective_floor;
+                stamped += 1;
+            }
+        }
+    }
+
+    stamped
 }
 
 /// Clear material at a single Z level, optionally restricted to a region.
@@ -930,6 +976,24 @@ fn clear_z_level(
         return;
     }
 
+    // Pre-stamp thin bands on steep walls to avoid unproductive contour re-tracing.
+    let pre_stamped = pre_stamp_thin_bands(
+        material_hm, surface_hm, z_level, ctx.stock_to_leave, ctx.depth_per_pass, region,
+    );
+    if pre_stamped > 0 {
+        debug!(cells = pre_stamped, z = z_level, "Pre-stamped thin wall bands");
+        // Re-check remaining after pre-stamp — skip level if negligible
+        let remaining_after = if let Some(r) = region {
+            material_remaining_in_region(material_hm, surface_hm, z_level, ctx.stock_to_leave, r)
+        } else {
+            material_remaining_at_level(material_hm, surface_hm, z_level, ctx.stock_to_leave)
+        };
+        if remaining_after < 0.005 {
+            debug!(z = z_level, "Skipping Z level — thin bands consumed all remaining material");
+            return;
+        }
+    }
+
     let t_level = Instant::now();
     let mut pass_endpoints: Vec<P2> = Vec::new();
     let max_passes = 500;
@@ -947,7 +1011,7 @@ fn clear_z_level(
         if pass_count > max_passes {
             break;
         }
-        if pass_count > warmup_passes && short_pass_streak > 15 {
+        if pass_count > warmup_passes && short_pass_streak > 8 {
             debug!(short_passes = short_pass_streak, z = z_level, pass = pass_count, "Bailing from Z level");
             break;
         }
@@ -983,13 +1047,13 @@ fn clear_z_level(
             dir_x_min, dir_x_max, dir_y_min, dir_y_max,
         );
         if preflight_dir.is_none() {
-            stamp_tool_at(material_hm, ctx.cutter, entry_xy.x, entry_xy.y, entry_z);
+            stamp_tool_at_lut(material_hm, ctx.lut, ctx.tool_radius, entry_xy.x, entry_xy.y, entry_z);
             for a in 0..8 {
                 let angle = (a as f64 / 8.0) * TAU;
                 let (sin_a, cos_a) = angle.sin_cos();
                 let px = entry_xy.x + tool_radius * 0.5 * cos_a;
                 let py = entry_xy.y + tool_radius * 0.5 * sin_a;
-                stamp_tool_at(material_hm, ctx.cutter, px, py, entry_z);
+                stamp_tool_at_lut(material_hm, ctx.lut, ctx.tool_radius, px, py, entry_z);
             }
             pass_endpoints.push(entry_xy);
             short_pass_streak += 1;
@@ -1033,7 +1097,7 @@ fn clear_z_level(
             0.0
         };
 
-        stamp_tool_at(material_hm, ctx.cutter, cx, cy, cz);
+        stamp_tool_at_lut(material_hm, ctx.lut, ctx.tool_radius, cx, cy, cz);
 
         const SMOOTH_BUF_LEN: usize = 3;
         let mut angle_buf: Vec<f64> = Vec::with_capacity(SMOOTH_BUF_LEN);
@@ -1042,6 +1106,7 @@ fn clear_z_level(
         let mut idle_count = 0;
         let mut step_count = 0u32;
         let mut looped = false;
+        let mut pass_removal_sum = 0.0f64;
 
         // Loop detection: after enough steps to form a meaningful loop,
         // check if we've returned near the entry point. The minimum step
@@ -1079,7 +1144,7 @@ fn clear_z_level(
             cz = z_next.max(cz - max_z_step);
             path.push(P3::new(cx, cy, cz));
 
-            stamp_tool_at(material_hm, ctx.cutter, cx, cy, cz);
+            stamp_tool_at_lut(material_hm, ctx.lut, ctx.tool_radius, cx, cy, cz);
 
             if angle_buf.len() >= SMOOTH_BUF_LEN {
                 angle_buf.remove(0);
@@ -1104,6 +1169,7 @@ fn clear_z_level(
 
             let local_after = local_material_sum(material_hm, cx, cy, tool_radius);
             let local_delta = (local_before - local_after).abs();
+            pass_removal_sum += local_delta;
             let engagement_here = compute_engagement_3d(
                 material_hm, surface_hm, cx, cy, tool_radius,
                 z_level, ctx.stock_to_leave,
@@ -1126,8 +1192,8 @@ fn clear_z_level(
         // Keep a reference to the path for post-pass widening before moving it
         let should_widen = (looped || pass_steps >= min_productive_steps) && pass_steps >= 4;
         let widen_path: Vec<P3> = if should_widen {
-            // Sample every few points to keep the widening cheap
-            let skip = 3.max(path.len() / 200);
+            // Denser sampling to avoid missing tight contours
+            let skip = 1.max(path.len() / 500);
             path.iter().step_by(skip).copied().collect()
         } else {
             Vec::new()
@@ -1145,22 +1211,33 @@ fn clear_z_level(
 
         total_steps += pass_steps as u64;
         let exit_reason = if looped { "loop closed" } else if was_idle { "idle" } else { "no material" };
-        if pass_steps < min_productive_steps {
+
+        // Low-yield detection: bail on passes that trace lots of steps but remove
+        // negligible material (typical of thin wall contour re-tracing).
+        let yield_ratio = if pass_steps > 1 {
+            let expected = pass_steps as f64 * ctx.stepover * ctx.depth_per_pass * material_hm.cell_size;
+            if expected > 0.0 { pass_removal_sum / expected } else { 1.0 }
+        } else {
+            1.0
+        };
+        let is_low_yield = pass_steps < min_productive_steps || (pass_steps >= min_productive_steps && yield_ratio < 0.05);
+
+        if is_low_yield {
             short_passes += 1;
             short_pass_streak += 1;
             segments.push(Adaptive3dSegment::Label(
-                format!("Pass {} — short ({} steps, {})", pass_count, pass_steps, exit_reason)
+                format!("Pass {} — short ({} steps, {}, yield {:.3})", pass_count, pass_steps, exit_reason, yield_ratio)
             ));
         } else {
             long_passes += 1;
             short_pass_streak = 0;
             segments.push(Adaptive3dSegment::Label(
-                format!("Pass {} — {} steps ({})", pass_count, pass_steps, exit_reason)
+                format!("Pass {} — {} steps ({}, yield {:.3})", pass_count, pass_steps, exit_reason, yield_ratio)
             ));
         }
 
         if was_idle {
-            stamp_tool_at(material_hm, ctx.cutter, cx, cy, cz);
+            stamp_tool_at_lut(material_hm, ctx.lut, ctx.tool_radius, cx, cy, cz);
             for a in 0..8 {
                 let angle = (a as f64 / 8.0) * TAU;
                 let (sin_a, cos_a) = angle.sin_cos();
@@ -1168,15 +1245,15 @@ fn clear_z_level(
                 let py = cy + tool_radius * sin_a;
                 let surf_z = surface_hm.surface_z_at_world(px, py);
                 let pz = if surf_z == f64::NEG_INFINITY { cz } else { (surf_z + ctx.stock_to_leave).max(z_level) };
-                stamp_tool_at(material_hm, ctx.cutter, px, py, pz);
+                stamp_tool_at_lut(material_hm, ctx.lut, ctx.tool_radius, px, py, pz);
             }
         }
 
         // Widen the cleared band after loop-close or long contour passes.
-        // Stamp perpendicular offsets along the path at stepover distance
+        // Stamp perpendicular offsets at 1× and 2× stepover distance (double ring)
         // so adjacent parallel contours are also marked as cleared.
         if !widen_path.is_empty() {
-            let widen_offset = ctx.step_len * 2.0; // ~1 stepover width on each side
+            let widen_offset = ctx.stepover;
             for i in 1..widen_path.len() {
                 let prev = &widen_path[i - 1];
                 let curr = &widen_path[i];
@@ -1188,13 +1265,15 @@ fn clear_z_level(
                 }
                 let nx = -dy / seg_len;
                 let ny = dx / seg_len;
-                for &sign in &[1.0f64, -1.0] {
-                    let px = curr.x + sign * widen_offset * nx;
-                    let py = curr.y + sign * widen_offset * ny;
-                    let sz = surface_hm.surface_z_at_world(px, py);
-                    if sz != f64::NEG_INFINITY {
-                        let pz = (sz + ctx.stock_to_leave).max(z_level);
-                        stamp_tool_at(material_hm, ctx.cutter, px, py, pz);
+                for &mult in &[1.0f64, 2.0] {
+                    for &sign in &[1.0f64, -1.0] {
+                        let px = curr.x + sign * mult * widen_offset * nx;
+                        let py = curr.y + sign * mult * widen_offset * ny;
+                        let sz = surface_hm.surface_z_at_world(px, py);
+                        if sz != f64::NEG_INFINITY {
+                            let pz = (sz + ctx.stock_to_leave).max(z_level);
+                            stamp_tool_at_lut(material_hm, ctx.lut, ctx.tool_radius, px, py, pz);
+                        }
                     }
                 }
             }
@@ -1215,6 +1294,7 @@ fn waterline_cleanup(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
+    lut: &RadialProfileLUT,
     material_hm: &mut Heightmap,
     z_level: f64,
     tool_radius: f64,
@@ -1244,12 +1324,12 @@ fn waterline_cleanup(
                 let x = a.x + t * dx;
                 let y = a.y + t * dy;
                 let z = a.z + t * (b.z - a.z);
-                stamp_tool_at(material_hm, cutter, x, y, z);
+                stamp_tool_at_lut(material_hm, lut, tool_radius, x, y, z);
                 cleanup_path.push(P3::new(x, y, z));
             }
         }
         cleanup_path.push(contour[0]);
-        stamp_tool_at(material_hm, cutter, contour[0].x, contour[0].y, contour[0].z);
+        stamp_tool_at_lut(material_hm, lut, tool_radius, contour[0].x, contour[0].y, contour[0].z);
         segments.push(Adaptive3dSegment::Cut(cleanup_path));
         *last_pos = Some(contour[0]);
     }
@@ -1413,11 +1493,14 @@ fn adaptive_3d_segments(
     let bbox_y_min = origin_y + tool_radius;
     let bbox_y_max = extent_y - tool_radius;
 
+    let lut = RadialProfileLUT::from_cutter(cutter, 256);
     let ctx = ClearZLevelContext {
         mesh,
         index,
         cutter,
+        lut: &lut,
         tool_radius,
+        stepover: params.stepover,
         stock_to_leave: params.stock_to_leave,
         depth_per_pass: params.depth_per_pass,
         target_frac,
@@ -1472,7 +1555,7 @@ fn adaptive_3d_segments(
             if let Some(&z_bottom_level) = z_levels.last() {
                 segments.push(Adaptive3dSegment::Label("Waterline cleanup".to_string()));
                 waterline_cleanup(
-                    mesh, index, cutter,
+                    mesh, index, cutter, &lut,
                     &mut material_hm, z_bottom_level,
                     tool_radius, cell_size,
                     &mut segments, &mut last_pos,
@@ -1495,7 +1578,7 @@ fn adaptive_3d_segments(
                 if is_last_level {
                     segments.push(Adaptive3dSegment::Label("Waterline cleanup".to_string()));
                     waterline_cleanup(
-                        mesh, index, cutter,
+                        mesh, index, cutter, &lut,
                         &mut material_hm, z_level,
                         tool_radius, cell_size,
                         &mut segments, &mut last_pos,
@@ -2473,6 +2556,204 @@ mod tests {
             min_z < 15.0,
             "ByArea should cut down to lower Z levels, min feed Z = {:.1}",
             min_z
+        );
+    }
+
+    // ── Pre-stamp thin bands tests ──────────────────────────────────────
+
+    #[test]
+    fn test_pre_stamp_clears_thin_bands() {
+        // Thin material (0.5mm) should be pre-stamped; thick material (5mm) preserved.
+        let cell_size = 1.0;
+        let rows = 10;
+        let cols = 10;
+        let z_level = 7.0;
+        let stock_to_leave = 0.5;
+        let depth_per_pass = 3.0;
+
+        // Surface at z=0 everywhere → effective_floor = max(0+0.5, 7.0) = 7.0
+        let surface_hm = SurfaceHeightmap {
+            z_values: vec![0.0; rows * cols],
+            rows, cols,
+            origin_x: 0.0, origin_y: 0.0,
+            cell_size,
+        };
+
+        // Material at z=7.5 (thin: 0.5mm above floor) for half the cells,
+        // z=12.0 (thick: 5mm above floor) for the other half.
+        let mut mat_cells = vec![7.5; rows * cols];
+        for row in 5..rows {
+            for col in 0..cols {
+                mat_cells[row * cols + col] = 12.0;
+            }
+        }
+        let mut material_hm = Heightmap {
+            cells: mat_cells,
+            rows, cols,
+            origin_x: 0.0, origin_y: 0.0,
+            cell_size,
+            stock_top_z: 20.0,
+        };
+
+        let stamped = pre_stamp_thin_bands(
+            &mut material_hm, &surface_hm, z_level, stock_to_leave, depth_per_pass, None,
+        );
+
+        // thin_threshold = 3.0 * 0.3 = 0.9; 0.5mm < 0.9 → should be stamped
+        assert!(stamped > 0, "Should pre-stamp thin cells, stamped {}", stamped);
+
+        // Thin cells should now be at floor level
+        for row in 0..5 {
+            for col in 0..cols {
+                let z = material_hm.get(row, col);
+                assert!(
+                    (z - 7.0).abs() < 0.01,
+                    "Thin cell ({},{}) should be at floor 7.0, got {:.2}",
+                    row, col, z
+                );
+            }
+        }
+
+        // Thick cells should be unchanged
+        for row in 5..rows {
+            for col in 0..cols {
+                let z = material_hm.get(row, col);
+                assert!(
+                    (z - 12.0).abs() < 0.01,
+                    "Thick cell ({},{}) should be unchanged at 12.0, got {:.2}",
+                    row, col, z
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_pre_stamp_no_op_on_flat() {
+        // Flat stock 5mm above surface — no cells should be pre-stamped.
+        let cell_size = 1.0;
+        let rows = 10;
+        let cols = 10;
+        let z_level = 15.0;
+        let stock_to_leave = 0.5;
+        let depth_per_pass = 3.0;
+
+        // Surface at z=0, material at z=20 → thickness = 20 - 15 = 5mm >> threshold
+        let surface_hm = SurfaceHeightmap {
+            z_values: vec![0.0; rows * cols],
+            rows, cols,
+            origin_x: 0.0, origin_y: 0.0,
+            cell_size,
+        };
+        let mut material_hm = Heightmap {
+            cells: vec![20.0; rows * cols],
+            rows, cols,
+            origin_x: 0.0, origin_y: 0.0,
+            cell_size,
+            stock_top_z: 20.0,
+        };
+
+        let stamped = pre_stamp_thin_bands(
+            &mut material_hm, &surface_hm, z_level, stock_to_leave, depth_per_pass, None,
+        );
+
+        assert_eq!(stamped, 0, "Flat stock well above surface should not be pre-stamped");
+    }
+
+    // ── Widening coverage test ──────────────────────────────────────────
+
+    #[test]
+    fn test_widening_covers_stepover() {
+        // Verify that path widening stamps cells at stepover distance.
+        let (mesh, si) = make_flat_mesh();
+        let cutter = flat_cutter();
+        let cell_size = 0.5;
+        let stepover = 2.0;
+
+        let mut material_hm =
+            Heightmap::from_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
+        let surface_hm = SurfaceHeightmap::from_mesh(
+            &mesh, &si, &cutter,
+            material_hm.origin_x, material_hm.origin_y,
+            material_hm.rows, material_hm.cols, cell_size, -10.0,
+        );
+
+        // Simulate a straight horizontal path at y=0, from x=-10 to x=10
+        let z_level = 10.0;
+        let path: Vec<P3> = (0..=40)
+            .map(|i| P3::new(-10.0 + i as f64 * 0.5, 0.0, z_level))
+            .collect();
+
+        // Stamp along the path itself
+        for p in &path {
+            stamp_tool_at(&mut material_hm, &cutter, p.x, p.y, p.z);
+        }
+
+        // Now apply widening with double ring at stepover distance
+        for i in 1..path.len() {
+            let prev = &path[i - 1];
+            let curr = &path[i];
+            let dx = curr.x - prev.x;
+            let dy = curr.y - prev.y;
+            let seg_len = (dx * dx + dy * dy).sqrt();
+            if seg_len < 1e-10 { continue; }
+            let nx = -dy / seg_len;
+            let ny = dx / seg_len;
+            for &mult in &[1.0f64, 2.0] {
+                for &sign in &[1.0f64, -1.0] {
+                    let px = curr.x + sign * mult * stepover * nx;
+                    let py = curr.y + sign * mult * stepover * ny;
+                    let sz = surface_hm.surface_z_at_world(px, py);
+                    if sz != f64::NEG_INFINITY {
+                        let pz = (sz + 0.5).max(z_level);
+                        stamp_tool_at(&mut material_hm, &cutter, px, py, pz);
+                    }
+                }
+            }
+        }
+
+        // Check that cells at y = +/- stepover are cleared (material lowered from 20)
+        for &y_off in &[stepover, -stepover, 2.0 * stepover, -2.0 * stepover] {
+            if let Some((row, col)) = material_hm.world_to_cell(0.0, y_off) {
+                let z = material_hm.get(row, col);
+                assert!(
+                    z < 20.0 - 0.1,
+                    "Cell at y={:.1} should be widened (z lowered from 20), got z={:.2}",
+                    y_off, z
+                );
+            }
+        }
+    }
+
+    // ── Low-yield bail test ─────────────────────────────────────────────
+
+    #[test]
+    fn test_low_yield_bail() {
+        // Thin-film material (just above floor) — adaptive should bail quickly.
+        let (mesh, si) = make_flat_mesh();
+        let cutter = flat_cutter();
+
+        // Stock barely above surface: 0.2mm of material (below thin_threshold)
+        // Pre-stamp should eliminate this, so adaptive should do minimal work.
+        let params = Adaptive3dParams {
+            stock_top_z: 0.2, // Only 0.2mm above flat mesh at z=0
+            depth_per_pass: 3.0,
+            stock_to_leave: 0.0,
+            tolerance: 0.5,
+            ..default_params()
+        };
+
+        let segments = adaptive_3d_segments(&mesh, &si, &cutter, &params);
+
+        // Count actual cutting passes
+        let cut_count = segments.iter()
+            .filter(|s| matches!(s, Adaptive3dSegment::Cut(_)))
+            .count();
+
+        // With thin-film material, should bail quickly (few or no passes)
+        assert!(
+            cut_count < 20,
+            "Thin film should produce few cutting passes, got {}",
+            cut_count
         );
     }
 }
