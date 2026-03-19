@@ -24,9 +24,24 @@ use crate::toolpath::Toolpath;
 use crate::waterline::waterline_contours;
 
 use rayon::prelude::*;
+use std::collections::VecDeque;
 use std::f64::consts::{PI, TAU};
 use std::time::Instant;
 use tracing::{info, debug};
+
+/// Region ordering strategy for 3D adaptive clearing.
+///
+/// `Global` clears all areas at each Z level before moving to the next (default).
+/// `ByArea` detects connected material regions via flood fill and clears each
+/// region fully (all Z levels) before moving to the next, reducing tool travel.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RegionOrdering {
+    /// Clear all areas at each Z level globally (default, backward compat).
+    #[default]
+    Global,
+    /// Detect connected pockets and clear each fully before moving to the next.
+    ByArea,
+}
 
 /// Entry strategy for 3D adaptive (replaces vertical plunge).
 #[derive(Debug, Clone, Copy, Default)]
@@ -60,6 +75,8 @@ pub struct Adaptive3dParams {
     pub detect_flat_areas: bool,
     /// Maximum distance to stay down between passes (default: tool_radius * 6).
     pub max_stay_down_dist: Option<f64>,
+    /// Region ordering strategy (default: Global for backward compat).
+    pub region_ordering: RegionOrdering,
 }
 
 // ── Surface heightmap ─────────────────────────────────────────────────
@@ -162,6 +179,134 @@ fn local_material_sum(hm: &Heightmap, cx: f64, cy: f64, radius: f64) -> f64 {
     sum
 }
 
+// ── Region detection ──────────────────────────────────────────────────
+
+/// A connected region of material detected by flood fill on the heightmap.
+struct MaterialRegion {
+    row_min: usize,
+    row_max: usize,
+    col_min: usize,
+    col_max: usize,
+    /// World-space bounding box (expanded by tool_radius for direction search).
+    world_x_min: f64,
+    world_x_max: f64,
+    world_y_min: f64,
+    world_y_max: f64,
+    cell_count: usize,
+    surface_z_min: f64,
+    surface_z_max: f64,
+}
+
+/// Detect connected material regions via 8-connected BFS flood fill.
+///
+/// A cell "has material" if `material_z > surface_z + stock_to_leave + 0.01`.
+/// Regions with fewer than `min_cells` (default 4) are filtered out.
+/// Returns regions sorted by cell_count descending (largest first).
+fn detect_material_regions(
+    material_hm: &Heightmap,
+    surface_hm: &SurfaceHeightmap,
+    stock_to_leave: f64,
+    tool_radius: f64,
+) -> Vec<MaterialRegion> {
+    let rows = material_hm.rows;
+    let cols = material_hm.cols;
+    let min_cells = 4usize;
+
+    // Label grid: 0 = unlabeled, usize::MAX = no-material
+    let mut labels = vec![0usize; rows * cols];
+
+    // Mark cells that have no material
+    for row in 0..rows {
+        for col in 0..cols {
+            let mat_z = material_hm.get(row, col);
+            let surf_z = surface_hm.surface_z_at(row, col);
+            if mat_z <= surf_z + stock_to_leave + 0.01 {
+                labels[row * cols + col] = usize::MAX;
+            }
+        }
+    }
+
+    let mut regions = Vec::new();
+    let mut region_id = 1usize;
+    let mut queue = VecDeque::new();
+
+    for start_row in 0..rows {
+        for start_col in 0..cols {
+            let idx = start_row * cols + start_col;
+            if labels[idx] != 0 {
+                continue; // Already labeled or no material
+            }
+
+            // BFS flood fill for this region
+            let mut rmin = start_row;
+            let mut rmax = start_row;
+            let mut cmin = start_col;
+            let mut cmax = start_col;
+            let mut count = 0usize;
+            let mut sz_min = f64::INFINITY;
+            let mut sz_max = f64::NEG_INFINITY;
+
+            labels[idx] = region_id;
+            queue.push_back((start_row, start_col));
+
+            while let Some((r, c)) = queue.pop_front() {
+                count += 1;
+                rmin = rmin.min(r);
+                rmax = rmax.max(r);
+                cmin = cmin.min(c);
+                cmax = cmax.max(c);
+                let sz = surface_hm.surface_z_at(r, c);
+                sz_min = sz_min.min(sz);
+                sz_max = sz_max.max(sz);
+
+                // 8-connected neighbors
+                for dr in [-1i32, 0, 1] {
+                    for dc in [-1i32, 0, 1] {
+                        if dr == 0 && dc == 0 {
+                            continue;
+                        }
+                        let nr = r as i32 + dr;
+                        let nc = c as i32 + dc;
+                        if nr < 0 || nr >= rows as i32 || nc < 0 || nc >= cols as i32 {
+                            continue;
+                        }
+                        let nr = nr as usize;
+                        let nc = nc as usize;
+                        let ni = nr * cols + nc;
+                        if labels[ni] == 0 {
+                            labels[ni] = region_id;
+                            queue.push_back((nr, nc));
+                        }
+                    }
+                }
+            }
+
+            if count >= min_cells {
+                let cs = material_hm.cell_size;
+                regions.push(MaterialRegion {
+                    row_min: rmin,
+                    row_max: rmax,
+                    col_min: cmin,
+                    col_max: cmax,
+                    world_x_min: material_hm.origin_x + cmin as f64 * cs - tool_radius,
+                    world_x_max: material_hm.origin_x + cmax as f64 * cs + tool_radius,
+                    world_y_min: material_hm.origin_y + rmin as f64 * cs - tool_radius,
+                    world_y_max: material_hm.origin_y + rmax as f64 * cs + tool_radius,
+                    cell_count: count,
+                    surface_z_min: sz_min,
+                    surface_z_max: sz_max,
+                });
+            }
+
+            region_id += 1;
+        }
+    }
+
+    // Sort largest first
+    regions.sort_by(|a, b| b.cell_count.cmp(&a.cell_count));
+    regions
+}
+
 // ── 3D engagement ─────────────────────────────────────────────────────
 
 /// Compute 3D engagement at position (cx, cy) for a given z_level.
@@ -249,6 +394,38 @@ fn material_remaining_at_level(
             total += 1;
             if material_hm.cells[i] > floor + 0.01 {
                 above += 1;
+            }
+        }
+    }
+    if total == 0 {
+        0.0
+    } else {
+        above as f64 / total as f64
+    }
+}
+
+/// Bbox-restricted version of `material_remaining_at_level()`.
+/// Only scans cells within the region's row/col bounding box.
+fn material_remaining_in_region(
+    material_hm: &Heightmap,
+    surface_hm: &SurfaceHeightmap,
+    z_level: f64,
+    stock_to_leave: f64,
+    region: &MaterialRegion,
+) -> f64 {
+    let mut above = 0u64;
+    let mut total = 0u64;
+    for row in region.row_min..=region.row_max.min(material_hm.rows - 1) {
+        let base = row * material_hm.cols;
+        for col in region.col_min..=region.col_max.min(material_hm.cols - 1) {
+            let i = base + col;
+            let surf_z = surface_hm.z_values[i];
+            let floor = (surf_z + stock_to_leave).max(z_level);
+            if surf_z + stock_to_leave <= z_level + 0.01 {
+                total += 1;
+                if material_hm.cells[i] > floor + 0.01 {
+                    above += 1;
+                }
             }
         }
     }
@@ -424,6 +601,9 @@ fn search_direction_3d(
 
 /// Find the next entry point: a cell where material remains above the
 /// effective floor at z_level.
+///
+/// When `scan_bbox` is `Some((row_min, row_max, col_min, col_max))`, only
+/// cells within that bounding box are considered.
 fn find_entry_3d(
     material_hm: &Heightmap,
     surface_hm: &SurfaceHeightmap,
@@ -435,8 +615,18 @@ fn find_entry_3d(
     last_pos: Option<P2>,
     pass_endpoints: &[P2],
     tool_radius: f64,
+    scan_bbox: Option<(usize, usize, usize, usize)>,
 ) -> Option<(P2, f64)> {
     let min_endpoint_dist_sq = (tool_radius * 3.0) * (tool_radius * 3.0);
+
+    let (row_lo, row_hi, col_lo, col_hi) = scan_bbox.unwrap_or((
+        0,
+        material_hm.rows.saturating_sub(1),
+        0,
+        material_hm.cols.saturating_sub(1),
+    ));
+    let row_hi = row_hi.min(material_hm.rows.saturating_sub(1));
+    let col_hi = col_hi.min(material_hm.cols.saturating_sub(1));
 
     // Reference position for nearest search
     let ref_pos = last_pos.unwrap_or_else(|| {
@@ -449,8 +639,8 @@ fn find_entry_3d(
 
     let mut best: Option<(f64, usize, usize)> = None; // (dist_sq, row, col)
 
-    for row in 0..material_hm.rows {
-        for col in 0..material_hm.cols {
+    for row in row_lo..=row_hi {
+        for col in col_lo..=col_hi {
             let mat_z = material_hm.get(row, col);
             let surf_z = surface_hm.surface_z_at(row, col);
             let floor = (surf_z + stock_to_leave).max(z_level);
@@ -484,8 +674,8 @@ fn find_entry_3d(
 
     // If spreading excluded everything, retry without spreading
     if best.is_none() {
-        for row in 0..material_hm.rows {
-            for col in 0..material_hm.cols {
+        for row in row_lo..=row_hi {
+            for col in col_lo..=col_hi {
                 let mat_z = material_hm.get(row, col);
                 let surf_z = surface_hm.surface_z_at(row, col);
                 let floor = (surf_z + stock_to_leave).max(z_level);
@@ -683,6 +873,305 @@ enum Adaptive3dSegment {
     Link(P3),
 }
 
+// ── Z-level clearing helper ──────────────────────────────────────────
+
+/// Parameters for a single Z-level clearing pass, extracted to avoid
+/// threading dozens of locals through the helper.
+struct ClearZLevelContext<'a> {
+    mesh: &'a TriangleMesh,
+    index: &'a SpatialIndex,
+    cutter: &'a dyn MillingCutter,
+    tool_radius: f64,
+    stock_to_leave: f64,
+    depth_per_pass: f64,
+    target_frac: f64,
+    step_len: f64,
+    max_link_dist: f64,
+    bbox_x_min: f64,
+    bbox_x_max: f64,
+    bbox_y_min: f64,
+    bbox_y_max: f64,
+}
+
+/// Clear material at a single Z level, optionally restricted to a region.
+///
+/// When `region` is `Some`, entry point search and material-remaining checks
+/// are restricted to the region's bounding box, and direction search bbox
+/// is clamped to the region's world extent.
+#[allow(clippy::too_many_arguments)]
+fn clear_z_level(
+    ctx: &ClearZLevelContext<'_>,
+    material_hm: &mut Heightmap,
+    surface_hm: &SurfaceHeightmap,
+    z_level: f64,
+    segments: &mut Vec<Adaptive3dSegment>,
+    last_pos: &mut Option<P3>,
+    region: Option<&MaterialRegion>,
+) {
+    let tool_radius = ctx.tool_radius;
+
+    let scan_bbox = region.map(|r| (r.row_min, r.row_max, r.col_min, r.col_max));
+
+    let dir_x_min = region.map_or(ctx.bbox_x_min, |r| r.world_x_min.max(ctx.bbox_x_min));
+    let dir_x_max = region.map_or(ctx.bbox_x_max, |r| r.world_x_max.min(ctx.bbox_x_max));
+    let dir_y_min = region.map_or(ctx.bbox_y_min, |r| r.world_y_min.max(ctx.bbox_y_min));
+    let dir_y_max = region.map_or(ctx.bbox_y_max, |r| r.world_y_max.min(ctx.bbox_y_max));
+
+    let remaining = if let Some(r) = region {
+        material_remaining_in_region(material_hm, surface_hm, z_level, ctx.stock_to_leave, r)
+    } else {
+        material_remaining_at_level(material_hm, surface_hm, z_level, ctx.stock_to_leave)
+    };
+    if remaining < 0.005 {
+        return;
+    }
+
+    let t_level = Instant::now();
+    let mut pass_endpoints: Vec<P2> = Vec::new();
+    let max_passes = 500;
+    let mut pass_count = 0;
+    let mut short_pass_streak = 0u32;
+    let min_productive_steps = 8;
+    let warmup_passes = 50;
+    let mut total_steps = 0u64;
+    let mut long_passes = 0u32;
+    let mut short_passes = 0u32;
+    let mut skipped_preflight = 0u32;
+
+    loop {
+        pass_count += 1;
+        if pass_count > max_passes {
+            break;
+        }
+        if pass_count > warmup_passes && short_pass_streak > 15 {
+            debug!(short_passes = short_pass_streak, z = z_level, pass = pass_count, "Bailing from Z level");
+            break;
+        }
+        if pass_count % 20 == 1 {
+            let rem = if let Some(r) = region {
+                material_remaining_in_region(material_hm, surface_hm, z_level, ctx.stock_to_leave, r)
+            } else {
+                material_remaining_at_level(material_hm, surface_hm, z_level, ctx.stock_to_leave)
+            };
+            if rem < 0.01 {
+                break;
+            }
+        }
+
+        let last_2d = last_pos.map(|p| P2::new(p.x, p.y));
+        let (entry_xy, entry_z) = match find_entry_3d(
+            material_hm, surface_hm,
+            ctx.mesh, ctx.index, ctx.cutter,
+            z_level, ctx.stock_to_leave,
+            last_2d, &pass_endpoints, tool_radius,
+            scan_bbox,
+        ) {
+            Some(e) => e,
+            None => break,
+        };
+
+        let entry_3d = P3::new(entry_xy.x, entry_xy.y, entry_z);
+
+        let preflight_dir = search_direction_3d(
+            material_hm, surface_hm,
+            entry_xy.x, entry_xy.y, tool_radius, ctx.step_len,
+            ctx.target_frac, 0.0, z_level, ctx.stock_to_leave,
+            dir_x_min, dir_x_max, dir_y_min, dir_y_max,
+        );
+        if preflight_dir.is_none() {
+            stamp_tool_at(material_hm, ctx.cutter, entry_xy.x, entry_xy.y, entry_z);
+            for a in 0..8 {
+                let angle = (a as f64 / 8.0) * TAU;
+                let px = entry_xy.x + tool_radius * 0.5 * angle.cos();
+                let py = entry_xy.y + tool_radius * 0.5 * angle.sin();
+                stamp_tool_at(material_hm, ctx.cutter, px, py, entry_z);
+            }
+            pass_endpoints.push(entry_xy);
+            short_pass_streak += 1;
+            skipped_preflight += 1;
+            continue;
+        }
+
+        if let Some(last) = *last_pos {
+            let dx = entry_3d.x - last.x;
+            let dy = entry_3d.y - last.y;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist < ctx.max_link_dist
+                && is_clear_path_3d(
+                    material_hm, surface_hm, last, entry_3d,
+                    z_level, ctx.stock_to_leave,
+                )
+            {
+                segments.push(Adaptive3dSegment::Link(entry_3d));
+            } else {
+                segments.push(Adaptive3dSegment::Rapid(entry_3d));
+            }
+        } else {
+            segments.push(Adaptive3dSegment::Rapid(entry_3d));
+        }
+
+        let mut path = vec![entry_3d];
+        let mut cx = entry_xy.x;
+        let mut cy = entry_xy.y;
+        let mut cz = entry_z;
+
+        let mut prev_angle = if let Some(last) = *last_pos {
+            (entry_xy.y - last.y).atan2(entry_xy.x - last.x)
+        } else {
+            0.0
+        };
+
+        stamp_tool_at(material_hm, ctx.cutter, cx, cy, cz);
+
+        const SMOOTH_BUF_LEN: usize = 3;
+        let mut angle_buf: Vec<f64> = Vec::with_capacity(SMOOTH_BUF_LEN);
+
+        let max_steps = 5000;
+        let mut idle_count = 0;
+
+        for _ in 0..max_steps {
+            let local_before = local_material_sum(material_hm, cx, cy, tool_radius);
+
+            let smoothed = if angle_buf.len() >= 2 {
+                average_angles(&angle_buf)
+            } else {
+                prev_angle
+            };
+
+            let (angle, z_next) = match search_direction_3d(
+                material_hm, surface_hm,
+                cx, cy, tool_radius, ctx.step_len,
+                ctx.target_frac, smoothed, z_level, ctx.stock_to_leave,
+                dir_x_min, dir_x_max, dir_y_min, dir_y_max,
+            ) {
+                Some(r) => r,
+                None => break,
+            };
+
+            cx += ctx.step_len * angle.cos();
+            cy += ctx.step_len * angle.sin();
+            let max_z_step = ctx.depth_per_pass;
+            cz = z_next.max(cz - max_z_step);
+            path.push(P3::new(cx, cy, cz));
+
+            stamp_tool_at(material_hm, ctx.cutter, cx, cy, cz);
+
+            if angle_buf.len() >= SMOOTH_BUF_LEN {
+                angle_buf.remove(0);
+            }
+            angle_buf.push(angle);
+
+            let local_after = local_material_sum(material_hm, cx, cy, tool_radius);
+            let local_delta = (local_before - local_after).abs();
+            let engagement_here = compute_engagement_3d(
+                material_hm, surface_hm, cx, cy, tool_radius,
+                z_level, ctx.stock_to_leave,
+            );
+            if local_delta < 0.001 && engagement_here < 0.05 {
+                idle_count += 1;
+                if idle_count > 20 {
+                    break;
+                }
+            } else {
+                idle_count = 0;
+            }
+
+            prev_angle = angle;
+        }
+
+        let was_idle = idle_count > 20;
+
+        let pass_steps = path.len();
+        if pass_steps >= 2 {
+            let endpoint = *path.last().expect("path is non-empty after loop");
+            *last_pos = Some(endpoint);
+            pass_endpoints.push(P2::new(endpoint.x, endpoint.y));
+            segments.push(Adaptive3dSegment::Cut(path));
+        } else {
+            *last_pos = Some(entry_3d);
+            pass_endpoints.push(entry_xy);
+        }
+
+        total_steps += pass_steps as u64;
+        if pass_steps < min_productive_steps {
+            short_passes += 1;
+            short_pass_streak += 1;
+        } else {
+            long_passes += 1;
+            short_pass_streak = 0;
+        }
+
+        if was_idle {
+            stamp_tool_at(material_hm, ctx.cutter, cx, cy, cz);
+            for a in 0..8 {
+                let angle = (a as f64 / 8.0) * TAU;
+                let px = cx + tool_radius * angle.cos();
+                let py = cy + tool_radius * angle.sin();
+                let surf_z = surface_hm.surface_z_at_world(px, py);
+                let pz = if surf_z == f64::NEG_INFINITY { cz } else { (surf_z + ctx.stock_to_leave).max(z_level) };
+                stamp_tool_at(material_hm, ctx.cutter, px, py, pz);
+            }
+        }
+    }
+
+    let level_ms = t_level.elapsed().as_millis() as u64;
+    debug!(
+        passes = pass_count, long = long_passes, short = short_passes,
+        skipped = skipped_preflight, total_steps = total_steps,
+        z = z_level, elapsed_ms = level_ms,
+        "Completed Z level"
+    );
+}
+
+/// Run waterline boundary cleanup at a given Z level.
+fn waterline_cleanup(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    material_hm: &mut Heightmap,
+    z_level: f64,
+    tool_radius: f64,
+    cell_size: f64,
+    segments: &mut Vec<Adaptive3dSegment>,
+    last_pos: &mut Option<P3>,
+) {
+    let t_waterline = Instant::now();
+    let sampling = tool_radius.max(cell_size * 4.0);
+    let contours = waterline_contours(mesh, index, cutter, z_level, sampling);
+    for contour in &contours {
+        if contour.len() < 3 {
+            continue;
+        }
+        segments.push(Adaptive3dSegment::Rapid(contour[0]));
+
+        let mut cleanup_path = vec![contour[0]];
+        for i in 0..contour.len() {
+            let a = contour[i];
+            let b = contour[(i + 1) % contour.len()];
+            let dx = b.x - a.x;
+            let dy = b.y - a.y;
+            let len = (dx * dx + dy * dy).sqrt();
+            let n_steps = (len / (cell_size * 1.5)).ceil() as usize;
+            for j in 1..=n_steps {
+                let t = j as f64 / n_steps.max(1) as f64;
+                let x = a.x + t * dx;
+                let y = a.y + t * dy;
+                let z = a.z + t * (b.z - a.z);
+                stamp_tool_at(material_hm, cutter, x, y, z);
+                cleanup_path.push(P3::new(x, y, z));
+            }
+        }
+        cleanup_path.push(contour[0]);
+        stamp_tool_at(material_hm, cutter, contour[0].x, contour[0].y, contour[0].z);
+        segments.push(Adaptive3dSegment::Cut(cleanup_path));
+        *last_pos = Some(contour[0]);
+    }
+    if !contours.is_empty() {
+        debug!(contours = contours.len(), z = z_level,
+            elapsed_ms = t_waterline.elapsed().as_millis() as u64, "Waterline cleanup");
+    }
+}
+
 // ── Main loop ─────────────────────────────────────────────────────────
 
 fn adaptive_3d_segments(
@@ -832,293 +1321,89 @@ fn adaptive_3d_segments(
     let step_len = cell_size * 1.5;
     let max_link_dist = params.max_stay_down_dist.unwrap_or(tool_radius * 6.0);
 
-    // Expanded bbox for bounds checking in direction search
     let bbox_x_min = origin_x + tool_radius;
     let bbox_x_max = extent_x - tool_radius;
     let bbox_y_min = origin_y + tool_radius;
     let bbox_y_max = extent_y - tool_radius;
 
+    let ctx = ClearZLevelContext {
+        mesh,
+        index,
+        cutter,
+        tool_radius,
+        stock_to_leave: params.stock_to_leave,
+        depth_per_pass: params.depth_per_pass,
+        target_frac,
+        step_len,
+        max_link_dist,
+        bbox_x_min,
+        bbox_x_max,
+        bbox_y_min,
+        bbox_y_max,
+    };
+
     let mut segments = Vec::new();
     let mut last_pos: Option<P3> = None;
 
-    for (level_idx, &z_level) in z_levels.iter().enumerate() {
-        let remaining = material_remaining_at_level(&material_hm, &surface_hm, z_level, params.stock_to_leave);
-        if remaining < 0.005 {
-            debug!(level = level_idx, z = z_level, "Skipping level, no material");
-            continue;
-        }
-        debug!(level = level_idx, z = z_level, remaining_pct = remaining * 100.0, "Starting Z level");
-        let t_level = Instant::now();
-
-        let mut pass_endpoints: Vec<P2> = Vec::new();
-        let max_passes = 500;
-        let mut pass_count = 0;
-        let mut short_pass_streak = 0u32; // Consecutive short passes
-        let min_productive_steps = 8; // Pass shorter than this is "unproductive"
-        let warmup_passes = 50; // Don't bail during warmup
-
-        loop {
-            pass_count += 1;
-            if pass_count > max_passes {
-                break;
-            }
-            // After warmup, bail if too many consecutive short passes
-            // (tool is circling narrow steep features unproductively)
-            if pass_count > warmup_passes && short_pass_streak > 15 {
-                debug!(short_passes = short_pass_streak, z = z_level, pass = pass_count, "Bailing from Z level");
-                break;
-            }
-            // Check global material remaining periodically (expensive O(cells) scan)
-            if pass_count % 20 == 1 {
-                let rem = material_remaining_at_level(&material_hm, &surface_hm, z_level, params.stock_to_leave);
-                if rem < 0.01 {
-                    break;
-                }
-            }
-
-            // Find entry point
-            let last_2d = last_pos.map(|p| P2::new(p.x, p.y));
-            let (entry_xy, entry_z) = match find_entry_3d(
-                &material_hm,
-                &surface_hm,
-                mesh,
-                index,
-                cutter,
-                z_level,
-                params.stock_to_leave,
-                last_2d,
-                &pass_endpoints,
-                tool_radius,
-            ) {
-                Some(e) => e,
-                None => break,
-            };
-
-            let entry_3d = P3::new(entry_xy.x, entry_xy.y, entry_z);
-
-            // Pre-flight check: test if there's any viable cutting direction
-            // from this entry. Entries with material but no viable direction
-            // (thin slivers, isolated cells) produce 1-step passes that waste time.
-            let preflight_dir = search_direction_3d(
-                &material_hm, &surface_hm,
-                entry_xy.x, entry_xy.y, tool_radius, step_len,
-                target_frac, 0.0, z_level, params.stock_to_leave,
-                bbox_x_min, bbox_x_max, bbox_y_min, bbox_y_max,
+    match params.region_ordering {
+        RegionOrdering::ByArea => {
+            let regions = detect_material_regions(
+                &material_hm, &surface_hm, params.stock_to_leave, tool_radius,
             );
-            if preflight_dir.is_none() {
-                // No viable direction — force-clear this spot and move on
-                stamp_tool_at(&mut material_hm, cutter, entry_xy.x, entry_xy.y, entry_z);
-                for a in 0..8 {
-                    let angle = (a as f64 / 8.0) * TAU;
-                    let px = entry_xy.x + tool_radius * 0.5 * angle.cos();
-                    let py = entry_xy.y + tool_radius * 0.5 * angle.sin();
-                    stamp_tool_at(&mut material_hm, cutter, px, py, entry_z);
-                }
-                pass_endpoints.push(entry_xy);
-                short_pass_streak += 1;
-                continue;
-            }
+            info!(regions = regions.len(), "Detected material regions for by-area ordering");
 
-            // Link or retract to entry
-            if let Some(last) = last_pos {
-                let dx = entry_3d.x - last.x;
-                let dy = entry_3d.y - last.y;
-                let dist = (dx * dx + dy * dy).sqrt();
-                if dist < max_link_dist
-                    && is_clear_path_3d(
-                        &material_hm,
-                        &surface_hm,
-                        last,
-                        entry_3d,
-                        z_level,
-                        params.stock_to_leave,
-                    )
-                {
-                    segments.push(Adaptive3dSegment::Link(entry_3d));
-                } else {
-                    segments.push(Adaptive3dSegment::Rapid(entry_3d));
-                }
-            } else {
-                segments.push(Adaptive3dSegment::Rapid(entry_3d));
-            }
-
-            // Walk the adaptive path
-            let mut path = vec![entry_3d];
-            let mut cx = entry_xy.x;
-            let mut cy = entry_xy.y;
-            let mut cz = entry_z;
-
-            // Initial direction
-            let mut prev_angle = if let Some(last) = last_pos {
-                (entry_xy.y - last.y).atan2(entry_xy.x - last.x)
-            } else {
-                0.0
-            };
-
-            // Stamp at entry
-            stamp_tool_at(&mut material_hm, cutter, cx, cy, cz);
-
-            // Direction smoothing buffer
-            const SMOOTH_BUF_LEN: usize = 3;
-            let mut angle_buf: Vec<f64> = Vec::with_capacity(SMOOTH_BUF_LEN);
-
-            let max_steps = 5000;
-            let mut idle_count = 0;
-
-            for _ in 0..max_steps {
-                // Snapshot local cells around tool for cheap idle detection
-                let local_before = local_material_sum(&material_hm, cx, cy, tool_radius);
-
-                // Smoothed direction
-                let smoothed = if angle_buf.len() >= 2 {
-                    average_angles(&angle_buf)
-                } else {
-                    prev_angle
-                };
-
-                // Search for direction
-                let (angle, z_next) = match search_direction_3d(
-                    &material_hm,
-                    &surface_hm,
-                    cx,
-                    cy,
-                    tool_radius,
-                    step_len,
-                    target_frac,
-                    smoothed,
-                    z_level,
-                    params.stock_to_leave,
-                    bbox_x_min,
-                    bbox_x_max,
-                    bbox_y_min,
-                    bbox_y_max,
-                ) {
-                    Some(r) => r,
-                    None => break,
-                };
-
-                // Move
-                cx += step_len * angle.cos();
-                cy += step_len * angle.sin();
-                // Z-rate clamping: limit max descent per step to depth_per_pass.
-                // Prevents tool from plunging freely on steep slopes.
-                // Upward movement is always unrestricted (safe).
-                let max_z_step = params.depth_per_pass;
-                cz = z_next.max(cz - max_z_step);
-                path.push(P3::new(cx, cy, cz));
-
-                // Stamp
-                stamp_tool_at(&mut material_hm, cutter, cx, cy, cz);
-
-                // Update direction buffer
-                if angle_buf.len() >= SMOOTH_BUF_LEN {
-                    angle_buf.remove(0);
-                }
-                angle_buf.push(angle);
-
-                // Idle detection: require BOTH no local material change AND
-                // low engagement. The engagement threshold must be high enough
-                // that the tool doesn't idle-break at the boundary of a cleared
-                // ring when there's still material just inward (the direction
-                // search will steer inward if given the chance).
-                let local_after = local_material_sum(&material_hm, cx, cy, tool_radius);
-                let local_delta = (local_before - local_after).abs();
-                let engagement_here = compute_engagement_3d(
-                    &material_hm, &surface_hm, cx, cy, tool_radius,
-                    z_level, params.stock_to_leave,
+            for (region_idx, region) in regions.iter().enumerate() {
+                debug!(
+                    region = region_idx, cells = region.cell_count,
+                    z_min = format!("{:.1}", region.surface_z_min),
+                    z_max = format!("{:.1}", region.surface_z_max),
+                    "Processing region"
                 );
-                if local_delta < 0.001 && engagement_here < 0.05 {
-                    idle_count += 1;
-                    if idle_count > 20 {
-                        break;
-                    }
-                } else {
-                    idle_count = 0;
+
+                // Filter Z levels relevant to this region's surface Z range
+                let region_z_levels: Vec<f64> = z_levels.iter()
+                    .copied()
+                    .filter(|&z| z >= region.surface_z_min + params.stock_to_leave - 0.01)
+                    .collect();
+
+                for &z_level in &region_z_levels {
+                    clear_z_level(
+                        &ctx,
+                        &mut material_hm, &surface_hm, z_level,
+                        &mut segments, &mut last_pos,
+                        Some(region),
+                    );
                 }
-
-                prev_angle = angle;
             }
 
-            let was_idle = idle_count > 20;
-
-            let pass_steps = path.len();
-            if pass_steps >= 2 {
-                let endpoint = *path.last().expect("path is non-empty after loop");
-                last_pos = Some(endpoint);
-                pass_endpoints.push(P2::new(endpoint.x, endpoint.y));
-                segments.push(Adaptive3dSegment::Cut(path));
-            } else {
-                last_pos = Some(entry_3d);
-                pass_endpoints.push(entry_xy);
-            }
-
-            // Track pass productivity
-            if pass_steps < min_productive_steps {
-                short_pass_streak += 1;
-            } else {
-                short_pass_streak = 0;
-            }
-
-            // Force-clear around endpoint if idle to prevent revisiting
-            if was_idle {
-                stamp_tool_at(&mut material_hm, cutter, cx, cy, cz);
-                // Clear a wider area by stamping in a small circle
-                for a in 0..8 {
-                    let angle = (a as f64 / 8.0) * TAU;
-                    let px = cx + tool_radius * angle.cos();
-                    let py = cy + tool_radius * angle.sin();
-                    let surf_z = surface_hm.surface_z_at_world(px, py);
-                    let pz = if surf_z == f64::NEG_INFINITY { cz } else { (surf_z + params.stock_to_leave).max(z_level) };
-                    stamp_tool_at(&mut material_hm, cutter, px, py, pz);
-                }
+            // Waterline cleanup once at bottom Z
+            if let Some(&z_bottom_level) = z_levels.last() {
+                waterline_cleanup(
+                    mesh, index, cutter,
+                    &mut material_hm, z_bottom_level,
+                    tool_radius, cell_size,
+                    &mut segments, &mut last_pos,
+                );
             }
         }
+        RegionOrdering::Global => {
+            for (level_idx, &z_level) in z_levels.iter().enumerate() {
+                clear_z_level(
+                    &ctx,
+                    &mut material_hm, &surface_hm, z_level,
+                    &mut segments, &mut last_pos,
+                    None,
+                );
 
-        let level_ms = t_level.elapsed().as_millis() as u64;
-        debug!(passes = pass_count, z = z_level, elapsed_ms = level_ms, "Completed Z level");
-
-        // Boundary cleanup: waterline contours only at the final Z level.
-        // Running waterline at every level produces overlapping contours on
-        // gentle slopes (each level traces nearly the same path). The adaptive
-        // passes already clear walls; waterline is only needed at the bottom
-        // to catch any remaining material against steep features.
-        let is_last_level = level_idx == z_levels.len() - 1;
-        if is_last_level {
-            let t_waterline = Instant::now();
-            let sampling = tool_radius.max(cell_size * 4.0);
-            let contours = waterline_contours(mesh, index, cutter, z_level, sampling);
-            for contour in &contours {
-                if contour.len() < 3 {
-                    continue;
+                let is_last_level = level_idx == z_levels.len() - 1;
+                if is_last_level {
+                    waterline_cleanup(
+                        mesh, index, cutter,
+                        &mut material_hm, z_level,
+                        tool_radius, cell_size,
+                        &mut segments, &mut last_pos,
+                    );
                 }
-                segments.push(Adaptive3dSegment::Rapid(contour[0]));
-
-                let mut cleanup_path = vec![contour[0]];
-                for i in 0..contour.len() {
-                    let a = contour[i];
-                    let b = contour[(i + 1) % contour.len()];
-                    let dx = b.x - a.x;
-                    let dy = b.y - a.y;
-                    let len = (dx * dx + dy * dy).sqrt();
-                    let n_steps = (len / (cell_size * 1.5)).ceil() as usize;
-                    for j in 1..=n_steps {
-                        let t = j as f64 / n_steps.max(1) as f64;
-                        let x = a.x + t * dx;
-                        let y = a.y + t * dy;
-                        let z = a.z + t * (b.z - a.z);
-                        stamp_tool_at(&mut material_hm, cutter, x, y, z);
-                        cleanup_path.push(P3::new(x, y, z));
-                    }
-                }
-                // Close loop
-                cleanup_path.push(contour[0]);
-                stamp_tool_at(&mut material_hm, cutter, contour[0].x, contour[0].y, contour[0].z);
-                segments.push(Adaptive3dSegment::Cut(cleanup_path));
-                last_pos = Some(contour[0]);
-            }
-            if !contours.is_empty() {
-                debug!(contours = contours.len(), z = z_level,
-                    elapsed_ms = t_waterline.elapsed().as_millis() as u64, "Waterline cleanup");
             }
         }
     }
@@ -1234,6 +1519,7 @@ mod tests {
             fine_stepdown: None,
             detect_flat_areas: false,
             max_stay_down_dist: None,
+            region_ordering: RegionOrdering::Global,
         }
     }
 
@@ -1452,7 +1738,7 @@ mod tests {
 
         let result = find_entry_3d(
             &material_hm, &surface_hm, &mesh, &si, &cutter,
-            10.0, 0.5, None, &[], 3.175,
+            10.0, 0.5, None, &[], 3.175, None,
         );
         assert!(result.is_some(), "Should find entry with full material");
     }
@@ -1792,6 +2078,285 @@ mod tests {
             found_shelf,
             "Should detect shelf near z=10.5, found levels: {:?}",
             flat_levels
+        );
+    }
+
+    // ── Region detection tests ───────────────────────────────────────────
+
+    #[test]
+    fn test_detect_regions_single_block() {
+        // Full material → 1 region covering entire grid
+        let (mesh, si) = make_flat_mesh();
+        let cutter = flat_cutter();
+        let cell_size = 2.0;
+
+        let material_hm =
+            Heightmap::from_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
+        let surface_hm = SurfaceHeightmap::from_mesh(
+            &mesh, &si, &cutter,
+            material_hm.origin_x, material_hm.origin_y,
+            material_hm.rows, material_hm.cols, cell_size, -10.0,
+        );
+
+        let regions = detect_material_regions(&material_hm, &surface_hm, 0.5, 3.175);
+        assert!(
+            !regions.is_empty(),
+            "Full material should produce at least 1 region"
+        );
+        // Largest region should cover most of the grid
+        let total_cells = material_hm.rows * material_hm.cols;
+        assert!(
+            regions[0].cell_count > total_cells / 2,
+            "Largest region should cover most cells: {} / {}",
+            regions[0].cell_count, total_cells
+        );
+    }
+
+    #[test]
+    fn test_detect_regions_two_islands() {
+        // Two separated blocks → 2 regions, sorted by area
+        let cell_size = 1.0;
+        let material_hm = Heightmap::from_stock(0.0, 0.0, 30.0, 10.0, 20.0, cell_size);
+        let rows = material_hm.rows;
+        let cols = material_hm.cols;
+
+        // Surface at z=0 everywhere
+        let surface_hm = SurfaceHeightmap {
+            z_values: vec![0.0; rows * cols],
+            rows, cols,
+            origin_x: material_hm.origin_x,
+            origin_y: material_hm.origin_y,
+            cell_size,
+        };
+
+        // Create two islands by clearing a gap in the middle
+        let mut hm = material_hm;
+        for row in 0..rows {
+            for col in 0..cols {
+                let (x, _y) = hm.cell_to_world(row, col);
+                if x >= 13.0 && x <= 17.0 {
+                    // Clear the gap
+                    let i = row * cols + col;
+                    hm.cells[i] = 0.0;
+                }
+            }
+        }
+
+        let regions = detect_material_regions(&hm, &surface_hm, 0.5, 3.175);
+        assert!(
+            regions.len() >= 2,
+            "Should detect at least 2 separate regions, got {}",
+            regions.len()
+        );
+        // Sorted by area descending
+        assert!(
+            regions[0].cell_count >= regions[1].cell_count,
+            "Regions should be sorted by area descending"
+        );
+    }
+
+    #[test]
+    fn test_detect_regions_diagonal_connected() {
+        // Diagonal-touching blocks → 1 region (8-connected)
+        let cell_size = 1.0;
+        let rows = 10;
+        let cols = 10;
+
+        // Surface at z=0, material at z=20 only on diagonal cells
+        let mut mat_cells = vec![0.0f64; rows * cols];
+        for i in 0..rows.min(cols) {
+            mat_cells[i * cols + i] = 20.0;
+        }
+
+        let hm = Heightmap {
+            cells: mat_cells,
+            rows, cols,
+            origin_x: 0.0, origin_y: 0.0,
+            cell_size,
+            stock_top_z: 20.0,
+        };
+        let surface_hm = SurfaceHeightmap {
+            z_values: vec![0.0; rows * cols],
+            rows, cols,
+            origin_x: 0.0, origin_y: 0.0,
+            cell_size,
+        };
+
+        let regions = detect_material_regions(&hm, &surface_hm, 0.5, 3.175);
+        assert_eq!(
+            regions.len(), 1,
+            "Diagonal cells should form 1 region with 8-connectivity, got {}",
+            regions.len()
+        );
+    }
+
+    #[test]
+    fn test_detect_regions_small_filtered() {
+        // Isolated cells (< 4) should be filtered out
+        let cell_size = 1.0;
+        let rows = 10;
+        let cols = 10;
+
+        // Only 2 adjacent cells have material
+        let mut mat_cells = vec![0.0f64; rows * cols];
+        mat_cells[0] = 20.0;
+        mat_cells[1] = 20.0;
+
+        let hm = Heightmap {
+            cells: mat_cells,
+            rows, cols,
+            origin_x: 0.0, origin_y: 0.0,
+            cell_size,
+            stock_top_z: 20.0,
+        };
+        let surface_hm = SurfaceHeightmap {
+            z_values: vec![0.0; rows * cols],
+            rows, cols,
+            origin_x: 0.0, origin_y: 0.0,
+            cell_size,
+        };
+
+        let regions = detect_material_regions(&hm, &surface_hm, 0.5, 3.175);
+        assert!(
+            regions.is_empty(),
+            "Tiny regions (< 4 cells) should be filtered out, got {} regions",
+            regions.len()
+        );
+    }
+
+    #[test]
+    fn test_material_remaining_in_region() {
+        let (mesh, si) = make_flat_mesh();
+        let cutter = flat_cutter();
+        let cell_size = 1.0;
+
+        let material_hm =
+            Heightmap::from_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
+        let surface_hm = SurfaceHeightmap::from_mesh(
+            &mesh, &si, &cutter,
+            material_hm.origin_x, material_hm.origin_y,
+            material_hm.rows, material_hm.cols, cell_size, -10.0,
+        );
+
+        // A region covering a quarter of the grid
+        let region = MaterialRegion {
+            row_min: 0,
+            row_max: material_hm.rows / 2,
+            col_min: 0,
+            col_max: material_hm.cols / 2,
+            world_x_min: -30.0,
+            world_x_max: 0.0,
+            world_y_min: -30.0,
+            world_y_max: 0.0,
+            cell_count: (material_hm.rows / 2) * (material_hm.cols / 2),
+            surface_z_min: 0.0,
+            surface_z_max: 0.0,
+        };
+
+        let rem = material_remaining_in_region(
+            &material_hm, &surface_hm, 10.0, 0.5, &region,
+        );
+        assert!(
+            rem > 0.5,
+            "Full material in region should show high remaining, got {:.2}",
+            rem
+        );
+    }
+
+    #[test]
+    fn test_find_entry_3d_with_bbox() {
+        let (mesh, si) = make_flat_mesh();
+        let cutter = flat_cutter();
+        let cell_size = 1.0;
+
+        let material_hm =
+            Heightmap::from_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
+        let surface_hm = SurfaceHeightmap::from_mesh(
+            &mesh, &si, &cutter,
+            material_hm.origin_x, material_hm.origin_y,
+            material_hm.rows, material_hm.cols, cell_size, -10.0,
+        );
+
+        // Restrict scan to a small bbox in the top-right quadrant
+        let half_rows = material_hm.rows / 2;
+        let half_cols = material_hm.cols / 2;
+        let scan_bbox = Some((half_rows, material_hm.rows - 1, half_cols, material_hm.cols - 1));
+
+        let result = find_entry_3d(
+            &material_hm, &surface_hm, &mesh, &si, &cutter,
+            10.0, 0.5, None, &[], 3.175,
+            scan_bbox,
+        );
+        assert!(result.is_some(), "Should find entry within bbox constraint");
+
+        // Verify the entry point is within the bbox
+        let (entry_xy, _) = result.unwrap();
+        let (_, min_world_y) = material_hm.cell_to_world(half_rows, half_cols);
+        let (min_world_x, _) = material_hm.cell_to_world(half_rows, half_cols);
+        assert!(
+            entry_xy.x >= min_world_x - cell_size && entry_xy.y >= min_world_y - cell_size,
+            "Entry ({:.1}, {:.1}) should be within scan bbox (x>={:.1}, y>={:.1})",
+            entry_xy.x, entry_xy.y, min_world_x, min_world_y
+        );
+    }
+
+    // ── Integration: ByArea ordering ─────────────────────────────────────
+
+    #[test]
+    fn test_adaptive_3d_by_area_flat() {
+        let (mesh, si) = make_flat_mesh();
+        let cutter = flat_cutter();
+        let params = Adaptive3dParams {
+            stock_top_z: 5.0,
+            depth_per_pass: 5.0,
+            stock_to_leave: 0.0,
+            tolerance: 0.5,
+            region_ordering: RegionOrdering::ByArea,
+            ..default_params()
+        };
+
+        let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+        assert!(
+            tp.moves.len() > 10,
+            "ByArea on flat mesh should produce toolpath, got {} moves",
+            tp.moves.len()
+        );
+        assert!(
+            tp.total_cutting_distance() > 10.0,
+            "ByArea should have meaningful cutting distance, got {:.1}mm",
+            tp.total_cutting_distance()
+        );
+    }
+
+    #[test]
+    fn test_adaptive_3d_by_area_hemisphere() {
+        let (mesh, si) = make_hemisphere_mesh();
+        let cutter = flat_cutter();
+        let params = Adaptive3dParams {
+            stock_top_z: 25.0,
+            depth_per_pass: 5.0,
+            stock_to_leave: 0.5,
+            tolerance: 0.5,
+            region_ordering: RegionOrdering::ByArea,
+            ..default_params()
+        };
+
+        let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+        assert!(
+            tp.moves.len() > 20,
+            "ByArea on hemisphere should produce multi-level passes, got {} moves",
+            tp.moves.len()
+        );
+
+        // Z values should span a useful range
+        let min_z = tp.moves.iter()
+            .filter(|m| matches!(m.move_type, crate::toolpath::MoveType::Linear { .. }))
+            .map(|m| m.target.z)
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            min_z < 15.0,
+            "ByArea should cut down to lower Z levels, min feed Z = {:.1}",
+            min_z
         );
     }
 }

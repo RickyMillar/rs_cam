@@ -17,7 +17,7 @@ use rs_cam_core::{
     simulation::{Heightmap, simulate_toolpath},
     tool::{BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill},
     toolpath::{Toolpath, raster_toolpath_from_grid},
-    adaptive3d::{Adaptive3dParams, EntryStyle3d, adaptive_3d_toolpath},
+    adaptive3d::{Adaptive3dParams, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath},
     rest::{RestParams, rest_machining_toolpath},
     vcarve::{VCarveParams, vcarve_toolpath},
     waterline::{WaterlineParams, waterline_toolpath},
@@ -578,6 +578,10 @@ enum Commands {
         /// Maximum stay-down distance between passes in mm (default: tool_radius * 6)
         #[arg(long)]
         max_stay_down_dist: Option<f64>,
+
+        /// Region ordering: global (default) or by-area
+        #[arg(long, default_value = "global")]
+        order_by: String,
 
         /// Enable material removal simulation in viewer (requires --view)
         #[arg(long)]
@@ -1449,7 +1453,7 @@ fn main() -> Result<()> {
             input, units, scale, tool, stepover, depth_per_pass,
             stock_top_z, stock_to_leave, feed_rate, plunge_rate, spindle_speed,
             safe_z, tolerance, min_cutting_radius, entry_style, fine_stepdown,
-            detect_flat_areas, max_stay_down_dist, post, output, svg, view,
+            detect_flat_areas, max_stay_down_dist, order_by, post, output, svg, view,
             simulate, sim_resolution,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
@@ -1476,6 +1480,11 @@ fn main() -> Result<()> {
                 _ => EntryStyle3d::Plunge,
             };
 
+            let region_ord = match order_by.to_lowercase().as_str() {
+                "by-area" | "by_area" | "byarea" => RegionOrdering::ByArea,
+                _ => RegionOrdering::Global,
+            };
+
             let params = Adaptive3dParams {
                 tool_radius: cutter.radius(),
                 stepover,
@@ -1491,6 +1500,7 @@ fn main() -> Result<()> {
                 fine_stepdown,
                 detect_flat_areas,
                 max_stay_down_dist,
+                region_ordering: region_ord,
             };
 
             let start = std::time::Instant::now();

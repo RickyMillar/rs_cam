@@ -35,7 +35,7 @@ use tracing::{debug, info};
 
 use rs_cam_core::{
     adaptive::{AdaptiveParams, adaptive_toolpath},
-    adaptive3d::{Adaptive3dParams, EntryStyle3d, adaptive_3d_toolpath},
+    adaptive3d::{Adaptive3dParams, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath},
     depth::{DepthStepping, depth_stepped_toolpath},
     dressup::{apply_dogbones, apply_entry, apply_tabs, even_tabs},
     dropcutter::batch_drop_cutter,
@@ -146,6 +146,7 @@ pub struct OperationDef {
     pub fine_stepdown: Option<f64>,
     pub detect_flat_areas: Option<bool>,
     pub max_stay_down_dist: Option<f64>,
+    pub order_by: Option<String>,
 }
 
 // ── Parsing ────────────────────────────────────────────────────────────
@@ -428,6 +429,11 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                     _ => EntryStyle3d::Plunge,
                 };
 
+                let region_ord = match op.order_by.as_deref().unwrap_or("global") {
+                    "by-area" | "by_area" | "byarea" => RegionOrdering::ByArea,
+                    _ => RegionOrdering::Global,
+                };
+
                 let params = Adaptive3dParams {
                     tool_radius,
                     stepover,
@@ -443,6 +449,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                     fine_stepdown: op.fine_stepdown,
                     detect_flat_areas: op.detect_flat_areas.unwrap_or(false),
                     max_stay_down_dist: op.max_stay_down_dist,
+                    region_ordering: region_ord,
                 };
 
                 adaptive_3d_toolpath(&mesh, &si, cutter.as_ref(), &params)

@@ -9,7 +9,7 @@ Read this FIRST at the start of every session. Update LAST before ending.
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 316 tests passing (314 unit + 2 integration)
+- [x] Core library + CLI compiling, 324 tests passing (322 unit + 2 integration)
 - [x] Phase 1 complete: STL → drop-cutter → G-code pipeline with 3D HTML viewer
 - [x] Phase 2 complete: 2.5D operations (pocket, profile, zigzag, depth stepping, SVG/DXF input, dressups, CLI)
 - [x] Phase 3 complete: Advanced tools (BullNose, VBit, TaperedBall), push-cutter, waterline, arc fitting, G2/G3
@@ -78,6 +78,7 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] 4.3 Rest machining — geometric comparison (large vs small tool offset), masked zigzag scan lines, CLI + TOML integration (rest.rs)
 - [x] 4.7 3D adaptive clearing — heightmap material tracking, precomputed surface Z, multi-level passes, waterline cleanup, CLI + TOML (adaptive3d.rs)
 - [x] 4.7a 3D adaptive improvements — Z-rate clamping (no deep plunges), helix/ramp entry, improved idle detection, fine stepdown, flat area detection, configurable max_stay_down_dist (adaptive3d.rs)
+- [x] 4.7b Region-based pocket ordering — BFS flood fill detects connected material regions, clears each fully before moving to next (--order-by by-area), reduces tool travel on scattered terrain (adaptive3d.rs)
 - [x] 4.4 TOML job file parsing — multi-tool, multi-operation job files with per-op overrides (job.rs, demo_job.toml)
 - [x] 4.5 Dogbone dressup — inside corner overcuts with configurable angle threshold (dressup.rs)
 - [x] 4.6 Lead-in/lead-out dressup — quarter-circle arc entry/exit for clean profile cuts (dressup.rs)
