@@ -25,6 +25,7 @@ use crate::waterline::waterline_contours;
 
 use rayon::prelude::*;
 use std::f64::consts::{PI, TAU};
+use std::time::Instant;
 use tracing::{info, debug};
 
 /// Entry strategy for 3D adaptive (replaces vertical plunge).
@@ -706,6 +707,7 @@ fn adaptive_3d_segments(
         Heightmap::from_stock(origin_x, origin_y, extent_x, extent_y, params.stock_top_z, cell_size);
 
     // Precompute surface heightmap (rayon parallel drop-cutter)
+    let t_surface = Instant::now();
     debug!(cols = material_hm.cols, rows = material_hm.rows, "Precomputing surface heightmap");
     let surface_hm = SurfaceHeightmap::from_mesh(
         mesh,
@@ -718,6 +720,7 @@ fn adaptive_3d_segments(
         material_hm.cell_size,
         bbox.min.z,
     );
+    info!(elapsed_ms = t_surface.elapsed().as_millis() as u64, "Surface heightmap complete");
 
     // Compute Z levels: stock_top down to surface bottom + stock_to_leave
     let surface_bottom = surface_hm.min_z();
@@ -820,6 +823,7 @@ fn adaptive_3d_segments(
             continue;
         }
         debug!(level = level_idx, z = z_level, remaining_pct = remaining * 100.0, "Starting Z level");
+        let t_level = Instant::now();
 
         let mut pass_endpoints: Vec<P2> = Vec::new();
         let max_passes = 500;
@@ -1045,9 +1049,11 @@ fn adaptive_3d_segments(
             }
         }
 
-        debug!(passes = pass_count, z = z_level, "Completed Z level");
+        let level_ms = t_level.elapsed().as_millis() as u64;
+        debug!(passes = pass_count, z = z_level, elapsed_ms = level_ms, "Completed Z level");
 
         // Boundary cleanup: waterline contours at this z_level
+        let t_waterline = Instant::now();
         let sampling = cell_size * 2.0;
         let contours = waterline_contours(mesh, index, cutter, z_level, sampling);
         for contour in &contours {
@@ -1078,6 +1084,10 @@ fn adaptive_3d_segments(
             stamp_tool_at(&mut material_hm, cutter, contour[0].x, contour[0].y, contour[0].z);
             segments.push(Adaptive3dSegment::Cut(cleanup_path));
             last_pos = Some(contour[0]);
+        }
+        if !contours.is_empty() {
+            debug!(contours = contours.len(), z = z_level,
+                elapsed_ms = t_waterline.elapsed().as_millis() as u64, "Waterline cleanup");
         }
     }
 
