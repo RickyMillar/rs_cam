@@ -125,6 +125,8 @@ pub struct OperationDef {
 
     // Adaptive-specific
     pub tolerance: Option<f64>,
+    pub slot_clearing: Option<bool>,
+    pub min_cutting_radius: Option<f64>,
 }
 
 // ── Parsing ────────────────────────────────────────────────────────────
@@ -327,6 +329,8 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<Toolpath> {
                 let depth_per_pass = op.depth_per_pass.unwrap_or(3.0);
                 let stepover = op.stepover.unwrap_or(2.0);
                 let tolerance = op.tolerance.unwrap_or(0.1);
+                let slot_clearing = op.slot_clearing.unwrap_or(false);
+                let min_cutting_radius = op.min_cutting_radius.unwrap_or(0.0);
                 let stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
 
                 eprintln!("  {} polygon(s), depth={:.1}mm, stepover={:.1}mm", polygons.len(), depth, stepover);
@@ -337,6 +341,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<Toolpath> {
                         adaptive_toolpath(poly, &AdaptiveParams {
                             tool_radius, stepover, cut_depth: z,
                             feed_rate, plunge_rate, safe_z, tolerance,
+                            slot_clearing, min_cutting_radius,
                         })
                     });
                     tp.moves.extend(poly_tp.moves);

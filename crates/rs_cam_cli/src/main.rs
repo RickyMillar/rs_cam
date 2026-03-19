@@ -321,6 +321,14 @@ enum Commands {
         #[arg(long, default_value = "0.1")]
         tolerance: f64,
 
+        /// Enable slot clearing: cut center slot before adaptive spiral
+        #[arg(long)]
+        slot_clearing: bool,
+
+        /// Minimum cutting radius: blend sharp corners with arcs (mm, 0=disabled)
+        #[arg(long, default_value = "0.0")]
+        min_cutting_radius: f64,
+
         /// Post-processor: grbl, linuxcnc
         #[arg(long, default_value = "grbl")]
         post: String,
@@ -914,8 +922,8 @@ fn main() -> Result<()> {
 
         Commands::Adaptive {
             input, tool, stepover, depth, depth_per_pass, feed_rate, plunge_rate,
-            spindle_speed, safe_z, tolerance, post, output, svg, view,
-            simulate, sim_resolution,
+            spindle_speed, safe_z, tolerance, slot_clearing, min_cutting_radius,
+            post, output, svg, view, simulate, sim_resolution,
         } => {
             let cutter = parse_tool(&tool)?;
             let tool_radius = cutter.diameter() / 2.0;
@@ -947,6 +955,8 @@ fn main() -> Result<()> {
                             plunge_rate,
                             safe_z,
                             tolerance,
+                            slot_clearing,
+                            min_cutting_radius,
                         },
                     )
                 });

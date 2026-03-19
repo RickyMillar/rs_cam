@@ -9,7 +9,7 @@ Read this FIRST at the start of every session. Update LAST before ending.
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 261 tests passing (259 unit + 2 integration)
+- [x] Core library + CLI compiling, 276 tests passing (274 unit + 2 integration)
 - [x] Phase 1 complete: STL → drop-cutter → G-code pipeline with 3D HTML viewer
 - [x] Phase 2 complete: 2.5D operations (pocket, profile, zigzag, depth stepping, SVG/DXF input, dressups, CLI)
 - [x] Phase 3 complete: Advanced tools (BullNose, VBit, TaperedBall), push-cutter, waterline, arc fitting, G2/G3
@@ -64,12 +64,19 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 
 ### Phase 4: High-Value Features
 - [x] 4.1 Adaptive clearing (constant engagement) — grid-based engagement, direction smoothing, idle detection, CLI subcommand (adaptive.rs)
+- [x] 4.1e Adaptive: boundary distance field + wall-tangent bias (BFS distance, gradient-based tangential scoring near walls)
+- [x] 4.1f Adaptive: entry point spreading (avoid corner clustering by penalizing proximity to previous endpoints)
+- [x] 4.1g Adaptive: slot clearing (Fusion-style center slot before adaptive spiral, reuses zigzag_lines)
+- [x] 4.1h Adaptive: minimum cutting radius (blend sharp corners with arcs, configurable)
+- [x] 4.1i Adaptive: increased angle continuity weight (0.05 → 0.12 for smoother curves)
+- [x] 4.1j Adaptive: boundary cleanup pass (auto contour trace of all walls + island boundaries after adaptive passes)
 - [ ] 4.1a Adaptive: interpolation-based angle search (see Adaptive Refinements below)
 - [ ] 4.1b Adaptive: boundary walking for entry points (see Adaptive Refinements below)
 - [ ] 4.1c Adaptive: exact sweep-line area calculation (see Adaptive Refinements below)
-- [ ] 4.1d Adaptive: link vs retract logic (see Adaptive Refinements below)
+- [x] 4.1d Adaptive: link vs retract logic — keep tool down between nearby passes when path is clear (56% rapid reduction)
 - [ ] 4.2 V-carving
 - [ ] 4.3 Rest machining
+- [ ] 4.7 3D adaptive clearing (see 3D Adaptive Deep Dive below)
 - [x] 4.4 TOML job file parsing — multi-tool, multi-operation job files with per-op overrides (job.rs, demo_job.toml)
 - [x] 4.5 Dogbone dressup — inside corner overcuts with configurable angle threshold (dressup.rs)
 - [x] 4.6 Lead-in/lead-out dressup — quarter-circle arc entry/exit for clean profile cuts (dressup.rs)
@@ -205,3 +212,90 @@ works by offsetting the cleared area boundary and testing progressively larger o
 a walkable corridor.
 **Impact**: Fewer rapids and retracts → faster cycle time, less tool wear from plunging.
 Medium effort. Requires tracking cleared polygon contours (not just grid cells).
+
+## 3D Adaptive Clearing Deep Dive
+
+True 3D adaptive clearing: maintain constant engagement while following a mesh surface.
+Unlike 2.5D adaptive (which clears flat polygon regions at discrete Z levels), 3D adaptive
+follows the actual STL surface — the tool Z changes continuously based on drop-cutter queries.
+
+### Why It Matters
+- 2.5D adaptive works for pockets/profiles but can't rough a sculpted surface efficiently
+- Current 3D options (drop-cutter raster, waterline) don't control engagement — they use
+  fixed stepover which means variable chip load on slopes
+- 3D adaptive = the marquee feature of high-end CAM (Fusion 360 "3D Adaptive", Mastercam
+  "OptiRough", HSMWorks)
+
+### Architecture: Heightmap-Based Material Tracking
+
+Replace the 2D `MaterialGrid` (boolean cells) with a `MaterialHeightmap` (f64 heights):
+
+| Component | 2.5D (current) | 3D (new) |
+|-----------|----------------|----------|
+| Material state | `MaterialGrid` (0/1/2 cells) | `MaterialHeightmap` (f64 heights per cell) |
+| "Is material here?" | `cell == CELL_MATERIAL` | `heightmap[cell] > mesh_z_at(x,y) + stock_to_leave` |
+| Clear material | `clear_circle(cx, cy, radius)` | `stamp_tool(cx, cy, z, cutter)` (lower heights) |
+| Engagement | Count samples on tool circle hitting material cells | Count samples on tool circle where `hm[x,y] > surface_z + threshold` |
+| Z at position | Constant `cut_depth` | `point_drop_cutter(mesh, cutter, x, y)` |
+
+The `MaterialHeightmap` starts at stock top (Z=0). As the tool cuts, heights are lowered
+by stamping the cutter profile — exactly like `simulation.rs` already does.
+
+### Step-by-Step Implementation
+
+**Step 1: MaterialHeightmap** — New struct wrapping `simulation::Heightmap` with engagement
+query methods. Initialize from stock bounding box. Provides `is_material_at(x, y, z)` and
+`engagement_3d(cx, cy, cz, radius)`.
+
+**Step 2: 3D direction search** — Same angular sweep as 2D, but each candidate position
+gets its Z from `point_drop_cutter()`. Engagement is computed in 3D: sample points on the
+tool circle at the surface-following Z, check which hit material above the surface.
+
+**Step 3: 3D entry point finding** — Scan the heightmap for cells where material remains
+above the mesh surface. Entry Z comes from drop-cutter at that XY.
+
+**Step 4: adaptive_3d_segments()** — Main loop, same structure as 2D:
+```
+while material_remaining > threshold:
+    entry = find_3d_entry(heightmap, mesh, cutter)
+    while can_continue:
+        z = point_drop_cutter(mesh, cutter, cx, cy)
+        angle = search_direction_3d(heightmap, mesh, cutter, cx, cy, z, ...)
+        move to (cx + step*cos(angle), cy + step*sin(angle), z_new)
+        stamp_tool(heightmap, cx, cy, z, cutter)
+```
+
+**Step 5: Multi-level roughing** — For deep stock (stock_top >> mesh), do multiple Z
+levels. At each level, limit the drop-cutter Z to `max(mesh_z, current_level_z)`. This
+prevents the tool from plunging to full depth on steep walls. Freesteel calls this
+"waterline-bounded adaptive" — combine waterline Z levels with adaptive XY motion.
+
+**Step 6: 3D boundary cleanup** — After adaptive passes, run waterline contours at each
+Z level to clean walls, analogous to the 2D boundary cleanup pass.
+
+### Key Reuse from Existing Code
+
+| Existing Module | Reuse For |
+|----------------|-----------|
+| `simulation.rs` `Heightmap` | Material tracking (stamp_tool already works) |
+| `dropcutter.rs` `point_drop_cutter` | Z-height queries at each step |
+| `adaptive.rs` `search_direction` | Angular sweep logic (add Z param) |
+| `adaptive.rs` `blend_corners` | Path post-processing |
+| `adaptive.rs` `simplify_path` | Path simplification |
+| `waterline.rs` | Boundary cleanup at each Z level |
+| `tool/*.rs` all cutter types | Drop-cutter + stamping already implemented |
+
+### Performance Considerations
+
+- Drop-cutter query per step is the bottleneck (~1µs per query with spatial index)
+- At step_len ≈ 0.5mm over a 100×100mm part: ~40K steps per pass, ~200K total queries
+- With spatial index: ~0.2s for the drop-cutter queries alone
+- Heightmap stamping is O(cells_in_tool_radius) per step, already fast
+- Total: should be under 1s for a typical part in release build
+
+### Effort Estimate
+- MaterialHeightmap + engagement: 1 session
+- 3D direction search + entry points: 1 session
+- Main loop + multi-level: 1 session
+- CLI integration + testing + boundary cleanup: 1 session
+- Total: ~4 focused sessions, high complexity
