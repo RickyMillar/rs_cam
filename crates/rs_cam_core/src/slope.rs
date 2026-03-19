@@ -234,7 +234,7 @@ impl SlopeMap {
         Some(self.curvatures[row * self.cols + col])
     }
 
-    fn world_to_cell(&self, x: f64, y: f64) -> Option<(usize, usize)> {
+    pub fn world_to_cell(&self, x: f64, y: f64) -> Option<(usize, usize)> {
         let col_f = (x - self.origin_x) / self.cell_size;
         let row_f = (y - self.origin_y) / self.cell_size;
         if col_f < -0.5 || row_f < -0.5 {
