@@ -722,6 +722,31 @@ fn adaptive_3d_segments(
     );
     info!(elapsed_ms = t_surface.elapsed().as_millis() as u64, "Surface heightmap complete");
 
+    // Clear material at cells outside the mesh XY footprint.
+    // Drop-cutter returns min_z for cells beyond the mesh edge, creating phantom
+    // "deep material" that the tool can never reach. Mark these as already cleared
+    // so the adaptive doesn't waste passes trying to cut in empty space.
+    // Only clear cells whose XY center is outside the mesh bbox (with tolerance).
+    let border_margin = r * 0.5;
+    let mut border_cleared = 0u32;
+    for row in 0..material_hm.rows {
+        for col in 0..material_hm.cols {
+            let (x, y) = material_hm.cell_to_world(row, col);
+            if x < bbox.min.x - border_margin
+                || x > bbox.max.x + border_margin
+                || y < bbox.min.y - border_margin
+                || y > bbox.max.y + border_margin
+            {
+                let i = row * material_hm.cols + col;
+                material_hm.cells[i] = surface_hm.z_values[i];
+                border_cleared += 1;
+            }
+        }
+    }
+    if border_cleared > 0 {
+        debug!(cells = border_cleared, "Cleared border cells outside mesh footprint");
+    }
+
     // Compute Z levels: stock_top down to surface bottom + stock_to_leave
     let surface_bottom = surface_hm.min_z();
     let z_bottom = surface_bottom + params.stock_to_leave;
@@ -1052,42 +1077,49 @@ fn adaptive_3d_segments(
         let level_ms = t_level.elapsed().as_millis() as u64;
         debug!(passes = pass_count, z = z_level, elapsed_ms = level_ms, "Completed Z level");
 
-        // Boundary cleanup: waterline contours at this z_level
-        let t_waterline = Instant::now();
-        let sampling = cell_size * 2.0;
-        let contours = waterline_contours(mesh, index, cutter, z_level, sampling);
-        for contour in &contours {
-            if contour.len() < 3 {
-                continue;
-            }
-            segments.push(Adaptive3dSegment::Rapid(contour[0]));
-
-            let mut cleanup_path = vec![contour[0]];
-            for i in 0..contour.len() {
-                let a = contour[i];
-                let b = contour[(i + 1) % contour.len()];
-                let dx = b.x - a.x;
-                let dy = b.y - a.y;
-                let len = (dx * dx + dy * dy).sqrt();
-                let n_steps = (len / (cell_size * 1.5)).ceil() as usize;
-                for j in 1..=n_steps {
-                    let t = j as f64 / n_steps.max(1) as f64;
-                    let x = a.x + t * dx;
-                    let y = a.y + t * dy;
-                    let z = a.z + t * (b.z - a.z);
-                    stamp_tool_at(&mut material_hm, cutter, x, y, z);
-                    cleanup_path.push(P3::new(x, y, z));
+        // Boundary cleanup: waterline contours only at the final Z level.
+        // Running waterline at every level produces overlapping contours on
+        // gentle slopes (each level traces nearly the same path). The adaptive
+        // passes already clear walls; waterline is only needed at the bottom
+        // to catch any remaining material against steep features.
+        let is_last_level = level_idx == z_levels.len() - 1;
+        if is_last_level {
+            let t_waterline = Instant::now();
+            let sampling = tool_radius.max(cell_size * 4.0);
+            let contours = waterline_contours(mesh, index, cutter, z_level, sampling);
+            for contour in &contours {
+                if contour.len() < 3 {
+                    continue;
                 }
+                segments.push(Adaptive3dSegment::Rapid(contour[0]));
+
+                let mut cleanup_path = vec![contour[0]];
+                for i in 0..contour.len() {
+                    let a = contour[i];
+                    let b = contour[(i + 1) % contour.len()];
+                    let dx = b.x - a.x;
+                    let dy = b.y - a.y;
+                    let len = (dx * dx + dy * dy).sqrt();
+                    let n_steps = (len / (cell_size * 1.5)).ceil() as usize;
+                    for j in 1..=n_steps {
+                        let t = j as f64 / n_steps.max(1) as f64;
+                        let x = a.x + t * dx;
+                        let y = a.y + t * dy;
+                        let z = a.z + t * (b.z - a.z);
+                        stamp_tool_at(&mut material_hm, cutter, x, y, z);
+                        cleanup_path.push(P3::new(x, y, z));
+                    }
+                }
+                // Close loop
+                cleanup_path.push(contour[0]);
+                stamp_tool_at(&mut material_hm, cutter, contour[0].x, contour[0].y, contour[0].z);
+                segments.push(Adaptive3dSegment::Cut(cleanup_path));
+                last_pos = Some(contour[0]);
             }
-            // Close loop
-            cleanup_path.push(contour[0]);
-            stamp_tool_at(&mut material_hm, cutter, contour[0].x, contour[0].y, contour[0].z);
-            segments.push(Adaptive3dSegment::Cut(cleanup_path));
-            last_pos = Some(contour[0]);
-        }
-        if !contours.is_empty() {
-            debug!(contours = contours.len(), z = z_level,
-                elapsed_ms = t_waterline.elapsed().as_millis() as u64, "Waterline cleanup");
+            if !contours.is_empty() {
+                debug!(contours = contours.len(), z = z_level,
+                    elapsed_ms = t_waterline.elapsed().as_millis() as u64, "Waterline cleanup");
+            }
         }
     }
 
