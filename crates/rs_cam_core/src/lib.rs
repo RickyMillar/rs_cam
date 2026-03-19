@@ -30,3 +30,5 @@ pub mod scallop;
 pub mod pencil;
 pub mod inlay;
 pub mod weave;
+pub mod collision;
+pub mod pipeline;
