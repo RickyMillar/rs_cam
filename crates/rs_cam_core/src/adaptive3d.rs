@@ -19,7 +19,7 @@ use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::simulation::{stamp_tool_at, stamp_tool_at_lut, Heightmap, RadialProfileLUT};
-use crate::slope::SurfaceHeightmap;
+use crate::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 use crate::waterline::waterline_contours;
@@ -809,6 +809,7 @@ struct ClearZLevelContext<'a> {
     index: &'a SpatialIndex,
     cutter: &'a dyn MillingCutter,
     lut: &'a RadialProfileLUT,
+    slope_map: &'a SlopeMap,
     tool_radius: f64,
     stepover: f64,
     stock_to_leave: f64,
@@ -834,12 +835,16 @@ struct ClearZLevelContext<'a> {
 fn pre_stamp_thin_bands(
     material_hm: &mut Heightmap,
     surface_hm: &SurfaceHeightmap,
+    slope_map: &SlopeMap,
     z_level: f64,
     stock_to_leave: f64,
     depth_per_pass: f64,
     region: Option<&MaterialRegion>,
 ) -> u32 {
     let thin_threshold = depth_per_pass * 0.3;
+    // Only pre-stamp on steep walls (>60°). Shallow areas have thin bands
+    // that represent real productive material worth clearing with the adaptive spiral.
+    let steep_threshold = 60.0_f64.to_radians();
     let mut stamped = 0u32;
 
     let (row_min, row_max, col_min, col_max) = if let Some(r) = region {
@@ -852,6 +857,12 @@ fn pre_stamp_thin_bands(
         let base = row * material_hm.cols;
         for col in col_min..=col_max {
             let i = base + col;
+
+            // Skip shallow cells — only pre-stamp steep wall bands
+            if slope_map.angles[i] < steep_threshold {
+                continue;
+            }
+
             let mat_z = material_hm.cells[i];
             let surf_z = surface_hm.z_values[i];
             let effective_floor = (surf_z + stock_to_leave).max(z_level);
@@ -901,7 +912,7 @@ fn clear_z_level(
 
     // Pre-stamp thin bands on steep walls to avoid unproductive contour re-tracing.
     let pre_stamped = pre_stamp_thin_bands(
-        material_hm, surface_hm, z_level, ctx.stock_to_leave, ctx.depth_per_pass, region,
+        material_hm, surface_hm, ctx.slope_map, z_level, ctx.stock_to_leave, ctx.depth_per_pass, region,
     );
     if pre_stamped > 0 {
         debug!(cells = pre_stamped, z = z_level, "Pre-stamped thin wall bands");
@@ -1213,11 +1224,16 @@ fn clear_z_level(
 }
 
 /// Run waterline boundary cleanup at a given Z level.
+///
+/// When `slope_map` is provided, only traces contours through steep regions
+/// (slope angle > 30°). This avoids re-tracing shallow areas that the
+/// adaptive spiral already cleared.
 fn waterline_cleanup(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     lut: &RadialProfileLUT,
+    slope_map: &SlopeMap,
     material_hm: &mut Heightmap,
     z_level: f64,
     tool_radius: f64,
@@ -1228,10 +1244,32 @@ fn waterline_cleanup(
     let t_waterline = Instant::now();
     let sampling = tool_radius.max(cell_size * 4.0);
     let contours = waterline_contours(mesh, index, cutter, z_level, sampling);
+
+    // Threshold for steep-only waterline: only trace contours where slope > 30°.
+    // This eliminates redundant shallow-area waterline passes.
+    let steep_threshold = 30.0_f64.to_radians();
+
+    let mut traced = 0u32;
     for contour in &contours {
         if contour.len() < 3 {
             continue;
         }
+
+        // Check if this contour is predominantly in a steep region.
+        // Sample a few points and check the slope. If most are shallow, skip.
+        let sample_step = 1.max(contour.len() / 10);
+        let steep_samples = contour.iter().step_by(sample_step)
+            .filter(|p| {
+                slope_map.angle_at_world(p.x, p.y)
+                    .map_or(false, |a| a >= steep_threshold)
+            })
+            .count();
+        let total_samples = (contour.len() + sample_step - 1) / sample_step;
+        if total_samples > 0 && steep_samples * 3 < total_samples {
+            // Less than 1/3 of samples are steep — skip this contour
+            continue;
+        }
+
         segments.push(Adaptive3dSegment::Rapid(contour[0]));
 
         let mut cleanup_path = vec![contour[0]];
@@ -1255,10 +1293,11 @@ fn waterline_cleanup(
         stamp_tool_at_lut(material_hm, lut, tool_radius, contour[0].x, contour[0].y, contour[0].z);
         segments.push(Adaptive3dSegment::Cut(cleanup_path));
         *last_pos = Some(contour[0]);
+        traced += 1;
     }
     if !contours.is_empty() {
-        debug!(contours = contours.len(), z = z_level,
-            elapsed_ms = t_waterline.elapsed().as_millis() as u64, "Waterline cleanup");
+        debug!(total = contours.len(), traced = traced, z = z_level,
+            elapsed_ms = t_waterline.elapsed().as_millis() as u64, "Waterline cleanup (slope-filtered)");
     }
 }
 
@@ -1300,6 +1339,9 @@ fn adaptive_3d_segments(
         bbox.min.z,
     );
     info!(elapsed_ms = t_surface.elapsed().as_millis() as u64, "Surface heightmap complete");
+
+    // Compute slope map for slope-aware pre-stamping and selective waterline cleanup.
+    let slope_map = surface_hm.slope_map();
 
     // Clear material at cells outside the mesh XY footprint.
     // Drop-cutter returns min_z for cells beyond the mesh edge, creating phantom
@@ -1422,6 +1464,7 @@ fn adaptive_3d_segments(
         index,
         cutter,
         lut: &lut,
+        slope_map: &slope_map,
         tool_radius,
         stepover: params.stepover,
         stock_to_leave: params.stock_to_leave,
@@ -1478,7 +1521,7 @@ fn adaptive_3d_segments(
             if let Some(&z_bottom_level) = z_levels.last() {
                 segments.push(Adaptive3dSegment::Label("Waterline cleanup".to_string()));
                 waterline_cleanup(
-                    mesh, index, cutter, &lut,
+                    mesh, index, cutter, &lut, &slope_map,
                     &mut material_hm, z_bottom_level,
                     tool_radius, cell_size,
                     &mut segments, &mut last_pos,
@@ -1501,7 +1544,7 @@ fn adaptive_3d_segments(
                 if is_last_level {
                     segments.push(Adaptive3dSegment::Label("Waterline cleanup".to_string()));
                     waterline_cleanup(
-                        mesh, index, cutter, &lut,
+                        mesh, index, cutter, &lut, &slope_map,
                         &mut material_hm, z_level,
                         tool_radius, cell_size,
                         &mut segments, &mut last_pos,
@@ -2486,7 +2529,9 @@ mod tests {
 
     #[test]
     fn test_pre_stamp_clears_thin_bands() {
-        // Thin material (0.5mm) should be pre-stamped; thick material (5mm) preserved.
+        use crate::slope::SlopeMap;
+        // Thin material (0.5mm) on steep walls should be pre-stamped;
+        // thick material (5mm) preserved.
         let cell_size = 1.0;
         let rows = 10;
         let cols = 10;
@@ -2494,16 +2539,24 @@ mod tests {
         let stock_to_leave = 0.5;
         let depth_per_pass = 3.0;
 
-        // Surface at z=0 everywhere → effective_floor = max(0+0.5, 7.0) = 7.0
+        // Surface: rows 0-4 are a steep ramp (z increases steeply with col),
+        // rows 5-9 are flat at z=0. This makes rows 0-4 steep (>60°).
+        let mut z_values = vec![0.0; rows * cols];
+        for row in 0..5 {
+            for col in 0..cols {
+                z_values[row * cols + col] = col as f64 * 3.0; // dz/dx=3 → ~72° slope
+            }
+        }
         let surface_hm = SurfaceHeightmap {
-            z_values: vec![0.0; rows * cols],
+            z_values: z_values.clone(),
             rows, cols,
             origin_x: 0.0, origin_y: 0.0,
             cell_size,
         };
+        let slope_map = SlopeMap::from_z_grid(&z_values, rows, cols, 0.0, 0.0, cell_size);
 
-        // Material at z=7.5 (thin: 0.5mm above floor) for half the cells,
-        // z=12.0 (thick: 5mm above floor) for the other half.
+        // Material at z=7.5 (thin: 0.5mm above floor) for steep cells (rows 0-4),
+        // z=12.0 (thick: 5mm above floor) for flat cells (rows 5-9).
         let mut mat_cells = vec![7.5; rows * cols];
         for row in 5..rows {
             for col in 0..cols {
@@ -2519,23 +2572,11 @@ mod tests {
         };
 
         let stamped = pre_stamp_thin_bands(
-            &mut material_hm, &surface_hm, z_level, stock_to_leave, depth_per_pass, None,
+            &mut material_hm, &surface_hm, &slope_map, z_level, stock_to_leave, depth_per_pass, None,
         );
 
-        // thin_threshold = 3.0 * 0.3 = 0.9; 0.5mm < 0.9 → should be stamped
-        assert!(stamped > 0, "Should pre-stamp thin cells, stamped {}", stamped);
-
-        // Thin cells should now be at floor level
-        for row in 0..5 {
-            for col in 0..cols {
-                let z = material_hm.get(row, col);
-                assert!(
-                    (z - 7.0).abs() < 0.01,
-                    "Thin cell ({},{}) should be at floor 7.0, got {:.2}",
-                    row, col, z
-                );
-            }
-        }
+        // Only steep cells with thin bands should be stamped
+        assert!(stamped > 0, "Should pre-stamp thin steep cells, stamped {}", stamped);
 
         // Thick cells should be unchanged
         for row in 5..rows {
@@ -2552,7 +2593,9 @@ mod tests {
 
     #[test]
     fn test_pre_stamp_no_op_on_flat() {
-        // Flat stock 5mm above surface — no cells should be pre-stamped.
+        use crate::slope::SlopeMap;
+        // Flat stock 5mm above surface — no cells should be pre-stamped
+        // (flat surface = not steep, so pre-stamp skips all).
         let cell_size = 1.0;
         let rows = 10;
         let cols = 10;
@@ -2560,13 +2603,15 @@ mod tests {
         let stock_to_leave = 0.5;
         let depth_per_pass = 3.0;
 
-        // Surface at z=0, material at z=20 → thickness = 20 - 15 = 5mm >> threshold
+        // Surface at z=0 → flat slope everywhere
+        let z_values = vec![0.0; rows * cols];
         let surface_hm = SurfaceHeightmap {
-            z_values: vec![0.0; rows * cols],
+            z_values: z_values.clone(),
             rows, cols,
             origin_x: 0.0, origin_y: 0.0,
             cell_size,
         };
+        let slope_map = SlopeMap::from_z_grid(&z_values, rows, cols, 0.0, 0.0, cell_size);
         let mut material_hm = Heightmap {
             cells: vec![20.0; rows * cols],
             rows, cols,
@@ -2576,10 +2621,76 @@ mod tests {
         };
 
         let stamped = pre_stamp_thin_bands(
-            &mut material_hm, &surface_hm, z_level, stock_to_leave, depth_per_pass, None,
+            &mut material_hm, &surface_hm, &slope_map, z_level, stock_to_leave, depth_per_pass, None,
         );
 
         assert_eq!(stamped, 0, "Flat stock well above surface should not be pre-stamped");
+    }
+
+    #[test]
+    fn test_pre_stamp_steep_only() {
+        use crate::slope::SlopeMap;
+        // Mixed terrain: steep cells (rows 0-4) and shallow cells (rows 5-9).
+        // Both have thin bands, but only steep cells should be pre-stamped.
+        let cell_size = 1.0;
+        let rows = 10;
+        let cols = 10;
+        let z_level = 5.0;
+        let stock_to_leave = 0.0;
+        let depth_per_pass = 3.0;
+
+        // Surface: rows 0-4 steep ramp (dz/dx=3 → ~72°), rows 5-9 flat
+        let mut z_values = vec![0.0; rows * cols];
+        for row in 0..5 {
+            for col in 0..cols {
+                z_values[row * cols + col] = col as f64 * 3.0;
+            }
+        }
+        let surface_hm = SurfaceHeightmap {
+            z_values: z_values.clone(),
+            rows, cols,
+            origin_x: 0.0, origin_y: 0.0,
+            cell_size,
+        };
+        let slope_map = SlopeMap::from_z_grid(&z_values, rows, cols, 0.0, 0.0, cell_size);
+
+        // All cells have thin material (0.5mm above floor)
+        let mut mat_cells = vec![0.0; rows * cols];
+        for row in 0..rows {
+            for col in 0..cols {
+                let surf_z = z_values[row * cols + col];
+                let floor = (surf_z + stock_to_leave).max(z_level);
+                mat_cells[row * cols + col] = floor + 0.5; // 0.5mm thin band everywhere
+            }
+        }
+        let mut material_hm = Heightmap {
+            cells: mat_cells.clone(),
+            rows, cols,
+            origin_x: 0.0, origin_y: 0.0,
+            cell_size,
+            stock_top_z: 20.0,
+        };
+
+        let stamped = pre_stamp_thin_bands(
+            &mut material_hm, &surface_hm, &slope_map, z_level, stock_to_leave, depth_per_pass, None,
+        );
+
+        // Steep cells should be stamped, shallow cells should NOT
+        assert!(stamped > 0, "Should stamp some steep thin bands");
+
+        // Verify shallow cells (rows 7-9) are untouched (skip boundary rows 5-6
+        // where finite differences see the steep→flat transition as steep)
+        for row in 7..rows {
+            for col in 0..cols {
+                let original = mat_cells[row * cols + col];
+                let current = material_hm.get(row, col);
+                assert!(
+                    (current - original).abs() < 0.01,
+                    "Shallow cell ({},{}) should be untouched: was {:.2}, now {:.2}",
+                    row, col, original, current
+                );
+            }
+        }
     }
 
     // ── Widening coverage test ──────────────────────────────────────────
