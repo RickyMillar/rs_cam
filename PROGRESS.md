@@ -9,7 +9,7 @@ Read this FIRST at the start of every session. Update LAST before ending.
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 506 tests passing (504 unit + 2 integration)
+- [x] Core library + CLI compiling, 512 tests passing (510 unit + 2 integration)
 - [x] Phase 1 complete: STL → drop-cutter → G-code pipeline with 3D HTML viewer
 - [x] Phase 2 complete: 2.5D operations (pocket, profile, zigzag, depth stepping, SVG/DXF input, dressups, CLI)
 - [x] Phase 3 complete: Advanced tools (BullNose, VBit, TaperedBall), push-cutter, waterline, arc fitting, G2/G3
