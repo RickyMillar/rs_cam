@@ -248,6 +248,68 @@ pub fn check_collisions_interpolated(
     }
 }
 
+/// A rapid move that passes through stock material.
+#[derive(Debug, Clone)]
+pub struct RapidCollision {
+    /// Index of the move in the toolpath.
+    pub move_index: usize,
+    /// Start position of the rapid.
+    pub start: P3,
+    /// End position of the rapid.
+    pub end: P3,
+}
+
+/// Check for rapid (G0) moves that pass through stock material.
+/// Samples points along each rapid move and checks if any point is below
+/// the stock top Z and within the stock XY bounds.
+pub fn check_rapid_collisions(toolpath: &Toolpath, stock_bbox: &crate::geo::BoundingBox3) -> Vec<RapidCollision> {
+    let mut collisions = Vec::new();
+
+    for i in 1..toolpath.moves.len() {
+        if !matches!(toolpath.moves[i].move_type, MoveType::Rapid) {
+            continue;
+        }
+
+        let start = toolpath.moves[i - 1].target;
+        let end = toolpath.moves[i].target;
+
+        let dx = end.x - start.x;
+        let dy = end.y - start.y;
+        let dz = end.z - start.z;
+        let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+
+        let n_steps = (dist / 1.0).ceil().max(1.0) as usize;
+
+        let mut hit = false;
+        for step in 0..=n_steps {
+            let t = step as f64 / n_steps as f64;
+            let px = start.x + t * dx;
+            let py = start.y + t * dy;
+            let pz = start.z + t * dz;
+
+            if pz < stock_bbox.max.z
+                && px >= stock_bbox.min.x
+                && px <= stock_bbox.max.x
+                && py >= stock_bbox.min.y
+                && py <= stock_bbox.max.y
+            {
+                hit = true;
+                break;
+            }
+        }
+
+        if hit {
+            collisions.push(RapidCollision {
+                move_index: i,
+                start,
+                end,
+            });
+        }
+    }
+
+    collisions
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -446,5 +508,50 @@ mod tests {
                 assert!(c.penetration_depth > 0.0, "Penetration should be positive");
             }
         }
+    }
+
+    #[test]
+    fn test_rapid_above_stock_no_collision() {
+        let stock = crate::geo::BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(100.0, 100.0, 20.0),
+        };
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 50.0));
+        tp.rapid_to(P3::new(100.0, 100.0, 50.0));
+
+        let collisions = check_rapid_collisions(&tp, &stock);
+        assert!(collisions.is_empty(), "Rapids above stock should not collide");
+    }
+
+    #[test]
+    fn test_rapid_through_stock_detected() {
+        let stock = crate::geo::BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(100.0, 100.0, 20.0),
+        };
+        let mut tp = Toolpath::new();
+        // Start high, feed down, then rapid across through stock
+        tp.rapid_to(P3::new(0.0, 50.0, 50.0));
+        tp.feed_to(P3::new(0.0, 50.0, 10.0), 500.0);
+        tp.rapid_to(P3::new(80.0, 50.0, 10.0)); // Z=10 is inside stock
+
+        let collisions = check_rapid_collisions(&tp, &stock);
+        assert_eq!(collisions.len(), 1, "Should detect one rapid collision");
+        assert_eq!(collisions[0].move_index, 2);
+    }
+
+    #[test]
+    fn test_no_rapids_empty_result() {
+        let stock = crate::geo::BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(100.0, 100.0, 20.0),
+        };
+        let mut tp = Toolpath::new();
+        tp.feed_to(P3::new(50.0, 50.0, 10.0), 1000.0);
+        tp.feed_to(P3::new(80.0, 50.0, 10.0), 1000.0);
+
+        let collisions = check_rapid_collisions(&tp, &stock);
+        assert!(collisions.is_empty(), "No rapids means no rapid collisions");
     }
 }

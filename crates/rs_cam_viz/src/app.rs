@@ -323,6 +323,20 @@ impl RsCamApp {
                         Err(e) => tracing::error!("Export failed: {}", e),
                     }
                 }
+                AppEvent::ExportSetupSheet => {
+                    let html = crate::io::setup_sheet::generate_setup_sheet(&self.state.job);
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("HTML", &["html"])
+                        .set_file_name("setup_sheet.html")
+                        .save_file()
+                    {
+                        if let Err(e) = std::fs::write(&path, &html) {
+                            tracing::error!("Failed to write setup sheet: {}", e);
+                        } else {
+                            tracing::info!("Exported setup sheet to {}", path.display());
+                        }
+                    }
+                }
                 AppEvent::GenerateAll => {
                     let ids: Vec<_> = self.state.job.toolpaths.iter().map(|tp| tp.id).collect();
                     for id in ids {

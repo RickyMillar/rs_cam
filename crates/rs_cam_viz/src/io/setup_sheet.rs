@@ -1,0 +1,469 @@
+use std::fmt::Write;
+
+use crate::state::job::{JobState, ToolConfig, ToolId};
+use crate::state::toolpath::{OperationConfig, ToolpathEntry};
+
+/// Extract feed rate (mm/min) from an operation config.
+fn feed_rate_of(op: &OperationConfig) -> f64 {
+    match op {
+        OperationConfig::Face(c) => c.feed_rate,
+        OperationConfig::Pocket(c) => c.feed_rate,
+        OperationConfig::Profile(c) => c.feed_rate,
+        OperationConfig::Adaptive(c) => c.feed_rate,
+        OperationConfig::VCarve(c) => c.feed_rate,
+        OperationConfig::Rest(c) => c.feed_rate,
+        OperationConfig::Inlay(c) => c.feed_rate,
+        OperationConfig::Zigzag(c) => c.feed_rate,
+        OperationConfig::Trace(c) => c.feed_rate,
+        OperationConfig::Drill(c) => c.feed_rate,
+        OperationConfig::Chamfer(c) => c.feed_rate,
+        OperationConfig::DropCutter(c) => c.feed_rate,
+        OperationConfig::Adaptive3d(c) => c.feed_rate,
+        OperationConfig::Waterline(c) => c.feed_rate,
+        OperationConfig::Pencil(c) => c.feed_rate,
+        OperationConfig::Scallop(c) => c.feed_rate,
+        OperationConfig::SteepShallow(c) => c.feed_rate,
+        OperationConfig::RampFinish(c) => c.feed_rate,
+        OperationConfig::SpiralFinish(c) => c.feed_rate,
+        OperationConfig::RadialFinish(c) => c.feed_rate,
+        OperationConfig::HorizontalFinish(c) => c.feed_rate,
+        OperationConfig::ProjectCurve(c) => c.feed_rate,
+    }
+}
+
+/// Extract depth (mm) from an operation config, if applicable.
+fn depth_of(op: &OperationConfig) -> Option<f64> {
+    match op {
+        OperationConfig::Face(c) => Some(c.depth),
+        OperationConfig::Pocket(c) => Some(c.depth),
+        OperationConfig::Profile(c) => Some(c.depth),
+        OperationConfig::Adaptive(c) => Some(c.depth),
+        OperationConfig::VCarve(c) => Some(c.max_depth),
+        OperationConfig::Rest(c) => Some(c.depth),
+        OperationConfig::Inlay(c) => Some(c.pocket_depth),
+        OperationConfig::Zigzag(c) => Some(c.depth),
+        OperationConfig::Trace(c) => Some(c.depth),
+        OperationConfig::Drill(c) => Some(c.depth),
+        OperationConfig::Chamfer(_) => None,
+        OperationConfig::DropCutter(_) => None,
+        OperationConfig::Adaptive3d(c) => Some(c.depth_per_pass),
+        OperationConfig::Waterline(c) => Some((c.start_z - c.final_z).abs()),
+        OperationConfig::Pencil(_) => None,
+        OperationConfig::Scallop(_) => None,
+        OperationConfig::SteepShallow(_) => None,
+        OperationConfig::RampFinish(_) => None,
+        OperationConfig::SpiralFinish(_) => None,
+        OperationConfig::RadialFinish(_) => None,
+        OperationConfig::HorizontalFinish(_) => None,
+        OperationConfig::ProjectCurve(c) => Some(c.depth),
+    }
+}
+
+/// Look up a tool by id, returning None if not found.
+fn find_tool<'a>(tools: &'a [ToolConfig], id: ToolId) -> Option<&'a ToolConfig> {
+    tools.iter().find(|t| t.id == id)
+}
+
+/// Format a duration in seconds as "Xm Ys".
+fn format_time(seconds: f64) -> String {
+    if seconds < 0.0 || !seconds.is_finite() {
+        return "N/A".to_string();
+    }
+    let total_secs = seconds.round() as u64;
+    let mins = total_secs / 60;
+    let secs = total_secs % 60;
+    if mins > 0 {
+        format!("{}m {}s", mins, secs)
+    } else {
+        format!("{}s", secs)
+    }
+}
+
+/// Estimate machining time for a single toolpath entry (cutting only).
+/// Returns seconds, or None if no result or zero feed rate.
+fn estimate_time(tp: &ToolpathEntry) -> Option<f64> {
+    let result = tp.result.as_ref()?;
+    let feed = feed_rate_of(&tp.operation);
+    if feed <= 0.0 {
+        return None;
+    }
+    // feed_rate is mm/min, cutting_distance is mm => time in minutes
+    let minutes = result.stats.cutting_distance / feed;
+    Some(minutes * 60.0)
+}
+
+/// HTML-escape a string to prevent injection.
+fn escape_html(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+/// Generate an HTML setup sheet from the current job state.
+///
+/// The returned string is a self-contained HTML document with inline CSS
+/// (dark theme) that can be saved to a file and opened in any browser.
+/// It documents stock dimensions, tools, operations, and per-operation
+/// statistics for use by CNC operators.
+pub fn generate_setup_sheet(job: &JobState) -> String {
+    let mut html = String::with_capacity(8192);
+
+    // Compute total estimated time across all enabled toolpaths with results.
+    let total_seconds: f64 = job
+        .toolpaths
+        .iter()
+        .filter(|tp| tp.enabled)
+        .filter_map(estimate_time)
+        .sum();
+
+    // Get the current date as YYYY-MM-DD.
+    let date = {
+        let now = std::time::SystemTime::now();
+        let secs = now
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        // Simple date calculation (no chrono dependency).
+        let days = secs / 86400;
+        let (year, month, day) = days_to_ymd(days);
+        format!("{:04}-{:02}-{:02}", year, month, day)
+    };
+
+    // --- Document start ---
+    let _ = write!(
+        html,
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Setup Sheet - {name}</title>
+<style>
+body {{ background: #1e1e24; color: #c8c8d2; font-family: -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; }}
+h1 {{ color: #e0e0ea; border-bottom: 2px solid #3a3a4a; padding-bottom: 8px; }}
+h2 {{ color: #b0b0c0; margin-top: 24px; }}
+table {{ border-collapse: collapse; width: 100%; margin: 12px 0; }}
+th {{ background: #2a2a36; color: #a0a0b0; text-align: left; padding: 8px 12px; border: 1px solid #3a3a4a; }}
+td {{ padding: 6px 12px; border: 1px solid #3a3a4a; }}
+tr:nth-child(even) {{ background: #24242e; }}
+.meta {{ color: #888; font-size: 0.9em; }}
+</style>
+</head>
+<body>
+"#,
+        name = escape_html(&job.name),
+    );
+
+    // --- Header ---
+    let _ = write!(
+        html,
+        "<h1>Setup Sheet: {}</h1>\n\
+         <p class=\"meta\">Generated: {} | Estimated machining time: {}</p>\n",
+        escape_html(&job.name),
+        escape_html(&date),
+        format_time(total_seconds),
+    );
+
+    // --- Stock section ---
+    let _ = write!(
+        html,
+        "<h2>Stock</h2>\n\
+         <table>\n\
+         <tr><th>Dimension</th><th>Value</th></tr>\n\
+         <tr><td>Size</td><td>{:.2} x {:.2} x {:.2} mm</td></tr>\n\
+         <tr><td>Origin</td><td>({:.2}, {:.2}, {:.2})</td></tr>\n\
+         </table>\n",
+        job.stock.x,
+        job.stock.y,
+        job.stock.z,
+        job.stock.origin_x,
+        job.stock.origin_y,
+        job.stock.origin_z,
+    );
+
+    // --- Tool table ---
+    let _ = write!(
+        html,
+        "<h2>Tools</h2>\n\
+         <table>\n\
+         <tr><th>#</th><th>Name</th><th>Type</th><th>Diameter</th><th>Flute Length</th></tr>\n"
+    );
+    for (i, tool) in job.tools.iter().enumerate() {
+        let _ = write!(
+            html,
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{:.2} mm</td><td>{:.2} mm</td></tr>\n",
+            i + 1,
+            escape_html(&tool.name),
+            tool.tool_type.label(),
+            tool.diameter,
+            tool.cutting_length,
+        );
+    }
+    let _ = write!(html, "</table>\n");
+
+    // --- Operations table ---
+    let _ = write!(
+        html,
+        "<h2>Operations</h2>\n\
+         <table>\n\
+         <tr><th>#</th><th>Name</th><th>Tool</th><th>Type</th><th>Feed Rate</th><th>Depth</th><th>Est. Time</th></tr>\n"
+    );
+    for (i, tp) in job.toolpaths.iter().enumerate() {
+        let tool_name = find_tool(&job.tools, tp.tool_id)
+            .map(|t| t.name.as_str())
+            .unwrap_or("(unknown)");
+        let feed = feed_rate_of(&tp.operation);
+        let depth_str = match depth_of(&tp.operation) {
+            Some(d) => format!("{:.2} mm", d),
+            None => "-".to_string(),
+        };
+        let time_str = estimate_time(tp)
+            .map(format_time)
+            .unwrap_or_else(|| "-".to_string());
+        let enabled_marker = if tp.enabled { "" } else { " (disabled)" };
+
+        let _ = write!(
+            html,
+            "<tr><td>{}</td><td>{}{}</td><td>{}</td><td>{}</td><td>{:.0} mm/min</td><td>{}</td><td>{}</td></tr>\n",
+            i + 1,
+            escape_html(&tp.name),
+            enabled_marker,
+            escape_html(tool_name),
+            tp.operation.label(),
+            feed,
+            depth_str,
+            time_str,
+        );
+    }
+    let _ = write!(html, "</table>\n");
+
+    // --- Post-processor info ---
+    let _ = write!(
+        html,
+        "<h2>Post-Processor</h2>\n\
+         <table>\n\
+         <tr><th>Setting</th><th>Value</th></tr>\n\
+         <tr><td>Format</td><td>{}</td></tr>\n\
+         <tr><td>Spindle Speed</td><td>{} RPM</td></tr>\n\
+         <tr><td>Safe Z</td><td>{:.2} mm</td></tr>\n\
+         </table>\n",
+        job.post.format.label(),
+        job.post.spindle_speed,
+        job.post.safe_z,
+    );
+
+    // --- Per-operation details ---
+    let has_details = job
+        .toolpaths
+        .iter()
+        .any(|tp| tp.enabled && tp.result.is_some());
+
+    if has_details {
+        let _ = write!(html, "<h2>Toolpath Details</h2>\n");
+
+        for tp in &job.toolpaths {
+            if !tp.enabled {
+                continue;
+            }
+            let result = match &tp.result {
+                Some(r) => r,
+                None => continue,
+            };
+
+            let _ = write!(
+                html,
+                "<h3 style=\"color:#b0b0c0;margin-top:16px\">{}</h3>\n\
+                 <table>\n\
+                 <tr><th>Metric</th><th>Value</th></tr>\n\
+                 <tr><td>Move Count</td><td>{}</td></tr>\n\
+                 <tr><td>Cutting Distance</td><td>{:.1} mm</td></tr>\n\
+                 <tr><td>Rapid Distance</td><td>{:.1} mm</td></tr>\n\
+                 </table>\n",
+                escape_html(&tp.name),
+                result.stats.move_count,
+                result.stats.cutting_distance,
+                result.stats.rapid_distance,
+            );
+        }
+    }
+
+    // --- Document end ---
+    let _ = write!(html, "</body>\n</html>\n");
+
+    html
+}
+
+/// Convert days since Unix epoch to (year, month, day).
+///
+/// Uses a basic calendar algorithm; no leap-second precision needed for a
+/// date stamp on a setup sheet.
+fn days_to_ymd(days_since_epoch: u64) -> (u64, u64, u64) {
+    // Algorithm from Howard Hinnant's date library (public domain).
+    let z = days_since_epoch + 719468;
+    let era = z / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::job::{JobState, ToolConfig, ToolType};
+    use crate::state::toolpath::{
+        ComputeStatus, DressupConfig, HeightsConfig, OperationConfig, PocketConfig,
+        ToolpathEntry, ToolpathResult, ToolpathStats, BoundaryContainment,
+    };
+    use std::sync::Arc;
+
+    fn make_test_job() -> JobState {
+        let mut job = JobState::new();
+        job.name = "Test Job".to_string();
+
+        // Add a tool.
+        let tool_id = job.next_tool_id();
+        job.tools.push(ToolConfig::new_default(tool_id, ToolType::EndMill));
+
+        // Add a toolpath with a result.
+        let tp_id = job.next_toolpath_id();
+        job.toolpaths.push(ToolpathEntry {
+            id: tp_id,
+            name: "Pocket 1".to_string(),
+            enabled: true,
+            visible: true,
+            locked: false,
+            tool_id,
+            model_id: crate::state::job::ModelId(0),
+            operation: OperationConfig::Pocket(PocketConfig {
+                feed_rate: 1000.0,
+                ..PocketConfig::default()
+            }),
+            dressups: DressupConfig::default(),
+            heights: HeightsConfig::default(),
+            boundary_enabled: false,
+            boundary_containment: BoundaryContainment::Center,
+            pre_gcode: String::new(),
+            post_gcode: String::new(),
+            status: ComputeStatus::Done,
+            result: Some(ToolpathResult {
+                toolpath: Arc::new(rs_cam_core::toolpath::Toolpath::new()),
+                stats: ToolpathStats {
+                    move_count: 150,
+                    cutting_distance: 5000.0,
+                    rapid_distance: 200.0,
+                },
+            }),
+            stale_since: None,
+            auto_regen: true,
+        });
+
+        job
+    }
+
+    #[test]
+    fn setup_sheet_contains_job_name() {
+        let job = make_test_job();
+        let html = generate_setup_sheet(&job);
+        assert!(html.contains("Test Job"));
+    }
+
+    #[test]
+    fn setup_sheet_contains_stock_dimensions() {
+        let job = make_test_job();
+        let html = generate_setup_sheet(&job);
+        assert!(html.contains("100.00 x 100.00 x 25.00 mm"));
+    }
+
+    #[test]
+    fn setup_sheet_contains_tool_info() {
+        let job = make_test_job();
+        let html = generate_setup_sheet(&job);
+        assert!(html.contains("End Mill"));
+        assert!(html.contains("6.35 mm"));
+    }
+
+    #[test]
+    fn setup_sheet_contains_operation_info() {
+        let job = make_test_job();
+        let html = generate_setup_sheet(&job);
+        assert!(html.contains("Pocket 1"));
+        assert!(html.contains("1000 mm/min"));
+    }
+
+    #[test]
+    fn setup_sheet_contains_post_info() {
+        let job = make_test_job();
+        let html = generate_setup_sheet(&job);
+        assert!(html.contains("GRBL"));
+        assert!(html.contains("18000 RPM"));
+    }
+
+    #[test]
+    fn setup_sheet_contains_toolpath_details() {
+        let job = make_test_job();
+        let html = generate_setup_sheet(&job);
+        assert!(html.contains("150")); // move_count
+        assert!(html.contains("5000.0 mm")); // cutting_distance
+        assert!(html.contains("200.0 mm")); // rapid_distance
+    }
+
+    #[test]
+    fn setup_sheet_estimated_time() {
+        let job = make_test_job();
+        let html = generate_setup_sheet(&job);
+        // 5000mm / 1000mm/min = 5 min = 300s => "5m 0s"
+        assert!(html.contains("5m 0s"));
+    }
+
+    #[test]
+    fn format_time_renders_correctly() {
+        assert_eq!(format_time(0.0), "0s");
+        assert_eq!(format_time(59.0), "59s");
+        assert_eq!(format_time(60.0), "1m 0s");
+        assert_eq!(format_time(125.0), "2m 5s");
+        assert_eq!(format_time(-1.0), "N/A");
+        assert_eq!(format_time(f64::NAN), "N/A");
+    }
+
+    #[test]
+    fn escape_html_works() {
+        assert_eq!(escape_html("<b>\"test\" & 'it'</b>"),
+                   "&lt;b&gt;&quot;test&quot; &amp; &#39;it&#39;&lt;/b&gt;");
+    }
+
+    #[test]
+    fn setup_sheet_is_valid_html() {
+        let job = make_test_job();
+        let html = generate_setup_sheet(&job);
+        assert!(html.starts_with("<!DOCTYPE html>"));
+        assert!(html.contains("</html>"));
+    }
+
+    #[test]
+    fn days_to_ymd_epoch() {
+        let (y, m, d) = days_to_ymd(0);
+        assert_eq!((y, m, d), (1970, 1, 1));
+    }
+
+    #[test]
+    fn days_to_ymd_known_date() {
+        // 2024-01-01 is day 19723 since epoch
+        let (y, m, d) = days_to_ymd(19723);
+        assert_eq!((y, m, d), (2024, 1, 1));
+    }
+}
