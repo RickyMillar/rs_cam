@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use rs_cam_core::{
     arcfit::fit_arcs,
     depth::{DepthStepping, depth_stepped_toolpath},
-    dressup::{apply_dogbones, apply_entry, apply_tabs, even_tabs},
+    dressup::{apply_dogbones, apply_entry, apply_link_moves, apply_tabs, even_tabs, LinkMoveParams},
     dropcutter::batch_drop_cutter,
     geo::BoundingBox3,
     gcode::{emit_gcode, emit_gcode_phased, get_post_processor, GcodePhase},
@@ -119,6 +119,10 @@ enum Commands {
         /// Simulation grid resolution in mm (default 0.25)
         #[arg(long, default_value = "0.25")]
         sim_resolution: f64,
+
+        /// Replace short retracts with direct feed moves (max link distance in mm, 0 to disable)
+        #[arg(long, default_value = "0.0")]
+        link_moves: f64,
     },
 
     /// Clear a 2D pocket from SVG or DXF boundary
@@ -493,6 +497,10 @@ enum Commands {
         /// Simulation grid resolution in mm (default 0.25)
         #[arg(long, default_value = "0.25")]
         sim_resolution: f64,
+
+        /// Replace short retracts with direct feed moves (max link distance in mm, 0 to disable)
+        #[arg(long, default_value = "0.0")]
+        link_moves: f64,
     },
 
     /// 3D adaptive clearing (constant engagement rough machining from STL)
@@ -673,6 +681,10 @@ enum Commands {
         /// Simulation grid resolution in mm (default 0.25)
         #[arg(long, default_value = "0.25")]
         sim_resolution: f64,
+
+        /// Replace short retracts with direct feed moves (max link distance in mm, 0 to disable)
+        #[arg(long, default_value = "0.0")]
+        link_moves: f64,
     },
 
     /// Ramp finishing — continuous descent on steep walls (no Z-level witness marks)
@@ -727,6 +739,10 @@ enum Commands {
         simulate: bool,
         #[arg(long, default_value = "0.25")]
         sim_resolution: f64,
+
+        /// Replace short retracts with direct feed moves (max link distance in mm, 0 to disable)
+        #[arg(long, default_value = "0.0")]
+        link_moves: f64,
     },
 
     /// Steep and Shallow finishing — hybrid waterline + parallel for mixed terrain
@@ -784,6 +800,10 @@ enum Commands {
         simulate: bool,
         #[arg(long, default_value = "0.25")]
         sim_resolution: f64,
+
+        /// Replace short retracts with direct feed moves (max link distance in mm, 0 to disable)
+        #[arg(long, default_value = "0.0")]
+        link_moves: f64,
     },
 
     /// Inlay operations — generate male and female V-carve toolpaths
@@ -880,6 +900,10 @@ enum Commands {
         simulate: bool,
         #[arg(long, default_value = "0.25")]
         sim_resolution: f64,
+
+        /// Replace short retracts with direct feed moves (max link distance in mm, 0 to disable)
+        #[arg(long, default_value = "0.0")]
+        link_moves: f64,
     },
 
     /// Scallop finishing — constant scallop height with variable stepover
@@ -931,6 +955,10 @@ enum Commands {
         simulate: bool,
         #[arg(long, default_value = "0.25")]
         sim_resolution: f64,
+
+        /// Replace short retracts with direct feed moves (max link distance in mm, 0 to disable)
+        #[arg(long, default_value = "0.0")]
+        link_moves: f64,
     },
 }
 
@@ -1279,7 +1307,7 @@ fn main() -> Result<()> {
         Commands::DropCutter {
             input, units, scale, tool, stepover, feed_rate, plunge_rate,
             spindle_speed, safe_z, min_z, post, output, svg, view,
-            simulate, sim_resolution,
+            simulate, sim_resolution, link_moves,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             debug!(path = %input.display(), units = %units, scale = scale_factor, "Loading STL");
@@ -1299,13 +1327,28 @@ fn main() -> Result<()> {
                 "Drop-cutter grid"
             );
 
-            let toolpath = raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z);
+            let mut toolpath = raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z);
             info!(
                 moves = toolpath.moves.len(),
                 cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
                 rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
                 "Generated toolpath"
             );
+
+            if link_moves > 0.0 {
+                let link_params = LinkMoveParams {
+                    max_link_distance: link_moves,
+                    link_feed_rate: feed_rate,
+                    safe_z_threshold: safe_z,
+                };
+                let before_rapid = toolpath.total_rapid_distance();
+                toolpath = apply_link_moves(&toolpath, &link_params);
+                info!(
+                    before_rapid_mm = format!("{:.1}", before_rapid),
+                    after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                    "Applied link moves"
+                );
+            }
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
@@ -1601,7 +1644,7 @@ fn main() -> Result<()> {
         Commands::Rest {
             input, tool, prev_tool, stepover, depth, depth_per_pass,
             feed_rate, plunge_rate, spindle_speed, safe_z, angle,
-            post, output, svg, view, simulate, sim_resolution,
+            post, output, svg, view, simulate, sim_resolution, link_moves,
         } => {
             let cutter = parse_tool(&tool)?;
             let tool_radius = cutter.diameter() / 2.0;
@@ -1661,6 +1704,21 @@ fn main() -> Result<()> {
                 elapsed_secs = format!("{:.2}", elapsed.as_secs_f64()),
                 "Generated toolpath"
             );
+
+            if link_moves > 0.0 {
+                let link_params = LinkMoveParams {
+                    max_link_distance: link_moves,
+                    link_feed_rate: feed_rate,
+                    safe_z_threshold: safe_z,
+                };
+                let before_rapid = toolpath.total_rapid_distance();
+                toolpath = apply_link_moves(&toolpath, &link_params);
+                info!(
+                    before_rapid_mm = format!("{:.1}", before_rapid),
+                    after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                    "Applied link moves"
+                );
+            }
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
@@ -1826,7 +1884,7 @@ fn main() -> Result<()> {
         Commands::Waterline {
             input, units, scale, tool, z_step, sampling, start_z, final_z,
             feed_rate, plunge_rate, spindle_speed, safe_z, arc_tolerance,
-            post, output, svg, view, simulate, sim_resolution,
+            post, output, svg, view, simulate, sim_resolution, link_moves,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             debug!(path = %input.display(), units = %units, scale = scale_factor, "Loading STL");
@@ -1858,6 +1916,21 @@ fn main() -> Result<()> {
                 debug!(before = before, after = toolpath.moves.len(), tolerance_mm = arc_tolerance, "Arc fitting");
             }
 
+            if link_moves > 0.0 {
+                let link_params = LinkMoveParams {
+                    max_link_distance: link_moves,
+                    link_feed_rate: feed_rate,
+                    safe_z_threshold: safe_z,
+                };
+                let before_rapid = toolpath.total_rapid_distance();
+                toolpath = apply_link_moves(&toolpath, &link_params);
+                info!(
+                    before_rapid_mm = format!("{:.1}", before_rapid),
+                    after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                    "Applied link moves"
+                );
+            }
+
             info!(
                 moves = toolpath.moves.len(),
                 cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
@@ -1875,7 +1948,7 @@ fn main() -> Result<()> {
             input, units, scale, tool, max_stepdown, slope_from, slope_to,
             direction, bottom_up, feed_rate, plunge_rate, spindle_speed, safe_z,
             sampling, stock_to_leave, tolerance, post, output, svg, view,
-            simulate, sim_resolution,
+            simulate, sim_resolution, link_moves,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             let cutter = parse_tool(&tool)?;
@@ -1902,7 +1975,7 @@ fn main() -> Result<()> {
             };
 
             let start = std::time::Instant::now();
-            let toolpath = ramp_finish_toolpath(&mesh, &index, cutter.as_ref(), &params);
+            let mut toolpath = ramp_finish_toolpath(&mesh, &index, cutter.as_ref(), &params);
             info!(
                 moves = toolpath.moves.len(),
                 cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
@@ -1910,6 +1983,21 @@ fn main() -> Result<()> {
                 elapsed_secs = format!("{:.2}", start.elapsed().as_secs_f64()),
                 "Generated ramp finish toolpath"
             );
+
+            if link_moves > 0.0 {
+                let link_params = LinkMoveParams {
+                    max_link_distance: link_moves,
+                    link_feed_rate: feed_rate,
+                    safe_z_threshold: safe_z,
+                };
+                let before_rapid = toolpath.total_rapid_distance();
+                toolpath = apply_link_moves(&toolpath, &link_params);
+                info!(
+                    before_rapid_mm = format!("{:.1}", before_rapid),
+                    after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                    "Applied link moves"
+                );
+            }
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
             write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
@@ -1919,7 +2007,7 @@ fn main() -> Result<()> {
             input, units, scale, tool, threshold_angle, overlap_distance,
             wall_clearance, steep_first, stepover, z_step, sampling,
             stock_to_leave, tolerance, feed_rate, plunge_rate, spindle_speed,
-            safe_z, post, output, svg, view, simulate, sim_resolution,
+            safe_z, post, output, svg, view, simulate, sim_resolution, link_moves,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             let cutter = parse_tool(&tool)?;
@@ -1941,7 +2029,7 @@ fn main() -> Result<()> {
             };
 
             let start = std::time::Instant::now();
-            let toolpath = steep_shallow_toolpath(&mesh, &index, cutter.as_ref(), &params);
+            let mut toolpath = steep_shallow_toolpath(&mesh, &index, cutter.as_ref(), &params);
             info!(
                 moves = toolpath.moves.len(),
                 cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
@@ -1949,6 +2037,21 @@ fn main() -> Result<()> {
                 elapsed_secs = format!("{:.2}", start.elapsed().as_secs_f64()),
                 "Generated steep & shallow toolpath"
             );
+
+            if link_moves > 0.0 {
+                let link_params = LinkMoveParams {
+                    max_link_distance: link_moves,
+                    link_feed_rate: feed_rate,
+                    safe_z_threshold: safe_z,
+                };
+                let before_rapid = toolpath.total_rapid_distance();
+                toolpath = apply_link_moves(&toolpath, &link_params);
+                info!(
+                    before_rapid_mm = format!("{:.1}", before_rapid),
+                    after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                    "Applied link moves"
+                );
+            }
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
             write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
@@ -2008,7 +2111,7 @@ fn main() -> Result<()> {
             input, units, scale, tool, bitangency_angle, min_cut_length,
             offset_passes, offset_stepover, sampling, stock_to_leave,
             feed_rate, plunge_rate, spindle_speed, safe_z, post, output,
-            svg, view, simulate, sim_resolution,
+            svg, view, simulate, sim_resolution, link_moves,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             let cutter = parse_tool(&tool)?;
@@ -2028,7 +2131,7 @@ fn main() -> Result<()> {
             };
 
             let start = std::time::Instant::now();
-            let toolpath = pencil_toolpath(&mesh, &index, cutter.as_ref(), &params);
+            let mut toolpath = pencil_toolpath(&mesh, &index, cutter.as_ref(), &params);
             info!(
                 moves = toolpath.moves.len(),
                 cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
@@ -2036,6 +2139,21 @@ fn main() -> Result<()> {
                 elapsed_secs = format!("{:.2}", start.elapsed().as_secs_f64()),
                 "Generated pencil toolpath"
             );
+
+            if link_moves > 0.0 {
+                let link_params = LinkMoveParams {
+                    max_link_distance: link_moves,
+                    link_feed_rate: feed_rate,
+                    safe_z_threshold: safe_z,
+                };
+                let before_rapid = toolpath.total_rapid_distance();
+                toolpath = apply_link_moves(&toolpath, &link_params);
+                info!(
+                    before_rapid_mm = format!("{:.1}", before_rapid),
+                    after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                    "Applied link moves"
+                );
+            }
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
             write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
@@ -2045,7 +2163,7 @@ fn main() -> Result<()> {
             input, units, scale, tool, scallop_height, direction, continuous,
             slope_from, slope_to, stock_to_leave, tolerance, feed_rate,
             plunge_rate, spindle_speed, safe_z, post, output, svg, view,
-            simulate, sim_resolution,
+            simulate, sim_resolution, link_moves,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             let cutter = parse_tool(&tool)?;
@@ -2070,7 +2188,7 @@ fn main() -> Result<()> {
             };
 
             let start = std::time::Instant::now();
-            let toolpath = scallop_toolpath(&mesh, &index, cutter.as_ref(), &params);
+            let mut toolpath = scallop_toolpath(&mesh, &index, cutter.as_ref(), &params);
             info!(
                 moves = toolpath.moves.len(),
                 cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),
@@ -2078,6 +2196,21 @@ fn main() -> Result<()> {
                 elapsed_secs = format!("{:.2}", start.elapsed().as_secs_f64()),
                 "Generated scallop toolpath"
             );
+
+            if link_moves > 0.0 {
+                let link_params = LinkMoveParams {
+                    max_link_distance: link_moves,
+                    link_feed_rate: feed_rate,
+                    safe_z_threshold: safe_z,
+                };
+                let before_rapid = toolpath.total_rapid_distance();
+                toolpath = apply_link_moves(&toolpath, &link_params);
+                info!(
+                    before_rapid_mm = format!("{:.1}", before_rapid),
+                    after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
+                    "Applied link moves"
+                );
+            }
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
             write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;

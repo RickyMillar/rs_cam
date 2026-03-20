@@ -651,6 +651,100 @@ pub fn apply_dogbones(
     result
 }
 
+// ---------------------------------------------------------------------------
+// Link-vs-Retract dressup
+// ---------------------------------------------------------------------------
+
+/// Parameters for the link-move optimization.
+pub struct LinkMoveParams {
+    /// Maximum XY distance between passes to replace retract with direct feed.
+    /// Default: 3× tool_diameter.
+    pub max_link_distance: f64,
+    /// Feed rate for link moves (mm/min).
+    pub link_feed_rate: f64,
+    /// Z threshold: moves to Z at or above this are considered rapids/retracts.
+    pub safe_z_threshold: f64,
+}
+
+/// Replace short retract→rapid→plunge sequences with direct feed moves.
+///
+/// Detects 3-move windows of (retract to safe_z, rapid reposition, plunge to cut_z)
+/// where the XY distance is short, and replaces them with a single feed move.
+///
+/// Safety rules:
+/// - Never links the first entry (tool hasn't cut yet)
+/// - Only links when cut Z before and after are within 0.1mm (same depth level)
+/// - max_link_distance caps risk
+pub fn apply_link_moves(toolpath: &Toolpath, params: &LinkMoveParams) -> Toolpath {
+    let moves = &toolpath.moves;
+    if moves.len() < 4 {
+        return toolpath.clone();
+    }
+
+    let mut result = Toolpath::new();
+    let mut i = 0;
+    let mut has_cut = false; // Track whether we've done any cutting yet
+
+    while i < moves.len() {
+        let m = &moves[i];
+
+        // Track first cut — never link before the tool has engaged material
+        if !has_cut {
+            if matches!(m.move_type, MoveType::Linear { .. }) && m.target.z < params.safe_z_threshold - 1.0 {
+                has_cut = true;
+            }
+            result.moves.push(m.clone());
+            i += 1;
+            continue;
+        }
+
+        // Look for retract→rapid→plunge pattern:
+        // moves[i]   = Rapid to (x1, y1, safe_z)      — retract
+        // moves[i+1] = Rapid to (x2, y2, safe_z)      — reposition
+        // moves[i+2] = Linear to (x2, y2, cut_z)      — plunge
+        if i + 2 < moves.len()
+            && m.move_type == MoveType::Rapid
+            && m.target.z >= params.safe_z_threshold - 0.1
+            && moves[i + 1].move_type == MoveType::Rapid
+            && moves[i + 1].target.z >= params.safe_z_threshold - 0.1
+            && matches!(moves[i + 2].move_type, MoveType::Linear { .. })
+            && moves[i + 2].target.z < params.safe_z_threshold - 1.0
+        {
+            let plunge_target = moves[i + 2].target;
+
+            // Get the Z of the last cut move before this retract
+            let prev_cut_z = result.moves.iter().rev()
+                .find(|mv| matches!(mv.move_type, MoveType::Linear { .. }) && mv.target.z < params.safe_z_threshold - 1.0)
+                .map(|mv| mv.target.z);
+
+            if let Some(prev_z) = prev_cut_z {
+                // Check same depth level (within 0.1mm)
+                if (prev_z - plunge_target.z).abs() < 0.1 {
+                    // Check XY distance
+                    let prev_pos = result.moves.last().map(|mv| &mv.target);
+                    if let Some(prev) = prev_pos {
+                        let dx = moves[i + 1].target.x - prev.x;
+                        let dy = moves[i + 1].target.y - prev.y;
+                        let dist = (dx * dx + dy * dy).sqrt();
+
+                        if dist < params.max_link_distance {
+                            // Replace: skip retract and rapid, emit direct feed to plunge target
+                            result.feed_to(plunge_target, params.link_feed_rate);
+                            i += 3; // Skip retract, rapid, plunge
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+
+        result.moves.push(m.clone());
+        i += 1;
+    }
+
+    result
+}
+
 /// Generate evenly-spaced tabs around a perimeter.
 pub fn even_tabs(count: usize, width: f64, height: f64) -> Vec<Tab> {
     (0..count)
@@ -1074,6 +1168,139 @@ mod tests {
             "Tab dressup should add transition moves: {} vs {}",
             result.moves.len(),
             tp.moves.len()
+        );
+    }
+
+    // --- Link-vs-retract tests ---
+
+    /// Build a toolpath with two nearby passes (retract between them).
+    fn two_pass_toolpath(pass_gap: f64) -> Toolpath {
+        let mut tp = Toolpath::new();
+        // First pass
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp.feed_to(P3::new(0.0, 0.0, -3.0), 500.0);
+        tp.feed_to(P3::new(20.0, 0.0, -3.0), 1000.0);
+        // Retract
+        tp.rapid_to(P3::new(20.0, 0.0, 10.0));
+        // Rapid to second pass start
+        tp.rapid_to(P3::new(20.0 + pass_gap, 0.0, 10.0));
+        // Plunge
+        tp.feed_to(P3::new(20.0 + pass_gap, 0.0, -3.0), 500.0);
+        // Second pass
+        tp.feed_to(P3::new(40.0 + pass_gap, 0.0, -3.0), 1000.0);
+        // Retract
+        tp.rapid_to(P3::new(40.0 + pass_gap, 0.0, 10.0));
+        tp
+    }
+
+    fn default_link_params() -> LinkMoveParams {
+        LinkMoveParams {
+            max_link_distance: 18.0, // 3× 6mm tool diameter
+            link_feed_rate: 1000.0,
+            safe_z_threshold: 10.0,
+        }
+    }
+
+    #[test]
+    fn test_link_basic() {
+        // 2mm gap between passes — should be linked
+        let tp = two_pass_toolpath(2.0);
+        let params = default_link_params();
+        let result = apply_link_moves(&tp, &params);
+
+        // Should have fewer moves (retract+rapid+plunge replaced with feed)
+        assert!(
+            result.moves.len() < tp.moves.len(),
+            "Link should reduce moves: {} vs {}",
+            result.moves.len(),
+            tp.moves.len()
+        );
+
+        // Should have less rapid distance
+        assert!(
+            result.total_rapid_distance() < tp.total_rapid_distance(),
+            "Link should reduce rapids: {:.1} vs {:.1}",
+            result.total_rapid_distance(),
+            tp.total_rapid_distance()
+        );
+    }
+
+    #[test]
+    fn test_link_too_far() {
+        // 25mm gap — exceeds max_link_distance of 18mm
+        let tp = two_pass_toolpath(25.0);
+        let params = default_link_params();
+        let result = apply_link_moves(&tp, &params);
+
+        // Should be unchanged (gap too large)
+        assert_eq!(
+            result.moves.len(),
+            tp.moves.len(),
+            "Far passes should not be linked"
+        );
+    }
+
+    #[test]
+    fn test_link_first_entry_preserved() {
+        // The very first plunge should never be linked (no prior cutting)
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp.rapid_to(P3::new(5.0, 0.0, 10.0));
+        tp.feed_to(P3::new(5.0, 0.0, -3.0), 500.0);
+        tp.feed_to(P3::new(20.0, 0.0, -3.0), 1000.0);
+        tp.rapid_to(P3::new(20.0, 0.0, 10.0));
+
+        let params = default_link_params();
+        let result = apply_link_moves(&tp, &params);
+
+        // First entry should not be linked — all moves preserved
+        assert_eq!(
+            result.moves.len(),
+            tp.moves.len(),
+            "First entry should be preserved"
+        );
+    }
+
+    #[test]
+    fn test_link_different_z_preserved() {
+        // Two passes at different Z levels — should NOT be linked
+        let mut tp = Toolpath::new();
+        // First pass at Z=-3
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp.feed_to(P3::new(0.0, 0.0, -3.0), 500.0);
+        tp.feed_to(P3::new(20.0, 0.0, -3.0), 1000.0);
+        // Retract
+        tp.rapid_to(P3::new(20.0, 0.0, 10.0));
+        // Second pass at Z=-6 (different depth)
+        tp.rapid_to(P3::new(22.0, 0.0, 10.0));
+        tp.feed_to(P3::new(22.0, 0.0, -6.0), 500.0);
+        tp.feed_to(P3::new(40.0, 0.0, -6.0), 1000.0);
+        tp.rapid_to(P3::new(40.0, 0.0, 10.0));
+
+        let params = default_link_params();
+        let result = apply_link_moves(&tp, &params);
+
+        // Different Z levels — should not be linked
+        assert_eq!(
+            result.moves.len(),
+            tp.moves.len(),
+            "Different Z levels should not be linked"
+        );
+    }
+
+    #[test]
+    fn test_link_reduces_rapid_distance() {
+        let tp = two_pass_toolpath(5.0);
+        let params = default_link_params();
+        let result = apply_link_moves(&tp, &params);
+
+        let orig_rapid = tp.total_rapid_distance();
+        let linked_rapid = result.total_rapid_distance();
+        assert!(
+            linked_rapid < orig_rapid * 0.8,
+            "Linking should significantly reduce rapids: {:.1} -> {:.1}",
+            orig_rapid,
+            linked_rapid
         );
     }
 }
