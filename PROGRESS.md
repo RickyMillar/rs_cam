@@ -9,7 +9,7 @@ Read this FIRST at the start of every session. Update LAST before ending.
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 454 tests passing (452 unit + 2 integration)
+- [x] Core library + CLI compiling, 466 tests passing (464 unit + 2 integration)
 - [x] Phase 1 complete: STL → drop-cutter → G-code pipeline with 3D HTML viewer
 - [x] Phase 2 complete: 2.5D operations (pocket, profile, zigzag, depth stepping, SVG/DXF input, dressups, CLI)
 - [x] Phase 3 complete: Advanced tools (BullNose, VBit, TaperedBall), push-cutter, waterline, arc fitting, G2/G3
@@ -99,6 +99,11 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] 5.11 Link-vs-retract dressup — general post-processing dressup that replaces short retract→rapid→plunge with direct feeds (dressup.rs), CLI --link-moves flag
 - [x] 5.12 Flipped normal detection — check_winding/fix_winding on STL load, auto-fix if >5% inconsistent edges (mesh.rs)
 - [x] 5.13 Module rename — weave.rs → contour_extract.rs (reflects actual algorithm: marching squares, not Weave graph)
+- [x] 5.14 Adaptive speed optimizations — coarse 360° scan + bracket refinement replaces 55-eval brute-force sweep (~21 evals), growing-radius entry point search replaces O(rows×cols) grid scans (adaptive.rs, adaptive3d.rs)
+- [x] 5.15 Pocket island support — contour-parallel pocket emits hole contours alongside exterior rings, islands no longer cut through (pocket.rs)
+- [x] 5.16 Push-cutter edge accuracy — coarse+bisection sampling (9+10≈19 evals) replaces 32-step uniform, higher boundary accuracy (pushcutter.rs)
+- [x] 5.17 Polygon offset hole pairing — containment-based re-pairing via point-in-polygon instead of blind attachment to first polygon (polygon.rs)
+- [x] 5.18 Arc fitting least-squares — Kåsa's algebraic circle fit replaces 3-point fit for 5+ points, lower mean error on noisy/partial arcs (arcfit.rs)
 
 ## Module Map (for new agents)
 
@@ -157,9 +162,10 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - ~~Flipped normals on some triangles could cause facet_drop to miss contacts~~ FIXED: check_winding/fix_winding on STL load, auto-fix if >5% inconsistent.
 - ~~Duplicate rapid at start of each row in raster toolpath~~ FIXED: removed duplicate initial rapid.
 - ~~Waterline contour chaining uses nearest-neighbor which can produce artifacts~~ FIXED: marching squares contour extraction (contour_extract.rs).
-- Contour-parallel pocket pattern does NOT avoid islands (rings pass through holes). Use zigzag pattern for pockets with islands.
+- ~~Contour-parallel pocket pattern does NOT avoid islands~~ FIXED: hole contours emitted alongside exterior contours in pocket_contours().
 - Bull nose edge_drop uses simplified tube-circle approach (not full offset-ellipse with Brent's solver). Accurate for most cases but may have slight errors on highly sloped edges.
-- Push-cutter edge_push uses sampling (32 steps) rather than analytical solution. Could miss contacts on very small edges.
+- ~~Push-cutter edge_push uses sampling (32 steps) rather than analytical solution~~ FIXED: coarse+bisection (9 coarse + ~10 bisection = ~19 evals) with higher boundary accuracy.
+- ~~Polygon offset blindly assigns all holes to first polygon~~ FIXED: containment-based hole pairing via point-in-polygon test.
 
 ## Test Fixtures
 - fixtures/terrain_small.stl: 40K triangle terrain mesh (100x73mm, from rivmap project)

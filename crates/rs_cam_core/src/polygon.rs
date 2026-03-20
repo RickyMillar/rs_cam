@@ -157,29 +157,42 @@ pub fn offset_polygon(polygon: &Polygon2, distance: f64) -> Vec<Polygon2> {
         let shape = Shape::from_plines(plines);
         let result = shape.parallel_offset(distance, Default::default());
 
-        // CCW plines are boundaries, CW are holes
-        // For now, return each boundary as a separate Polygon2 without re-pairing holes.
-        // TODO: pair holes with their containing boundary for complex shapes.
+        // CCW plines are boundaries, CW are holes.
+        // Pair each hole with its containing boundary via containment test.
         let mut polygons: Vec<Polygon2> = result
             .ccw_plines
             .iter()
             .map(|ip| Polygon2::from_pline(&ip.polyline))
             .collect();
 
-        // If there are holes in the result, attach them to the first polygon
-        // (works for simple single-boundary cases)
-        if !result.cw_plines.is_empty() && !polygons.is_empty() {
-            let holes: Vec<Vec<P2>> = result
-                .cw_plines
-                .iter()
-                .map(|ip| {
-                    ip.polyline
-                        .iter_vertexes()
-                        .map(|v| P2::new(v.x, v.y))
-                        .collect()
-                })
-                .collect();
-            polygons[0].holes = holes;
+        let holes: Vec<Vec<P2>> = result
+            .cw_plines
+            .iter()
+            .map(|ip| {
+                ip.polyline
+                    .iter_vertexes()
+                    .map(|v| P2::new(v.x, v.y))
+                    .collect()
+            })
+            .collect();
+
+        for hole in holes {
+            if hole.is_empty() {
+                continue;
+            }
+            let test_pt = &hole[0];
+            let mut assigned = false;
+            for poly in &mut polygons {
+                if poly.contains_point(test_pt) {
+                    poly.holes.push(hole.clone());
+                    assigned = true;
+                    break;
+                }
+            }
+            if !assigned && !polygons.is_empty() {
+                // Fallback: attach to first polygon (preserves old behavior)
+                polygons[0].holes.push(hole);
+            }
         }
 
         polygons
@@ -703,6 +716,80 @@ mod tests {
         let result = detect_containment(vec![poly.clone()]);
         assert_eq!(result.len(), 1);
         assert!(result[0].holes.is_empty());
+    }
+
+    #[test]
+    fn test_offset_two_separate_regions() {
+        // Two separate rectangles, each with a hole. Offset inward.
+        // Verify each polygon keeps its own hole after re-pairing.
+        let rect1 = Polygon2::rectangle(0.0, 0.0, 30.0, 30.0);
+        let hole1 = vec![
+            P2::new(10.0, 10.0),
+            P2::new(10.0, 20.0),
+            P2::new(20.0, 20.0),
+            P2::new(20.0, 10.0),
+        ]; // CW
+        let rect2 = Polygon2::rectangle(50.0, 0.0, 80.0, 30.0);
+        let hole2 = vec![
+            P2::new(60.0, 10.0),
+            P2::new(60.0, 20.0),
+            P2::new(70.0, 20.0),
+            P2::new(70.0, 10.0),
+        ]; // CW
+
+        let poly1 = Polygon2::with_holes(rect1.exterior, vec![hole1]);
+        let poly2 = Polygon2::with_holes(rect2.exterior, vec![hole2]);
+
+        // Offset each separately — both should retain their holes
+        let r1 = offset_polygon(&poly1, 1.0);
+        let r2 = offset_polygon(&poly2, 1.0);
+        assert!(!r1.is_empty(), "First offset should succeed");
+        assert!(!r2.is_empty(), "Second offset should succeed");
+
+        // Each result should have holes
+        let r1_holes: usize = r1.iter().map(|p| p.holes.len()).sum();
+        let r2_holes: usize = r2.iter().map(|p| p.holes.len()).sum();
+        assert!(
+            r1_holes >= 1,
+            "First polygon should keep its hole, got {} holes",
+            r1_holes
+        );
+        assert!(
+            r2_holes >= 1,
+            "Second polygon should keep its hole, got {} holes",
+            r2_holes
+        );
+    }
+
+    #[test]
+    fn test_offset_single_region_two_holes() {
+        // One rect with two holes — both should stay attached after offset.
+        let hole1 = vec![
+            P2::new(5.0, 5.0),
+            P2::new(5.0, 10.0),
+            P2::new(10.0, 10.0),
+            P2::new(10.0, 5.0),
+        ]; // CW
+        let hole2 = vec![
+            P2::new(20.0, 5.0),
+            P2::new(20.0, 10.0),
+            P2::new(25.0, 10.0),
+            P2::new(25.0, 5.0),
+        ]; // CW
+        let poly = Polygon2::with_holes(
+            Polygon2::rectangle(0.0, 0.0, 30.0, 15.0).exterior,
+            vec![hole1, hole2],
+        );
+
+        let results = offset_polygon(&poly, 1.0);
+        assert!(!results.is_empty(), "Offset should succeed");
+
+        let total_holes: usize = results.iter().map(|p| p.holes.len()).sum();
+        assert!(
+            total_holes >= 2,
+            "Both holes should survive offset, got {} holes",
+            total_holes
+        );
     }
 
     #[test]

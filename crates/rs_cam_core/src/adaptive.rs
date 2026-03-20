@@ -205,14 +205,42 @@ impl MaterialGrid {
     }
 
     /// Find the nearest cell with uncut material to the given position.
+    /// Uses growing-radius search: starts small, doubles until found.
     /// Returns the world coordinates of the cell center, or None if no material remains.
     pub fn find_nearest_material(&self, x: f64, y: f64) -> Option<(f64, f64)> {
+        let initial_radius = self.cell_size * 8.0;
+        let max_radius = (self.cols as f64 * self.cell_size)
+            .max(self.rows as f64 * self.cell_size)
+            * 1.5;
+
+        let mut radius = initial_radius;
+        while radius <= max_radius {
+            if let Some(result) = self.find_nearest_material_in_radius(x, y, radius) {
+                return Some(result);
+            }
+            radius *= 2.0;
+        }
+        // Final full scan as fallback
+        self.find_nearest_material_in_radius(x, y, max_radius)
+    }
+
+    /// Search for nearest material within a given radius from (x, y).
+    fn find_nearest_material_in_radius(&self, x: f64, y: f64, radius: f64) -> Option<(f64, f64)> {
+        let col_min = ((x - radius - self.origin_x) / self.cell_size).floor().max(0.0) as usize;
+        let col_max = ((x + radius - self.origin_x) / self.cell_size)
+            .ceil()
+            .min(self.cols.saturating_sub(1) as f64) as usize;
+        let row_min = ((y - radius - self.origin_y) / self.cell_size).floor().max(0.0) as usize;
+        let row_max = ((y + radius - self.origin_y) / self.cell_size)
+            .ceil()
+            .min(self.rows.saturating_sub(1) as f64) as usize;
+
         let mut best_dist_sq = f64::INFINITY;
         let mut best = None;
 
-        for row in 0..self.rows {
+        for row in row_min..=row_max {
             let cy = self.origin_y + row as f64 * self.cell_size;
-            for col in 0..self.cols {
+            for col in col_min..=col_max {
                 if self.cells[row * self.cols + col] != CELL_MATERIAL {
                     continue;
                 }
@@ -535,16 +563,18 @@ pub(crate) fn search_direction(
         }
     }
 
-    // ── Phase 2+3: Broad sweep fallback ───────────────────────────────
-    // Used when the narrow search fails (no engagement nearby, U-turn needed, etc.)
-    let evaluate_sweep = |sweep: f64, n_candidates: usize| -> (Option<f64>, Option<f64>) {
-        let mut best_good: Option<(f64, f64)> = None;
+    // ── Phase 2: Coarse 360° scan + bracket refinement ────────────────
+    // 18 candidates at 20° intervals replaces the old Phase 2 (19 @ ±90°)
+    // + Phase 3 (36 @ 360°) = 55 evals. Now ~21 evals total.
+    {
+        let n_coarse = 18;
+        let mut best_good: Option<(f64, f64)> = None; // (score, angle)
         let mut best_any: Option<(f64, f64)> = None;
+        let mut coarse_lo: Option<(f64, f64)> = None; // (angle, engagement) below target
+        let mut coarse_hi: Option<(f64, f64)> = None; // (angle, engagement) above target
 
-        for i in 0..n_candidates {
-            let t = i as f64 / (n_candidates - 1) as f64;
-            let angle = prev_angle - sweep / 2.0 + t * sweep;
-
+        for i in 0..n_coarse {
+            let angle = (i as f64 / n_coarse as f64) * TAU;
             if let Some((eng, score)) = eval_candidate(angle) {
                 if eng >= min_frac && eng <= max_frac
                     && best_good.map_or(true, |b| score < b.0)
@@ -554,25 +584,56 @@ pub(crate) fn search_direction(
                 if best_any.map_or(true, |b| score < b.0) {
                     best_any = Some((score, angle));
                 }
+                if eng < target_frac {
+                    if coarse_lo.map_or(true, |b| (eng - target_frac).abs() < (b.1 - target_frac).abs()) {
+                        coarse_lo = Some((angle, eng));
+                    }
+                } else if coarse_hi.map_or(true, |b| (eng - target_frac).abs() < (b.1 - target_frac).abs()) {
+                    coarse_hi = Some((angle, eng));
+                }
             }
         }
 
-        (best_good.map(|(_, a)| a), best_any.map(|(_, a)| a))
-    };
+        // Bracket refinement: 2-3 interpolation iterations
+        if let (Some(lo), Some(hi)) = (coarse_lo, coarse_hi) {
+            let delta = hi.1 - lo.1;
+            if delta.abs() > 0.001 {
+                let t = ((target_frac - lo.1) / delta).clamp(0.0, 1.0);
+                let interp_angle = lo.0 + t * angle_diff(hi.0, lo.0);
 
-    // Phase 2: forward ±90°
-    let (good, fallback) = evaluate_sweep(PI, 19);
-    if let Some(angle) = good {
-        return Some(angle);
+                if let Some((eng, score)) = eval_candidate(interp_angle) {
+                    if eng >= min_frac && eng <= max_frac
+                        && best_good.map_or(true, |b| score < b.0)
+                    {
+                        best_good = Some((score, interp_angle));
+                    }
+
+                    // Second refinement
+                    let (new_lo, new_hi) = if eng < target_frac {
+                        ((interp_angle, eng), hi)
+                    } else {
+                        (lo, (interp_angle, eng))
+                    };
+                    let d2 = new_hi.1 - new_lo.1;
+                    if d2.abs() > 0.001 {
+                        let t2 = ((target_frac - new_lo.1) / d2).clamp(0.0, 1.0);
+                        let refined = new_lo.0 + t2 * angle_diff(new_hi.0, new_lo.0);
+                        if let Some((eng2, score2)) = eval_candidate(refined)
+                            && eng2 >= min_frac && eng2 <= max_frac
+                            && best_good.map_or(true, |b| score2 < b.0)
+                        {
+                            best_good = Some((score2, refined));
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some((_, angle)) = best_good {
+            return Some(angle);
+        }
+        best_any.map(|(_, a)| a)
     }
-
-    // Phase 3: full 360° (allows U-turns)
-    let (good2, fallback2) = evaluate_sweep(TAU, 36);
-    if let Some(angle) = good2 {
-        return Some(angle);
-    }
-
-    fallback.or(fallback2)
 }
 
 /// Average a buffer of angles, handling wraparound correctly.
@@ -602,7 +663,8 @@ pub(crate) fn angle_diff(a: f64, b: f64) -> f64 {
 // ── Entry point finding ────────────────────────────────────────────────
 
 /// Find the nearest material cell that is not near any of the given endpoints.
-/// Falls back to the plain nearest material if everything is near an endpoint.
+/// Uses growing-radius search. Falls back to plain nearest material if
+/// everything is near an endpoint.
 fn find_nearest_material_spread(
     grid: &MaterialGrid,
     x: f64,
@@ -610,18 +672,51 @@ fn find_nearest_material_spread(
     pass_endpoints: &[P2],
     min_dist_sq: f64,
 ) -> Option<(f64, f64)> {
+    let initial_radius = grid.cell_size * 8.0;
+    let max_radius = (grid.cols as f64 * grid.cell_size)
+        .max(grid.rows as f64 * grid.cell_size)
+        * 1.5;
+
+    let mut radius = initial_radius;
+    while radius <= max_radius {
+        if let Some(result) =
+            find_nearest_material_spread_in_radius(grid, x, y, pass_endpoints, min_dist_sq, radius)
+        {
+            return Some(result);
+        }
+        radius *= 2.0;
+    }
+    find_nearest_material_spread_in_radius(grid, x, y, pass_endpoints, min_dist_sq, max_radius)
+}
+
+fn find_nearest_material_spread_in_radius(
+    grid: &MaterialGrid,
+    x: f64,
+    y: f64,
+    pass_endpoints: &[P2],
+    min_dist_sq: f64,
+    radius: f64,
+) -> Option<(f64, f64)> {
+    let col_min = ((x - radius - grid.origin_x) / grid.cell_size).floor().max(0.0) as usize;
+    let col_max = ((x + radius - grid.origin_x) / grid.cell_size)
+        .ceil()
+        .min(grid.cols.saturating_sub(1) as f64) as usize;
+    let row_min = ((y - radius - grid.origin_y) / grid.cell_size).floor().max(0.0) as usize;
+    let row_max = ((y + radius - grid.origin_y) / grid.cell_size)
+        .ceil()
+        .min(grid.rows.saturating_sub(1) as f64) as usize;
+
     let mut best_dist_sq = f64::INFINITY;
     let mut best = None;
 
-    for row in 0..grid.rows {
+    for row in row_min..=row_max {
         let cy = grid.origin_y + row as f64 * grid.cell_size;
-        for col in 0..grid.cols {
+        for col in col_min..=col_max {
             if grid.cells[row * grid.cols + col] != CELL_MATERIAL {
                 continue;
             }
             let cx = grid.origin_x + col as f64 * grid.cell_size;
 
-            // Skip if near a previous endpoint
             let near = pass_endpoints.iter().any(|ep| {
                 let dx = cx - ep.x;
                 let dy = cy - ep.y;
@@ -2043,6 +2138,120 @@ mod tests {
             link_count > 0 || total_entries <= 2,
             "Should produce links between nearby passes, got {} links / {} entries",
             link_count, total_entries
+        );
+    }
+
+    // ── Coarse scan direction search tests ────────────────────────────
+
+    #[test]
+    fn test_search_coarse_finds_uturn() {
+        // Full material square, tool at center, prev_angle pointing +X.
+        // Coarse 360° scan must find a valid direction (since material is everywhere).
+        let sq = square_polygon(30.0);
+        let grid = MaterialGrid::from_polygon(&sq, 0.5);
+        let boundary_dist = grid.compute_boundary_distances();
+
+        let machinable = offset_polygon(&sq, 2.5);
+        assert!(!machinable.is_empty());
+        let mask = MaterialGrid::build_machinable_mask(
+            &machinable[0], grid.origin_x, grid.origin_y,
+            grid.rows, grid.cols, grid.cell_size,
+        );
+
+        let target = target_engagement_fraction(1.2, 2.5);
+        // prev_angle = PI (pointing -X) — narrow search should fail on some configs,
+        // coarse scan covers full 360°
+        let angle = search_direction(
+            &grid, &mask, 0.0, 0.0, 2.5, 0.75, target, PI, &boundary_dist,
+        );
+        assert!(angle.is_some(), "Coarse scan should find a direction in full material");
+    }
+
+    #[test]
+    fn test_search_coarse_engagement_result() {
+        // Verify that the direction found by the coarse scan actually
+        // leads to a position with engagement within the target tolerance.
+        let sq = square_polygon(40.0);
+        let grid = MaterialGrid::from_polygon(&sq, 0.5);
+        let boundary_dist = grid.compute_boundary_distances();
+
+        let tool_radius = 3.0;
+        let machinable = offset_polygon(&sq, tool_radius);
+        assert!(!machinable.is_empty());
+        let mask = MaterialGrid::build_machinable_mask(
+            &machinable[0], grid.origin_x, grid.origin_y,
+            grid.rows, grid.cols, grid.cell_size,
+        );
+
+        let step_len = grid.cell_size * 1.5;
+        let target = target_engagement_fraction(1.5, tool_radius);
+        let angle = search_direction(
+            &grid, &mask, 0.0, 0.0, tool_radius, step_len, target, 0.0, &boundary_dist,
+        );
+        assert!(angle.is_some(), "Should find direction in open material");
+
+        // Verify engagement at destination
+        let a = angle.unwrap();
+        let nx = step_len * a.cos();
+        let ny = step_len * a.sin();
+        let eng = compute_engagement(&grid, nx, ny, tool_radius);
+        assert!(
+            eng > 0.005,
+            "Destination should have non-zero engagement, got {:.4}",
+            eng
+        );
+    }
+
+    // ── Growing-radius entry point tests ──────────────────────────────
+
+    #[test]
+    fn test_find_material_radius_finds_cluster() {
+        // Material in one corner only, search from far away.
+        let sq = Polygon2::rectangle(0.0, 0.0, 40.0, 40.0);
+        let grid = MaterialGrid::from_polygon(&sq, 0.5);
+
+        // Clear everything except a 5×5 cluster in the top-right corner
+        // by creating a new grid and keeping only the corner
+        let mut grid2 = MaterialGrid::from_polygon(&sq, 0.5);
+        for r in 0..grid2.rows {
+            let y = grid2.origin_y + r as f64 * grid2.cell_size;
+            for c in 0..grid2.cols {
+                let x = grid2.origin_x + c as f64 * grid2.cell_size;
+                if !(x > 33.0 && y > 33.0) && grid2.cells[r * grid2.cols + c] == CELL_MATERIAL {
+                    grid2.cells[r * grid2.cols + c] = CELL_CLEARED;
+                    grid2.material_count -= 1;
+                }
+            }
+        }
+
+        // Search from (5, 5) — far from the cluster
+        let result = grid2.find_nearest_material(5.0, 5.0);
+        assert!(result.is_some(), "Growing-radius search should find distant material");
+        let (mx, my) = result.unwrap();
+        assert!(mx > 30.0 && my > 30.0, "Found material should be in the cluster at ({}, {})", mx, my);
+
+        // Verify the original grid still works (regression)
+        let result2 = grid.find_nearest_material(5.0, 5.0);
+        assert!(result2.is_some(), "Full grid should find nearby material");
+        let (mx2, my2) = result2.unwrap();
+        let dist = ((mx2 - 5.0).powi(2) + (my2 - 5.0).powi(2)).sqrt();
+        assert!(dist < 2.0, "Nearby material should be very close, got dist={:.1}", dist);
+    }
+
+    #[test]
+    fn test_find_material_radius_nearby() {
+        // Full material grid — nearest should be found immediately with small radius.
+        let sq = square_polygon(20.0);
+        let grid = MaterialGrid::from_polygon(&sq, 0.5);
+
+        let result = grid.find_nearest_material(0.0, 0.0);
+        assert!(result.is_some(), "Should find nearby material");
+        let (mx, my) = result.unwrap();
+        let dist = (mx * mx + my * my).sqrt();
+        assert!(
+            dist < 1.0,
+            "Center of full grid should find material right there, got dist={:.1}",
+            dist
         );
     }
 }

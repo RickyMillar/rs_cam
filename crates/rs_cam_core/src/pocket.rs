@@ -60,6 +60,15 @@ pub fn pocket_contours(
         // Compensated boundary is the outermost cutting contour
         all_contours.push(comp.exterior.clone());
 
+        // Include hole contours (reversed to CCW so direction logic works uniformly)
+        for hole in &comp.holes {
+            if hole.len() >= 3 {
+                let mut reversed = hole.clone();
+                reversed.reverse(); // CW→CCW
+                all_contours.push(reversed);
+            }
+        }
+
         // Generate inner contours by repeated stepover offset
         let mut current = vec![comp.clone()];
         loop {
@@ -68,6 +77,16 @@ pub fn pocket_contours(
                 for inner in offset_polygon(poly, stepover) {
                     if inner.exterior.len() >= 3 {
                         all_contours.push(inner.exterior.clone());
+
+                        // Include hole contours from inner offsets
+                        for hole in &inner.holes {
+                            if hole.len() >= 3 {
+                                let mut reversed = hole.clone();
+                                reversed.reverse(); // CW→CCW
+                                all_contours.push(reversed);
+                            }
+                        }
+
                         next.push(inner);
                     }
                 }
@@ -318,6 +337,86 @@ mod tests {
                     i,
                     tp.moves[i].target.z,
                     params.cut_depth
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_pocket_contours_with_hole() {
+        // 40×40 rect with 10×10 center hole — pocket should have more contours
+        // than the same shape without a hole.
+        let hole = vec![
+            P2::new(15.0, 15.0),
+            P2::new(15.0, 25.0),
+            P2::new(25.0, 25.0),
+            P2::new(25.0, 15.0),
+        ]; // CW
+        let poly_with_hole = Polygon2::with_holes(
+            Polygon2::rectangle(0.0, 0.0, 40.0, 40.0).exterior,
+            vec![hole],
+        );
+        let poly_no_hole = Polygon2::rectangle(0.0, 0.0, 40.0, 40.0);
+
+        let contours_with = pocket_contours(&poly_with_hole, 2.0, 2.0);
+        let contours_without = pocket_contours(&poly_no_hole, 2.0, 2.0);
+
+        assert!(
+            !contours_with.is_empty(),
+            "Pocket with hole should produce contours"
+        );
+
+        // The polygon with a hole should produce more contours (the extra hole rings)
+        assert!(
+            contours_with.len() > contours_without.len(),
+            "Pocket with hole should have more contours ({}) than without ({})",
+            contours_with.len(),
+            contours_without.len()
+        );
+    }
+
+    #[test]
+    fn test_pocket_toolpath_no_cuts_inside_island() {
+        // 40×40 rect with 10×10 center hole
+        let hole = vec![
+            P2::new(15.0, 15.0),
+            P2::new(15.0, 25.0),
+            P2::new(25.0, 25.0),
+            P2::new(25.0, 15.0),
+        ]; // CW
+        let poly = Polygon2::with_holes(
+            Polygon2::rectangle(0.0, 0.0, 40.0, 40.0).exterior,
+            vec![hole],
+        );
+
+        let params = PocketParams {
+            tool_radius: 2.0,
+            stepover: 2.0,
+            cut_depth: -3.0,
+            feed_rate: 1000.0,
+            plunge_rate: 500.0,
+            safe_z: 10.0,
+            climb: false,
+        };
+        let tp = pocket_toolpath(&poly, &params);
+
+        // Verify no feed moves have XY inside the hole (with tool radius margin)
+        let hole_margin = 1.0; // allow some tolerance for tool radius
+        for m in &tp.moves {
+            if let MoveType::Linear { feed_rate } = m.move_type
+                && (feed_rate - params.feed_rate).abs() < 1e-6
+            {
+                let x = m.target.x;
+                let y = m.target.y;
+                // Inside the hole = x in (15+margin, 25-margin) and y in (15+margin, 25-margin)
+                let inside_hole = x > 15.0 + hole_margin
+                    && x < 25.0 - hole_margin
+                    && y > 15.0 + hole_margin
+                    && y < 25.0 - hole_margin;
+                assert!(
+                    !inside_hole,
+                    "Feed move at ({:.1}, {:.1}) is inside the island",
+                    x, y
                 );
             }
         }

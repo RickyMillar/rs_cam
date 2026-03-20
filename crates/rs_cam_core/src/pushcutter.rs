@@ -257,52 +257,81 @@ fn edge_push_single(fiber: &mut Fiber, p1: &P3, p2: &P3, cutter: &dyn MillingCut
         return;
     }
 
-    // Sample the edge and find contact intervals.
-    // For each sample point on the edge, check if the cutter centered at
-    // some point on the fiber would contact that edge point.
-    let n_samples = 32;
+    // Coarse+bisection sampling: 9 coarse samples to find contact intervals,
+    // then bisect at boundaries for higher accuracy with fewer evaluations.
+    let n_coarse = 8;
     let mut t_min = f64::INFINITY;
     let mut t_max = f64::NEG_INFINITY;
 
-    for i in 0..=n_samples {
-        let s = i as f64 / n_samples as f64;
+    // Helper: evaluate contact at parameter s along the edge.
+    // Returns the (t_lo, t_hi) fiber interval if contact, else None.
+    let eval_at = |s: f64| -> Option<(f64, f64)> {
         let edge_x = p1.x + s * ex;
         let edge_y = p1.y + s * ey;
         let edge_z = p1.z + s * ez;
 
-        // Height of edge point above fiber Z
         let h = edge_z - z;
         if h < -1e-10 || h > cutter.length() {
-            continue;
+            return None;
         }
 
-        // Cutter width at this height
         let w = cutter.width_at_height(h);
         if w < 1e-15 {
-            continue;
+            return None;
         }
 
-        // Perpendicular distance from edge point to fiber line
         let qx = edge_x - fiber.p1.x;
         let qy = edge_y - fiber.p1.y;
         let perp_dist = (qx * fiber_dy - qy * fiber_dx).abs() / fiber_len;
 
         if perp_dist > w + 1e-10 {
-            continue;
+            return None;
         }
 
-        // t parameter for projection onto fiber
         let t_proj = (qx * fiber_dx + qy * fiber_dy) / fiber_len_sq;
-
-        // Half-width along fiber
         let half_len = (w * w - perp_dist * perp_dist).max(0.0).sqrt() / fiber_len;
 
         let tl = t_proj - half_len;
         let tu = t_proj + half_len;
 
         if tu >= 0.0 && tl <= 1.0 {
+            Some((tl, tu))
+        } else {
+            None
+        }
+    };
+
+    // Phase 1: 9 coarse samples at s = 0, 1/8, 2/8, ..., 1
+    let mut coarse_contact = [false; 9];
+    for i in 0..=n_coarse {
+        let s = i as f64 / n_coarse as f64;
+        if let Some((tl, tu)) = eval_at(s) {
             t_min = t_min.min(tl);
             t_max = t_max.max(tu);
+            coarse_contact[i] = true;
+        }
+    }
+
+    // Phase 2: Bisect at boundaries (contact ↔ no-contact transitions)
+    for i in 0..n_coarse {
+        if coarse_contact[i] != coarse_contact[i + 1] {
+            let mut s_lo = i as f64 / n_coarse as f64;
+            let mut s_hi = (i + 1) as f64 / n_coarse as f64;
+            // 5 bisection iterations → 1/32 of interval precision
+            for _ in 0..5 {
+                let s_mid = (s_lo + s_hi) * 0.5;
+                let has_contact = eval_at(s_mid).is_some();
+                if has_contact == coarse_contact[i] {
+                    s_lo = s_mid;
+                } else {
+                    s_hi = s_mid;
+                }
+                // Evaluate at boundary for t_min/t_max update
+                if let Some((tl, tu)) = eval_at(s_mid) {
+                    t_min = t_min.min(tl);
+                    t_max = t_max.max(tu);
+                }
+            }
         }
     }
 
@@ -433,6 +462,60 @@ mod tests {
         // Center fibers should have intervals, outer ones may not
         let center_fiber = &fibers[5]; // y=0
         assert!(!center_fiber.intervals().is_empty());
+    }
+
+    #[test]
+    fn test_edge_push_diagonal_flat() {
+        // Known diagonal edge with flat endmill, verify interval accuracy.
+        let tool = FlatEndmill::new(10.0, 25.0); // R=5
+        let mut fiber = Fiber::new_x(0.0, 0.0, -30.0, 30.0);
+        // Diagonal edge from (-10, -2, 0) to (10, 2, 0) at z=0 = fiber.z
+        // h=0 → width = R = 5, perp_dist from y=0 fiber varies along edge
+        let p1 = P3::new(-10.0, -2.0, 0.0);
+        let p2 = P3::new(10.0, 2.0, 0.0);
+        edge_push_single(&mut fiber, &p1, &p2, &tool);
+
+        let intervals = fiber.intervals();
+        assert!(
+            !intervals.is_empty(),
+            "Diagonal edge at fiber height should produce contact"
+        );
+
+        // The contact interval should be roughly centered near t=0.5 (x=0)
+        // and span a reasonable fraction of the fiber
+        let (lo, hi) = (intervals[0].lower, intervals[0].upper);
+        let fiber_range = 60.0; // fiber from -30 to 30
+        let contact_len = (hi - lo) * fiber_range;
+        assert!(
+            contact_len > 5.0 && contact_len < 40.0,
+            "Contact length {:.1} should be reasonable for R=5 tool on diagonal edge",
+            contact_len
+        );
+    }
+
+    #[test]
+    fn test_edge_push_diagonal_ball() {
+        // Same diagonal edge with ball endmill.
+        let tool = BallEndmill::new(10.0, 25.0); // R=5
+        let mut fiber = Fiber::new_x(0.0, 3.0, -30.0, 30.0); // fiber at z=3
+        // Edge from (-10, -2, 0) to (10, 2, 6) — crosses fiber z=3 midway
+        let p1 = P3::new(-10.0, -2.0, 0.0);
+        let p2 = P3::new(10.0, 2.0, 6.0);
+        edge_push_single(&mut fiber, &p1, &p2, &tool);
+
+        let intervals = fiber.intervals();
+        assert!(
+            !intervals.is_empty(),
+            "Diagonal edge crossing fiber height should produce contact with ball endmill"
+        );
+
+        // Ball endmill has narrower width at height — interval should be narrower than flat
+        let (lo, hi) = (intervals[0].lower, intervals[0].upper);
+        assert!(
+            hi > lo,
+            "Should have non-zero contact interval: lo={:.3}, hi={:.3}",
+            lo, hi
+        );
     }
 
     #[test]

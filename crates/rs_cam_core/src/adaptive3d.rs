@@ -385,9 +385,9 @@ fn search_direction_3d(
     bbox_y_min: f64,
     bbox_y_max: f64,
 ) -> Option<(f64, f64)> {
-    // Evaluate a candidate direction: returns (score, z_at_next) or None if invalid.
+    // Evaluate a candidate direction: returns (engagement, score, z_at_next) or None.
     // Uses precomputed surface heightmap for Z lookups (O(1)) instead of drop-cutter queries.
-    let evaluate = |angle: f64| -> Option<(f64, f64)> {
+    let evaluate = |angle: f64| -> Option<(f64, f64, f64)> {
         let (sin_a, cos_a) = angle.sin_cos();
         let nx = cx + step_len * cos_a;
         let ny = cy + step_len * sin_a;
@@ -416,7 +416,7 @@ fn search_direction_3d(
         let ad = angle_diff(angle, prev_angle).abs() / PI;
         let score = error + ad * 0.12;
 
-        Some((score, z))
+        Some((eng, score, z))
     };
 
     // Phase 1: Narrow interpolation — 7 candidates near prev_angle
@@ -477,7 +477,7 @@ fn search_direction_3d(
         let diff = angle_diff(hi.0, lo.0);
         let interp_angle = lo.0 + t * diff;
 
-        if let Some((score, z)) = evaluate(interp_angle)
+        if let Some((_eng, score, z)) = evaluate(interp_angle)
             && best.map_or(true, |b| score < b.0)
         {
             best = Some((score, interp_angle, z));
@@ -492,35 +492,63 @@ fn search_direction_3d(
         return Some((angle, z));
     }
 
-    // Phase 2: Forward sweep +/-90 degrees (19 candidates)
-    let mut fallback: Option<(f64, f64, f64)> = best;
-    for i in 0..19 {
-        let angle = prev_angle - PI / 2.0 + (i as f64 / 18.0) * PI;
-        if let Some((score, z)) = evaluate(angle)
-            && fallback.map_or(true, |b| score < b.0)
-        {
-            fallback = Some((score, angle, z));
-        }
-    }
-
-    if let Some((score, angle, z)) = fallback
-        && score < 0.3
+    // ── Phase 2: Coarse 360° scan + bracket refinement ────────────────
+    // 18 candidates at 20° intervals (vs 55 in the old Phase 2+3)
     {
-        return Some((angle, z));
-    }
+        let n_coarse = 18;
+        let mut fallback: Option<(f64, f64, f64)> = best; // carry over from Phase 1
+        let mut coarse_lo: Option<(f64, f64, f64)> = None; // (angle, eng, z)
+        let mut coarse_hi: Option<(f64, f64, f64)> = None;
 
-    // Phase 3: Full 360 (36 candidates, allows U-turns)
-    let mut fallback2: Option<(f64, f64, f64)> = fallback;
-    for i in 0..36 {
-        let angle = (i as f64 / 36.0) * TAU;
-        if let Some((score, z)) = evaluate(angle)
-            && fallback2.map_or(true, |b| score < b.0)
-        {
-            fallback2 = Some((score, angle, z));
+        for i in 0..n_coarse {
+            let angle = (i as f64 / n_coarse as f64) * TAU;
+            if let Some((eng, score, z)) = evaluate(angle) {
+                if fallback.map_or(true, |b| score < b.0) {
+                    fallback = Some((score, angle, z));
+                }
+                if eng < target_frac {
+                    if coarse_lo.map_or(true, |b| (eng - target_frac).abs() < (b.1 - target_frac).abs()) {
+                        coarse_lo = Some((angle, eng, z));
+                    }
+                } else if coarse_hi.map_or(true, |b| (eng - target_frac).abs() < (b.1 - target_frac).abs()) {
+                    coarse_hi = Some((angle, eng, z));
+                }
+            }
         }
-    }
 
-    fallback2.map(|(_, angle, z)| (angle, z))
+        // Bracket refinement
+        if let (Some(lo), Some(hi)) = (coarse_lo, coarse_hi) {
+            let delta = hi.1 - lo.1;
+            if delta.abs() > 0.001 {
+                let t = ((target_frac - lo.1) / delta).clamp(0.0, 1.0);
+                let interp_angle = lo.0 + t * angle_diff(hi.0, lo.0);
+
+                if let Some((eng, score, z)) = evaluate(interp_angle) {
+                    if fallback.map_or(true, |b| score < b.0) {
+                        fallback = Some((score, interp_angle, z));
+                    }
+                    // Second refinement
+                    let (new_lo, new_hi) = if eng < target_frac {
+                        ((interp_angle, eng, z), hi)
+                    } else {
+                        (lo, (interp_angle, eng, z))
+                    };
+                    let d2 = new_hi.1 - new_lo.1;
+                    if d2.abs() > 0.001 {
+                        let t2 = ((target_frac - new_lo.1) / d2).clamp(0.0, 1.0);
+                        let refined = new_lo.0 + t2 * angle_diff(new_hi.0, new_lo.0);
+                        if let Some((_eng2, score2, z2)) = evaluate(refined)
+                            && fallback.map_or(true, |b| score2 < b.0)
+                        {
+                            fallback = Some((score2, refined, z2));
+                        }
+                    }
+                }
+            }
+        }
+
+        fallback.map(|(_, angle, z)| (angle, z))
+    }
 }
 
 // ── 3D entry point finding ────────────────────────────────────────────
@@ -529,7 +557,9 @@ fn search_direction_3d(
 /// effective floor at z_level.
 ///
 /// When `scan_bbox` is `Some((row_min, row_max, col_min, col_max))`, only
-/// cells within that bounding box are considered.
+/// cells within that bounding box are considered. When `None`, uses
+/// growing-radius search from the reference position for O(local) instead
+/// of O(rows×cols).
 fn find_entry_3d(
     material_hm: &Heightmap,
     surface_hm: &SurfaceHeightmap,
@@ -545,15 +575,6 @@ fn find_entry_3d(
 ) -> Option<(P2, f64)> {
     let min_endpoint_dist_sq = (tool_radius * 3.0) * (tool_radius * 3.0);
 
-    let (row_lo, row_hi, col_lo, col_hi) = scan_bbox.unwrap_or((
-        0,
-        material_hm.rows.saturating_sub(1),
-        0,
-        material_hm.cols.saturating_sub(1),
-    ));
-    let row_hi = row_hi.min(material_hm.rows.saturating_sub(1));
-    let col_hi = col_hi.min(material_hm.cols.saturating_sub(1));
-
     // Reference position for nearest search
     let ref_pos = last_pos.unwrap_or_else(|| {
         let cx = material_hm.origin_x
@@ -562,6 +583,73 @@ fn find_entry_3d(
             + (material_hm.rows as f64 / 2.0) * material_hm.cell_size;
         P2::new(cx, cy)
     });
+
+    // Growing-radius search when no explicit bbox
+    if scan_bbox.is_none() {
+        let cs = material_hm.cell_size;
+        let initial_radius = tool_radius * 4.0;
+        let max_extent = (material_hm.cols as f64 * cs).max(material_hm.rows as f64 * cs);
+
+        let mut radius = initial_radius;
+        while radius <= max_extent * 1.5 {
+            let row_lo = ((ref_pos.y - radius - material_hm.origin_y) / cs)
+                .floor()
+                .max(0.0) as usize;
+            let row_hi = ((ref_pos.y + radius - material_hm.origin_y) / cs)
+                .ceil()
+                .min(material_hm.rows.saturating_sub(1) as f64) as usize;
+            let col_lo = ((ref_pos.x - radius - material_hm.origin_x) / cs)
+                .floor()
+                .max(0.0) as usize;
+            let col_hi = ((ref_pos.x + radius - material_hm.origin_x) / cs)
+                .ceil()
+                .min(material_hm.cols.saturating_sub(1) as f64) as usize;
+
+            if let Some(result) = scan_entry_3d_bounds(
+                material_hm, surface_hm, mesh, index, cutter,
+                z_level, stock_to_leave, &ref_pos, pass_endpoints,
+                min_endpoint_dist_sq, row_lo, row_hi, col_lo, col_hi,
+            ) {
+                return Some(result);
+            }
+            radius *= 2.0;
+        }
+    }
+
+    // Full scan (explicit bbox or growing radius exhausted)
+    let (row_lo, row_hi, col_lo, col_hi) = scan_bbox.unwrap_or((
+        0,
+        material_hm.rows.saturating_sub(1),
+        0,
+        material_hm.cols.saturating_sub(1),
+    ));
+
+    scan_entry_3d_bounds(
+        material_hm, surface_hm, mesh, index, cutter,
+        z_level, stock_to_leave, &ref_pos, pass_endpoints,
+        min_endpoint_dist_sq, row_lo, row_hi, col_lo, col_hi,
+    )
+}
+
+/// Scan a bounded region of the heightmap for the nearest entry point.
+fn scan_entry_3d_bounds(
+    material_hm: &Heightmap,
+    surface_hm: &SurfaceHeightmap,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    z_level: f64,
+    stock_to_leave: f64,
+    ref_pos: &P2,
+    pass_endpoints: &[P2],
+    min_endpoint_dist_sq: f64,
+    row_lo: usize,
+    row_hi: usize,
+    col_lo: usize,
+    col_hi: usize,
+) -> Option<(P2, f64)> {
+    let row_hi = row_hi.min(material_hm.rows.saturating_sub(1));
+    let col_hi = col_hi.min(material_hm.cols.saturating_sub(1));
 
     let mut best: Option<(f64, usize, usize)> = None; // (dist_sq, row, col)
 
@@ -572,19 +660,17 @@ fn find_entry_3d(
             let floor = (surf_z + stock_to_leave).max(z_level);
 
             if mat_z <= floor + 0.01 {
-                continue; // No material here
+                continue;
             }
 
             let (x, y) = material_hm.cell_to_world(row, col);
 
-            // Skip cells near previous endpoints (entry spreading)
             let too_close = pass_endpoints.iter().any(|ep| {
                 let dx = x - ep.x;
                 let dy = y - ep.y;
                 dx * dx + dy * dy < min_endpoint_dist_sq
             });
             if too_close && pass_endpoints.len() < 50 {
-                // Allow after many passes to avoid deadlock
                 continue;
             }
 

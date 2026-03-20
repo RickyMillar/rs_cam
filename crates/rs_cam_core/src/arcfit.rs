@@ -139,14 +139,16 @@ fn try_fit_arc(points: &[&P3], tolerance: f64) -> Option<ArcParams> {
         return None;
     }
 
-    // Use first, middle, and last points to define the circle
-    let p0 = points[0];
-    let pm = points[points.len() / 2];
-    let pn = points[points.len() - 1];
-
-    let (cx, cy, radius) = circle_from_3_points(
-        p0.x, p0.y, pm.x, pm.y, pn.x, pn.y,
-    )?;
+    // Least-squares circle fit (Kåsa's algebraic method) for better accuracy
+    // on noisy or partial-arc points. Falls back to 3-point if too few points.
+    let (cx, cy, radius) = if points.len() >= 5 {
+        circle_from_least_squares(points)?
+    } else {
+        let p0 = points[0];
+        let pm = points[points.len() / 2];
+        let pn = points[points.len() - 1];
+        circle_from_3_points(p0.x, p0.y, pm.x, pm.y, pn.x, pn.y)?
+    };
 
     // Reject degenerate arcs (very large radius = nearly straight line)
     if radius > 1e6 {
@@ -164,10 +166,13 @@ fn try_fit_arc(points: &[&P3], tolerance: f64) -> Option<ArcParams> {
     }
 
     // Determine CW vs CCW using the cross product of the first two segments
-    let dx1 = pm.x - p0.x;
-    let dy1 = pm.y - p0.y;
-    let dx2 = pn.x - pm.x;
-    let dy2 = pn.y - pm.y;
+    let p_first = points[0];
+    let p_mid = points[points.len() / 2];
+    let p_last = points[points.len() - 1];
+    let dx1 = p_mid.x - p_first.x;
+    let dy1 = p_mid.y - p_first.y;
+    let dx2 = p_last.x - p_mid.x;
+    let dy2 = p_last.y - p_mid.y;
     let cross = dx1 * dy2 - dy1 * dx2;
 
     // Negative cross product = CW (G2), positive = CCW (G3)
@@ -180,7 +185,72 @@ fn try_fit_arc(points: &[&P3], tolerance: f64) -> Option<ArcParams> {
     })
 }
 
+/// Least-squares circle fit using Kåsa's algebraic method.
+///
+/// Minimizes the algebraic distance sum(xi² + yi² + D*xi + E*yi + F)²
+/// by solving a 3×3 linear system. Returns (cx, cy, radius).
+fn circle_from_least_squares(points: &[&P3]) -> Option<(f64, f64, f64)> {
+    let n = points.len() as f64;
+    if n < 3.0 {
+        return None;
+    }
+
+    let mut sx = 0.0;
+    let mut sy = 0.0;
+    let mut sx2 = 0.0;
+    let mut sy2 = 0.0;
+    let mut sxy = 0.0;
+    let mut sx3 = 0.0;
+    let mut sy3 = 0.0;
+    let mut sx2y = 0.0;
+    let mut sxy2 = 0.0;
+
+    for &p in points {
+        let x = p.x;
+        let y = p.y;
+        let x2 = x * x;
+        let y2 = y * y;
+        sx += x;
+        sy += y;
+        sx2 += x2;
+        sy2 += y2;
+        sxy += x * y;
+        sx3 += x2 * x;
+        sy3 += y2 * y;
+        sx2y += x2 * y;
+        sxy2 += x * y2;
+    }
+
+    // Solve 2×2 system for A, B:
+    //   [sx2  sxy] [A]   [-(sx3 + sxy2)]
+    //   [sxy  sy2] [B] = [-(sx2y + sy3)]
+    // Then cx = A/(-2), cy = B/(-2)
+    let a11 = sx2 - sx * sx / n;
+    let a12 = sxy - sx * sy / n;
+    let a22 = sy2 - sy * sy / n;
+
+    let b1 = 0.5 * (sx3 + sxy2 - sx * (sx2 + sy2) / n);
+    let b2 = 0.5 * (sx2y + sy3 - sy * (sx2 + sy2) / n);
+
+    let det = a11 * a22 - a12 * a12;
+    if det.abs() < 1e-20 {
+        return None; // Degenerate (collinear or single point)
+    }
+
+    let cx = (b1 * a22 - b2 * a12) / det;
+    let cy = (a11 * b2 - a12 * b1) / det;
+
+    let r_sq = (sx2 + sy2 - 2.0 * cx * sx - 2.0 * cy * sy) / n + cx * cx + cy * cy;
+    if r_sq <= 0.0 {
+        return None;
+    }
+    let radius = r_sq.sqrt();
+
+    Some((cx, cy, radius))
+}
+
 /// Find the center and radius of a circle through 3 points.
+#[allow(dead_code)]
 fn circle_from_3_points(
     x1: f64, y1: f64,
     x2: f64, y2: f64,
@@ -360,6 +430,76 @@ mod tests {
             "Z-changed segment should remain linear"
         );
         assert!((last.target.z - 5.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_least_squares_exact_circle() {
+        // 8 points on a known circle — verify center/radius match.
+        let cx = 5.0;
+        let cy = -3.0;
+        let r = 12.0;
+        let pts: Vec<P3> = (0..8)
+            .map(|i| {
+                let angle = std::f64::consts::TAU * i as f64 / 8.0;
+                P3::new(cx + r * angle.cos(), cy + r * angle.sin(), 0.0)
+            })
+            .collect();
+        let refs: Vec<&P3> = pts.iter().collect();
+
+        let (fx, fy, fr) = circle_from_least_squares(&refs).unwrap();
+        assert!((fx - cx).abs() < 0.01, "cx: expected {}, got {}", cx, fx);
+        assert!((fy - cy).abs() < 0.01, "cy: expected {}, got {}", cy, fy);
+        assert!((fr - r).abs() < 0.01, "r: expected {}, got {}", r, fr);
+    }
+
+    #[test]
+    fn test_least_squares_beats_3_point() {
+        // 16 points with small noise — least-squares should have lower mean error.
+        let cx = 0.0;
+        let cy = 0.0;
+        let r = 10.0;
+
+        // Add small deterministic "noise" using sin pattern
+        let pts: Vec<P3> = (0..16)
+            .map(|i| {
+                let angle = std::f64::consts::TAU * i as f64 / 16.0;
+                let noise = (i as f64 * 1.7).sin() * 0.05;
+                P3::new(
+                    cx + (r + noise) * angle.cos(),
+                    cy + (r + noise) * angle.sin(),
+                    0.0,
+                )
+            })
+            .collect();
+        let refs: Vec<&P3> = pts.iter().collect();
+
+        // Least-squares fit
+        let (lx, ly, lr) = circle_from_least_squares(&refs).unwrap();
+        let ls_err: f64 = refs.iter()
+            .map(|p| {
+                let d = ((p.x - lx).powi(2) + (p.y - ly).powi(2)).sqrt();
+                (d - lr).abs()
+            })
+            .sum::<f64>() / refs.len() as f64;
+
+        // 3-point fit (first, middle, last)
+        let (tx, ty, tr) = circle_from_3_points(
+            refs[0].x, refs[0].y,
+            refs[8].x, refs[8].y,
+            refs[15].x, refs[15].y,
+        ).unwrap();
+        let tp_err: f64 = refs.iter()
+            .map(|p| {
+                let d = ((p.x - tx).powi(2) + (p.y - ty).powi(2)).sqrt();
+                (d - tr).abs()
+            })
+            .sum::<f64>() / refs.len() as f64;
+
+        assert!(
+            ls_err <= tp_err + 1e-10,
+            "Least-squares error ({:.6}) should be <= 3-point error ({:.6})",
+            ls_err, tp_err
+        );
     }
 
     #[test]
