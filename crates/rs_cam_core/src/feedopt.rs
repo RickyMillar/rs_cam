@@ -33,21 +33,13 @@ pub struct FeedOptParams {
 
 /// Compute the Radial Chip Thinning Factor (RCTF).
 ///
-/// When the cutter is not fully engaged (ae < D), the actual chip thickness
-/// is less than the nominal feed-per-tooth. The RCTF compensates:
-///
-///   RCTF = 1.0 / sqrt(1.0 - (1.0 - 2*ae/D)^2)
-///
-/// At full engagement (ae = D): RCTF = 1.0 (no compensation)
-/// At ae = D/2: RCTF ≈ 1.15
-/// At ae = D/4: RCTF ≈ 1.55
+/// Delegates to `feeds::geometry::radial_chip_thinning_factor` for the shared
+/// implementation. This wrapper accepts an ae fraction (0..1) instead of
+/// absolute mm values.
 fn rctf(ae_fraction: f64) -> f64 {
-    let ae = ae_fraction.clamp(0.001, 1.0);
-    let inner = 1.0 - (1.0 - 2.0 * ae).powi(2);
-    if inner <= 0.0 {
-        return 1.0;
-    }
-    1.0 / inner.sqrt()
+    // Convert fraction to absolute values — use diameter = 1.0 so ae_fraction
+    // directly represents ae/D ratio.
+    crate::feeds::geometry::radial_chip_thinning_factor(ae_fraction, 1.0)
 }
 
 /// Estimate material engagement fraction at a point using the heightmap.

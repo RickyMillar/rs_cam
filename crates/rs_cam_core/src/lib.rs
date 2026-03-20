@@ -33,3 +33,6 @@ pub mod contour_extract;
 pub mod collision;
 pub mod pipeline;
 pub mod feedopt;
+pub mod material;
+pub mod machine;
+pub mod feeds;
