@@ -1,4 +1,4 @@
-use crate::state::job::{ToolConfig, ToolType};
+use crate::state::job::{CutDirection, ToolConfig, ToolMaterial, ToolType};
 
 pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     ui.heading(&tool.name);
@@ -47,6 +47,40 @@ pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
                     .speed(0.5)
                     .range(0.1..=200.0),
             );
+            ui.end_row();
+
+            // Flute count (critical for feeds calculation)
+            ui.label("Flutes:");
+            let mut flutes_f = tool.flute_count as f64;
+            if ui.add(
+                egui::DragValue::new(&mut flutes_f)
+                    .range(1.0..=8.0)
+                    .speed(0.1),
+            ).changed() {
+                tool.flute_count = (flutes_f as u32).clamp(1, 8);
+            }
+            ui.end_row();
+
+            // Tool material
+            ui.label("Material:");
+            egui::ComboBox::from_id_salt("tool_material")
+                .selected_text(tool.tool_material.label())
+                .show_ui(ui, |ui| {
+                    for &tm in ToolMaterial::ALL {
+                        ui.selectable_value(&mut tool.tool_material, tm, tm.label());
+                    }
+                });
+            ui.end_row();
+
+            // Cut direction
+            ui.label("Cut Dir:");
+            egui::ComboBox::from_id_salt("cut_direction")
+                .selected_text(tool.cut_direction.label())
+                .show_ui(ui, |ui| {
+                    for &cd in CutDirection::ALL {
+                        ui.selectable_value(&mut tool.cut_direction, cd, cd.label());
+                    }
+                });
             ui.end_row();
 
             // Type-specific parameters

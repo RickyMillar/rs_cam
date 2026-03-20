@@ -1,4 +1,5 @@
 use super::AppEvent;
+use crate::render::toolpath_render::palette_color;
 use crate::state::AppState;
 use crate::state::job::ToolType;
 use crate::state::selection::Selection;
@@ -36,6 +37,17 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         .clicked()
     {
         events.push(AppEvent::Select(Selection::PostProcessor));
+    }
+
+    // Machine
+    if ui
+        .selectable_label(
+            state.selection == Selection::Machine,
+            format!("Machine: {}", state.job.machine.name),
+        )
+        .clicked()
+    {
+        events.push(AppEvent::Select(Selection::Machine));
     }
 
     ui.add_space(4.0);
@@ -113,17 +125,50 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         }
         for (i, tp) in state.job.toolpaths.iter().enumerate() {
             let selected = state.selection == Selection::Toolpath(tp.id);
-            let status_icon = match &tp.status {
-                ComputeStatus::Pending => "  ",
-                ComputeStatus::Computing(_) => "~ ",
-                ComputeStatus::Done => "* ",
-                ComputeStatus::Error(_) => "! ",
+
+            // Status indicator: colored unicode circle
+            let (status_icon, status_color) = match &tp.status {
+                ComputeStatus::Pending => ("\u{25CB}", egui::Color32::from_rgb(120, 120, 130)), // hollow circle
+                ComputeStatus::Computing(_) => ("\u{25CF}", egui::Color32::from_rgb(200, 180, 80)), // yellow filled
+                ComputeStatus::Done => ("\u{25CF}", egui::Color32::from_rgb(80, 180, 80)), // green filled
+                ComputeStatus::Error(_) => ("\u{25CF}", egui::Color32::from_rgb(220, 80, 80)), // red filled
             };
-            let label = format!("[{}] {}{}", i + 1, status_icon, tp.name);
-            let response = ui.selectable_label(selected, &label);
-            if response.clicked() {
-                events.push(AppEvent::Select(Selection::Toolpath(tp.id)));
-            }
+
+            // Palette color swatch matching viewport color
+            let pc = palette_color(i);
+            let swatch_color = egui::Color32::from_rgb(
+                (pc[0] * 255.0) as u8,
+                (pc[1] * 255.0) as u8,
+                (pc[2] * 255.0) as u8,
+            );
+
+            // Visibility/enabled indicators
+            let dim = !tp.enabled || !tp.visible;
+
+            let response = ui.horizontal(|ui| {
+                // Palette color swatch (small colored square)
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                ui.painter().rect_filled(rect, 1.0, swatch_color);
+
+                // Status circle
+                ui.label(egui::RichText::new(status_icon).color(status_color).size(10.0));
+
+                // Toolpath name
+                let text_color = if dim {
+                    egui::Color32::from_rgb(100, 100, 110)
+                } else if selected {
+                    egui::Color32::from_rgb(220, 220, 230)
+                } else {
+                    egui::Color32::from_rgb(180, 180, 190)
+                };
+                let label = format!("[{}] {}", i + 1, tp.name);
+                let resp = ui.selectable_label(selected, egui::RichText::new(&label).color(text_color));
+                if resp.clicked() {
+                    events.push(AppEvent::Select(Selection::Toolpath(tp.id)));
+                }
+                resp
+            }).inner;
+
             response.context_menu(|ui| {
                 let vis_label = if tp.visible { "Hide" } else { "Show" };
                 if ui.button(vis_label).clicked() {
