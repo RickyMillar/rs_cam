@@ -1,3 +1,5 @@
+use super::toolpath::ToolpathId;
+
 /// Viewport rendering state.
 pub struct ViewportState {
     pub show_grid: bool,
@@ -6,6 +8,8 @@ pub struct ViewportState {
     pub show_cutting: bool,
     pub show_rapids: bool,
     pub show_collisions: bool,
+    /// When set, only this toolpath is visible (isolation mode, toggle with I).
+    pub isolate_toolpath: Option<ToolpathId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,6 +27,7 @@ impl ViewportState {
             show_cutting: true,
             show_rapids: true,
             show_collisions: true,
+            isolate_toolpath: None,
         }
     }
 }

@@ -64,6 +64,10 @@ pub fn draw(ctx: &egui::Context, _state: &AppState, events: &mut Vec<AppEvent>) 
                     ui.close_menu();
                     events.push(AppEvent::ExportGcode);
                 }
+                if ui.button("Export SVG Preview...").clicked() {
+                    ui.close_menu();
+                    events.push(AppEvent::ExportSvgPreview);
+                }
                 ui.separator();
                 if ui.button("Quit").clicked() {
                     events.push(AppEvent::Quit);

@@ -1,0 +1,116 @@
+{
+  "sources": [
+    {
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-03-10",
+      "coverage_notes": "Flat/compression wood tooling feed and chipload chart"
+    },
+    {
+      "source_id": "amana_ball_nose_v7",
+      "source_vendor": "amana",
+      "source_title": "Amana Spiral Ball Nose Speed Chart v7",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Spiral-Ball-Nose-Speed-Chart-v7.pdf",
+      "accessed_on": "2026-03-10",
+      "coverage_notes": "Ball nose chart rows for wood, MDF, plastic, and aluminum"
+    },
+    {
+      "source_id": "amana_zrn_3d_profiling",
+      "source_vendor": "amana",
+      "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf",
+      "accessed_on": "2026-03-10",
+      "coverage_notes": "Ball/tapered-ball/flat profiling guidance"
+    },
+    {
+      "source_id": "amana_insert_v_groove_v16",
+      "source_vendor": "amana",
+      "source_title": "Amana Insert V-Groove Speed Chart v16",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Insert-V-Groove-Speed-Chart-v16.pdf",
+      "accessed_on": "2026-03-10",
+      "coverage_notes": "Chamfer and V-bit speed/feed data"
+    },
+    {
+      "source_id": "amana_spoilboard_v8",
+      "source_vendor": "amana",
+      "source_title": "Amana Spoilboard 2-Wing Speed Chart v8",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Spoilboard_2-Wing-Speed-Chart-v8.pdf",
+      "accessed_on": "2026-03-10",
+      "coverage_notes": "Facing/surfacing tool guidance"
+    },
+    {
+      "source_id": "onsrud_cutting_data_recommendations",
+      "source_vendor": "onsrud",
+      "source_title": "Onsrud Cutting Data Recommendations",
+      "source_url": "https://www.onsrud.com/Forms/Cutting-Data-Recommendations.asp",
+      "accessed_on": "2026-03-10",
+      "coverage_notes": "Router guidance across wood/plastic/aluminum families"
+    },
+    {
+      "source_id": "harvey_speeds_and_feeds_library",
+      "source_vendor": "harvey",
+      "source_title": "Harvey Speeds and Feeds Library",
+      "source_url": "https://www.harveytool.com/resources/speeds-feeds",
+      "accessed_on": "2026-03-10",
+      "coverage_notes": "Product-specific published chart references"
+    },
+    {
+      "source_id": "harvey_map",
+      "source_vendor": "harvey",
+      "source_title": "Harvey Machining Advisor Pro",
+      "source_url": "https://www.harveyperformance.com/machining-advisor-pro/",
+      "accessed_on": "2026-03-10",
+      "coverage_notes": "Interactive source captured manually when needed"
+    },
+    {
+      "source_id": "whiteside_cnc_router_bits",
+      "source_vendor": "whiteside",
+      "source_title": "Whiteside CNC Router Bits Collection",
+      "source_url": "https://www.whitesiderouterbits.com/collections/cnc-router-bits",
+      "accessed_on": "2026-03-10",
+      "coverage_notes": "RPM-band reference pages"
+    },
+    {
+      "source_id": "whiteside_vgroove_collection",
+      "source_vendor": "whiteside",
+      "source_title": "Whiteside 120 V-Groove Collection",
+      "source_url": "https://www.whitesiderouterbits.com/collections/120-v-groove",
+      "accessed_on": "2026-03-10",
+      "coverage_notes": "V-bit RPM bands"
+    },
+    {
+      "source_id": "whiteside_6210_spoilboard",
+      "source_vendor": "whiteside",
+      "source_title": "Whiteside 6210 Spoilboard Surfacing",
+      "source_url": "https://www.whitesiderouterbits.com/products/6210",
+      "accessed_on": "2026-03-10",
+      "coverage_notes": "Small surfacing bit RPM guidance"
+    },
+    {
+      "source_id": "sandvik_formulas",
+      "source_vendor": "sandvik",
+      "source_title": "Sandvik Coromant Milling Formulas",
+      "source_url": "https://cdn.sandvik.coromant.com/files/sitecollectiondocuments/downloads/global/technical%20guides/en-gb/c-2920-034.pdf",
+      "accessed_on": "2026-03-10",
+      "coverage_notes": "Formula validation and power equations"
+    },
+    {
+      "source_id": "garr_chip_thinning",
+      "source_vendor": "garr",
+      "source_title": "GARR Chip Thinning",
+      "source_url": "https://www.garrtool.com/knowledge-base/chip-thinning/",
+      "accessed_on": "2026-03-10",
+      "coverage_notes": "Chip thinning equation reference"
+    },
+    {
+      "source_id": "autodesk_adaptive_reference",
+      "source_vendor": "autodesk",
+      "source_title": "Autodesk Fusion Adaptive Reference",
+      "source_url": "https://help.autodesk.com/cloudhelp/ENU/Fusion-CAM/files/GUID09E44604-DAD8-47D6-ADC6-C100869DE724.htm",
+      "accessed_on": "2026-03-10",
+      "coverage_notes": "Operation semantics for adaptive and load parameters"
+    }
+  ]
+}

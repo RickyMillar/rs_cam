@@ -7,6 +7,10 @@ use crate::state::selection::Selection;
 use crate::state::toolpath::*;
 use crate::ui::AppEvent;
 
+/// Global embedded vendor LUT, loaded once on first access.
+static VENDOR_LUT: std::sync::LazyLock<rs_cam_core::feeds::vendor_lut::VendorLut> =
+    std::sync::LazyLock::new(|| rs_cam_core::feeds::vendor_lut::VendorLut::embedded());
+
 pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
     // When simulation is active, show simulation panel instead of normal properties
     if state.simulation.active {
@@ -511,6 +515,11 @@ fn calculate_and_apply_feeds(
         axial_depth_mm: axial_hint,
         radial_width_mm: radial_hint,
         target_scallop_mm: scallop_hint,
+        vendor_lut: Some(&*VENDOR_LUT),
+        setup: rs_cam_core::feeds::SetupContext {
+            tool_overhang_mm: Some(tool.stickout),
+            workholding_rigidity: rs_cam_core::feeds::WorkholdingRigidity::Medium,
+        },
     };
 
     let result = rs_cam_core::feeds::calculate(&input);
@@ -562,6 +571,12 @@ fn draw_feeds_card(ui: &mut egui::Ui, entry: &ToolpathEntry) {
 
                 ui.label("MRR:"); ui.label(format!("{:.0} mm\u{00B3}/min", result.mrr_mm3_min)); ui.end_row();
             });
+
+            // Vendor source
+            if let Some(src) = &result.vendor_source {
+                ui.label(egui::RichText::new(format!("Source: {src}")).small()
+                    .color(egui::Color32::from_rgb(100, 160, 200)));
+            }
 
             // Warnings
             for w in &result.warnings {

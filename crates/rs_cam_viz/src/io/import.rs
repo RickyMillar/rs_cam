@@ -23,6 +23,10 @@ pub fn import_stl(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, S
         ModelUnits::Custom(scale)
     };
 
+    // Check winding consistency for normal flip warning
+    let winding = mesh.check_winding();
+    let winding_pct = winding.inconsistency_fraction * 100.0;
+
     Ok(LoadedModel {
         id,
         path: path.to_path_buf(),
@@ -31,6 +35,7 @@ pub fn import_stl(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, S
         mesh: Some(Arc::new(mesh)),
         polygons: None,
         units,
+        winding_report: Some(winding_pct),
     })
 }
 
@@ -51,6 +56,7 @@ pub fn import_svg(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
         mesh: None,
         polygons: Some(Arc::new(polygons)),
         units: ModelUnits::Millimeters,
+        winding_report: None,
     })
 }
 
@@ -71,5 +77,6 @@ pub fn import_dxf(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
         mesh: None,
         polygons: Some(Arc::new(polygons)),
         units: ModelUnits::Millimeters,
+        winding_report: None,
     })
 }

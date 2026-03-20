@@ -9,7 +9,7 @@ Read this FIRST at the start of every session. Update LAST before ending.
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 512 tests passing (510 unit + 2 integration)
+- [x] Core library + CLI compiling, 534 tests passing (532 unit + 2 integration)
 - [x] Phase 1 complete: STL → drop-cutter → G-code pipeline with 3D HTML viewer
 - [x] Phase 2 complete: 2.5D operations (pocket, profile, zigzag, depth stepping, SVG/DXF input, dressups, CLI)
 - [x] Phase 3 complete: Advanced tools (BullNose, VBit, TaperedBall), push-cutter, waterline, arc fitting, G2/G3
@@ -114,6 +114,7 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] 5.21 Remaining stock — Phase C: StockSource enum (Fresh/FromRemainingStock) on every ToolpathEntry, stock source selector in properties panel with info text, deprecation path for Rest machining operation
 - [x] 5.22 Plan gaps — Phase D: normal flip warning (yellow banner in model properties when >1% inconsistent winding), export summary logging (line count, moves, cutting distance, tool changes, estimated time), cancel computation button with AtomicBool cancellation token, SVG preview export via File menu (toolpath_to_svg)
 - [x] 5.23 Feeds & Speeds Integration — Material model (23 materials across 5 families: wood/plywood/sheet/plastic/foam with hardness index and Kc), Machine profiles (3 presets: generic/Shapeoko VFD/Makita with spindle config, power model, chip load formula, rigidity), Feeds calculator (10-step pipeline: RPM→chipload→DOC/WOC→flute guard→feed→power check→machine clamp→plunge→safety→warnings, sub-ms per call), Tool extensions (flute_count, tool_material, cut_direction), Auto-suggest UX (per-field auto/manual toggle via FeedsAutoMode, calculated values auto-written into operation configs, feeds summary card with RPM/chipload/feed/plunge/DOC/WOC/power bar/MRR/warnings), TOML serialization (material, machine, flute_count backward-compatible), 58 new tests (material.rs, machine.rs, feeds/geometry.rs, feeds/mod.rs)
+- [x] 5.24 Vendor LUT Chipload Seeding + Setup Derates — Vendor observation LUT (61 Amana observations across 5 JSON files, 6 tool families, 12 material families), scoring lookup algorithm (must-match filter + 8-component scoring: tool family, row kind, evidence grade, flute count, diameter proximity, hardness proximity, subfamily, pass role), chipload override (LUT midpoint replaces formula when matched, formula fallback when no match), RPM override from vendor data, setup derates (L/D>6 → 25% feed reduction, L/D>4 → 12%, low workholding → 15% reduction), vendor source display in feeds card, embedded data via include_str!, extensible load_dir for additional vendor JSON, 22 new tests
 
 ## Module Map (for new agents)
 
@@ -149,7 +150,7 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 | pipeline | `rs_cam_core/src/pipeline.rs` | Incremental computation cache with dirty-flag invalidation |
 | material | `rs_cam_core/src/material.rs` | Material enum (wood/plywood/sheet/plastic/foam/custom), hardness index, Kc values |
 | machine | `rs_cam_core/src/machine.rs` | MachineProfile, spindle config, power model, chip load formula, rigidity, presets |
-| feeds | `rs_cam_core/src/feeds/` | Feeds calculator (mod.rs + geometry.rs): RPM, chip load, DOC/WOC, power check, warnings |
+| feeds | `rs_cam_core/src/feeds/` | Feeds calculator (mod.rs + geometry.rs + vendor_lut.rs + vendor_lookup.rs + vendor_normalize.rs): RPM, chip load, DOC/WOC, power check, warnings, vendor LUT chipload seeding, setup derates |
 | contour_extract | `rs_cam_core/src/contour_extract.rs` | Marching squares contour extraction for waterline (replaces nearest-neighbor) |
 | CLI | `rs_cam_cli/src/main.rs` | drop-cutter, pocket, profile, adaptive, adaptive3d, vcarve, rest, waterline, pencil, inlay subcommands |
 

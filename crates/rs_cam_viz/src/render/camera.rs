@@ -115,6 +115,22 @@ impl OrbitCamera {
         self.distance = extent * 1.8;
     }
 
+    /// Project a world-space point to screen coordinates (in pixels).
+    /// Returns None if the point is behind the camera.
+    pub fn project_to_screen(&self, world: [f32; 3], aspect: f32, viewport_w: f32, viewport_h: f32) -> Option<[f32; 2]> {
+        let vp = self.projection_matrix(aspect) * self.view_matrix();
+        let p = nalgebra::Vector4::new(world[0], world[1], world[2], 1.0);
+        let clip = vp * p;
+        if clip.w <= 0.0 {
+            return None; // behind camera
+        }
+        let ndc_x = clip.x / clip.w;
+        let ndc_y = clip.y / clip.w;
+        let screen_x = (ndc_x + 1.0) * 0.5 * viewport_w;
+        let screen_y = (1.0 - ndc_y) * 0.5 * viewport_h; // flip Y for screen coords
+        Some([screen_x, screen_y])
+    }
+
     /// Set a preset view orientation.
     pub fn set_preset(&mut self, preset: ViewPreset) {
         match preset {
