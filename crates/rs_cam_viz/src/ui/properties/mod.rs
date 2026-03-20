@@ -8,6 +8,12 @@ use crate::state::toolpath::*;
 use crate::ui::AppEvent;
 
 pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+    // When simulation is active, show simulation panel instead of normal properties
+    if state.simulation.active {
+        draw_simulation_panel(ui, state, events);
+        return;
+    }
+
     match state.selection.clone() {
         Selection::None => {
             ui.label(
@@ -39,6 +45,9 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
         }
         Selection::PostProcessor => {
             post::draw(ui, &mut state.job.post);
+        }
+        Selection::Machine => {
+            draw_machine_panel(ui, state, events);
         }
         Selection::Model(id) => {
             draw_model_properties(ui, id, state, events);
@@ -140,6 +149,20 @@ fn draw_model_properties(
             );
         }
 
+        // Normal flip warning (D1): check winding consistency
+        if let Some(report) = &model.winding_report {
+            if *report > 1.0 {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(format!(
+                        "\u{26A0} {:.1}% inconsistent normals detected (auto-fixed on load)",
+                        report
+                    ))
+                    .color(egui::Color32::from_rgb(220, 190, 60)),
+                );
+            }
+        }
+
         // Units / scale selector (STL only)
         if model.kind == ModelKind::Stl {
             ui.add_space(8.0);
@@ -208,6 +231,190 @@ fn draw_model_properties(
     }
 }
 
+fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, _events: &mut Vec<AppEvent>) {
+    ui.heading("Simulation");
+    ui.separator();
+
+    // Toolpath checklist
+    ui.label(
+        egui::RichText::new("Included Toolpaths")
+            .strong()
+            .color(egui::Color32::from_rgb(180, 180, 195)),
+    );
+
+    for (i, boundary) in state.simulation.boundaries.iter().enumerate() {
+        let pc = crate::render::toolpath_render::palette_color(i);
+        let color = egui::Color32::from_rgb(
+            (pc[0] * 255.0) as u8,
+            (pc[1] * 255.0) as u8,
+            (pc[2] * 255.0) as u8,
+        );
+        let is_current = state.simulation.current_boundary()
+            .map(|b| b.id == boundary.id)
+            .unwrap_or(false);
+
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("\u{25CF}").color(color));
+            let text = if is_current {
+                egui::RichText::new(&boundary.name).strong().color(egui::Color32::WHITE)
+            } else {
+                egui::RichText::new(&boundary.name).color(egui::Color32::from_rgb(180, 180, 190))
+            };
+            ui.label(text);
+            ui.label(
+                egui::RichText::new(&boundary.tool_name)
+                    .small()
+                    .color(egui::Color32::from_rgb(130, 130, 140)),
+            );
+        });
+
+        // Progress bar for this toolpath
+        let progress = if state.simulation.current_move >= boundary.end_move {
+            1.0
+        } else if state.simulation.current_move <= boundary.start_move {
+            0.0
+        } else {
+            (state.simulation.current_move - boundary.start_move) as f32
+                / (boundary.end_move - boundary.start_move).max(1) as f32
+        };
+        let bar = egui::ProgressBar::new(progress)
+            .fill(color)
+            .desired_width(ui.available_width() - 16.0);
+        ui.add(bar);
+
+        // Jump-to-boundary button
+        let boundary_start = boundary.start_move;
+        ui.horizontal(|ui| {
+            if ui.small_button("Jump to start").clicked() {
+                state.simulation.current_move = boundary_start;
+                state.simulation.playing = false;
+            }
+        });
+
+        ui.add_space(2.0);
+    }
+
+    ui.add_space(8.0);
+
+    // Tool position readout
+    if let Some(pos) = state.simulation.tool_position {
+        ui.label(
+            egui::RichText::new("Tool Position")
+                .strong()
+                .color(egui::Color32::from_rgb(180, 180, 195)),
+        );
+        egui::Grid::new("sim_tool_pos")
+            .num_columns(2)
+            .spacing([8.0, 3.0])
+            .show(ui, |ui| {
+                ui.label("X:");
+                ui.label(format!("{:.3} mm", pos[0]));
+                ui.end_row();
+                ui.label("Y:");
+                ui.label(format!("{:.3} mm", pos[1]));
+                ui.end_row();
+                ui.label("Z:");
+                ui.label(format!("{:.3} mm", pos[2]));
+                ui.end_row();
+            });
+    }
+
+    ui.add_space(8.0);
+
+    // Current operation info
+    if let Some(boundary) = state.simulation.current_boundary() {
+        let (within, total) = state.simulation.current_toolpath_progress();
+        ui.label(
+            egui::RichText::new("Current Operation")
+                .strong()
+                .color(egui::Color32::from_rgb(180, 180, 195)),
+        );
+        ui.label(format!("{} ({})", boundary.name, boundary.tool_name));
+        ui.label(format!("Move {}/{}", within, total));
+    }
+}
+
+fn draw_machine_panel(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    _events: &mut Vec<AppEvent>,
+) {
+    ui.heading("Machine Setup");
+    ui.separator();
+
+    let presets = rs_cam_core::machine::MachineProfile::presets();
+    let current_key = state.job.machine.to_key();
+    let mut selected_idx = presets.iter().position(|(_, p)| p.to_key() == current_key).unwrap_or(0);
+
+    ui.horizontal(|ui| {
+        ui.label("Preset:");
+        egui::ComboBox::from_id_salt("machine_preset")
+            .selected_text(presets[selected_idx].0)
+            .show_ui(ui, |ui| {
+                for (i, (label, _)) in presets.iter().enumerate() {
+                    if ui.selectable_value(&mut selected_idx, i, *label).changed() {
+                        state.job.machine = presets[i].1.clone();
+                        state.job.dirty = true;
+                    }
+                }
+            });
+    });
+
+    ui.add_space(8.0);
+
+    // Show machine specs (read-only)
+    egui::Grid::new("machine_specs")
+        .num_columns(2)
+        .spacing([8.0, 4.0])
+        .show(ui, |ui| {
+            let (min_rpm, max_rpm) = state.job.machine.rpm_range();
+            ui.label("RPM Range:");
+            ui.label(format!("{:.0} - {:.0}", min_rpm, max_rpm));
+            ui.end_row();
+
+            let max_power = match state.job.machine.power {
+                rs_cam_core::machine::PowerModel::VfdConstantTorque { rated_power_kw, .. } => rated_power_kw,
+                rs_cam_core::machine::PowerModel::ConstantPower { power_kw } => power_kw,
+            };
+            ui.label("Power:");
+            ui.label(format!("{:.2} kW", max_power));
+            ui.end_row();
+
+            ui.label("Max Feed:");
+            ui.label(format!("{:.0} mm/min", state.job.machine.max_feed_mm_min));
+            ui.end_row();
+
+            ui.label("Max Shank:");
+            ui.label(format!("{:.1} mm", state.job.machine.max_shank_mm));
+            ui.end_row();
+        });
+
+    ui.add_space(8.0);
+
+    // Safety factor / aggressiveness slider
+    ui.horizontal(|ui| {
+        ui.label("Aggressiveness:");
+        if ui.add(
+            egui::Slider::new(&mut state.job.machine.safety_factor, 0.60..=0.95)
+                .text("")
+                .show_value(true),
+        ).changed() {
+            state.job.dirty = true;
+        }
+    });
+    ui.label(
+        egui::RichText::new(if state.job.machine.safety_factor < 0.72 {
+            "Conservative — safer for new setups"
+        } else if state.job.machine.safety_factor > 0.85 {
+            "Aggressive — experienced operators only"
+        } else {
+            "Balanced — good for most work"
+        })
+        .small()
+        .color(egui::Color32::from_rgb(140, 140, 150)),
+    );
+}
+
 fn draw_toolpath_panel(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
@@ -251,6 +458,28 @@ fn draw_toolpath_panel(
                 }
             });
     });
+
+    // Stock source selector (Phase C)
+    ui.horizontal(|ui| {
+        ui.label("Stock Source:");
+        egui::ComboBox::from_id_salt("tp_stock_src")
+            .selected_text(match entry.stock_source {
+                StockSource::Fresh => "Fresh Stock",
+                StockSource::FromRemainingStock => "Remaining Stock",
+            })
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut entry.stock_source, StockSource::Fresh, "Fresh Stock");
+                ui.selectable_value(&mut entry.stock_source, StockSource::FromRemainingStock, "Remaining Stock (after prior operations)");
+            });
+    });
+    if entry.stock_source == StockSource::FromRemainingStock {
+        ui.label(
+            egui::RichText::new("Will simulate prior toolpaths to determine starting material.")
+                .small()
+                .italics()
+                .color(egui::Color32::from_rgb(150, 150, 130)),
+        );
+    }
 
     ui.add_space(8.0);
     ui.label(

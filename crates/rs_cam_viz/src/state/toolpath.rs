@@ -4,6 +4,21 @@ use rs_cam_core::toolpath::Toolpath;
 
 use super::job::ToolId;
 
+/// Where the toolpath's stock material comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StockSource {
+    /// Start from raw stock (default).
+    Fresh,
+    /// Simulate all prior enabled toolpaths to determine starting material.
+    FromRemainingStock,
+}
+
+impl Default for StockSource {
+    fn default() -> Self {
+        StockSource::Fresh
+    }
+}
+
 /// Unique identifier for a toolpath.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ToolpathId(pub usize);
@@ -422,6 +437,28 @@ pub struct ToolpathStats {
     pub rapid_distance: f64,
 }
 
+/// Tracks which feed parameters are auto-calculated vs user-overridden.
+#[derive(Debug, Clone)]
+pub struct FeedsAutoMode {
+    pub feed_rate: bool,
+    pub plunge_rate: bool,
+    pub stepover: bool,
+    pub depth_per_pass: bool,
+    pub spindle_speed: bool,
+}
+
+impl Default for FeedsAutoMode {
+    fn default() -> Self {
+        Self {
+            feed_rate: true,
+            plunge_rate: true,
+            stepover: true,
+            depth_per_pass: true,
+            spindle_speed: true,
+        }
+    }
+}
+
 pub struct ToolpathEntry {
     pub id: ToolpathId,
     pub name: String,
@@ -431,12 +468,17 @@ pub struct ToolpathEntry {
     pub model_id: super::job::ModelId,
     pub operation: OperationConfig,
     pub dressups: DressupConfig,
+    pub stock_source: StockSource,
     pub status: ComputeStatus,
     pub result: Option<ToolpathResult>,
     /// When params were last changed (for debounced auto-regen). None = not stale.
     pub stale_since: Option<std::time::Instant>,
     /// Whether auto-regeneration is enabled for this toolpath.
     pub auto_regen: bool,
+    /// Which feed params are auto-calculated vs user-overridden.
+    pub feeds_auto: FeedsAutoMode,
+    /// Cached feeds & speeds calculation result.
+    pub feeds_result: Option<rs_cam_core::feeds::FeedsResult>,
 }
 
 pub struct ToolpathResult {

@@ -14,6 +14,10 @@ pub enum UndoAction {
         old_dressups: DressupConfig,
         new_dressups: DressupConfig,
     },
+    MachineChange {
+        old: rs_cam_core::machine::MachineProfile,
+        new: rs_cam_core::machine::MachineProfile,
+    },
 }
 
 /// Simple undo/redo stack.
