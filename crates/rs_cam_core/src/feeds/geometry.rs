@@ -100,6 +100,37 @@ pub fn scallop_stepover(ball_radius: f64, target_scallop: f64) -> Option<f64> {
     Some(2.0 * inside.sqrt())
 }
 
+/// Axial chip thinning factor for ball nose tools.
+///
+/// When ball effective diameter < nominal, the chip is thinner along the axis.
+/// Compensate by multiplying feed by (nominal / effective), clamped to [1.0, 4.0].
+pub fn axial_chip_thinning_factor_for_ball(nominal_d: f64, effective_d: f64) -> f64 {
+    if nominal_d <= 0.0 || effective_d <= 0.0 {
+        return 1.0;
+    }
+    (nominal_d / effective_d).clamp(1.0, 4.0)
+}
+
+/// Depth tier feed multiplier.
+///
+/// When axial depth exceeds tool diameter, feed should be derated to avoid
+/// excessive tool deflection and breakage. From reference calcs.rs.
+pub fn depth_tier_multiplier(ap: f64, diameter: f64) -> f64 {
+    if diameter <= 0.0 {
+        return 1.0;
+    }
+    let ratio = ap / diameter;
+    if ratio > 3.0 {
+        0.45
+    } else if ratio > 2.0 {
+        0.50
+    } else if ratio > 1.0 {
+        0.75
+    } else {
+        1.0
+    }
+}
+
 /// V-bit cut width at a given depth.
 ///
 /// `included_angle` — full V angle in degrees
@@ -206,5 +237,42 @@ mod tests {
         // stepover = 2 * sqrt(2*R*h - h^2) = 2 * sqrt(2*3*0.1 - 0.01) = 2 * sqrt(0.59) ≈ 1.536
         let stepover = scallop_stepover(3.0, 0.1).unwrap();
         assert!((stepover - 1.536).abs() < 0.01, "got {stepover}");
+    }
+
+    #[test]
+    fn test_axial_thinning_at_full_depth() {
+        // When effective == nominal, no thinning
+        assert!((axial_chip_thinning_factor_for_ball(6.0, 6.0) - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_axial_thinning_at_shallow_cut() {
+        // Ball nose 6mm, effective ~2.68mm at 0.3mm depth → factor ~2.24
+        let d_eff = ball_effective_diameter(6.0, 0.3);
+        let factor = axial_chip_thinning_factor_for_ball(6.0, d_eff);
+        assert!(factor > 1.5, "expected thinning factor > 1.5, got {factor}");
+        assert!(factor < 4.0);
+    }
+
+    #[test]
+    fn test_axial_thinning_clamped_to_4() {
+        assert!((axial_chip_thinning_factor_for_ball(6.0, 0.5) - 4.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_depth_tier_multiplier_shallow() {
+        assert!((depth_tier_multiplier(3.0, 6.0) - 1.0).abs() < 1e-9); // 0.5D
+    }
+
+    #[test]
+    fn test_depth_tier_multiplier_1d() {
+        assert!((depth_tier_multiplier(6.0, 6.0) - 1.0).abs() < 1e-9); // exactly 1D
+    }
+
+    #[test]
+    fn test_depth_tier_multiplier_deep() {
+        assert!((depth_tier_multiplier(7.0, 6.0) - 0.75).abs() < 1e-9); // >1D
+        assert!((depth_tier_multiplier(13.0, 6.0) - 0.50).abs() < 1e-9); // >2D
+        assert!((depth_tier_multiplier(19.0, 6.0) - 0.45).abs() < 1e-9); // >3D
     }
 }

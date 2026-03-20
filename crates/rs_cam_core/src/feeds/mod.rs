@@ -54,6 +54,7 @@ pub struct FeedsInput<'a> {
     pub tool_diameter: f64,
     pub flute_count: u32,
     pub flute_length: f64,
+    pub shank_diameter: Option<f64>,
     pub tool_geometry: ToolGeometryHint,
     pub material: &'a Material,
     pub machine: &'a MachineProfile,
@@ -185,10 +186,35 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         }
     }
 
+    // --- Step 4c: Shank check ---
+    if let Some(shank) = input.shank_diameter {
+        if shank > machine.max_shank_mm {
+            warnings.push(FeedsWarning::ShankTooLarge {
+                shank_mm: shank,
+                max_mm: machine.max_shank_mm,
+            });
+        }
+    }
+
     // --- Step 5: Feed rate ---
     let effective_d = effective_diameter(input.tool_geometry, d, ap);
+
+    // Radial chip thinning (all tools)
     let rctf = geometry::radial_chip_thinning_factor(ae, effective_d);
-    let raw_feed = rpm * chip_load * input.flute_count as f64 * rctf;
+
+    // Axial chip thinning (ball nose tools at shallow depth)
+    let axial_thinning = match input.tool_geometry {
+        ToolGeometryHint::Ball | ToolGeometryHint::TaperedBall { .. } => {
+            geometry::axial_chip_thinning_factor_for_ball(d, effective_d)
+        }
+        _ => 1.0,
+    };
+    let chip_thinning = (rctf * axial_thinning).clamp(1.0, 4.0);
+
+    // Depth tier feed derate — deep cuts need slower feed to limit deflection
+    let depth_tier = geometry::depth_tier_multiplier(ap, d);
+
+    let raw_feed = rpm * chip_load * input.flute_count as f64 * chip_thinning * depth_tier;
 
     // --- Step 6: Power check ---
     let kc = material.kc_n_per_mm2();
@@ -199,7 +225,6 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let mut feed = raw_feed;
 
     if required_power > available_power && available_power > 0.0 {
-        // Reduce feed to stay within power budget
         let power_ratio = available_power / required_power;
         feed = raw_feed * power_ratio;
         power_limited = true;
@@ -221,8 +246,8 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // --- Step 8: Plunge rate ---
     let plunge = estimate_plunge_rate(material, hardness);
 
-    // Ramp feed: between plunge and cutting feed
-    let ramp_feed = (feed * 0.5).max(plunge);
+    // Ramp feed: capped at 1.5× plunge rate (reference calcs.rs convention)
+    let ramp_feed = (feed * 0.5).max(plunge).min(plunge * 1.5);
 
     // --- Step 9: Safety factor ---
     feed *= machine.safety_factor;
@@ -292,7 +317,46 @@ fn default_engagement(d: f64, profile: &DefaultProfile, input: &FeedsInput, mach
     let mut ap_factor = profile.ap_factor;
     let mut ae_factor = profile.ae_factor;
 
-    // Tool geometry adjustments for finishing operations
+    // --- Adaptive-specific engagement matrix per tool geometry ---
+    // From reference calcs.rs: separate entries for Flat/Ball/TaperedBall
+    if input.operation == OperationFamily::Adaptive {
+        let roughing = input.pass_role == PassRole::Roughing;
+        let semi = input.pass_role == PassRole::SemiFinish;
+        if roughing || semi {
+            let (ap_base, ae_base) = match input.tool_geometry {
+                ToolGeometryHint::Flat | ToolGeometryHint::Bull { .. } => (1.20, 0.14),
+                ToolGeometryHint::Ball => (0.80, 0.10),
+                ToolGeometryHint::TaperedBall { .. } => (0.70, 0.08),
+                ToolGeometryHint::VBit { .. } => (ap_factor, ae_factor),
+            };
+            ap_factor = if roughing { ap_base } else { ap_base * 0.75 };
+            ae_factor = if roughing { ae_base } else { ae_base * 0.85 };
+
+            // Multi-flute AE derate for adaptive (>= 3 flutes)
+            if input.flute_count >= 3 {
+                ae_factor *= 0.85;
+            }
+
+            // Hardness-dependent adaptive derates
+            let hardness = input.material.hardness_index();
+            if hardness > 1.40 {
+                ap_factor *= 0.80;
+                ae_factor *= 0.90;
+            } else if hardness > 1.15 {
+                ap_factor *= 0.90;
+                ae_factor *= 0.95;
+            } else if hardness < 0.85 {
+                ap_factor *= 1.05;
+                ae_factor *= 1.05;
+            }
+        }
+
+        // Apply machine rigidity bounds
+        ap_factor = ap_factor.max(machine.rigidity.adaptive_doc_factor * profile.ap_factor / 1.5);
+        ae_factor = ae_factor.min(machine.rigidity.adaptive_woc_factor);
+    }
+
+    // --- Tool geometry adjustments for finishing operations ---
     match (input.tool_geometry, input.operation, input.pass_role) {
         (ToolGeometryHint::Ball, OperationFamily::Parallel | OperationFamily::Scallop, PassRole::Finish) => {
             ap_factor = 0.06;
@@ -311,12 +375,6 @@ fn default_engagement(d: f64, profile: &DefaultProfile, input: &FeedsInput, mach
             ae_factor = 0.05;
         }
         _ => {}
-    }
-
-    // Use machine rigidity factors for adaptive operations
-    if input.operation == OperationFamily::Adaptive {
-        ap_factor = ap_factor.max(machine.rigidity.adaptive_doc_factor * profile.ap_factor / 1.5);
-        ae_factor = ae_factor.min(machine.rigidity.adaptive_woc_factor);
     }
 
     let ap = (d * ap_factor).max(0.05);
@@ -370,6 +428,7 @@ mod tests {
             tool_diameter: 6.0,
             flute_count: 2,
             flute_length: 18.0,
+            shank_diameter: None,
             tool_geometry: ToolGeometryHint::Flat,
             material,
             machine,
@@ -429,14 +488,14 @@ mod tests {
 
         let adaptive = calculate(&FeedsInput {
             tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat,
+            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
             material: &material, machine: &machine,
             operation: OperationFamily::Adaptive, pass_role: PassRole::Roughing,
             axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
         });
         let pocket = calculate(&FeedsInput {
             tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat,
+            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
             material: &material, machine: &machine,
             operation: OperationFamily::Pocket, pass_role: PassRole::Roughing,
             axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
@@ -462,14 +521,14 @@ mod tests {
         for family in families {
             let rough = calculate(&FeedsInput {
                 tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-                tool_geometry: ToolGeometryHint::Flat,
+                tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
                 material: &material, machine: &machine,
                 operation: family, pass_role: PassRole::Roughing,
                 axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
             });
             let finish = calculate(&FeedsInput {
                 tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-                tool_geometry: ToolGeometryHint::Flat,
+                tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
                 material: &material, machine: &machine,
                 operation: family, pass_role: PassRole::Finish,
                 axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
@@ -491,7 +550,7 @@ mod tests {
 
         let result = calculate(&FeedsInput {
             tool_diameter: 6.0, flute_count: 2, flute_length: 5.0, // very short flutes
-            tool_geometry: ToolGeometryHint::Flat,
+            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
             material: &material, machine: &machine,
             operation: OperationFamily::Adaptive, pass_role: PassRole::Roughing,
             axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
@@ -511,7 +570,7 @@ mod tests {
 
         let result = calculate(&FeedsInput {
             tool_diameter: 12.0, flute_count: 4, flute_length: 25.0,
-            tool_geometry: ToolGeometryHint::Flat,
+            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
             material: &material, machine: &machine,
             operation: OperationFamily::Pocket, pass_role: PassRole::Roughing,
             axial_depth_mm: Some(5.0), radial_width_mm: Some(8.0),
@@ -530,7 +589,7 @@ mod tests {
 
         let result = calculate(&FeedsInput {
             tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Ball,
+            tool_geometry: ToolGeometryHint::Ball, shank_diameter: None,
             material: &material, machine: &machine,
             operation: OperationFamily::Parallel, pass_role: PassRole::Finish,
             axial_depth_mm: Some(0.4), radial_width_mm: None,
@@ -549,7 +608,7 @@ mod tests {
 
         let result = calculate(&FeedsInput {
             tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat,
+            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
             material: &material, machine: &machine,
             operation: OperationFamily::Pocket, pass_role: PassRole::Roughing,
             axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
@@ -566,7 +625,7 @@ mod tests {
 
         let result = calculate(&FeedsInput {
             tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat,
+            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
             material: &material, machine: &machine,
             operation: OperationFamily::Pocket, pass_role: PassRole::Roughing,
             axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
@@ -584,7 +643,7 @@ mod tests {
 
         let result = calculate(&FeedsInput {
             tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat,
+            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
             material: &material, machine: &machine,
             operation: OperationFamily::Pocket, pass_role: PassRole::Roughing,
             axial_depth_mm: Some(10.0),

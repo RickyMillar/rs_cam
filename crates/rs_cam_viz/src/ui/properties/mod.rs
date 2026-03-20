@@ -427,8 +427,12 @@ fn operation_to_feeds_family(op: &OperationConfig) -> (rs_cam_core::feeds::Opera
         OperationConfig::Profile(_) => (OF::Contour, PR::Roughing),
         OperationConfig::Adaptive(_) | OperationConfig::Adaptive3d(_) => (OF::Adaptive, PR::Roughing),
         OperationConfig::VCarve(_) | OperationConfig::Inlay(_) => (OF::Trace, PR::Finish),
-        OperationConfig::DropCutter(_) | OperationConfig::Scallop(_) | OperationConfig::Pencil(_) => (OF::Parallel, PR::Finish),
-        OperationConfig::Waterline(_) | OperationConfig::SteepShallow(_) | OperationConfig::RampFinish(_) => (OF::Contour, PR::Finish),
+        OperationConfig::DropCutter(_) => (OF::Parallel, PR::Finish),
+        OperationConfig::Scallop(_) => (OF::Scallop, PR::Finish),
+        OperationConfig::Pencil(_) => (OF::Trace, PR::Finish),
+        OperationConfig::Waterline(_) => (OF::Contour, PR::SemiFinish),
+        OperationConfig::SteepShallow(_) => (OF::Contour, PR::Finish),
+        OperationConfig::RampFinish(_) => (OF::Parallel, PR::Finish),
         OperationConfig::Zigzag(_) | OperationConfig::Rest(_) => (OF::Pocket, PR::Roughing),
     }
 }
@@ -446,6 +450,25 @@ fn tool_geometry_hint(tool: &crate::state::job::ToolConfig) -> rs_cam_core::feed
             tip_radius: tool.diameter / 2.0,
             taper_angle_deg: tool.taper_half_angle,
         },
+    }
+}
+
+/// Extract operation-specific parameter hints for the feeds calculator.
+/// Returns (axial_depth_hint, radial_width_hint, scallop_hint).
+fn operation_feeds_hints(op: &OperationConfig) -> (Option<f64>, Option<f64>, Option<f64>) {
+    match op {
+        // Scallop: scallop_height drives stepover for ball tools
+        OperationConfig::Scallop(cfg) => (None, None, Some(cfg.scallop_height)),
+        // Waterline: z_step is the axial slice height
+        OperationConfig::Waterline(cfg) => (Some(cfg.z_step), None, None),
+        // SteepShallow: z_step for the steep (waterline) portion
+        OperationConfig::SteepShallow(cfg) => (Some(cfg.z_step), None, None),
+        // VCarve: max_depth hints the axial depth
+        OperationConfig::VCarve(cfg) => (Some(cfg.max_depth), None, None),
+        // RampFinish: max_stepdown is the axial depth
+        OperationConfig::RampFinish(cfg) => (Some(cfg.max_stepdown), None, None),
+        // All others: let the calculator use defaults
+        _ => (None, None, None),
     }
 }
 
@@ -472,18 +495,22 @@ fn calculate_and_apply_feeds(
 
     let (family, role) = operation_to_feeds_family(&entry.operation);
 
+    // Extract operation-specific hints for the calculator
+    let (axial_hint, radial_hint, scallop_hint) = operation_feeds_hints(&entry.operation);
+
     let input = rs_cam_core::feeds::FeedsInput {
         tool_diameter: tool.diameter,
         flute_count: tool.flute_count,
         flute_length: tool.cutting_length,
+        shank_diameter: Some(tool.shank_diameter),
         tool_geometry: tool_geometry_hint(tool),
         material,
         machine,
         operation: family,
         pass_role: role,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
+        axial_depth_mm: axial_hint,
+        radial_width_mm: radial_hint,
+        target_scallop_mm: scallop_hint,
     };
 
     let result = rs_cam_core::feeds::calculate(&input);
