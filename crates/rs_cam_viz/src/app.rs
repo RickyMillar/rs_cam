@@ -1,18 +1,23 @@
+use crate::compute::ComputeManager;
+use crate::compute::worker::ComputeRequest;
 use crate::io::import;
 use crate::render::camera::OrbitCamera;
 use crate::render::mesh_render::MeshGpuData;
 use crate::render::stock_render::StockGpuData;
+use crate::render::toolpath_render::ToolpathGpuData;
 use crate::render::{LineUniforms, MeshUniforms, RenderResources, ViewportCallback};
 use crate::state::AppState;
 use crate::state::job::ToolConfig;
 use crate::state::selection::Selection;
+use crate::state::toolpath::*;
 use crate::ui::AppEvent;
 
 pub struct RsCamApp {
     state: AppState,
     camera: OrbitCamera,
     events: Vec<AppEvent>,
-    /// Flag: need to upload mesh/stock to GPU on next frame.
+    compute: ComputeManager,
+    /// Flag: need to upload mesh/stock/toolpath to GPU on next frame.
     pending_upload: bool,
 }
 
@@ -20,7 +25,6 @@ impl RsCamApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         configure_theme(&cc.egui_ctx);
 
-        // Initialize wgpu render resources
         if let Some(render_state) = cc.wgpu_render_state.as_ref() {
             let resources =
                 RenderResources::new(&render_state.device, render_state.target_format);
@@ -35,6 +39,7 @@ impl RsCamApp {
             state: AppState::new(),
             camera: OrbitCamera::new(),
             events: Vec::new(),
+            compute: ComputeManager::new(),
             pending_upload: false,
         }
     }
@@ -63,9 +68,18 @@ impl RsCamApp {
                             self.state.job.dirty = true;
                             self.pending_upload = true;
                         }
-                        Err(e) => {
-                            tracing::error!("Import failed: {}", e);
+                        Err(e) => tracing::error!("STL import failed: {}", e),
+                    }
+                }
+                AppEvent::ImportSvg(path) => {
+                    let id = self.state.job.next_model_id();
+                    match import::import_svg(&path, id) {
+                        Ok(model) => {
+                            self.state.selection = Selection::Model(model.id);
+                            self.state.job.models.push(model);
+                            self.state.job.dirty = true;
                         }
+                        Err(e) => tracing::error!("SVG import failed: {}", e),
                     }
                 }
                 AppEvent::Select(sel) => {
@@ -75,7 +89,7 @@ impl RsCamApp {
                     self.camera.set_preset(preset);
                 }
                 AppEvent::ResetView => {
-                    if let Some(model) = self.state.job.models.first() {
+                    if let Some(model) = self.state.job.models.iter().find(|m| m.mesh.is_some()) {
                         if let Some(mesh) = &model.mesh {
                             let bb = &mesh.bbox;
                             self.camera.fit_to_bounds(
@@ -112,6 +126,54 @@ impl RsCamApp {
                     }
                     self.state.job.dirty = true;
                 }
+                AppEvent::AddPocketToolpath => {
+                    let id = self.state.job.next_toolpath_id();
+                    let tool_id = self
+                        .state
+                        .job
+                        .tools
+                        .first()
+                        .map(|t| t.id)
+                        .unwrap_or(crate::state::job::ToolId(0));
+                    let model_id = self
+                        .state
+                        .job
+                        .models
+                        .first()
+                        .map(|m| m.id)
+                        .unwrap_or(crate::state::job::ModelId(0));
+                    let entry = ToolpathEntry {
+                        id,
+                        name: format!("Pocket {}", id.0 + 1),
+                        enabled: true,
+                        visible: true,
+                        tool_id,
+                        model_id,
+                        operation: OperationConfig::Pocket(PocketConfig::default()),
+                        status: ComputeStatus::Pending,
+                        result: None,
+                    };
+                    self.state.selection = Selection::Toolpath(id);
+                    self.state.job.toolpaths.push(entry);
+                    self.state.job.dirty = true;
+                }
+                AppEvent::RemoveToolpath(tp_id) => {
+                    self.state.job.toolpaths.retain(|tp| tp.id != tp_id);
+                    if self.state.selection == Selection::Toolpath(tp_id) {
+                        self.state.selection = Selection::None;
+                    }
+                    self.pending_upload = true;
+                    self.state.job.dirty = true;
+                }
+                AppEvent::GenerateToolpath(tp_id) => {
+                    self.submit_toolpath_compute(tp_id);
+                }
+                AppEvent::ToggleToolpathVisibility(tp_id) => {
+                    if let Some(tp) = self.state.job.toolpaths.iter_mut().find(|t| t.id == tp_id) {
+                        tp.visible = !tp.visible;
+                        self.pending_upload = true;
+                    }
+                }
                 AppEvent::StockChanged => {
                     self.pending_upload = true;
                     self.state.job.dirty = true;
@@ -120,6 +182,66 @@ impl RsCamApp {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
+        }
+    }
+
+    fn submit_toolpath_compute(&mut self, tp_id: ToolpathId) {
+        let tp = match self.state.job.toolpaths.iter_mut().find(|t| t.id == tp_id) {
+            Some(tp) => tp,
+            None => return,
+        };
+
+        let tool = match self.state.job.tools.iter().find(|t| t.id == tp.tool_id) {
+            Some(t) => t.clone(),
+            None => return,
+        };
+
+        // Find polygons from the model
+        let polygons = self
+            .state
+            .job
+            .models
+            .iter()
+            .find(|m| m.id == tp.model_id)
+            .and_then(|m| m.polygons.clone());
+
+        let Some(polygons) = polygons else {
+            tp.status = ComputeStatus::Error("No 2D geometry (import SVG first)".to_string());
+            return;
+        };
+
+        tp.status = ComputeStatus::Computing(0.0);
+        tp.result = None;
+
+        self.compute.submit(ComputeRequest {
+            toolpath_id: tp_id,
+            polygons,
+            operation: tp.operation.clone(),
+            tool,
+            safe_z: self.state.job.post.safe_z,
+        });
+    }
+
+    fn drain_compute_results(&mut self) {
+        for result in self.compute.drain_results() {
+            if let Some(tp) = self
+                .state
+                .job
+                .toolpaths
+                .iter_mut()
+                .find(|t| t.id == result.toolpath_id)
+            {
+                match result.result {
+                    Ok(r) => {
+                        tp.status = ComputeStatus::Done;
+                        tp.result = Some(r);
+                    }
+                    Err(e) => {
+                        tp.status = ComputeStatus::Error(e);
+                    }
+                }
+            }
+            self.pending_upload = true;
         }
     }
 
@@ -142,17 +264,27 @@ impl RsCamApp {
         // Upload stock wireframe
         let stock_bbox = self.state.job.stock.bbox();
         resources.stock_data = Some(StockGpuData::from_bbox(&render_state.device, &stock_bbox));
+
+        // Upload toolpath line data
+        resources.toolpath_data.clear();
+        for tp in &self.state.job.toolpaths {
+            if tp.visible {
+                if let Some(result) = &tp.result {
+                    resources.toolpath_data.push(ToolpathGpuData::from_toolpath(
+                        &render_state.device,
+                        &result.toolpath,
+                    ));
+                }
+            }
+        }
     }
 
     fn draw_viewport(&mut self, ui: &mut egui::Ui) {
-        // Viewport overlay buttons
         crate::ui::viewport_overlay::draw(ui, &mut self.events);
 
-        // Allocate remaining space for the 3D viewport
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
 
-        // Handle camera input
         if response.dragged_by(egui::PointerButton::Primary) {
             let delta = response.drag_delta();
             self.camera.orbit(delta.x, delta.y);
@@ -164,14 +296,12 @@ impl RsCamApp {
             self.camera.pan(delta.x, delta.y);
         }
 
-        // Handle scroll zoom
         let scroll = ui.input(|i| i.smooth_scroll_delta.y);
         if rect.contains(ui.input(|i| i.pointer.hover_pos().unwrap_or_default())) && scroll != 0.0
         {
             self.camera.zoom(scroll);
         }
 
-        // Build camera matrices
         let aspect = if rect.height() > 0.0 {
             rect.width() / rect.height()
         } else {
@@ -190,12 +320,7 @@ impl RsCamApp {
                 _pad1: 0.0,
             },
             line_uniforms: LineUniforms { view_proj },
-            has_mesh: self
-                .state
-                .job
-                .models
-                .iter()
-                .any(|m| m.mesh.is_some()),
+            has_mesh: self.state.job.models.iter().any(|m| m.mesh.is_some()),
             show_grid: self.state.viewport.show_grid,
             show_stock: self.state.viewport.show_stock
                 && self.state.job.models.iter().any(|m| m.mesh.is_some()),
@@ -210,6 +335,9 @@ impl RsCamApp {
 
 impl eframe::App for RsCamApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // Drain compute results
+        self.drain_compute_results();
+
         // Upload pending GPU data
         if self.pending_upload {
             self.pending_upload = false;
@@ -221,7 +349,7 @@ impl eframe::App for RsCamApp {
         // Menu bar
         crate::ui::menu_bar::draw(ctx, &self.state, &mut self.events);
 
-        // Left panel: project tree (reads state immutably)
+        // Left panel: project tree
         egui::SidePanel::left("project_tree")
             .default_width(220.0)
             .resizable(true)
@@ -231,7 +359,7 @@ impl eframe::App for RsCamApp {
                 });
             });
 
-        // Right panel: properties (needs mutable state for inline editing)
+        // Right panel: properties (mutable state for inline editing)
         egui::SidePanel::right("properties")
             .default_width(280.0)
             .resizable(true)
@@ -259,13 +387,23 @@ impl eframe::App for RsCamApp {
 
         // Process events after UI pass
         self.handle_events(ctx);
+
+        // Keep repainting while computing
+        let computing = self
+            .state
+            .job
+            .toolpaths
+            .iter()
+            .any(|tp| matches!(tp.status, ComputeStatus::Computing(_)));
+        if computing {
+            ctx.request_repaint();
+        }
     }
 }
 
 fn configure_theme(ctx: &egui::Context) {
     let mut visuals = egui::Visuals::dark();
 
-    // Zed-inspired dark theme
     visuals.panel_fill = egui::Color32::from_rgb(30, 30, 36);
     visuals.window_fill = egui::Color32::from_rgb(30, 30, 36);
     visuals.extreme_bg_color = egui::Color32::from_rgb(22, 22, 28);

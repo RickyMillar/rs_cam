@@ -1,4 +1,5 @@
 pub mod app;
+pub mod compute;
 pub mod state;
 pub mod ui;
 pub mod render;

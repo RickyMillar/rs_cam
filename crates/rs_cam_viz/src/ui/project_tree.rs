@@ -2,12 +2,12 @@ use super::AppEvent;
 use crate::state::AppState;
 use crate::state::job::ToolType;
 use crate::state::selection::Selection;
+use crate::state::toolpath::ComputeStatus;
 
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     ui.heading("Project");
     ui.separator();
 
-    // Job name
     ui.label(
         egui::RichText::new(format!("Job: {}", state.job.name))
             .strong()
@@ -17,28 +17,30 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     ui.add_space(4.0);
 
     // Stock
-    let stock_selected = state.selection == Selection::Stock;
-    let stock_label = format!(
-        "Stock ({:.0} x {:.0} x {:.0} mm)",
-        state.job.stock.x, state.job.stock.y, state.job.stock.z
-    );
     if ui
-        .selectable_label(stock_selected, &stock_label)
+        .selectable_label(state.selection == Selection::Stock, format!(
+            "Stock ({:.0} x {:.0} x {:.0} mm)",
+            state.job.stock.x, state.job.stock.y, state.job.stock.z
+        ))
         .clicked()
     {
         events.push(AppEvent::Select(Selection::Stock));
     }
 
     // Post processor
-    let post_selected = state.selection == Selection::PostProcessor;
-    let post_label = format!("Post Processor: {}", state.job.post.format.label());
-    if ui.selectable_label(post_selected, &post_label).clicked() {
+    if ui
+        .selectable_label(
+            state.selection == Selection::PostProcessor,
+            format!("Post Processor: {}", state.job.post.format.label()),
+        )
+        .clicked()
+    {
         events.push(AppEvent::Select(Selection::PostProcessor));
     }
 
     ui.add_space(4.0);
 
-    // Models section
+    // Models
     ui.collapsing("Models", |ui| {
         if state.job.models.is_empty() {
             ui.label(
@@ -54,14 +56,16 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 crate::state::job::ModelKind::Svg => "SVG",
                 crate::state::job::ModelKind::Dxf => "DXF",
             };
-            let label = format!("[{}] {}", icon, model.name);
-            if ui.selectable_label(selected, &label).clicked() {
+            if ui
+                .selectable_label(selected, format!("[{}] {}", icon, model.name))
+                .clicked()
+            {
                 events.push(AppEvent::Select(Selection::Model(model.id)));
             }
         }
     });
 
-    // Tool library section
+    // Tool library
     ui.collapsing("Tool Library", |ui| {
         if state.job.tools.is_empty() {
             ui.label(
@@ -72,8 +76,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         }
         for tool in &state.job.tools {
             let selected = state.selection == Selection::Tool(tool.id);
-            let label = tool.summary();
-            let response = ui.selectable_label(selected, &label);
+            let response = ui.selectable_label(selected, tool.summary());
             if response.clicked() {
                 events.push(AppEvent::Select(Selection::Tool(tool.id)));
             }
@@ -88,7 +91,6 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 }
             });
         }
-
         ui.add_space(4.0);
         ui.menu_button("+ Add Tool", |ui| {
             for &tt in ToolType::ALL {
@@ -100,15 +102,71 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         });
     });
 
+    // Toolpaths
+    ui.collapsing("Toolpaths", |ui| {
+        if state.job.toolpaths.is_empty() {
+            ui.label(
+                egui::RichText::new("No toolpaths")
+                    .italics()
+                    .color(egui::Color32::from_rgb(120, 120, 130)),
+            );
+        }
+        for (i, tp) in state.job.toolpaths.iter().enumerate() {
+            let selected = state.selection == Selection::Toolpath(tp.id);
+            let status_icon = match &tp.status {
+                ComputeStatus::Pending => "  ",
+                ComputeStatus::Computing(_) => "~ ",
+                ComputeStatus::Done => "* ",
+                ComputeStatus::Error(_) => "! ",
+            };
+            let label = format!(
+                "[{}] {}{}",
+                i + 1,
+                status_icon,
+                tp.name
+            );
+            let response = ui.selectable_label(selected, &label);
+            if response.clicked() {
+                events.push(AppEvent::Select(Selection::Toolpath(tp.id)));
+            }
+            response.context_menu(|ui| {
+                let vis_label = if tp.visible { "Hide" } else { "Show" };
+                if ui.button(vis_label).clicked() {
+                    events.push(AppEvent::ToggleToolpathVisibility(tp.id));
+                    ui.close_menu();
+                }
+                if ui.button("Delete").clicked() {
+                    events.push(AppEvent::RemoveToolpath(tp.id));
+                    ui.close_menu();
+                }
+            });
+        }
+
+        ui.add_space(4.0);
+        if ui.button("+ Add Pocket").clicked() {
+            events.push(AppEvent::AddPocketToolpath);
+        }
+    });
+
     ui.add_space(8.0);
 
-    // Import button
-    if ui.button("+ Import STL...").clicked() {
-        if let Some(path) = rfd::FileDialog::new()
-            .add_filter("STL Files", &["stl", "STL"])
-            .pick_file()
-        {
-            events.push(AppEvent::ImportStl(path));
+    // Import buttons
+    ui.horizontal(|ui| {
+        if ui.button("+ Import STL").clicked() {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("STL", &["stl", "STL"])
+                .pick_file()
+            {
+                events.push(AppEvent::ImportStl(path));
+            }
         }
-    }
+        if ui.button("+ Import SVG").clicked() {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("SVG", &["svg", "SVG"])
+                .pick_file()
+            {
+                events.push(AppEvent::ImportSvg(path));
+            }
+        }
+    });
 }

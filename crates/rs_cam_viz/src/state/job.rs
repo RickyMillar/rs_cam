@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::mesh::TriangleMesh;
+use rs_cam_core::polygon::Polygon2;
 
 /// Unique identifier for a loaded model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -27,6 +28,7 @@ pub struct LoadedModel {
     pub name: String,
     pub kind: ModelKind,
     pub mesh: Option<Arc<TriangleMesh>>,
+    pub polygons: Option<Arc<Vec<Polygon2>>>,
 }
 
 /// Tool type matching the five cutter types in rs_cam_core.
@@ -236,8 +238,10 @@ pub struct JobState {
     pub stock: StockConfig,
     pub tools: Vec<ToolConfig>,
     pub post: PostConfig,
+    pub toolpaths: Vec<super::toolpath::ToolpathEntry>,
     next_model_id: usize,
     next_tool_id: usize,
+    next_toolpath_id: usize,
 }
 
 impl JobState {
@@ -250,8 +254,10 @@ impl JobState {
             stock: StockConfig::default(),
             tools: Vec::new(),
             post: PostConfig::default(),
+            toolpaths: Vec::new(),
             next_model_id: 0,
             next_tool_id: 0,
+            next_toolpath_id: 0,
         }
     }
 
@@ -264,6 +270,12 @@ impl JobState {
     pub fn next_tool_id(&mut self) -> ToolId {
         let id = ToolId(self.next_tool_id);
         self.next_tool_id += 1;
+        id
+    }
+
+    pub fn next_toolpath_id(&mut self) -> super::toolpath::ToolpathId {
+        let id = super::toolpath::ToolpathId(self.next_toolpath_id);
+        self.next_toolpath_id += 1;
         id
     }
 }

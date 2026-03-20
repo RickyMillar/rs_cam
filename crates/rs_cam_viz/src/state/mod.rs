@@ -1,5 +1,6 @@
 pub mod job;
 pub mod selection;
+pub mod toolpath;
 pub mod viewport;
 
 use job::JobState;

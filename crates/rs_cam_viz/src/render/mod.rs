@@ -2,12 +2,14 @@ pub mod camera;
 pub mod mesh_render;
 pub mod grid_render;
 pub mod stock_render;
+pub mod toolpath_render;
 
 use egui_wgpu::wgpu;
 
 use mesh_render::{MeshGpuData, MeshVertex};
 use grid_render::GridGpuData;
 use stock_render::StockGpuData;
+use toolpath_render::ToolpathGpuData;
 
 /// GPU uniform data for mesh rendering (Phong shading).
 #[repr(C)]
@@ -67,6 +69,7 @@ pub struct RenderResources {
     pub mesh_data: Option<MeshGpuData>,
     pub grid_data: GridGpuData,
     pub stock_data: Option<StockGpuData>,
+    pub toolpath_data: Vec<ToolpathGpuData>,
 }
 
 impl RenderResources {
@@ -333,6 +336,7 @@ impl RenderResources {
             mesh_data: None,
             grid_data,
             stock_data: None,
+            toolpath_data: Vec::new(),
         }
     }
 
@@ -510,6 +514,22 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                         wgpu::IndexFormat::Uint32,
                     );
                     pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                }
+            }
+
+            // Draw toolpaths
+            for tp_gpu in &resources.toolpath_data {
+                pass.set_pipeline(&resources.line_pipeline);
+                pass.set_bind_group(0, &resources.line_bind_group, &[]);
+                // Cutting moves
+                if tp_gpu.cut_vertex_count > 1 {
+                    pass.set_vertex_buffer(0, tp_gpu.cut_vertex_buffer.slice(..));
+                    pass.draw(0..tp_gpu.cut_vertex_count, 0..1);
+                }
+                // Rapid moves
+                if tp_gpu.rapid_vertex_count > 1 {
+                    pass.set_vertex_buffer(0, tp_gpu.rapid_vertex_buffer.slice(..));
+                    pass.draw(0..tp_gpu.rapid_vertex_count, 0..1);
                 }
             }
         } // render pass ends
