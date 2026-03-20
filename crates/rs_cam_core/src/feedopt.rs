@@ -113,7 +113,7 @@ pub fn optimize_feed_rates(
             MoveType::Rapid => {
                 feed_rates.push(0.0); // Rapids don't have feed rates
             }
-            MoveType::Linear { feed_rate } | MoveType::ArcCW { feed_rate, .. } | MoveType::ArcCCW { feed_rate, .. } => {
+            MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
                 let cx = mv.target.x;
                 let cy = mv.target.y;
                 let cz = mv.target.z;

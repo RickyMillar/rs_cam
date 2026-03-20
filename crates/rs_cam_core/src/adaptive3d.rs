@@ -18,7 +18,7 @@ use crate::adaptive::{
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::simulation::{stamp_tool_at, stamp_tool_at_lut, Heightmap, RadialProfileLUT};
+use crate::simulation::{stamp_tool_at_lut, Heightmap, RadialProfileLUT};
 use crate::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
 use crate::toolpath::{simplify_path_3d, Toolpath};
@@ -1616,6 +1616,7 @@ pub fn adaptive_3d_toolpath_annotated(
 mod tests {
     use super::*;
     use crate::mesh::SpatialIndex;
+    use crate::simulation::stamp_tool_at;
     use crate::tool::FlatEndmill;
 
     fn make_flat_mesh() -> (TriangleMesh, SpatialIndex) {

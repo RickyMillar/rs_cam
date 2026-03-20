@@ -93,13 +93,17 @@ pub struct ToolDef {
     pub taper_angle: Option<f64>,
     /// Shaft diameter for tapered ball
     pub shaft_diameter: Option<f64>,
-    /// Shank diameter above the cutting flutes (mm).
+    /// Shank diameter above the cutting flutes (mm). Used for collision detection.
+    #[allow(dead_code)]
     pub shank_diameter: Option<f64>,
-    /// Shank length above the cutting flutes (mm).
+    /// Shank length above the cutting flutes (mm). Used for collision detection.
+    #[allow(dead_code)]
     pub shank_length: Option<f64>,
-    /// Holder diameter (mm).
+    /// Holder diameter (mm). Used for collision detection.
+    #[allow(dead_code)]
     pub holder_diameter: Option<f64>,
-    /// Holder length (mm).
+    /// Holder length (mm). Used for collision detection.
+    #[allow(dead_code)]
     pub holder_length: Option<f64>,
 }
 

@@ -24,7 +24,7 @@ use crate::slope::SurfaceHeightmap;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
-use tracing::{debug, info};
+use tracing::info;
 
 /// Direction for scallop contouring.
 #[derive(Debug, Clone, Copy, Default)]

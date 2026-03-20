@@ -14,7 +14,7 @@
 //! - Steep-first ordering for safer tool conditions
 //! - Scallop height support for variable stepover in shallow regions
 
-use crate::dropcutter::{batch_drop_cutter, point_drop_cutter};
+use crate::dropcutter::batch_drop_cutter;
 use crate::geo::P3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::slope::{classify_steep_shallow, SlopeMap, SurfaceHeightmap};

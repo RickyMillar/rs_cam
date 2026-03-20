@@ -8,7 +8,6 @@
 //! constant stepping (max step + shallower final pass). Optional finish
 //! allowance leaves material for a separate finish pass at exact depth.
 
-use crate::geo::P3;
 use crate::toolpath::Toolpath;
 
 /// How to distribute depth across passes.
