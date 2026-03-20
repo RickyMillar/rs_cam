@@ -84,7 +84,8 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] 4.6 Lead-in/lead-out dressup — quarter-circle arc entry/exit for clean profile cuts (dressup.rs)
 
 ### Phase 5: Visualization & Polish
-- [ ] 5.1 egui + wgpu 3D viewer (rs_cam_viz crate)
+- [x] 5.1 egui + wgpu 3D viewer — Phase 1+2: eframe app, dark Zed theme, 3-panel layout, custom WGSL shaders (mesh Phong + line + blit), offscreen depth buffer rendering, orbit/pan/zoom camera, STL import via rfd, mesh upload to GPU with flat shading, ground grid + axis indicators, stock wireframe box, project tree, properties panel, status bar, view presets (rs_cam_viz crate)
+- [x] 5.1a GUI Phase 3: State management — tool library (5 tool types with type-specific params, add/duplicate/delete, context menu), editable stock config (DragValue widgets, auto-from-model), post-processor config (GRBL/LinuxCNC/Mach3, spindle speed, safe Z), tool cross-section 2D preview (egui Painter), selection-driven properties panel, inline parameter editing with stock wireframe GPU re-upload
 - [x] 5.2 Material removal simulation — heightmap stamping, wood-tone mesh, animated 3D replay with tool model (simulation.rs, viz.rs)
 - [x] 5.2a Simulation performance — swept segment stamping (10x), radial LUT (no sqrt), early-out skip, benchmarks (simulation.rs, adaptive3d.rs)
 - [x] 5.3 Inlay operations — female V-carve pocket, flat area clearing, male plug with glue gap, CLI subcommand (inlay.rs)

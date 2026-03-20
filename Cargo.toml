@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/rs_cam_core",
     "crates/rs_cam_cli",
+    "crates/rs_cam_viz",
 ]
 
 [workspace.package]
