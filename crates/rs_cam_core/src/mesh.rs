@@ -1,8 +1,10 @@
 //! Triangle mesh loading and spatial indexing.
 
 use crate::geo::{BoundingBox3, P3, Triangle};
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use thiserror::Error;
+use tracing::warn;
 
 #[derive(Error, Debug)]
 pub enum MeshError {
@@ -10,6 +12,17 @@ pub enum MeshError {
     StlRead(#[from] std::io::Error),
     #[error("Empty mesh: no triangles loaded")]
     EmptyMesh,
+}
+
+/// Result of checking mesh winding consistency.
+#[derive(Debug, Clone)]
+pub struct WindingReport {
+    /// Number of edges with consistent winding (adjacent faces have opposite edge directions).
+    pub consistent_edges: usize,
+    /// Number of edges with inconsistent winding.
+    pub inconsistent_edges: usize,
+    /// Fraction of edges that are inconsistent (0.0 = perfect, 1.0 = all wrong).
+    pub inconsistency_fraction: f64,
 }
 
 /// An indexed triangle mesh built from STL.
@@ -61,12 +74,29 @@ impl TriangleMesh {
 
         let bbox = BoundingBox3::from_points(vertices.iter().copied());
 
-        Ok(Self {
+        let mut mesh = Self {
             vertices,
             triangles,
             faces,
             bbox,
-        })
+        };
+
+        // Check and fix winding consistency
+        let report = mesh.check_winding();
+        if report.inconsistency_fraction > 0.01 {
+            warn!(
+                inconsistent = report.inconsistent_edges,
+                total = report.consistent_edges + report.inconsistent_edges,
+                fraction = format!("{:.1}%", report.inconsistency_fraction * 100.0),
+                "STL has inconsistent normals"
+            );
+        }
+        if report.inconsistency_fraction > 0.05 {
+            let flipped = mesh.fix_winding();
+            warn!(flipped = flipped, "Auto-fixed winding on STL load");
+        }
+
+        Ok(mesh)
     }
 
     /// Load from an STL file assuming mm (scale=1.0).
@@ -109,12 +139,169 @@ impl TriangleMesh {
 
         let bbox = BoundingBox3::from_points(vertices.iter().copied());
 
-        Ok(Self {
+        let mut mesh = Self {
             vertices,
             triangles,
             faces,
             bbox,
-        })
+        };
+
+        // Check and fix winding consistency
+        let report = mesh.check_winding();
+        if report.inconsistency_fraction > 0.01 {
+            warn!(
+                inconsistent = report.inconsistent_edges,
+                total = report.consistent_edges + report.inconsistent_edges,
+                fraction = format!("{:.1}%", report.inconsistency_fraction * 100.0),
+                "STL bytes has inconsistent normals"
+            );
+        }
+        if report.inconsistency_fraction > 0.05 {
+            let flipped = mesh.fix_winding();
+            warn!(flipped = flipped, "Auto-fixed winding on STL bytes load");
+        }
+
+        Ok(mesh)
+    }
+
+    /// Check winding consistency of the mesh.
+    ///
+    /// For each undirected edge shared by two faces, checks whether the
+    /// two faces traverse the edge in opposite directions (consistent)
+    /// or the same direction (inconsistent). Consistent winding means
+    /// all normals point the same way.
+    pub fn check_winding(&self) -> WindingReport {
+        // Count how many faces traverse each directed edge (a,b)
+        let mut edge_count: HashMap<(u32, u32), u32> = HashMap::new();
+        for tri in &self.triangles {
+            for i in 0..3 {
+                let a = tri[i];
+                let b = tri[(i + 1) % 3];
+                *edge_count.entry((a, b)).or_insert(0) += 1;
+            }
+        }
+
+        let mut consistent = 0usize;
+        let mut inconsistent = 0usize;
+
+        // For each undirected edge, check once
+        let mut checked = HashMap::<(u32, u32), bool>::new();
+        for &(a, b) in edge_count.keys() {
+            let key = if a < b { (a, b) } else { (b, a) };
+            if checked.contains_key(&key) {
+                continue;
+            }
+            checked.insert(key, true);
+
+            let fwd = edge_count.get(&(a, b)).copied().unwrap_or(0);
+            let rev = edge_count.get(&(b, a)).copied().unwrap_or(0);
+
+            if fwd == 1 && rev == 1 {
+                // One face has (a,b), the other has (b,a) — consistent
+                consistent += 1;
+            } else if fwd >= 2 || rev >= 2 {
+                // Two faces have the SAME directed edge — inconsistent
+                inconsistent += 1;
+            }
+            // fwd==1,rev==0 or fwd==0,rev==1 → boundary edge, skip
+        }
+
+        let total = consistent + inconsistent;
+        let fraction = if total > 0 { inconsistent as f64 / total as f64 } else { 0.0 };
+
+        WindingReport {
+            consistent_edges: consistent,
+            inconsistent_edges: inconsistent,
+            inconsistency_fraction: fraction,
+        }
+    }
+
+    /// Fix inconsistent winding using BFS from a seed triangle.
+    ///
+    /// Picks the triangle with the most upward-pointing normal as seed,
+    /// then BFS-propagates consistent winding. Flips triangles whose
+    /// shared edge direction doesn't match the seed's orientation.
+    /// Recomputes normals after fixing. Returns the number of triangles flipped.
+    pub fn fix_winding(&mut self) -> usize {
+        if self.triangles.is_empty() {
+            return 0;
+        }
+
+        let n = self.triangles.len();
+
+        // Build adjacency: for each undirected edge, which faces share it?
+        let mut edge_to_faces: HashMap<(u32, u32), Vec<usize>> = HashMap::new();
+        for (fi, tri) in self.triangles.iter().enumerate() {
+            for i in 0..3 {
+                let a = tri[i];
+                let b = tri[(i + 1) % 3];
+                let key = if a < b { (a, b) } else { (b, a) };
+                edge_to_faces.entry(key).or_default().push(fi);
+            }
+        }
+
+        // Pick seed: triangle with most upward normal (highest nz)
+        let seed = self.faces.iter().enumerate()
+            .max_by(|(_, a), (_, b)| a.normal.z.partial_cmp(&b.normal.z).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+
+        // BFS to propagate winding
+        let mut visited = vec![false; n];
+        let mut flipped = vec![false; n];
+        let mut queue = VecDeque::new();
+        queue.push_back(seed);
+        visited[seed] = true;
+
+        while let Some(fi) = queue.pop_front() {
+            let tri = self.triangles[fi];
+            for i in 0..3 {
+                let a = tri[i];
+                let b = tri[(i + 1) % 3];
+                let key = if a < b { (a, b) } else { (b, a) };
+
+                if let Some(neighbors) = edge_to_faces.get(&key) {
+                    for &nfi in neighbors {
+                        if visited[nfi] {
+                            continue;
+                        }
+                        visited[nfi] = true;
+
+                        // Check if neighbor has the reverse edge (consistent)
+                        // The current face has directed edge (a,b).
+                        // Consistent neighbor should have (b,a).
+                        let ntri = self.triangles[nfi];
+                        let has_reverse = (0..3).any(|j| ntri[j] == b && ntri[(j + 1) % 3] == a);
+
+                        if !has_reverse {
+                            // Flip neighbor: swap two vertices
+                            self.triangles[nfi] = [ntri[0], ntri[2], ntri[1]];
+                            flipped[nfi] = true;
+                        }
+
+                        queue.push_back(nfi);
+                    }
+                }
+            }
+        }
+
+        let flip_count = flipped.iter().filter(|&&f| f).count();
+
+        // Recompute faces (normals) for flipped triangles
+        if flip_count > 0 {
+            for fi in 0..n {
+                if flipped[fi] {
+                    let tri = &self.triangles[fi];
+                    self.faces[fi] = Triangle::new(
+                        self.vertices[tri[0] as usize],
+                        self.vertices[tri[1] as usize],
+                        self.vertices[tri[2] as usize],
+                    );
+                }
+            }
+        }
+
+        flip_count
     }
 
     /// Build from raw vertices and triangle indices (for testing).
@@ -366,5 +553,119 @@ mod tests {
         // And still find triangles
         let tris = idx.query(0.0, 0.0, 5.0);
         assert_eq!(tris.len(), 2);
+    }
+
+    // ── Winding consistency tests ─────────────────────────────────────
+
+    #[test]
+    fn test_winding_consistent_hemisphere() {
+        let mesh = make_test_hemisphere(10.0, 8);
+        let report = mesh.check_winding();
+        assert_eq!(
+            report.inconsistent_edges, 0,
+            "Hemisphere should have consistent winding, got {} inconsistent",
+            report.inconsistent_edges
+        );
+        assert!(report.consistent_edges > 0);
+    }
+
+    #[test]
+    fn test_winding_consistent_flat() {
+        let mesh = make_test_flat(50.0);
+        let report = mesh.check_winding();
+        assert_eq!(
+            report.inconsistent_edges, 0,
+            "Flat mesh should have consistent winding"
+        );
+    }
+
+    #[test]
+    fn test_winding_detect_flipped() {
+        // Create a simple 4-triangle mesh with one triangle flipped
+        let vertices = vec![
+            P3::new(0.0, 0.0, 0.0),  // 0
+            P3::new(10.0, 0.0, 0.0), // 1
+            P3::new(10.0, 10.0, 0.0),// 2
+            P3::new(0.0, 10.0, 0.0), // 3
+        ];
+        // Normal: [0,1,2] + [0,2,3] — consistent CCW
+        // Flipped: [0,1,2] + [0,3,2] — second has opposite winding
+        let triangles = vec![
+            [0, 1, 2], // CCW
+            [0, 3, 2], // CW (flipped!)
+        ];
+        let mesh = TriangleMesh::from_raw(vertices, triangles);
+        let report = mesh.check_winding();
+        assert!(
+            report.inconsistent_edges > 0,
+            "Should detect flipped triangle, got {} inconsistent",
+            report.inconsistent_edges
+        );
+    }
+
+    #[test]
+    fn test_fix_winding_corrects_flip() {
+        let vertices = vec![
+            P3::new(0.0, 0.0, 0.0),
+            P3::new(10.0, 0.0, 0.0),
+            P3::new(10.0, 10.0, 0.0),
+            P3::new(0.0, 10.0, 0.0),
+        ];
+        let triangles = vec![
+            [0, 1, 2], // CCW
+            [0, 3, 2], // CW (flipped!)
+        ];
+        let mut mesh = TriangleMesh::from_raw(vertices, triangles);
+
+        // Verify it's broken
+        let before = mesh.check_winding();
+        assert!(before.inconsistent_edges > 0);
+
+        // Fix it
+        let flipped = mesh.fix_winding();
+        assert!(flipped > 0, "Should flip at least one triangle");
+
+        // Verify it's now consistent
+        let after = mesh.check_winding();
+        assert_eq!(
+            after.inconsistent_edges, 0,
+            "After fix, should be consistent, got {} inconsistent",
+            after.inconsistent_edges
+        );
+    }
+
+    #[test]
+    fn test_fix_winding_normals_updated() {
+        let vertices = vec![
+            P3::new(0.0, 0.0, 0.0),
+            P3::new(10.0, 0.0, 0.0),
+            P3::new(10.0, 10.0, 0.0),
+            P3::new(0.0, 10.0, 0.0),
+        ];
+        let triangles = vec![
+            [0, 1, 2], // CCW → normal +Z
+            [0, 3, 2], // CW → normal -Z (flipped!)
+        ];
+        let mut mesh = TriangleMesh::from_raw(vertices, triangles);
+
+        // Before fix: normals point opposite directions
+        let nz_0_before = mesh.faces[0].normal.z;
+        let nz_1_before = mesh.faces[1].normal.z;
+        assert!(
+            nz_0_before * nz_1_before < 0.0,
+            "Before fix, normals should disagree: {:.1} vs {:.1}",
+            nz_0_before, nz_1_before
+        );
+
+        mesh.fix_winding();
+
+        // After fix: all normals should agree in direction
+        let nz_0 = mesh.faces[0].normal.z;
+        let nz_1 = mesh.faces[1].normal.z;
+        assert!(
+            nz_0 * nz_1 > 0.0,
+            "After fix, normals should agree: {:.1} vs {:.1}",
+            nz_0, nz_1
+        );
     }
 }
