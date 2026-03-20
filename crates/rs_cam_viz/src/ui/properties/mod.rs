@@ -261,6 +261,7 @@ fn draw_toolpath_panel(
 
     // Operation-specific parameters
     match &mut entry.operation {
+        OperationConfig::Face(cfg) => draw_face_params(ui, cfg),
         OperationConfig::Pocket(cfg) => draw_pocket_params(ui, cfg),
         OperationConfig::Profile(cfg) => draw_profile_params(ui, cfg),
         OperationConfig::Adaptive(cfg) => draw_adaptive_params(ui, cfg),
@@ -268,6 +269,9 @@ fn draw_toolpath_panel(
         OperationConfig::Rest(cfg) => draw_rest_params(ui, cfg, tools),
         OperationConfig::Inlay(cfg) => draw_inlay_params(ui, cfg),
         OperationConfig::Zigzag(cfg) => draw_zigzag_params(ui, cfg),
+        OperationConfig::Trace(cfg) => draw_trace_params(ui, cfg),
+        OperationConfig::Drill(cfg) => draw_drill_params(ui, cfg),
+        OperationConfig::Chamfer(cfg) => draw_chamfer_params(ui, cfg),
         OperationConfig::DropCutter(cfg) => draw_dropcutter_params(ui, cfg),
         OperationConfig::Adaptive3d(cfg) => draw_adaptive3d_params(ui, cfg),
         OperationConfig::Waterline(cfg) => draw_waterline_params(ui, cfg),
@@ -275,6 +279,10 @@ fn draw_toolpath_panel(
         OperationConfig::Scallop(cfg) => draw_scallop_params(ui, cfg),
         OperationConfig::SteepShallow(cfg) => draw_steep_shallow_params(ui, cfg),
         OperationConfig::RampFinish(cfg) => draw_ramp_finish_params(ui, cfg),
+        OperationConfig::SpiralFinish(cfg) => draw_spiral_finish_params(ui, cfg),
+        OperationConfig::RadialFinish(cfg) => draw_radial_finish_params(ui, cfg),
+        OperationConfig::HorizontalFinish(cfg) => draw_horizontal_finish_params(ui, cfg),
+        OperationConfig::ProjectCurve(cfg) => draw_project_curve_params(ui, cfg),
     }
 
     // Dressup modifications
@@ -359,6 +367,16 @@ fn tooltip_for(label: &str) -> Option<&'static str> {
         "Min Z" => "Lowest Z the tool will descend to during drop-cutter.",
         "Angle" => "Zigzag/raster angle in degrees. 0 = along X axis.",
         "Fine Stepdown" => "Optional finer Z step for final passes. 0 = disabled.",
+        "Stock Offset" => "Extra distance beyond stock boundary to ensure full coverage.",
+        "Chamfer Width" => "Width of the chamfer on the face (mm). Depth computed from tool angle.",
+        "Tip Offset" => "Distance from V-bit tip to prevent wear. Increases cut depth slightly.",
+        "Peck Depth" => "Incremental depth per peck for chip evacuation.",
+        "Dwell Time" => "Pause at bottom of drill hole (seconds).",
+        "Retract Amt" => "Small retract distance for chip breaking between pecks.",
+        "Retract Z" => "R-plane height: rapid down to here, then feed into material.",
+        "Angular Step" => "Degrees between radial spokes. Smaller = more passes, finer finish.",
+        "Point Spacing" => "Distance between sample points along curves. Smaller = smoother.",
+        "Angle Threshold" => "Max slope angle (degrees) to consider a surface flat/horizontal.",
         _ => return None,
     })
 }
@@ -629,6 +647,134 @@ fn draw_ramp_finish_params(ui: &mut egui::Ui, cfg: &mut RampFinishConfig) {
     });
 }
 
+// ── New operation parameters ─────────────────────────────────────────────
+
+fn draw_face_params(ui: &mut egui::Ui, cfg: &mut FaceConfig) {
+    ui.label(egui::RichText::new("Levels stock top surface").italics().color(egui::Color32::from_rgb(150, 150, 130)));
+    egui::Grid::new("face_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        ui.label("Direction:");
+        egui::ComboBox::from_id_salt("face_dir").selected_text(match cfg.direction {
+            FaceDirection::OneWay => "One Way", FaceDirection::Zigzag => "Zigzag",
+        }).show_ui(ui, |ui| {
+            ui.selectable_value(&mut cfg.direction, FaceDirection::OneWay, "One Way");
+            ui.selectable_value(&mut cfg.direction, FaceDirection::Zigzag, "Zigzag");
+        });
+        ui.end_row();
+        dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.5, 0.5..=100.0);
+        dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, 0.0..=50.0);
+        dv(ui, "Depth/Pass:", &mut cfg.depth_per_pass, " mm", 0.1, 0.1..=20.0);
+        dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
+        dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
+        dv(ui, "Stock Offset:", &mut cfg.stock_offset, " mm", 0.5, 0.0..=50.0);
+    });
+}
+
+fn draw_trace_params(ui: &mut egui::Ui, cfg: &mut TraceConfig) {
+    ui.label(egui::RichText::new("Follows path exactly").italics().color(egui::Color32::from_rgb(150, 150, 130)));
+    egui::Grid::new("trace_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        ui.label("Compensation:");
+        egui::ComboBox::from_id_salt("trace_comp").selected_text(match cfg.compensation {
+            TraceCompensation::None => "None", TraceCompensation::Left => "Left", TraceCompensation::Right => "Right",
+        }).show_ui(ui, |ui| {
+            ui.selectable_value(&mut cfg.compensation, TraceCompensation::None, "None");
+            ui.selectable_value(&mut cfg.compensation, TraceCompensation::Left, "Left");
+            ui.selectable_value(&mut cfg.compensation, TraceCompensation::Right, "Right");
+        });
+        ui.end_row();
+        dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, 0.1..=50.0);
+        dv(ui, "Depth/Pass:", &mut cfg.depth_per_pass, " mm", 0.1, 0.1..=20.0);
+        dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
+        dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
+    });
+}
+
+fn draw_drill_params(ui: &mut egui::Ui, cfg: &mut DrillConfig) {
+    ui.label(egui::RichText::new("Hole positions from SVG circles").italics().color(egui::Color32::from_rgb(150, 150, 130)));
+    egui::Grid::new("drill_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        ui.label("Cycle:");
+        egui::ComboBox::from_id_salt("drill_cycle").selected_text(match cfg.cycle {
+            DrillCycleType::Simple => "Simple (G81)", DrillCycleType::Dwell => "Dwell (G82)",
+            DrillCycleType::Peck => "Peck (G83)", DrillCycleType::ChipBreak => "Chip Break (G73)",
+        }).show_ui(ui, |ui| {
+            ui.selectable_value(&mut cfg.cycle, DrillCycleType::Simple, "Simple (G81)");
+            ui.selectable_value(&mut cfg.cycle, DrillCycleType::Dwell, "Dwell (G82)");
+            ui.selectable_value(&mut cfg.cycle, DrillCycleType::Peck, "Peck (G83)");
+            ui.selectable_value(&mut cfg.cycle, DrillCycleType::ChipBreak, "Chip Break (G73)");
+        });
+        ui.end_row();
+        dv(ui, "Depth:", &mut cfg.depth, " mm", 0.5, 0.5..=100.0);
+        dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=5000.0);
+        dv(ui, "Retract Z:", &mut cfg.retract_z, " mm", 0.5, 0.5..=50.0);
+        if matches!(cfg.cycle, DrillCycleType::Peck | DrillCycleType::ChipBreak) {
+            dv(ui, "Peck Depth:", &mut cfg.peck_depth, " mm", 0.5, 0.5..=50.0);
+        }
+        if cfg.cycle == DrillCycleType::Dwell {
+            dv(ui, "Dwell Time:", &mut cfg.dwell_time, " s", 0.1, 0.1..=10.0);
+        }
+        if cfg.cycle == DrillCycleType::ChipBreak {
+            dv(ui, "Retract Amt:", &mut cfg.retract_amount, " mm", 0.1, 0.1..=5.0);
+        }
+    });
+}
+
+fn draw_chamfer_params(ui: &mut egui::Ui, cfg: &mut ChamferConfig) {
+    ui.label(egui::RichText::new("Requires V-Bit tool").italics().color(egui::Color32::from_rgb(150, 140, 110)));
+    egui::Grid::new("chamfer_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        dv(ui, "Chamfer Width:", &mut cfg.chamfer_width, " mm", 0.1, 0.1..=10.0);
+        dv(ui, "Tip Offset:", &mut cfg.tip_offset, " mm", 0.01, 0.0..=2.0);
+        dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
+        dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
+    });
+}
+
+fn draw_spiral_finish_params(ui: &mut egui::Ui, cfg: &mut SpiralFinishConfig) {
+    egui::Grid::new("spiral_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=20.0);
+        ui.label("Direction:");
+        egui::ComboBox::from_id_salt("spiral_dir").selected_text(match cfg.direction {
+            SpiralDirection::InsideOut => "Inside Out", SpiralDirection::OutsideIn => "Outside In",
+        }).show_ui(ui, |ui| {
+            ui.selectable_value(&mut cfg.direction, SpiralDirection::InsideOut, "Inside Out");
+            ui.selectable_value(&mut cfg.direction, SpiralDirection::OutsideIn, "Outside In");
+        });
+        ui.end_row();
+        dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
+        dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
+        dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
+    });
+}
+
+fn draw_radial_finish_params(ui: &mut egui::Ui, cfg: &mut RadialFinishConfig) {
+    egui::Grid::new("radial_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        dv(ui, "Angular Step:", &mut cfg.angular_step, " deg", 1.0, 1.0..=90.0);
+        dv(ui, "Point Spacing:", &mut cfg.point_spacing, " mm", 0.1, 0.1..=5.0);
+        dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
+        dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
+        dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
+    });
+}
+
+fn draw_horizontal_finish_params(ui: &mut egui::Ui, cfg: &mut HorizontalFinishConfig) {
+    ui.label(egui::RichText::new("Machines only flat areas").italics().color(egui::Color32::from_rgb(150, 150, 130)));
+    egui::Grid::new("horiz_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        dv(ui, "Angle Threshold:", &mut cfg.angle_threshold, " deg", 1.0, 1.0..=30.0);
+        dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=20.0);
+        dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
+        dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
+        dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
+    });
+}
+
+fn draw_project_curve_params(ui: &mut egui::Ui, cfg: &mut ProjectCurveConfig) {
+    ui.label(egui::RichText::new("Projects 2D curves onto 3D mesh").italics().color(egui::Color32::from_rgb(150, 150, 130)));
+    egui::Grid::new("proj_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, 0.1..=20.0);
+        dv(ui, "Point Spacing:", &mut cfg.point_spacing, " mm", 0.1, 0.1..=5.0);
+        dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
+        dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
+    });
+}
+
 // ── Validation ───────────────────────────────────────────────────────────
 
 fn validate_toolpath(
@@ -667,6 +813,13 @@ fn validate_toolpath(
                 .map(|(_, name, _)| name.contains("V-Bit")).unwrap_or(false);
             if !is_vbit {
                 errs.push("Inlay requires a V-Bit tool".into());
+            }
+        }
+        OperationConfig::Chamfer(_) => {
+            let is_vbit = tools.iter().find(|(id, _, _)| *id == entry.tool_id)
+                .map(|(_, name, _)| name.contains("V-Bit")).unwrap_or(false);
+            if !is_vbit {
+                errs.push("Chamfer requires a V-Bit tool".into());
             }
         }
         OperationConfig::Rest(c) => {

@@ -33,25 +33,30 @@ pub enum CutDirection { Climb, Conventional, BothWays }
 pub enum OperationType {
     // 2.5D
     Pocket, Profile, Adaptive, VCarve, Rest, Inlay, Zigzag,
+    Face, Trace, Drill, Chamfer,
     // 3D
     DropCutter, Adaptive3d, Waterline, Pencil, Scallop, SteepShallow, RampFinish,
+    SpiralFinish, RadialFinish, HorizontalFinish, ProjectCurve,
 }
 
 impl OperationType {
     pub const ALL_2D: &[OperationType] = &[
-        OperationType::Pocket, OperationType::Profile, OperationType::Adaptive,
-        OperationType::VCarve, OperationType::Rest, OperationType::Inlay,
-        OperationType::Zigzag,
+        OperationType::Face, OperationType::Pocket, OperationType::Profile,
+        OperationType::Adaptive, OperationType::VCarve, OperationType::Rest,
+        OperationType::Inlay, OperationType::Zigzag, OperationType::Trace,
+        OperationType::Drill, OperationType::Chamfer,
     ];
 
     pub const ALL_3D: &[OperationType] = &[
         OperationType::DropCutter, OperationType::Adaptive3d, OperationType::Waterline,
         OperationType::Pencil, OperationType::Scallop, OperationType::SteepShallow,
-        OperationType::RampFinish,
+        OperationType::RampFinish, OperationType::SpiralFinish, OperationType::RadialFinish,
+        OperationType::HorizontalFinish, OperationType::ProjectCurve,
     ];
 
     pub fn label(&self) -> &'static str {
         match self {
+            OperationType::Face => "Face",
             OperationType::Pocket => "Pocket",
             OperationType::Profile => "Profile",
             OperationType::Adaptive => "Adaptive",
@@ -59,6 +64,9 @@ impl OperationType {
             OperationType::Rest => "Rest Machining",
             OperationType::Inlay => "Inlay",
             OperationType::Zigzag => "Zigzag",
+            OperationType::Trace => "Trace",
+            OperationType::Drill => "Drill",
+            OperationType::Chamfer => "Chamfer",
             OperationType::DropCutter => "3D Finish",
             OperationType::Adaptive3d => "3D Rough",
             OperationType::Waterline => "Waterline",
@@ -66,6 +74,10 @@ impl OperationType {
             OperationType::Scallop => "Scallop Finish",
             OperationType::SteepShallow => "Steep/Shallow",
             OperationType::RampFinish => "Ramp Finish",
+            OperationType::SpiralFinish => "Spiral Finish",
+            OperationType::RadialFinish => "Radial Finish",
+            OperationType::HorizontalFinish => "Horizontal Finish",
+            OperationType::ProjectCurve => "Project Curve",
         }
     }
 }
@@ -74,6 +86,7 @@ impl OperationType {
 #[derive(Debug, Clone)]
 pub enum OperationConfig {
     // 2.5D
+    Face(FaceConfig),
     Pocket(PocketConfig),
     Profile(ProfileConfig),
     Adaptive(AdaptiveConfig),
@@ -81,6 +94,9 @@ pub enum OperationConfig {
     Rest(RestConfig),
     Inlay(InlayConfig),
     Zigzag(ZigzagConfig),
+    Trace(TraceConfig),
+    Drill(DrillConfig),
+    Chamfer(ChamferConfig),
     // 3D
     DropCutter(DropCutterConfig),
     Adaptive3d(Adaptive3dConfig),
@@ -89,11 +105,16 @@ pub enum OperationConfig {
     Scallop(ScallopConfig),
     SteepShallow(SteepShallowConfig),
     RampFinish(RampFinishConfig),
+    SpiralFinish(SpiralFinishConfig),
+    RadialFinish(RadialFinishConfig),
+    HorizontalFinish(HorizontalFinishConfig),
+    ProjectCurve(ProjectCurveConfig),
 }
 
 impl OperationConfig {
     pub fn label(&self) -> &'static str {
         match self {
+            OperationConfig::Face(_) => "Face",
             OperationConfig::Pocket(_) => "Pocket",
             OperationConfig::Profile(_) => "Profile",
             OperationConfig::Adaptive(_) => "Adaptive",
@@ -101,6 +122,9 @@ impl OperationConfig {
             OperationConfig::Rest(_) => "Rest Machining",
             OperationConfig::Inlay(_) => "Inlay",
             OperationConfig::Zigzag(_) => "Zigzag",
+            OperationConfig::Trace(_) => "Trace",
+            OperationConfig::Drill(_) => "Drill",
+            OperationConfig::Chamfer(_) => "Chamfer",
             OperationConfig::DropCutter(_) => "3D Finish",
             OperationConfig::Adaptive3d(_) => "3D Rough",
             OperationConfig::Waterline(_) => "Waterline",
@@ -108,6 +132,10 @@ impl OperationConfig {
             OperationConfig::Scallop(_) => "Scallop Finish",
             OperationConfig::SteepShallow(_) => "Steep/Shallow",
             OperationConfig::RampFinish(_) => "Ramp Finish",
+            OperationConfig::SpiralFinish(_) => "Spiral Finish",
+            OperationConfig::RadialFinish(_) => "Radial Finish",
+            OperationConfig::HorizontalFinish(_) => "Horizontal Finish",
+            OperationConfig::ProjectCurve(_) => "Project Curve",
         }
     }
 
@@ -117,12 +145,25 @@ impl OperationConfig {
             OperationConfig::DropCutter(_) | OperationConfig::Adaptive3d(_)
                 | OperationConfig::Waterline(_) | OperationConfig::Pencil(_)
                 | OperationConfig::Scallop(_) | OperationConfig::SteepShallow(_)
-                | OperationConfig::RampFinish(_)
+                | OperationConfig::RampFinish(_) | OperationConfig::SpiralFinish(_)
+                | OperationConfig::RadialFinish(_) | OperationConfig::HorizontalFinish(_)
+                | OperationConfig::ProjectCurve(_)
         )
+    }
+
+    /// Whether this operation uses stock bounds (not mesh or polygon).
+    pub fn is_stock_based(&self) -> bool {
+        matches!(self, OperationConfig::Face(_))
+    }
+
+    /// Whether this is a 2.5D op that needs both polygons AND mesh (project curve).
+    pub fn needs_both(&self) -> bool {
+        matches!(self, OperationConfig::ProjectCurve(_))
     }
 
     pub fn new_default(op_type: OperationType) -> Self {
         match op_type {
+            OperationType::Face => OperationConfig::Face(FaceConfig::default()),
             OperationType::Pocket => OperationConfig::Pocket(PocketConfig::default()),
             OperationType::Profile => OperationConfig::Profile(ProfileConfig::default()),
             OperationType::Adaptive => OperationConfig::Adaptive(AdaptiveConfig::default()),
@@ -130,6 +171,9 @@ impl OperationConfig {
             OperationType::Rest => OperationConfig::Rest(RestConfig::default()),
             OperationType::Inlay => OperationConfig::Inlay(InlayConfig::default()),
             OperationType::Zigzag => OperationConfig::Zigzag(ZigzagConfig::default()),
+            OperationType::Trace => OperationConfig::Trace(TraceConfig::default()),
+            OperationType::Drill => OperationConfig::Drill(DrillConfig::default()),
+            OperationType::Chamfer => OperationConfig::Chamfer(ChamferConfig::default()),
             OperationType::DropCutter => OperationConfig::DropCutter(DropCutterConfig::default()),
             OperationType::Adaptive3d => OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
             OperationType::Waterline => OperationConfig::Waterline(WaterlineConfig::default()),
@@ -137,6 +181,10 @@ impl OperationConfig {
             OperationType::Scallop => OperationConfig::Scallop(ScallopConfig::default()),
             OperationType::SteepShallow => OperationConfig::SteepShallow(SteepShallowConfig::default()),
             OperationType::RampFinish => OperationConfig::RampFinish(RampFinishConfig::default()),
+            OperationType::SpiralFinish => OperationConfig::SpiralFinish(SpiralFinishConfig::default()),
+            OperationType::RadialFinish => OperationConfig::RadialFinish(RadialFinishConfig::default()),
+            OperationType::HorizontalFinish => OperationConfig::HorizontalFinish(HorizontalFinishConfig::default()),
+            OperationType::ProjectCurve => OperationConfig::ProjectCurve(ProjectCurveConfig::default()),
         }
     }
 }
@@ -144,6 +192,65 @@ impl OperationConfig {
 // =========================================================================
 // 2.5D config structs
 // =========================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FaceDirection { OneWay, Zigzag }
+
+#[derive(Debug, Clone)]
+pub struct FaceConfig {
+    pub stepover: f64, pub depth: f64, pub depth_per_pass: f64,
+    pub feed_rate: f64, pub plunge_rate: f64, pub stock_offset: f64,
+    pub direction: FaceDirection,
+}
+impl Default for FaceConfig {
+    fn default() -> Self {
+        Self { stepover: 5.0, depth: 0.0, depth_per_pass: 1.0, feed_rate: 1500.0,
+               plunge_rate: 500.0, stock_offset: 5.0, direction: FaceDirection::Zigzag }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TraceCompensation { None, Left, Right }
+
+#[derive(Debug, Clone)]
+pub struct TraceConfig {
+    pub depth: f64, pub depth_per_pass: f64,
+    pub feed_rate: f64, pub plunge_rate: f64,
+    pub compensation: TraceCompensation,
+}
+impl Default for TraceConfig {
+    fn default() -> Self {
+        Self { depth: 1.0, depth_per_pass: 0.5, feed_rate: 800.0,
+               plunge_rate: 400.0, compensation: TraceCompensation::None }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DrillCycleType { Simple, Dwell, Peck, ChipBreak }
+
+#[derive(Debug, Clone)]
+pub struct DrillConfig {
+    pub depth: f64, pub cycle: DrillCycleType,
+    pub peck_depth: f64, pub dwell_time: f64, pub retract_amount: f64,
+    pub feed_rate: f64, pub retract_z: f64,
+}
+impl Default for DrillConfig {
+    fn default() -> Self {
+        Self { depth: 10.0, cycle: DrillCycleType::Peck, peck_depth: 3.0,
+               dwell_time: 0.5, retract_amount: 0.5, feed_rate: 300.0, retract_z: 2.0 }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ChamferConfig {
+    pub chamfer_width: f64, pub tip_offset: f64,
+    pub feed_rate: f64, pub plunge_rate: f64,
+}
+impl Default for ChamferConfig {
+    fn default() -> Self {
+        Self { chamfer_width: 1.0, tip_offset: 0.1, feed_rate: 800.0, plunge_rate: 400.0 }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct PocketConfig {
@@ -333,6 +440,56 @@ impl Default for RampFinishConfig {
                direction: CutDirection::Climb, order_bottom_up: false,
                feed_rate: 1000.0, plunge_rate: 500.0, sampling: 0.5,
                stock_to_leave: 0.0, tolerance: 0.05 }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpiralDirection { InsideOut, OutsideIn }
+
+#[derive(Debug, Clone)]
+pub struct SpiralFinishConfig {
+    pub stepover: f64, pub direction: SpiralDirection,
+    pub feed_rate: f64, pub plunge_rate: f64, pub stock_to_leave: f64,
+}
+impl Default for SpiralFinishConfig {
+    fn default() -> Self {
+        Self { stepover: 1.0, direction: SpiralDirection::InsideOut,
+               feed_rate: 1000.0, plunge_rate: 500.0, stock_to_leave: 0.0 }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RadialFinishConfig {
+    pub angular_step: f64, pub point_spacing: f64,
+    pub feed_rate: f64, pub plunge_rate: f64, pub stock_to_leave: f64,
+}
+impl Default for RadialFinishConfig {
+    fn default() -> Self {
+        Self { angular_step: 5.0, point_spacing: 0.5,
+               feed_rate: 1000.0, plunge_rate: 500.0, stock_to_leave: 0.0 }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct HorizontalFinishConfig {
+    pub angle_threshold: f64, pub stepover: f64,
+    pub feed_rate: f64, pub plunge_rate: f64, pub stock_to_leave: f64,
+}
+impl Default for HorizontalFinishConfig {
+    fn default() -> Self {
+        Self { angle_threshold: 5.0, stepover: 1.0,
+               feed_rate: 1000.0, plunge_rate: 500.0, stock_to_leave: 0.0 }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ProjectCurveConfig {
+    pub depth: f64, pub point_spacing: f64,
+    pub feed_rate: f64, pub plunge_rate: f64,
+}
+impl Default for ProjectCurveConfig {
+    fn default() -> Self {
+        Self { depth: 1.0, point_spacing: 0.5, feed_rate: 800.0, plunge_rate: 400.0 }
     }
 }
 

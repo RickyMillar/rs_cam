@@ -28,6 +28,15 @@ use rs_cam_core::toolpath::{MoveType, Toolpath, raster_toolpath_from_grid};
 use rs_cam_core::vcarve::{VCarveParams, vcarve_toolpath};
 use rs_cam_core::waterline::{WaterlineParams, waterline_toolpath};
 use rs_cam_core::zigzag::{ZigzagParams, zigzag_toolpath};
+use rs_cam_core::face::{FaceParams, FaceDirection as CoreFaceDir, face_toolpath};
+use rs_cam_core::trace::{TraceParams, TraceCompensation as CoreTraceComp, trace_toolpath};
+use rs_cam_core::drill::{DrillParams, DrillCycle, drill_toolpath};
+use rs_cam_core::chamfer::{ChamferParams, chamfer_toolpath};
+use rs_cam_core::spiral_finish::{SpiralFinishParams, SpiralDirection as CoreSpiralDir, spiral_finish_toolpath};
+use rs_cam_core::radial_finish::{RadialFinishParams, radial_finish_toolpath};
+use rs_cam_core::horizontal_finish::{HorizontalFinishParams, horizontal_finish_toolpath};
+use rs_cam_core::project_curve::{ProjectCurveParams, project_curve_toolpath};
+// boundary module available for future use: clip_toolpath_to_boundary, effective_boundary
 
 use crate::state::job::{ToolConfig, ToolType};
 use crate::state::toolpath::*;
@@ -42,6 +51,7 @@ pub struct ComputeRequest {
     pub tool: ToolConfig,
     pub safe_z: f64,
     pub prev_tool_radius: Option<f64>,
+    pub stock_bbox: Option<BoundingBox3>,
 }
 
 pub struct ComputeResult {
@@ -184,6 +194,7 @@ fn build_cutter(tool: &ToolConfig) -> Box<dyn MillingCutter> {
 
 fn run_compute(req: &ComputeRequest) -> Result<ToolpathResult, String> {
     let mut tp = match &req.operation {
+        OperationConfig::Face(c) => run_face(req, c),
         OperationConfig::Pocket(c) => run_pocket(req, c),
         OperationConfig::Profile(c) => run_profile(req, c),
         OperationConfig::Adaptive(c) => run_adaptive(req, c),
@@ -191,6 +202,9 @@ fn run_compute(req: &ComputeRequest) -> Result<ToolpathResult, String> {
         OperationConfig::Rest(c) => run_rest(req, c),
         OperationConfig::Inlay(c) => run_inlay(req, c),
         OperationConfig::Zigzag(c) => run_zigzag(req, c),
+        OperationConfig::Trace(c) => run_trace(req, c),
+        OperationConfig::Drill(c) => run_drill(req, c),
+        OperationConfig::Chamfer(c) => run_chamfer(req, c),
         OperationConfig::DropCutter(c) => run_dropcutter(req, c),
         OperationConfig::Adaptive3d(c) => run_adaptive3d(req, c),
         OperationConfig::Waterline(c) => run_waterline(req, c),
@@ -198,6 +212,10 @@ fn run_compute(req: &ComputeRequest) -> Result<ToolpathResult, String> {
         OperationConfig::Scallop(c) => run_scallop(req, c),
         OperationConfig::SteepShallow(c) => run_steep_shallow(req, c),
         OperationConfig::RampFinish(c) => run_ramp_finish(req, c),
+        OperationConfig::SpiralFinish(c) => run_spiral_finish(req, c),
+        OperationConfig::RadialFinish(c) => run_radial_finish(req, c),
+        OperationConfig::HorizontalFinish(c) => run_horizontal_finish(req, c),
+        OperationConfig::ProjectCurve(c) => run_project_curve(req, c),
     }?;
 
     tp = apply_dressups(tp, &req.dressups, &req.tool, req.safe_z);
@@ -440,6 +458,149 @@ fn run_ramp_finish(req: &ComputeRequest, cfg: &RampFinishConfig) -> Result<Toolp
         stock_to_leave: cfg.stock_to_leave, tolerance: cfg.tolerance,
     };
     Ok(ramp_finish_toolpath(mesh, &index, cutter.as_ref(), &params))
+}
+
+fn run_spiral_finish(req: &ComputeRequest, cfg: &SpiralFinishConfig) -> Result<Toolpath, String> {
+    let (mesh, index) = require_mesh(req)?;
+    let cutter = build_cutter(&req.tool);
+    let params = SpiralFinishParams {
+        stepover: cfg.stepover,
+        direction: match cfg.direction {
+            self::SpiralDirection::InsideOut => CoreSpiralDir::InsideOut,
+            self::SpiralDirection::OutsideIn => CoreSpiralDir::OutsideIn,
+        },
+        feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
+        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave,
+    };
+    Ok(spiral_finish_toolpath(mesh, &index, cutter.as_ref(), &params))
+}
+
+fn run_radial_finish(req: &ComputeRequest, cfg: &RadialFinishConfig) -> Result<Toolpath, String> {
+    let (mesh, index) = require_mesh(req)?;
+    let cutter = build_cutter(&req.tool);
+    let params = RadialFinishParams {
+        angular_step: cfg.angular_step, point_spacing: cfg.point_spacing,
+        feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
+        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave,
+    };
+    Ok(radial_finish_toolpath(mesh, &index, cutter.as_ref(), &params))
+}
+
+fn run_horizontal_finish(req: &ComputeRequest, cfg: &HorizontalFinishConfig) -> Result<Toolpath, String> {
+    let (mesh, index) = require_mesh(req)?;
+    let cutter = build_cutter(&req.tool);
+    let params = HorizontalFinishParams {
+        angle_threshold: cfg.angle_threshold, stepover: cfg.stepover,
+        feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
+        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave,
+    };
+    Ok(horizontal_finish_toolpath(mesh, &index, cutter.as_ref(), &params))
+}
+
+fn run_project_curve(req: &ComputeRequest, cfg: &ProjectCurveConfig) -> Result<Toolpath, String> {
+    let polys = require_polygons(req)?;
+    let (mesh, index) = require_mesh(req)?;
+    let cutter = build_cutter(&req.tool);
+    let params = ProjectCurveParams {
+        depth: cfg.depth, point_spacing: cfg.point_spacing,
+        feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
+        safe_z: req.safe_z,
+    };
+    let mut out = Toolpath::new();
+    for p in polys {
+        let tp = project_curve_toolpath(p, mesh, &index, cutter.as_ref(), &params);
+        out.moves.extend(tp.moves);
+    }
+    Ok(out)
+}
+
+fn run_face(req: &ComputeRequest, cfg: &FaceConfig) -> Result<Toolpath, String> {
+    let bbox = req.stock_bbox.ok_or("No stock defined for face operation")?;
+    let tr = req.tool.diameter / 2.0;
+    let params = FaceParams {
+        tool_radius: tr,
+        stepover: cfg.stepover,
+        depth: cfg.depth,
+        depth_per_pass: cfg.depth_per_pass,
+        feed_rate: cfg.feed_rate,
+        plunge_rate: cfg.plunge_rate,
+        safe_z: req.safe_z,
+        stock_offset: cfg.stock_offset,
+        direction: match cfg.direction {
+            self::FaceDirection::OneWay => CoreFaceDir::OneWay,
+            self::FaceDirection::Zigzag => CoreFaceDir::Zigzag,
+        },
+    };
+    Ok(face_toolpath(&bbox, &params))
+}
+
+fn run_trace(req: &ComputeRequest, cfg: &TraceConfig) -> Result<Toolpath, String> {
+    let polys = require_polygons(req)?;
+    let tr = req.tool.diameter / 2.0;
+    let depth = make_depth(cfg.depth, cfg.depth_per_pass);
+    let mut out = Toolpath::new();
+    for p in polys {
+        let tp = depth_stepped_toolpath(&depth, req.safe_z, |z| {
+            let params = TraceParams {
+                tool_radius: tr, depth: z.abs(), depth_per_pass: cfg.depth_per_pass,
+                feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate, safe_z: req.safe_z,
+                compensation: match cfg.compensation {
+                    self::TraceCompensation::None => CoreTraceComp::None,
+                    self::TraceCompensation::Left => CoreTraceComp::Left,
+                    self::TraceCompensation::Right => CoreTraceComp::Right,
+                },
+            };
+            trace_toolpath(p, &params)
+        });
+        out.moves.extend(tp.moves);
+    }
+    Ok(out)
+}
+
+fn run_drill(req: &ComputeRequest, cfg: &DrillConfig) -> Result<Toolpath, String> {
+    // Drill uses polygon centers as hole positions (circles from SVG/DXF)
+    let polys = require_polygons(req)?;
+    let mut holes = Vec::new();
+    for p in polys {
+        if p.exterior.is_empty() { continue; }
+        // Use centroid of each polygon as drill point
+        let (sx, sy) = p.exterior.iter().fold((0.0, 0.0), |(ax, ay), pt| (ax + pt.x, ay + pt.y));
+        let n = p.exterior.len() as f64;
+        holes.push([sx / n, sy / n]);
+    }
+    if holes.is_empty() {
+        return Err("No hole positions found (import SVG with circles)".to_string());
+    }
+    let cycle = match cfg.cycle {
+        self::DrillCycleType::Simple => DrillCycle::Simple,
+        self::DrillCycleType::Dwell => DrillCycle::Dwell(cfg.dwell_time),
+        self::DrillCycleType::Peck => DrillCycle::Peck(cfg.peck_depth),
+        self::DrillCycleType::ChipBreak => DrillCycle::ChipBreak(cfg.peck_depth, cfg.retract_amount),
+    };
+    let params = DrillParams {
+        depth: cfg.depth, cycle, feed_rate: cfg.feed_rate,
+        safe_z: req.safe_z, retract_z: cfg.retract_z,
+    };
+    Ok(drill_toolpath(&holes, &params))
+}
+
+fn run_chamfer(req: &ComputeRequest, cfg: &ChamferConfig) -> Result<Toolpath, String> {
+    let polys = require_polygons(req)?;
+    let ha = match req.tool.tool_type {
+        ToolType::VBit => (req.tool.included_angle / 2.0).to_radians(),
+        _ => return Err("Chamfer requires V-Bit tool".into()),
+    };
+    let mut out = Toolpath::new();
+    for p in polys {
+        let params = ChamferParams {
+            chamfer_width: cfg.chamfer_width, tip_offset: cfg.tip_offset,
+            tool_half_angle: ha, tool_radius: req.tool.diameter / 2.0,
+            feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate, safe_z: req.safe_z,
+        };
+        let tp = chamfer_toolpath(p, &params);
+        out.moves.extend(tp.moves);
+    }
+    Ok(out)
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────

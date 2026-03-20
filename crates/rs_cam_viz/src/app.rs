@@ -466,6 +466,8 @@ impl RsCamApp {
         tp.result = None;
         self.compute_start = Some(std::time::Instant::now());
 
+        let stock_bbox = Some(self.state.job.stock.bbox());
+
         self.compute.submit(ComputeRequest {
             toolpath_id: tp_id,
             polygons,
@@ -475,6 +477,7 @@ impl RsCamApp {
             tool,
             safe_z: self.state.job.post.safe_z,
             prev_tool_radius,
+            stock_bbox,
         });
     }
 
