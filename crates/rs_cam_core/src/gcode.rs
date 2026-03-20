@@ -18,6 +18,21 @@ pub trait PostProcessor {
     fn arc_ccw(&self, x: f64, y: f64, z: f64, i: f64, j: f64, feed: f64) -> String;
     fn comment(&self, text: &str) -> String;
     fn decimal_places(&self) -> usize { 3 }
+
+    // Canned drilling cycles (default implementations)
+    fn drill_simple(&self, x: f64, y: f64, z: f64, r: f64, feed: f64) -> String {
+        format!("G81 X{x:.4} Y{y:.4} Z{z:.4} R{r:.4} F{feed:.1}\n")
+    }
+    fn drill_dwell(&self, x: f64, y: f64, z: f64, r: f64, feed: f64, dwell: f64) -> String {
+        format!("G82 X{x:.4} Y{y:.4} Z{z:.4} R{r:.4} P{dwell:.3} F{feed:.1}\n")
+    }
+    fn drill_peck(&self, x: f64, y: f64, z: f64, r: f64, feed: f64, peck: f64) -> String {
+        format!("G83 X{x:.4} Y{y:.4} Z{z:.4} R{r:.4} Q{peck:.4} F{feed:.1}\n")
+    }
+    fn drill_chip_break(&self, x: f64, y: f64, z: f64, r: f64, feed: f64, peck: f64) -> String {
+        format!("G73 X{x:.4} Y{y:.4} Z{z:.4} R{r:.4} Q{peck:.4} F{feed:.1}\n")
+    }
+    fn drill_cancel(&self) -> String { "G80\n".to_string() }
 }
 
 /// GRBL-compatible post-processor.

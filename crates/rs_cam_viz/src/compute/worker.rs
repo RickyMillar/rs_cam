@@ -395,7 +395,7 @@ fn run_adaptive3d(req: &ComputeRequest, cfg: &Adaptive3dConfig) -> Result<Toolpa
     };
     let params = Adaptive3dParams {
         tool_radius: req.tool.diameter / 2.0, stepover: cfg.stepover,
-        depth_per_pass: cfg.depth_per_pass, stock_to_leave: cfg.stock_to_leave,
+        depth_per_pass: cfg.depth_per_pass, stock_to_leave: cfg.stock_to_leave_axial,
         feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate, safe_z: req.safe_z,
         tolerance: cfg.tolerance, min_cutting_radius: cfg.min_cutting_radius,
         stock_top_z: cfg.stock_top_z, entry_style: entry,
@@ -428,7 +428,7 @@ fn run_pencil(req: &ComputeRequest, cfg: &PencilConfig) -> Result<Toolpath, Stri
         hookup_distance: cfg.hookup_distance, num_offset_passes: cfg.num_offset_passes,
         offset_stepover: cfg.offset_stepover, sampling: cfg.sampling,
         feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
-        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave,
+        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave_axial,
     };
     Ok(pencil_toolpath(mesh, &index, cutter.as_ref(), &params))
 }
@@ -444,7 +444,7 @@ fn run_scallop(req: &ComputeRequest, cfg: &ScallopConfig) -> Result<Toolpath, St
         },
         continuous: cfg.continuous, slope_from: cfg.slope_from, slope_to: cfg.slope_to,
         feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
-        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave,
+        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave_axial,
     };
     Ok(scallop_toolpath(mesh, &index, cutter.as_ref(), &params))
 }
@@ -458,7 +458,7 @@ fn run_steep_shallow(req: &ComputeRequest, cfg: &SteepShallowConfig) -> Result<T
         stepover: cfg.stepover, z_step: cfg.z_step,
         feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
         safe_z: req.safe_z, sampling: cfg.sampling,
-        stock_to_leave: cfg.stock_to_leave, tolerance: cfg.tolerance,
+        stock_to_leave: cfg.stock_to_leave_axial, tolerance: cfg.tolerance,
     };
     Ok(steep_shallow_toolpath(mesh, &index, cutter.as_ref(), &params))
 }
@@ -476,7 +476,7 @@ fn run_ramp_finish(req: &ComputeRequest, cfg: &RampFinishConfig) -> Result<Toolp
         order_bottom_up: cfg.order_bottom_up,
         feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
         safe_z: req.safe_z, sampling: cfg.sampling,
-        stock_to_leave: cfg.stock_to_leave, tolerance: cfg.tolerance,
+        stock_to_leave: cfg.stock_to_leave_axial, tolerance: cfg.tolerance,
     };
     Ok(ramp_finish_toolpath(mesh, &index, cutter.as_ref(), &params))
 }
@@ -491,7 +491,7 @@ fn run_spiral_finish(req: &ComputeRequest, cfg: &SpiralFinishConfig) -> Result<T
             self::SpiralDirection::OutsideIn => CoreSpiralDir::OutsideIn,
         },
         feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
-        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave,
+        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave_axial,
     };
     Ok(spiral_finish_toolpath(mesh, &index, cutter.as_ref(), &params))
 }
@@ -502,7 +502,7 @@ fn run_radial_finish(req: &ComputeRequest, cfg: &RadialFinishConfig) -> Result<T
     let params = RadialFinishParams {
         angular_step: cfg.angular_step, point_spacing: cfg.point_spacing,
         feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
-        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave,
+        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave_axial,
     };
     Ok(radial_finish_toolpath(mesh, &index, cutter.as_ref(), &params))
 }
@@ -513,7 +513,7 @@ fn run_horizontal_finish(req: &ComputeRequest, cfg: &HorizontalFinishConfig) -> 
     let params = HorizontalFinishParams {
         angle_threshold: cfg.angle_threshold, stepover: cfg.stepover,
         feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
-        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave,
+        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave_axial,
     };
     Ok(horizontal_finish_toolpath(mesh, &index, cutter.as_ref(), &params))
 }

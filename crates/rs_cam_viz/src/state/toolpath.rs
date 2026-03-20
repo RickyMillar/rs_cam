@@ -361,14 +361,14 @@ impl Default for DropCutterConfig {
 
 #[derive(Debug, Clone)]
 pub struct Adaptive3dConfig {
-    pub stepover: f64, pub depth_per_pass: f64, pub stock_to_leave: f64,
+    pub stepover: f64, pub depth_per_pass: f64, pub stock_to_leave_radial: f64, pub stock_to_leave_axial: f64,
     pub feed_rate: f64, pub plunge_rate: f64, pub tolerance: f64,
     pub min_cutting_radius: f64, pub stock_top_z: f64, pub entry_style: EntryStyle,
     pub fine_stepdown: f64, pub detect_flat_areas: bool, pub region_ordering: RegionOrdering,
 }
 impl Default for Adaptive3dConfig {
     fn default() -> Self {
-        Self { stepover: 2.0, depth_per_pass: 3.0, stock_to_leave: 0.5, feed_rate: 1500.0,
+        Self { stepover: 2.0, depth_per_pass: 3.0, stock_to_leave_radial: 0.5, stock_to_leave_axial: 0.5, feed_rate: 1500.0,
                plunge_rate: 500.0, tolerance: 0.1, min_cutting_radius: 0.0, stock_top_z: 30.0,
                entry_style: EntryStyle::Plunge, fine_stepdown: 0.0, detect_flat_areas: false,
                region_ordering: RegionOrdering::Global }
@@ -391,13 +391,13 @@ impl Default for WaterlineConfig {
 pub struct PencilConfig {
     pub bitangency_angle: f64, pub min_cut_length: f64, pub hookup_distance: f64,
     pub num_offset_passes: usize, pub offset_stepover: f64, pub sampling: f64,
-    pub feed_rate: f64, pub plunge_rate: f64, pub stock_to_leave: f64,
+    pub feed_rate: f64, pub plunge_rate: f64, pub stock_to_leave_radial: f64, pub stock_to_leave_axial: f64,
 }
 impl Default for PencilConfig {
     fn default() -> Self {
         Self { bitangency_angle: 160.0, min_cut_length: 2.0, hookup_distance: 5.0,
                num_offset_passes: 1, offset_stepover: 0.5, sampling: 0.5,
-               feed_rate: 800.0, plunge_rate: 400.0, stock_to_leave: 0.0 }
+               feed_rate: 800.0, plunge_rate: 400.0, stock_to_leave_radial: 0.0, stock_to_leave_axial: 0.0 }
     }
 }
 
@@ -405,13 +405,13 @@ impl Default for PencilConfig {
 pub struct ScallopConfig {
     pub scallop_height: f64, pub tolerance: f64, pub direction: ScallopDirection,
     pub continuous: bool, pub slope_from: f64, pub slope_to: f64,
-    pub feed_rate: f64, pub plunge_rate: f64, pub stock_to_leave: f64,
+    pub feed_rate: f64, pub plunge_rate: f64, pub stock_to_leave_radial: f64, pub stock_to_leave_axial: f64,
 }
 impl Default for ScallopConfig {
     fn default() -> Self {
         Self { scallop_height: 0.1, tolerance: 0.05, direction: ScallopDirection::OutsideIn,
                continuous: false, slope_from: 0.0, slope_to: 90.0,
-               feed_rate: 1000.0, plunge_rate: 500.0, stock_to_leave: 0.0 }
+               feed_rate: 1000.0, plunge_rate: 500.0, stock_to_leave_radial: 0.0, stock_to_leave_axial: 0.0 }
     }
 }
 
@@ -420,14 +420,14 @@ pub struct SteepShallowConfig {
     pub threshold_angle: f64, pub overlap_distance: f64, pub wall_clearance: f64,
     pub steep_first: bool, pub stepover: f64, pub z_step: f64,
     pub feed_rate: f64, pub plunge_rate: f64, pub sampling: f64,
-    pub stock_to_leave: f64, pub tolerance: f64,
+    pub stock_to_leave_radial: f64, pub stock_to_leave_axial: f64, pub tolerance: f64,
 }
 impl Default for SteepShallowConfig {
     fn default() -> Self {
         Self { threshold_angle: 45.0, overlap_distance: 1.0, wall_clearance: 0.5,
                steep_first: true, stepover: 1.0, z_step: 1.0,
                feed_rate: 1000.0, plunge_rate: 500.0, sampling: 0.5,
-               stock_to_leave: 0.0, tolerance: 0.05 }
+               stock_to_leave_radial: 0.0, stock_to_leave_axial: 0.0, tolerance: 0.05 }
     }
 }
 
@@ -436,14 +436,14 @@ pub struct RampFinishConfig {
     pub max_stepdown: f64, pub slope_from: f64, pub slope_to: f64,
     pub direction: CutDirection, pub order_bottom_up: bool,
     pub feed_rate: f64, pub plunge_rate: f64, pub sampling: f64,
-    pub stock_to_leave: f64, pub tolerance: f64,
+    pub stock_to_leave_radial: f64, pub stock_to_leave_axial: f64, pub tolerance: f64,
 }
 impl Default for RampFinishConfig {
     fn default() -> Self {
         Self { max_stepdown: 0.5, slope_from: 30.0, slope_to: 90.0,
                direction: CutDirection::Climb, order_bottom_up: false,
                feed_rate: 1000.0, plunge_rate: 500.0, sampling: 0.5,
-               stock_to_leave: 0.0, tolerance: 0.05 }
+               stock_to_leave_radial: 0.0, stock_to_leave_axial: 0.0, tolerance: 0.05 }
     }
 }
 
@@ -453,36 +453,36 @@ pub enum SpiralDirection { InsideOut, OutsideIn }
 #[derive(Debug, Clone)]
 pub struct SpiralFinishConfig {
     pub stepover: f64, pub direction: SpiralDirection,
-    pub feed_rate: f64, pub plunge_rate: f64, pub stock_to_leave: f64,
+    pub feed_rate: f64, pub plunge_rate: f64, pub stock_to_leave_radial: f64, pub stock_to_leave_axial: f64,
 }
 impl Default for SpiralFinishConfig {
     fn default() -> Self {
         Self { stepover: 1.0, direction: SpiralDirection::InsideOut,
-               feed_rate: 1000.0, plunge_rate: 500.0, stock_to_leave: 0.0 }
+               feed_rate: 1000.0, plunge_rate: 500.0, stock_to_leave_radial: 0.0, stock_to_leave_axial: 0.0 }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct RadialFinishConfig {
     pub angular_step: f64, pub point_spacing: f64,
-    pub feed_rate: f64, pub plunge_rate: f64, pub stock_to_leave: f64,
+    pub feed_rate: f64, pub plunge_rate: f64, pub stock_to_leave_radial: f64, pub stock_to_leave_axial: f64,
 }
 impl Default for RadialFinishConfig {
     fn default() -> Self {
         Self { angular_step: 5.0, point_spacing: 0.5,
-               feed_rate: 1000.0, plunge_rate: 500.0, stock_to_leave: 0.0 }
+               feed_rate: 1000.0, plunge_rate: 500.0, stock_to_leave_radial: 0.0, stock_to_leave_axial: 0.0 }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct HorizontalFinishConfig {
     pub angle_threshold: f64, pub stepover: f64,
-    pub feed_rate: f64, pub plunge_rate: f64, pub stock_to_leave: f64,
+    pub feed_rate: f64, pub plunge_rate: f64, pub stock_to_leave_radial: f64, pub stock_to_leave_axial: f64,
 }
 impl Default for HorizontalFinishConfig {
     fn default() -> Self {
         Self { angle_threshold: 5.0, stepover: 1.0,
-               feed_rate: 1000.0, plunge_rate: 500.0, stock_to_leave: 0.0 }
+               feed_rate: 1000.0, plunge_rate: 500.0, stock_to_leave_radial: 0.0, stock_to_leave_axial: 0.0 }
     }
 }
 

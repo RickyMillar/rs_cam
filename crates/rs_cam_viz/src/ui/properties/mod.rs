@@ -372,7 +372,8 @@ fn tooltip_for(label: &str) -> Option<&'static str> {
         "Plunge Rate" => "Vertical feed speed (mm/min). Typically 30-50% of feed rate.",
         "Tolerance" => "Geometric tolerance for path approximation. Smaller = more accurate, slower.",
         "Min Cut Radius" | "Min Cutting Radius" => "Blend sharp corners with arcs of at least this radius.",
-        "Stock to Leave" => "Material left on surface for finish pass. 0.2-0.5mm typical.",
+        "Stock to Leave" | "Wall Stock" => "Material left on walls (radial) for finish pass. 0.2-0.5mm typical.",
+        "Floor Stock" => "Material left on floors (axial) for finish pass. 0.2-0.5mm typical.",
         "Stock Top Z" => "Z height of the stock material top surface.",
         "Scallop Height" => "Target cusp height between passes. 0.05-0.2mm for finishing.",
         "Threshold Angle" => "Angle dividing steep (waterline) from shallow (raster) regions.",
@@ -568,7 +569,8 @@ fn draw_adaptive3d_params(ui: &mut egui::Ui, cfg: &mut Adaptive3dConfig) {
     egui::Grid::new("a3d_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
         dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=50.0);
         dv(ui, "Depth/Pass:", &mut cfg.depth_per_pass, " mm", 0.1, 0.1..=50.0);
-        dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Wall Stock:", &mut cfg.stock_to_leave_radial, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Floor Stock:", &mut cfg.stock_to_leave_axial, " mm", 0.05, 0.0..=10.0);
         dv(ui, "Stock Top Z:", &mut cfg.stock_top_z, " mm", 0.5, -100.0..=200.0);
         dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
         dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
@@ -620,7 +622,8 @@ fn draw_pencil_params(ui: &mut egui::Ui, cfg: &mut PencilConfig) {
         dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
         dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
         dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
-        dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Wall Stock:", &mut cfg.stock_to_leave_radial, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Floor Stock:", &mut cfg.stock_to_leave_axial, " mm", 0.05, 0.0..=10.0);
     });
 }
 
@@ -641,7 +644,8 @@ fn draw_scallop_params(ui: &mut egui::Ui, cfg: &mut ScallopConfig) {
         dv(ui, "Slope To:", &mut cfg.slope_to, " deg", 1.0, 0.0..=90.0);
         dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
         dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
-        dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Wall Stock:", &mut cfg.stock_to_leave_radial, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Floor Stock:", &mut cfg.stock_to_leave_axial, " mm", 0.05, 0.0..=10.0);
     });
 }
 
@@ -656,7 +660,8 @@ fn draw_steep_shallow_params(ui: &mut egui::Ui, cfg: &mut SteepShallowConfig) {
         dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
         dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
         dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
-        dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Wall Stock:", &mut cfg.stock_to_leave_radial, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Floor Stock:", &mut cfg.stock_to_leave_axial, " mm", 0.05, 0.0..=10.0);
         dv(ui, "Tolerance:", &mut cfg.tolerance, " mm", 0.01, 0.01..=1.0);
     });
 }
@@ -680,7 +685,8 @@ fn draw_ramp_finish_params(ui: &mut egui::Ui, cfg: &mut RampFinishConfig) {
         dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
         dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
         dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
-        dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Wall Stock:", &mut cfg.stock_to_leave_radial, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Floor Stock:", &mut cfg.stock_to_leave_axial, " mm", 0.05, 0.0..=10.0);
         dv(ui, "Tolerance:", &mut cfg.tolerance, " mm", 0.01, 0.01..=1.0);
     });
 }
@@ -778,7 +784,8 @@ fn draw_spiral_finish_params(ui: &mut egui::Ui, cfg: &mut SpiralFinishConfig) {
         ui.end_row();
         dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
         dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
-        dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Wall Stock:", &mut cfg.stock_to_leave_radial, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Floor Stock:", &mut cfg.stock_to_leave_axial, " mm", 0.05, 0.0..=10.0);
     });
 }
 
@@ -788,7 +795,8 @@ fn draw_radial_finish_params(ui: &mut egui::Ui, cfg: &mut RadialFinishConfig) {
         dv(ui, "Point Spacing:", &mut cfg.point_spacing, " mm", 0.1, 0.1..=5.0);
         dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
         dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
-        dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Wall Stock:", &mut cfg.stock_to_leave_radial, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Floor Stock:", &mut cfg.stock_to_leave_axial, " mm", 0.05, 0.0..=10.0);
     });
 }
 
@@ -799,7 +807,8 @@ fn draw_horizontal_finish_params(ui: &mut egui::Ui, cfg: &mut HorizontalFinishCo
         dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=20.0);
         dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
         dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
-        dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Wall Stock:", &mut cfg.stock_to_leave_radial, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Floor Stock:", &mut cfg.stock_to_leave_axial, " mm", 0.05, 0.0..=10.0);
     });
 }
 
