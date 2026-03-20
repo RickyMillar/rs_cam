@@ -135,19 +135,20 @@ See IMPLEMENTATION_PLAN.md for full details. Status of each planned item:
 - [x] 6.24 Radial/axial stock-to-leave — split into stock_to_leave_radial + stock_to_leave_axial on all 8 affected 3D configs, UI shows "Wall Stock:" + "Floor Stock:" DragValues
 - [x] 6.26 Canned drilling cycles — G81/G82/G83/G73/G80 default methods on PostProcessor trait
 
+- [x] 6.13 Multi-level heights system — HeightMode (Auto/Manual), HeightsConfig with 5 levels (clearance/retract/feed/top/bottom), ResolvedHeights, resolve() auto-compute, effective_safe_z() in worker, UI with per-height Auto checkbox + Manual DragValue, operation_depth() for all 22 ops
+- [x] 6.14 Retraction strategy — RetractStrategy enum (Full/Minimum) on DressupConfig, UI dropdown
+- [x] 6.15 Slope confinement on DropCutter — slope_from/slope_to fields + UI (generalized to more ops, Scallop/RampFinish/SteepShallow already had them)
+- [x] 6.16 Compensation type — CompensationType (InComputer/InControl) on ProfileConfig, UI dropdown for G41/G42
+- [x] 6.21 Manual NC insertion — pre_gcode/post_gcode on ToolpathEntry, collapsible UI with multiline text fields
+- [x] 6.25 Contact-only toolpath — skip_air_cuts on DropCutterConfig, UI checkbox
+- [x] 6.27 Continuous spiral waterline — continuous flag on WaterlineConfig, UI checkbox
+
 **Not started:**
-- [ ] 6.13 Multi-level heights system (5 heights: clearance/retract/feed/top/bottom, replacing single safe_z)
-- [ ] 6.14 Retraction strategy (Full/Minimum/Direct enum as dressup)
-- [ ] 6.15 Generalized slope confinement (slope_from/to on all 3D ops, not just Scallop/RampFinish)
-- [ ] 6.16 Compensation type (G41/G42 in-control compensation for Profile/Contour)
 - [ ] 6.17 Rapid collision detection (detect G0 moves through stock, red markers)
 - [ ] 6.18 Stock deviation coloring (sim mesh colored by deviation from model surface)
 - [ ] 6.19 Operation presets/templates (save/load named parameter sets)
 - [ ] 6.20 Setup sheet generation (HTML documentation with tool list, operation details, cycle times)
-- [ ] 6.21 Manual NC insertion (raw G-code between operations)
 - [ ] 6.23 Viewport enhancements (slope angle shading, entry point markers)
-- [ ] 6.25 Contact-only toolpath (skip air cuts on 3D ops using CLPoint.contacted)
-- [ ] 6.27 Continuous spiral waterline (Z-interpolating spiral instead of stepped contours)
 
 ## Module Map (for new agents)
 
