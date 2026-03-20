@@ -309,6 +309,12 @@ fn draw_toolpath_panel(
         }
     });
 
+    // Heights
+    ui.add_space(4.0);
+    ui.collapsing("Heights", |ui| {
+        draw_heights_params(ui, &mut entry.heights);
+    });
+
     // Dressup modifications
     ui.add_space(4.0);
     ui.collapsing("Modifications", |ui| {
@@ -688,6 +694,55 @@ fn draw_ramp_finish_params(ui: &mut egui::Ui, cfg: &mut RampFinishConfig) {
         dv(ui, "Wall Stock:", &mut cfg.stock_to_leave_radial, " mm", 0.05, 0.0..=10.0);
         dv(ui, "Floor Stock:", &mut cfg.stock_to_leave_axial, " mm", 0.05, 0.0..=10.0);
         dv(ui, "Tolerance:", &mut cfg.tolerance, " mm", 0.01, 0.01..=1.0);
+    });
+}
+
+// ── Heights panel ────────────────────────────────────────────────────────
+
+fn draw_height_row(ui: &mut egui::Ui, label: &str, mode: &mut HeightMode, tooltip: &str, _id_salt: &str) {
+    ui.label(label);
+    let is_auto = mode.is_auto();
+    let mut auto_checked = is_auto;
+    ui.checkbox(&mut auto_checked, "Auto");
+    if auto_checked != is_auto {
+        if auto_checked {
+            *mode = HeightMode::Auto;
+        } else {
+            // Switch to manual with current auto value as starting point
+            *mode = HeightMode::Manual(0.0);
+        }
+    }
+    if let HeightMode::Manual(val) = mode {
+        let resp = ui.add(egui::DragValue::new(val).suffix(" mm").speed(0.5).range(-500.0..=500.0));
+        resp.on_hover_text(tooltip);
+    } else {
+        ui.label(
+            egui::RichText::new("(auto)")
+                .italics()
+                .color(egui::Color32::from_rgb(120, 120, 130)),
+        );
+    }
+    ui.end_row();
+}
+
+fn draw_heights_params(ui: &mut egui::Ui, heights: &mut HeightsConfig) {
+    ui.label(
+        egui::RichText::new("Override auto-computed heights for precise control")
+            .small()
+            .italics()
+            .color(egui::Color32::from_rgb(130, 130, 140)),
+    );
+    egui::Grid::new("heights_p").num_columns(4).spacing([6.0, 4.0]).show(ui, |ui| {
+        draw_height_row(ui, "Clearance Z:", &mut heights.clearance_z,
+            "Highest safe travel height between operations. Auto = retract + 10mm.", "h_clear");
+        draw_height_row(ui, "Retract Z:", &mut heights.retract_z,
+            "Height between passes within one operation. Auto = safe Z from post config.", "h_retract");
+        draw_height_row(ui, "Feed Z:", &mut heights.feed_z,
+            "Height at which tool switches from rapid to feed on approach. Auto = retract - 2mm.", "h_feed");
+        draw_height_row(ui, "Top Z:", &mut heights.top_z,
+            "Starting Z of cut (stock surface). Auto = 0.0.", "h_top");
+        draw_height_row(ui, "Bottom Z:", &mut heights.bottom_z,
+            "Final machining depth. Auto = computed from operation depth.", "h_bottom");
     });
 }
 

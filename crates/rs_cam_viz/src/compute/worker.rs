@@ -54,6 +54,9 @@ pub struct ComputeRequest {
     pub stock_bbox: Option<BoundingBox3>,
     pub boundary_enabled: bool,
     pub boundary_containment: crate::state::toolpath::BoundaryContainment,
+    /// Resolved heights (5-level system). retract_z replaces safe_z for operations,
+    /// top_z replaces start_z=0 in depth stepping.
+    pub heights: crate::state::toolpath::ResolvedHeights,
 }
 
 pub struct ComputeResult {
@@ -194,6 +197,11 @@ fn build_cutter(tool: &ToolConfig) -> Box<dyn MillingCutter> {
     }
 }
 
+/// The effective retract height for operations (from heights system, falls back to safe_z).
+fn effective_safe_z(req: &ComputeRequest) -> f64 {
+    req.heights.retract_z
+}
+
 fn run_compute(req: &ComputeRequest) -> Result<ToolpathResult, String> {
     let mut tp = match &req.operation {
         OperationConfig::Face(c) => run_face(req, c),
@@ -220,7 +228,7 @@ fn run_compute(req: &ComputeRequest) -> Result<ToolpathResult, String> {
         OperationConfig::ProjectCurve(c) => run_project_curve(req, c),
     }?;
 
-    tp = apply_dressups(tp, &req.dressups, &req.tool, req.safe_z);
+    tp = apply_dressups(tp, &req.dressups, &req.tool, effective_safe_z(req));
 
     // Apply machining boundary clipping if enabled
     if req.boundary_enabled {
@@ -236,7 +244,7 @@ fn run_compute(req: &ComputeRequest) -> Result<ToolpathResult, String> {
             };
             let boundaries = effective_boundary(&stock_poly, containment, req.tool.diameter / 2.0);
             if let Some(boundary) = boundaries.first() {
-                tp = clip_toolpath_to_boundary(&tp, boundary, req.safe_z);
+                tp = clip_toolpath_to_boundary(&tp, boundary, effective_safe_z(req));
             }
         }
     }
@@ -263,13 +271,13 @@ fn run_pocket(req: &ComputeRequest, cfg: &PocketConfig) -> Result<Toolpath, Stri
     let depth = make_depth_with_finishing(cfg.depth, cfg.depth_per_pass, cfg.finishing_passes);
     let mut out = Toolpath::new();
     for p in polys {
-        let tp = depth_stepped_toolpath(&depth, req.safe_z, |z| match cfg.pattern {
+        let tp = depth_stepped_toolpath(&depth, effective_safe_z(req), |z| match cfg.pattern {
             PocketPattern::Contour => pocket_toolpath(p, &PocketParams {
                 tool_radius: tr, stepover: cfg.stepover, cut_depth: z, feed_rate: cfg.feed_rate,
-                plunge_rate: cfg.plunge_rate, safe_z: req.safe_z, climb: cfg.climb }),
+                plunge_rate: cfg.plunge_rate, safe_z: effective_safe_z(req), climb: cfg.climb }),
             PocketPattern::Zigzag => zigzag_toolpath(p, &ZigzagParams {
                 tool_radius: tr, stepover: cfg.stepover, cut_depth: z, feed_rate: cfg.feed_rate,
-                plunge_rate: cfg.plunge_rate, safe_z: req.safe_z, angle: cfg.angle.to_radians() }),
+                plunge_rate: cfg.plunge_rate, safe_z: effective_safe_z(req), angle: cfg.angle.to_radians() }),
         });
         out.moves.extend(tp.moves);
     }
@@ -286,9 +294,9 @@ fn run_profile(req: &ComputeRequest, cfg: &ProfileConfig) -> Result<Toolpath, St
     let depth = make_depth_with_finishing(cfg.depth, cfg.depth_per_pass, cfg.finishing_passes);
     let mut out = Toolpath::new();
     for p in polys {
-        let mut tp = depth_stepped_toolpath(&depth, req.safe_z, |z| profile_toolpath(p, &ProfileParams {
+        let mut tp = depth_stepped_toolpath(&depth, effective_safe_z(req), |z| profile_toolpath(p, &ProfileParams {
             tool_radius: tr, side, cut_depth: z, feed_rate: cfg.feed_rate,
-            plunge_rate: cfg.plunge_rate, safe_z: req.safe_z, climb: cfg.climb }));
+            plunge_rate: cfg.plunge_rate, safe_z: effective_safe_z(req), climb: cfg.climb }));
         if cfg.tab_count > 0 {
             tp = apply_tabs(&tp, &even_tabs(cfg.tab_count, cfg.tab_width, cfg.tab_height), -cfg.depth.abs());
         }
@@ -303,9 +311,9 @@ fn run_adaptive(req: &ComputeRequest, cfg: &AdaptiveConfig) -> Result<Toolpath, 
     let depth = make_depth(cfg.depth, cfg.depth_per_pass);
     let mut out = Toolpath::new();
     for p in polys {
-        let tp = depth_stepped_toolpath(&depth, req.safe_z, |z| adaptive_toolpath(p, &AdaptiveParams {
+        let tp = depth_stepped_toolpath(&depth, effective_safe_z(req), |z| adaptive_toolpath(p, &AdaptiveParams {
             tool_radius: tr, stepover: cfg.stepover, cut_depth: z, feed_rate: cfg.feed_rate,
-            plunge_rate: cfg.plunge_rate, safe_z: req.safe_z, tolerance: cfg.tolerance,
+            plunge_rate: cfg.plunge_rate, safe_z: effective_safe_z(req), tolerance: cfg.tolerance,
             slot_clearing: cfg.slot_clearing, min_cutting_radius: cfg.min_cutting_radius }));
         out.moves.extend(tp.moves);
     }
@@ -322,7 +330,7 @@ fn run_vcarve(req: &ComputeRequest, cfg: &VCarveConfig) -> Result<Toolpath, Stri
     for p in polys {
         let tp = vcarve_toolpath(p, &VCarveParams { half_angle: ha, max_depth: cfg.max_depth,
             stepover: cfg.stepover, feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
-            safe_z: req.safe_z, tolerance: cfg.tolerance });
+            safe_z: effective_safe_z(req), tolerance: cfg.tolerance });
         out.moves.extend(tp.moves);
     }
     Ok(out)
@@ -335,9 +343,9 @@ fn run_rest(req: &ComputeRequest, cfg: &RestConfig) -> Result<Toolpath, String> 
     let depth = make_depth(cfg.depth, cfg.depth_per_pass);
     let mut out = Toolpath::new();
     for p in polys {
-        let tp = depth_stepped_toolpath(&depth, req.safe_z, |z| rest_machining_toolpath(p, &RestParams {
+        let tp = depth_stepped_toolpath(&depth, effective_safe_z(req), |z| rest_machining_toolpath(p, &RestParams {
             prev_tool_radius: ptr, tool_radius: tr, cut_depth: z, stepover: cfg.stepover,
-            feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate, safe_z: req.safe_z,
+            feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate, safe_z: effective_safe_z(req),
             angle: cfg.angle.to_radians() }));
         out.moves.extend(tp.moves);
     }
@@ -355,7 +363,7 @@ fn run_inlay(req: &ComputeRequest, cfg: &InlayConfig) -> Result<Toolpath, String
         let r = inlay_toolpaths(p, &InlayParams { half_angle: ha, pocket_depth: cfg.pocket_depth,
             glue_gap: cfg.glue_gap, flat_depth: cfg.flat_depth, boundary_offset: cfg.boundary_offset,
             stepover: cfg.stepover, flat_tool_radius: cfg.flat_tool_radius, feed_rate: cfg.feed_rate,
-            plunge_rate: cfg.plunge_rate, safe_z: req.safe_z, tolerance: cfg.tolerance });
+            plunge_rate: cfg.plunge_rate, safe_z: effective_safe_z(req), tolerance: cfg.tolerance });
         out.moves.extend(r.female.moves);
         out.moves.extend(r.male.moves);
     }
@@ -368,9 +376,9 @@ fn run_zigzag(req: &ComputeRequest, cfg: &ZigzagConfig) -> Result<Toolpath, Stri
     let depth = make_depth(cfg.depth, cfg.depth_per_pass);
     let mut out = Toolpath::new();
     for p in polys {
-        let tp = depth_stepped_toolpath(&depth, req.safe_z, |z| zigzag_toolpath(p, &ZigzagParams {
+        let tp = depth_stepped_toolpath(&depth, effective_safe_z(req), |z| zigzag_toolpath(p, &ZigzagParams {
             tool_radius: tr, stepover: cfg.stepover, cut_depth: z, feed_rate: cfg.feed_rate,
-            plunge_rate: cfg.plunge_rate, safe_z: req.safe_z, angle: cfg.angle.to_radians() }));
+            plunge_rate: cfg.plunge_rate, safe_z: effective_safe_z(req), angle: cfg.angle.to_radians() }));
         out.moves.extend(tp.moves);
     }
     Ok(out)
@@ -382,7 +390,7 @@ fn run_dropcutter(req: &ComputeRequest, cfg: &DropCutterConfig) -> Result<Toolpa
     let (mesh, index) = require_mesh(req)?;
     let cutter = build_cutter(&req.tool);
     let grid = batch_drop_cutter(mesh, &index, cutter.as_ref(), cfg.stepover, 0.0, cfg.min_z);
-    Ok(raster_toolpath_from_grid(&grid, cfg.feed_rate, cfg.plunge_rate, req.safe_z))
+    Ok(raster_toolpath_from_grid(&grid, cfg.feed_rate, cfg.plunge_rate, effective_safe_z(req)))
 }
 
 fn run_adaptive3d(req: &ComputeRequest, cfg: &Adaptive3dConfig) -> Result<Toolpath, String> {
@@ -396,7 +404,7 @@ fn run_adaptive3d(req: &ComputeRequest, cfg: &Adaptive3dConfig) -> Result<Toolpa
     let params = Adaptive3dParams {
         tool_radius: req.tool.diameter / 2.0, stepover: cfg.stepover,
         depth_per_pass: cfg.depth_per_pass, stock_to_leave: cfg.stock_to_leave_axial,
-        feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate, safe_z: req.safe_z,
+        feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate, safe_z: effective_safe_z(req),
         tolerance: cfg.tolerance, min_cutting_radius: cfg.min_cutting_radius,
         stock_top_z: cfg.stock_top_z, entry_style: entry,
         fine_stepdown: if cfg.fine_stepdown > 0.0 { Some(cfg.fine_stepdown) } else { None },
@@ -415,7 +423,7 @@ fn run_waterline(req: &ComputeRequest, cfg: &WaterlineConfig) -> Result<Toolpath
     let cutter = build_cutter(&req.tool);
     let params = WaterlineParams {
         sampling: cfg.sampling, feed_rate: cfg.feed_rate,
-        plunge_rate: cfg.plunge_rate, safe_z: req.safe_z,
+        plunge_rate: cfg.plunge_rate, safe_z: effective_safe_z(req),
     };
     Ok(waterline_toolpath(mesh, &index, cutter.as_ref(), cfg.start_z, cfg.final_z, cfg.z_step, &params))
 }
@@ -428,7 +436,7 @@ fn run_pencil(req: &ComputeRequest, cfg: &PencilConfig) -> Result<Toolpath, Stri
         hookup_distance: cfg.hookup_distance, num_offset_passes: cfg.num_offset_passes,
         offset_stepover: cfg.offset_stepover, sampling: cfg.sampling,
         feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
-        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave_axial,
+        safe_z: effective_safe_z(req), stock_to_leave: cfg.stock_to_leave_axial,
     };
     Ok(pencil_toolpath(mesh, &index, cutter.as_ref(), &params))
 }
@@ -444,7 +452,7 @@ fn run_scallop(req: &ComputeRequest, cfg: &ScallopConfig) -> Result<Toolpath, St
         },
         continuous: cfg.continuous, slope_from: cfg.slope_from, slope_to: cfg.slope_to,
         feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
-        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave_axial,
+        safe_z: effective_safe_z(req), stock_to_leave: cfg.stock_to_leave_axial,
     };
     Ok(scallop_toolpath(mesh, &index, cutter.as_ref(), &params))
 }
@@ -457,7 +465,7 @@ fn run_steep_shallow(req: &ComputeRequest, cfg: &SteepShallowConfig) -> Result<T
         wall_clearance: cfg.wall_clearance, steep_first: cfg.steep_first,
         stepover: cfg.stepover, z_step: cfg.z_step,
         feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
-        safe_z: req.safe_z, sampling: cfg.sampling,
+        safe_z: effective_safe_z(req), sampling: cfg.sampling,
         stock_to_leave: cfg.stock_to_leave_axial, tolerance: cfg.tolerance,
     };
     Ok(steep_shallow_toolpath(mesh, &index, cutter.as_ref(), &params))
@@ -475,7 +483,7 @@ fn run_ramp_finish(req: &ComputeRequest, cfg: &RampFinishConfig) -> Result<Toolp
         },
         order_bottom_up: cfg.order_bottom_up,
         feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
-        safe_z: req.safe_z, sampling: cfg.sampling,
+        safe_z: effective_safe_z(req), sampling: cfg.sampling,
         stock_to_leave: cfg.stock_to_leave_axial, tolerance: cfg.tolerance,
     };
     Ok(ramp_finish_toolpath(mesh, &index, cutter.as_ref(), &params))
@@ -491,7 +499,7 @@ fn run_spiral_finish(req: &ComputeRequest, cfg: &SpiralFinishConfig) -> Result<T
             self::SpiralDirection::OutsideIn => CoreSpiralDir::OutsideIn,
         },
         feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
-        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave_axial,
+        safe_z: effective_safe_z(req), stock_to_leave: cfg.stock_to_leave_axial,
     };
     Ok(spiral_finish_toolpath(mesh, &index, cutter.as_ref(), &params))
 }
@@ -502,7 +510,7 @@ fn run_radial_finish(req: &ComputeRequest, cfg: &RadialFinishConfig) -> Result<T
     let params = RadialFinishParams {
         angular_step: cfg.angular_step, point_spacing: cfg.point_spacing,
         feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
-        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave_axial,
+        safe_z: effective_safe_z(req), stock_to_leave: cfg.stock_to_leave_axial,
     };
     Ok(radial_finish_toolpath(mesh, &index, cutter.as_ref(), &params))
 }
@@ -513,7 +521,7 @@ fn run_horizontal_finish(req: &ComputeRequest, cfg: &HorizontalFinishConfig) -> 
     let params = HorizontalFinishParams {
         angle_threshold: cfg.angle_threshold, stepover: cfg.stepover,
         feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
-        safe_z: req.safe_z, stock_to_leave: cfg.stock_to_leave_axial,
+        safe_z: effective_safe_z(req), stock_to_leave: cfg.stock_to_leave_axial,
     };
     Ok(horizontal_finish_toolpath(mesh, &index, cutter.as_ref(), &params))
 }
@@ -525,7 +533,7 @@ fn run_project_curve(req: &ComputeRequest, cfg: &ProjectCurveConfig) -> Result<T
     let params = ProjectCurveParams {
         depth: cfg.depth, point_spacing: cfg.point_spacing,
         feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate,
-        safe_z: req.safe_z,
+        safe_z: effective_safe_z(req),
     };
     let mut out = Toolpath::new();
     for p in polys {
@@ -545,7 +553,7 @@ fn run_face(req: &ComputeRequest, cfg: &FaceConfig) -> Result<Toolpath, String> 
         depth_per_pass: cfg.depth_per_pass,
         feed_rate: cfg.feed_rate,
         plunge_rate: cfg.plunge_rate,
-        safe_z: req.safe_z,
+        safe_z: effective_safe_z(req),
         stock_offset: cfg.stock_offset,
         direction: match cfg.direction {
             self::FaceDirection::OneWay => CoreFaceDir::OneWay,
@@ -561,10 +569,10 @@ fn run_trace(req: &ComputeRequest, cfg: &TraceConfig) -> Result<Toolpath, String
     let depth = make_depth(cfg.depth, cfg.depth_per_pass);
     let mut out = Toolpath::new();
     for p in polys {
-        let tp = depth_stepped_toolpath(&depth, req.safe_z, |z| {
+        let tp = depth_stepped_toolpath(&depth, effective_safe_z(req), |z| {
             let params = TraceParams {
                 tool_radius: tr, depth: z.abs(), depth_per_pass: cfg.depth_per_pass,
-                feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate, safe_z: req.safe_z,
+                feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate, safe_z: effective_safe_z(req),
                 compensation: match cfg.compensation {
                     self::TraceCompensation::None => CoreTraceComp::None,
                     self::TraceCompensation::Left => CoreTraceComp::Left,
@@ -600,7 +608,7 @@ fn run_drill(req: &ComputeRequest, cfg: &DrillConfig) -> Result<Toolpath, String
     };
     let params = DrillParams {
         depth: cfg.depth, cycle, feed_rate: cfg.feed_rate,
-        safe_z: req.safe_z, retract_z: cfg.retract_z,
+        safe_z: effective_safe_z(req), retract_z: cfg.retract_z,
     };
     Ok(drill_toolpath(&holes, &params))
 }
@@ -616,7 +624,7 @@ fn run_chamfer(req: &ComputeRequest, cfg: &ChamferConfig) -> Result<Toolpath, St
         let params = ChamferParams {
             chamfer_width: cfg.chamfer_width, tip_offset: cfg.tip_offset,
             tool_half_angle: ha, tool_radius: req.tool.diameter / 2.0,
-            feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate, safe_z: req.safe_z,
+            feed_rate: cfg.feed_rate, plunge_rate: cfg.plunge_rate, safe_z: effective_safe_z(req),
         };
         let tp = chamfer_toolpath(p, &params);
         out.moves.extend(tp.moves);
@@ -678,13 +686,30 @@ fn apply_dressups(mut tp: Toolpath, cfg: &DressupConfig, tool: &ToolConfig, safe
 }
 
 fn make_depth(depth: f64, per_pass: f64) -> DepthStepping {
-    make_depth_with_finishing(depth, per_pass, 0)
+    make_depth_ext(depth, per_pass, 0, 0.0)
 }
 
 fn make_depth_with_finishing(depth: f64, per_pass: f64, finishing_passes: usize) -> DepthStepping {
+    make_depth_ext(depth, per_pass, finishing_passes, 0.0)
+}
+
+fn make_depth_ext(depth: f64, per_pass: f64, finishing_passes: usize, top_z: f64) -> DepthStepping {
     DepthStepping {
-        start_z: 0.0, final_z: -depth.abs(), max_step_down: per_pass,
+        start_z: top_z, final_z: top_z - depth.abs(), max_step_down: per_pass,
         distribution: DepthDistribution::Even, finish_allowance: 0.0,
+        finishing_passes,
+    }
+}
+
+/// Create depth stepping using the resolved heights system.
+#[allow(dead_code)]
+fn make_depth_from_heights(heights: &crate::state::toolpath::ResolvedHeights, per_pass: f64, finishing_passes: usize) -> DepthStepping {
+    DepthStepping {
+        start_z: heights.top_z,
+        final_z: heights.bottom_z,
+        max_step_down: per_pass,
+        distribution: DepthDistribution::Even,
+        finish_allowance: 0.0,
         finishing_passes,
     }
 }

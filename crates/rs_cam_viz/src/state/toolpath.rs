@@ -587,6 +587,95 @@ pub struct ToolpathStats {
     pub rapid_distance: f64,
 }
 
+// =========================================================================
+// Heights system
+// =========================================================================
+
+/// Controls whether a height value is auto-computed or manually set.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HeightMode {
+    /// Auto-compute from stock/operation context.
+    Auto,
+    /// User-specified absolute Z value.
+    Manual(f64),
+}
+
+impl HeightMode {
+    pub fn value(&self, auto_value: f64) -> f64 {
+        match self {
+            HeightMode::Auto => auto_value,
+            HeightMode::Manual(v) => *v,
+        }
+    }
+
+    pub fn is_auto(&self) -> bool {
+        matches!(self, HeightMode::Auto)
+    }
+}
+
+/// Five-level height system controlling vertical tool motion.
+///
+/// Each height can be auto-computed from context or manually overridden.
+/// Auto defaults:
+/// - clearance_z = safe_z + 10 (highest — safe travel between operations)
+/// - retract_z   = safe_z      (between passes within one operation)
+/// - feed_z      = safe_z - 2  (switch from rapid to feed on approach)
+/// - top_z       = 0.0         (stock surface — top of cut)
+/// - bottom_z    = -depth      (final machining depth)
+#[derive(Debug, Clone)]
+pub struct HeightsConfig {
+    pub clearance_z: HeightMode,
+    pub retract_z: HeightMode,
+    pub feed_z: HeightMode,
+    pub top_z: HeightMode,
+    pub bottom_z: HeightMode,
+}
+
+impl Default for HeightsConfig {
+    fn default() -> Self {
+        Self {
+            clearance_z: HeightMode::Auto,
+            retract_z: HeightMode::Auto,
+            feed_z: HeightMode::Auto,
+            top_z: HeightMode::Auto,
+            bottom_z: HeightMode::Auto,
+        }
+    }
+}
+
+impl HeightsConfig {
+    /// Resolve all heights given the context values.
+    /// `safe_z`: from PostConfig (the baseline retract height)
+    /// `op_depth`: the operation's total depth (positive, e.g. 6.0)
+    pub fn resolve(&self, safe_z: f64, op_depth: f64) -> ResolvedHeights {
+        let retract = self.retract_z.value(safe_z);
+        ResolvedHeights {
+            clearance_z: self.clearance_z.value(retract + 10.0),
+            retract_z: retract,
+            feed_z: self.feed_z.value(retract - 2.0),
+            top_z: self.top_z.value(0.0),
+            bottom_z: self.bottom_z.value(-op_depth.abs()),
+        }
+    }
+}
+
+/// Fully resolved (concrete) heights for a single operation.
+#[derive(Debug, Clone, Copy)]
+pub struct ResolvedHeights {
+    pub clearance_z: f64,
+    pub retract_z: f64,
+    pub feed_z: f64,
+    pub top_z: f64,
+    pub bottom_z: f64,
+}
+
+impl ResolvedHeights {
+    /// The depth range: distance from top_z to bottom_z (positive value).
+    pub fn depth(&self) -> f64 {
+        (self.top_z - self.bottom_z).abs()
+    }
+}
+
 /// Tool containment mode for machining boundary (re-export from core).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoundaryContainment { Center, Inside, Outside }
@@ -601,6 +690,7 @@ pub struct ToolpathEntry {
     pub model_id: super::job::ModelId,
     pub operation: OperationConfig,
     pub dressups: DressupConfig,
+    pub heights: HeightsConfig,
     pub boundary_enabled: bool,
     pub boundary_containment: BoundaryContainment,
     pub status: ComputeStatus,

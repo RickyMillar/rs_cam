@@ -165,6 +165,7 @@ impl RsCamApp {
                         model_id,
                         operation,
                         dressups: crate::state::toolpath::DressupConfig::default(),
+                        heights: crate::state::toolpath::HeightsConfig::default(),
                         boundary_enabled: false,
                         boundary_containment: crate::state::toolpath::BoundaryContainment::Center,
                         status: ComputeStatus::Pending,
@@ -188,6 +189,7 @@ impl RsCamApp {
                         self.state.job.toolpaths.push(ToolpathEntry {
                             id: new_id, name: format!("{} (copy)", name),
                             enabled, visible, locked: false, tool_id, model_id, operation, dressups,
+                            heights: crate::state::toolpath::HeightsConfig::default(),
                             boundary_enabled: false,
                             boundary_containment: crate::state::toolpath::BoundaryContainment::Center,
                             status: ComputeStatus::Pending, result: None,
@@ -472,6 +474,11 @@ impl RsCamApp {
         self.compute_start = Some(std::time::Instant::now());
 
         let stock_bbox = Some(self.state.job.stock.bbox());
+        let safe_z = self.state.job.post.safe_z;
+
+        // Resolve heights from the 5-level system
+        let op_depth = operation_depth(&tp.operation);
+        let heights = tp.heights.resolve(safe_z, op_depth);
 
         self.compute.submit(ComputeRequest {
             toolpath_id: tp_id,
@@ -480,11 +487,12 @@ impl RsCamApp {
             operation: tp.operation.clone(),
             dressups: tp.dressups.clone(),
             tool,
-            safe_z: self.state.job.post.safe_z,
+            safe_z,
             prev_tool_radius,
             stock_bbox,
             boundary_enabled: tp.boundary_enabled,
             boundary_containment: tp.boundary_containment,
+            heights,
         });
     }
 
@@ -786,6 +794,34 @@ impl eframe::App for RsCamApp {
         if computing || self.state.simulation.playing {
             ctx.request_repaint();
         }
+    }
+}
+
+/// Extract the nominal depth from an operation config (for auto-computing bottom_z).
+fn operation_depth(op: &OperationConfig) -> f64 {
+    match op {
+        OperationConfig::Face(c) => c.depth,
+        OperationConfig::Pocket(c) => c.depth,
+        OperationConfig::Profile(c) => c.depth,
+        OperationConfig::Adaptive(c) => c.depth,
+        OperationConfig::VCarve(c) => c.max_depth,
+        OperationConfig::Rest(c) => c.depth,
+        OperationConfig::Inlay(c) => c.pocket_depth,
+        OperationConfig::Zigzag(c) => c.depth,
+        OperationConfig::Trace(c) => c.depth,
+        OperationConfig::Drill(c) => c.depth,
+        OperationConfig::Chamfer(c) => c.chamfer_width, // approximate
+        OperationConfig::DropCutter(c) => c.min_z.abs(),
+        OperationConfig::Adaptive3d(c) => c.stock_top_z,
+        OperationConfig::Waterline(c) => (c.start_z - c.final_z).abs(),
+        OperationConfig::Pencil(_) => 25.0, // no explicit depth, use default
+        OperationConfig::Scallop(_) => 25.0,
+        OperationConfig::SteepShallow(_) => 25.0,
+        OperationConfig::RampFinish(_) => 25.0,
+        OperationConfig::SpiralFinish(_) => 25.0,
+        OperationConfig::RadialFinish(_) => 25.0,
+        OperationConfig::HorizontalFinish(_) => 25.0,
+        OperationConfig::ProjectCurve(c) => c.depth,
     }
 }
 
