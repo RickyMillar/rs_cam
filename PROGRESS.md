@@ -109,6 +109,8 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] 5.16 Push-cutter edge accuracy — coarse+bisection sampling (9+10≈19 evals) replaces 32-step uniform, higher boundary accuracy (pushcutter.rs)
 - [x] 5.17 Polygon offset hole pairing — containment-based re-pairing via point-in-polygon instead of blind attachment to first polygon (polygon.rs)
 - [x] 5.18 Arc fitting least-squares — Kåsa's algebraic circle fit replaces 3-point fit for 5+ points, lower mean error on noisy/partial arcs (arcfit.rs)
+- [x] 5.19 Feature gap operations — 8 new operations (Face, Trace, Drill, Chamfer, Spiral Finish, Radial Finish, Horizontal Finish, Project Curve) + 2 infrastructure modules (Boundary containment with clip, TSP rapid optimization). Total operations: 22 (was 14). 73 new tests across 10 new modules. Full GUI wiring: state enums, worker dispatch, UI parameter panels, tooltips, validation.
+- [x] 5.20 Infrastructure features — High feedrate mode (G0→G1 conversion for GRBL dogleg), finishing/spring passes (repeat final Z for dimensional accuracy), post-processor config extensions
 
 ## Module Map (for new agents)
 
@@ -143,6 +145,16 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 | collision | `rs_cam_core/src/collision.rs` | Tool holder/shank collision detection, interpolated path checking, multi-segment holders |
 | pipeline | `rs_cam_core/src/pipeline.rs` | Incremental computation cache with dirty-flag invalidation |
 | contour_extract | `rs_cam_core/src/contour_extract.rs` | Marching squares contour extraction for waterline (replaces nearest-neighbor) |
+| face | `rs_cam_core/src/face.rs` | Face/surfacing: stock-top leveling with zigzag pattern |
+| trace | `rs_cam_core/src/trace.rs` | Trace/follow-path: follow SVG/DXF exactly at depth, optional compensation |
+| drill | `rs_cam_core/src/drill.rs` | Drilling: peck (G83), dwell (G82), simple (G81), chip-break (G73) cycles |
+| chamfer | `rs_cam_core/src/chamfer.rs` | Chamfer: V-bit edge break with width/tip-offset depth calculation |
+| spiral_finish | `rs_cam_core/src/spiral_finish.rs` | Spiral finishing: Archimedean spiral over 3D mesh (domes/bowls) |
+| radial_finish | `rs_cam_core/src/radial_finish.rs` | Radial finishing: spoke-pattern passes from center (rotational features) |
+| horizontal_finish | `rs_cam_core/src/horizontal_finish.rs` | Horizontal finishing: detect and machine only flat mesh areas |
+| project_curve | `rs_cam_core/src/project_curve.rs` | Project curve: project 2D paths onto 3D mesh for 3D engraving |
+| boundary | `rs_cam_core/src/boundary.rs` | Machining boundary: containment modes (center/inside/outside), toolpath clipping |
+| tsp | `rs_cam_core/src/tsp.rs` | TSP rapid optimization: nearest-neighbor + 2-opt segment reordering |
 | CLI | `rs_cam_cli/src/main.rs` | drop-cutter, pocket, profile, adaptive, adaptive3d, vcarve, rest, waterline, pencil, inlay subcommands |
 
 ## Decisions Log
