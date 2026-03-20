@@ -58,7 +58,7 @@ impl RsCamApp {
             match event {
                 AppEvent::ImportStl(path) => {
                     let id = self.state.job.next_model_id();
-                    match import::import_stl(&path, id) {
+                    match import::import_stl(&path, id, 1.0) {
                         Ok(model) => {
                             if let Some(mesh) = &model.mesh {
                                 if self.state.job.stock.auto_from_model {
@@ -255,6 +255,41 @@ impl RsCamApp {
                     self.state.simulation = crate::state::simulation::SimulationState::new();
                     // Sim mesh will be cleared on next upload
                     self.pending_upload = true;
+                }
+                AppEvent::RescaleModel(model_id, new_units) => {
+                    if let Some(model) = self.state.job.models.iter().find(|m| m.id == model_id) {
+                        if model.kind == crate::state::job::ModelKind::Stl {
+                            let path = model.path.clone();
+                            let scale = new_units.scale_factor();
+                            match import::import_stl(&path, model_id, scale) {
+                                Ok(mut new_model) => {
+                                    new_model.units = new_units;
+                                    // Replace the model in-place
+                                    if let Some(m) = self.state.job.models.iter_mut().find(|m| m.id == model_id) {
+                                        m.mesh = new_model.mesh;
+                                        m.units = new_model.units;
+                                        // Update stock if auto
+                                        if self.state.job.stock.auto_from_model {
+                                            if let Some(mesh) = &m.mesh {
+                                                self.state.job.stock.update_from_bbox(&mesh.bbox);
+                                            }
+                                        }
+                                        // Re-fit camera
+                                        if let Some(mesh) = &m.mesh {
+                                            let bb = &mesh.bbox;
+                                            self.camera.fit_to_bounds(
+                                                [bb.min.x as f32, bb.min.y as f32, bb.min.z as f32],
+                                                [bb.max.x as f32, bb.max.y as f32, bb.max.z as f32],
+                                            );
+                                        }
+                                    }
+                                    self.pending_upload = true;
+                                    self.state.job.dirty = true;
+                                }
+                                Err(e) => tracing::error!("Rescale failed: {}", e),
+                            }
+                        }
+                    }
                 }
                 AppEvent::ExportGcode => {
                     match crate::io::export::export_gcode(&self.state.job) {

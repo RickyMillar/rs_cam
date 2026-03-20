@@ -41,28 +41,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             post::draw(ui, &mut state.job.post);
         }
         Selection::Model(id) => {
-            if let Some(model) = state.job.models.iter().find(|m| m.id == id) {
-                ui.heading(&model.name);
-                ui.separator();
-                ui.label(format!("Type: {:?}", model.kind));
-                ui.label(format!("Path: {}", model.path.display()));
-                if let Some(mesh) = &model.mesh {
-                    ui.add_space(4.0);
-                    ui.label(format!("Vertices: {}", mesh.vertices.len()));
-                    ui.label(format!("Triangles: {}", mesh.triangles.len()));
-                    let bb = &mesh.bbox;
-                    ui.label(format!(
-                        "Bounds: {:.1} x {:.1} x {:.1} mm",
-                        bb.max.x - bb.min.x,
-                        bb.max.y - bb.min.y,
-                        bb.max.z - bb.min.z
-                    ));
-                }
-                if let Some(polys) = &model.polygons {
-                    ui.add_space(4.0);
-                    ui.label(format!("Polygons: {}", polys.len()));
-                }
-            }
+            draw_model_properties(ui, id, state, events);
         }
         Selection::Tool(id) => {
             if let Some(t) = state.job.tools.iter_mut().find(|t| t.id == id) {
@@ -77,6 +56,154 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             if let Some(entry) = state.job.toolpaths.iter_mut().find(|t| t.id == id) {
                 draw_toolpath_panel(ui, entry, &tools, &models, events);
             }
+        }
+    }
+}
+
+fn draw_model_properties(
+    ui: &mut egui::Ui,
+    id: crate::state::job::ModelId,
+    state: &mut AppState,
+    events: &mut Vec<AppEvent>,
+) {
+    use crate::state::job::{ModelKind, ModelUnits};
+
+    let Some(model) = state.job.models.iter().find(|m| m.id == id) else {
+        return;
+    };
+
+    ui.heading(&model.name);
+    ui.separator();
+
+    ui.label(format!("Type: {:?}", model.kind));
+    ui.label(format!("Path: {}", model.path.display()));
+
+    if let Some(mesh) = &model.mesh {
+        let bb = &mesh.bbox;
+        let dx = bb.max.x - bb.min.x;
+        let dy = bb.max.y - bb.min.y;
+        let dz = bb.max.z - bb.min.z;
+
+        ui.add_space(8.0);
+        ui.label(
+            egui::RichText::new("Mesh Info")
+                .strong()
+                .color(egui::Color32::from_rgb(180, 180, 195)),
+        );
+        egui::Grid::new("mesh_info")
+            .num_columns(2)
+            .spacing([8.0, 3.0])
+            .show(ui, |ui| {
+                ui.label("Vertices:");
+                ui.label(format!("{}", mesh.vertices.len()));
+                ui.end_row();
+                ui.label("Triangles:");
+                ui.label(format!("{}", mesh.triangles.len()));
+                ui.end_row();
+            });
+
+        ui.add_space(8.0);
+        ui.label(
+            egui::RichText::new("Dimensions (after scaling)")
+                .strong()
+                .color(egui::Color32::from_rgb(180, 180, 195)),
+        );
+        egui::Grid::new("mesh_dims")
+            .num_columns(2)
+            .spacing([8.0, 3.0])
+            .show(ui, |ui| {
+                ui.label("X:");
+                ui.label(format!("{:.3} mm  ({:.3} to {:.3})", dx, bb.min.x, bb.max.x));
+                ui.end_row();
+                ui.label("Y:");
+                ui.label(format!("{:.3} mm  ({:.3} to {:.3})", dy, bb.min.y, bb.max.y));
+                ui.end_row();
+                ui.label("Z:");
+                ui.label(format!("{:.3} mm  ({:.3} to {:.3})", dz, bb.min.z, bb.max.z));
+                ui.end_row();
+            });
+
+        // Size hint
+        let max_dim = dx.max(dy).max(dz);
+        let min_dim = dx.min(dy).min(dz);
+        if max_dim < 1.0 {
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new("Very small! Probably in meters - try scaling x1000")
+                    .color(egui::Color32::from_rgb(220, 170, 60)),
+            );
+        } else if min_dim > 5000.0 {
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new("Very large! Check units")
+                    .color(egui::Color32::from_rgb(220, 170, 60)),
+            );
+        }
+
+        // Units / scale selector (STL only)
+        if model.kind == ModelKind::Stl {
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new("Units / Scale")
+                    .strong()
+                    .color(egui::Color32::from_rgb(180, 180, 195)),
+            );
+
+            let current_units = model.units;
+            let current_label = current_units.label();
+
+            ui.horizontal(|ui| {
+                ui.label("Import as:");
+                egui::ComboBox::from_id_salt("model_units")
+                    .selected_text(&current_label)
+                    .show_ui(ui, |ui| {
+                        for &(units, label) in ModelUnits::PRESETS {
+                            if ui
+                                .selectable_label(
+                                    std::mem::discriminant(&units)
+                                        == std::mem::discriminant(&current_units)
+                                        && units.scale_factor() == current_units.scale_factor(),
+                                    label,
+                                )
+                                .clicked()
+                            {
+                                events.push(AppEvent::RescaleModel(id, units));
+                            }
+                        }
+                    });
+            });
+
+            // Custom scale
+            let mut custom_scale = current_units.scale_factor();
+            ui.horizontal(|ui| {
+                ui.label("Custom scale:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut custom_scale)
+                            .speed(0.1)
+                            .range(0.001..=100000.0),
+                    )
+                    .changed()
+                {
+                    events.push(AppEvent::RescaleModel(id, ModelUnits::Custom(custom_scale)));
+                }
+            });
+        }
+    }
+
+    if let Some(polys) = &model.polygons {
+        ui.add_space(8.0);
+        ui.label(format!("Polygons: {}", polys.len()));
+        for (i, p) in polys.iter().enumerate().take(5) {
+            ui.label(format!(
+                "  #{}: {} pts, {} holes",
+                i + 1,
+                p.exterior.len(),
+                p.holes.len()
+            ));
+        }
+        if polys.len() > 5 {
+            ui.label(format!("  ... and {} more", polys.len() - 5));
         }
     }
 }

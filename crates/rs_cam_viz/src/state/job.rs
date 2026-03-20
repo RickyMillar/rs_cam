@@ -21,6 +21,45 @@ pub enum ModelKind {
     Dxf,
 }
 
+/// Assumed units of the imported STL (determines scale factor to mm).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ModelUnits {
+    Millimeters,
+    Inches,
+    Meters,
+    Centimeters,
+    Custom(f64),
+}
+
+impl ModelUnits {
+    pub const PRESETS: &[(ModelUnits, &'static str)] = &[
+        (ModelUnits::Millimeters, "mm (1:1)"),
+        (ModelUnits::Inches, "inches (x25.4)"),
+        (ModelUnits::Centimeters, "cm (x10)"),
+        (ModelUnits::Meters, "m (x1000)"),
+    ];
+
+    pub fn scale_factor(&self) -> f64 {
+        match self {
+            ModelUnits::Millimeters => 1.0,
+            ModelUnits::Inches => 25.4,
+            ModelUnits::Meters => 1000.0,
+            ModelUnits::Centimeters => 10.0,
+            ModelUnits::Custom(s) => *s,
+        }
+    }
+
+    pub fn label(&self) -> String {
+        match self {
+            ModelUnits::Millimeters => "mm".into(),
+            ModelUnits::Inches => "inches".into(),
+            ModelUnits::Meters => "m".into(),
+            ModelUnits::Centimeters => "cm".into(),
+            ModelUnits::Custom(s) => format!("x{s:.3}"),
+        }
+    }
+}
+
 /// A loaded geometry model.
 pub struct LoadedModel {
     pub id: ModelId,
@@ -29,6 +68,7 @@ pub struct LoadedModel {
     pub kind: ModelKind,
     pub mesh: Option<Arc<TriangleMesh>>,
     pub polygons: Option<Arc<Vec<Polygon2>>>,
+    pub units: ModelUnits,
 }
 
 /// Tool type matching the five cutter types in rs_cam_core.

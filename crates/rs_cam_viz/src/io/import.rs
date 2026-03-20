@@ -1,20 +1,27 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::dxf_input::load_dxf;
+use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::svg_input::load_svg;
 
-use crate::state::job::{LoadedModel, ModelId, ModelKind};
+use crate::state::job::{LoadedModel, ModelId, ModelKind, ModelUnits};
 
-/// Import an STL file, returning a LoadedModel.
-pub fn import_stl(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
-    let mesh = TriangleMesh::from_stl(path).map_err(|e| format!("Failed to load STL: {e}"))?;
+/// Import an STL file with a given scale factor.
+pub fn import_stl(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, String> {
+    let mesh =
+        TriangleMesh::from_stl_scaled(path, scale).map_err(|e| format!("Failed to load STL: {e}"))?;
 
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown.stl".to_string());
+
+    let units = if (scale - 1.0).abs() < 1e-9 {
+        ModelUnits::Millimeters
+    } else {
+        ModelUnits::Custom(scale)
+    };
 
     Ok(LoadedModel {
         id,
@@ -23,6 +30,7 @@ pub fn import_stl(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
         kind: ModelKind::Stl,
         mesh: Some(Arc::new(mesh)),
         polygons: None,
+        units,
     })
 }
 
@@ -42,6 +50,7 @@ pub fn import_svg(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
         kind: ModelKind::Svg,
         mesh: None,
         polygons: Some(Arc::new(polygons)),
+        units: ModelUnits::Millimeters,
     })
 }
 
@@ -61,5 +70,6 @@ pub fn import_dxf(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
         kind: ModelKind::Dxf,
         mesh: None,
         polygons: Some(Arc::new(polygons)),
+        units: ModelUnits::Millimeters,
     })
 }
