@@ -76,6 +76,10 @@ pub struct SimulationRequest {
 pub struct SimulationResult {
     pub mesh: HeightmapMesh,
     pub total_moves: usize,
+    /// Per-vertex deviation from model surface (sim_z - model_z).
+    /// Positive = material remaining, negative = overcut.
+    /// `None` when no model mesh is available for comparison.
+    pub deviations: Option<Vec<f32>>,
 }
 
 /// Request to run collision detection on a toolpath.
@@ -182,7 +186,11 @@ fn run_simulation(req: &SimulationRequest) -> Result<SimulationResult, String> {
     }
 
     let mesh = heightmap_to_mesh(&heightmap);
-    Ok(SimulationResult { mesh, total_moves })
+    Ok(SimulationResult {
+        mesh,
+        total_moves,
+        deviations: None,
+    })
 }
 
 fn build_cutter(tool: &ToolConfig) -> Box<dyn MillingCutter> {

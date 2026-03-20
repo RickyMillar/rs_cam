@@ -10,6 +10,44 @@ pub struct SimMeshGpuData {
     pub index_count: u32,
 }
 
+/// Compute per-vertex colors based on deviation from model surface.
+///
+/// Each entry in `deviations` is `sim_z - model_z` for that vertex:
+/// - Positive = material remaining (stock not yet cut away)
+/// - Negative = overcut (cut below the model surface)
+/// - Zero = on target
+///
+/// Color mapping:
+/// - Green: on target (deviation in ±0.1 mm)
+/// - Blue: material remaining (deviation > 0.1 mm)
+/// - Yellow: slight overcut (deviation in -0.5..−0.1 mm)
+/// - Red: major overcut (deviation < -0.5 mm)
+///
+/// Returns one `[r, g, b]` per vertex.
+pub fn deviation_colors(deviations: &[f32]) -> Vec<[f32; 3]> {
+    deviations
+        .iter()
+        .map(|&d| {
+            if d > 0.1 {
+                // Material remaining — blue, intensity by amount
+                let t = ((d - 0.1) / 1.0).min(1.0); // 0..1 over 0.1..1.1 mm
+                [0.0, 0.3 * (1.0 - t), 0.5 + 0.5 * t] // darker blue as more remaining
+            } else if d < -0.5 {
+                // Major overcut — red
+                let t = ((-d - 0.5) / 1.0).min(1.0);
+                [0.6 + 0.4 * t, 0.0, 0.0]
+            } else if d < -0.1 {
+                // Slight overcut — yellow, blending toward red
+                let t = ((-d - 0.1) / 0.4).min(1.0); // 0..1 over -0.1..-0.5
+                [0.8 + 0.2 * t, 0.8 * (1.0 - t), 0.0]
+            } else {
+                // On target — green
+                [0.1, 0.75, 0.1]
+            }
+        })
+        .collect()
+}
+
 impl SimMeshGpuData {
     /// Upload a HeightmapMesh (from heightmap_to_mesh) to the GPU.
     /// The HeightmapMesh has flat arrays: vertices [x,y,z,...], colors [r,g,b,...], indices [i0,i1,i2,...].
