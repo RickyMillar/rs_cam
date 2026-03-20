@@ -15,6 +15,11 @@ pub fn draw(ctx: &egui::Context, _state: &AppState, events: &mut Vec<AppEvent>) 
                     }
                 }
                 ui.separator();
+                if ui.button("Export G-code...").clicked() {
+                    ui.close_menu();
+                    events.push(AppEvent::ExportGcode);
+                }
+                ui.separator();
                 if ui.button("Quit").clicked() {
                     events.push(AppEvent::Quit);
                 }

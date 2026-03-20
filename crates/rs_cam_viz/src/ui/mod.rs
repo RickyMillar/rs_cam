@@ -24,6 +24,7 @@ pub enum AppEvent {
     RemoveToolpath(ToolpathId),
     GenerateToolpath(ToolpathId),
     ToggleToolpathVisibility(ToolpathId),
+    ExportGcode,
     StockChanged,
     Quit,
 }

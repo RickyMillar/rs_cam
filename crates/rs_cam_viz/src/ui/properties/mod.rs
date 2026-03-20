@@ -123,6 +123,13 @@ fn draw_toolpath_panel(
         OperationConfig::Rest(cfg) => draw_rest_params(ui, cfg, tools),
         OperationConfig::Inlay(cfg) => draw_inlay_params(ui, cfg),
         OperationConfig::Zigzag(cfg) => draw_zigzag_params(ui, cfg),
+        OperationConfig::DropCutter(cfg) => draw_dropcutter_params(ui, cfg),
+        OperationConfig::Adaptive3d(cfg) => draw_adaptive3d_params(ui, cfg),
+        OperationConfig::Waterline(cfg) => draw_waterline_params(ui, cfg),
+        OperationConfig::Pencil(cfg) => draw_pencil_params(ui, cfg),
+        OperationConfig::Scallop(cfg) => draw_scallop_params(ui, cfg),
+        OperationConfig::SteepShallow(cfg) => draw_steep_shallow_params(ui, cfg),
+        OperationConfig::RampFinish(cfg) => draw_ramp_finish_params(ui, cfg),
     }
 
     ui.add_space(12.0);
@@ -291,5 +298,137 @@ fn draw_zigzag_params(ui: &mut egui::Ui, cfg: &mut ZigzagConfig) {
         dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
         dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
         dv(ui, "Angle:", &mut cfg.angle, " deg", 1.0, 0.0..=360.0);
+    });
+}
+
+// ── 3D operation parameters ──────────────────────────────────────────────
+
+fn draw_dropcutter_params(ui: &mut egui::Ui, cfg: &mut DropCutterConfig) {
+    egui::Grid::new("dc_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=50.0);
+        dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
+        dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
+        dv(ui, "Min Z:", &mut cfg.min_z, " mm", 0.5, -500.0..=0.0);
+    });
+}
+
+fn draw_adaptive3d_params(ui: &mut egui::Ui, cfg: &mut Adaptive3dConfig) {
+    egui::Grid::new("a3d_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=50.0);
+        dv(ui, "Depth/Pass:", &mut cfg.depth_per_pass, " mm", 0.1, 0.1..=50.0);
+        dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Stock Top Z:", &mut cfg.stock_top_z, " mm", 0.5, -100.0..=200.0);
+        dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
+        dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
+        dv(ui, "Tolerance:", &mut cfg.tolerance, " mm", 0.01, 0.01..=1.0);
+        dv(ui, "Min Cut Radius:", &mut cfg.min_cutting_radius, " mm", 0.1, 0.0..=50.0);
+        ui.label("Entry Style:");
+        egui::ComboBox::from_id_salt("a3d_entry").selected_text(match cfg.entry_style {
+            EntryStyle::Plunge => "Plunge", EntryStyle::Helix => "Helix", EntryStyle::Ramp => "Ramp",
+        }).show_ui(ui, |ui| {
+            ui.selectable_value(&mut cfg.entry_style, EntryStyle::Plunge, "Plunge");
+            ui.selectable_value(&mut cfg.entry_style, EntryStyle::Helix, "Helix");
+            ui.selectable_value(&mut cfg.entry_style, EntryStyle::Ramp, "Ramp");
+        });
+        ui.end_row();
+        dv(ui, "Fine Stepdown:", &mut cfg.fine_stepdown, " mm", 0.1, 0.0..=10.0);
+        ui.label("Detect Flat:"); ui.checkbox(&mut cfg.detect_flat_areas, ""); ui.end_row();
+        ui.label("Ordering:");
+        egui::ComboBox::from_id_salt("a3d_ord").selected_text(match cfg.region_ordering {
+            RegionOrdering::Global => "Global", RegionOrdering::ByArea => "By Area",
+        }).show_ui(ui, |ui| {
+            ui.selectable_value(&mut cfg.region_ordering, RegionOrdering::Global, "Global");
+            ui.selectable_value(&mut cfg.region_ordering, RegionOrdering::ByArea, "By Area");
+        });
+        ui.end_row();
+    });
+}
+
+fn draw_waterline_params(ui: &mut egui::Ui, cfg: &mut WaterlineConfig) {
+    egui::Grid::new("wl_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        dv(ui, "Z Step:", &mut cfg.z_step, " mm", 0.1, 0.05..=20.0);
+        dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
+        dv(ui, "Start Z:", &mut cfg.start_z, " mm", 0.5, -200.0..=200.0);
+        dv(ui, "Final Z:", &mut cfg.final_z, " mm", 0.5, -200.0..=200.0);
+        dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
+        dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
+    });
+}
+
+fn draw_pencil_params(ui: &mut egui::Ui, cfg: &mut PencilConfig) {
+    egui::Grid::new("pen_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        dv(ui, "Bitangency Angle:", &mut cfg.bitangency_angle, " deg", 1.0, 90.0..=180.0);
+        dv(ui, "Min Cut Length:", &mut cfg.min_cut_length, " mm", 0.5, 0.5..=50.0);
+        dv(ui, "Hookup Distance:", &mut cfg.hookup_distance, " mm", 0.5, 0.5..=50.0);
+        ui.label("Offset Passes:");
+        let mut n = cfg.num_offset_passes as i32;
+        if ui.add(egui::DragValue::new(&mut n).range(0..=10)).changed() { cfg.num_offset_passes = n.max(0) as usize; }
+        ui.end_row();
+        dv(ui, "Offset Stepover:", &mut cfg.offset_stepover, " mm", 0.1, 0.05..=10.0);
+        dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
+        dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
+        dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
+        dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
+    });
+}
+
+fn draw_scallop_params(ui: &mut egui::Ui, cfg: &mut ScallopConfig) {
+    egui::Grid::new("sc_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        dv(ui, "Scallop Height:", &mut cfg.scallop_height, " mm", 0.01, 0.01..=2.0);
+        dv(ui, "Tolerance:", &mut cfg.tolerance, " mm", 0.01, 0.01..=1.0);
+        ui.label("Direction:");
+        egui::ComboBox::from_id_salt("sc_dir").selected_text(match cfg.direction {
+            ScallopDirection::OutsideIn => "Outside In", ScallopDirection::InsideOut => "Inside Out",
+        }).show_ui(ui, |ui| {
+            ui.selectable_value(&mut cfg.direction, ScallopDirection::OutsideIn, "Outside In");
+            ui.selectable_value(&mut cfg.direction, ScallopDirection::InsideOut, "Inside Out");
+        });
+        ui.end_row();
+        ui.label("Continuous:"); ui.checkbox(&mut cfg.continuous, ""); ui.end_row();
+        dv(ui, "Slope From:", &mut cfg.slope_from, " deg", 1.0, 0.0..=90.0);
+        dv(ui, "Slope To:", &mut cfg.slope_to, " deg", 1.0, 0.0..=90.0);
+        dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
+        dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
+        dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
+    });
+}
+
+fn draw_steep_shallow_params(ui: &mut egui::Ui, cfg: &mut SteepShallowConfig) {
+    egui::Grid::new("ss_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        dv(ui, "Threshold Angle:", &mut cfg.threshold_angle, " deg", 1.0, 10.0..=80.0);
+        dv(ui, "Overlap:", &mut cfg.overlap_distance, " mm", 0.1, 0.0..=10.0);
+        dv(ui, "Wall Clearance:", &mut cfg.wall_clearance, " mm", 0.1, 0.0..=10.0);
+        ui.label("Steep First:"); ui.checkbox(&mut cfg.steep_first, ""); ui.end_row();
+        dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=50.0);
+        dv(ui, "Z Step:", &mut cfg.z_step, " mm", 0.1, 0.05..=20.0);
+        dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
+        dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
+        dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
+        dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Tolerance:", &mut cfg.tolerance, " mm", 0.01, 0.01..=1.0);
+    });
+}
+
+fn draw_ramp_finish_params(ui: &mut egui::Ui, cfg: &mut RampFinishConfig) {
+    egui::Grid::new("rf_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        dv(ui, "Max Stepdown:", &mut cfg.max_stepdown, " mm", 0.1, 0.05..=10.0);
+        dv(ui, "Slope From:", &mut cfg.slope_from, " deg", 1.0, 0.0..=90.0);
+        dv(ui, "Slope To:", &mut cfg.slope_to, " deg", 1.0, 0.0..=90.0);
+        ui.label("Direction:");
+        egui::ComboBox::from_id_salt("rf_dir").selected_text(match cfg.direction {
+            CutDirection::Climb => "Climb", CutDirection::Conventional => "Conventional",
+            CutDirection::BothWays => "Both Ways",
+        }).show_ui(ui, |ui| {
+            ui.selectable_value(&mut cfg.direction, CutDirection::Climb, "Climb");
+            ui.selectable_value(&mut cfg.direction, CutDirection::Conventional, "Conventional");
+            ui.selectable_value(&mut cfg.direction, CutDirection::BothWays, "Both Ways");
+        });
+        ui.end_row();
+        ui.label("Bottom Up:"); ui.checkbox(&mut cfg.order_bottom_up, ""); ui.end_row();
+        dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
+        dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
+        dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
+        dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
+        dv(ui, "Tolerance:", &mut cfg.tolerance, " mm", 0.01, 0.01..=1.0);
     });
 }

@@ -164,6 +164,24 @@ impl RsCamApp {
                         self.pending_upload = true;
                     }
                 }
+                AppEvent::ExportGcode => {
+                    match crate::io::export::export_gcode(&self.state.job) {
+                        Ok(gcode) => {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("G-code", &["nc", "gcode", "ngc"])
+                                .set_file_name("output.nc")
+                                .save_file()
+                            {
+                                if let Err(e) = std::fs::write(&path, &gcode) {
+                                    tracing::error!("Failed to write G-code: {}", e);
+                                } else {
+                                    tracing::info!("Exported G-code to {}", path.display());
+                                }
+                            }
+                        }
+                        Err(e) => tracing::error!("Export failed: {}", e),
+                    }
+                }
                 AppEvent::StockChanged => {
                     self.pending_upload = true;
                     self.state.job.dirty = true;
@@ -186,19 +204,20 @@ impl RsCamApp {
             None => return,
         };
 
-        // Find polygons from the model
-        let polygons = self
-            .state
-            .job
-            .models
-            .iter()
-            .find(|m| m.id == tp.model_id)
-            .and_then(|m| m.polygons.clone());
+        // Find model data
+        let model = self.state.job.models.iter().find(|m| m.id == tp.model_id);
+        let polygons = model.and_then(|m| m.polygons.clone());
+        let mesh = model.and_then(|m| m.mesh.clone());
 
-        let Some(polygons) = polygons else {
+        let is_3d = tp.operation.is_3d();
+        if is_3d && mesh.is_none() {
+            tp.status = ComputeStatus::Error("No 3D mesh (import STL first)".to_string());
+            return;
+        }
+        if !is_3d && polygons.is_none() {
             tp.status = ComputeStatus::Error("No 2D geometry (import SVG first)".to_string());
             return;
-        };
+        }
 
         // For rest machining, resolve the previous tool radius
         let prev_tool_radius = if let OperationConfig::Rest(ref cfg) = tp.operation {
@@ -215,6 +234,7 @@ impl RsCamApp {
         self.compute.submit(ComputeRequest {
             toolpath_id: tp_id,
             polygons,
+            mesh,
             operation: tp.operation.clone(),
             tool,
             safe_z: self.state.job.post.safe_z,
