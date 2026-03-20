@@ -9,7 +9,7 @@ use crate::render::{LineUniforms, MeshUniforms, RenderResources, ViewportCallbac
 use crate::state::AppState;
 use crate::state::job::ToolConfig;
 use crate::state::selection::Selection;
-use crate::state::toolpath::*;
+use crate::state::toolpath::{ComputeStatus, OperationConfig, ToolpathEntry, ToolpathId};
 use crate::ui::AppEvent;
 
 pub struct RsCamApp {
@@ -126,30 +126,20 @@ impl RsCamApp {
                     }
                     self.state.job.dirty = true;
                 }
-                AppEvent::AddPocketToolpath => {
+                AppEvent::AddToolpath(op_type) => {
                     let id = self.state.job.next_toolpath_id();
-                    let tool_id = self
-                        .state
-                        .job
-                        .tools
-                        .first()
-                        .map(|t| t.id)
-                        .unwrap_or(crate::state::job::ToolId(0));
-                    let model_id = self
-                        .state
-                        .job
-                        .models
-                        .first()
-                        .map(|m| m.id)
-                        .unwrap_or(crate::state::job::ModelId(0));
+                    let tool_id = self.state.job.tools.first()
+                        .map(|t| t.id).unwrap_or(crate::state::job::ToolId(0));
+                    let model_id = self.state.job.models.first()
+                        .map(|m| m.id).unwrap_or(crate::state::job::ModelId(0));
                     let entry = ToolpathEntry {
                         id,
-                        name: format!("Pocket {}", id.0 + 1),
+                        name: format!("{} {}", op_type.label(), id.0 + 1),
                         enabled: true,
                         visible: true,
                         tool_id,
                         model_id,
-                        operation: OperationConfig::Pocket(PocketConfig::default()),
+                        operation: OperationConfig::new_default(op_type),
                         status: ComputeStatus::Pending,
                         result: None,
                     };
@@ -210,6 +200,15 @@ impl RsCamApp {
             return;
         };
 
+        // For rest machining, resolve the previous tool radius
+        let prev_tool_radius = if let OperationConfig::Rest(ref cfg) = tp.operation {
+            cfg.prev_tool_id.and_then(|pid| {
+                self.state.job.tools.iter().find(|t| t.id == pid).map(|t| t.diameter / 2.0)
+            })
+        } else {
+            None
+        };
+
         tp.status = ComputeStatus::Computing(0.0);
         tp.result = None;
 
@@ -219,6 +218,7 @@ impl RsCamApp {
             operation: tp.operation.clone(),
             tool,
             safe_z: self.state.job.post.safe_z,
+            prev_tool_radius,
         });
     }
 

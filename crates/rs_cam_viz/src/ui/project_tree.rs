@@ -2,7 +2,7 @@ use super::AppEvent;
 use crate::state::AppState;
 use crate::state::job::ToolType;
 use crate::state::selection::Selection;
-use crate::state::toolpath::ComputeStatus;
+use crate::state::toolpath::{ComputeStatus, OperationType};
 
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     ui.heading("Project");
@@ -119,12 +119,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 ComputeStatus::Done => "* ",
                 ComputeStatus::Error(_) => "! ",
             };
-            let label = format!(
-                "[{}] {}{}",
-                i + 1,
-                status_icon,
-                tp.name
-            );
+            let label = format!("[{}] {}{}", i + 1, status_icon, tp.name);
             let response = ui.selectable_label(selected, &label);
             if response.clicked() {
                 events.push(AppEvent::Select(Selection::Toolpath(tp.id)));
@@ -143,9 +138,14 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         }
 
         ui.add_space(4.0);
-        if ui.button("+ Add Pocket").clicked() {
-            events.push(AppEvent::AddPocketToolpath);
-        }
+        ui.menu_button("+ Add Toolpath", |ui| {
+            for &op in OperationType::ALL_2D {
+                if ui.button(op.label()).clicked() {
+                    events.push(AppEvent::AddToolpath(op));
+                    ui.close_menu();
+                }
+            }
+        });
     });
 
     ui.add_space(8.0);

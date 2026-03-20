@@ -6,7 +6,7 @@ pub mod viewport_overlay;
 
 use crate::render::camera::ViewPreset;
 use crate::state::job::{ToolId, ToolType};
-use crate::state::toolpath::ToolpathId;
+use crate::state::toolpath::{OperationType, ToolpathId};
 use std::path::PathBuf;
 
 /// Events emitted by UI components, processed after the UI pass.
@@ -20,11 +20,10 @@ pub enum AppEvent {
     AddTool(ToolType),
     DuplicateTool(ToolId),
     RemoveTool(ToolId),
-    AddPocketToolpath,
+    AddToolpath(OperationType),
     RemoveToolpath(ToolpathId),
     GenerateToolpath(ToolpathId),
     ToggleToolpathVisibility(ToolpathId),
-    /// Stock or tool params were edited inline; re-upload GPU data.
     StockChanged,
     Quit,
 }
