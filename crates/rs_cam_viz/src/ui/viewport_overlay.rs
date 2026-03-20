@@ -40,11 +40,15 @@ pub fn draw(
 
         // Simulation controls
         if sim.active {
-            if ui.small_button("Reset Sim").clicked() {
+            let play_label = if sim.playing { "Pause" } else { "Play" };
+            if ui.small_button(play_label).clicked() {
+                events.push(AppEvent::ToggleSimPlayback);
+            }
+            if ui.small_button("Reset").clicked() {
                 events.push(AppEvent::ResetSimulation);
             }
             ui.label(
-                egui::RichText::new(format!("Sim: {:.0}%", sim.progress() * 100.0))
+                egui::RichText::new(format!("{:.0}%", sim.progress() * 100.0))
                     .color(egui::Color32::from_rgb(100, 180, 100)),
             );
         } else if ui.small_button("Simulate").clicked() {

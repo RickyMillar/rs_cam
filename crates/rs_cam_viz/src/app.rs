@@ -248,6 +248,9 @@ impl RsCamApp {
                         self.state.simulation.active = false; // will be set true when result arrives
                     }
                 }
+                AppEvent::ToggleSimPlayback => {
+                    self.state.simulation.playing = !self.state.simulation.playing;
+                }
                 AppEvent::ResetSimulation => {
                     self.state.simulation = crate::state::simulation::SimulationState::new();
                     // Sim mesh will be cleared on next upload
@@ -294,8 +297,38 @@ impl RsCamApp {
                     }
                 }
                 AppEvent::SaveJob => {
-                    // TOML save - placeholder: just log for now
-                    tracing::info!("Save job: not yet implemented (TOML serialization)");
+                    let path = self.state.job.file_path.clone().or_else(|| {
+                        rfd::FileDialog::new()
+                            .add_filter("TOML Job", &["toml"])
+                            .set_file_name("job.toml")
+                            .save_file()
+                    });
+                    if let Some(path) = path {
+                        match crate::io::project::save_project(&self.state.job, &path) {
+                            Ok(()) => {
+                                self.state.job.file_path = Some(path.clone());
+                                self.state.job.dirty = false;
+                                tracing::info!("Saved job to {}", path.display());
+                            }
+                            Err(e) => tracing::error!("Save failed: {}", e),
+                        }
+                    }
+                }
+                AppEvent::OpenJob => {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("TOML Job", &["toml"])
+                        .pick_file()
+                    {
+                        match crate::io::project::load_project(&path) {
+                            Ok((job, _inputs)) => {
+                                self.state.job = job;
+                                self.state.selection = Selection::None;
+                                self.pending_upload = true;
+                                tracing::info!("Loaded job from {}", path.display());
+                            }
+                            Err(e) => tracing::error!("Load failed: {}", e),
+                        }
+                    }
                 }
                 AppEvent::Undo => {
                     if let Some(action) = self.state.history.undo() {
@@ -303,6 +336,20 @@ impl RsCamApp {
                             UndoAction::StockChange { old, .. } => {
                                 self.state.job.stock = old;
                                 self.pending_upload = true;
+                            }
+                            UndoAction::PostChange { old, .. } => {
+                                self.state.job.post = old;
+                            }
+                            UndoAction::ToolChange { tool_id, old, .. } => {
+                                if let Some(t) = self.state.job.tools.iter_mut().find(|t| t.id == tool_id) {
+                                    *t = old;
+                                }
+                            }
+                            UndoAction::ToolpathParamChange { tp_id, old_op, old_dressups, .. } => {
+                                if let Some(tp) = self.state.job.toolpaths.iter_mut().find(|t| t.id == tp_id) {
+                                    tp.operation = old_op;
+                                    tp.dressups = old_dressups;
+                                }
                             }
                         }
                     }
@@ -313,6 +360,20 @@ impl RsCamApp {
                             UndoAction::StockChange { new, .. } => {
                                 self.state.job.stock = new;
                                 self.pending_upload = true;
+                            }
+                            UndoAction::PostChange { new, .. } => {
+                                self.state.job.post = new;
+                            }
+                            UndoAction::ToolChange { tool_id, new, .. } => {
+                                if let Some(t) = self.state.job.tools.iter_mut().find(|t| t.id == tool_id) {
+                                    *t = new;
+                                }
+                            }
+                            UndoAction::ToolpathParamChange { tp_id, new_op, new_dressups, .. } => {
+                                if let Some(tp) = self.state.job.toolpaths.iter_mut().find(|t| t.id == tp_id) {
+                                    tp.operation = new_op;
+                                    tp.dressups = new_dressups;
+                                }
                             }
                         }
                     }

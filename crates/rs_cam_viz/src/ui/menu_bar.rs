@@ -51,6 +51,10 @@ pub fn draw(ctx: &egui::Context, _state: &AppState, events: &mut Vec<AppEvent>) 
                     }
                 }
                 ui.separator();
+                if ui.button("Open Job...").clicked() {
+                    ui.close_menu();
+                    events.push(AppEvent::OpenJob);
+                }
                 if ui.add(egui::Button::new("Save Job  Ctrl+S")).clicked() {
                     ui.close_menu();
                     events.push(AppEvent::SaveJob);

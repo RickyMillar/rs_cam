@@ -1,9 +1,19 @@
-use super::job::StockConfig;
+use super::job::{PostConfig, StockConfig, ToolConfig, ToolId};
+use super::toolpath::{DressupConfig, OperationConfig, ToolpathId};
 
 /// A snapshot of undoable state.
 #[derive(Debug, Clone)]
 pub enum UndoAction {
     StockChange { old: StockConfig, new: StockConfig },
+    PostChange { old: PostConfig, new: PostConfig },
+    ToolChange { tool_id: ToolId, old: ToolConfig, new: ToolConfig },
+    ToolpathParamChange {
+        tp_id: ToolpathId,
+        old_op: OperationConfig,
+        new_op: OperationConfig,
+        old_dressups: DressupConfig,
+        new_dressups: DressupConfig,
+    },
 }
 
 /// Simple undo/redo stack.
@@ -26,7 +36,6 @@ impl UndoHistory {
     pub fn push(&mut self, action: UndoAction) {
         self.undo_stack.push(action);
         self.redo_stack.clear();
-        // Cap at 100 entries
         if self.undo_stack.len() > 100 {
             self.undo_stack.remove(0);
         }

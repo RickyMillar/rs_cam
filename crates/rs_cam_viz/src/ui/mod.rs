@@ -18,6 +18,7 @@ pub enum AppEvent {
     ImportDxf(PathBuf),
     ExportGcode,
     SaveJob,
+    OpenJob,
 
     // Selection / view
     Select(crate::state::selection::Selection),
@@ -43,6 +44,7 @@ pub enum AppEvent {
     // Simulation
     RunSimulation,
     ResetSimulation,
+    ToggleSimPlayback,
 
     // Collision
     RunCollisionCheck,
