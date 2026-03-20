@@ -267,19 +267,29 @@ impl Default for PocketConfig {
     }
 }
 
+/// Whether tool compensation is computed in the CAM or on the CNC controller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompensationType {
+    /// Tool offset computed in CAM software (default, most common).
+    InComputer,
+    /// Emit G41/G42 for CNC controller to apply offset.
+    InControl,
+}
+
 #[derive(Debug, Clone)]
 pub struct ProfileConfig {
     pub side: ProfileSide, pub depth: f64, pub depth_per_pass: f64,
     pub feed_rate: f64, pub plunge_rate: f64, pub climb: bool,
     pub tab_count: usize, pub tab_width: f64, pub tab_height: f64,
     pub finishing_passes: usize,
+    pub compensation: CompensationType,
 }
 impl Default for ProfileConfig {
     fn default() -> Self {
         Self { side: ProfileSide::Outside, depth: 6.0, depth_per_pass: 2.0,
                feed_rate: 1000.0, plunge_rate: 500.0, climb: true,
                tab_count: 0, tab_width: 6.0, tab_height: 2.0,
-               finishing_passes: 0 }
+               finishing_passes: 0, compensation: CompensationType::InComputer }
     }
 }
 
@@ -352,10 +362,13 @@ impl Default for ZigzagConfig {
 #[derive(Debug, Clone)]
 pub struct DropCutterConfig {
     pub stepover: f64, pub feed_rate: f64, pub plunge_rate: f64, pub min_z: f64,
+    pub skip_air_cuts: bool,
+    pub slope_from: f64, pub slope_to: f64,
 }
 impl Default for DropCutterConfig {
     fn default() -> Self {
-        Self { stepover: 1.0, feed_rate: 1000.0, plunge_rate: 500.0, min_z: -50.0 }
+        Self { stepover: 1.0, feed_rate: 1000.0, plunge_rate: 500.0, min_z: -50.0,
+               skip_air_cuts: false, slope_from: 0.0, slope_to: 90.0 }
     }
 }
 
@@ -379,11 +392,12 @@ impl Default for Adaptive3dConfig {
 pub struct WaterlineConfig {
     pub z_step: f64, pub sampling: f64, pub start_z: f64, pub final_z: f64,
     pub feed_rate: f64, pub plunge_rate: f64,
+    pub continuous: bool,
 }
 impl Default for WaterlineConfig {
     fn default() -> Self {
         Self { z_step: 1.0, sampling: 0.5, start_z: 0.0, final_z: -25.0,
-               feed_rate: 1000.0, plunge_rate: 500.0 }
+               feed_rate: 1000.0, plunge_rate: 500.0, continuous: false }
     }
 }
 
@@ -542,6 +556,18 @@ pub struct DressupConfig {
 
     // TSP rapid optimization
     pub optimize_rapid_order: bool,
+
+    // Retraction strategy
+    pub retract_strategy: RetractStrategy,
+}
+
+/// How the tool retracts between cutting passes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetractStrategy {
+    /// Always retract to retract_z (safest, default).
+    Full,
+    /// Retract just above the highest Z on nearby path + 2mm (faster).
+    Minimum,
 }
 
 impl Default for DressupConfig {
@@ -564,6 +590,7 @@ impl Default for DressupConfig {
             feed_max_rate: 3000.0,
             feed_ramp_rate: 200.0,
             optimize_rapid_order: false,
+            retract_strategy: RetractStrategy::Full,
         }
     }
 }
@@ -693,6 +720,10 @@ pub struct ToolpathEntry {
     pub heights: HeightsConfig,
     pub boundary_enabled: bool,
     pub boundary_containment: BoundaryContainment,
+    /// Raw G-code inserted before this operation's toolpath in export.
+    pub pre_gcode: String,
+    /// Raw G-code inserted after this operation's toolpath in export.
+    pub post_gcode: String,
     pub status: ComputeStatus,
     pub result: Option<ToolpathResult>,
     /// When params were last changed (for debounced auto-regen). None = not stale.

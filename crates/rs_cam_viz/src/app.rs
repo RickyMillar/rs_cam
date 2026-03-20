@@ -168,6 +168,8 @@ impl RsCamApp {
                         heights: crate::state::toolpath::HeightsConfig::default(),
                         boundary_enabled: false,
                         boundary_containment: crate::state::toolpath::BoundaryContainment::Center,
+                        pre_gcode: String::new(),
+                        post_gcode: String::new(),
                         status: ComputeStatus::Pending,
                         result: None,
                         stale_since: None,
@@ -192,6 +194,8 @@ impl RsCamApp {
                             heights: crate::state::toolpath::HeightsConfig::default(),
                             boundary_enabled: false,
                             boundary_containment: crate::state::toolpath::BoundaryContainment::Center,
+                            pre_gcode: String::new(),
+                            post_gcode: String::new(),
                             status: ComputeStatus::Pending, result: None,
                             stale_since: None, auto_regen: !is_3d,
                         });

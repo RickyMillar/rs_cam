@@ -309,6 +309,19 @@ fn draw_toolpath_panel(
         }
     });
 
+    // Manual G-code
+    ui.add_space(4.0);
+    ui.collapsing("Manual G-code", |ui| {
+        ui.label(
+            egui::RichText::new("Raw G-code inserted before/after this operation in export")
+                .small().italics().color(egui::Color32::from_rgb(130, 130, 140)),
+        );
+        ui.label("Before:");
+        ui.text_edit_multiline(&mut entry.pre_gcode);
+        ui.label("After:");
+        ui.text_edit_multiline(&mut entry.post_gcode);
+    });
+
     // Heights
     ui.add_space(4.0);
     ui.collapsing("Heights", |ui| {
@@ -455,6 +468,14 @@ fn draw_profile_params(ui: &mut egui::Ui, cfg: &mut ProfileConfig) {
         dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
         dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
         ui.label("Climb:"); ui.checkbox(&mut cfg.climb, ""); ui.end_row();
+        ui.label("Compensation:");
+        egui::ComboBox::from_id_salt("prof_comp").selected_text(match cfg.compensation {
+            CompensationType::InComputer => "In Computer", CompensationType::InControl => "In Control (G41/G42)",
+        }).show_ui(ui, |ui| {
+            ui.selectable_value(&mut cfg.compensation, CompensationType::InComputer, "In Computer");
+            ui.selectable_value(&mut cfg.compensation, CompensationType::InControl, "In Control (G41/G42)");
+        });
+        ui.end_row();
     });
     ui.add_space(8.0);
     ui.collapsing("Tabs", |ui| {
@@ -568,6 +589,10 @@ fn draw_dropcutter_params(ui: &mut egui::Ui, cfg: &mut DropCutterConfig) {
         dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
         dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
         dv(ui, "Min Z:", &mut cfg.min_z, " mm", 0.5, -500.0..=0.0);
+        ui.label("Skip Air Cuts:"); ui.checkbox(&mut cfg.skip_air_cuts, "")
+            .on_hover_text("Skip moves where tool doesn't contact the part"); ui.end_row();
+        dv(ui, "Slope From:", &mut cfg.slope_from, " deg", 1.0, 0.0..=90.0);
+        dv(ui, "Slope To:", &mut cfg.slope_to, " deg", 1.0, 0.0..=90.0);
     });
 }
 
@@ -612,6 +637,9 @@ fn draw_waterline_params(ui: &mut egui::Ui, cfg: &mut WaterlineConfig) {
         dv(ui, "Final Z:", &mut cfg.final_z, " mm", 0.5, -200.0..=200.0);
         dv(ui, "Feed Rate:", &mut cfg.feed_rate, " mm/min", 10.0, 1.0..=50000.0);
         dv(ui, "Plunge Rate:", &mut cfg.plunge_rate, " mm/min", 10.0, 1.0..=10000.0);
+        ui.label("Continuous:"); ui.checkbox(&mut cfg.continuous, "")
+            .on_hover_text("Replace stepped contours with a continuous Z-interpolating spiral (no seam lines)");
+        ui.end_row();
     });
 }
 
@@ -1008,4 +1036,16 @@ fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
     }
     ui.checkbox(&mut cfg.optimize_rapid_order, "Optimize rapid travel order")
         .on_hover_text("Reorder toolpath segments to minimize rapid travel distance (TSP optimization)");
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.label("Retract Strategy:");
+        egui::ComboBox::from_id_salt("retract_strat").selected_text(match cfg.retract_strategy {
+            RetractStrategy::Full => "Full", RetractStrategy::Minimum => "Minimum",
+        }).show_ui(ui, |ui| {
+            ui.selectable_value(&mut cfg.retract_strategy, RetractStrategy::Full, "Full")
+                .on_hover_text("Always retract to retract height (safest)");
+            ui.selectable_value(&mut cfg.retract_strategy, RetractStrategy::Minimum, "Minimum")
+                .on_hover_text("Retract just above nearby path (faster, less safe)");
+        });
+    });
 }
