@@ -283,6 +283,24 @@ pub fn emit_gcode_phased(
     output
 }
 
+/// Replace G0 rapid moves with G1 at a high feedrate.
+/// Used for machines with unpredictable rapid behavior (e.g., GRBL "dogleg" rapids).
+pub fn replace_rapids_with_feed(gcode: &str, high_feedrate: f64) -> String {
+    let mut output = String::with_capacity(gcode.len());
+    for line in gcode.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("G0 ") || trimmed.starts_with("G0X") {
+            // Replace G0 with G1 and append feedrate
+            let rest = &trimmed[2..];
+            output.push_str(&format!("G1{rest} F{high_feedrate:.1}\n"));
+        } else {
+            output.push_str(line);
+            output.push('\n');
+        }
+    }
+    output
+}
+
 /// Get a post-processor by name.
 pub fn get_post_processor(name: &str) -> Option<Box<dyn PostProcessor>> {
     match name.to_lowercase().as_str() {

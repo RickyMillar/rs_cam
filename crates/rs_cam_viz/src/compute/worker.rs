@@ -657,6 +657,7 @@ fn make_depth(depth: f64, per_pass: f64) -> DepthStepping {
     DepthStepping {
         start_z: 0.0, final_z: -depth.abs(), max_step_down: per_pass,
         distribution: DepthDistribution::Even, finish_allowance: 0.0,
+        finishing_passes: 0,
     }
 }
 

@@ -1,4 +1,4 @@
-use rs_cam_core::gcode::{GcodePhase, emit_gcode_phased, get_post_processor};
+use rs_cam_core::gcode::{GcodePhase, emit_gcode_phased, get_post_processor, replace_rapids_with_feed};
 
 use crate::state::job::{JobState, PostFormat};
 
@@ -29,5 +29,12 @@ pub fn export_gcode(job: &JobState) -> Result<String, String> {
         return Err("No computed toolpaths to export".to_string());
     }
 
-    Ok(emit_gcode_phased(&phases, post.as_ref()))
+    let mut gcode = emit_gcode_phased(&phases, post.as_ref());
+
+    // Apply high feedrate mode: convert G0 rapids to G1 at specified feedrate
+    if job.post.high_feedrate_mode {
+        gcode = replace_rapids_with_feed(&gcode, job.post.high_feedrate);
+    }
+
+    Ok(gcode)
 }

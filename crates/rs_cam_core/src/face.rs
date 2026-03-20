@@ -76,6 +76,7 @@ pub fn face_toolpath(bounds: &BoundingBox3, params: &FaceParams) -> Toolpath {
             max_step_down: params.depth_per_pass,
             distribution: DepthDistribution::Even,
             finish_allowance: 0.0,
+            finishing_passes: 0,
         };
 
         depth_stepped_toolpath(&stepping, params.safe_z, |z| {

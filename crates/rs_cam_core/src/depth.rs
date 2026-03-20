@@ -36,6 +36,10 @@ pub struct DepthStepping {
     /// Roughing passes stop at `final_z + finish_allowance`.
     /// Set to 0.0 for no separate finish pass.
     pub finish_allowance: f64,
+    /// Number of finishing (spring) passes to repeat at the final depth.
+    /// Each spring pass repeats the last Z level for dimensional accuracy.
+    /// 0 = no extra spring passes.
+    pub finishing_passes: usize,
 }
 
 impl DepthStepping {
@@ -47,6 +51,7 @@ impl DepthStepping {
             max_step_down,
             distribution: DepthDistribution::Even,
             finish_allowance: 0.0,
+            finishing_passes: 0,
         }
     }
 
@@ -112,11 +117,16 @@ impl DepthStepping {
         }
     }
 
-    /// Calculate all Z levels: roughing + optional finish pass.
+    /// Calculate all Z levels: roughing + optional finish pass + spring passes.
     pub fn all_levels(&self) -> Vec<f64> {
         let mut levels = self.roughing_levels();
         if self.has_finish_pass() {
             levels.push(self.final_z);
+        }
+        // Add spring passes (repeat final Z for dimensional accuracy)
+        let final_z = levels.last().copied().unwrap_or(self.final_z);
+        for _ in 0..self.finishing_passes {
+            levels.push(final_z);
         }
         levels
     }
