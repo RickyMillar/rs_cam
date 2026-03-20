@@ -109,8 +109,46 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] 5.16 Push-cutter edge accuracy — coarse+bisection sampling (9+10≈19 evals) replaces 32-step uniform, higher boundary accuracy (pushcutter.rs)
 - [x] 5.17 Polygon offset hole pairing — containment-based re-pairing via point-in-polygon instead of blind attachment to first polygon (polygon.rs)
 - [x] 5.18 Arc fitting least-squares — Kåsa's algebraic circle fit replaces 3-point fit for 5+ points, lower mean error on noisy/partial arcs (arcfit.rs)
-- [x] 5.19 Feature gap operations — 8 new operations (Face, Trace, Drill, Chamfer, Spiral Finish, Radial Finish, Horizontal Finish, Project Curve) + 2 infrastructure modules (Boundary containment with clip, TSP rapid optimization). Total operations: 22 (was 14). 73 new tests across 10 new modules. Full GUI wiring: state enums, worker dispatch, UI parameter panels, tooltips, validation.
-- [x] 5.20 Infrastructure features — High feedrate mode (G0→G1 conversion for GRBL dogleg), finishing/spring passes (repeat final Z for dimensional accuracy), post-processor config extensions
+- [x] 5.19 Feature gap: new operations — Face (stock surfacing), Trace (follow path), Drill (peck/dwell/chip-break cycles), Chamfer (V-bit edge break). Core algorithms + full GUI wiring (state, worker, UI panels, tooltips, validation). 22 new tests.
+- [x] 5.20 Feature gap: 3D finishing strategies — Spiral Finish (Archimedean spiral for domes/bowls), Radial Finish (spoke pattern), Horizontal Finish (flat area detection + raster), Project Curve (2D paths onto 3D mesh). Core + full GUI wiring. 35 new tests.
+- [x] 5.21 Feature gap: infrastructure modules — Boundary containment (center/inside/outside + toolpath clipping, 12 tests), TSP rapid optimization (nearest-neighbor + 2-opt, 6 tests). Core algorithms only — NOT yet wired into GUI/worker.
+- [x] 5.22 Feature gap: post-processing — High feedrate mode (G0→G1 for GRBL dogleg, PostConfig + UI + export), finishing/spring passes (DepthStepping.finishing_passes field, core only — NOT yet in UI configs)
+
+### Phase 6: Feature Gap Plan (IN PROGRESS)
+See IMPLEMENTATION_PLAN.md for full details. Status of each planned item:
+
+**Done (core + full GUI wiring):**
+- [x] 6.1 Face operation (face.rs)
+- [x] 6.2 Trace operation (trace.rs)
+- [x] 6.3 Drill operation (drill.rs)
+- [x] 6.4 Chamfer operation (chamfer.rs)
+- [x] 6.5 Spiral Finish (spiral_finish.rs)
+- [x] 6.6 Radial Finish (radial_finish.rs)
+- [x] 6.7 Horizontal Finish (horizontal_finish.rs)
+- [x] 6.8 Project Curve (project_curve.rs)
+- [x] 6.9 High feedrate mode (gcode.rs + PostConfig + UI)
+
+**Done (core algorithm only, needs GUI wiring):**
+- [~] 6.10 Machining boundary/containment (boundary.rs exists, not wired into ToolpathEntry/worker/UI)
+- [~] 6.11 Finishing/spring passes (DepthStepping field exists, not exposed in operation UI configs)
+- [~] 6.12 TSP rapid optimization (tsp.rs exists, not wired as dressup option in UI)
+
+**Not started:**
+- [ ] 6.13 Multi-level heights system (5 heights: clearance/retract/feed/top/bottom, replacing single safe_z)
+- [ ] 6.14 Retraction strategy (Full/Minimum/Direct enum as dressup)
+- [ ] 6.15 Generalized slope confinement (slope_from/to on all 3D ops, not just Scallop/RampFinish)
+- [ ] 6.16 Compensation type (G41/G42 in-control compensation for Profile/Contour)
+- [ ] 6.17 Rapid collision detection (detect G0 moves through stock, red markers)
+- [ ] 6.18 Stock deviation coloring (sim mesh colored by deviation from model surface)
+- [ ] 6.19 Operation presets/templates (save/load named parameter sets)
+- [ ] 6.20 Setup sheet generation (HTML documentation with tool list, operation details, cycle times)
+- [ ] 6.21 Manual NC insertion (raw G-code between operations)
+- [ ] 6.22 Operation suppression & locking (locked field, skip auto-regen)
+- [ ] 6.23 Viewport enhancements (slope angle shading, entry point markers)
+- [ ] 6.24 Radial/axial stock-to-leave split (two params instead of one on 3D ops)
+- [ ] 6.25 Contact-only toolpath (skip air cuts on 3D ops using CLPoint.contacted)
+- [ ] 6.26 Canned drilling cycles in PostProcessor (G81/G82/G83/G80 methods)
+- [ ] 6.27 Continuous spiral waterline (Z-interpolating spiral instead of stepped contours)
 
 ## Module Map (for new agents)
 
