@@ -123,6 +123,22 @@ enum Commands {
         /// Replace short retracts with direct feed moves (max link distance in mm, 0 to disable)
         #[arg(long, default_value = "0.0")]
         link_moves: f64,
+
+        /// Holder diameter for collision check (mm, 0 to disable)
+        #[arg(long, default_value = "0.0")]
+        holder_diameter: f64,
+
+        /// Shank diameter (mm)
+        #[arg(long, default_value = "0.0")]
+        shank_diameter: f64,
+
+        /// Shank length above flutes (mm)
+        #[arg(long, default_value = "0.0")]
+        shank_length: f64,
+
+        /// Tool stickout length (mm)
+        #[arg(long, default_value = "0.0")]
+        stickout: f64,
     },
 
     /// Clear a 2D pocket from SVG or DXF boundary
@@ -685,6 +701,22 @@ enum Commands {
         /// Replace short retracts with direct feed moves (max link distance in mm, 0 to disable)
         #[arg(long, default_value = "0.0")]
         link_moves: f64,
+
+        /// Holder diameter for collision check (mm, 0 to disable)
+        #[arg(long, default_value = "0.0")]
+        holder_diameter: f64,
+
+        /// Shank diameter (mm)
+        #[arg(long, default_value = "0.0")]
+        shank_diameter: f64,
+
+        /// Shank length above flutes (mm)
+        #[arg(long, default_value = "0.0")]
+        shank_length: f64,
+
+        /// Tool stickout length (mm)
+        #[arg(long, default_value = "0.0")]
+        stickout: f64,
     },
 
     /// Ramp finishing — continuous descent on steep walls (no Z-level witness marks)
@@ -743,6 +775,22 @@ enum Commands {
         /// Replace short retracts with direct feed moves (max link distance in mm, 0 to disable)
         #[arg(long, default_value = "0.0")]
         link_moves: f64,
+
+        /// Holder diameter for collision check (mm, 0 to disable)
+        #[arg(long, default_value = "0.0")]
+        holder_diameter: f64,
+
+        /// Shank diameter (mm)
+        #[arg(long, default_value = "0.0")]
+        shank_diameter: f64,
+
+        /// Shank length above flutes (mm)
+        #[arg(long, default_value = "0.0")]
+        shank_length: f64,
+
+        /// Tool stickout length (mm)
+        #[arg(long, default_value = "0.0")]
+        stickout: f64,
     },
 
     /// Steep and Shallow finishing — hybrid waterline + parallel for mixed terrain
@@ -804,6 +852,22 @@ enum Commands {
         /// Replace short retracts with direct feed moves (max link distance in mm, 0 to disable)
         #[arg(long, default_value = "0.0")]
         link_moves: f64,
+
+        /// Holder diameter for collision check (mm, 0 to disable)
+        #[arg(long, default_value = "0.0")]
+        holder_diameter: f64,
+
+        /// Shank diameter (mm)
+        #[arg(long, default_value = "0.0")]
+        shank_diameter: f64,
+
+        /// Shank length above flutes (mm)
+        #[arg(long, default_value = "0.0")]
+        shank_length: f64,
+
+        /// Tool stickout length (mm)
+        #[arg(long, default_value = "0.0")]
+        stickout: f64,
     },
 
     /// Inlay operations — generate male and female V-carve toolpaths
@@ -904,6 +968,22 @@ enum Commands {
         /// Replace short retracts with direct feed moves (max link distance in mm, 0 to disable)
         #[arg(long, default_value = "0.0")]
         link_moves: f64,
+
+        /// Holder diameter for collision check (mm, 0 to disable)
+        #[arg(long, default_value = "0.0")]
+        holder_diameter: f64,
+
+        /// Shank diameter (mm)
+        #[arg(long, default_value = "0.0")]
+        shank_diameter: f64,
+
+        /// Shank length above flutes (mm)
+        #[arg(long, default_value = "0.0")]
+        shank_length: f64,
+
+        /// Tool stickout length (mm)
+        #[arg(long, default_value = "0.0")]
+        stickout: f64,
     },
 
     /// Scallop finishing — constant scallop height with variable stepover
@@ -959,6 +1039,22 @@ enum Commands {
         /// Replace short retracts with direct feed moves (max link distance in mm, 0 to disable)
         #[arg(long, default_value = "0.0")]
         link_moves: f64,
+
+        /// Holder diameter for collision check (mm, 0 to disable)
+        #[arg(long, default_value = "0.0")]
+        holder_diameter: f64,
+
+        /// Shank diameter (mm)
+        #[arg(long, default_value = "0.0")]
+        shank_diameter: f64,
+
+        /// Shank length above flutes (mm)
+        #[arg(long, default_value = "0.0")]
+        shank_length: f64,
+
+        /// Tool stickout length (mm)
+        #[arg(long, default_value = "0.0")]
+        stickout: f64,
     },
 }
 
@@ -1308,6 +1404,7 @@ fn main() -> Result<()> {
             input, units, scale, tool, stepover, feed_rate, plunge_rate,
             spindle_speed, safe_z, min_z, post, output, svg, view,
             simulate, sim_resolution, link_moves,
+            holder_diameter, shank_diameter, shank_length, stickout,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             debug!(path = %input.display(), units = %units, scale = scale_factor, "Loading STL");
@@ -1348,6 +1445,31 @@ fn main() -> Result<()> {
                     after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
                     "Applied link moves"
                 );
+            }
+
+            if holder_diameter > 0.0 {
+                let cutter_ref = cutter.as_ref();
+                let assembly = rs_cam_core::collision::ToolAssembly {
+                    cutter_radius: cutter_ref.radius(),
+                    cutter_length: if stickout > 0.0 { stickout - shank_length } else { cutter_ref.length() },
+                    shank_diameter: if shank_diameter > 0.0 { shank_diameter } else { cutter_ref.diameter() },
+                    shank_length,
+                    holder_diameter,
+                    holder_length: 40.0,
+                };
+                let report = rs_cam_core::collision::check_collisions_interpolated(
+                    &toolpath, &assembly, &mesh, &index, 2.0,
+                );
+                if report.is_clear() {
+                    info!("Collision check: CLEAR");
+                } else {
+                    eprintln!("WARNING: {} holder/shank collisions detected!", report.collisions.len());
+                    eprintln!("  Min safe stickout: {:.1}mm (current: {:.1}mm)", report.min_safe_stickout, assembly.stickout());
+                    for c in report.collisions.iter().take(5) {
+                        eprintln!("  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
+                            c.move_idx, c.segment, c.position.x, c.position.y, c.position.z, c.penetration_depth);
+                    }
+                }
             }
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
@@ -1885,6 +2007,7 @@ fn main() -> Result<()> {
             input, units, scale, tool, z_step, sampling, start_z, final_z,
             feed_rate, plunge_rate, spindle_speed, safe_z, arc_tolerance,
             post, output, svg, view, simulate, sim_resolution, link_moves,
+            holder_diameter, shank_diameter, shank_length, stickout,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             debug!(path = %input.display(), units = %units, scale = scale_factor, "Loading STL");
@@ -1939,6 +2062,31 @@ fn main() -> Result<()> {
                 "Generated toolpath"
             );
 
+            if holder_diameter > 0.0 {
+                let cutter_ref = cutter.as_ref();
+                let assembly = rs_cam_core::collision::ToolAssembly {
+                    cutter_radius: cutter_ref.radius(),
+                    cutter_length: if stickout > 0.0 { stickout - shank_length } else { cutter_ref.length() },
+                    shank_diameter: if shank_diameter > 0.0 { shank_diameter } else { cutter_ref.diameter() },
+                    shank_length,
+                    holder_diameter,
+                    holder_length: 40.0,
+                };
+                let report = rs_cam_core::collision::check_collisions_interpolated(
+                    &toolpath, &assembly, &mesh, &index, 2.0,
+                );
+                if report.is_clear() {
+                    info!("Collision check: CLEAR");
+                } else {
+                    eprintln!("WARNING: {} holder/shank collisions detected!", report.collisions.len());
+                    eprintln!("  Min safe stickout: {:.1}mm (current: {:.1}mm)", report.min_safe_stickout, assembly.stickout());
+                    for c in report.collisions.iter().take(5) {
+                        eprintln!("  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
+                            c.move_idx, c.segment, c.position.x, c.position.y, c.position.z, c.penetration_depth);
+                    }
+                }
+            }
+
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
             write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
@@ -1949,6 +2097,7 @@ fn main() -> Result<()> {
             direction, bottom_up, feed_rate, plunge_rate, spindle_speed, safe_z,
             sampling, stock_to_leave, tolerance, post, output, svg, view,
             simulate, sim_resolution, link_moves,
+            holder_diameter, shank_diameter, shank_length, stickout,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             let cutter = parse_tool(&tool)?;
@@ -1999,6 +2148,31 @@ fn main() -> Result<()> {
                 );
             }
 
+            if holder_diameter > 0.0 {
+                let cutter_ref = cutter.as_ref();
+                let assembly = rs_cam_core::collision::ToolAssembly {
+                    cutter_radius: cutter_ref.radius(),
+                    cutter_length: if stickout > 0.0 { stickout - shank_length } else { cutter_ref.length() },
+                    shank_diameter: if shank_diameter > 0.0 { shank_diameter } else { cutter_ref.diameter() },
+                    shank_length,
+                    holder_diameter,
+                    holder_length: 40.0,
+                };
+                let report = rs_cam_core::collision::check_collisions_interpolated(
+                    &toolpath, &assembly, &mesh, &index, 2.0,
+                );
+                if report.is_clear() {
+                    info!("Collision check: CLEAR");
+                } else {
+                    eprintln!("WARNING: {} holder/shank collisions detected!", report.collisions.len());
+                    eprintln!("  Min safe stickout: {:.1}mm (current: {:.1}mm)", report.min_safe_stickout, assembly.stickout());
+                    for c in report.collisions.iter().take(5) {
+                        eprintln!("  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
+                            c.move_idx, c.segment, c.position.x, c.position.y, c.position.z, c.penetration_depth);
+                    }
+                }
+            }
+
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
             write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
         }
@@ -2008,6 +2182,7 @@ fn main() -> Result<()> {
             wall_clearance, steep_first, stepover, z_step, sampling,
             stock_to_leave, tolerance, feed_rate, plunge_rate, spindle_speed,
             safe_z, post, output, svg, view, simulate, sim_resolution, link_moves,
+            holder_diameter, shank_diameter, shank_length, stickout,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             let cutter = parse_tool(&tool)?;
@@ -2051,6 +2226,31 @@ fn main() -> Result<()> {
                     after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
                     "Applied link moves"
                 );
+            }
+
+            if holder_diameter > 0.0 {
+                let cutter_ref = cutter.as_ref();
+                let assembly = rs_cam_core::collision::ToolAssembly {
+                    cutter_radius: cutter_ref.radius(),
+                    cutter_length: if stickout > 0.0 { stickout - shank_length } else { cutter_ref.length() },
+                    shank_diameter: if shank_diameter > 0.0 { shank_diameter } else { cutter_ref.diameter() },
+                    shank_length,
+                    holder_diameter,
+                    holder_length: 40.0,
+                };
+                let report = rs_cam_core::collision::check_collisions_interpolated(
+                    &toolpath, &assembly, &mesh, &index, 2.0,
+                );
+                if report.is_clear() {
+                    info!("Collision check: CLEAR");
+                } else {
+                    eprintln!("WARNING: {} holder/shank collisions detected!", report.collisions.len());
+                    eprintln!("  Min safe stickout: {:.1}mm (current: {:.1}mm)", report.min_safe_stickout, assembly.stickout());
+                    for c in report.collisions.iter().take(5) {
+                        eprintln!("  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
+                            c.move_idx, c.segment, c.position.x, c.position.y, c.position.z, c.penetration_depth);
+                    }
+                }
             }
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
@@ -2112,6 +2312,7 @@ fn main() -> Result<()> {
             offset_passes, offset_stepover, sampling, stock_to_leave,
             feed_rate, plunge_rate, spindle_speed, safe_z, post, output,
             svg, view, simulate, sim_resolution, link_moves,
+            holder_diameter, shank_diameter, shank_length, stickout,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             let cutter = parse_tool(&tool)?;
@@ -2155,6 +2356,31 @@ fn main() -> Result<()> {
                 );
             }
 
+            if holder_diameter > 0.0 {
+                let cutter_ref = cutter.as_ref();
+                let assembly = rs_cam_core::collision::ToolAssembly {
+                    cutter_radius: cutter_ref.radius(),
+                    cutter_length: if stickout > 0.0 { stickout - shank_length } else { cutter_ref.length() },
+                    shank_diameter: if shank_diameter > 0.0 { shank_diameter } else { cutter_ref.diameter() },
+                    shank_length,
+                    holder_diameter,
+                    holder_length: 40.0,
+                };
+                let report = rs_cam_core::collision::check_collisions_interpolated(
+                    &toolpath, &assembly, &mesh, &index, 2.0,
+                );
+                if report.is_clear() {
+                    info!("Collision check: CLEAR");
+                } else {
+                    eprintln!("WARNING: {} holder/shank collisions detected!", report.collisions.len());
+                    eprintln!("  Min safe stickout: {:.1}mm (current: {:.1}mm)", report.min_safe_stickout, assembly.stickout());
+                    for c in report.collisions.iter().take(5) {
+                        eprintln!("  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
+                            c.move_idx, c.segment, c.position.x, c.position.y, c.position.z, c.penetration_depth);
+                    }
+                }
+            }
+
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
             write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
         }
@@ -2164,6 +2390,7 @@ fn main() -> Result<()> {
             slope_from, slope_to, stock_to_leave, tolerance, feed_rate,
             plunge_rate, spindle_speed, safe_z, post, output, svg, view,
             simulate, sim_resolution, link_moves,
+            holder_diameter, shank_diameter, shank_length, stickout,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             let cutter = parse_tool(&tool)?;
@@ -2210,6 +2437,31 @@ fn main() -> Result<()> {
                     after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
                     "Applied link moves"
                 );
+            }
+
+            if holder_diameter > 0.0 {
+                let cutter_ref = cutter.as_ref();
+                let assembly = rs_cam_core::collision::ToolAssembly {
+                    cutter_radius: cutter_ref.radius(),
+                    cutter_length: if stickout > 0.0 { stickout - shank_length } else { cutter_ref.length() },
+                    shank_diameter: if shank_diameter > 0.0 { shank_diameter } else { cutter_ref.diameter() },
+                    shank_length,
+                    holder_diameter,
+                    holder_length: 40.0,
+                };
+                let report = rs_cam_core::collision::check_collisions_interpolated(
+                    &toolpath, &assembly, &mesh, &index, 2.0,
+                );
+                if report.is_clear() {
+                    info!("Collision check: CLEAR");
+                } else {
+                    eprintln!("WARNING: {} holder/shank collisions detected!", report.collisions.len());
+                    eprintln!("  Min safe stickout: {:.1}mm (current: {:.1}mm)", report.min_safe_stickout, assembly.stickout());
+                    for c in report.collisions.iter().take(5) {
+                        eprintln!("  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
+                            c.move_idx, c.segment, c.position.x, c.position.y, c.position.z, c.penetration_depth);
+                    }
+                }
             }
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;

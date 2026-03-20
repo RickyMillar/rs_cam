@@ -10,8 +10,31 @@
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::P3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::tool::{FlatEndmill, MillingCutter};
+use crate::tool::FlatEndmill;
 use crate::toolpath::{MoveType, Toolpath};
+
+/// A segment of the holder/shank geometry above the cutter.
+///
+/// Supports cylindrical and tapered (conical) sections. For tapered segments,
+/// collision checking uses the maximum radius (conservative).
+#[derive(Debug, Clone)]
+pub struct HolderSegment {
+    /// Distance from tool tip to bottom of this segment (mm).
+    pub z_offset: f64,
+    /// Radius at bottom of segment (mm).
+    pub radius_bottom: f64,
+    /// Radius at top of segment (mm). Equal to radius_bottom for cylinders.
+    pub radius_top: f64,
+    /// Length of this segment (mm).
+    pub length: f64,
+}
+
+impl HolderSegment {
+    /// Maximum radius of this segment (conservative for collision).
+    pub fn max_radius(&self) -> f64 {
+        self.radius_bottom.max(self.radius_top)
+    }
+}
 
 /// Describes the physical tool assembly: cutter + shank + holder.
 pub struct ToolAssembly {
@@ -35,8 +58,7 @@ impl ToolAssembly {
         self.cutter_length + self.shank_length
     }
 
-    /// Segments of the assembly from tip upward, as (z_offset, radius, length).
-    /// z_offset is the distance from the tool tip to the bottom of the segment.
+    /// Segments of the assembly from tip upward, as (z_offset, max_radius, length).
     fn segments(&self) -> Vec<(f64, f64, f64)> {
         let mut segs = Vec::new();
 
@@ -59,6 +81,20 @@ impl ToolAssembly {
         }
 
         segs
+    }
+
+    /// Build segments from a multi-segment holder profile.
+    ///
+    /// Each HolderSegment can have different bottom/top radii (tapered).
+    /// Collision checking uses max_radius per segment (conservative).
+    pub fn segments_from_profile(
+        cutter_radius: f64,
+        profile: &[HolderSegment],
+    ) -> Vec<(f64, f64, f64)> {
+        profile.iter()
+            .filter(|s| s.max_radius() > cutter_radius + 1e-6)
+            .map(|s| (s.z_offset, s.max_radius(), s.length))
+            .collect()
     }
 }
 
@@ -97,11 +133,29 @@ impl CollisionReport {
 /// For each cutting move, checks whether the shank or holder cylinder
 /// (modeled as a flat endmill at that radius) would contact the mesh
 /// surface above the allowed Z.
+///
+/// `step_mm` controls interpolation along moves: positions are checked
+/// every `step_mm` between move endpoints to catch collisions mid-travel.
+/// Use 0.0 to check endpoints only (legacy behavior).
 pub fn check_collisions(
     toolpath: &Toolpath,
     assembly: &ToolAssembly,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
+) -> CollisionReport {
+    check_collisions_interpolated(toolpath, assembly, mesh, index, 0.0)
+}
+
+/// Check collisions with interpolated path sampling.
+///
+/// Samples every `step_mm` along each move (in addition to endpoints)
+/// to catch collisions mid-travel on long linear moves.
+pub fn check_collisions_interpolated(
+    toolpath: &Toolpath,
+    assembly: &ToolAssembly,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    step_mm: f64,
 ) -> CollisionReport {
     let segments = assembly.segments();
     let mut collisions = Vec::new();
@@ -117,46 +171,71 @@ pub fn check_collisions(
             continue;
         }
 
-        let tip_x = mv.target.x;
-        let tip_y = mv.target.y;
-        let tip_z = mv.target.z;
+        // Get previous position for interpolation
+        let prev = if move_idx > 0 {
+            toolpath.moves[move_idx - 1].target
+        } else {
+            mv.target
+        };
 
-        for &(z_offset, seg_radius, _seg_length) in &segments {
-            // Skip if the segment radius is smaller than the cutter
-            // (the cutter itself handles collision below its radius)
-            if seg_radius <= assembly.cutter_radius + 1e-6 {
-                continue;
+        // Generate sample points along this move
+        let sample_points = if step_mm > 0.01 {
+            let dx = mv.target.x - prev.x;
+            let dy = mv.target.y - prev.y;
+            let dz = mv.target.z - prev.z;
+            let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+            let n_steps = (dist / step_mm).ceil() as usize;
+            if n_steps > 1 {
+                let mut pts = Vec::with_capacity(n_steps + 1);
+                for i in 0..=n_steps {
+                    let t = i as f64 / n_steps as f64;
+                    pts.push(P3::new(
+                        prev.x + t * dx,
+                        prev.y + t * dy,
+                        prev.z + t * dz,
+                    ));
+                }
+                pts
+            } else {
+                vec![mv.target]
             }
+        } else {
+            vec![mv.target]
+        };
 
-            // Bottom of this segment above tip
-            let seg_bottom_z = tip_z + z_offset;
+        for tip in &sample_points {
+            for &(z_offset, seg_radius, _seg_length) in &segments {
+                if seg_radius <= assembly.cutter_radius + 1e-6 {
+                    continue;
+                }
 
-            // Drop a flat endmill at the segment's radius to find mesh contact Z
-            let virtual_cutter = FlatEndmill::new(seg_radius * 2.0, 1.0);
-            let cl = point_drop_cutter(tip_x, tip_y, mesh, index, &virtual_cutter);
+                let seg_bottom_z = tip.z + z_offset;
 
-            if !cl.contacted {
-                continue; // Outside mesh footprint
-            }
+                let virtual_cutter = FlatEndmill::new(seg_radius * 2.0, 1.0);
+                let cl = point_drop_cutter(tip.x, tip.y, mesh, index, &virtual_cutter);
 
-            // cl.z is where a flat endmill of this radius would touch
-            // If cl.z > seg_bottom_z, the holder would collide
-            let penetration = cl.z - seg_bottom_z;
-            if penetration > 0.01 { // 0.01mm threshold to avoid false positives
-                let seg_name = if seg_radius > assembly.shank_diameter / 2.0 - 0.01 {
-                    "holder"
-                } else {
-                    "shank"
-                };
+                if !cl.contacted {
+                    continue;
+                }
 
-                collisions.push(CollisionEvent {
-                    move_idx,
-                    position: P3::new(tip_x, tip_y, tip_z),
-                    penetration_depth: penetration,
-                    segment: seg_name.to_string(),
-                });
+                let penetration = cl.z - seg_bottom_z;
+                if penetration > 0.01 {
+                    let seg_name = if seg_radius > assembly.shank_diameter / 2.0 - 0.01 {
+                        "holder"
+                    } else {
+                        "shank"
+                    };
 
-                max_extra_stickout_needed = max_extra_stickout_needed.max(penetration);
+                    collisions.push(CollisionEvent {
+                        move_idx,
+                        position: *tip,
+                        penetration_depth: penetration,
+                        segment: seg_name.to_string(),
+                    });
+
+                    max_extra_stickout_needed = max_extra_stickout_needed.max(penetration);
+                    break; // One collision per move per segment is enough
+                }
             }
         }
     }
@@ -173,7 +252,6 @@ pub fn check_collisions(
 mod tests {
     use super::*;
     use crate::mesh::{make_test_hemisphere, SpatialIndex};
-    use crate::tool::BallEndmill;
 
     fn test_assembly() -> ToolAssembly {
         ToolAssembly {
@@ -209,7 +287,6 @@ mod tests {
     fn test_no_collision_high_safe_z() {
         let mesh = make_test_hemisphere(20.0, 16);
         let index = SpatialIndex::build(&mesh, 5.0);
-        let tool = BallEndmill::new(6.0, 25.0);
         let asm = test_assembly();
 
         // Toolpath well above the mesh
@@ -254,6 +331,94 @@ mod tests {
         assert!(
             report.min_safe_stickout > asm.stickout(),
             "Safe stickout should exceed current stickout"
+        );
+    }
+
+    #[test]
+    fn test_interpolated_catches_mid_move() {
+        let mesh = make_test_hemisphere(20.0, 32);
+        let index = SpatialIndex::build(&mesh, 5.0);
+        let asm = ToolAssembly {
+            cutter_radius: 3.0,
+            cutter_length: 10.0,
+            shank_diameter: 6.0,
+            shank_length: 5.0,
+            holder_diameter: 35.0,
+            holder_length: 40.0,
+        };
+
+        // Long move that sweeps over the hemisphere center
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(-30.0, 0.0, 25.0));
+        tp.feed_to(P3::new(-30.0, 0.0, 0.0), 500.0);
+        tp.feed_to(P3::new(30.0, 0.0, 0.0), 1000.0); // sweeps over hemisphere
+
+        // Without interpolation (endpoint only at x=30)
+        let report_no_interp = check_collisions(&tp, &asm, &mesh, &index);
+        // With interpolation (samples along the 60mm move)
+        let report_interp = check_collisions_interpolated(&tp, &asm, &mesh, &index, 2.0);
+
+        // Interpolated should catch more collisions (mid-move over hemisphere peak)
+        assert!(
+            report_interp.collisions.len() >= report_no_interp.collisions.len(),
+            "Interpolation should catch at least as many collisions: {} vs {}",
+            report_interp.collisions.len(),
+            report_no_interp.collisions.len()
+        );
+    }
+
+    #[test]
+    fn test_tapered_holder_segment() {
+        // Test the HolderSegment API with a tapered collet nut
+        let profile = vec![
+            HolderSegment {
+                z_offset: 25.0,
+                radius_bottom: 5.0,  // narrow bottom
+                radius_top: 10.0,    // wider top
+                length: 10.0,
+            },
+            HolderSegment {
+                z_offset: 35.0,
+                radius_bottom: 17.5,
+                radius_top: 17.5,
+                length: 40.0,
+            },
+        ];
+
+        let segs = ToolAssembly::segments_from_profile(3.0, &profile);
+        assert_eq!(segs.len(), 2);
+        // First segment: max_radius = 10.0 (tapered)
+        assert!((segs[0].1 - 10.0).abs() < 0.01);
+        // Second segment: max_radius = 17.5 (cylinder)
+        assert!((segs[1].1 - 17.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_no_collision_adequate_stickout() {
+        let mesh = make_test_hemisphere(20.0, 16);
+        let index = SpatialIndex::build(&mesh, 5.0);
+
+        // Generous stickout — holder is well above mesh
+        let asm = ToolAssembly {
+            cutter_radius: 3.0,
+            cutter_length: 40.0, // 40mm cutter length
+            shank_diameter: 6.0,
+            shank_length: 20.0,
+            holder_diameter: 35.0,
+            holder_length: 40.0,
+        };
+
+        // Toolpath at mesh surface level (z ~ 0)
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 25.0));
+        tp.feed_to(P3::new(0.0, 0.0, 0.0), 500.0);
+        tp.feed_to(P3::new(15.0, 0.0, 0.0), 1000.0);
+
+        let report = check_collisions(&tp, &asm, &mesh, &index);
+        assert!(
+            report.is_clear(),
+            "Adequate stickout should have no collisions, got {}",
+            report.collisions.len()
         );
     }
 

@@ -93,6 +93,14 @@ pub struct ToolDef {
     pub taper_angle: Option<f64>,
     /// Shaft diameter for tapered ball
     pub shaft_diameter: Option<f64>,
+    /// Shank diameter above the cutting flutes (mm).
+    pub shank_diameter: Option<f64>,
+    /// Shank length above the cutting flutes (mm).
+    pub shank_length: Option<f64>,
+    /// Holder diameter (mm).
+    pub holder_diameter: Option<f64>,
+    /// Holder length (mm).
+    pub holder_length: Option<f64>,
 }
 
 #[derive(Deserialize)]
