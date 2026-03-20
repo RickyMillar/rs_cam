@@ -2,6 +2,8 @@ use std::sync::mpsc;
 use std::sync::Arc;
 
 use rs_cam_core::adaptive::{AdaptiveParams, adaptive_toolpath};
+use rs_cam_core::geo::BoundingBox3;
+use rs_cam_core::simulation::{Heightmap, HeightmapMesh, heightmap_to_mesh, simulate_toolpath};
 use rs_cam_core::adaptive3d::{Adaptive3dParams, EntryStyle3d, adaptive_3d_toolpath};
 use rs_cam_core::depth::{DepthDistribution, DepthStepping, depth_stepped_toolpath};
 use rs_cam_core::dropcutter::batch_drop_cutter;
@@ -43,23 +45,55 @@ pub struct ComputeResult {
     pub result: Result<ToolpathResult, String>,
 }
 
+/// Request to run material removal simulation.
+pub struct SimulationRequest {
+    pub toolpaths: Vec<(Arc<Toolpath>, ToolConfig)>,
+    pub stock_bbox: BoundingBox3,
+    pub stock_top_z: f64,
+    pub resolution: f64,
+}
+
+/// Result of simulation computation.
+pub struct SimulationResult {
+    pub mesh: HeightmapMesh,
+    pub total_moves: usize,
+}
+
+enum WorkerRequest {
+    Toolpath(ComputeRequest),
+    Simulation(SimulationRequest),
+}
+
+enum WorkerResult {
+    Toolpath(ComputeResult),
+    Simulation(Result<SimulationResult, String>),
+}
+
 pub struct ComputeManager {
-    request_tx: mpsc::Sender<ComputeRequest>,
-    result_rx: mpsc::Receiver<ComputeResult>,
+    request_tx: mpsc::Sender<WorkerRequest>,
+    result_rx: mpsc::Receiver<WorkerResult>,
 }
 
 impl ComputeManager {
     pub fn new() -> Self {
-        let (request_tx, request_rx) = mpsc::channel::<ComputeRequest>();
-        let (result_tx, result_rx) = mpsc::channel::<ComputeResult>();
+        let (request_tx, request_rx) = mpsc::channel::<WorkerRequest>();
+        let (result_tx, result_rx) = mpsc::channel::<WorkerResult>();
 
         std::thread::spawn(move || {
             while let Ok(req) = request_rx.recv() {
-                let result = run_compute(&req);
-                let _ = result_tx.send(ComputeResult {
-                    toolpath_id: req.toolpath_id,
-                    result,
-                });
+                match req {
+                    WorkerRequest::Toolpath(r) => {
+                        let result = run_compute(&r);
+                        let _ = result_tx.send(WorkerResult::Toolpath(ComputeResult {
+                            toolpath_id: r.toolpath_id,
+                            result,
+                        }));
+                    }
+                    WorkerRequest::Simulation(r) => {
+                        let result = run_simulation(&r);
+                        let _ = result_tx.send(WorkerResult::Simulation(result));
+                    }
+                }
             }
         });
 
@@ -67,16 +101,38 @@ impl ComputeManager {
     }
 
     pub fn submit(&self, request: ComputeRequest) {
-        let _ = self.request_tx.send(request);
+        let _ = self.request_tx.send(WorkerRequest::Toolpath(request));
     }
 
-    pub fn drain_results(&self) -> Vec<ComputeResult> {
-        let mut results = Vec::new();
-        while let Ok(r) = self.result_rx.try_recv() {
-            results.push(r);
-        }
-        results
+    pub fn submit_simulation(&self, request: SimulationRequest) {
+        let _ = self.request_tx.send(WorkerRequest::Simulation(request));
     }
+
+    pub fn drain_results(&self) -> (Vec<ComputeResult>, Vec<Result<SimulationResult, String>>) {
+        let mut tp_results = Vec::new();
+        let mut sim_results = Vec::new();
+        while let Ok(r) = self.result_rx.try_recv() {
+            match r {
+                WorkerResult::Toolpath(r) => tp_results.push(r),
+                WorkerResult::Simulation(r) => sim_results.push(r),
+            }
+        }
+        (tp_results, sim_results)
+    }
+}
+
+fn run_simulation(req: &SimulationRequest) -> Result<SimulationResult, String> {
+    let mut heightmap = Heightmap::from_bounds(&req.stock_bbox, Some(req.stock_top_z), req.resolution);
+
+    let mut total_moves = 0;
+    for (toolpath, tool_config) in &req.toolpaths {
+        let cutter = build_cutter(tool_config);
+        simulate_toolpath(toolpath, cutter.as_ref(), &mut heightmap);
+        total_moves += toolpath.moves.len();
+    }
+
+    let mesh = heightmap_to_mesh(&heightmap);
+    Ok(SimulationResult { mesh, total_moves })
 }
 
 fn build_cutter(tool: &ToolConfig) -> Box<dyn MillingCutter> {

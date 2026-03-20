@@ -25,6 +25,17 @@ pub fn draw(ctx: &egui::Context, _state: &AppState, events: &mut Vec<AppEvent>) 
                 }
             });
 
+            ui.menu_button("Simulation", |ui| {
+                if ui.button("Run Simulation").clicked() {
+                    ui.close_menu();
+                    events.push(AppEvent::RunSimulation);
+                }
+                if ui.button("Reset Simulation").clicked() {
+                    ui.close_menu();
+                    events.push(AppEvent::ResetSimulation);
+                }
+            });
+
             ui.menu_button("View", |ui| {
                 if ui.button("Reset View").clicked() {
                     ui.close_menu();

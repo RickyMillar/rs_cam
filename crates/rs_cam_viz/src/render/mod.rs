@@ -3,6 +3,7 @@ pub mod mesh_render;
 pub mod grid_render;
 pub mod stock_render;
 pub mod toolpath_render;
+pub mod sim_render;
 
 use egui_wgpu::wgpu;
 
@@ -10,6 +11,7 @@ use mesh_render::{MeshGpuData, MeshVertex};
 use grid_render::GridGpuData;
 use stock_render::StockGpuData;
 use toolpath_render::ToolpathGpuData;
+use sim_render::SimMeshGpuData;
 
 /// GPU uniform data for mesh rendering (Phong shading).
 #[repr(C)]
@@ -70,6 +72,7 @@ pub struct RenderResources {
     pub grid_data: GridGpuData,
     pub stock_data: Option<StockGpuData>,
     pub toolpath_data: Vec<ToolpathGpuData>,
+    pub sim_mesh_data: Option<SimMeshGpuData>,
 }
 
 impl RenderResources {
@@ -337,6 +340,7 @@ impl RenderResources {
             grid_data,
             stock_data: None,
             toolpath_data: Vec::new(),
+            sim_mesh_data: None,
         }
     }
 
@@ -414,6 +418,7 @@ pub struct ViewportCallback {
     pub has_mesh: bool,
     pub show_grid: bool,
     pub show_stock: bool,
+    pub show_sim_mesh: bool,
     pub viewport_width: u32,
     pub viewport_height: u32,
 }
@@ -503,16 +508,21 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 }
             }
 
-            // Draw mesh
-            if self.has_mesh {
+            // Draw mesh (sim mesh replaces raw STL when simulation is active)
+            if self.show_sim_mesh {
+                if let Some(sim) = &resources.sim_mesh_data {
+                    pass.set_pipeline(&resources.mesh_pipeline);
+                    pass.set_bind_group(0, &resources.mesh_bind_group, &[]);
+                    pass.set_vertex_buffer(0, sim.vertex_buffer.slice(..));
+                    pass.set_index_buffer(sim.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..sim.index_count, 0, 0..1);
+                }
+            } else if self.has_mesh {
                 if let Some(mesh) = &resources.mesh_data {
                     pass.set_pipeline(&resources.mesh_pipeline);
                     pass.set_bind_group(0, &resources.mesh_bind_group, &[]);
                     pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                    pass.set_index_buffer(
-                        mesh.index_buffer.slice(..),
-                        wgpu::IndexFormat::Uint32,
-                    );
+                    pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                     pass.draw_indexed(0..mesh.index_count, 0, 0..1);
                 }
             }

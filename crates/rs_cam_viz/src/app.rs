@@ -1,8 +1,11 @@
+use std::sync::Arc;
+
 use crate::compute::ComputeManager;
-use crate::compute::worker::ComputeRequest;
+use crate::compute::worker::{ComputeRequest, SimulationRequest};
 use crate::io::import;
 use crate::render::camera::OrbitCamera;
 use crate::render::mesh_render::MeshGpuData;
+use crate::render::sim_render::SimMeshGpuData;
 use crate::render::stock_render::StockGpuData;
 use crate::render::toolpath_render::ToolpathGpuData;
 use crate::render::{LineUniforms, MeshUniforms, RenderResources, ViewportCallback};
@@ -164,6 +167,35 @@ impl RsCamApp {
                         self.pending_upload = true;
                     }
                 }
+                AppEvent::RunSimulation => {
+                    // Collect all enabled toolpaths with results
+                    let toolpaths: Vec<_> = self.state.job.toolpaths.iter()
+                        .filter(|tp| tp.enabled)
+                        .filter_map(|tp| {
+                            let result = tp.result.as_ref()?;
+                            let tool = self.state.job.tools.iter().find(|t| t.id == tp.tool_id)?.clone();
+                            Some((Arc::clone(&result.toolpath), tool))
+                        })
+                        .collect();
+
+                    if toolpaths.is_empty() {
+                        tracing::warn!("No computed toolpaths to simulate");
+                    } else {
+                        let stock_bbox = self.state.job.stock.bbox();
+                        self.compute.submit_simulation(SimulationRequest {
+                            toolpaths,
+                            stock_bbox,
+                            stock_top_z: stock_bbox.max.z,
+                            resolution: 0.25,
+                        });
+                        self.state.simulation.active = false; // will be set true when result arrives
+                    }
+                }
+                AppEvent::ResetSimulation => {
+                    self.state.simulation = crate::state::simulation::SimulationState::new();
+                    // Sim mesh will be cleared on next upload
+                    self.pending_upload = true;
+                }
                 AppEvent::ExportGcode => {
                     match crate::io::export::export_gcode(&self.state.job) {
                         Ok(gcode) => {
@@ -242,8 +274,10 @@ impl RsCamApp {
         });
     }
 
-    fn drain_compute_results(&mut self) {
-        for result in self.compute.drain_results() {
+    fn drain_compute_results(&mut self, frame: &mut eframe::Frame) {
+        let (tp_results, sim_results) = self.compute.drain_results();
+
+        for result in tp_results {
             if let Some(tp) = self
                 .state
                 .job
@@ -262,6 +296,27 @@ impl RsCamApp {
                 }
             }
             self.pending_upload = true;
+        }
+
+        for result in sim_results {
+            match result {
+                Ok(sim) => {
+                    self.state.simulation.active = true;
+                    self.state.simulation.total_moves = sim.total_moves;
+                    self.state.simulation.current_move = sim.total_moves;
+                    // Upload sim mesh to GPU
+                    if let Some(rs) = frame.wgpu_render_state() {
+                        let mut renderer = rs.renderer.write();
+                        let resources: &mut RenderResources =
+                            renderer.callback_resources.get_mut().unwrap();
+                        resources.sim_mesh_data =
+                            Some(SimMeshGpuData::from_heightmap_mesh(&rs.device, &sim.mesh));
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Simulation failed: {}", e);
+                }
+            }
         }
     }
 
@@ -285,6 +340,11 @@ impl RsCamApp {
         let stock_bbox = self.state.job.stock.bbox();
         resources.stock_data = Some(StockGpuData::from_bbox(&render_state.device, &stock_bbox));
 
+        // Clear sim mesh if simulation was reset
+        if !self.state.simulation.active {
+            resources.sim_mesh_data = None;
+        }
+
         // Upload toolpath line data
         resources.toolpath_data.clear();
         for tp in &self.state.job.toolpaths {
@@ -300,7 +360,7 @@ impl RsCamApp {
     }
 
     fn draw_viewport(&mut self, ui: &mut egui::Ui) {
-        crate::ui::viewport_overlay::draw(ui, &mut self.events);
+        crate::ui::viewport_overlay::draw(ui, &self.state.simulation, &mut self.events);
 
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
@@ -344,6 +404,7 @@ impl RsCamApp {
             show_grid: self.state.viewport.show_grid,
             show_stock: self.state.viewport.show_stock
                 && self.state.job.models.iter().any(|m| m.mesh.is_some()),
+            show_sim_mesh: self.state.simulation.active,
             viewport_width: (rect.width() * ppp) as u32,
             viewport_height: (rect.height() * ppp) as u32,
         };
@@ -356,7 +417,7 @@ impl RsCamApp {
 impl eframe::App for RsCamApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // Drain compute results
-        self.drain_compute_results();
+        self.drain_compute_results(frame);
 
         // Upload pending GPU data
         if self.pending_upload {
