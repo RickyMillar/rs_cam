@@ -1,9 +1,11 @@
+pub mod history;
 pub mod job;
 pub mod selection;
 pub mod simulation;
 pub mod toolpath;
 pub mod viewport;
 
+use history::UndoHistory;
 use job::JobState;
 use selection::Selection;
 use simulation::SimulationState;
@@ -15,6 +17,7 @@ pub struct AppState {
     pub selection: Selection,
     pub viewport: ViewportState,
     pub simulation: SimulationState,
+    pub history: UndoHistory,
 }
 
 impl AppState {
@@ -24,6 +27,7 @@ impl AppState {
             selection: Selection::None,
             viewport: ViewportState::new(),
             simulation: SimulationState::new(),
+            history: UndoHistory::new(),
         }
     }
 }

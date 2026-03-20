@@ -2,6 +2,24 @@ use super::AppEvent;
 use crate::state::AppState;
 
 pub fn draw(ctx: &egui::Context, _state: &AppState, events: &mut Vec<AppEvent>) {
+    // Keyboard shortcuts
+    let modifiers = ctx.input(|i| i.modifiers);
+    ctx.input(|i| {
+        if modifiers.ctrl && i.key_pressed(egui::Key::Z) {
+            if modifiers.shift {
+                events.push(AppEvent::Redo);
+            } else {
+                events.push(AppEvent::Undo);
+            }
+        }
+        if modifiers.ctrl && i.key_pressed(egui::Key::S) {
+            events.push(AppEvent::SaveJob);
+        }
+        if modifiers.ctrl && modifiers.shift && i.key_pressed(egui::Key::E) {
+            events.push(AppEvent::ExportGcode);
+        }
+    });
+
     egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
         egui::menu::bar(ui, |ui| {
             ui.menu_button("File", |ui| {
@@ -14,14 +32,55 @@ pub fn draw(ctx: &egui::Context, _state: &AppState, events: &mut Vec<AppEvent>) 
                         events.push(AppEvent::ImportStl(path));
                     }
                 }
+                if ui.button("Import SVG...").clicked() {
+                    ui.close_menu();
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("SVG Files", &["svg", "SVG"])
+                        .pick_file()
+                    {
+                        events.push(AppEvent::ImportSvg(path));
+                    }
+                }
+                if ui.button("Import DXF...").clicked() {
+                    ui.close_menu();
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("DXF Files", &["dxf", "DXF"])
+                        .pick_file()
+                    {
+                        events.push(AppEvent::ImportDxf(path));
+                    }
+                }
                 ui.separator();
-                if ui.button("Export G-code...").clicked() {
+                if ui.add(egui::Button::new("Save Job  Ctrl+S")).clicked() {
+                    ui.close_menu();
+                    events.push(AppEvent::SaveJob);
+                }
+                ui.separator();
+                if ui.add(egui::Button::new("Export G-code...  Ctrl+Shift+E")).clicked() {
                     ui.close_menu();
                     events.push(AppEvent::ExportGcode);
                 }
                 ui.separator();
                 if ui.button("Quit").clicked() {
                     events.push(AppEvent::Quit);
+                }
+            });
+
+            ui.menu_button("Edit", |ui| {
+                if ui.add(egui::Button::new("Undo  Ctrl+Z")).clicked() {
+                    ui.close_menu();
+                    events.push(AppEvent::Undo);
+                }
+                if ui.add(egui::Button::new("Redo  Ctrl+Shift+Z")).clicked() {
+                    ui.close_menu();
+                    events.push(AppEvent::Redo);
+                }
+            });
+
+            ui.menu_button("Toolpath", |ui| {
+                if ui.button("Generate All").clicked() {
+                    ui.close_menu();
+                    events.push(AppEvent::GenerateAll);
                 }
             });
 
@@ -34,6 +93,11 @@ pub fn draw(ctx: &egui::Context, _state: &AppState, events: &mut Vec<AppEvent>) 
                     ui.close_menu();
                     events.push(AppEvent::ResetSimulation);
                 }
+                ui.separator();
+                if ui.button("Check Collisions").clicked() {
+                    ui.close_menu();
+                    events.push(AppEvent::RunCollisionCheck);
+                }
             });
 
             ui.menu_button("View", |ui| {
@@ -44,27 +108,19 @@ pub fn draw(ctx: &egui::Context, _state: &AppState, events: &mut Vec<AppEvent>) 
                 ui.separator();
                 if ui.button("Top").clicked() {
                     ui.close_menu();
-                    events.push(AppEvent::SetViewPreset(
-                        crate::render::camera::ViewPreset::Top,
-                    ));
+                    events.push(AppEvent::SetViewPreset(crate::render::camera::ViewPreset::Top));
                 }
                 if ui.button("Front").clicked() {
                     ui.close_menu();
-                    events.push(AppEvent::SetViewPreset(
-                        crate::render::camera::ViewPreset::Front,
-                    ));
+                    events.push(AppEvent::SetViewPreset(crate::render::camera::ViewPreset::Front));
                 }
                 if ui.button("Right").clicked() {
                     ui.close_menu();
-                    events.push(AppEvent::SetViewPreset(
-                        crate::render::camera::ViewPreset::Right,
-                    ));
+                    events.push(AppEvent::SetViewPreset(crate::render::camera::ViewPreset::Right));
                 }
                 if ui.button("Isometric").clicked() {
                     ui.close_menu();
-                    events.push(AppEvent::SetViewPreset(
-                        crate::render::camera::ViewPreset::Isometric,
-                    ));
+                    events.push(AppEvent::SetViewPreset(crate::render::camera::ViewPreset::Isometric));
                 }
             });
         });

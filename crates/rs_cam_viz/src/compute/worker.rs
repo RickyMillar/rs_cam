@@ -2,6 +2,7 @@ use std::sync::mpsc;
 use std::sync::Arc;
 
 use rs_cam_core::adaptive::{AdaptiveParams, adaptive_toolpath};
+use rs_cam_core::collision::{CollisionReport, ToolAssembly, check_collisions_interpolated};
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::simulation::{Heightmap, HeightmapMesh, heightmap_to_mesh, simulate_toolpath};
 use rs_cam_core::adaptive3d::{Adaptive3dParams, EntryStyle3d, adaptive_3d_toolpath};
@@ -59,14 +60,29 @@ pub struct SimulationResult {
     pub total_moves: usize,
 }
 
+/// Request to run collision detection on a toolpath.
+pub struct CollisionRequest {
+    pub toolpath: Arc<Toolpath>,
+    pub tool: ToolConfig,
+    pub mesh: Arc<TriangleMesh>,
+}
+
+/// Collision detection result: list of collision positions.
+pub struct CollisionResult {
+    pub report: CollisionReport,
+    pub positions: Vec<[f32; 3]>,
+}
+
 enum WorkerRequest {
     Toolpath(ComputeRequest),
     Simulation(SimulationRequest),
+    Collision(CollisionRequest),
 }
 
 enum WorkerResult {
     Toolpath(ComputeResult),
     Simulation(Result<SimulationResult, String>),
+    Collision(Result<CollisionResult, String>),
 }
 
 pub struct ComputeManager {
@@ -93,6 +109,10 @@ impl ComputeManager {
                         let result = run_simulation(&r);
                         let _ = result_tx.send(WorkerResult::Simulation(result));
                     }
+                    WorkerRequest::Collision(r) => {
+                        let result = run_collision_check(&r);
+                        let _ = result_tx.send(WorkerResult::Collision(result));
+                    }
                 }
             }
         });
@@ -108,16 +128,28 @@ impl ComputeManager {
         let _ = self.request_tx.send(WorkerRequest::Simulation(request));
     }
 
-    pub fn drain_results(&self) -> (Vec<ComputeResult>, Vec<Result<SimulationResult, String>>) {
+    pub fn submit_collision(&self, request: CollisionRequest) {
+        let _ = self.request_tx.send(WorkerRequest::Collision(request));
+    }
+
+    pub fn drain_results(
+        &self,
+    ) -> (
+        Vec<ComputeResult>,
+        Vec<Result<SimulationResult, String>>,
+        Vec<Result<CollisionResult, String>>,
+    ) {
         let mut tp_results = Vec::new();
         let mut sim_results = Vec::new();
+        let mut col_results = Vec::new();
         while let Ok(r) = self.result_rx.try_recv() {
             match r {
                 WorkerResult::Toolpath(r) => tp_results.push(r),
                 WorkerResult::Simulation(r) => sim_results.push(r),
+                WorkerResult::Collision(r) => col_results.push(r),
             }
         }
-        (tp_results, sim_results)
+        (tp_results, sim_results, col_results)
     }
 }
 
@@ -412,6 +444,25 @@ fn make_depth(depth: f64, per_pass: f64) -> DepthStepping {
         start_z: 0.0, final_z: -depth.abs(), max_step_down: per_pass,
         distribution: DepthDistribution::Even, finish_allowance: 0.0,
     }
+}
+
+fn run_collision_check(req: &CollisionRequest) -> Result<CollisionResult, String> {
+    let index = SpatialIndex::build_auto(&req.mesh);
+    let assembly = ToolAssembly {
+        cutter_radius: req.tool.diameter / 2.0,
+        cutter_length: req.tool.cutting_length,
+        shank_diameter: req.tool.shank_diameter,
+        shank_length: req.tool.shank_length,
+        holder_diameter: req.tool.holder_diameter,
+        holder_length: req.tool.stickout - req.tool.cutting_length - req.tool.shank_length,
+    };
+    let report = check_collisions_interpolated(&req.toolpath, &assembly, &req.mesh, &index, 1.0);
+    let positions: Vec<[f32; 3]> = report
+        .collisions
+        .iter()
+        .map(|c| [c.position.x as f32, c.position.y as f32, c.position.z as f32])
+        .collect();
+    Ok(CollisionResult { report, positions })
 }
 
 fn compute_stats(tp: &Toolpath) -> ToolpathStats {

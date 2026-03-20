@@ -160,8 +160,8 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     ui.add_space(8.0);
 
     // Import buttons
-    ui.horizontal(|ui| {
-        if ui.button("+ Import STL").clicked() {
+    ui.horizontal_wrapped(|ui| {
+        if ui.small_button("+ STL").clicked() {
             if let Some(path) = rfd::FileDialog::new()
                 .add_filter("STL", &["stl", "STL"])
                 .pick_file()
@@ -169,12 +169,20 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 events.push(AppEvent::ImportStl(path));
             }
         }
-        if ui.button("+ Import SVG").clicked() {
+        if ui.small_button("+ SVG").clicked() {
             if let Some(path) = rfd::FileDialog::new()
                 .add_filter("SVG", &["svg", "SVG"])
                 .pick_file()
             {
                 events.push(AppEvent::ImportSvg(path));
+            }
+        }
+        if ui.small_button("+ DXF").clicked() {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("DXF", &["dxf", "DXF"])
+                .pick_file()
+            {
+                events.push(AppEvent::ImportDxf(path));
             }
         }
     });

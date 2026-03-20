@@ -12,21 +12,41 @@ use std::path::PathBuf;
 /// Events emitted by UI components, processed after the UI pass.
 #[derive(Debug)]
 pub enum AppEvent {
+    // File
     ImportStl(PathBuf),
     ImportSvg(PathBuf),
+    ImportDxf(PathBuf),
+    ExportGcode,
+    SaveJob,
+
+    // Selection / view
     Select(crate::state::selection::Selection),
     SetViewPreset(ViewPreset),
     ResetView,
+
+    // Tools
     AddTool(ToolType),
     DuplicateTool(ToolId),
     RemoveTool(ToolId),
+
+    // Toolpaths
     AddToolpath(OperationType),
     RemoveToolpath(ToolpathId),
     GenerateToolpath(ToolpathId),
+    GenerateAll,
     ToggleToolpathVisibility(ToolpathId),
+
+    // Simulation
     RunSimulation,
     ResetSimulation,
-    ExportGcode,
+
+    // Collision
+    RunCollisionCheck,
+
+    // Edit
     StockChanged,
+    Undo,
+    Redo,
+
     Quit,
 }

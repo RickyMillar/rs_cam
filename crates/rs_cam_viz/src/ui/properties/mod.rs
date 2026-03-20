@@ -17,7 +17,25 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             );
         }
         Selection::Stock => {
+            // Capture snapshot for undo before editing
+            if state.history.stock_snapshot.is_none() {
+                state.history.stock_snapshot = Some(state.job.stock.clone());
+            }
             stock::draw(ui, &mut state.job.stock, events);
+            // If an edit just finished (DragValue released), push undo
+            if events.iter().any(|e| matches!(e, AppEvent::StockChanged)) {
+                if let Some(old) = state.history.stock_snapshot.take() {
+                    if old.x != state.job.stock.x || old.y != state.job.stock.y || old.z != state.job.stock.z
+                        || old.origin_x != state.job.stock.origin_x || old.origin_y != state.job.stock.origin_y
+                        || old.origin_z != state.job.stock.origin_z || old.padding != state.job.stock.padding
+                    {
+                        state.history.push(crate::state::history::UndoAction::StockChange {
+                            old,
+                            new: state.job.stock.clone(),
+                        });
+                    }
+                }
+            }
         }
         Selection::PostProcessor => {
             post::draw(ui, &mut state.job.post);

@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use crate::compute::ComputeManager;
-use crate::compute::worker::{ComputeRequest, SimulationRequest};
+use crate::compute::worker::{CollisionRequest, ComputeRequest, SimulationRequest};
+use crate::state::history::UndoAction;
 use crate::io::import;
 use crate::render::camera::OrbitCamera;
 use crate::render::mesh_render::MeshGpuData;
@@ -22,6 +23,8 @@ pub struct RsCamApp {
     compute: ComputeManager,
     /// Flag: need to upload mesh/stock/toolpath to GPU on next frame.
     pending_upload: bool,
+    /// Collision marker positions (from last collision check).
+    collision_positions: Vec<[f32; 3]>,
 }
 
 impl RsCamApp {
@@ -44,6 +47,7 @@ impl RsCamApp {
             events: Vec::new(),
             compute: ComputeManager::new(),
             pending_upload: false,
+            collision_positions: Vec::new(),
         }
     }
 
@@ -83,6 +87,17 @@ impl RsCamApp {
                             self.state.job.dirty = true;
                         }
                         Err(e) => tracing::error!("SVG import failed: {}", e),
+                    }
+                }
+                AppEvent::ImportDxf(path) => {
+                    let id = self.state.job.next_model_id();
+                    match import::import_dxf(&path, id) {
+                        Ok(model) => {
+                            self.state.selection = Selection::Model(model.id);
+                            self.state.job.models.push(model);
+                            self.state.job.dirty = true;
+                        }
+                        Err(e) => tracing::error!("DXF import failed: {}", e),
                     }
                 }
                 AppEvent::Select(sel) => {
@@ -214,6 +229,52 @@ impl RsCamApp {
                         Err(e) => tracing::error!("Export failed: {}", e),
                     }
                 }
+                AppEvent::GenerateAll => {
+                    let ids: Vec<_> = self.state.job.toolpaths.iter().map(|tp| tp.id).collect();
+                    for id in ids {
+                        self.submit_toolpath_compute(id);
+                    }
+                }
+                AppEvent::RunCollisionCheck => {
+                    // Run collision check on the first enabled toolpath with a result and an STL model
+                    let tp_data = self.state.job.toolpaths.iter().find_map(|tp| {
+                        let result = tp.result.as_ref()?;
+                        let tool = self.state.job.tools.iter().find(|t| t.id == tp.tool_id)?.clone();
+                        let mesh = self.state.job.models.iter()
+                            .find(|m| m.id == tp.model_id)
+                            .and_then(|m| m.mesh.clone())?;
+                        Some((Arc::clone(&result.toolpath), tool, mesh))
+                    });
+                    if let Some((toolpath, tool, mesh)) = tp_data {
+                        self.compute.submit_collision(CollisionRequest { toolpath, tool, mesh });
+                    } else {
+                        tracing::warn!("No toolpath with STL mesh available for collision check");
+                    }
+                }
+                AppEvent::SaveJob => {
+                    // TOML save - placeholder: just log for now
+                    tracing::info!("Save job: not yet implemented (TOML serialization)");
+                }
+                AppEvent::Undo => {
+                    if let Some(action) = self.state.history.undo() {
+                        match action {
+                            UndoAction::StockChange { old, .. } => {
+                                self.state.job.stock = old;
+                                self.pending_upload = true;
+                            }
+                        }
+                    }
+                }
+                AppEvent::Redo => {
+                    if let Some(action) = self.state.history.redo() {
+                        match action {
+                            UndoAction::StockChange { new, .. } => {
+                                self.state.job.stock = new;
+                                self.pending_upload = true;
+                            }
+                        }
+                    }
+                }
                 AppEvent::StockChanged => {
                     self.pending_upload = true;
                     self.state.job.dirty = true;
@@ -275,7 +336,7 @@ impl RsCamApp {
     }
 
     fn drain_compute_results(&mut self, frame: &mut eframe::Frame) {
-        let (tp_results, sim_results) = self.compute.drain_results();
+        let (tp_results, sim_results, col_results) = self.compute.drain_results();
 
         for result in tp_results {
             if let Some(tp) = self
@@ -316,6 +377,26 @@ impl RsCamApp {
                 Err(e) => {
                     tracing::error!("Simulation failed: {}", e);
                 }
+            }
+        }
+
+        for result in col_results {
+            match result {
+                Ok(col) => {
+                    let n = col.report.collisions.len();
+                    if n == 0 {
+                        tracing::info!("No collisions detected");
+                    } else {
+                        tracing::warn!(
+                            "{} collisions detected, min safe stickout: {:.1} mm",
+                            n,
+                            col.report.min_safe_stickout
+                        );
+                    }
+                    // Store collision positions for rendering (future: render as red markers)
+                    self.collision_positions = col.positions;
+                }
+                Err(e) => tracing::error!("Collision check failed: {}", e),
             }
         }
     }
@@ -451,8 +532,9 @@ impl eframe::App for RsCamApp {
             });
 
         // Status bar
+        let col_count = self.collision_positions.len();
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
-            crate::ui::status_bar::draw(ui, &self.state);
+            crate::ui::status_bar::draw(ui, &self.state, col_count);
         });
 
         // Central panel: 3D viewport
