@@ -31,7 +31,11 @@ pub enum AppEvent {
 
     // Toolpaths
     AddToolpath(OperationType),
+    DuplicateToolpath(ToolpathId),
     RemoveToolpath(ToolpathId),
+    MoveToolpathUp(ToolpathId),
+    MoveToolpathDown(ToolpathId),
+    ToggleToolpathEnabled(ToolpathId),
     GenerateToolpath(ToolpathId),
     GenerateAll,
     ToggleToolpathVisibility(ToolpathId),

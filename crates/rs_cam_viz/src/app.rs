@@ -166,6 +166,41 @@ impl RsCamApp {
                     self.state.job.toolpaths.push(entry);
                     self.state.job.dirty = true;
                 }
+                AppEvent::DuplicateToolpath(tp_id) => {
+                    let src_data = self.state.job.toolpaths.iter().find(|t| t.id == tp_id).map(|src| {
+                        (src.name.clone(), src.enabled, src.visible, src.tool_id,
+                         src.model_id, src.operation.clone(), src.dressups.clone())
+                    });
+                    if let Some((name, enabled, visible, tool_id, model_id, operation, dressups)) = src_data {
+                        let new_id = self.state.job.next_toolpath_id();
+                        self.state.selection = Selection::Toolpath(new_id);
+                        self.state.job.toolpaths.push(ToolpathEntry {
+                            id: new_id, name: format!("{} (copy)", name),
+                            enabled, visible, tool_id, model_id, operation, dressups,
+                            status: ComputeStatus::Pending, result: None,
+                        });
+                        self.state.job.dirty = true;
+                    }
+                }
+                AppEvent::MoveToolpathUp(tp_id) => {
+                    if let Some(idx) = self.state.job.toolpaths.iter().position(|t| t.id == tp_id) {
+                        if idx > 0 {
+                            self.state.job.toolpaths.swap(idx, idx - 1);
+                        }
+                    }
+                }
+                AppEvent::MoveToolpathDown(tp_id) => {
+                    if let Some(idx) = self.state.job.toolpaths.iter().position(|t| t.id == tp_id) {
+                        if idx + 1 < self.state.job.toolpaths.len() {
+                            self.state.job.toolpaths.swap(idx, idx + 1);
+                        }
+                    }
+                }
+                AppEvent::ToggleToolpathEnabled(tp_id) => {
+                    if let Some(tp) = self.state.job.toolpaths.iter_mut().find(|t| t.id == tp_id) {
+                        tp.enabled = !tp.enabled;
+                    }
+                }
                 AppEvent::RemoveToolpath(tp_id) => {
                     self.state.job.toolpaths.retain(|tp| tp.id != tp_id);
                     if self.state.selection == Selection::Toolpath(tp_id) {
@@ -426,6 +461,35 @@ impl RsCamApp {
         // Clear sim mesh if simulation was reset
         if !self.state.simulation.active {
             resources.sim_mesh_data = None;
+        }
+
+        // Upload collision markers as red crosses
+        if !self.collision_positions.is_empty() {
+            use crate::render::LineVertex;
+            let s = 1.0f32; // marker size in mm
+            let color = [0.95, 0.15, 0.15];
+            let mut verts = Vec::new();
+            for p in &self.collision_positions {
+                // X cross
+                verts.push(LineVertex { position: [p[0] - s, p[1], p[2]], color });
+                verts.push(LineVertex { position: [p[0] + s, p[1], p[2]], color });
+                verts.push(LineVertex { position: [p[0], p[1] - s, p[2]], color });
+                verts.push(LineVertex { position: [p[0], p[1] + s, p[2]], color });
+                verts.push(LineVertex { position: [p[0], p[1], p[2] - s], color });
+                verts.push(LineVertex { position: [p[0], p[1], p[2] + s], color });
+            }
+            use egui_wgpu::wgpu::util::DeviceExt;
+            resources.collision_vertex_buffer = Some(
+                render_state.device.create_buffer_init(&egui_wgpu::wgpu::util::BufferInitDescriptor {
+                    label: Some("collision_markers"),
+                    contents: bytemuck::cast_slice(&verts),
+                    usage: egui_wgpu::wgpu::BufferUsages::VERTEX,
+                }),
+            );
+            resources.collision_vertex_count = verts.len() as u32;
+        } else {
+            resources.collision_vertex_buffer = None;
+            resources.collision_vertex_count = 0;
         }
 
         // Upload toolpath line data

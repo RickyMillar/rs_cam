@@ -158,9 +158,19 @@ fn draw_toolpath_panel(
 
     ui.add_space(12.0);
 
+    // Validation
+    let validation_errors = validate_toolpath(entry, tools);
+    if !validation_errors.is_empty() {
+        ui.add_space(4.0);
+        for err in &validation_errors {
+            ui.label(egui::RichText::new(err).color(egui::Color32::from_rgb(220, 150, 60)).small());
+        }
+    }
+
     // Generate button + status
+    let can_generate = !tools.is_empty() && validation_errors.is_empty();
     ui.horizontal(|ui| {
-        if ui.add_enabled(!tools.is_empty(), egui::Button::new("Generate")).clicked() {
+        if ui.add_enabled(can_generate, egui::Button::new("Generate")).clicked() {
             events.push(AppEvent::GenerateToolpath(entry.id));
         }
         match &entry.status {
@@ -455,6 +465,64 @@ fn draw_ramp_finish_params(ui: &mut egui::Ui, cfg: &mut RampFinishConfig) {
         dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
         dv(ui, "Tolerance:", &mut cfg.tolerance, " mm", 0.01, 0.01..=1.0);
     });
+}
+
+// ── Validation ───────────────────────────────────────────────────────────
+
+fn validate_toolpath(
+    entry: &ToolpathEntry,
+    tools: &[(crate::state::job::ToolId, String, f64)],
+) -> Vec<String> {
+    let mut errs = Vec::new();
+
+    let tool = tools.iter().find(|(id, _, _)| *id == entry.tool_id);
+    if tool.is_none() {
+        errs.push("No tool selected".into());
+        return errs;
+    }
+    let (_, _, tool_diameter) = tool.unwrap();
+
+    match &entry.operation {
+        OperationConfig::Pocket(c) => {
+            if c.stepover >= *tool_diameter {
+                errs.push("Stepover must be less than tool diameter".into());
+            }
+        }
+        OperationConfig::Adaptive(c) => {
+            if c.stepover >= *tool_diameter {
+                errs.push("Stepover must be less than tool diameter".into());
+            }
+        }
+        OperationConfig::VCarve(_) => {
+            let is_vbit = tools.iter().find(|(id, _, _)| *id == entry.tool_id)
+                .map(|(_, name, _)| name.contains("V-Bit")).unwrap_or(false);
+            if !is_vbit {
+                errs.push("VCarve requires a V-Bit tool".into());
+            }
+        }
+        OperationConfig::Inlay(_) => {
+            let is_vbit = tools.iter().find(|(id, _, _)| *id == entry.tool_id)
+                .map(|(_, name, _)| name.contains("V-Bit")).unwrap_or(false);
+            if !is_vbit {
+                errs.push("Inlay requires a V-Bit tool".into());
+            }
+        }
+        OperationConfig::Rest(c) => {
+            if c.prev_tool_id.is_none() {
+                errs.push("Previous tool not selected".into());
+            } else if let Some(prev) = c.prev_tool_id {
+                let prev_d = tools.iter().find(|(id, _, _)| *id == prev).map(|(_, _, d)| *d);
+                if let Some(pd) = prev_d {
+                    if pd <= *tool_diameter {
+                        errs.push("Previous tool must be larger than current tool".into());
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
+    errs
 }
 
 // ── Dressup configuration ────────────────────────────────────────────────

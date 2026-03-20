@@ -73,6 +73,8 @@ pub struct RenderResources {
     pub stock_data: Option<StockGpuData>,
     pub toolpath_data: Vec<ToolpathGpuData>,
     pub sim_mesh_data: Option<SimMeshGpuData>,
+    pub collision_vertex_buffer: Option<wgpu::Buffer>,
+    pub collision_vertex_count: u32,
 }
 
 impl RenderResources {
@@ -341,6 +343,8 @@ impl RenderResources {
             stock_data: None,
             toolpath_data: Vec::new(),
             sim_mesh_data: None,
+            collision_vertex_buffer: None,
+            collision_vertex_count: 0,
         }
     }
 
@@ -524,6 +528,16 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                     pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                     pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                     pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                }
+            }
+
+            // Draw collision markers
+            if resources.collision_vertex_count > 0 {
+                if let Some(buf) = &resources.collision_vertex_buffer {
+                    pass.set_pipeline(&resources.line_pipeline);
+                    pass.set_bind_group(0, &resources.line_bind_group, &[]);
+                    pass.set_vertex_buffer(0, buf.slice(..));
+                    pass.draw(0..resources.collision_vertex_count, 0..1);
                 }
             }
 

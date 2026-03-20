@@ -130,6 +130,25 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     events.push(AppEvent::ToggleToolpathVisibility(tp.id));
                     ui.close_menu();
                 }
+                let en_label = if tp.enabled { "Disable" } else { "Enable" };
+                if ui.button(en_label).clicked() {
+                    events.push(AppEvent::ToggleToolpathEnabled(tp.id));
+                    ui.close_menu();
+                }
+                if ui.button("Duplicate").clicked() {
+                    events.push(AppEvent::DuplicateToolpath(tp.id));
+                    ui.close_menu();
+                }
+                ui.separator();
+                if ui.button("Move Up").clicked() {
+                    events.push(AppEvent::MoveToolpathUp(tp.id));
+                    ui.close_menu();
+                }
+                if ui.button("Move Down").clicked() {
+                    events.push(AppEvent::MoveToolpathDown(tp.id));
+                    ui.close_menu();
+                }
+                ui.separator();
                 if ui.button("Delete").clicked() {
                     events.push(AppEvent::RemoveToolpath(tp.id));
                     ui.close_menu();
