@@ -25,6 +25,8 @@ pub struct RsCamApp {
     pending_upload: bool,
     /// Collision marker positions (from last collision check).
     collision_positions: Vec<[f32; 3]>,
+    /// When the current compute started (for elapsed time display).
+    compute_start: Option<std::time::Instant>,
 }
 
 impl RsCamApp {
@@ -48,6 +50,7 @@ impl RsCamApp {
             compute: ComputeManager::new(),
             pending_upload: false,
             collision_positions: Vec::new(),
+            compute_start: None,
         }
     }
 
@@ -461,6 +464,7 @@ impl RsCamApp {
 
         tp.status = ComputeStatus::Computing(0.0);
         tp.result = None;
+        self.compute_start = Some(std::time::Instant::now());
 
         self.compute.submit(ComputeRequest {
             toolpath_id: tp_id,
@@ -477,6 +481,9 @@ impl RsCamApp {
     fn drain_compute_results(&mut self, frame: &mut eframe::Frame) {
         let (tp_results, sim_results, col_results) = self.compute.drain_results();
 
+        if !tp_results.is_empty() {
+            self.compute_start = None;
+        }
         for result in tp_results {
             if let Some(tp) = self
                 .state
@@ -609,7 +616,20 @@ impl RsCamApp {
     }
 
     fn draw_viewport(&mut self, ui: &mut egui::Ui) {
-        crate::ui::viewport_overlay::draw(ui, &self.state.simulation, &mut self.state.viewport, &mut self.events);
+        // Compute elapsed time for progress display
+        let compute_elapsed = if self.state.job.toolpaths.iter().any(|tp| matches!(tp.status, ComputeStatus::Computing(_))) {
+            Some(self.compute_start.map(|t| t.elapsed().as_secs_f32()).unwrap_or(0.0))
+        } else {
+            None
+        };
+
+        crate::ui::viewport_overlay::draw(
+            ui,
+            &mut self.state.simulation,
+            &mut self.state.viewport,
+            compute_elapsed,
+            &mut self.events,
+        );
 
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
@@ -655,6 +675,14 @@ impl RsCamApp {
             show_stock: self.state.viewport.show_stock
                 && self.state.job.models.iter().any(|m| m.mesh.is_some()),
             show_sim_mesh: self.state.simulation.active,
+            show_cutting: self.state.viewport.show_cutting,
+            show_rapids: self.state.viewport.show_rapids,
+            show_collisions: self.state.viewport.show_collisions,
+            toolpath_move_limit: if self.state.simulation.active && self.state.simulation.current_move < self.state.simulation.total_moves {
+                Some(self.state.simulation.current_move)
+            } else {
+                None
+            },
             viewport_width: (rect.width() * ppp) as u32,
             viewport_height: (rect.height() * ppp) as u32,
         };
@@ -720,6 +748,13 @@ impl eframe::App for RsCamApp {
         // Process events after UI pass
         self.handle_events(ctx);
 
+        // Advance simulation playback
+        if self.state.simulation.playing {
+            let dt = ctx.input(|i| i.stable_dt);
+            self.state.simulation.advance(dt);
+            ctx.request_repaint();
+        }
+
         // Debounced auto-regeneration: if a 2.5D toolpath has been stale for >500ms, regenerate
         let now = std::time::Instant::now();
         let stale_ids: Vec<_> = self.state.job.toolpaths.iter()
@@ -735,14 +770,10 @@ impl eframe::App for RsCamApp {
             self.submit_toolpath_compute(id);
         }
 
-        // Keep repainting while computing
-        let computing = self
-            .state
-            .job
-            .toolpaths
-            .iter()
+        // Keep repainting while computing or playing simulation
+        let computing = self.state.job.toolpaths.iter()
             .any(|tp| matches!(tp.status, ComputeStatus::Computing(_)));
-        if computing {
+        if computing || self.state.simulation.playing {
             ctx.request_repaint();
         }
     }

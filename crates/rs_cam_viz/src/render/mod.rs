@@ -423,6 +423,11 @@ pub struct ViewportCallback {
     pub show_grid: bool,
     pub show_stock: bool,
     pub show_sim_mesh: bool,
+    pub show_cutting: bool,
+    pub show_rapids: bool,
+    pub show_collisions: bool,
+    /// If Some, only draw toolpath moves up to this index (sim scrubbing).
+    pub toolpath_move_limit: Option<usize>,
     pub viewport_width: u32,
     pub viewport_height: u32,
 }
@@ -532,7 +537,7 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             }
 
             // Draw collision markers
-            if resources.collision_vertex_count > 0 {
+            if self.show_collisions && resources.collision_vertex_count > 0 {
                 if let Some(buf) = &resources.collision_vertex_buffer {
                     pass.set_pipeline(&resources.line_pipeline);
                     pass.set_bind_group(0, &resources.line_bind_group, &[]);
@@ -541,19 +546,24 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 }
             }
 
-            // Draw toolpaths
+            // Draw toolpaths (with optional move limit for sim scrubbing)
             for tp_gpu in &resources.toolpath_data {
+                let (max_cut, max_rapid) = if let Some(limit) = self.toolpath_move_limit {
+                    tp_gpu.vertices_for_moves(limit)
+                } else {
+                    (tp_gpu.cut_vertex_count, tp_gpu.rapid_vertex_count)
+                };
+
                 pass.set_pipeline(&resources.line_pipeline);
                 pass.set_bind_group(0, &resources.line_bind_group, &[]);
-                // Cutting moves
-                if tp_gpu.cut_vertex_count > 1 {
+
+                if self.show_cutting && max_cut > 1 {
                     pass.set_vertex_buffer(0, tp_gpu.cut_vertex_buffer.slice(..));
-                    pass.draw(0..tp_gpu.cut_vertex_count, 0..1);
+                    pass.draw(0..max_cut, 0..1);
                 }
-                // Rapid moves
-                if tp_gpu.rapid_vertex_count > 1 {
+                if self.show_rapids && max_rapid > 1 {
                     pass.set_vertex_buffer(0, tp_gpu.rapid_vertex_buffer.slice(..));
-                    pass.draw(0..tp_gpu.rapid_vertex_count, 0..1);
+                    pass.draw(0..max_rapid, 0..1);
                 }
             }
         } // render pass ends
