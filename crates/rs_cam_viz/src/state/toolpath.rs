@@ -126,6 +126,138 @@ impl OperationConfig {
         }
     }
 
+    pub fn feed_rate(&self) -> f64 {
+        match self {
+            OperationConfig::Pocket(c) => c.feed_rate,
+            OperationConfig::Profile(c) => c.feed_rate,
+            OperationConfig::Adaptive(c) => c.feed_rate,
+            OperationConfig::VCarve(c) => c.feed_rate,
+            OperationConfig::Rest(c) => c.feed_rate,
+            OperationConfig::Inlay(c) => c.feed_rate,
+            OperationConfig::Zigzag(c) => c.feed_rate,
+            OperationConfig::DropCutter(c) => c.feed_rate,
+            OperationConfig::Adaptive3d(c) => c.feed_rate,
+            OperationConfig::Waterline(c) => c.feed_rate,
+            OperationConfig::Pencil(c) => c.feed_rate,
+            OperationConfig::Scallop(c) => c.feed_rate,
+            OperationConfig::SteepShallow(c) => c.feed_rate,
+            OperationConfig::RampFinish(c) => c.feed_rate,
+        }
+    }
+
+    pub fn set_feed_rate(&mut self, v: f64) {
+        match self {
+            OperationConfig::Pocket(c) => c.feed_rate = v,
+            OperationConfig::Profile(c) => c.feed_rate = v,
+            OperationConfig::Adaptive(c) => c.feed_rate = v,
+            OperationConfig::VCarve(c) => c.feed_rate = v,
+            OperationConfig::Rest(c) => c.feed_rate = v,
+            OperationConfig::Inlay(c) => c.feed_rate = v,
+            OperationConfig::Zigzag(c) => c.feed_rate = v,
+            OperationConfig::DropCutter(c) => c.feed_rate = v,
+            OperationConfig::Adaptive3d(c) => c.feed_rate = v,
+            OperationConfig::Waterline(c) => c.feed_rate = v,
+            OperationConfig::Pencil(c) => c.feed_rate = v,
+            OperationConfig::Scallop(c) => c.feed_rate = v,
+            OperationConfig::SteepShallow(c) => c.feed_rate = v,
+            OperationConfig::RampFinish(c) => c.feed_rate = v,
+        }
+    }
+
+    pub fn plunge_rate(&self) -> f64 {
+        match self {
+            OperationConfig::Pocket(c) => c.plunge_rate,
+            OperationConfig::Profile(c) => c.plunge_rate,
+            OperationConfig::Adaptive(c) => c.plunge_rate,
+            OperationConfig::VCarve(c) => c.plunge_rate,
+            OperationConfig::Rest(c) => c.plunge_rate,
+            OperationConfig::Inlay(c) => c.plunge_rate,
+            OperationConfig::Zigzag(c) => c.plunge_rate,
+            OperationConfig::DropCutter(c) => c.plunge_rate,
+            OperationConfig::Adaptive3d(c) => c.plunge_rate,
+            OperationConfig::Waterline(c) => c.plunge_rate,
+            OperationConfig::Pencil(c) => c.plunge_rate,
+            OperationConfig::Scallop(c) => c.plunge_rate,
+            OperationConfig::SteepShallow(c) => c.plunge_rate,
+            OperationConfig::RampFinish(c) => c.plunge_rate,
+        }
+    }
+
+    pub fn set_plunge_rate(&mut self, v: f64) {
+        match self {
+            OperationConfig::Pocket(c) => c.plunge_rate = v,
+            OperationConfig::Profile(c) => c.plunge_rate = v,
+            OperationConfig::Adaptive(c) => c.plunge_rate = v,
+            OperationConfig::VCarve(c) => c.plunge_rate = v,
+            OperationConfig::Rest(c) => c.plunge_rate = v,
+            OperationConfig::Inlay(c) => c.plunge_rate = v,
+            OperationConfig::Zigzag(c) => c.plunge_rate = v,
+            OperationConfig::DropCutter(c) => c.plunge_rate = v,
+            OperationConfig::Adaptive3d(c) => c.plunge_rate = v,
+            OperationConfig::Waterline(c) => c.plunge_rate = v,
+            OperationConfig::Pencil(c) => c.plunge_rate = v,
+            OperationConfig::Scallop(c) => c.plunge_rate = v,
+            OperationConfig::SteepShallow(c) => c.plunge_rate = v,
+            OperationConfig::RampFinish(c) => c.plunge_rate = v,
+        }
+    }
+
+    /// Get stepover if the operation has one. Returns None for ops without stepover.
+    pub fn stepover(&self) -> Option<f64> {
+        match self {
+            OperationConfig::Pocket(c) => Some(c.stepover),
+            OperationConfig::Adaptive(c) => Some(c.stepover),
+            OperationConfig::VCarve(c) => Some(c.stepover),
+            OperationConfig::Rest(c) => Some(c.stepover),
+            OperationConfig::Inlay(c) => Some(c.stepover),
+            OperationConfig::Zigzag(c) => Some(c.stepover),
+            OperationConfig::DropCutter(c) => Some(c.stepover),
+            OperationConfig::Adaptive3d(c) => Some(c.stepover),
+            OperationConfig::SteepShallow(c) => Some(c.stepover),
+            _ => None,
+        }
+    }
+
+    pub fn set_stepover(&mut self, v: f64) {
+        match self {
+            OperationConfig::Pocket(c) => c.stepover = v,
+            OperationConfig::Adaptive(c) => c.stepover = v,
+            OperationConfig::VCarve(c) => c.stepover = v,
+            OperationConfig::Rest(c) => c.stepover = v,
+            OperationConfig::Inlay(c) => c.stepover = v,
+            OperationConfig::Zigzag(c) => c.stepover = v,
+            OperationConfig::DropCutter(c) => c.stepover = v,
+            OperationConfig::Adaptive3d(c) => c.stepover = v,
+            OperationConfig::SteepShallow(c) => c.stepover = v,
+            _ => {}
+        }
+    }
+
+    /// Get depth_per_pass if the operation has one.
+    pub fn depth_per_pass(&self) -> Option<f64> {
+        match self {
+            OperationConfig::Pocket(c) => Some(c.depth_per_pass),
+            OperationConfig::Profile(c) => Some(c.depth_per_pass),
+            OperationConfig::Adaptive(c) => Some(c.depth_per_pass),
+            OperationConfig::Rest(c) => Some(c.depth_per_pass),
+            OperationConfig::Zigzag(c) => Some(c.depth_per_pass),
+            OperationConfig::Adaptive3d(c) => Some(c.depth_per_pass),
+            _ => None,
+        }
+    }
+
+    pub fn set_depth_per_pass(&mut self, v: f64) {
+        match self {
+            OperationConfig::Pocket(c) => c.depth_per_pass = v,
+            OperationConfig::Profile(c) => c.depth_per_pass = v,
+            OperationConfig::Adaptive(c) => c.depth_per_pass = v,
+            OperationConfig::Rest(c) => c.depth_per_pass = v,
+            OperationConfig::Zigzag(c) => c.depth_per_pass = v,
+            OperationConfig::Adaptive3d(c) => c.depth_per_pass = v,
+            _ => {}
+        }
+    }
+
     pub fn is_3d(&self) -> bool {
         matches!(
             self,

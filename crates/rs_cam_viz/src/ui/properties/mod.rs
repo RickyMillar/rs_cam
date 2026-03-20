@@ -61,9 +61,13 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // Snapshot tool/model lists to avoid borrow conflict with toolpaths
             let tools: Vec<_> = state.job.tools.iter().map(|t| (t.id, t.summary(), t.diameter)).collect();
             let models: Vec<_> = state.job.models.iter().map(|m| (m.id, m.name.clone())).collect();
+            // Snapshot tool configs for feeds calculation
+            let tool_configs: Vec<_> = state.job.tools.iter().map(|t| (t.id, t.clone())).collect();
+            let material = state.job.stock.material.clone();
+            let machine = state.job.machine.clone();
 
             if let Some(entry) = state.job.toolpaths.iter_mut().find(|t| t.id == id) {
-                draw_toolpath_panel(ui, entry, &tools, &models, events);
+                draw_toolpath_panel(ui, entry, &tools, &models, &tool_configs, &material, &machine, events);
             }
         }
     }
@@ -415,11 +419,154 @@ fn draw_machine_panel(
     );
 }
 
+/// Map OperationConfig variant to (OperationFamily, PassRole) for the feeds calculator.
+fn operation_to_feeds_family(op: &OperationConfig) -> (rs_cam_core::feeds::OperationFamily, rs_cam_core::feeds::PassRole) {
+    use rs_cam_core::feeds::{OperationFamily as OF, PassRole as PR};
+    match op {
+        OperationConfig::Pocket(_) => (OF::Pocket, PR::Roughing),
+        OperationConfig::Profile(_) => (OF::Contour, PR::Roughing),
+        OperationConfig::Adaptive(_) | OperationConfig::Adaptive3d(_) => (OF::Adaptive, PR::Roughing),
+        OperationConfig::VCarve(_) | OperationConfig::Inlay(_) => (OF::Trace, PR::Finish),
+        OperationConfig::DropCutter(_) | OperationConfig::Scallop(_) | OperationConfig::Pencil(_) => (OF::Parallel, PR::Finish),
+        OperationConfig::Waterline(_) | OperationConfig::SteepShallow(_) | OperationConfig::RampFinish(_) => (OF::Contour, PR::Finish),
+        OperationConfig::Zigzag(_) | OperationConfig::Rest(_) => (OF::Pocket, PR::Roughing),
+    }
+}
+
+/// Map ToolType + ToolConfig to ToolGeometryHint for the feeds calculator.
+fn tool_geometry_hint(tool: &crate::state::job::ToolConfig) -> rs_cam_core::feeds::ToolGeometryHint {
+    use crate::state::job::ToolType;
+    use rs_cam_core::feeds::ToolGeometryHint;
+    match tool.tool_type {
+        ToolType::EndMill => ToolGeometryHint::Flat,
+        ToolType::BallNose => ToolGeometryHint::Ball,
+        ToolType::BullNose => ToolGeometryHint::Bull { corner_radius: tool.corner_radius },
+        ToolType::VBit => ToolGeometryHint::VBit { included_angle: tool.included_angle, tip_diameter: 0.2 },
+        ToolType::TaperedBallNose => ToolGeometryHint::TaperedBall {
+            tip_radius: tool.diameter / 2.0,
+            taper_angle_deg: tool.taper_half_angle,
+        },
+    }
+}
+
+/// Run feeds calculation, auto-write into operation, and draw the feeds card.
+fn calculate_and_apply_feeds(
+    ui: &mut egui::Ui,
+    entry: &mut ToolpathEntry,
+    tool: &crate::state::job::ToolConfig,
+    material: &rs_cam_core::material::Material,
+    machine: &rs_cam_core::machine::MachineProfile,
+) {
+    let has_any_auto = entry.feeds_auto.feed_rate
+        || entry.feeds_auto.plunge_rate
+        || entry.feeds_auto.stepover
+        || entry.feeds_auto.depth_per_pass;
+
+    if !has_any_auto {
+        // Only draw the card if we have a cached result
+        if entry.feeds_result.is_some() {
+            draw_feeds_card(ui, entry);
+        }
+        return;
+    }
+
+    let (family, role) = operation_to_feeds_family(&entry.operation);
+
+    let input = rs_cam_core::feeds::FeedsInput {
+        tool_diameter: tool.diameter,
+        flute_count: tool.flute_count,
+        flute_length: tool.cutting_length,
+        tool_geometry: tool_geometry_hint(tool),
+        material,
+        machine,
+        operation: family,
+        pass_role: role,
+        axial_depth_mm: None,
+        radial_width_mm: None,
+        target_scallop_mm: None,
+    };
+
+    let result = rs_cam_core::feeds::calculate(&input);
+
+    // Auto-write calculated values into the operation config
+    if entry.feeds_auto.feed_rate {
+        entry.operation.set_feed_rate(result.feed_rate_mm_min);
+    }
+    if entry.feeds_auto.plunge_rate {
+        entry.operation.set_plunge_rate(result.plunge_rate_mm_min);
+    }
+    if entry.feeds_auto.stepover {
+        entry.operation.set_stepover(result.radial_width_mm);
+    }
+    if entry.feeds_auto.depth_per_pass {
+        entry.operation.set_depth_per_pass(result.axial_depth_mm);
+    }
+
+    entry.feeds_result = Some(result);
+    draw_feeds_card(ui, entry);
+}
+
+fn draw_feeds_card(ui: &mut egui::Ui, entry: &ToolpathEntry) {
+    ui.add_space(8.0);
+    ui.collapsing("Feeds & Speeds", |ui| {
+        if let Some(result) = &entry.feeds_result {
+            egui::Grid::new("feeds_card").num_columns(2).spacing([8.0, 3.0]).show(ui, |ui| {
+                ui.label("RPM:"); ui.label(format!("{:.0}", result.rpm)); ui.end_row();
+                ui.label("Chip Load:"); ui.label(format!("{:.4} mm/tooth", result.chip_load_mm)); ui.end_row();
+                ui.label("Feed:"); ui.label(format!("{:.0} mm/min", result.feed_rate_mm_min)); ui.end_row();
+                ui.label("Plunge:"); ui.label(format!("{:.0} mm/min", result.plunge_rate_mm_min)); ui.end_row();
+                ui.label("DOC:"); ui.label(format!("{:.2} mm", result.axial_depth_mm)); ui.end_row();
+                ui.label("WOC:"); ui.label(format!("{:.2} mm", result.radial_width_mm)); ui.end_row();
+
+                // Power bar
+                ui.label("Power:");
+                let frac = if result.available_power_kw > 0.0 {
+                    (result.power_kw / result.available_power_kw).clamp(0.0, 1.0)
+                } else { 0.0 };
+                let color = if frac > 0.9 { egui::Color32::from_rgb(220, 80, 80) }
+                           else if frac > 0.7 { egui::Color32::from_rgb(220, 180, 60) }
+                           else { egui::Color32::from_rgb(80, 180, 80) };
+                ui.horizontal(|ui| {
+                    let bar = egui::ProgressBar::new(frac as f32).fill(color).desired_width(100.0);
+                    ui.add(bar);
+                    ui.label(format!("{:.2}/{:.2}kW", result.power_kw, result.available_power_kw));
+                });
+                ui.end_row();
+
+                ui.label("MRR:"); ui.label(format!("{:.0} mm\u{00B3}/min", result.mrr_mm3_min)); ui.end_row();
+            });
+
+            // Warnings
+            for w in &result.warnings {
+                let text = match w {
+                    rs_cam_core::feeds::FeedsWarning::FeedRateClamped { requested, actual } =>
+                        format!("Feed clamped: {requested:.0} -> {actual:.0} mm/min (machine limit)"),
+                    rs_cam_core::feeds::FeedsWarning::PowerLimited { required_kw, available_kw } =>
+                        format!("Power limited: {required_kw:.2}kW needed, {available_kw:.2}kW available"),
+                    rs_cam_core::feeds::FeedsWarning::DocExceedsFlute { requested, capped } =>
+                        format!("DOC capped: {requested:.1} -> {capped:.1}mm (flute guard)"),
+                    rs_cam_core::feeds::FeedsWarning::SlottingDetected { doc_reduced_to } =>
+                        format!("Slotting detected: DOC reduced to {doc_reduced_to:.1}mm"),
+                    rs_cam_core::feeds::FeedsWarning::ScallopInvalid { target, max_possible } =>
+                        format!("Invalid scallop: {target:.3}mm (max {max_possible:.1}mm)"),
+                    rs_cam_core::feeds::FeedsWarning::ShankTooLarge { shank_mm, max_mm } =>
+                        format!("Shank {shank_mm:.1}mm exceeds max {max_mm:.1}mm"),
+                };
+                ui.label(egui::RichText::new(format!("! {text}"))
+                    .small().color(egui::Color32::from_rgb(220, 170, 60)));
+            }
+        }
+    });
+}
+
 fn draw_toolpath_panel(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
     tools: &[(crate::state::job::ToolId, String, f64)],
     models: &[(crate::state::job::ModelId, String)],
+    tool_configs: &[(crate::state::job::ToolId, crate::state::job::ToolConfig)],
+    material: &rs_cam_core::material::Material,
+    machine: &rs_cam_core::machine::MachineProfile,
     events: &mut Vec<AppEvent>,
 ) {
     ui.heading(&entry.name);
@@ -504,6 +651,11 @@ fn draw_toolpath_panel(
         OperationConfig::Scallop(cfg) => draw_scallop_params(ui, cfg),
         OperationConfig::SteepShallow(cfg) => draw_steep_shallow_params(ui, cfg),
         OperationConfig::RampFinish(cfg) => draw_ramp_finish_params(ui, cfg),
+    }
+
+    // --- Feeds & Speeds calculation ---
+    if let Some(tool_cfg) = tool_configs.iter().find(|(id, _)| *id == entry.tool_id).map(|(_, t)| t) {
+        calculate_and_apply_feeds(ui, entry, tool_cfg, material, machine);
     }
 
     // Dressup modifications
