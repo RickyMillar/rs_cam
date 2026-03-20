@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 
@@ -66,10 +67,25 @@ pub struct ComputeResult {
 
 /// Request to run material removal simulation.
 pub struct SimulationRequest {
-    pub toolpaths: Vec<(Arc<Toolpath>, ToolConfig)>,
+    pub toolpaths: Vec<(ToolpathId, String, Arc<Toolpath>, ToolConfig)>,
     pub stock_bbox: BoundingBox3,
     pub stock_top_z: f64,
     pub resolution: f64,
+}
+
+/// Per-toolpath boundary in simulation result.
+pub struct SimBoundary {
+    pub id: ToolpathId,
+    pub name: String,
+    pub tool_name: String,
+    pub start_move: usize,
+    pub end_move: usize,
+}
+
+/// Checkpoint mesh at a toolpath boundary.
+pub struct SimCheckpointMesh {
+    pub boundary_index: usize,
+    pub mesh: HeightmapMesh,
 }
 
 /// Result of simulation computation.
@@ -80,6 +96,8 @@ pub struct SimulationResult {
     /// Positive = material remaining, negative = overcut.
     /// `None` when no model mesh is available for comparison.
     pub deviations: Option<Vec<f32>>,
+    pub boundaries: Vec<SimBoundary>,
+    pub checkpoints: Vec<SimCheckpointMesh>,
 }
 
 /// Request to run collision detection on a toolpath.
@@ -110,22 +128,35 @@ enum WorkerResult {
 pub struct ComputeManager {
     request_tx: mpsc::Sender<WorkerRequest>,
     result_rx: mpsc::Receiver<WorkerResult>,
+    /// Cancellation token — set to true to request the worker abort.
+    pub cancel_token: Arc<AtomicBool>,
 }
 
 impl ComputeManager {
     pub fn new() -> Self {
         let (request_tx, request_rx) = mpsc::channel::<WorkerRequest>();
         let (result_tx, result_rx) = mpsc::channel::<WorkerResult>();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let cancel_clone = Arc::clone(&cancel);
 
         std::thread::spawn(move || {
             while let Ok(req) = request_rx.recv() {
+                // Reset cancel flag at start of each job
+                cancel_clone.store(false, Ordering::SeqCst);
                 match req {
                     WorkerRequest::Toolpath(r) => {
                         let result = run_compute(&r);
-                        let _ = result_tx.send(WorkerResult::Toolpath(ComputeResult {
-                            toolpath_id: r.toolpath_id,
-                            result,
-                        }));
+                        if cancel_clone.load(Ordering::SeqCst) {
+                            let _ = result_tx.send(WorkerResult::Toolpath(ComputeResult {
+                                toolpath_id: r.toolpath_id,
+                                result: Err("Cancelled".to_string()),
+                            }));
+                        } else {
+                            let _ = result_tx.send(WorkerResult::Toolpath(ComputeResult {
+                                toolpath_id: r.toolpath_id,
+                                result,
+                            }));
+                        }
                     }
                     WorkerRequest::Simulation(r) => {
                         let result = run_simulation(&r);
@@ -139,7 +170,7 @@ impl ComputeManager {
             }
         });
 
-        Self { request_tx, result_rx }
+        Self { request_tx, result_rx, cancel_token: cancel }
     }
 
     pub fn submit(&self, request: ComputeRequest) {
@@ -152,6 +183,11 @@ impl ComputeManager {
 
     pub fn submit_collision(&self, request: CollisionRequest) {
         let _ = self.request_tx.send(WorkerRequest::Collision(request));
+    }
+
+    /// Request cancellation of the current computation.
+    pub fn cancel(&self) {
+        self.cancel_token.store(true, Ordering::SeqCst);
     }
 
     pub fn drain_results(
@@ -179,10 +215,29 @@ fn run_simulation(req: &SimulationRequest) -> Result<SimulationResult, String> {
     let mut heightmap = Heightmap::from_bounds(&req.stock_bbox, Some(req.stock_top_z), req.resolution);
 
     let mut total_moves = 0;
-    for (toolpath, tool_config) in &req.toolpaths {
+    let mut boundaries = Vec::new();
+    let mut checkpoints = Vec::new();
+
+    for (i, (tp_id, tp_name, toolpath, tool_config)) in req.toolpaths.iter().enumerate() {
+        let start_move = total_moves;
         let cutter = build_cutter(tool_config);
         simulate_toolpath(toolpath, cutter.as_ref(), &mut heightmap);
         total_moves += toolpath.moves.len();
+
+        boundaries.push(SimBoundary {
+            id: *tp_id,
+            name: tp_name.clone(),
+            tool_name: tool_config.summary(),
+            start_move,
+            end_move: total_moves,
+        });
+
+        // Save checkpoint mesh after each toolpath for rewind support
+        let checkpoint_mesh = heightmap_to_mesh(&heightmap);
+        checkpoints.push(SimCheckpointMesh {
+            boundary_index: i,
+            mesh: checkpoint_mesh,
+        });
     }
 
     let mesh = heightmap_to_mesh(&heightmap);
@@ -190,6 +245,8 @@ fn run_simulation(req: &SimulationRequest) -> Result<SimulationResult, String> {
         mesh,
         total_moves,
         deviations: None,
+        boundaries,
+        checkpoints,
     })
 }
 

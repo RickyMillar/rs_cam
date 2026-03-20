@@ -69,6 +69,8 @@ pub struct LoadedModel {
     pub mesh: Option<Arc<TriangleMesh>>,
     pub polygons: Option<Arc<Vec<Polygon2>>>,
     pub units: ModelUnits,
+    /// Percentage of inconsistent winding edges (from check_winding). None if not STL.
+    pub winding_report: Option<f64>,
 }
 
 /// Tool type matching the five cutter types in rs_cam_core.
@@ -101,6 +103,44 @@ impl ToolType {
     }
 }
 
+/// Tool material (affects chip load and wear).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolMaterial {
+    Carbide,
+    Hss,
+}
+
+impl ToolMaterial {
+    pub const ALL: &[ToolMaterial] = &[ToolMaterial::Carbide, ToolMaterial::Hss];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            ToolMaterial::Carbide => "Carbide",
+            ToolMaterial::Hss => "HSS",
+        }
+    }
+}
+
+/// Cut direction (affects chip evacuation and surface quality).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CutDirection {
+    UpCut,
+    DownCut,
+    Compression,
+}
+
+impl CutDirection {
+    pub const ALL: &[CutDirection] = &[CutDirection::UpCut, CutDirection::DownCut, CutDirection::Compression];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            CutDirection::UpCut => "Up Cut",
+            CutDirection::DownCut => "Down Cut",
+            CutDirection::Compression => "Compression",
+        }
+    }
+}
+
 /// Complete tool configuration.
 #[derive(Debug, Clone)]
 pub struct ToolConfig {
@@ -121,6 +161,13 @@ pub struct ToolConfig {
     pub shank_diameter: f64,
     pub shank_length: f64,
     pub stickout: f64,
+    // Cutting parameters (for feeds calculation)
+    pub flute_count: u32,
+    pub tool_material: ToolMaterial,
+    pub cut_direction: CutDirection,
+    // Optional vendor info
+    pub vendor: String,
+    pub product_id: String,
 }
 
 impl ToolConfig {
@@ -146,6 +193,11 @@ impl ToolConfig {
             shank_diameter: 6.35,
             shank_length: 20.0,
             stickout: 45.0,
+            flute_count: 2,
+            tool_material: ToolMaterial::Carbide,
+            cut_direction: CutDirection::UpCut,
+            vendor: String::new(),
+            product_id: String::new(),
         }
     }
 
@@ -232,6 +284,7 @@ pub struct StockConfig {
     pub origin_z: f64,
     pub auto_from_model: bool,
     pub padding: f64,
+    pub material: rs_cam_core::material::Material,
 }
 
 impl Default for StockConfig {
@@ -245,6 +298,7 @@ impl Default for StockConfig {
             origin_z: 0.0,
             auto_from_model: true,
             padding: 5.0,
+            material: rs_cam_core::material::Material::default(),
         }
     }
 }
@@ -283,6 +337,7 @@ pub struct JobState {
     pub stock: StockConfig,
     pub tools: Vec<ToolConfig>,
     pub post: PostConfig,
+    pub machine: rs_cam_core::machine::MachineProfile,
     pub toolpaths: Vec<super::toolpath::ToolpathEntry>,
     next_model_id: usize,
     next_tool_id: usize,
@@ -299,6 +354,7 @@ impl JobState {
             stock: StockConfig::default(),
             tools: Vec::new(),
             post: PostConfig::default(),
+            machine: rs_cam_core::machine::MachineProfile::default(),
             toolpaths: Vec::new(),
             next_model_id: 0,
             next_tool_id: 0,

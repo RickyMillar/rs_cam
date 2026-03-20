@@ -4,6 +4,21 @@ use rs_cam_core::toolpath::Toolpath;
 
 use super::job::ToolId;
 
+/// Where the toolpath's stock material comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StockSource {
+    /// Start from raw stock (default).
+    Fresh,
+    /// Simulate all prior enabled toolpaths to determine starting material.
+    FromRemainingStock,
+}
+
+impl Default for StockSource {
+    fn default() -> Self {
+        StockSource::Fresh
+    }
+}
+
 /// Unique identifier for a toolpath.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ToolpathId(pub usize);
@@ -136,6 +151,180 @@ impl OperationConfig {
             OperationConfig::RadialFinish(_) => "Radial Finish",
             OperationConfig::HorizontalFinish(_) => "Horizontal Finish",
             OperationConfig::ProjectCurve(_) => "Project Curve",
+        }
+    }
+
+    pub fn feed_rate(&self) -> f64 {
+        match self {
+            OperationConfig::Face(c) => c.feed_rate,
+            OperationConfig::Pocket(c) => c.feed_rate,
+            OperationConfig::Profile(c) => c.feed_rate,
+            OperationConfig::Adaptive(c) => c.feed_rate,
+            OperationConfig::VCarve(c) => c.feed_rate,
+            OperationConfig::Rest(c) => c.feed_rate,
+            OperationConfig::Inlay(c) => c.feed_rate,
+            OperationConfig::Zigzag(c) => c.feed_rate,
+            OperationConfig::Trace(c) => c.feed_rate,
+            OperationConfig::Drill(c) => c.feed_rate,
+            OperationConfig::Chamfer(c) => c.feed_rate,
+            OperationConfig::DropCutter(c) => c.feed_rate,
+            OperationConfig::Adaptive3d(c) => c.feed_rate,
+            OperationConfig::Waterline(c) => c.feed_rate,
+            OperationConfig::Pencil(c) => c.feed_rate,
+            OperationConfig::Scallop(c) => c.feed_rate,
+            OperationConfig::SteepShallow(c) => c.feed_rate,
+            OperationConfig::RampFinish(c) => c.feed_rate,
+            OperationConfig::SpiralFinish(c) => c.feed_rate,
+            OperationConfig::RadialFinish(c) => c.feed_rate,
+            OperationConfig::HorizontalFinish(c) => c.feed_rate,
+            OperationConfig::ProjectCurve(c) => c.feed_rate,
+        }
+    }
+
+    pub fn set_feed_rate(&mut self, v: f64) {
+        match self {
+            OperationConfig::Face(c) => c.feed_rate = v,
+            OperationConfig::Pocket(c) => c.feed_rate = v,
+            OperationConfig::Profile(c) => c.feed_rate = v,
+            OperationConfig::Adaptive(c) => c.feed_rate = v,
+            OperationConfig::VCarve(c) => c.feed_rate = v,
+            OperationConfig::Rest(c) => c.feed_rate = v,
+            OperationConfig::Inlay(c) => c.feed_rate = v,
+            OperationConfig::Zigzag(c) => c.feed_rate = v,
+            OperationConfig::Trace(c) => c.feed_rate = v,
+            OperationConfig::Drill(c) => c.feed_rate = v,
+            OperationConfig::Chamfer(c) => c.feed_rate = v,
+            OperationConfig::DropCutter(c) => c.feed_rate = v,
+            OperationConfig::Adaptive3d(c) => c.feed_rate = v,
+            OperationConfig::Waterline(c) => c.feed_rate = v,
+            OperationConfig::Pencil(c) => c.feed_rate = v,
+            OperationConfig::Scallop(c) => c.feed_rate = v,
+            OperationConfig::SteepShallow(c) => c.feed_rate = v,
+            OperationConfig::RampFinish(c) => c.feed_rate = v,
+            OperationConfig::SpiralFinish(c) => c.feed_rate = v,
+            OperationConfig::RadialFinish(c) => c.feed_rate = v,
+            OperationConfig::HorizontalFinish(c) => c.feed_rate = v,
+            OperationConfig::ProjectCurve(c) => c.feed_rate = v,
+        }
+    }
+
+    pub fn plunge_rate(&self) -> f64 {
+        match self {
+            OperationConfig::Face(c) => c.plunge_rate,
+            OperationConfig::Pocket(c) => c.plunge_rate,
+            OperationConfig::Profile(c) => c.plunge_rate,
+            OperationConfig::Adaptive(c) => c.plunge_rate,
+            OperationConfig::VCarve(c) => c.plunge_rate,
+            OperationConfig::Rest(c) => c.plunge_rate,
+            OperationConfig::Inlay(c) => c.plunge_rate,
+            OperationConfig::Zigzag(c) => c.plunge_rate,
+            OperationConfig::Trace(c) => c.plunge_rate,
+            OperationConfig::Drill(c) => c.feed_rate, // no plunge_rate, fallback to feed_rate
+            OperationConfig::Chamfer(c) => c.plunge_rate,
+            OperationConfig::DropCutter(c) => c.plunge_rate,
+            OperationConfig::Adaptive3d(c) => c.plunge_rate,
+            OperationConfig::Waterline(c) => c.plunge_rate,
+            OperationConfig::Pencil(c) => c.plunge_rate,
+            OperationConfig::Scallop(c) => c.plunge_rate,
+            OperationConfig::SteepShallow(c) => c.plunge_rate,
+            OperationConfig::RampFinish(c) => c.plunge_rate,
+            OperationConfig::SpiralFinish(c) => c.plunge_rate,
+            OperationConfig::RadialFinish(c) => c.plunge_rate,
+            OperationConfig::HorizontalFinish(c) => c.plunge_rate,
+            OperationConfig::ProjectCurve(c) => c.plunge_rate,
+        }
+    }
+
+    pub fn set_plunge_rate(&mut self, v: f64) {
+        match self {
+            OperationConfig::Face(c) => c.plunge_rate = v,
+            OperationConfig::Pocket(c) => c.plunge_rate = v,
+            OperationConfig::Profile(c) => c.plunge_rate = v,
+            OperationConfig::Adaptive(c) => c.plunge_rate = v,
+            OperationConfig::VCarve(c) => c.plunge_rate = v,
+            OperationConfig::Rest(c) => c.plunge_rate = v,
+            OperationConfig::Inlay(c) => c.plunge_rate = v,
+            OperationConfig::Zigzag(c) => c.plunge_rate = v,
+            OperationConfig::Trace(c) => c.plunge_rate = v,
+            OperationConfig::Drill(_) => {} // no plunge_rate field, no-op
+            OperationConfig::Chamfer(c) => c.plunge_rate = v,
+            OperationConfig::DropCutter(c) => c.plunge_rate = v,
+            OperationConfig::Adaptive3d(c) => c.plunge_rate = v,
+            OperationConfig::Waterline(c) => c.plunge_rate = v,
+            OperationConfig::Pencil(c) => c.plunge_rate = v,
+            OperationConfig::Scallop(c) => c.plunge_rate = v,
+            OperationConfig::SteepShallow(c) => c.plunge_rate = v,
+            OperationConfig::RampFinish(c) => c.plunge_rate = v,
+            OperationConfig::SpiralFinish(c) => c.plunge_rate = v,
+            OperationConfig::RadialFinish(c) => c.plunge_rate = v,
+            OperationConfig::HorizontalFinish(c) => c.plunge_rate = v,
+            OperationConfig::ProjectCurve(c) => c.plunge_rate = v,
+        }
+    }
+
+    /// Get stepover if the operation has one. Returns None for ops without stepover.
+    pub fn stepover(&self) -> Option<f64> {
+        match self {
+            OperationConfig::Face(c) => Some(c.stepover),
+            OperationConfig::Pocket(c) => Some(c.stepover),
+            OperationConfig::Adaptive(c) => Some(c.stepover),
+            OperationConfig::VCarve(c) => Some(c.stepover),
+            OperationConfig::Rest(c) => Some(c.stepover),
+            OperationConfig::Inlay(c) => Some(c.stepover),
+            OperationConfig::Zigzag(c) => Some(c.stepover),
+            OperationConfig::DropCutter(c) => Some(c.stepover),
+            OperationConfig::Adaptive3d(c) => Some(c.stepover),
+            OperationConfig::SteepShallow(c) => Some(c.stepover),
+            OperationConfig::SpiralFinish(c) => Some(c.stepover),
+            OperationConfig::HorizontalFinish(c) => Some(c.stepover),
+            _ => None,
+        }
+    }
+
+    pub fn set_stepover(&mut self, v: f64) {
+        match self {
+            OperationConfig::Face(c) => c.stepover = v,
+            OperationConfig::Pocket(c) => c.stepover = v,
+            OperationConfig::Adaptive(c) => c.stepover = v,
+            OperationConfig::VCarve(c) => c.stepover = v,
+            OperationConfig::Rest(c) => c.stepover = v,
+            OperationConfig::Inlay(c) => c.stepover = v,
+            OperationConfig::Zigzag(c) => c.stepover = v,
+            OperationConfig::DropCutter(c) => c.stepover = v,
+            OperationConfig::Adaptive3d(c) => c.stepover = v,
+            OperationConfig::SteepShallow(c) => c.stepover = v,
+            OperationConfig::SpiralFinish(c) => c.stepover = v,
+            OperationConfig::HorizontalFinish(c) => c.stepover = v,
+            _ => {}
+        }
+    }
+
+    /// Get depth_per_pass if the operation has one.
+    pub fn depth_per_pass(&self) -> Option<f64> {
+        match self {
+            OperationConfig::Face(c) => Some(c.depth_per_pass),
+            OperationConfig::Pocket(c) => Some(c.depth_per_pass),
+            OperationConfig::Profile(c) => Some(c.depth_per_pass),
+            OperationConfig::Adaptive(c) => Some(c.depth_per_pass),
+            OperationConfig::Rest(c) => Some(c.depth_per_pass),
+            OperationConfig::Zigzag(c) => Some(c.depth_per_pass),
+            OperationConfig::Trace(c) => Some(c.depth_per_pass),
+            OperationConfig::Adaptive3d(c) => Some(c.depth_per_pass),
+            _ => None,
+        }
+    }
+
+    pub fn set_depth_per_pass(&mut self, v: f64) {
+        match self {
+            OperationConfig::Face(c) => c.depth_per_pass = v,
+            OperationConfig::Pocket(c) => c.depth_per_pass = v,
+            OperationConfig::Profile(c) => c.depth_per_pass = v,
+            OperationConfig::Adaptive(c) => c.depth_per_pass = v,
+            OperationConfig::Rest(c) => c.depth_per_pass = v,
+            OperationConfig::Zigzag(c) => c.depth_per_pass = v,
+            OperationConfig::Trace(c) => c.depth_per_pass = v,
+            OperationConfig::Adaptive3d(c) => c.depth_per_pass = v,
+            _ => {}
         }
     }
 
@@ -670,6 +859,28 @@ impl Default for HeightsConfig {
     }
 }
 
+/// Tracks which feed parameters are auto-calculated vs user-overridden.
+#[derive(Debug, Clone)]
+pub struct FeedsAutoMode {
+    pub feed_rate: bool,
+    pub plunge_rate: bool,
+    pub stepover: bool,
+    pub depth_per_pass: bool,
+    pub spindle_speed: bool,
+}
+
+impl Default for FeedsAutoMode {
+    fn default() -> Self {
+        Self {
+            feed_rate: true,
+            plunge_rate: true,
+            stepover: true,
+            depth_per_pass: true,
+            spindle_speed: true,
+        }
+    }
+}
+
 impl HeightsConfig {
     /// Resolve all heights given the context values.
     /// `safe_z`: from PostConfig (the baseline retract height)
@@ -724,12 +935,17 @@ pub struct ToolpathEntry {
     pub pre_gcode: String,
     /// Raw G-code inserted after this operation's toolpath in export.
     pub post_gcode: String,
+    pub stock_source: StockSource,
     pub status: ComputeStatus,
     pub result: Option<ToolpathResult>,
     /// When params were last changed (for debounced auto-regen). None = not stale.
     pub stale_since: Option<std::time::Instant>,
     /// Whether auto-regeneration is enabled for this toolpath.
     pub auto_regen: bool,
+    /// Which feed params are auto-calculated vs user-overridden.
+    pub feeds_auto: FeedsAutoMode,
+    /// Cached feeds & speeds calculation result.
+    pub feeds_result: Option<rs_cam_core::feeds::FeedsResult>,
 }
 
 pub struct ToolpathResult {

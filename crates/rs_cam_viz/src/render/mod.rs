@@ -11,7 +11,7 @@ use mesh_render::{MeshGpuData, MeshVertex};
 use grid_render::GridGpuData;
 use stock_render::StockGpuData;
 use toolpath_render::ToolpathGpuData;
-use sim_render::SimMeshGpuData;
+use sim_render::{SimMeshGpuData, ToolModelGpuData};
 
 /// GPU uniform data for mesh rendering (Phong shading).
 #[repr(C)]
@@ -73,6 +73,7 @@ pub struct RenderResources {
     pub stock_data: Option<StockGpuData>,
     pub toolpath_data: Vec<ToolpathGpuData>,
     pub sim_mesh_data: Option<SimMeshGpuData>,
+    pub tool_model_data: Option<ToolModelGpuData>,
     pub collision_vertex_buffer: Option<wgpu::Buffer>,
     pub collision_vertex_count: u32,
 }
@@ -343,6 +344,7 @@ impl RenderResources {
             stock_data: None,
             toolpath_data: Vec::new(),
             sim_mesh_data: None,
+            tool_model_data: None,
             collision_vertex_buffer: None,
             collision_vertex_count: 0,
         }
@@ -426,6 +428,7 @@ pub struct ViewportCallback {
     pub show_cutting: bool,
     pub show_rapids: bool,
     pub show_collisions: bool,
+    pub show_tool_model: bool,
     /// If Some, only draw toolpath moves up to this index (sim scrubbing).
     pub toolpath_move_limit: Option<usize>,
     pub viewport_width: u32,
@@ -543,6 +546,16 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                     pass.set_bind_group(0, &resources.line_bind_group, &[]);
                     pass.set_vertex_buffer(0, buf.slice(..));
                     pass.draw(0..resources.collision_vertex_count, 0..1);
+                }
+            }
+
+            // Draw tool model during simulation
+            if self.show_tool_model {
+                if let Some(tool) = &resources.tool_model_data {
+                    pass.set_pipeline(&resources.line_pipeline);
+                    pass.set_bind_group(0, &resources.line_bind_group, &[]);
+                    pass.set_vertex_buffer(0, tool.vertex_buffer.slice(..));
+                    pass.draw(0..tool.vertex_count, 0..1);
                 }
             }
 

@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use crate::state::job::*;
+// Re-import specific types used in serialization logic
+use crate::state::job::{ToolMaterial, CutDirection};
 
 /// Serializable job file format, compatible with the CLI TOML format.
 #[derive(Serialize, Deserialize)]
@@ -31,6 +33,10 @@ pub struct JobSection {
     pub stock_origin_y: f64,
     #[serde(default)]
     pub stock_origin_z: f64,
+    #[serde(default)]
+    pub material: String,
+    #[serde(default)]
+    pub machine: String,
 }
 
 fn default_spindle() -> u32 { 18000 }
@@ -52,10 +58,17 @@ pub struct ToolSection {
     pub taper_half_angle: f64,
     #[serde(default)]
     pub shaft_diameter: f64,
+    #[serde(default = "default_flutes")]
+    pub flute_count: u32,
+    #[serde(default)]
+    pub tool_material: String,
+    #[serde(default)]
+    pub cut_direction: String,
 }
 
 fn default_length() -> f64 { 25.0 }
 fn default_angle() -> f64 { 90.0 }
+fn default_flutes() -> u32 { 2 }
 
 #[derive(Serialize, Deserialize)]
 pub struct ToolpathSection {
@@ -86,6 +99,16 @@ pub fn save_project(job: &JobState, path: &Path) -> Result<(), String> {
         included_angle: t.included_angle,
         taper_half_angle: t.taper_half_angle,
         shaft_diameter: t.shaft_diameter,
+        flute_count: t.flute_count,
+        tool_material: match t.tool_material {
+            ToolMaterial::Carbide => "carbide".into(),
+            ToolMaterial::Hss => "hss".into(),
+        },
+        cut_direction: match t.cut_direction {
+            CutDirection::UpCut => "upcut".into(),
+            CutDirection::DownCut => "downcut".into(),
+            CutDirection::Compression => "compression".into(),
+        },
     }).collect();
 
     let toolpaths: Vec<ToolpathSection> = job.toolpaths.iter().map(|tp| {
@@ -118,6 +141,8 @@ pub fn save_project(job: &JobState, path: &Path) -> Result<(), String> {
             stock_origin_x: job.stock.origin_x,
             stock_origin_y: job.stock.origin_y,
             stock_origin_z: job.stock.origin_z,
+            material: job.stock.material.to_key(),
+            machine: job.machine.to_key(),
         },
         tools,
         toolpaths,
@@ -142,6 +167,13 @@ pub fn load_project(path: &Path) -> Result<(JobState, Vec<String>), String> {
     job.stock.origin_y = project.job.stock_origin_y;
     job.stock.origin_z = project.job.stock_origin_z;
     job.stock.auto_from_model = false;
+
+    if !project.job.material.is_empty() {
+        job.stock.material = rs_cam_core::material::Material::from_key(&project.job.material);
+    }
+    if !project.job.machine.is_empty() {
+        job.machine = rs_cam_core::machine::MachineProfile::from_key(&project.job.machine);
+    }
 
     job.post.spindle_speed = project.job.spindle_speed;
     job.post.safe_z = project.job.safe_z;
@@ -169,6 +201,16 @@ pub fn load_project(path: &Path) -> Result<(JobState, Vec<String>), String> {
         tool.included_angle = ts.included_angle;
         tool.taper_half_angle = ts.taper_half_angle;
         tool.shaft_diameter = ts.shaft_diameter;
+        tool.flute_count = ts.flute_count;
+        tool.tool_material = match ts.tool_material.as_str() {
+            "hss" => ToolMaterial::Hss,
+            _ => ToolMaterial::Carbide,
+        };
+        tool.cut_direction = match ts.cut_direction.as_str() {
+            "downcut" => CutDirection::DownCut,
+            "compression" => CutDirection::Compression,
+            _ => CutDirection::UpCut,
+        };
         job.tools.push(tool);
     }
 

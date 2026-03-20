@@ -9,7 +9,7 @@ Read this FIRST at the start of every session. Update LAST before ending.
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 466 tests passing (464 unit + 2 integration)
+- [x] Core library + CLI compiling, 534 tests passing (532 unit + 2 integration)
 - [x] Phase 1 complete: STL → drop-cutter → G-code pipeline with 3D HTML viewer
 - [x] Phase 2 complete: 2.5D operations (pocket, profile, zigzag, depth stepping, SVG/DXF input, dressups, CLI)
 - [x] Phase 3 complete: Advanced tools (BullNose, VBit, TaperedBall), push-cutter, waterline, arc fitting, G2/G3
@@ -150,6 +150,12 @@ See IMPLEMENTATION_PLAN.md for full details. Status of each planned item:
 - [x] 6.23 Viewport enhancements — entry_marker_vertices() in toolpath_render.rs generates 2mm arrowhead at first cutting move (infrastructure ready for rendering in line pipeline)
 
 **All 27 items complete.**
+- [x] 5.19 GUI UX Overhaul — Phase A: per-toolpath color palette (8-color deterministic, Z-depth blend, selection highlight), viewport click-to-select (screen-space nearest-segment), toolpath isolation mode (I key), colored unicode tree indicators with palette swatches, keyboard shortcuts (Delete/G/Shift+G/Space/I/H/1-4 view presets)
+- [x] 5.20 Simulation workspace — Phase B: simulation replaces properties panel when active, per-toolpath boundaries with colored progress segments, heightmap checkpoint caching at each boundary for rewind, tool model wireframe rendering during playback (ball/flat detection, position tracking), per-operation progress with tool name/position readout, jump-to-boundary buttons
+- [x] 5.21 Remaining stock — Phase C: StockSource enum (Fresh/FromRemainingStock) on every ToolpathEntry, stock source selector in properties panel with info text, deprecation path for Rest machining operation
+- [x] 5.22 Plan gaps — Phase D: normal flip warning (yellow banner in model properties when >1% inconsistent winding), export summary logging (line count, moves, cutting distance, tool changes, estimated time), cancel computation button with AtomicBool cancellation token, SVG preview export via File menu (toolpath_to_svg)
+- [x] 5.23 Feeds & Speeds Integration — Material model (23 materials across 5 families: wood/plywood/sheet/plastic/foam with hardness index and Kc), Machine profiles (3 presets: generic/Shapeoko VFD/Makita with spindle config, power model, chip load formula, rigidity), Feeds calculator (10-step pipeline: RPM→chipload→DOC/WOC→flute guard→feed→power check→machine clamp→plunge→safety→warnings, sub-ms per call), Tool extensions (flute_count, tool_material, cut_direction), Auto-suggest UX (per-field auto/manual toggle via FeedsAutoMode, calculated values auto-written into operation configs, feeds summary card with RPM/chipload/feed/plunge/DOC/WOC/power bar/MRR/warnings), TOML serialization (material, machine, flute_count backward-compatible), 58 new tests (material.rs, machine.rs, feeds/geometry.rs, feeds/mod.rs)
+- [x] 5.24 Vendor LUT Chipload Seeding + Setup Derates — Vendor observation LUT (61 Amana observations across 5 JSON files, 6 tool families, 12 material families), scoring lookup algorithm (must-match filter + 8-component scoring: tool family, row kind, evidence grade, flute count, diameter proximity, hardness proximity, subfamily, pass role), chipload override (LUT midpoint replaces formula when matched, formula fallback when no match), RPM override from vendor data, setup derates (L/D>6 → 25% feed reduction, L/D>4 → 12%, low workholding → 15% reduction), vendor source display in feeds card, embedded data via include_str!, extensible load_dir for additional vendor JSON, 22 new tests
 
 ## Module Map (for new agents)
 
@@ -183,6 +189,9 @@ See IMPLEMENTATION_PLAN.md for full details. Status of each planned item:
 | inlay | `rs_cam_core/src/inlay.rs` | Inlay operations: female V-carve pocket, male plug with inverted depth profile |
 | collision | `rs_cam_core/src/collision.rs` | Tool holder/shank collision detection, interpolated path checking, multi-segment holders |
 | pipeline | `rs_cam_core/src/pipeline.rs` | Incremental computation cache with dirty-flag invalidation |
+| material | `rs_cam_core/src/material.rs` | Material enum (wood/plywood/sheet/plastic/foam/custom), hardness index, Kc values |
+| machine | `rs_cam_core/src/machine.rs` | MachineProfile, spindle config, power model, chip load formula, rigidity, presets |
+| feeds | `rs_cam_core/src/feeds/` | Feeds calculator (mod.rs + geometry.rs + vendor_lut.rs + vendor_lookup.rs + vendor_normalize.rs): RPM, chip load, DOC/WOC, power check, warnings, vendor LUT chipload seeding, setup derates |
 | contour_extract | `rs_cam_core/src/contour_extract.rs` | Marching squares contour extraction for waterline (replaces nearest-neighbor) |
 | face | `rs_cam_core/src/face.rs` | Face/surfacing: stock-top leveling with zigzag pattern |
 | trace | `rs_cam_core/src/trace.rs` | Trace/follow-path: follow SVG/DXF exactly at depth, optional compensation |

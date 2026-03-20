@@ -1,1 +1,5 @@
 /target
+.claude/
+profile.json.gz
+demos/
+reference/

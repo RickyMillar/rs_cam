@@ -6,14 +6,14 @@ use crate::state::history::UndoAction;
 use crate::io::import;
 use crate::render::camera::OrbitCamera;
 use crate::render::mesh_render::MeshGpuData;
-use crate::render::sim_render::SimMeshGpuData;
+use crate::render::sim_render::{SimMeshGpuData, ToolModelGpuData};
 use crate::render::stock_render::StockGpuData;
 use crate::render::toolpath_render::ToolpathGpuData;
 use crate::render::{LineUniforms, MeshUniforms, RenderResources, ViewportCallback};
 use crate::state::AppState;
 use crate::state::job::ToolConfig;
 use crate::state::selection::Selection;
-use crate::state::toolpath::{ComputeStatus, OperationConfig, ToolpathEntry, ToolpathId};
+use crate::state::toolpath::{ComputeStatus, OperationConfig, StockSource, ToolpathEntry, ToolpathId};
 use crate::ui::AppEvent;
 
 pub struct RsCamApp {
@@ -27,6 +27,8 @@ pub struct RsCamApp {
     collision_positions: Vec<[f32; 3]>,
     /// When the current compute started (for elapsed time display).
     compute_start: Option<std::time::Instant>,
+    /// Cached viewport rect for click detection.
+    viewport_rect: egui::Rect,
 }
 
 impl RsCamApp {
@@ -51,6 +53,7 @@ impl RsCamApp {
             pending_upload: false,
             collision_positions: Vec::new(),
             compute_start: None,
+            viewport_rect: egui::Rect::NOTHING,
         }
     }
 
@@ -170,10 +173,13 @@ impl RsCamApp {
                         boundary_containment: crate::state::toolpath::BoundaryContainment::Center,
                         pre_gcode: String::new(),
                         post_gcode: String::new(),
+                        stock_source: StockSource::Fresh,
                         status: ComputeStatus::Pending,
                         result: None,
                         stale_since: None,
                         auto_regen: !is_3d,
+                        feeds_auto: crate::state::toolpath::FeedsAutoMode::default(),
+                        feeds_result: None,
                     };
                     self.state.selection = Selection::Toolpath(id);
                     self.state.job.toolpaths.push(entry);
@@ -182,9 +188,9 @@ impl RsCamApp {
                 AppEvent::DuplicateToolpath(tp_id) => {
                     let src_data = self.state.job.toolpaths.iter().find(|t| t.id == tp_id).map(|src| {
                         (src.name.clone(), src.enabled, src.visible, src.tool_id,
-                         src.model_id, src.operation.clone(), src.dressups.clone())
+                         src.model_id, src.operation.clone(), src.dressups.clone(), src.stock_source)
                     });
-                    if let Some((name, enabled, visible, tool_id, model_id, operation, dressups)) = src_data {
+                    if let Some((name, enabled, visible, tool_id, model_id, operation, dressups, stock_source)) = src_data {
                         let new_id = self.state.job.next_toolpath_id();
                         self.state.selection = Selection::Toolpath(new_id);
                         let is_3d = operation.is_3d();
@@ -196,8 +202,11 @@ impl RsCamApp {
                             boundary_containment: crate::state::toolpath::BoundaryContainment::Center,
                             pre_gcode: String::new(),
                             post_gcode: String::new(),
+                            stock_source,
                             status: ComputeStatus::Pending, result: None,
                             stale_since: None, auto_regen: !is_3d,
+                            feeds_auto: crate::state::toolpath::FeedsAutoMode::default(),
+                            feeds_result: None,
                         });
                         self.state.job.dirty = true;
                     }
@@ -226,6 +235,10 @@ impl RsCamApp {
                     if self.state.selection == Selection::Toolpath(tp_id) {
                         self.state.selection = Selection::None;
                     }
+                    // Clear isolation if isolated toolpath was removed
+                    if self.state.viewport.isolate_toolpath == Some(tp_id) {
+                        self.state.viewport.isolate_toolpath = None;
+                    }
                     self.pending_upload = true;
                     self.state.job.dirty = true;
                 }
@@ -238,37 +251,31 @@ impl RsCamApp {
                         self.pending_upload = true;
                     }
                 }
-                AppEvent::RunSimulation => {
-                    // Collect all enabled toolpaths with results
-                    let toolpaths: Vec<_> = self.state.job.toolpaths.iter()
-                        .filter(|tp| tp.enabled)
-                        .filter_map(|tp| {
-                            let result = tp.result.as_ref()?;
-                            let tool = self.state.job.tools.iter().find(|t| t.id == tp.tool_id)?.clone();
-                            Some((Arc::clone(&result.toolpath), tool))
-                        })
-                        .collect();
-
-                    if toolpaths.is_empty() {
-                        tracing::warn!("No computed toolpaths to simulate");
-                    } else {
-                        let stock_bbox = self.state.job.stock.bbox();
-                        self.compute.submit_simulation(SimulationRequest {
-                            toolpaths,
-                            stock_bbox,
-                            stock_top_z: stock_bbox.max.z,
-                            resolution: 0.25,
-                        });
-                        self.state.simulation.active = false; // will be set true when result arrives
+                AppEvent::ToggleIsolateToolpath => {
+                    if let Selection::Toolpath(id) = self.state.selection {
+                        if self.state.viewport.isolate_toolpath == Some(id) {
+                            self.state.viewport.isolate_toolpath = None;
+                        } else {
+                            self.state.viewport.isolate_toolpath = Some(id);
+                        }
+                        self.pending_upload = true;
                     }
+                }
+                AppEvent::RunSimulation => {
+                    self.run_simulation_with_all();
+                }
+                AppEvent::RunSimulationWith(ids) => {
+                    self.run_simulation_with_ids(&ids);
                 }
                 AppEvent::ToggleSimPlayback => {
                     self.state.simulation.playing = !self.state.simulation.playing;
                 }
                 AppEvent::ResetSimulation => {
                     self.state.simulation = crate::state::simulation::SimulationState::new();
-                    // Sim mesh will be cleared on next upload
                     self.pending_upload = true;
+                }
+                AppEvent::ToggleSimToolpath(_tp_id) => {
+                    // Subset toggling handled by simulation panel UI
                 }
                 AppEvent::RescaleModel(model_id, new_units) => {
                     if let Some(model) = self.state.job.models.iter().find(|m| m.id == model_id) {
@@ -278,17 +285,15 @@ impl RsCamApp {
                             match import::import_stl(&path, model_id, scale) {
                                 Ok(mut new_model) => {
                                     new_model.units = new_units;
-                                    // Replace the model in-place
                                     if let Some(m) = self.state.job.models.iter_mut().find(|m| m.id == model_id) {
                                         m.mesh = new_model.mesh;
                                         m.units = new_model.units;
-                                        // Update stock if auto
+                                        m.winding_report = new_model.winding_report;
                                         if self.state.job.stock.auto_from_model {
                                             if let Some(mesh) = &m.mesh {
                                                 self.state.job.stock.update_from_bbox(&mesh.bbox);
                                             }
                                         }
-                                        // Re-fit camera
                                         if let Some(mesh) = &m.mesh {
                                             let bb = &mesh.bbox;
                                             self.camera.fit_to_bounds(
@@ -306,22 +311,10 @@ impl RsCamApp {
                     }
                 }
                 AppEvent::ExportGcode => {
-                    match crate::io::export::export_gcode(&self.state.job) {
-                        Ok(gcode) => {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("G-code", &["nc", "gcode", "ngc"])
-                                .set_file_name("output.nc")
-                                .save_file()
-                            {
-                                if let Err(e) = std::fs::write(&path, &gcode) {
-                                    tracing::error!("Failed to write G-code: {}", e);
-                                } else {
-                                    tracing::info!("Exported G-code to {}", path.display());
-                                }
-                            }
-                        }
-                        Err(e) => tracing::error!("Export failed: {}", e),
-                    }
+                    self.export_gcode_with_summary();
+                }
+                AppEvent::ExportSvgPreview => {
+                    self.export_svg_preview();
                 }
                 AppEvent::ExportSetupSheet => {
                     let html = crate::io::setup_sheet::generate_setup_sheet(&self.state.job);
@@ -344,7 +337,6 @@ impl RsCamApp {
                     }
                 }
                 AppEvent::RunCollisionCheck => {
-                    // Run collision check on the first enabled toolpath with a result and an STL model
                     let tp_data = self.state.job.toolpaths.iter().find_map(|tp| {
                         let result = tp.result.as_ref()?;
                         let tool = self.state.job.tools.iter().find(|t| t.id == tp.tool_id)?.clone();
@@ -358,6 +350,9 @@ impl RsCamApp {
                     } else {
                         tracing::warn!("No toolpath with STL mesh available for collision check");
                     }
+                }
+                AppEvent::CancelCompute => {
+                    self.compute.cancel();
                 }
                 AppEvent::SaveJob => {
                     let path = self.state.job.file_path.clone().or_else(|| {
@@ -414,6 +409,9 @@ impl RsCamApp {
                                     tp.dressups = old_dressups;
                                 }
                             }
+                            UndoAction::MachineChange { old, .. } => {
+                                self.state.job.machine = old;
+                            }
                         }
                     }
                 }
@@ -438,6 +436,9 @@ impl RsCamApp {
                                     tp.dressups = new_dressups;
                                 }
                             }
+                            UndoAction::MachineChange { new, .. } => {
+                                self.state.job.machine = new;
+                            }
                         }
                     }
                 }
@@ -445,9 +446,159 @@ impl RsCamApp {
                     self.pending_upload = true;
                     self.state.job.dirty = true;
                 }
+                AppEvent::StockMaterialChanged => {
+                    self.state.job.dirty = true;
+                }
+                AppEvent::MachineChanged => {
+                    self.state.job.dirty = true;
+                }
+                AppEvent::RecalculateFeeds(_tp_id) => {
+                    // Feeds recalculation happens in the UI draw pass, this is just a marker
+                }
                 AppEvent::Quit => {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
+            }
+        }
+    }
+
+    // --- Simulation helpers ---
+
+    fn run_simulation_with_all(&mut self) {
+        let toolpaths: Vec<_> = self.state.job.toolpaths.iter()
+            .filter(|tp| tp.enabled)
+            .filter_map(|tp| {
+                let result = tp.result.as_ref()?;
+                let tool = self.state.job.tools.iter().find(|t| t.id == tp.tool_id)?.clone();
+                Some((tp.id, tp.name.clone(), Arc::clone(&result.toolpath), tool))
+            })
+            .collect();
+
+        if toolpaths.is_empty() {
+            tracing::warn!("No computed toolpaths to simulate");
+        } else {
+            let stock_bbox = self.state.job.stock.bbox();
+            self.compute.submit_simulation(SimulationRequest {
+                toolpaths,
+                stock_bbox,
+                stock_top_z: stock_bbox.max.z,
+                resolution: 0.25,
+            });
+            self.state.simulation.active = false;
+        }
+    }
+
+    fn run_simulation_with_ids(&mut self, ids: &[ToolpathId]) {
+        let toolpaths: Vec<_> = self.state.job.toolpaths.iter()
+            .filter(|tp| ids.contains(&tp.id))
+            .filter_map(|tp| {
+                let result = tp.result.as_ref()?;
+                let tool = self.state.job.tools.iter().find(|t| t.id == tp.tool_id)?.clone();
+                Some((tp.id, tp.name.clone(), Arc::clone(&result.toolpath), tool))
+            })
+            .collect();
+
+        if toolpaths.is_empty() {
+            tracing::warn!("No computed toolpaths to simulate");
+        } else {
+            let stock_bbox = self.state.job.stock.bbox();
+            self.compute.submit_simulation(SimulationRequest {
+                toolpaths,
+                stock_bbox,
+                stock_top_z: stock_bbox.max.z,
+                resolution: 0.25,
+            });
+            self.state.simulation.active = false;
+        }
+    }
+
+    // --- Export helpers ---
+
+    fn export_gcode_with_summary(&self) {
+        match crate::io::export::export_gcode(&self.state.job) {
+            Ok(gcode) => {
+                // Compute summary stats
+                let line_count = gcode.lines().count();
+                let mut total_moves = 0usize;
+                let mut cutting_dist = 0.0f64;
+                let tool_changes;
+                let mut est_time_min = 0.0f64;
+
+                for tp in &self.state.job.toolpaths {
+                    if tp.enabled {
+                        if let Some(result) = &tp.result {
+                            total_moves += result.stats.move_count;
+                            cutting_dist += result.stats.cutting_distance;
+                            // Rough time estimate: cutting at first feed rate found
+                            let feed = match &tp.operation {
+                                OperationConfig::Pocket(c) => c.feed_rate,
+                                OperationConfig::Profile(c) => c.feed_rate,
+                                OperationConfig::Adaptive(c) => c.feed_rate,
+                                OperationConfig::DropCutter(c) => c.feed_rate,
+                                _ => 1000.0,
+                            };
+                            est_time_min += result.stats.cutting_distance / feed;
+                        }
+                    }
+                }
+
+                // Count distinct tool IDs across enabled toolpaths
+                let mut seen_tools = Vec::new();
+                for tp in &self.state.job.toolpaths {
+                    if tp.enabled && !seen_tools.contains(&tp.tool_id) {
+                        seen_tools.push(tp.tool_id);
+                    }
+                }
+                tool_changes = if seen_tools.len() > 1 { seen_tools.len() - 1 } else { 0 };
+
+                // Log the summary (shown in status bar / tracing output)
+                tracing::info!(
+                    "Export summary: {} G-code lines, {} moves, {:.0} mm cutting, {} tool changes, ~{:.1} min",
+                    line_count, total_moves, cutting_dist, tool_changes, est_time_min,
+                );
+
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("G-code", &["nc", "gcode", "ngc"])
+                    .set_file_name("output.nc")
+                    .save_file()
+                {
+                    if let Err(e) = std::fs::write(&path, &gcode) {
+                        tracing::error!("Failed to write G-code: {}", e);
+                    } else {
+                        tracing::info!("Exported G-code to {}", path.display());
+                    }
+                }
+            }
+            Err(e) => tracing::error!("Export failed: {}", e),
+        }
+    }
+
+    fn export_svg_preview(&self) {
+        use rs_cam_core::viz::toolpath_to_svg;
+
+        // Collect all enabled toolpaths with results
+        let toolpaths: Vec<_> = self.state.job.toolpaths.iter()
+            .filter(|tp| tp.enabled && tp.result.is_some())
+            .filter_map(|tp| tp.result.as_ref().map(|r| &*r.toolpath))
+            .collect();
+
+        if toolpaths.is_empty() {
+            tracing::warn!("No computed toolpaths for SVG export");
+            return;
+        }
+
+        // Generate SVG from first toolpath
+        let svg = toolpath_to_svg(toolpaths[0], 800.0, 600.0);
+
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter("SVG", &["svg"])
+            .set_file_name("toolpath_preview.svg")
+            .save_file()
+        {
+            if let Err(e) = std::fs::write(&path, &svg) {
+                tracing::error!("Failed to write SVG: {}", e);
+            } else {
+                tracing::info!("Exported SVG preview to {}", path.display());
             }
         }
     }
@@ -547,7 +698,27 @@ impl RsCamApp {
                     self.state.simulation.active = true;
                     self.state.simulation.total_moves = sim.total_moves;
                     self.state.simulation.current_move = sim.total_moves;
-                    // Upload sim mesh to GPU
+
+                    // Convert boundaries
+                    self.state.simulation.boundaries = sim.boundaries.iter().map(|b| {
+                        crate::state::simulation::ToolpathBoundary {
+                            id: b.id,
+                            name: b.name.clone(),
+                            tool_name: b.tool_name.clone(),
+                            start_move: b.start_move,
+                            end_move: b.end_move,
+                        }
+                    }).collect();
+
+                    // Store checkpoints
+                    self.state.simulation.checkpoints = sim.checkpoints.into_iter().map(|c| {
+                        crate::state::simulation::SimCheckpoint {
+                            boundary_index: c.boundary_index,
+                            mesh: c.mesh,
+                        }
+                    }).collect();
+
+                    // Upload final sim mesh to GPU
                     if let Some(rs) = frame.wgpu_render_state() {
                         let mut renderer = rs.renderer.write();
                         let resources: &mut RenderResources =
@@ -575,7 +746,6 @@ impl RsCamApp {
                             col.report.min_safe_stickout
                         );
                     }
-                    // Store collision positions for rendering (future: render as red markers)
                     self.collision_positions = col.positions;
                 }
                 Err(e) => tracing::error!("Collision check failed: {}", e),
@@ -606,6 +776,7 @@ impl RsCamApp {
         // Clear sim mesh if simulation was reset
         if !self.state.simulation.active {
             resources.sim_mesh_data = None;
+            resources.tool_model_data = None;
         }
 
         // Upload collision markers as red crosses
@@ -615,7 +786,6 @@ impl RsCamApp {
             let color = [0.95, 0.15, 0.15];
             let mut verts = Vec::new();
             for p in &self.collision_positions {
-                // X cross
                 verts.push(LineVertex { position: [p[0] - s, p[1], p[2]], color });
                 verts.push(LineVertex { position: [p[0] + s, p[1], p[2]], color });
                 verts.push(LineVertex { position: [p[0], p[1] - s, p[2]], color });
@@ -637,17 +807,139 @@ impl RsCamApp {
             resources.collision_vertex_count = 0;
         }
 
-        // Upload toolpath line data
+        // Upload toolpath line data (with per-toolpath colors and isolation filtering)
         resources.toolpath_data.clear();
-        for tp in &self.state.job.toolpaths {
-            if tp.visible {
+        let selected_tp_id = match self.state.selection {
+            Selection::Toolpath(id) => Some(id),
+            _ => None,
+        };
+        let isolate = self.state.viewport.isolate_toolpath;
+
+        for (i, tp) in self.state.job.toolpaths.iter().enumerate() {
+            // Skip invisible toolpaths; also skip if not the isolated toolpath
+            let visible = tp.visible && match isolate {
+                Some(iso_id) => tp.id == iso_id,
+                None => true,
+            };
+            if visible {
                 if let Some(result) = &tp.result {
+                    let selected = selected_tp_id == Some(tp.id);
                     resources.toolpath_data.push(ToolpathGpuData::from_toolpath(
                         &render_state.device,
                         &result.toolpath,
+                        i,
+                        selected,
                     ));
                 }
             }
+        }
+    }
+
+    /// Update tool model position during simulation playback.
+    fn update_sim_tool_position(&mut self, frame: &mut eframe::Frame) {
+        if !self.state.simulation.active || self.state.simulation.total_moves == 0 {
+            self.state.simulation.tool_position = None;
+            return;
+        }
+
+        // Find which toolpath and move index we're at
+        let current = self.state.simulation.current_move;
+        let mut cumulative = 0;
+        for tp in &self.state.job.toolpaths {
+            if !tp.enabled {
+                continue;
+            }
+            if let Some(result) = &tp.result {
+                let tp_moves = result.toolpath.moves.len();
+                if current <= cumulative + tp_moves {
+                    let local_idx = current.saturating_sub(cumulative);
+                    if local_idx < result.toolpath.moves.len() {
+                        let pos = result.toolpath.moves[local_idx].target;
+                        self.state.simulation.tool_position = Some([pos.x, pos.y, pos.z]);
+
+                        // Update tool info
+                        if let Some(tool) = self.state.job.tools.iter().find(|t| t.id == tp.tool_id) {
+                            self.state.simulation.tool_radius = tool.diameter / 2.0;
+                            self.state.simulation.tool_type_label = tool.tool_type.label().to_string();
+
+                            // Upload tool model to GPU
+                            if let Some(rs) = frame.wgpu_render_state() {
+                                let is_ball = matches!(tool.tool_type,
+                                    crate::state::job::ToolType::BallNose | crate::state::job::ToolType::TaperedBallNose);
+                                let mut renderer = rs.renderer.write();
+                                let resources: &mut RenderResources =
+                                    renderer.callback_resources.get_mut().unwrap();
+                                resources.tool_model_data = Some(ToolModelGpuData::from_tool(
+                                    &rs.device,
+                                    (tool.diameter / 2.0) as f32,
+                                    tool.cutting_length as f32,
+                                    is_ball,
+                                    [pos.x as f32, pos.y as f32, pos.z as f32],
+                                ));
+                            }
+                        }
+                    }
+                    return;
+                }
+                cumulative += tp_moves;
+            }
+        }
+        self.state.simulation.tool_position = None;
+    }
+
+    /// Click-to-select: find nearest toolpath to click position in screen space.
+    fn handle_viewport_click(&mut self, click_pos: egui::Pos2) {
+        let rect = self.viewport_rect;
+        if rect.width() < 1.0 || rect.height() < 1.0 {
+            return;
+        }
+
+        let aspect = rect.width() / rect.height();
+        let vw = rect.width();
+        let vh = rect.height();
+        // Convert click to viewport-local coordinates
+        let local_x = click_pos.x - rect.min.x;
+        let local_y = click_pos.y - rect.min.y;
+
+        let mut best_dist = 15.0f32; // max pick distance in pixels
+        let mut best_id = None;
+
+        for tp in &self.state.job.toolpaths {
+            if !tp.visible {
+                continue;
+            }
+            // Respect isolation
+            if let Some(iso_id) = self.state.viewport.isolate_toolpath {
+                if tp.id != iso_id {
+                    continue;
+                }
+            }
+            let result = match &tp.result {
+                Some(r) => r,
+                None => continue,
+            };
+
+            // Sample every 20th move for performance
+            let moves = &result.toolpath.moves;
+            let step = (moves.len() / 200).max(1);
+            for j in (0..moves.len()).step_by(step) {
+                let m = &moves[j];
+                let world = [m.target.x as f32, m.target.y as f32, m.target.z as f32];
+                if let Some(screen) = self.camera.project_to_screen(world, aspect, vw, vh) {
+                    let dx = screen[0] - local_x;
+                    let dy = screen[1] - local_y;
+                    let dist = (dx * dx + dy * dy).sqrt();
+                    if dist < best_dist {
+                        best_dist = dist;
+                        best_id = Some(tp.id);
+                    }
+                }
+            }
+        }
+
+        if let Some(id) = best_id {
+            self.state.selection = Selection::Toolpath(id);
+            self.pending_upload = true;
         }
     }
 
@@ -669,6 +961,15 @@ impl RsCamApp {
 
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
+
+        self.viewport_rect = rect;
+
+        // Click-to-select toolpath in viewport
+        if response.clicked() {
+            if let Some(pos) = response.interact_pointer_pos() {
+                self.handle_viewport_click(pos);
+            }
+        }
 
         if response.dragged_by(egui::PointerButton::Primary) {
             let delta = response.drag_delta();
@@ -714,6 +1015,7 @@ impl RsCamApp {
             show_cutting: self.state.viewport.show_cutting,
             show_rapids: self.state.viewport.show_rapids,
             show_collisions: self.state.viewport.show_collisions,
+            show_tool_model: self.state.simulation.active && self.state.simulation.tool_position.is_some(),
             toolpath_move_limit: if self.state.simulation.active && self.state.simulation.current_move < self.state.simulation.total_moves {
                 Some(self.state.simulation.current_move)
             } else {
@@ -725,6 +1027,67 @@ impl RsCamApp {
 
         let cb = egui_wgpu::Callback::new_paint_callback(rect, callback);
         ui.painter().add(cb);
+    }
+
+    /// Handle keyboard shortcuts for the viewport and application.
+    fn handle_keyboard_shortcuts(&mut self, ctx: &egui::Context) {
+        // Only process shortcuts when no text edit is focused
+        if ctx.memory(|m| m.focused().is_some()) {
+            return;
+        }
+
+        ctx.input(|i| {
+            let modifiers = i.modifiers;
+
+            // Delete: remove selected toolpath
+            if i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace) {
+                if let Selection::Toolpath(id) = self.state.selection {
+                    self.events.push(AppEvent::RemoveToolpath(id));
+                }
+            }
+
+            // G: generate selected toolpath, Shift+G: generate all
+            if i.key_pressed(egui::Key::G) {
+                if modifiers.shift {
+                    self.events.push(AppEvent::GenerateAll);
+                } else if let Selection::Toolpath(id) = self.state.selection {
+                    self.events.push(AppEvent::GenerateToolpath(id));
+                }
+            }
+
+            // Space: play/pause simulation
+            if i.key_pressed(egui::Key::Space) {
+                if self.state.simulation.active {
+                    self.events.push(AppEvent::ToggleSimPlayback);
+                }
+            }
+
+            // I: toggle isolation mode
+            if i.key_pressed(egui::Key::I) {
+                self.events.push(AppEvent::ToggleIsolateToolpath);
+            }
+
+            // H: toggle visibility of selected toolpath
+            if i.key_pressed(egui::Key::H) {
+                if let Selection::Toolpath(id) = self.state.selection {
+                    self.events.push(AppEvent::ToggleToolpathVisibility(id));
+                }
+            }
+
+            // 1-4: view presets
+            if i.key_pressed(egui::Key::Num1) {
+                self.events.push(AppEvent::SetViewPreset(crate::render::camera::ViewPreset::Top));
+            }
+            if i.key_pressed(egui::Key::Num2) {
+                self.events.push(AppEvent::SetViewPreset(crate::render::camera::ViewPreset::Front));
+            }
+            if i.key_pressed(egui::Key::Num3) {
+                self.events.push(AppEvent::SetViewPreset(crate::render::camera::ViewPreset::Right));
+            }
+            if i.key_pressed(egui::Key::Num4) {
+                self.events.push(AppEvent::SetViewPreset(crate::render::camera::ViewPreset::Isometric));
+            }
+        });
     }
 }
 
@@ -739,7 +1102,15 @@ impl eframe::App for RsCamApp {
             self.upload_gpu_data(frame);
         }
 
+        // Update tool model position during sim playback
+        if self.state.simulation.active {
+            self.update_sim_tool_position(frame);
+        }
+
         self.events.clear();
+
+        // Handle keyboard shortcuts (before UI to prevent conflicts)
+        self.handle_keyboard_shortcuts(ctx);
 
         // Menu bar
         crate::ui::menu_bar::draw(ctx, &self.state, &mut self.events);

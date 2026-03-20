@@ -19,6 +19,7 @@ pub enum AppEvent {
     RescaleModel(crate::state::job::ModelId, crate::state::job::ModelUnits),
     ExportGcode,
     ExportSetupSheet,
+    ExportSvgPreview,
     SaveJob,
     OpenJob,
 
@@ -42,17 +43,26 @@ pub enum AppEvent {
     GenerateToolpath(ToolpathId),
     GenerateAll,
     ToggleToolpathVisibility(ToolpathId),
+    ToggleIsolateToolpath,
 
     // Simulation
     RunSimulation,
+    RunSimulationWith(Vec<ToolpathId>),
     ResetSimulation,
     ToggleSimPlayback,
+    ToggleSimToolpath(ToolpathId),
 
     // Collision
     RunCollisionCheck,
 
+    // Compute
+    CancelCompute,
+
     // Edit
     StockChanged,
+    StockMaterialChanged,
+    MachineChanged,
+    RecalculateFeeds(ToolpathId),
     Undo,
     Redo,
 

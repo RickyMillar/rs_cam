@@ -7,6 +7,7 @@ pub enum Selection {
     None,
     Stock,
     PostProcessor,
+    Machine,
     Model(ModelId),
     Tool(ToolId),
     Toolpath(ToolpathId),

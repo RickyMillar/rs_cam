@@ -43,3 +43,6 @@ pub mod boundary;
 pub mod horizontal_finish;
 pub mod radial_finish;
 pub mod tsp;
+pub mod material;
+pub mod machine;
+pub mod feeds;
