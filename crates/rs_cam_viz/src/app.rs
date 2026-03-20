@@ -150,6 +150,8 @@ impl RsCamApp {
                         .map(|t| t.id).unwrap_or(crate::state::job::ToolId(0));
                     let model_id = self.state.job.models.first()
                         .map(|m| m.id).unwrap_or(crate::state::job::ModelId(0));
+                    let operation = OperationConfig::new_default(op_type);
+                    let is_3d = operation.is_3d();
                     let entry = ToolpathEntry {
                         id,
                         name: format!("{} {}", op_type.label(), id.0 + 1),
@@ -157,10 +159,12 @@ impl RsCamApp {
                         visible: true,
                         tool_id,
                         model_id,
-                        operation: OperationConfig::new_default(op_type),
+                        operation,
                         dressups: crate::state::toolpath::DressupConfig::default(),
                         status: ComputeStatus::Pending,
                         result: None,
+                        stale_since: None,
+                        auto_regen: !is_3d,
                     };
                     self.state.selection = Selection::Toolpath(id);
                     self.state.job.toolpaths.push(entry);
@@ -174,10 +178,12 @@ impl RsCamApp {
                     if let Some((name, enabled, visible, tool_id, model_id, operation, dressups)) = src_data {
                         let new_id = self.state.job.next_toolpath_id();
                         self.state.selection = Selection::Toolpath(new_id);
+                        let is_3d = operation.is_3d();
                         self.state.job.toolpaths.push(ToolpathEntry {
                             id: new_id, name: format!("{} (copy)", name),
                             enabled, visible, tool_id, model_id, operation, dressups,
                             status: ComputeStatus::Pending, result: None,
+                            stale_since: None, auto_regen: !is_3d,
                         });
                         self.state.job.dirty = true;
                     }
@@ -507,7 +513,7 @@ impl RsCamApp {
     }
 
     fn draw_viewport(&mut self, ui: &mut egui::Ui) {
-        crate::ui::viewport_overlay::draw(ui, &self.state.simulation, &mut self.events);
+        crate::ui::viewport_overlay::draw(ui, &self.state.simulation, &mut self.state.viewport, &mut self.events);
 
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
@@ -547,7 +553,8 @@ impl RsCamApp {
                 _pad1: 0.0,
             },
             line_uniforms: LineUniforms { view_proj },
-            has_mesh: self.state.job.models.iter().any(|m| m.mesh.is_some()),
+            has_mesh: self.state.job.models.iter().any(|m| m.mesh.is_some())
+                && self.state.viewport.render_mode == crate::state::viewport::RenderMode::Shaded,
             show_grid: self.state.viewport.show_grid,
             show_stock: self.state.viewport.show_stock
                 && self.state.job.models.iter().any(|m| m.mesh.is_some()),
@@ -616,6 +623,21 @@ impl eframe::App for RsCamApp {
 
         // Process events after UI pass
         self.handle_events(ctx);
+
+        // Debounced auto-regeneration: if a 2.5D toolpath has been stale for >500ms, regenerate
+        let now = std::time::Instant::now();
+        let stale_ids: Vec<_> = self.state.job.toolpaths.iter()
+            .filter(|tp| tp.auto_regen)
+            .filter_map(|tp| {
+                tp.stale_since.filter(|t| now.duration_since(*t).as_millis() > 500).map(|_| tp.id)
+            })
+            .collect();
+        for id in stale_ids {
+            if let Some(tp) = self.state.job.toolpaths.iter_mut().find(|t| t.id == id) {
+                tp.stale_since = None;
+            }
+            self.submit_toolpath_compute(id);
+        }
 
         // Keep repainting while computing
         let computing = self

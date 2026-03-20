@@ -197,8 +197,43 @@ fn draw_toolpath_panel(
 
 fn dv(ui: &mut egui::Ui, label: &str, val: &mut f64, suffix: &str, speed: f64, range: std::ops::RangeInclusive<f64>) {
     ui.label(label);
-    ui.add(egui::DragValue::new(val).suffix(suffix).speed(speed).range(range));
+    let resp = ui.add(egui::DragValue::new(val).suffix(suffix).speed(speed).range(range));
+    if let Some(tip) = tooltip_for(label) {
+        resp.on_hover_text(tip);
+    }
     ui.end_row();
+}
+
+fn tooltip_for(label: &str) -> Option<&'static str> {
+    Some(match label.trim().trim_end_matches(':') {
+        "Stepover" => "Distance between passes. 40-60% of diameter for roughing, 10-20% for finishing.",
+        "Depth" => "Total cut depth from stock surface.",
+        "Depth/Pass" | "Depth per Pass" => "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter for large.",
+        "Feed Rate" => "Cutting speed (mm/min). Wood: 500-2000 for small tools, 1500-4000 for large.",
+        "Plunge Rate" => "Vertical feed speed (mm/min). Typically 30-50% of feed rate.",
+        "Tolerance" => "Geometric tolerance for path approximation. Smaller = more accurate, slower.",
+        "Min Cut Radius" | "Min Cutting Radius" => "Blend sharp corners with arcs of at least this radius.",
+        "Stock to Leave" => "Material left on surface for finish pass. 0.2-0.5mm typical.",
+        "Stock Top Z" => "Z height of the stock material top surface.",
+        "Scallop Height" => "Target cusp height between passes. 0.05-0.2mm for finishing.",
+        "Threshold Angle" => "Angle dividing steep (waterline) from shallow (raster) regions.",
+        "Max Stepdown" => "Maximum Z step between ramp passes.",
+        "Z Step" => "Vertical distance between waterline Z levels.",
+        "Sampling" => "XY grid resolution for push-cutter sampling.",
+        "Bitangency Angle" => "Minimum dihedral angle to detect concave edges. 140-170 deg typical.",
+        "Min Cut Length" => "Minimum polyline length to include as a pencil pass.",
+        "Hookup Distance" => "Max gap between pencil segments to connect into one pass.",
+        "Max Depth" => "Maximum V-carve plunge depth. Limits how deep the V-bit goes.",
+        "Glue Gap" => "Gap between male/female inlay pieces for glue. 0.05-0.15mm.",
+        "Overlap" | "Overlap Distance" => "Overlap between steep and shallow regions.",
+        "Wall Clearance" => "Extra clearance from vertical walls.",
+        "Max Distance" => "Max XY distance to keep tool down instead of retracting.",
+        "Max Angle" => "Maximum ramp angle from horizontal for entry moves.",
+        "Min Z" => "Lowest Z the tool will descend to during drop-cutter.",
+        "Angle" => "Zigzag/raster angle in degrees. 0 = along X axis.",
+        "Fine Stepdown" => "Optional finer Z step for final passes. 0 = disabled.",
+        _ => return None,
+    })
 }
 
 fn draw_pocket_params(ui: &mut egui::Ui, cfg: &mut PocketConfig) {

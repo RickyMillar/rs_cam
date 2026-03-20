@@ -2,7 +2,13 @@
 pub struct ViewportState {
     pub show_grid: bool,
     pub show_stock: bool,
-    pub show_wireframe: bool,
+    pub render_mode: RenderMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderMode {
+    Shaded,
+    Wireframe,
 }
 
 impl ViewportState {
@@ -10,7 +16,7 @@ impl ViewportState {
         Self {
             show_grid: true,
             show_stock: true,
-            show_wireframe: false,
+            render_mode: RenderMode::Shaded,
         }
     }
 }

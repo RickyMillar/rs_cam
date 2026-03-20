@@ -433,6 +433,10 @@ pub struct ToolpathEntry {
     pub dressups: DressupConfig,
     pub status: ComputeStatus,
     pub result: Option<ToolpathResult>,
+    /// When params were last changed (for debounced auto-regen). None = not stale.
+    pub stale_since: Option<std::time::Instant>,
+    /// Whether auto-regeneration is enabled for this toolpath.
+    pub auto_regen: bool,
 }
 
 pub struct ToolpathResult {
