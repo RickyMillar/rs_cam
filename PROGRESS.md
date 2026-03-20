@@ -128,10 +128,12 @@ See IMPLEMENTATION_PLAN.md for full details. Status of each planned item:
 - [x] 6.8 Project Curve (project_curve.rs)
 - [x] 6.9 High feedrate mode (gcode.rs + PostConfig + UI)
 
-**Done (core algorithm only, needs GUI wiring):**
-- [~] 6.10 Machining boundary/containment (boundary.rs exists, not wired into ToolpathEntry/worker/UI)
-- [~] 6.11 Finishing/spring passes (DepthStepping field exists, not exposed in operation UI configs)
-- [~] 6.12 TSP rapid optimization (tsp.rs exists, not wired as dressup option in UI)
+- [x] 6.10 Machining boundary/containment — boundary.rs core + wired into ToolpathEntry (boundary_enabled, boundary_containment), worker clips to stock bbox, UI panel with enable checkbox + Center/Inside/Outside dropdown
+- [x] 6.11 Finishing/spring passes — finishing_passes field on PocketConfig + ProfileConfig, wired through make_depth_with_finishing(), UI DragValue (0-10) on pocket and profile panels
+- [x] 6.12 TSP rapid optimization — optimize_rapid_order field on DressupConfig, applied in apply_dressups() chain, UI checkbox in Modifications section
+- [x] 6.22 Operation locking — locked field on ToolpathEntry, locked ops skip auto-regen
+- [x] 6.24 Radial/axial stock-to-leave — split into stock_to_leave_radial + stock_to_leave_axial on all 8 affected 3D configs, UI shows "Wall Stock:" + "Floor Stock:" DragValues
+- [x] 6.26 Canned drilling cycles — G81/G82/G83/G73/G80 default methods on PostProcessor trait
 
 **Not started:**
 - [ ] 6.13 Multi-level heights system (5 heights: clearance/retract/feed/top/bottom, replacing single safe_z)
@@ -143,11 +145,8 @@ See IMPLEMENTATION_PLAN.md for full details. Status of each planned item:
 - [ ] 6.19 Operation presets/templates (save/load named parameter sets)
 - [ ] 6.20 Setup sheet generation (HTML documentation with tool list, operation details, cycle times)
 - [ ] 6.21 Manual NC insertion (raw G-code between operations)
-- [ ] 6.22 Operation suppression & locking (locked field, skip auto-regen)
 - [ ] 6.23 Viewport enhancements (slope angle shading, entry point markers)
-- [ ] 6.24 Radial/axial stock-to-leave split (two params instead of one on 3D ops)
 - [ ] 6.25 Contact-only toolpath (skip air cuts on 3D ops using CLPoint.contacted)
-- [ ] 6.26 Canned drilling cycles in PostProcessor (G81/G82/G83/G80 methods)
 - [ ] 6.27 Continuous spiral waterline (Z-interpolating spiral instead of stepped contours)
 
 ## Module Map (for new agents)
