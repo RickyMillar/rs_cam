@@ -257,11 +257,13 @@ pub struct PocketConfig {
     pub stepover: f64, pub depth: f64, pub depth_per_pass: f64,
     pub feed_rate: f64, pub plunge_rate: f64, pub climb: bool,
     pub pattern: PocketPattern, pub angle: f64,
+    pub finishing_passes: usize,
 }
 impl Default for PocketConfig {
     fn default() -> Self {
         Self { stepover: 2.0, depth: 3.0, depth_per_pass: 1.5, feed_rate: 1000.0,
-               plunge_rate: 500.0, climb: true, pattern: PocketPattern::Contour, angle: 0.0 }
+               plunge_rate: 500.0, climb: true, pattern: PocketPattern::Contour, angle: 0.0,
+               finishing_passes: 0 }
     }
 }
 
@@ -270,12 +272,14 @@ pub struct ProfileConfig {
     pub side: ProfileSide, pub depth: f64, pub depth_per_pass: f64,
     pub feed_rate: f64, pub plunge_rate: f64, pub climb: bool,
     pub tab_count: usize, pub tab_width: f64, pub tab_height: f64,
+    pub finishing_passes: usize,
 }
 impl Default for ProfileConfig {
     fn default() -> Self {
         Self { side: ProfileSide::Outside, depth: 6.0, depth_per_pass: 2.0,
                feed_rate: 1000.0, plunge_rate: 500.0, climb: true,
-               tab_count: 0, tab_width: 6.0, tab_height: 2.0 }
+               tab_count: 0, tab_width: 6.0, tab_height: 2.0,
+               finishing_passes: 0 }
     }
 }
 
@@ -535,6 +539,9 @@ pub struct DressupConfig {
     pub feed_optimization: bool,
     pub feed_max_rate: f64,
     pub feed_ramp_rate: f64,
+
+    // TSP rapid optimization
+    pub optimize_rapid_order: bool,
 }
 
 impl Default for DressupConfig {
@@ -556,6 +563,7 @@ impl Default for DressupConfig {
             feed_optimization: false,
             feed_max_rate: 3000.0,
             feed_ramp_rate: 200.0,
+            optimize_rapid_order: false,
         }
     }
 }
@@ -579,15 +587,22 @@ pub struct ToolpathStats {
     pub rapid_distance: f64,
 }
 
+/// Tool containment mode for machining boundary (re-export from core).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoundaryContainment { Center, Inside, Outside }
+
 pub struct ToolpathEntry {
     pub id: ToolpathId,
     pub name: String,
     pub enabled: bool,
     pub visible: bool,
+    pub locked: bool,
     pub tool_id: ToolId,
     pub model_id: super::job::ModelId,
     pub operation: OperationConfig,
     pub dressups: DressupConfig,
+    pub boundary_enabled: bool,
+    pub boundary_containment: BoundaryContainment,
     pub status: ComputeStatus,
     pub result: Option<ToolpathResult>,
     /// When params were last changed (for debounced auto-regen). None = not stale.

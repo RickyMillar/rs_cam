@@ -52,6 +52,8 @@ pub struct ComputeRequest {
     pub safe_z: f64,
     pub prev_tool_radius: Option<f64>,
     pub stock_bbox: Option<BoundingBox3>,
+    pub boundary_enabled: bool,
+    pub boundary_containment: crate::state::toolpath::BoundaryContainment,
 }
 
 pub struct ComputeResult {
@@ -220,6 +222,25 @@ fn run_compute(req: &ComputeRequest) -> Result<ToolpathResult, String> {
 
     tp = apply_dressups(tp, &req.dressups, &req.tool, req.safe_z);
 
+    // Apply machining boundary clipping if enabled
+    if req.boundary_enabled {
+        if let Some(bbox) = &req.stock_bbox {
+            use rs_cam_core::boundary::{ToolContainment, effective_boundary, clip_toolpath_to_boundary};
+            let stock_poly = rs_cam_core::polygon::Polygon2::rectangle(
+                bbox.min.x, bbox.min.y, bbox.max.x, bbox.max.y,
+            );
+            let containment = match req.boundary_containment {
+                crate::state::toolpath::BoundaryContainment::Center => ToolContainment::Center,
+                crate::state::toolpath::BoundaryContainment::Inside => ToolContainment::Inside,
+                crate::state::toolpath::BoundaryContainment::Outside => ToolContainment::Outside,
+            };
+            let boundaries = effective_boundary(&stock_poly, containment, req.tool.diameter / 2.0);
+            if let Some(boundary) = boundaries.first() {
+                tp = clip_toolpath_to_boundary(&tp, boundary, req.safe_z);
+            }
+        }
+    }
+
     let stats = compute_stats(&tp);
     Ok(ToolpathResult { toolpath: Arc::new(tp), stats })
 }
@@ -239,7 +260,7 @@ fn require_mesh(req: &ComputeRequest) -> Result<(&TriangleMesh, SpatialIndex), S
 fn run_pocket(req: &ComputeRequest, cfg: &PocketConfig) -> Result<Toolpath, String> {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
-    let depth = make_depth(cfg.depth, cfg.depth_per_pass);
+    let depth = make_depth_with_finishing(cfg.depth, cfg.depth_per_pass, cfg.finishing_passes);
     let mut out = Toolpath::new();
     for p in polys {
         let tp = depth_stepped_toolpath(&depth, req.safe_z, |z| match cfg.pattern {
@@ -262,7 +283,7 @@ fn run_profile(req: &ComputeRequest, cfg: &ProfileConfig) -> Result<Toolpath, St
         crate::state::toolpath::ProfileSide::Outside => rs_cam_core::profile::ProfileSide::Outside,
         crate::state::toolpath::ProfileSide::Inside => rs_cam_core::profile::ProfileSide::Inside,
     };
-    let depth = make_depth(cfg.depth, cfg.depth_per_pass);
+    let depth = make_depth_with_finishing(cfg.depth, cfg.depth_per_pass, cfg.finishing_passes);
     let mut out = Toolpath::new();
     for p in polys {
         let mut tp = depth_stepped_toolpath(&depth, req.safe_z, |z| profile_toolpath(p, &ProfileParams {
@@ -650,14 +671,21 @@ fn apply_dressups(mut tp: Toolpath, cfg: &DressupConfig, tool: &ToolConfig, safe
         };
         tp = optimize_feed_rates(&tp, cutter.as_ref(), &mut hm, &params);
     }
+    if cfg.optimize_rapid_order {
+        tp = rs_cam_core::tsp::optimize_rapid_order(&tp, safe_z);
+    }
     tp
 }
 
 fn make_depth(depth: f64, per_pass: f64) -> DepthStepping {
+    make_depth_with_finishing(depth, per_pass, 0)
+}
+
+fn make_depth_with_finishing(depth: f64, per_pass: f64, finishing_passes: usize) -> DepthStepping {
     DepthStepping {
         start_z: 0.0, final_z: -depth.abs(), max_step_down: per_pass,
         distribution: DepthDistribution::Even, finish_allowance: 0.0,
-        finishing_passes: 0,
+        finishing_passes,
     }
 }
 

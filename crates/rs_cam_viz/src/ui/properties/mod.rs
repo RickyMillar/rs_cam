@@ -285,8 +285,32 @@ fn draw_toolpath_panel(
         OperationConfig::ProjectCurve(cfg) => draw_project_curve_params(ui, cfg),
     }
 
-    // Dressup modifications
+    // Machining boundary
     ui.add_space(8.0);
+    ui.collapsing("Machining Boundary", |ui| {
+        ui.checkbox(&mut entry.boundary_enabled, "Clip to stock boundary")
+            .on_hover_text("Restrict toolpath to within the stock material bounds");
+        if entry.boundary_enabled {
+            ui.horizontal(|ui| {
+                ui.label("Containment:");
+                egui::ComboBox::from_id_salt("boundary_contain").selected_text(match entry.boundary_containment {
+                    BoundaryContainment::Center => "Center",
+                    BoundaryContainment::Inside => "Inside",
+                    BoundaryContainment::Outside => "Outside",
+                }).show_ui(ui, |ui| {
+                    ui.selectable_value(&mut entry.boundary_containment, BoundaryContainment::Center, "Center")
+                        .on_hover_text("Tool center stays inside boundary");
+                    ui.selectable_value(&mut entry.boundary_containment, BoundaryContainment::Inside, "Inside")
+                        .on_hover_text("Entire tool stays inside boundary (shrinks by tool radius)");
+                    ui.selectable_value(&mut entry.boundary_containment, BoundaryContainment::Outside, "Outside")
+                        .on_hover_text("Tool edge can extend outside boundary");
+                });
+            });
+        }
+    });
+
+    // Dressup modifications
+    ui.add_space(4.0);
     ui.collapsing("Modifications", |ui| {
         draw_dressup_params(ui, &mut entry.dressups);
     });
@@ -400,6 +424,12 @@ fn draw_pocket_params(ui: &mut egui::Ui, cfg: &mut PocketConfig) {
         if cfg.pattern == PocketPattern::Zigzag {
             dv(ui, "Angle:", &mut cfg.angle, " deg", 1.0, 0.0..=360.0);
         }
+        ui.label("Finishing Passes:");
+        let mut fp = cfg.finishing_passes as i32;
+        if ui.add(egui::DragValue::new(&mut fp).range(0..=10)).on_hover_text("Spring passes at final depth for dimensional accuracy").changed() {
+            cfg.finishing_passes = fp.max(0) as usize;
+        }
+        ui.end_row();
     });
 }
 
@@ -433,6 +463,14 @@ fn draw_profile_params(ui: &mut egui::Ui, cfg: &mut ProfileConfig) {
                 dv(ui, "Height:", &mut cfg.tab_height, " mm", 0.5, 0.5..=20.0);
             }
         });
+    });
+    egui::Grid::new("prof_finish").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+        ui.label("Finishing Passes:");
+        let mut fp = cfg.finishing_passes as i32;
+        if ui.add(egui::DragValue::new(&mut fp).range(0..=10)).on_hover_text("Spring passes at final depth for dimensional accuracy").changed() {
+            cfg.finishing_passes = fp.max(0) as usize;
+        }
+        ui.end_row();
     });
 }
 
@@ -904,4 +942,6 @@ fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
             dv(ui, "  Ramp Rate:", &mut cfg.feed_ramp_rate, " mm/min/mm", 10.0, 10.0..=2000.0);
         });
     }
+    ui.checkbox(&mut cfg.optimize_rapid_order, "Optimize rapid travel order")
+        .on_hover_text("Reorder toolpath segments to minimize rapid travel distance (TSP optimization)");
 }

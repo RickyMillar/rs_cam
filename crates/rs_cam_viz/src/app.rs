@@ -160,10 +160,13 @@ impl RsCamApp {
                         name: format!("{} {}", op_type.label(), id.0 + 1),
                         enabled: true,
                         visible: true,
+                        locked: false,
                         tool_id,
                         model_id,
                         operation,
                         dressups: crate::state::toolpath::DressupConfig::default(),
+                        boundary_enabled: false,
+                        boundary_containment: crate::state::toolpath::BoundaryContainment::Center,
                         status: ComputeStatus::Pending,
                         result: None,
                         stale_since: None,
@@ -184,7 +187,9 @@ impl RsCamApp {
                         let is_3d = operation.is_3d();
                         self.state.job.toolpaths.push(ToolpathEntry {
                             id: new_id, name: format!("{} (copy)", name),
-                            enabled, visible, tool_id, model_id, operation, dressups,
+                            enabled, visible, locked: false, tool_id, model_id, operation, dressups,
+                            boundary_enabled: false,
+                            boundary_containment: crate::state::toolpath::BoundaryContainment::Center,
                             status: ComputeStatus::Pending, result: None,
                             stale_since: None, auto_regen: !is_3d,
                         });
@@ -478,6 +483,8 @@ impl RsCamApp {
             safe_z: self.state.job.post.safe_z,
             prev_tool_radius,
             stock_bbox,
+            boundary_enabled: tp.boundary_enabled,
+            boundary_containment: tp.boundary_containment,
         });
     }
 
@@ -761,7 +768,7 @@ impl eframe::App for RsCamApp {
         // Debounced auto-regeneration: if a 2.5D toolpath has been stale for >500ms, regenerate
         let now = std::time::Instant::now();
         let stale_ids: Vec<_> = self.state.job.toolpaths.iter()
-            .filter(|tp| tp.auto_regen)
+            .filter(|tp| tp.auto_regen && !tp.locked)
             .filter_map(|tp| {
                 tp.stale_since.filter(|t| now.duration_since(*t).as_millis() > 500).map(|_| tp.id)
             })
