@@ -9,7 +9,7 @@ Read this FIRST at the start of every session. Update LAST before ending.
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 466 tests passing (464 unit + 2 integration)
+- [x] Core library + CLI compiling, 506 tests passing (504 unit + 2 integration)
 - [x] Phase 1 complete: STL → drop-cutter → G-code pipeline with 3D HTML viewer
 - [x] Phase 2 complete: 2.5D operations (pocket, profile, zigzag, depth stepping, SVG/DXF input, dressups, CLI)
 - [x] Phase 3 complete: Advanced tools (BullNose, VBit, TaperedBall), push-cutter, waterline, arc fitting, G2/G3
@@ -109,6 +109,11 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] 5.16 Push-cutter edge accuracy — coarse+bisection sampling (9+10≈19 evals) replaces 32-step uniform, higher boundary accuracy (pushcutter.rs)
 - [x] 5.17 Polygon offset hole pairing — containment-based re-pairing via point-in-polygon instead of blind attachment to first polygon (polygon.rs)
 - [x] 5.18 Arc fitting least-squares — Kåsa's algebraic circle fit replaces 3-point fit for 5+ points, lower mean error on noisy/partial arcs (arcfit.rs)
+- [x] 5.19 GUI UX Overhaul — Phase A: per-toolpath color palette (8-color deterministic, Z-depth blend, selection highlight), viewport click-to-select (screen-space nearest-segment), toolpath isolation mode (I key), colored unicode tree indicators with palette swatches, keyboard shortcuts (Delete/G/Shift+G/Space/I/H/1-4 view presets)
+- [x] 5.20 Simulation workspace — Phase B: simulation replaces properties panel when active, per-toolpath boundaries with colored progress segments, heightmap checkpoint caching at each boundary for rewind, tool model wireframe rendering during playback (ball/flat detection, position tracking), per-operation progress with tool name/position readout, jump-to-boundary buttons
+- [x] 5.21 Remaining stock — Phase C: StockSource enum (Fresh/FromRemainingStock) on every ToolpathEntry, stock source selector in properties panel with info text, deprecation path for Rest machining operation
+- [x] 5.22 Plan gaps — Phase D: normal flip warning (yellow banner in model properties when >1% inconsistent winding), export summary logging (line count, moves, cutting distance, tool changes, estimated time), cancel computation button with AtomicBool cancellation token, SVG preview export via File menu (toolpath_to_svg)
+- [x] 5.23 Feeds & Speeds Integration — Material model (23 materials across 5 families: wood/plywood/sheet/plastic/foam with hardness index and Kc), Machine profiles (3 presets: generic/Shapeoko VFD/Makita with spindle config, power model, chip load formula, rigidity), Feeds calculator (10-step pipeline: RPM→chipload→DOC/WOC→flute guard→feed→power check→machine clamp→plunge→safety→warnings, sub-ms per call), Tool extensions (flute_count, tool_material, cut_direction), Auto-suggest UX (per-field auto/manual toggle via FeedsAutoMode, calculated values auto-written into operation configs, feeds summary card with RPM/chipload/feed/plunge/DOC/WOC/power bar/MRR/warnings), TOML serialization (material, machine, flute_count backward-compatible), 58 new tests (material.rs, machine.rs, feeds/geometry.rs, feeds/mod.rs)
 
 ## Module Map (for new agents)
 
@@ -142,6 +147,9 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 | inlay | `rs_cam_core/src/inlay.rs` | Inlay operations: female V-carve pocket, male plug with inverted depth profile |
 | collision | `rs_cam_core/src/collision.rs` | Tool holder/shank collision detection, interpolated path checking, multi-segment holders |
 | pipeline | `rs_cam_core/src/pipeline.rs` | Incremental computation cache with dirty-flag invalidation |
+| material | `rs_cam_core/src/material.rs` | Material enum (wood/plywood/sheet/plastic/foam/custom), hardness index, Kc values |
+| machine | `rs_cam_core/src/machine.rs` | MachineProfile, spindle config, power model, chip load formula, rigidity, presets |
+| feeds | `rs_cam_core/src/feeds/` | Feeds calculator (mod.rs + geometry.rs): RPM, chip load, DOC/WOC, power check, warnings |
 | contour_extract | `rs_cam_core/src/contour_extract.rs` | Marching squares contour extraction for waterline (replaces nearest-neighbor) |
 | CLI | `rs_cam_cli/src/main.rs` | drop-cutter, pocket, profile, adaptive, adaptive3d, vcarve, rest, waterline, pencil, inlay subcommands |
 
