@@ -19,10 +19,10 @@ use crate::geo::P3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
-use crate::toolpath::Toolpath;
+use crate::toolpath::{simplify_path_3d, Toolpath};
 use crate::waterline::waterline_contours;
 
-use tracing::{debug, info};
+use tracing::info;
 
 /// Cutting direction for ramp finishing.
 #[derive(Debug, Clone, Copy, Default)]
@@ -272,65 +272,6 @@ fn slope_confined_segments(
     segments
 }
 
-/// Simplify a 3D path using Douglas-Peucker algorithm.
-fn simplify_path(points: &[P3], tolerance: f64) -> Vec<P3> {
-    if points.len() <= 2 {
-        return points.to_vec();
-    }
-
-    let mut keep = vec![false; points.len()];
-    keep[0] = true;
-    keep[points.len() - 1] = true;
-    dp_simplify(points, 0, points.len() - 1, tolerance, &mut keep);
-
-    points
-        .iter()
-        .zip(keep.iter())
-        .filter(|(_, k)| **k)
-        .map(|(p, _)| *p)
-        .collect()
-}
-
-fn dp_simplify(points: &[P3], start: usize, end: usize, tol: f64, keep: &mut [bool]) {
-    if end <= start + 1 {
-        return;
-    }
-    let a = points[start];
-    let b = points[end];
-    let ab = P3::new(b.x - a.x, b.y - a.y, b.z - a.z);
-    let ab_len_sq = ab.x * ab.x + ab.y * ab.y + ab.z * ab.z;
-
-    let mut max_dist = 0.0;
-    let mut max_idx = start;
-    for i in (start + 1)..end {
-        let ap = P3::new(
-            points[i].x - a.x,
-            points[i].y - a.y,
-            points[i].z - a.z,
-        );
-        let dist = if ab_len_sq < 1e-20 {
-            (ap.x * ap.x + ap.y * ap.y + ap.z * ap.z).sqrt()
-        } else {
-            let t = (ap.x * ab.x + ap.y * ab.y + ap.z * ab.z) / ab_len_sq;
-            let t = t.clamp(0.0, 1.0);
-            let proj_x = ap.x - t * ab.x;
-            let proj_y = ap.y - t * ab.y;
-            let proj_z = ap.z - t * ab.z;
-            (proj_x * proj_x + proj_y * proj_y + proj_z * proj_z).sqrt()
-        };
-        if dist > max_dist {
-            max_dist = dist;
-            max_idx = i;
-        }
-    }
-
-    if max_dist > tol {
-        keep[max_idx] = true;
-        dp_simplify(points, start, max_idx, tol, keep);
-        dp_simplify(points, max_idx, end, tol, keep);
-    }
-}
-
 /// Generate a ramp finishing toolpath.
 ///
 /// Produces continuous helical descent along steep walls instead of discrete
@@ -467,7 +408,7 @@ pub fn ramp_finish_toolpath(
     let should_reverse = matches!(params.direction, CutDirection::Conventional);
 
     for (i, segment) in all_ramp_segments.iter().enumerate() {
-        let simplified = simplify_path(segment, params.tolerance);
+        let simplified = simplify_path_3d(segment, params.tolerance);
         if simplified.len() < 2 {
             continue;
         }
@@ -481,24 +422,10 @@ pub fn ramp_finish_toolpath(
             simplified
         };
 
-        // Rapid to start
-        tp.rapid_to(P3::new(path[0].x, path[0].y, params.safe_z));
-        tp.feed_to(path[0], params.plunge_rate);
-
-        // Feed along ramp
-        for pt in &path[1..] {
-            tp.feed_to(*pt, params.feed_rate);
-        }
-
-        // Retract
-        if let Some(last) = path.last() {
-            tp.rapid_to(P3::new(last.x, last.y, params.safe_z));
-        }
+        tp.emit_path_segment(&path, params.safe_z, params.feed_rate, params.plunge_rate);
     }
 
-    if let Some(last) = tp.moves.last() {
-        tp.rapid_to(P3::new(last.target.x, last.target.y, params.safe_z));
-    }
+    tp.final_retract(params.safe_z);
 
     info!(
         moves = tp.moves.len(),
@@ -826,7 +753,7 @@ mod tests {
             P3::new(2.0, 0.0, 0.0),
             P3::new(3.0, 0.0, 0.0),
         ];
-        let simplified = simplify_path(&path, 0.01);
+        let simplified = simplify_path_3d(&path, 0.01);
         assert_eq!(simplified.len(), 2, "Collinear points should reduce to 2");
     }
 
@@ -837,7 +764,7 @@ mod tests {
             P3::new(5.0, 5.0, 0.0),
             P3::new(10.0, 0.0, 0.0),
         ];
-        let simplified = simplify_path(&path, 0.01);
+        let simplified = simplify_path_3d(&path, 0.01);
         assert_eq!(simplified.len(), 3, "Corner should be preserved");
     }
 }

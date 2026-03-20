@@ -553,26 +553,16 @@ pub fn pencil_toolpath(
         }
 
         // Filter out points where drop-cutter had no contact
-        let valid_points: Vec<&P3> = path.iter()
+        let valid_points: Vec<P3> = path.iter()
             .filter(|p| p.z > f64::NEG_INFINITY + 1.0)
+            .copied()
             .collect();
 
         if valid_points.len() < 2 {
             continue;
         }
 
-        // Rapid to above first point
-        tp.rapid_to(P3::new(valid_points[0].x, valid_points[0].y, params.safe_z));
-        // Plunge
-        tp.feed_to(*valid_points[0], params.plunge_rate);
-        // Feed along path
-        for &pt in &valid_points[1..] {
-            tp.feed_to(*pt, params.feed_rate);
-        }
-        // Retract
-        if let Some(&&last) = valid_points.last() {
-            tp.rapid_to(P3::new(last.x, last.y, params.safe_z));
-        }
+        tp.emit_path_segment(&valid_points, params.safe_z, params.feed_rate, params.plunge_rate);
     }
 
     info!(

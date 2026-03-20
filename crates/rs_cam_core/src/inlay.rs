@@ -9,7 +9,7 @@
 //! The V-bit angle must match for both operations. A `glue_gap` parameter accounts
 //! for the adhesive layer between mating surfaces.
 
-use crate::geo::{P2, P3};
+use crate::geo::{point_to_segment_distance, P2, P3};
 use crate::pocket::{PocketParams, pocket_toolpath};
 use crate::polygon::{Polygon2, offset_polygon};
 use crate::toolpath::Toolpath;
@@ -177,14 +177,7 @@ fn male_toolpath(polygon: &Polygon2, params: &InlayParams) -> Toolpath {
             continue;
         }
 
-        tp.rapid_to(P3::new(points[0].x, points[0].y, params.safe_z));
-        tp.feed_to(points[0], params.plunge_rate);
-        for p in points.iter().skip(1) {
-            tp.feed_to(*p, params.feed_rate);
-        }
-        if let Some(last) = points.last() {
-            tp.rapid_to(P3::new(last.x, last.y, params.safe_z));
-        }
+        tp.emit_path_segment(&points, params.safe_z, params.feed_rate, params.plunge_rate);
     }
 
     tp
@@ -211,28 +204,6 @@ fn point_to_polygon_boundary(point: &P2, exterior: &[P2], holes: &[Vec<P2>]) -> 
     }
 
     min_dist
-}
-
-/// Compute the minimum Euclidean distance from a point to a line segment.
-fn point_to_segment_distance(p: &P2, a: &P2, b: &P2) -> f64 {
-    let ab_x = b.x - a.x;
-    let ab_y = b.y - a.y;
-    let ab_len_sq = ab_x * ab_x + ab_y * ab_y;
-
-    if ab_len_sq < 1e-20 {
-        let dx = p.x - a.x;
-        let dy = p.y - a.y;
-        return (dx * dx + dy * dy).sqrt();
-    }
-
-    let ap_x = p.x - a.x;
-    let ap_y = p.y - a.y;
-    let t = ((ap_x * ab_x + ap_y * ab_y) / ab_len_sq).clamp(0.0, 1.0);
-    let closest_x = a.x + t * ab_x;
-    let closest_y = a.y + t * ab_y;
-    let dx = p.x - closest_x;
-    let dy = p.y - closest_y;
-    (dx * dx + dy * dy).sqrt()
 }
 
 /// Get the XY bounding box of a polygon.

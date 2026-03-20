@@ -88,6 +88,37 @@ impl Toolpath {
         dist
     }
 
+    /// Emit rapid→plunge→feed→retract for a 3D path.
+    ///
+    /// For an empty path, this is a no-op. For a single point, emits
+    /// rapid+plunge+retract only (no feed moves).
+    pub fn emit_path_segment(&mut self, path: &[P3], safe_z: f64, feed_rate: f64, plunge_rate: f64) {
+        if path.is_empty() {
+            return;
+        }
+        // Rapid to above first point
+        self.rapid_to(P3::new(path[0].x, path[0].y, safe_z));
+        // Plunge to first point
+        self.feed_to(path[0], plunge_rate);
+        // Feed along remaining points
+        for p in path.iter().skip(1) {
+            self.feed_to(*p, feed_rate);
+        }
+        // Retract
+        if let Some(last) = path.last() {
+            self.rapid_to(P3::new(last.x, last.y, safe_z));
+        }
+    }
+
+    /// Retract to safe_z if currently below it (0.001mm epsilon).
+    pub fn final_retract(&mut self, safe_z: f64) {
+        if let Some(last) = self.moves.last() {
+            if last.target.z < safe_z - 0.001 {
+                self.rapid_to(P3::new(last.target.x, last.target.y, safe_z));
+            }
+        }
+    }
+
     pub fn total_rapid_distance(&self) -> f64 {
         let mut dist = 0.0;
         for i in 1..self.moves.len() {
@@ -99,6 +130,58 @@ impl Toolpath {
         }
         dist
     }
+}
+
+/// Simplify a 3D path using Douglas-Peucker with cross-product distance.
+///
+/// Removes points that deviate less than `tolerance` from the line between
+/// their neighbors. Uses 3D perpendicular distance via cross product for
+/// accurate distance computation on slopes.
+pub fn simplify_path_3d(points: &[P3], tolerance: f64) -> Vec<P3> {
+    if points.len() <= 2 {
+        return points.to_vec();
+    }
+
+    let first = points[0];
+    let last = points[points.len() - 1];
+    let dx = last.x - first.x;
+    let dy = last.y - first.y;
+    let dz = last.z - first.z;
+    let seg_len = (dx * dx + dy * dy + dz * dz).sqrt();
+
+    if seg_len < 1e-10 {
+        return vec![first, last];
+    }
+
+    // Find point farthest from the line first→last
+    let mut max_dist = 0.0;
+    let mut max_idx = 0;
+
+    for (i, p) in points.iter().enumerate().skip(1).take(points.len() - 2) {
+        // Vector from first to p
+        let vx = p.x - first.x;
+        let vy = p.y - first.y;
+        let vz = p.z - first.z;
+        // Cross product magnitude: |v x d| / |d|
+        let cx = vy * dz - vz * dy;
+        let cy = vz * dx - vx * dz;
+        let cz = vx * dy - vy * dx;
+        let dist = (cx * cx + cy * cy + cz * cz).sqrt() / seg_len;
+        if dist > max_dist {
+            max_dist = dist;
+            max_idx = i;
+        }
+    }
+
+    if max_dist <= tolerance {
+        return vec![first, last];
+    }
+
+    let mut left = simplify_path_3d(&points[..=max_idx], tolerance);
+    let right = simplify_path_3d(&points[max_idx..], tolerance);
+    left.pop(); // Remove duplicate at split point
+    left.extend(right);
+    left
 }
 
 /// Convert a drop-cutter grid into a zigzag raster toolpath.
@@ -152,6 +235,89 @@ pub fn raster_toolpath_from_grid(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_emit_path_segment_basic() {
+        let path = vec![
+            P3::new(0.0, 0.0, -1.0),
+            P3::new(5.0, 0.0, -1.0),
+            P3::new(10.0, 0.0, -1.0),
+        ];
+        let mut tp = Toolpath::new();
+        tp.emit_path_segment(&path, 10.0, 1000.0, 500.0);
+
+        // rapid + plunge + 2 feeds + retract = 5 moves
+        assert_eq!(tp.moves.len(), 5, "Expected 5 moves, got {}", tp.moves.len());
+        assert_eq!(tp.moves[0].move_type, MoveType::Rapid);
+        assert!((tp.moves[0].target.z - 10.0).abs() < 1e-10);
+        assert!(matches!(tp.moves[1].move_type, MoveType::Linear { feed_rate } if (feed_rate - 500.0).abs() < 1e-10));
+        assert!(matches!(tp.moves[2].move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10));
+        assert!(matches!(tp.moves[3].move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10));
+        assert_eq!(tp.moves[4].move_type, MoveType::Rapid);
+        assert!((tp.moves[4].target.z - 10.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_emit_path_segment_empty() {
+        let mut tp = Toolpath::new();
+        tp.emit_path_segment(&[], 10.0, 1000.0, 500.0);
+        assert!(tp.moves.is_empty());
+    }
+
+    #[test]
+    fn test_emit_path_segment_single_point() {
+        let path = vec![P3::new(5.0, 5.0, -2.0)];
+        let mut tp = Toolpath::new();
+        tp.emit_path_segment(&path, 10.0, 1000.0, 500.0);
+
+        // rapid + plunge + retract = 3 moves
+        assert_eq!(tp.moves.len(), 3);
+        assert_eq!(tp.moves[0].move_type, MoveType::Rapid);
+        assert!(matches!(tp.moves[1].move_type, MoveType::Linear { .. }));
+        assert_eq!(tp.moves[2].move_type, MoveType::Rapid);
+    }
+
+    #[test]
+    fn test_final_retract_below() {
+        let mut tp = Toolpath::new();
+        tp.feed_to(P3::new(5.0, 5.0, -3.0), 1000.0);
+        tp.final_retract(10.0);
+        assert_eq!(tp.moves.len(), 2);
+        assert_eq!(tp.moves[1].move_type, MoveType::Rapid);
+        assert!((tp.moves[1].target.z - 10.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_final_retract_already_safe() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(5.0, 5.0, 10.0));
+        tp.final_retract(10.0);
+        // No retract added since we're already at safe_z
+        assert_eq!(tp.moves.len(), 1);
+    }
+
+    #[test]
+    fn test_simplify_path_3d_collinear() {
+        let path = vec![
+            P3::new(0.0, 0.0, 0.0),
+            P3::new(1.0, 0.0, 0.0),
+            P3::new(2.0, 0.0, 0.0),
+            P3::new(3.0, 0.0, 0.0),
+        ];
+        let simplified = simplify_path_3d(&path, 0.01);
+        assert_eq!(simplified.len(), 2, "Collinear points should reduce to 2");
+    }
+
+    #[test]
+    fn test_simplify_path_3d_preserves_corners() {
+        let path = vec![
+            P3::new(0.0, 0.0, 0.0),
+            P3::new(5.0, 5.0, 5.0),
+            P3::new(10.0, 0.0, 0.0),
+        ];
+        let simplified = simplify_path_3d(&path, 0.01);
+        assert_eq!(simplified.len(), 3, "Corner should be preserved");
+    }
 
     #[test]
     fn test_toolpath_distances() {

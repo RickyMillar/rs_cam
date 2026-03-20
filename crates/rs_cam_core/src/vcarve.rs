@@ -11,7 +11,7 @@
 //!
 //! Reference: research/02_algorithms.md §11
 
-use crate::geo::{P2, P3};
+use crate::geo::{point_to_segment_distance, P2, P3};
 use crate::polygon::Polygon2;
 use crate::toolpath::Toolpath;
 
@@ -35,29 +35,6 @@ pub struct VCarveParams {
 }
 
 // ── Distance computation ──────────────────────────────────────────────
-
-/// Compute the minimum Euclidean distance from a point to a line segment.
-fn point_to_segment_distance(p: &P2, a: &P2, b: &P2) -> f64 {
-    let ab_x = b.x - a.x;
-    let ab_y = b.y - a.y;
-    let ab_len_sq = ab_x * ab_x + ab_y * ab_y;
-
-    if ab_len_sq < 1e-20 {
-        // Degenerate segment (point)
-        let dx = p.x - a.x;
-        let dy = p.y - a.y;
-        return (dx * dx + dy * dy).sqrt();
-    }
-
-    let ap_x = p.x - a.x;
-    let ap_y = p.y - a.y;
-    let t = ((ap_x * ab_x + ap_y * ab_y) / ab_len_sq).clamp(0.0, 1.0);
-    let closest_x = a.x + t * ab_x;
-    let closest_y = a.y + t * ab_y;
-    let dx = p.x - closest_x;
-    let dy = p.y - closest_y;
-    (dx * dx + dy * dy).sqrt()
-}
 
 /// Compute the minimum distance from a point to any edge of a polygon
 /// (exterior + all holes).
@@ -136,19 +113,7 @@ pub fn vcarve_toolpath(polygon: &Polygon2, params: &VCarveParams) -> Toolpath {
             continue;
         }
 
-        // Rapid to start at safe_z, plunge to first depth
-        tp.rapid_to(P3::new(points[0].x, points[0].y, params.safe_z));
-        tp.feed_to(points[0], params.plunge_rate);
-
-        // Feed along scan line with varying Z
-        for p in points.iter().skip(1) {
-            tp.feed_to(*p, params.feed_rate);
-        }
-
-        // Retract
-        if let Some(last) = points.last() {
-            tp.rapid_to(P3::new(last.x, last.y, params.safe_z));
-        }
+        tp.emit_path_segment(&points, params.safe_z, params.feed_rate, params.plunge_rate);
     }
 
     tp
@@ -174,29 +139,6 @@ mod tests {
             safe_z: 10.0,
             tolerance: 0.1,
         }
-    }
-
-    // ── Distance computation tests ────────────────────────────────────
-
-    #[test]
-    fn test_point_to_segment_distance() {
-        let a = P2::new(0.0, 0.0);
-        let b = P2::new(10.0, 0.0);
-
-        // Point directly above the midpoint
-        let p = P2::new(5.0, 3.0);
-        let d = point_to_segment_distance(&p, &a, &b);
-        assert!((d - 3.0).abs() < 1e-10, "Should be 3.0, got {}", d);
-
-        // Point beyond the end
-        let p2 = P2::new(12.0, 0.0);
-        let d2 = point_to_segment_distance(&p2, &a, &b);
-        assert!((d2 - 2.0).abs() < 1e-10, "Should be 2.0, got {}", d2);
-
-        // Point at vertex
-        let p3 = P2::new(0.0, 4.0);
-        let d3 = point_to_segment_distance(&p3, &a, &b);
-        assert!((d3 - 4.0).abs() < 1e-10, "Should be 4.0, got {}", d3);
     }
 
     #[test]

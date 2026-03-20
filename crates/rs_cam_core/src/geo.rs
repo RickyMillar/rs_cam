@@ -128,6 +128,29 @@ impl Triangle {
     }
 }
 
+/// Compute the minimum Euclidean distance from a point to a line segment.
+pub fn point_to_segment_distance(p: &P2, a: &P2, b: &P2) -> f64 {
+    let ab_x = b.x - a.x;
+    let ab_y = b.y - a.y;
+    let ab_len_sq = ab_x * ab_x + ab_y * ab_y;
+
+    if ab_len_sq < 1e-20 {
+        // Degenerate segment (point)
+        let dx = p.x - a.x;
+        let dy = p.y - a.y;
+        return (dx * dx + dy * dy).sqrt();
+    }
+
+    let ap_x = p.x - a.x;
+    let ap_y = p.y - a.y;
+    let t = ((ap_x * ab_x + ap_y * ab_y) / ab_len_sq).clamp(0.0, 1.0);
+    let closest_x = a.x + t * ab_x;
+    let closest_y = a.y + t * ab_y;
+    let dx = p.x - closest_x;
+    let dy = p.y - closest_y;
+    (dx * dx + dy * dy).sqrt()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,5 +200,35 @@ mod tests {
         );
         let z = t.z_at_xy(5.0, 3.0).unwrap();
         assert!((z - 8.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_point_to_segment_distance() {
+        let a = P2::new(0.0, 0.0);
+        let b = P2::new(10.0, 0.0);
+
+        // Point directly above the midpoint
+        let p = P2::new(5.0, 3.0);
+        let d = point_to_segment_distance(&p, &a, &b);
+        assert!((d - 3.0).abs() < 1e-10, "Should be 3.0, got {}", d);
+
+        // Point beyond the end
+        let p2 = P2::new(12.0, 0.0);
+        let d2 = point_to_segment_distance(&p2, &a, &b);
+        assert!((d2 - 2.0).abs() < 1e-10, "Should be 2.0, got {}", d2);
+
+        // Point at vertex
+        let p3 = P2::new(0.0, 4.0);
+        let d3 = point_to_segment_distance(&p3, &a, &b);
+        assert!((d3 - 4.0).abs() < 1e-10, "Should be 4.0, got {}", d3);
+    }
+
+    #[test]
+    fn test_point_to_segment_degenerate() {
+        // Degenerate segment (single point)
+        let a = P2::new(5.0, 5.0);
+        let p = P2::new(8.0, 9.0);
+        let d = point_to_segment_distance(&p, &a, &a);
+        assert!((d - 5.0).abs() < 1e-10, "Should be 5.0, got {}", d);
     }
 }

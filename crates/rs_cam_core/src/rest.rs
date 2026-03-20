@@ -136,21 +136,9 @@ fn emit_rest_segment(tp: &mut Toolpath, points: &[P2], params: &RestParams) {
     if points.is_empty() {
         return;
     }
-
     let z = params.cut_depth;
-
-    // Rapid to start at safe_z
-    tp.rapid_to(P3::new(points[0].x, points[0].y, params.safe_z));
-    // Plunge to cut depth
-    tp.feed_to(P3::new(points[0].x, points[0].y, z), params.plunge_rate);
-    // Feed along the segment
-    for p in points.iter().skip(1) {
-        tp.feed_to(P3::new(p.x, p.y, z), params.feed_rate);
-    }
-    // Retract
-    if let Some(last) = points.last() {
-        tp.rapid_to(P3::new(last.x, last.y, params.safe_z));
-    }
+    let path_3d: Vec<P3> = points.iter().map(|p| P3::new(p.x, p.y, z)).collect();
+    tp.emit_path_segment(&path_3d, params.safe_z, params.feed_rate, params.plunge_rate);
 }
 
 #[cfg(test)]

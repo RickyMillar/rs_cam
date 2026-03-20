@@ -21,14 +21,14 @@ use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::simulation::{stamp_tool_at, stamp_tool_at_lut, Heightmap, RadialProfileLUT};
 use crate::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
-use crate::toolpath::Toolpath;
+use crate::toolpath::{simplify_path_3d, Toolpath};
 use crate::waterline::waterline_contours;
 
 use std::collections::VecDeque;
 use std::f64::consts::{PI, TAU};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 /// Region ordering strategy for 3D adaptive clearing.
 ///
@@ -673,54 +673,6 @@ fn is_clear_path_3d(
 }
 
 // ── 3D path simplification ───────────────────────────────────────────
-
-/// Simplify a 3D path using Douglas-Peucker with 3D perpendicular distance.
-fn simplify_path_3d(points: &[P3], tolerance: f64) -> Vec<P3> {
-    if points.len() <= 2 {
-        return points.to_vec();
-    }
-
-    let first = points[0];
-    let last = points[points.len() - 1];
-    let dx = last.x - first.x;
-    let dy = last.y - first.y;
-    let dz = last.z - first.z;
-    let seg_len = (dx * dx + dy * dy + dz * dz).sqrt();
-
-    if seg_len < 1e-10 {
-        return vec![first, last];
-    }
-
-    // Find point farthest from the line first→last
-    let mut max_dist = 0.0;
-    let mut max_idx = 0;
-
-    for (i, p) in points.iter().enumerate().skip(1).take(points.len() - 2) {
-        // Vector from first to p
-        let vx = p.x - first.x;
-        let vy = p.y - first.y;
-        let vz = p.z - first.z;
-        // Cross product magnitude: |v x d| / |d|
-        let cx = vy * dz - vz * dy;
-        let cy = vz * dx - vx * dz;
-        let cz = vx * dy - vy * dx;
-        let dist = (cx * cx + cy * cy + cz * cz).sqrt() / seg_len;
-        if dist > max_dist {
-            max_dist = dist;
-            max_idx = i;
-        }
-    }
-
-    if max_dist <= tolerance {
-        return vec![first, last];
-    }
-
-    let mut left = simplify_path_3d(&points[..=max_idx], tolerance);
-    let right = simplify_path_3d(&points[max_idx..], tolerance);
-    left.pop(); // Remove duplicate at split point
-    left.extend(right);
-    left
-}
 
 /// Blend corners on a 3D path. Projects to 2D for geometry, interpolates Z.
 fn blend_corners_3d(path: &[P3], min_radius: f64) -> Vec<P3> {

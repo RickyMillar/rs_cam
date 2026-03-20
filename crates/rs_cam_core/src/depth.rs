@@ -199,11 +199,7 @@ where
         let finish_tp = finish_op(finish_z);
         if !finish_tp.moves.is_empty() {
             // Ensure retract before finish pass
-            if let Some(last) = tp.moves.last()
-                && last.target.z < safe_z - 0.001
-            {
-                tp.rapid_to(P3::new(last.target.x, last.target.y, safe_z));
-            }
+            tp.final_retract(safe_z);
             tp.moves.extend(finish_tp.moves);
         }
     }
@@ -224,11 +220,8 @@ where
         }
 
         // Ensure retract between levels (not before first)
-        if i > 0
-            && let Some(last) = tp.moves.last()
-            && last.target.z < safe_z - 0.001
-        {
-            tp.rapid_to(P3::new(last.target.x, last.target.y, safe_z));
+        if i > 0 {
+            tp.final_retract(safe_z);
         }
 
         tp.moves.extend(level_tp.moves);
