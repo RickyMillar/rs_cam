@@ -15,7 +15,7 @@ use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::pushcutter::batch_push_cutter;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
-use crate::weave::weave_contours;
+use crate::contour_extract::weave_contours;
 
 /// Parameters for waterline toolpath generation.
 pub struct WaterlineParams {

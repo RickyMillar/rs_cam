@@ -1,4 +1,4 @@
-//! Waterline contour extraction using grid-based marching squares.
+//! Marching squares contour extraction for waterline operations.
 //!
 //! Converts overlapping X-fiber and Y-fiber blocked intervals into a boolean
 //! grid, then uses marching squares to extract topologically correct closed

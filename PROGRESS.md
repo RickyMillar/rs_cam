@@ -9,7 +9,7 @@ Read this FIRST at the start of every session. Update LAST before ending.
 - [x] Architecture complete (architecture/ directory - user stories, requirements, high-level design)
 - [x] CLAUDE.md guardrails in place
 - [x] Cargo workspace initialized
-- [x] Core library + CLI compiling, 435 tests passing (433 unit + 2 integration)
+- [x] Core library + CLI compiling, 454 tests passing (452 unit + 2 integration)
 - [x] Phase 1 complete: STL → drop-cutter → G-code pipeline with 3D HTML viewer
 - [x] Phase 2 complete: 2.5D operations (pocket, profile, zigzag, depth stepping, SVG/DXF input, dressups, CLI)
 - [x] Phase 3 complete: Advanced tools (BullNose, VBit, TaperedBall), push-cutter, waterline, arc fitting, G2/G3
@@ -91,19 +91,24 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 - [x] 5.5 Pencil finishing — mesh edge dihedral angle analysis, concave edge chaining, offset passes, drop-cutter Z lift, CLI subcommand (pencil.rs)
 - [x] 5.6 WASM readiness — feature-gated rayon (`parallel` feature, default on), `std::time::Instant` gated for wasm32, `from_stl_bytes()` API for in-memory loading
 - [x] 5.7 Collision detection MVP — tool holder/shank collision check via drop-cutter at larger radii, penetration depth + min safe stickout (collision.rs)
+- [x] 5.7a Collision detection expanded — interpolated path checking (catch mid-move collisions), multi-segment holders (tapered collet nuts), CLI integration (--holder-diameter etc.), TOML holder fields
 - [x] 5.8 Pipeline cache foundation — dirty-flag invalidation cache for mesh + surface heightmap across multi-operation jobs (pipeline.rs)
 - [x] 5.9 Feed rate optimization — RCTF chip thinning compensation, heightmap engagement estimation, forward/backward smoothing, post-process dressup for any operation (feedopt.rs)
 - [x] 5.4 Tech debt cleanup — removed all unwrap() from library code (partial_cmp NaN safety, last() safety), wired per-operation spindle speed, spatial index auto-sizing + cell clamp, CLPoint.contacted flag for boundary detection, fixed duplicate rapid in raster toolpath, emit_gcode_phased for multi-operation jobs
+- [x] 5.10 Shared toolpath utilities — point_to_segment_distance in geo.rs, emit_path_segment/final_retract/simplify_path_3d in toolpath.rs, eliminated duplication across 9 files
+- [x] 5.11 Link-vs-retract dressup — general post-processing dressup that replaces short retract→rapid→plunge with direct feeds (dressup.rs), CLI --link-moves flag
+- [x] 5.12 Flipped normal detection — check_winding/fix_winding on STL load, auto-fix if >5% inconsistent edges (mesh.rs)
+- [x] 5.13 Module rename — weave.rs → contour_extract.rs (reflects actual algorithm: marching squares, not Weave graph)
 
 ## Module Map (for new agents)
 
 | Module | File | Purpose |
 |--------|------|---------|
-| geo | `rs_cam_core/src/geo.rs` | P2/P3/V2/V3 aliases, BoundingBox3, Triangle |
-| mesh | `rs_cam_core/src/mesh.rs` | TriangleMesh (STL loading), SpatialIndex (uniform grid) |
+| geo | `rs_cam_core/src/geo.rs` | P2/P3/V2/V3 aliases, BoundingBox3, Triangle, point_to_segment_distance |
+| mesh | `rs_cam_core/src/mesh.rs` | TriangleMesh (STL loading, winding check/fix), SpatialIndex (uniform grid) |
 | tool | `rs_cam_core/src/tool/` | MillingCutter trait, FlatEndmill, BallEndmill, BullNoseEndmill, VBitEndmill, TaperedBallEndmill |
 | dropcutter | `rs_cam_core/src/dropcutter.rs` | point_drop_cutter, batch_drop_cutter (rayon parallel) |
-| toolpath | `rs_cam_core/src/toolpath.rs` | Move, MoveType (Rapid/Linear/ArcCW/ArcCCW), Toolpath IR |
+| toolpath | `rs_cam_core/src/toolpath.rs` | Move, MoveType, Toolpath IR, emit_path_segment, final_retract, simplify_path_3d |
 | gcode | `rs_cam_core/src/gcode.rs` | PostProcessor trait, GrblPost, LinuxCncPost, Mach3Post, emit_gcode |
 | viz | `rs_cam_core/src/viz.rs` | SVG preview, 3D HTML viewer (mesh+toolpath, standalone, simulation w/ animation) |
 | simulation | `rs_cam_core/src/simulation.rs` | Heightmap, tool stamping, arc linearization, heightmap-to-mesh export |
@@ -114,7 +119,7 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 | depth | `rs_cam_core/src/depth.rs` | DepthStepping, depth_stepped_toolpath, finish allowance |
 | svg_input | `rs_cam_core/src/svg_input.rs` | load_svg (usvg, bezier flattening, containment) |
 | dxf_input | `rs_cam_core/src/dxf_input.rs` | load_dxf (LwPolyline, Circle, Ellipse, bulge arcs) |
-| dressup | `rs_cam_core/src/dressup.rs` | Ramp/helix entry, tab/bridge with segment interpolation |
+| dressup | `rs_cam_core/src/dressup.rs` | Ramp/helix entry, tab/bridge, dogbone, lead-in/out, link-vs-retract |
 | fiber | `rs_cam_core/src/fiber.rs` | Fiber (parameterized line at Z), Interval with merging |
 | pushcutter | `rs_cam_core/src/pushcutter.rs` | push_cutter_triangle, batch_push_cutter (rayon) |
 | waterline | `rs_cam_core/src/waterline.rs` | waterline_contours, waterline_toolpath (multi-Z) |
@@ -125,9 +130,9 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 | adaptive3d | `rs_cam_core/src/adaptive3d.rs` | 3D adaptive clearing: heightmap material tracking, surface-following engagement, multi-level passes |
 | pencil | `rs_cam_core/src/pencil.rs` | Pencil finishing: concave mesh edge detection, dihedral angle analysis, polyline chaining |
 | inlay | `rs_cam_core/src/inlay.rs` | Inlay operations: female V-carve pocket, male plug with inverted depth profile |
-| collision | `rs_cam_core/src/collision.rs` | Tool holder/shank collision detection via drop-cutter at larger radii |
+| collision | `rs_cam_core/src/collision.rs` | Tool holder/shank collision detection, interpolated path checking, multi-segment holders |
 | pipeline | `rs_cam_core/src/pipeline.rs` | Incremental computation cache with dirty-flag invalidation |
-| weave | `rs_cam_core/src/weave.rs` | Marching squares contour extraction for waterline (replaces nearest-neighbor) |
+| contour_extract | `rs_cam_core/src/contour_extract.rs` | Marching squares contour extraction for waterline (replaces nearest-neighbor) |
 | CLI | `rs_cam_cli/src/main.rs` | drop-cutter, pocket, profile, adaptive, adaptive3d, vcarve, rest, waterline, pencil, inlay subcommands |
 
 ## Decisions Log
@@ -143,17 +148,18 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 | 2026-03-19 | KD-tree for drop-cutter, BVH for ray queries | Follows OpenCAMLib's proven approach |
 | 2026-03-19 | Zigzag for pockets with islands | Contour-parallel rings don't avoid holes; zigzag scan-lines clip correctly against hole edges |
 | 2026-03-19 | Nearest-neighbor over Weave for waterline | Simpler implementation, sufficient for initial waterline support; Weave graph is complex and can be added later for adaptive refinement |
+| 2026-03-20 | Weave graph evaluated, marching squares chosen | Topologically correct, precision within fiber sampling resolution, full OCL Weave deferred (20-40h) |
+| 2026-03-20 | Link-vs-retract as general dressup, not per-operation | Avoids code duplication across 14 files; operations produce standard retract patterns, dressup optimizes post-hoc |
 
 ## Known Issues / Tech Debt
 - ~~Spatial index degrades when cell_size >> model extent~~ FIXED: `build()` auto-clamps oversized cells; `build_auto()` added.
 - ~~Points outside mesh boundary hit min_z clamp~~ FIXED: CLPoint now has `contacted` flag to detect no-contact points.
-- Flipped normals on some triangles could cause facet_drop to miss contacts. Consider checking/fixing winding on load.
+- ~~Flipped normals on some triangles could cause facet_drop to miss contacts~~ FIXED: check_winding/fix_winding on STL load, auto-fix if >5% inconsistent.
 - ~~Duplicate rapid at start of each row in raster toolpath~~ FIXED: removed duplicate initial rapid.
+- ~~Waterline contour chaining uses nearest-neighbor which can produce artifacts~~ FIXED: marching squares contour extraction (contour_extract.rs).
 - Contour-parallel pocket pattern does NOT avoid islands (rings pass through holes). Use zigzag pattern for pockets with islands.
 - Bull nose edge_drop uses simplified tube-circle approach (not full offset-ellipse with Brent's solver). Accurate for most cases but may have slight errors on highly sloped edges.
 - Push-cutter edge_push uses sampling (32 steps) rather than analytical solution. Could miss contacts on very small edges.
-- Waterline contour chaining uses nearest-neighbor which can produce artifacts. Full Weave graph would be more robust.
-- Unused warnings in tool/ball.rs tests (cosmetic).
 
 ## Test Fixtures
 - fixtures/terrain_small.stl: 40K triangle terrain mesh (100x73mm, from rivmap project)
@@ -178,8 +184,9 @@ Goal: Load an STL, drop a ball cutter onto it, emit G-code.
 ## Adaptive Clearing Refinements (from FreeCAD/Freesteel research)
 
 Current implementation (4.1) uses grid-based engagement sampling and brute-force angle sweep.
-The following refinements are based on analysis of FreeCAD's Path Adaptive (libactp/Adaptive2d.cpp)
-and Freesteel's approach. Each is independent and can be done in any order.
+Items 4.1a-d are implemented at a basic level (checked above). The Freesteel-level versions
+documented below are aspirational targets, not blockers — they describe the full algorithms
+from libactp that would further improve quality and performance.
 
 ### 4.1a — Interpolation-Based Angle Search
 **What**: Replace brute-force sweep (19+36 candidates) with history-predicted interpolation.

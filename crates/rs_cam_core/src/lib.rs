@@ -29,7 +29,7 @@ pub mod steep_shallow;
 pub mod scallop;
 pub mod pencil;
 pub mod inlay;
-pub mod weave;
+pub mod contour_extract;
 pub mod collision;
 pub mod pipeline;
 pub mod feedopt;
