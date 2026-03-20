@@ -8,7 +8,9 @@ use rs_cam_core::simulation::{Heightmap, HeightmapMesh, heightmap_to_mesh, simul
 use rs_cam_core::adaptive3d::{Adaptive3dParams, EntryStyle3d, adaptive_3d_toolpath};
 use rs_cam_core::depth::{DepthDistribution, DepthStepping, depth_stepped_toolpath};
 use rs_cam_core::dropcutter::batch_drop_cutter;
-use rs_cam_core::dressup::{apply_tabs, even_tabs};
+use rs_cam_core::arcfit::fit_arcs;
+use rs_cam_core::dressup::{EntryStyle as CoreEntryStyle, LinkMoveParams, apply_dogbones, apply_entry, apply_lead_in_out, apply_link_moves, apply_tabs, even_tabs};
+use rs_cam_core::feedopt::{FeedOptParams, optimize_feed_rates};
 use rs_cam_core::inlay::{InlayParams, inlay_toolpaths};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::pencil::{PencilParams, pencil_toolpath};
@@ -36,6 +38,7 @@ pub struct ComputeRequest {
     pub polygons: Option<Arc<Vec<Polygon2>>>,
     pub mesh: Option<Arc<TriangleMesh>>,
     pub operation: OperationConfig,
+    pub dressups: DressupConfig,
     pub tool: ToolConfig,
     pub safe_z: f64,
     pub prev_tool_radius: Option<f64>,
@@ -180,7 +183,7 @@ fn build_cutter(tool: &ToolConfig) -> Box<dyn MillingCutter> {
 }
 
 fn run_compute(req: &ComputeRequest) -> Result<ToolpathResult, String> {
-    let tp = match &req.operation {
+    let mut tp = match &req.operation {
         OperationConfig::Pocket(c) => run_pocket(req, c),
         OperationConfig::Profile(c) => run_profile(req, c),
         OperationConfig::Adaptive(c) => run_adaptive(req, c),
@@ -196,6 +199,8 @@ fn run_compute(req: &ComputeRequest) -> Result<ToolpathResult, String> {
         OperationConfig::SteepShallow(c) => run_steep_shallow(req, c),
         OperationConfig::RampFinish(c) => run_ramp_finish(req, c),
     }?;
+
+    tp = apply_dressups(tp, &req.dressups, &req.tool, req.safe_z);
 
     let stats = compute_stats(&tp);
     Ok(ToolpathResult { toolpath: Arc::new(tp), stats })
@@ -438,6 +443,54 @@ fn run_ramp_finish(req: &ComputeRequest, cfg: &RampFinishConfig) -> Result<Toolp
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
+
+fn apply_dressups(mut tp: Toolpath, cfg: &DressupConfig, tool: &ToolConfig, safe_z: f64) -> Toolpath {
+    match cfg.entry_style {
+        DressupEntryStyle::Ramp => {
+            tp = apply_entry(&tp, CoreEntryStyle::Ramp { max_angle_deg: cfg.ramp_angle }, tool.diameter / 2.0);
+        }
+        DressupEntryStyle::Helix => {
+            tp = apply_entry(&tp, CoreEntryStyle::Helix { radius: cfg.helix_radius, pitch: cfg.helix_pitch }, tool.diameter / 2.0);
+        }
+        DressupEntryStyle::None => {}
+    }
+    if cfg.dogbone {
+        tp = apply_dogbones(&tp, tool.diameter / 2.0, cfg.dogbone_angle);
+    }
+    if cfg.lead_in_out {
+        tp = apply_lead_in_out(&tp, cfg.lead_radius);
+    }
+    if cfg.link_moves {
+        tp = apply_link_moves(&tp, &LinkMoveParams {
+            max_link_distance: cfg.link_max_distance,
+            link_feed_rate: cfg.link_feed_rate,
+            safe_z_threshold: safe_z * 0.9,
+        });
+    }
+    if cfg.arc_fitting {
+        tp = fit_arcs(&tp, cfg.arc_tolerance);
+    }
+    if cfg.feed_optimization {
+        // Feed optimization requires a heightmap for engagement estimation.
+        // For 2.5D ops we create a flat heightmap at stock top; for 3D it would
+        // need the actual mesh heightmap. This is a simplified version.
+        let nominal = tp.moves.iter().find_map(|m| match m.move_type {
+            MoveType::Linear { feed_rate } => Some(feed_rate),
+            _ => None,
+        }).unwrap_or(1000.0);
+        let cutter = build_cutter(tool);
+        let mut hm = Heightmap::from_stock(-100.0, -100.0, 100.0, 100.0, 0.0, 1.0);
+        let params = FeedOptParams {
+            nominal_feed_rate: nominal,
+            max_feed_rate: cfg.feed_max_rate,
+            min_feed_rate: nominal * 0.5,
+            ramp_rate: cfg.feed_ramp_rate,
+            air_cut_threshold: 0.05,
+        };
+        tp = optimize_feed_rates(&tp, cutter.as_ref(), &mut hm, &params);
+    }
+    tp
+}
 
 fn make_depth(depth: f64, per_pass: f64) -> DepthStepping {
     DepthStepping {

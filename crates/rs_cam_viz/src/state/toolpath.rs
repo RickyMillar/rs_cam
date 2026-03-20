@@ -337,6 +337,73 @@ impl Default for RampFinishConfig {
 }
 
 // =========================================================================
+// Dressup configuration
+// =========================================================================
+
+/// Entry style for plunge replacement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DressupEntryStyle {
+    None,
+    Ramp,
+    Helix,
+}
+
+/// Configurable dressups applied after toolpath generation.
+#[derive(Debug, Clone)]
+pub struct DressupConfig {
+    // Entry style
+    pub entry_style: DressupEntryStyle,
+    pub ramp_angle: f64,
+    pub helix_radius: f64,
+    pub helix_pitch: f64,
+
+    // Dogbone overcuts at inside corners
+    pub dogbone: bool,
+    pub dogbone_angle: f64,
+
+    // Lead-in/out arcs for profile cuts
+    pub lead_in_out: bool,
+    pub lead_radius: f64,
+
+    // Link moves (keep tool down between nearby passes)
+    pub link_moves: bool,
+    pub link_max_distance: f64,
+    pub link_feed_rate: f64,
+
+    // Arc fitting (reduce G-code size)
+    pub arc_fitting: bool,
+    pub arc_tolerance: f64,
+
+    // Feed rate optimization
+    pub feed_optimization: bool,
+    pub feed_max_rate: f64,
+    pub feed_ramp_rate: f64,
+}
+
+impl Default for DressupConfig {
+    fn default() -> Self {
+        Self {
+            entry_style: DressupEntryStyle::None,
+            ramp_angle: 3.0,
+            helix_radius: 2.0,
+            helix_pitch: 1.0,
+            dogbone: false,
+            dogbone_angle: 90.0,
+            lead_in_out: false,
+            lead_radius: 2.0,
+            link_moves: false,
+            link_max_distance: 10.0,
+            link_feed_rate: 500.0,
+            arc_fitting: false,
+            arc_tolerance: 0.05,
+            feed_optimization: false,
+            feed_max_rate: 3000.0,
+            feed_ramp_rate: 200.0,
+        }
+    }
+}
+
+// =========================================================================
 // Computation state
 // =========================================================================
 
@@ -363,6 +430,7 @@ pub struct ToolpathEntry {
     pub tool_id: ToolId,
     pub model_id: super::job::ModelId,
     pub operation: OperationConfig,
+    pub dressups: DressupConfig,
     pub status: ComputeStatus,
     pub result: Option<ToolpathResult>,
 }

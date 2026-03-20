@@ -158,6 +158,7 @@ impl RsCamApp {
                         tool_id,
                         model_id,
                         operation: OperationConfig::new_default(op_type),
+                        dressups: crate::state::toolpath::DressupConfig::default(),
                         status: ComputeStatus::Pending,
                         result: None,
                     };
@@ -329,6 +330,7 @@ impl RsCamApp {
             polygons,
             mesh,
             operation: tp.operation.clone(),
+            dressups: tp.dressups.clone(),
             tool,
             safe_z: self.state.job.post.safe_z,
             prev_tool_radius,

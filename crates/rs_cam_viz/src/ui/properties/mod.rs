@@ -150,6 +150,12 @@ fn draw_toolpath_panel(
         OperationConfig::RampFinish(cfg) => draw_ramp_finish_params(ui, cfg),
     }
 
+    // Dressup modifications
+    ui.add_space(8.0);
+    ui.collapsing("Modifications", |ui| {
+        draw_dressup_params(ui, &mut entry.dressups);
+    });
+
     ui.add_space(12.0);
 
     // Generate button + status
@@ -449,4 +455,70 @@ fn draw_ramp_finish_params(ui: &mut egui::Ui, cfg: &mut RampFinishConfig) {
         dv(ui, "Stock to Leave:", &mut cfg.stock_to_leave, " mm", 0.05, 0.0..=10.0);
         dv(ui, "Tolerance:", &mut cfg.tolerance, " mm", 0.01, 0.01..=1.0);
     });
+}
+
+// ── Dressup configuration ────────────────────────────────────────────────
+
+fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
+    ui.horizontal(|ui| {
+        ui.label("Entry Style:");
+        egui::ComboBox::from_id_salt("dressup_entry")
+            .selected_text(match cfg.entry_style {
+                DressupEntryStyle::None => "None",
+                DressupEntryStyle::Ramp => "Ramp",
+                DressupEntryStyle::Helix => "Helix",
+            })
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::None, "None");
+                ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::Ramp, "Ramp");
+                ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::Helix, "Helix");
+            });
+    });
+    match cfg.entry_style {
+        DressupEntryStyle::Ramp => {
+            egui::Grid::new("ramp_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+                dv(ui, "  Max Angle:", &mut cfg.ramp_angle, " deg", 0.5, 0.5..=15.0);
+            });
+        }
+        DressupEntryStyle::Helix => {
+            egui::Grid::new("helix_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+                dv(ui, "  Radius:", &mut cfg.helix_radius, " mm", 0.1, 0.5..=20.0);
+                dv(ui, "  Pitch:", &mut cfg.helix_pitch, " mm", 0.1, 0.2..=10.0);
+            });
+        }
+        DressupEntryStyle::None => {}
+    }
+    ui.add_space(4.0);
+    ui.checkbox(&mut cfg.dogbone, "Dogbone overcuts");
+    if cfg.dogbone {
+        egui::Grid::new("dog_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+            dv(ui, "  Max Angle:", &mut cfg.dogbone_angle, " deg", 1.0, 45.0..=135.0);
+        });
+    }
+    ui.checkbox(&mut cfg.lead_in_out, "Lead-in / lead-out");
+    if cfg.lead_in_out {
+        egui::Grid::new("lead_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+            dv(ui, "  Radius:", &mut cfg.lead_radius, " mm", 0.1, 0.5..=20.0);
+        });
+    }
+    ui.checkbox(&mut cfg.link_moves, "Link moves (keep tool down)");
+    if cfg.link_moves {
+        egui::Grid::new("link_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+            dv(ui, "  Max Distance:", &mut cfg.link_max_distance, " mm", 0.5, 1.0..=50.0);
+            dv(ui, "  Feed Rate:", &mut cfg.link_feed_rate, " mm/min", 10.0, 50.0..=5000.0);
+        });
+    }
+    ui.checkbox(&mut cfg.arc_fitting, "Arc fitting (G2/G3)");
+    if cfg.arc_fitting {
+        egui::Grid::new("arc_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+            dv(ui, "  Tolerance:", &mut cfg.arc_tolerance, " mm", 0.01, 0.01..=0.5);
+        });
+    }
+    ui.checkbox(&mut cfg.feed_optimization, "Feed rate optimization");
+    if cfg.feed_optimization {
+        egui::Grid::new("fopt_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+            dv(ui, "  Max Rate:", &mut cfg.feed_max_rate, " mm/min", 50.0, 500.0..=20000.0);
+            dv(ui, "  Ramp Rate:", &mut cfg.feed_ramp_rate, " mm/min/mm", 10.0, 10.0..=2000.0);
+        });
+    }
 }
