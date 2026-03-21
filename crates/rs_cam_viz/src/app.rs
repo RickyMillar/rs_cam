@@ -29,6 +29,8 @@ pub struct RsCamApp {
     compute_start: Option<std::time::Instant>,
     /// Cached viewport rect for click detection.
     viewport_rect: egui::Rect,
+    /// Flag: need to load checkpoint mesh for backward scrubbing on next frame.
+    pending_checkpoint_load: bool,
 }
 
 impl RsCamApp {
@@ -54,6 +56,7 @@ impl RsCamApp {
             collision_positions: Vec::new(),
             compute_start: None,
             viewport_rect: egui::Rect::NOTHING,
+            pending_checkpoint_load: false,
         }
     }
 
@@ -78,7 +81,7 @@ impl RsCamApp {
                             }
                             self.state.selection = Selection::Model(model.id);
                             self.state.job.models.push(model);
-                            self.state.job.dirty = true;
+                            self.state.job.mark_edited();
                             self.pending_upload = true;
                         }
                         Err(e) => tracing::error!("STL import failed: {}", e),
@@ -90,7 +93,7 @@ impl RsCamApp {
                         Ok(model) => {
                             self.state.selection = Selection::Model(model.id);
                             self.state.job.models.push(model);
-                            self.state.job.dirty = true;
+                            self.state.job.mark_edited();
                         }
                         Err(e) => tracing::error!("SVG import failed: {}", e),
                     }
@@ -101,7 +104,7 @@ impl RsCamApp {
                         Ok(model) => {
                             self.state.selection = Selection::Model(model.id);
                             self.state.job.models.push(model);
-                            self.state.job.dirty = true;
+                            self.state.job.mark_edited();
                         }
                         Err(e) => tracing::error!("DXF import failed: {}", e),
                     }
@@ -130,7 +133,7 @@ impl RsCamApp {
                     let tool = ToolConfig::new_default(id, tool_type);
                     self.state.selection = Selection::Tool(id);
                     self.state.job.tools.push(tool);
-                    self.state.job.dirty = true;
+                    self.state.job.mark_edited();
                 }
                 AppEvent::DuplicateTool(tool_id) => {
                     if let Some(src) = self.state.job.tools.iter().find(|t| t.id == tool_id) {
@@ -140,7 +143,7 @@ impl RsCamApp {
                         dup.name = format!("{} (copy)", dup.name);
                         self.state.selection = Selection::Tool(new_id);
                         self.state.job.tools.push(dup);
-                        self.state.job.dirty = true;
+                        self.state.job.mark_edited();
                     }
                 }
                 AppEvent::RemoveTool(tool_id) => {
@@ -148,7 +151,7 @@ impl RsCamApp {
                     if self.state.selection == Selection::Tool(tool_id) {
                         self.state.selection = Selection::None;
                     }
-                    self.state.job.dirty = true;
+                    self.state.job.mark_edited();
                 }
                 AppEvent::AddToolpath(op_type) => {
                     let id = self.state.job.next_toolpath_id();
@@ -183,7 +186,7 @@ impl RsCamApp {
                     };
                     self.state.selection = Selection::Toolpath(id);
                     self.state.job.toolpaths.push(entry);
-                    self.state.job.dirty = true;
+                    self.state.job.mark_edited();
                 }
                 AppEvent::DuplicateToolpath(tp_id) => {
                     let src_data = self.state.job.toolpaths.iter().find(|t| t.id == tp_id).map(|src| {
@@ -208,7 +211,7 @@ impl RsCamApp {
                             feeds_auto: crate::state::toolpath::FeedsAutoMode::default(),
                             feeds_result: None,
                         });
-                        self.state.job.dirty = true;
+                        self.state.job.mark_edited();
                     }
                 }
                 AppEvent::MoveToolpathUp(tp_id) => {
@@ -240,7 +243,7 @@ impl RsCamApp {
                         self.state.viewport.isolate_toolpath = None;
                     }
                     self.pending_upload = true;
-                    self.state.job.dirty = true;
+                    self.state.job.mark_edited();
                 }
                 AppEvent::GenerateToolpath(tp_id) => {
                     self.submit_toolpath_compute(tp_id);
@@ -282,9 +285,21 @@ impl RsCamApp {
                     if !self.state.simulation.active {
                         self.run_simulation_with_all();
                     }
+                    // Save editor viewport state and set sim defaults
+                    self.state.simulation.saved_show_cutting = self.state.viewport.show_cutting;
+                    self.state.simulation.saved_show_rapids = self.state.viewport.show_rapids;
+                    self.state.simulation.saved_show_stock = self.state.viewport.show_stock;
+                    // In sim mode: hide toolpath lines, show stock
+                    self.state.viewport.show_cutting = false;
+                    self.state.viewport.show_rapids = false;
+                    self.state.viewport.show_stock = true;
                     self.state.mode = AppMode::Simulation;
                 }
                 AppEvent::ExitSimulation => {
+                    // Restore editor viewport state
+                    self.state.viewport.show_cutting = self.state.simulation.saved_show_cutting;
+                    self.state.viewport.show_rapids = self.state.simulation.saved_show_rapids;
+                    self.state.viewport.show_stock = self.state.simulation.saved_show_stock;
                     self.state.mode = AppMode::Editor;
                     // Simulation state is preserved across transitions
                 }
@@ -300,12 +315,14 @@ impl RsCamApp {
                         self.state.simulation.playing = false;
                         self.state.simulation.current_move =
                             self.state.simulation.current_move.saturating_sub(1);
+                        self.pending_checkpoint_load = true;
                     }
                 }
                 AppEvent::SimJumpToStart => {
                     if self.state.simulation.active {
                         self.state.simulation.playing = false;
                         self.state.simulation.current_move = 0;
+                        self.pending_checkpoint_load = true;
                     }
                 }
                 AppEvent::SimJumpToEnd => {
@@ -318,6 +335,7 @@ impl RsCamApp {
                     if let Some(boundary) = self.state.simulation.boundaries.get(boundary_idx) {
                         self.state.simulation.playing = false;
                         self.state.simulation.current_move = boundary.start_move;
+                        self.pending_checkpoint_load = true;
                     }
                 }
                 AppEvent::SimJumpToOpEnd(boundary_idx) => {
@@ -352,7 +370,7 @@ impl RsCamApp {
                                         }
                                     }
                                     self.pending_upload = true;
-                                    self.state.job.dirty = true;
+                                    self.state.job.mark_edited();
                                 }
                                 Err(e) => tracing::error!("Rescale failed: {}", e),
                             }
@@ -501,13 +519,13 @@ impl RsCamApp {
                 }
                 AppEvent::StockChanged => {
                     self.pending_upload = true;
-                    self.state.job.dirty = true;
+                    self.state.job.mark_edited();
                 }
                 AppEvent::StockMaterialChanged => {
-                    self.state.job.dirty = true;
+                    self.state.job.mark_edited();
                 }
                 AppEvent::MachineChanged => {
-                    self.state.job.dirty = true;
+                    self.state.job.mark_edited();
                 }
                 AppEvent::RecalculateFeeds(_tp_id) => {
                     // Feeds recalculation happens in the UI draw pass, this is just a marker
@@ -520,6 +538,30 @@ impl RsCamApp {
     }
 
     // --- Simulation helpers ---
+
+    /// Load the nearest checkpoint mesh for backward scrubbing.
+    /// Uses `checkpoint_for_move()` to find the right snapshot and uploads it to GPU.
+    fn load_checkpoint_for_move(&mut self, move_idx: usize, frame: &mut eframe::Frame) {
+        if let Some(cp_idx) = self.state.simulation.checkpoint_for_move(move_idx) {
+            if let Some(checkpoint) = self.state.simulation.checkpoints.get(cp_idx) {
+                if let Some(rs) = frame.wgpu_render_state() {
+                    let mut renderer = rs.renderer.write();
+                    let resources: &mut RenderResources =
+                        renderer.callback_resources.get_mut().unwrap();
+                    // Upload the checkpoint mesh as the current sim mesh
+                    let hm_mesh = &checkpoint.mesh;
+                    resources.sim_mesh_data =
+                        Some(SimMeshGpuData::from_heightmap_mesh(&rs.device, hm_mesh));
+                }
+            }
+        }
+    }
+
+    /// Get the first STL model mesh (if any) for simulation deviation computation.
+    fn first_model_mesh(&self) -> Option<Arc<rs_cam_core::mesh::TriangleMesh>> {
+        self.state.job.models.iter()
+            .find_map(|m| m.mesh.clone())
+    }
 
     fn run_simulation_with_all(&mut self) {
         let toolpaths: Vec<_> = self.state.job.toolpaths.iter()
@@ -535,11 +577,13 @@ impl RsCamApp {
             tracing::warn!("No computed toolpaths to simulate");
         } else {
             let stock_bbox = self.state.job.stock.bbox();
+            let model_mesh = self.first_model_mesh();
             self.compute.submit_simulation(SimulationRequest {
                 toolpaths,
                 stock_bbox,
                 stock_top_z: stock_bbox.max.z,
                 resolution: 0.25,
+                model_mesh,
             });
             self.state.simulation.active = false;
         }
@@ -559,11 +603,13 @@ impl RsCamApp {
             tracing::warn!("No computed toolpaths to simulate");
         } else {
             let stock_bbox = self.state.job.stock.bbox();
+            let model_mesh = self.first_model_mesh();
             self.compute.submit_simulation(SimulationRequest {
                 toolpaths,
                 stock_bbox,
                 stock_top_z: stock_bbox.max.z,
                 resolution: 0.25,
+                model_mesh,
             });
             self.state.simulation.active = false;
         }
@@ -824,6 +870,7 @@ impl RsCamApp {
                     } else {
                         None
                     };
+                    self.state.simulation.collision_report = Some(col.report);
                     self.collision_positions = col.positions;
                 }
                 Err(e) => tracing::error!("Collision check failed: {}", e),
@@ -1381,6 +1428,13 @@ impl eframe::App for RsCamApp {
 
         // Process events after UI pass
         self.handle_events(ctx);
+
+        // Load checkpoint mesh for backward scrubbing
+        if self.pending_checkpoint_load {
+            self.pending_checkpoint_load = false;
+            let move_idx = self.state.simulation.current_move;
+            self.load_checkpoint_for_move(move_idx, frame);
+        }
 
         // Advance simulation playback
         if self.state.simulation.playing {

@@ -166,6 +166,17 @@ impl SimMeshGpuData {
             index_count: hm.indices.len() as u32,
         }
     }
+
+    /// Upload a HeightmapMesh with per-vertex custom colors.
+    /// `colors` is one `[r, g, b]` per vertex (from deviation_colors, height_gradient_colors, etc.).
+    /// The mesh pipeline currently uses Phong shading with a fixed color, so per-vertex colors
+    /// will require a shader extension to be visible. This method prepares the data for that.
+    pub fn from_heightmap_mesh_colored(device: &wgpu::Device, hm: &HeightmapMesh, _colors: &[[f32; 3]]) -> Self {
+        // For now, delegate to the standard upload. When the colored mesh shader is added,
+        // this method will encode per-vertex colors into a separate color buffer or
+        // extended vertex format.
+        Self::from_heightmap_mesh(device, hm)
+    }
 }
 
 /// Tool model visualization: a simple wireframe representation of the tool at a position.

@@ -71,6 +71,8 @@ pub struct SimulationRequest {
     pub stock_bbox: BoundingBox3,
     pub stock_top_z: f64,
     pub resolution: f64,
+    /// Optional model mesh for deviation computation (sim_z vs model_z).
+    pub model_mesh: Option<Arc<TriangleMesh>>,
 }
 
 /// Per-toolpath boundary in simulation result.

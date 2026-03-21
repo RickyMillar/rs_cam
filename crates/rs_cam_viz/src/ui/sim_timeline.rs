@@ -117,13 +117,25 @@ pub fn draw(
             painter.rect_filled(fill_rect, 1.0, color);
         }
 
-        // Red tick marks at rapid collision move indices
-        let collision_color = egui::Color32::from_rgb(255, 50, 50);
+        // Red tick marks at holder collision move indices
+        if let Some(ref report) = sim.collision_report {
+            let holder_color = egui::Color32::from_rgb(255, 50, 50);
+            for col in &report.collisions {
+                let x = rect.min.x + (col.move_idx as f32 / total_moves) * total_width;
+                painter.line_segment(
+                    [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
+                    egui::Stroke::new(2.0, holder_color),
+                );
+            }
+        }
+
+        // Orange tick marks at rapid collision move indices
+        let rapid_color = egui::Color32::from_rgb(255, 160, 40);
         for &idx in &sim.rapid_collision_move_indices {
             let x = rect.min.x + (idx as f32 / total_moves) * total_width;
             painter.line_segment(
                 [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
-                egui::Stroke::new(1.5, collision_color),
+                egui::Stroke::new(1.5, rapid_color),
             );
         }
 

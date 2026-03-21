@@ -1,5 +1,5 @@
 use super::toolpath::ToolpathId;
-use rs_cam_core::collision::RapidCollision;
+use rs_cam_core::collision::{CollisionReport, RapidCollision};
 use rs_cam_core::simulation::HeightmapMesh;
 
 /// How the simulation stock mesh is colored.
@@ -63,6 +63,8 @@ pub struct SimulationState {
     pub rapid_collisions: Vec<RapidCollision>,
     /// Move indices with rapid collisions (for timeline markers).
     pub rapid_collision_move_indices: Vec<usize>,
+    /// Full collision report from last dedicated collision check.
+    pub collision_report: Option<CollisionReport>,
     /// Number of holder collisions from last dedicated collision check.
     pub holder_collision_count: usize,
     /// Min safe stickout from last collision check.
@@ -71,6 +73,10 @@ pub struct SimulationState {
     pub stock_viz_mode: StockVizMode,
     /// Stock opacity (0.0 = transparent, 1.0 = solid).
     pub stock_opacity: f32,
+    /// Saved viewport state from editor mode (restored on exit).
+    pub saved_show_cutting: bool,
+    pub saved_show_rapids: bool,
+    pub saved_show_stock: bool,
 }
 
 impl SimulationState {
@@ -91,10 +97,14 @@ impl SimulationState {
             last_sim_edit_counter: 0,
             rapid_collisions: Vec::new(),
             rapid_collision_move_indices: Vec::new(),
+            collision_report: None,
             holder_collision_count: 0,
             min_safe_stickout: None,
             stock_viz_mode: StockVizMode::Solid,
             stock_opacity: 1.0,
+            saved_show_cutting: true,
+            saved_show_rapids: true,
+            saved_show_stock: true,
         }
     }
 
