@@ -778,6 +778,34 @@ impl RsCamApp {
                 ));
             }
         }
+
+        // Upload height plane overlays when a toolpath is selected in Toolpaths workspace
+        if self.controller.state().workspace == Workspace::Toolpaths
+            && let Selection::Toolpath(tp_id) = self.controller.state().selection
+        {
+            let job = &self.controller.state().job;
+            if let Some(tp) = job.all_toolpaths().find(|t| t.id == tp_id) {
+                let safe_z = job.post.safe_z;
+                let op_depth = tp.operation.default_depth_for_heights();
+                let heights = tp.heights.resolve(safe_z, op_depth);
+                let stock_bbox = job.stock.bbox();
+                resources.height_planes_data = Some(
+                    crate::render::height_planes::HeightPlanesGpuData::from_heights(
+                        &render_state.device,
+                        &stock_bbox,
+                        heights.clearance_z,
+                        heights.retract_z,
+                        heights.feed_z,
+                        heights.top_z,
+                        heights.bottom_z,
+                    ),
+                );
+            } else {
+                resources.height_planes_data = None;
+            }
+        } else {
+            resources.height_planes_data = None;
+        }
     }
 
     /// Update tool model position during simulation playback.
@@ -1021,6 +1049,8 @@ impl RsCamApp {
                 && state.job.models.iter().any(|model| model.mesh.is_some()),
             show_fixtures: state.viewport.show_fixtures,
             show_solid_stock: state.viewport.show_stock && state.workspace != Workspace::Simulation,
+            show_height_planes: state.workspace == Workspace::Toolpaths
+                && matches!(state.selection, Selection::Toolpath(_)),
             show_sim_mesh: state.workspace == Workspace::Simulation
                 && state.simulation.has_results(),
             sim_mesh_opacity: state.simulation.stock_opacity,
