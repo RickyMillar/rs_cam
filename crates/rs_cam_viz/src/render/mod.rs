@@ -703,6 +703,14 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                     pass.set_vertex_buffer(0, tp_gpu.rapid_vertex_buffer.slice(..));
                     pass.draw(0..max_rapid, 0..1);
                 }
+
+                // Draw entry path preview overlay (ramp/helix/lead-in indicator)
+                if let Some(ref buf) = tp_gpu.entry_preview_buffer
+                    && tp_gpu.entry_preview_count > 1
+                {
+                    pass.set_vertex_buffer(0, buf.slice(..));
+                    pass.draw(0..tp_gpu.entry_preview_count, 0..1);
+                }
             }
         } // render pass ends
 

@@ -33,6 +33,9 @@ pub struct ToolpathGpuData {
     /// Used to compute how many cut/rapid verts to draw up to move N.
     pub move_cut_counts: Vec<u32>,
     pub move_rapid_counts: Vec<u32>,
+    /// Entry path preview lines (ramp/helix/lead-in indicator) for selected toolpaths.
+    pub entry_preview_buffer: Option<wgpu::Buffer>,
+    pub entry_preview_count: u32,
 }
 
 impl ToolpathGpuData {
@@ -177,8 +180,212 @@ impl ToolpathGpuData {
             rapid_vertex_count,
             move_cut_counts,
             move_rapid_counts,
+            entry_preview_buffer: None,
+            entry_preview_count: 0,
         }
     }
+
+    /// Attach entry path preview geometry for a selected toolpath.
+    /// Call after `from_toolpath` to add the entry indicator overlay.
+    pub fn attach_entry_preview(&mut self, device: &wgpu::Device, verts: Vec<LineVertex>) {
+        use wgpu::util::DeviceExt;
+        if verts.is_empty() {
+            return;
+        }
+        self.entry_preview_count = verts.len() as u32;
+        self.entry_preview_buffer = Some(device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("entry_preview"),
+                contents: bytemuck::cast_slice(&verts),
+                usage: wgpu::BufferUsages::VERTEX,
+            },
+        ));
+    }
+}
+
+/// Entry/exit style configuration passed from the toolpath dressup settings.
+pub struct EntryPreviewConfig {
+    pub entry_style: EntryStyle,
+    pub ramp_angle_deg: f64,
+    pub helix_radius: f64,
+    pub helix_pitch: f64,
+    pub lead_in_out: bool,
+    pub lead_radius: f64,
+    /// Resolved feed_z and top_z heights for the entry path.
+    pub feed_z: f64,
+    pub top_z: f64,
+}
+
+/// Simplified entry style enum (mirrors DressupEntryStyle without serde dependency).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntryStyle {
+    None,
+    Ramp,
+    Helix,
+}
+
+/// Bright cyan color for entry preview lines.
+const ENTRY_PREVIEW_COLOR: [f32; 3] = [0.2, 0.9, 0.9];
+
+/// Generate schematic entry path preview vertices for a toolpath.
+///
+/// Draws a visual indicator of the configured entry strategy at the first plunge point:
+/// - Ramp: a sloped line descending from feed_z to top_z at the configured ramp angle
+/// - Helix: a helical spiral descending from feed_z to top_z at the first move position
+/// - Lead-in arc: a quarter-circle arc leading into the first cutting direction
+///
+/// Returns empty if entry_style is None or there are no cutting moves.
+pub fn entry_preview_vertices(tp: &Toolpath, config: &EntryPreviewConfig) -> Vec<LineVertex> {
+    let color = ENTRY_PREVIEW_COLOR;
+
+    // Find the first non-Rapid move position (the first plunge/cut point)
+    let first_cut_idx = match tp
+        .moves
+        .iter()
+        .enumerate()
+        .position(|(i, m)| i > 0 && !matches!(m.move_type, MoveType::Rapid))
+    {
+        Some(idx) => idx,
+        None => return Vec::new(),
+    };
+
+    let entry_pos = tp.moves[first_cut_idx].target;
+    let approach_pos = tp.moves[first_cut_idx - 1].target;
+    let mut verts = Vec::new();
+
+    let feed_z = config.feed_z;
+    let top_z = config.top_z;
+    let z_drop = (feed_z - top_z).abs();
+
+    match config.entry_style {
+        EntryStyle::None => {}
+        EntryStyle::Ramp => {
+            if z_drop > 0.01 {
+                // Compute horizontal distance from ramp angle
+                let angle_rad = config.ramp_angle_deg.to_radians().max(0.1_f64.to_radians());
+                let horiz_dist = z_drop / angle_rad.tan();
+
+                // Direction of approach in XY
+                let dx = entry_pos.x - approach_pos.x;
+                let dy = entry_pos.y - approach_pos.y;
+                let len = (dx * dx + dy * dy).sqrt();
+                let (dir_x, dir_y) = if len < 1e-9 {
+                    (1.0, 0.0)
+                } else {
+                    (dx / len, dy / len)
+                };
+
+                // Ramp starts offset backward from entry point at feed_z
+                let start = [
+                    (entry_pos.x - dir_x * horiz_dist) as f32,
+                    (entry_pos.y - dir_y * horiz_dist) as f32,
+                    feed_z as f32,
+                ];
+                let end = [entry_pos.x as f32, entry_pos.y as f32, top_z as f32];
+
+                verts.push(LineVertex {
+                    position: start,
+                    color,
+                });
+                verts.push(LineVertex {
+                    position: end,
+                    color,
+                });
+            }
+        }
+        EntryStyle::Helix => {
+            if z_drop > 0.01 && config.helix_radius > 0.01 {
+                let segments = 16;
+                let cx = entry_pos.x;
+                let cy = entry_pos.y;
+                let r = config.helix_radius;
+
+                // Helix descends from feed_z to top_z over one or more turns
+                // Number of turns based on pitch
+                let pitch = config.helix_pitch.max(0.1);
+                let turns = z_drop / pitch;
+                let total_angle = turns * std::f64::consts::TAU;
+
+                for i in 0..segments {
+                    let t0 = i as f64 / segments as f64;
+                    let t1 = (i + 1) as f64 / segments as f64;
+
+                    let a0 = t0 * total_angle;
+                    let a1 = t1 * total_angle;
+                    let z0 = feed_z - t0 * z_drop;
+                    let z1 = feed_z - t1 * z_drop;
+
+                    verts.push(LineVertex {
+                        position: [
+                            (cx + r * a0.cos()) as f32,
+                            (cy + r * a0.sin()) as f32,
+                            z0 as f32,
+                        ],
+                        color,
+                    });
+                    verts.push(LineVertex {
+                        position: [
+                            (cx + r * a1.cos()) as f32,
+                            (cy + r * a1.sin()) as f32,
+                            z1 as f32,
+                        ],
+                        color,
+                    });
+                }
+            }
+        }
+    }
+
+    // Lead-in arc: quarter-circle arc before the first cutting move
+    if config.lead_in_out && config.lead_radius > 0.01 {
+        let dx = entry_pos.x - approach_pos.x;
+        let dy = entry_pos.y - approach_pos.y;
+        let len = (dx * dx + dy * dy).sqrt();
+        let (dir_x, dir_y) = if len < 1e-9 {
+            (1.0, 0.0)
+        } else {
+            (dx / len, dy / len)
+        };
+
+        // Arc center is offset perpendicular to approach direction by lead_radius
+        let perp_x = -dir_y;
+        let perp_y = dir_x;
+        let arc_cx = entry_pos.x + perp_x * config.lead_radius;
+        let arc_cy = entry_pos.y + perp_y * config.lead_radius;
+        let r = config.lead_radius;
+
+        // Quarter-circle arc from tangent approach to entry point
+        let arc_segments = 8;
+        let start_angle = std::f64::consts::PI; // start opposite to perpendicular
+        let sweep = std::f64::consts::FRAC_PI_2; // 90 degrees
+
+        for i in 0..arc_segments {
+            let t0 = i as f64 / arc_segments as f64;
+            let t1 = (i + 1) as f64 / arc_segments as f64;
+            let a0 = start_angle + t0 * sweep;
+            let a1 = start_angle + t1 * sweep;
+
+            let z = entry_pos.z; // lead-in at entry Z level
+            verts.push(LineVertex {
+                position: [
+                    (arc_cx + r * a0.cos()) as f32,
+                    (arc_cy + r * a0.sin()) as f32,
+                    z as f32,
+                ],
+                color,
+            });
+            verts.push(LineVertex {
+                position: [
+                    (arc_cx + r * a1.cos()) as f32,
+                    (arc_cy + r * a1.sin()) as f32,
+                    z as f32,
+                ],
+                color,
+            });
+        }
+    }
+
+    verts
 }
 
 /// Generate entry point marker vertices for a toolpath.

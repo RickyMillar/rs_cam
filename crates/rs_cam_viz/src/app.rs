@@ -5,7 +5,7 @@ use crate::render::camera::OrbitCamera;
 use crate::render::mesh_render::MeshGpuData;
 use crate::render::sim_render::{self, SimMeshGpuData, ToolModelGpuData};
 use crate::render::stock_render::StockGpuData;
-use crate::render::toolpath_render::ToolpathGpuData;
+use crate::render::toolpath_render::{self, ToolpathGpuData};
 use crate::render::{LineUniforms, MeshUniforms, RenderResources, ViewportCallback};
 use crate::state::Workspace;
 use crate::state::selection::Selection;
@@ -761,6 +761,8 @@ impl RsCamApp {
         };
         let isolate = self.controller.state().viewport.isolate_toolpath;
 
+        let safe_z = self.controller.state().job.post.safe_z;
+
         for (i, tp) in self.controller.state().job.toolpaths_enumerated() {
             // Skip invisible toolpaths; also skip if not the isolated toolpath
             let visible = tp.visible
@@ -770,12 +772,40 @@ impl RsCamApp {
                 };
             if visible && let Some(result) = &tp.result {
                 let selected = selected_tp_id == Some(tp.id);
-                resources.toolpath_data.push(ToolpathGpuData::from_toolpath(
+                let mut gpu_data = ToolpathGpuData::from_toolpath(
                     &render_state.device,
                     &result.toolpath,
                     i,
                     selected,
-                ));
+                );
+
+                // Generate entry path preview for selected toolpaths with a non-None entry style
+                if selected {
+                    use crate::state::toolpath::DressupEntryStyle;
+                    let entry_style = match tp.dressups.entry_style {
+                        DressupEntryStyle::None => toolpath_render::EntryStyle::None,
+                        DressupEntryStyle::Ramp => toolpath_render::EntryStyle::Ramp,
+                        DressupEntryStyle::Helix => toolpath_render::EntryStyle::Helix,
+                    };
+                    let resolved = tp
+                        .heights
+                        .resolve(safe_z, tp.operation.default_depth_for_heights());
+                    let config = toolpath_render::EntryPreviewConfig {
+                        entry_style,
+                        ramp_angle_deg: tp.dressups.ramp_angle,
+                        helix_radius: tp.dressups.helix_radius,
+                        helix_pitch: tp.dressups.helix_pitch,
+                        lead_in_out: tp.dressups.lead_in_out,
+                        lead_radius: tp.dressups.lead_radius,
+                        feed_z: resolved.feed_z,
+                        top_z: resolved.top_z,
+                    };
+                    let preview_verts =
+                        toolpath_render::entry_preview_vertices(&result.toolpath, &config);
+                    gpu_data.attach_entry_preview(&render_state.device, preview_verts);
+                }
+
+                resources.toolpath_data.push(gpu_data);
             }
         }
     }
