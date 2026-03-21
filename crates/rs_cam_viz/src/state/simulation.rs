@@ -1,5 +1,19 @@
 use super::toolpath::ToolpathId;
+use rs_cam_core::collision::RapidCollision;
 use rs_cam_core::simulation::HeightmapMesh;
+
+/// How the simulation stock mesh is colored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StockVizMode {
+    /// Default wood-tone gradient.
+    Solid,
+    /// Green/yellow/red/blue deviation from model surface.
+    Deviation,
+    /// Colored by which operation removed material.
+    ByOperation,
+    /// Height gradient (low=blue, high=red).
+    ByHeight,
+}
 
 /// Per-toolpath boundary in the simulation: toolpath ID and cumulative move count at its end.
 #[derive(Debug, Clone)]
@@ -41,6 +55,22 @@ pub struct SimulationState {
     pub tool_radius: f64,
     /// Tool type label for current operation during playback.
     pub tool_type_label: String,
+    /// Generation counter — incremented when sim results arrive.
+    pub sim_generation: u64,
+    /// Edit counter at the time of the last simulation run.
+    pub last_sim_edit_counter: u64,
+    /// Rapid-through-stock collisions from last simulation.
+    pub rapid_collisions: Vec<RapidCollision>,
+    /// Move indices with rapid collisions (for timeline markers).
+    pub rapid_collision_move_indices: Vec<usize>,
+    /// Number of holder collisions from last dedicated collision check.
+    pub holder_collision_count: usize,
+    /// Min safe stickout from last collision check.
+    pub min_safe_stickout: Option<f64>,
+    /// Stock visualization mode.
+    pub stock_viz_mode: StockVizMode,
+    /// Stock opacity (0.0 = transparent, 1.0 = solid).
+    pub stock_opacity: f32,
 }
 
 impl SimulationState {
@@ -57,7 +87,20 @@ impl SimulationState {
             tool_position: None,
             tool_radius: 0.0,
             tool_type_label: String::new(),
+            sim_generation: 0,
+            last_sim_edit_counter: 0,
+            rapid_collisions: Vec::new(),
+            rapid_collision_move_indices: Vec::new(),
+            holder_collision_count: 0,
+            min_safe_stickout: None,
+            stock_viz_mode: StockVizMode::Solid,
+            stock_opacity: 1.0,
         }
+    }
+
+    /// Returns true if simulation results are stale (params changed since last sim).
+    pub fn is_stale(&self, current_edit_counter: u64) -> bool {
+        self.active && current_edit_counter > self.last_sim_edit_counter
     }
 
     pub fn progress(&self) -> f32 {

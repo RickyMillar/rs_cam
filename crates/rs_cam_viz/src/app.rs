@@ -10,7 +10,7 @@ use crate::render::sim_render::{SimMeshGpuData, ToolModelGpuData};
 use crate::render::stock_render::StockGpuData;
 use crate::render::toolpath_render::ToolpathGpuData;
 use crate::render::{LineUniforms, MeshUniforms, RenderResources, ViewportCallback};
-use crate::state::AppState;
+use crate::state::{AppMode, AppState};
 use crate::state::job::ToolConfig;
 use crate::state::selection::Selection;
 use crate::state::toolpath::{ComputeStatus, OperationConfig, StockSource, ToolpathEntry, ToolpathId};
@@ -277,6 +277,55 @@ impl RsCamApp {
                 AppEvent::ToggleSimToolpath(_tp_id) => {
                     // Subset toggling handled by simulation panel UI
                 }
+                AppEvent::EnterSimulation => {
+                    // If no sim results yet, trigger a run
+                    if !self.state.simulation.active {
+                        self.run_simulation_with_all();
+                    }
+                    self.state.mode = AppMode::Simulation;
+                }
+                AppEvent::ExitSimulation => {
+                    self.state.mode = AppMode::Editor;
+                    // Simulation state is preserved across transitions
+                }
+                AppEvent::SimStepForward => {
+                    if self.state.simulation.active {
+                        self.state.simulation.playing = false;
+                        self.state.simulation.current_move =
+                            (self.state.simulation.current_move + 1).min(self.state.simulation.total_moves);
+                    }
+                }
+                AppEvent::SimStepBackward => {
+                    if self.state.simulation.active {
+                        self.state.simulation.playing = false;
+                        self.state.simulation.current_move =
+                            self.state.simulation.current_move.saturating_sub(1);
+                    }
+                }
+                AppEvent::SimJumpToStart => {
+                    if self.state.simulation.active {
+                        self.state.simulation.playing = false;
+                        self.state.simulation.current_move = 0;
+                    }
+                }
+                AppEvent::SimJumpToEnd => {
+                    if self.state.simulation.active {
+                        self.state.simulation.playing = false;
+                        self.state.simulation.current_move = self.state.simulation.total_moves;
+                    }
+                }
+                AppEvent::SimJumpToOpStart(boundary_idx) => {
+                    if let Some(boundary) = self.state.simulation.boundaries.get(boundary_idx) {
+                        self.state.simulation.playing = false;
+                        self.state.simulation.current_move = boundary.start_move;
+                    }
+                }
+                AppEvent::SimJumpToOpEnd(boundary_idx) => {
+                    if let Some(boundary) = self.state.simulation.boundaries.get(boundary_idx) {
+                        self.state.simulation.playing = false;
+                        self.state.simulation.current_move = boundary.end_move;
+                    }
+                }
                 AppEvent::RescaleModel(model_id, new_units) => {
                     if let Some(model) = self.state.job.models.iter().find(|m| m.id == model_id) {
                         if model.kind == crate::state::job::ModelKind::Stl {
@@ -311,7 +360,15 @@ impl RsCamApp {
                     }
                 }
                 AppEvent::ExportGcode => {
+                    // Show pre-flight checklist instead of exporting directly
+                    self.state.show_preflight = true;
+                }
+                AppEvent::ExportGcodeConfirmed => {
                     self.export_gcode_with_summary();
+                }
+                AppEvent::SimVizModeChanged => {
+                    // Re-upload sim mesh will happen on next pending_upload cycle
+                    self.pending_upload = true;
                 }
                 AppEvent::ExportSvgPreview => {
                     self.export_svg_preview();
@@ -698,6 +755,13 @@ impl RsCamApp {
                     self.state.simulation.active = true;
                     self.state.simulation.total_moves = sim.total_moves;
                     self.state.simulation.current_move = sim.total_moves;
+                    self.state.simulation.sim_generation += 1;
+                    self.state.simulation.last_sim_edit_counter = self.state.job.edit_counter;
+
+                    // Auto-enter simulation workspace when results arrive
+                    if self.state.mode == AppMode::Editor {
+                        self.state.mode = AppMode::Simulation;
+                    }
 
                     // Convert boundaries
                     self.state.simulation.boundaries = sim.boundaries.iter().map(|b| {
@@ -717,6 +781,13 @@ impl RsCamApp {
                             mesh: c.mesh,
                         }
                     }).collect();
+
+                    // Store rapid collision data
+                    if !sim.rapid_collisions.is_empty() {
+                        tracing::warn!("{} rapid collisions detected", sim.rapid_collisions.len());
+                    }
+                    self.state.simulation.rapid_collisions = sim.rapid_collisions;
+                    self.state.simulation.rapid_collision_move_indices = sim.rapid_collision_move_indices;
 
                     // Upload final sim mesh to GPU
                     if let Some(rs) = frame.wgpu_render_state() {
@@ -746,6 +817,13 @@ impl RsCamApp {
                             col.report.min_safe_stickout
                         );
                     }
+                    // Store into simulation state for diagnostics panel
+                    self.state.simulation.holder_collision_count = n;
+                    self.state.simulation.min_safe_stickout = if n > 0 {
+                        Some(col.report.min_safe_stickout)
+                    } else {
+                        None
+                    };
                     self.collision_positions = col.positions;
                 }
                 Err(e) => tracing::error!("Collision check failed: {}", e),
@@ -953,7 +1031,8 @@ impl RsCamApp {
 
         crate::ui::viewport_overlay::draw(
             ui,
-            &mut self.state.simulation,
+            self.state.mode,
+            self.state.simulation.active,
             &mut self.state.viewport,
             compute_elapsed,
             &mut self.events,
@@ -1055,10 +1134,10 @@ impl RsCamApp {
                 }
             }
 
-            // Space: play/pause simulation
+            // Space: play/pause simulation (editor mode — sim mode has its own handler)
             if i.key_pressed(egui::Key::Space) {
                 if self.state.simulation.active {
-                    self.events.push(AppEvent::ToggleSimPlayback);
+                    self.events.push(AppEvent::EnterSimulation);
                 }
             }
 
@@ -1089,32 +1168,10 @@ impl RsCamApp {
             }
         });
     }
-}
 
-impl eframe::App for RsCamApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        // Drain compute results
-        self.drain_compute_results(frame);
+    // --- Layout methods ---
 
-        // Upload pending GPU data
-        if self.pending_upload {
-            self.pending_upload = false;
-            self.upload_gpu_data(frame);
-        }
-
-        // Update tool model position during sim playback
-        if self.state.simulation.active {
-            self.update_sim_tool_position(frame);
-        }
-
-        self.events.clear();
-
-        // Handle keyboard shortcuts (before UI to prevent conflicts)
-        self.handle_keyboard_shortcuts(ctx);
-
-        // Menu bar
-        crate::ui::menu_bar::draw(ctx, &self.state, &mut self.events);
-
+    fn draw_editor_layout(&mut self, ctx: &egui::Context) {
         // Left panel: project tree
         egui::SidePanel::left("project_tree")
             .default_width(220.0)
@@ -1151,6 +1208,176 @@ impl eframe::App for RsCamApp {
             .show(ctx, |ui| {
                 self.draw_viewport(ui);
             });
+    }
+
+    fn draw_simulation_layout(&mut self, ctx: &egui::Context) {
+        // Top bar: Back button + SIMULATION label + display toggles
+        egui::TopBottomPanel::top("sim_top_bar").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if ui.button("\u{2190} Back to Editor").clicked() {
+                    self.events.push(AppEvent::ExitSimulation);
+                }
+                ui.separator();
+                ui.label(
+                    egui::RichText::new("SIMULATION")
+                        .strong()
+                        .color(egui::Color32::from_rgb(100, 180, 220)),
+                );
+                ui.separator();
+
+                // Display toggles relevant to sim mode
+                ui.checkbox(&mut self.state.viewport.show_cutting, "Paths");
+                ui.checkbox(&mut self.state.viewport.show_stock, "Stock");
+                ui.checkbox(&mut self.state.viewport.show_collisions, "Collisions");
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("Re-run Simulation").clicked() {
+                        self.events.push(AppEvent::RunSimulation);
+                    }
+                    if ui.button("Reset").clicked() {
+                        self.events.push(AppEvent::ResetSimulation);
+                    }
+                });
+            });
+        });
+
+        // Bottom panel: timeline
+        egui::TopBottomPanel::bottom("sim_timeline")
+            .min_height(60.0)
+            .show(ctx, |ui| {
+                crate::ui::sim_timeline::draw(
+                    ui,
+                    &mut self.state.simulation,
+                    &self.state.job,
+                    &mut self.events,
+                );
+            });
+
+        // Left panel: operation list
+        egui::SidePanel::left("sim_op_list")
+            .default_width(200.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    crate::ui::sim_op_list::draw(
+                        ui,
+                        &self.state.simulation,
+                        &self.state.job,
+                        &mut self.events,
+                    );
+                });
+            });
+
+        // Right panel: diagnostics
+        egui::SidePanel::right("sim_diagnostics")
+            .default_width(240.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    crate::ui::sim_diagnostics::draw(
+                        ui,
+                        &mut self.state.simulation,
+                        &self.state.job,
+                        &mut self.events,
+                    );
+                });
+            });
+
+        // Central panel: 3D viewport
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::default()
+                    .fill(egui::Color32::from_rgb(26, 26, 38))
+                    .inner_margin(0.0),
+            )
+            .show(ctx, |ui| {
+                self.draw_viewport(ui);
+            });
+    }
+
+    /// Handle keyboard shortcuts for the simulation workspace.
+    fn handle_simulation_shortcuts(&mut self, ctx: &egui::Context) {
+        if ctx.memory(|m| m.focused().is_some()) {
+            return;
+        }
+
+        ctx.input(|i| {
+            // Left/Right: step back/forward
+            if i.key_pressed(egui::Key::ArrowLeft) {
+                self.events.push(AppEvent::SimStepBackward);
+            }
+            if i.key_pressed(egui::Key::ArrowRight) {
+                self.events.push(AppEvent::SimStepForward);
+            }
+
+            // Home/End: jump to start/end
+            if i.key_pressed(egui::Key::Home) {
+                self.events.push(AppEvent::SimJumpToStart);
+            }
+            if i.key_pressed(egui::Key::End) {
+                self.events.push(AppEvent::SimJumpToEnd);
+            }
+
+            // Space: play/pause
+            if i.key_pressed(egui::Key::Space) {
+                self.events.push(AppEvent::ToggleSimPlayback);
+            }
+
+            // Escape: back to editor
+            if i.key_pressed(egui::Key::Escape) {
+                self.events.push(AppEvent::ExitSimulation);
+            }
+
+            // [ / ]: speed down/up
+            if i.key_pressed(egui::Key::OpenBracket) {
+                self.state.simulation.speed = (self.state.simulation.speed * 0.5).max(10.0);
+            }
+            if i.key_pressed(egui::Key::CloseBracket) {
+                self.state.simulation.speed = (self.state.simulation.speed * 2.0).min(50000.0);
+            }
+        });
+    }
+}
+
+impl eframe::App for RsCamApp {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // Drain compute results
+        self.drain_compute_results(frame);
+
+        // Upload pending GPU data
+        if self.pending_upload {
+            self.pending_upload = false;
+            self.upload_gpu_data(frame);
+        }
+
+        // Update tool model position during sim playback
+        if self.state.simulation.active {
+            self.update_sim_tool_position(frame);
+        }
+
+        self.events.clear();
+
+        // Handle keyboard shortcuts (before UI to prevent conflicts)
+        match self.state.mode {
+            AppMode::Editor => self.handle_keyboard_shortcuts(ctx),
+            AppMode::Simulation => self.handle_simulation_shortcuts(ctx),
+        }
+
+        // Menu bar (shown in both modes)
+        crate::ui::menu_bar::draw(ctx, &self.state, &mut self.events);
+
+        // Draw mode-specific layout
+        match self.state.mode {
+            AppMode::Editor => self.draw_editor_layout(ctx),
+            AppMode::Simulation => self.draw_simulation_layout(ctx),
+        }
+
+        // Pre-flight checklist modal (shown on top of either layout)
+        if self.state.show_preflight {
+            if !crate::ui::preflight::draw(ctx, &self.state, &mut self.events) {
+                self.state.show_preflight = false;
+            }
+        }
 
         // Process events after UI pass
         self.handle_events(ctx);

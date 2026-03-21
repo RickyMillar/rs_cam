@@ -1,6 +1,10 @@
 pub mod menu_bar;
+pub mod preflight;
 pub mod project_tree;
 pub mod properties;
+pub mod sim_diagnostics;
+pub mod sim_op_list;
+pub mod sim_timeline;
 pub mod status_bar;
 pub mod viewport_overlay;
 
@@ -51,6 +55,21 @@ pub enum AppEvent {
     ResetSimulation,
     ToggleSimPlayback,
     ToggleSimToolpath(ToolpathId),
+
+    // Simulation workspace
+    EnterSimulation,
+    ExitSimulation,
+    SimStepForward,
+    SimStepBackward,
+    SimJumpToStart,
+    SimJumpToEnd,
+    SimJumpToOpStart(usize),
+    SimJumpToOpEnd(usize),
+
+    // Pre-flight / Export
+    ExportGcodeConfirmed,
+    /// Re-upload simulation mesh with new viz colors.
+    SimVizModeChanged,
 
     // Collision
     RunCollisionCheck,

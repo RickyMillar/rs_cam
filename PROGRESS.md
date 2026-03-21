@@ -150,6 +150,20 @@ See IMPLEMENTATION_PLAN.md for full details. Status of each planned item:
 - [x] 6.23 Viewport enhancements — entry_marker_vertices() in toolpath_render.rs generates 2mm arrowhead at first cutting move (infrastructure ready for rendering in line pipeline)
 
 **All 27 items complete.**
+
+### Phase 7: Simulation Workspace (IN PROGRESS)
+Dedicated verification workspace — distinct mode with its own layout, controls, and diagnostics.
+See SIMULATION_WORKSPACE_VISION.md for full UX rationale.
+
+- [x] 7.1 AppMode + workspace switching — AppMode enum (Editor/Simulation), draw_editor_layout/draw_simulation_layout in app.rs, mode-specific keyboard shortcuts, EnterSimulation/ExitSimulation events
+- [x] 7.2 Stub panel files — sim_op_list.rs (left panel operation list), sim_diagnostics.rs (right panel diagnostics), sim_timeline.rs (bottom panel timeline)
+- [x] 7.3 Viewport overlay sim guard — simulation controls in viewport_overlay.rs guarded by AppMode::Editor to avoid duplication with dedicated panels
+- [x] 7.4 Enhanced operation list — checkboxes per toolpath (subset sim), per-op time estimates, jump-to-start/end per op, current-op highlighting with accent border, palette color swatches, staleness detection (sim_generation + edit_counter)
+- [x] 7.5 Collision integration — rapid collision detection auto-runs after simulation, RapidCollision data stored on SimulationState, holder collision count + min safe stickout from dedicated collision check
+- [x] 7.6 Diagnostics panel — three collapsible sections: Current State (position, op, move type, feed rate), Warnings & Flags (holder/rapid collisions, stale results, run collision check button), Summary Stats (total moves, cutting/rapid distance, cycle time, per-op breakdown table)
+- [x] 7.7 Enhanced timeline — transport buttons (|◄ ◄ ▶/❚❚ ► ►|), custom-painted per-op colored segments with proportional width, red collision tick marks, white position indicator, click-to-jump, MM:SS time display, speed presets (100/500/1k/5k/10k/Max)
+- [x] 7.8 Pre-flight checklist — modal window before G-code export: sim run status, holder/rapid collisions, cycle time, tool changes, enabled ops. Green/red/yellow indicators. Export Anyway / Fix Issues / Cancel buttons. ExportGcodeConfirmed event for actual export
+- [x] 7.9 Stock visualization modes — StockVizMode enum (Solid/Deviation/ByOperation/ByHeight), stock_opacity slider, mode selector in diagnostics panel, deviation_colors() + height_gradient_colors() in sim_render.rs (data-side ready, shader integration pending)
 - [x] 5.19 GUI UX Overhaul — Phase A: per-toolpath color palette (8-color deterministic, Z-depth blend, selection highlight), viewport click-to-select (screen-space nearest-segment), toolpath isolation mode (I key), colored unicode tree indicators with palette swatches, keyboard shortcuts (Delete/G/Shift+G/Space/I/H/1-4 view presets)
 - [x] 5.20 Simulation workspace — Phase B: simulation replaces properties panel when active, per-toolpath boundaries with colored progress segments, heightmap checkpoint caching at each boundary for rewind, tool model wireframe rendering during playback (ball/flat detection, position tracking), per-operation progress with tool name/position readout, jump-to-boundary buttons
 - [x] 5.21 Remaining stock — Phase C: StockSource enum (Fresh/FromRemainingStock) on every ToolpathEntry, stock source selector in properties panel with info text, deprecation path for Rest machining operation

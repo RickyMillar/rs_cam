@@ -49,6 +49,49 @@ pub fn deviation_colors(deviations: &[f32]) -> Vec<[f32; 3]> {
         .collect()
 }
 
+/// Generate per-vertex colors for height-gradient mode.
+/// Maps Z values from min_z to max_z: blue (low) -> green (mid) -> red (high).
+pub fn height_gradient_colors(vertices: &[f32]) -> Vec<[f32; 3]> {
+    let num_verts = vertices.len() / 3;
+    if num_verts == 0 {
+        return Vec::new();
+    }
+
+    let mut min_z = f32::MAX;
+    let mut max_z = f32::MIN;
+    for i in 0..num_verts {
+        let z = vertices[i * 3 + 2];
+        min_z = min_z.min(z);
+        max_z = max_z.max(z);
+    }
+    let range = (max_z - min_z).max(0.001);
+
+    (0..num_verts)
+        .map(|i| {
+            let z = vertices[i * 3 + 2];
+            let t = ((z - min_z) / range).clamp(0.0, 1.0);
+            if t < 0.5 {
+                // Blue to green
+                let s = t * 2.0;
+                [0.0, s, 1.0 - s]
+            } else {
+                // Green to red
+                let s = (t - 0.5) * 2.0;
+                [s, 1.0 - s, 0.0]
+            }
+        })
+        .collect()
+}
+
+/// Generate per-vertex colors based on which operation index removed material.
+/// `op_colors` maps boundary index to palette color for each vertex.
+/// Since we don't track per-vertex op ownership in the heightmap, this returns the
+/// wood-tone default (operations color requires per-cell tracking in a future pass).
+pub fn operation_placeholder_colors(num_verts: usize) -> Vec<[f32; 3]> {
+    // Placeholder: uniform color until per-vertex op tracking is implemented
+    vec![[0.65, 0.45, 0.25]; num_verts]
+}
+
 impl SimMeshGpuData {
     /// Upload a HeightmapMesh (from heightmap_to_mesh) to the GPU.
     /// The HeightmapMesh has flat arrays: vertices [x,y,z,...], colors [r,g,b,...], indices [i0,i1,i2,...].

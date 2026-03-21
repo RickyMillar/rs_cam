@@ -3,7 +3,7 @@ use std::sync::mpsc;
 use std::sync::Arc;
 
 use rs_cam_core::adaptive::{AdaptiveParams, adaptive_toolpath};
-use rs_cam_core::collision::{CollisionReport, ToolAssembly, check_collisions_interpolated};
+use rs_cam_core::collision::{CollisionReport, RapidCollision, ToolAssembly, check_collisions_interpolated, check_rapid_collisions};
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::simulation::{Heightmap, HeightmapMesh, heightmap_to_mesh, simulate_toolpath};
 use rs_cam_core::adaptive3d::{Adaptive3dParams, EntryStyle3d, adaptive_3d_toolpath};
@@ -98,6 +98,10 @@ pub struct SimulationResult {
     pub deviations: Option<Vec<f32>>,
     pub boundaries: Vec<SimBoundary>,
     pub checkpoints: Vec<SimCheckpointMesh>,
+    /// Rapid-through-stock collisions detected during simulation.
+    pub rapid_collisions: Vec<RapidCollision>,
+    /// Move indices with rapid collisions (for timeline markers).
+    pub rapid_collision_move_indices: Vec<usize>,
 }
 
 /// Request to run collision detection on a toolpath.
@@ -240,6 +244,19 @@ fn run_simulation(req: &SimulationRequest) -> Result<SimulationResult, String> {
         });
     }
 
+    // Check for rapid-through-stock collisions on each toolpath
+    let mut rapid_collisions = Vec::new();
+    let mut rapid_collision_move_indices = Vec::new();
+    let mut cumulative_offset = 0;
+    for (_tp_id, _tp_name, toolpath, _tool_config) in &req.toolpaths {
+        let rapids = check_rapid_collisions(toolpath, &req.stock_bbox);
+        for rc in &rapids {
+            rapid_collision_move_indices.push(cumulative_offset + rc.move_index);
+        }
+        rapid_collisions.extend(rapids);
+        cumulative_offset += toolpath.moves.len();
+    }
+
     let mesh = heightmap_to_mesh(&heightmap);
     Ok(SimulationResult {
         mesh,
@@ -247,6 +264,8 @@ fn run_simulation(req: &SimulationRequest) -> Result<SimulationResult, String> {
         deviations: None,
         boundaries,
         checkpoints,
+        rapid_collisions,
+        rapid_collision_move_indices,
     })
 }
 

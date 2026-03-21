@@ -339,6 +339,8 @@ pub struct JobState {
     pub post: PostConfig,
     pub machine: rs_cam_core::machine::MachineProfile,
     pub toolpaths: Vec<super::toolpath::ToolpathEntry>,
+    /// Monotonic counter incremented on every edit (for staleness detection).
+    pub edit_counter: u64,
     next_model_id: usize,
     next_tool_id: usize,
     next_toolpath_id: usize,
@@ -356,6 +358,7 @@ impl JobState {
             post: PostConfig::default(),
             machine: rs_cam_core::machine::MachineProfile::default(),
             toolpaths: Vec::new(),
+            edit_counter: 0,
             next_model_id: 0,
             next_tool_id: 0,
             next_toolpath_id: 0,
@@ -378,5 +381,11 @@ impl JobState {
         let id = super::toolpath::ToolpathId(self.next_toolpath_id);
         self.next_toolpath_id += 1;
         id
+    }
+
+    /// Mark the job as edited (increments edit counter for staleness tracking).
+    pub fn mark_edited(&mut self) {
+        self.dirty = true;
+        self.edit_counter += 1;
     }
 }
