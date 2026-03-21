@@ -1000,7 +1000,19 @@ impl RsCamApp {
 
         let safe_z = self.controller.state().job.post.safe_z;
 
+        // Determine which setup is active for filtering toolpath display
+        let active_setup_id = active_setup_ref.map(|s| s.id);
+
         for (i, tp) in self.controller.state().job.toolpaths_enumerated() {
+            // In Setup/Toolpaths workspace, only show toolpaths from the active setup
+            // (other setups are in different coordinate frames)
+            if matches!(workspace, Workspace::Setup | Workspace::Toolpaths) {
+                let tp_setup = self.controller.state().job.setup_of_toolpath(tp.id);
+                if tp_setup != active_setup_id {
+                    continue;
+                }
+            }
+
             // Skip invisible toolpaths; also skip if not the isolated toolpath
             let visible = tp.visible
                 && match isolate {
