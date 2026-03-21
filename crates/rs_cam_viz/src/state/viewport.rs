@@ -4,6 +4,7 @@ use super::toolpath::ToolpathId;
 pub struct ViewportState {
     pub show_grid: bool,
     pub show_stock: bool,
+    pub show_fixtures: bool,
     pub render_mode: RenderMode,
     pub show_cutting: bool,
     pub show_rapids: bool,
@@ -23,6 +24,7 @@ impl ViewportState {
         Self {
             show_grid: true,
             show_stock: true,
+            show_fixtures: true,
             render_mode: RenderMode::Shaded,
             show_cutting: true,
             show_rapids: true,

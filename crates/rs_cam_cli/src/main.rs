@@ -1324,19 +1324,66 @@ fn main() -> Result<()> {
                 "Unknown post-processor '{}'. Supported: grbl, linuxcnc, mach3",
                 job_file.job.post
             ))?;
-            let phases: Vec<GcodePhase<'_>> = job_result
-                .phases
-                .iter()
-                .map(|p| GcodePhase {
-                    toolpath: &p.toolpath,
-                    spindle_rpm: p.spindle_speed,
-                    label: &p.label,
-                })
-                .collect();
-            info!("Emitting G-code ({})...", post_proc.name());
-            let gcode = emit_gcode_phased(&phases, post_proc.as_ref());
-            std::fs::write(&output, &gcode).context("Failed to write output file")?;
-            info!(bytes = gcode.len(), path = %output.display(), "Wrote G-code");
+            if !job_file.setup.is_empty() {
+                for setup_def in &job_file.setup {
+                    let setup_phases: Vec<GcodePhase<'_>> = job_result
+                        .phases
+                        .iter()
+                        .filter(|phase| phase.setup_name.as_deref() == Some(&setup_def.name))
+                        .map(|phase| GcodePhase {
+                            toolpath: &phase.toolpath,
+                            spindle_rpm: phase.spindle_speed,
+                            label: &phase.label,
+                        })
+                        .collect();
+                    if setup_phases.is_empty() {
+                        continue;
+                    }
+
+                    let setup_output = setup_def
+                        .output
+                        .as_ref()
+                        .map(|path| {
+                            if path.is_absolute() {
+                                path.clone()
+                            } else {
+                                job_dir.join(path)
+                            }
+                        })
+                        .unwrap_or_else(|| {
+                            let name = setup_def.name.replace(' ', "_").to_lowercase();
+                            output.with_file_name(format!(
+                                "{}_{}.nc",
+                                output.file_stem().unwrap_or_default().to_string_lossy(),
+                                name
+                            ))
+                        });
+
+                    let gcode = emit_gcode_phased(&setup_phases, post_proc.as_ref());
+                    std::fs::write(&setup_output, &gcode)
+                        .context("Failed to write setup output file")?;
+                    info!(
+                        setup = %setup_def.name,
+                        bytes = gcode.len(),
+                        path = %setup_output.display(),
+                        "Wrote setup G-code"
+                    );
+                }
+            } else {
+                let phases: Vec<GcodePhase<'_>> = job_result
+                    .phases
+                    .iter()
+                    .map(|phase| GcodePhase {
+                        toolpath: &phase.toolpath,
+                        spindle_rpm: phase.spindle_speed,
+                        label: &phase.label,
+                    })
+                    .collect();
+                info!("Emitting G-code ({})...", post_proc.name());
+                let gcode = emit_gcode_phased(&phases, post_proc.as_ref());
+                std::fs::write(&output, &gcode).context("Failed to write output file")?;
+                info!(bytes = gcode.len(), path = %output.display(), "Wrote G-code");
+            }
 
             if let Some(svg_out) = &svg {
                 let svg_content = rs_cam_core::viz::toolpath_to_svg(toolpath, 800.0, 600.0);

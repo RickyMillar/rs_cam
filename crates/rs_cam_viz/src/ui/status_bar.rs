@@ -28,8 +28,7 @@ pub fn draw(
 
         let tp_done = state
             .job
-            .toolpaths
-            .iter()
+            .all_toolpaths()
             .filter(|toolpath| {
                 matches!(toolpath.status, crate::state::toolpath::ComputeStatus::Done)
             })
@@ -39,7 +38,7 @@ pub fn draw(
             ui.label(format!(
                 "Toolpaths: {}/{}",
                 tp_done,
-                state.job.toolpaths.len()
+                state.job.toolpath_count()
             ));
         }
 

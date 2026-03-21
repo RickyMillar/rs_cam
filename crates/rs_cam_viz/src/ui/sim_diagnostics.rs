@@ -29,9 +29,21 @@ pub fn draw(
                     })
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut sim.stock_viz_mode, StockVizMode::Solid, "Solid");
-                        ui.selectable_value(&mut sim.stock_viz_mode, StockVizMode::Deviation, "Deviation");
-                        ui.selectable_value(&mut sim.stock_viz_mode, StockVizMode::ByOperation, "By Operation");
-                        ui.selectable_value(&mut sim.stock_viz_mode, StockVizMode::ByHeight, "By Height");
+                        ui.selectable_value(
+                            &mut sim.stock_viz_mode,
+                            StockVizMode::Deviation,
+                            "Deviation",
+                        );
+                        ui.selectable_value(
+                            &mut sim.stock_viz_mode,
+                            StockVizMode::ByOperation,
+                            "By Operation",
+                        );
+                        ui.selectable_value(
+                            &mut sim.stock_viz_mode,
+                            StockVizMode::ByHeight,
+                            "By Height",
+                        );
                     });
             });
             if sim.stock_viz_mode != prev_mode {
@@ -78,9 +90,12 @@ pub fn draw(
                 ui.horizontal(|ui| {
                     ui.label("Position:");
                     ui.label(
-                        egui::RichText::new(format!("X{:.2} Y{:.2} Z{:.2}", pos[0], pos[1], pos[2]))
-                            .color(egui::Color32::from_rgb(180, 180, 100))
-                            .monospace(),
+                        egui::RichText::new(format!(
+                            "X{:.2} Y{:.2} Z{:.2}",
+                            pos[0], pos[1], pos[2]
+                        ))
+                        .color(egui::Color32::from_rgb(180, 180, 100))
+                        .monospace(),
                     );
                 });
             } else {
@@ -108,16 +123,14 @@ pub fn draw(
                 ui.label("Move:");
                 ui.label(format!("{} / {}", sim.current_move, sim.total_moves));
                 if let Some((mt, _feed)) = &move_info {
-                    ui.label(
-                        egui::RichText::new(format!("({})", mt))
-                            .small()
-                            .color(match mt.as_str() {
-                                "Rapid" => egui::Color32::from_rgb(200, 200, 80),
-                                "Linear" => egui::Color32::from_rgb(100, 180, 100),
-                                "Arc CW" | "Arc CCW" => egui::Color32::from_rgb(100, 140, 200),
-                                _ => egui::Color32::from_rgb(150, 150, 150),
-                            }),
-                    );
+                    ui.label(egui::RichText::new(format!("({})", mt)).small().color(
+                        match mt.as_str() {
+                            "Rapid" => egui::Color32::from_rgb(200, 200, 80),
+                            "Linear" => egui::Color32::from_rgb(100, 180, 100),
+                            "Arc CW" | "Arc CCW" => egui::Color32::from_rgb(100, 140, 200),
+                            _ => egui::Color32::from_rgb(150, 150, 150),
+                        },
+                    ));
                 }
             });
             if let Some((_, Some(feed))) = &move_info {
@@ -189,10 +202,11 @@ pub fn draw(
             }
 
             // Run collision check button
-            if sim.holder_collision_count == 0 && sim.min_safe_stickout.is_none() {
-                if ui.small_button("Run Collision Check").clicked() {
-                    events.push(AppEvent::RunCollisionCheck);
-                }
+            if sim.holder_collision_count == 0
+                && sim.min_safe_stickout.is_none()
+                && ui.small_button("Run Collision Check").clicked()
+            {
+                events.push(AppEvent::RunCollisionCheck);
             }
         });
 
@@ -249,18 +263,24 @@ pub fn draw(
                         ui.end_row();
 
                         for boundary in &sim.boundaries {
-                            if let Some(tp) = job.toolpaths.iter().find(|tp| tp.id == boundary.id) {
-                                if let Some(result) = &tp.result {
-                                    let feed = op_feed_rate(&tp.operation);
-                                    let time_min = result.stats.cutting_distance / feed;
-                                    let m = time_min.floor() as u32;
-                                    let s = ((time_min - m as f64) * 60.0) as u32;
+                            if let Some(tp) = job.find_toolpath(boundary.id)
+                                && let Some(result) = &tp.result
+                            {
+                                let feed = op_feed_rate(&tp.operation);
+                                let time_min = result.stats.cutting_distance / feed;
+                                let m = time_min.floor() as u32;
+                                let s = ((time_min - m as f64) * 60.0) as u32;
 
-                                    ui.label(egui::RichText::new(&boundary.name).small());
-                                    ui.label(egui::RichText::new(format!("{:.0}", result.stats.cutting_distance)).small());
-                                    ui.label(egui::RichText::new(format!("{}:{:02}", m, s)).small());
-                                    ui.end_row();
-                                }
+                                ui.label(egui::RichText::new(&boundary.name).small());
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "{:.0}",
+                                        result.stats.cutting_distance
+                                    ))
+                                    .small(),
+                                );
+                                ui.label(egui::RichText::new(format!("{}:{:02}", m, s)).small());
+                                ui.end_row();
                             }
                         }
                     });
@@ -272,7 +292,7 @@ pub fn draw(
 fn current_move_info(sim: &SimulationState, job: &JobState) -> Option<(String, Option<f64>)> {
     let current = sim.current_move;
     let mut cumulative = 0;
-    for tp in &job.toolpaths {
+    for tp in job.all_toolpaths() {
         if !tp.enabled {
             continue;
         }
@@ -282,11 +302,17 @@ fn current_move_info(sim: &SimulationState, job: &JobState) -> Option<(String, O
                 let local_idx = current.saturating_sub(cumulative);
                 if local_idx < result.toolpath.moves.len() {
                     let mv = &result.toolpath.moves[local_idx];
-                    return Some(match &mv.move_type {
+                    return Some(match mv.move_type {
                         rs_cam_core::toolpath::MoveType::Rapid => ("Rapid".to_string(), None),
-                        rs_cam_core::toolpath::MoveType::Linear { feed_rate } => ("Linear".to_string(), Some(*feed_rate)),
-                        rs_cam_core::toolpath::MoveType::ArcCW { feed_rate, .. } => ("Arc CW".to_string(), Some(*feed_rate)),
-                        rs_cam_core::toolpath::MoveType::ArcCCW { feed_rate, .. } => ("Arc CCW".to_string(), Some(*feed_rate)),
+                        rs_cam_core::toolpath::MoveType::Linear { feed_rate } => {
+                            ("Linear".to_string(), Some(feed_rate))
+                        }
+                        rs_cam_core::toolpath::MoveType::ArcCW { feed_rate, .. } => {
+                            ("Arc CW".to_string(), Some(feed_rate))
+                        }
+                        rs_cam_core::toolpath::MoveType::ArcCCW { feed_rate, .. } => {
+                            ("Arc CCW".to_string(), Some(feed_rate))
+                        }
                     });
                 }
             }
@@ -303,13 +329,13 @@ fn aggregate_stats(sim: &SimulationState, job: &JobState) -> (f64, f64, f64) {
     let mut total_time_min = 0.0;
 
     for boundary in &sim.boundaries {
-        if let Some(tp) = job.toolpaths.iter().find(|tp| tp.id == boundary.id) {
-            if let Some(result) = &tp.result {
-                total_cutting += result.stats.cutting_distance;
-                total_rapid += result.stats.rapid_distance;
-                let feed = op_feed_rate(&tp.operation);
-                total_time_min += result.stats.cutting_distance / feed;
-            }
+        if let Some(tp) = job.find_toolpath(boundary.id)
+            && let Some(result) = &tp.result
+        {
+            total_cutting += result.stats.cutting_distance;
+            total_rapid += result.stats.rapid_distance;
+            let feed = op_feed_rate(&tp.operation);
+            total_time_min += result.stats.cutting_distance / feed;
         }
     }
 

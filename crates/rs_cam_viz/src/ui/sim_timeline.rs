@@ -14,18 +14,30 @@ pub fn draw(
     // Row 1: Transport + scrubber + time display
     ui.horizontal(|ui| {
         // Transport buttons
-        if ui.button("|◄").on_hover_text("Jump to start (Home)").clicked() {
+        if ui
+            .button("|◄")
+            .on_hover_text("Jump to start (Home)")
+            .clicked()
+        {
             events.push(AppEvent::SimJumpToStart);
         }
         if ui.button("◄").on_hover_text("Step back (Left)").clicked() {
             events.push(AppEvent::SimStepBackward);
         }
         let play_label = if sim.playing { "❚❚" } else { "▶" };
-        let play_tip = if sim.playing { "Pause (Space)" } else { "Play (Space)" };
+        let play_tip = if sim.playing {
+            "Pause (Space)"
+        } else {
+            "Play (Space)"
+        };
         if ui.button(play_label).on_hover_text(play_tip).clicked() {
             events.push(AppEvent::ToggleSimPlayback);
         }
-        if ui.button("►").on_hover_text("Step forward (Right)").clicked() {
+        if ui
+            .button("►")
+            .on_hover_text("Step forward (Right)")
+            .clicked()
+        {
             events.push(AppEvent::SimStepForward);
         }
         if ui.button("►|").on_hover_text("Jump to end (End)").clicked() {
@@ -41,10 +53,7 @@ pub fn draw(
                 .show_value(false)
                 .step_by(1.0);
             let available = (ui.available_width() - 160.0).max(80.0);
-            let slider_response = ui.add_sized(
-                egui::vec2(available, 18.0),
-                slider,
-            );
+            let slider_response = ui.add_sized(egui::vec2(available, 18.0), slider);
             if slider_response.changed() {
                 sim.current_move = pos as usize;
                 sim.playing = false;
@@ -64,14 +73,45 @@ pub fn draw(
         }
     });
 
+    if sim.setup_boundaries.len() > 1 {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(
+                egui::RichText::new("Setups:")
+                    .small()
+                    .color(egui::Color32::from_rgb(140, 140, 150)),
+            );
+            for setup in &sim.setup_boundaries {
+                let is_current = sim.current_move >= setup.start_move;
+                let color = if is_current {
+                    egui::Color32::from_rgb(160, 170, 200)
+                } else {
+                    egui::Color32::from_rgb(110, 110, 120)
+                };
+                let pct = if sim.total_moves > 0 {
+                    setup.start_move as f32 / sim.total_moves as f32 * 100.0
+                } else {
+                    0.0
+                };
+                let button = egui::Button::new(
+                    egui::RichText::new(format!("{} {:.0}%", setup.setup_name, pct))
+                        .small()
+                        .color(color),
+                )
+                .selected(is_current);
+                if ui.add(button).clicked() {
+                    sim.current_move = setup.start_move;
+                    sim.playing = false;
+                }
+            }
+        });
+    }
+
     // Row 2: Custom-painted per-op timeline with collision markers
     if sim.total_moves > 0 && !sim.boundaries.is_empty() {
         let total_width = ui.available_width();
         let height = 12.0;
-        let (rect, response) = ui.allocate_exact_size(
-            egui::vec2(total_width, height),
-            egui::Sense::click(),
-        );
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(total_width, height), egui::Sense::click());
 
         let painter = ui.painter_at(rect);
         let total_moves = sim.total_moves.max(1) as f32;
@@ -142,17 +182,20 @@ pub fn draw(
         // Position indicator (white vertical line)
         let pos_x = rect.min.x + (sim.current_move as f32 / total_moves) * total_width;
         painter.line_segment(
-            [egui::pos2(pos_x, rect.min.y - 1.0), egui::pos2(pos_x, rect.max.y + 1.0)],
+            [
+                egui::pos2(pos_x, rect.min.y - 1.0),
+                egui::pos2(pos_x, rect.max.y + 1.0),
+            ],
             egui::Stroke::new(2.0, egui::Color32::WHITE),
         );
 
         // Click-to-jump
-        if response.clicked() {
-            if let Some(pos) = response.interact_pointer_pos() {
-                let frac = ((pos.x - rect.min.x) / total_width).clamp(0.0, 1.0);
-                sim.current_move = (frac * total_moves) as usize;
-                sim.playing = false;
-            }
+        if response.clicked()
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            let frac = ((pos.x - rect.min.x) / total_width).clamp(0.0, 1.0);
+            sim.current_move = (frac * total_moves) as usize;
+            sim.playing = false;
         }
     }
 
@@ -170,9 +213,7 @@ pub fn draw(
             ("Max", 50000.0),
         ] {
             let is_selected = (sim.speed - speed).abs() < 1.0;
-            let btn = egui::Button::new(
-                egui::RichText::new(label).small(),
-            ).selected(is_selected);
+            let btn = egui::Button::new(egui::RichText::new(label).small()).selected(is_selected);
             if ui.add(btn).clicked() {
                 sim.speed = speed;
             }
@@ -201,23 +242,23 @@ fn estimate_times(sim: &SimulationState, job: &JobState) -> (f64, f64) {
     let mut elapsed_secs = 0.0;
 
     for boundary in &sim.boundaries {
-        if let Some(tp) = job.toolpaths.iter().find(|tp| tp.id == boundary.id) {
-            if let Some(result) = &tp.result {
-                let feed = op_feed_rate(&tp.operation);
-                let op_time = (result.stats.cutting_distance / feed) * 60.0;
-                total_secs += op_time;
+        if let Some(tp) = job.find_toolpath(boundary.id)
+            && let Some(result) = &tp.result
+        {
+            let feed = op_feed_rate(&tp.operation);
+            let op_time = (result.stats.cutting_distance / feed) * 60.0;
+            total_secs += op_time;
 
-                // Estimate elapsed time for this op
-                let op_moves = boundary.end_move.saturating_sub(boundary.start_move);
-                let progress = if sim.current_move >= boundary.end_move {
-                    1.0
-                } else if sim.current_move <= boundary.start_move {
-                    0.0
-                } else {
-                    (sim.current_move - boundary.start_move) as f64 / op_moves.max(1) as f64
-                };
-                elapsed_secs += op_time * progress;
-            }
+            // Estimate elapsed time for this op
+            let op_moves = boundary.end_move.saturating_sub(boundary.start_move);
+            let progress = if sim.current_move >= boundary.end_move {
+                1.0
+            } else if sim.current_move <= boundary.start_move {
+                0.0
+            } else {
+                (sim.current_move - boundary.start_move) as f64 / op_moves.max(1) as f64
+            };
+            elapsed_secs += op_time * progress;
         }
     }
 

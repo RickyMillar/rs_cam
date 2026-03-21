@@ -26,6 +26,7 @@ fn sample_request(operation: OperationConfig, stock_source: StockSource) -> Comp
         }),
         boundary_enabled: false,
         boundary_containment: BoundaryContainment::Center,
+        keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(10.0, 5.0),
     }
 }
@@ -99,6 +100,7 @@ fn quick_pocket_request(id: usize) -> ComputeRequest {
         }),
         boundary_enabled: false,
         boundary_containment: BoundaryContainment::Center,
+        keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(10.0, 5.0),
     }
 }
@@ -129,6 +131,7 @@ fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
         }),
         boundary_enabled: false,
         boundary_containment: BoundaryContainment::Center,
+        keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(10.0, 5.0),
     }
 }
@@ -156,6 +159,7 @@ fn long_simulation_request() -> SimulationRequest {
         },
         stock_top_z: 10.0,
         resolution: 0.5,
+        model_mesh: None,
     }
 }
 

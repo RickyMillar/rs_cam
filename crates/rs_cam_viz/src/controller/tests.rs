@@ -11,7 +11,7 @@ use crate::compute::{
     CollisionRequest, ComputeMessage, ComputeRequest, LaneState, SimulationRequest,
 };
 use crate::state::job::{
-    LoadedModel, ModelId, ModelKind, ModelUnits, ToolConfig, ToolId, ToolType,
+    LoadedModel, ModelId, ModelKind, ModelUnits, Setup, ToolConfig, ToolId, ToolType,
 };
 use crate::state::selection::Selection;
 use crate::state::toolpath::{
@@ -104,7 +104,7 @@ fn sample_controller() -> AppController<ScriptedBackend> {
         toolpath: Arc::new(Toolpath::new()),
         stats: Default::default(),
     });
-    controller.state.job.toolpaths.push(entry);
+    controller.state.job.push_toolpath(entry);
     controller.state.selection = Selection::Toolpath(ToolpathId(1));
     controller
 }
@@ -133,7 +133,8 @@ fn render_snapshot(
             let events = &mut controller.events;
             crate::ui::viewport_overlay::draw(
                 ui,
-                &mut controller.state.simulation,
+                controller.state.mode,
+                controller.state.simulation.active,
                 &mut controller.state.viewport,
                 &lanes,
                 events,
@@ -226,7 +227,12 @@ fn fixture_projects_load_2d_and_3d_models() {
 fn controller_save_open_and_export_smoke() {
     let mut controller = sample_controller();
     controller.state.job.name = "Smoke".to_string();
-    controller.state.job.toolpaths[0].result = Some(ToolpathResult {
+    controller
+        .state
+        .job
+        .find_toolpath_mut(ToolpathId(1))
+        .unwrap()
+        .result = Some(ToolpathResult {
         toolpath: Arc::new({
             let mut toolpath = Toolpath::new();
             toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
@@ -258,4 +264,82 @@ fn controller_save_open_and_export_smoke() {
 
     let setup = controller.export_setup_sheet_html();
     assert!(setup.contains("<html"));
+}
+
+#[test]
+fn simulation_results_capture_setup_boundaries() {
+    let mut controller = sample_controller();
+
+    let second_setup_id = controller.state.job.next_setup_id();
+    controller
+        .state
+        .job
+        .setups
+        .push(Setup::new(second_setup_id, "Bottom Side".to_string()));
+    controller.state.job.push_toolpath_to_setup(
+        second_setup_id,
+        ToolpathEntry::from_init(
+            crate::state::toolpath::ToolpathEntryInit::from_loaded_state(
+                ToolpathId(2),
+                "Profile".to_string(),
+                ToolId(1),
+                ModelId(1),
+                OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
+            ),
+        ),
+    );
+
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Simulation(Ok(
+            crate::compute::SimulationResult {
+                mesh: rs_cam_core::simulation::HeightmapMesh {
+                    vertices: Vec::new(),
+                    indices: Vec::new(),
+                    colors: Vec::new(),
+                },
+                total_moves: 20,
+                deviations: None,
+                boundaries: vec![
+                    crate::compute::worker::SimBoundary {
+                        id: ToolpathId(1),
+                        name: "Adaptive 3D".to_string(),
+                        tool_name: "End Mill".to_string(),
+                        start_move: 0,
+                        end_move: 10,
+                    },
+                    crate::compute::worker::SimBoundary {
+                        id: ToolpathId(2),
+                        name: "Profile".to_string(),
+                        tool_name: "End Mill".to_string(),
+                        start_move: 10,
+                        end_move: 20,
+                    },
+                ],
+                checkpoints: Vec::new(),
+                rapid_collisions: Vec::new(),
+                rapid_collision_move_indices: Vec::new(),
+            },
+        )));
+
+    controller.drain_compute_results();
+
+    assert_eq!(controller.state.simulation.setup_boundaries.len(), 2);
+    assert_eq!(
+        controller.state.simulation.setup_boundaries[0].setup_name,
+        "Setup 1"
+    );
+    assert_eq!(
+        controller.state.simulation.setup_boundaries[1].setup_name,
+        "Bottom Side"
+    );
+    assert_eq!(
+        controller.state.simulation.setup_boundaries[0].start_move,
+        0
+    );
+    assert_eq!(
+        controller.state.simulation.setup_boundaries[1].start_move,
+        10
+    );
 }

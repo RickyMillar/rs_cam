@@ -21,6 +21,15 @@ pub trait PostProcessor {
         3
     }
 
+    /// Program pause for setup changes (M0). Override for machine-specific behavior.
+    fn program_pause(&self, message: &str) -> String {
+        let mut s = String::new();
+        let _ = writeln!(s, "M5");
+        s.push_str(&self.comment(message));
+        let _ = writeln!(s, "M0");
+        s
+    }
+
     // Canned drilling cycles (default implementations)
     fn drill_simple(&self, x: f64, y: f64, z: f64, r: f64, feed: f64) -> String {
         format!("G81 X{x:.4} Y{y:.4} Z{z:.4} R{r:.4} F{feed:.1}\n")
@@ -295,6 +304,102 @@ pub fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &dyn PostProcessor) ->
     output
 }
 
+/// A group of toolpath phases belonging to one setup.
+pub struct GcodeSetupPhase<'a> {
+    pub setup_label: &'a str,
+    pub phases: Vec<GcodePhase<'a>>,
+}
+
+/// Emit G-code for multiple setups with M0 pauses between them.
+pub fn emit_gcode_multi_setup(
+    setups: &[GcodeSetupPhase<'_>],
+    post: &dyn PostProcessor,
+    safe_z: f64,
+) -> String {
+    if setups.is_empty() {
+        return String::new();
+    }
+
+    let mut output = String::new();
+    let first_rpm = setups
+        .iter()
+        .flat_map(|setup| setup.phases.iter())
+        .map(|phase| phase.spindle_rpm)
+        .next()
+        .unwrap_or(18_000);
+
+    output.push_str(&post.preamble(first_rpm));
+
+    let mut current_rpm = first_rpm;
+    let mut last_feed: Option<f64> = None;
+    let dp = post.decimal_places();
+
+    for (setup_index, setup) in setups.iter().enumerate() {
+        if setup_index > 0 {
+            let _ = writeln!(output, "G0 Z{safe_z:.dp$}");
+            output.push_str(&post.program_pause(&format!("Setup change: {}", setup.setup_label)));
+
+            let next_rpm = setup
+                .phases
+                .first()
+                .map(|phase| phase.spindle_rpm)
+                .unwrap_or(current_rpm);
+            let _ = writeln!(output, "M3 S{next_rpm}");
+            current_rpm = next_rpm;
+            last_feed = None;
+        }
+
+        output.push_str(&post.comment(&format!("=== {} ===", setup.setup_label)));
+
+        for phase in &setup.phases {
+            output.push_str(&post.comment(phase.label));
+
+            if phase.spindle_rpm != current_rpm {
+                let _ = writeln!(output, "M3 S{}", phase.spindle_rpm);
+                current_rpm = phase.spindle_rpm;
+            }
+
+            for m in &phase.toolpath.moves {
+                match m.move_type {
+                    MoveType::Rapid => {
+                        output.push_str(&post.rapid(m.target.x, m.target.y, m.target.z));
+                        last_feed = None;
+                    }
+                    MoveType::Linear { feed_rate } => {
+                        if last_feed != Some(feed_rate) {
+                            output.push_str(
+                                &post.linear(m.target.x, m.target.y, m.target.z, feed_rate),
+                            );
+                            last_feed = Some(feed_rate);
+                        } else {
+                            let _ = writeln!(
+                                output,
+                                "G1 X{:.dp$} Y{:.dp$} Z{:.dp$}",
+                                m.target.x, m.target.y, m.target.z
+                            );
+                        }
+                    }
+                    MoveType::ArcCW { i, j, feed_rate } => {
+                        output.push_str(
+                            &post.arc_cw(m.target.x, m.target.y, m.target.z, i, j, feed_rate),
+                        );
+                        last_feed = Some(feed_rate);
+                    }
+                    MoveType::ArcCCW { i, j, feed_rate } => {
+                        output.push_str(
+                            &post.arc_ccw(m.target.x, m.target.y, m.target.z, i, j, feed_rate),
+                        );
+                        last_feed = Some(feed_rate);
+                    }
+                }
+            }
+        }
+    }
+
+    output.push_str(&post.postamble());
+    output
+}
+
 /// Replace G0 rapid moves with G1 at a high feedrate.
 /// Used for machines with unpredictable rapid behavior (e.g., GRBL "dogleg" rapids).
 pub fn replace_rapids_with_feed(gcode: &str, high_feedrate: f64) -> String {
@@ -449,5 +554,53 @@ mod tests {
             m3_count, 2,
             "Different spindle speeds should emit M3 for each"
         );
+    }
+
+    #[test]
+    fn test_program_pause_stops_and_pauses() {
+        let pause = GrblPost.program_pause("Rotate stock");
+        assert!(pause.contains("M5"));
+        assert!(pause.contains("(Rotate stock)"));
+        assert!(pause.contains("M0"));
+    }
+
+    #[test]
+    fn test_emit_gcode_multi_setup_inserts_pause_between_setups() {
+        let mut tp1 = Toolpath::new();
+        tp1.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp1.feed_to(P3::new(10.0, 0.0, 0.0), 1000.0);
+
+        let mut tp2 = Toolpath::new();
+        tp2.rapid_to(P3::new(20.0, 0.0, 10.0));
+        tp2.feed_to(P3::new(30.0, 0.0, 0.0), 800.0);
+
+        let setups = vec![
+            GcodeSetupPhase {
+                setup_label: "Top",
+                phases: vec![GcodePhase {
+                    toolpath: &tp1,
+                    spindle_rpm: 18_000,
+                    label: "Pocket",
+                }],
+            },
+            GcodeSetupPhase {
+                setup_label: "Bottom",
+                phases: vec![GcodePhase {
+                    toolpath: &tp2,
+                    spindle_rpm: 24_000,
+                    label: "Profile",
+                }],
+            },
+        ];
+
+        let gcode = emit_gcode_multi_setup(&setups, &GrblPost, 15.0);
+
+        assert!(gcode.contains("(=== Top ===)"));
+        assert!(gcode.contains("(=== Bottom ===)"));
+        assert!(gcode.contains("G0 Z15.000"));
+        assert!(gcode.contains("(Setup change: Bottom)"));
+        assert!(gcode.contains("M0"));
+        assert!(gcode.contains("M3 S18000"));
+        assert!(gcode.contains("M3 S24000"));
     }
 }

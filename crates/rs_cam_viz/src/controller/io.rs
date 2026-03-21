@@ -124,8 +124,7 @@ impl<B: ComputeBackend> AppController<B> {
         let toolpaths: Vec<_> = self
             .state
             .job
-            .toolpaths
-            .iter()
+            .all_toolpaths()
             .filter(|toolpath| toolpath.enabled && toolpath.result.is_some())
             .filter_map(|toolpath| toolpath.result.as_ref().map(|result| &*result.toolpath))
             .collect();

@@ -6,15 +6,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::io::import;
 use crate::state::job::{
-    CutDirection as ToolCutDirection, JobState, LoadedModel, ModelId, ModelKind, ModelUnits,
-    PostConfig, PostFormat, StockConfig, ToolConfig, ToolId, ToolMaterial, ToolType,
+    AlignmentPin, CutDirection as ToolCutDirection, FaceUp, Fixture, FixtureId, FixtureKind,
+    JobState, KeepOutId, KeepOutZone, LoadedModel, ModelId, ModelKind, ModelUnits, PostConfig,
+    PostFormat, Setup, SetupId, StockConfig, ToolConfig, ToolId, ToolMaterial, ToolType, XYDatum,
+    ZDatum, ZRotation,
 };
 use crate::state::toolpath::{
     BoundaryContainment, DressupConfig, FeedsAutoMode, HeightsConfig, OperationConfig,
     OperationType, StockSource, ToolpathEntry, ToolpathEntryInit, ToolpathId,
 };
 
-const PROJECT_FORMAT_VERSION: u32 = 1;
+const PROJECT_FORMAT_VERSION: u32 = 2;
 
 pub struct LoadedProject {
     pub job: JobState,
@@ -93,6 +95,8 @@ pub struct ProjectFile {
     pub tools: Vec<ProjectToolSection>,
     #[serde(default)]
     pub models: Vec<ProjectModelSection>,
+    #[serde(default)]
+    pub setups: Vec<ProjectSetupSection>,
     #[serde(default)]
     pub toolpaths: Vec<ProjectToolpathSection>,
 }
@@ -204,6 +208,84 @@ pub struct ProjectToolpathSection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectSetupSection {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<SetupId>,
+    #[serde(default = "default_setup_name")]
+    pub name: String,
+    #[serde(default = "default_setup_face_up")]
+    pub face_up: String,
+    #[serde(default = "default_setup_z_rotation")]
+    pub z_rotation: String,
+    #[serde(default)]
+    pub xy_datum: String,
+    #[serde(default)]
+    pub z_datum: String,
+    #[serde(default)]
+    pub datum_notes: String,
+    #[serde(default)]
+    pub alignment_pins: Vec<ProjectPinSection>,
+    #[serde(default)]
+    pub fixtures: Vec<ProjectFixtureSection>,
+    #[serde(default)]
+    pub keep_out_zones: Vec<ProjectKeepOutSection>,
+    #[serde(default)]
+    pub toolpaths: Vec<ProjectToolpathSection>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectPinSection {
+    pub x: f64,
+    pub y: f64,
+    #[serde(default = "default_pin_diameter")]
+    pub diameter: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectFixtureSection {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<FixtureId>,
+    #[serde(default = "default_fixture_name")]
+    pub name: String,
+    #[serde(default = "default_fixture_kind")]
+    pub kind: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub origin_x: f64,
+    #[serde(default)]
+    pub origin_y: f64,
+    #[serde(default)]
+    pub origin_z: f64,
+    #[serde(default = "default_fixture_size_x")]
+    pub size_x: f64,
+    #[serde(default = "default_fixture_size_y")]
+    pub size_y: f64,
+    #[serde(default = "default_fixture_size_z")]
+    pub size_z: f64,
+    #[serde(default = "default_fixture_clearance")]
+    pub clearance: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectKeepOutSection {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<KeepOutId>,
+    #[serde(default = "default_keep_out_name")]
+    pub name: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub origin_x: f64,
+    #[serde(default)]
+    pub origin_y: f64,
+    #[serde(default = "default_keep_out_size")]
+    pub size_x: f64,
+    #[serde(default = "default_keep_out_size")]
+    pub size_y: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct LegacyProjectFile {
     pub job: LegacyJobSection,
     #[serde(default)]
@@ -295,11 +377,12 @@ pub fn save_project(job: &JobState, path: &Path) -> Result<(), String> {
             .iter()
             .map(|model| ProjectModelSection::from_runtime(model, path))
             .collect(),
-        toolpaths: job
-            .toolpaths
+        setups: job
+            .setups
             .iter()
-            .map(ProjectToolpathSection::from_runtime)
+            .map(ProjectSetupSection::from_runtime)
             .collect(),
+        toolpaths: Vec::new(),
     };
 
     let toml_str = toml::to_string_pretty(&project).map_err(|e| format!("Serialize error: {e}"))?;
@@ -404,6 +487,81 @@ impl ProjectToolpathSection {
     }
 }
 
+impl ProjectSetupSection {
+    fn from_runtime(setup: &Setup) -> Self {
+        Self {
+            id: Some(setup.id),
+            name: setup.name.clone(),
+            face_up: setup.face_up.to_key().to_string(),
+            z_rotation: setup.z_rotation.to_key().to_string(),
+            xy_datum: setup.datum.xy_method.to_key(),
+            z_datum: setup.datum.z_method.to_key(),
+            datum_notes: setup.datum.notes.clone(),
+            alignment_pins: setup
+                .alignment_pins
+                .iter()
+                .map(|pin| ProjectPinSection {
+                    x: pin.x,
+                    y: pin.y,
+                    diameter: pin.diameter,
+                })
+                .collect(),
+            fixtures: setup
+                .fixtures
+                .iter()
+                .map(ProjectFixtureSection::from_runtime)
+                .collect(),
+            keep_out_zones: setup
+                .keep_out_zones
+                .iter()
+                .map(ProjectKeepOutSection::from_runtime)
+                .collect(),
+            toolpaths: setup
+                .toolpaths
+                .iter()
+                .map(ProjectToolpathSection::from_runtime)
+                .collect(),
+        }
+    }
+}
+
+impl ProjectFixtureSection {
+    fn from_runtime(fixture: &Fixture) -> Self {
+        Self {
+            id: Some(fixture.id),
+            name: fixture.name.clone(),
+            kind: match fixture.kind {
+                FixtureKind::Clamp => "clamp".to_string(),
+                FixtureKind::Vise => "vise".to_string(),
+                FixtureKind::VacuumPod => "vacuum_pod".to_string(),
+                FixtureKind::Custom => "custom".to_string(),
+            },
+            enabled: fixture.enabled,
+            origin_x: fixture.origin_x,
+            origin_y: fixture.origin_y,
+            origin_z: fixture.origin_z,
+            size_x: fixture.size_x,
+            size_y: fixture.size_y,
+            size_z: fixture.size_z,
+            clearance: fixture.clearance,
+        }
+    }
+}
+
+impl ProjectKeepOutSection {
+    fn from_runtime(keep_out: &KeepOutZone) -> Self {
+        Self {
+            id: Some(keep_out.id),
+            name: keep_out.name.clone(),
+            enabled: keep_out.enabled,
+            origin_x: keep_out.origin_x,
+            origin_y: keep_out.origin_y,
+            size_x: keep_out.size_x,
+            size_y: keep_out.size_y,
+        }
+    }
+}
+
 fn load_typed_project(path: &Path, project: ProjectFile) -> Result<LoadedProject, String> {
     let mut job = JobState::new();
     let mut warnings = Vec::new();
@@ -439,62 +597,66 @@ fn load_typed_project(path: &Path, project: ProjectFile) -> Result<LoadedProject
     }
 
     let loaded_at = Instant::now();
+    let mut used_setup_ids = BTreeSet::new();
+    let mut next_setup_id = 0usize;
+    let mut used_fixture_ids = BTreeSet::new();
+    let mut next_fixture_id = 0usize;
+    let mut used_keep_out_ids = BTreeSet::new();
+    let mut next_keep_out_id = 0usize;
     let mut used_toolpath_ids = BTreeSet::new();
     let mut next_toolpath_id = 0usize;
-    for section in project.toolpaths {
-        let id = ToolpathId(assign_unique_id(
-            section.id.map(|id| id.0),
-            &mut used_toolpath_ids,
-            &mut next_toolpath_id,
-        ));
-        let tool_id = section
-            .tool_id
-            .or_else(|| job.tools.first().map(|tool| tool.id))
-            .unwrap_or(ToolId(0));
-        let model_id = section
-            .model_id
-            .or_else(|| job.models.first().map(|model| model.id))
-            .unwrap_or(ModelId(0));
-        let operation = section.operation.unwrap_or_else(|| {
-            OperationConfig::new_default(section.op_type.unwrap_or(OperationType::Pocket))
-        });
-        let mut init = ToolpathEntryInit::from_loaded_state(
-            id,
-            default_toolpath_name(&section.name, &operation, id),
-            tool_id,
-            model_id,
-            operation,
-        );
-        init.enabled = section.enabled;
-        init.visible = section.visible;
-        init.locked = section.locked;
-        init.dressups = section.dressups;
-        init.heights = section.heights;
-        init.boundary_enabled = section.boundary_enabled;
-        init.boundary_containment = section.boundary_containment;
-        init.pre_gcode = section.pre_gcode;
-        init.post_gcode = section.post_gcode;
-        init.stock_source = section.stock_source;
-        init.auto_regen = section.auto_regen;
-        init.feeds_auto = section.feeds_auto;
-        let mut toolpath = ToolpathEntry::from_init(init);
-        toolpath.clear_runtime_state();
-        toolpath.stale_since = Some(loaded_at);
 
-        if !job.tools.iter().any(|tool| tool.id == tool_id) {
-            warnings.push(ProjectLoadWarning::MissingToolReference {
-                toolpath: toolpath.name.clone(),
-                tool_id,
-            });
+    if !project.setups.is_empty() {
+        job.setups.clear();
+        for setup_section in project.setups {
+            let setup_id = SetupId(assign_unique_id(
+                setup_section.id.map(|id| id.0),
+                &mut used_setup_ids,
+                &mut next_setup_id,
+            ));
+            let (mut setup, toolpath_sections) = restore_project_setup(
+                setup_section,
+                setup_id,
+                &mut used_fixture_ids,
+                &mut next_fixture_id,
+                &mut used_keep_out_ids,
+                &mut next_keep_out_id,
+            );
+            for section in toolpath_sections {
+                let id = ToolpathId(assign_unique_id(
+                    section.id.map(|id| id.0),
+                    &mut used_toolpath_ids,
+                    &mut next_toolpath_id,
+                ));
+                let toolpath = restore_project_toolpath(
+                    section,
+                    id,
+                    &job.tools,
+                    &job.models,
+                    loaded_at,
+                    &mut warnings,
+                );
+                setup.toolpaths.push(toolpath);
+            }
+            job.setups.push(setup);
         }
-        if !job.models.iter().any(|model| model.id == model_id) {
-            warnings.push(ProjectLoadWarning::MissingModelReference {
-                toolpath: toolpath.name.clone(),
-                model_id,
-            });
+    } else {
+        for section in project.toolpaths {
+            let id = ToolpathId(assign_unique_id(
+                section.id.map(|id| id.0),
+                &mut used_toolpath_ids,
+                &mut next_toolpath_id,
+            ));
+            let toolpath = restore_project_toolpath(
+                section,
+                id,
+                &job.tools,
+                &job.models,
+                loaded_at,
+                &mut warnings,
+            );
+            job.push_toolpath(toolpath);
         }
-
-        job.toolpaths.push(toolpath);
     }
 
     job.sync_next_ids();
@@ -600,7 +762,7 @@ fn load_legacy_project(path: &Path, legacy: LegacyProjectFile) -> Result<LoadedP
             });
         }
 
-        job.toolpaths.push(toolpath);
+        job.push_toolpath(toolpath);
     }
 
     job.sync_next_ids();
@@ -739,6 +901,147 @@ fn load_model_section(
     }
 }
 
+fn restore_project_setup(
+    section: ProjectSetupSection,
+    id: SetupId,
+    used_fixture_ids: &mut BTreeSet<usize>,
+    next_fixture_id: &mut usize,
+    used_keep_out_ids: &mut BTreeSet<usize>,
+    next_keep_out_id: &mut usize,
+) -> (Setup, Vec<ProjectToolpathSection>) {
+    let mut setup = Setup::new(id, section.name);
+    setup.face_up = FaceUp::from_key(&section.face_up);
+    setup.z_rotation = ZRotation::from_key(&section.z_rotation);
+    if !section.xy_datum.is_empty() {
+        setup.datum.xy_method = XYDatum::from_key(&section.xy_datum);
+    }
+    if !section.z_datum.is_empty() {
+        setup.datum.z_method = ZDatum::from_key(&section.z_datum);
+    }
+    setup.datum.notes = section.datum_notes;
+    setup.alignment_pins = section
+        .alignment_pins
+        .into_iter()
+        .map(|pin| AlignmentPin::new(pin.x, pin.y, pin.diameter))
+        .collect();
+    setup.fixtures = section
+        .fixtures
+        .into_iter()
+        .map(|fixture| {
+            let id = FixtureId(assign_unique_id(
+                fixture.id.map(|id| id.0),
+                used_fixture_ids,
+                next_fixture_id,
+            ));
+            restore_project_fixture(fixture, id)
+        })
+        .collect();
+    setup.keep_out_zones = section
+        .keep_out_zones
+        .into_iter()
+        .map(|keep_out| {
+            let id = KeepOutId(assign_unique_id(
+                keep_out.id.map(|id| id.0),
+                used_keep_out_ids,
+                next_keep_out_id,
+            ));
+            restore_project_keep_out(keep_out, id)
+        })
+        .collect();
+    (setup, section.toolpaths)
+}
+
+fn restore_project_fixture(section: ProjectFixtureSection, id: FixtureId) -> Fixture {
+    Fixture {
+        id,
+        name: section.name,
+        kind: match section.kind.as_str() {
+            "vise" => FixtureKind::Vise,
+            "vacuum_pod" => FixtureKind::VacuumPod,
+            "custom" => FixtureKind::Custom,
+            _ => FixtureKind::Clamp,
+        },
+        enabled: section.enabled,
+        origin_x: section.origin_x,
+        origin_y: section.origin_y,
+        origin_z: section.origin_z,
+        size_x: section.size_x,
+        size_y: section.size_y,
+        size_z: section.size_z,
+        clearance: section.clearance,
+    }
+}
+
+fn restore_project_keep_out(section: ProjectKeepOutSection, id: KeepOutId) -> KeepOutZone {
+    KeepOutZone {
+        id,
+        name: section.name,
+        enabled: section.enabled,
+        origin_x: section.origin_x,
+        origin_y: section.origin_y,
+        size_x: section.size_x,
+        size_y: section.size_y,
+    }
+}
+
+fn restore_project_toolpath(
+    section: ProjectToolpathSection,
+    id: ToolpathId,
+    tools: &[ToolConfig],
+    models: &[LoadedModel],
+    loaded_at: Instant,
+    warnings: &mut Vec<ProjectLoadWarning>,
+) -> ToolpathEntry {
+    let tool_id = section
+        .tool_id
+        .or_else(|| tools.first().map(|tool| tool.id))
+        .unwrap_or(ToolId(0));
+    let model_id = section
+        .model_id
+        .or_else(|| models.first().map(|model| model.id))
+        .unwrap_or(ModelId(0));
+    let operation = section.operation.unwrap_or_else(|| {
+        OperationConfig::new_default(section.op_type.unwrap_or(OperationType::Pocket))
+    });
+    let mut init = ToolpathEntryInit::from_loaded_state(
+        id,
+        default_toolpath_name(&section.name, &operation, id),
+        tool_id,
+        model_id,
+        operation,
+    );
+    init.enabled = section.enabled;
+    init.visible = section.visible;
+    init.locked = section.locked;
+    init.dressups = section.dressups;
+    init.heights = section.heights;
+    init.boundary_enabled = section.boundary_enabled;
+    init.boundary_containment = section.boundary_containment;
+    init.pre_gcode = section.pre_gcode;
+    init.post_gcode = section.post_gcode;
+    init.stock_source = section.stock_source;
+    init.auto_regen = section.auto_regen;
+    init.feeds_auto = section.feeds_auto;
+    let mut toolpath = ToolpathEntry::from_init(init);
+    toolpath.clear_runtime_state();
+    toolpath.stale_since = Some(loaded_at);
+
+    if !tools.iter().any(|tool| tool.id == tool_id) {
+        warnings.push(ProjectLoadWarning::MissingToolReference {
+            toolpath: toolpath.name.clone(),
+            tool_id,
+        });
+    }
+    if !models.iter().any(|model| model.id == model_id) {
+        warnings.push(ProjectLoadWarning::MissingModelReference {
+            toolpath: toolpath.name.clone(),
+            model_id,
+        });
+    }
+
+    toolpath
+}
+
 fn assign_unique_id(
     preferred: Option<usize>,
     used: &mut BTreeSet<usize>,
@@ -853,7 +1156,55 @@ fn parse_legacy_operation_type(value: &str) -> OperationType {
 }
 
 fn default_project_format_version() -> u32 {
-    PROJECT_FORMAT_VERSION
+    1
+}
+
+fn default_setup_name() -> String {
+    "Setup 1".to_string()
+}
+
+fn default_setup_face_up() -> String {
+    "top".to_string()
+}
+
+fn default_setup_z_rotation() -> String {
+    "0".to_string()
+}
+
+fn default_pin_diameter() -> f64 {
+    6.0
+}
+
+fn default_fixture_name() -> String {
+    "Fixture".to_string()
+}
+
+fn default_fixture_kind() -> String {
+    "clamp".to_string()
+}
+
+fn default_fixture_size_x() -> f64 {
+    30.0
+}
+
+fn default_fixture_size_y() -> f64 {
+    15.0
+}
+
+fn default_fixture_size_z() -> f64 {
+    20.0
+}
+
+fn default_fixture_clearance() -> f64 {
+    3.0
+}
+
+fn default_keep_out_name() -> String {
+    "Keep-Out".to_string()
+}
+
+fn default_keep_out_size() -> f64 {
+    20.0
 }
 
 fn default_job_name() -> String {
@@ -930,7 +1281,10 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use crate::state::job::{ModelUnits, ToolId};
+    use crate::state::job::{
+        AlignmentPin, FaceUp, Fixture, KeepOutZone, ModelUnits, Setup, ToolId, XYDatum, ZDatum,
+        ZRotation,
+    };
     use crate::state::toolpath::{
         Adaptive3dConfig, BoundaryContainment, DressupEntryStyle, HeightMode, OperationConfig,
         OperationType, ScallopConfig,
@@ -1001,7 +1355,7 @@ mod tests {
         toolpath.post_gcode = "M9".to_string();
         toolpath.auto_regen = false;
         toolpath.feeds_auto.feed_rate = false;
-        job.toolpaths.push(toolpath);
+        job.push_toolpath(toolpath);
 
         save_project(&job, &project_path).unwrap();
         let loaded = load_project(&project_path).unwrap();
@@ -1010,9 +1364,9 @@ mod tests {
         assert_eq!(loaded.job.name, "Round Trip 2D");
         assert_eq!(loaded.job.tools.len(), 1);
         assert_eq!(loaded.job.models.len(), 1);
-        assert_eq!(loaded.job.toolpaths.len(), 1);
+        assert_eq!(loaded.job.toolpath_count(), 1);
         assert_eq!(loaded.job.models[0].path, fixture_path);
-        let toolpath = &loaded.job.toolpaths[0];
+        let toolpath = loaded.job.all_toolpaths().next().unwrap();
         assert!(!toolpath.enabled);
         assert!(!toolpath.visible);
         assert!(toolpath.locked);
@@ -1062,7 +1416,7 @@ mod tests {
         let mut toolpath = ToolpathEntry::from_init(init);
         toolpath.dressups.dogbone = true;
         toolpath.stock_source = StockSource::FromRemainingStock;
-        job.toolpaths.push(toolpath);
+        job.push_toolpath(toolpath);
 
         save_project(&job, &project_path).unwrap();
         let saved = fs::read_to_string(&project_path).unwrap();
@@ -1071,13 +1425,127 @@ mod tests {
         let loaded = load_project(&project_path).unwrap();
         assert!(loaded.warnings.is_empty());
         assert!(matches!(
-            loaded.job.toolpaths[0].operation,
+            loaded.job.all_toolpaths().next().unwrap().operation,
             OperationConfig::Adaptive3d(Adaptive3dConfig {
                 stock_to_leave_radial,
                 stock_to_leave_axial,
                 ..
             }) if (stock_to_leave_radial - 0.7).abs() < 1e-9 && (stock_to_leave_axial - 0.4).abs() < 1e-9
         ));
+
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[test]
+    fn round_trip_persists_multi_setup_state() {
+        let temp_dir = unique_temp_dir();
+        let project_path = temp_dir.join("multi_setup.toml");
+        let fixture_path = repo_root().join("fixtures/demo_star.svg");
+        let model = import::import_model(
+            &fixture_path,
+            ModelId(3),
+            ModelKind::Svg,
+            ModelUnits::Millimeters,
+        )
+        .unwrap();
+
+        let mut job = JobState::new();
+        job.name = "Multi Setup".to_string();
+        job.file_path = Some(project_path.clone());
+        job.tools.push(sample_tool());
+        job.models.push(model);
+
+        let default_setup_id = job.setups[0].id;
+        let fixture_id = job.next_fixture_id();
+        let keep_out_id = job.next_keep_out_id();
+        let second_setup_id = job.next_setup_id();
+
+        {
+            let top_setup = &mut job.setups[0];
+            top_setup.name = "Top Side".to_string();
+            top_setup.datum.xy_method = XYDatum::AlignmentPins;
+            top_setup.datum.z_method = ZDatum::MachineTable;
+            top_setup.datum.notes = "Probe pins first".to_string();
+            top_setup
+                .alignment_pins
+                .push(AlignmentPin::new(10.0, 20.0, 6.0));
+
+            let mut fixture = Fixture::new_default(fixture_id);
+            fixture.name = "Toe Clamp".to_string();
+            fixture.origin_x = 12.0;
+            fixture.origin_y = 8.0;
+            top_setup.fixtures.push(fixture);
+
+            let mut keep_out = KeepOutZone::new_default(keep_out_id);
+            keep_out.name = "Clamp Swing".to_string();
+            keep_out.origin_x = 14.0;
+            keep_out.origin_y = 18.0;
+            top_setup.keep_out_zones.push(keep_out);
+        }
+
+        let mut bottom_setup = Setup::new(second_setup_id, "Bottom Side".to_string());
+        bottom_setup.face_up = FaceUp::Bottom;
+        bottom_setup.z_rotation = ZRotation::Deg90;
+        bottom_setup.datum.xy_method = XYDatum::AlignmentPins;
+        bottom_setup.datum.notes = "Locate from dowel pins".to_string();
+        bottom_setup
+            .alignment_pins
+            .push(AlignmentPin::new(15.0, 25.0, 6.0));
+        job.setups.push(bottom_setup);
+
+        job.push_toolpath_to_setup(
+            default_setup_id,
+            ToolpathEntry::for_operation(
+                ToolpathId(5),
+                "Top Pocket".to_string(),
+                job.tools[0].id,
+                job.models[0].id,
+                OperationType::Pocket,
+            ),
+        );
+        job.push_toolpath_to_setup(
+            second_setup_id,
+            ToolpathEntry::for_operation(
+                ToolpathId(6),
+                "Bottom Profile".to_string(),
+                job.tools[0].id,
+                job.models[0].id,
+                OperationType::Profile,
+            ),
+        );
+
+        save_project(&job, &project_path).unwrap();
+        let saved = fs::read_to_string(&project_path).unwrap();
+        assert!(saved.contains("format_version = 2"));
+        assert!(saved.contains("[[setups]]"));
+        assert!(saved.contains("[[setups.toolpaths]]"));
+
+        let loaded = load_project(&project_path).unwrap();
+        assert!(loaded.warnings.is_empty());
+        assert_eq!(loaded.job.setups.len(), 2);
+        assert_eq!(loaded.job.toolpath_count(), 2);
+
+        let top_setup = &loaded.job.setups[0];
+        assert_eq!(top_setup.name, "Top Side");
+        assert_eq!(top_setup.datum.xy_method, XYDatum::AlignmentPins);
+        assert_eq!(top_setup.datum.z_method, ZDatum::MachineTable);
+        assert_eq!(top_setup.datum.notes, "Probe pins first");
+        assert_eq!(top_setup.alignment_pins.len(), 1);
+        assert_eq!(top_setup.fixtures.len(), 1);
+        assert_eq!(top_setup.fixtures[0].name, "Toe Clamp");
+        assert_eq!(top_setup.keep_out_zones.len(), 1);
+        assert_eq!(top_setup.keep_out_zones[0].name, "Clamp Swing");
+        assert_eq!(top_setup.toolpaths.len(), 1);
+        assert_eq!(top_setup.toolpaths[0].name, "Top Pocket");
+
+        let bottom_setup = &loaded.job.setups[1];
+        assert_eq!(bottom_setup.name, "Bottom Side");
+        assert_eq!(bottom_setup.face_up, FaceUp::Bottom);
+        assert_eq!(bottom_setup.z_rotation, ZRotation::Deg90);
+        assert_eq!(bottom_setup.datum.xy_method, XYDatum::AlignmentPins);
+        assert_eq!(bottom_setup.datum.notes, "Locate from dowel pins");
+        assert_eq!(bottom_setup.toolpaths.len(), 1);
+        assert_eq!(bottom_setup.toolpaths[0].name, "Bottom Profile");
 
         fs::remove_dir_all(temp_dir).unwrap();
     }
@@ -1117,9 +1585,9 @@ input = "{}"
         assert!(loaded.warnings.is_empty());
         assert_eq!(loaded.job.tools.len(), 1);
         assert_eq!(loaded.job.models.len(), 1);
-        assert_eq!(loaded.job.toolpaths.len(), 1);
+        assert_eq!(loaded.job.toolpath_count(), 1);
         assert!(matches!(
-            loaded.job.toolpaths[0].operation,
+            loaded.job.all_toolpaths().next().unwrap().operation,
             OperationConfig::Pocket(_)
         ));
 
@@ -1146,7 +1614,7 @@ input = "{}"
             )
             .unwrap(),
         );
-        job.toolpaths.push(ToolpathEntry::for_operation(
+        job.push_toolpath(ToolpathEntry::for_operation(
             ToolpathId(1),
             "Pocket".to_string(),
             job.tools[0].id,
@@ -1199,13 +1667,14 @@ operation = { kind = "pocket", params = { depth = 2.0, depth_per_pass = 1.0, fee
 
         let loaded = load_project(&project_path).unwrap();
         assert_eq!(loaded.job.models.len(), 1);
-        assert_eq!(loaded.job.toolpaths.len(), 1);
+        assert_eq!(loaded.job.toolpath_count(), 1);
         assert_eq!(loaded.warnings.len(), 1);
         assert!(loaded.job.models[0].mesh.is_none());
         assert!(loaded.job.models[0].polygons.is_none());
         assert!(loaded.job.models[0].load_error.is_some());
-        assert!(loaded.job.toolpaths[0].result.is_none());
-        assert!(loaded.job.toolpaths[0].stale_since.is_some());
+        let toolpath = loaded.job.all_toolpaths().next().unwrap();
+        assert!(toolpath.result.is_none());
+        assert!(toolpath.stale_since.is_some());
 
         fs::remove_dir_all(temp_dir).unwrap();
     }
@@ -1237,9 +1706,9 @@ type = "scallop"
 
         let loaded = load_project(&project_path).unwrap();
         assert_eq!(loaded.job.tools.len(), 1);
-        assert_eq!(loaded.job.toolpaths.len(), 1);
+        assert_eq!(loaded.job.toolpath_count(), 1);
         assert!(matches!(
-            loaded.job.toolpaths[0].operation,
+            loaded.job.all_toolpaths().next().unwrap().operation,
             OperationConfig::Scallop(ScallopConfig { .. })
         ));
 

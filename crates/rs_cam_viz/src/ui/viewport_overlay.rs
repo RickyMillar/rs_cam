@@ -47,6 +47,7 @@ pub fn draw(
         ui.checkbox(&mut viewport.show_cutting, "Cut");
         ui.checkbox(&mut viewport.show_rapids, "Rapid");
         ui.checkbox(&mut viewport.show_collisions, "Col");
+        ui.checkbox(&mut viewport.show_fixtures, "Fix");
 
         ui.separator();
 

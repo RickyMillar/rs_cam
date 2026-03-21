@@ -108,11 +108,14 @@ pub(super) fn run_compute(
         && let Some(bbox) = &req.stock_bbox
     {
         use rs_cam_core::boundary::{
-            ToolContainment, clip_toolpath_to_boundary, effective_boundary,
+            ToolContainment, clip_toolpath_to_boundary, effective_boundary, subtract_keepouts,
         };
-        let stock_poly = rs_cam_core::polygon::Polygon2::rectangle(
+        let mut stock_poly = rs_cam_core::polygon::Polygon2::rectangle(
             bbox.min.x, bbox.min.y, bbox.max.x, bbox.max.y,
         );
+        if !req.keep_out_footprints.is_empty() {
+            stock_poly = subtract_keepouts(&stock_poly, &req.keep_out_footprints);
+        }
         let containment = match req.boundary_containment {
             crate::state::toolpath::BoundaryContainment::Center => ToolContainment::Center,
             crate::state::toolpath::BoundaryContainment::Inside => ToolContainment::Inside,

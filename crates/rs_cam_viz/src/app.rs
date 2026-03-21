@@ -7,9 +7,9 @@ use crate::render::sim_render::{self, SimMeshGpuData, ToolModelGpuData};
 use crate::render::stock_render::StockGpuData;
 use crate::render::toolpath_render::ToolpathGpuData;
 use crate::render::{LineUniforms, MeshUniforms, RenderResources, ViewportCallback};
-use crate::state::simulation::StockVizMode;
 use crate::state::AppMode;
 use crate::state::selection::Selection;
+use crate::state::simulation::StockVizMode;
 use crate::ui::AppEvent;
 
 pub struct RsCamApp {
@@ -75,7 +75,8 @@ impl RsCamApp {
                 // Simulation workspace transitions (need camera/viewport changes in app)
                 AppEvent::EnterSimulation => {
                     if !self.controller.state().simulation.active {
-                        self.controller.handle_internal_event(AppEvent::RunSimulation);
+                        self.controller
+                            .handle_internal_event(AppEvent::RunSimulation);
                     }
                     let state = self.controller.state_mut();
                     state.simulation.saved_show_cutting = state.viewport.show_cutting;
@@ -137,6 +138,69 @@ impl RsCamApp {
                 }
                 AppEvent::ExportGcodeConfirmed => {
                     self.export_gcode_with_summary();
+                }
+                AppEvent::ExportCombinedGcode => {
+                    match crate::io::export::export_combined_gcode(&self.controller.state().job) {
+                        Ok(gcode) => {
+                            let default_name =
+                                format!("{}_combined.nc", self.controller.state().job.name)
+                                    .replace(' ', "_")
+                                    .to_lowercase();
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("G-code", &["nc", "gcode", "ngc"])
+                                .set_file_name(&default_name)
+                                .save_file()
+                            {
+                                if let Err(error) = std::fs::write(&path, &gcode) {
+                                    tracing::error!("Failed to write G-code: {error}");
+                                } else {
+                                    tracing::info!(
+                                        "Exported combined G-code to {}",
+                                        path.display()
+                                    );
+                                }
+                            }
+                        }
+                        Err(error) => tracing::error!("Export failed: {error}"),
+                    }
+                }
+                AppEvent::ExportSetupGcode(setup_id) => {
+                    let setup_name = self
+                        .controller
+                        .state()
+                        .job
+                        .setups
+                        .iter()
+                        .find(|setup| setup.id == setup_id)
+                        .map(|setup| setup.name.clone())
+                        .unwrap_or_default();
+                    match crate::io::export::export_setup_gcode(
+                        &self.controller.state().job,
+                        setup_id,
+                    ) {
+                        Ok(gcode) => {
+                            let default_name =
+                                format!("{}_{}.nc", self.controller.state().job.name, setup_name)
+                                    .replace(' ', "_")
+                                    .to_lowercase();
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("G-code", &["nc", "gcode", "ngc"])
+                                .set_file_name(&default_name)
+                                .save_file()
+                            {
+                                if let Err(error) = std::fs::write(&path, &gcode) {
+                                    tracing::error!("Failed to write G-code: {error}");
+                                } else {
+                                    tracing::info!(
+                                        "Exported setup '{}' G-code to {}",
+                                        setup_name,
+                                        path.display()
+                                    );
+                                }
+                            }
+                        }
+                        Err(error) => tracing::error!("Export failed: {error}"),
+                    }
                 }
                 AppEvent::ExportSvgPreview => self.export_svg_preview(),
 
@@ -218,7 +282,12 @@ impl RsCamApp {
 
     /// Load the nearest checkpoint mesh for backward scrubbing.
     fn load_checkpoint_for_move(&mut self, move_idx: usize, frame: &mut eframe::Frame) {
-        if let Some(cp_idx) = self.controller.state().simulation.checkpoint_for_move(move_idx) {
+        if let Some(cp_idx) = self
+            .controller
+            .state()
+            .simulation
+            .checkpoint_for_move(move_idx)
+        {
             let mesh = match self.controller.state().simulation.checkpoints.get(cp_idx) {
                 Some(c) => c.mesh.clone(),
                 None => return,
@@ -237,22 +306,10 @@ impl RsCamApp {
                 let resources: &mut RenderResources =
                     renderer.callback_resources.get_mut().unwrap();
                 resources.sim_mesh_data = Some(SimMeshGpuData::from_heightmap_mesh_colored(
-                    &rs.device,
-                    mesh_ref,
-                    &colors,
+                    &rs.device, mesh_ref, &colors,
                 ));
             }
         }
-    }
-
-    /// Get the first STL model mesh (if any) for simulation deviation computation.
-    fn first_model_mesh(&self) -> Option<Arc<rs_cam_core::mesh::TriangleMesh>> {
-        self.controller
-            .state()
-            .job
-            .models
-            .iter()
-            .find_map(|m| m.mesh.clone())
     }
 
     /// Compute per-vertex colors for the sim mesh based on current viz mode.
@@ -305,8 +362,7 @@ impl RsCamApp {
             .controller
             .state()
             .job
-            .toolpaths
-            .iter()
+            .all_toolpaths()
             .filter(|tp| tp.enabled)
             .filter_map(|tp| {
                 let result = tp.result.as_ref()?;
@@ -338,24 +394,21 @@ impl RsCamApp {
             }
 
             if let Some(cp_idx) = best_cp {
-                if let Some(cp) = self.controller.state().simulation.checkpoints.get(cp_idx) {
-                    if let Some(hm) = &cp.heightmap {
-                        let hm_clone = hm.clone();
-                        let cp_end = boundaries[cp_idx].end_move;
-                        let sim = &mut self.controller.state_mut().simulation;
-                        sim.live_heightmap = Some(hm_clone);
-                        sim.live_sim_move = cp_end;
-                    }
+                if let Some(cp) = self.controller.state().simulation.checkpoints.get(cp_idx)
+                    && let Some(hm) = &cp.heightmap
+                {
+                    let hm_clone = hm.clone();
+                    let cp_end = boundaries[cp_idx].end_move;
+                    let sim = &mut self.controller.state_mut().simulation;
+                    sim.live_heightmap = Some(hm_clone);
+                    sim.live_sim_move = cp_end;
                 }
             } else {
                 // Before any checkpoint — reset to fresh stock
                 let bbox = self.controller.state().job.stock.bbox();
                 let res = self.controller.state().simulation.resolution;
-                let fresh = rs_cam_core::simulation::Heightmap::from_bounds(
-                    &bbox,
-                    Some(bbox.max.z),
-                    res,
-                );
+                let fresh =
+                    rs_cam_core::simulation::Heightmap::from_bounds(&bbox, Some(bbox.max.z), res);
                 let sim = &mut self.controller.state_mut().simulation;
                 sim.live_heightmap = Some(fresh);
                 sim.live_sim_move = 0;
@@ -366,12 +419,7 @@ impl RsCamApp {
         let current_live = self.controller.state().simulation.live_sim_move;
         if current_live < target_move {
             // Take the heightmap out to avoid borrow conflicts
-            let mut heightmap = self
-                .controller
-                .state_mut()
-                .simulation
-                .live_heightmap
-                .take();
+            let mut heightmap = self.controller.state_mut().simulation.live_heightmap.take();
 
             if let Some(ref mut heightmap) = heightmap {
                 let mut global_offset = 0;
@@ -381,10 +429,12 @@ impl RsCamApp {
                     let tp_end = global_offset + tp_moves;
 
                     if tp_end > current_live && tp_start < target_move {
-                        let local_start =
-                            if current_live > tp_start { current_live - tp_start } else { 0 };
-                        let local_end =
-                            if target_move < tp_end { target_move - tp_start } else { tp_moves };
+                        let local_start = current_live.saturating_sub(tp_start);
+                        let local_end = if target_move < tp_end {
+                            target_move - tp_start
+                        } else {
+                            tp_moves
+                        };
 
                         let cutter = crate::compute::worker::helpers::build_cutter(tool);
                         simulate_toolpath_range(
@@ -423,9 +473,7 @@ impl RsCamApp {
                 let resources: &mut RenderResources =
                     renderer.callback_resources.get_mut().unwrap();
                 resources.sim_mesh_data = Some(SimMeshGpuData::from_heightmap_mesh_colored(
-                    &rs.device,
-                    mesh_ref,
-                    &colors,
+                    &rs.device, mesh_ref, &colors,
                 ));
             }
         }
@@ -439,7 +487,7 @@ impl RsCamApp {
                 let mut cutting_dist = 0.0f64;
                 let mut est_time_min = 0.0f64;
 
-                for tp in &self.controller.state().job.toolpaths {
+                for tp in self.controller.state().job.all_toolpaths() {
                     if tp.enabled
                         && let Some(result) = &tp.result
                     {
@@ -451,7 +499,7 @@ impl RsCamApp {
                 }
 
                 let mut seen_tools = Vec::new();
-                for tp in &self.controller.state().job.toolpaths {
+                for tp in self.controller.state().job.all_toolpaths() {
                     if tp.enabled && !seen_tools.contains(&tp.tool_id) {
                         seen_tools.push(tp.tool_id);
                     }
@@ -531,6 +579,76 @@ impl RsCamApp {
         let stock_bbox = self.controller.state().job.stock.bbox();
         resources.stock_data = Some(StockGpuData::from_bbox(&render_state.device, &stock_bbox));
 
+        // Upload fixture and keep-out wireframes.
+        {
+            use crate::render::fixture_render::FixtureGpuData;
+
+            let job = &self.controller.state().job;
+            let mut boxes = Vec::new();
+            for setup in &job.setups {
+                for fixture in &setup.fixtures {
+                    if fixture.enabled {
+                        boxes.push((fixture.clearance_bbox(), [0.9_f32, 0.7, 0.2]));
+                    }
+                }
+                for keep_out in &setup.keep_out_zones {
+                    if keep_out.enabled {
+                        let bbox = rs_cam_core::geo::BoundingBox3 {
+                            min: rs_cam_core::geo::P3::new(
+                                keep_out.origin_x,
+                                keep_out.origin_y,
+                                job.stock.origin_z,
+                            ),
+                            max: rs_cam_core::geo::P3::new(
+                                keep_out.origin_x + keep_out.size_x,
+                                keep_out.origin_y + keep_out.size_y,
+                                job.stock.origin_z + job.stock.z,
+                            ),
+                        };
+                        boxes.push((bbox, [0.9_f32, 0.2, 0.2]));
+                    }
+                }
+            }
+
+            let stock_top = job.stock.origin_z + job.stock.z;
+            let mut pin_vertices = Vec::new();
+            for setup in &job.setups {
+                for pin in &setup.alignment_pins {
+                    let radius = (pin.diameter / 2.0) as f32;
+                    let x = pin.x as f32;
+                    let y = pin.y as f32;
+                    let z = stock_top as f32;
+                    let color = [0.2_f32, 0.9, 0.3];
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [x - radius, y, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [x + radius, y, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [x, y - radius, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [x, y + radius, z],
+                        color,
+                    });
+                }
+            }
+
+            if boxes.is_empty() && pin_vertices.is_empty() {
+                resources.fixture_data = None;
+            } else {
+                resources.fixture_data = Some(FixtureGpuData::from_boxes_and_lines(
+                    &render_state.device,
+                    &boxes,
+                    &pin_vertices,
+                ));
+            }
+        }
+
         // Re-upload sim mesh with current viz mode colors, or clear if sim is inactive
         if self.controller.state().simulation.active {
             if let Some(mesh) = &self.controller.state().simulation.current_mesh {
@@ -600,7 +718,7 @@ impl RsCamApp {
         };
         let isolate = self.controller.state().viewport.isolate_toolpath;
 
-        for (i, tp) in self.controller.state().job.toolpaths.iter().enumerate() {
+        for (i, tp) in self.controller.state().job.toolpaths_enumerated() {
             // Skip invisible toolpaths; also skip if not the isolated toolpath
             let visible = tp.visible
                 && match isolate {
@@ -632,7 +750,7 @@ impl RsCamApp {
         let current = self.controller.state().simulation.current_move;
         let mut cumulative = 0;
         let mut found = None;
-        for tp in &self.controller.state().job.toolpaths {
+        for tp in self.controller.state().job.all_toolpaths() {
             if !tp.enabled {
                 continue;
             }
@@ -715,7 +833,7 @@ impl RsCamApp {
         let mut best_dist = 15.0f32; // max pick distance in pixels
         let mut best_id = None;
 
-        for tp in &self.controller.state().job.toolpaths {
+        for tp in self.controller.state().job.all_toolpaths() {
             if !tp.visible {
                 continue;
             }
@@ -793,8 +911,7 @@ impl RsCamApp {
         }
 
         let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-        if rect.contains(ui.input(|i| i.pointer.hover_pos().unwrap_or_default())) && scroll != 0.0
-        {
+        if rect.contains(ui.input(|i| i.pointer.hover_pos().unwrap_or_default())) && scroll != 0.0 {
             self.camera.zoom(scroll);
         }
 
@@ -822,6 +939,7 @@ impl RsCamApp {
             show_grid: state.viewport.show_grid,
             show_stock: state.viewport.show_stock
                 && state.job.models.iter().any(|model| model.mesh.is_some()),
+            show_fixtures: state.viewport.show_fixtures,
             show_sim_mesh: state.simulation.active,
             sim_mesh_opacity: state.simulation.stock_opacity,
             show_cutting: state.viewport.show_cutting,
@@ -875,9 +993,7 @@ impl RsCamApp {
 
             // Space: play/pause simulation or enter sim workspace
             if i.key_pressed(egui::Key::Space) && self.controller.state().simulation.active {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::EnterSimulation);
+                self.controller.events_mut().push(AppEvent::EnterSimulation);
             }
 
             // I: toggle isolation mode
@@ -929,26 +1045,18 @@ impl RsCamApp {
         ctx.input(|i| {
             // Left/Right: step back/forward
             if i.key_pressed(egui::Key::ArrowLeft) {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::SimStepBackward);
+                self.controller.events_mut().push(AppEvent::SimStepBackward);
             }
             if i.key_pressed(egui::Key::ArrowRight) {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::SimStepForward);
+                self.controller.events_mut().push(AppEvent::SimStepForward);
             }
 
             // Home/End: jump to start/end
             if i.key_pressed(egui::Key::Home) {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::SimJumpToStart);
+                self.controller.events_mut().push(AppEvent::SimJumpToStart);
             }
             if i.key_pressed(egui::Key::End) {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::SimJumpToEnd);
+                self.controller.events_mut().push(AppEvent::SimJumpToEnd);
             }
 
             // Space: play/pause
@@ -960,9 +1068,7 @@ impl RsCamApp {
 
             // Escape: back to editor
             if i.key_pressed(egui::Key::Escape) {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::ExitSimulation);
+                self.controller.events_mut().push(AppEvent::ExitSimulation);
             }
 
             // [ / ]: speed down/up
@@ -1022,9 +1128,7 @@ impl RsCamApp {
         egui::TopBottomPanel::top("sim_top_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui.button("\u{2190} Back to Editor").clicked() {
-                    self.controller
-                        .events_mut()
-                        .push(AppEvent::ExitSimulation);
+                    self.controller.events_mut().push(AppEvent::ExitSimulation);
                 }
                 ui.separator();
                 ui.label(
@@ -1039,19 +1143,16 @@ impl RsCamApp {
                     let viewport = &mut self.controller.state_mut().viewport;
                     ui.checkbox(&mut viewport.show_cutting, "Paths");
                     ui.checkbox(&mut viewport.show_stock, "Stock");
+                    ui.checkbox(&mut viewport.show_fixtures, "Fixtures");
                     ui.checkbox(&mut viewport.show_collisions, "Collisions");
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("Re-run Simulation").clicked() {
-                        self.controller
-                            .events_mut()
-                            .push(AppEvent::RunSimulation);
+                        self.controller.events_mut().push(AppEvent::RunSimulation);
                     }
                     if ui.button("Reset").clicked() {
-                        self.controller
-                            .events_mut()
-                            .push(AppEvent::ResetSimulation);
+                        self.controller.events_mut().push(AppEvent::ResetSimulation);
                     }
                 });
             });
@@ -1062,12 +1163,7 @@ impl RsCamApp {
             .min_height(60.0)
             .show(ctx, |ui| {
                 let (state, events) = self.controller.state_and_events_mut();
-                crate::ui::sim_timeline::draw(
-                    ui,
-                    &mut state.simulation,
-                    &state.job,
-                    events,
-                );
+                crate::ui::sim_timeline::draw(ui, &mut state.simulation, &state.job, events);
             });
 
         // Left panel: operation list
@@ -1077,12 +1173,7 @@ impl RsCamApp {
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_ref_and_events_mut();
-                    crate::ui::sim_op_list::draw(
-                        ui,
-                        &state.simulation,
-                        &state.job,
-                        events,
-                    );
+                    crate::ui::sim_op_list::draw(ui, &state.simulation, &state.job, events);
                 });
             });
 
@@ -1093,12 +1184,7 @@ impl RsCamApp {
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_and_events_mut();
-                    crate::ui::sim_diagnostics::draw(
-                        ui,
-                        &mut state.simulation,
-                        &state.job,
-                        events,
-                    );
+                    crate::ui::sim_diagnostics::draw(ui, &mut state.simulation, &state.job, events);
                 });
             });
 

@@ -1,3 +1,4 @@
+use super::job::SetupId;
 use super::toolpath::ToolpathId;
 use rs_cam_core::collision::{CollisionReport, RapidCollision};
 use rs_cam_core::simulation::HeightmapMesh;
@@ -25,6 +26,14 @@ pub struct ToolpathBoundary {
     pub end_move: usize,
 }
 
+/// Per-setup boundary in the simulation: marks where a setup begins.
+#[derive(Debug, Clone)]
+pub struct SetupBoundary {
+    pub setup_id: SetupId,
+    pub setup_name: String,
+    pub start_move: usize,
+}
+
 /// Checkpoint: a snapshot of the heightmap at a toolpath boundary.
 pub struct SimCheckpoint {
     pub boundary_index: usize,
@@ -49,6 +58,8 @@ pub struct SimulationState {
     pub speed: f32,
     /// Per-toolpath boundaries for progress tracking and checkpoint lookup.
     pub boundaries: Vec<ToolpathBoundary>,
+    /// Per-setup boundaries for setup transition markers.
+    pub setup_boundaries: Vec<SetupBoundary>,
     /// Checkpoints at each toolpath boundary for rewind.
     pub checkpoints: Vec<SimCheckpoint>,
     /// Which toolpaths are selected for simulation (None = all enabled).
@@ -105,6 +116,7 @@ impl SimulationState {
             total_moves: 0,
             speed: 500.0,
             boundaries: Vec::new(),
+            setup_boundaries: Vec::new(),
             checkpoints: Vec::new(),
             selected_toolpaths: None,
             tool_position: None,

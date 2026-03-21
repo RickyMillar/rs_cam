@@ -10,7 +10,7 @@ pub mod status_bar;
 pub mod viewport_overlay;
 
 use crate::render::camera::ViewPreset;
-use crate::state::job::{ToolId, ToolType};
+use crate::state::job::{FixtureId, KeepOutId, SetupId, ToolId, ToolType};
 use crate::state::toolpath::{OperationType, ToolpathId};
 use std::path::PathBuf;
 
@@ -23,6 +23,8 @@ pub enum AppEvent {
     ImportDxf(PathBuf),
     RescaleModel(crate::state::job::ModelId, crate::state::job::ModelUnits),
     ExportGcode,
+    ExportCombinedGcode,
+    ExportSetupGcode(SetupId),
     ExportSetupSheet,
     ExportSvgPreview,
     SaveJob,
@@ -37,6 +39,18 @@ pub enum AppEvent {
     AddTool(ToolType),
     DuplicateTool(ToolId),
     RemoveTool(ToolId),
+
+    // Setups
+    AddSetup,
+    RemoveSetup(SetupId),
+    RenameSetup(SetupId, String),
+
+    // Fixtures and keep-out zones
+    AddFixture(SetupId),
+    RemoveFixture(SetupId, FixtureId),
+    AddKeepOut(SetupId),
+    RemoveKeepOut(SetupId, KeepOutId),
+    FixtureChanged,
 
     // Toolpaths
     AddToolpath(OperationType),

@@ -39,6 +39,22 @@ pub fn effective_boundary(
     }
 }
 
+/// Add rectangular keep-out zones as holes in a boundary polygon.
+///
+/// Each keep-out polygon's exterior is reversed to CW winding and added as a hole.
+/// The resulting polygon excludes the keep-out regions from `contains_point` checks,
+/// which means `clip_toolpath_to_boundary` will automatically retract the tool
+/// when entering a keep-out area.
+pub fn subtract_keepouts(boundary: &Polygon2, keepouts: &[Polygon2]) -> Polygon2 {
+    let mut result = boundary.clone();
+    for ko in keepouts {
+        let mut hole = ko.exterior.clone();
+        hole.reverse();
+        result.holes.push(hole);
+    }
+    result
+}
+
 /// Clip a toolpath to stay within a boundary polygon.
 ///
 /// Moves whose target is inside the boundary are kept. Moves that cross from
@@ -376,5 +392,39 @@ mod tests {
         assert!(point_in_polygon(8.0, 0.0, &poly));
         // Inside the hole
         assert!(!point_in_polygon(0.0, 0.0, &poly));
+    }
+
+    #[test]
+    fn subtract_keepouts_adds_holes() {
+        let boundary = Polygon2::rectangle(-50.0, -50.0, 50.0, 50.0);
+        let keepout = Polygon2::rectangle(10.0, 10.0, 20.0, 20.0);
+
+        let result = subtract_keepouts(&boundary, &[keepout]);
+        assert_eq!(result.holes.len(), 1);
+
+        assert!(result.contains_point(&P2::new(0.0, 0.0)));
+        assert!(!result.contains_point(&P2::new(15.0, 15.0)));
+    }
+
+    #[test]
+    fn subtract_keepouts_multiple() {
+        let boundary = Polygon2::rectangle(0.0, 0.0, 100.0, 100.0);
+        let ko1 = Polygon2::rectangle(10.0, 10.0, 20.0, 20.0);
+        let ko2 = Polygon2::rectangle(70.0, 70.0, 90.0, 90.0);
+
+        let result = subtract_keepouts(&boundary, &[ko1, ko2]);
+        assert_eq!(result.holes.len(), 2);
+
+        assert!(result.contains_point(&P2::new(50.0, 50.0)));
+        assert!(!result.contains_point(&P2::new(15.0, 15.0)));
+        assert!(!result.contains_point(&P2::new(80.0, 80.0)));
+    }
+
+    #[test]
+    fn subtract_keepouts_empty_is_noop() {
+        let boundary = Polygon2::rectangle(0.0, 0.0, 100.0, 100.0);
+        let result = subtract_keepouts(&boundary, &[]);
+        assert_eq!(result.holes.len(), 0);
+        assert!(result.contains_point(&P2::new(50.0, 50.0)));
     }
 }

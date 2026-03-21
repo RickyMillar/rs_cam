@@ -7,7 +7,7 @@ use crate::compute::{
 use rs_cam_core::geo::BoundingBox3;
 
 use crate::state::history::UndoAction;
-use crate::state::job::ToolConfig;
+use crate::state::job::{Fixture, KeepOutZone, Setup, ToolConfig};
 use crate::state::selection::Selection;
 use crate::state::simulation::SimulationState;
 use crate::state::toolpath::{ComputeStatus, OperationConfig, ToolpathEntry, ToolpathId};
@@ -61,7 +61,124 @@ impl<B: ComputeBackend> AppController<B> {
                 }
                 self.state.job.mark_edited();
             }
+            AppEvent::AddSetup => {
+                let id = self.state.job.next_setup_id();
+                let name = format!("Setup {}", id.0 + 1);
+                self.state.job.setups.push(Setup::new(id, name));
+                self.state.selection = Selection::Setup(id);
+                self.state.job.mark_edited();
+            }
+            AppEvent::RemoveSetup(setup_id) => {
+                if self.state.job.setups.len() > 1 {
+                    self.state.job.setups.retain(|setup| setup.id != setup_id);
+                    match self.state.selection {
+                        Selection::Setup(id) if id == setup_id => {
+                            self.state.selection = Selection::None;
+                        }
+                        Selection::Fixture(id, _) if id == setup_id => {
+                            self.state.selection = Selection::None;
+                        }
+                        Selection::KeepOut(id, _) if id == setup_id => {
+                            self.state.selection = Selection::None;
+                        }
+                        _ => {}
+                    }
+                    self.pending_upload = true;
+                    self.state.job.mark_edited();
+                }
+            }
+            AppEvent::RenameSetup(setup_id, name) => {
+                if let Some(setup) = self
+                    .state
+                    .job
+                    .setups
+                    .iter_mut()
+                    .find(|setup| setup.id == setup_id)
+                {
+                    setup.name = name;
+                    self.state.job.mark_edited();
+                }
+            }
+            AppEvent::AddFixture(setup_id) => {
+                let fixture_id = self.state.job.next_fixture_id();
+                if let Some(setup) = self
+                    .state
+                    .job
+                    .setups
+                    .iter_mut()
+                    .find(|setup| setup.id == setup_id)
+                {
+                    setup.fixtures.push(Fixture::new_default(fixture_id));
+                    self.state.selection = Selection::Fixture(setup_id, fixture_id);
+                    self.pending_upload = true;
+                    self.state.job.mark_edited();
+                }
+            }
+            AppEvent::RemoveFixture(setup_id, fixture_id) => {
+                if let Some(setup) = self
+                    .state
+                    .job
+                    .setups
+                    .iter_mut()
+                    .find(|setup| setup.id == setup_id)
+                {
+                    setup.fixtures.retain(|fixture| fixture.id != fixture_id);
+                    if self.state.selection == Selection::Fixture(setup_id, fixture_id) {
+                        self.state.selection = Selection::Setup(setup_id);
+                    }
+                    self.pending_upload = true;
+                    self.state.job.mark_edited();
+                }
+            }
+            AppEvent::AddKeepOut(setup_id) => {
+                let keep_out_id = self.state.job.next_keep_out_id();
+                if let Some(setup) = self
+                    .state
+                    .job
+                    .setups
+                    .iter_mut()
+                    .find(|setup| setup.id == setup_id)
+                {
+                    setup
+                        .keep_out_zones
+                        .push(KeepOutZone::new_default(keep_out_id));
+                    self.state.selection = Selection::KeepOut(setup_id, keep_out_id);
+                    self.pending_upload = true;
+                    self.state.job.mark_edited();
+                }
+            }
+            AppEvent::RemoveKeepOut(setup_id, keep_out_id) => {
+                if let Some(setup) = self
+                    .state
+                    .job
+                    .setups
+                    .iter_mut()
+                    .find(|setup| setup.id == setup_id)
+                {
+                    setup
+                        .keep_out_zones
+                        .retain(|keep_out| keep_out.id != keep_out_id);
+                    if self.state.selection == Selection::KeepOut(setup_id, keep_out_id) {
+                        self.state.selection = Selection::Setup(setup_id);
+                    }
+                    self.pending_upload = true;
+                    self.state.job.mark_edited();
+                }
+            }
+            AppEvent::FixtureChanged => {
+                self.pending_upload = true;
+                self.state.job.mark_edited();
+            }
             AppEvent::AddToolpath(op_type) => {
+                let target_setup_id = match self.state.selection {
+                    Selection::Toolpath(tp_id) => self.state.job.setup_of_toolpath(tp_id),
+                    Selection::Setup(setup_id) => Some(setup_id),
+                    Selection::Fixture(setup_id, _) => Some(setup_id),
+                    Selection::KeepOut(setup_id, _) => Some(setup_id),
+                    _ => None,
+                }
+                .or_else(|| self.state.job.setups.first().map(|setup| setup.id));
+
                 let id = self.state.job.next_toolpath_id();
                 let tool_id = self
                     .state
@@ -85,64 +202,44 @@ impl<B: ComputeBackend> AppController<B> {
                     op_type,
                 );
                 self.state.selection = Selection::Toolpath(id);
-                self.state.job.toolpaths.push(entry);
+                if let Some(setup_id) = target_setup_id {
+                    self.state.job.push_toolpath_to_setup(setup_id, entry);
+                } else {
+                    self.state.job.push_toolpath(entry);
+                }
                 self.state.job.mark_edited();
             }
             AppEvent::DuplicateToolpath(tp_id) => {
                 let new_id = self.state.job.next_toolpath_id();
-                if let Some(src) = self
-                    .state
-                    .job
-                    .toolpaths
-                    .iter()
-                    .find(|toolpath| toolpath.id == tp_id)
-                {
+                let target_setup_id = self.state.job.setup_of_toolpath(tp_id);
+                if let Some(src) = self.state.job.find_toolpath(tp_id) {
                     self.state.selection = Selection::Toolpath(new_id);
                     let entry = src.duplicate_as(new_id, format!("{} (copy)", src.name));
-                    self.state.job.toolpaths.push(entry);
+                    if let Some(setup_id) = target_setup_id {
+                        self.state.job.push_toolpath_to_setup(setup_id, entry);
+                    } else {
+                        self.state.job.push_toolpath(entry);
+                    }
                     self.state.job.mark_edited();
                 }
             }
             AppEvent::MoveToolpathUp(tp_id) => {
-                if let Some(index) = self
-                    .state
-                    .job
-                    .toolpaths
-                    .iter()
-                    .position(|toolpath| toolpath.id == tp_id)
-                    && index > 0
-                {
-                    self.state.job.toolpaths.swap(index, index - 1);
+                if self.state.job.move_toolpath_up(tp_id) {
+                    self.state.job.mark_edited();
                 }
             }
             AppEvent::MoveToolpathDown(tp_id) => {
-                if let Some(index) = self
-                    .state
-                    .job
-                    .toolpaths
-                    .iter()
-                    .position(|toolpath| toolpath.id == tp_id)
-                    && index + 1 < self.state.job.toolpaths.len()
-                {
-                    self.state.job.toolpaths.swap(index, index + 1);
+                if self.state.job.move_toolpath_down(tp_id) {
+                    self.state.job.mark_edited();
                 }
             }
             AppEvent::ToggleToolpathEnabled(tp_id) => {
-                if let Some(toolpath) = self
-                    .state
-                    .job
-                    .toolpaths
-                    .iter_mut()
-                    .find(|toolpath| toolpath.id == tp_id)
-                {
+                if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
                     toolpath.enabled = !toolpath.enabled;
                 }
             }
             AppEvent::RemoveToolpath(tp_id) => {
-                self.state
-                    .job
-                    .toolpaths
-                    .retain(|toolpath| toolpath.id != tp_id);
+                self.state.job.remove_toolpath(tp_id);
                 if self.state.selection == Selection::Toolpath(tp_id) {
                     self.state.selection = Selection::None;
                 }
@@ -157,8 +254,7 @@ impl<B: ComputeBackend> AppController<B> {
                 let ids: Vec<_> = self
                     .state
                     .job
-                    .toolpaths
-                    .iter()
+                    .all_toolpaths()
                     .map(|toolpath| toolpath.id)
                     .collect();
                 for id in ids {
@@ -166,13 +262,7 @@ impl<B: ComputeBackend> AppController<B> {
                 }
             }
             AppEvent::ToggleToolpathVisibility(tp_id) => {
-                if let Some(toolpath) = self
-                    .state
-                    .job
-                    .toolpaths
-                    .iter_mut()
-                    .find(|toolpath| toolpath.id == tp_id)
-                {
+                if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
                     toolpath.visible = !toolpath.visible;
                     self.pending_upload = true;
                 }
@@ -200,8 +290,8 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::SimStepForward => {
                 if self.state.simulation.active {
                     self.state.simulation.playing = false;
-                    self.state.simulation.current_move =
-                        (self.state.simulation.current_move + 1).min(self.state.simulation.total_moves);
+                    self.state.simulation.current_move = (self.state.simulation.current_move + 1)
+                        .min(self.state.simulation.total_moves);
                 }
             }
             AppEvent::SimStepBackward => {
@@ -256,6 +346,8 @@ impl<B: ComputeBackend> AppController<B> {
             }
             AppEvent::RecalculateFeeds(_) => {}
             AppEvent::ExportGcode
+            | AppEvent::ExportCombinedGcode
+            | AppEvent::ExportSetupGcode(_)
             | AppEvent::ExportGcodeConfirmed
             | AppEvent::ExportSetupSheet
             | AppEvent::ExportSvgPreview
@@ -274,8 +366,7 @@ impl<B: ComputeBackend> AppController<B> {
         let toolpaths: Vec<_> = self
             .state
             .job
-            .toolpaths
-            .iter()
+            .all_toolpaths()
             .filter(|toolpath| toolpath.enabled)
             .filter_map(|toolpath| {
                 let result = toolpath.result.as_ref()?;
@@ -305,12 +396,7 @@ impl<B: ComputeBackend> AppController<B> {
             }
 
             let stock_bbox = self.state.job.stock.bbox();
-            let model_mesh = self
-                .state
-                .job
-                .models
-                .iter()
-                .find_map(|m| m.mesh.clone());
+            let model_mesh = self.state.job.models.iter().find_map(|m| m.mesh.clone());
             self.compute.submit_simulation(SimulationRequest {
                 toolpaths,
                 stock_bbox,
@@ -325,8 +411,7 @@ impl<B: ComputeBackend> AppController<B> {
         let toolpaths: Vec<_> = self
             .state
             .job
-            .toolpaths
-            .iter()
+            .all_toolpaths()
             .filter(|toolpath| ids.contains(&toolpath.id))
             .filter_map(|toolpath| {
                 let result = toolpath.result.as_ref()?;
@@ -355,12 +440,7 @@ impl<B: ComputeBackend> AppController<B> {
             }
 
             let stock_bbox = self.state.job.stock.bbox();
-            let model_mesh = self
-                .state
-                .job
-                .models
-                .iter()
-                .find_map(|m| m.mesh.clone());
+            let model_mesh = self.state.job.models.iter().find_map(|m| m.mesh.clone());
             self.compute.submit_simulation(SimulationRequest {
                 toolpaths,
                 stock_bbox,
@@ -372,7 +452,7 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub fn request_collision_check(&mut self) {
-        let toolpath_data = self.state.job.toolpaths.iter().find_map(|toolpath| {
+        let toolpath_data = self.state.job.all_toolpaths().find_map(|toolpath| {
             let result = toolpath.result.as_ref()?;
             let tool = self
                 .state
@@ -403,12 +483,29 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub fn submit_toolpath_compute(&mut self, tp_id: ToolpathId) {
-        let Some(toolpath) = self
-            .state
-            .job
-            .toolpaths
-            .iter_mut()
-            .find(|toolpath| toolpath.id == tp_id)
+        let Some((
+            tool_id,
+            model_id,
+            operation,
+            dressups,
+            heights_config,
+            stock_source,
+            toolpath_name,
+            boundary_enabled,
+            boundary_containment,
+        )) = self.state.job.find_toolpath(tp_id).map(|toolpath| {
+            (
+                toolpath.tool_id,
+                toolpath.model_id,
+                toolpath.operation.clone(),
+                toolpath.dressups.clone(),
+                toolpath.heights.clone(),
+                toolpath.stock_source,
+                toolpath.name.clone(),
+                toolpath.boundary_enabled,
+                toolpath.boundary_containment,
+            )
+        })
         else {
             return;
         };
@@ -418,32 +515,93 @@ impl<B: ComputeBackend> AppController<B> {
             .job
             .tools
             .iter()
-            .find(|tool| tool.id == toolpath.tool_id)
+            .find(|tool| tool.id == tool_id)
             .cloned()
         else {
             return;
         };
+
+        let setup_ref = self
+            .state
+            .job
+            .setups
+            .iter()
+            .find(|setup| setup.toolpaths.iter().any(|toolpath| toolpath.id == tp_id));
+        let mut keep_out_footprints = setup_ref
+            .map(|setup| {
+                let mut footprints = Vec::new();
+                for fixture in &setup.fixtures {
+                    if fixture.enabled {
+                        footprints.push(fixture.footprint());
+                    }
+                }
+                for keep_out in &setup.keep_out_zones {
+                    if keep_out.enabled {
+                        footprints.push(keep_out.footprint());
+                    }
+                }
+                footprints
+            })
+            .unwrap_or_default();
+        let transform_setup = setup_ref.and_then(|setup| {
+            if setup.needs_transform() {
+                let mut transform_setup = Setup::new(setup.id, setup.name.clone());
+                transform_setup.face_up = setup.face_up;
+                transform_setup.z_rotation = setup.z_rotation;
+                Some(transform_setup)
+            } else {
+                None
+            }
+        });
+        let stock_snapshot = self.state.job.stock.clone();
 
         let model = self
             .state
             .job
             .models
             .iter()
-            .find(|model| model.id == toolpath.model_id);
-        let polygons = model.and_then(|model| model.polygons.clone());
-        let mesh = model.and_then(|model| model.mesh.clone());
+            .find(|model| model.id == model_id);
+        let mut polygons = model.and_then(|model| model.polygons.clone());
+        let mut mesh = model.and_then(|model| model.mesh.clone());
 
-        let is_3d = toolpath.operation.is_3d();
+        if let Some(transform_setup) = transform_setup.as_ref() {
+            if let Some(raw_mesh) = mesh.as_ref() {
+                mesh = Some(Arc::new(crate::state::job::transform_mesh(
+                    raw_mesh,
+                    transform_setup,
+                    &stock_snapshot,
+                )));
+            }
+            if let Some(raw_polygons) = polygons.as_ref() {
+                polygons = Some(Arc::new(crate::state::job::transform_polygons(
+                    raw_polygons,
+                    transform_setup,
+                    &stock_snapshot,
+                )));
+            }
+            keep_out_footprints = crate::state::job::transform_polygons(
+                &keep_out_footprints,
+                transform_setup,
+                &stock_snapshot,
+            );
+        }
+
+        let is_3d = operation.is_3d();
         if is_3d && mesh.is_none() {
-            toolpath.status = ComputeStatus::Error("No 3D mesh (import STL first)".to_string());
+            if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
+                toolpath.status = ComputeStatus::Error("No 3D mesh (import STL first)".to_string());
+            }
             return;
         }
         if !is_3d && polygons.is_none() {
-            toolpath.status = ComputeStatus::Error("No 2D geometry (import SVG first)".to_string());
+            if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
+                toolpath.status =
+                    ComputeStatus::Error("No 2D geometry (import SVG first)".to_string());
+            }
             return;
         }
 
-        let prev_tool_radius = if let OperationConfig::Rest(config) = &toolpath.operation {
+        let prev_tool_radius = if let OperationConfig::Rest(config) = &operation {
             config.prev_tool_id.and_then(|prev_tool_id| {
                 self.state
                     .job
@@ -456,28 +614,38 @@ impl<B: ComputeBackend> AppController<B> {
             None
         };
 
-        toolpath.status = ComputeStatus::Computing;
-        toolpath.result = None;
+        if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
+            toolpath.status = ComputeStatus::Computing;
+            toolpath.result = None;
+        }
 
         let safe_z = self.state.job.post.safe_z;
-        let heights = toolpath
-            .heights
-            .resolve(safe_z, toolpath.operation.default_depth_for_heights());
+        let heights = heights_config.resolve(safe_z, operation.default_depth_for_heights());
+        let stock_bbox = if let Some(transform_setup) = transform_setup.as_ref() {
+            let (width, depth, height) = transform_setup.effective_stock(&stock_snapshot);
+            Some(BoundingBox3 {
+                min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
+                max: rs_cam_core::geo::P3::new(width, depth, height),
+            })
+        } else {
+            Some(self.state.job.stock.bbox())
+        };
 
         self.compute.submit_toolpath(ComputeRequest {
             toolpath_id: tp_id,
-            toolpath_name: toolpath.name.clone(),
+            toolpath_name,
             polygons,
             mesh,
-            operation: toolpath.operation.clone(),
-            dressups: toolpath.dressups.clone(),
-            stock_source: toolpath.stock_source,
+            operation,
+            dressups,
+            stock_source,
             tool,
             safe_z,
             prev_tool_radius,
-            stock_bbox: Some(self.state.job.stock.bbox()),
-            boundary_enabled: toolpath.boundary_enabled,
-            boundary_containment: toolpath.boundary_containment,
+            stock_bbox,
+            boundary_enabled,
+            boundary_containment,
+            keep_out_footprints,
             heights,
         });
     }
@@ -486,13 +654,7 @@ impl<B: ComputeBackend> AppController<B> {
         for message in self.compute.drain_results() {
             match message {
                 ComputeMessage::Toolpath(result) => {
-                    if let Some(toolpath) = self
-                        .state
-                        .job
-                        .toolpaths
-                        .iter_mut()
-                        .find(|toolpath| toolpath.id == result.toolpath_id)
-                    {
+                    if let Some(toolpath) = self.state.job.find_toolpath_mut(result.toolpath_id) {
                         match result.result {
                             Ok(computed) => {
                                 toolpath.status = ComputeStatus::Done;
@@ -514,8 +676,7 @@ impl<B: ComputeBackend> AppController<B> {
                         self.state.simulation.total_moves = simulation.total_moves;
                         self.state.simulation.current_move = simulation.total_moves;
                         self.state.simulation.sim_generation += 1;
-                        self.state.simulation.last_sim_edit_counter =
-                            self.state.job.edit_counter;
+                        self.state.simulation.last_sim_edit_counter = self.state.job.edit_counter;
 
                         self.state.simulation.boundaries = simulation
                             .boundaries
@@ -528,15 +689,41 @@ impl<B: ComputeBackend> AppController<B> {
                                 end_move: boundary.end_move,
                             })
                             .collect();
+                        self.state.simulation.setup_boundaries = {
+                            let mut setup_boundaries = Vec::new();
+                            let mut last_setup_id = None;
+                            for boundary in &self.state.simulation.boundaries {
+                                let setup_id = self.state.job.setup_of_toolpath(boundary.id);
+                                if setup_id != last_setup_id {
+                                    if let Some(setup_id) = setup_id {
+                                        let setup_name = self
+                                            .state
+                                            .job
+                                            .setups
+                                            .iter()
+                                            .find(|setup| setup.id == setup_id)
+                                            .map(|setup| setup.name.clone())
+                                            .unwrap_or_default();
+                                        setup_boundaries.push(
+                                            crate::state::simulation::SetupBoundary {
+                                                setup_id,
+                                                setup_name,
+                                                start_move: boundary.start_move,
+                                            },
+                                        );
+                                    }
+                                    last_setup_id = setup_id;
+                                }
+                            }
+                            setup_boundaries
+                        };
                         // Store the initial (fresh stock) heightmap for playback
-                        let initial_heightmap =
-                            rs_cam_core::simulation::Heightmap::from_bounds(
-                                &self.state.job.stock.bbox(),
-                                Some(self.state.job.stock.bbox().max.z),
-                                self.state.simulation.resolution,
-                            );
-                        self.state.simulation.live_heightmap =
-                            Some(initial_heightmap);
+                        let initial_heightmap = rs_cam_core::simulation::Heightmap::from_bounds(
+                            &self.state.job.stock.bbox(),
+                            Some(self.state.job.stock.bbox().max.z),
+                            self.state.simulation.resolution,
+                        );
+                        self.state.simulation.live_heightmap = Some(initial_heightmap);
                         self.state.simulation.live_sim_move = 0;
 
                         self.state.simulation.checkpoints = simulation
@@ -562,8 +749,7 @@ impl<B: ComputeBackend> AppController<B> {
 
                         // Cache mesh and deviations for viz mode re-coloring
                         self.state.simulation.current_deviations = simulation.deviations;
-                        self.state.simulation.current_mesh =
-                            Some(simulation.mesh.clone());
+                        self.state.simulation.current_mesh = Some(simulation.mesh.clone());
                         self.state.simulation.mesh = Some(simulation.mesh);
                         self.pending_upload = true;
                     }
@@ -623,13 +809,7 @@ impl<B: ComputeBackend> AppController<B> {
                     old_dressups,
                     ..
                 } => {
-                    if let Some(toolpath) = self
-                        .state
-                        .job
-                        .toolpaths
-                        .iter_mut()
-                        .find(|toolpath| toolpath.id == tp_id)
-                    {
+                    if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
                         toolpath.operation = old_op;
                         toolpath.dressups = old_dressups;
                     }
@@ -668,13 +848,7 @@ impl<B: ComputeBackend> AppController<B> {
                     new_dressups,
                     ..
                 } => {
-                    if let Some(toolpath) = self
-                        .state
-                        .job
-                        .toolpaths
-                        .iter_mut()
-                        .find(|toolpath| toolpath.id == tp_id)
-                    {
+                    if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
                         toolpath.operation = new_op;
                         toolpath.dressups = new_dressups;
                     }
@@ -693,7 +867,12 @@ impl<B: ComputeBackend> AppController<B> {
 /// (especially ball nose) are visually resolved.  Clamped to [0.02, 0.5] mm
 /// and further limited so the grid stays under ~8 M cells.
 fn auto_resolution_for_tools(
-    toolpaths: &[(ToolpathId, String, Arc<rs_cam_core::toolpath::Toolpath>, ToolConfig)],
+    toolpaths: &[(
+        ToolpathId,
+        String,
+        Arc<rs_cam_core::toolpath::Toolpath>,
+        ToolConfig,
+    )],
     stock_bbox: &BoundingBox3,
 ) -> f64 {
     let min_radius = toolpaths

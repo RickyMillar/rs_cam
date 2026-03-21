@@ -1,4 +1,5 @@
 pub mod camera;
+pub mod fixture_render;
 pub mod grid_render;
 pub mod mesh_render;
 pub mod sim_render;
@@ -7,6 +8,7 @@ pub mod toolpath_render;
 
 use egui_wgpu::wgpu;
 
+use fixture_render::FixtureGpuData;
 use grid_render::GridGpuData;
 use mesh_render::{MeshGpuData, MeshVertex};
 use sim_render::{ColoredMeshVertex, SimMeshGpuData, ToolModelGpuData};
@@ -85,6 +87,7 @@ pub struct RenderResources {
     pub mesh_data: Option<MeshGpuData>,
     pub grid_data: GridGpuData,
     pub stock_data: Option<StockGpuData>,
+    pub fixture_data: Option<FixtureGpuData>,
     pub toolpath_data: Vec<ToolpathGpuData>,
     pub sim_mesh_data: Option<SimMeshGpuData>,
     pub tool_model_data: Option<ToolModelGpuData>,
@@ -416,6 +419,7 @@ impl RenderResources {
             mesh_data: None,
             grid_data,
             stock_data: None,
+            fixture_data: None,
             toolpath_data: Vec::new(),
             sim_mesh_data: None,
             tool_model_data: None,
@@ -499,6 +503,7 @@ pub struct ViewportCallback {
     pub has_mesh: bool,
     pub show_grid: bool,
     pub show_stock: bool,
+    pub show_fixtures: bool,
     pub show_sim_mesh: bool,
     pub sim_mesh_opacity: f32,
     pub show_cutting: bool,
@@ -608,6 +613,16 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 pass.set_bind_group(0, &resources.line_bind_group, &[]);
                 pass.set_vertex_buffer(0, stock.vertex_buffer.slice(..));
                 pass.draw(0..stock.vertex_count, 0..1);
+            }
+
+            // Draw fixture and keep-out wireframes
+            if self.show_fixtures
+                && let Some(fixture) = &resources.fixture_data
+            {
+                pass.set_pipeline(&resources.line_pipeline);
+                pass.set_bind_group(0, &resources.line_bind_group, &[]);
+                pass.set_vertex_buffer(0, fixture.vertex_buffer.slice(..));
+                pass.draw(0..fixture.vertex_count, 0..1);
             }
 
             // Draw mesh (sim mesh replaces raw STL when simulation is active)

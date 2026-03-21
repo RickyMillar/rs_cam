@@ -77,8 +77,7 @@ pub fn generate_setup_sheet(job: &JobState) -> String {
 
     // Compute total estimated time across all enabled toolpaths with results.
     let total_seconds: f64 = job
-        .toolpaths
-        .iter()
+        .all_toolpaths()
         .filter(|tp| tp.enabled)
         .filter_map(estimate_time)
         .sum();
@@ -114,6 +113,7 @@ th {{ background: #2a2a36; color: #a0a0b0; text-align: left; padding: 8px 12px; 
 td {{ padding: 6px 12px; border: 1px solid #3a3a4a; }}
 tr:nth-child(even) {{ background: #24242e; }}
 .meta {{ color: #888; font-size: 0.9em; }}
+.flip-instruction {{ background: #3a3520; border: 2px solid #d4a020; border-radius: 6px; padding: 12px 16px; margin: 12px 0; color: #f0d060; font-size: 1.1em; font-weight: bold; }}
 </style>
 </head>
 <body>
@@ -148,6 +148,149 @@ tr:nth-child(even) {{ background: #24242e; }}
         job.stock.origin_z,
     );
 
+    // --- Setup orientation section ---
+    if job.setups.len() > 1 {
+        let _ = writeln!(html, "<h2>Setups</h2>");
+        let mut prev_face = crate::state::job::FaceUp::Top;
+        for (i, setup) in job.setups.iter().enumerate() {
+            let _ = write!(
+                html,
+                "<h3>Setup {}: {}</h3>\n\
+                 <p>Orientation: {} up, Z rotation: {}</p>\n",
+                i + 1,
+                escape_html(&setup.name),
+                setup.face_up.label(),
+                setup.z_rotation.label(),
+            );
+            if i > 0 && setup.face_up != prev_face {
+                let _ = writeln!(
+                    html,
+                    "<div class=\"flip-instruction\">{}</div>",
+                    setup.face_up.flip_instruction(),
+                );
+            }
+            prev_face = setup.face_up;
+        }
+    }
+
+    // --- Workholding section ---
+    let has_workholding = job
+        .setups
+        .iter()
+        .any(|setup| !setup.fixtures.is_empty() || !setup.keep_out_zones.is_empty());
+    if has_workholding {
+        let _ = writeln!(html, "<h2>Workholding</h2>");
+        for setup in &job.setups {
+            if setup.fixtures.is_empty() && setup.keep_out_zones.is_empty() {
+                continue;
+            }
+            if job.setups.len() > 1 {
+                let _ = writeln!(html, "<h3>{}</h3>", escape_html(&setup.name));
+            }
+            let _ = write!(
+                html,
+                "<table>\n\
+                 <tr><th>Name</th><th>Type</th><th>Position</th><th>Size</th><th>Clearance</th></tr>\n"
+            );
+            for fixture in &setup.fixtures {
+                let _ = writeln!(
+                    html,
+                    "<tr><td>{}</td><td>{}</td><td>({:.1}, {:.1}, {:.1})</td>\
+                     <td>{:.1} x {:.1} x {:.1} mm</td><td>{:.1} mm</td></tr>",
+                    escape_html(&fixture.name),
+                    fixture.kind.label(),
+                    fixture.origin_x,
+                    fixture.origin_y,
+                    fixture.origin_z,
+                    fixture.size_x,
+                    fixture.size_y,
+                    fixture.size_z,
+                    fixture.clearance,
+                );
+            }
+            for keep_out in &setup.keep_out_zones {
+                let _ = writeln!(
+                    html,
+                    "<tr><td>{}</td><td>Keep-Out</td><td>({:.1}, {:.1})</td>\
+                     <td>{:.1} x {:.1} mm</td><td>-</td></tr>",
+                    escape_html(&keep_out.name),
+                    keep_out.origin_x,
+                    keep_out.origin_y,
+                    keep_out.size_x,
+                    keep_out.size_y,
+                );
+            }
+            let _ = writeln!(html, "</table>");
+        }
+    }
+
+    // --- Datum / Alignment section ---
+    let has_datum_info = job.setups.iter().any(|setup| {
+        !setup.alignment_pins.is_empty()
+            || !setup.datum.notes.is_empty()
+            || setup.datum.xy_method != crate::state::job::XYDatum::default()
+            || setup.datum.z_method != crate::state::job::ZDatum::default()
+    });
+    if has_datum_info || job.setups.len() > 1 {
+        let _ = writeln!(html, "<h2>Datum / Alignment</h2>");
+        for (i, setup) in job.setups.iter().enumerate() {
+            if job.setups.len() > 1 {
+                let _ = writeln!(
+                    html,
+                    "<h3>Setup {}: {}</h3>",
+                    i + 1,
+                    escape_html(&setup.name)
+                );
+            }
+            let _ = write!(
+                html,
+                "<table>\n\
+                 <tr><td>XY Method</td><td>{}</td></tr>\n\
+                 <tr><td>Z Method</td><td>{}</td></tr>\n\
+                 </table>\n",
+                setup.datum.xy_method.label(),
+                setup.datum.z_method.label(),
+            );
+            if !setup.datum.notes.is_empty() {
+                let _ = writeln!(
+                    html,
+                    "<p class=\"meta\">Notes: {}</p>",
+                    escape_html(&setup.datum.notes)
+                );
+            }
+            if !setup.alignment_pins.is_empty() {
+                let _ = write!(
+                    html,
+                    "<h4>Alignment Pins</h4>\n\
+                     <table>\n\
+                     <tr><th>Pin</th><th>Position</th><th>Diameter</th></tr>\n"
+                );
+                for (pin_index, pin) in setup.alignment_pins.iter().enumerate() {
+                    let _ = writeln!(
+                        html,
+                        "<tr><td>{}</td><td>({:.1}, {:.1})</td><td>{:.1} mm</td></tr>",
+                        pin_index + 1,
+                        pin.x,
+                        pin.y,
+                        pin.diameter,
+                    );
+                }
+                let _ = writeln!(html, "</table>");
+            }
+            if i > 0
+                && matches!(
+                    setup.datum.xy_method,
+                    crate::state::job::XYDatum::AlignmentPins
+                )
+            {
+                let _ = writeln!(
+                    html,
+                    "<div class=\"flip-instruction\">Insert dowels into alignment pin holes. Part self-locates on pins.</div>"
+                );
+            }
+        }
+    }
+
     // --- Tool table ---
     let _ = write!(
         html,
@@ -175,7 +318,7 @@ tr:nth-child(even) {{ background: #24242e; }}
          <table>\n\
          <tr><th>#</th><th>Name</th><th>Tool</th><th>Type</th><th>Feed Rate</th><th>Depth</th><th>Est. Time</th></tr>\n"
     );
-    for (i, tp) in job.toolpaths.iter().enumerate() {
+    for (i, tp) in job.toolpaths_enumerated() {
         let tool_name = find_tool(&job.tools, tp.tool_id)
             .map(|t| t.name.as_str())
             .unwrap_or("(unknown)");
@@ -221,14 +364,13 @@ tr:nth-child(even) {{ background: #24242e; }}
 
     // --- Per-operation details ---
     let has_details = job
-        .toolpaths
-        .iter()
+        .all_toolpaths()
         .any(|tp| tp.enabled && tp.result.is_some());
 
     if has_details {
         let _ = writeln!(html, "<h2>Toolpath Details</h2>");
 
-        for tp in &job.toolpaths {
+        for tp in job.all_toolpaths() {
             if !tp.enabled {
                 continue;
             }
@@ -282,7 +424,10 @@ fn days_to_ymd(days_since_epoch: u64) -> (u64, u64, u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::job::{JobState, ToolConfig, ToolType};
+    use crate::state::job::{
+        AlignmentPin, FaceUp, Fixture, FixtureId, JobState, KeepOutId, KeepOutZone, Setup, SetupId,
+        ToolConfig, ToolType, XYDatum, ZDatum, ZRotation,
+    };
     use crate::state::toolpath::{
         ComputeStatus, OperationConfig, PocketConfig, ToolpathEntry, ToolpathResult, ToolpathStats,
     };
@@ -320,7 +465,43 @@ mod tests {
                 rapid_distance: 200.0,
             },
         });
-        job.toolpaths.push(toolpath);
+        job.push_toolpath(toolpath);
+
+        job
+    }
+
+    fn make_multi_setup_job() -> JobState {
+        let mut job = make_test_job();
+        let second_setup_id = SetupId(1);
+
+        {
+            let top_setup = &mut job.setups[0];
+            top_setup.name = "Top Side".to_string();
+            top_setup.datum.xy_method = XYDatum::AlignmentPins;
+            top_setup.datum.notes = "Probe on the pin pair".to_string();
+            top_setup
+                .alignment_pins
+                .push(AlignmentPin::new(10.0, 20.0, 6.0));
+
+            let mut fixture = Fixture::new_default(FixtureId(0));
+            fixture.name = "Toe Clamp".to_string();
+            top_setup.fixtures.push(fixture);
+
+            let mut keep_out = KeepOutZone::new_default(KeepOutId(0));
+            keep_out.name = "Vice Travel".to_string();
+            top_setup.keep_out_zones.push(keep_out);
+        }
+
+        let mut bottom_setup = Setup::new(second_setup_id, "Bottom Side".to_string());
+        bottom_setup.face_up = FaceUp::Bottom;
+        bottom_setup.z_rotation = ZRotation::Deg90;
+        bottom_setup.datum.xy_method = XYDatum::AlignmentPins;
+        bottom_setup.datum.z_method = ZDatum::MachineTable;
+        bottom_setup
+            .alignment_pins
+            .push(AlignmentPin::new(12.0, 22.0, 6.0));
+        job.setups.push(bottom_setup);
+        job.sync_next_ids();
 
         job
     }
@@ -378,6 +559,30 @@ mod tests {
         let html = generate_setup_sheet(&job);
         // 5000mm / 1000mm/min = 5 min = 300s => "5m 0s"
         assert!(html.contains("5m 0s"));
+    }
+
+    #[test]
+    fn setup_sheet_contains_setup_orientation_and_workholding() {
+        let job = make_multi_setup_job();
+        let html = generate_setup_sheet(&job);
+        assert!(html.contains("<h2>Setups</h2>"));
+        assert!(html.contains("Setup 2: Bottom Side"));
+        assert!(html.contains("Orientation: Bottom up, Z rotation: 90 deg"));
+        assert!(html.contains("Flip 180 deg on X axis"));
+        assert!(html.contains("<h2>Workholding</h2>"));
+        assert!(html.contains("Toe Clamp"));
+        assert!(html.contains("Vice Travel"));
+    }
+
+    #[test]
+    fn setup_sheet_contains_datum_and_alignment_sections() {
+        let job = make_multi_setup_job();
+        let html = generate_setup_sheet(&job);
+        assert!(html.contains("<h2>Datum / Alignment</h2>"));
+        assert!(html.contains("Alignment Pins"));
+        assert!(html.contains("Machine Table"));
+        assert!(html.contains("Probe on the pin pair"));
+        assert!(html.contains("Insert dowels into alignment pin holes"));
     }
 
     #[test]

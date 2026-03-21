@@ -2,7 +2,6 @@ use egui_wgpu::wgpu;
 use rs_cam_core::simulation::HeightmapMesh;
 
 use super::LineVertex;
-use super::mesh_render::MeshVertex;
 
 /// GPU vertex for per-vertex colored mesh rendering (simulation stock).
 #[repr(C)]

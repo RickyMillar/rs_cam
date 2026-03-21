@@ -75,6 +75,8 @@ pub struct ComputeRequest {
     pub stock_bbox: Option<BoundingBox3>,
     pub boundary_enabled: bool,
     pub boundary_containment: crate::state::toolpath::BoundaryContainment,
+    /// Fixture and keep-out footprints to subtract from the machining boundary.
+    pub keep_out_footprints: Vec<Polygon2>,
     pub heights: crate::state::toolpath::ResolvedHeights,
 }
 

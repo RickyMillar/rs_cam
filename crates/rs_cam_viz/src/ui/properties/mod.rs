@@ -1,4 +1,5 @@
 pub mod post;
+pub mod setup;
 pub mod stock;
 pub mod tool;
 
@@ -66,6 +67,44 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 tool::draw(ui, t);
             }
         }
+        Selection::Setup(setup_id) => {
+            if let Some(setup_state) = state
+                .job
+                .setups
+                .iter_mut()
+                .find(|setup| setup.id == setup_id)
+            {
+                setup::draw(ui, setup_id, setup_state, events);
+            }
+        }
+        Selection::Fixture(setup_id, fixture_id) => {
+            if let Some(setup_state) = state
+                .job
+                .setups
+                .iter_mut()
+                .find(|setup| setup.id == setup_id)
+                && let Some(fixture) = setup_state
+                    .fixtures
+                    .iter_mut()
+                    .find(|fixture| fixture.id == fixture_id)
+            {
+                setup::draw_fixture_properties(ui, setup_id, fixture, events);
+            }
+        }
+        Selection::KeepOut(setup_id, keep_out_id) => {
+            if let Some(setup_state) = state
+                .job
+                .setups
+                .iter_mut()
+                .find(|setup| setup.id == setup_id)
+                && let Some(zone) = setup_state
+                    .keep_out_zones
+                    .iter_mut()
+                    .find(|zone| zone.id == keep_out_id)
+            {
+                setup::draw_keep_out_properties(ui, setup_id, zone, events);
+            }
+        }
         Selection::Toolpath(id) => {
             // Snapshot tool/model lists to avoid borrow conflict with toolpaths
             let tools: Vec<_> = state
@@ -85,7 +124,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             let material = state.job.stock.material.clone();
             let machine = state.job.machine.clone();
 
-            if let Some(entry) = state.job.toolpaths.iter_mut().find(|t| t.id == id) {
+            if let Some(entry) = state.job.find_toolpath_mut(id) {
                 draw_toolpath_panel(
                     ui,
                     entry,

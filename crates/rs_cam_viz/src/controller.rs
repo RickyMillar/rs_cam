@@ -118,8 +118,7 @@ impl<B: ComputeBackend> AppController<B> {
         let stale_ids: Vec<_> = self
             .state
             .job
-            .toolpaths
-            .iter()
+            .all_toolpaths()
             .filter(|toolpath| toolpath.auto_regen && !toolpath.locked)
             .filter_map(|toolpath| {
                 toolpath
@@ -130,13 +129,7 @@ impl<B: ComputeBackend> AppController<B> {
             .collect();
 
         for id in stale_ids {
-            if let Some(toolpath) = self
-                .state
-                .job
-                .toolpaths
-                .iter_mut()
-                .find(|toolpath| toolpath.id == id)
-            {
+            if let Some(toolpath) = self.state.job.find_toolpath_mut(id) {
                 toolpath.stale_since = None;
             }
             self.submit_toolpath_compute(id);

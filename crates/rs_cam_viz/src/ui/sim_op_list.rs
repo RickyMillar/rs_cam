@@ -1,16 +1,11 @@
 use super::AppEvent;
 use crate::render::toolpath_render::palette_color;
-use crate::state::simulation::SimulationState;
 use crate::state::job::JobState;
+use crate::state::simulation::SimulationState;
 use crate::state::toolpath::ToolpathId;
 
 /// Left panel in simulation workspace: operation list with checkboxes, progress bars, and jump buttons.
-pub fn draw(
-    ui: &mut egui::Ui,
-    sim: &SimulationState,
-    job: &JobState,
-    events: &mut Vec<AppEvent>,
-) {
+pub fn draw(ui: &mut egui::Ui, sim: &SimulationState, job: &JobState, events: &mut Vec<AppEvent>) {
     ui.heading("Operations");
     ui.separator();
 
@@ -42,10 +37,8 @@ pub fn draw(
 
     // Collect selected toolpath IDs for checkbox state
     let all_selected = sim.selected_toolpaths.is_none();
-    let selected_set: Vec<ToolpathId> = sim.selected_toolpaths
-        .as_ref()
-        .cloned()
-        .unwrap_or_default();
+    let selected_set: Vec<ToolpathId> =
+        sim.selected_toolpaths.as_ref().cloned().unwrap_or_default();
 
     // Track if user toggled any checkbox
     let mut toggled_id: Option<ToolpathId> = None;
@@ -67,8 +60,7 @@ pub fn draw(
                 .inner_margin(4.0)
                 .rounding(3.0)
         } else {
-            egui::Frame::default()
-                .inner_margin(4.0)
+            egui::Frame::default().inner_margin(4.0)
         };
 
         frame.show(ui, |ui| {
@@ -80,12 +72,17 @@ pub fn draw(
                 }
 
                 // Palette color swatch
-                let (swatch_rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                let (swatch_rect, _) =
+                    ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
                 ui.painter().rect_filled(swatch_rect, 2.0, color);
 
                 // Operation name (bold if current)
                 let name_text = egui::RichText::new(&boundary.name).small();
-                let name_text = if is_current { name_text.strong() } else { name_text };
+                let name_text = if is_current {
+                    name_text.strong()
+                } else {
+                    name_text
+                };
                 ui.label(name_text);
             });
 
@@ -123,7 +120,8 @@ pub fn draw(
 
             let bar_height = 4.0;
             let bar_width = ui.available_width();
-            let (bar_rect, _) = ui.allocate_exact_size(egui::vec2(bar_width, bar_height), egui::Sense::hover());
+            let (bar_rect, _) =
+                ui.allocate_exact_size(egui::vec2(bar_width, bar_height), egui::Sense::hover());
             let dim_color = egui::Color32::from_rgb(
                 (pc[0] * 60.0) as u8,
                 (pc[1] * 60.0) as u8,
@@ -138,15 +136,30 @@ pub fn draw(
 
             // Jump buttons + move info
             ui.horizontal(|ui| {
-                if ui.small_button("|<").on_hover_text("Jump to op start").clicked() {
+                if ui
+                    .small_button("|<")
+                    .on_hover_text("Jump to op start")
+                    .clicked()
+                {
                     events.push(AppEvent::SimJumpToOpStart(i));
                 }
-                let move_info = format!("{} / {}",
-                    sim.current_move.saturating_sub(boundary.start_move).min(op_moves),
+                let move_info = format!(
+                    "{} / {}",
+                    sim.current_move
+                        .saturating_sub(boundary.start_move)
+                        .min(op_moves),
                     op_moves,
                 );
-                ui.label(egui::RichText::new(move_info).small().color(egui::Color32::from_rgb(140, 140, 150)));
-                if ui.small_button(">|").on_hover_text("Jump to op end").clicked() {
+                ui.label(
+                    egui::RichText::new(move_info)
+                        .small()
+                        .color(egui::Color32::from_rgb(140, 140, 150)),
+                );
+                if ui
+                    .small_button(">|")
+                    .on_hover_text("Jump to op end")
+                    .clicked()
+                {
                     events.push(AppEvent::SimJumpToOpEnd(i));
                 }
             });
@@ -161,7 +174,11 @@ pub fn draw(
     if let Some(id) = toggled_id {
         let mut new_selection: Vec<ToolpathId> = if all_selected {
             // Was "all" — now exclude the toggled one
-            sim.boundaries.iter().map(|b| b.id).filter(|bid| *bid != id).collect()
+            sim.boundaries
+                .iter()
+                .map(|b| b.id)
+                .filter(|bid| *bid != id)
+                .collect()
         } else {
             let mut s = selected_set;
             if s.contains(&id) {
@@ -187,7 +204,7 @@ pub fn draw(
 
 /// Estimate operation time as a formatted string.
 fn estimate_op_time(job: &JobState, tp_id: ToolpathId) -> Option<String> {
-    let tp = job.toolpaths.iter().find(|tp| tp.id == tp_id)?;
+    let tp = job.find_toolpath(tp_id)?;
     let result = tp.result.as_ref()?;
     let feed = match &tp.operation {
         crate::state::toolpath::OperationConfig::Face(c) => c.feed_rate,

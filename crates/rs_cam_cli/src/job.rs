@@ -55,7 +55,24 @@ pub struct JobFile {
     #[serde(default)]
     pub tools: HashMap<String, ToolDef>,
     #[serde(default)]
+    pub setup: Vec<SetupDef>,
+    #[serde(default)]
     pub operation: Vec<OperationDef>,
+}
+
+/// A setup definition for multi-setup jobs. Each setup can have its own output file.
+#[derive(Deserialize)]
+pub struct SetupDef {
+    pub name: String,
+    /// Orientation metadata (informational, used in setup sheets).
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub face_up: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub z_rotation: Option<String>,
+    /// Per-setup output file. If absent, uses the global job output.
+    pub output: Option<PathBuf>,
 }
 
 #[derive(Deserialize)]
@@ -121,6 +138,9 @@ pub struct OperationDef {
     pub op_type: String,
     pub input: PathBuf,
     pub tool: String,
+    /// Which setup this operation belongs to. If absent, belongs to a default setup.
+    #[serde(default)]
+    pub setup: Option<String>,
 
     // Common parameters (override job defaults if present)
     pub stepover: Option<f64>,
@@ -187,6 +207,20 @@ pub fn parse_job_file(path: &Path) -> Result<JobFile> {
                 job.tools.keys().collect::<Vec<_>>()
             );
         }
+        if let Some(ref setup_name) = op.setup
+            && !job.setup.is_empty()
+            && !job.setup.iter().any(|setup| setup.name == *setup_name)
+        {
+            bail!(
+                "Operation {} references unknown setup '{}'. Available: {:?}",
+                i,
+                setup_name,
+                job.setup
+                    .iter()
+                    .map(|setup| &setup.name)
+                    .collect::<Vec<_>>()
+            );
+        }
     }
 
     Ok(job)
@@ -237,6 +271,8 @@ pub struct OpResult {
     pub cutter: Box<dyn rs_cam_core::tool::MillingCutter>,
     pub label: String,
     pub spindle_speed: u32,
+    /// Which setup this operation belongs to (None = default/single setup).
+    pub setup_name: Option<String>,
 }
 
 /// Result of executing a full job: combined toolpath + per-operation results.
@@ -588,6 +624,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
             cutter: phase_cutter,
             label,
             spindle_speed,
+            setup_name: op.setup.clone(),
         });
     }
 
