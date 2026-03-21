@@ -227,6 +227,25 @@ pub struct ToolModelGpuData {
     pub vertex_count: u32,
 }
 
+/// Full tool assembly dimensions for wireframe rendering.
+/// All lengths in mm. The position is the tool TIP.
+pub struct ToolAssemblyInfo {
+    /// Cutter radius (diameter / 2).
+    pub tool_radius: f32,
+    /// Cutting flute length.
+    pub cutting_length: f32,
+    /// Whether the cutter has a ball nose hemisphere.
+    pub is_ball: bool,
+    /// Shank cylinder radius (shank_diameter / 2).
+    pub shank_radius: f32,
+    /// Shank cylinder length above cutter.
+    pub shank_length: f32,
+    /// Holder cylinder radius (holder_diameter / 2).
+    pub holder_radius: f32,
+    /// Total stickout from holder face to tool tip; holder length = stickout - cutting_length - shank_length.
+    pub stickout: f32,
+}
+
 impl ToolModelGpuData {
     /// Generate tool wireframe lines at the given position.
     /// `tool_radius`: radius of the cutting tool.
@@ -240,84 +259,150 @@ impl ToolModelGpuData {
         is_ball: bool,
         position: [f32; 3],
     ) -> Self {
+        // Delegate to full assembly with no shank/holder (backward compat)
+        Self::from_tool_assembly(
+            device,
+            &ToolAssemblyInfo {
+                tool_radius,
+                cutting_length: tool_length,
+                is_ball,
+                shank_radius: 0.0,
+                shank_length: 0.0,
+                holder_radius: 0.0,
+                stickout: 0.0,
+            },
+            position,
+        )
+    }
+
+    /// Generate wireframe for the complete tool assembly: cutter + shank + holder.
+    /// `position`: [x, y, z] of the tool tip (lowest point of the cutter).
+    pub fn from_tool_assembly(
+        device: &wgpu::Device,
+        info: &ToolAssemblyInfo,
+        position: [f32; 3],
+    ) -> Self {
         use wgpu::util::DeviceExt;
 
-        let color = [0.8, 0.8, 0.3]; // yellow-ish tool color
+        let cutter_color = [0.8, 0.8, 0.3]; // yellow-ish for cutter
+        let shank_color = [0.6, 0.6, 0.5]; // lighter gray for shank
+        let holder_color = [0.4, 0.4, 0.35]; // darker gray for holder
         let segments = 24;
         let mut verts = Vec::new();
 
         let cx = position[0];
         let cy = position[1];
         let tip_z = position[2];
-        let r = tool_radius;
+        let r = info.tool_radius;
 
+        // --- Cutter body ---
         // Bottom circle (at tip for flat, at center of ball for ball nose)
-        let bottom_z = if is_ball { tip_z + r } else { tip_z };
-        for i in 0..segments {
-            let a0 = std::f32::consts::TAU * (i as f32) / (segments as f32);
-            let a1 = std::f32::consts::TAU * ((i + 1) as f32) / (segments as f32);
-            verts.push(LineVertex {
-                position: [cx + r * a0.cos(), cy + r * a0.sin(), bottom_z],
-                color,
-            });
-            verts.push(LineVertex {
-                position: [cx + r * a1.cos(), cy + r * a1.sin(), bottom_z],
-                color,
-            });
-        }
+        let cutter_bottom_z = if info.is_ball { tip_z + r } else { tip_z };
+        draw_circle(
+            &mut verts,
+            cx,
+            cy,
+            cutter_bottom_z,
+            r,
+            segments,
+            cutter_color,
+        );
 
-        // Top circle (at top of cutting length)
-        let top_z = tip_z + tool_length;
-        for i in 0..segments {
-            let a0 = std::f32::consts::TAU * (i as f32) / (segments as f32);
-            let a1 = std::f32::consts::TAU * ((i + 1) as f32) / (segments as f32);
-            verts.push(LineVertex {
-                position: [cx + r * a0.cos(), cy + r * a0.sin(), top_z],
-                color,
-            });
-            verts.push(LineVertex {
-                position: [cx + r * a1.cos(), cy + r * a1.sin(), top_z],
-                color,
-            });
-        }
+        // Top of cutter
+        let cutter_top_z = tip_z + info.cutting_length;
+        draw_circle(&mut verts, cx, cy, cutter_top_z, r, segments, cutter_color);
 
-        // Vertical lines connecting top and bottom (4 lines at 90-degree intervals)
-        for i in 0..4 {
-            let a = std::f32::consts::TAU * (i as f32) / 4.0;
-            verts.push(LineVertex {
-                position: [cx + r * a.cos(), cy + r * a.sin(), bottom_z],
-                color,
-            });
-            verts.push(LineVertex {
-                position: [cx + r * a.cos(), cy + r * a.sin(), top_z],
-                color,
-            });
-        }
+        // Vertical connectors for cutter
+        draw_vertical_connectors(
+            &mut verts,
+            cx,
+            cy,
+            cutter_bottom_z,
+            cutter_top_z,
+            r,
+            cutter_color,
+        );
 
         // Ball nose hemisphere (arcs in XZ and YZ planes)
-        if is_ball {
+        if info.is_ball {
             for i in 0..segments {
                 let a0 = std::f32::consts::PI * (i as f32) / (segments as f32);
                 let a1 = std::f32::consts::PI * ((i + 1) as f32) / (segments as f32);
                 // XZ arc
                 verts.push(LineVertex {
                     position: [cx + r * a0.sin(), cy, tip_z + r - r * a0.cos()],
-                    color,
+                    color: cutter_color,
                 });
                 verts.push(LineVertex {
                     position: [cx + r * a1.sin(), cy, tip_z + r - r * a1.cos()],
-                    color,
+                    color: cutter_color,
                 });
                 // YZ arc
                 verts.push(LineVertex {
                     position: [cx, cy + r * a0.sin(), tip_z + r - r * a0.cos()],
-                    color,
+                    color: cutter_color,
                 });
                 verts.push(LineVertex {
                     position: [cx, cy + r * a1.sin(), tip_z + r - r * a1.cos()],
-                    color,
+                    color: cutter_color,
                 });
             }
+        }
+
+        // --- Shank cylinder ---
+        if info.shank_radius > 0.01 && info.shank_length > 0.01 {
+            let shank_bottom_z = cutter_top_z;
+            let shank_top_z = cutter_top_z + info.shank_length;
+            let sr = info.shank_radius;
+
+            draw_circle(
+                &mut verts,
+                cx,
+                cy,
+                shank_bottom_z,
+                sr,
+                segments,
+                shank_color,
+            );
+            draw_circle(&mut verts, cx, cy, shank_top_z, sr, segments, shank_color);
+            draw_vertical_connectors(
+                &mut verts,
+                cx,
+                cy,
+                shank_bottom_z,
+                shank_top_z,
+                sr,
+                shank_color,
+            );
+        }
+
+        // --- Holder cylinder ---
+        // Holder extends from top of shank upward by the remaining stickout distance
+        let holder_bottom_z = cutter_top_z + info.shank_length;
+        let holder_length = (info.stickout - info.cutting_length - info.shank_length).max(0.0);
+        if info.holder_radius > 0.01 && holder_length > 0.01 {
+            let holder_top_z = holder_bottom_z + holder_length;
+            let hr = info.holder_radius;
+
+            draw_circle(
+                &mut verts,
+                cx,
+                cy,
+                holder_bottom_z,
+                hr,
+                segments,
+                holder_color,
+            );
+            draw_circle(&mut verts, cx, cy, holder_top_z, hr, segments, holder_color);
+            draw_vertical_connectors(
+                &mut verts,
+                cx,
+                cy,
+                holder_bottom_z,
+                holder_top_z,
+                hr,
+                holder_color,
+            );
         }
 
         if verts.is_empty() {
@@ -338,5 +423,52 @@ impl ToolModelGpuData {
             vertex_buffer,
             vertex_count,
         }
+    }
+}
+
+/// Draw a circle of line segments at the given center (cx, cy, z) with radius r.
+fn draw_circle(
+    verts: &mut Vec<LineVertex>,
+    cx: f32,
+    cy: f32,
+    z: f32,
+    r: f32,
+    segments: u32,
+    color: [f32; 3],
+) {
+    for i in 0..segments {
+        let a0 = std::f32::consts::TAU * (i as f32) / (segments as f32);
+        let a1 = std::f32::consts::TAU * ((i + 1) as f32) / (segments as f32);
+        verts.push(LineVertex {
+            position: [cx + r * a0.cos(), cy + r * a0.sin(), z],
+            color,
+        });
+        verts.push(LineVertex {
+            position: [cx + r * a1.cos(), cy + r * a1.sin(), z],
+            color,
+        });
+    }
+}
+
+/// Draw 4 vertical connector lines between bottom_z and top_z at 90-degree intervals.
+fn draw_vertical_connectors(
+    verts: &mut Vec<LineVertex>,
+    cx: f32,
+    cy: f32,
+    bottom_z: f32,
+    top_z: f32,
+    r: f32,
+    color: [f32; 3],
+) {
+    for i in 0..4 {
+        let a = std::f32::consts::TAU * (i as f32) / 4.0;
+        verts.push(LineVertex {
+            position: [cx + r * a.cos(), cy + r * a.sin(), bottom_z],
+            color,
+        });
+        verts.push(LineVertex {
+            position: [cx + r * a.cos(), cy + r * a.sin(), top_z],
+            color,
+        });
     }
 }

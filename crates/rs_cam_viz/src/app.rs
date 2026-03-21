@@ -845,15 +845,24 @@ impl RsCamApp {
                             .iter()
                             .find(|tool| tool.id == tp.tool_id)
                             .map(|tool| {
+                                use crate::render::sim_render::ToolAssemblyInfo;
+                                let is_ball = matches!(
+                                    tool.tool_type,
+                                    crate::state::job::ToolType::BallNose
+                                        | crate::state::job::ToolType::TaperedBallNose
+                                );
                                 (
                                     tool.diameter / 2.0,
-                                    tool.cutting_length as f32,
                                     tool.tool_type.label().to_string(),
-                                    matches!(
-                                        tool.tool_type,
-                                        crate::state::job::ToolType::BallNose
-                                            | crate::state::job::ToolType::TaperedBallNose
-                                    ),
+                                    ToolAssemblyInfo {
+                                        tool_radius: (tool.diameter / 2.0) as f32,
+                                        cutting_length: tool.cutting_length as f32,
+                                        is_ball,
+                                        shank_radius: (tool.shank_diameter / 2.0) as f32,
+                                        shank_length: tool.shank_length as f32,
+                                        holder_radius: (tool.holder_diameter / 2.0) as f32,
+                                        stickout: tool.stickout as f32,
+                                    },
                                 )
                             });
                         found = Some((pos, tool_info));
@@ -876,22 +885,20 @@ impl RsCamApp {
         {
             let pb = &mut self.controller.state_mut().simulation.playback;
             pb.tool_position = Some([pos.x, pos.y, pos.z]);
-            if let Some((tool_radius, _, tool_type_label, _)) = &tool_info {
-                pb.tool_radius = *tool_radius;
+            if let Some((tool_radius, ref tool_type_label, _)) = tool_info {
+                pb.tool_radius = tool_radius;
                 pb.tool_type_label = tool_type_label.clone();
             }
         }
 
-        if let Some((tool_radius, cutting_length, _, is_ball)) = tool_info
+        if let Some((_, _, assembly_info)) = tool_info
             && let Some(rs) = frame.wgpu_render_state()
         {
             let mut renderer = rs.renderer.write();
             let resources: &mut RenderResources = renderer.callback_resources.get_mut().unwrap();
-            resources.tool_model_data = Some(ToolModelGpuData::from_tool(
+            resources.tool_model_data = Some(ToolModelGpuData::from_tool_assembly(
                 &rs.device,
-                tool_radius as f32,
-                cutting_length,
-                is_ball,
+                &assembly_info,
                 [pos.x as f32, pos.y as f32, pos.z as f32],
             ));
         }
