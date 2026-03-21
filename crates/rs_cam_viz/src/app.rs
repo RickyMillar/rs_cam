@@ -357,10 +357,18 @@ impl RsCamApp {
             .simulation
             .checkpoint_for_move(move_idx)
         {
-            let mesh = match self.controller.state().simulation.checkpoints().get(cp_idx) {
+            let mut mesh = match self.controller.state().simulation.checkpoints().get(cp_idx) {
                 Some(c) => c.mesh.clone(),
                 None => return,
             };
+            // Checkpoint mesh is in global frame — transform to display local frame
+            if let Some(setup) = self.controller.state().job.setups.first() {
+                crate::state::job::transform_heightmap_mesh(
+                    &mut mesh,
+                    setup,
+                    &self.controller.state().job.stock,
+                );
+            }
             let colors = self.compute_sim_colors(&mesh);
             self.controller.state_mut().simulation.playback.display_mesh = Some(mesh);
             if let Some(rs) = frame.wgpu_render_state() {
@@ -433,26 +441,32 @@ impl RsCamApp {
             return; // nothing changed
         }
 
-        // Collect the toolpath data we need (tool configs + toolpath arcs)
-        let tp_data: Vec<_> = self
-            .controller
-            .state()
-            .job
-            .all_toolpaths()
-            .filter(|tp| tp.enabled)
-            .filter_map(|tp| {
-                let result = tp.result.as_ref()?;
-                let tool = self
-                    .controller
-                    .state()
-                    .job
-                    .tools
-                    .iter()
-                    .find(|t| t.id == tp.tool_id)?
-                    .clone();
-                Some((Arc::clone(&result.toolpath), tool))
-            })
-            .collect();
+        // Collect toolpath data inverse-transformed to global frame (matches
+        // the simulation heightmap which is in global coords).
+        let tp_data: Vec<_> = {
+            let job = &self.controller.state().job;
+            job.all_toolpaths()
+                .filter(|tp| tp.enabled)
+                .filter_map(|tp| {
+                    let result = tp.result.as_ref()?;
+                    let tool = job.tools.iter().find(|t| t.id == tp.tool_id)?.clone();
+                    // Inverse-transform from setup-local to global
+                    let setup_id = job.setup_of_toolpath(tp.id);
+                    let setup =
+                        setup_id.and_then(|sid| job.setups.iter().find(|s| s.id == sid));
+                    let global_tp = if let Some(setup) = setup {
+                        let mut clone = (*result.toolpath).clone();
+                        for m in &mut clone.moves {
+                            m.target = setup.inverse_transform_point(m.target, &job.stock);
+                        }
+                        Arc::new(clone)
+                    } else {
+                        Arc::clone(&result.toolpath)
+                    };
+                    Some((global_tp, tool))
+                })
+                .collect()
+        };
 
         if tp_data.is_empty() {
             return;
@@ -480,16 +494,8 @@ impl RsCamApp {
                     pb.live_sim_move = cp_end;
                 }
             } else {
-                // Before any checkpoint — reset to fresh stock (local frame)
-                let bbox = if let Some(setup) = self.controller.state().job.setups.first() {
-                    let (w, d, h) = setup.effective_stock(&self.controller.state().job.stock);
-                    rs_cam_core::geo::BoundingBox3 {
-                        min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
-                        max: rs_cam_core::geo::P3::new(w, d, h),
-                    }
-                } else {
-                    self.controller.state().job.stock.bbox()
-                };
+                // Before any checkpoint — reset to fresh stock (global frame)
+                let bbox = self.controller.state().job.stock.bbox();
                 let res = self.controller.state().simulation.resolution;
                 let fresh =
                     rs_cam_core::simulation::Heightmap::from_bounds(&bbox, Some(bbox.max.z), res);
@@ -545,9 +551,17 @@ impl RsCamApp {
             pb.live_sim_move = target_move;
         }
 
-        // Convert heightmap to mesh and upload to GPU
+        // Convert heightmap to mesh, forward-transform to display frame, and upload to GPU
         if let Some(heightmap) = &self.controller.state().simulation.playback.live_heightmap {
-            let mesh = heightmap_to_mesh(heightmap);
+            let mut mesh = heightmap_to_mesh(heightmap);
+            // Heightmap is in global frame — transform to active setup's local frame for display
+            if let Some(setup) = self.controller.state().job.setups.first() {
+                crate::state::job::transform_heightmap_mesh(
+                    &mut mesh,
+                    setup,
+                    &self.controller.state().job.stock,
+                );
+            }
             let colors = self.compute_sim_colors(&mesh);
             self.controller.state_mut().simulation.playback.display_mesh = Some(mesh);
 
@@ -1099,16 +1113,22 @@ impl RsCamApp {
                 if current <= cumulative + tp_moves {
                     let local_idx = current.saturating_sub(cumulative);
                     if local_idx < result.toolpath.moves.len() {
-                        // Toolpath is in local coords, viewport is in local frame — use directly
-                        let pos = result.toolpath.moves[local_idx].target;
-                        let tool_info = self
-                            .controller
-                            .state()
-                            .job
-                            .tools
-                            .iter()
-                            .find(|tool| tool.id == tp.tool_id)
-                            .cloned();
+                        // Toolpath is in setup-local coords. Transform:
+                        // setup-local → global → display setup local
+                        let mut pos = result.toolpath.moves[local_idx].target;
+                        let job = &self.controller.state().job;
+                        let stock = &job.stock;
+                        let tp_setup_id = job.setup_of_toolpath(tp.id);
+                        let tp_setup = tp_setup_id
+                            .and_then(|sid| job.setups.iter().find(|s| s.id == sid));
+                        let display_setup = job.setups.first();
+                        if let Some(s) = tp_setup {
+                            pos = s.inverse_transform_point(pos, stock);
+                        }
+                        if let Some(s) = display_setup {
+                            pos = s.transform_point(pos, stock);
+                        }
+                        let tool_info = job.tools.iter().find(|tool| tool.id == tp.tool_id).cloned();
                         found = Some((pos, tool_info));
                     }
                     break;

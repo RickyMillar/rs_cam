@@ -1,6 +1,6 @@
 use super::AppEvent;
 use crate::render::toolpath_render::palette_color;
-use crate::state::job::JobState;
+use crate::state::job::{JobState, SetupId};
 use crate::state::simulation::SimulationState;
 use crate::state::toolpath::ToolpathId;
 
@@ -82,8 +82,30 @@ pub fn draw(ui: &mut egui::Ui, sim: &SimulationState, job: &JobState, events: &m
 
     // Track if user toggled any checkbox
     let mut toggled_id: Option<ToolpathId> = None;
+    let mut current_setup_id: Option<SetupId> = None;
 
     for (i, boundary) in sim.boundaries().iter().enumerate() {
+        // Insert setup transition divider when the setup changes
+        let this_setup = sim
+            .setup_boundaries()
+            .iter()
+            .rev()
+            .find(|sb| sb.start_move <= boundary.start_move);
+        if let Some(sb) = this_setup
+            && current_setup_id != Some(sb.setup_id)
+        {
+            current_setup_id = Some(sb.setup_id);
+            if i > 0 {
+                ui.add_space(4.0);
+                ui.separator();
+            }
+            ui.label(
+                egui::RichText::new(&sb.setup_name)
+                    .strong()
+                    .color(egui::Color32::from_rgb(180, 180, 200)),
+            );
+            ui.add_space(2.0);
+        }
         let is_current = sim.current_boundary().map(|b| b.id) == Some(boundary.id);
         let pc = palette_color(i);
         let color = egui::Color32::from_rgb(

@@ -993,6 +993,26 @@ pub fn transform_mesh(
     rs_cam_core::mesh::TriangleMesh::from_raw(new_verts, mesh.triangles.clone())
 }
 
+/// Transform a HeightmapMesh's vertices from global frame to a setup's local frame.
+/// Modifies the mesh in place — vertices are stored as flat [x, y, z, ...] f32.
+pub fn transform_heightmap_mesh(
+    mesh: &mut rs_cam_core::simulation::HeightmapMesh,
+    setup: &Setup,
+    stock: &StockConfig,
+) {
+    for i in (0..mesh.vertices.len()).step_by(3) {
+        let p = rs_cam_core::geo::P3::new(
+            mesh.vertices[i] as f64,
+            mesh.vertices[i + 1] as f64,
+            mesh.vertices[i + 2] as f64,
+        );
+        let local = setup.transform_point(p, stock);
+        mesh.vertices[i] = local.x as f32;
+        mesh.vertices[i + 1] = local.y as f32;
+        mesh.vertices[i + 2] = local.z as f32;
+    }
+}
+
 /// Transform 2D polygons into a setup's local frame (XY projection).
 pub fn transform_polygons(
     polygons: &[rs_cam_core::polygon::Polygon2],

@@ -425,8 +425,8 @@ impl<B: ComputeBackend> AppController<B> {
                     .iter()
                     .find(|tool| tool.id == toolpath.tool_id)?
                     .clone();
-                // Toolpaths are always in local coords — use directly
-                let tp = Arc::clone(&result.toolpath);
+                // Inverse-transform from setup-local to global for simulation
+                let tp = inverse_transform_toolpath(toolpath.id, &result.toolpath, &self.state.job);
                 Some((toolpath.id, toolpath.name.clone(), tp, tool))
             })
             .collect();
@@ -434,15 +434,15 @@ impl<B: ComputeBackend> AppController<B> {
         if toolpaths.is_empty() {
             tracing::warn!("No computed toolpaths to simulate");
         } else {
-            // Simulation runs in local frame (first setup)
-            let stock_bbox = self.local_stock_bbox();
+            // Simulation runs in global frame
+            let stock_bbox = self.state.job.stock.bbox();
 
             if self.state.simulation.auto_resolution {
                 self.state.simulation.resolution =
                     auto_resolution_for_tools(&toolpaths, &stock_bbox);
             }
 
-            let model_mesh = self.local_model_mesh();
+            let model_mesh = self.state.job.models.iter().find_map(|m| m.mesh.clone());
             self.compute.submit_simulation(SimulationRequest {
                 toolpaths,
                 stock_bbox,
@@ -468,8 +468,7 @@ impl<B: ComputeBackend> AppController<B> {
                     .iter()
                     .find(|tool| tool.id == toolpath.tool_id)?
                     .clone();
-                // Toolpaths are always in local coords — use directly
-                let tp = Arc::clone(&result.toolpath);
+                let tp = inverse_transform_toolpath(toolpath.id, &result.toolpath, &self.state.job);
                 Some((toolpath.id, toolpath.name.clone(), tp, tool))
             })
             .collect();
@@ -477,14 +476,14 @@ impl<B: ComputeBackend> AppController<B> {
         if toolpaths.is_empty() {
             tracing::warn!("No computed toolpaths to simulate");
         } else {
-            let stock_bbox = self.local_stock_bbox();
+            let stock_bbox = self.state.job.stock.bbox();
 
             if self.state.simulation.auto_resolution {
                 self.state.simulation.resolution =
                     auto_resolution_for_tools(&toolpaths, &stock_bbox);
             }
 
-            let model_mesh = self.local_model_mesh();
+            let model_mesh = self.state.job.models.iter().find_map(|m| m.mesh.clone());
             self.compute.submit_simulation(SimulationRequest {
                 toolpaths,
                 stock_bbox,
@@ -493,33 +492,6 @@ impl<B: ComputeBackend> AppController<B> {
                 model_mesh,
             });
         }
-    }
-
-    /// Stock bbox in local frame of the first setup (for simulation).
-    fn local_stock_bbox(&self) -> BoundingBox3 {
-        if let Some(setup) = self.state.job.setups.first() {
-            let (w, d, h) = setup.effective_stock(&self.state.job.stock);
-            BoundingBox3 {
-                min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
-                max: rs_cam_core::geo::P3::new(w, d, h),
-            }
-        } else {
-            self.state.job.stock.bbox()
-        }
-    }
-
-    /// Model mesh forward-transformed to the first setup's local frame (for simulation).
-    fn local_model_mesh(&self) -> Option<Arc<rs_cam_core::mesh::TriangleMesh>> {
-        let setup = self.state.job.setups.first()?;
-        self.state.job.models.iter().find_map(|m| {
-            m.mesh.as_ref().map(|mesh| {
-                Arc::new(crate::state::job::transform_mesh(
-                    mesh,
-                    setup,
-                    &self.state.job.stock,
-                ))
-            })
-        })
     }
 
     pub fn request_collision_check(&mut self) {
@@ -960,6 +932,25 @@ impl<B: ComputeBackend> AppController<B> {
 
 /// Calculate heightmap resolution from the smallest tool in the simulation.
 ///
+/// Inverse-transform a toolpath from its setup's local frame to global coords.
+fn inverse_transform_toolpath(
+    tp_id: crate::state::toolpath::ToolpathId,
+    toolpath: &Arc<rs_cam_core::toolpath::Toolpath>,
+    job: &crate::state::job::JobState,
+) -> Arc<rs_cam_core::toolpath::Toolpath> {
+    let setup_id = job.setup_of_toolpath(tp_id);
+    let setup = setup_id.and_then(|sid| job.setups.iter().find(|s| s.id == sid));
+    if let Some(setup) = setup {
+        let mut tp = (**toolpath).clone();
+        for m in &mut tp.moves {
+            m.target = setup.inverse_transform_point(m.target, &job.stock);
+        }
+        Arc::new(tp)
+    } else {
+        Arc::clone(toolpath)
+    }
+}
+
 /// Targets ~5 cells across the smallest tool radius so curved profiles
 /// (especially ball nose) are visually resolved.  Clamped to [0.02, 0.5] mm
 /// and further limited so the grid stays under ~8 M cells.
