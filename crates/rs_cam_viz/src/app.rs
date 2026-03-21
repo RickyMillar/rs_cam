@@ -1018,7 +1018,21 @@ impl RsCamApp {
                 if current <= cumulative + tp_moves {
                     let local_idx = current.saturating_sub(cumulative);
                     if local_idx < result.toolpath.moves.len() {
-                        let pos = result.toolpath.moves[local_idx].target;
+                        let mut pos = result.toolpath.moves[local_idx].target;
+                        // Inverse-transform from setup-local to global coords
+                        let setup_id = self.controller.state().job.setup_of_toolpath(tp.id);
+                        if let Some(setup) = setup_id.and_then(|sid| {
+                            self.controller
+                                .state()
+                                .job
+                                .setups
+                                .iter()
+                                .find(|s| s.id == sid)
+                        }) && setup.needs_transform()
+                        {
+                            pos = setup
+                                .inverse_transform_point(pos, &self.controller.state().job.stock);
+                        }
                         let tool_info = self
                             .controller
                             .state()

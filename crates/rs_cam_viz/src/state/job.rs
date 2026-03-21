@@ -924,14 +924,24 @@ impl Setup {
     }
 
     /// Transform a point from world coords to this setup's local frame.
+    /// Translates to stock-relative coords first, then applies FaceUp + ZRotation.
     pub fn transform_point(
         &self,
         p: rs_cam_core::geo::P3,
         stock: &StockConfig,
     ) -> rs_cam_core::geo::P3 {
-        let p = self.face_up.transform_point(p, stock.x, stock.y, stock.z);
+        use rs_cam_core::geo::P3;
+        // 1. Translate world → stock-relative (origin at 0,0,0)
+        let rel = P3::new(
+            p.x - stock.origin_x,
+            p.y - stock.origin_y,
+            p.z - stock.origin_z,
+        );
+        // 2. Apply FaceUp flip on stock-relative coords
+        let flipped = self.face_up.transform_point(rel, stock.x, stock.y, stock.z);
+        // 3. Apply ZRotation
         let (eff_w, eff_d, _) = self.face_up.effective_stock(stock.x, stock.y, stock.z);
-        self.z_rotation.transform_point(p, eff_w, eff_d)
+        self.z_rotation.transform_point(flipped, eff_w, eff_d)
     }
 
     /// Effective stock dimensions in this setup's local frame.
@@ -941,16 +951,26 @@ impl Setup {
     }
 
     /// Inverse transform: from this setup's local frame back to world coords.
+    /// Undoes ZRotation, then FaceUp, then translates back to world coords.
     pub fn inverse_transform_point(
         &self,
         p: rs_cam_core::geo::P3,
         stock: &StockConfig,
     ) -> rs_cam_core::geo::P3 {
-        // Inverse is: undo z_rotation first (using pre-rotation dims), then undo face_up
+        use rs_cam_core::geo::P3;
+        // 1. Undo ZRotation
         let (eff_w, eff_d, _) = self.face_up.effective_stock(stock.x, stock.y, stock.z);
-        let p = self.z_rotation.inverse_transform_point(p, eff_w, eff_d);
-        self.face_up
-            .inverse_transform_point(p, stock.x, stock.y, stock.z)
+        let unrotated = self.z_rotation.inverse_transform_point(p, eff_w, eff_d);
+        // 2. Undo FaceUp flip → stock-relative coords
+        let rel = self
+            .face_up
+            .inverse_transform_point(unrotated, stock.x, stock.y, stock.z);
+        // 3. Translate stock-relative → world
+        P3::new(
+            rel.x + stock.origin_x,
+            rel.y + stock.origin_y,
+            rel.z + stock.origin_z,
+        )
     }
 
     /// Whether this setup requires geometry transforms (non-identity orientation).
@@ -1321,7 +1341,7 @@ mod tests {
     use super::*;
     use rs_cam_core::geo::P3;
 
-    fn stock() -> StockConfig {
+    fn stock_at_origin() -> StockConfig {
         StockConfig {
             x: 100.0,
             y: 80.0,
@@ -1330,34 +1350,55 @@ mod tests {
         }
     }
 
+    fn stock_with_offset() -> StockConfig {
+        StockConfig {
+            x: 100.0,
+            y: 80.0,
+            z: 25.0,
+            origin_x: -50.0,
+            origin_y: -40.0,
+            origin_z: 0.0,
+            ..StockConfig::default()
+        }
+    }
+
     /// Verify that transform followed by inverse_transform is identity for all orientations.
     #[test]
     fn setup_transform_round_trip() {
-        let stock = stock();
-        let point = P3::new(30.0, 20.0, 10.0);
+        // Test both zero-origin and non-zero origin stocks
+        for stock in [stock_at_origin(), stock_with_offset()] {
+            let point = P3::new(
+                stock.origin_x + 30.0,
+                stock.origin_y + 20.0,
+                stock.origin_z + 10.0,
+            );
 
-        for &face in FaceUp::ALL {
-            for &rot in ZRotation::ALL {
-                let setup = Setup {
-                    face_up: face,
-                    z_rotation: rot,
-                    ..Setup::new(SetupId(0), "Test".to_string())
-                };
+            for &face in FaceUp::ALL {
+                for &rot in ZRotation::ALL {
+                    let setup = Setup {
+                        face_up: face,
+                        z_rotation: rot,
+                        ..Setup::new(SetupId(0), "Test".to_string())
+                    };
 
-                let transformed = setup.transform_point(point, &stock);
-                let recovered = setup.inverse_transform_point(transformed, &stock);
+                    let transformed = setup.transform_point(point, &stock);
+                    let recovered = setup.inverse_transform_point(transformed, &stock);
 
-                assert!(
-                    (recovered.x - point.x).abs() < 1e-10
-                        && (recovered.y - point.y).abs() < 1e-10
-                        && (recovered.z - point.z).abs() < 1e-10,
-                    "Round-trip failed for face={:?} rot={:?}: {:?} -> {:?} -> {:?}",
-                    face,
-                    rot,
-                    point,
-                    transformed,
-                    recovered,
-                );
+                    assert!(
+                        (recovered.x - point.x).abs() < 1e-10
+                            && (recovered.y - point.y).abs() < 1e-10
+                            && (recovered.z - point.z).abs() < 1e-10,
+                        "Round-trip failed for face={:?} rot={:?} origin=({},{},{}): {:?} -> {:?} -> {:?}",
+                        face,
+                        rot,
+                        stock.origin_x,
+                        stock.origin_y,
+                        stock.origin_z,
+                        point,
+                        transformed,
+                        recovered,
+                    );
+                }
             }
         }
     }
