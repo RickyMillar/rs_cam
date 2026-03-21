@@ -8,6 +8,7 @@ use crate::render::stock_render::StockGpuData;
 use crate::render::toolpath_render::{self, ToolpathGpuData};
 use crate::render::{LineUniforms, MeshUniforms, RenderResources, ViewportCallback};
 use crate::state::Workspace;
+use crate::state::job::transform_mesh;
 use crate::state::selection::Selection;
 use crate::state::simulation::StockVizMode;
 use crate::ui::AppEvent;
@@ -626,6 +627,18 @@ impl RsCamApp {
         let mut renderer = render_state.renderer.write();
         let resources: &mut RenderResources = renderer.callback_resources.get_mut().unwrap();
 
+        // Determine whether to show in the setup's local coordinate frame.
+        // In Setup/Toolpaths workspaces with a non-identity setup, display
+        // everything in the setup-local frame ("machine view").
+        // In Simulation workspace, keep global frame (heightmap is global).
+        let workspace = self.controller.state().workspace;
+        let active_setup_ref = if matches!(workspace, Workspace::Setup | Workspace::Toolpaths) {
+            self.controller.state().job.setups.first()
+        } else {
+            None
+        };
+        let use_local_frame = active_setup_ref.is_some_and(|s| s.needs_transform());
+
         // Upload mesh data for the first STL model
         if let Some(model) = self
             .controller
@@ -636,11 +649,29 @@ impl RsCamApp {
             .find(|model| model.mesh.is_some())
             && let Some(mesh) = &model.mesh
         {
-            resources.mesh_data = Some(MeshGpuData::from_mesh(&render_state.device, mesh));
+            if use_local_frame {
+                let setup = active_setup_ref.unwrap();
+                let transformed = transform_mesh(mesh, setup, &self.controller.state().job.stock);
+                resources.mesh_data = Some(MeshGpuData::from_mesh(
+                    &render_state.device,
+                    &Arc::new(transformed),
+                ));
+            } else {
+                resources.mesh_data = Some(MeshGpuData::from_mesh(&render_state.device, mesh));
+            }
         }
 
         // Upload stock wireframe + solid stock
-        let stock_bbox = self.controller.state().job.stock.bbox();
+        let stock_bbox = if use_local_frame {
+            let setup = active_setup_ref.unwrap();
+            let (w, d, h) = setup.effective_stock(&self.controller.state().job.stock);
+            rs_cam_core::geo::BoundingBox3 {
+                min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
+                max: rs_cam_core::geo::P3::new(w, d, h),
+            }
+        } else {
+            self.controller.state().job.stock.bbox()
+        };
         resources.stock_data = Some(StockGpuData::from_bbox(&render_state.device, &stock_bbox));
         resources.solid_stock_data =
             Some(crate::render::stock_render::SolidStockGpuData::from_bbox(
@@ -648,10 +679,14 @@ impl RsCamApp {
                 &stock_bbox,
             ));
 
-        // Upload origin axes at stock origin
+        // Upload origin axes at stock origin (local origin when in machine view)
         {
             let s = &self.controller.state().job.stock;
-            let origin = [s.origin_x as f32, s.origin_y as f32, s.origin_z as f32];
+            let origin = if use_local_frame {
+                [0.0_f32, 0.0, 0.0]
+            } else {
+                [s.origin_x as f32, s.origin_y as f32, s.origin_z as f32]
+            };
             let min_dim = s.x.min(s.y).min(s.z) as f32;
             let length = (min_dim * 0.3).clamp(5.0, 50.0);
             resources.origin_axes_data = Some(crate::render::grid_render::OriginAxesGpuData::new(
@@ -664,9 +699,32 @@ impl RsCamApp {
         // Upload fixture and keep-out wireframes.
         {
             use crate::render::fixture_render::FixtureGpuData;
+            use rs_cam_core::geo::{BoundingBox3, P3};
 
             let job = &self.controller.state().job;
             let selection = &self.controller.state().selection;
+
+            // Helper: forward-transform a bbox into the setup's local frame.
+            // After transforming corners, min/max may swap, so rebuild via from_points.
+            let transform_bbox =
+                |bb: BoundingBox3, setup: &crate::state::job::Setup| -> BoundingBox3 {
+                    let corners = [
+                        P3::new(bb.min.x, bb.min.y, bb.min.z),
+                        P3::new(bb.max.x, bb.min.y, bb.min.z),
+                        P3::new(bb.min.x, bb.max.y, bb.min.z),
+                        P3::new(bb.max.x, bb.max.y, bb.min.z),
+                        P3::new(bb.min.x, bb.min.y, bb.max.z),
+                        P3::new(bb.max.x, bb.min.y, bb.max.z),
+                        P3::new(bb.min.x, bb.max.y, bb.max.z),
+                        P3::new(bb.max.x, bb.max.y, bb.max.z),
+                    ];
+                    BoundingBox3::from_points(
+                        corners
+                            .iter()
+                            .map(|c| setup.transform_point(*c, &job.stock)),
+                    )
+                };
+
             let mut boxes = Vec::new();
             for setup in &job.setups {
                 for fixture in &setup.fixtures {
@@ -677,10 +735,22 @@ impl RsCamApp {
                         } else {
                             [0.9_f32, 0.7, 0.2]
                         };
-                        boxes.push((fixture.clearance_bbox(), color));
+                        let clearance = fixture.clearance_bbox();
+                        let display_clearance = if use_local_frame {
+                            transform_bbox(clearance, active_setup_ref.unwrap())
+                        } else {
+                            clearance
+                        };
+                        boxes.push((display_clearance, color));
                         // When selected, also show inner physical bbox in white
                         if selected {
-                            boxes.push((fixture.bbox(), [0.9_f32, 0.9, 0.9]));
+                            let inner = fixture.bbox();
+                            let display_inner = if use_local_frame {
+                                transform_bbox(inner, active_setup_ref.unwrap())
+                            } else {
+                                inner
+                            };
+                            boxes.push((display_inner, [0.9_f32, 0.9, 0.9]));
                         }
                     }
                 }
@@ -692,19 +762,32 @@ impl RsCamApp {
                         } else {
                             [0.9_f32, 0.2, 0.2]
                         };
-                        boxes.push((keep_out.bbox(&job.stock), color));
+                        let ko_bb = keep_out.bbox(&job.stock);
+                        let display_ko = if use_local_frame {
+                            transform_bbox(ko_bb, active_setup_ref.unwrap())
+                        } else {
+                            ko_bb
+                        };
+                        boxes.push((display_ko, color));
                     }
                 }
             }
 
-            let stock_top = job.stock.origin_z + job.stock.z;
             let mut pin_vertices = Vec::new();
             for setup in &job.setups {
                 for pin in &setup.alignment_pins {
                     let radius = (pin.diameter / 2.0) as f32;
-                    let x = pin.x as f32;
-                    let y = pin.y as f32;
-                    let z = stock_top as f32;
+                    // Pin is defined in global frame at stock top
+                    let (x, y, z) = if use_local_frame {
+                        let s = active_setup_ref.unwrap();
+                        let stock_top = job.stock.origin_z + job.stock.z;
+                        let global_pt = P3::new(pin.x, pin.y, stock_top);
+                        let local_pt = s.transform_point(global_pt, &job.stock);
+                        (local_pt.x as f32, local_pt.y as f32, local_pt.z as f32)
+                    } else {
+                        let stock_top = job.stock.origin_z + job.stock.z;
+                        (pin.x as f32, pin.y as f32, stock_top as f32)
+                    };
                     let color = [0.2_f32, 0.9, 0.3];
                     pin_vertices.push(crate::render::LineVertex {
                         position: [x - radius, y, z],
@@ -726,12 +809,13 @@ impl RsCamApp {
             }
 
             // Add datum crosshair markers in Setup workspace.
-            // Compute datum position in setup-local frame, then inverse-transform to global.
+            // Compute datum position in setup-local frame. When in local frame
+            // (machine view), use local coords directly; otherwise inverse-transform
+            // back to global coords.
             if self.controller.state().workspace == Workspace::Setup
                 && let Some(setup) = job.setups.first()
             {
                 use crate::state::job::{Corner, XYDatum};
-                use rs_cam_core::geo::P3;
 
                 let (eff_w, eff_d, eff_h) = setup.effective_stock(&job.stock);
                 let color = [0.9_f32, 0.2, 0.9]; // magenta
@@ -754,11 +838,16 @@ impl RsCamApp {
                 };
 
                 if let Some(local) = local_datum {
-                    // Inverse-transform to global frame
-                    let global = setup.inverse_transform_point(local, &job.stock);
-                    let dx = global.x as f32;
-                    let dy = global.y as f32;
-                    let dz = global.z as f32;
+                    // In local frame, use local coords directly; otherwise
+                    // inverse-transform to global for the global viewport.
+                    let display_pt = if use_local_frame {
+                        local
+                    } else {
+                        setup.inverse_transform_point(local, &job.stock)
+                    };
+                    let dx = display_pt.x as f32;
+                    let dy = display_pt.y as f32;
+                    let dz = display_pt.z as f32;
 
                     let arm = 15.0_f32;
                     let diamond = 3.0_f32;
@@ -886,12 +975,15 @@ impl RsCamApp {
             if visible && let Some(result) = &tp.result {
                 let selected = selected_tp_id == Some(tp.id);
 
-                // Inverse-transform toolpath for flipped setups so it renders in global frame
+                // In Setup/Toolpaths workspace (local frame), toolpaths are already
+                // in local coords — use them directly.  In Simulation workspace
+                // (global frame), inverse-transform so they align with the heightmap.
                 let render_tp: std::borrow::Cow<'_, rs_cam_core::toolpath::Toolpath> = {
                     let job = &self.controller.state().job;
                     let setup_id = job.setup_of_toolpath(tp.id);
                     let setup = setup_id.and_then(|sid| job.setups.iter().find(|s| s.id == sid));
-                    if let Some(setup) = setup
+                    if workspace == Workspace::Simulation
+                        && let Some(setup) = setup
                         && setup.needs_transform()
                     {
                         let mut tp_clone = (*result.toolpath).clone();
@@ -944,11 +1036,12 @@ impl RsCamApp {
                 let safe_z = job.post.safe_z;
                 let op_depth = tp.operation.default_depth_for_heights();
                 let heights = tp.heights.resolve(safe_z, op_depth);
-                let stock_bbox = job.stock.bbox();
+                // Use the same stock bbox as the rest of the viewport (local or global)
+                let hp_stock_bbox = stock_bbox;
                 resources.height_planes_data = Some(
                     crate::render::height_planes::HeightPlanesGpuData::from_heights(
                         &render_state.device,
-                        &stock_bbox,
+                        &hp_stock_bbox,
                         heights.clearance_z,
                         heights.retract_z,
                         heights.feed_z,
