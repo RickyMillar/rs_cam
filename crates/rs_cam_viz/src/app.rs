@@ -1179,14 +1179,14 @@ impl RsCamApp {
     }
 
     fn draw_toolpath_layout(&mut self, ctx: &egui::Context) {
-        // Left panel: project tree (toolpath-focused)
+        // Left panel: operation queue
         egui::SidePanel::left("toolpath_tree")
-            .default_width(220.0)
+            .default_width(230.0)
             .resizable(true)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_ref_and_events_mut();
-                    crate::ui::project_tree::draw(ui, state, events);
+                    crate::ui::toolpath_panel::draw(ui, state, events);
                 });
             });
 
