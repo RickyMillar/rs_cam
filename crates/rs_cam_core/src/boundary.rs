@@ -5,7 +5,7 @@
 
 use crate::geo::{P2, P3};
 use crate::polygon::{Polygon2, offset_polygon};
-use crate::toolpath::{Toolpath, MoveType};
+use crate::toolpath::{MoveType, Toolpath};
 
 /// How the tool relates to the machining boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -191,7 +191,10 @@ mod tests {
     fn test_effective_boundary_outside_expands() {
         let boundary = square_boundary(20.0);
         let result = effective_boundary(&boundary, ToolContainment::Outside, 2.0);
-        assert!(!result.is_empty(), "Outside offset should produce a polygon");
+        assert!(
+            !result.is_empty(),
+            "Outside offset should produce a polygon"
+        );
 
         let total_area: f64 = result.iter().map(|p| p.area()).sum();
         assert!(
@@ -337,7 +340,10 @@ mod tests {
                 && (m.target.x - 25.0).abs() < 1e-10
                 && (m.target.z - (-5.0)).abs() < 1e-10
         });
-        assert!(has_plunge, "Re-entry should produce a plunge to cutting depth");
+        assert!(
+            has_plunge,
+            "Re-entry should produce a plunge to cutting depth"
+        );
     }
 
     // --- point_in_polygon helper tests ---

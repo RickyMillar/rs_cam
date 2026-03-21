@@ -1,14 +1,16 @@
 use super::AppEvent;
+use crate::compute::LaneSnapshot;
 use crate::render::camera::ViewPreset;
 use crate::state::AppMode;
 use crate::state::viewport::{RenderMode, ViewportState};
+use crate::ui::automation;
 
 pub fn draw(
     ui: &mut egui::Ui,
     mode: AppMode,
     sim_active: bool,
     viewport: &mut ViewportState,
-    compute_elapsed: Option<f32>,
+    lanes: &[LaneSnapshot; 2],
     events: &mut Vec<AppEvent>,
 ) {
     // Top row: view presets + render mode + visibility + sim controls
@@ -48,13 +50,21 @@ pub fn draw(
 
         ui.separator();
 
-        // Computing indicator with cancel button
-        if let Some(secs) = compute_elapsed {
-            ui.label(
-                egui::RichText::new(format!("Computing {:.1}s", secs))
-                    .color(egui::Color32::from_rgb(200, 180, 80)),
-            );
-            if ui.small_button("Cancel").clicked() {
+        let active_lanes: Vec<_> = lanes.iter().filter(|lane| lane.is_active()).collect();
+        if !active_lanes.is_empty() {
+            let label = active_lanes
+                .iter()
+                .map(|lane| {
+                    lane.current_job
+                        .clone()
+                        .unwrap_or_else(|| "Working".to_string())
+                })
+                .collect::<Vec<_>>()
+                .join(" | ");
+            ui.label(egui::RichText::new(label).color(egui::Color32::from_rgb(200, 180, 80)));
+            let cancel = ui.small_button("Cancel All");
+            automation::record(ui, "overlay_cancel_all", &cancel, "Cancel All");
+            if cancel.clicked() {
                 events.push(AppEvent::CancelCompute);
             }
             ui.separator();
@@ -69,8 +79,18 @@ pub fn draw(
                 if ui.small_button("Reset").clicked() {
                     events.push(AppEvent::ResetSimulation);
                 }
-            } else if ui.small_button("Simulate").clicked() {
-                events.push(AppEvent::RunSimulation);
+            } else {
+                let simulate = ui.small_button("Simulate");
+                automation::record(ui, "overlay_simulate", &simulate, "Simulate");
+                if simulate.clicked() {
+                    events.push(AppEvent::RunSimulation);
+                }
+            }
+
+            let collision = ui.small_button("Collision");
+            automation::record(ui, "overlay_collision_check", &collision, "Collision");
+            if collision.clicked() {
+                events.push(AppEvent::RunCollisionCheck);
             }
         }
     });

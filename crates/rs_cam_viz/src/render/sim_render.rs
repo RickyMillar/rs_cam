@@ -2,6 +2,7 @@ use egui_wgpu::wgpu;
 use rs_cam_core::simulation::HeightmapMesh;
 
 use super::LineVertex;
+use super::mesh_render::MeshVertex;
 
 /// GPU vertex for per-vertex colored mesh rendering (simulation stock).
 #[repr(C)]
@@ -233,7 +234,13 @@ impl ToolModelGpuData {
     /// `tool_length`: cutting length.
     /// `is_ball`: true for ball nose (hemisphere bottom), false for flat end.
     /// `position`: [x, y, z] of the tool tip.
-    pub fn from_tool(device: &wgpu::Device, tool_radius: f32, tool_length: f32, is_ball: bool, position: [f32; 3]) -> Self {
+    pub fn from_tool(
+        device: &wgpu::Device,
+        tool_radius: f32,
+        tool_length: f32,
+        is_ball: bool,
+        position: [f32; 3],
+    ) -> Self {
         use wgpu::util::DeviceExt;
 
         let color = [0.8, 0.8, 0.3]; // yellow-ish tool color
@@ -250,8 +257,14 @@ impl ToolModelGpuData {
         for i in 0..segments {
             let a0 = std::f32::consts::TAU * (i as f32) / (segments as f32);
             let a1 = std::f32::consts::TAU * ((i + 1) as f32) / (segments as f32);
-            verts.push(LineVertex { position: [cx + r * a0.cos(), cy + r * a0.sin(), bottom_z], color });
-            verts.push(LineVertex { position: [cx + r * a1.cos(), cy + r * a1.sin(), bottom_z], color });
+            verts.push(LineVertex {
+                position: [cx + r * a0.cos(), cy + r * a0.sin(), bottom_z],
+                color,
+            });
+            verts.push(LineVertex {
+                position: [cx + r * a1.cos(), cy + r * a1.sin(), bottom_z],
+                color,
+            });
         }
 
         // Top circle (at top of cutting length)
@@ -259,15 +272,27 @@ impl ToolModelGpuData {
         for i in 0..segments {
             let a0 = std::f32::consts::TAU * (i as f32) / (segments as f32);
             let a1 = std::f32::consts::TAU * ((i + 1) as f32) / (segments as f32);
-            verts.push(LineVertex { position: [cx + r * a0.cos(), cy + r * a0.sin(), top_z], color });
-            verts.push(LineVertex { position: [cx + r * a1.cos(), cy + r * a1.sin(), top_z], color });
+            verts.push(LineVertex {
+                position: [cx + r * a0.cos(), cy + r * a0.sin(), top_z],
+                color,
+            });
+            verts.push(LineVertex {
+                position: [cx + r * a1.cos(), cy + r * a1.sin(), top_z],
+                color,
+            });
         }
 
         // Vertical lines connecting top and bottom (4 lines at 90-degree intervals)
         for i in 0..4 {
             let a = std::f32::consts::TAU * (i as f32) / 4.0;
-            verts.push(LineVertex { position: [cx + r * a.cos(), cy + r * a.sin(), bottom_z], color });
-            verts.push(LineVertex { position: [cx + r * a.cos(), cy + r * a.sin(), top_z], color });
+            verts.push(LineVertex {
+                position: [cx + r * a.cos(), cy + r * a.sin(), bottom_z],
+                color,
+            });
+            verts.push(LineVertex {
+                position: [cx + r * a.cos(), cy + r * a.sin(), top_z],
+                color,
+            });
         }
 
         // Ball nose hemisphere (arcs in XZ and YZ planes)
@@ -276,16 +301,31 @@ impl ToolModelGpuData {
                 let a0 = std::f32::consts::PI * (i as f32) / (segments as f32);
                 let a1 = std::f32::consts::PI * ((i + 1) as f32) / (segments as f32);
                 // XZ arc
-                verts.push(LineVertex { position: [cx + r * a0.sin(), cy, tip_z + r - r * a0.cos()], color });
-                verts.push(LineVertex { position: [cx + r * a1.sin(), cy, tip_z + r - r * a1.cos()], color });
+                verts.push(LineVertex {
+                    position: [cx + r * a0.sin(), cy, tip_z + r - r * a0.cos()],
+                    color,
+                });
+                verts.push(LineVertex {
+                    position: [cx + r * a1.sin(), cy, tip_z + r - r * a1.cos()],
+                    color,
+                });
                 // YZ arc
-                verts.push(LineVertex { position: [cx, cy + r * a0.sin(), tip_z + r - r * a0.cos()], color });
-                verts.push(LineVertex { position: [cx, cy + r * a1.sin(), tip_z + r - r * a1.cos()], color });
+                verts.push(LineVertex {
+                    position: [cx, cy + r * a0.sin(), tip_z + r - r * a0.cos()],
+                    color,
+                });
+                verts.push(LineVertex {
+                    position: [cx, cy + r * a1.sin(), tip_z + r - r * a1.cos()],
+                    color,
+                });
             }
         }
 
         if verts.is_empty() {
-            verts.push(LineVertex { position: [0.0; 3], color: [0.0; 3] });
+            verts.push(LineVertex {
+                position: [0.0; 3],
+                color: [0.0; 3],
+            });
         }
 
         let vertex_count = verts.len() as u32;
@@ -295,6 +335,9 @@ impl ToolModelGpuData {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        Self { vertex_buffer, vertex_count }
+        Self {
+            vertex_buffer,
+            vertex_count,
+        }
     }
 }

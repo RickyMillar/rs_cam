@@ -1,5 +1,5 @@
-use egui_wgpu::wgpu;
 use super::LineVertex;
+use egui_wgpu::wgpu;
 
 /// Ground grid + axis indicator GPU data.
 pub struct GridGpuData {
@@ -19,26 +19,56 @@ impl GridGpuData {
 
         for i in -steps / 2..=steps / 2 {
             let y = i as f32 * spacing;
-            vertices.push(LineVertex { position: [-half, y, 0.0], color: grid_color });
-            vertices.push(LineVertex { position: [half, y, 0.0], color: grid_color });
+            vertices.push(LineVertex {
+                position: [-half, y, 0.0],
+                color: grid_color,
+            });
+            vertices.push(LineVertex {
+                position: [half, y, 0.0],
+                color: grid_color,
+            });
         }
 
         for i in -steps / 2..=steps / 2 {
             let x = i as f32 * spacing;
-            vertices.push(LineVertex { position: [x, -half, 0.0], color: grid_color });
-            vertices.push(LineVertex { position: [x, half, 0.0], color: grid_color });
+            vertices.push(LineVertex {
+                position: [x, -half, 0.0],
+                color: grid_color,
+            });
+            vertices.push(LineVertex {
+                position: [x, half, 0.0],
+                color: grid_color,
+            });
         }
 
         // X axis (red)
         let axis_len = extent * 0.6;
-        vertices.push(LineVertex { position: [0.0, 0.0, 0.0], color: [0.9, 0.2, 0.2] });
-        vertices.push(LineVertex { position: [axis_len, 0.0, 0.0], color: [0.9, 0.2, 0.2] });
+        vertices.push(LineVertex {
+            position: [0.0, 0.0, 0.0],
+            color: [0.9, 0.2, 0.2],
+        });
+        vertices.push(LineVertex {
+            position: [axis_len, 0.0, 0.0],
+            color: [0.9, 0.2, 0.2],
+        });
         // Y axis (green)
-        vertices.push(LineVertex { position: [0.0, 0.0, 0.0], color: [0.2, 0.9, 0.2] });
-        vertices.push(LineVertex { position: [0.0, axis_len, 0.0], color: [0.2, 0.9, 0.2] });
+        vertices.push(LineVertex {
+            position: [0.0, 0.0, 0.0],
+            color: [0.2, 0.9, 0.2],
+        });
+        vertices.push(LineVertex {
+            position: [0.0, axis_len, 0.0],
+            color: [0.2, 0.9, 0.2],
+        });
         // Z axis (blue)
-        vertices.push(LineVertex { position: [0.0, 0.0, 0.0], color: [0.3, 0.4, 0.95] });
-        vertices.push(LineVertex { position: [0.0, 0.0, axis_len * 0.5], color: [0.3, 0.4, 0.95] });
+        vertices.push(LineVertex {
+            position: [0.0, 0.0, 0.0],
+            color: [0.3, 0.4, 0.95],
+        });
+        vertices.push(LineVertex {
+            position: [0.0, 0.0, axis_len * 0.5],
+            color: [0.3, 0.4, 0.95],
+        });
 
         let vertex_count = vertices.len() as u32;
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -47,6 +77,9 @@ impl GridGpuData {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        Self { vertex_buffer, vertex_count }
+        Self {
+            vertex_buffer,
+            vertex_count,
+        }
     }
 }

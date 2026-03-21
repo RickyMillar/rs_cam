@@ -1,4 +1,6 @@
-use rs_cam_core::gcode::{GcodePhase, emit_gcode_phased, get_post_processor, replace_rapids_with_feed};
+use rs_cam_core::gcode::{
+    GcodePhase, emit_gcode_phased, get_post_processor, replace_rapids_with_feed,
+};
 
 use crate::state::job::{JobState, PostFormat};
 

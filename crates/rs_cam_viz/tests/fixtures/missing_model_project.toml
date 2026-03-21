@@ -1,0 +1,23 @@
+format_version = 1
+
+[job]
+name = "Missing Model Fixture"
+
+[[tools]]
+id = 1
+name = "Fixture End Mill"
+type = "end_mill"
+
+[[models]]
+id = 1
+path = "missing_model.stl"
+name = "Missing"
+kind = "stl"
+units = { kind = "millimeters" }
+
+[[toolpaths]]
+id = 1
+name = "Adaptive 3D Fixture"
+type = "adaptive3d"
+tool_id = 1
+model_id = 1

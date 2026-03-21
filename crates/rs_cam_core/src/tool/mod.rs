@@ -6,17 +6,17 @@
 //!
 //! Reference: research/03_tool_geometry.md and research/raw_opencamlib_math.md
 
-mod flat;
 mod ball;
 mod bullnose;
-mod vbit;
+mod flat;
 mod tapered_ball;
+mod vbit;
 
-pub use flat::FlatEndmill;
 pub use ball::BallEndmill;
 pub use bullnose::BullNoseEndmill;
-pub use vbit::VBitEndmill;
+pub use flat::FlatEndmill;
 pub use tapered_ball::TaperedBallEndmill;
+pub use vbit::VBitEndmill;
 
 use crate::geo::{P3, Triangle};
 
@@ -63,7 +63,9 @@ impl CLPoint {
 /// them according to its geometry.
 pub trait MillingCutter: Send + Sync {
     fn diameter(&self) -> f64;
-    fn radius(&self) -> f64 { self.diameter() / 2.0 }
+    fn radius(&self) -> f64 {
+        self.diameter() / 2.0
+    }
     fn length(&self) -> f64;
 
     /// Profile height at radial distance r from tool axis.

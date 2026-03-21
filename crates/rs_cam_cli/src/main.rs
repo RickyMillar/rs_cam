@@ -4,29 +4,33 @@ mod job;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use rs_cam_core::{
+    adaptive::{AdaptiveParams, adaptive_toolpath},
+    adaptive3d::{Adaptive3dParams, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath_annotated},
     arcfit::fit_arcs,
     depth::{DepthStepping, depth_stepped_toolpath},
-    dressup::{apply_dogbones, apply_entry, apply_link_moves, apply_tabs, even_tabs, LinkMoveParams},
+    dressup::{
+        LinkMoveParams, apply_dogbones, apply_entry, apply_link_moves, apply_tabs, even_tabs,
+    },
     dropcutter::batch_drop_cutter,
+    gcode::{GcodePhase, emit_gcode, emit_gcode_phased, get_post_processor},
     geo::BoundingBox3,
-    gcode::{emit_gcode, emit_gcode_phased, get_post_processor, GcodePhase},
+    inlay::{InlayParams, inlay_toolpaths},
     mesh::{SpatialIndex, TriangleMesh},
+    pencil::{PencilParams, pencil_toolpath},
     pocket::{PocketParams, pocket_toolpath},
     profile::{ProfileParams, ProfileSide, profile_toolpath},
-    adaptive::{AdaptiveParams, adaptive_toolpath},
-    simulation::{Heightmap, simulate_toolpath},
-    tool::{BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill},
-    toolpath::{Toolpath, raster_toolpath_from_grid},
-    adaptive3d::{Adaptive3dParams, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath_annotated},
+    ramp_finish::{CutDirection, RampFinishParams, ramp_finish_toolpath},
     rest::{RestParams, rest_machining_toolpath},
+    scallop::{ScallopDirection, ScallopParams, scallop_toolpath},
+    simulation::{Heightmap, simulate_toolpath},
+    steep_shallow::{SteepShallowParams, steep_shallow_toolpath},
+    tool::{
+        BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill,
+    },
+    toolpath::{Toolpath, raster_toolpath_from_grid},
     vcarve::{VCarveParams, vcarve_toolpath},
     waterline::{WaterlineParams, waterline_toolpath},
     zigzag::{ZigzagParams, zigzag_toolpath},
-    ramp_finish::{RampFinishParams, CutDirection, ramp_finish_toolpath},
-    steep_shallow::{SteepShallowParams, steep_shallow_toolpath},
-    scallop::{ScallopParams, ScallopDirection, scallop_toolpath},
-    pencil::{PencilParams, pencil_toolpath},
-    inlay::{InlayParams, inlay_toolpaths},
 };
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
@@ -1067,9 +1071,7 @@ fn parse_tool(spec: &str) -> Result<Box<dyn MillingCutter>> {
         );
     }
 
-    let diameter: f64 = parts[1]
-        .parse()
-        .context("Invalid tool diameter")?;
+    let diameter: f64 = parts[1].parse().context("Invalid tool diameter")?;
 
     let cutting_length = diameter * 4.0;
 
@@ -1083,7 +1085,11 @@ fn parse_tool(spec: &str) -> Result<Box<dyn MillingCutter>> {
                 .context("Bull nose needs corner radius: bullnose:10:2")?
                 .parse()
                 .context("Invalid corner radius")?;
-            Ok(Box::new(BullNoseEndmill::new(diameter, corner_radius, cutting_length)))
+            Ok(Box::new(BullNoseEndmill::new(
+                diameter,
+                corner_radius,
+                cutting_length,
+            )))
         }
         "vbit" => {
             // vbit:diameter:included_angle_deg
@@ -1107,7 +1113,10 @@ fn parse_tool(spec: &str) -> Result<Box<dyn MillingCutter>> {
                 .parse()
                 .context("Invalid shaft diameter")?;
             Ok(Box::new(TaperedBallEndmill::new(
-                diameter, taper_angle, shaft_diameter, cutting_length,
+                diameter,
+                taper_angle,
+                shaft_diameter,
+                cutting_length,
             )))
         }
         _ => bail!(
@@ -1116,7 +1125,6 @@ fn parse_tool(spec: &str) -> Result<Box<dyn MillingCutter>> {
         ),
     }
 }
-
 
 /// Parse STL scale factor from --scale override or --units string.
 fn parse_scale_factor(scale: Option<f64>, units: &str) -> Result<f64> {
@@ -1139,12 +1147,19 @@ fn load_stl_with_index(
     scale: f64,
     cutter: &dyn MillingCutter,
 ) -> Result<(TriangleMesh, SpatialIndex)> {
-    let mesh = TriangleMesh::from_stl_scaled(path, scale)
-        .context("Failed to load STL")?;
-    debug!(vertices = mesh.vertices.len(), triangles = mesh.faces.len(), "Loaded mesh");
+    let mesh = TriangleMesh::from_stl_scaled(path, scale).context("Failed to load STL")?;
     debug!(
-        min_x = mesh.bbox.min.x, min_y = mesh.bbox.min.y, min_z = mesh.bbox.min.z,
-        max_x = mesh.bbox.max.x, max_y = mesh.bbox.max.y, max_z = mesh.bbox.max.z,
+        vertices = mesh.vertices.len(),
+        triangles = mesh.faces.len(),
+        "Loaded mesh"
+    );
+    debug!(
+        min_x = mesh.bbox.min.x,
+        min_y = mesh.bbox.min.y,
+        min_z = mesh.bbox.min.z,
+        max_x = mesh.bbox.max.x,
+        max_y = mesh.bbox.max.y,
+        max_z = mesh.bbox.max.z,
         "Bounding box"
     );
     debug!("Building spatial index...");
@@ -1180,8 +1195,7 @@ fn write_3d_view(
         } else {
             rs_cam_core::viz::toolpath_to_3d_html(mesh, tp)
         };
-        std::fs::write(view_path, &html)
-            .context("Failed to write 3D viewer file")?;
+        std::fs::write(view_path, &html).context("Failed to write 3D viewer file")?;
         info!(path = %view_path.display(), size_mb = html.len() as f64 / 1_048_576.0, "Wrote 3D viewer");
     }
     Ok(())
@@ -1206,11 +1220,7 @@ fn write_2d_view(
                     tp_bbox.min.y - margin,
                     tp_bbox.min.z,
                 ),
-                max: rs_cam_core::geo::P3::new(
-                    tp_bbox.max.x + margin,
-                    tp_bbox.max.y + margin,
-                    0.0,
-                ),
+                max: rs_cam_core::geo::P3::new(tp_bbox.max.x + margin, tp_bbox.max.y + margin, 0.0),
             };
             let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_res);
             simulate_toolpath(tp, cutter, &mut hm);
@@ -1219,8 +1229,7 @@ fn write_2d_view(
         } else {
             rs_cam_core::viz::toolpath_standalone_3d_html(tp, None)
         };
-        std::fs::write(view_path, &html)
-            .context("Failed to write 3D viewer file")?;
+        std::fs::write(view_path, &html).context("Failed to write 3D viewer file")?;
         info!(path = %view_path.display(), "Wrote 3D viewer");
     }
     Ok(())
@@ -1241,20 +1250,20 @@ fn emit_and_write(
     output: &PathBuf,
     svg_path: &Option<PathBuf>,
 ) -> Result<()> {
-    let post_proc = get_post_processor(post)
-        .context(format!("Unknown post-processor '{}'. Supported: grbl, linuxcnc", post))?;
+    let post_proc = get_post_processor(post).context(format!(
+        "Unknown post-processor '{}'. Supported: grbl, linuxcnc",
+        post
+    ))?;
 
     info!("Emitting G-code ({})...", post_proc.name());
     let gcode = emit_gcode(toolpath, post_proc.as_ref(), spindle_speed);
 
-    std::fs::write(output, &gcode)
-        .context("Failed to write output file")?;
+    std::fs::write(output, &gcode).context("Failed to write output file")?;
     info!(bytes = gcode.len(), path = %output.display(), "Wrote G-code");
 
     if let Some(svg_out) = svg_path {
         let svg_content = rs_cam_core::viz::toolpath_to_svg(toolpath, 800.0, 600.0);
-        std::fs::write(svg_out, &svg_content)
-            .context("Failed to write SVG file")?;
+        std::fs::write(svg_out, &svg_content).context("Failed to write SVG file")?;
         info!(path = %svg_out.display(), "Wrote SVG preview");
     }
 
@@ -1274,7 +1283,8 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Job { input } => {
-            let job_path = input.canonicalize()
+            let job_path = input
+                .canonicalize()
                 .context(format!("Job file not found: {}", input.display()))?;
             let job_dir = job_path.parent().unwrap_or(Path::new("."));
             debug!(path = %job_path.display(), "Loading job file");
@@ -1302,42 +1312,56 @@ fn main() -> Result<()> {
                 job_dir.join(&job_file.job.output)
             };
             let svg = job_file.job.svg.as_ref().map(|p| {
-                if p.is_absolute() { p.clone() } else { job_dir.join(p) }
+                if p.is_absolute() {
+                    p.clone()
+                } else {
+                    job_dir.join(p)
+                }
             });
 
             // Emit G-code with per-operation spindle speed support
-            let post_proc = get_post_processor(&job_file.job.post)
-                .context(format!("Unknown post-processor '{}'. Supported: grbl, linuxcnc, mach3", job_file.job.post))?;
-            let phases: Vec<GcodePhase<'_>> = job_result.phases.iter().map(|p| {
-                GcodePhase {
+            let post_proc = get_post_processor(&job_file.job.post).context(format!(
+                "Unknown post-processor '{}'. Supported: grbl, linuxcnc, mach3",
+                job_file.job.post
+            ))?;
+            let phases: Vec<GcodePhase<'_>> = job_result
+                .phases
+                .iter()
+                .map(|p| GcodePhase {
                     toolpath: &p.toolpath,
                     spindle_rpm: p.spindle_speed,
                     label: &p.label,
-                }
-            }).collect();
+                })
+                .collect();
             info!("Emitting G-code ({})...", post_proc.name());
             let gcode = emit_gcode_phased(&phases, post_proc.as_ref());
-            std::fs::write(&output, &gcode)
-                .context("Failed to write output file")?;
+            std::fs::write(&output, &gcode).context("Failed to write output file")?;
             info!(bytes = gcode.len(), path = %output.display(), "Wrote G-code");
 
             if let Some(svg_out) = &svg {
                 let svg_content = rs_cam_core::viz::toolpath_to_svg(toolpath, 800.0, 600.0);
-                std::fs::write(svg_out, &svg_content)
-                    .context("Failed to write SVG file")?;
+                std::fs::write(svg_out, &svg_content).context("Failed to write SVG file")?;
                 info!(path = %svg_out.display(), "Wrote SVG preview");
             }
 
             if let Some(view) = &job_file.job.view {
-                let view_path = if view.is_absolute() { view.clone() } else { job_dir.join(view) };
+                let view_path = if view.is_absolute() {
+                    view.clone()
+                } else {
+                    job_dir.join(view)
+                };
                 let html = if job_file.job.simulate {
                     // Stacked simulation: each operation is a phase with its own cutter
                     let tp_bbox = toolpath_bbox(toolpath);
-                    let max_margin = job_result.phases.iter()
+                    let max_margin = job_result
+                        .phases
+                        .iter()
                         .map(|p| p.cutter.radius())
                         .fold(0.0_f64, f64::max);
                     // Determine stock top: use stock_top_z from first 3D op, or bbox max + 5
-                    let stock_top = job_file.operation.iter()
+                    let stock_top = job_file
+                        .operation
+                        .iter()
                         .find_map(|op| op.stock_top_z)
                         .unwrap_or(tp_bbox.max.z + 5.0);
                     let sim_bbox = BoundingBox3 {
@@ -1353,16 +1377,27 @@ fn main() -> Result<()> {
                         ),
                     };
                     let mut hm = Heightmap::from_bounds(
-                        &sim_bbox, Some(stock_top), job_file.job.sim_resolution,
+                        &sim_bbox,
+                        Some(stock_top),
+                        job_file.job.sim_resolution,
                     );
 
-                    debug!(phases = job_result.phases.len(), resolution_mm = job_file.job.sim_resolution, "Running stacked simulation");
+                    debug!(
+                        phases = job_result.phases.len(),
+                        resolution_mm = job_file.job.sim_resolution,
+                        "Running stacked simulation"
+                    );
 
                     // Simulate each phase with its own cutter
                     for phase in &job_result.phases {
                         simulate_toolpath(&phase.toolpath, phase.cutter.as_ref(), &mut hm);
                     }
-                    debug!(cols = hm.cols, rows = hm.rows, phases = job_result.phases.len(), "Heightmap generated");
+                    debug!(
+                        cols = hm.cols,
+                        rows = hm.rows,
+                        phases = job_result.phases.len(),
+                        "Heightmap generated"
+                    );
 
                     // Try to load source mesh for overlay (from first STL-based operation)
                     let source_mesh = job_file.operation.iter().find_map(|op| {
@@ -1380,7 +1415,9 @@ fn main() -> Result<()> {
                     });
 
                     use rs_cam_core::viz::SimPhase;
-                    let sim_phases: Vec<SimPhase> = job_result.phases.iter()
+                    let sim_phases: Vec<SimPhase> = job_result
+                        .phases
+                        .iter()
                         .map(|p| SimPhase {
                             toolpath: &p.toolpath,
                             cutter: p.cutter.as_ref(),
@@ -1389,22 +1426,40 @@ fn main() -> Result<()> {
                         .collect();
 
                     rs_cam_core::viz::stacked_simulation_3d_html(
-                        &sim_phases, &hm, source_mesh.as_ref(),
+                        &sim_phases,
+                        &hm,
+                        source_mesh.as_ref(),
                     )
                 } else {
                     rs_cam_core::viz::toolpath_standalone_3d_html(toolpath, None)
                 };
-                std::fs::write(&view_path, &html)
-                    .context("Failed to write 3D viewer file")?;
+                std::fs::write(&view_path, &html).context("Failed to write 3D viewer file")?;
                 info!(path = %view_path.display(), "Wrote 3D viewer");
             }
         }
 
         Commands::DropCutter {
-            input, units, scale, tool, stepover, feed_rate, plunge_rate,
-            spindle_speed, safe_z, min_z, post, output, svg, view,
-            simulate, sim_resolution, link_moves,
-            holder_diameter, shank_diameter, shank_length, stickout,
+            input,
+            units,
+            scale,
+            tool,
+            stepover,
+            feed_rate,
+            plunge_rate,
+            spindle_speed,
+            safe_z,
+            min_z,
+            post,
+            output,
+            svg,
+            view,
+            simulate,
+            sim_resolution,
+            link_moves,
+            holder_diameter,
+            shank_diameter,
+            shank_length,
+            stickout,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             debug!(path = %input.display(), units = %units, scale = scale_factor, "Loading STL");
@@ -1419,7 +1474,9 @@ fn main() -> Result<()> {
             let grid = batch_drop_cutter(&mesh, &index, cutter.as_ref(), stepover, 0.0, min_z);
             let elapsed = start.elapsed();
             debug!(
-                cols = grid.cols, rows = grid.rows, points = grid.points.len(),
+                cols = grid.cols,
+                rows = grid.rows,
+                points = grid.points.len(),
                 elapsed_secs = format!("{:.2}", elapsed.as_secs_f64()),
                 "Drop-cutter grid"
             );
@@ -1451,8 +1508,16 @@ fn main() -> Result<()> {
                 let cutter_ref = cutter.as_ref();
                 let assembly = rs_cam_core::collision::ToolAssembly {
                     cutter_radius: cutter_ref.radius(),
-                    cutter_length: if stickout > 0.0 { stickout - shank_length } else { cutter_ref.length() },
-                    shank_diameter: if shank_diameter > 0.0 { shank_diameter } else { cutter_ref.diameter() },
+                    cutter_length: if stickout > 0.0 {
+                        stickout - shank_length
+                    } else {
+                        cutter_ref.length()
+                    },
+                    shank_diameter: if shank_diameter > 0.0 {
+                        shank_diameter
+                    } else {
+                        cutter_ref.diameter()
+                    },
                     shank_length,
                     holder_diameter,
                     holder_length: 40.0,
@@ -1463,24 +1528,63 @@ fn main() -> Result<()> {
                 if report.is_clear() {
                     info!("Collision check: CLEAR");
                 } else {
-                    eprintln!("WARNING: {} holder/shank collisions detected!", report.collisions.len());
-                    eprintln!("  Min safe stickout: {:.1}mm (current: {:.1}mm)", report.min_safe_stickout, assembly.stickout());
+                    eprintln!(
+                        "WARNING: {} holder/shank collisions detected!",
+                        report.collisions.len()
+                    );
+                    eprintln!(
+                        "  Min safe stickout: {:.1}mm (current: {:.1}mm)",
+                        report.min_safe_stickout,
+                        assembly.stickout()
+                    );
                     for c in report.collisions.iter().take(5) {
-                        eprintln!("  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
-                            c.move_idx, c.segment, c.position.x, c.position.y, c.position.z, c.penetration_depth);
+                        eprintln!(
+                            "  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
+                            c.move_idx,
+                            c.segment,
+                            c.position.x,
+                            c.position.y,
+                            c.position.z,
+                            c.penetration_depth
+                        );
                     }
                 }
             }
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
-            write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
+            write_3d_view(
+                &view,
+                &toolpath,
+                &mesh,
+                cutter.as_ref(),
+                simulate,
+                sim_resolution,
+                mesh.bbox.max.z,
+            )?;
         }
 
         Commands::Pocket {
-            input, tool, stepover, depth, depth_per_pass, feed_rate, plunge_rate,
-            spindle_speed, safe_z, pattern, angle, climb, dogbone, entry, post, output, svg, view,
-            simulate, sim_resolution,
+            input,
+            tool,
+            stepover,
+            depth,
+            depth_per_pass,
+            feed_rate,
+            plunge_rate,
+            spindle_speed,
+            safe_z,
+            pattern,
+            angle,
+            climb,
+            dogbone,
+            entry,
+            post,
+            output,
+            svg,
+            view,
+            simulate,
+            sim_resolution,
         } => {
             let cutter = parse_tool(&tool)?;
             let tool_radius = cutter.diameter() / 2.0;
@@ -1491,7 +1595,8 @@ fn main() -> Result<()> {
 
             let depth_stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
             debug!(
-                total_mm = depth, per_pass_mm = depth_per_pass,
+                total_mm = depth,
+                per_pass_mm = depth_per_pass,
                 passes = depth_stepping.roughing_pass_count(),
                 "Depth stepping"
             );
@@ -1500,35 +1605,38 @@ fn main() -> Result<()> {
             let mut toolpath = Toolpath::new();
 
             for (i, poly) in polygons.iter().enumerate() {
-                debug!(index = i, vertices = poly.exterior.len(), area_mm2 = format!("{:.1}", poly.area()), "Polygon");
+                debug!(
+                    index = i,
+                    vertices = poly.exterior.len(),
+                    area_mm2 = format!("{:.1}", poly.area()),
+                    "Polygon"
+                );
 
-                let poly_tp = depth_stepped_toolpath(&depth_stepping, safe_z, |z| {
-                    match pattern {
-                        ClearingPattern::Contour => pocket_toolpath(
-                            poly,
-                            &PocketParams {
-                                tool_radius,
-                                stepover,
-                                cut_depth: z,
-                                feed_rate,
-                                plunge_rate,
-                                safe_z,
-                                climb,
-                            },
-                        ),
-                        ClearingPattern::Zigzag => zigzag_toolpath(
-                            poly,
-                            &ZigzagParams {
-                                tool_radius,
-                                stepover,
-                                cut_depth: z,
-                                feed_rate,
-                                plunge_rate,
-                                safe_z,
-                                angle,
-                            },
-                        ),
-                    }
+                let poly_tp = depth_stepped_toolpath(&depth_stepping, safe_z, |z| match pattern {
+                    ClearingPattern::Contour => pocket_toolpath(
+                        poly,
+                        &PocketParams {
+                            tool_radius,
+                            stepover,
+                            cut_depth: z,
+                            feed_rate,
+                            plunge_rate,
+                            safe_z,
+                            climb,
+                        },
+                    ),
+                    ClearingPattern::Zigzag => zigzag_toolpath(
+                        poly,
+                        &ZigzagParams {
+                            tool_radius,
+                            stepover,
+                            cut_depth: z,
+                            feed_rate,
+                            plunge_rate,
+                            safe_z,
+                            angle,
+                        },
+                    ),
                 });
 
                 toolpath.moves.extend(poly_tp.moves);
@@ -1561,9 +1669,27 @@ fn main() -> Result<()> {
         }
 
         Commands::Profile {
-            input, tool, depth, depth_per_pass, side, feed_rate, plunge_rate,
-            spindle_speed, safe_z, climb, dogbone, tabs, tab_width, tab_height,
-            entry, post, output, svg, view, simulate, sim_resolution,
+            input,
+            tool,
+            depth,
+            depth_per_pass,
+            side,
+            feed_rate,
+            plunge_rate,
+            spindle_speed,
+            safe_z,
+            climb,
+            dogbone,
+            tabs,
+            tab_width,
+            tab_height,
+            entry,
+            post,
+            output,
+            svg,
+            view,
+            simulate,
+            sim_resolution,
         } => {
             let cutter = parse_tool(&tool)?;
             let tool_radius = cutter.diameter() / 2.0;
@@ -1617,7 +1743,12 @@ fn main() -> Result<()> {
 
             // Apply tabs (on final depth pass only)
             if tabs > 0 {
-                debug!(count = tabs, width_mm = tab_width, height_mm = tab_height, "Adding tabs");
+                debug!(
+                    count = tabs,
+                    width_mm = tab_width,
+                    height_mm = tab_height,
+                    "Adding tabs"
+                );
                 let tab_list = even_tabs(tabs, tab_width, tab_height);
                 toolpath = apply_tabs(&toolpath, &tab_list, -depth);
             }
@@ -1643,9 +1774,24 @@ fn main() -> Result<()> {
         }
 
         Commands::Adaptive {
-            input, tool, stepover, depth, depth_per_pass, feed_rate, plunge_rate,
-            spindle_speed, safe_z, tolerance, slot_clearing, min_cutting_radius,
-            post, output, svg, view, simulate, sim_resolution,
+            input,
+            tool,
+            stepover,
+            depth,
+            depth_per_pass,
+            feed_rate,
+            plunge_rate,
+            spindle_speed,
+            safe_z,
+            tolerance,
+            slot_clearing,
+            min_cutting_radius,
+            post,
+            output,
+            svg,
+            view,
+            simulate,
+            sim_resolution,
         } => {
             let cutter = parse_tool(&tool)?;
             let tool_radius = cutter.diameter() / 2.0;
@@ -1656,7 +1802,8 @@ fn main() -> Result<()> {
 
             let depth_stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
             debug!(
-                total_mm = depth, per_pass_mm = depth_per_pass,
+                total_mm = depth,
+                per_pass_mm = depth_per_pass,
                 passes = depth_stepping.roughing_pass_count(),
                 "Depth stepping"
             );
@@ -1665,7 +1812,12 @@ fn main() -> Result<()> {
             let mut toolpath = Toolpath::new();
 
             for (i, poly) in polygons.iter().enumerate() {
-                debug!(index = i, vertices = poly.exterior.len(), area_mm2 = format!("{:.1}", poly.area()), "Polygon");
+                debug!(
+                    index = i,
+                    vertices = poly.exterior.len(),
+                    area_mm2 = format!("{:.1}", poly.area()),
+                    "Polygon"
+                );
 
                 let poly_tp = depth_stepped_toolpath(&depth_stepping, safe_z, |z| {
                     adaptive_toolpath(
@@ -1702,9 +1854,21 @@ fn main() -> Result<()> {
         }
 
         Commands::Vcarve {
-            input, tool, max_depth, stepover, feed_rate, plunge_rate,
-            spindle_speed, safe_z, tolerance, post, output, svg, view,
-            simulate, sim_resolution,
+            input,
+            tool,
+            max_depth,
+            stepover,
+            feed_rate,
+            plunge_rate,
+            spindle_speed,
+            safe_z,
+            tolerance,
+            post,
+            output,
+            svg,
+            view,
+            simulate,
+            sim_resolution,
         } => {
             let cutter = parse_tool(&tool)?;
             let tool_radius = cutter.diameter() / 2.0;
@@ -1714,8 +1878,7 @@ fn main() -> Result<()> {
             if tool_parts[0] != "vbit" || tool_parts.len() < 3 {
                 bail!("V-carve requires a V-bit tool (e.g., --tool vbit:6.35:90)");
             }
-            let included_angle_deg: f64 = tool_parts[2].parse()
-                .context("Invalid V-bit angle")?;
+            let included_angle_deg: f64 = tool_parts[2].parse().context("Invalid V-bit angle")?;
             let half_angle = (included_angle_deg / 2.0).to_radians();
 
             debug!(tool = %tool, diameter_mm = cutter.diameter(), half_angle_deg = half_angle.to_degrees(), "Tool");
@@ -1728,7 +1891,11 @@ fn main() -> Result<()> {
             } else {
                 tool_radius / half_angle.tan()
             };
-            debug!(max_depth_mm = effective_max_depth, stepover_mm = stepover, "V-carve params");
+            debug!(
+                max_depth_mm = effective_max_depth,
+                stepover_mm = stepover,
+                "V-carve params"
+            );
 
             let start = std::time::Instant::now();
             let mut toolpath = Toolpath::new();
@@ -1736,15 +1903,18 @@ fn main() -> Result<()> {
             for (i, poly) in polygons.iter().enumerate() {
                 debug!(index = i, vertices = poly.exterior.len(), "Polygon");
 
-                let poly_tp = vcarve_toolpath(poly, &VCarveParams {
-                    half_angle,
-                    max_depth: effective_max_depth,
-                    stepover,
-                    feed_rate,
-                    plunge_rate,
-                    safe_z,
-                    tolerance,
-                });
+                let poly_tp = vcarve_toolpath(
+                    poly,
+                    &VCarveParams {
+                        half_angle,
+                        max_depth: effective_max_depth,
+                        stepover,
+                        feed_rate,
+                        plunge_rate,
+                        safe_z,
+                        tolerance,
+                    },
+                );
 
                 toolpath.moves.extend(poly_tp.moves);
             }
@@ -1764,9 +1934,24 @@ fn main() -> Result<()> {
         }
 
         Commands::Rest {
-            input, tool, prev_tool, stepover, depth, depth_per_pass,
-            feed_rate, plunge_rate, spindle_speed, safe_z, angle,
-            post, output, svg, view, simulate, sim_resolution, link_moves,
+            input,
+            tool,
+            prev_tool,
+            stepover,
+            depth,
+            depth_per_pass,
+            feed_rate,
+            plunge_rate,
+            spindle_speed,
+            safe_z,
+            angle,
+            post,
+            output,
+            svg,
+            view,
+            simulate,
+            sim_resolution,
+            link_moves,
         } => {
             let cutter = parse_tool(&tool)?;
             let tool_radius = cutter.diameter() / 2.0;
@@ -1776,7 +1961,8 @@ fn main() -> Result<()> {
             if tool_radius >= prev_tool_radius {
                 bail!(
                     "Rest machining tool ({:.2}mm) must be smaller than previous tool ({:.2}mm)",
-                    cutter.diameter(), prev_cutter.diameter()
+                    cutter.diameter(),
+                    prev_cutter.diameter()
                 );
             }
 
@@ -1788,7 +1974,8 @@ fn main() -> Result<()> {
 
             let depth_stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
             debug!(
-                total_mm = depth, per_pass_mm = depth_per_pass,
+                total_mm = depth,
+                per_pass_mm = depth_per_pass,
                 passes = depth_stepping.roughing_pass_count(),
                 "Depth stepping"
             );
@@ -1797,7 +1984,12 @@ fn main() -> Result<()> {
             let mut toolpath = Toolpath::new();
 
             for (i, poly) in polygons.iter().enumerate() {
-                debug!(index = i, vertices = poly.exterior.len(), area_mm2 = format!("{:.1}", poly.area()), "Polygon");
+                debug!(
+                    index = i,
+                    vertices = poly.exterior.len(),
+                    area_mm2 = format!("{:.1}", poly.area()),
+                    "Polygon"
+                );
 
                 let poly_tp = depth_stepped_toolpath(&depth_stepping, safe_z, |z| {
                     rest_machining_toolpath(
@@ -1886,7 +2078,12 @@ fn main() -> Result<()> {
                     let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_resolution);
                     simulate_toolpath(&prev_toolpath, prev_cutter.as_ref(), &mut hm);
                     simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
-                    debug!(cols = hm.cols, rows = hm.rows, phases = 2, "Heightmap generated");
+                    debug!(
+                        cols = hm.cols,
+                        rows = hm.rows,
+                        phases = 2,
+                        "Heightmap generated"
+                    );
 
                     // Stacked viewer: animates roughing then rest
                     use rs_cam_core::viz::SimPhase;
@@ -1894,7 +2091,11 @@ fn main() -> Result<()> {
                         SimPhase {
                             toolpath: &prev_toolpath,
                             cutter: prev_cutter.as_ref(),
-                            label: format!("Roughing ({:.2}mm {})", prev_cutter.diameter(), prev_tool),
+                            label: format!(
+                                "Roughing ({:.2}mm {})",
+                                prev_cutter.diameter(),
+                                prev_tool
+                            ),
                         },
                         SimPhase {
                             toolpath: &toolpath,
@@ -1906,18 +2107,37 @@ fn main() -> Result<()> {
                 } else {
                     rs_cam_core::viz::toolpath_standalone_3d_html(&toolpath, None)
                 };
-                std::fs::write(&view_path, &html)
-                    .context("Failed to write 3D viewer file")?;
+                std::fs::write(&view_path, &html).context("Failed to write 3D viewer file")?;
                 info!(path = %view_path.display(), "Wrote 3D viewer");
             }
         }
 
         Commands::Adaptive3d {
-            input, units, scale, tool, stepover, depth_per_pass,
-            stock_top_z, stock_to_leave, feed_rate, plunge_rate, spindle_speed,
-            safe_z, tolerance, min_cutting_radius, entry_style, fine_stepdown,
-            detect_flat_areas, max_stay_down_dist, order_by, post, output, svg, view,
-            simulate, sim_resolution,
+            input,
+            units,
+            scale,
+            tool,
+            stepover,
+            depth_per_pass,
+            stock_top_z,
+            stock_to_leave,
+            feed_rate,
+            plunge_rate,
+            spindle_speed,
+            safe_z,
+            tolerance,
+            min_cutting_radius,
+            entry_style,
+            fine_stepdown,
+            detect_flat_areas,
+            max_stay_down_dist,
+            order_by,
+            post,
+            output,
+            svg,
+            view,
+            simulate,
+            sim_resolution,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             debug!(path = %input.display(), units = %units, scale = scale_factor, "Loading STL");
@@ -1929,8 +2149,10 @@ fn main() -> Result<()> {
 
             let stock_z = stock_top_z.unwrap_or(mesh.bbox.max.z + 5.0);
             debug!(
-                stock_top = stock_z, depth_per_pass = depth_per_pass,
-                stock_to_leave = stock_to_leave, stepover = stepover,
+                stock_top = stock_z,
+                depth_per_pass = depth_per_pass,
+                stock_to_leave = stock_to_leave,
+                stepover = stepover,
                 "3D Adaptive params"
             );
 
@@ -1967,7 +2189,8 @@ fn main() -> Result<()> {
             };
 
             let start = std::time::Instant::now();
-            let (toolpath, annotations) = adaptive_3d_toolpath_annotated(&mesh, &index, cutter.as_ref(), &params);
+            let (toolpath, annotations) =
+                adaptive_3d_toolpath_annotated(&mesh, &index, cutter.as_ref(), &params);
             let elapsed = start.elapsed();
 
             info!(
@@ -1993,21 +2216,46 @@ fn main() -> Result<()> {
                         sim_resolution,
                     );
                     simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
-                    rs_cam_core::viz::simulation_3d_html(&hm, &toolpath, Some(&mesh), cutter.as_ref(), &annotations)
+                    rs_cam_core::viz::simulation_3d_html(
+                        &hm,
+                        &toolpath,
+                        Some(&mesh),
+                        cutter.as_ref(),
+                        &annotations,
+                    )
                 } else {
                     rs_cam_core::viz::toolpath_to_3d_html(&mesh, &toolpath)
                 };
-                std::fs::write(view_path, &html)
-                    .context("Failed to write 3D viewer file")?;
+                std::fs::write(view_path, &html).context("Failed to write 3D viewer file")?;
                 info!(path = %view_path.display(), size_mb = html.len() as f64 / 1_048_576.0, "Wrote 3D viewer");
             }
         }
 
         Commands::Waterline {
-            input, units, scale, tool, z_step, sampling, start_z, final_z,
-            feed_rate, plunge_rate, spindle_speed, safe_z, arc_tolerance,
-            post, output, svg, view, simulate, sim_resolution, link_moves,
-            holder_diameter, shank_diameter, shank_length, stickout,
+            input,
+            units,
+            scale,
+            tool,
+            z_step,
+            sampling,
+            start_z,
+            final_z,
+            feed_rate,
+            plunge_rate,
+            spindle_speed,
+            safe_z,
+            arc_tolerance,
+            post,
+            output,
+            svg,
+            view,
+            simulate,
+            sim_resolution,
+            link_moves,
+            holder_diameter,
+            shank_diameter,
+            shank_length,
+            stickout,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             debug!(path = %input.display(), units = %units, scale = scale_factor, "Loading STL");
@@ -2019,7 +2267,13 @@ fn main() -> Result<()> {
 
             let sz = start_z.unwrap_or(mesh.bbox.max.z);
             let fz = final_z.unwrap_or(mesh.bbox.min.z);
-            debug!(start_z = sz, final_z = fz, z_step = z_step, sampling = sampling, "Waterline params");
+            debug!(
+                start_z = sz,
+                final_z = fz,
+                z_step = z_step,
+                sampling = sampling,
+                "Waterline params"
+            );
 
             let params = WaterlineParams {
                 sampling,
@@ -2029,14 +2283,20 @@ fn main() -> Result<()> {
             };
 
             let start = std::time::Instant::now();
-            let mut toolpath = waterline_toolpath(&mesh, &index, cutter.as_ref(), sz, fz, z_step, &params);
+            let mut toolpath =
+                waterline_toolpath(&mesh, &index, cutter.as_ref(), sz, fz, z_step, &params);
             let elapsed = start.elapsed();
 
             // Apply arc fitting if requested
             if arc_tolerance > 0.0 {
                 let before = toolpath.moves.len();
                 toolpath = fit_arcs(&toolpath, arc_tolerance);
-                debug!(before = before, after = toolpath.moves.len(), tolerance_mm = arc_tolerance, "Arc fitting");
+                debug!(
+                    before = before,
+                    after = toolpath.moves.len(),
+                    tolerance_mm = arc_tolerance,
+                    "Arc fitting"
+                );
             }
 
             if link_moves > 0.0 {
@@ -2066,8 +2326,16 @@ fn main() -> Result<()> {
                 let cutter_ref = cutter.as_ref();
                 let assembly = rs_cam_core::collision::ToolAssembly {
                     cutter_radius: cutter_ref.radius(),
-                    cutter_length: if stickout > 0.0 { stickout - shank_length } else { cutter_ref.length() },
-                    shank_diameter: if shank_diameter > 0.0 { shank_diameter } else { cutter_ref.diameter() },
+                    cutter_length: if stickout > 0.0 {
+                        stickout - shank_length
+                    } else {
+                        cutter_ref.length()
+                    },
+                    shank_diameter: if shank_diameter > 0.0 {
+                        shank_diameter
+                    } else {
+                        cutter_ref.diameter()
+                    },
                     shank_length,
                     holder_diameter,
                     holder_length: 40.0,
@@ -2078,26 +2346,70 @@ fn main() -> Result<()> {
                 if report.is_clear() {
                     info!("Collision check: CLEAR");
                 } else {
-                    eprintln!("WARNING: {} holder/shank collisions detected!", report.collisions.len());
-                    eprintln!("  Min safe stickout: {:.1}mm (current: {:.1}mm)", report.min_safe_stickout, assembly.stickout());
+                    eprintln!(
+                        "WARNING: {} holder/shank collisions detected!",
+                        report.collisions.len()
+                    );
+                    eprintln!(
+                        "  Min safe stickout: {:.1}mm (current: {:.1}mm)",
+                        report.min_safe_stickout,
+                        assembly.stickout()
+                    );
                     for c in report.collisions.iter().take(5) {
-                        eprintln!("  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
-                            c.move_idx, c.segment, c.position.x, c.position.y, c.position.z, c.penetration_depth);
+                        eprintln!(
+                            "  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
+                            c.move_idx,
+                            c.segment,
+                            c.position.x,
+                            c.position.y,
+                            c.position.z,
+                            c.penetration_depth
+                        );
                     }
                 }
             }
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
-            write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
+            write_3d_view(
+                &view,
+                &toolpath,
+                &mesh,
+                cutter.as_ref(),
+                simulate,
+                sim_resolution,
+                mesh.bbox.max.z,
+            )?;
         }
 
         Commands::RampFinish {
-            input, units, scale, tool, max_stepdown, slope_from, slope_to,
-            direction, bottom_up, feed_rate, plunge_rate, spindle_speed, safe_z,
-            sampling, stock_to_leave, tolerance, post, output, svg, view,
-            simulate, sim_resolution, link_moves,
-            holder_diameter, shank_diameter, shank_length, stickout,
+            input,
+            units,
+            scale,
+            tool,
+            max_stepdown,
+            slope_from,
+            slope_to,
+            direction,
+            bottom_up,
+            feed_rate,
+            plunge_rate,
+            spindle_speed,
+            safe_z,
+            sampling,
+            stock_to_leave,
+            tolerance,
+            post,
+            output,
+            svg,
+            view,
+            simulate,
+            sim_resolution,
+            link_moves,
+            holder_diameter,
+            shank_diameter,
+            shank_length,
+            stickout,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             let cutter = parse_tool(&tool)?;
@@ -2152,8 +2464,16 @@ fn main() -> Result<()> {
                 let cutter_ref = cutter.as_ref();
                 let assembly = rs_cam_core::collision::ToolAssembly {
                     cutter_radius: cutter_ref.radius(),
-                    cutter_length: if stickout > 0.0 { stickout - shank_length } else { cutter_ref.length() },
-                    shank_diameter: if shank_diameter > 0.0 { shank_diameter } else { cutter_ref.diameter() },
+                    cutter_length: if stickout > 0.0 {
+                        stickout - shank_length
+                    } else {
+                        cutter_ref.length()
+                    },
+                    shank_diameter: if shank_diameter > 0.0 {
+                        shank_diameter
+                    } else {
+                        cutter_ref.diameter()
+                    },
                     shank_length,
                     holder_diameter,
                     holder_length: 40.0,
@@ -2164,25 +2484,70 @@ fn main() -> Result<()> {
                 if report.is_clear() {
                     info!("Collision check: CLEAR");
                 } else {
-                    eprintln!("WARNING: {} holder/shank collisions detected!", report.collisions.len());
-                    eprintln!("  Min safe stickout: {:.1}mm (current: {:.1}mm)", report.min_safe_stickout, assembly.stickout());
+                    eprintln!(
+                        "WARNING: {} holder/shank collisions detected!",
+                        report.collisions.len()
+                    );
+                    eprintln!(
+                        "  Min safe stickout: {:.1}mm (current: {:.1}mm)",
+                        report.min_safe_stickout,
+                        assembly.stickout()
+                    );
                     for c in report.collisions.iter().take(5) {
-                        eprintln!("  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
-                            c.move_idx, c.segment, c.position.x, c.position.y, c.position.z, c.penetration_depth);
+                        eprintln!(
+                            "  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
+                            c.move_idx,
+                            c.segment,
+                            c.position.x,
+                            c.position.y,
+                            c.position.z,
+                            c.penetration_depth
+                        );
                     }
                 }
             }
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
-            write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
+            write_3d_view(
+                &view,
+                &toolpath,
+                &mesh,
+                cutter.as_ref(),
+                simulate,
+                sim_resolution,
+                mesh.bbox.max.z,
+            )?;
         }
 
         Commands::SteepShallow {
-            input, units, scale, tool, threshold_angle, overlap_distance,
-            wall_clearance, steep_first, stepover, z_step, sampling,
-            stock_to_leave, tolerance, feed_rate, plunge_rate, spindle_speed,
-            safe_z, post, output, svg, view, simulate, sim_resolution, link_moves,
-            holder_diameter, shank_diameter, shank_length, stickout,
+            input,
+            units,
+            scale,
+            tool,
+            threshold_angle,
+            overlap_distance,
+            wall_clearance,
+            steep_first,
+            stepover,
+            z_step,
+            sampling,
+            stock_to_leave,
+            tolerance,
+            feed_rate,
+            plunge_rate,
+            spindle_speed,
+            safe_z,
+            post,
+            output,
+            svg,
+            view,
+            simulate,
+            sim_resolution,
+            link_moves,
+            holder_diameter,
+            shank_diameter,
+            shank_length,
+            stickout,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             let cutter = parse_tool(&tool)?;
@@ -2232,8 +2597,16 @@ fn main() -> Result<()> {
                 let cutter_ref = cutter.as_ref();
                 let assembly = rs_cam_core::collision::ToolAssembly {
                     cutter_radius: cutter_ref.radius(),
-                    cutter_length: if stickout > 0.0 { stickout - shank_length } else { cutter_ref.length() },
-                    shank_diameter: if shank_diameter > 0.0 { shank_diameter } else { cutter_ref.diameter() },
+                    cutter_length: if stickout > 0.0 {
+                        stickout - shank_length
+                    } else {
+                        cutter_ref.length()
+                    },
+                    shank_diameter: if shank_diameter > 0.0 {
+                        shank_diameter
+                    } else {
+                        cutter_ref.diameter()
+                    },
                     shank_length,
                     holder_diameter,
                     holder_length: 40.0,
@@ -2244,23 +2617,59 @@ fn main() -> Result<()> {
                 if report.is_clear() {
                     info!("Collision check: CLEAR");
                 } else {
-                    eprintln!("WARNING: {} holder/shank collisions detected!", report.collisions.len());
-                    eprintln!("  Min safe stickout: {:.1}mm (current: {:.1}mm)", report.min_safe_stickout, assembly.stickout());
+                    eprintln!(
+                        "WARNING: {} holder/shank collisions detected!",
+                        report.collisions.len()
+                    );
+                    eprintln!(
+                        "  Min safe stickout: {:.1}mm (current: {:.1}mm)",
+                        report.min_safe_stickout,
+                        assembly.stickout()
+                    );
                     for c in report.collisions.iter().take(5) {
-                        eprintln!("  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
-                            c.move_idx, c.segment, c.position.x, c.position.y, c.position.z, c.penetration_depth);
+                        eprintln!(
+                            "  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
+                            c.move_idx,
+                            c.segment,
+                            c.position.x,
+                            c.position.y,
+                            c.position.z,
+                            c.penetration_depth
+                        );
                     }
                 }
             }
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
-            write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
+            write_3d_view(
+                &view,
+                &toolpath,
+                &mesh,
+                cutter.as_ref(),
+                simulate,
+                sim_resolution,
+                mesh.bbox.max.z,
+            )?;
         }
 
         Commands::Inlay {
-            input, tool, half_angle, pocket_depth, glue_gap, flat_depth,
-            boundary_offset, stepover, flat_tool_radius, feed_rate, plunge_rate,
-            spindle_speed, safe_z, post, output, male_output, svg,
+            input,
+            tool,
+            half_angle,
+            pocket_depth,
+            glue_gap,
+            flat_depth,
+            boundary_offset,
+            stepover,
+            flat_tool_radius,
+            feed_rate,
+            plunge_rate,
+            spindle_speed,
+            safe_z,
+            post,
+            output,
+            male_output,
+            svg,
         } => {
             let polygons = helpers::load_polygons(&input)?;
             let _cutter = parse_tool(&tool)?;
@@ -2308,11 +2717,31 @@ fn main() -> Result<()> {
         }
 
         Commands::Pencil {
-            input, units, scale, tool, bitangency_angle, min_cut_length,
-            offset_passes, offset_stepover, sampling, stock_to_leave,
-            feed_rate, plunge_rate, spindle_speed, safe_z, post, output,
-            svg, view, simulate, sim_resolution, link_moves,
-            holder_diameter, shank_diameter, shank_length, stickout,
+            input,
+            units,
+            scale,
+            tool,
+            bitangency_angle,
+            min_cut_length,
+            offset_passes,
+            offset_stepover,
+            sampling,
+            stock_to_leave,
+            feed_rate,
+            plunge_rate,
+            spindle_speed,
+            safe_z,
+            post,
+            output,
+            svg,
+            view,
+            simulate,
+            sim_resolution,
+            link_moves,
+            holder_diameter,
+            shank_diameter,
+            shank_length,
+            stickout,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             let cutter = parse_tool(&tool)?;
@@ -2360,8 +2789,16 @@ fn main() -> Result<()> {
                 let cutter_ref = cutter.as_ref();
                 let assembly = rs_cam_core::collision::ToolAssembly {
                     cutter_radius: cutter_ref.radius(),
-                    cutter_length: if stickout > 0.0 { stickout - shank_length } else { cutter_ref.length() },
-                    shank_diameter: if shank_diameter > 0.0 { shank_diameter } else { cutter_ref.diameter() },
+                    cutter_length: if stickout > 0.0 {
+                        stickout - shank_length
+                    } else {
+                        cutter_ref.length()
+                    },
+                    shank_diameter: if shank_diameter > 0.0 {
+                        shank_diameter
+                    } else {
+                        cutter_ref.diameter()
+                    },
                     shank_length,
                     holder_diameter,
                     holder_length: 40.0,
@@ -2372,25 +2809,68 @@ fn main() -> Result<()> {
                 if report.is_clear() {
                     info!("Collision check: CLEAR");
                 } else {
-                    eprintln!("WARNING: {} holder/shank collisions detected!", report.collisions.len());
-                    eprintln!("  Min safe stickout: {:.1}mm (current: {:.1}mm)", report.min_safe_stickout, assembly.stickout());
+                    eprintln!(
+                        "WARNING: {} holder/shank collisions detected!",
+                        report.collisions.len()
+                    );
+                    eprintln!(
+                        "  Min safe stickout: {:.1}mm (current: {:.1}mm)",
+                        report.min_safe_stickout,
+                        assembly.stickout()
+                    );
                     for c in report.collisions.iter().take(5) {
-                        eprintln!("  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
-                            c.move_idx, c.segment, c.position.x, c.position.y, c.position.z, c.penetration_depth);
+                        eprintln!(
+                            "  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
+                            c.move_idx,
+                            c.segment,
+                            c.position.x,
+                            c.position.y,
+                            c.position.z,
+                            c.penetration_depth
+                        );
                     }
                 }
             }
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
-            write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
+            write_3d_view(
+                &view,
+                &toolpath,
+                &mesh,
+                cutter.as_ref(),
+                simulate,
+                sim_resolution,
+                mesh.bbox.max.z,
+            )?;
         }
 
         Commands::Scallop {
-            input, units, scale, tool, scallop_height, direction, continuous,
-            slope_from, slope_to, stock_to_leave, tolerance, feed_rate,
-            plunge_rate, spindle_speed, safe_z, post, output, svg, view,
-            simulate, sim_resolution, link_moves,
-            holder_diameter, shank_diameter, shank_length, stickout,
+            input,
+            units,
+            scale,
+            tool,
+            scallop_height,
+            direction,
+            continuous,
+            slope_from,
+            slope_to,
+            stock_to_leave,
+            tolerance,
+            feed_rate,
+            plunge_rate,
+            spindle_speed,
+            safe_z,
+            post,
+            output,
+            svg,
+            view,
+            simulate,
+            sim_resolution,
+            link_moves,
+            holder_diameter,
+            shank_diameter,
+            shank_length,
+            stickout,
         } => {
             let scale_factor = parse_scale_factor(scale, &units)?;
             let cutter = parse_tool(&tool)?;
@@ -2443,8 +2923,16 @@ fn main() -> Result<()> {
                 let cutter_ref = cutter.as_ref();
                 let assembly = rs_cam_core::collision::ToolAssembly {
                     cutter_radius: cutter_ref.radius(),
-                    cutter_length: if stickout > 0.0 { stickout - shank_length } else { cutter_ref.length() },
-                    shank_diameter: if shank_diameter > 0.0 { shank_diameter } else { cutter_ref.diameter() },
+                    cutter_length: if stickout > 0.0 {
+                        stickout - shank_length
+                    } else {
+                        cutter_ref.length()
+                    },
+                    shank_diameter: if shank_diameter > 0.0 {
+                        shank_diameter
+                    } else {
+                        cutter_ref.diameter()
+                    },
                     shank_length,
                     holder_diameter,
                     holder_length: 40.0,
@@ -2455,17 +2943,39 @@ fn main() -> Result<()> {
                 if report.is_clear() {
                     info!("Collision check: CLEAR");
                 } else {
-                    eprintln!("WARNING: {} holder/shank collisions detected!", report.collisions.len());
-                    eprintln!("  Min safe stickout: {:.1}mm (current: {:.1}mm)", report.min_safe_stickout, assembly.stickout());
+                    eprintln!(
+                        "WARNING: {} holder/shank collisions detected!",
+                        report.collisions.len()
+                    );
+                    eprintln!(
+                        "  Min safe stickout: {:.1}mm (current: {:.1}mm)",
+                        report.min_safe_stickout,
+                        assembly.stickout()
+                    );
                     for c in report.collisions.iter().take(5) {
-                        eprintln!("  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
-                            c.move_idx, c.segment, c.position.x, c.position.y, c.position.z, c.penetration_depth);
+                        eprintln!(
+                            "  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
+                            c.move_idx,
+                            c.segment,
+                            c.position.x,
+                            c.position.y,
+                            c.position.z,
+                            c.penetration_depth
+                        );
                     }
                 }
             }
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
-            write_3d_view(&view, &toolpath, &mesh, cutter.as_ref(), simulate, sim_resolution, mesh.bbox.max.z)?;
+            write_3d_view(
+                &view,
+                &toolpath,
+                &mesh,
+                cutter.as_ref(),
+                simulate,
+                sim_resolution,
+                mesh.bbox.max.z,
+            )?;
         }
     }
 

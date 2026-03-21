@@ -4,9 +4,19 @@ use super::toolpath::{DressupConfig, OperationConfig, ToolpathId};
 /// A snapshot of undoable state.
 #[derive(Debug, Clone)]
 pub enum UndoAction {
-    StockChange { old: StockConfig, new: StockConfig },
-    PostChange { old: PostConfig, new: PostConfig },
-    ToolChange { tool_id: ToolId, old: ToolConfig, new: ToolConfig },
+    StockChange {
+        old: StockConfig,
+        new: StockConfig,
+    },
+    PostChange {
+        old: PostConfig,
+        new: PostConfig,
+    },
+    ToolChange {
+        tool_id: ToolId,
+        old: ToolConfig,
+        new: ToolConfig,
+    },
     ToolpathParamChange {
         tp_id: ToolpathId,
         old_op: OperationConfig,
@@ -63,5 +73,11 @@ impl UndoHistory {
         let action = self.redo_stack.pop()?;
         self.undo_stack.push(action.clone());
         Some(action)
+    }
+}
+
+impl Default for UndoHistory {
+    fn default() -> Self {
+        Self::new()
     }
 }

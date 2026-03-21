@@ -1,9 +1,10 @@
 pub mod app;
 pub mod compute;
+pub mod controller;
+pub mod io;
+pub mod render;
 pub mod state;
 pub mod ui;
-pub mod render;
-pub mod io;
 
 pub fn run() -> eframe::Result {
     let options = eframe::NativeOptions {

@@ -170,7 +170,11 @@ mod tests {
     #[test]
     fn spiral_points_cover_radius() {
         let pts = generate_spiral_points(0.0, 0.0, 20.0, 2.0);
-        assert!(pts.len() > 50, "Should produce many points, got {}", pts.len());
+        assert!(
+            pts.len() > 50,
+            "Should produce many points, got {}",
+            pts.len()
+        );
 
         // The last few points should be near the max radius.
         let last = pts.last().expect("non-empty");
@@ -253,10 +257,15 @@ mod tests {
         };
 
         let tp_in = spiral_finish_toolpath(&mesh, &si, &cutter, &base);
-        let tp_out = spiral_finish_toolpath(&mesh, &si, &cutter, &SpiralFinishParams {
-            direction: SpiralDirection::OutsideIn,
-            ..base
-        });
+        let tp_out = spiral_finish_toolpath(
+            &mesh,
+            &si,
+            &cutter,
+            &SpiralFinishParams {
+                direction: SpiralDirection::OutsideIn,
+                ..base
+            },
+        );
 
         // Both should have moves.
         assert!(tp_in.moves.len() > 5);
@@ -293,10 +302,15 @@ mod tests {
         };
 
         let tp_zero = spiral_finish_toolpath(&mesh, &si, &cutter, &base);
-        let tp_leave = spiral_finish_toolpath(&mesh, &si, &cutter, &SpiralFinishParams {
-            stock_to_leave: 1.0,
-            ..base
-        });
+        let tp_leave = spiral_finish_toolpath(
+            &mesh,
+            &si,
+            &cutter,
+            &SpiralFinishParams {
+                stock_to_leave: 1.0,
+                ..base
+            },
+        );
 
         // Find the minimum Z among cutting (non-rapid) moves.
         let min_z = |tp: &Toolpath| -> f64 {

@@ -12,7 +12,7 @@
 //! - Consistent chip load → better surface finish
 
 use crate::geo::P3;
-use crate::simulation::{stamp_tool_at, Heightmap};
+use crate::simulation::{Heightmap, stamp_tool_at};
 use crate::tool::MillingCutter;
 use crate::toolpath::{Move, MoveType, Toolpath};
 
@@ -111,19 +111,15 @@ pub fn optimize_feed_rates(
                 let cz = mv.target.z;
 
                 // Estimate engagement before stamping
-                let engagement = estimate_engagement(
-                    heightmap, cx, cy, cz, tool_radius, n_samples,
-                );
+                let engagement = estimate_engagement(heightmap, cx, cy, cz, tool_radius, n_samples);
 
                 // Compute adjusted feed rate
                 let adjusted = if engagement < params.air_cut_threshold {
                     params.max_feed_rate
                 } else {
                     let factor = rctf(engagement);
-                    (params.nominal_feed_rate * factor).clamp(
-                        params.min_feed_rate,
-                        params.max_feed_rate,
-                    )
+                    (params.nominal_feed_rate * factor)
+                        .clamp(params.min_feed_rate, params.max_feed_rate)
                 };
 
                 feed_rates.push(adjusted);
@@ -213,14 +209,22 @@ mod tests {
     #[test]
     fn test_rctf_full_engagement() {
         let f = rctf(1.0);
-        assert!((f - 1.0).abs() < 0.01, "Full engagement RCTF should be ~1.0, got {:.3}", f);
+        assert!(
+            (f - 1.0).abs() < 0.01,
+            "Full engagement RCTF should be ~1.0, got {:.3}",
+            f
+        );
     }
 
     #[test]
     fn test_rctf_half_engagement() {
         // At 50% radial engagement (ae = D/2), RCTF = 1.0 (no thinning)
         let f = rctf(0.5);
-        assert!((f - 1.0).abs() < 0.01, "50% engagement RCTF should be 1.0, got {:.3}", f);
+        assert!(
+            (f - 1.0).abs() < 0.01,
+            "50% engagement RCTF should be 1.0, got {:.3}",
+            f
+        );
     }
 
     #[test]
@@ -234,7 +238,11 @@ mod tests {
     #[test]
     fn test_rctf_light_engagement() {
         let f = rctf(0.1);
-        assert!(f > 1.5, "Light engagement should have high RCTF, got {:.3}", f);
+        assert!(
+            f > 1.5,
+            "Light engagement should have high RCTF, got {:.3}",
+            f
+        );
     }
 
     #[test]
@@ -243,9 +251,7 @@ mod tests {
         let params = default_params();
 
         // Heightmap at stock_top_z = 0 (already cut to zero)
-        let mut hm = Heightmap::from_stock(
-            0.0, 0.0, 50.0, 50.0, 0.0, 1.0,
-        );
+        let mut hm = Heightmap::from_stock(0.0, 0.0, 50.0, 50.0, 0.0, 1.0);
         // Set all cells to -10 (below tool path) — no material
         for c in hm.cells.iter_mut() {
             *c = -10.0;
@@ -276,9 +282,7 @@ mod tests {
         let params = default_params();
 
         // Full block of material at Z=10
-        let mut hm = Heightmap::from_stock(
-            0.0, 0.0, 50.0, 50.0, 10.0, 1.0,
-        );
+        let mut hm = Heightmap::from_stock(0.0, 0.0, 50.0, 50.0, 10.0, 1.0);
 
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(10.0, 10.0, 15.0));
@@ -308,10 +312,22 @@ mod tests {
     fn test_ramp_rate_limits_change() {
         let mut feeds = vec![0.0, 1000.0, 3000.0, 1000.0]; // rapid, then 3 cuts
         let moves = vec![
-            Move { target: P3::new(0.0, 0.0, 0.0), move_type: MoveType::Rapid },
-            Move { target: P3::new(1.0, 0.0, 0.0), move_type: MoveType::Linear { feed_rate: 1000.0 } },
-            Move { target: P3::new(2.0, 0.0, 0.0), move_type: MoveType::Linear { feed_rate: 3000.0 } },
-            Move { target: P3::new(3.0, 0.0, 0.0), move_type: MoveType::Linear { feed_rate: 1000.0 } },
+            Move {
+                target: P3::new(0.0, 0.0, 0.0),
+                move_type: MoveType::Rapid,
+            },
+            Move {
+                target: P3::new(1.0, 0.0, 0.0),
+                move_type: MoveType::Linear { feed_rate: 1000.0 },
+            },
+            Move {
+                target: P3::new(2.0, 0.0, 0.0),
+                move_type: MoveType::Linear { feed_rate: 3000.0 },
+            },
+            Move {
+                target: P3::new(3.0, 0.0, 0.0),
+                move_type: MoveType::Linear { feed_rate: 1000.0 },
+            },
         ];
 
         smooth_feed_rates(&mut feeds, &moves, 500.0);

@@ -17,7 +17,9 @@ pub trait PostProcessor {
     fn arc_cw(&self, x: f64, y: f64, z: f64, i: f64, j: f64, feed: f64) -> String;
     fn arc_ccw(&self, x: f64, y: f64, z: f64, i: f64, j: f64, feed: f64) -> String;
     fn comment(&self, text: &str) -> String;
-    fn decimal_places(&self) -> usize { 3 }
+    fn decimal_places(&self) -> usize {
+        3
+    }
 
     // Canned drilling cycles (default implementations)
     fn drill_simple(&self, x: f64, y: f64, z: f64, r: f64, feed: f64) -> String {
@@ -32,14 +34,18 @@ pub trait PostProcessor {
     fn drill_chip_break(&self, x: f64, y: f64, z: f64, r: f64, feed: f64, peck: f64) -> String {
         format!("G73 X{x:.4} Y{y:.4} Z{z:.4} R{r:.4} Q{peck:.4} F{feed:.1}\n")
     }
-    fn drill_cancel(&self) -> String { "G80\n".to_string() }
+    fn drill_cancel(&self) -> String {
+        "G80\n".to_string()
+    }
 }
 
 /// GRBL-compatible post-processor.
 pub struct GrblPost;
 
 impl PostProcessor for GrblPost {
-    fn name(&self) -> &str { "GRBL" }
+    fn name(&self) -> &str {
+        "GRBL"
+    }
 
     fn preamble(&self, spindle_rpm: u32) -> String {
         let mut s = String::new();
@@ -82,7 +88,9 @@ impl PostProcessor for GrblPost {
 pub struct LinuxCncPost;
 
 impl PostProcessor for LinuxCncPost {
-    fn name(&self) -> &str { "LinuxCNC" }
+    fn name(&self) -> &str {
+        "LinuxCNC"
+    }
 
     fn preamble(&self, spindle_rpm: u32) -> String {
         let mut s = String::new();
@@ -121,15 +129,13 @@ impl PostProcessor for LinuxCncPost {
         format!("({text})\n")
     }
 
-    fn decimal_places(&self) -> usize { 4 }
+    fn decimal_places(&self) -> usize {
+        4
+    }
 }
 
 /// Emit G-code from a toolpath using the given post-processor.
-pub fn emit_gcode(
-    toolpath: &Toolpath,
-    post: &dyn PostProcessor,
-    spindle_rpm: u32,
-) -> String {
+pub fn emit_gcode(toolpath: &Toolpath, post: &dyn PostProcessor, spindle_rpm: u32) -> String {
     let mut output = String::new();
 
     output.push_str(&post.preamble(spindle_rpm));
@@ -144,12 +150,7 @@ pub fn emit_gcode(
             }
             MoveType::Linear { feed_rate } => {
                 if last_feed != Some(feed_rate) {
-                    output.push_str(&post.linear(
-                        m.target.x,
-                        m.target.y,
-                        m.target.z,
-                        feed_rate,
-                    ));
+                    output.push_str(&post.linear(m.target.x, m.target.y, m.target.z, feed_rate));
                     last_feed = Some(feed_rate);
                 } else {
                     let dp = post.decimal_places();
@@ -161,15 +162,11 @@ pub fn emit_gcode(
                 }
             }
             MoveType::ArcCW { i, j, feed_rate } => {
-                output.push_str(&post.arc_cw(
-                    m.target.x, m.target.y, m.target.z, i, j, feed_rate,
-                ));
+                output.push_str(&post.arc_cw(m.target.x, m.target.y, m.target.z, i, j, feed_rate));
                 last_feed = Some(feed_rate);
             }
             MoveType::ArcCCW { i, j, feed_rate } => {
-                output.push_str(&post.arc_ccw(
-                    m.target.x, m.target.y, m.target.z, i, j, feed_rate,
-                ));
+                output.push_str(&post.arc_ccw(m.target.x, m.target.y, m.target.z, i, j, feed_rate));
                 last_feed = Some(feed_rate);
             }
         }
@@ -183,7 +180,9 @@ pub fn emit_gcode(
 pub struct Mach3Post;
 
 impl PostProcessor for Mach3Post {
-    fn name(&self) -> &str { "Mach3" }
+    fn name(&self) -> &str {
+        "Mach3"
+    }
 
     fn preamble(&self, spindle_rpm: u32) -> String {
         let mut s = String::new();
@@ -223,7 +222,9 @@ impl PostProcessor for Mach3Post {
         format!("({text})\n")
     }
 
-    fn decimal_places(&self) -> usize { 4 }
+    fn decimal_places(&self) -> usize {
+        4
+    }
 }
 
 /// A phase in a multi-operation job: toolpath + spindle speed + label.
@@ -234,10 +235,7 @@ pub struct GcodePhase<'a> {
 }
 
 /// Emit G-code from multiple phases, inserting spindle speed changes between operations.
-pub fn emit_gcode_phased(
-    phases: &[GcodePhase<'_>],
-    post: &dyn PostProcessor,
-) -> String {
+pub fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &dyn PostProcessor) -> String {
     if phases.is_empty() {
         return String::new();
     }
@@ -265,9 +263,8 @@ pub fn emit_gcode_phased(
                 }
                 MoveType::Linear { feed_rate } => {
                     if last_feed != Some(feed_rate) {
-                        output.push_str(&post.linear(
-                            m.target.x, m.target.y, m.target.z, feed_rate,
-                        ));
+                        output
+                            .push_str(&post.linear(m.target.x, m.target.y, m.target.z, feed_rate));
                         last_feed = Some(feed_rate);
                     } else {
                         let dp = post.decimal_places();
@@ -279,15 +276,15 @@ pub fn emit_gcode_phased(
                     }
                 }
                 MoveType::ArcCW { i, j, feed_rate } => {
-                    output.push_str(&post.arc_cw(
-                        m.target.x, m.target.y, m.target.z, i, j, feed_rate,
-                    ));
+                    output.push_str(
+                        &post.arc_cw(m.target.x, m.target.y, m.target.z, i, j, feed_rate),
+                    );
                     last_feed = Some(feed_rate);
                 }
                 MoveType::ArcCCW { i, j, feed_rate } => {
-                    output.push_str(&post.arc_ccw(
-                        m.target.x, m.target.y, m.target.z, i, j, feed_rate,
-                    ));
+                    output.push_str(
+                        &post.arc_ccw(m.target.x, m.target.y, m.target.z, i, j, feed_rate),
+                    );
                     last_feed = Some(feed_rate);
                 }
             }
@@ -397,8 +394,16 @@ mod tests {
         tp2.feed_to(P3::new(30.0, 0.0, 0.0), 800.0);
 
         let phases = vec![
-            GcodePhase { toolpath: &tp1, spindle_rpm: 18000, label: "Op 0 — pocket" },
-            GcodePhase { toolpath: &tp2, spindle_rpm: 18000, label: "Op 1 — profile" },
+            GcodePhase {
+                toolpath: &tp1,
+                spindle_rpm: 18000,
+                label: "Op 0 — pocket",
+            },
+            GcodePhase {
+                toolpath: &tp2,
+                spindle_rpm: 18000,
+                label: "Op 1 — profile",
+            },
         ];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
 
@@ -423,8 +428,16 @@ mod tests {
         tp2.feed_to(P3::new(30.0, 0.0, 0.0), 800.0);
 
         let phases = vec![
-            GcodePhase { toolpath: &tp1, spindle_rpm: 18000, label: "Op 0 — rough" },
-            GcodePhase { toolpath: &tp2, spindle_rpm: 24000, label: "Op 1 — finish" },
+            GcodePhase {
+                toolpath: &tp1,
+                spindle_rpm: 18000,
+                label: "Op 0 — rough",
+            },
+            GcodePhase {
+                toolpath: &tp2,
+                spindle_rpm: 24000,
+                label: "Op 1 — finish",
+            },
         ];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
 
@@ -432,6 +445,9 @@ mod tests {
         assert!(gcode.contains("M3 S18000"));
         assert!(gcode.contains("M3 S24000"));
         let m3_count = gcode.matches("M3 S").count();
-        assert_eq!(m3_count, 2, "Different spindle speeds should emit M3 for each");
+        assert_eq!(
+            m3_count, 2,
+            "Different spindle speeds should emit M3 for each"
+        );
     }
 }

@@ -5,62 +5,20 @@ use crate::state::toolpath::{OperationConfig, ToolpathEntry};
 
 /// Extract feed rate (mm/min) from an operation config.
 fn feed_rate_of(op: &OperationConfig) -> f64 {
-    match op {
-        OperationConfig::Face(c) => c.feed_rate,
-        OperationConfig::Pocket(c) => c.feed_rate,
-        OperationConfig::Profile(c) => c.feed_rate,
-        OperationConfig::Adaptive(c) => c.feed_rate,
-        OperationConfig::VCarve(c) => c.feed_rate,
-        OperationConfig::Rest(c) => c.feed_rate,
-        OperationConfig::Inlay(c) => c.feed_rate,
-        OperationConfig::Zigzag(c) => c.feed_rate,
-        OperationConfig::Trace(c) => c.feed_rate,
-        OperationConfig::Drill(c) => c.feed_rate,
-        OperationConfig::Chamfer(c) => c.feed_rate,
-        OperationConfig::DropCutter(c) => c.feed_rate,
-        OperationConfig::Adaptive3d(c) => c.feed_rate,
-        OperationConfig::Waterline(c) => c.feed_rate,
-        OperationConfig::Pencil(c) => c.feed_rate,
-        OperationConfig::Scallop(c) => c.feed_rate,
-        OperationConfig::SteepShallow(c) => c.feed_rate,
-        OperationConfig::RampFinish(c) => c.feed_rate,
-        OperationConfig::SpiralFinish(c) => c.feed_rate,
-        OperationConfig::RadialFinish(c) => c.feed_rate,
-        OperationConfig::HorizontalFinish(c) => c.feed_rate,
-        OperationConfig::ProjectCurve(c) => c.feed_rate,
-    }
+    op.feed_rate()
 }
 
 /// Extract depth (mm) from an operation config, if applicable.
 fn depth_of(op: &OperationConfig) -> Option<f64> {
-    match op {
-        OperationConfig::Face(c) => Some(c.depth),
-        OperationConfig::Pocket(c) => Some(c.depth),
-        OperationConfig::Profile(c) => Some(c.depth),
-        OperationConfig::Adaptive(c) => Some(c.depth),
-        OperationConfig::VCarve(c) => Some(c.max_depth),
-        OperationConfig::Rest(c) => Some(c.depth),
-        OperationConfig::Inlay(c) => Some(c.pocket_depth),
-        OperationConfig::Zigzag(c) => Some(c.depth),
-        OperationConfig::Trace(c) => Some(c.depth),
-        OperationConfig::Drill(c) => Some(c.depth),
-        OperationConfig::Chamfer(_) => None,
-        OperationConfig::DropCutter(_) => None,
-        OperationConfig::Adaptive3d(c) => Some(c.depth_per_pass),
-        OperationConfig::Waterline(c) => Some((c.start_z - c.final_z).abs()),
-        OperationConfig::Pencil(_) => None,
-        OperationConfig::Scallop(_) => None,
-        OperationConfig::SteepShallow(_) => None,
-        OperationConfig::RampFinish(_) => None,
-        OperationConfig::SpiralFinish(_) => None,
-        OperationConfig::RadialFinish(_) => None,
-        OperationConfig::HorizontalFinish(_) => None,
-        OperationConfig::ProjectCurve(c) => Some(c.depth),
+    match op.depth_semantics() {
+        crate::state::toolpath::DepthSemantics::Explicit(value)
+        | crate::state::toolpath::DepthSemantics::DerivedStockTop(value) => Some(value),
+        crate::state::toolpath::DepthSemantics::None => None,
     }
 }
 
 /// Look up a tool by id, returning None if not found.
-fn find_tool<'a>(tools: &'a [ToolConfig], id: ToolId) -> Option<&'a ToolConfig> {
+fn find_tool(tools: &[ToolConfig], id: ToolId) -> Option<&ToolConfig> {
     tools.iter().find(|t| t.id == id)
 }
 
@@ -198,9 +156,9 @@ tr:nth-child(even) {{ background: #24242e; }}
          <tr><th>#</th><th>Name</th><th>Type</th><th>Diameter</th><th>Flute Length</th></tr>\n"
     );
     for (i, tool) in job.tools.iter().enumerate() {
-        let _ = write!(
+        let _ = writeln!(
             html,
-            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{:.2} mm</td><td>{:.2} mm</td></tr>\n",
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{:.2} mm</td><td>{:.2} mm</td></tr>",
             i + 1,
             escape_html(&tool.name),
             tool.tool_type.label(),
@@ -208,7 +166,7 @@ tr:nth-child(even) {{ background: #24242e; }}
             tool.cutting_length,
         );
     }
-    let _ = write!(html, "</table>\n");
+    let _ = writeln!(html, "</table>");
 
     // --- Operations table ---
     let _ = write!(
@@ -231,9 +189,9 @@ tr:nth-child(even) {{ background: #24242e; }}
             .unwrap_or_else(|| "-".to_string());
         let enabled_marker = if tp.enabled { "" } else { " (disabled)" };
 
-        let _ = write!(
+        let _ = writeln!(
             html,
-            "<tr><td>{}</td><td>{}{}</td><td>{}</td><td>{}</td><td>{:.0} mm/min</td><td>{}</td><td>{}</td></tr>\n",
+            "<tr><td>{}</td><td>{}{}</td><td>{}</td><td>{}</td><td>{:.0} mm/min</td><td>{}</td><td>{}</td></tr>",
             i + 1,
             escape_html(&tp.name),
             enabled_marker,
@@ -244,7 +202,7 @@ tr:nth-child(even) {{ background: #24242e; }}
             time_str,
         );
     }
-    let _ = write!(html, "</table>\n");
+    let _ = writeln!(html, "</table>");
 
     // --- Post-processor info ---
     let _ = write!(
@@ -268,7 +226,7 @@ tr:nth-child(even) {{ background: #24242e; }}
         .any(|tp| tp.enabled && tp.result.is_some());
 
     if has_details {
-        let _ = write!(html, "<h2>Toolpath Details</h2>\n");
+        let _ = writeln!(html, "<h2>Toolpath Details</h2>");
 
         for tp in &job.toolpaths {
             if !tp.enabled {
@@ -326,8 +284,7 @@ mod tests {
     use super::*;
     use crate::state::job::{JobState, ToolConfig, ToolType};
     use crate::state::toolpath::{
-        ComputeStatus, DressupConfig, HeightsConfig, OperationConfig, PocketConfig,
-        ToolpathEntry, ToolpathResult, ToolpathStats, BoundaryContainment,
+        ComputeStatus, OperationConfig, PocketConfig, ToolpathEntry, ToolpathResult, ToolpathStats,
     };
     use std::sync::Arc;
 
@@ -337,40 +294,33 @@ mod tests {
 
         // Add a tool.
         let tool_id = job.next_tool_id();
-        job.tools.push(ToolConfig::new_default(tool_id, ToolType::EndMill));
+        job.tools
+            .push(ToolConfig::new_default(tool_id, ToolType::EndMill));
 
         // Add a toolpath with a result.
         let tp_id = job.next_toolpath_id();
-        job.toolpaths.push(ToolpathEntry {
-            id: tp_id,
-            name: "Pocket 1".to_string(),
-            enabled: true,
-            visible: true,
-            locked: false,
-            tool_id,
-            model_id: crate::state::job::ModelId(0),
-            operation: OperationConfig::Pocket(PocketConfig {
-                feed_rate: 1000.0,
-                ..PocketConfig::default()
-            }),
-            dressups: DressupConfig::default(),
-            heights: HeightsConfig::default(),
-            boundary_enabled: false,
-            boundary_containment: BoundaryContainment::Center,
-            pre_gcode: String::new(),
-            post_gcode: String::new(),
-            status: ComputeStatus::Done,
-            result: Some(ToolpathResult {
-                toolpath: Arc::new(rs_cam_core::toolpath::Toolpath::new()),
-                stats: ToolpathStats {
-                    move_count: 150,
-                    cutting_distance: 5000.0,
-                    rapid_distance: 200.0,
-                },
-            }),
-            stale_since: None,
-            auto_regen: true,
+        let mut toolpath = ToolpathEntry::from_init(
+            crate::state::toolpath::ToolpathEntryInit::from_loaded_state(
+                tp_id,
+                "Pocket 1".to_string(),
+                tool_id,
+                crate::state::job::ModelId(0),
+                OperationConfig::Pocket(PocketConfig {
+                    feed_rate: 1000.0,
+                    ..PocketConfig::default()
+                }),
+            ),
+        );
+        toolpath.status = ComputeStatus::Done;
+        toolpath.result = Some(ToolpathResult {
+            toolpath: Arc::new(rs_cam_core::toolpath::Toolpath::new()),
+            stats: ToolpathStats {
+                move_count: 150,
+                cutting_distance: 5000.0,
+                rapid_distance: 200.0,
+            },
         });
+        job.toolpaths.push(toolpath);
 
         job
     }
@@ -442,8 +392,10 @@ mod tests {
 
     #[test]
     fn escape_html_works() {
-        assert_eq!(escape_html("<b>\"test\" & 'it'</b>"),
-                   "&lt;b&gt;&quot;test&quot; &amp; &#39;it&#39;&lt;/b&gt;");
+        assert_eq!(
+            escape_html("<b>\"test\" & 'it'</b>"),
+            "&lt;b&gt;&quot;test&quot; &amp; &#39;it&#39;&lt;/b&gt;"
+        );
     }
 
     #[test]

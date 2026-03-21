@@ -1,0 +1,282 @@
+use std::sync::Arc;
+
+use rs_cam_core::toolpath::Toolpath;
+
+use crate::state::job::{ModelId, ToolId};
+
+use super::catalog::OperationConfig;
+use super::support::{
+    BoundaryContainment, ComputeStatus, DressupConfig, FeedsAutoMode, HeightsConfig, StockSource,
+    ToolpathId, ToolpathStats,
+};
+
+#[derive(Debug, Clone)]
+pub struct ToolpathEntryInit {
+    pub id: ToolpathId,
+    pub name: String,
+    pub enabled: bool,
+    pub visible: bool,
+    pub locked: bool,
+    pub tool_id: ToolId,
+    pub model_id: ModelId,
+    pub operation: OperationConfig,
+    pub dressups: DressupConfig,
+    pub heights: HeightsConfig,
+    pub boundary_enabled: bool,
+    pub boundary_containment: BoundaryContainment,
+    pub pre_gcode: String,
+    pub post_gcode: String,
+    pub stock_source: StockSource,
+    pub auto_regen: Option<bool>,
+    pub feeds_auto: FeedsAutoMode,
+}
+
+impl ToolpathEntryInit {
+    pub fn new(
+        id: ToolpathId,
+        name: String,
+        tool_id: ToolId,
+        model_id: ModelId,
+        operation: OperationConfig,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            enabled: true,
+            visible: true,
+            locked: false,
+            tool_id,
+            model_id,
+            operation,
+            dressups: DressupConfig::default(),
+            heights: HeightsConfig::default(),
+            boundary_enabled: false,
+            boundary_containment: BoundaryContainment::Center,
+            pre_gcode: String::new(),
+            post_gcode: String::new(),
+            stock_source: StockSource::Fresh,
+            auto_regen: None,
+            feeds_auto: FeedsAutoMode::default(),
+        }
+    }
+
+    pub fn new_toolpath(
+        id: ToolpathId,
+        name: String,
+        tool_id: ToolId,
+        model_id: ModelId,
+        op_type: super::catalog::OperationType,
+    ) -> Self {
+        Self::new(
+            id,
+            name,
+            tool_id,
+            model_id,
+            OperationConfig::new_default(op_type),
+        )
+    }
+
+    pub fn from_loaded_state(
+        id: ToolpathId,
+        name: String,
+        tool_id: ToolId,
+        model_id: ModelId,
+        operation: OperationConfig,
+    ) -> Self {
+        Self::new(id, name, tool_id, model_id, operation)
+    }
+
+    pub fn duplicate_from(source: &ToolpathEntry, new_id: ToolpathId, new_name: String) -> Self {
+        Self {
+            id: new_id,
+            name: new_name,
+            enabled: source.enabled,
+            visible: source.visible,
+            locked: source.locked,
+            tool_id: source.tool_id,
+            model_id: source.model_id,
+            operation: source.operation.clone(),
+            dressups: source.dressups.clone(),
+            heights: source.heights.clone(),
+            boundary_enabled: source.boundary_enabled,
+            boundary_containment: source.boundary_containment,
+            pre_gcode: source.pre_gcode.clone(),
+            post_gcode: source.post_gcode.clone(),
+            stock_source: source.stock_source,
+            auto_regen: Some(source.auto_regen),
+            feeds_auto: source.feeds_auto.clone(),
+        }
+    }
+}
+
+pub struct ToolpathEntry {
+    pub id: ToolpathId,
+    pub name: String,
+    pub enabled: bool,
+    pub visible: bool,
+    pub locked: bool,
+    pub tool_id: ToolId,
+    pub model_id: ModelId,
+    pub operation: OperationConfig,
+    pub dressups: DressupConfig,
+    pub heights: HeightsConfig,
+    pub boundary_enabled: bool,
+    pub boundary_containment: BoundaryContainment,
+    pub pre_gcode: String,
+    pub post_gcode: String,
+    pub stock_source: StockSource,
+    pub status: ComputeStatus,
+    pub result: Option<ToolpathResult>,
+    pub stale_since: Option<std::time::Instant>,
+    pub auto_regen: bool,
+    pub feeds_auto: FeedsAutoMode,
+    pub feeds_result: Option<rs_cam_core::feeds::FeedsResult>,
+}
+
+pub struct ToolpathResult {
+    pub toolpath: Arc<Toolpath>,
+    pub stats: ToolpathStats,
+}
+
+impl ToolpathEntry {
+    pub fn from_init(init: ToolpathEntryInit) -> Self {
+        let auto_regen = init
+            .auto_regen
+            .unwrap_or_else(|| init.operation.default_auto_regen());
+        Self {
+            id: init.id,
+            name: init.name,
+            enabled: init.enabled,
+            visible: init.visible,
+            locked: init.locked,
+            tool_id: init.tool_id,
+            model_id: init.model_id,
+            operation: init.operation,
+            dressups: init.dressups,
+            heights: init.heights,
+            boundary_enabled: init.boundary_enabled,
+            boundary_containment: init.boundary_containment,
+            pre_gcode: init.pre_gcode,
+            post_gcode: init.post_gcode,
+            stock_source: init.stock_source,
+            status: ComputeStatus::Pending,
+            result: None,
+            stale_since: None,
+            auto_regen,
+            feeds_auto: init.feeds_auto,
+            feeds_result: None,
+        }
+    }
+
+    pub fn new(
+        id: ToolpathId,
+        name: String,
+        tool_id: ToolId,
+        model_id: ModelId,
+        operation: OperationConfig,
+    ) -> Self {
+        Self::from_init(ToolpathEntryInit::new(
+            id, name, tool_id, model_id, operation,
+        ))
+    }
+
+    pub fn for_operation(
+        id: ToolpathId,
+        name: String,
+        tool_id: ToolId,
+        model_id: ModelId,
+        op_type: super::catalog::OperationType,
+    ) -> Self {
+        Self::from_init(ToolpathEntryInit::new_toolpath(
+            id, name, tool_id, model_id, op_type,
+        ))
+    }
+
+    pub fn duplicate_as(&self, new_id: ToolpathId, new_name: String) -> Self {
+        Self::from_init(ToolpathEntryInit::duplicate_from(self, new_id, new_name))
+    }
+
+    pub fn clear_runtime_state(&mut self) {
+        self.status = ComputeStatus::Pending;
+        self.result = None;
+        self.stale_since = None;
+        self.feeds_result = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::job::{ModelId, ToolId};
+    use crate::state::toolpath::{
+        Adaptive3dConfig, OperationConfig, OperationType, StockSource, ToolpathStats,
+    };
+
+    #[test]
+    fn new_toolpath_uses_operation_defaults() {
+        let entry = ToolpathEntry::for_operation(
+            ToolpathId(1),
+            "Pocket".to_string(),
+            ToolId(1),
+            ModelId(1),
+            OperationType::Pocket,
+        );
+        assert!(entry.auto_regen);
+        assert!(matches!(entry.operation, OperationConfig::Pocket(_)));
+    }
+
+    #[test]
+    fn duplicate_preserves_editable_state_but_not_runtime() {
+        let mut source = ToolpathEntry::for_operation(
+            ToolpathId(1),
+            "Adaptive 3D".to_string(),
+            ToolId(1),
+            ModelId(2),
+            OperationType::Adaptive3d,
+        );
+        source.enabled = false;
+        source.stock_source = StockSource::FromRemainingStock;
+        source.status = ComputeStatus::Done;
+        source.result = Some(ToolpathResult {
+            toolpath: Arc::new(Toolpath::new()),
+            stats: ToolpathStats::default(),
+        });
+
+        let duplicate = source.duplicate_as(ToolpathId(9), "Adaptive 3D Copy".to_string());
+        assert_eq!(duplicate.id, ToolpathId(9));
+        assert!(!duplicate.enabled);
+        assert_eq!(duplicate.stock_source, StockSource::FromRemainingStock);
+        assert!(matches!(
+            duplicate.operation,
+            OperationConfig::Adaptive3d(Adaptive3dConfig { .. })
+        ));
+        assert!(matches!(duplicate.status, ComputeStatus::Pending));
+        assert!(duplicate.result.is_none());
+    }
+
+    #[test]
+    fn loaded_init_can_override_auto_regen_and_runtime_reset() {
+        let mut init = ToolpathEntryInit::from_loaded_state(
+            ToolpathId(4),
+            "Loaded".to_string(),
+            ToolId(2),
+            ModelId(3),
+            OperationConfig::new_default(OperationType::DropCutter),
+        );
+        init.auto_regen = Some(true);
+        let mut entry = ToolpathEntry::from_init(init);
+        assert!(entry.auto_regen);
+
+        entry.status = ComputeStatus::Error("x".to_string());
+        entry.result = Some(ToolpathResult {
+            toolpath: Arc::new(Toolpath::new()),
+            stats: ToolpathStats::default(),
+        });
+        entry.stale_since = Some(std::time::Instant::now());
+        entry.clear_runtime_state();
+        assert!(matches!(entry.status, ComputeStatus::Pending));
+        assert!(entry.result.is_none());
+        assert!(entry.feeds_result.is_none());
+        assert!(entry.stale_since.is_none());
+    }
+}

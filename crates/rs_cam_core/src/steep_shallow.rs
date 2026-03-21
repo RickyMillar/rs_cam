@@ -17,7 +17,7 @@
 use crate::dropcutter::batch_drop_cutter;
 use crate::geo::P3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::slope::{classify_steep_shallow, SlopeMap, SurfaceHeightmap};
+use crate::slope::{SlopeMap, SurfaceHeightmap, classify_steep_shallow};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 use crate::waterline::waterline_contours;
@@ -123,6 +123,7 @@ fn erode_grid(grid: &[bool], rows: usize, cols: usize, radius_cells: usize) -> V
 }
 
 /// Generate steep (waterline) passes filtered to steep+overlap region.
+#[allow(clippy::too_many_arguments)]
 fn generate_steep_passes(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -160,10 +161,10 @@ fn generate_steep_passes(
                 .filter(|p| {
                     slope_map
                         .angle_at_world(p.x, p.y)
-                        .map_or(false, |a| a >= steep_threshold)
+                        .is_some_and(|a| a >= steep_threshold)
                 })
                 .count();
-            let total = (contour.len() + sample_step - 1) / sample_step;
+            let total = contour.len().div_ceil(sample_step);
             if total > 0 && in_steep * 3 < total {
                 continue; // Mostly shallow, skip
             }
@@ -196,10 +197,7 @@ fn generate_steep_passes(
                 tp.feed_to(P3::new(pt.x, pt.y, z_adjusted), feed_rate);
             }
             // Close the contour
-            tp.feed_to(
-                P3::new(filtered[0].x, filtered[0].y, z_adjusted),
-                feed_rate,
-            );
+            tp.feed_to(P3::new(filtered[0].x, filtered[0].y, z_adjusted), feed_rate);
             tp.rapid_to(P3::new(filtered[0].x, filtered[0].y, safe_z));
         }
 
@@ -210,6 +208,7 @@ fn generate_steep_passes(
 }
 
 /// Generate shallow (parallel raster) passes filtered to shallow+overlap region.
+#[allow(clippy::too_many_arguments)]
 fn generate_shallow_passes(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -245,12 +244,10 @@ fn generate_shallow_passes(
             let y = grid.y_start + row as f64 * grid.y_step;
 
             // Check if this point is in the shallow region
-            let is_shallow = slope_map
-                .world_to_cell(x, y)
-                .map_or(false, |(_r, _c)| {
-                    let idx = _r * slope_map.cols + _c;
-                    idx < shallow_eroded.len() && shallow_eroded[idx]
-                });
+            let is_shallow = slope_map.world_to_cell(x, y).is_some_and(|(_r, _c)| {
+                let idx = _r * slope_map.cols + _c;
+                idx < shallow_eroded.len() && shallow_eroded[idx]
+            });
 
             if is_shallow {
                 let z = cl.z + stock_to_leave;
@@ -445,7 +442,8 @@ mod tests {
                 assert!(
                     dilated[r * 5 + c],
                     "Cell ({},{}) should be true after dilation",
-                    r, c
+                    r,
+                    c
                 );
             }
         }
@@ -467,7 +465,7 @@ mod tests {
         let eroded = erode_grid(&grid, rows, cols, 1);
 
         // Border of the original block (row/col 1 and 5) should be eroded
-        assert!(!eroded[1 * cols + 1], "Edge of block should be eroded");
+        assert!(!eroded[cols + 1], "Edge of block should be eroded");
         assert!(!eroded[5 * cols + 5], "Edge of block should be eroded");
         // Interior (rows 2-4, cols 2-4) should survive
         assert!(eroded[3 * cols + 3], "Center should survive erosion");
@@ -496,7 +494,8 @@ mod tests {
                 assert!(
                     restored[r * cols + c],
                     "Original block cell ({},{}) should survive dilate+erode",
-                    r, c
+                    r,
+                    c
                 );
             }
         }
@@ -528,10 +527,7 @@ mod tests {
         let steep_count = steep.iter().filter(|&&s| s).count();
         let shallow_count = steep.iter().filter(|&&s| !s).count();
 
-        assert!(
-            steep_count > 0,
-            "Hemisphere should have steep cells, got 0"
-        );
+        assert!(steep_count > 0, "Hemisphere should have steep cells, got 0");
         assert!(
             shallow_count > 0,
             "Hemisphere should have shallow cells, got 0"
@@ -591,9 +587,19 @@ mod tests {
         let steep_expanded = dilate_grid(&steep_grid, rows, cols, 2);
 
         let steep_tp = generate_steep_passes(
-            &mesh, &si, &cutter, &slope_map, &steep_expanded,
-            bbox.max.z, surface_hm.min_z(), 2.0, 3.0, 0.0,
-            1000.0, 500.0, 30.0,
+            &mesh,
+            &si,
+            &cutter,
+            &slope_map,
+            &steep_expanded,
+            bbox.max.z,
+            surface_hm.min_z(),
+            2.0,
+            3.0,
+            0.0,
+            1000.0,
+            500.0,
+            30.0,
         );
 
         // Steep waterline passes should have constant Z within each contour
@@ -604,7 +610,10 @@ mod tests {
             match m.move_type {
                 crate::toolpath::MoveType::Rapid => {
                     if in_contour && contour_z_values.len() >= 2 {
-                        let z_min = contour_z_values.iter().copied().fold(f64::INFINITY, f64::min);
+                        let z_min = contour_z_values
+                            .iter()
+                            .copied()
+                            .fold(f64::INFINITY, f64::min);
                         let z_max = contour_z_values
                             .iter()
                             .copied()
@@ -655,14 +664,25 @@ mod tests {
         let shallow_expanded = dilate_grid(&shallow_grid, rows, cols, 2);
 
         let shallow_tp = generate_shallow_passes(
-            &mesh, &si, &cutter, &shallow_expanded, &slope_map, 2.0, 0.0, 1000.0, 500.0, 30.0,
+            &mesh,
+            &si,
+            &cutter,
+            &shallow_expanded,
+            &slope_map,
+            2.0,
+            0.0,
+            1000.0,
+            500.0,
+            30.0,
         );
 
         // Shallow raster should have variable Z across the surface
         let cutting_z: Vec<f64> = shallow_tp
             .moves
             .iter()
-            .filter(|m| matches!(m.move_type, crate::toolpath::MoveType::Linear { .. }) && m.target.z < 29.0)
+            .filter(|m| {
+                matches!(m.move_type, crate::toolpath::MoveType::Linear { .. }) && m.target.z < 29.0
+            })
             .map(|m| m.target.z)
             .collect();
 

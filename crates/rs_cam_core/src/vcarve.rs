@@ -11,7 +11,7 @@
 //!
 //! Reference: research/02_algorithms.md §11
 
-use crate::geo::{point_to_segment_distance, P2, P3};
+use crate::geo::{P2, P3, point_to_segment_distance};
 use crate::polygon::Polygon2;
 use crate::toolpath::Toolpath;
 

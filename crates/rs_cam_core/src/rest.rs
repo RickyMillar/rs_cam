@@ -15,7 +15,7 @@
 //! Reference: research/raw_algorithms.md §4.5
 
 use crate::geo::{P2, P3};
-use crate::polygon::{offset_polygon, Polygon2};
+use crate::polygon::{Polygon2, offset_polygon};
 use crate::toolpath::Toolpath;
 
 /// Parameters for rest machining.
@@ -63,12 +63,8 @@ pub fn rest_machining_toolpath(polygon: &Polygon2, params: &RestParams) -> Toolp
     let large_reachable = offset_polygon(polygon, params.prev_tool_radius);
 
     // Generate zigzag scan lines for the small tool
-    let lines = crate::zigzag::zigzag_lines(
-        polygon,
-        params.tool_radius,
-        params.stepover,
-        params.angle,
-    );
+    let lines =
+        crate::zigzag::zigzag_lines(polygon, params.tool_radius, params.stepover, params.angle);
 
     if lines.is_empty() {
         return tp;
@@ -138,7 +134,12 @@ fn emit_rest_segment(tp: &mut Toolpath, points: &[P2], params: &RestParams) {
     }
     let z = params.cut_depth;
     let path_3d: Vec<P3> = points.iter().map(|p| P3::new(p.x, p.y, z)).collect();
-    tp.emit_path_segment(&path_3d, params.safe_z, params.feed_rate, params.plunge_rate);
+    tp.emit_path_segment(
+        &path_3d,
+        params.safe_z,
+        params.feed_rate,
+        params.plunge_rate,
+    );
 }
 
 #[cfg(test)]
@@ -152,8 +153,8 @@ mod tests {
 
     fn default_params() -> RestParams {
         RestParams {
-            prev_tool_radius: 6.0,  // 12mm large tool
-            tool_radius: 1.5,       // 3mm small tool
+            prev_tool_radius: 6.0, // 12mm large tool
+            tool_radius: 1.5,      // 3mm small tool
             cut_depth: -3.0,
             stepover: 1.0,
             feed_rate: 1000.0,
@@ -174,7 +175,10 @@ mod tests {
             ..default_params()
         };
         let tp = rest_machining_toolpath(&sq, &params);
-        assert!(tp.moves.is_empty(), "Same tool size should produce no rest passes");
+        assert!(
+            tp.moves.is_empty(),
+            "Same tool size should produce no rest passes"
+        );
     }
 
     #[test]
@@ -186,7 +190,10 @@ mod tests {
             ..default_params()
         };
         let tp = rest_machining_toolpath(&sq, &params);
-        assert!(tp.moves.is_empty(), "Larger new tool should produce no rest passes");
+        assert!(
+            tp.moves.is_empty(),
+            "Larger new tool should produce no rest passes"
+        );
     }
 
     #[test]
@@ -242,15 +249,18 @@ mod tests {
         let tp = rest_machining_toolpath(&sq, &params);
 
         // For comparison, generate a full zigzag
-        let full_tp = crate::zigzag::zigzag_toolpath(&sq, &crate::zigzag::ZigzagParams {
-            tool_radius: params.tool_radius,
-            stepover: params.stepover,
-            cut_depth: params.cut_depth,
-            feed_rate: params.feed_rate,
-            plunge_rate: params.plunge_rate,
-            safe_z: params.safe_z,
-            angle: 0.0,
-        });
+        let full_tp = crate::zigzag::zigzag_toolpath(
+            &sq,
+            &crate::zigzag::ZigzagParams {
+                tool_radius: params.tool_radius,
+                stepover: params.stepover,
+                cut_depth: params.cut_depth,
+                feed_rate: params.feed_rate,
+                plunge_rate: params.plunge_rate,
+                safe_z: params.safe_z,
+                angle: 0.0,
+            },
+        );
 
         // Rest passes should be much less than full zigzag.
         // The perimeter strip between tool offsets (4.5mm wide all around)
@@ -338,10 +348,7 @@ mod tests {
             P2::new(5.0, 5.0),
             P2::new(5.0, -5.0),
         ];
-        let poly = Polygon2::with_holes(
-            square_polygon(40.0).exterior,
-            vec![hole],
-        );
+        let poly = Polygon2::with_holes(square_polygon(40.0).exterior, vec![hole]);
         let params = default_params();
         let tp = rest_machining_toolpath(&poly, &params);
 
@@ -371,7 +378,8 @@ mod tests {
                 assert!(
                     sq.contains_point(&p) || point_in_any_polygon(&p, &expanded),
                     "Cut at ({:.2}, {:.2}) should be inside polygon",
-                    m.target.x, m.target.y
+                    m.target.x,
+                    m.target.y
                 );
             }
         }

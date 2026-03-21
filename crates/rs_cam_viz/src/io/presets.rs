@@ -32,10 +32,10 @@ pub fn list_presets() -> Vec<Preset> {
     let mut presets = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("toml") {
-            if let Ok(preset) = load_preset_from_path(&path) {
-                presets.push(preset);
-            }
+        if path.extension().and_then(|e| e.to_str()) == Some("toml")
+            && let Ok(preset) = load_preset_from_path(&path)
+        {
+            presets.push(preset);
         }
     }
     presets.sort_by(|a, b| a.name.cmp(&b.name));
@@ -82,8 +82,7 @@ pub fn delete_preset(name: &str) -> Result<(), String> {
         return Err(format!("Preset '{}' not found", name));
     }
 
-    std::fs::remove_file(&path)
-        .map_err(|e| format!("Failed to delete preset '{}': {}", name, e))
+    std::fs::remove_file(&path).map_err(|e| format!("Failed to delete preset '{}': {}", name, e))
 }
 
 /// Parse a preset from a .toml file at the given path.
@@ -204,10 +203,7 @@ mod tests {
             extract_field(text, "name"),
             Some("Hardwood Roughing".to_string())
         );
-        assert_eq!(
-            extract_field(text, "operation"),
-            Some("Pocket".to_string())
-        );
+        assert_eq!(extract_field(text, "operation"), Some("Pocket".to_string()));
         assert_eq!(extract_field(text, "missing"), None);
     }
 

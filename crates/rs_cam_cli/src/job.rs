@@ -27,7 +27,7 @@
 //! pattern = "zigzag"
 //! ```
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -75,10 +75,18 @@ pub struct JobConfig {
     pub sim_resolution: f64,
 }
 
-fn default_post() -> String { "grbl".into() }
-fn default_spindle_speed() -> u32 { 18000 }
-fn default_safe_z() -> f64 { 10.0 }
-fn default_sim_resolution() -> f64 { 0.25 }
+fn default_post() -> String {
+    "grbl".into()
+}
+fn default_spindle_speed() -> u32 {
+    18000
+}
+fn default_safe_z() -> f64 {
+    10.0
+}
+fn default_sim_resolution() -> f64 {
+    0.25
+}
 
 #[derive(Deserialize)]
 pub struct ToolDef {
@@ -164,8 +172,7 @@ pub struct OperationDef {
 pub fn parse_job_file(path: &Path) -> Result<JobFile> {
     let content = std::fs::read_to_string(path)
         .context(format!("Failed to read job file: {}", path.display()))?;
-    let job: JobFile = toml::from_str(&content)
-        .context("Failed to parse TOML job file")?;
+    let job: JobFile = toml::from_str(&content).context("Failed to parse TOML job file")?;
 
     if job.operation.is_empty() {
         bail!("Job file has no [[operation]] entries");
@@ -175,7 +182,9 @@ pub fn parse_job_file(path: &Path) -> Result<JobFile> {
         if !job.tools.contains_key(&op.tool) {
             bail!(
                 "Operation {} references unknown tool '{}'. Available: {:?}",
-                i, op.tool, job.tools.keys().collect::<Vec<_>>()
+                i,
+                op.tool,
+                job.tools.keys().collect::<Vec<_>>()
             );
         }
     }
@@ -193,23 +202,30 @@ fn build_tool(def: &ToolDef) -> Result<Box<dyn rs_cam_core::tool::MillingCutter>
         "flat" | "endmill" => Ok(Box::new(FlatEndmill::new(d, cl))),
         "ball" | "ballnose" => Ok(Box::new(BallEndmill::new(d, cl))),
         "bullnose" => {
-            let cr = def.corner_radius
+            let cr = def
+                .corner_radius
                 .context("Bull nose tool requires 'corner_radius'")?;
             Ok(Box::new(BullNoseEndmill::new(d, cr, cl)))
         }
         "vbit" => {
-            let angle = def.included_angle
+            let angle = def
+                .included_angle
                 .context("V-bit tool requires 'included_angle'")?;
             Ok(Box::new(VBitEndmill::new(d, angle, cl)))
         }
         "tapered_ball" => {
-            let taper = def.taper_angle
+            let taper = def
+                .taper_angle
                 .context("Tapered ball requires 'taper_angle'")?;
-            let shaft = def.shaft_diameter
+            let shaft = def
+                .shaft_diameter
                 .context("Tapered ball requires 'shaft_diameter'")?;
             Ok(Box::new(TaperedBallEndmill::new(d, taper, shaft, cl)))
         }
-        _ => bail!("Unknown tool type '{}'. Supported: flat, ball, bullnose, vbit, tapered_ball", def.tool_type),
+        _ => bail!(
+            "Unknown tool type '{}'. Supported: flat, ball, bullnose, vbit, tapered_ball",
+            def.tool_type
+        ),
     }
 }
 
@@ -269,17 +285,31 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
 
                 let mut tp = Toolpath::new();
                 for poly in &polygons {
-                    let poly_tp = depth_stepped_toolpath(&stepping, safe_z, |z| {
-                        match pattern {
-                            "zigzag" => zigzag_toolpath(poly, &ZigzagParams {
-                                tool_radius, stepover, cut_depth: z,
-                                feed_rate, plunge_rate, safe_z, angle,
-                            }),
-                            _ => pocket_toolpath(poly, &PocketParams {
-                                tool_radius, stepover, cut_depth: z,
-                                feed_rate, plunge_rate, safe_z, climb,
-                            }),
-                        }
+                    let poly_tp = depth_stepped_toolpath(&stepping, safe_z, |z| match pattern {
+                        "zigzag" => zigzag_toolpath(
+                            poly,
+                            &ZigzagParams {
+                                tool_radius,
+                                stepover,
+                                cut_depth: z,
+                                feed_rate,
+                                plunge_rate,
+                                safe_z,
+                                angle,
+                            },
+                        ),
+                        _ => pocket_toolpath(
+                            poly,
+                            &PocketParams {
+                                tool_radius,
+                                stepover,
+                                cut_depth: z,
+                                feed_rate,
+                                plunge_rate,
+                                safe_z,
+                                climb,
+                            },
+                        ),
                     });
                     tp.moves.extend(poly_tp.moves);
                 }
@@ -312,10 +342,18 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                 let mut tp = Toolpath::new();
                 for poly in &polygons {
                     let poly_tp = depth_stepped_toolpath(&stepping, safe_z, |z| {
-                        profile_toolpath(poly, &ProfileParams {
-                            tool_radius, side, cut_depth: z,
-                            feed_rate, plunge_rate, safe_z, climb,
-                        })
+                        profile_toolpath(
+                            poly,
+                            &ProfileParams {
+                                tool_radius,
+                                side,
+                                cut_depth: z,
+                                feed_rate,
+                                plunge_rate,
+                                safe_z,
+                                climb,
+                            },
+                        )
                     });
                     tp.moves.extend(poly_tp.moves);
                 }
@@ -351,16 +389,30 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                 let min_cutting_radius = op.min_cutting_radius.unwrap_or(0.0);
                 let stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
 
-                debug!(polygons = polygons.len(), depth_mm = depth, stepover_mm = stepover, "Adaptive details");
+                debug!(
+                    polygons = polygons.len(),
+                    depth_mm = depth,
+                    stepover_mm = stepover,
+                    "Adaptive details"
+                );
 
                 let mut tp = Toolpath::new();
                 for poly in &polygons {
                     let poly_tp = depth_stepped_toolpath(&stepping, safe_z, |z| {
-                        adaptive_toolpath(poly, &AdaptiveParams {
-                            tool_radius, stepover, cut_depth: z,
-                            feed_rate, plunge_rate, safe_z, tolerance,
-                            slot_clearing, min_cutting_radius,
-                        })
+                        adaptive_toolpath(
+                            poly,
+                            &AdaptiveParams {
+                                tool_radius,
+                                stepover,
+                                cut_depth: z,
+                                feed_rate,
+                                plunge_rate,
+                                safe_z,
+                                tolerance,
+                                slot_clearing,
+                                min_cutting_radius,
+                            },
+                        )
                     });
                     tp.moves.extend(poly_tp.moves);
                 }
@@ -375,10 +427,14 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                 let angle = op.angle.unwrap_or(0.0);
                 let stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
 
-                let prev_tool_name = op.prev_tool.as_ref()
+                let prev_tool_name = op
+                    .prev_tool
+                    .as_ref()
                     .context("Rest requires 'prev_tool' referencing the larger tool")?;
-                let prev_tool_def = job.tools.get(prev_tool_name)
-                    .context(format!("Rest 'prev_tool' references unknown tool '{}'", prev_tool_name))?;
+                let prev_tool_def = job.tools.get(prev_tool_name).context(format!(
+                    "Rest 'prev_tool' references unknown tool '{}'",
+                    prev_tool_name
+                ))?;
                 let prev_cutter = build_tool(prev_tool_def)?;
                 let prev_tool_radius = prev_cutter.diameter() / 2.0;
 
@@ -389,16 +445,19 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                 let mut tp = Toolpath::new();
                 for poly in &polygons {
                     let poly_tp = depth_stepped_toolpath(&stepping, safe_z, |z| {
-                        rest_machining_toolpath(poly, &RestParams {
-                            prev_tool_radius,
-                            tool_radius,
-                            cut_depth: z,
-                            stepover,
-                            feed_rate,
-                            plunge_rate,
-                            safe_z,
-                            angle,
-                        })
+                        rest_machining_toolpath(
+                            poly,
+                            &RestParams {
+                                prev_tool_radius,
+                                tool_radius,
+                                cut_depth: z,
+                                stepover,
+                                feed_rate,
+                                plunge_rate,
+                                safe_z,
+                                angle,
+                            },
+                        )
                     });
                     tp.moves.extend(poly_tp.moves);
                 }
@@ -407,7 +466,8 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
 
             "adaptive3d" => {
                 // 3D adaptive requires STL input
-                let ext = input_path.extension()
+                let ext = input_path
+                    .extension()
                     .and_then(|e| e.to_str())
                     .unwrap_or("")
                     .to_lowercase();
@@ -428,9 +488,13 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                 let tolerance = op.tolerance.unwrap_or(0.1);
                 let mcr = op.min_cutting_radius.unwrap_or(0.0);
 
-                debug!(vertices = mesh.vertices.len(), triangles = mesh.faces.len(),
-                    stock_top = stock_top, stock_to_leave = stl,
-                    "Adaptive3d STL details");
+                debug!(
+                    vertices = mesh.vertices.len(),
+                    triangles = mesh.faces.len(),
+                    stock_top = stock_top,
+                    stock_to_leave = stl,
+                    "Adaptive3d STL details"
+                );
 
                 let entry = match op.entry_style.as_deref().unwrap_or("plunge") {
                     "helix" => EntryStyle3d::Helix {
@@ -468,7 +532,8 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
             }
 
             "drop-cutter" | "drop_cutter" | "finish" => {
-                let ext = input_path.extension()
+                let ext = input_path
+                    .extension()
                     .and_then(|e| e.to_str())
                     .unwrap_or("")
                     .to_lowercase();
@@ -485,15 +550,22 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                 let stepover = op.stepover.unwrap_or(1.0);
                 let min_z = mesh.bbox.min.z;
 
-                debug!(vertices = mesh.vertices.len(), triangles = mesh.faces.len(),
-                    stepover = stepover, "Drop-cutter STL details");
+                debug!(
+                    vertices = mesh.vertices.len(),
+                    triangles = mesh.faces.len(),
+                    stepover = stepover,
+                    "Drop-cutter STL details"
+                );
 
                 let angle = op.angle.unwrap_or(0.0);
                 let grid = batch_drop_cutter(&mesh, &si, cutter.as_ref(), stepover, angle, min_z);
                 raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z)
             }
 
-            _ => bail!("Unknown operation type '{}'. Supported: pocket, profile, adaptive, rest, adaptive3d, drop-cutter", op.op_type),
+            _ => bail!(
+                "Unknown operation type '{}'. Supported: pocket, profile, adaptive, rest, adaptive3d, drop-cutter",
+                op.op_type
+            ),
         };
 
         info!(
@@ -505,13 +577,19 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
 
         combined.moves.extend(tp.moves.clone());
 
-        let label = format!("Op {} — {} ({:.2}mm {})",
-            i, op.op_type, tool_def.diameter, tool_def.tool_type);
+        let label = format!(
+            "Op {} — {} ({:.2}mm {})",
+            i, op.op_type, tool_def.diameter, tool_def.tool_type
+        );
         // Build a fresh cutter for the phase (the original was consumed above)
         let phase_cutter = build_tool(tool_def)?;
-        phases.push(OpResult { toolpath: tp, cutter: phase_cutter, label, spindle_speed });
+        phases.push(OpResult {
+            toolpath: tp,
+            cutter: phase_cutter,
+            label,
+            spindle_speed,
+        });
     }
 
     Ok(JobResult { combined, phases })
 }
-

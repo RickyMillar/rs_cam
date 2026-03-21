@@ -1,17 +1,17 @@
 pub mod camera;
-pub mod mesh_render;
 pub mod grid_render;
+pub mod mesh_render;
+pub mod sim_render;
 pub mod stock_render;
 pub mod toolpath_render;
-pub mod sim_render;
 
 use egui_wgpu::wgpu;
 
-use mesh_render::{MeshGpuData, MeshVertex};
 use grid_render::GridGpuData;
+use mesh_render::{MeshGpuData, MeshVertex};
+use sim_render::{ColoredMeshVertex, SimMeshGpuData, ToolModelGpuData};
 use stock_render::StockGpuData;
 use toolpath_render::ToolpathGpuData;
-use sim_render::{ColoredMeshVertex, SimMeshGpuData, ToolModelGpuData};
 
 /// GPU uniform data for mesh rendering (Phong shading).
 #[repr(C)]
@@ -131,12 +131,11 @@ impl RenderResources {
             }],
         });
 
-        let mesh_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("mesh_pl"),
-                bind_group_layouts: &[&mesh_bind_group_layout],
-                push_constant_ranges: &[],
-            });
+        let mesh_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("mesh_pl"),
+            bind_group_layouts: &[&mesh_bind_group_layout],
+            push_constant_ranges: &[],
+        });
 
         let depth_stencil = wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
@@ -274,12 +273,11 @@ impl RenderResources {
             }],
         });
 
-        let line_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("line_pl"),
-                bind_group_layouts: &[&line_bind_group_layout],
-                push_constant_ranges: &[],
-            });
+        let line_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("line_pl"),
+            bind_group_layouts: &[&line_bind_group_layout],
+            push_constant_ranges: &[],
+        });
 
         let line_vertex_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<LineVertex>() as u64,
@@ -356,12 +354,11 @@ impl RenderResources {
                 ],
             });
 
-        let blit_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("blit_pl"),
-                bind_group_layouts: &[&blit_bind_group_layout],
-                push_constant_ranges: &[],
-            });
+        let blit_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("blit_pl"),
+            bind_group_layouts: &[&blit_bind_group_layout],
+            push_constant_ranges: &[],
+        });
 
         let blit_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("blit_pipeline"),
@@ -432,10 +429,11 @@ impl RenderResources {
         let width = width.max(1);
         let height = height.max(1);
 
-        if let Some(existing) = &self.offscreen {
-            if existing.width == width && existing.height == height {
-                return;
-            }
+        if let Some(existing) = &self.offscreen
+            && existing.width == width
+            && existing.height == height
+        {
+            return;
         }
 
         let size = wgpu::Extent3d {
@@ -603,13 +601,13 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             }
 
             // Draw stock wireframe
-            if self.show_stock {
-                if let Some(stock) = &resources.stock_data {
-                    pass.set_pipeline(&resources.line_pipeline);
-                    pass.set_bind_group(0, &resources.line_bind_group, &[]);
-                    pass.set_vertex_buffer(0, stock.vertex_buffer.slice(..));
-                    pass.draw(0..stock.vertex_count, 0..1);
-                }
+            if self.show_stock
+                && let Some(stock) = &resources.stock_data
+            {
+                pass.set_pipeline(&resources.line_pipeline);
+                pass.set_bind_group(0, &resources.line_bind_group, &[]);
+                pass.set_vertex_buffer(0, stock.vertex_buffer.slice(..));
+                pass.draw(0..stock.vertex_count, 0..1);
             }
 
             // Draw mesh (sim mesh replaces raw STL when simulation is active)
@@ -621,34 +619,35 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                     pass.set_index_buffer(sim.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                     pass.draw_indexed(0..sim.index_count, 0, 0..1);
                 }
-            } else if self.has_mesh {
-                if let Some(mesh) = &resources.mesh_data {
-                    pass.set_pipeline(&resources.mesh_pipeline);
-                    pass.set_bind_group(0, &resources.mesh_bind_group, &[]);
-                    pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                    pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..mesh.index_count, 0, 0..1);
-                }
+            } else if self.has_mesh
+                && let Some(mesh) = &resources.mesh_data
+            {
+                pass.set_pipeline(&resources.mesh_pipeline);
+                pass.set_bind_group(0, &resources.mesh_bind_group, &[]);
+                pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..mesh.index_count, 0, 0..1);
             }
 
             // Draw collision markers
-            if self.show_collisions && resources.collision_vertex_count > 0 {
-                if let Some(buf) = &resources.collision_vertex_buffer {
-                    pass.set_pipeline(&resources.line_pipeline);
-                    pass.set_bind_group(0, &resources.line_bind_group, &[]);
-                    pass.set_vertex_buffer(0, buf.slice(..));
-                    pass.draw(0..resources.collision_vertex_count, 0..1);
-                }
+            if self.show_collisions
+                && resources.collision_vertex_count > 0
+                && let Some(buf) = &resources.collision_vertex_buffer
+            {
+                pass.set_pipeline(&resources.line_pipeline);
+                pass.set_bind_group(0, &resources.line_bind_group, &[]);
+                pass.set_vertex_buffer(0, buf.slice(..));
+                pass.draw(0..resources.collision_vertex_count, 0..1);
             }
 
             // Draw tool model during simulation
-            if self.show_tool_model {
-                if let Some(tool) = &resources.tool_model_data {
-                    pass.set_pipeline(&resources.line_pipeline);
-                    pass.set_bind_group(0, &resources.line_bind_group, &[]);
-                    pass.set_vertex_buffer(0, tool.vertex_buffer.slice(..));
-                    pass.draw(0..tool.vertex_count, 0..1);
-                }
+            if self.show_tool_model
+                && let Some(tool) = &resources.tool_model_data
+            {
+                pass.set_pipeline(&resources.line_pipeline);
+                pass.set_bind_group(0, &resources.line_bind_group, &[]);
+                pass.set_vertex_buffer(0, tool.vertex_buffer.slice(..));
+                pass.draw(0..tool.vertex_count, 0..1);
             }
 
             // Draw toolpaths (with optional move limit for sim scrubbing)

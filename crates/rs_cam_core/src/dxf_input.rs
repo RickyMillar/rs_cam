@@ -243,10 +243,7 @@ fn ellipse_to_points(ell: &dxf::entities::Ellipse, arc_step: f64) -> Vec<P2> {
 mod tests {
     use super::*;
 
-    fn make_lwpolyline_drawing(
-        vertices: Vec<(f64, f64, f64)>,
-        closed: bool,
-    ) -> dxf::Drawing {
+    fn make_lwpolyline_drawing(vertices: Vec<(f64, f64, f64)>, closed: bool) -> dxf::Drawing {
         let mut drawing = dxf::Drawing::new();
         let mut lwp = dxf::entities::LwPolyline::default();
         for (x, y, bulge) in vertices {
@@ -301,11 +298,7 @@ mod tests {
     #[test]
     fn test_lwpolyline_open_ignored() {
         let drawing = make_lwpolyline_drawing(
-            vec![
-                (0.0, 0.0, 0.0),
-                (100.0, 0.0, 0.0),
-                (100.0, 50.0, 0.0),
-            ],
+            vec![(0.0, 0.0, 0.0), (100.0, 0.0, 0.0), (100.0, 50.0, 0.0)],
             false,
         );
         let polys = extract_polygons(&drawing, 5.0);
@@ -409,10 +402,7 @@ mod tests {
 
     #[test]
     fn test_too_few_vertices_ignored() {
-        let drawing = make_lwpolyline_drawing(
-            vec![(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)],
-            true,
-        );
+        let drawing = make_lwpolyline_drawing(vec![(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)], true);
         let polys = extract_polygons(&drawing, 5.0);
         assert!(polys.is_empty(), "2-vertex polyline should be ignored");
     }

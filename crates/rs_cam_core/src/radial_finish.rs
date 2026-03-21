@@ -104,7 +104,12 @@ pub fn radial_finish_toolpath(
             spoke_points
         };
 
-        tp.emit_path_segment(&spoke_points, params.safe_z, params.feed_rate, params.plunge_rate);
+        tp.emit_path_segment(
+            &spoke_points,
+            params.safe_z,
+            params.feed_rate,
+            params.plunge_rate,
+        );
     }
 
     tp.final_retract(params.safe_z);
@@ -134,13 +139,13 @@ fn compute_max_radius(bbox: &BoundingBox3, cx: f64, cy: f64) -> f64 {
 fn trim_uncontacted(points: &[P3], fallback_z: f64) -> Vec<P3> {
     let is_contacted = |p: &P3| (p.z - fallback_z).abs() > 0.001;
 
-    let start = match points.iter().position(|p| is_contacted(p)) {
+    let start = match points.iter().position(&is_contacted) {
         Some(i) => i,
         None => return Vec::new(),
     };
 
     // Safe: we know at least one point is contacted, so rposition will find it.
-    let end = match points.iter().rposition(|p| is_contacted(p)) {
+    let end = match points.iter().rposition(is_contacted) {
         Some(i) => i,
         None => return Vec::new(),
     };
@@ -229,10 +234,7 @@ mod tests {
     #[test]
     fn test_trim_none_contacted() {
         let fallback = -1000.0;
-        let pts = vec![
-            P3::new(0.0, 0.0, fallback),
-            P3::new(1.0, 0.0, fallback),
-        ];
+        let pts = vec![P3::new(0.0, 0.0, fallback), P3::new(1.0, 0.0, fallback)];
         let trimmed = trim_uncontacted(&pts, fallback);
         assert!(trimmed.is_empty());
     }
@@ -388,19 +390,17 @@ mod tests {
         // Even spokes start near center, odd spokes start near edge.
         // We identify spoke boundaries by rapids to safe_z.
         let spokes = extract_spoke_feeds(&tp, params.safe_z);
-        assert!(
-            spokes.len() >= 4,
-            "Expected 4 spokes, got {}",
-            spokes.len()
-        );
+        assert!(spokes.len() >= 4, "Expected 4 spokes, got {}", spokes.len());
 
         let cx = 0.0;
         let cy = 0.0;
 
         // For spokes 0 (even) and 1 (odd), check starting distance from center.
         if spokes.len() >= 2 && !spokes[0].is_empty() && !spokes[1].is_empty() {
-            let dist_start_0 = ((spokes[0][0].x - cx).powi(2) + (spokes[0][0].y - cy).powi(2)).sqrt();
-            let dist_start_1 = ((spokes[1][0].x - cx).powi(2) + (spokes[1][0].y - cy).powi(2)).sqrt();
+            let dist_start_0 =
+                ((spokes[0][0].x - cx).powi(2) + (spokes[0][0].y - cy).powi(2)).sqrt();
+            let dist_start_1 =
+                ((spokes[1][0].x - cx).powi(2) + (spokes[1][0].y - cy).powi(2)).sqrt();
 
             // Even spoke starts near center (small distance), odd near edge (large distance).
             assert!(

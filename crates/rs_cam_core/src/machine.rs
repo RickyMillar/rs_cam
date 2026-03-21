@@ -33,7 +33,11 @@ pub struct ChipLoadFormula {
 impl Default for ChipLoadFormula {
     fn default() -> Self {
         // Soft wood baseline from Shapeoko empirical data
-        Self { k0: 0.024, p: 0.61, q: 1.26 }
+        Self {
+            k0: 0.024,
+            p: 0.61,
+            q: 1.26,
+        }
     }
 }
 
@@ -87,7 +91,10 @@ impl MachineProfile {
     pub fn generic_wood_router() -> Self {
         MachineProfile {
             name: "Generic Wood Router".to_string(),
-            spindle: SpindleConfig::Variable { min_rpm: 8000.0, max_rpm: 24000.0 },
+            spindle: SpindleConfig::Variable {
+                min_rpm: 8000.0,
+                max_rpm: 24000.0,
+            },
             power: PowerModel::ConstantPower { power_kw: 0.8 },
             chip_load: ChipLoadFormula::default(),
             max_feed_mm_min: 4000.0,
@@ -109,9 +116,19 @@ impl MachineProfile {
     pub fn shapeoko_vfd() -> Self {
         MachineProfile {
             name: "Shapeoko (1.5kW VFD)".to_string(),
-            spindle: SpindleConfig::Variable { min_rpm: 6000.0, max_rpm: 24000.0 },
-            power: PowerModel::VfdConstantTorque { rated_power_kw: 1.5, rated_rpm: 24000.0 },
-            chip_load: ChipLoadFormula { k0: 0.024, p: 0.61, q: 1.26 },
+            spindle: SpindleConfig::Variable {
+                min_rpm: 6000.0,
+                max_rpm: 24000.0,
+            },
+            power: PowerModel::VfdConstantTorque {
+                rated_power_kw: 1.5,
+                rated_rpm: 24000.0,
+            },
+            chip_load: ChipLoadFormula {
+                k0: 0.024,
+                p: 0.61,
+                q: 1.26,
+            },
             max_feed_mm_min: 5000.0,
             max_shank_mm: 7.0,
             rigidity: RigidityProfile::default(),
@@ -127,7 +144,11 @@ impl MachineProfile {
                 speeds: vec![10000.0, 12000.0, 17000.0, 22000.0, 27000.0, 30000.0],
             },
             power: PowerModel::ConstantPower { power_kw: 0.71 },
-            chip_load: ChipLoadFormula { k0: 0.024, p: 0.61, q: 1.26 },
+            chip_load: ChipLoadFormula {
+                k0: 0.024,
+                p: 0.61,
+                q: 1.26,
+            },
             max_feed_mm_min: 5000.0,
             max_shank_mm: 6.35,
             rigidity: RigidityProfile::default(),
@@ -140,7 +161,10 @@ impl MachineProfile {
         vec![
             ("Generic Wood Router", MachineProfile::generic_wood_router()),
             ("Shapeoko (1.5kW VFD)", MachineProfile::shapeoko_vfd()),
-            ("Shapeoko (Makita RT0701C)", MachineProfile::shapeoko_makita()),
+            (
+                "Shapeoko (Makita RT0701C)",
+                MachineProfile::shapeoko_makita(),
+            ),
         ]
     }
 
@@ -148,21 +172,23 @@ impl MachineProfile {
     pub fn clamp_rpm(&self, rpm: f64) -> f64 {
         match &self.spindle {
             SpindleConfig::Variable { min_rpm, max_rpm } => rpm.clamp(*min_rpm, *max_rpm),
-            SpindleConfig::Discrete { speeds } => {
-                *speeds.iter()
-                    .min_by(|&&a, &&b| {
-                        (a - rpm).abs().partial_cmp(&(b - rpm).abs()).unwrap()
-                    })
-                    .unwrap_or(&speeds[speeds.len() / 2])
-            }
+            SpindleConfig::Discrete { speeds } => *speeds
+                .iter()
+                .min_by(|&&a, &&b| (a - rpm).abs().partial_cmp(&(b - rpm).abs()).unwrap())
+                .unwrap_or(&speeds[speeds.len() / 2]),
         }
     }
 
     /// Available spindle power at the given RPM.
     pub fn power_at_rpm(&self, rpm: f64) -> f64 {
         match self.power {
-            PowerModel::VfdConstantTorque { rated_power_kw, rated_rpm } => {
-                if rpm <= 0.0 { return 0.0; }
+            PowerModel::VfdConstantTorque {
+                rated_power_kw,
+                rated_rpm,
+            } => {
+                if rpm <= 0.0 {
+                    return 0.0;
+                }
                 rated_power_kw * (rpm.min(rated_rpm) / rated_rpm)
             }
             PowerModel::ConstantPower { power_kw } => power_kw,
@@ -183,9 +209,13 @@ impl MachineProfile {
 
     /// Serialization key for TOML project files.
     pub fn to_key(&self) -> String {
-        if self.name.contains("VFD") { "shapeoko_vfd".to_string() }
-        else if self.name.contains("Makita") { "shapeoko_makita".to_string() }
-        else { "generic".to_string() }
+        if self.name.contains("VFD") {
+            "shapeoko_vfd".to_string()
+        } else if self.name.contains("Makita") {
+            "shapeoko_makita".to_string()
+        } else {
+            "generic".to_string()
+        }
     }
 
     /// Parse from TOML key.
@@ -207,8 +237,14 @@ mod tests {
         let m = MachineProfile::shapeoko_vfd();
         let p_low = m.power_at_rpm(6000.0);
         let p_high = m.power_at_rpm(24000.0);
-        assert!((p_high - 1.5).abs() < 1e-9, "full RPM should give full power");
-        assert!((p_low - 0.375).abs() < 1e-9, "quarter RPM should give quarter power");
+        assert!(
+            (p_high - 1.5).abs() < 1e-9,
+            "full RPM should give full power"
+        );
+        assert!(
+            (p_low - 0.375).abs() < 1e-9,
+            "quarter RPM should give quarter power"
+        );
     }
 
     #[test]
@@ -246,7 +282,10 @@ mod tests {
         for (_, profile) in MachineProfile::presets() {
             let key = profile.to_key();
             let restored = MachineProfile::from_key(&key);
-            assert_eq!(profile.name, restored.name, "roundtrip failed for key '{key}'");
+            assert_eq!(
+                profile.name, restored.name,
+                "roundtrip failed for key '{key}'"
+            );
         }
     }
 }

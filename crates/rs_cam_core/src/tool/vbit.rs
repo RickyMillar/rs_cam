@@ -315,7 +315,12 @@ mod tests {
         let tool = VBitEndmill::new(10.0, 60.0, 25.0);
         let expected = 3.0 * 3.0_f64.sqrt(); // r=3, h = 3*sqrt(3) ≈ 5.196
         let h = tool.height_at_radius(3.0).unwrap();
-        assert!((h - expected).abs() < 1e-10, "h={}, expected={}", h, expected);
+        assert!(
+            (h - expected).abs() < 1e-10,
+            "h={}, expected={}",
+            h,
+            expected
+        );
     }
 
     #[test]
@@ -424,7 +429,10 @@ mod tests {
         let p2 = P3::new(0.0, 5.0, 10.0);
         let mut cl = CLPoint::new(3.0, 0.0);
         tool.edge_drop(&mut cl, &p1, &p2);
-        assert!(cl.z > f64::NEG_INFINITY, "Should find contact on sloped edge");
+        assert!(
+            cl.z > f64::NEG_INFINITY,
+            "Should find contact on sloped edge"
+        );
     }
 
     #[test]
@@ -471,6 +479,11 @@ mod tests {
         // At same radius, 60° V-bit is taller
         let h_90 = tool_90.height_at_radius(3.0).unwrap();
         let h_60 = tool_60.height_at_radius(3.0).unwrap();
-        assert!(h_60 > h_90, "60° V-bit should be taller: h_60={}, h_90={}", h_60, h_90);
+        assert!(
+            h_60 > h_90,
+            "60° V-bit should be taller: h_60={}, h_90={}",
+            h_60,
+            h_90
+        );
     }
 }

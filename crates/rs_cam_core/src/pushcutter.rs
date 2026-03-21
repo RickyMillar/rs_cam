@@ -8,16 +8,13 @@
 
 use crate::fiber::{Fiber, Interval};
 use crate::geo::{P3, Triangle};
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::MillingCutter;
 
 /// Push a cutter along a fiber against a single triangle.
 /// Adds any gouge intervals to the fiber.
-pub fn push_cutter_triangle(
-    fiber: &mut Fiber,
-    tri: &Triangle,
-    cutter: &dyn MillingCutter,
-) {
+pub fn push_cutter_triangle(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn MillingCutter) {
     vertex_push(fiber, tri, cutter);
     facet_push(fiber, tri, cutter);
     edge_push(fiber, tri, cutter);
@@ -63,19 +60,30 @@ pub fn batch_push_cutter(
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
 ) {
+    let never_cancel = || false;
+    let _ = batch_push_cutter_with_cancel(fibers, mesh, index, cutter, &never_cancel);
+}
+
+pub fn batch_push_cutter_with_cancel(
+    fibers: &mut [Fiber],
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    cancel: &dyn CancelCheck,
+) -> Result<(), Cancelled> {
     #[cfg(feature = "parallel")]
     {
-        use rayon::prelude::*;
-        fibers.par_iter_mut().for_each(|fiber| {
-            push_cutter_fiber(fiber, mesh, index, cutter);
-        });
+        let _ = (&mesh, &index, &cutter);
     }
-    #[cfg(not(feature = "parallel"))]
-    {
-        for fiber in fibers.iter_mut() {
-            push_cutter_fiber(fiber, mesh, index, cutter);
+
+    for (i, fiber) in fibers.iter_mut().enumerate() {
+        if i % 32 == 0 {
+            check_cancel(cancel)?;
         }
+        push_cutter_fiber(fiber, mesh, index, cutter);
     }
+
+    Ok(())
 }
 
 /// Vertex push: for each triangle vertex, compute the interval on the fiber
@@ -303,12 +311,12 @@ fn edge_push_single(fiber: &mut Fiber, p1: &P3, p2: &P3, cutter: &dyn MillingCut
 
     // Phase 1: 9 coarse samples at s = 0, 1/8, 2/8, ..., 1
     let mut coarse_contact = [false; 9];
-    for i in 0..=n_coarse {
+    for (i, contacted) in coarse_contact.iter_mut().enumerate().take(n_coarse + 1) {
         let s = i as f64 / n_coarse as f64;
         if let Some((tl, tu)) = eval_at(s) {
             t_min = t_min.min(tl);
             t_max = t_max.max(tu);
-            coarse_contact[i] = true;
+            *contacted = true;
         }
     }
 
@@ -430,7 +438,10 @@ mod tests {
         push_cutter_fiber(&mut fiber, &mesh, &index, &tool);
 
         // Should have intervals (the cutter contacts the hemisphere)
-        assert!(!fiber.intervals().is_empty(), "Should find contacts on hemisphere at z=10");
+        assert!(
+            !fiber.intervals().is_empty(),
+            "Should find contacts on hemisphere at z=10"
+        );
     }
 
     #[test]
@@ -514,7 +525,8 @@ mod tests {
         assert!(
             hi > lo,
             "Should have non-zero contact interval: lo={:.3}, hi={:.3}",
-            lo, hi
+            lo,
+            hi
         );
     }
 
@@ -530,6 +542,9 @@ mod tests {
         );
         edge_push(&mut fiber, &tri, &tool);
         // Edge from z=0 to z=10 crosses fiber z=5
-        assert!(!fiber.intervals().is_empty(), "Should find edge contact at z=5");
+        assert!(
+            !fiber.intervals().is_empty(),
+            "Should find edge contact at z=5"
+        );
     }
 }

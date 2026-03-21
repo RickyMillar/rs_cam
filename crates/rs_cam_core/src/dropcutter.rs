@@ -3,10 +3,9 @@
 //! Given a cutter at (x,y), find the maximum Z where it contacts the mesh
 //! without gouging. The cutter is "dropped" along Z until first contact.
 
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::{CLPoint, MillingCutter};
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
 
 /// Drop a single cutter at position (x, y) onto the mesh.
 pub fn point_drop_cutter<C: MillingCutter + ?Sized>(
@@ -58,6 +57,28 @@ pub fn batch_drop_cutter<C: MillingCutter + ?Sized>(
     direction_deg: f64,
     min_z: f64,
 ) -> DropCutterGrid {
+    let never_cancel = || false;
+    batch_drop_cutter_with_cancel(
+        mesh,
+        index,
+        cutter,
+        step_over,
+        direction_deg,
+        min_z,
+        &never_cancel,
+    )
+    .expect("non-cancellable drop-cutter should never be cancelled")
+}
+
+pub fn batch_drop_cutter_with_cancel<C: MillingCutter + ?Sized>(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &C,
+    step_over: f64,
+    direction_deg: f64,
+    min_z: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<DropCutterGrid, Cancelled> {
     let r = cutter.radius();
     let bbox = mesh.bbox.expand_by(r);
 
@@ -81,7 +102,11 @@ pub fn batch_drop_cutter<C: MillingCutter + ?Sized>(
         let rows = ((y_end - y_start) / step_over).ceil() as usize + 1;
         let total = rows * cols;
 
-        let make_point = |i: usize| {
+        let mut points = Vec::with_capacity(total);
+        for i in 0..total {
+            if i % 64 == 0 {
+                check_cancel(cancel)?;
+            }
             let row = i / cols;
             let col = i % cols;
             let x = x_start + col as f64 * step_over;
@@ -90,15 +115,10 @@ pub fn batch_drop_cutter<C: MillingCutter + ?Sized>(
             if cl.z < min_z {
                 cl.z = min_z;
             }
-            cl
-        };
+            points.push(cl);
+        }
 
-        #[cfg(feature = "parallel")]
-        let points: Vec<CLPoint> = (0..total).into_par_iter().map(make_point).collect();
-        #[cfg(not(feature = "parallel"))]
-        let points: Vec<CLPoint> = (0..total).map(make_point).collect();
-
-        return DropCutterGrid {
+        return Ok(DropCutterGrid {
             points,
             rows,
             cols,
@@ -106,7 +126,7 @@ pub fn batch_drop_cutter<C: MillingCutter + ?Sized>(
             y_start,
             x_step: step_over,
             y_step: step_over,
-        };
+        });
     }
 
     // Rotated grid: transform bbox corners into rotated frame to find bounds
@@ -136,7 +156,11 @@ pub fn batch_drop_cutter<C: MillingCutter + ?Sized>(
     let rows = ((v_max - v_min) / step_over).ceil() as usize + 1;
     let total = rows * cols;
 
-    let make_rotated_point = |i: usize| {
+    let mut points = Vec::with_capacity(total);
+    for i in 0..total {
+        if i % 64 == 0 {
+            check_cancel(cancel)?;
+        }
         let row = i / cols;
         let col = i % cols;
         let u = u_min + col as f64 * step_over;
@@ -150,15 +174,10 @@ pub fn batch_drop_cutter<C: MillingCutter + ?Sized>(
         if cl.z < min_z {
             cl.z = min_z;
         }
-        cl
-    };
+        points.push(cl);
+    }
 
-    #[cfg(feature = "parallel")]
-    let points: Vec<CLPoint> = (0..total).into_par_iter().map(make_rotated_point).collect();
-    #[cfg(not(feature = "parallel"))]
-    let points: Vec<CLPoint> = (0..total).map(make_rotated_point).collect();
-
-    DropCutterGrid {
+    Ok(DropCutterGrid {
         points,
         rows,
         cols,
@@ -166,13 +185,13 @@ pub fn batch_drop_cutter<C: MillingCutter + ?Sized>(
         y_start: v_min,
         x_step: step_over,
         y_step: step_over,
-    }
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mesh::{make_test_flat, SpatialIndex};
+    use crate::mesh::{SpatialIndex, make_test_flat};
     use crate::tool::BallEndmill;
 
     #[test]
@@ -210,7 +229,10 @@ mod tests {
 
         // Point far outside mesh footprint should not be contacted
         let cl_outside = point_drop_cutter(500.0, 500.0, &mesh, &index, &tool);
-        assert!(!cl_outside.contacted, "Point far outside mesh should not be contacted");
+        assert!(
+            !cl_outside.contacted,
+            "Point far outside mesh should not be contacted"
+        );
     }
 
     #[test]
@@ -228,7 +250,10 @@ mod tests {
 
         // The 45° grid should have contacted points over the mesh
         let center = grid_45.get(grid_45.rows / 2, grid_45.cols / 2);
-        assert!(center.contacted, "Center of 45° grid should contact flat mesh");
+        assert!(
+            center.contacted,
+            "Center of 45° grid should contact flat mesh"
+        );
         assert!(
             (center.z - 0.0).abs() < 0.5,
             "Center CL.z on flat = {}, expected ~0.0",

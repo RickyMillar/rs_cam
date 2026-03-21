@@ -139,23 +139,20 @@ pub fn optimize_rapid_order(toolpath: &Toolpath, safe_z: f64) -> Toolpath {
             for j in (i + 2)..n {
                 // Cost of current edges: (i -> i+1) and (j -> j+1 if exists).
                 // Cost if we reverse the sub-tour i+1..=j.
-                let cost_before = xy_distance(
-                    &segments[order[i]].end,
-                    &segments[order[i + 1]].start,
-                ) + if j + 1 < n {
-                    xy_distance(&segments[order[j]].end, &segments[order[j + 1]].start)
-                } else {
-                    0.0
-                };
+                let cost_before =
+                    xy_distance(&segments[order[i]].end, &segments[order[i + 1]].start)
+                        + if j + 1 < n {
+                            xy_distance(&segments[order[j]].end, &segments[order[j + 1]].start)
+                        } else {
+                            0.0
+                        };
 
-                let cost_after = xy_distance(
-                    &segments[order[i]].end,
-                    &segments[order[j]].end,
-                ) + if j + 1 < n {
-                    xy_distance(&segments[order[i + 1]].start, &segments[order[j + 1]].start)
-                } else {
-                    0.0
-                };
+                let cost_after = xy_distance(&segments[order[i]].end, &segments[order[j]].end)
+                    + if j + 1 < n {
+                        xy_distance(&segments[order[i + 1]].start, &segments[order[j + 1]].start)
+                    } else {
+                        0.0
+                    };
 
                 if cost_after < cost_before - 1e-10 {
                     order[i + 1..=j].reverse();
@@ -364,7 +361,11 @@ mod tests {
         let a = P3::new(0.0, 0.0, -5.0);
         let b = P3::new(3.0, 4.0, 100.0);
         let d = xy_distance(&a, &b);
-        assert!((d - 5.0).abs() < 1e-10, "XY distance should be 5.0, got {}", d);
+        assert!(
+            (d - 5.0).abs() < 1e-10,
+            "XY distance should be 5.0, got {}",
+            d
+        );
     }
 
     #[test]

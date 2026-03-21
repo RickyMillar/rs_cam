@@ -70,11 +70,7 @@ pub fn effective_radius(tool_radius: f64, curvature_radius: f64) -> f64 {
 ///
 /// `curvature`: positive = convex, negative = concave, 0 = flat.
 /// This is the mean curvature value (1/radius), not the radius itself.
-pub fn stepover_from_scallop_curved(
-    tool_radius: f64,
-    scallop_height: f64,
-    curvature: f64,
-) -> f64 {
+pub fn stepover_from_scallop_curved(tool_radius: f64, scallop_height: f64, curvature: f64) -> f64 {
     let r_eff = if curvature.abs() < 1e-9 {
         tool_radius
     } else {
@@ -84,11 +80,7 @@ pub fn stepover_from_scallop_curved(
 }
 
 /// Scallop height given stepover, tool radius, and surface curvature.
-pub fn scallop_height_curved(
-    tool_radius: f64,
-    stepover: f64,
-    curvature: f64,
-) -> f64 {
+pub fn scallop_height_curved(tool_radius: f64, stepover: f64, curvature: f64) -> f64 {
     let r_eff = if curvature.abs() < 1e-9 {
         tool_radius
     } else {
@@ -158,7 +150,9 @@ mod tests {
         assert!(
             (so - so_back).abs() < 1e-10,
             "Roundtrip failed: {} -> {} -> {}",
-            so, h, so_back
+            so,
+            h,
+            so_back
         );
     }
 
@@ -166,7 +160,11 @@ mod tests {
     fn test_effective_radius_flat() {
         // Very large curvature radius → R_eff ≈ R
         let r_eff = effective_radius(5.0, 1e8);
-        assert!((r_eff - 5.0).abs() < 0.01, "Flat surface R_eff should equal R, got {:.4}", r_eff);
+        assert!(
+            (r_eff - 5.0).abs() < 0.01,
+            "Flat surface R_eff should equal R, got {:.4}",
+            r_eff
+        );
     }
 
     #[test]
@@ -179,7 +177,11 @@ mod tests {
             r_eff
         );
         // R_eff = 5 * 20 / (5 + 20) = 100/25 = 4.0
-        assert!((r_eff - 4.0).abs() < 0.001, "Expected 4.0, got {:.4}", r_eff);
+        assert!(
+            (r_eff - 4.0).abs() < 0.001,
+            "Expected 4.0, got {:.4}",
+            r_eff
+        );
     }
 
     #[test]
@@ -192,7 +194,11 @@ mod tests {
             r_eff
         );
         // R_eff = 5 * 20 / (20 - 5) = 100/15 ≈ 6.667
-        assert!((r_eff - 6.667).abs() < 0.01, "Expected ~6.667, got {:.4}", r_eff);
+        assert!(
+            (r_eff - 6.667).abs() < 0.01,
+            "Expected ~6.667, got {:.4}",
+            r_eff
+        );
     }
 
     #[test]
@@ -203,7 +209,8 @@ mod tests {
         assert!(
             h_convex > h_flat,
             "Convex scallop ({:.4}) should exceed flat ({:.4})",
-            h_convex, h_flat
+            h_convex,
+            h_flat
         );
     }
 
@@ -215,7 +222,8 @@ mod tests {
         assert!(
             h_concave < h_flat,
             "Concave scallop ({:.4}) should be less than flat ({:.4})",
-            h_concave, h_flat
+            h_concave,
+            h_flat
         );
     }
 
@@ -227,7 +235,8 @@ mod tests {
         assert!(
             (so_flat - so_var).abs() < 0.001,
             "Zero slope should match flat: flat={:.4} var={:.4}",
-            so_flat, so_var
+            so_flat,
+            so_var
         );
     }
 
@@ -239,7 +248,8 @@ mod tests {
         assert!(
             so_steep > so_flat,
             "Steep slope should give wider stepover: flat={:.4} steep={:.4}",
-            so_flat, so_steep
+            so_flat,
+            so_steep
         );
     }
 
@@ -252,7 +262,8 @@ mod tests {
         assert!(
             (so - expected).abs() < 0.001,
             "45° slope: expected {:.4} got {:.4}",
-            expected, so
+            expected,
+            so
         );
     }
 

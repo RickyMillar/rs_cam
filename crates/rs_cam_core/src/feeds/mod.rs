@@ -1,7 +1,8 @@
 //! Feeds & speeds calculator — computes RPM, feed rate, plunge rate, DOC, WOC,
 //! and power requirements from tool, material, machine, and operation parameters.
 //!
-//! Ported from reference/shapeoko_feeds_and_speeds/src/calcs.rs.
+//! Provenance for formulas and seed data is tracked in
+//! `crates/rs_cam_core/data/vendor_lut/source_manifest.json` and the repo credits docs.
 //! The calculation pipeline:
 //! 1. RPM from surface speed → clamp to machine range
 //! 2. Chip load from empirical formula: K₀ × D^p × (1/H)^q
@@ -15,8 +16,8 @@
 //! 10. Collect warnings
 
 pub mod geometry;
-pub mod vendor_lut;
 pub mod vendor_lookup;
+pub mod vendor_lut;
 pub mod vendor_normalize;
 
 use crate::machine::MachineProfile;
@@ -27,9 +28,17 @@ use crate::material::Material;
 pub enum ToolGeometryHint {
     Flat,
     Ball,
-    Bull { corner_radius: f64 },
-    VBit { included_angle: f64, tip_diameter: f64 },
-    TaperedBall { tip_radius: f64, taper_angle_deg: f64 },
+    Bull {
+        corner_radius: f64,
+    },
+    VBit {
+        included_angle: f64,
+        tip_diameter: f64,
+    },
+    TaperedBall {
+        tip_radius: f64,
+        taper_angle_deg: f64,
+    },
 }
 
 /// Which family of operation is being calculated.
@@ -161,7 +170,11 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let (chip_load, vendor_rpm, vendor_source) = if let Some(lut) = input.vendor_lut {
         let query = vendor_normalize::to_lookup_query(input);
         if let Some(result) = vendor_lookup::lookup_best(lut, &query) {
-            (result.chip_load_mm, result.rpm_nominal, Some(result.observation_id))
+            (
+                result.chip_load_mm,
+                result.rpm_nominal,
+                Some(result.observation_id),
+            )
         } else {
             (formula_chipload, None, None)
         }
@@ -237,13 +250,13 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     }
 
     // --- Step 4c: Shank check ---
-    if let Some(shank) = input.shank_diameter {
-        if shank > machine.max_shank_mm {
-            warnings.push(FeedsWarning::ShankTooLarge {
-                shank_mm: shank,
-                max_mm: machine.max_shank_mm,
-            });
-        }
+    if let Some(shank) = input.shank_diameter
+        && shank > machine.max_shank_mm
+    {
+        warnings.push(FeedsWarning::ShankTooLarge {
+            shank_mm: shank,
+            max_mm: machine.max_shank_mm,
+        });
     }
 
     // --- Step 5: Feed rate ---
@@ -276,8 +289,12 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         }
     }
     match input.setup.workholding_rigidity {
-        WorkholdingRigidity::Low => { raw_feed *= 0.85; }
-        WorkholdingRigidity::High => { raw_feed *= 1.03; }
+        WorkholdingRigidity::Low => {
+            raw_feed *= 0.85;
+        }
+        WorkholdingRigidity::High => {
+            raw_feed *= 1.03;
+        }
         WorkholdingRigidity::Medium => {}
     }
 
@@ -349,37 +366,105 @@ struct DefaultProfile {
 fn operation_default_profile(family: OperationFamily, role: PassRole) -> DefaultProfile {
     match (family, role) {
         // Adaptive: deep and narrow
-        (OperationFamily::Adaptive, PassRole::Roughing) => DefaultProfile { ap_factor: 1.50, ae_factor: 0.12 },
-        (OperationFamily::Adaptive, PassRole::SemiFinish) => DefaultProfile { ap_factor: 0.90, ae_factor: 0.10 },
-        (OperationFamily::Adaptive, PassRole::Finish) => DefaultProfile { ap_factor: 0.70, ae_factor: 0.08 },
+        (OperationFamily::Adaptive, PassRole::Roughing) => DefaultProfile {
+            ap_factor: 1.50,
+            ae_factor: 0.12,
+        },
+        (OperationFamily::Adaptive, PassRole::SemiFinish) => DefaultProfile {
+            ap_factor: 0.90,
+            ae_factor: 0.10,
+        },
+        (OperationFamily::Adaptive, PassRole::Finish) => DefaultProfile {
+            ap_factor: 0.70,
+            ae_factor: 0.08,
+        },
         // Pocket: moderate
-        (OperationFamily::Pocket, PassRole::Roughing) => DefaultProfile { ap_factor: 0.70, ae_factor: 0.35 },
-        (OperationFamily::Pocket, PassRole::SemiFinish) => DefaultProfile { ap_factor: 0.35, ae_factor: 0.20 },
-        (OperationFamily::Pocket, PassRole::Finish) => DefaultProfile { ap_factor: 0.20, ae_factor: 0.08 },
+        (OperationFamily::Pocket, PassRole::Roughing) => DefaultProfile {
+            ap_factor: 0.70,
+            ae_factor: 0.35,
+        },
+        (OperationFamily::Pocket, PassRole::SemiFinish) => DefaultProfile {
+            ap_factor: 0.35,
+            ae_factor: 0.20,
+        },
+        (OperationFamily::Pocket, PassRole::Finish) => DefaultProfile {
+            ap_factor: 0.20,
+            ae_factor: 0.08,
+        },
         // Contour: moderate depth, narrow width
-        (OperationFamily::Contour, PassRole::Roughing) => DefaultProfile { ap_factor: 0.80, ae_factor: 0.18 },
-        (OperationFamily::Contour, PassRole::SemiFinish) => DefaultProfile { ap_factor: 0.45, ae_factor: 0.10 },
-        (OperationFamily::Contour, PassRole::Finish) => DefaultProfile { ap_factor: 0.30, ae_factor: 0.05 },
+        (OperationFamily::Contour, PassRole::Roughing) => DefaultProfile {
+            ap_factor: 0.80,
+            ae_factor: 0.18,
+        },
+        (OperationFamily::Contour, PassRole::SemiFinish) => DefaultProfile {
+            ap_factor: 0.45,
+            ae_factor: 0.10,
+        },
+        (OperationFamily::Contour, PassRole::Finish) => DefaultProfile {
+            ap_factor: 0.30,
+            ae_factor: 0.05,
+        },
         // Parallel: shallow surface following
-        (OperationFamily::Parallel, PassRole::Roughing) => DefaultProfile { ap_factor: 0.25, ae_factor: 0.08 },
-        (OperationFamily::Parallel, PassRole::SemiFinish) => DefaultProfile { ap_factor: 0.16, ae_factor: 0.05 },
-        (OperationFamily::Parallel, PassRole::Finish) => DefaultProfile { ap_factor: 0.10, ae_factor: 0.03 },
+        (OperationFamily::Parallel, PassRole::Roughing) => DefaultProfile {
+            ap_factor: 0.25,
+            ae_factor: 0.08,
+        },
+        (OperationFamily::Parallel, PassRole::SemiFinish) => DefaultProfile {
+            ap_factor: 0.16,
+            ae_factor: 0.05,
+        },
+        (OperationFamily::Parallel, PassRole::Finish) => DefaultProfile {
+            ap_factor: 0.10,
+            ae_factor: 0.03,
+        },
         // Scallop: very fine
-        (OperationFamily::Scallop, PassRole::Roughing) => DefaultProfile { ap_factor: 0.20, ae_factor: 0.07 },
-        (OperationFamily::Scallop, PassRole::SemiFinish) => DefaultProfile { ap_factor: 0.14, ae_factor: 0.05 },
-        (OperationFamily::Scallop, PassRole::Finish) => DefaultProfile { ap_factor: 0.08, ae_factor: 0.025 },
+        (OperationFamily::Scallop, PassRole::Roughing) => DefaultProfile {
+            ap_factor: 0.20,
+            ae_factor: 0.07,
+        },
+        (OperationFamily::Scallop, PassRole::SemiFinish) => DefaultProfile {
+            ap_factor: 0.14,
+            ae_factor: 0.05,
+        },
+        (OperationFamily::Scallop, PassRole::Finish) => DefaultProfile {
+            ap_factor: 0.08,
+            ae_factor: 0.025,
+        },
         // Trace: V-carve/engrave
-        (OperationFamily::Trace, PassRole::Roughing) => DefaultProfile { ap_factor: 0.15, ae_factor: 0.05 },
-        (OperationFamily::Trace, PassRole::SemiFinish) => DefaultProfile { ap_factor: 0.10, ae_factor: 0.03 },
-        (OperationFamily::Trace, PassRole::Finish) => DefaultProfile { ap_factor: 0.06, ae_factor: 0.02 },
+        (OperationFamily::Trace, PassRole::Roughing) => DefaultProfile {
+            ap_factor: 0.15,
+            ae_factor: 0.05,
+        },
+        (OperationFamily::Trace, PassRole::SemiFinish) => DefaultProfile {
+            ap_factor: 0.10,
+            ae_factor: 0.03,
+        },
+        (OperationFamily::Trace, PassRole::Finish) => DefaultProfile {
+            ap_factor: 0.06,
+            ae_factor: 0.02,
+        },
         // Face: wide and shallow
-        (OperationFamily::Face, PassRole::Roughing) => DefaultProfile { ap_factor: 0.08, ae_factor: 0.65 },
-        (OperationFamily::Face, PassRole::SemiFinish) => DefaultProfile { ap_factor: 0.06, ae_factor: 0.55 },
-        (OperationFamily::Face, PassRole::Finish) => DefaultProfile { ap_factor: 0.04, ae_factor: 0.45 },
+        (OperationFamily::Face, PassRole::Roughing) => DefaultProfile {
+            ap_factor: 0.08,
+            ae_factor: 0.65,
+        },
+        (OperationFamily::Face, PassRole::SemiFinish) => DefaultProfile {
+            ap_factor: 0.06,
+            ae_factor: 0.55,
+        },
+        (OperationFamily::Face, PassRole::Finish) => DefaultProfile {
+            ap_factor: 0.04,
+            ae_factor: 0.45,
+        },
     }
 }
 
-fn default_engagement(d: f64, profile: &DefaultProfile, input: &FeedsInput, machine: &MachineProfile) -> (f64, f64) {
+fn default_engagement(
+    d: f64,
+    profile: &DefaultProfile,
+    input: &FeedsInput,
+    machine: &MachineProfile,
+) -> (f64, f64) {
     let mut ap_factor = profile.ap_factor;
     let mut ae_factor = profile.ae_factor;
 
@@ -424,19 +509,35 @@ fn default_engagement(d: f64, profile: &DefaultProfile, input: &FeedsInput, mach
 
     // --- Tool geometry adjustments for finishing operations ---
     match (input.tool_geometry, input.operation, input.pass_role) {
-        (ToolGeometryHint::Ball, OperationFamily::Parallel | OperationFamily::Scallop, PassRole::Finish) => {
+        (
+            ToolGeometryHint::Ball,
+            OperationFamily::Parallel | OperationFamily::Scallop,
+            PassRole::Finish,
+        ) => {
             ap_factor = 0.06;
             ae_factor = 0.025;
         }
-        (ToolGeometryHint::Ball, OperationFamily::Parallel | OperationFamily::Scallop, PassRole::SemiFinish) => {
+        (
+            ToolGeometryHint::Ball,
+            OperationFamily::Parallel | OperationFamily::Scallop,
+            PassRole::SemiFinish,
+        ) => {
             ap_factor = 0.10;
             ae_factor = 0.04;
         }
-        (ToolGeometryHint::TaperedBall { .. }, OperationFamily::Parallel | OperationFamily::Scallop, PassRole::Finish) => {
+        (
+            ToolGeometryHint::TaperedBall { .. },
+            OperationFamily::Parallel | OperationFamily::Scallop,
+            PassRole::Finish,
+        ) => {
             ap_factor = 0.10;
             ae_factor = 0.03;
         }
-        (ToolGeometryHint::TaperedBall { .. }, OperationFamily::Parallel | OperationFamily::Scallop, PassRole::SemiFinish) => {
+        (
+            ToolGeometryHint::TaperedBall { .. },
+            OperationFamily::Parallel | OperationFamily::Scallop,
+            PassRole::SemiFinish,
+        ) => {
             ap_factor = 0.14;
             ae_factor = 0.05;
         }
@@ -455,14 +556,16 @@ fn effective_diameter(geom: ToolGeometryHint, nominal_d: f64, ap: f64) -> f64 {
         ToolGeometryHint::Bull { corner_radius } => {
             geometry::bull_nose_effective_diameter(nominal_d, corner_radius, ap)
         }
-        ToolGeometryHint::VBit { included_angle, tip_diameter } => {
-            geometry::vbit_width_at_depth(included_angle, tip_diameter, ap)
-                .unwrap_or(nominal_d)
-                .min(nominal_d)
-        }
-        ToolGeometryHint::TaperedBall { tip_radius, taper_angle_deg } => {
-            geometry::tapered_ball_effective_diameter(nominal_d, tip_radius, taper_angle_deg, ap)
-        }
+        ToolGeometryHint::VBit {
+            included_angle,
+            tip_diameter,
+        } => geometry::vbit_width_at_depth(included_angle, tip_diameter, ap)
+            .unwrap_or(nominal_d)
+            .min(nominal_d),
+        ToolGeometryHint::TaperedBall {
+            tip_radius,
+            taper_angle_deg,
+        } => geometry::tapered_ball_effective_diameter(nominal_d, tip_radius, taper_angle_deg, ap),
     }
 }
 
@@ -484,12 +587,10 @@ mod tests {
 
     fn softwood_flat_6mm_pocket() -> FeedsInput<'static> {
         // We need 'static material/machine so use leaked boxes for test convenience
-        let material: &'static Material = Box::leak(Box::new(
-            Material::SolidWood { species: WoodSpecies::GenericSoftwood }
-        ));
-        let machine: &'static MachineProfile = Box::leak(Box::new(
-            MachineProfile::shapeoko_vfd()
-        ));
+        let material: &'static Material = Box::leak(Box::new(Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        }));
+        let machine: &'static MachineProfile = Box::leak(Box::new(MachineProfile::shapeoko_vfd()));
         FeedsInput {
             tool_diameter: 6.0,
             flute_count: 2,
@@ -512,8 +613,13 @@ mod tests {
     fn test_chip_load_soft_wood_6mm() {
         let machine = MachineProfile::shapeoko_vfd();
         let d: f64 = 6.0;
-        let h = Material::SolidWood { species: WoodSpecies::GenericSoftwood }.hardness_index();
-        let cl = machine.chip_load.k0 * d.powf(machine.chip_load.p) * (1.0 / h).powf(machine.chip_load.q);
+        let h = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        }
+        .hardness_index();
+        let cl = machine.chip_load.k0
+            * d.powf(machine.chip_load.p)
+            * (1.0 / h).powf(machine.chip_load.q);
         assert!((cl - 0.0716).abs() < 0.002, "expected ~0.0716, got {cl}");
     }
 
@@ -521,8 +627,13 @@ mod tests {
     fn test_chip_load_hard_wood_3175mm() {
         let machine = MachineProfile::shapeoko_vfd();
         let d: f64 = 3.175;
-        let h = Material::SolidWood { species: WoodSpecies::HardMaple }.hardness_index();
-        let cl = machine.chip_load.k0 * d.powf(machine.chip_load.p) * (1.0 / h).powf(machine.chip_load.q);
+        let h = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        }
+        .hardness_index();
+        let cl = machine.chip_load.k0
+            * d.powf(machine.chip_load.p)
+            * (1.0 / h).powf(machine.chip_load.q);
         assert!((cl - 0.0311).abs() < 0.002, "expected ~0.0311, got {cl}");
     }
 
@@ -537,138 +648,252 @@ mod tests {
         let input = softwood_flat_6mm_pocket();
         let result = calculate(&input);
 
-        assert!(result.rpm >= 6000.0 && result.rpm <= 24000.0, "RPM {}", result.rpm);
-        assert!(result.feed_rate_mm_min > 500.0 && result.feed_rate_mm_min < 5000.0,
-            "feed {}", result.feed_rate_mm_min);
-        assert!(result.plunge_rate_mm_min > 100.0 && result.plunge_rate_mm_min < 2000.0,
-            "plunge {}", result.plunge_rate_mm_min);
-        assert!(result.axial_depth_mm > 0.0 && result.axial_depth_mm <= 18.0,
-            "DOC {}", result.axial_depth_mm);
-        assert!(result.radial_width_mm > 0.0 && result.radial_width_mm <= 6.0,
-            "WOC {}", result.radial_width_mm);
+        assert!(
+            result.rpm >= 6000.0 && result.rpm <= 24000.0,
+            "RPM {}",
+            result.rpm
+        );
+        assert!(
+            result.feed_rate_mm_min > 500.0 && result.feed_rate_mm_min < 5000.0,
+            "feed {}",
+            result.feed_rate_mm_min
+        );
+        assert!(
+            result.plunge_rate_mm_min > 100.0 && result.plunge_rate_mm_min < 2000.0,
+            "plunge {}",
+            result.plunge_rate_mm_min
+        );
+        assert!(
+            result.axial_depth_mm > 0.0 && result.axial_depth_mm <= 18.0,
+            "DOC {}",
+            result.axial_depth_mm
+        );
+        assert!(
+            result.radial_width_mm > 0.0 && result.radial_width_mm <= 6.0,
+            "WOC {}",
+            result.radial_width_mm
+        );
         assert!(result.power_kw >= 0.0, "power {}", result.power_kw);
     }
 
     #[test]
     fn test_adaptive_deeper_narrower_than_pocket() {
-        let material = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
         let machine = MachineProfile::shapeoko_vfd();
 
         let adaptive = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Adaptive, pass_role: PassRole::Roughing,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: None, setup: SetupContext::default(),
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
         });
         let pocket = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Pocket, pass_role: PassRole::Roughing,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: None, setup: SetupContext::default(),
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Pocket,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
         });
 
-        assert!(adaptive.axial_depth_mm > pocket.axial_depth_mm,
-            "adaptive DOC {} should > pocket DOC {}", adaptive.axial_depth_mm, pocket.axial_depth_mm);
-        assert!(adaptive.radial_width_mm < pocket.radial_width_mm,
-            "adaptive WOC {} should < pocket WOC {}", adaptive.radial_width_mm, pocket.radial_width_mm);
+        assert!(
+            adaptive.axial_depth_mm > pocket.axial_depth_mm,
+            "adaptive DOC {} should > pocket DOC {}",
+            adaptive.axial_depth_mm,
+            pocket.axial_depth_mm
+        );
+        assert!(
+            adaptive.radial_width_mm < pocket.radial_width_mm,
+            "adaptive WOC {} should < pocket WOC {}",
+            adaptive.radial_width_mm,
+            pocket.radial_width_mm
+        );
     }
 
     #[test]
     fn test_roughing_deeper_than_finishing() {
-        let material = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
         let machine = MachineProfile::shapeoko_vfd();
 
         let families = [
-            OperationFamily::Adaptive, OperationFamily::Pocket, OperationFamily::Contour,
-            OperationFamily::Parallel, OperationFamily::Scallop, OperationFamily::Trace,
+            OperationFamily::Adaptive,
+            OperationFamily::Pocket,
+            OperationFamily::Contour,
+            OperationFamily::Parallel,
+            OperationFamily::Scallop,
+            OperationFamily::Trace,
             OperationFamily::Face,
         ];
 
         for family in families {
             let rough = calculate(&FeedsInput {
-                tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-                tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-                material: &material, machine: &machine,
-                operation: family, pass_role: PassRole::Roughing,
-                axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-                vendor_lut: None, setup: SetupContext::default(),
+                tool_diameter: 6.0,
+                flute_count: 2,
+                flute_length: 18.0,
+                tool_geometry: ToolGeometryHint::Flat,
+                shank_diameter: None,
+                material: &material,
+                machine: &machine,
+                operation: family,
+                pass_role: PassRole::Roughing,
+                axial_depth_mm: None,
+                radial_width_mm: None,
+                target_scallop_mm: None,
+                vendor_lut: None,
+                setup: SetupContext::default(),
             });
             let finish = calculate(&FeedsInput {
-                tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-                tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-                material: &material, machine: &machine,
-                operation: family, pass_role: PassRole::Finish,
-                axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-                vendor_lut: None, setup: SetupContext::default(),
+                tool_diameter: 6.0,
+                flute_count: 2,
+                flute_length: 18.0,
+                tool_geometry: ToolGeometryHint::Flat,
+                shank_diameter: None,
+                material: &material,
+                machine: &machine,
+                operation: family,
+                pass_role: PassRole::Finish,
+                axial_depth_mm: None,
+                radial_width_mm: None,
+                target_scallop_mm: None,
+                vendor_lut: None,
+                setup: SetupContext::default(),
             });
 
-            assert!(rough.axial_depth_mm >= finish.axial_depth_mm,
+            assert!(
+                rough.axial_depth_mm >= finish.axial_depth_mm,
                 "{family:?}: roughing DOC {} should >= finishing DOC {}",
-                rough.axial_depth_mm, finish.axial_depth_mm);
-            assert!(rough.radial_width_mm >= finish.radial_width_mm,
+                rough.axial_depth_mm,
+                finish.axial_depth_mm
+            );
+            assert!(
+                rough.radial_width_mm >= finish.radial_width_mm,
                 "{family:?}: roughing WOC {} should >= finishing WOC {}",
-                rough.radial_width_mm, finish.radial_width_mm);
+                rough.radial_width_mm,
+                finish.radial_width_mm
+            );
         }
     }
 
     #[test]
     fn test_flute_guard_caps_doc() {
-        let material = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
         let machine = MachineProfile::shapeoko_vfd();
 
         let result = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 5.0, // very short flutes
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Adaptive, pass_role: PassRole::Roughing,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: None, setup: SetupContext::default(),
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 5.0, // very short flutes
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
         });
 
-        assert!(result.axial_depth_mm <= 5.0 * 0.8 + 0.01,
-            "DOC {} should be capped by flute guard 4.0", result.axial_depth_mm);
-        assert!(result.warnings.iter().any(|w| matches!(w, FeedsWarning::DocExceedsFlute { .. })));
+        assert!(
+            result.axial_depth_mm <= 5.0 * 0.8 + 0.01,
+            "DOC {} should be capped by flute guard 4.0",
+            result.axial_depth_mm
+        );
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| matches!(w, FeedsWarning::DocExceedsFlute { .. }))
+        );
     }
 
     #[test]
     fn test_power_limiting_on_low_power_machine() {
         // Use softwood (high chip load) with a tiny spindle to trigger power limiting
-        let material = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
         let mut machine = MachineProfile::shapeoko_vfd();
         machine.power = crate::machine::PowerModel::ConstantPower { power_kw: 0.01 }; // extremely tiny
 
         let result = calculate(&FeedsInput {
-            tool_diameter: 12.0, flute_count: 4, flute_length: 25.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Pocket, pass_role: PassRole::Roughing,
-            axial_depth_mm: Some(5.0), radial_width_mm: Some(8.0),
+            tool_diameter: 12.0,
+            flute_count: 4,
+            flute_length: 25.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Pocket,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: Some(5.0),
+            radial_width_mm: Some(8.0),
             target_scallop_mm: None,
-            vendor_lut: None, setup: SetupContext::default(),
+            vendor_lut: None,
+            setup: SetupContext::default(),
         });
 
-        assert!(result.power_limited, "should be power limited with 0.01kW spindle: power={:.4}kW, available={:.4}kW",
-            result.power_kw, result.available_power_kw);
-        assert!(result.warnings.iter().any(|w| matches!(w, FeedsWarning::PowerLimited { .. })));
+        assert!(
+            result.power_limited,
+            "should be power limited with 0.01kW spindle: power={:.4}kW, available={:.4}kW",
+            result.power_kw, result.available_power_kw
+        );
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| matches!(w, FeedsWarning::PowerLimited { .. }))
+        );
     }
 
     #[test]
     fn test_scallop_stepover_used_for_ball_nose() {
-        let material = Material::SolidWood { species: WoodSpecies::HardMaple };
+        let material = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
         let machine = MachineProfile::shapeoko_vfd();
 
         let result = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Ball, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Parallel, pass_role: PassRole::Finish,
-            axial_depth_mm: Some(0.4), radial_width_mm: None,
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Ball,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Parallel,
+            pass_role: PassRole::Finish,
+            axial_depth_mm: Some(0.4),
+            radial_width_mm: None,
             target_scallop_mm: Some(0.03),
-            vendor_lut: None, setup: SetupContext::default(),
+            vendor_lut: None,
+            setup: SetupContext::default(),
         });
 
         // With 3mm ball radius, 0.03mm scallop → stepover should be small
@@ -677,35 +902,59 @@ mod tests {
 
     #[test]
     fn test_machine_feed_clamp() {
-        let material = Material::Foam { density: crate::material::FoamDensity::Low };
+        let material = Material::Foam {
+            density: crate::material::FoamDensity::Low,
+        };
         let mut machine = MachineProfile::generic_wood_router();
         machine.max_feed_mm_min = 500.0; // very low max feed
 
         let result = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Pocket, pass_role: PassRole::Roughing,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: None, setup: SetupContext::default(),
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Pocket,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
         });
 
-        assert!(result.feed_rate_mm_min <= 500.0 * machine.safety_factor + 0.01,
-            "feed {} should be clamped to max {}", result.feed_rate_mm_min, 500.0);
+        assert!(
+            result.feed_rate_mm_min <= 500.0 * machine.safety_factor + 0.01,
+            "feed {} should be clamped to max {}",
+            result.feed_rate_mm_min,
+            500.0
+        );
     }
 
     #[test]
     fn test_safety_factor_applied() {
-        let material = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
         let machine = MachineProfile::shapeoko_vfd();
 
         let result = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Pocket, pass_role: PassRole::Roughing,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: None, setup: SetupContext::default(),
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Pocket,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
         });
 
         // Feed should be < what it would be without safety factor
@@ -715,23 +964,39 @@ mod tests {
 
     #[test]
     fn test_slotting_detection() {
-        let material = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
         let machine = MachineProfile::shapeoko_vfd();
 
         let result = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Pocket, pass_role: PassRole::Roughing,
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Pocket,
+            pass_role: PassRole::Roughing,
             axial_depth_mm: Some(10.0),
             radial_width_mm: Some(5.5), // >85% of D = slotting
             target_scallop_mm: None,
-            vendor_lut: None, setup: SetupContext::default(),
+            vendor_lut: None,
+            setup: SetupContext::default(),
         });
 
-        assert!(result.axial_depth_mm <= 6.0 * 0.25 + 0.01,
-            "slotting should reduce DOC, got {}", result.axial_depth_mm);
-        assert!(result.warnings.iter().any(|w| matches!(w, FeedsWarning::SlottingDetected { .. })));
+        assert!(
+            result.axial_depth_mm <= 6.0 * 0.25 + 0.01,
+            "slotting should reduce DOC, got {}",
+            result.axial_depth_mm
+        );
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| matches!(w, FeedsWarning::SlottingDetected { .. }))
+        );
     }
 
     // --- Vendor LUT integration tests ---
@@ -739,34 +1004,62 @@ mod tests {
     #[test]
     fn test_lut_chipload_overrides_formula() {
         let lut = vendor_lut::VendorLut::embedded();
-        let material = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
         let machine = MachineProfile::shapeoko_vfd();
 
         let with_lut = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Adaptive, pass_role: PassRole::Roughing,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: Some(&lut), setup: SetupContext::default(),
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: Some(&lut),
+            setup: SetupContext::default(),
         });
         let without_lut = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Adaptive, pass_role: PassRole::Roughing,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: None, setup: SetupContext::default(),
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
         });
 
         // LUT chipload for 6mm softwood adaptive should be ~0.0875 (midpoint 0.065-0.11)
         // Formula chipload should be ~0.0716
-        assert!((with_lut.chip_load_mm - 0.0875).abs() < 0.002,
-            "LUT chipload should be ~0.0875, got {}", with_lut.chip_load_mm);
-        assert!((without_lut.chip_load_mm - 0.0716).abs() < 0.002,
-            "formula chipload should be ~0.0716, got {}", without_lut.chip_load_mm);
-        assert!(with_lut.chip_load_mm > without_lut.chip_load_mm,
-            "LUT chipload {} should differ from formula {}", with_lut.chip_load_mm, without_lut.chip_load_mm);
+        assert!(
+            (with_lut.chip_load_mm - 0.0875).abs() < 0.002,
+            "LUT chipload should be ~0.0875, got {}",
+            with_lut.chip_load_mm
+        );
+        assert!(
+            (without_lut.chip_load_mm - 0.0716).abs() < 0.002,
+            "formula chipload should be ~0.0716, got {}",
+            without_lut.chip_load_mm
+        );
+        assert!(
+            with_lut.chip_load_mm > without_lut.chip_load_mm,
+            "LUT chipload {} should differ from formula {}",
+            with_lut.chip_load_mm,
+            without_lut.chip_load_mm
+        );
         assert!(with_lut.vendor_source.is_some());
         assert!(without_lut.vendor_source.is_none());
     }
@@ -774,35 +1067,58 @@ mod tests {
     #[test]
     fn test_lut_rpm_override_within_machine_range() {
         let lut = vendor_lut::VendorLut::embedded();
-        let material = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
         let machine = MachineProfile::shapeoko_vfd();
 
         let result = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Adaptive, pass_role: PassRole::Roughing,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: Some(&lut), setup: SetupContext::default(),
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: Some(&lut),
+            setup: SetupContext::default(),
         });
 
         // Vendor RPM for amana 6mm softwood adaptive is 18000
-        assert!((result.rpm - 18000.0).abs() < 100.0,
-            "RPM should be ~18000 from vendor data, got {}", result.rpm);
+        assert!(
+            (result.rpm - 18000.0).abs() < 100.0,
+            "RPM should be ~18000 from vendor data, got {}",
+            result.rpm
+        );
     }
 
     #[test]
     fn test_no_lut_backward_compatible() {
-        let material = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
         let machine = MachineProfile::shapeoko_vfd();
 
         let result = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Pocket, pass_role: PassRole::Roughing,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: None, setup: SetupContext::default(),
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Pocket,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
         });
 
         assert!(result.vendor_source.is_none());
@@ -813,28 +1129,46 @@ mod tests {
 
     #[test]
     fn test_setup_derate_long_overhang() {
-        let material = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
         let machine = MachineProfile::shapeoko_vfd();
 
         let normal = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Adaptive, pass_role: PassRole::Roughing,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: None, setup: SetupContext {
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext {
                 tool_overhang_mm: Some(20.0), // L/D = 20/6 = 3.3, no derate
                 workholding_rigidity: WorkholdingRigidity::Medium,
             },
         });
 
         let long = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Adaptive, pass_role: PassRole::Roughing,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: None, setup: SetupContext {
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext {
                 tool_overhang_mm: Some(40.0), // L/D = 40/6 = 6.67, 25% derate
                 workholding_rigidity: WorkholdingRigidity::Medium,
             },
@@ -842,123 +1176,198 @@ mod tests {
 
         // L/D > 6 should reduce feed by 25%
         let ratio = long.feed_rate_mm_min / normal.feed_rate_mm_min;
-        assert!((ratio - 0.75).abs() < 0.02,
-            "L/D>6 derate should give 0.75x feed ratio, got {ratio}");
+        assert!(
+            (ratio - 0.75).abs() < 0.02,
+            "L/D>6 derate should give 0.75x feed ratio, got {ratio}"
+        );
     }
 
     #[test]
     fn test_setup_derate_medium_overhang() {
-        let material = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
         let machine = MachineProfile::shapeoko_vfd();
 
         let normal = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Adaptive, pass_role: PassRole::Roughing,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: None, setup: SetupContext {
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext {
                 tool_overhang_mm: Some(20.0), // L/D = 3.3, no derate
                 workholding_rigidity: WorkholdingRigidity::Medium,
             },
         });
 
         let medium = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Adaptive, pass_role: PassRole::Roughing,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: None, setup: SetupContext {
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext {
                 tool_overhang_mm: Some(30.0), // L/D = 30/6 = 5.0, 12% derate
                 workholding_rigidity: WorkholdingRigidity::Medium,
             },
         });
 
         let ratio = medium.feed_rate_mm_min / normal.feed_rate_mm_min;
-        assert!((ratio - 0.88).abs() < 0.02,
-            "L/D>4 derate should give 0.88x feed ratio, got {ratio}");
+        assert!(
+            (ratio - 0.88).abs() < 0.02,
+            "L/D>4 derate should give 0.88x feed ratio, got {ratio}"
+        );
     }
 
     #[test]
     fn test_setup_derate_workholding_low() {
-        let material = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
         let machine = MachineProfile::shapeoko_vfd();
 
         let medium = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Adaptive, pass_role: PassRole::Roughing,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: None, setup: SetupContext {
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext {
                 tool_overhang_mm: None,
                 workholding_rigidity: WorkholdingRigidity::Medium,
             },
         });
 
         let low = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Adaptive, pass_role: PassRole::Roughing,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: None, setup: SetupContext {
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext {
                 tool_overhang_mm: None,
                 workholding_rigidity: WorkholdingRigidity::Low,
             },
         });
 
         let ratio = low.feed_rate_mm_min / medium.feed_rate_mm_min;
-        assert!((ratio - 0.85).abs() < 0.02,
-            "Low workholding should give 0.85x feed ratio, got {ratio}");
+        assert!(
+            (ratio - 0.85).abs() < 0.02,
+            "Low workholding should give 0.85x feed ratio, got {ratio}"
+        );
     }
 
     #[test]
     fn test_lut_ball_nose_different_chipload_than_flat() {
         let lut = vendor_lut::VendorLut::embedded();
-        let material = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
         let machine = MachineProfile::shapeoko_vfd();
 
         let flat = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Adaptive, pass_role: PassRole::Roughing,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: Some(&lut), setup: SetupContext::default(),
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: Some(&lut),
+            setup: SetupContext::default(),
         });
         let ball = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Ball, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Parallel, pass_role: PassRole::Finish,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: Some(&lut), setup: SetupContext::default(),
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Ball,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Parallel,
+            pass_role: PassRole::Finish,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: Some(&lut),
+            setup: SetupContext::default(),
         });
 
         // Ball nose finishing should have a different (lower) chipload than flat adaptive
-        assert_ne!(flat.chip_load_mm, ball.chip_load_mm,
-            "LUT should give different chiploads for flat vs ball");
-        assert!(flat.chip_load_mm > ball.chip_load_mm,
+        assert_ne!(
+            flat.chip_load_mm, ball.chip_load_mm,
+            "LUT should give different chiploads for flat vs ball"
+        );
+        assert!(
+            flat.chip_load_mm > ball.chip_load_mm,
             "flat adaptive chipload {} should be > ball finish chipload {}",
-            flat.chip_load_mm, ball.chip_load_mm);
+            flat.chip_load_mm,
+            ball.chip_load_mm
+        );
     }
 
     #[test]
     fn test_lut_fallback_when_no_match() {
         let lut = vendor_lut::VendorLut::embedded();
-        let material = Material::Foam { density: crate::material::FoamDensity::Low };
+        let material = Material::Foam {
+            density: crate::material::FoamDensity::Low,
+        };
         let machine = MachineProfile::shapeoko_vfd();
 
         // Foam has no LUT data — should fall back to formula
         let result = calculate(&FeedsInput {
-            tool_diameter: 6.0, flute_count: 2, flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat, shank_diameter: None,
-            material: &material, machine: &machine,
-            operation: OperationFamily::Pocket, pass_role: PassRole::Roughing,
-            axial_depth_mm: None, radial_width_mm: None, target_scallop_mm: None,
-            vendor_lut: Some(&lut), setup: SetupContext::default(),
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Pocket,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: Some(&lut),
+            setup: SetupContext::default(),
         });
 
         // Foam maps to softwood in normalize, but with hardness 200 which is far from

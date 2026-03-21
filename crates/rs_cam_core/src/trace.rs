@@ -3,9 +3,9 @@
 //! Follows polygon paths exactly at a specified depth, optionally offset
 //! by the tool radius for left/right cutter compensation.
 
-use crate::depth::{depth_stepped_toolpath, DepthStepping};
+use crate::depth::{DepthStepping, depth_stepped_toolpath};
 use crate::geo::{P2, P3};
-use crate::polygon::{offset_polygon, Polygon2};
+use crate::polygon::{Polygon2, offset_polygon};
 use crate::toolpath::Toolpath;
 
 /// Cutter compensation direction relative to the travel direction.
@@ -250,10 +250,7 @@ mod tests {
             .iter()
             .cloned()
             .fold(f64::NEG_INFINITY, f64::max);
-        let right_x_min = right_feed_xs
-            .iter()
-            .cloned()
-            .fold(f64::INFINITY, f64::min);
+        let right_x_min = right_feed_xs.iter().cloned().fold(f64::INFINITY, f64::min);
         let right_x_max = right_feed_xs
             .iter()
             .cloned()

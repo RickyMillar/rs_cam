@@ -220,18 +220,46 @@ mod tests {
     #[test]
     fn test_embedded_loads_all_observations() {
         let lut = VendorLut::embedded();
-        assert_eq!(lut.observations.len(), 61, "expected 61 embedded observations");
+        assert_eq!(
+            lut.observations.len(),
+            61,
+            "expected 61 embedded observations"
+        );
     }
 
     #[test]
     fn test_embedded_has_all_tool_families() {
         let lut = VendorLut::embedded();
-        assert!(lut.observations.iter().any(|o| o.tool_family == ToolFamily::FlatEnd));
-        assert!(lut.observations.iter().any(|o| o.tool_family == ToolFamily::BallNose));
-        assert!(lut.observations.iter().any(|o| o.tool_family == ToolFamily::TaperedBallNose));
-        assert!(lut.observations.iter().any(|o| o.tool_family == ToolFamily::BullNose));
-        assert!(lut.observations.iter().any(|o| o.tool_family == ToolFamily::ChamferVbit));
-        assert!(lut.observations.iter().any(|o| o.tool_family == ToolFamily::FacingBit));
+        assert!(
+            lut.observations
+                .iter()
+                .any(|o| o.tool_family == ToolFamily::FlatEnd)
+        );
+        assert!(
+            lut.observations
+                .iter()
+                .any(|o| o.tool_family == ToolFamily::BallNose)
+        );
+        assert!(
+            lut.observations
+                .iter()
+                .any(|o| o.tool_family == ToolFamily::TaperedBallNose)
+        );
+        assert!(
+            lut.observations
+                .iter()
+                .any(|o| o.tool_family == ToolFamily::BullNose)
+        );
+        assert!(
+            lut.observations
+                .iter()
+                .any(|o| o.tool_family == ToolFamily::ChamferVbit)
+        );
+        assert!(
+            lut.observations
+                .iter()
+                .any(|o| o.tool_family == ToolFamily::FacingBit)
+        );
     }
 
     #[test]
@@ -239,8 +267,16 @@ mod tests {
         let lut = VendorLut::embedded();
         for obs in &lut.observations {
             if let (Some(min), Some(max)) = (obs.chipload_min_mm_tooth, obs.chipload_max_mm_tooth) {
-                assert!(max >= min, "{}: chipload max {max} < min {min}", obs.observation_id);
-                assert!(min > 0.0, "{}: chipload min must be positive", obs.observation_id);
+                assert!(
+                    max >= min,
+                    "{}: chipload max {max} < min {min}",
+                    obs.observation_id
+                );
+                assert!(
+                    min > 0.0,
+                    "{}: chipload min must be positive",
+                    obs.observation_id
+                );
             }
         }
     }
@@ -248,7 +284,9 @@ mod tests {
     #[test]
     fn test_amana_flat_6mm_softwood_chipload() {
         let lut = VendorLut::embedded();
-        let obs = lut.observations.iter()
+        let obs = lut
+            .observations
+            .iter()
             .find(|o| o.observation_id == "amana-flat-softwood-adaptive-6000-2f")
             .expect("should find amana 6mm flat softwood adaptive");
         assert_eq!(obs.diameter_mm, 6.0);

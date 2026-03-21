@@ -24,8 +24,12 @@ impl BallEndmill {
 }
 
 impl MillingCutter for BallEndmill {
-    fn diameter(&self) -> f64 { self.diameter }
-    fn length(&self) -> f64 { self.cutting_length }
+    fn diameter(&self) -> f64 {
+        self.diameter
+    }
+    fn length(&self) -> f64 {
+        self.cutting_length
+    }
 
     fn height_at_radius(&self, r: f64) -> Option<f64> {
         let big_r = self.radius();
@@ -46,9 +50,15 @@ impl MillingCutter for BallEndmill {
         }
     }
 
-    fn center_height(&self) -> f64 { self.radius() }
-    fn normal_length(&self) -> f64 { self.radius() }
-    fn xy_normal_length(&self) -> f64 { 0.0 }
+    fn center_height(&self) -> f64 {
+        self.radius()
+    }
+    fn normal_length(&self) -> f64 {
+        self.radius()
+    }
+    fn xy_normal_length(&self) -> f64 {
+        0.0
+    }
 
     fn edge_drop(&self, cl: &mut CLPoint, p1: &P3, p2: &P3) {
         let big_r = self.radius();
@@ -278,6 +288,11 @@ mod tests {
         // For a ball of radius r_tool on a convex sphere of radius R_sphere:
         // the tip z = R_sphere (the ball just touches the top)
         // Actually at the very top, vertex_drop gives: z = hemisphere_r - height(0) = hemisphere_r
-        assert!((cl.z - hemisphere_r).abs() < 0.5, "cl.z = {}, expected ~{}", cl.z, hemisphere_r);
+        assert!(
+            (cl.z - hemisphere_r).abs() < 0.5,
+            "cl.z = {}, expected ~{}",
+            cl.z,
+            hemisphere_r
+        );
     }
 }

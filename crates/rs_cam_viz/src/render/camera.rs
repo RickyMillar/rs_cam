@@ -109,15 +109,19 @@ impl OrbitCamera {
         let cz = (min[2] + max[2]) * 0.5;
         self.target = Point3::new(cx, cy, cz);
 
-        let extent = (max[0] - min[0])
-            .max(max[1] - min[1])
-            .max(max[2] - min[2]);
+        let extent = (max[0] - min[0]).max(max[1] - min[1]).max(max[2] - min[2]);
         self.distance = extent * 1.8;
     }
 
     /// Project a world-space point to screen coordinates (in pixels).
     /// Returns None if the point is behind the camera.
-    pub fn project_to_screen(&self, world: [f32; 3], aspect: f32, viewport_w: f32, viewport_h: f32) -> Option<[f32; 2]> {
+    pub fn project_to_screen(
+        &self,
+        world: [f32; 3],
+        aspect: f32,
+        viewport_w: f32,
+        viewport_h: f32,
+    ) -> Option<[f32; 2]> {
         let vp = self.projection_matrix(aspect) * self.view_matrix();
         let p = nalgebra::Vector4::new(world[0], world[1], world[2], 1.0);
         let clip = vp * p;
@@ -151,5 +155,11 @@ impl OrbitCamera {
                 self.pitch = std::f32::consts::FRAC_PI_6;
             }
         }
+    }
+}
+
+impl Default for OrbitCamera {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -51,7 +51,7 @@ pub fn lookup_best(lut: &VendorLut, query: &LookupQuery) -> Option<LookupResult>
         }
         // Diameter ratio must be within 0.5x to 2.0x
         let ratio = query.diameter_mm / obs.diameter_mm;
-        if ratio < 0.5 || ratio > 2.0 {
+        if !(0.5..=2.0).contains(&ratio) {
             continue;
         }
 
@@ -81,21 +81,24 @@ pub fn lookup_best(lut: &VendorLut, query: &LookupQuery) -> Option<LookupResult>
         score += diam_score;
 
         // Hardness proximity (0-80)
-        if let (Some(qk), Some(qv), Some(ok), Some(ov)) =
-            (query.hardness_kind, query.hardness_value, obs.hardness_kind, obs.hardness_value)
+        if let (Some(qk), Some(qv), Some(ok), Some(ov)) = (
+            query.hardness_kind,
+            query.hardness_value,
+            obs.hardness_kind,
+            obs.hardness_value,
+        ) && qk == ok
+            && ov > 0.0
         {
-            if qk == ok && ov > 0.0 {
-                let rel_diff = ((qv - ov) / ov).abs();
-                let h_score = ((1.0 - rel_diff) * 80.0).clamp(0.0, 80.0) as i64;
-                score += h_score;
-            }
+            let rel_diff = ((qv - ov) / ov).abs();
+            let h_score = ((1.0 - rel_diff) * 80.0).clamp(0.0, 80.0) as i64;
+            score += h_score;
         }
 
         // Subfamily match
-        if let (Some(qs), Some(os)) = (&query.tool_subfamily, &obs.tool_subfamily) {
-            if qs == os {
-                score += 50;
-            }
+        if let (Some(qs), Some(os)) = (&query.tool_subfamily, &obs.tool_subfamily)
+            && qs == os
+        {
+            score += 50;
         }
 
         // Pass role
@@ -204,11 +207,21 @@ mod tests {
             pass_role: LutPassRole::Roughing,
         };
         let result = lookup_best(&lut, &query).expect("should find match");
-        assert!(result.score > 1400, "score {} should be > 1400", result.score);
-        assert_eq!(result.observation_id, "amana-flat-softwood-adaptive-6000-2f");
+        assert!(
+            result.score > 1400,
+            "score {} should be > 1400",
+            result.score
+        );
+        assert_eq!(
+            result.observation_id,
+            "amana-flat-softwood-adaptive-6000-2f"
+        );
         // Midpoint of 0.065-0.11 = 0.0875
-        assert!((result.chip_load_mm - 0.0875).abs() < 0.001,
-            "chipload {} should be ~0.0875", result.chip_load_mm);
+        assert!(
+            (result.chip_load_mm - 0.0875).abs() < 0.001,
+            "chipload {} should be ~0.0875",
+            result.chip_load_mm
+        );
     }
 
     #[test]
@@ -280,7 +293,8 @@ mod tests {
             operation_family: LutOperationFamily::Adaptive,
             pass_role: LutPassRole::Roughing,
         };
-        let result = lookup_best(&lut, &query).expect("bull nose should fallback to flat/bull rows");
+        let result =
+            lookup_best(&lut, &query).expect("bull nose should fallback to flat/bull rows");
         assert!(result.chip_load_mm > 0.03);
     }
 

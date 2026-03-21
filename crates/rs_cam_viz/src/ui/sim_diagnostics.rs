@@ -42,6 +42,30 @@ pub fn draw(
                 ui.label("Opacity:");
                 ui.add(egui::Slider::new(&mut sim.stock_opacity, 0.0..=1.0).show_value(true));
             });
+
+            ui.horizontal(|ui| {
+                ui.label("Resolution:");
+                if sim.auto_resolution {
+                    ui.label(format!("{:.3} mm (auto)", sim.resolution));
+                } else {
+                    ui.add(
+                        egui::Slider::new(&mut sim.resolution, 0.02..=1.0)
+                            .suffix(" mm")
+                            .logarithmic(true)
+                            .show_value(true),
+                    );
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut sim.auto_resolution, "Auto from tool size");
+                if !sim.auto_resolution {
+                    ui.label(
+                        egui::RichText::new("(re-run to apply)")
+                            .small()
+                            .color(egui::Color32::from_rgb(180, 160, 80)),
+                    );
+                }
+            });
         });
 
     ui.add_space(4.0);

@@ -4,7 +4,7 @@
 //! following the design contour. A single pass at each depth level.
 
 use crate::geo::{P2, P3};
-use crate::polygon::{offset_polygon, Polygon2};
+use crate::polygon::{Polygon2, offset_polygon};
 use crate::toolpath::Toolpath;
 
 /// Which side of the boundary the tool cuts on.
@@ -52,11 +52,7 @@ pub fn profile_toolpath(polygon: &Polygon2, params: &ProfileParams) -> Toolpath 
 /// Generate the 2D profile contour (tool center path).
 ///
 /// Returns None if the offset collapses.
-pub fn profile_contour(
-    polygon: &Polygon2,
-    tool_radius: f64,
-    side: ProfileSide,
-) -> Option<Vec<P2>> {
+pub fn profile_contour(polygon: &Polygon2, tool_radius: f64, side: ProfileSide) -> Option<Vec<P2>> {
     let distance = match side {
         ProfileSide::Inside => tool_radius,   // inward (positive)
         ProfileSide::Outside => -tool_radius, // outward (negative)
@@ -131,7 +127,10 @@ mod tests {
         let sq = Polygon2::rectangle(0.0, 0.0, 20.0, 20.0);
         let contour = profile_contour(&sq, 3.175, ProfileSide::Outside);
 
-        assert!(contour.is_some(), "Outside profile should produce a contour");
+        assert!(
+            contour.is_some(),
+            "Outside profile should produce a contour"
+        );
         let pts = contour.unwrap();
         assert!(pts.len() >= 4, "Should have at least 4 vertices");
 
@@ -154,7 +153,11 @@ mod tests {
         let x_min = pts.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
         let x_max = pts.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
         assert!(x_min > 0.0, "Inside profile x_min={} should be > 0", x_min);
-        assert!(x_max < 20.0, "Inside profile x_max={} should be < 20", x_max);
+        assert!(
+            x_max < 20.0,
+            "Inside profile x_max={} should be < 20",
+            x_max
+        );
     }
 
     #[test]
@@ -306,7 +309,10 @@ mod tests {
         ]);
 
         let outside = profile_toolpath(&l_shape, &default_params(ProfileSide::Outside));
-        assert!(!outside.moves.is_empty(), "Outside profile of L-shape should work");
+        assert!(
+            !outside.moves.is_empty(),
+            "Outside profile of L-shape should work"
+        );
 
         let inside = profile_toolpath(
             &l_shape,
@@ -320,6 +326,9 @@ mod tests {
                 climb: false,
             },
         );
-        assert!(!inside.moves.is_empty(), "Inside profile of L-shape should work");
+        assert!(
+            !inside.moves.is_empty(),
+            "Inside profile of L-shape should work"
+        );
     }
 }

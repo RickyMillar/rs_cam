@@ -9,6 +9,7 @@
 
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::P3;
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::FlatEndmill;
 use crate::toolpath::{MoveType, Toolpath};
@@ -91,7 +92,8 @@ impl ToolAssembly {
         cutter_radius: f64,
         profile: &[HolderSegment],
     ) -> Vec<(f64, f64, f64)> {
-        profile.iter()
+        profile
+            .iter()
             .filter(|s| s.max_radius() > cutter_radius + 1e-6)
             .map(|s| (s.z_offset, s.max_radius(), s.length))
             .collect()
@@ -157,11 +159,37 @@ pub fn check_collisions_interpolated(
     index: &SpatialIndex,
     step_mm: f64,
 ) -> CollisionReport {
+    let never_cancel = || false;
+    match check_collisions_interpolated_with_cancel(
+        toolpath,
+        assembly,
+        mesh,
+        index,
+        step_mm,
+        &never_cancel,
+    ) {
+        Ok(report) => report,
+        Err(_) => CollisionReport {
+            collisions: Vec::new(),
+            min_safe_stickout: assembly.stickout(),
+        },
+    }
+}
+
+pub fn check_collisions_interpolated_with_cancel(
+    toolpath: &Toolpath,
+    assembly: &ToolAssembly,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    step_mm: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<CollisionReport, Cancelled> {
     let segments = assembly.segments();
     let mut collisions = Vec::new();
     let mut max_extra_stickout_needed = 0.0_f64;
 
     for (move_idx, mv) in toolpath.moves.iter().enumerate() {
+        check_cancel(cancel)?;
         // Only check cutting moves (linear), not rapids
         let is_cutting = matches!(
             mv.move_type,
@@ -189,11 +217,7 @@ pub fn check_collisions_interpolated(
                 let mut pts = Vec::with_capacity(n_steps + 1);
                 for i in 0..=n_steps {
                     let t = i as f64 / n_steps as f64;
-                    pts.push(P3::new(
-                        prev.x + t * dx,
-                        prev.y + t * dy,
-                        prev.z + t * dz,
-                    ));
+                    pts.push(P3::new(prev.x + t * dx, prev.y + t * dy, prev.z + t * dz));
                 }
                 pts
             } else {
@@ -204,6 +228,7 @@ pub fn check_collisions_interpolated(
         };
 
         for tip in &sample_points {
+            check_cancel(cancel)?;
             for &(z_offset, seg_radius, _seg_length) in &segments {
                 if seg_radius <= assembly.cutter_radius + 1e-6 {
                     continue;
@@ -242,10 +267,10 @@ pub fn check_collisions_interpolated(
 
     let min_safe_stickout = assembly.stickout() + max_extra_stickout_needed;
 
-    CollisionReport {
+    Ok(CollisionReport {
         collisions,
         min_safe_stickout,
-    }
+    })
 }
 
 /// A rapid move that passes through stock material.
@@ -262,7 +287,10 @@ pub struct RapidCollision {
 /// Check for rapid (G0) moves that pass through stock material.
 /// Samples points along each rapid move and checks if any point is below
 /// the stock top Z and within the stock XY bounds.
-pub fn check_rapid_collisions(toolpath: &Toolpath, stock_bbox: &crate::geo::BoundingBox3) -> Vec<RapidCollision> {
+pub fn check_rapid_collisions(
+    toolpath: &Toolpath,
+    stock_bbox: &crate::geo::BoundingBox3,
+) -> Vec<RapidCollision> {
     let mut collisions = Vec::new();
 
     for i in 1..toolpath.moves.len() {
@@ -313,11 +341,11 @@ pub fn check_rapid_collisions(toolpath: &Toolpath, stock_bbox: &crate::geo::Boun
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mesh::{make_test_hemisphere, SpatialIndex};
+    use crate::mesh::{SpatialIndex, make_test_hemisphere};
 
     fn test_assembly() -> ToolAssembly {
         ToolAssembly {
-            cutter_radius: 3.0,  // 6mm ball endmill
+            cutter_radius: 3.0, // 6mm ball endmill
             cutter_length: 25.0,
             shank_diameter: 6.0,
             shank_length: 10.0,
@@ -358,7 +386,10 @@ mod tests {
         tp.feed_to(P3::new(20.0, 0.0, 50.0), 1000.0);
 
         let report = check_collisions(&tp, &asm, &mesh, &index);
-        assert!(report.is_clear(), "High Z toolpath should have no collisions");
+        assert!(
+            report.is_clear(),
+            "High Z toolpath should have no collisions"
+        );
     }
 
     #[test]
@@ -367,7 +398,7 @@ mod tests {
         let index = SpatialIndex::build(&mesh, 5.0);
         let asm = ToolAssembly {
             cutter_radius: 3.0,
-            cutter_length: 10.0,  // short cutter
+            cutter_length: 10.0, // short cutter
             shank_diameter: 6.0,
             shank_length: 5.0,
             holder_diameter: 35.0,
@@ -435,8 +466,8 @@ mod tests {
         let profile = vec![
             HolderSegment {
                 z_offset: 25.0,
-                radius_bottom: 5.0,  // narrow bottom
-                radius_top: 10.0,    // wider top
+                radius_bottom: 5.0, // narrow bottom
+                radius_top: 10.0,   // wider top
                 length: 10.0,
             },
             HolderSegment {
@@ -521,7 +552,10 @@ mod tests {
         tp.rapid_to(P3::new(100.0, 100.0, 50.0));
 
         let collisions = check_rapid_collisions(&tp, &stock);
-        assert!(collisions.is_empty(), "Rapids above stock should not collide");
+        assert!(
+            collisions.is_empty(),
+            "Rapids above stock should not collide"
+        );
     }
 
     #[test]

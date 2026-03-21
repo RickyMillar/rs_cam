@@ -1,0 +1,23 @@
+format_version = 1
+
+[job]
+name = "Fixture 2D"
+
+[[tools]]
+id = 1
+name = "Fixture End Mill"
+type = "end_mill"
+
+[[models]]
+id = 1
+path = "square.svg"
+name = "Square"
+kind = "svg"
+units = { kind = "millimeters" }
+
+[[toolpaths]]
+id = 1
+name = "Pocket Fixture"
+type = "pocket"
+tool_id = 1
+model_id = 1

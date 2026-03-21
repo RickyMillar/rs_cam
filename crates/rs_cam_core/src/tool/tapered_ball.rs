@@ -382,8 +382,8 @@ mod tests {
         assert!(hc > 0.0 && hc < tool.ball_radius());
 
         // Both formulas should give the same height at r_contact
-        let h_ball = tool.ball_radius()
-            - (tool.ball_radius() * tool.ball_radius() - rc * rc).sqrt();
+        let h_ball =
+            tool.ball_radius() - (tool.ball_radius() * tool.ball_radius() - rc * rc).sqrt();
         let h_cone = rc / tool.alpha().tan() + tool.cone_offset();
         assert!(
             (h_ball - h_cone).abs() < 1e-10,
@@ -529,7 +529,10 @@ mod tests {
         let p2 = P3::new(1.0, 10.0, 0.0);
         let mut cl = CLPoint::new(0.0, 0.0);
         tool.edge_drop(&mut cl, &p1, &p2);
-        assert!(cl.z > f64::NEG_INFINITY, "Should find ball-region edge contact");
+        assert!(
+            cl.z > f64::NEG_INFINITY,
+            "Should find ball-region edge contact"
+        );
     }
 
     #[test]

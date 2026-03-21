@@ -19,10 +19,13 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
     // Stock
     if ui
-        .selectable_label(state.selection == Selection::Stock, format!(
-            "Stock ({:.0} x {:.0} x {:.0} mm)",
-            state.job.stock.x, state.job.stock.y, state.job.stock.z
-        ))
+        .selectable_label(
+            state.selection == Selection::Stock,
+            format!(
+                "Stock ({:.0} x {:.0} x {:.0} mm)",
+                state.job.stock.x, state.job.stock.y, state.job.stock.z
+            ),
+        )
         .clicked()
     {
         events.push(AppEvent::Select(Selection::Stock));
@@ -129,7 +132,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             // Status indicator: colored unicode circle
             let (status_icon, status_color) = match &tp.status {
                 ComputeStatus::Pending => ("\u{25CB}", egui::Color32::from_rgb(120, 120, 130)), // hollow circle
-                ComputeStatus::Computing(_) => ("\u{25CF}", egui::Color32::from_rgb(200, 180, 80)), // yellow filled
+                ComputeStatus::Computing => ("\u{25CF}", egui::Color32::from_rgb(200, 180, 80)), // yellow filled
                 ComputeStatus::Done => ("\u{25CF}", egui::Color32::from_rgb(80, 180, 80)), // green filled
                 ComputeStatus::Error(_) => ("\u{25CF}", egui::Color32::from_rgb(220, 80, 80)), // red filled
             };
@@ -145,29 +148,37 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             // Visibility/enabled indicators
             let dim = !tp.enabled || !tp.visible;
 
-            let response = ui.horizontal(|ui| {
-                // Palette color swatch (small colored square)
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
-                ui.painter().rect_filled(rect, 1.0, swatch_color);
+            let response = ui
+                .horizontal(|ui| {
+                    // Palette color swatch (small colored square)
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                    ui.painter().rect_filled(rect, 1.0, swatch_color);
 
-                // Status circle
-                ui.label(egui::RichText::new(status_icon).color(status_color).size(10.0));
+                    // Status circle
+                    ui.label(
+                        egui::RichText::new(status_icon)
+                            .color(status_color)
+                            .size(10.0),
+                    );
 
-                // Toolpath name
-                let text_color = if dim {
-                    egui::Color32::from_rgb(100, 100, 110)
-                } else if selected {
-                    egui::Color32::from_rgb(220, 220, 230)
-                } else {
-                    egui::Color32::from_rgb(180, 180, 190)
-                };
-                let label = format!("[{}] {}", i + 1, tp.name);
-                let resp = ui.selectable_label(selected, egui::RichText::new(&label).color(text_color));
-                if resp.clicked() {
-                    events.push(AppEvent::Select(Selection::Toolpath(tp.id)));
-                }
-                resp
-            }).inner;
+                    // Toolpath name
+                    let text_color = if dim {
+                        egui::Color32::from_rgb(100, 100, 110)
+                    } else if selected {
+                        egui::Color32::from_rgb(220, 220, 230)
+                    } else {
+                        egui::Color32::from_rgb(180, 180, 190)
+                    };
+                    let label = format!("[{}] {}", i + 1, tp.name);
+                    let resp = ui
+                        .selectable_label(selected, egui::RichText::new(&label).color(text_color));
+                    if resp.clicked() {
+                        events.push(AppEvent::Select(Selection::Toolpath(tp.id)));
+                    }
+                    resp
+                })
+                .inner;
 
             response.context_menu(|ui| {
                 let vis_label = if tp.visible { "Hide" } else { "Show" };
@@ -225,29 +236,26 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
     // Import buttons
     ui.horizontal_wrapped(|ui| {
-        if ui.small_button("+ STL").clicked() {
-            if let Some(path) = rfd::FileDialog::new()
+        if ui.small_button("+ STL").clicked()
+            && let Some(path) = rfd::FileDialog::new()
                 .add_filter("STL", &["stl", "STL"])
                 .pick_file()
-            {
-                events.push(AppEvent::ImportStl(path));
-            }
+        {
+            events.push(AppEvent::ImportStl(path));
         }
-        if ui.small_button("+ SVG").clicked() {
-            if let Some(path) = rfd::FileDialog::new()
+        if ui.small_button("+ SVG").clicked()
+            && let Some(path) = rfd::FileDialog::new()
                 .add_filter("SVG", &["svg", "SVG"])
                 .pick_file()
-            {
-                events.push(AppEvent::ImportSvg(path));
-            }
+        {
+            events.push(AppEvent::ImportSvg(path));
         }
-        if ui.small_button("+ DXF").clicked() {
-            if let Some(path) = rfd::FileDialog::new()
+        if ui.small_button("+ DXF").clicked()
+            && let Some(path) = rfd::FileDialog::new()
                 .add_filter("DXF", &["dxf", "DXF"])
                 .pick_file()
-            {
-                events.push(AppEvent::ImportDxf(path));
-            }
+        {
+            events.push(AppEvent::ImportDxf(path));
         }
     });
 }

@@ -75,14 +75,11 @@ pub fn draw(
             ComputeStatus::Pending => {
                 ui.label("Ready");
             }
-            ComputeStatus::Computing(pct) => {
-                ui.label(format!("Computing... {:.0}%", pct * 100.0));
+            ComputeStatus::Computing => {
+                ui.label("Computing...");
             }
             ComputeStatus::Done => {
-                ui.label(
-                    egui::RichText::new("Done")
-                        .color(egui::Color32::from_rgb(100, 180, 100)),
-                );
+                ui.label(egui::RichText::new("Done").color(egui::Color32::from_rgb(100, 180, 100)));
             }
             ComputeStatus::Error(e) => {
                 ui.label(

@@ -9,13 +9,14 @@
 //! 3. Extract CL boundary points from interval endpoints
 //! 4. Connect boundary points into closed loops using nearest-neighbor chaining
 
+use crate::contour_extract::weave_contours;
 use crate::fiber::Fiber;
 use crate::geo::P3;
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::pushcutter::batch_push_cutter;
+use crate::pushcutter::{batch_push_cutter, batch_push_cutter_with_cancel};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
-use crate::contour_extract::weave_contours;
 
 /// Parameters for waterline toolpath generation.
 pub struct WaterlineParams {
@@ -94,11 +95,38 @@ pub fn waterline_toolpath(
     z_step: f64,
     params: &WaterlineParams,
 ) -> Toolpath {
+    let never_cancel = || false;
+    waterline_toolpath_with_cancel(
+        mesh,
+        index,
+        cutter,
+        start_z,
+        final_z,
+        z_step,
+        params,
+        &never_cancel,
+    )
+    .expect("non-cancellable waterline should never be cancelled")
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn waterline_toolpath_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    start_z: f64,
+    final_z: f64,
+    z_step: f64,
+    params: &WaterlineParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
     let mut toolpath = Toolpath::new();
 
     let mut z = start_z;
     while z >= final_z - 1e-10 {
-        let contours = waterline_contours(mesh, index, cutter, z, params.sampling);
+        check_cancel(cancel)?;
+        let contours =
+            waterline_contours_with_cancel(mesh, index, cutter, z, params.sampling, cancel)?;
 
         for contour in &contours {
             if contour.len() < 3 {
@@ -126,7 +154,45 @@ pub fn waterline_toolpath(
         z -= z_step;
     }
 
-    toolpath
+    Ok(toolpath)
+}
+
+pub fn waterline_contours_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    z: f64,
+    sampling: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<Vec<Vec<P3>>, Cancelled> {
+    let bbox = &mesh.bbox;
+    let r = cutter.radius();
+
+    let x_min = bbox.min.x - r;
+    let x_max = bbox.max.x + r;
+    let y_min = bbox.min.y - r;
+    let y_max = bbox.max.y + r;
+
+    let ny = ((y_max - y_min) / sampling).ceil() as usize + 1;
+    let mut x_fibers: Vec<Fiber> = (0..ny)
+        .map(|i| {
+            let y = y_min + i as f64 * sampling;
+            Fiber::new_x(y, z, x_min, x_max)
+        })
+        .collect();
+
+    let nx = ((x_max - x_min) / sampling).ceil() as usize + 1;
+    let mut y_fibers: Vec<Fiber> = (0..nx)
+        .map(|i| {
+            let x = x_min + i as f64 * sampling;
+            Fiber::new_y(x, z, y_min, y_max)
+        })
+        .collect();
+
+    batch_push_cutter_with_cancel(&mut x_fibers, mesh, index, cutter, cancel)?;
+    batch_push_cutter_with_cancel(&mut y_fibers, mesh, index, cutter, cancel)?;
+
+    Ok(weave_contours(&x_fibers, &y_fibers, z))
 }
 
 /// Chain boundary points into closed contour loops using nearest-neighbor.
@@ -149,7 +215,6 @@ fn chain_contours(points: &[P3], max_gap: f64) -> Vec<Vec<P3>> {
     let mut contours = Vec::new();
 
     while let Some(start) = used.iter().position(|&u| !u) {
-
         let mut chain = vec![points[start]];
         used[start] = true;
 
@@ -255,13 +320,14 @@ mod tests {
 
         let tp = waterline_toolpath(&mesh, &index, &tool, 15.0, 5.0, 5.0, &params);
         // Should have multiple Z levels: 15, 10, 5
-        assert!(
-            !tp.moves.is_empty(),
-            "Waterline toolpath should have moves"
-        );
+        assert!(!tp.moves.is_empty(), "Waterline toolpath should have moves");
 
         // Should have rapids (retracts between contours)
-        let rapids = tp.moves.iter().filter(|m| m.move_type == MoveType::Rapid).count();
+        let rapids = tp
+            .moves
+            .iter()
+            .filter(|m| m.move_type == MoveType::Rapid)
+            .count();
         assert!(rapids >= 2, "Should have retracts between Z levels");
     }
 

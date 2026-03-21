@@ -134,14 +134,14 @@ mod tests {
 
         // All cutting moves should be at Z=0 (single pass, depth=0)
         for m in &tp.moves {
-            if let MoveType::Linear { feed_rate } = m.move_type {
-                if (feed_rate - params.feed_rate).abs() < 1e-10 {
-                    assert!(
-                        (m.target.z - 0.0).abs() < 1e-10,
-                        "Single-pass face should cut at Z=0, got Z={}",
-                        m.target.z
-                    );
-                }
+            if let MoveType::Linear { feed_rate } = m.move_type
+                && (feed_rate - params.feed_rate).abs() < 1e-10
+            {
+                assert!(
+                    (m.target.z - 0.0).abs() < 1e-10,
+                    "Single-pass face should cut at Z=0, got Z={}",
+                    m.target.z
+                );
             }
         }
 
@@ -167,10 +167,7 @@ mod tests {
 
         let tp = face_toolpath(&bounds, &params);
 
-        assert!(
-            !tp.moves.is_empty(),
-            "Multi-pass face should produce moves"
-        );
+        assert!(!tp.moves.is_empty(), "Multi-pass face should produce moves");
 
         // Collect unique Z levels of cutting moves (at feed_rate)
         let mut cut_zs: Vec<f64> = tp

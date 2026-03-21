@@ -99,8 +99,7 @@ fn extract_polygons_from_path(
                     if pts.len() >= 2 {
                         let first = pts[0];
                         let last_pt = pts[pts.len() - 1];
-                        if (first.x - last_pt.x).abs() < 1e-6
-                            && (first.y - last_pt.y).abs() < 1e-6
+                        if (first.x - last_pt.x).abs() < 1e-6 && (first.y - last_pt.y).abs() < 1e-6
                         {
                             pts.pop();
                         }
@@ -200,7 +199,10 @@ mod tests {
         let polys = load_svg_data(simple_rect_svg(), 0.1).unwrap();
         assert_eq!(polys.len(), 1, "Rectangle SVG should produce 1 polygon");
         let poly = &polys[0];
-        assert!(poly.exterior.len() >= 4, "Rectangle should have at least 4 points");
+        assert!(
+            poly.exterior.len() >= 4,
+            "Rectangle should have at least 4 points"
+        );
 
         // Area should be approximately 80 * 60 = 4800
         let area = poly.area();
@@ -243,11 +245,7 @@ mod tests {
     #[test]
     fn test_load_multiple_paths() {
         let polys = load_svg_data(multi_path_svg(), 0.1).unwrap();
-        assert_eq!(
-            polys.len(),
-            2,
-            "Two rectangles should produce 2 polygons"
-        );
+        assert_eq!(polys.len(), 2, "Two rectangles should produce 2 polygons");
     }
 
     #[test]
@@ -274,7 +272,11 @@ mod tests {
             <path d="M 50 80 C 50 80 10 50 10 30 C 10 10 30 10 50 30 C 70 10 90 10 90 30 C 90 50 50 80 50 80 Z"/>
         </svg>"#;
         let polys = load_svg_data(svg, 0.5).unwrap();
-        assert_eq!(polys.len(), 1, "Closed bezier path should produce 1 polygon");
+        assert_eq!(
+            polys.len(),
+            1,
+            "Closed bezier path should produce 1 polygon"
+        );
         assert!(
             polys[0].exterior.len() > 10,
             "Flattened bezier should have many points"
@@ -288,7 +290,11 @@ mod tests {
             <circle cx="40" cy="40" r="12"/>
         </svg>"#;
         let polys = load_svg_data(svg, 0.5).unwrap();
-        assert_eq!(polys.len(), 1, "Circle inside rect should be detected as hole");
+        assert_eq!(
+            polys.len(),
+            1,
+            "Circle inside rect should be detected as hole"
+        );
         assert_eq!(polys[0].holes.len(), 1, "Should have 1 hole");
 
         // Area with hole should be less than the exterior alone

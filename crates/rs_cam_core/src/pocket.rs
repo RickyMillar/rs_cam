@@ -5,7 +5,7 @@
 //! automatically so the tool edge follows the pocket wall.
 
 use crate::geo::{P2, P3};
-use crate::polygon::{offset_polygon, Polygon2};
+use crate::polygon::{Polygon2, offset_polygon};
 use crate::toolpath::Toolpath;
 
 /// Parameters for pocket clearing.
@@ -43,11 +43,7 @@ pub fn pocket_toolpath(polygon: &Polygon2, params: &PocketParams) -> Toolpath {
 /// Generate the 2D contour rings for pocket clearing (no Z, no toolpath yet).
 ///
 /// Useful for visualization or when you need the geometry separately.
-pub fn pocket_contours(
-    polygon: &Polygon2,
-    tool_radius: f64,
-    stepover: f64,
-) -> Vec<Vec<P2>> {
+pub fn pocket_contours(polygon: &Polygon2, tool_radius: f64, stepover: f64) -> Vec<Vec<P2>> {
     // First offset: tool radius compensation (tool edge touches wall)
     let compensated = offset_polygon(polygon, tool_radius);
 
@@ -189,10 +185,7 @@ mod tests {
         let params = default_params();
         let tp = pocket_toolpath(&sq, &params);
 
-        assert!(
-            !tp.moves.is_empty(),
-            "Pocket toolpath should have moves"
-        );
+        assert!(!tp.moves.is_empty(), "Pocket toolpath should have moves");
 
         // All cutting moves should be at cut_depth
         for m in &tp.moves {
@@ -232,7 +225,11 @@ mod tests {
         let n_contours = contours.len();
 
         // Count rapid moves: 2 per contour (approach + retract)
-        let n_rapids = tp.moves.iter().filter(|m| m.move_type == MoveType::Rapid).count();
+        let n_rapids = tp
+            .moves
+            .iter()
+            .filter(|m| m.move_type == MoveType::Rapid)
+            .count();
         assert_eq!(
             n_rapids,
             n_contours * 2,

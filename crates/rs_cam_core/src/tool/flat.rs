@@ -24,8 +24,12 @@ impl FlatEndmill {
 }
 
 impl MillingCutter for FlatEndmill {
-    fn diameter(&self) -> f64 { self.diameter }
-    fn length(&self) -> f64 { self.cutting_length }
+    fn diameter(&self) -> f64 {
+        self.diameter
+    }
+    fn length(&self) -> f64 {
+        self.cutting_length
+    }
 
     fn height_at_radius(&self, r: f64) -> Option<f64> {
         if r <= self.radius() + 1e-10 {
@@ -39,9 +43,15 @@ impl MillingCutter for FlatEndmill {
         self.radius() // constant width
     }
 
-    fn center_height(&self) -> f64 { 0.0 }
-    fn normal_length(&self) -> f64 { 0.0 }
-    fn xy_normal_length(&self) -> f64 { self.radius() }
+    fn center_height(&self) -> f64 {
+        0.0
+    }
+    fn normal_length(&self) -> f64 {
+        0.0
+    }
+    fn xy_normal_length(&self) -> f64 {
+        self.radius()
+    }
 
     fn edge_drop(&self, cl: &mut CLPoint, p1: &P3, p2: &P3) {
         // Flat endmill edge test: circle-line intersection

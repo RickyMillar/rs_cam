@@ -45,8 +45,16 @@ impl BoundingBox3 {
 
     pub fn expand_by(&self, margin: f64) -> Self {
         Self {
-            min: P3::new(self.min.x - margin, self.min.y - margin, self.min.z - margin),
-            max: P3::new(self.max.x + margin, self.max.y + margin, self.max.z + margin),
+            min: P3::new(
+                self.min.x - margin,
+                self.min.y - margin,
+                self.min.z - margin,
+            ),
+            max: P3::new(
+                self.max.x + margin,
+                self.max.y + margin,
+                self.max.z + margin,
+            ),
         }
     }
 

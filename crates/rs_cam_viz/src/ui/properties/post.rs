@@ -41,15 +41,18 @@ pub fn draw(ui: &mut egui::Ui, post: &mut PostConfig) {
     ui.checkbox(&mut post.high_feedrate_mode, "High Feedrate Mode (G0→G1)")
         .on_hover_text("Replace rapids (G0) with G1 at high feedrate for machines with unpredictable rapid motion");
     if post.high_feedrate_mode {
-        egui::Grid::new("high_feed_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-            ui.label("  High Feed:");
-            ui.add(
-                egui::DragValue::new(&mut post.high_feedrate)
-                    .suffix(" mm/min")
-                    .speed(50.0)
-                    .range(500.0..=20000.0),
-            );
-            ui.end_row();
-        });
+        egui::Grid::new("high_feed_p")
+            .num_columns(2)
+            .spacing([8.0, 4.0])
+            .show(ui, |ui| {
+                ui.label("  High Feed:");
+                ui.add(
+                    egui::DragValue::new(&mut post.high_feedrate)
+                        .suffix(" mm/min")
+                        .speed(50.0)
+                        .range(500.0..=20000.0),
+                );
+                ui.end_row();
+            });
     }
 }

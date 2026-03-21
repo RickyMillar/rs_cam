@@ -1,3 +1,4 @@
+pub mod automation;
 pub mod menu_bar;
 pub mod preflight;
 pub mod project_tree;

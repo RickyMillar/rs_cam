@@ -215,7 +215,10 @@ mod tests {
                 cell_size: 1.0,
             }
         });
-        assert_eq!(compute_count, 1, "Surface HM should be recomputed after mesh change");
+        assert_eq!(
+            compute_count, 1,
+            "Surface HM should be recomputed after mesh change"
+        );
     }
 
     #[test]

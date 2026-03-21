@@ -242,11 +242,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pocket::{pocket_toolpath, PocketParams};
+    use crate::pocket::{PocketParams, pocket_toolpath};
     use crate::polygon::Polygon2;
-    use crate::profile::{profile_toolpath, ProfileParams, ProfileSide};
+    use crate::profile::{ProfileParams, ProfileSide, profile_toolpath};
     use crate::toolpath::MoveType;
-    use crate::zigzag::{zigzag_toolpath, ZigzagParams};
+    use crate::zigzag::{ZigzagParams, zigzag_toolpath};
 
     // --- Z-level calculation tests ---
 
@@ -510,12 +510,7 @@ mod tests {
         cut_zs.sort_by(|a, b| b.partial_cmp(a).unwrap());
         cut_zs.dedup();
 
-        assert_eq!(
-            cut_zs.len(),
-            3,
-            "Expected 3 depth levels, got {:?}",
-            cut_zs
-        );
+        assert_eq!(cut_zs.len(), 3, "Expected 3 depth levels, got {:?}", cut_zs);
         assert!((cut_zs[0] - -3.0).abs() < 0.01);
         assert!((cut_zs[1] - -6.0).abs() < 0.01);
         assert!((cut_zs[2] - -9.0).abs() < 0.01);

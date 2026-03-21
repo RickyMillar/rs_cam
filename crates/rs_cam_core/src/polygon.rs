@@ -244,7 +244,11 @@ pub fn detect_containment(mut polygons: Vec<Polygon2>) -> Vec<Polygon2> {
     }
 
     // Sort by area descending (largest = outer boundaries)
-    polygons.sort_by(|a, b| b.area().partial_cmp(&a.area()).unwrap_or(std::cmp::Ordering::Equal));
+    polygons.sort_by(|a, b| {
+        b.area()
+            .partial_cmp(&a.area())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // Track which polygons have been consumed as holes
     let mut consumed = vec![false; polygons.len()];
@@ -295,14 +299,19 @@ fn polygon_contains_polygon(outer: &Polygon2, inner: &Polygon2) -> bool {
     // Quick bbox check
     let outer_bb = polygon_bbox(&outer.exterior);
     let inner_bb = polygon_bbox(&inner.exterior);
-    if inner_bb.0 < outer_bb.0 || inner_bb.1 < outer_bb.1
-        || inner_bb.2 > outer_bb.2 || inner_bb.3 > outer_bb.3
+    if inner_bb.0 < outer_bb.0
+        || inner_bb.1 < outer_bb.1
+        || inner_bb.2 > outer_bb.2
+        || inner_bb.3 > outer_bb.3
     {
         return false;
     }
 
     // Check that all inner vertices are inside the outer polygon (ray casting)
-    inner.exterior.iter().all(|p| point_in_polygon(p, &outer.exterior))
+    inner
+        .exterior
+        .iter()
+        .all(|p| point_in_polygon(p, &outer.exterior))
 }
 
 /// Ray-casting point-in-polygon test.
@@ -357,7 +366,8 @@ fn shoelace_area(pts: &[P2]) -> f64 {
 }
 
 fn ring_to_geo(pts: &[P2]) -> geo::LineString<f64> {
-    let mut coords: Vec<geo::Coord<f64>> = pts.iter().map(|p| geo::Coord { x: p.x, y: p.y }).collect();
+    let mut coords: Vec<geo::Coord<f64>> =
+        pts.iter().map(|p| geo::Coord { x: p.x, y: p.y }).collect();
     // geo requires closing vertex
     if let Some(&first) = pts.first() {
         coords.push(geo::Coord {
@@ -413,7 +423,10 @@ mod tests {
     #[test]
     fn test_signed_area_ccw() {
         let sq = square(10.0);
-        assert!(sq.signed_area() > 0.0, "CCW square should have positive area");
+        assert!(
+            sq.signed_area() > 0.0,
+            "CCW square should have positive area"
+        );
         assert_relative_eq!(sq.area(), 100.0, epsilon = 1e-10);
     }
 
@@ -431,7 +444,10 @@ mod tests {
 
         let mut poly = Polygon2::new(pts);
         poly.ensure_winding();
-        assert!(poly.signed_area() > 0.0, "After ensure_winding, should be CCW");
+        assert!(
+            poly.signed_area() > 0.0,
+            "After ensure_winding, should be CCW"
+        );
     }
 
     #[test]
@@ -523,7 +539,11 @@ mod tests {
         let sq = square(20.0); // 20x20 centered at origin
         let results = offset_polygon(&sq, 2.0); // inward by 2
 
-        assert_eq!(results.len(), 1, "Single inward offset should produce one polygon");
+        assert_eq!(
+            results.len(),
+            1,
+            "Single inward offset should produce one polygon"
+        );
         let inner = &results[0];
 
         // Area should be approximately (20 - 2*2)^2 = 256
@@ -557,7 +577,10 @@ mod tests {
         let results = offset_polygon(&sq, -2.0); // outward by 2
 
         assert_eq!(results.len(), 1);
-        assert!(results[0].area() > sq.area(), "Outward offset should increase area");
+        assert!(
+            results[0].area() > sq.area(),
+            "Outward offset should increase area"
+        );
     }
 
     #[test]
@@ -575,10 +598,17 @@ mod tests {
 
         // Small inward offset should produce one polygon
         let results = offset_polygon(&l_shape, 1.0);
-        assert!(!results.is_empty(), "Small offset of L-shape should not collapse");
+        assert!(
+            !results.is_empty(),
+            "Small offset of L-shape should not collapse"
+        );
         let total_area: f64 = results.iter().map(|p| p.area()).sum();
         assert!(total_area < l_shape.area());
-        assert!(total_area > 200.0, "Area {} too small for 1mm inward offset", total_area);
+        assert!(
+            total_area > 200.0,
+            "Area {} too small for 1mm inward offset",
+            total_area
+        );
     }
 
     #[test]
@@ -598,7 +628,10 @@ mod tests {
 
         // Inward offset by 2mm should shrink exterior and grow hole
         let results = offset_polygon(&poly, 2.0);
-        assert!(!results.is_empty(), "Offset of polygon-with-hole should not collapse");
+        assert!(
+            !results.is_empty(),
+            "Offset of polygon-with-hole should not collapse"
+        );
         let total_area: f64 = results.iter().map(|p| p.area()).sum();
         assert!(
             total_area < poly.area(),
@@ -667,13 +700,13 @@ mod tests {
         let inner = Polygon2::rectangle(15.0, 15.0, 35.0, 35.0);
 
         let result = detect_containment(vec![outer, inner]);
-        assert_eq!(result.len(), 1, "Inner should become a hole, not a separate polygon");
-        assert_eq!(result[0].holes.len(), 1, "Outer should have 1 hole");
-        assert_relative_eq!(
-            result[0].area(),
-            50.0 * 50.0 - 20.0 * 20.0,
-            epsilon = 1.0
+        assert_eq!(
+            result.len(),
+            1,
+            "Inner should become a hole, not a separate polygon"
         );
+        assert_eq!(result[0].holes.len(), 1, "Outer should have 1 hole");
+        assert_relative_eq!(result[0].area(), 50.0 * 50.0 - 20.0 * 20.0, epsilon = 1.0);
     }
 
     #[test]

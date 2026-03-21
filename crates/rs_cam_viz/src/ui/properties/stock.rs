@@ -18,7 +18,10 @@ pub fn draw(ui: &mut egui::Ui, stock: &mut StockConfig, events: &mut Vec<AppEven
             .selected_text(&current_label)
             .show_ui(ui, |ui| {
                 for (label, mat) in &catalog {
-                    if ui.selectable_label(stock.material == *mat, *label).clicked() {
+                    if ui
+                        .selectable_label(stock.material == *mat, *label)
+                        .clicked()
+                    {
                         stock.material = mat.clone();
                         changed = true;
                         events.push(AppEvent::StockMaterialChanged);
@@ -66,19 +69,34 @@ pub fn draw(ui: &mut egui::Ui, stock: &mut StockConfig, events: &mut Vec<AppEven
         .show(ui, |ui| {
             ui.label("X:");
             changed |= ui
-                .add(egui::DragValue::new(&mut stock.x).suffix(" mm").speed(0.5).range(0.1..=10000.0))
+                .add(
+                    egui::DragValue::new(&mut stock.x)
+                        .suffix(" mm")
+                        .speed(0.5)
+                        .range(0.1..=10000.0),
+                )
                 .changed();
             ui.end_row();
 
             ui.label("Y:");
             changed |= ui
-                .add(egui::DragValue::new(&mut stock.y).suffix(" mm").speed(0.5).range(0.1..=10000.0))
+                .add(
+                    egui::DragValue::new(&mut stock.y)
+                        .suffix(" mm")
+                        .speed(0.5)
+                        .range(0.1..=10000.0),
+                )
                 .changed();
             ui.end_row();
 
             ui.label("Z:");
             changed |= ui
-                .add(egui::DragValue::new(&mut stock.z).suffix(" mm").speed(0.5).range(0.1..=10000.0))
+                .add(
+                    egui::DragValue::new(&mut stock.z)
+                        .suffix(" mm")
+                        .speed(0.5)
+                        .range(0.1..=10000.0),
+                )
                 .changed();
             ui.end_row();
         });
@@ -91,30 +109,49 @@ pub fn draw(ui: &mut egui::Ui, stock: &mut StockConfig, events: &mut Vec<AppEven
         .show(ui, |ui| {
             ui.label("X:");
             changed |= ui
-                .add(egui::DragValue::new(&mut stock.origin_x).suffix(" mm").speed(0.5))
+                .add(
+                    egui::DragValue::new(&mut stock.origin_x)
+                        .suffix(" mm")
+                        .speed(0.5),
+                )
                 .changed();
             ui.end_row();
 
             ui.label("Y:");
             changed |= ui
-                .add(egui::DragValue::new(&mut stock.origin_y).suffix(" mm").speed(0.5))
+                .add(
+                    egui::DragValue::new(&mut stock.origin_y)
+                        .suffix(" mm")
+                        .speed(0.5),
+                )
                 .changed();
             ui.end_row();
 
             ui.label("Z:");
             changed |= ui
-                .add(egui::DragValue::new(&mut stock.origin_z).suffix(" mm").speed(0.5))
+                .add(
+                    egui::DragValue::new(&mut stock.origin_z)
+                        .suffix(" mm")
+                        .speed(0.5),
+                )
                 .changed();
             ui.end_row();
         });
 
     ui.add_space(8.0);
-    changed |= ui.checkbox(&mut stock.auto_from_model, "Auto from model").changed();
+    changed |= ui
+        .checkbox(&mut stock.auto_from_model, "Auto from model")
+        .changed();
     if stock.auto_from_model {
         ui.horizontal(|ui| {
             ui.label("Padding:");
             changed |= ui
-                .add(egui::DragValue::new(&mut stock.padding).suffix(" mm").speed(0.1).range(0.0..=100.0))
+                .add(
+                    egui::DragValue::new(&mut stock.padding)
+                        .suffix(" mm")
+                        .speed(0.1)
+                        .range(0.0..=100.0),
+                )
                 .changed();
         });
     }

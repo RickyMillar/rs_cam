@@ -3,18 +3,18 @@
 //! Run with: cargo bench -p rs_cam_core
 //! Results saved to target/criterion/
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use std::path::Path;
 
-use rs_cam_core::dropcutter::{batch_drop_cutter, point_drop_cutter};
-use rs_cam_core::mesh::{make_test_hemisphere, SpatialIndex, TriangleMesh};
-use rs_cam_core::polygon::{offset_polygon, pocket_offsets, Polygon2};
-use rs_cam_core::simulation::{simulate_toolpath, stamp_linear_segment, stamp_tool_at, Heightmap};
-use rs_cam_core::tool::{BallEndmill, FlatEndmill};
-use rs_cam_core::waterline::waterline_contours;
 use rs_cam_core::arcfit::fit_arcs;
-use rs_cam_core::toolpath::Toolpath;
+use rs_cam_core::dropcutter::{batch_drop_cutter, point_drop_cutter};
 use rs_cam_core::geo::P3;
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
+use rs_cam_core::polygon::{Polygon2, offset_polygon, pocket_offsets};
+use rs_cam_core::simulation::{Heightmap, simulate_toolpath, stamp_linear_segment, stamp_tool_at};
+use rs_cam_core::tool::{BallEndmill, FlatEndmill};
+use rs_cam_core::toolpath::Toolpath;
+use rs_cam_core::waterline::waterline_contours;
 
 // ── Fixture helpers ──────────────────────────────────────────────────────
 
@@ -63,31 +63,19 @@ fn bench_batch_drop_cutter(c: &mut Criterion) {
     let (mesh, index) = hemisphere_fixture(20);
     let ball = BallEndmill::new(6.35, 25.0);
     group.bench_function("hemisphere_ball_6mm", |b| {
-        b.iter(|| {
-            black_box(batch_drop_cutter(
-                &mesh, &index, &ball, 1.0, 0.0, -100.0,
-            ))
-        })
+        b.iter(|| black_box(batch_drop_cutter(&mesh, &index, &ball, 1.0, 0.0, -100.0)))
     });
 
     // Terrain: real-world mesh
     let (mesh, index) = load_terrain();
     let ball = BallEndmill::new(6.35, 25.0);
     group.bench_function("terrain_ball_6mm_step1", |b| {
-        b.iter(|| {
-            black_box(batch_drop_cutter(
-                &mesh, &index, &ball, 1.0, 0.0, -100.0,
-            ))
-        })
+        b.iter(|| black_box(batch_drop_cutter(&mesh, &index, &ball, 1.0, 0.0, -100.0)))
     });
 
     let flat = FlatEndmill::new(6.35, 25.0);
     group.bench_function("terrain_flat_6mm_step1", |b| {
-        b.iter(|| {
-            black_box(batch_drop_cutter(
-                &mesh, &index, &flat, 1.0, 0.0, -100.0,
-            ))
-        })
+        b.iter(|| black_box(batch_drop_cutter(&mesh, &index, &flat, 1.0, 0.0, -100.0)))
     });
 
     group.finish();
@@ -148,17 +136,13 @@ fn bench_stamp_tool(c: &mut Criterion) {
         let mut hm = Heightmap::from_stock(0.0, 0.0, 100.0, 100.0, 10.0, cell_size);
         group.bench_function(
             BenchmarkId::new("ball_6mm", format!("cs{cell_size}")),
-            |b| {
-                b.iter(|| stamp_tool_at(&mut hm, &ball, 50.0, 50.0, black_box(-2.0)))
-            },
+            |b| b.iter(|| stamp_tool_at(&mut hm, &ball, 50.0, 50.0, black_box(-2.0))),
         );
 
         let mut hm = Heightmap::from_stock(0.0, 0.0, 100.0, 100.0, 10.0, cell_size);
         group.bench_function(
             BenchmarkId::new("flat_6mm", format!("cs{cell_size}")),
-            |b| {
-                b.iter(|| stamp_tool_at(&mut hm, &flat, 50.0, 50.0, black_box(-2.0)))
-            },
+            |b| b.iter(|| stamp_tool_at(&mut hm, &flat, 50.0, 50.0, black_box(-2.0))),
         );
     }
 

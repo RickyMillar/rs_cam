@@ -94,7 +94,10 @@ fn build_edge_adjacency(mesh: &TriangleMesh) -> HashMap<EdgeKey, Vec<usize>> {
 }
 
 /// Compute shared edge info for all edges with exactly 2 adjacent faces.
-fn compute_shared_edges(mesh: &TriangleMesh, edge_map: &HashMap<EdgeKey, Vec<usize>>) -> Vec<SharedEdge> {
+fn compute_shared_edges(
+    mesh: &TriangleMesh,
+    edge_map: &HashMap<EdgeKey, Vec<usize>>,
+) -> Vec<SharedEdge> {
     let mut shared = Vec::new();
 
     for (&key, faces) in edge_map {
@@ -172,7 +175,8 @@ fn chain_concave_edges(
 
     // Find chain starting points: vertices with degree != 2 (endpoints/junctions)
     // or any unvisited vertex if all have degree 2 (closed loops)
-    let mut start_vertices: Vec<u32> = adj.keys()
+    let mut start_vertices: Vec<u32> = adj
+        .keys()
         .filter(|&&v| {
             let deg = adj.get(&v).map_or(0, |n| n.len());
             deg != 2
@@ -181,10 +185,10 @@ fn chain_concave_edges(
         .collect();
 
     // If no endpoints found (all closed loops), pick any unvisited vertex
-    if start_vertices.is_empty() {
-        if let Some(&v) = adj.keys().next() {
-            start_vertices.push(v);
-        }
+    if start_vertices.is_empty()
+        && let Some(&v) = adj.keys().next()
+    {
+        start_vertices.push(v);
     }
 
     for &start in &start_vertices {
@@ -192,10 +196,10 @@ fn chain_concave_edges(
         if let Some(neighbors) = adj.get(&start) {
             for &next in neighbors {
                 let edge_key = EdgeKey::new(start, next);
-                if let Some(visited) = visited_edges.get(&edge_key) {
-                    if *visited {
-                        continue;
-                    }
+                if let Some(visited) = visited_edges.get(&edge_key)
+                    && *visited
+                {
+                    continue;
                 }
 
                 // Walk the chain
@@ -210,11 +214,16 @@ fn chain_concave_edges(
 
                     // Find next unvisited neighbor (not the one we came from)
                     let next_opt = adj.get(&current).and_then(|neighbors| {
-                        neighbors.iter().find(|&&n| {
-                            if n == prev { return false; }
-                            let ek = EdgeKey::new(current, n);
-                            visited_edges.get(&ek).map_or(false, |&v| !v)
-                        }).copied()
+                        neighbors
+                            .iter()
+                            .find(|&&n| {
+                                if n == prev {
+                                    return false;
+                                }
+                                let ek = EdgeKey::new(current, n);
+                                visited_edges.get(&ek).is_some_and(|&v| !v)
+                            })
+                            .copied()
                     });
 
                     match next_opt {
@@ -236,7 +245,8 @@ fn chain_concave_edges(
 
     // Also find any remaining closed loops (all edges visited by endpoints check above
     // may miss pure loops)
-    let unvisited_starts: Vec<EdgeKey> = visited_edges.iter()
+    let unvisited_starts: Vec<EdgeKey> = visited_edges
+        .iter()
         .filter(|&(_, v)| !v)
         .map(|(&k, _)| k)
         .collect();
@@ -255,11 +265,16 @@ fn chain_concave_edges(
             let current = chain[chain.len() - 1];
             let prev = chain[chain.len() - 2];
             let next_opt = adj.get(&current).and_then(|neighbors| {
-                neighbors.iter().find(|&&n| {
-                    if n == prev { return false; }
-                    let ek = EdgeKey::new(current, n);
-                    visited_edges.get(&ek).map_or(false, |&v| !v)
-                }).copied()
+                neighbors
+                    .iter()
+                    .find(|&&n| {
+                        if n == prev {
+                            return false;
+                        }
+                        let ek = EdgeKey::new(current, n);
+                        visited_edges.get(&ek).is_some_and(|&v| !v)
+                    })
+                    .copied()
             });
             match next_opt {
                 Some(next_v) => {
@@ -276,18 +291,21 @@ fn chain_concave_edges(
     }
 
     // Filter by minimum length
-    chains.into_iter().filter(|chain| {
-        if chain.len() < 2 {
-            return false;
-        }
-        let mut total_len = 0.0;
-        for i in 0..chain.len() - 1 {
-            let a = mesh.vertices[chain[i] as usize];
-            let b = mesh.vertices[chain[i + 1] as usize];
-            total_len += (b - a).norm();
-        }
-        total_len >= min_length
-    }).collect()
+    chains
+        .into_iter()
+        .filter(|chain| {
+            if chain.len() < 2 {
+                return false;
+            }
+            let mut total_len = 0.0;
+            for i in 0..chain.len() - 1 {
+                let a = mesh.vertices[chain[i] as usize];
+                let b = mesh.vertices[chain[i + 1] as usize];
+                total_len += (b - a).norm();
+            }
+            total_len >= min_length
+        })
+        .collect()
 }
 
 /// Sample points along a vertex chain at the given spacing.
@@ -326,10 +344,10 @@ fn sample_chain(mesh: &TriangleMesh, chain: &[u32], spacing: f64) -> Vec<P3> {
     // Always include the last point
     if let Some(&last_idx) = chain.last() {
         let last = mesh.vertices[last_idx as usize];
-        if let Some(prev) = points.last() {
-            if (last - prev).norm() > spacing * 0.1 {
-                points.push(last);
-            }
+        if let Some(prev) = points.last()
+            && (last - prev).norm() > spacing * 0.1
+        {
+            points.push(last);
         }
     }
 
@@ -385,15 +403,18 @@ fn lift_to_surface(
     cutter: &dyn MillingCutter,
     stock_to_leave: f64,
 ) -> Vec<P3> {
-    points.iter().map(|p| {
-        let cl = point_drop_cutter(p.x, p.y, mesh, index, cutter);
-        if cl.contacted {
-            P3::new(p.x, p.y, cl.z + stock_to_leave)
-        } else {
-            // Outside mesh — keep original Z (will be filtered or skipped)
-            *p
-        }
-    }).collect()
+    points
+        .iter()
+        .map(|p| {
+            let cl = point_drop_cutter(p.x, p.y, mesh, index, cutter);
+            if cl.contacted {
+                P3::new(p.x, p.y, cl.z + stock_to_leave)
+            } else {
+                // Outside mesh — keep original Z (will be filtered or skipped)
+                *p
+            }
+        })
+        .collect()
 }
 
 /// Order chains by nearest-neighbor to minimize rapids.
@@ -411,7 +432,11 @@ fn order_chains_nearest(chains: &mut [Vec<P3>]) {
 
     for _ in 1..chains.len() {
         let last_chain = &chains[ordered_indices[ordered_indices.len() - 1]];
-        let last_pt = if let Some(p) = last_chain.last() { *p } else { continue };
+        let last_pt = if let Some(p) = last_chain.last() {
+            *p
+        } else {
+            continue;
+        };
 
         let mut best_idx = 0;
         let mut best_dist = f64::MAX;
@@ -458,9 +483,10 @@ fn order_chains_nearest(chains: &mut [Vec<P3>]) {
     }
 
     // Reorder chains in-place using the ordering
-    let mut temp: Vec<Vec<P3>> = ordered_indices.into_iter().map(|i| {
-        std::mem::take(&mut chains[i])
-    }).collect();
+    let mut temp: Vec<Vec<P3>> = ordered_indices
+        .into_iter()
+        .map(|i| std::mem::take(&mut chains[i]))
+        .collect();
     for (i, chain) in temp.drain(..).enumerate() {
         chains[i] = chain;
     }
@@ -486,12 +512,16 @@ pub fn pencil_toolpath(
 
     // Step 3: Filter to concave edges below threshold
     let threshold_rad = params.bitangency_angle.to_radians();
-    let concave_edges: Vec<&SharedEdge> = shared_edges.iter()
+    let concave_edges: Vec<&SharedEdge> = shared_edges
+        .iter()
         .filter(|e| e.is_concave && e.dihedral_angle > (std::f64::consts::PI - threshold_rad))
         .collect();
 
     if concave_edges.is_empty() {
-        info!("No concave edges found below {:.0}° threshold", params.bitangency_angle);
+        info!(
+            "No concave edges found below {:.0}° threshold",
+            params.bitangency_angle
+        );
         return tp;
     }
 
@@ -502,13 +532,17 @@ pub fn pencil_toolpath(
     );
 
     // Step 4: Chain connected concave edges into polylines
-    let concave_owned: Vec<SharedEdge> = shared_edges.into_iter()
+    let concave_owned: Vec<SharedEdge> = shared_edges
+        .into_iter()
         .filter(|e| e.is_concave && e.dihedral_angle > (std::f64::consts::PI - threshold_rad))
         .collect();
     let chains = chain_concave_edges(&concave_owned, mesh, params.min_cut_length);
 
     if chains.is_empty() {
-        info!("No chains above minimum length {:.1}mm", params.min_cut_length);
+        info!(
+            "No chains above minimum length {:.1}mm",
+            params.min_cut_length
+        );
         return tp;
     }
 
@@ -553,7 +587,8 @@ pub fn pencil_toolpath(
         }
 
         // Filter out points where drop-cutter had no contact
-        let valid_points: Vec<P3> = path.iter()
+        let valid_points: Vec<P3> = path
+            .iter()
             .filter(|p| p.z > f64::NEG_INFINITY + 1.0)
             .copied()
             .collect();
@@ -562,7 +597,12 @@ pub fn pencil_toolpath(
             continue;
         }
 
-        tp.emit_path_segment(&valid_points, params.safe_z, params.feed_rate, params.plunge_rate);
+        tp.emit_path_segment(
+            &valid_points,
+            params.safe_z,
+            params.feed_rate,
+            params.plunge_rate,
+        );
     }
 
     info!(
@@ -578,7 +618,7 @@ pub fn pencil_toolpath(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mesh::{make_test_hemisphere, SpatialIndex};
+    use crate::mesh::{SpatialIndex, make_test_hemisphere};
     use crate::tool::BallEndmill;
 
     /// Create a V-groove mesh: two planes meeting at a concave edge along X axis.
@@ -587,19 +627,19 @@ mod tests {
         // Left plane: from (0, -width, 0) down to (0, 0, -depth) and back up
         // Right plane: from (0, 0, -depth) up to (0, width, 0)
         let vertices = vec![
-            P3::new(0.0, -width, 0.0),          // 0: left-back top
-            P3::new(length, -width, 0.0),        // 1: left-front top
-            P3::new(0.0, 0.0, -depth),           // 2: back center (groove bottom)
-            P3::new(length, 0.0, -depth),         // 3: front center (groove bottom)
-            P3::new(0.0, width, 0.0),            // 4: right-back top
-            P3::new(length, width, 0.0),          // 5: right-front top
+            P3::new(0.0, -width, 0.0),    // 0: left-back top
+            P3::new(length, -width, 0.0), // 1: left-front top
+            P3::new(0.0, 0.0, -depth),    // 2: back center (groove bottom)
+            P3::new(length, 0.0, -depth), // 3: front center (groove bottom)
+            P3::new(0.0, width, 0.0),     // 4: right-back top
+            P3::new(length, width, 0.0),  // 5: right-front top
         ];
 
         let triangles = vec![
-            [0, 2, 1],   // left plane tri 1
-            [1, 2, 3],   // left plane tri 2
-            [2, 4, 3],   // right plane tri 1
-            [3, 4, 5],   // right plane tri 2
+            [0, 2, 1], // left plane tri 1
+            [1, 2, 3], // left plane tri 2
+            [2, 4, 3], // right plane tri 1
+            [3, 4, 5], // right plane tri 2
         ];
 
         TriangleMesh::from_raw(vertices, triangles)
@@ -614,10 +654,7 @@ mod tests {
             P3::new(size, size, 0.0),
             P3::new(0.0, size, 0.0),
         ];
-        let triangles = vec![
-            [0, 1, 2],
-            [0, 2, 3],
-        ];
+        let triangles = vec![[0, 1, 2], [0, 2, 3]];
         TriangleMesh::from_raw(vertices, triangles)
     }
 
@@ -654,9 +691,9 @@ mod tests {
         );
 
         // The center edge (2-3) should be concave
-        let center_edge = shared.iter().find(|e| {
-            (e.key.0 == 2 && e.key.1 == 3) || (e.key.0 == 3 && e.key.1 == 2)
-        });
+        let center_edge = shared
+            .iter()
+            .find(|e| (e.key.0 == 2 && e.key.1 == 3) || (e.key.0 == 3 && e.key.1 == 2));
         assert!(center_edge.is_some(), "Should find center groove edge");
         if let Some(edge) = center_edge {
             assert!(edge.is_concave, "Center groove edge should be concave");
@@ -678,7 +715,7 @@ mod tests {
         let shared = compute_shared_edges(&mesh, &edge_map);
 
         // Flat mesh should have no concave edges
-        let concave_count = shared.iter().filter(|e| e.is_concave).count();
+        let _concave_count = shared.iter().filter(|e| e.is_concave).count();
         // For coplanar faces, dihedral angle ≈ 0, concavity is ambiguous (sign ≈ 0)
         // Either concave_count == 0, or any "concave" edges have angle ≈ 0
         for edge in &shared {
@@ -692,10 +729,14 @@ mod tests {
         }
         // With threshold of 160°, none should pass
         let threshold_rad = 160.0_f64.to_radians();
-        let filtered = shared.iter()
+        let filtered = shared
+            .iter()
             .filter(|e| e.is_concave && e.dihedral_angle > (std::f64::consts::PI - threshold_rad))
             .count();
-        assert_eq!(filtered, 0, "Flat mesh should produce no pencil edges at 160° threshold");
+        assert_eq!(
+            filtered, 0,
+            "Flat mesh should produce no pencil edges at 160° threshold"
+        );
     }
 
     #[test]
@@ -704,7 +745,8 @@ mod tests {
         let edge_map = build_edge_adjacency(&mesh);
         let shared = compute_shared_edges(&mesh, &edge_map);
 
-        let concave: Vec<SharedEdge> = shared.into_iter()
+        let concave: Vec<SharedEdge> = shared
+            .into_iter()
             .filter(|e| e.is_concave && e.dihedral_angle > 0.1)
             .collect();
 
@@ -735,8 +777,16 @@ mod tests {
 
         // All points should be along the groove bottom (y=0, z=-5)
         for p in &points {
-            assert!((p.y - 0.0).abs() < 0.1, "Points should be at y=0, got y={}", p.y);
-            assert!((p.z - (-5.0)).abs() < 0.1, "Points should be at z=-5, got z={}", p.z);
+            assert!(
+                (p.y - 0.0).abs() < 0.1,
+                "Points should be at y=0, got y={}",
+                p.y
+            );
+            assert!(
+                (p.z - (-5.0)).abs() < 0.1,
+                "Points should be at z=-5, got z={}",
+                p.z
+            );
         }
     }
 
@@ -852,12 +902,15 @@ mod tests {
         let shared = compute_shared_edges(&mesh, &edge_map);
 
         // Hemisphere should have concave edges where the dome meets steeper regions
-        let concave_count = shared.iter().filter(|e| e.is_concave).count();
+        let _concave_count = shared.iter().filter(|e| e.is_concave).count();
         // The hemisphere is all convex from outside, but some edges at base may be concave
         // depending on tessellation. At minimum, the algorithm should not crash.
         let _tp = pencil_toolpath(&mesh, &index, &tool, &params);
         // We just verify it runs without panic — hemisphere may or may not produce edges
         // depending on tessellation quality
-        assert!(concave_count >= 0); // always true, but documents we checked
+        assert!(
+            !shared.is_empty(),
+            "hemisphere tessellation should produce shared edges"
+        );
     }
 }

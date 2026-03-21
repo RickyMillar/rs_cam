@@ -108,7 +108,11 @@ pub fn horizontal_finish_toolpath(
 
     // ── Step 2-3: group flat triangles by similar Z ──────────────────
     // Sort by Z so we can sweep and cluster.
-    flat_tris.sort_by(|a, b| a.avg_z.partial_cmp(&b.avg_z).unwrap_or(std::cmp::Ordering::Equal));
+    flat_tris.sort_by(|a, b| {
+        a.avg_z
+            .partial_cmp(&b.avg_z)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let z_tolerance = params.stepover / 2.0;
     let mut regions: Vec<FlatRegion> = Vec::new();
@@ -201,7 +205,12 @@ pub fn horizontal_finish_toolpath(
                 if !cl.contacted {
                     // Off the mesh — flush any accumulated segment.
                     if !segment.is_empty() {
-                        tp.emit_path_segment(&segment, params.safe_z, params.feed_rate, params.plunge_rate);
+                        tp.emit_path_segment(
+                            &segment,
+                            params.safe_z,
+                            params.feed_rate,
+                            params.plunge_rate,
+                        );
                         segment.clear();
                     }
                     continue;
@@ -210,14 +219,8 @@ pub fn horizontal_finish_toolpath(
                 // Check if the triangle(s) under this point are flat.
                 // Query the spatial index for triangles near this point and check
                 // if any flat triangle contains this XY coordinate.
-                let is_flat = is_point_over_flat_triangle(
-                    x,
-                    y,
-                    mesh,
-                    index,
-                    cutter_radius,
-                    &flat_face_set,
-                );
+                let is_flat =
+                    is_point_over_flat_triangle(x, y, mesh, index, cutter_radius, &flat_face_set);
 
                 if is_flat {
                     let z = cl.z + params.stock_to_leave;
@@ -225,7 +228,12 @@ pub fn horizontal_finish_toolpath(
                 } else {
                     // Not flat — flush segment, skip this point.
                     if !segment.is_empty() {
-                        tp.emit_path_segment(&segment, params.safe_z, params.feed_rate, params.plunge_rate);
+                        tp.emit_path_segment(
+                            &segment,
+                            params.safe_z,
+                            params.feed_rate,
+                            params.plunge_rate,
+                        );
                         segment.clear();
                     }
                 }
@@ -233,7 +241,12 @@ pub fn horizontal_finish_toolpath(
 
             // Flush any remaining segment at end of line.
             if !segment.is_empty() {
-                tp.emit_path_segment(&segment, params.safe_z, params.feed_rate, params.plunge_rate);
+                tp.emit_path_segment(
+                    &segment,
+                    params.safe_z,
+                    params.feed_rate,
+                    params.plunge_rate,
+                );
             }
         }
     }
@@ -258,10 +271,11 @@ fn is_point_over_flat_triangle(
 ) -> bool {
     let candidates = index.query(x, y, cutter_radius);
     for &tri_idx in &candidates {
-        if tri_idx < flat_face_set.len() && flat_face_set[tri_idx] {
-            if mesh.faces[tri_idx].contains_point_xy(x, y) {
-                return true;
-            }
+        if tri_idx < flat_face_set.len()
+            && flat_face_set[tri_idx]
+            && mesh.faces[tri_idx].contains_point_xy(x, y)
+        {
+            return true;
         }
     }
     false
@@ -270,7 +284,7 @@ fn is_point_over_flat_triangle(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mesh::{make_test_flat, SpatialIndex};
+    use crate::mesh::{SpatialIndex, make_test_flat};
     use crate::tool::BallEndmill;
 
     #[test]
@@ -300,9 +314,10 @@ mod tests {
             .moves
             .iter()
             .any(|m| m.move_type == crate::toolpath::MoveType::Rapid);
-        let has_linear = tp.moves.iter().any(|m| {
-            matches!(m.move_type, crate::toolpath::MoveType::Linear { .. })
-        });
+        let has_linear = tp
+            .moves
+            .iter()
+            .any(|m| matches!(m.move_type, crate::toolpath::MoveType::Linear { .. }));
         assert!(has_rapid, "Toolpath should contain rapid moves");
         assert!(has_linear, "Toolpath should contain linear feed moves");
     }

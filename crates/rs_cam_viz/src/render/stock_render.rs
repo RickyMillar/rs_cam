@@ -1,6 +1,6 @@
+use super::LineVertex;
 use egui_wgpu::wgpu;
 use rs_cam_core::geo::BoundingBox3;
-use super::LineVertex;
 
 /// Wireframe stock bounding box GPU data.
 pub struct StockGpuData {
@@ -20,32 +20,104 @@ impl StockGpuData {
         // 12 edges of a box = 24 vertices (line list)
         let vertices = [
             // Bottom face
-            LineVertex { position: [mn[0], mn[1], mn[2]], color },
-            LineVertex { position: [mx[0], mn[1], mn[2]], color },
-            LineVertex { position: [mx[0], mn[1], mn[2]], color },
-            LineVertex { position: [mx[0], mx[1], mn[2]], color },
-            LineVertex { position: [mx[0], mx[1], mn[2]], color },
-            LineVertex { position: [mn[0], mx[1], mn[2]], color },
-            LineVertex { position: [mn[0], mx[1], mn[2]], color },
-            LineVertex { position: [mn[0], mn[1], mn[2]], color },
+            LineVertex {
+                position: [mn[0], mn[1], mn[2]],
+                color,
+            },
+            LineVertex {
+                position: [mx[0], mn[1], mn[2]],
+                color,
+            },
+            LineVertex {
+                position: [mx[0], mn[1], mn[2]],
+                color,
+            },
+            LineVertex {
+                position: [mx[0], mx[1], mn[2]],
+                color,
+            },
+            LineVertex {
+                position: [mx[0], mx[1], mn[2]],
+                color,
+            },
+            LineVertex {
+                position: [mn[0], mx[1], mn[2]],
+                color,
+            },
+            LineVertex {
+                position: [mn[0], mx[1], mn[2]],
+                color,
+            },
+            LineVertex {
+                position: [mn[0], mn[1], mn[2]],
+                color,
+            },
             // Top face
-            LineVertex { position: [mn[0], mn[1], mx[2]], color },
-            LineVertex { position: [mx[0], mn[1], mx[2]], color },
-            LineVertex { position: [mx[0], mn[1], mx[2]], color },
-            LineVertex { position: [mx[0], mx[1], mx[2]], color },
-            LineVertex { position: [mx[0], mx[1], mx[2]], color },
-            LineVertex { position: [mn[0], mx[1], mx[2]], color },
-            LineVertex { position: [mn[0], mx[1], mx[2]], color },
-            LineVertex { position: [mn[0], mn[1], mx[2]], color },
+            LineVertex {
+                position: [mn[0], mn[1], mx[2]],
+                color,
+            },
+            LineVertex {
+                position: [mx[0], mn[1], mx[2]],
+                color,
+            },
+            LineVertex {
+                position: [mx[0], mn[1], mx[2]],
+                color,
+            },
+            LineVertex {
+                position: [mx[0], mx[1], mx[2]],
+                color,
+            },
+            LineVertex {
+                position: [mx[0], mx[1], mx[2]],
+                color,
+            },
+            LineVertex {
+                position: [mn[0], mx[1], mx[2]],
+                color,
+            },
+            LineVertex {
+                position: [mn[0], mx[1], mx[2]],
+                color,
+            },
+            LineVertex {
+                position: [mn[0], mn[1], mx[2]],
+                color,
+            },
             // Vertical edges
-            LineVertex { position: [mn[0], mn[1], mn[2]], color },
-            LineVertex { position: [mn[0], mn[1], mx[2]], color },
-            LineVertex { position: [mx[0], mn[1], mn[2]], color },
-            LineVertex { position: [mx[0], mn[1], mx[2]], color },
-            LineVertex { position: [mx[0], mx[1], mn[2]], color },
-            LineVertex { position: [mx[0], mx[1], mx[2]], color },
-            LineVertex { position: [mn[0], mx[1], mn[2]], color },
-            LineVertex { position: [mn[0], mx[1], mx[2]], color },
+            LineVertex {
+                position: [mn[0], mn[1], mn[2]],
+                color,
+            },
+            LineVertex {
+                position: [mn[0], mn[1], mx[2]],
+                color,
+            },
+            LineVertex {
+                position: [mx[0], mn[1], mn[2]],
+                color,
+            },
+            LineVertex {
+                position: [mx[0], mn[1], mx[2]],
+                color,
+            },
+            LineVertex {
+                position: [mx[0], mx[1], mn[2]],
+                color,
+            },
+            LineVertex {
+                position: [mx[0], mx[1], mx[2]],
+                color,
+            },
+            LineVertex {
+                position: [mn[0], mx[1], mn[2]],
+                color,
+            },
+            LineVertex {
+                position: [mn[0], mx[1], mx[2]],
+                color,
+            },
         ];
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -54,6 +126,9 @@ impl StockGpuData {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        Self { vertex_buffer, vertex_count: 24 }
+        Self {
+            vertex_buffer,
+            vertex_count: 24,
+        }
     }
 }

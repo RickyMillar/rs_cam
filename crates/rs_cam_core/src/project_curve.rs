@@ -210,11 +210,7 @@ mod tests {
     #[test]
     fn test_resample_polyline_multi_segment() {
         // L-shaped path: (0,0) -> (4,0) -> (4,4), total length 8, spacing 3
-        let pts = vec![
-            P2::new(0.0, 0.0),
-            P2::new(4.0, 0.0),
-            P2::new(4.0, 4.0),
-        ];
+        let pts = vec![P2::new(0.0, 0.0), P2::new(4.0, 0.0), P2::new(4.0, 4.0)];
         let resampled = resample_polyline(&pts, 3.0);
 
         // Samples at distance 0, 3, 6 along the path, plus endpoint at distance 8
@@ -249,11 +245,7 @@ mod tests {
 
     #[test]
     fn test_close_ring() {
-        let ring = vec![
-            P2::new(0.0, 0.0),
-            P2::new(1.0, 0.0),
-            P2::new(1.0, 1.0),
-        ];
+        let ring = vec![P2::new(0.0, 0.0), P2::new(1.0, 0.0), P2::new(1.0, 1.0)];
         let closed = close_ring(&ring);
         assert_eq!(closed.len(), 4);
         assert!((closed[3].x - 0.0).abs() < 1e-9);
@@ -274,11 +266,7 @@ mod tests {
 
     #[test]
     fn test_polyline_length() {
-        let pts = vec![
-            P2::new(0.0, 0.0),
-            P2::new(3.0, 0.0),
-            P2::new(3.0, 4.0),
-        ];
+        let pts = vec![P2::new(0.0, 0.0), P2::new(3.0, 0.0), P2::new(3.0, 4.0)];
         let len = polyline_length(&pts);
         assert!((len - 7.0).abs() < 1e-9);
     }

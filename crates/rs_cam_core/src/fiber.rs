@@ -17,7 +17,12 @@ pub struct Interval {
 
 impl Interval {
     pub fn new(lower: f64, upper: f64) -> Self {
-        debug_assert!(lower <= upper + 1e-10, "Interval lower {} > upper {}", lower, upper);
+        debug_assert!(
+            lower <= upper + 1e-10,
+            "Interval lower {} > upper {}",
+            lower,
+            upper
+        );
         Self {
             lower: lower.min(upper),
             upper: upper.max(lower),

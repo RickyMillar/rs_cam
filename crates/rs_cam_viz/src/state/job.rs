@@ -4,17 +4,19 @@ use std::sync::Arc;
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::polygon::Polygon2;
+use serde::{Deserialize, Serialize};
 
 /// Unique identifier for a loaded model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ModelId(pub usize);
 
 /// Unique identifier for a tool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ToolId(pub usize);
 
 /// What kind of geometry was loaded.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ModelKind {
     Stl,
     Svg,
@@ -22,7 +24,8 @@ pub enum ModelKind {
 }
 
 /// Assumed units of the imported STL (determines scale factor to mm).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "scale", rename_all = "snake_case")]
 pub enum ModelUnits {
     Millimeters,
     Inches,
@@ -71,10 +74,36 @@ pub struct LoadedModel {
     pub units: ModelUnits,
     /// Percentage of inconsistent winding edges (from check_winding). None if not STL.
     pub winding_report: Option<f64>,
+    /// Load/import failure preserved so broken references can round-trip.
+    pub load_error: Option<String>,
+}
+
+impl LoadedModel {
+    pub fn placeholder(
+        id: ModelId,
+        path: PathBuf,
+        name: String,
+        kind: ModelKind,
+        units: ModelUnits,
+        load_error: String,
+    ) -> Self {
+        Self {
+            id,
+            path,
+            name,
+            kind,
+            mesh: None,
+            polygons: None,
+            units,
+            winding_report: None,
+            load_error: Some(load_error),
+        }
+    }
 }
 
 /// Tool type matching the five cutter types in rs_cam_core.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ToolType {
     EndMill,
     BallNose,
@@ -104,7 +133,8 @@ impl ToolType {
 }
 
 /// Tool material (affects chip load and wear).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ToolMaterial {
     Carbide,
     Hss,
@@ -122,7 +152,8 @@ impl ToolMaterial {
 }
 
 /// Cut direction (affects chip evacuation and surface quality).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CutDirection {
     UpCut,
     DownCut,
@@ -130,7 +161,11 @@ pub enum CutDirection {
 }
 
 impl CutDirection {
-    pub const ALL: &[CutDirection] = &[CutDirection::UpCut, CutDirection::DownCut, CutDirection::Compression];
+    pub const ALL: &[CutDirection] = &[
+        CutDirection::UpCut,
+        CutDirection::DownCut,
+        CutDirection::Compression,
+    ];
 
     pub fn label(&self) -> &'static str {
         match self {
@@ -142,7 +177,7 @@ impl CutDirection {
 }
 
 /// Complete tool configuration.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolConfig {
     pub id: ToolId,
     pub name: String,
@@ -231,7 +266,8 @@ impl ToolConfig {
 }
 
 /// Post-processor format.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PostFormat {
     Grbl,
     LinuxCnc,
@@ -251,7 +287,7 @@ impl PostFormat {
 }
 
 /// Post-processor configuration.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PostConfig {
     pub format: PostFormat,
     pub spindle_speed: u32,
@@ -274,7 +310,7 @@ impl Default for PostConfig {
 }
 
 /// Stock material configuration.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StockConfig {
     pub x: f64,
     pub y: f64,
@@ -387,5 +423,32 @@ impl JobState {
     pub fn mark_edited(&mut self) {
         self.dirty = true;
         self.edit_counter += 1;
+    }
+
+    pub fn sync_next_ids(&mut self) {
+        self.next_model_id = self
+            .models
+            .iter()
+            .map(|m| m.id.0)
+            .max()
+            .map_or(0, |id| id + 1);
+        self.next_tool_id = self
+            .tools
+            .iter()
+            .map(|t| t.id.0)
+            .max()
+            .map_or(0, |id| id + 1);
+        self.next_toolpath_id = self
+            .toolpaths
+            .iter()
+            .map(|tp| tp.id.0)
+            .max()
+            .map_or(0, |id| id + 1);
+    }
+}
+
+impl Default for JobState {
+    fn default() -> Self {
+        Self::new()
     }
 }

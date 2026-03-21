@@ -149,12 +149,7 @@ pub fn zigzag_lines(
 ///
 /// The scan line is defined by: point = perp_pos * perp_dir + t * scan_dir
 /// where scan_dir = (cos_a, sin_a) and perp_dir = (-sin_a, cos_a).
-fn scan_line_intersections(
-    edges: &[(P2, P2)],
-    perp_pos: f64,
-    cos_a: f64,
-    sin_a: f64,
-) -> Vec<f64> {
+fn scan_line_intersections(edges: &[(P2, P2)], perp_pos: f64, cos_a: f64, sin_a: f64) -> Vec<f64> {
     let perp_x = -sin_a;
     let perp_y = cos_a;
 
@@ -378,10 +373,7 @@ mod tests {
             P2::new(0.0, 30.0),
         ]);
         let lines = zigzag_lines(&l_shape, 2.0, 2.0, 0.0);
-        assert!(
-            !lines.is_empty(),
-            "L-shape should produce zigzag lines"
-        );
+        assert!(!lines.is_empty(), "L-shape should produce zigzag lines");
 
         let tp = zigzag_toolpath(
             &l_shape,

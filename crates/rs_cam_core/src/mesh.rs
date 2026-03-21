@@ -50,14 +50,26 @@ impl TriangleMesh {
         let vertices: Vec<P3> = stl
             .vertices
             .iter()
-            .map(|v| P3::new(v.0[0] as f64 * scale, v.0[1] as f64 * scale, v.0[2] as f64 * scale))
+            .map(|v| {
+                P3::new(
+                    v.0[0] as f64 * scale,
+                    v.0[1] as f64 * scale,
+                    v.0[2] as f64 * scale,
+                )
+            })
             .collect();
 
         // Convert stl_io indexed triangles ([usize; 3]) to our [u32; 3]
         let triangles: Vec<[u32; 3]> = stl
             .faces
             .iter()
-            .map(|f| [f.vertices[0] as u32, f.vertices[1] as u32, f.vertices[2] as u32])
+            .map(|f| {
+                [
+                    f.vertices[0] as u32,
+                    f.vertices[1] as u32,
+                    f.vertices[2] as u32,
+                ]
+            })
             .collect();
 
         // Build face list with recomputed normals
@@ -117,13 +129,25 @@ impl TriangleMesh {
         let vertices: Vec<P3> = stl
             .vertices
             .iter()
-            .map(|v| P3::new(v.0[0] as f64 * scale, v.0[1] as f64 * scale, v.0[2] as f64 * scale))
+            .map(|v| {
+                P3::new(
+                    v.0[0] as f64 * scale,
+                    v.0[1] as f64 * scale,
+                    v.0[2] as f64 * scale,
+                )
+            })
             .collect();
 
         let triangles: Vec<[u32; 3]> = stl
             .faces
             .iter()
-            .map(|f| [f.vertices[0] as u32, f.vertices[1] as u32, f.vertices[2] as u32])
+            .map(|f| {
+                [
+                    f.vertices[0] as u32,
+                    f.vertices[1] as u32,
+                    f.vertices[2] as u32,
+                ]
+            })
             .collect();
 
         let faces: Vec<Triangle> = triangles
@@ -207,7 +231,11 @@ impl TriangleMesh {
         }
 
         let total = consistent + inconsistent;
-        let fraction = if total > 0 { inconsistent as f64 / total as f64 } else { 0.0 };
+        let fraction = if total > 0 {
+            inconsistent as f64 / total as f64
+        } else {
+            0.0
+        };
 
         WindingReport {
             consistent_edges: consistent,
@@ -241,8 +269,16 @@ impl TriangleMesh {
         }
 
         // Pick seed: triangle with most upward normal (highest nz)
-        let seed = self.faces.iter().enumerate()
-            .max_by(|(_, a), (_, b)| a.normal.z.partial_cmp(&b.normal.z).unwrap_or(std::cmp::Ordering::Equal))
+        let seed = self
+            .faces
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| {
+                a.normal
+                    .z
+                    .partial_cmp(&b.normal.z)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .map(|(i, _)| i)
             .unwrap_or(0);
 
@@ -289,8 +325,8 @@ impl TriangleMesh {
 
         // Recompute faces (normals) for flipped triangles
         if flip_count > 0 {
-            for fi in 0..n {
-                if flipped[fi] {
+            for (fi, flipped_face) in flipped.iter().enumerate().take(n) {
+                if *flipped_face {
                     let tri = &self.triangles[fi];
                     self.faces[fi] = Triangle::new(
                         self.vertices[tri[0] as usize],
@@ -539,8 +575,16 @@ mod tests {
         let tris = idx.query(0.0, 0.0, 5.0);
         assert_eq!(tris.len(), 2, "Auto-sized index should find triangles");
         // Auto-size should produce reasonable cell count (not 1 cell)
-        assert!(idx.cell_count_x >= 4, "Should have multiple X cells, got {}", idx.cell_count_x);
-        assert!(idx.cell_count_y >= 4, "Should have multiple Y cells, got {}", idx.cell_count_y);
+        assert!(
+            idx.cell_count_x >= 4,
+            "Should have multiple X cells, got {}",
+            idx.cell_count_x
+        );
+        assert!(
+            idx.cell_count_y >= 4,
+            "Should have multiple Y cells, got {}",
+            idx.cell_count_y
+        );
     }
 
     #[test]
@@ -549,7 +593,11 @@ mod tests {
         let mesh = make_test_flat(100.0);
         let idx = SpatialIndex::build(&mesh, 10000.0); // way too big
         // Should still have multiple cells due to clamping
-        assert!(idx.cell_count_x >= 4, "Oversized cell should be clamped, got {} X cells", idx.cell_count_x);
+        assert!(
+            idx.cell_count_x >= 4,
+            "Oversized cell should be clamped, got {} X cells",
+            idx.cell_count_x
+        );
         // And still find triangles
         let tris = idx.query(0.0, 0.0, 5.0);
         assert_eq!(tris.len(), 2);
@@ -583,10 +631,10 @@ mod tests {
     fn test_winding_detect_flipped() {
         // Create a simple 4-triangle mesh with one triangle flipped
         let vertices = vec![
-            P3::new(0.0, 0.0, 0.0),  // 0
-            P3::new(10.0, 0.0, 0.0), // 1
-            P3::new(10.0, 10.0, 0.0),// 2
-            P3::new(0.0, 10.0, 0.0), // 3
+            P3::new(0.0, 0.0, 0.0),   // 0
+            P3::new(10.0, 0.0, 0.0),  // 1
+            P3::new(10.0, 10.0, 0.0), // 2
+            P3::new(0.0, 10.0, 0.0),  // 3
         ];
         // Normal: [0,1,2] + [0,2,3] — consistent CCW
         // Flipped: [0,1,2] + [0,3,2] — second has opposite winding
@@ -654,7 +702,8 @@ mod tests {
         assert!(
             nz_0_before * nz_1_before < 0.0,
             "Before fix, normals should disagree: {:.1} vs {:.1}",
-            nz_0_before, nz_1_before
+            nz_0_before,
+            nz_1_before
         );
 
         mesh.fix_winding();
@@ -665,7 +714,8 @@ mod tests {
         assert!(
             nz_0 * nz_1 > 0.0,
             "After fix, normals should agree: {:.1} vs {:.1}",
-            nz_0, nz_1
+            nz_0,
+            nz_1
         );
     }
 }

@@ -19,7 +19,7 @@ use crate::geo::P3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
-use crate::toolpath::{simplify_path_3d, Toolpath};
+use crate::toolpath::{Toolpath, simplify_path_3d};
 use crate::waterline::waterline_contours;
 
 use tracing::info;
@@ -127,7 +127,10 @@ impl ParamContour {
             return self.points[0];
         }
         // Binary search for the segment containing t
-        let idx = match self.params.binary_search_by(|p| p.partial_cmp(&t).unwrap_or(std::cmp::Ordering::Equal)) {
+        let idx = match self
+            .params
+            .binary_search_by(|p| p.partial_cmp(&t).unwrap_or(std::cmp::Ordering::Equal))
+        {
             Ok(i) => return self.points[i],
             Err(i) => i.saturating_sub(1),
         };
@@ -153,10 +156,7 @@ impl ParamContour {
 ///
 /// Returns pairs of indices (upper_idx, lower_idx) for matched contours.
 /// Unmatched contours (new walls appearing/disappearing) are returned separately.
-fn match_contours(
-    upper: &[ParamContour],
-    lower: &[ParamContour],
-) -> Vec<(usize, usize)> {
+fn match_contours(upper: &[ParamContour], lower: &[ParamContour]) -> Vec<(usize, usize)> {
     let mut matches = Vec::new();
     let mut lower_used = vec![false; lower.len()];
 
@@ -255,7 +255,7 @@ fn slope_confined_segments(
     for pt in path {
         let in_range = slope_map
             .angle_at_world(pt.x, pt.y)
-            .map_or(false, |a| a >= slope_from_rad && a <= slope_to_rad);
+            .is_some_and(|a| a >= slope_from_rad && a <= slope_to_rad);
 
         if in_range {
             current.push(*pt);
@@ -349,9 +349,7 @@ pub fn ramp_finish_toolpath(
     // Generate ramp paths between adjacent Z levels
     let mut all_ramp_segments: Vec<Vec<P3>> = Vec::new();
 
-    let level_pairs: Vec<(usize, usize)> = (0..z_levels.len() - 1)
-        .map(|i| (i, i + 1))
-        .collect();
+    let level_pairs: Vec<(usize, usize)> = (0..z_levels.len() - 1).map(|i| (i, i + 1)).collect();
 
     // Optionally reverse for bottom-up ordering
     let level_pairs: Vec<(usize, usize)> = if params.order_bottom_up {
@@ -413,7 +411,8 @@ pub fn ramp_finish_toolpath(
             continue;
         }
 
-        let path = if should_reverse || (matches!(params.direction, CutDirection::BothWays) && i % 2 == 1)
+        let path = if should_reverse
+            || (matches!(params.direction, CutDirection::BothWays) && i % 2 == 1)
         {
             let mut rev = simplified;
             rev.reverse();
@@ -474,7 +473,10 @@ mod tests {
         ];
         let pc = ParamContour::from_contour(&contour);
 
-        assert!((pc.total_length - 20.0).abs() < 0.01, "Total length should be ~20");
+        assert!(
+            (pc.total_length - 20.0).abs() < 0.01,
+            "Total length should be ~20"
+        );
         assert!((pc.params[0] - 0.0).abs() < 0.01);
         assert!((pc.params[1] - 0.5).abs() < 0.01);
         assert!((pc.params[2] - 1.0).abs() < 0.01);
@@ -482,15 +484,20 @@ mod tests {
 
     #[test]
     fn test_param_contour_interpolation() {
-        let contour = vec![
-            P3::new(0.0, 0.0, 10.0),
-            P3::new(10.0, 0.0, 10.0),
-        ];
+        let contour = vec![P3::new(0.0, 0.0, 10.0), P3::new(10.0, 0.0, 10.0)];
         let pc = ParamContour::from_contour(&contour);
 
         let mid = pc.point_at(0.5);
-        assert!((mid.x - 5.0).abs() < 0.01, "Midpoint X should be 5, got {:.2}", mid.x);
-        assert!((mid.z - 10.0).abs() < 0.01, "Midpoint Z should be 10, got {:.2}", mid.z);
+        assert!(
+            (mid.x - 5.0).abs() < 0.01,
+            "Midpoint X should be 5, got {:.2}",
+            mid.x
+        );
+        assert!(
+            (mid.z - 10.0).abs() < 0.01,
+            "Midpoint Z should be 10, got {:.2}",
+            mid.z
+        );
 
         let start = pc.point_at(0.0);
         assert!((start.x - 0.0).abs() < 0.01);
@@ -581,7 +588,8 @@ mod tests {
             assert!(
                 dz >= -0.01,
                 "Z should never increase: {:.3} -> {:.3}",
-                window[0].z, window[1].z
+                window[0].z,
+                window[1].z
             );
         }
 
@@ -626,7 +634,8 @@ mod tests {
                 assert!(
                     z_drop <= 0.5 + 0.05,
                     "Z drop per revolution should be <= 0.5, got {:.3} at index {}",
-                    z_drop, i
+                    z_drop,
+                    i
                 );
             }
         }
@@ -655,11 +664,21 @@ mod tests {
             .collect();
 
         // slope_from=30, slope_to=90: surface is 45°, should pass
-        let segs = slope_confined_segments(&path, &slope_map, 30.0_f64.to_radians(), 90.0_f64.to_radians());
+        let segs = slope_confined_segments(
+            &path,
+            &slope_map,
+            30.0_f64.to_radians(),
+            90.0_f64.to_radians(),
+        );
         assert!(!segs.is_empty(), "45° surface should pass 30-90° filter");
 
         // slope_from=50, slope_to=90: surface is 45°, should fail
-        let segs = slope_confined_segments(&path, &slope_map, 50.0_f64.to_radians(), 90.0_f64.to_radians());
+        let segs = slope_confined_segments(
+            &path,
+            &slope_map,
+            50.0_f64.to_radians(),
+            90.0_f64.to_radians(),
+        );
         assert!(segs.is_empty(), "45° surface should fail 50-90° filter");
     }
 

@@ -25,16 +25,20 @@ pub struct ToolpathBoundary {
     pub end_move: usize,
 }
 
-/// Checkpoint: a snapshot of the heightmap mesh at a toolpath boundary.
+/// Checkpoint: a snapshot of the heightmap at a toolpath boundary.
 pub struct SimCheckpoint {
     pub boundary_index: usize,
     pub mesh: HeightmapMesh,
+    /// The heightmap grid at this checkpoint (for resuming incremental sim).
+    pub heightmap: Option<rs_cam_core::simulation::Heightmap>,
 }
 
 /// Simulation playback state.
 pub struct SimulationState {
     /// Whether simulation result mesh is displayed (replaces raw STL).
     pub active: bool,
+    /// Latest simulated stock mesh for rendering.
+    pub mesh: Option<HeightmapMesh>,
     /// Animation playback state.
     pub playing: bool,
     /// Current move index for timeline scrubbing.
@@ -77,6 +81,14 @@ pub struct SimulationState {
     pub stock_viz_mode: StockVizMode,
     /// Stock opacity (0.0 = transparent, 1.0 = solid).
     pub stock_opacity: f32,
+    /// Heightmap cell size in mm (smaller = finer detail, more memory/time).
+    pub resolution: f64,
+    /// When true, resolution is auto-calculated from the smallest tool.
+    pub auto_resolution: bool,
+    /// Live heightmap for incremental playback simulation.
+    pub live_heightmap: Option<rs_cam_core::simulation::Heightmap>,
+    /// Move index the live heightmap has been simulated up to.
+    pub live_sim_move: usize,
     /// Saved viewport state from editor mode (restored on exit).
     pub saved_show_cutting: bool,
     pub saved_show_rapids: bool,
@@ -87,6 +99,7 @@ impl SimulationState {
     pub fn new() -> Self {
         Self {
             active: false,
+            mesh: None,
             playing: false,
             current_move: 0,
             total_moves: 0,
@@ -108,6 +121,10 @@ impl SimulationState {
             current_deviations: None,
             stock_viz_mode: StockVizMode::Solid,
             stock_opacity: 1.0,
+            resolution: 0.25,
+            auto_resolution: true,
+            live_heightmap: None,
+            live_sim_move: 0,
             saved_show_cutting: true,
             saved_show_rapids: true,
             saved_show_stock: true,
@@ -142,7 +159,9 @@ impl SimulationState {
 
     /// Find which toolpath boundary contains the current move.
     pub fn current_boundary(&self) -> Option<&ToolpathBoundary> {
-        self.boundaries.iter().find(|b| self.current_move >= b.start_move && self.current_move <= b.end_move)
+        self.boundaries
+            .iter()
+            .find(|b| self.current_move >= b.start_move && self.current_move <= b.end_move)
     }
 
     /// Progress within the current toolpath (0.0..1.0).
@@ -159,12 +178,23 @@ impl SimulationState {
     /// Find the nearest checkpoint at or before the given move index.
     pub fn checkpoint_for_move(&self, move_idx: usize) -> Option<usize> {
         // Find the boundary index for this move
-        let boundary_idx = self.boundaries.iter().position(|b| move_idx <= b.end_move)?;
+        let boundary_idx = self
+            .boundaries
+            .iter()
+            .position(|b| move_idx <= b.end_move)?;
         // The checkpoint to use is the one before this boundary (i.e., the state after previous toolpath)
         if boundary_idx == 0 {
             return None; // before the first toolpath, use initial stock
         }
         // Find checkpoint for boundary_idx - 1
-        self.checkpoints.iter().position(|c| c.boundary_index == boundary_idx - 1)
+        self.checkpoints
+            .iter()
+            .position(|c| c.boundary_index == boundary_idx - 1)
+    }
+}
+
+impl Default for SimulationState {
+    fn default() -> Self {
+        Self::new()
     }
 }

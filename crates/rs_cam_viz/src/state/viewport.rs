@@ -31,3 +31,9 @@ impl ViewportState {
         }
     }
 }
+
+impl Default for ViewportState {
+    fn default() -> Self {
+        Self::new()
+    }
+}

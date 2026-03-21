@@ -1,9 +1,9 @@
 //! Maps rs_cam_core types to vendor LUT query types.
 
-use crate::material::*;
-use super::vendor_lut::*;
 use super::vendor_lookup::LookupQuery;
-use super::{FeedsInput, ToolGeometryHint, OperationFamily, PassRole};
+use super::vendor_lut::*;
+use super::{FeedsInput, OperationFamily, PassRole, ToolGeometryHint};
+use crate::material::*;
 
 /// Convert a FeedsInput to a LookupQuery for vendor LUT lookup.
 pub fn to_lookup_query(input: &FeedsInput) -> LookupQuery {
@@ -59,19 +59,27 @@ fn material_to_lut(material: &Material) -> (MaterialFamily, HardnessKind, f64) {
         }
         Material::Plywood { grade } => match grade {
             PlywoodGrade::Softwood => (MaterialFamily::PlywoodSoftwood, HardnessKind::Janka, 600.0),
-            PlywoodGrade::BalticBirch => (MaterialFamily::PlywoodHardwood, HardnessKind::Janka, 1200.0),
-            PlywoodGrade::HardwoodFaced => (MaterialFamily::PlywoodHardwood, HardnessKind::Janka, 1000.0),
+            PlywoodGrade::BalticBirch => {
+                (MaterialFamily::PlywoodHardwood, HardnessKind::Janka, 1200.0)
+            }
+            PlywoodGrade::HardwoodFaced => {
+                (MaterialFamily::PlywoodHardwood, HardnessKind::Janka, 1000.0)
+            }
         },
         Material::SheetGood { kind } => match kind {
             SheetGoodKind::Mdf => (MaterialFamily::Mdf, HardnessKind::Janka, 1100.0),
             SheetGoodKind::Hdf => (MaterialFamily::Hdf, HardnessKind::Janka, 1300.0),
-            SheetGoodKind::Particleboard => (MaterialFamily::Particleboard, HardnessKind::Janka, 750.0),
+            SheetGoodKind::Particleboard => {
+                (MaterialFamily::Particleboard, HardnessKind::Janka, 750.0)
+            }
         },
         Material::Plastic { family } => match family {
             PlasticFamily::Acrylic => (MaterialFamily::Acrylic, HardnessKind::ShoreD, 85.0),
             PlasticFamily::Hdpe => (MaterialFamily::Hdpe, HardnessKind::ShoreD, 65.0),
             PlasticFamily::Delrin => (MaterialFamily::Delrin, HardnessKind::ShoreD, 85.0),
-            PlasticFamily::Polycarbonate => (MaterialFamily::Polycarbonate, HardnessKind::ShoreD, 80.0),
+            PlasticFamily::Polycarbonate => {
+                (MaterialFamily::Polycarbonate, HardnessKind::ShoreD, 80.0)
+            }
             PlasticFamily::Generic => (MaterialFamily::Acrylic, HardnessKind::ShoreD, 80.0),
         },
         Material::Foam { .. } => {
@@ -122,9 +130,16 @@ mod tests {
 
     #[test]
     fn test_flat_softwood_maps_correctly() {
-        let mat = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
+        let mat = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
         let mach = MachineProfile::shapeoko_vfd();
-        let input = make_input(ToolGeometryHint::Flat, &mat, &mach, OperationFamily::Adaptive);
+        let input = make_input(
+            ToolGeometryHint::Flat,
+            &mat,
+            &mach,
+            OperationFamily::Adaptive,
+        );
         let query = to_lookup_query(&input);
         assert_eq!(query.tool_family, ToolFamily::FlatEnd);
         assert_eq!(query.material_family, MaterialFamily::Softwood);
@@ -134,9 +149,16 @@ mod tests {
 
     #[test]
     fn test_ball_hardwood_maps_correctly() {
-        let mat = Material::SolidWood { species: WoodSpecies::HardMaple };
+        let mat = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
         let mach = MachineProfile::shapeoko_vfd();
-        let input = make_input(ToolGeometryHint::Ball, &mat, &mach, OperationFamily::Parallel);
+        let input = make_input(
+            ToolGeometryHint::Ball,
+            &mat,
+            &mach,
+            OperationFamily::Parallel,
+        );
         let query = to_lookup_query(&input);
         assert_eq!(query.tool_family, ToolFamily::BallNose);
         assert_eq!(query.material_family, MaterialFamily::Hardwood);
@@ -145,9 +167,16 @@ mod tests {
 
     #[test]
     fn test_acrylic_maps_correctly() {
-        let mat = Material::Plastic { family: PlasticFamily::Acrylic };
+        let mat = Material::Plastic {
+            family: PlasticFamily::Acrylic,
+        };
         let mach = MachineProfile::shapeoko_vfd();
-        let input = make_input(ToolGeometryHint::Flat, &mat, &mach, OperationFamily::Contour);
+        let input = make_input(
+            ToolGeometryHint::Flat,
+            &mat,
+            &mach,
+            OperationFamily::Contour,
+        );
         let query = to_lookup_query(&input);
         assert_eq!(query.material_family, MaterialFamily::Acrylic);
         assert_eq!(query.hardness_kind, Some(HardnessKind::ShoreD));
@@ -156,7 +185,9 @@ mod tests {
 
     #[test]
     fn test_mdf_maps_correctly() {
-        let mat = Material::SheetGood { kind: SheetGoodKind::Mdf };
+        let mat = Material::SheetGood {
+            kind: SheetGoodKind::Mdf,
+        };
         let mach = MachineProfile::shapeoko_vfd();
         let input = make_input(ToolGeometryHint::Flat, &mat, &mach, OperationFamily::Pocket);
         let query = to_lookup_query(&input);

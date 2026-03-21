@@ -14,17 +14,9 @@ pub enum MoveType {
     /// Linear feed move (G1) at specified feed rate (mm/min).
     Linear { feed_rate: f64 },
     /// Clockwise arc (G2) in the XY plane. I/J are offsets from start to center.
-    ArcCW {
-        i: f64,
-        j: f64,
-        feed_rate: f64,
-    },
+    ArcCW { i: f64, j: f64, feed_rate: f64 },
     /// Counter-clockwise arc (G3) in the XY plane. I/J are offsets from start to center.
-    ArcCCW {
-        i: f64,
-        j: f64,
-        feed_rate: f64,
-    },
+    ArcCCW { i: f64, j: f64, feed_rate: f64 },
 }
 
 /// A single toolpath move to a target position.
@@ -92,7 +84,13 @@ impl Toolpath {
     ///
     /// For an empty path, this is a no-op. For a single point, emits
     /// rapid+plunge+retract only (no feed moves).
-    pub fn emit_path_segment(&mut self, path: &[P3], safe_z: f64, feed_rate: f64, plunge_rate: f64) {
+    pub fn emit_path_segment(
+        &mut self,
+        path: &[P3],
+        safe_z: f64,
+        feed_rate: f64,
+        plunge_rate: f64,
+    ) {
         if path.is_empty() {
             return;
         }
@@ -112,10 +110,10 @@ impl Toolpath {
 
     /// Retract to safe_z if currently below it (0.001mm epsilon).
     pub fn final_retract(&mut self, safe_z: f64) {
-        if let Some(last) = self.moves.last() {
-            if last.target.z < safe_z - 0.001 {
-                self.rapid_to(P3::new(last.target.x, last.target.y, safe_z));
-            }
+        if let Some(last) = self.moves.last()
+            && last.target.z < safe_z - 0.001
+        {
+            self.rapid_to(P3::new(last.target.x, last.target.y, safe_z));
         }
     }
 
@@ -247,12 +245,23 @@ mod tests {
         tp.emit_path_segment(&path, 10.0, 1000.0, 500.0);
 
         // rapid + plunge + 2 feeds + retract = 5 moves
-        assert_eq!(tp.moves.len(), 5, "Expected 5 moves, got {}", tp.moves.len());
+        assert_eq!(
+            tp.moves.len(),
+            5,
+            "Expected 5 moves, got {}",
+            tp.moves.len()
+        );
         assert_eq!(tp.moves[0].move_type, MoveType::Rapid);
         assert!((tp.moves[0].target.z - 10.0).abs() < 1e-10);
-        assert!(matches!(tp.moves[1].move_type, MoveType::Linear { feed_rate } if (feed_rate - 500.0).abs() < 1e-10));
-        assert!(matches!(tp.moves[2].move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10));
-        assert!(matches!(tp.moves[3].move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10));
+        assert!(
+            matches!(tp.moves[1].move_type, MoveType::Linear { feed_rate } if (feed_rate - 500.0).abs() < 1e-10)
+        );
+        assert!(
+            matches!(tp.moves[2].move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10)
+        );
+        assert!(
+            matches!(tp.moves[3].move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10)
+        );
         assert_eq!(tp.moves[4].move_type, MoveType::Rapid);
         assert!((tp.moves[4].target.z - 10.0).abs() < 1e-10);
     }

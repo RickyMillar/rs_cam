@@ -18,7 +18,7 @@
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::polygon::{offset_polygon, Polygon2};
+use crate::polygon::{Polygon2, offset_polygon};
 use crate::scallop_math::variable_stepover;
 use crate::slope::SurfaceHeightmap;
 use crate::tool::MillingCutter;
@@ -94,12 +94,8 @@ fn average_stepover_for_ring(
     let mut count = 0;
 
     for pt in ring.iter().step_by(sample_step) {
-        let angle = slope_map
-            .angle_at_world(pt.x, pt.y)
-            .unwrap_or(0.0);
-        let curvature = slope_map
-            .curvature_at_world(pt.x, pt.y)
-            .unwrap_or(0.0);
+        let angle = slope_map.angle_at_world(pt.x, pt.y).unwrap_or(0.0);
+        let curvature = slope_map.curvature_at_world(pt.x, pt.y).unwrap_or(0.0);
         let so = variable_stepover(tool_radius, scallop_height, angle, curvature);
         if so > 0.01 {
             sum += so;
@@ -127,7 +123,11 @@ fn ring_to_3d(
     ring.iter()
         .map(|p| {
             let cl = point_drop_cutter(p.x, p.y, mesh, index, cutter);
-            let z = if cl.z.is_finite() { cl.z + stock_to_leave } else { min_z + stock_to_leave };
+            let z = if cl.z.is_finite() {
+                cl.z + stock_to_leave
+            } else {
+                min_z + stock_to_leave
+            };
             P3::new(p.x, p.y, z)
         })
         .collect()
@@ -138,6 +138,7 @@ fn ring_to_3d(
 /// Uses variable stepover: at each ring, samples the slope map to compute
 /// the average stepover that maintains constant scallop height, then offsets
 /// by that amount.
+#[allow(clippy::too_many_arguments)]
 fn generate_scallop_rings(
     boundary: &Polygon2,
     mesh: &TriangleMesh,
@@ -153,7 +154,14 @@ fn generate_scallop_rings(
     let mut rings_3d: Vec<Vec<P3>> = Vec::new();
 
     // First ring: the boundary itself, lifted to 3D
-    let first_ring = ring_to_3d(&boundary.exterior, mesh, index, cutter, stock_to_leave, min_z);
+    let first_ring = ring_to_3d(
+        &boundary.exterior,
+        mesh,
+        index,
+        cutter,
+        stock_to_leave,
+        min_z,
+    );
     if first_ring.len() < 3 {
         return rings_3d;
     }
@@ -171,7 +179,12 @@ fn generate_scallop_rings(
             let mut total_so = 0.0;
             let mut total_count = 0;
             for poly in &current_polys {
-                let so = average_stepover_for_ring(&poly.exterior, slope_map, tool_radius, scallop_height);
+                let so = average_stepover_for_ring(
+                    &poly.exterior,
+                    slope_map,
+                    tool_radius,
+                    scallop_height,
+                );
                 total_so += so * poly.exterior.len() as f64;
                 total_count += poly.exterior.len();
             }
@@ -275,32 +288,51 @@ pub fn scallop_toolpath(
     let by0 = bbox.min.y;
     let bx1 = bbox.max.x;
     let by1 = bbox.max.y;
-    let flat_so = crate::scallop_math::stepover_from_scallop_flat(tool_radius, params.scallop_height)
-        .max(tool_radius * 0.1);
+    let flat_so =
+        crate::scallop_math::stepover_from_scallop_flat(tool_radius, params.scallop_height)
+            .max(tool_radius * 0.1);
     let boundary = {
         let mut pts = Vec::new();
         // Bottom edge
         let mut x = bx0;
-        while x < bx1 { pts.push(P2::new(x, by0)); x += flat_so; }
+        while x < bx1 {
+            pts.push(P2::new(x, by0));
+            x += flat_so;
+        }
         // Right edge
         let mut y = by0;
-        while y < by1 { pts.push(P2::new(bx1, y)); y += flat_so; }
+        while y < by1 {
+            pts.push(P2::new(bx1, y));
+            y += flat_so;
+        }
         // Top edge (reversed)
         let mut x = bx1;
-        while x > bx0 { pts.push(P2::new(x, by1)); x -= flat_so; }
+        while x > bx0 {
+            pts.push(P2::new(x, by1));
+            x -= flat_so;
+        }
         // Left edge (reversed)
         let mut y = by1;
-        while y > by0 { pts.push(P2::new(bx0, y)); y -= flat_so; }
+        while y > by0 {
+            pts.push(P2::new(bx0, y));
+            y -= flat_so;
+        }
         if pts.len() < 4 {
             // Fallback to simple rectangle
-            pts = vec![P2::new(bx0, by0), P2::new(bx1, by0), P2::new(bx1, by1), P2::new(bx0, by1)];
+            pts = vec![
+                P2::new(bx0, by0),
+                P2::new(bx1, by0),
+                P2::new(bx1, by1),
+                P2::new(bx0, by1),
+            ];
         }
         Polygon2::new(pts)
     };
 
     // Max rings: bounded by extent / min_stepover
-    let min_stepover = crate::scallop_math::stepover_from_scallop_flat(tool_radius, params.scallop_height)
-        .max(tool_radius * 0.05);
+    let min_stepover =
+        crate::scallop_math::stepover_from_scallop_flat(tool_radius, params.scallop_height)
+            .max(tool_radius * 0.05);
     let max_extent = (extent_x - origin_x).max(extent_y - origin_y);
     let max_rings = ((max_extent / min_stepover) * 0.5).ceil() as usize + 10;
 
@@ -367,7 +399,7 @@ pub fn scallop_toolpath(
                 if use_slope_filter {
                     let in_range = slope_map
                         .angle_at_world(pt.x, pt.y)
-                        .map_or(false, |a| a >= slope_from_rad && a <= slope_to_rad);
+                        .is_some_and(|a| a >= slope_from_rad && a <= slope_to_rad);
                     if !in_range {
                         continue;
                     }
@@ -393,7 +425,7 @@ pub fn scallop_toolpath(
                     .filter(|pt| {
                         slope_map
                             .angle_at_world(pt.x, pt.y)
-                            .map_or(false, |a| a >= slope_from_rad && a <= slope_to_rad)
+                            .is_some_and(|a| a >= slope_from_rad && a <= slope_to_rad)
                     })
                     .copied()
                     .collect()
@@ -416,10 +448,10 @@ pub fn scallop_toolpath(
         }
     }
 
-    if let Some(last) = tp.moves.last() {
-        if !matches!(last.move_type, crate::toolpath::MoveType::Rapid) {
-            tp.rapid_to(P3::new(last.target.x, last.target.y, params.safe_z));
-        }
+    if let Some(last) = tp.moves.last()
+        && !matches!(last.move_type, crate::toolpath::MoveType::Rapid)
+    {
+        tp.rapid_to(P3::new(last.target.x, last.target.y, params.safe_z));
     }
 
     info!(
@@ -464,7 +496,8 @@ mod tests {
         let tool_radius = cutter.radius();
         let scallop_height = 0.1;
 
-        let expected_so = crate::scallop_math::stepover_from_scallop_flat(tool_radius, scallop_height);
+        let expected_so =
+            crate::scallop_math::stepover_from_scallop_flat(tool_radius, scallop_height);
 
         let cell_size = 1.0;
         let bbox = &mesh.bbox;
@@ -491,7 +524,8 @@ mod tests {
         assert!(
             (so - expected_so).abs() < expected_so * 0.3,
             "Flat surface stepover ({:.3}) should be near flat formula ({:.3})",
-            so, expected_so
+            so,
+            expected_so
         );
     }
 
@@ -523,8 +557,16 @@ mod tests {
         let slope_map = surface_hm.slope_map();
 
         let rings = generate_scallop_rings(
-            &boundary, &mesh, &si, &cutter, &slope_map,
-            tool_radius, 0.1, 0.0, bbox.min.z, 100,
+            &boundary,
+            &mesh,
+            &si,
+            &cutter,
+            &slope_map,
+            tool_radius,
+            0.1,
+            0.0,
+            bbox.min.z,
+            100,
         );
 
         assert!(
@@ -539,7 +581,8 @@ mod tests {
         assert!(
             rings.len() <= expected_max,
             "Too many rings ({}), expected at most ~{}",
-            rings.len(), expected_max
+            rings.len(),
+            expected_max
         );
     }
 
@@ -559,14 +602,14 @@ mod tests {
 
         // On flat mesh (z≈0), all cutting Z should be near 0
         for m in &tp.moves {
-            if let crate::toolpath::MoveType::Linear { .. } = m.move_type {
-                if m.target.z < params.safe_z - 1.0 {
-                    assert!(
-                        m.target.z.abs() < 2.0,
-                        "Flat mesh cutting Z should be near 0, got {:.2}",
-                        m.target.z
-                    );
-                }
+            if let crate::toolpath::MoveType::Linear { .. } = m.move_type
+                && m.target.z < params.safe_z - 1.0
+            {
+                assert!(
+                    m.target.z.abs() < 2.0,
+                    "Flat mesh cutting Z should be near 0, got {:.2}",
+                    m.target.z
+                );
             }
         }
     }

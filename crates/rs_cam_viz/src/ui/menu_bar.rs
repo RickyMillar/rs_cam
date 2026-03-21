@@ -60,7 +60,10 @@ pub fn draw(ctx: &egui::Context, _state: &AppState, events: &mut Vec<AppEvent>) 
                     events.push(AppEvent::SaveJob);
                 }
                 ui.separator();
-                if ui.add(egui::Button::new("Export G-code...  Ctrl+Shift+E")).clicked() {
+                if ui
+                    .add(egui::Button::new("Export G-code...  Ctrl+Shift+E"))
+                    .clicked()
+                {
                     ui.close_menu();
                     events.push(AppEvent::ExportGcode);
                 }
@@ -120,19 +123,27 @@ pub fn draw(ctx: &egui::Context, _state: &AppState, events: &mut Vec<AppEvent>) 
                 ui.separator();
                 if ui.button("Top").clicked() {
                     ui.close_menu();
-                    events.push(AppEvent::SetViewPreset(crate::render::camera::ViewPreset::Top));
+                    events.push(AppEvent::SetViewPreset(
+                        crate::render::camera::ViewPreset::Top,
+                    ));
                 }
                 if ui.button("Front").clicked() {
                     ui.close_menu();
-                    events.push(AppEvent::SetViewPreset(crate::render::camera::ViewPreset::Front));
+                    events.push(AppEvent::SetViewPreset(
+                        crate::render::camera::ViewPreset::Front,
+                    ));
                 }
                 if ui.button("Right").clicked() {
                     ui.close_menu();
-                    events.push(AppEvent::SetViewPreset(crate::render::camera::ViewPreset::Right));
+                    events.push(AppEvent::SetViewPreset(
+                        crate::render::camera::ViewPreset::Right,
+                    ));
                 }
                 if ui.button("Isometric").clicked() {
                     ui.close_menu();
-                    events.push(AppEvent::SetViewPreset(crate::render::camera::ViewPreset::Isometric));
+                    events.push(AppEvent::SetViewPreset(
+                        crate::render::camera::ViewPreset::Isometric,
+                    ));
                 }
             });
         });

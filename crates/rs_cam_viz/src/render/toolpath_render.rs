@@ -1,17 +1,17 @@
+use super::LineVertex;
 use egui_wgpu::wgpu;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
-use super::LineVertex;
 
 /// 8-color deterministic palette for per-toolpath coloring.
 pub const TOOLPATH_PALETTE: [[f32; 3]; 8] = [
-    [0.2, 0.5, 0.95],  // blue
-    [0.2, 0.8, 0.3],   // green
+    [0.2, 0.5, 0.95],   // blue
+    [0.2, 0.8, 0.3],    // green
     [0.95, 0.6, 0.15],  // orange
-    [0.7, 0.3, 0.9],   // purple
-    [0.9, 0.85, 0.2],  // yellow
-    [0.2, 0.85, 0.85], // cyan
+    [0.7, 0.3, 0.9],    // purple
+    [0.9, 0.85, 0.2],   // yellow
+    [0.2, 0.85, 0.85],  // cyan
     [0.95, 0.25, 0.25], // red
-    [0.5, 0.9, 0.2],   // lime
+    [0.5, 0.9, 0.2],    // lime
 ];
 
 /// Get the palette color for a toolpath at the given index.
@@ -48,7 +48,12 @@ impl ToolpathGpuData {
     /// Build GPU data from a Toolpath, coloring by palette index with Z-depth blend.
     /// `index`: toolpath index for deterministic palette color.
     /// `selected`: if true, brighten the toolpath by +30%.
-    pub fn from_toolpath(device: &wgpu::Device, tp: &Toolpath, index: usize, selected: bool) -> Self {
+    pub fn from_toolpath(
+        device: &wgpu::Device,
+        tp: &Toolpath,
+        index: usize,
+        selected: bool,
+    ) -> Self {
         use wgpu::util::DeviceExt;
 
         let base = palette_color(index);
@@ -109,14 +114,26 @@ impl ToolpathGpuData {
 
             match tp.moves[i].move_type {
                 MoveType::Rapid => {
-                    rapid_verts.push(LineVertex { position: p0, color: rapid_color });
-                    rapid_verts.push(LineVertex { position: p1, color: rapid_color });
+                    rapid_verts.push(LineVertex {
+                        position: p0,
+                        color: rapid_color,
+                    });
+                    rapid_verts.push(LineVertex {
+                        position: p1,
+                        color: rapid_color,
+                    });
                 }
                 _ => {
                     let c0 = z_color(from.z);
                     let c1 = z_color(to.z);
-                    cut_verts.push(LineVertex { position: p0, color: c0 });
-                    cut_verts.push(LineVertex { position: p1, color: c1 });
+                    cut_verts.push(LineVertex {
+                        position: p0,
+                        color: c0,
+                    });
+                    cut_verts.push(LineVertex {
+                        position: p1,
+                        color: c1,
+                    });
                 }
             }
 
@@ -126,10 +143,16 @@ impl ToolpathGpuData {
 
         // Ensure non-empty buffers
         if cut_verts.is_empty() {
-            cut_verts.push(LineVertex { position: [0.0; 3], color: [0.0; 3] });
+            cut_verts.push(LineVertex {
+                position: [0.0; 3],
+                color: [0.0; 3],
+            });
         }
         if rapid_verts.is_empty() {
-            rapid_verts.push(LineVertex { position: [0.0; 3], color: [0.0; 3] });
+            rapid_verts.push(LineVertex {
+                position: [0.0; 3],
+                color: [0.0; 3],
+            });
         }
 
         let cut_vertex_count = cut_verts.len() as u32;
@@ -164,9 +187,12 @@ impl ToolpathGpuData {
 /// `palette_color`: the toolpath's palette color.
 pub fn entry_marker_vertices(tp: &Toolpath, palette_color: [f32; 3]) -> Vec<LineVertex> {
     // Find the first non-Rapid move at index > 0
-    let first_cut_idx = match tp.moves.iter().enumerate().position(|(i, m)| {
-        i > 0 && !matches!(m.move_type, MoveType::Rapid)
-    }) {
+    let first_cut_idx = match tp
+        .moves
+        .iter()
+        .enumerate()
+        .position(|(i, m)| i > 0 && !matches!(m.move_type, MoveType::Rapid))
+    {
         Some(idx) => idx,
         None => return Vec::new(),
     };
@@ -227,13 +253,31 @@ pub fn entry_marker_vertices(tp: &Toolpath, palette_color: [f32; 3]) -> Vec<Line
 
     vec![
         // Center line: tail to tip
-        LineVertex { position: tail, color: palette_color },
-        LineVertex { position: tip, color: palette_color },
+        LineVertex {
+            position: tail,
+            color: palette_color,
+        },
+        LineVertex {
+            position: tip,
+            color: palette_color,
+        },
         // Left wing: tip to left wing end
-        LineVertex { position: tip, color: palette_color },
-        LineVertex { position: left_wing, color: palette_color },
+        LineVertex {
+            position: tip,
+            color: palette_color,
+        },
+        LineVertex {
+            position: left_wing,
+            color: palette_color,
+        },
         // Right wing: tip to right wing end
-        LineVertex { position: tip, color: palette_color },
-        LineVertex { position: right_wing, color: palette_color },
+        LineVertex {
+            position: tip,
+            color: palette_color,
+        },
+        LineVertex {
+            position: right_wing,
+            color: palette_color,
+        },
     ]
 }

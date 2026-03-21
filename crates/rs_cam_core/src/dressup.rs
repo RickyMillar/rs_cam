@@ -37,7 +37,8 @@ pub fn apply_entry(toolpath: &Toolpath, style: EntryStyle, plunge_rate: f64) -> 
 
         // Detect a plunge: Linear move that goes downward with no XY change
         if let MoveType::Linear { feed_rate } = m.move_type
-            && i > 0 && is_plunge(&toolpath.moves[i - 1], m)
+            && i > 0
+            && is_plunge(&toolpath.moves[i - 1], m)
         {
             match style {
                 EntryStyle::Ramp { max_angle_deg } => {
@@ -225,8 +226,7 @@ pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath
         .iter()
         .enumerate()
         .filter(|(_, m)| {
-            matches!(m.move_type, MoveType::Linear { .. })
-                && (m.target.z - cut_depth).abs() < 0.01
+            matches!(m.move_type, MoveType::Linear { .. }) && (m.target.z - cut_depth).abs() < 0.01
         })
         .map(|(i, _)| i)
         .collect();
@@ -327,17 +327,11 @@ pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath
                     if !in_tab {
                         // Entered tab zone before this segment
                         if let Some(last) = result.moves.last() {
-                            result.feed_to(
-                                P3::new(last.target.x, last.target.y, tab_z),
-                                feed_rate,
-                            );
+                            result.feed_to(P3::new(last.target.x, last.target.y, tab_z), feed_rate);
                         }
                         in_tab = true;
                     }
-                    result.feed_to(
-                        P3::new(curr_target.x, curr_target.y, tab_z),
-                        feed_rate,
-                    );
+                    result.feed_to(P3::new(curr_target.x, curr_target.y, tab_z), feed_rate);
                 } else {
                     if in_tab {
                         if let Some(last) = result.moves.last() {
@@ -362,26 +356,18 @@ pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath
                     if *is_entry {
                         // Emit segment up to tab entry at cut_depth
                         if !in_tab {
-                            result.feed_to(
-                                P3::new(split_x, split_y, cut_depth),
-                                feed_rate,
-                            );
+                            result.feed_to(P3::new(split_x, split_y, cut_depth), feed_rate);
                         }
                         // Step up
-                        let tab_z = tab_z_at_dist(*event_dist + 0.01)
-                            .unwrap_or(cut_depth + 2.0);
+                        let tab_z = tab_z_at_dist(*event_dist + 0.01).unwrap_or(cut_depth + 2.0);
                         result.feed_to(P3::new(split_x, split_y, tab_z), feed_rate);
                         in_tab = true;
                     } else {
                         // Emit segment up to tab exit at tab height
-                        let tab_z = tab_z_at_dist(last_dist + 0.01)
-                            .unwrap_or(cut_depth + 2.0);
+                        let tab_z = tab_z_at_dist(last_dist + 0.01).unwrap_or(cut_depth + 2.0);
                         result.feed_to(P3::new(split_x, split_y, tab_z), feed_rate);
                         // Step down
-                        result.feed_to(
-                            P3::new(split_x, split_y, cut_depth),
-                            feed_rate,
-                        );
+                        result.feed_to(P3::new(split_x, split_y, cut_depth), feed_rate);
                         in_tab = false;
                     }
                     last_dist = *event_dist;
@@ -389,17 +375,10 @@ pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath
 
                 // Emit remainder of segment after last event
                 if in_tab {
-                    let tab_z = tab_z_at_dist(last_dist + 0.01)
-                        .unwrap_or(cut_depth + 2.0);
-                    result.feed_to(
-                        P3::new(curr_target.x, curr_target.y, tab_z),
-                        feed_rate,
-                    );
+                    let tab_z = tab_z_at_dist(last_dist + 0.01).unwrap_or(cut_depth + 2.0);
+                    result.feed_to(P3::new(curr_target.x, curr_target.y, tab_z), feed_rate);
                 } else {
-                    result.feed_to(
-                        P3::new(curr_target.x, curr_target.y, cut_depth),
-                        feed_rate,
-                    );
+                    result.feed_to(P3::new(curr_target.x, curr_target.y, cut_depth), feed_rate);
                 }
             }
         } else {
@@ -525,10 +504,8 @@ pub fn apply_lead_in_out(toolpath: &Toolpath, radius: f64) -> Toolpath {
                         let t = s as f64 / arc_steps as f64;
                         let angle = std::f64::consts::FRAC_PI_2 * t;
                         let (sin_a, cos_a) = angle.sin_cos();
-                        let ax = cut_end.x + ux * radius * sin_a
-                            + perp_x * radius * (1.0 - cos_a);
-                        let ay = cut_end.y + uy * radius * sin_a
-                            + perp_y * radius * (1.0 - cos_a);
+                        let ax = cut_end.x + ux * radius * sin_a + perp_x * radius * (1.0 - cos_a);
+                        let ay = cut_end.y + uy * radius * sin_a + perp_y * radius * (1.0 - cos_a);
                         result.feed_to(P3::new(ax, ay, cut_z), feed_rate);
                     }
 
@@ -557,11 +534,7 @@ pub fn apply_lead_in_out(toolpath: &Toolpath, radius: f64) -> Toolpath {
 /// creating a clearance notch at each inside corner.
 ///
 /// Only operates on consecutive linear feed moves at the same Z.
-pub fn apply_dogbones(
-    toolpath: &Toolpath,
-    tool_radius: f64,
-    max_angle_deg: f64,
-) -> Toolpath {
+pub fn apply_dogbones(toolpath: &Toolpath, tool_radius: f64, max_angle_deg: f64) -> Toolpath {
     let max_angle_rad = max_angle_deg.to_radians();
     let mut result = Toolpath::new();
 
@@ -690,7 +663,9 @@ pub fn apply_link_moves(toolpath: &Toolpath, params: &LinkMoveParams) -> Toolpat
 
         // Track first cut — never link before the tool has engaged material
         if !has_cut {
-            if matches!(m.move_type, MoveType::Linear { .. }) && m.target.z < params.safe_z_threshold - 1.0 {
+            if matches!(m.move_type, MoveType::Linear { .. })
+                && m.target.z < params.safe_z_threshold - 1.0
+            {
                 has_cut = true;
             }
             result.moves.push(m.clone());
@@ -713,8 +688,14 @@ pub fn apply_link_moves(toolpath: &Toolpath, params: &LinkMoveParams) -> Toolpat
             let plunge_target = moves[i + 2].target;
 
             // Get the Z of the last cut move before this retract
-            let prev_cut_z = result.moves.iter().rev()
-                .find(|mv| matches!(mv.move_type, MoveType::Linear { .. }) && mv.target.z < params.safe_z_threshold - 1.0)
+            let prev_cut_z = result
+                .moves
+                .iter()
+                .rev()
+                .find(|mv| {
+                    matches!(mv.move_type, MoveType::Linear { .. })
+                        && mv.target.z < params.safe_z_threshold - 1.0
+                })
                 .map(|mv| mv.target.z);
 
             if let Some(prev_z) = prev_cut_z {
@@ -828,10 +809,7 @@ mod tests {
                 matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10)
             })
             .collect();
-        assert!(
-            cut_moves.len() >= 2,
-            "Cutting moves should be preserved"
-        );
+        assert!(cut_moves.len() >= 2, "Cutting moves should be preserved");
     }
 
     // --- Helix entry tests ---
@@ -869,10 +847,7 @@ mod tests {
             500.0,
         );
 
-        let has_cut_depth = result
-            .moves
-            .iter()
-            .any(|m| (m.target.z - -3.0).abs() < 0.1);
+        let has_cut_depth = result.moves.iter().any(|m| (m.target.z - -3.0).abs() < 0.1);
         assert!(has_cut_depth, "Helix should reach cut_depth=-3.0");
     }
 
@@ -1044,7 +1019,10 @@ mod tests {
                 && (m.target.x - 10.0).abs() < 3.0
                 && (m.target.y - 10.0).abs() < 3.0
         });
-        assert!(has_first_cut, "Lead-in should arrive near the first cut point");
+        assert!(
+            has_first_cut,
+            "Lead-in should arrive near the first cut point"
+        );
     }
 
     #[test]

@@ -6,11 +6,9 @@
 
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::V3;
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::MillingCutter;
-
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
 
 // ── Surface heightmap ─────────────────────────────────────────────────
 
@@ -27,6 +25,7 @@ pub struct SurfaceHeightmap {
 
 impl SurfaceHeightmap {
     /// Build via rayon-parallelized drop-cutter queries at each grid cell.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_mesh(
         mesh: &TriangleMesh,
         index: &SpatialIndex,
@@ -38,6 +37,35 @@ impl SurfaceHeightmap {
         cell_size: f64,
         min_z: f64,
     ) -> Self {
+        let never_cancel = || false;
+        Self::from_mesh_with_cancel(
+            mesh,
+            index,
+            cutter,
+            origin_x,
+            origin_y,
+            rows,
+            cols,
+            cell_size,
+            min_z,
+            &never_cancel,
+        )
+        .expect("non-cancellable surface heightmap should never be cancelled")
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_mesh_with_cancel(
+        mesh: &TriangleMesh,
+        index: &SpatialIndex,
+        cutter: &dyn MillingCutter,
+        origin_x: f64,
+        origin_y: f64,
+        rows: usize,
+        cols: usize,
+        cell_size: f64,
+        min_z: f64,
+        cancel: &dyn CancelCheck,
+    ) -> Result<Self, Cancelled> {
         let total = rows * cols;
         let compute_z = |i: usize| {
             let row = i / cols;
@@ -47,19 +75,23 @@ impl SurfaceHeightmap {
             let cl = point_drop_cutter(x, y, mesh, index, cutter);
             cl.z.max(min_z)
         };
-        #[cfg(feature = "parallel")]
-        let z_values: Vec<f64> = (0..total).into_par_iter().map(compute_z).collect();
-        #[cfg(not(feature = "parallel"))]
-        let z_values: Vec<f64> = (0..total).map(compute_z).collect();
 
-        Self {
+        let mut z_values = Vec::with_capacity(total);
+        for i in 0..total {
+            if i % 64 == 0 {
+                check_cancel(cancel)?;
+            }
+            z_values.push(compute_z(i));
+        }
+
+        Ok(Self {
             z_values,
             rows,
             cols,
             origin_x,
             origin_y,
             cell_size,
-        }
+        })
     }
 
     /// O(1) surface Z lookup by cell indices.
@@ -85,10 +117,7 @@ impl SurfaceHeightmap {
 
     /// Minimum surface Z across all cells (bottom of the mesh surface).
     pub fn min_z(&self) -> f64 {
-        self.z_values
-            .iter()
-            .copied()
-            .fold(f64::INFINITY, f64::min)
+        self.z_values.iter().copied().fold(f64::INFINITY, f64::min)
     }
 
     /// Compute a slope map from this surface heightmap.
@@ -359,13 +388,17 @@ mod tests {
                 assert!(
                     angle.abs() < 0.01,
                     "Flat surface angle at ({},{}) should be ~0, got {:.4}",
-                    row, col, angle
+                    row,
+                    col,
+                    angle
                 );
                 let n = sm.normal_at(row, col);
                 assert!(
                     (n.z - 1.0).abs() < 0.01,
                     "Flat normal Z at ({},{}) should be ~1, got {:.4}",
-                    row, col, n.z
+                    row,
+                    col,
+                    n.z
                 );
             }
         }
@@ -382,7 +415,11 @@ mod tests {
                 assert!(
                     (angle - FRAC_PI_4).abs() < 0.01,
                     "Ramp angle at ({},{}) should be ~45° ({:.4}), got {:.4} ({:.1}°)",
-                    row, col, FRAC_PI_4, angle, angle.to_degrees()
+                    row,
+                    col,
+                    FRAC_PI_4,
+                    angle,
+                    angle.to_degrees()
                 );
             }
         }
@@ -438,7 +475,9 @@ mod tests {
                 assert!(
                     k.abs() < 0.001,
                     "Flat surface curvature at ({},{}) should be ~0, got {:.6}",
-                    row, col, k
+                    row,
+                    col,
+                    k
                 );
             }
         }
@@ -490,7 +529,8 @@ mod tests {
         assert!(
             steep_count > 0 && shallow_count > 0,
             "Should have both steep ({}) and shallow ({}) cells",
-            steep_count, shallow_count
+            steep_count,
+            shallow_count
         );
     }
 
@@ -518,7 +558,10 @@ mod tests {
         // Threshold at 50 → all shallow
         let steep_50 = classify_steep_shallow(&sm, 50.0);
         let interior_shallow = (1..9).all(|r| (1..9).all(|c| !steep_50[r * 10 + c]));
-        assert!(interior_shallow, "45° ramp should be shallow at 50° threshold");
+        assert!(
+            interior_shallow,
+            "45° ramp should be shallow at 50° threshold"
+        );
     }
 
     // ── World coordinate accessor tests ─────────────────────────────

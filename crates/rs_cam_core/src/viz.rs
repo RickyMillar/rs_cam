@@ -39,8 +39,14 @@ pub fn toolpath_to_svg(toolpath: &Toolpath, width: f64, height: f64) -> String {
     let z_range = (bbox.max.z - bbox.min.z).max(1e-6);
 
     let mut svg = String::new();
-    let _ = writeln!(svg, "<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}' viewBox='0 0 {width} {height}'>");
-    let _ = writeln!(svg, "<rect width='{width}' height='{height}' fill='#1a1a2e'/>");
+    let _ = writeln!(
+        svg,
+        "<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}' viewBox='0 0 {width} {height}'>"
+    );
+    let _ = writeln!(
+        svg,
+        "<rect width='{width}' height='{height}' fill='#1a1a2e'/>"
+    );
 
     // Draw rapids as thin gray dashed lines
     // Draw feed moves as colored lines (Z-based color)
@@ -55,7 +61,10 @@ pub fn toolpath_to_svg(toolpath: &Toolpath, width: f64, height: f64) -> String {
 
         match toolpath.moves[i].move_type {
             MoveType::Rapid => {
-                let _ = writeln!(svg, "<line x1='{x1:.1}' y1='{y1:.1}' x2='{x2:.1}' y2='{y2:.1}' stroke='#333' stroke-width='0.3' stroke-dasharray='2,2'/>");
+                let _ = writeln!(
+                    svg,
+                    "<line x1='{x1:.1}' y1='{y1:.1}' x2='{x2:.1}' y2='{y2:.1}' stroke='#333' stroke-width='0.3' stroke-dasharray='2,2'/>"
+                );
             }
             MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
                 // Color by Z: low=deep blue, high=bright cyan/white
@@ -63,14 +72,26 @@ pub fn toolpath_to_svg(toolpath: &Toolpath, width: f64, height: f64) -> String {
                 let r = (t * 100.0) as u8;
                 let g = (80.0 + t * 175.0) as u8;
                 let b = (180.0 + t * 75.0) as u8;
-                let _ = writeln!(svg, "<line x1='{x1:.1}' y1='{y1:.1}' x2='{x2:.1}' y2='{y2:.1}' stroke='#{r:02x}{g:02x}{b:02x}' stroke-width='0.5'/>");
+                let _ = writeln!(
+                    svg,
+                    "<line x1='{x1:.1}' y1='{y1:.1}' x2='{x2:.1}' y2='{y2:.1}' stroke='#{r:02x}{g:02x}{b:02x}' stroke-width='0.5'/>"
+                );
             }
         }
     }
 
     // Add legend
-    let _ = writeln!(svg, "<text x='5' y='15' fill='white' font-size='10' font-family='monospace'>Z: {:.2} to {:.2} mm</text>", z_min, bbox.max.z);
-    let _ = writeln!(svg, "<text x='5' y='27' fill='white' font-size='10' font-family='monospace'>{} moves, {:.0}mm cutting</text>", toolpath.moves.len(), toolpath.total_cutting_distance());
+    let _ = writeln!(
+        svg,
+        "<text x='5' y='15' fill='white' font-size='10' font-family='monospace'>Z: {:.2} to {:.2} mm</text>",
+        z_min, bbox.max.z
+    );
+    let _ = writeln!(
+        svg,
+        "<text x='5' y='27' fill='white' font-size='10' font-family='monospace'>{} moves, {:.0}mm cutting</text>",
+        toolpath.moves.len(),
+        toolpath.total_cutting_distance()
+    );
 
     let _ = writeln!(svg, "</svg>");
     svg
@@ -124,12 +145,18 @@ pub fn toolpath_to_3d_html(mesh: &TriangleMesh, toolpath: &Toolpath) -> String {
 
         match toolpath.moves[i].move_type {
             MoveType::Rapid => {
-                let _ = write!(rapid_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                    from.x, from.y, from.z, to.x, to.y, to.z);
+                let _ = write!(
+                    rapid_verts,
+                    "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                    from.x, from.y, from.z, to.x, to.y, to.z
+                );
             }
             MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
-                let _ = write!(cut_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                    from.x, from.y, from.z, to.x, to.y, to.z);
+                let _ = write!(
+                    cut_verts,
+                    "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                    from.x, from.y, from.z, to.x, to.y, to.z
+                );
                 // Color both endpoints by their Z
                 for z in [from.z, to.z] {
                     let t = ((z - z_min) / z_range).clamp(0.0, 1.0) as f32;
@@ -143,7 +170,9 @@ pub fn toolpath_to_3d_html(mesh: &TriangleMesh, toolpath: &Toolpath) -> String {
         }
     }
 
-    let _ = write!(html, r##"<!DOCTYPE html>
+    let _ = write!(
+        html,
+        r##"<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
 <title>rs_cam 3D Toolpath Viewer</title>
@@ -327,8 +356,12 @@ pub fn toolpath_standalone_3d_html(toolpath: &Toolpath, stock_bounds: Option<[f6
         None => {
             let margin = 5.0;
             (
-                tp_bbox.min.x - margin, tp_bbox.min.y - margin, tp_bbox.min.z,
-                tp_bbox.max.x + margin, tp_bbox.max.y + margin, 0.0,
+                tp_bbox.min.x - margin,
+                tp_bbox.min.y - margin,
+                tp_bbox.min.z,
+                tp_bbox.max.x + margin,
+                tp_bbox.max.y + margin,
+                0.0,
             )
         }
     };
@@ -336,7 +369,9 @@ pub fn toolpath_standalone_3d_html(toolpath: &Toolpath, stock_bounds: Option<[f6
     let center_x = (sx_min + sx_max) / 2.0;
     let center_y = (sy_min + sy_max) / 2.0;
     let center_z = (sz_min + sz_max) / 2.0;
-    let extent = (sx_max - sx_min).max(sy_max - sy_min).max((sz_max - sz_min).abs());
+    let extent = (sx_max - sx_min)
+        .max(sy_max - sy_min)
+        .max((sz_max - sz_min).abs());
     let cam_dist = extent * 1.8;
 
     // Serialize toolpath data
@@ -361,8 +396,11 @@ pub fn toolpath_standalone_3d_html(toolpath: &Toolpath, stock_bounds: Option<[f6
 
         match toolpath.moves[i].move_type {
             MoveType::Rapid => {
-                let _ = write!(rapid_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                    from.x, from.y, from.z, to.x, to.y, to.z);
+                let _ = write!(
+                    rapid_verts,
+                    "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                    from.x, from.y, from.z, to.x, to.y, to.z
+                );
             }
             MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
                 let dz = (to.z - from.z).abs();
@@ -372,11 +410,17 @@ pub fn toolpath_standalone_3d_html(toolpath: &Toolpath, stock_bounds: Option<[f6
 
                 // Classify as plunge (mostly vertical) vs cutting (mostly horizontal)
                 if dz > 0.1 && dxy < 0.1 {
-                    let _ = write!(plunge_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                        from.x, from.y, from.z, to.x, to.y, to.z);
+                    let _ = write!(
+                        plunge_verts,
+                        "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                        from.x, from.y, from.z, to.x, to.y, to.z
+                    );
                 } else {
-                    let _ = write!(cut_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                        from.x, from.y, from.z, to.x, to.y, to.z);
+                    let _ = write!(
+                        cut_verts,
+                        "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                        from.x, from.y, from.z, to.x, to.y, to.z
+                    );
                     for z in [from.z, to.z] {
                         let t = ((z - z_min) / z_range).clamp(0.0, 1.0) as f32;
                         let r = 0.1 + t * 0.15;
@@ -389,7 +433,9 @@ pub fn toolpath_standalone_3d_html(toolpath: &Toolpath, stock_bounds: Option<[f6
         }
     }
 
-    let _ = write!(html, r##"<!DOCTYPE html>
+    let _ = write!(
+        html,
+        r##"<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
 <title>rs_cam Toolpath Viewer</title>
@@ -628,12 +674,18 @@ pub fn simulation_3d_html(
 
         match toolpath.moves[i].move_type {
             MoveType::Rapid => {
-                let _ = write!(rapid_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                    from.x, from.y, from.z, to.x, to.y, to.z);
+                let _ = write!(
+                    rapid_verts,
+                    "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                    from.x, from.y, from.z, to.x, to.y, to.z
+                );
             }
             MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
-                let _ = write!(cut_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                    from.x, from.y, from.z, to.x, to.y, to.z);
+                let _ = write!(
+                    cut_verts,
+                    "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                    from.x, from.y, from.z, to.x, to.y, to.z
+                );
                 for z in [from.z, to.z] {
                     let t = ((z - z_min) / z_range).clamp(0.0, 1.0) as f32;
                     let r = 0.1 + t * 0.1;
@@ -731,12 +783,18 @@ pub fn simulation_3d_html(
     }
     // Shaft extending upward
     let shaft_h = tool_radius * 4.0;
-    let _ = write!(lathe_profile, "new THREE.Vector2({:.3},{:.3}),", tool_radius, shaft_h);
+    let _ = write!(
+        lathe_profile,
+        "new THREE.Vector2({:.3},{:.3}),",
+        tool_radius, shaft_h
+    );
     let _ = write!(lathe_profile, "new THREE.Vector2(0,{:.3}),", shaft_h);
 
     let mut html = String::with_capacity(2 * 1024 * 1024);
 
-    let _ = write!(html, r##"<!DOCTYPE html>
+    let _ = write!(
+        html,
+        r##"<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
 <title>rs_cam Simulation Viewer</title>
@@ -1273,12 +1331,18 @@ pub fn stacked_simulation_3d_html(
             let to = &tp.moves[i].target;
             match tp.moves[i].move_type {
                 MoveType::Rapid => {
-                    let _ = write!(rapid_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                        from.x, from.y, from.z, to.x, to.y, to.z);
+                    let _ = write!(
+                        rapid_verts,
+                        "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                        from.x, from.y, from.z, to.x, to.y, to.z
+                    );
                 }
                 MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
-                    let _ = write!(cut_verts, "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                        from.x, from.y, from.z, to.x, to.y, to.z);
+                    let _ = write!(
+                        cut_verts,
+                        "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                        from.x, from.y, from.z, to.x, to.y, to.z
+                    );
                     for z in [from.z, to.z] {
                         let t = ((z - global_z_min) / z_range_tp).clamp(0.0, 1.0) as f32;
                         let r = 0.1 + t * 0.1;
@@ -1321,8 +1385,11 @@ pub fn stacked_simulation_3d_html(
             let h = phase.cutter.height_at_radius(dist).unwrap_or(-1.0);
             let _ = write!(profile, "{:.4},", h);
         }
-        let _ = write!(tool_profiles_js, "new Float32Array([{}]),",
-            profile.trim_end_matches(','));
+        let _ = write!(
+            tool_profiles_js,
+            "new Float32Array([{}]),",
+            profile.trim_end_matches(',')
+        );
 
         let mut lathe = String::new();
         for i in 0..=num_profile_samples {
@@ -1350,7 +1417,9 @@ pub fn stacked_simulation_3d_html(
     for (ti, phase) in phases.iter().enumerate() {
         let tp = phase.toolpath;
         total_cut_dist += tp.total_cutting_distance();
-        if tp.moves.is_empty() { continue; }
+        if tp.moves.is_empty() {
+            continue;
+        }
 
         // Tool-change marker
         let _ = write!(anim_tp, "0,0,0,{},", 3 + ti);
@@ -1393,7 +1462,9 @@ pub fn stacked_simulation_3d_html(
 
     let mut html = String::with_capacity(2 * 1024 * 1024);
 
-    let _ = write!(html, r##"<!DOCTYPE html>
+    let _ = write!(
+        html,
+        r##"<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
 <title>rs_cam Stacked Simulation</title>
@@ -1727,8 +1798,13 @@ animate();
         total_cut = total_cut_dist,
         ghost_legend = if has_source_mesh {
             "<span style=\"color:#88aa88\">&#9632;</span> Source mesh &nbsp;"
-        } else { "" },
-        cx = center.x, cy = center.y, cz = center.z, cd = cam_dist,
+        } else {
+            ""
+        },
+        cx = center.x,
+        cy = center.y,
+        cz = center.z,
+        cd = cam_dist,
         hm_verts_data = hm_verts.trim_end_matches(','),
         hm_colors_data = hm_colors.trim_end_matches(','),
         hm_idx_data = hm_indices_str.trim_end_matches(','),
@@ -1743,7 +1819,9 @@ scene.add(new THREE.Mesh(srcG,new THREE.MeshPhongMaterial({{
                 src_mesh_verts.trim_end_matches(','),
                 src_mesh_indices_str.trim_end_matches(','),
             )
-        } else { String::new() },
+        } else {
+            String::new()
+        },
         cut_verts_data = cut_verts.trim_end_matches(','),
         cut_colors_data = cut_colors.trim_end_matches(','),
         rapid_verts_data = rapid_verts.trim_end_matches(','),
@@ -1752,7 +1830,8 @@ scene.add(new THREE.Mesh(srcG,new THREE.MeshPhongMaterial({{
         lathe_profiles_js = lathe_profiles_js.trim_end_matches(','),
         phase_labels_js = phase_labels_js.trim_end_matches(','),
         num_profile_samples = num_profile_samples,
-        origin_x = heightmap.origin_x, origin_y = heightmap.origin_y,
+        origin_x = heightmap.origin_x,
+        origin_y = heightmap.origin_y,
         cell_size_val = heightmap.cell_size,
         stock_top_z = heightmap.stock_top_z,
         z_range_val = (heightmap.stock_top_z - hm_bbox.min.z).max(1e-6),

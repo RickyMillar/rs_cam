@@ -2,7 +2,7 @@
 
 use rs_cam_core::{
     dropcutter::batch_drop_cutter,
-    gcode::{emit_gcode, GrblPost},
+    gcode::{GrblPost, emit_gcode},
     mesh::{SpatialIndex, TriangleMesh},
     tool::{BallEndmill, MillingCutter},
     toolpath::raster_toolpath_from_grid,
@@ -22,7 +22,11 @@ fn test_terrain_stl_to_gcode() {
 
     // Load
     let mesh = TriangleMesh::from_stl(&stl_path).expect("Failed to load STL");
-    assert!(mesh.faces.len() > 1000, "Expected a real mesh, got {} triangles", mesh.faces.len());
+    assert!(
+        mesh.faces.len() > 1000,
+        "Expected a real mesh, got {} triangles",
+        mesh.faces.len()
+    );
 
     // Index
     let tool = BallEndmill::new(6.35, 25.0);
@@ -36,13 +40,13 @@ fn test_terrain_stl_to_gcode() {
     // Verify Z values are within mesh bounds (with some margin for the cutter radius)
     let margin = tool.diameter();
     for cl in &grid.points {
-        assert!(
-            cl.z >= -50.0 - 1e-6,
-            "CL.z {} below min_z", cl.z
-        );
+        assert!(cl.z >= -50.0 - 1e-6, "CL.z {} below min_z", cl.z);
         assert!(
             cl.z <= mesh.bbox.max.z + margin,
-            "CL.z {} above mesh max {} + margin {}", cl.z, mesh.bbox.max.z, margin
+            "CL.z {} above mesh max {} + margin {}",
+            cl.z,
+            mesh.bbox.max.z,
+            margin
         );
     }
 

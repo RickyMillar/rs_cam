@@ -9,8 +9,8 @@ use crate::state::job::{LoadedModel, ModelId, ModelKind, ModelUnits};
 
 /// Import an STL file with a given scale factor.
 pub fn import_stl(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, String> {
-    let mesh =
-        TriangleMesh::from_stl_scaled(path, scale).map_err(|e| format!("Failed to load STL: {e}"))?;
+    let mesh = TriangleMesh::from_stl_scaled(path, scale)
+        .map_err(|e| format!("Failed to load STL: {e}"))?;
 
     let name = path
         .file_name()
@@ -36,6 +36,7 @@ pub fn import_stl(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, S
         polygons: None,
         units,
         winding_report: Some(winding_pct),
+        load_error: None,
     })
 }
 
@@ -57,6 +58,7 @@ pub fn import_svg(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
         polygons: Some(Arc::new(polygons)),
         units: ModelUnits::Millimeters,
         winding_report: None,
+        load_error: None,
     })
 }
 
@@ -78,5 +80,22 @@ pub fn import_dxf(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
         polygons: Some(Arc::new(polygons)),
         units: ModelUnits::Millimeters,
         winding_report: None,
+        load_error: None,
     })
+}
+
+/// Import a model using persisted kind/units metadata.
+pub fn import_model(
+    path: &Path,
+    id: ModelId,
+    kind: ModelKind,
+    units: ModelUnits,
+) -> Result<LoadedModel, String> {
+    let mut model = match kind {
+        ModelKind::Stl => import_stl(path, id, units.scale_factor())?,
+        ModelKind::Svg => import_svg(path, id)?,
+        ModelKind::Dxf => import_dxf(path, id)?,
+    };
+    model.units = units;
+    Ok(model)
 }

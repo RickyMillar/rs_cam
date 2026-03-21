@@ -178,11 +178,7 @@ fn try_fit_arc(points: &[&P3], tolerance: f64) -> Option<ArcParams> {
     // Negative cross product = CW (G2), positive = CCW (G3)
     let clockwise = cross < 0.0;
 
-    Some(ArcParams {
-        cx,
-        cy,
-        clockwise,
-    })
+    Some(ArcParams { cx, cy, clockwise })
 }
 
 /// Least-squares circle fit using Kåsa's algebraic method.
@@ -252,9 +248,12 @@ fn circle_from_least_squares(points: &[&P3]) -> Option<(f64, f64, f64)> {
 /// Find the center and radius of a circle through 3 points.
 #[allow(dead_code)]
 fn circle_from_3_points(
-    x1: f64, y1: f64,
-    x2: f64, y2: f64,
-    x3: f64, y3: f64,
+    x1: f64,
+    y1: f64,
+    x2: f64,
+    y2: f64,
+    x3: f64,
+    y3: f64,
 ) -> Option<(f64, f64, f64)> {
     let ax = x1 - x2;
     let ay = y1 - y2;
@@ -298,10 +297,11 @@ mod tests {
     #[test]
     fn test_circle_from_3_points() {
         let (cx, cy, r) = circle_from_3_points(
-            10.0, 0.0,  // right
-            0.0, 10.0,  // top
+            10.0, 0.0, // right
+            0.0, 10.0, // top
             -10.0, 0.0, // left
-        ).unwrap();
+        )
+        .unwrap();
         assert!((cx - 0.0).abs() < 1e-8);
         assert!((cy - 0.0).abs() < 1e-8);
         assert!((r - 10.0).abs() < 1e-8);
@@ -381,9 +381,16 @@ mod tests {
         );
 
         // Should contain at least one arc move
-        let arc_count = result.moves.iter().filter(|m| {
-            matches!(m.move_type, MoveType::ArcCW { .. } | MoveType::ArcCCW { .. })
-        }).count();
+        let arc_count = result
+            .moves
+            .iter()
+            .filter(|m| {
+                matches!(
+                    m.move_type,
+                    MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
+                )
+            })
+            .count();
         assert!(arc_count > 0, "Should have at least one arc move");
     }
 
@@ -399,9 +406,16 @@ mod tests {
         let result = fit_arcs(&tp, 0.01);
 
         // Straight line segments should pass through unchanged
-        let arc_count = result.moves.iter().filter(|m| {
-            matches!(m.move_type, MoveType::ArcCW { .. } | MoveType::ArcCCW { .. })
-        }).count();
+        let arc_count = result
+            .moves
+            .iter()
+            .filter(|m| {
+                matches!(
+                    m.move_type,
+                    MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
+                )
+            })
+            .count();
         assert_eq!(arc_count, 0, "Straight lines should not become arcs");
     }
 
@@ -475,30 +489,34 @@ mod tests {
 
         // Least-squares fit
         let (lx, ly, lr) = circle_from_least_squares(&refs).unwrap();
-        let ls_err: f64 = refs.iter()
+        let ls_err: f64 = refs
+            .iter()
             .map(|p| {
                 let d = ((p.x - lx).powi(2) + (p.y - ly).powi(2)).sqrt();
                 (d - lr).abs()
             })
-            .sum::<f64>() / refs.len() as f64;
+            .sum::<f64>()
+            / refs.len() as f64;
 
         // 3-point fit (first, middle, last)
         let (tx, ty, tr) = circle_from_3_points(
-            refs[0].x, refs[0].y,
-            refs[8].x, refs[8].y,
-            refs[15].x, refs[15].y,
-        ).unwrap();
-        let tp_err: f64 = refs.iter()
+            refs[0].x, refs[0].y, refs[8].x, refs[8].y, refs[15].x, refs[15].y,
+        )
+        .unwrap();
+        let tp_err: f64 = refs
+            .iter()
             .map(|p| {
                 let d = ((p.x - tx).powi(2) + (p.y - ty).powi(2)).sqrt();
                 (d - tr).abs()
             })
-            .sum::<f64>() / refs.len() as f64;
+            .sum::<f64>()
+            / refs.len() as f64;
 
         assert!(
             ls_err <= tp_err + 1e-10,
             "Least-squares error ({:.6}) should be <= 3-point error ({:.6})",
-            ls_err, tp_err
+            ls_err,
+            tp_err
         );
     }
 
@@ -511,7 +529,7 @@ mod tests {
 
     #[test]
     fn test_gcode_arc_output() {
-        use crate::gcode::{emit_gcode, GrblPost};
+        use crate::gcode::{GrblPost, emit_gcode};
 
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(10.0, 0.0, -3.0));
@@ -525,7 +543,7 @@ mod tests {
 
     #[test]
     fn test_gcode_cw_arc_output() {
-        use crate::gcode::{emit_gcode, GrblPost};
+        use crate::gcode::{GrblPost, emit_gcode};
 
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(10.0, 0.0, -3.0));

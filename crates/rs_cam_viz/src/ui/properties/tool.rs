@@ -52,11 +52,14 @@ pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
             // Flute count (critical for feeds calculation)
             ui.label("Flutes:");
             let mut flutes_f = tool.flute_count as f64;
-            if ui.add(
-                egui::DragValue::new(&mut flutes_f)
-                    .range(1.0..=8.0)
-                    .speed(0.1),
-            ).changed() {
+            if ui
+                .add(
+                    egui::DragValue::new(&mut flutes_f)
+                        .range(1.0..=8.0)
+                        .speed(0.1),
+                )
+                .changed()
+            {
                 tool.flute_count = (flutes_f as u32).clamp(1, 8);
             }
             ui.end_row();
@@ -256,15 +259,21 @@ fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
             // Right corner arc
             for i in 0..=16 {
                 let a = std::f32::consts::FRAC_PI_2 * (i as f32) / 16.0;
-                pts.push(egui::pos2(cx + flat_hw + crs * a.cos(), arc_cy + crs * a.sin()));
+                pts.push(egui::pos2(
+                    cx + flat_hw + crs * a.cos(),
+                    arc_cy + crs * a.sin(),
+                ));
             }
             // Flat bottom (already at bottom after right arc ends at (cx+flat_hw, bottom))
             pts.push(egui::pos2(cx - flat_hw, bottom));
             // Left corner arc
             for i in 0..=16 {
-                let a = std::f32::consts::FRAC_PI_2
-                    + std::f32::consts::FRAC_PI_2 * (i as f32) / 16.0;
-                pts.push(egui::pos2(cx - flat_hw + crs * a.cos(), arc_cy + crs * a.sin()));
+                let a =
+                    std::f32::consts::FRAC_PI_2 + std::f32::consts::FRAC_PI_2 * (i as f32) / 16.0;
+                pts.push(egui::pos2(
+                    cx - flat_hw + crs * a.cos(),
+                    arc_cy + crs * a.sin(),
+                ));
             }
             painter.add(egui::Shape::line(pts, stroke));
         }
@@ -308,7 +317,10 @@ fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
             let end_a = std::f32::consts::FRAC_PI_2 * 3.0 - alpha;
             for i in 0..=32 {
                 let a = start_a + (end_a - start_a) * (i as f32) / 32.0;
-                pts.push(egui::pos2(cx - ball_r * a.cos(), ball_cy + ball_r * a.sin()));
+                pts.push(egui::pos2(
+                    cx - ball_r * a.cos(),
+                    ball_cy + ball_r * a.sin(),
+                ));
             }
             // Right junction up to shaft
             pts.push(egui::pos2(cx + shaft_hw, top));
@@ -320,6 +332,9 @@ fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
     // Center line
     painter.line_segment(
         [egui::pos2(cx, rect.top() + 5.0), egui::pos2(cx, bottom)],
-        egui::Stroke::new(0.5, egui::Color32::from_rgba_premultiplied(80, 80, 100, 100)),
+        egui::Stroke::new(
+            0.5,
+            egui::Color32::from_rgba_premultiplied(80, 80, 100, 100),
+        ),
     );
 }

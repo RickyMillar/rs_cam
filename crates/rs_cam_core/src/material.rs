@@ -148,17 +148,33 @@ impl FoamDensity {
 /// Material being cut. Determines chip load scaling and power requirements.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Material {
-    SolidWood { species: WoodSpecies },
-    Plywood { grade: PlywoodGrade },
-    SheetGood { kind: SheetGoodKind },
-    Plastic { family: PlasticFamily },
-    Foam { density: FoamDensity },
-    Custom { name: String, hardness_index: f64, kc: f64 },
+    SolidWood {
+        species: WoodSpecies,
+    },
+    Plywood {
+        grade: PlywoodGrade,
+    },
+    SheetGood {
+        kind: SheetGoodKind,
+    },
+    Plastic {
+        family: PlasticFamily,
+    },
+    Foam {
+        density: FoamDensity,
+    },
+    Custom {
+        name: String,
+        hardness_index: f64,
+        kc: f64,
+    },
 }
 
 impl Default for Material {
     fn default() -> Self {
-        Material::SolidWood { species: WoodSpecies::GenericSoftwood }
+        Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        }
     }
 }
 
@@ -231,33 +247,148 @@ impl Material {
     pub fn catalog() -> Vec<(&'static str, Material)> {
         vec![
             // Wood
-            ("Softwood (Pine/Spruce)", Material::SolidWood { species: WoodSpecies::GenericSoftwood }),
-            ("Radiata Pine", Material::SolidWood { species: WoodSpecies::RadiataPine }),
-            ("Southern Yellow Pine", Material::SolidWood { species: WoodSpecies::SouthernYellowPine }),
-            ("Hardwood (Generic)", Material::SolidWood { species: WoodSpecies::GenericHardwood }),
-            ("Hard Maple", Material::SolidWood { species: WoodSpecies::HardMaple }),
-            ("Walnut", Material::SolidWood { species: WoodSpecies::Walnut }),
-            ("Birch", Material::SolidWood { species: WoodSpecies::Birch }),
-            ("White Oak", Material::SolidWood { species: WoodSpecies::WhiteOak }),
-            ("Jarrah", Material::SolidWood { species: WoodSpecies::Jarrah }),
-            ("Ipe", Material::SolidWood { species: WoodSpecies::Ipe }),
+            (
+                "Softwood (Pine/Spruce)",
+                Material::SolidWood {
+                    species: WoodSpecies::GenericSoftwood,
+                },
+            ),
+            (
+                "Radiata Pine",
+                Material::SolidWood {
+                    species: WoodSpecies::RadiataPine,
+                },
+            ),
+            (
+                "Southern Yellow Pine",
+                Material::SolidWood {
+                    species: WoodSpecies::SouthernYellowPine,
+                },
+            ),
+            (
+                "Hardwood (Generic)",
+                Material::SolidWood {
+                    species: WoodSpecies::GenericHardwood,
+                },
+            ),
+            (
+                "Hard Maple",
+                Material::SolidWood {
+                    species: WoodSpecies::HardMaple,
+                },
+            ),
+            (
+                "Walnut",
+                Material::SolidWood {
+                    species: WoodSpecies::Walnut,
+                },
+            ),
+            (
+                "Birch",
+                Material::SolidWood {
+                    species: WoodSpecies::Birch,
+                },
+            ),
+            (
+                "White Oak",
+                Material::SolidWood {
+                    species: WoodSpecies::WhiteOak,
+                },
+            ),
+            (
+                "Jarrah",
+                Material::SolidWood {
+                    species: WoodSpecies::Jarrah,
+                },
+            ),
+            (
+                "Ipe",
+                Material::SolidWood {
+                    species: WoodSpecies::Ipe,
+                },
+            ),
             // Plywood
-            ("Softwood Plywood", Material::Plywood { grade: PlywoodGrade::Softwood }),
-            ("Baltic Birch Plywood", Material::Plywood { grade: PlywoodGrade::BalticBirch }),
-            ("Hardwood Faced Plywood", Material::Plywood { grade: PlywoodGrade::HardwoodFaced }),
+            (
+                "Softwood Plywood",
+                Material::Plywood {
+                    grade: PlywoodGrade::Softwood,
+                },
+            ),
+            (
+                "Baltic Birch Plywood",
+                Material::Plywood {
+                    grade: PlywoodGrade::BalticBirch,
+                },
+            ),
+            (
+                "Hardwood Faced Plywood",
+                Material::Plywood {
+                    grade: PlywoodGrade::HardwoodFaced,
+                },
+            ),
             // Sheet goods
-            ("MDF", Material::SheetGood { kind: SheetGoodKind::Mdf }),
-            ("HDF", Material::SheetGood { kind: SheetGoodKind::Hdf }),
-            ("Particleboard", Material::SheetGood { kind: SheetGoodKind::Particleboard }),
+            (
+                "MDF",
+                Material::SheetGood {
+                    kind: SheetGoodKind::Mdf,
+                },
+            ),
+            (
+                "HDF",
+                Material::SheetGood {
+                    kind: SheetGoodKind::Hdf,
+                },
+            ),
+            (
+                "Particleboard",
+                Material::SheetGood {
+                    kind: SheetGoodKind::Particleboard,
+                },
+            ),
             // Plastic
-            ("Acrylic", Material::Plastic { family: PlasticFamily::Acrylic }),
-            ("HDPE", Material::Plastic { family: PlasticFamily::Hdpe }),
-            ("Delrin", Material::Plastic { family: PlasticFamily::Delrin }),
-            ("Polycarbonate", Material::Plastic { family: PlasticFamily::Polycarbonate }),
+            (
+                "Acrylic",
+                Material::Plastic {
+                    family: PlasticFamily::Acrylic,
+                },
+            ),
+            (
+                "HDPE",
+                Material::Plastic {
+                    family: PlasticFamily::Hdpe,
+                },
+            ),
+            (
+                "Delrin",
+                Material::Plastic {
+                    family: PlasticFamily::Delrin,
+                },
+            ),
+            (
+                "Polycarbonate",
+                Material::Plastic {
+                    family: PlasticFamily::Polycarbonate,
+                },
+            ),
             // Foam
-            ("Foam (Low Density)", Material::Foam { density: FoamDensity::Low }),
-            ("Foam (Medium Density)", Material::Foam { density: FoamDensity::Medium }),
-            ("Foam (High Density)", Material::Foam { density: FoamDensity::High }),
+            (
+                "Foam (Low Density)",
+                Material::Foam {
+                    density: FoamDensity::Low,
+                },
+            ),
+            (
+                "Foam (Medium Density)",
+                Material::Foam {
+                    density: FoamDensity::Medium,
+                },
+            ),
+            (
+                "Foam (High Density)",
+                Material::Foam {
+                    density: FoamDensity::High,
+                },
+            ),
         ]
     }
 
@@ -275,29 +406,34 @@ impl Material {
                 WoodSpecies::WhiteOak => "white_oak",
                 WoodSpecies::Jarrah => "jarrah",
                 WoodSpecies::Ipe => "ipe",
-            }.to_string(),
+            }
+            .to_string(),
             Material::Plywood { grade } => match grade {
                 PlywoodGrade::Softwood => "plywood_softwood",
                 PlywoodGrade::BalticBirch => "baltic_birch",
                 PlywoodGrade::HardwoodFaced => "plywood_hardwood",
-            }.to_string(),
+            }
+            .to_string(),
             Material::SheetGood { kind } => match kind {
                 SheetGoodKind::Mdf => "mdf",
                 SheetGoodKind::Hdf => "hdf",
                 SheetGoodKind::Particleboard => "particleboard",
-            }.to_string(),
+            }
+            .to_string(),
             Material::Plastic { family } => match family {
                 PlasticFamily::Generic => "plastic",
                 PlasticFamily::Acrylic => "acrylic",
                 PlasticFamily::Hdpe => "hdpe",
                 PlasticFamily::Delrin => "delrin",
                 PlasticFamily::Polycarbonate => "polycarbonate",
-            }.to_string(),
+            }
+            .to_string(),
             Material::Foam { density } => match density {
                 FoamDensity::Low => "foam_low",
                 FoamDensity::Medium => "foam_medium",
                 FoamDensity::High => "foam_high",
-            }.to_string(),
+            }
+            .to_string(),
             Material::Custom { name, .. } => format!("custom:{name}"),
         }
     }
@@ -305,30 +441,78 @@ impl Material {
     /// Parse from TOML key. Returns default softwood if unrecognized.
     pub fn from_key(key: &str) -> Self {
         match key {
-            "softwood" => Material::SolidWood { species: WoodSpecies::GenericSoftwood },
-            "radiata_pine" => Material::SolidWood { species: WoodSpecies::RadiataPine },
-            "southern_yellow_pine" => Material::SolidWood { species: WoodSpecies::SouthernYellowPine },
-            "hardwood" => Material::SolidWood { species: WoodSpecies::GenericHardwood },
-            "hard_maple" => Material::SolidWood { species: WoodSpecies::HardMaple },
-            "walnut" => Material::SolidWood { species: WoodSpecies::Walnut },
-            "birch" => Material::SolidWood { species: WoodSpecies::Birch },
-            "white_oak" => Material::SolidWood { species: WoodSpecies::WhiteOak },
-            "jarrah" => Material::SolidWood { species: WoodSpecies::Jarrah },
-            "ipe" => Material::SolidWood { species: WoodSpecies::Ipe },
-            "plywood_softwood" => Material::Plywood { grade: PlywoodGrade::Softwood },
-            "baltic_birch" => Material::Plywood { grade: PlywoodGrade::BalticBirch },
-            "plywood_hardwood" => Material::Plywood { grade: PlywoodGrade::HardwoodFaced },
-            "mdf" => Material::SheetGood { kind: SheetGoodKind::Mdf },
-            "hdf" => Material::SheetGood { kind: SheetGoodKind::Hdf },
-            "particleboard" => Material::SheetGood { kind: SheetGoodKind::Particleboard },
-            "plastic" => Material::Plastic { family: PlasticFamily::Generic },
-            "acrylic" => Material::Plastic { family: PlasticFamily::Acrylic },
-            "hdpe" => Material::Plastic { family: PlasticFamily::Hdpe },
-            "delrin" => Material::Plastic { family: PlasticFamily::Delrin },
-            "polycarbonate" => Material::Plastic { family: PlasticFamily::Polycarbonate },
-            "foam_low" => Material::Foam { density: FoamDensity::Low },
-            "foam_medium" => Material::Foam { density: FoamDensity::Medium },
-            "foam_high" => Material::Foam { density: FoamDensity::High },
+            "softwood" => Material::SolidWood {
+                species: WoodSpecies::GenericSoftwood,
+            },
+            "radiata_pine" => Material::SolidWood {
+                species: WoodSpecies::RadiataPine,
+            },
+            "southern_yellow_pine" => Material::SolidWood {
+                species: WoodSpecies::SouthernYellowPine,
+            },
+            "hardwood" => Material::SolidWood {
+                species: WoodSpecies::GenericHardwood,
+            },
+            "hard_maple" => Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            "walnut" => Material::SolidWood {
+                species: WoodSpecies::Walnut,
+            },
+            "birch" => Material::SolidWood {
+                species: WoodSpecies::Birch,
+            },
+            "white_oak" => Material::SolidWood {
+                species: WoodSpecies::WhiteOak,
+            },
+            "jarrah" => Material::SolidWood {
+                species: WoodSpecies::Jarrah,
+            },
+            "ipe" => Material::SolidWood {
+                species: WoodSpecies::Ipe,
+            },
+            "plywood_softwood" => Material::Plywood {
+                grade: PlywoodGrade::Softwood,
+            },
+            "baltic_birch" => Material::Plywood {
+                grade: PlywoodGrade::BalticBirch,
+            },
+            "plywood_hardwood" => Material::Plywood {
+                grade: PlywoodGrade::HardwoodFaced,
+            },
+            "mdf" => Material::SheetGood {
+                kind: SheetGoodKind::Mdf,
+            },
+            "hdf" => Material::SheetGood {
+                kind: SheetGoodKind::Hdf,
+            },
+            "particleboard" => Material::SheetGood {
+                kind: SheetGoodKind::Particleboard,
+            },
+            "plastic" => Material::Plastic {
+                family: PlasticFamily::Generic,
+            },
+            "acrylic" => Material::Plastic {
+                family: PlasticFamily::Acrylic,
+            },
+            "hdpe" => Material::Plastic {
+                family: PlasticFamily::Hdpe,
+            },
+            "delrin" => Material::Plastic {
+                family: PlasticFamily::Delrin,
+            },
+            "polycarbonate" => Material::Plastic {
+                family: PlasticFamily::Polycarbonate,
+            },
+            "foam_low" => Material::Foam {
+                density: FoamDensity::Low,
+            },
+            "foam_medium" => Material::Foam {
+                density: FoamDensity::Medium,
+            },
+            "foam_high" => Material::Foam {
+                density: FoamDensity::High,
+            },
             _ => Material::default(),
         }
     }
@@ -340,52 +524,99 @@ mod tests {
 
     #[test]
     fn test_softwood_baseline_hardness_is_one() {
-        let m = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
+        let m = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
         assert!((m.hardness_index() - 1.0).abs() < 0.01);
     }
 
     #[test]
     fn test_hardness_index_ordering() {
-        let soft = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
-        let hard = Material::SolidWood { species: WoodSpecies::HardMaple };
-        let ipe = Material::SolidWood { species: WoodSpecies::Ipe };
+        let soft = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
+        let hard = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let ipe = Material::SolidWood {
+            species: WoodSpecies::Ipe,
+        };
         assert!(soft.hardness_index() < hard.hardness_index());
         assert!(hard.hardness_index() < ipe.hardness_index());
     }
 
     #[test]
     fn test_kc_progression() {
-        let soft = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
-        let hard = Material::SolidWood { species: WoodSpecies::HardMaple };
-        let ipe = Material::SolidWood { species: WoodSpecies::Ipe };
+        let soft = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
+        let hard = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let ipe = Material::SolidWood {
+            species: WoodSpecies::Ipe,
+        };
         assert!(soft.kc_n_per_mm2() < hard.kc_n_per_mm2());
         assert!(hard.kc_n_per_mm2() < ipe.kc_n_per_mm2());
     }
 
     #[test]
     fn test_sheet_good_kc_progression() {
-        let mdf = Material::SheetGood { kind: SheetGoodKind::Mdf }.kc_n_per_mm2();
-        let hdf = Material::SheetGood { kind: SheetGoodKind::Hdf }.kc_n_per_mm2();
-        let particle = Material::SheetGood { kind: SheetGoodKind::Particleboard }.kc_n_per_mm2();
+        let mdf = Material::SheetGood {
+            kind: SheetGoodKind::Mdf,
+        }
+        .kc_n_per_mm2();
+        let hdf = Material::SheetGood {
+            kind: SheetGoodKind::Hdf,
+        }
+        .kc_n_per_mm2();
+        let particle = Material::SheetGood {
+            kind: SheetGoodKind::Particleboard,
+        }
+        .kc_n_per_mm2();
         assert!(hdf > mdf);
         assert!(mdf > particle);
     }
 
     #[test]
     fn test_foam_is_softer_than_wood() {
-        let foam = Material::Foam { density: FoamDensity::High };
-        let soft_wood = Material::SolidWood { species: WoodSpecies::GenericSoftwood };
+        let foam = Material::Foam {
+            density: FoamDensity::High,
+        };
+        let soft_wood = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
         assert!(foam.hardness_index() < soft_wood.hardness_index());
     }
 
     #[test]
     fn test_catalog_has_all_families() {
         let catalog = Material::catalog();
-        assert!(catalog.iter().any(|(_, m)| matches!(m, Material::SolidWood { .. })));
-        assert!(catalog.iter().any(|(_, m)| matches!(m, Material::Plywood { .. })));
-        assert!(catalog.iter().any(|(_, m)| matches!(m, Material::SheetGood { .. })));
-        assert!(catalog.iter().any(|(_, m)| matches!(m, Material::Plastic { .. })));
-        assert!(catalog.iter().any(|(_, m)| matches!(m, Material::Foam { .. })));
+        assert!(
+            catalog
+                .iter()
+                .any(|(_, m)| matches!(m, Material::SolidWood { .. }))
+        );
+        assert!(
+            catalog
+                .iter()
+                .any(|(_, m)| matches!(m, Material::Plywood { .. }))
+        );
+        assert!(
+            catalog
+                .iter()
+                .any(|(_, m)| matches!(m, Material::SheetGood { .. }))
+        );
+        assert!(
+            catalog
+                .iter()
+                .any(|(_, m)| matches!(m, Material::Plastic { .. }))
+        );
+        assert!(
+            catalog
+                .iter()
+                .any(|(_, m)| matches!(m, Material::Foam { .. }))
+        );
     }
 
     #[test]
@@ -400,7 +631,9 @@ mod tests {
     #[test]
     fn test_hard_maple_hardness_matches_reference() {
         // Reference: (1450/600)^0.4 ≈ 1.425
-        let m = Material::SolidWood { species: WoodSpecies::HardMaple };
+        let m = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
         assert!((m.hardness_index() - 1.425).abs() < 0.01);
     }
 }

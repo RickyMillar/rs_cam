@@ -14,8 +14,12 @@
 //!
 //! Reference: research/02_algorithms.md §5
 
+pub(crate) use crate::adaptive_shared::{
+    angle_diff, average_angles, blend_corners, refine_angle_bracket, target_engagement_fraction,
+};
 use crate::geo::P2;
-use crate::polygon::{offset_polygon, Polygon2};
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
+use crate::polygon::{Polygon2, offset_polygon};
 use crate::toolpath::Toolpath;
 
 use std::collections::VecDeque;
@@ -156,12 +160,14 @@ impl MaterialGrid {
     /// Clear a circle of material (mark as CELL_CLEARED).
     pub fn clear_circle(&mut self, cx: f64, cy: f64, radius: f64) {
         let r_sq = radius * radius;
-        let col_min = ((cx - radius - self.origin_x) / self.cell_size).floor().max(0.0) as usize;
-        let col_max =
-            ((cx + radius - self.origin_x) / self.cell_size).ceil() as usize;
-        let row_min = ((cy - radius - self.origin_y) / self.cell_size).floor().max(0.0) as usize;
-        let row_max =
-            ((cy + radius - self.origin_y) / self.cell_size).ceil() as usize;
+        let col_min = ((cx - radius - self.origin_x) / self.cell_size)
+            .floor()
+            .max(0.0) as usize;
+        let col_max = ((cx + radius - self.origin_x) / self.cell_size).ceil() as usize;
+        let row_min = ((cy - radius - self.origin_y) / self.cell_size)
+            .floor()
+            .max(0.0) as usize;
+        let row_max = ((cy + radius - self.origin_y) / self.cell_size).ceil() as usize;
 
         let col_max = col_max.min(self.cols - 1);
         let row_max = row_max.min(self.rows - 1);
@@ -209,9 +215,8 @@ impl MaterialGrid {
     /// Returns the world coordinates of the cell center, or None if no material remains.
     pub fn find_nearest_material(&self, x: f64, y: f64) -> Option<(f64, f64)> {
         let initial_radius = self.cell_size * 8.0;
-        let max_radius = (self.cols as f64 * self.cell_size)
-            .max(self.rows as f64 * self.cell_size)
-            * 1.5;
+        let max_radius =
+            (self.cols as f64 * self.cell_size).max(self.rows as f64 * self.cell_size) * 1.5;
 
         let mut radius = initial_radius;
         while radius <= max_radius {
@@ -226,11 +231,15 @@ impl MaterialGrid {
 
     /// Search for nearest material within a given radius from (x, y).
     fn find_nearest_material_in_radius(&self, x: f64, y: f64, radius: f64) -> Option<(f64, f64)> {
-        let col_min = ((x - radius - self.origin_x) / self.cell_size).floor().max(0.0) as usize;
+        let col_min = ((x - radius - self.origin_x) / self.cell_size)
+            .floor()
+            .max(0.0) as usize;
         let col_max = ((x + radius - self.origin_x) / self.cell_size)
             .ceil()
             .min(self.cols.saturating_sub(1) as f64) as usize;
-        let row_min = ((y - radius - self.origin_y) / self.cell_size).floor().max(0.0) as usize;
+        let row_min = ((y - radius - self.origin_y) / self.cell_size)
+            .floor()
+            .max(0.0) as usize;
         let row_max = ((y + radius - self.origin_y) / self.cell_size)
             .ceil()
             .min(self.rows.saturating_sub(1) as f64) as usize;
@@ -373,12 +382,14 @@ fn polygon_bbox(pts: &[P2]) -> (f64, f64, f64, f64) {
 /// Returns a value in [0.0, 1.0].
 pub(crate) fn compute_engagement(grid: &MaterialGrid, cx: f64, cy: f64, radius: f64) -> f64 {
     let r_sq = radius * radius;
-    let col_min = ((cx - radius - grid.origin_x) / grid.cell_size).floor().max(0.0) as usize;
-    let col_max =
-        ((cx + radius - grid.origin_x) / grid.cell_size).ceil() as usize;
-    let row_min = ((cy - radius - grid.origin_y) / grid.cell_size).floor().max(0.0) as usize;
-    let row_max =
-        ((cy + radius - grid.origin_y) / grid.cell_size).ceil() as usize;
+    let col_min = ((cx - radius - grid.origin_x) / grid.cell_size)
+        .floor()
+        .max(0.0) as usize;
+    let col_max = ((cx + radius - grid.origin_x) / grid.cell_size).ceil() as usize;
+    let row_min = ((cy - radius - grid.origin_y) / grid.cell_size)
+        .floor()
+        .max(0.0) as usize;
+    let row_max = ((cy + radius - grid.origin_y) / grid.cell_size).ceil() as usize;
 
     let col_max = col_max.min(grid.cols.saturating_sub(1));
     let row_max = row_max.min(grid.rows.saturating_sub(1));
@@ -411,16 +422,6 @@ pub(crate) fn compute_engagement(grid: &MaterialGrid, cx: f64, cy: f64, radius: 
     material_cells as f64 / total_cells as f64
 }
 
-/// Compute the target engagement fraction from stepover and tool radius.
-///
-/// Uses the engagement angle formula: α = arccos(1 - WOC/R)
-/// Then converts to fraction of full circle.
-pub(crate) fn target_engagement_fraction(stepover: f64, tool_radius: f64) -> f64 {
-    let woc = stepover.min(2.0 * tool_radius);
-    let alpha = (1.0 - woc / tool_radius).clamp(-1.0, 1.0).acos();
-    alpha / TAU
-}
-
 // ── Direction search ───────────────────────────────────────────────────
 
 /// Search for the best direction to move from (cx, cy) that produces
@@ -439,6 +440,7 @@ pub(crate) fn target_engagement_fraction(stepover: f64, tool_radius: f64) -> f64
 ///
 /// When near a wall (boundary_distance < 2 × tool_radius), a tangential
 /// bias steers the tool along the wall instead of into it.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn search_direction(
     grid: &MaterialGrid,
     machinable_mask: &[bool],
@@ -456,8 +458,8 @@ pub(crate) fn search_direction(
 
     let wall_threshold = 2.0 * tool_radius;
 
-    // Helper: evaluate a candidate angle, returns (engagement, score) or None
-    let eval_candidate = |angle: f64| -> Option<(f64, f64)> {
+    // Helper: evaluate a candidate angle, returns (angle, engagement, score) or None.
+    let eval_candidate = |angle: f64| -> Option<(f64, f64, f64)> {
         let nx = cx + step_len * angle.cos();
         let ny = cy + step_len * angle.sin();
 
@@ -492,70 +494,51 @@ pub(crate) fn search_direction(
         };
 
         let score = error + angle_penalty * 0.12 + wall_bias;
-        Some((engagement, score))
+        Some((angle, engagement, score))
     };
 
     // ── Phase 1: Narrow interpolation search ──────────────────────────
     // 7 candidates at ±0°, ±15°, ±30°, ±45° from prev_angle
     {
-        let offsets = [0.0, PI / 12.0, -PI / 12.0, PI / 6.0, -PI / 6.0, PI / 4.0, -PI / 4.0];
+        let offsets = [
+            0.0,
+            PI / 12.0,
+            -PI / 12.0,
+            PI / 6.0,
+            -PI / 6.0,
+            PI / 4.0,
+            -PI / 4.0,
+        ];
         let mut best_good: Option<(f64, f64)> = None; // (score, angle)
-        let mut lo_bracket: Option<(f64, f64)> = None; // (angle, engagement) below target
-        let mut hi_bracket: Option<(f64, f64)> = None; // (angle, engagement) above target
+        let mut lo_bracket: Option<(f64, f64, f64)> = None; // (angle, engagement, score)
+        let mut hi_bracket: Option<(f64, f64, f64)> = None; // (angle, engagement, score)
 
         for &offset in &offsets {
             let angle = prev_angle + offset;
-            if let Some((eng, score)) = eval_candidate(angle) {
+            if let Some((angle, eng, score)) = eval_candidate(angle) {
                 // Track engagement brackets for interpolation
                 if eng < target_frac {
-                    if lo_bracket.map_or(true, |b| eng > b.1) {
-                        lo_bracket = Some((angle, eng));
+                    if lo_bracket.is_none_or(|b| eng > b.1) {
+                        lo_bracket = Some((angle, eng, score));
                     }
-                } else if hi_bracket.map_or(true, |b| eng < b.1) {
-                    hi_bracket = Some((angle, eng));
+                } else if hi_bracket.is_none_or(|b| eng < b.1) {
+                    hi_bracket = Some((angle, eng, score));
                 }
 
-                if eng >= min_frac && eng <= max_frac
-                    && best_good.map_or(true, |b| score < b.0)
-                {
+                if eng >= min_frac && eng <= max_frac && best_good.is_none_or(|b| score < b.0) {
                     best_good = Some((score, angle));
                 }
             }
         }
 
-        // Interpolation refinement: if we have brackets, find the crossing
-        if let (Some((a_lo, e_lo)), Some((a_hi, e_hi))) = (lo_bracket, hi_bracket) {
-            let delta = e_hi - e_lo;
-            if delta.abs() > 0.001 {
-                let t = ((target_frac - e_lo) / delta).clamp(0.0, 1.0);
-                let interp_angle = a_lo + t * angle_diff(a_hi, a_lo);
-
-                if let Some((eng, score)) = eval_candidate(interp_angle) {
-                    if eng >= min_frac && eng <= max_frac
-                        && best_good.map_or(true, |b| score < b.0)
-                    {
-                        best_good = Some((score, interp_angle));
-                    }
-
-                    // Second refinement iteration
-                    let (new_lo, new_hi) = if eng < target_frac {
-                        ((interp_angle, eng), (a_hi, e_hi))
-                    } else {
-                        ((a_lo, e_lo), (interp_angle, eng))
-                    };
-                    let delta2 = new_hi.1 - new_lo.1;
-                    if delta2.abs() > 0.001 {
-                        let t2 = ((target_frac - new_lo.1) / delta2).clamp(0.0, 1.0);
-                        let refined = new_lo.0 + t2 * angle_diff(new_hi.0, new_lo.0);
-                        if let Some((eng2, score2)) = eval_candidate(refined)
-                            && eng2 >= min_frac && eng2 <= max_frac
-                            && best_good.map_or(true, |b| score2 < b.0)
-                        {
-                            best_good = Some((score2, refined));
-                        }
-                    }
-                }
-            }
+        if let (Some(lo), Some(hi)) = (lo_bracket, hi_bracket)
+            && let Some((angle, eng, score)) =
+                refine_angle_bracket(lo, hi, target_frac, 2, &eval_candidate)
+            && eng >= min_frac
+            && eng <= max_frac
+            && best_good.is_none_or(|b| score < b.0)
+        {
+            best_good = Some((score, angle));
         }
 
         if let Some((_, angle)) = best_good {
@@ -570,63 +553,40 @@ pub(crate) fn search_direction(
         let n_coarse = 18;
         let mut best_good: Option<(f64, f64)> = None; // (score, angle)
         let mut best_any: Option<(f64, f64)> = None;
-        let mut coarse_lo: Option<(f64, f64)> = None; // (angle, engagement) below target
-        let mut coarse_hi: Option<(f64, f64)> = None; // (angle, engagement) above target
+        let mut coarse_lo: Option<(f64, f64, f64)> = None; // (angle, engagement, score)
+        let mut coarse_hi: Option<(f64, f64, f64)> = None; // (angle, engagement, score)
 
         for i in 0..n_coarse {
             let angle = (i as f64 / n_coarse as f64) * TAU;
-            if let Some((eng, score)) = eval_candidate(angle) {
-                if eng >= min_frac && eng <= max_frac
-                    && best_good.map_or(true, |b| score < b.0)
-                {
+            if let Some((angle, eng, score)) = eval_candidate(angle) {
+                if eng >= min_frac && eng <= max_frac && best_good.is_none_or(|b| score < b.0) {
                     best_good = Some((score, angle));
                 }
-                if best_any.map_or(true, |b| score < b.0) {
+                if best_any.is_none_or(|b| score < b.0) {
                     best_any = Some((score, angle));
                 }
                 if eng < target_frac {
-                    if coarse_lo.map_or(true, |b| (eng - target_frac).abs() < (b.1 - target_frac).abs()) {
-                        coarse_lo = Some((angle, eng));
+                    if coarse_lo
+                        .is_none_or(|b| (eng - target_frac).abs() < (b.1 - target_frac).abs())
+                    {
+                        coarse_lo = Some((angle, eng, score));
                     }
-                } else if coarse_hi.map_or(true, |b| (eng - target_frac).abs() < (b.1 - target_frac).abs()) {
-                    coarse_hi = Some((angle, eng));
+                } else if coarse_hi
+                    .is_none_or(|b| (eng - target_frac).abs() < (b.1 - target_frac).abs())
+                {
+                    coarse_hi = Some((angle, eng, score));
                 }
             }
         }
 
-        // Bracket refinement: 2-3 interpolation iterations
-        if let (Some(lo), Some(hi)) = (coarse_lo, coarse_hi) {
-            let delta = hi.1 - lo.1;
-            if delta.abs() > 0.001 {
-                let t = ((target_frac - lo.1) / delta).clamp(0.0, 1.0);
-                let interp_angle = lo.0 + t * angle_diff(hi.0, lo.0);
-
-                if let Some((eng, score)) = eval_candidate(interp_angle) {
-                    if eng >= min_frac && eng <= max_frac
-                        && best_good.map_or(true, |b| score < b.0)
-                    {
-                        best_good = Some((score, interp_angle));
-                    }
-
-                    // Second refinement
-                    let (new_lo, new_hi) = if eng < target_frac {
-                        ((interp_angle, eng), hi)
-                    } else {
-                        (lo, (interp_angle, eng))
-                    };
-                    let d2 = new_hi.1 - new_lo.1;
-                    if d2.abs() > 0.001 {
-                        let t2 = ((target_frac - new_lo.1) / d2).clamp(0.0, 1.0);
-                        let refined = new_lo.0 + t2 * angle_diff(new_hi.0, new_lo.0);
-                        if let Some((eng2, score2)) = eval_candidate(refined)
-                            && eng2 >= min_frac && eng2 <= max_frac
-                            && best_good.map_or(true, |b| score2 < b.0)
-                        {
-                            best_good = Some((score2, refined));
-                        }
-                    }
-                }
-            }
+        if let (Some(lo), Some(hi)) = (coarse_lo, coarse_hi)
+            && let Some((angle, eng, score)) =
+                refine_angle_bracket(lo, hi, target_frac, 2, eval_candidate)
+            && eng >= min_frac
+            && eng <= max_frac
+            && best_good.is_none_or(|b| score < b.0)
+        {
+            best_good = Some((score, angle));
         }
 
         if let Some((_, angle)) = best_good {
@@ -634,30 +594,6 @@ pub(crate) fn search_direction(
         }
         best_any.map(|(_, a)| a)
     }
-}
-
-/// Average a buffer of angles, handling wraparound correctly.
-/// Uses vector averaging: sum unit vectors, then take atan2.
-pub(crate) fn average_angles(angles: &[f64]) -> f64 {
-    let mut sx = 0.0;
-    let mut sy = 0.0;
-    for &a in angles {
-        sx += a.cos();
-        sy += a.sin();
-    }
-    sy.atan2(sx)
-}
-
-/// Normalize an angle difference to [-π, π].
-pub(crate) fn angle_diff(a: f64, b: f64) -> f64 {
-    let mut d = a - b;
-    while d > PI {
-        d -= TAU;
-    }
-    while d < -PI {
-        d += TAU;
-    }
-    d
 }
 
 // ── Entry point finding ────────────────────────────────────────────────
@@ -673,9 +609,8 @@ fn find_nearest_material_spread(
     min_dist_sq: f64,
 ) -> Option<(f64, f64)> {
     let initial_radius = grid.cell_size * 8.0;
-    let max_radius = (grid.cols as f64 * grid.cell_size)
-        .max(grid.rows as f64 * grid.cell_size)
-        * 1.5;
+    let max_radius =
+        (grid.cols as f64 * grid.cell_size).max(grid.rows as f64 * grid.cell_size) * 1.5;
 
     let mut radius = initial_radius;
     while radius <= max_radius {
@@ -697,11 +632,15 @@ fn find_nearest_material_spread_in_radius(
     min_dist_sq: f64,
     radius: f64,
 ) -> Option<(f64, f64)> {
-    let col_min = ((x - radius - grid.origin_x) / grid.cell_size).floor().max(0.0) as usize;
+    let col_min = ((x - radius - grid.origin_x) / grid.cell_size)
+        .floor()
+        .max(0.0) as usize;
     let col_max = ((x + radius - grid.origin_x) / grid.cell_size)
         .ceil()
         .min(grid.cols.saturating_sub(1) as f64) as usize;
-    let row_min = ((y - radius - grid.origin_y) / grid.cell_size).floor().max(0.0) as usize;
+    let row_min = ((y - radius - grid.origin_y) / grid.cell_size)
+        .floor()
+        .max(0.0) as usize;
     let row_max = ((y + radius - grid.origin_y) / grid.cell_size)
         .ceil()
         .min(grid.rows.saturating_sub(1) as f64) as usize;
@@ -783,9 +722,7 @@ fn walk_boundary_for_entry(
             }
 
             let eng = compute_engagement(grid, x, y, tool_radius);
-            if eng > engage_threshold
-                && best.map_or(true, |b| eng > b.1)
-            {
+            if eng > engage_threshold && best.is_none_or(|b| eng > b.1) {
                 best = Some((P2::new(x, y), eng));
             }
         }
@@ -831,8 +768,7 @@ pub(crate) fn find_entry_point(
             walk_step,
             pass_endpoints,
             min_endpoint_dist_sq,
-        )
-            && best_boundary.map_or(true, |b| eng > b.1)
+        ) && best_boundary.is_none_or(|b| eng > b.1)
         {
             best_boundary = Some((p, eng));
         }
@@ -901,13 +837,7 @@ pub(crate) fn find_entry_point(
 /// cut depth. The entire path must be within the machinable region, and
 /// at most 20% of the path may cross uncut material (thin strips are OK —
 /// the tool handles light engagement during a link move).
-fn is_clear_path(
-    grid: &MaterialGrid,
-    mask: &[bool],
-    from: P2,
-    to: P2,
-    _tool_radius: f64,
-) -> bool {
+fn is_clear_path(grid: &MaterialGrid, mask: &[bool], from: P2, to: P2, _tool_radius: f64) -> bool {
     let dx = to.x - from.x;
     let dy = to.y - from.y;
     let len = (dx * dx + dy * dy).sqrt();
@@ -957,11 +887,12 @@ fn adaptive_segments(
     stepover: f64,
     tolerance: f64,
     slot_clearing: bool,
-) -> Vec<AdaptiveSegment> {
+    cancel: &dyn CancelCheck,
+) -> Result<Vec<AdaptiveSegment>, Cancelled> {
     // Inset polygon by tool radius to get the machinable region
     let machinable_vec = offset_polygon(polygon, tool_radius);
     if machinable_vec.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let machinable = &machinable_vec[0];
 
@@ -997,10 +928,10 @@ fn adaptive_segments(
         let slot_angle = if w >= h { 0.0 } else { 90.0 };
         // Use large stepover to get a single center line
         let perp_span = if w >= h { h } else { w };
-        let slot_lines =
-            crate::zigzag::zigzag_lines(polygon, tool_radius, perp_span, slot_angle);
+        let slot_lines = crate::zigzag::zigzag_lines(polygon, tool_radius, perp_span, slot_angle);
 
         for line in &slot_lines {
+            check_cancel(cancel)?;
             segments.push(AdaptiveSegment::Rapid(line[0]));
 
             // Walk along the line and clear material in the grid
@@ -1025,6 +956,7 @@ fn adaptive_segments(
     let mut pass_count = 0;
 
     while grid.material_fraction() > 0.01 && pass_count < max_passes {
+        check_cancel(cancel)?;
         pass_count += 1;
 
         // Find entry point (spread away from previous endpoints)
@@ -1082,6 +1014,7 @@ fn adaptive_segments(
         let max_steps = 5000;
         let mut idle_count = 0;
         for _ in 0..max_steps {
+            check_cancel(cancel)?;
             let before = grid.material_count;
 
             // Smoothed direction: average recent angles for prev_angle hint
@@ -1170,6 +1103,7 @@ fn adaptive_segments(
     }
 
     for boundary in &contours {
+        check_cancel(cancel)?;
         segments.push(AdaptiveSegment::Rapid(boundary[0]));
 
         let mut cleanup_path = vec![boundary[0]];
@@ -1196,7 +1130,7 @@ fn adaptive_segments(
         segments.push(AdaptiveSegment::Cut(cleanup_path));
     }
 
-    segments
+    Ok(segments)
 }
 
 /// Simplify a path using the Douglas-Peucker algorithm.
@@ -1247,109 +1181,6 @@ pub(crate) fn simplify_path(points: &[P2], tolerance: f64) -> Vec<P2> {
     }
 }
 
-/// Blend sharp corners in a path with arcs of at least `min_radius`.
-///
-/// For each interior vertex where consecutive segments form an angle sharper
-/// than what `min_radius` allows, inserts a smooth blend arc. This prevents
-/// chatter and improves surface finish at inside corners.
-pub(crate) fn blend_corners(path: &[P2], min_radius: f64) -> Vec<P2> {
-    if min_radius <= 0.0 || path.len() < 3 {
-        return path.to_vec();
-    }
-
-    let mut result = vec![path[0]];
-
-    for i in 1..path.len() - 1 {
-        let a = path[i - 1];
-        let b = path[i];
-        let c = path[i + 1];
-
-        let ba_x = a.x - b.x;
-        let ba_y = a.y - b.y;
-        let bc_x = c.x - b.x;
-        let bc_y = c.y - b.y;
-        let ba_len = (ba_x * ba_x + ba_y * ba_y).sqrt();
-        let bc_len = (bc_x * bc_x + bc_y * bc_y).sqrt();
-
-        if ba_len < 1e-10 || bc_len < 1e-10 {
-            result.push(b);
-            continue;
-        }
-
-        // Full angle at B between the two segments
-        let cos_full = (ba_x * bc_x + ba_y * bc_y) / (ba_len * bc_len);
-        let cos_full = cos_full.clamp(-1.0, 1.0);
-        let full_angle = cos_full.acos(); // ∈ [0, π]; π = straight, 0 = U-turn
-        let half = full_angle / 2.0;
-
-        // Near-straight (>170°) or degenerate: no blend needed
-        if full_angle > 170.0_f64.to_radians() || half < 0.02 {
-            result.push(b);
-            continue;
-        }
-
-        // Setback distance from B along each edge to start/end the arc
-        let setback = min_radius / half.tan();
-
-        // Only blend if setback fits within both segments (max 40% of each)
-        if setback > ba_len * 0.4 || setback > bc_len * 0.4 {
-            result.push(b);
-            continue;
-        }
-
-        // Tangent points: where the arc meets each segment
-        let t1 = P2::new(
-            b.x + ba_x / ba_len * setback,
-            b.y + ba_y / ba_len * setback,
-        );
-        let t2 = P2::new(
-            b.x + bc_x / bc_len * setback,
-            b.y + bc_y / bc_len * setback,
-        );
-
-        // Arc center: along the angle bisector from B at the correct distance
-        let bis_x = ba_x / ba_len + bc_x / bc_len;
-        let bis_y = ba_y / ba_len + bc_y / bc_len;
-        let bis_len = (bis_x * bis_x + bis_y * bis_y).sqrt();
-        if bis_len < 1e-10 {
-            result.push(b);
-            continue;
-        }
-        let center_dist = min_radius / half.sin();
-        let arc_cx = b.x + bis_x / bis_len * center_dist;
-        let arc_cy = b.y + bis_y / bis_len * center_dist;
-
-        // Generate arc from t1 to t2 around (arc_cx, arc_cy)
-        let a1 = (t1.y - arc_cy).atan2(t1.x - arc_cx);
-        let a2 = (t2.y - arc_cy).atan2(t2.x - arc_cx);
-
-        // Shortest sweep direction
-        let mut sweep = a2 - a1;
-        if sweep > PI {
-            sweep -= TAU;
-        }
-        if sweep < -PI {
-            sweep += TAU;
-        }
-
-        // One point per ~10° of arc, minimum 2
-        let n_pts = ((sweep.abs() / (PI / 18.0)).ceil() as usize).clamp(2, 20);
-        result.push(t1);
-        for j in 1..n_pts {
-            let t = j as f64 / n_pts as f64;
-            let ang = a1 + sweep * t;
-            result.push(P2::new(
-                arc_cx + min_radius * ang.cos(),
-                arc_cy + min_radius * ang.sin(),
-            ));
-        }
-        result.push(t2);
-    }
-
-    result.push(*path.last().expect("path has at least 3 elements"));
-    result
-}
-
 // ── Public API ─────────────────────────────────────────────────────────
 
 /// Generate an adaptive clearing toolpath for a 2D polygon region.
@@ -1358,20 +1189,32 @@ pub(crate) fn blend_corners(path: &[P2], min_radius: f64) -> Vec<P2> {
 /// adjusting direction at each step. Returns a Toolpath with rapids,
 /// plunges, and feeds at the specified cut_depth.
 pub fn adaptive_toolpath(polygon: &Polygon2, params: &AdaptiveParams) -> Toolpath {
+    let never_cancel = || false;
+    adaptive_toolpath_with_cancel(polygon, params, &never_cancel)
+        .expect("non-cancellable adaptive should never be cancelled")
+}
+
+pub fn adaptive_toolpath_with_cancel(
+    polygon: &Polygon2,
+    params: &AdaptiveParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
     let segments = adaptive_segments(
         polygon,
         params.tool_radius,
         params.stepover,
         params.tolerance,
         params.slot_clearing,
-    );
+        cancel,
+    )?;
 
     let mut tp = Toolpath::new();
     if segments.is_empty() {
-        return tp;
+        return Ok(tp);
     }
 
     for segment in &segments {
+        check_cancel(cancel)?;
         match segment {
             AdaptiveSegment::Rapid(entry) => {
                 // Retract, rapid to entry, plunge
@@ -1408,10 +1251,14 @@ pub fn adaptive_toolpath(polygon: &Polygon2, params: &AdaptiveParams) -> Toolpat
 
     // Final retract
     if let Some(last) = tp.moves.last() {
-        tp.rapid_to(crate::geo::P3::new(last.target.x, last.target.y, params.safe_z));
+        tp.rapid_to(crate::geo::P3::new(
+            last.target.x,
+            last.target.y,
+            params.safe_z,
+        ));
     }
 
-    tp
+    Ok(tp)
 }
 
 #[cfg(test)]
@@ -1678,13 +1525,25 @@ mod tests {
         let machinable = offset_polygon(&sq, 3.0);
         assert!(!machinable.is_empty());
         let mask = MaterialGrid::build_machinable_mask(
-            &machinable[0], grid.origin_x, grid.origin_y,
-            grid.rows, grid.cols, grid.cell_size,
+            &machinable[0],
+            grid.origin_x,
+            grid.origin_y,
+            grid.rows,
+            grid.cols,
+            grid.cell_size,
         );
 
         let target = target_engagement_fraction(1.5, 3.0);
         let angle = search_direction(
-            &grid, &mask, 0.0, 0.0, 3.0, 1.0, target, 0.0, &boundary_dist,
+            &grid,
+            &mask,
+            0.0,
+            0.0,
+            3.0,
+            1.0,
+            target,
+            0.0,
+            &boundary_dist,
         );
         assert!(angle.is_some(), "Should find a direction in open material");
     }
@@ -1709,14 +1568,29 @@ mod tests {
             return; // polygon too small for tool
         }
         let mask = MaterialGrid::build_machinable_mask(
-            &machinable[0], grid.origin_x, grid.origin_y,
-            grid.rows, grid.cols, grid.cell_size,
+            &machinable[0],
+            grid.origin_x,
+            grid.origin_y,
+            grid.rows,
+            grid.cols,
+            grid.cell_size,
         );
         let target = target_engagement_fraction(1.0, 2.0);
         let angle = search_direction(
-            &grid, &mask, 0.0, 0.0, 2.0, 0.5, target, 0.0, &boundary_dist,
+            &grid,
+            &mask,
+            0.0,
+            0.0,
+            2.0,
+            0.5,
+            target,
+            0.0,
+            &boundary_dist,
         );
-        assert!(angle.is_none(), "Should be blocked when no material remains");
+        assert!(
+            angle.is_none(),
+            "Should be blocked when no material remains"
+        );
     }
 
     #[test]
@@ -1751,12 +1625,24 @@ mod tests {
             return;
         }
         let mask = MaterialGrid::build_machinable_mask(
-            &machinable[0], grid.origin_x, grid.origin_y,
-            grid.rows, grid.cols, grid.cell_size,
+            &machinable[0],
+            grid.origin_x,
+            grid.origin_y,
+            grid.rows,
+            grid.cols,
+            grid.cell_size,
         );
         let target = target_engagement_fraction(1.5, 2.0);
         let angle = search_direction(
-            &grid, &mask, -7.0, 0.0, 2.0, 1.0, target, 0.0, &boundary_dist,
+            &grid,
+            &mask,
+            -7.0,
+            0.0,
+            2.0,
+            1.0,
+            target,
+            0.0,
+            &boundary_dist,
         );
         assert!(angle.is_some(), "Should find a direction near wall");
     }
@@ -1774,8 +1660,12 @@ mod tests {
             return;
         }
         let mask = MaterialGrid::build_machinable_mask(
-            &machinable[0], grid.origin_x, grid.origin_y,
-            grid.rows, grid.cols, grid.cell_size,
+            &machinable[0],
+            grid.origin_x,
+            grid.origin_y,
+            grid.rows,
+            grid.cols,
+            grid.cell_size,
         );
 
         // First entry: no previous endpoints
@@ -1804,9 +1694,7 @@ mod tests {
 
     #[test]
     fn test_simplify_straight_line() {
-        let pts: Vec<P2> = (0..=10)
-            .map(|i| P2::new(i as f64, 0.0))
-            .collect();
+        let pts: Vec<P2> = (0..=10).map(|i| P2::new(i as f64, 0.0)).collect();
         let simplified = simplify_path(&pts, 0.01);
         assert_eq!(
             simplified.len(),
@@ -1824,10 +1712,7 @@ mod tests {
             P2::new(10.0, 5.0),
         ];
         let simplified = simplify_path(&pts, 0.1);
-        assert!(
-            simplified.len() >= 3,
-            "L-shape should preserve the corner"
-        );
+        assert!(simplified.len() >= 3, "L-shape should preserve the corner");
     }
 
     // ── Blend corners tests ────────────────────────────────────────────
@@ -1835,11 +1720,7 @@ mod tests {
     #[test]
     fn test_blend_corners_sharp_turn() {
         // L-shape: 90° turn
-        let path = vec![
-            P2::new(0.0, 0.0),
-            P2::new(10.0, 0.0),
-            P2::new(10.0, 10.0),
-        ];
+        let path = vec![P2::new(0.0, 0.0), P2::new(10.0, 0.0), P2::new(10.0, 10.0)];
         let blended = blend_corners(&path, 2.0);
         // Should add arc points at the corner
         assert!(
@@ -1854,27 +1735,15 @@ mod tests {
 
     #[test]
     fn test_blend_corners_straight_line_unchanged() {
-        let path = vec![
-            P2::new(0.0, 0.0),
-            P2::new(5.0, 0.0),
-            P2::new(10.0, 0.0),
-        ];
+        let path = vec![P2::new(0.0, 0.0), P2::new(5.0, 0.0), P2::new(10.0, 0.0)];
         let blended = blend_corners(&path, 2.0);
         // Nearly straight → no blending, should be 3 points (start, corner, end)
-        assert_eq!(
-            blended.len(),
-            3,
-            "Straight line should not be blended"
-        );
+        assert_eq!(blended.len(), 3, "Straight line should not be blended");
     }
 
     #[test]
     fn test_blend_corners_disabled_when_zero() {
-        let path = vec![
-            P2::new(0.0, 0.0),
-            P2::new(10.0, 0.0),
-            P2::new(10.0, 10.0),
-        ];
+        let path = vec![P2::new(0.0, 0.0), P2::new(10.0, 0.0), P2::new(10.0, 10.0)];
         let blended = blend_corners(&path, 0.0);
         assert_eq!(blended.len(), path.len(), "Zero radius should not blend");
     }
@@ -1882,11 +1751,7 @@ mod tests {
     #[test]
     fn test_blend_corners_radius_too_large() {
         // Very short segments, large radius → setback won't fit
-        let path = vec![
-            P2::new(0.0, 0.0),
-            P2::new(1.0, 0.0),
-            P2::new(1.0, 1.0),
-        ];
+        let path = vec![P2::new(0.0, 0.0), P2::new(1.0, 0.0), P2::new(1.0, 1.0)];
         let blended = blend_corners(&path, 10.0);
         // Radius too large for the segments → corner preserved unblended
         assert_eq!(
@@ -1909,7 +1774,9 @@ mod tests {
         let frac_before = grid_no_slot.material_fraction();
 
         // With slot clearing: run adaptive_segments and check material after slot pass
-        let segs = adaptive_segments(&sq, tool_radius, 1.2, 0.2, true);
+        let never_cancel = || false;
+        let segs = adaptive_segments(&sq, tool_radius, 1.2, 0.2, true, &never_cancel)
+            .expect("test helper should not cancel");
 
         // Verify we got at least one cut segment (the slot)
         let cut_count = segs
@@ -1923,7 +1790,9 @@ mod tests {
 
         // Replay just the first cut segment to verify it clears material
         let mut grid = MaterialGrid::from_polygon(&sq, cell_size);
-        if let Some(AdaptiveSegment::Cut(path)) = segs.iter().find(|s| matches!(s, AdaptiveSegment::Cut(_))) {
+        if let Some(AdaptiveSegment::Cut(path)) =
+            segs.iter().find(|s| matches!(s, AdaptiveSegment::Cut(_)))
+        {
             for p in path {
                 grid.clear_circle(p.x, p.y, tool_radius);
             }
@@ -2004,7 +1873,9 @@ mod tests {
         let cell_size = 0.5;
         let tool_radius = 2.5;
 
-        let segments = adaptive_segments(&sq, tool_radius, 1.2, 0.2, false);
+        let never_cancel = || false;
+        let segments = adaptive_segments(&sq, tool_radius, 1.2, 0.2, false, &never_cancel)
+            .expect("test helper should not cancel");
 
         // Build a material grid and replay the segments to check coverage
         let mut grid = MaterialGrid::from_polygon(&sq, cell_size);
@@ -2070,8 +1941,12 @@ mod tests {
         let machinable = offset_polygon(&sq, tool_radius);
         assert!(!machinable.is_empty());
         let mask = MaterialGrid::build_machinable_mask(
-            &machinable[0], grid.origin_x, grid.origin_y,
-            grid.rows, grid.cols, grid.cell_size,
+            &machinable[0],
+            grid.origin_x,
+            grid.origin_y,
+            grid.rows,
+            grid.cols,
+            grid.cell_size,
         );
 
         // Clear a corridor through the center
@@ -2098,8 +1973,12 @@ mod tests {
         let machinable = offset_polygon(&sq, tool_radius);
         assert!(!machinable.is_empty());
         let mask = MaterialGrid::build_machinable_mask(
-            &machinable[0], grid.origin_x, grid.origin_y,
-            grid.rows, grid.cols, grid.cell_size,
+            &machinable[0],
+            grid.origin_x,
+            grid.origin_y,
+            grid.rows,
+            grid.cols,
+            grid.cell_size,
         );
 
         // Uncleared grid — path through material should be blocked
@@ -2119,17 +1998,23 @@ mod tests {
         let tp = adaptive_toolpath(&sq, &params);
 
         // Count rapid moves (retract + reposition)
-        let _rapid_count = tp.moves.iter()
+        let _rapid_count = tp
+            .moves
+            .iter()
             .filter(|m| matches!(m.move_type, crate::toolpath::MoveType::Rapid))
             .count();
 
         // With linking, there should be fewer rapids than passes * 2
         // (each retract+reposition pair = 2 rapids; links eliminate both)
-        let segments = adaptive_segments(&sq, 2.5, 1.2, 0.2, false);
-        let total_entries = segments.iter()
+        let never_cancel = || false;
+        let segments = adaptive_segments(&sq, 2.5, 1.2, 0.2, false, &never_cancel)
+            .expect("test helper should not cancel");
+        let total_entries = segments
+            .iter()
             .filter(|s| matches!(s, AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_)))
             .count();
-        let link_count = segments.iter()
+        let link_count = segments
+            .iter()
             .filter(|s| matches!(s, AdaptiveSegment::Link(_)))
             .count();
 
@@ -2137,7 +2022,8 @@ mod tests {
         assert!(
             link_count > 0 || total_entries <= 2,
             "Should produce links between nearby passes, got {} links / {} entries",
-            link_count, total_entries
+            link_count,
+            total_entries
         );
     }
 
@@ -2154,17 +2040,32 @@ mod tests {
         let machinable = offset_polygon(&sq, 2.5);
         assert!(!machinable.is_empty());
         let mask = MaterialGrid::build_machinable_mask(
-            &machinable[0], grid.origin_x, grid.origin_y,
-            grid.rows, grid.cols, grid.cell_size,
+            &machinable[0],
+            grid.origin_x,
+            grid.origin_y,
+            grid.rows,
+            grid.cols,
+            grid.cell_size,
         );
 
         let target = target_engagement_fraction(1.2, 2.5);
         // prev_angle = PI (pointing -X) — narrow search should fail on some configs,
         // coarse scan covers full 360°
         let angle = search_direction(
-            &grid, &mask, 0.0, 0.0, 2.5, 0.75, target, PI, &boundary_dist,
+            &grid,
+            &mask,
+            0.0,
+            0.0,
+            2.5,
+            0.75,
+            target,
+            PI,
+            &boundary_dist,
         );
-        assert!(angle.is_some(), "Coarse scan should find a direction in full material");
+        assert!(
+            angle.is_some(),
+            "Coarse scan should find a direction in full material"
+        );
     }
 
     #[test]
@@ -2179,14 +2080,26 @@ mod tests {
         let machinable = offset_polygon(&sq, tool_radius);
         assert!(!machinable.is_empty());
         let mask = MaterialGrid::build_machinable_mask(
-            &machinable[0], grid.origin_x, grid.origin_y,
-            grid.rows, grid.cols, grid.cell_size,
+            &machinable[0],
+            grid.origin_x,
+            grid.origin_y,
+            grid.rows,
+            grid.cols,
+            grid.cell_size,
         );
 
         let step_len = grid.cell_size * 1.5;
         let target = target_engagement_fraction(1.5, tool_radius);
         let angle = search_direction(
-            &grid, &mask, 0.0, 0.0, tool_radius, step_len, target, 0.0, &boundary_dist,
+            &grid,
+            &mask,
+            0.0,
+            0.0,
+            tool_radius,
+            step_len,
+            target,
+            0.0,
+            &boundary_dist,
         );
         assert!(angle.is_some(), "Should find direction in open material");
 
@@ -2226,16 +2139,28 @@ mod tests {
 
         // Search from (5, 5) — far from the cluster
         let result = grid2.find_nearest_material(5.0, 5.0);
-        assert!(result.is_some(), "Growing-radius search should find distant material");
+        assert!(
+            result.is_some(),
+            "Growing-radius search should find distant material"
+        );
         let (mx, my) = result.unwrap();
-        assert!(mx > 30.0 && my > 30.0, "Found material should be in the cluster at ({}, {})", mx, my);
+        assert!(
+            mx > 30.0 && my > 30.0,
+            "Found material should be in the cluster at ({}, {})",
+            mx,
+            my
+        );
 
         // Verify the original grid still works (regression)
         let result2 = grid.find_nearest_material(5.0, 5.0);
         assert!(result2.is_some(), "Full grid should find nearby material");
         let (mx2, my2) = result2.unwrap();
         let dist = ((mx2 - 5.0).powi(2) + (my2 - 5.0).powi(2)).sqrt();
-        assert!(dist < 2.0, "Nearby material should be very close, got dist={:.1}", dist);
+        assert!(
+            dist < 2.0,
+            "Nearby material should be very close, got dist={:.1}",
+            dist
+        );
     }
 
     #[test]

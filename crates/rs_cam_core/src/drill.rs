@@ -273,7 +273,12 @@ mod tests {
             .filter(|m| matches!(m.move_type, MoveType::Linear { .. }))
             .map(|m| m.target.z)
             .collect();
-        assert_eq!(feed_depths.len(), 3, "Expected 3 pecks, got {}", feed_depths.len());
+        assert_eq!(
+            feed_depths.len(),
+            3,
+            "Expected 3 pecks, got {}",
+            feed_depths.len()
+        );
         assert!((feed_depths[0] - (-3.0)).abs() < 1e-10);
         assert!((feed_depths[1] - (-8.0)).abs() < 1e-10);
         assert!((feed_depths[2] - (-10.0)).abs() < 1e-10);
@@ -342,7 +347,10 @@ mod tests {
             .iter()
             .filter(|m| matches!(m.move_type, MoveType::Linear { .. }))
             .count();
-        assert_eq!(feed_count, 1, "Single peck expected when peck_depth > depth");
+        assert_eq!(
+            feed_count, 1,
+            "Single peck expected when peck_depth > depth"
+        );
 
         // Verify it reaches the correct bottom
         let feed_z: Vec<f64> = tp

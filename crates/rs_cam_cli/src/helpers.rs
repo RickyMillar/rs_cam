@@ -1,12 +1,9 @@
 //! Shared helper functions used by both CLI subcommands and job execution.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::path::Path;
 
-use rs_cam_core::{
-    dressup::EntryStyle,
-    polygon::Polygon2,
-};
+use rs_cam_core::{dressup::EntryStyle, polygon::Polygon2};
 
 /// Parse an entry style string into an `EntryStyle`.
 ///
@@ -16,8 +13,14 @@ pub fn parse_entry_style(entry: &str) -> Result<Option<EntryStyle>> {
     match entry {
         "plunge" => Ok(None),
         "ramp" => Ok(Some(EntryStyle::Ramp { max_angle_deg: 3.0 })),
-        "helix" => Ok(Some(EntryStyle::Helix { radius: 2.0, pitch: 1.0 })),
-        _ => bail!("Unknown entry style '{}'. Supported: plunge, ramp, helix", entry),
+        "helix" => Ok(Some(EntryStyle::Helix {
+            radius: 2.0,
+            pitch: 1.0,
+        })),
+        _ => bail!(
+            "Unknown entry style '{}'. Supported: plunge, ramp, helix",
+            entry
+        ),
     }
 }
 
@@ -34,16 +37,16 @@ pub fn load_polygons(path: &Path) -> Result<Vec<Polygon2>> {
 
     match ext.as_str() {
         "svg" => {
-            let polys = rs_cam_core::svg_input::load_svg(path, 0.1)
-                .context("Failed to load SVG")?;
+            let polys =
+                rs_cam_core::svg_input::load_svg(path, 0.1).context("Failed to load SVG")?;
             if polys.is_empty() {
                 bail!("No closed paths found in SVG file");
             }
             Ok(polys)
         }
         "dxf" => {
-            let polys = rs_cam_core::dxf_input::load_dxf(path, 5.0)
-                .context("Failed to load DXF")?;
+            let polys =
+                rs_cam_core::dxf_input::load_dxf(path, 5.0).context("Failed to load DXF")?;
             if polys.is_empty() {
                 bail!("No closed entities found in DXF file");
             }

@@ -335,7 +335,12 @@ mod tests {
         // h=1: R1 + sqrt(R2² - (R2-1)²) = 3 + sqrt(4-1) = 3 + sqrt(3) ≈ 4.732
         let w = tool.width_at_height(1.0);
         let expected = 3.0 + (4.0 - 1.0_f64).sqrt();
-        assert!((w - expected).abs() < 1e-10, "w={}, expected={}", w, expected);
+        assert!(
+            (w - expected).abs() < 1e-10,
+            "w={}, expected={}",
+            w,
+            expected
+        );
     }
 
     #[test]
@@ -453,7 +458,10 @@ mod tests {
         let mut cl = CLPoint::new(4.0, 0.0);
         tool.edge_drop(&mut cl, &p1, &p2);
         // Should get a valid contact (d=4, in torus region)
-        assert!(cl.z > f64::NEG_INFINITY, "Should find contact on sloped edge");
+        assert!(
+            cl.z > f64::NEG_INFINITY,
+            "Should find contact on sloped edge"
+        );
     }
 
     #[test]

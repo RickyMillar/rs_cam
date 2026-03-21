@@ -9,7 +9,7 @@
 //! The V-bit angle must match for both operations. A `glue_gap` parameter accounts
 //! for the adhesive layer between mating surfaces.
 
-use crate::geo::{point_to_segment_distance, P2, P3};
+use crate::geo::{P2, P3, point_to_segment_distance};
 use crate::pocket::{PocketParams, pocket_toolpath};
 use crate::polygon::{Polygon2, offset_polygon};
 use crate::toolpath::Toolpath;
@@ -128,10 +128,7 @@ fn male_toolpath(polygon: &Polygon2, params: &InlayParams) -> Toolpath {
 
     // The male carving region is the outer boundary with the design as a hole
     // (inverted from the female where we carve inside the design)
-    let male_region = Polygon2::with_holes(
-        outer.exterior.clone(),
-        vec![polygon.exterior.clone()],
-    );
+    let male_region = Polygon2::with_holes(outer.exterior.clone(), vec![polygon.exterior.clone()]);
 
     // Generate scan lines across the male region
     let scan_lines = zigzag_lines(&male_region, 0.05, params.stepover, 0.0);
@@ -158,11 +155,7 @@ fn male_toolpath(polygon: &Polygon2, params: &InlayParams) -> Toolpath {
             let y = line[0].y + t * dy;
 
             // Distance to the design boundary (not the outer boundary)
-            let dist = point_to_polygon_boundary(
-                &P2::new(x, y),
-                &polygon.exterior,
-                &polygon.holes,
-            );
+            let dist = point_to_polygon_boundary(&P2::new(x, y), &polygon.exterior, &polygon.holes);
 
             // Male depth: increases with distance from design boundary
             // At the boundary: depth = glue_gap_depth (flush with slight gap)
@@ -240,10 +233,12 @@ mod tests {
     use std::f64::consts::FRAC_PI_4;
 
     fn circle_polygon(radius: f64, n_pts: usize) -> Polygon2 {
-        let pts: Vec<P2> = (0..n_pts).map(|i| {
-            let angle = 2.0 * std::f64::consts::PI * i as f64 / n_pts as f64;
-            P2::new(radius * angle.cos(), radius * angle.sin())
-        }).collect();
+        let pts: Vec<P2> = (0..n_pts)
+            .map(|i| {
+                let angle = 2.0 * std::f64::consts::PI * i as f64 / n_pts as f64;
+                P2::new(radius * angle.cos(), radius * angle.sin())
+            })
+            .collect();
         Polygon2::new(pts)
     }
 
@@ -315,7 +310,8 @@ mod tests {
                 assert!(
                     m.target.z >= -params.pocket_depth - 0.1,
                     "Female depth {} exceeds pocket_depth {}",
-                    m.target.z, params.pocket_depth
+                    m.target.z,
+                    params.pocket_depth
                 );
             }
         }
@@ -333,7 +329,8 @@ mod tests {
                 assert!(
                     m.target.z >= -params.pocket_depth - 0.1,
                     "Male depth {} exceeds pocket_depth {}",
-                    m.target.z, params.pocket_depth
+                    m.target.z,
+                    params.pocket_depth
                 );
             }
         }

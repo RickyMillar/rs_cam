@@ -5,10 +5,12 @@
 //! visualization in the HTML viewer.
 
 use crate::geo::{BoundingBox3, P3};
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveType, Toolpath};
 
 /// A 2D grid of Z heights representing the material surface after simulation.
+#[derive(Clone)]
 pub struct Heightmap {
     /// Z value for each cell, stored in row-major order (row * cols + col).
     pub cells: Vec<f64>,
@@ -49,7 +51,9 @@ impl Heightmap {
     /// Create a heightmap from a bounding box.
     pub fn from_bounds(bbox: &BoundingBox3, top_z: Option<f64>, cell_size: f64) -> Self {
         let top = top_z.unwrap_or(bbox.max.z);
-        Self::from_stock(bbox.min.x, bbox.min.y, bbox.max.x, bbox.max.y, top, cell_size)
+        Self::from_stock(
+            bbox.min.x, bbox.min.y, bbox.max.x, bbox.max.y, top, cell_size,
+        )
     }
 
     /// Convert world (x, y) to cell (row, col). Returns None if outside grid.
@@ -258,7 +262,9 @@ pub fn stamp_tool_at_lut(
                 (row_hi, col_lo),
                 (row_hi, col_hi),
             ];
-            let all_below = edge_cells.iter().all(|&(r, c)| heightmap.get(r, c) <= tip_z);
+            let all_below = edge_cells
+                .iter()
+                .all(|&(r, c)| heightmap.get(r, c) <= tip_z);
             if all_below {
                 return;
             }
@@ -418,14 +424,25 @@ pub fn simulate_toolpath(
     cutter: &dyn MillingCutter,
     heightmap: &mut Heightmap,
 ) {
+    let never_cancel = || false;
+    let _ = simulate_toolpath_with_cancel(toolpath, cutter, heightmap, &never_cancel);
+}
+
+pub fn simulate_toolpath_with_cancel(
+    toolpath: &Toolpath,
+    cutter: &dyn MillingCutter,
+    heightmap: &mut Heightmap,
+    cancel: &dyn CancelCheck,
+) -> Result<(), Cancelled> {
     if toolpath.moves.is_empty() {
-        return;
+        return Ok(());
     }
 
     let lut = RadialProfileLUT::from_cutter(cutter, 256);
     let radius = cutter.radius();
 
     for i in 1..toolpath.moves.len() {
+        check_cancel(cancel)?;
         let start = toolpath.moves[i - 1].target;
         let end = toolpath.moves[i].target;
 
@@ -433,6 +450,56 @@ pub fn simulate_toolpath(
             MoveType::Rapid => {
                 // Rapids don't cut material
             }
+            MoveType::Linear { .. } => {
+                stamp_linear_segment_lut(heightmap, &lut, radius, start, end);
+            }
+            MoveType::ArcCW { i, j, .. } => {
+                let points = linearize_arc(start, end, i, j, true, heightmap.cell_size);
+                for w in points.windows(2) {
+                    check_cancel(cancel)?;
+                    stamp_linear_segment_lut(heightmap, &lut, radius, w[0], w[1]);
+                }
+            }
+            MoveType::ArcCCW { i, j, .. } => {
+                let points = linearize_arc(start, end, i, j, false, heightmap.cell_size);
+                for w in points.windows(2) {
+                    check_cancel(cancel)?;
+                    stamp_linear_segment_lut(heightmap, &lut, radius, w[0], w[1]);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Simulate only moves `start_move..end_move` of a toolpath into the heightmap.
+///
+/// This is the building block for incremental playback: call it with successive
+/// ranges to progressively carve the stock.  Move indices are 1-based internally
+/// (move 0 is the initial position), so `start_move=0, end_move=N` processes
+/// the first N cutting segments.
+pub fn simulate_toolpath_range(
+    toolpath: &Toolpath,
+    cutter: &dyn MillingCutter,
+    heightmap: &mut Heightmap,
+    start_move: usize,
+    end_move: usize,
+) {
+    if toolpath.moves.len() < 2 {
+        return;
+    }
+    let lut = RadialProfileLUT::from_cutter(cutter, 256);
+    let radius = cutter.radius();
+    let first = start_move.max(1);
+    let last = end_move.min(toolpath.moves.len());
+
+    for i in first..last {
+        let start = toolpath.moves[i - 1].target;
+        let end = toolpath.moves[i].target;
+
+        match toolpath.moves[i].move_type {
+            MoveType::Rapid => {}
             MoveType::Linear { .. } => {
                 stamp_linear_segment_lut(heightmap, &lut, radius, start, end);
             }
@@ -813,7 +880,9 @@ mod tests {
             assert!(
                 (got - expected).abs() < 0.001,
                 "Ball LUT at r={}: expected {:.6}, got {:.6}",
-                r, expected, got
+                r,
+                expected,
+                got
             );
         }
         // Outside radius should return None
@@ -830,7 +899,8 @@ mod tests {
             assert!(
                 got.abs() < 0.001,
                 "Flat LUT at r={}: expected ~0, got {:.6}",
-                r, got
+                r,
+                got
             );
         }
         assert!(lut.height_at_dist_sq(5.1 * 5.1).is_none());
@@ -848,10 +918,15 @@ mod tests {
                 (Some(e), Some(g)) => assert!(
                     (g - e).abs() < 0.01,
                     "BullNose LUT at r={}: expected {:.6}, got {:.6}",
-                    r, e, g
+                    r,
+                    e,
+                    g
                 ),
                 (None, None) => {}
-                _ => panic!("BullNose LUT mismatch at r={}: {:?} vs {:?}", r, expected, got),
+                _ => panic!(
+                    "BullNose LUT mismatch at r={}: {:?} vs {:?}",
+                    r, expected, got
+                ),
             }
         }
     }
@@ -869,7 +944,9 @@ mod tests {
                 (Some(e), Some(g)) => assert!(
                     (g - e).abs() < 0.01,
                     "VBit LUT at r={}: expected {:.6}, got {:.6}",
-                    r, e, g
+                    r,
+                    e,
+                    g
                 ),
                 (None, None) => {}
                 _ => panic!("VBit LUT mismatch at r={}: {:?} vs {:?}", r, expected, got),
@@ -913,12 +990,16 @@ mod tests {
                 let cell_y = heightmap.origin_y + row as f64 * cs;
                 let dy2 = cell_y - y;
                 let dy_sq = dy2 * dy2;
-                if dy_sq > r_sq { continue; }
+                if dy_sq > r_sq {
+                    continue;
+                }
                 for col in col_lo..=col_hi {
                     let cell_x = heightmap.origin_x + col as f64 * cs;
                     let dx2 = cell_x - x;
                     let dist_sq = dx2 * dx2 + dy_sq;
-                    if dist_sq > r_sq { continue; }
+                    if dist_sq > r_sq {
+                        continue;
+                    }
                     let dist = dist_sq.sqrt();
                     if let Some(h) = cutter.height_at_radius(dist) {
                         heightmap.cut(row, col, z + h);
@@ -942,17 +1023,17 @@ mod tests {
 
         // Swept must cut at least as deep as reference everywhere
         let mut max_diff = 0.0_f64;
-        let mut worst_i = 0;
         for i in 0..hm_ref.cells.len() {
             let diff = (hm_swept.cells[i] - hm_ref.cells[i]).abs();
             if diff > max_diff {
                 max_diff = diff;
-                worst_i = i;
             }
             assert!(
                 hm_swept.cells[i] <= hm_ref.cells[i] + 0.01,
                 "Swept left material above reference at cell {}: swept={:.4}, ref={:.4}",
-                i, hm_swept.cells[i], hm_ref.cells[i]
+                i,
+                hm_swept.cells[i],
+                hm_ref.cells[i]
             );
         }
         // The max difference should be tiny (sub-mm)
@@ -995,10 +1076,7 @@ mod tests {
                 max_diff_interior = max_diff_interior.max(diff);
             }
         }
-        assert!(
-            swept_never_above_ref,
-            "Swept left material above reference"
-        );
+        assert!(swept_never_above_ref, "Swept left material above reference");
         assert!(
             max_diff_interior < 0.15,
             "Interior cell max diff: {:.4}mm",
@@ -1025,7 +1103,9 @@ mod tests {
             assert!(
                 hm_swept.cells[i] <= hm_ref.cells[i] + 0.01,
                 "Cell {}: swept={:.4}, ref={:.4}",
-                i, hm_swept.cells[i], hm_ref.cells[i]
+                i,
+                hm_swept.cells[i],
+                hm_ref.cells[i]
             );
         }
         assert!(max_diff < 0.05, "Max diff: {:.4}mm", max_diff);

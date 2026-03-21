@@ -25,11 +25,7 @@ use crate::geo::P3;
 /// - The Y-fiber at column `col` is blocked at the Y-coordinate of X-fiber `row`.
 ///
 /// Returns closed contour loops as sequences of 3D points.
-pub fn weave_contours(
-    x_fibers: &[Fiber],
-    y_fibers: &[Fiber],
-    z: f64,
-) -> Vec<Vec<P3>> {
+pub fn weave_contours(x_fibers: &[Fiber], y_fibers: &[Fiber], z: f64) -> Vec<Vec<P3>> {
     if x_fibers.is_empty() || y_fibers.is_empty() {
         return Vec::new();
     }
@@ -108,10 +104,10 @@ fn marching_squares(
     for r in 0..n_rows.saturating_sub(1) {
         for c in 0..n_cols.saturating_sub(1) {
             // The 4 corners of this cell (in CCW order from bottom-left)
-            let bl = grid[r][c];       // bottom-left
-            let br = grid[r][c + 1];   // bottom-right
+            let bl = grid[r][c]; // bottom-left
+            let br = grid[r][c + 1]; // bottom-right
             let tr = grid[r + 1][c + 1]; // top-right
-            let tl = grid[r + 1][c];   // top-left
+            let tl = grid[r + 1][c]; // top-left
 
             // Marching squares case index (4-bit)
             let case = (bl as u8) | ((br as u8) << 1) | ((tr as u8) << 2) | ((tl as u8) << 3);
@@ -132,29 +128,59 @@ fn marching_squares(
 
             // Generate segments based on the case
             match case {
-                1 => segments.push(Segment { p1: bottom, p2: left }),
-                2 => segments.push(Segment { p1: right, p2: bottom }),
-                3 => segments.push(Segment { p1: right, p2: left }),
+                1 => segments.push(Segment {
+                    p1: bottom,
+                    p2: left,
+                }),
+                2 => segments.push(Segment {
+                    p1: right,
+                    p2: bottom,
+                }),
+                3 => segments.push(Segment {
+                    p1: right,
+                    p2: left,
+                }),
                 4 => segments.push(Segment { p1: top, p2: right }),
                 5 => {
                     // Saddle case — disambiguate by center value
                     // Use average of corners as center test
-                    segments.push(Segment { p1: bottom, p2: right });
+                    segments.push(Segment {
+                        p1: bottom,
+                        p2: right,
+                    });
                     segments.push(Segment { p1: top, p2: left });
                 }
-                6 => segments.push(Segment { p1: top, p2: bottom }),
+                6 => segments.push(Segment {
+                    p1: top,
+                    p2: bottom,
+                }),
                 7 => segments.push(Segment { p1: top, p2: left }),
                 8 => segments.push(Segment { p1: left, p2: top }),
-                9 => segments.push(Segment { p1: bottom, p2: top }),
+                9 => segments.push(Segment {
+                    p1: bottom,
+                    p2: top,
+                }),
                 10 => {
                     // Saddle case — disambiguate
-                    segments.push(Segment { p1: left, p2: bottom });
+                    segments.push(Segment {
+                        p1: left,
+                        p2: bottom,
+                    });
                     segments.push(Segment { p1: right, p2: top });
                 }
                 11 => segments.push(Segment { p1: right, p2: top }),
-                12 => segments.push(Segment { p1: left, p2: right }),
-                13 => segments.push(Segment { p1: bottom, p2: right }),
-                14 => segments.push(Segment { p1: left, p2: bottom }),
+                12 => segments.push(Segment {
+                    p1: left,
+                    p2: right,
+                }),
+                13 => segments.push(Segment {
+                    p1: bottom,
+                    p2: right,
+                }),
+                14 => segments.push(Segment {
+                    p1: left,
+                    p2: bottom,
+                }),
                 _ => {} // 0 and 15 already handled
             }
         }
@@ -324,7 +350,10 @@ mod tests {
         let yf = Fiber::new_y(5.0, 0.0, 0.0, 10.0);
 
         let contours = weave_contours(&[xf], &[yf], 0.0);
-        assert!(contours.is_empty(), "No intervals should produce no contours");
+        assert!(
+            contours.is_empty(),
+            "No intervals should produce no contours"
+        );
     }
 
     #[test]
@@ -359,7 +388,7 @@ mod tests {
         for y_val in [0.0, 2.0, 4.0, 6.0, 8.0, 10.0] {
             let mut f = Fiber::new_x(y_val, 0.0, 0.0, 10.0);
             // Only middle fibers have intervals
-            if y_val >= 2.0 && y_val <= 8.0 {
+            if (2.0..=8.0).contains(&y_val) {
                 f.add_interval(Interval::new(0.2, 0.8));
             }
             x_fibers.push(f);
@@ -368,7 +397,7 @@ mod tests {
         let mut y_fibers = Vec::new();
         for x_val in [0.0, 2.0, 4.0, 6.0, 8.0, 10.0] {
             let mut f = Fiber::new_y(x_val, 0.0, 0.0, 10.0);
-            if x_val >= 2.0 && x_val <= 8.0 {
+            if (2.0..=8.0).contains(&x_val) {
                 f.add_interval(Interval::new(0.2, 0.8));
             }
             y_fibers.push(f);
@@ -384,7 +413,11 @@ mod tests {
 
         // All contours should have at least 3 points
         for contour in &contours {
-            assert!(contour.len() >= 3, "Contour too short: {} points", contour.len());
+            assert!(
+                contour.len() >= 3,
+                "Contour too short: {} points",
+                contour.len()
+            );
         }
     }
 
@@ -392,10 +425,22 @@ mod tests {
     fn test_chain_segments_closed_loop() {
         // Create a simple square of segments that should form one closed loop
         let segments = vec![
-            Segment { p1: P3::new(0.0, 0.0, 0.0), p2: P3::new(1.0, 0.0, 0.0) },
-            Segment { p1: P3::new(1.0, 0.0, 0.0), p2: P3::new(1.0, 1.0, 0.0) },
-            Segment { p1: P3::new(1.0, 1.0, 0.0), p2: P3::new(0.0, 1.0, 0.0) },
-            Segment { p1: P3::new(0.0, 1.0, 0.0), p2: P3::new(0.0, 0.0, 0.0) },
+            Segment {
+                p1: P3::new(0.0, 0.0, 0.0),
+                p2: P3::new(1.0, 0.0, 0.0),
+            },
+            Segment {
+                p1: P3::new(1.0, 0.0, 0.0),
+                p2: P3::new(1.0, 1.0, 0.0),
+            },
+            Segment {
+                p1: P3::new(1.0, 1.0, 0.0),
+                p2: P3::new(0.0, 1.0, 0.0),
+            },
+            Segment {
+                p1: P3::new(0.0, 1.0, 0.0),
+                p2: P3::new(0.0, 0.0, 0.0),
+            },
         ];
 
         let loops = chain_segments(segments);
@@ -408,15 +453,39 @@ mod tests {
         // Two separate squares
         let segments = vec![
             // Square 1
-            Segment { p1: P3::new(0.0, 0.0, 0.0), p2: P3::new(1.0, 0.0, 0.0) },
-            Segment { p1: P3::new(1.0, 0.0, 0.0), p2: P3::new(1.0, 1.0, 0.0) },
-            Segment { p1: P3::new(1.0, 1.0, 0.0), p2: P3::new(0.0, 1.0, 0.0) },
-            Segment { p1: P3::new(0.0, 1.0, 0.0), p2: P3::new(0.0, 0.0, 0.0) },
+            Segment {
+                p1: P3::new(0.0, 0.0, 0.0),
+                p2: P3::new(1.0, 0.0, 0.0),
+            },
+            Segment {
+                p1: P3::new(1.0, 0.0, 0.0),
+                p2: P3::new(1.0, 1.0, 0.0),
+            },
+            Segment {
+                p1: P3::new(1.0, 1.0, 0.0),
+                p2: P3::new(0.0, 1.0, 0.0),
+            },
+            Segment {
+                p1: P3::new(0.0, 1.0, 0.0),
+                p2: P3::new(0.0, 0.0, 0.0),
+            },
             // Square 2 (far away)
-            Segment { p1: P3::new(10.0, 10.0, 0.0), p2: P3::new(11.0, 10.0, 0.0) },
-            Segment { p1: P3::new(11.0, 10.0, 0.0), p2: P3::new(11.0, 11.0, 0.0) },
-            Segment { p1: P3::new(11.0, 11.0, 0.0), p2: P3::new(10.0, 11.0, 0.0) },
-            Segment { p1: P3::new(10.0, 11.0, 0.0), p2: P3::new(10.0, 10.0, 0.0) },
+            Segment {
+                p1: P3::new(10.0, 10.0, 0.0),
+                p2: P3::new(11.0, 10.0, 0.0),
+            },
+            Segment {
+                p1: P3::new(11.0, 10.0, 0.0),
+                p2: P3::new(11.0, 11.0, 0.0),
+            },
+            Segment {
+                p1: P3::new(11.0, 11.0, 0.0),
+                p2: P3::new(10.0, 11.0, 0.0),
+            },
+            Segment {
+                p1: P3::new(10.0, 11.0, 0.0),
+                p2: P3::new(10.0, 10.0, 0.0),
+            },
         ];
 
         let loops = chain_segments(segments);
