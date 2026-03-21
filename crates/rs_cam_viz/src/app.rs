@@ -729,9 +729,17 @@ impl RsCamApp {
             if self.controller.state().workspace == Workspace::Setup
                 && let Some(setup) = job.setups.first()
             {
-                use crate::state::job::{Corner, XYDatum};
+                use crate::state::job::{Corner, FaceUp, XYDatum};
                 let stock_bbox = job.stock.bbox();
-                let z = (stock_bbox.max.z) as f32;
+                // Datum Z corresponds to the setup's effective top surface in the global frame
+                let z = match setup.face_up {
+                    FaceUp::Top => stock_bbox.max.z,
+                    FaceUp::Bottom => stock_bbox.min.z,
+                    FaceUp::Front => stock_bbox.max.y,
+                    FaceUp::Back => stock_bbox.min.y,
+                    FaceUp::Left => stock_bbox.min.x,
+                    FaceUp::Right => stock_bbox.max.x,
+                } as f32;
                 let color = [0.9_f32, 0.2, 0.9]; // magenta
 
                 let datum_xy: Option<(f32, f32)> = match &setup.datum.xy_method {
@@ -903,12 +911,27 @@ impl RsCamApp {
                 };
             if visible && let Some(result) = &tp.result {
                 let selected = selected_tp_id == Some(tp.id);
-                let mut gpu_data = ToolpathGpuData::from_toolpath(
-                    &render_state.device,
-                    &result.toolpath,
-                    i,
-                    selected,
-                );
+
+                // Inverse-transform toolpath for flipped setups so it renders in global frame
+                let render_tp: std::borrow::Cow<'_, rs_cam_core::toolpath::Toolpath> = {
+                    let job = &self.controller.state().job;
+                    let setup_id = job.setup_of_toolpath(tp.id);
+                    let setup = setup_id.and_then(|sid| job.setups.iter().find(|s| s.id == sid));
+                    if let Some(setup) = setup
+                        && setup.needs_transform()
+                    {
+                        let mut tp_clone = (*result.toolpath).clone();
+                        for m in &mut tp_clone.moves {
+                            m.target = setup.inverse_transform_point(m.target, &job.stock);
+                        }
+                        std::borrow::Cow::Owned(tp_clone)
+                    } else {
+                        std::borrow::Cow::Borrowed(result.toolpath.as_ref())
+                    }
+                };
+
+                let mut gpu_data =
+                    ToolpathGpuData::from_toolpath(&render_state.device, &render_tp, i, selected);
 
                 // Generate entry path preview for selected toolpaths with a non-None entry style
                 if selected {
@@ -940,10 +963,8 @@ impl RsCamApp {
             }
         }
 
-        // Upload height plane overlays when a toolpath is selected in Toolpaths workspace
-        if self.controller.state().workspace == Workspace::Toolpaths
-            && let Selection::Toolpath(tp_id) = self.controller.state().selection
-        {
+        // Upload height plane overlays whenever a toolpath is selected (any workspace)
+        if let Selection::Toolpath(tp_id) = self.controller.state().selection {
             let job = &self.controller.state().job;
             if let Some(tp) = job.all_toolpaths().find(|t| t.id == tp_id) {
                 let safe_z = job.post.safe_z;

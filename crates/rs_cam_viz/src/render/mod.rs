@@ -556,7 +556,7 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             let opacity = if self.show_sim_mesh {
                 self.sim_mesh_opacity
             } else {
-                0.18 // solid stock / height planes translucency
+                0.08 // solid stock / height planes translucency
             };
             let sim_uniforms = ColoredMeshUniforms {
                 view_proj: self.mesh_uniforms.view_proj,
@@ -626,17 +626,6 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 pass.draw(0..resources.grid_data.vertex_count, 0..1);
             }
 
-            // Draw solid stock (semi-transparent, before wireframe)
-            if self.show_solid_stock
-                && let Some(solid) = &resources.solid_stock_data
-            {
-                pass.set_pipeline(&resources.sim_mesh_pipeline);
-                pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
-                pass.set_vertex_buffer(0, solid.vertex_buffer.slice(..));
-                pass.set_index_buffer(solid.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..solid.index_count, 0, 0..1);
-            }
-
             // Draw stock wireframe
             if self.show_stock
                 && let Some(stock) = &resources.stock_data
@@ -695,6 +684,17 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                 pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+            }
+
+            // Draw solid stock (semi-transparent, after mesh so model renders first)
+            if self.show_solid_stock
+                && let Some(solid) = &resources.solid_stock_data
+            {
+                pass.set_pipeline(&resources.sim_mesh_pipeline);
+                pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
+                pass.set_vertex_buffer(0, solid.vertex_buffer.slice(..));
+                pass.set_index_buffer(solid.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..solid.index_count, 0, 0..1);
             }
 
             // Draw collision markers
