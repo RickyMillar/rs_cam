@@ -612,9 +612,14 @@ impl RsCamApp {
             resources.mesh_data = Some(MeshGpuData::from_mesh(&render_state.device, mesh));
         }
 
-        // Upload stock wireframe
+        // Upload stock wireframe + solid stock
         let stock_bbox = self.controller.state().job.stock.bbox();
         resources.stock_data = Some(StockGpuData::from_bbox(&render_state.device, &stock_bbox));
+        resources.solid_stock_data =
+            Some(crate::render::stock_render::SolidStockGpuData::from_bbox(
+                &render_state.device,
+                &stock_bbox,
+            ));
 
         // Upload fixture and keep-out wireframes.
         {
@@ -1015,6 +1020,7 @@ impl RsCamApp {
             show_stock: state.viewport.show_stock
                 && state.job.models.iter().any(|model| model.mesh.is_some()),
             show_fixtures: state.viewport.show_fixtures,
+            show_solid_stock: state.viewport.show_stock && state.workspace != Workspace::Simulation,
             show_sim_mesh: state.workspace == Workspace::Simulation
                 && state.simulation.has_results(),
             sim_mesh_opacity: state.simulation.stock_opacity,

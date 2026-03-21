@@ -87,6 +87,7 @@ pub struct RenderResources {
     pub mesh_data: Option<MeshGpuData>,
     pub grid_data: GridGpuData,
     pub stock_data: Option<StockGpuData>,
+    pub solid_stock_data: Option<stock_render::SolidStockGpuData>,
     pub fixture_data: Option<FixtureGpuData>,
     pub toolpath_data: Vec<ToolpathGpuData>,
     pub sim_mesh_data: Option<SimMeshGpuData>,
@@ -419,6 +420,7 @@ impl RenderResources {
             mesh_data: None,
             grid_data,
             stock_data: None,
+            solid_stock_data: None,
             fixture_data: None,
             toolpath_data: Vec::new(),
             sim_mesh_data: None,
@@ -504,6 +506,7 @@ pub struct ViewportCallback {
     pub show_grid: bool,
     pub show_stock: bool,
     pub show_fixtures: bool,
+    pub show_solid_stock: bool,
     pub show_sim_mesh: bool,
     pub sim_mesh_opacity: f32,
     pub show_cutting: bool,
@@ -536,13 +539,18 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             0,
             bytemuck::bytes_of(&self.mesh_uniforms),
         );
-        if self.show_sim_mesh {
+        if self.show_sim_mesh || self.show_solid_stock {
+            let opacity = if self.show_sim_mesh {
+                self.sim_mesh_opacity
+            } else {
+                0.18 // solid stock translucency
+            };
             let sim_uniforms = ColoredMeshUniforms {
                 view_proj: self.mesh_uniforms.view_proj,
                 light_dir: self.mesh_uniforms.light_dir,
                 _pad0: 0.0,
                 camera_pos: self.mesh_uniforms.camera_pos,
-                opacity: self.sim_mesh_opacity,
+                opacity,
             };
             queue.write_buffer(
                 &resources.sim_mesh_uniform_buffer,
@@ -603,6 +611,17 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 pass.set_bind_group(0, &resources.line_bind_group, &[]);
                 pass.set_vertex_buffer(0, resources.grid_data.vertex_buffer.slice(..));
                 pass.draw(0..resources.grid_data.vertex_count, 0..1);
+            }
+
+            // Draw solid stock (semi-transparent, before wireframe)
+            if self.show_solid_stock
+                && let Some(solid) = &resources.solid_stock_data
+            {
+                pass.set_pipeline(&resources.sim_mesh_pipeline);
+                pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
+                pass.set_vertex_buffer(0, solid.vertex_buffer.slice(..));
+                pass.set_index_buffer(solid.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..solid.index_count, 0, 0..1);
             }
 
             // Draw stock wireframe
