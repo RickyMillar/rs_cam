@@ -638,6 +638,10 @@ impl RsCamApp {
                             [0.9_f32, 0.7, 0.2]
                         };
                         boxes.push((fixture.clearance_bbox(), color));
+                        // When selected, also show inner physical bbox in white
+                        if selected {
+                            boxes.push((fixture.bbox(), [0.9_f32, 0.9, 0.9]));
+                        }
                     }
                 }
                 for keep_out in &setup.keep_out_zones {
