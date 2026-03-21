@@ -681,6 +681,93 @@ impl RsCamApp {
                 }
             }
 
+            // Add datum crosshair markers in Setup workspace
+            if self.controller.state().workspace == Workspace::Setup
+                && let Some(setup) = job.setups.first()
+            {
+                use crate::state::job::{Corner, XYDatum};
+                let stock_bbox = job.stock.bbox();
+                let z = (stock_bbox.max.z) as f32;
+                let color = [0.9_f32, 0.2, 0.9]; // magenta
+
+                let datum_xy: Option<(f32, f32)> = match &setup.datum.xy_method {
+                    XYDatum::CornerProbe(corner) => {
+                        let x = match corner {
+                            Corner::FrontLeft | Corner::BackLeft => stock_bbox.min.x,
+                            Corner::FrontRight | Corner::BackRight => stock_bbox.max.x,
+                        };
+                        let y = match corner {
+                            Corner::FrontLeft | Corner::FrontRight => stock_bbox.min.y,
+                            Corner::BackLeft | Corner::BackRight => stock_bbox.max.y,
+                        };
+                        Some((x as f32, y as f32))
+                    }
+                    XYDatum::CenterOfStock => {
+                        let cx = ((stock_bbox.min.x + stock_bbox.max.x) / 2.0) as f32;
+                        let cy = ((stock_bbox.min.y + stock_bbox.max.y) / 2.0) as f32;
+                        Some((cx, cy))
+                    }
+                    _ => None, // AlignmentPins already rendered, Manual has no position
+                };
+
+                if let Some((dx, dy)) = datum_xy {
+                    let arm = 15.0_f32; // crosshair half-length in mm
+                    let diamond = 3.0_f32; // diamond half-size
+
+                    // Horizontal crosshair line (X direction)
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx - arm, dy, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx + arm, dy, z],
+                        color,
+                    });
+                    // Vertical crosshair line (Y direction)
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx, dy - arm, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx, dy + arm, z],
+                        color,
+                    });
+                    // Diamond shape (4 edges)
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx + diamond, dy, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx, dy + diamond, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx, dy + diamond, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx - diamond, dy, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx - diamond, dy, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx, dy - diamond, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx, dy - diamond, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx + diamond, dy, z],
+                        color,
+                    });
+                }
+            }
+
             if boxes.is_empty() && pin_vertices.is_empty() {
                 resources.fixture_data = None;
             } else {
