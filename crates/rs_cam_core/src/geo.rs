@@ -72,6 +72,60 @@ impl BoundingBox3 {
             && self.min.y <= other.max.y
             && self.max.y >= other.min.y
     }
+
+    /// Test whether a point lies inside (or on the boundary of) this AABB.
+    pub fn contains_point(&self, p: &P3) -> bool {
+        p.x >= self.min.x
+            && p.x <= self.max.x
+            && p.y >= self.min.y
+            && p.y <= self.max.y
+            && p.z >= self.min.z
+            && p.z <= self.max.z
+    }
+
+    /// Ray-AABB intersection using the slab method (Kay/Kajiya).
+    /// Returns the parametric `t` of the nearest intersection (entry point),
+    /// or `None` if the ray misses. A hit at `t >= 0` means the intersection
+    /// is in front of the ray origin.
+    pub fn ray_intersect(&self, origin: &P3, dir: &V3) -> Option<f64> {
+        let mut t_min = f64::NEG_INFINITY;
+        let mut t_max = f64::INFINITY;
+
+        for axis in 0..3 {
+            let o = origin[axis];
+            let d = dir[axis];
+            let lo = self.min[axis];
+            let hi = self.max[axis];
+
+            if d.abs() < 1e-12 {
+                // Ray is parallel to this slab — miss if origin outside
+                if o < lo || o > hi {
+                    return None;
+                }
+            } else {
+                let inv_d = 1.0 / d;
+                let mut t0 = (lo - o) * inv_d;
+                let mut t1 = (hi - o) * inv_d;
+                if t0 > t1 {
+                    std::mem::swap(&mut t0, &mut t1);
+                }
+                t_min = t_min.max(t0);
+                t_max = t_max.min(t1);
+                if t_min > t_max {
+                    return None;
+                }
+            }
+        }
+
+        // Return the entry t if it's in front, otherwise the exit t
+        if t_min >= 0.0 {
+            Some(t_min)
+        } else if t_max >= 0.0 {
+            Some(t_max) // origin inside box
+        } else {
+            None // box is behind the ray
+        }
+    }
 }
 
 /// A triangle in 3D space with precomputed normal.
@@ -238,5 +292,90 @@ mod tests {
         let p = P2::new(8.0, 9.0);
         let d = point_to_segment_distance(&p, &a, &a);
         assert!((d - 5.0).abs() < 1e-10, "Should be 5.0, got {}", d);
+    }
+
+    #[test]
+    fn test_bbox_contains_point() {
+        let bb = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(10.0, 10.0, 10.0),
+        };
+        assert!(bb.contains_point(&P3::new(5.0, 5.0, 5.0)));
+        assert!(bb.contains_point(&P3::new(0.0, 0.0, 0.0))); // on boundary
+        assert!(!bb.contains_point(&P3::new(-1.0, 5.0, 5.0)));
+        assert!(!bb.contains_point(&P3::new(5.0, 11.0, 5.0)));
+    }
+
+    #[test]
+    fn test_ray_intersect_hit() {
+        let bb = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(10.0, 10.0, 10.0),
+        };
+        // Ray from outside, hitting the -X face
+        let origin = P3::new(-5.0, 5.0, 5.0);
+        let dir = V3::new(1.0, 0.0, 0.0);
+        let t = bb.ray_intersect(&origin, &dir);
+        assert!(t.is_some());
+        assert!((t.unwrap() - 5.0).abs() < 1e-10, "t = {}", t.unwrap());
+    }
+
+    #[test]
+    fn test_ray_intersect_miss() {
+        let bb = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(10.0, 10.0, 10.0),
+        };
+        // Ray parallel to X axis but above the box
+        let origin = P3::new(-5.0, 15.0, 5.0);
+        let dir = V3::new(1.0, 0.0, 0.0);
+        assert!(bb.ray_intersect(&origin, &dir).is_none());
+    }
+
+    #[test]
+    fn test_ray_intersect_origin_inside() {
+        let bb = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(10.0, 10.0, 10.0),
+        };
+        // Origin inside the box
+        let origin = P3::new(5.0, 5.0, 5.0);
+        let dir = V3::new(1.0, 0.0, 0.0);
+        let t = bb.ray_intersect(&origin, &dir);
+        assert!(t.is_some());
+        // Should hit the +X face at t=5
+        assert!((t.unwrap() - 5.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_ray_intersect_behind() {
+        let bb = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(10.0, 10.0, 10.0),
+        };
+        // Ray pointing away from box
+        let origin = P3::new(-5.0, 5.0, 5.0);
+        let dir = V3::new(-1.0, 0.0, 0.0);
+        assert!(bb.ray_intersect(&origin, &dir).is_none());
+    }
+
+    #[test]
+    fn test_ray_intersect_diagonal() {
+        let bb = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(10.0, 10.0, 10.0),
+        };
+        let origin = P3::new(-1.0, -1.0, -1.0);
+        let dir = V3::new(1.0, 1.0, 1.0).normalize();
+        let t = bb.ray_intersect(&origin, &dir);
+        assert!(t.is_some());
+        // Ray enters at (0,0,0), distance from origin = sqrt(3)
+        let expected = (3.0_f64).sqrt();
+        assert!(
+            (t.unwrap() - expected).abs() < 1e-10,
+            "t = {}, expected {}",
+            t.unwrap(),
+            expected
+        );
     }
 }

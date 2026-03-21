@@ -621,28 +621,29 @@ impl RsCamApp {
             use crate::render::fixture_render::FixtureGpuData;
 
             let job = &self.controller.state().job;
+            let selection = &self.controller.state().selection;
             let mut boxes = Vec::new();
             for setup in &job.setups {
                 for fixture in &setup.fixtures {
                     if fixture.enabled {
-                        boxes.push((fixture.clearance_bbox(), [0.9_f32, 0.7, 0.2]));
+                        let selected = *selection == Selection::Fixture(setup.id, fixture.id);
+                        let color = if selected {
+                            [1.0_f32, 0.9, 0.4] // bright highlight
+                        } else {
+                            [0.9_f32, 0.7, 0.2]
+                        };
+                        boxes.push((fixture.clearance_bbox(), color));
                     }
                 }
                 for keep_out in &setup.keep_out_zones {
                     if keep_out.enabled {
-                        let bbox = rs_cam_core::geo::BoundingBox3 {
-                            min: rs_cam_core::geo::P3::new(
-                                keep_out.origin_x,
-                                keep_out.origin_y,
-                                job.stock.origin_z,
-                            ),
-                            max: rs_cam_core::geo::P3::new(
-                                keep_out.origin_x + keep_out.size_x,
-                                keep_out.origin_y + keep_out.size_y,
-                                job.stock.origin_z + job.stock.z,
-                            ),
+                        let selected = *selection == Selection::KeepOut(setup.id, keep_out.id);
+                        let color = if selected {
+                            [1.0_f32, 0.4, 0.4] // bright highlight
+                        } else {
+                            [0.9_f32, 0.2, 0.2]
                         };
-                        boxes.push((bbox, [0.9_f32, 0.2, 0.2]));
+                        boxes.push((keep_out.bbox(&job.stock), color));
                     }
                 }
             }
@@ -868,51 +869,80 @@ impl RsCamApp {
             return;
         }
 
-        let aspect = rect.width() / rect.height();
-        let vw = rect.width();
-        let vh = rect.height();
-        // Convert click to viewport-local coordinates
-        let local_x = click_pos.x - rect.min.x;
-        let local_y = click_pos.y - rect.min.y;
+        let ctx = crate::interaction::picking::PickContext {
+            camera: &self.camera,
+            screen_x: click_pos.x - rect.min.x,
+            screen_y: click_pos.y - rect.min.y,
+            aspect: rect.width() / rect.height(),
+            vw: rect.width(),
+            vh: rect.height(),
+        };
 
-        let mut best_dist = 15.0f32; // max pick distance in pixels
-        let mut best_id = None;
+        let workspace = self.controller.state().workspace;
+        let isolate = self.controller.state().viewport.isolate_toolpath;
 
-        for tp in self.controller.state().job.all_toolpaths() {
-            if !tp.visible {
-                continue;
+        let hit = crate::interaction::picking::pick(
+            &ctx,
+            &self.controller.state().job,
+            self.controller.collision_positions(),
+            workspace,
+            isolate,
+        );
+
+        if let Some(hit) = hit {
+            self.handle_pick_hit(hit);
+        }
+    }
+
+    fn handle_pick_hit(&mut self, hit: crate::interaction::PickHit) {
+        use crate::interaction::PickHit;
+
+        let workspace = self.controller.state().workspace;
+        match (workspace, hit) {
+            (
+                Workspace::Setup,
+                PickHit::Fixture {
+                    setup_id,
+                    fixture_id,
+                },
+            ) => {
+                self.controller.state_mut().selection = Selection::Fixture(setup_id, fixture_id);
             }
-            // Respect isolation
-            if let Some(iso_id) = self.controller.state().viewport.isolate_toolpath
-                && tp.id != iso_id
-            {
-                continue;
+            (
+                Workspace::Setup,
+                PickHit::KeepOut {
+                    setup_id,
+                    keep_out_id,
+                },
+            ) => {
+                self.controller.state_mut().selection = Selection::KeepOut(setup_id, keep_out_id);
             }
-            let result = match &tp.result {
-                Some(r) => r,
-                None => continue,
-            };
-
-            // Sample every 20th move for performance
-            let moves = &result.toolpath.moves;
-            let step = (moves.len() / 200).max(1);
-            for j in (0..moves.len()).step_by(step) {
-                let m = &moves[j];
-                let world = [m.target.x as f32, m.target.y as f32, m.target.z as f32];
-                if let Some(screen) = self.camera.project_to_screen(world, aspect, vw, vh) {
-                    let dx = screen[0] - local_x;
-                    let dy = screen[1] - local_y;
-                    let dist = (dx * dx + dy * dy).sqrt();
-                    if dist < best_dist {
-                        best_dist = dist;
-                        best_id = Some(tp.id);
-                    }
+            (Workspace::Setup, PickHit::AlignmentPin { setup_id, .. }) => {
+                self.controller.state_mut().selection = Selection::Setup(setup_id);
+            }
+            (_, PickHit::StockFace { .. }) => {
+                self.controller.state_mut().selection = Selection::Stock;
+            }
+            (Workspace::Simulation, PickHit::CollisionMarker { index }) => {
+                // Jump playback to the collision move
+                if let Some(&move_idx) = self
+                    .controller
+                    .state()
+                    .simulation
+                    .checks
+                    .rapid_collision_move_indices
+                    .get(index)
+                {
+                    let pb = &mut self.controller.state_mut().simulation.playback;
+                    pb.current_move = move_idx;
+                    pb.playing = false;
+                    self.pending_checkpoint_load = true;
                 }
             }
-        }
-
-        if let Some(id) = best_id {
-            self.controller.state_mut().selection = Selection::Toolpath(id);
+            (_, PickHit::Toolpath { id }) => {
+                self.controller.state_mut().selection = Selection::Toolpath(id);
+            }
+            _ => {}
         }
     }
 

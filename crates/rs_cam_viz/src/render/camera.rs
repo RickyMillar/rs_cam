@@ -135,6 +135,50 @@ impl OrbitCamera {
         Some([screen_x, screen_y])
     }
 
+    /// Cast a ray from screen pixel coordinates into world space.
+    /// Returns `(origin, direction)` where origin is on the near plane
+    /// and direction is a normalized world-space vector.
+    pub fn unproject_ray(
+        &self,
+        screen_x: f32,
+        screen_y: f32,
+        aspect: f32,
+        viewport_w: f32,
+        viewport_h: f32,
+    ) -> Option<(Point3<f32>, Vector3<f32>)> {
+        let vp = self.projection_matrix(aspect) * self.view_matrix();
+        let inv_vp = vp.try_inverse()?;
+
+        // Screen pixels → NDC (same convention as project_to_screen)
+        let ndc_x = (screen_x / viewport_w) * 2.0 - 1.0;
+        let ndc_y = 1.0 - (screen_y / viewport_h) * 2.0;
+
+        // Unproject near and far plane points
+        let near_clip = nalgebra::Vector4::new(ndc_x, ndc_y, -1.0, 1.0);
+        let far_clip = nalgebra::Vector4::new(ndc_x, ndc_y, 1.0, 1.0);
+
+        let near_world = inv_vp * near_clip;
+        let far_world = inv_vp * far_clip;
+
+        if near_world.w.abs() < 1e-10 || far_world.w.abs() < 1e-10 {
+            return None;
+        }
+
+        let near_pt = Point3::new(
+            near_world.x / near_world.w,
+            near_world.y / near_world.w,
+            near_world.z / near_world.w,
+        );
+        let far_pt = Point3::new(
+            far_world.x / far_world.w,
+            far_world.y / far_world.w,
+            far_world.z / far_world.w,
+        );
+
+        let dir = (far_pt - near_pt).normalize();
+        Some((near_pt, dir))
+    }
+
     /// Set a preset view orientation.
     pub fn set_preset(&mut self, preset: ViewPreset) {
         match preset {
@@ -161,5 +205,39 @@ impl OrbitCamera {
 impl Default for OrbitCamera {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unproject_round_trip() {
+        let cam = OrbitCamera::new();
+        let aspect = 16.0 / 9.0;
+        let vw = 1920.0;
+        let vh = 1080.0;
+        let world = [10.0f32, 5.0, 3.0];
+
+        let screen = cam
+            .project_to_screen(world, aspect, vw, vh)
+            .expect("point should be in front of camera");
+
+        let (origin, dir) = cam
+            .unproject_ray(screen[0], screen[1], aspect, vw, vh)
+            .expect("should produce a ray");
+
+        // The ray should pass near the original world point.
+        // Closest point on ray to world: project world onto ray.
+        let w = Point3::new(world[0], world[1], world[2]);
+        let ow = w - origin;
+        let t = ow.dot(&dir);
+        let closest = origin + dir * t;
+        let error = (closest - w).norm();
+        assert!(
+            error < 0.1,
+            "Ray should pass near original point, error = {error}"
+        );
     }
 }

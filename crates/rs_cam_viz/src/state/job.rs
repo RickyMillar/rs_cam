@@ -828,6 +828,18 @@ impl KeepOutZone {
         }
     }
 
+    /// 3D bounding box, extending from the stock Z range.
+    pub fn bbox(&self, stock: &StockConfig) -> rs_cam_core::geo::BoundingBox3 {
+        rs_cam_core::geo::BoundingBox3 {
+            min: rs_cam_core::geo::P3::new(self.origin_x, self.origin_y, stock.origin_z),
+            max: rs_cam_core::geo::P3::new(
+                self.origin_x + self.size_x,
+                self.origin_y + self.size_y,
+                stock.origin_z + stock.z,
+            ),
+        }
+    }
+
     /// XY footprint as a polygon for boundary subtraction.
     pub fn footprint(&self) -> rs_cam_core::polygon::Polygon2 {
         rs_cam_core::polygon::Polygon2::rectangle(

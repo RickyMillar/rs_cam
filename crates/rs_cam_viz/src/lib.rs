@@ -1,6 +1,7 @@
 pub mod app;
 pub mod compute;
 pub mod controller;
+pub mod interaction;
 pub mod io;
 pub mod render;
 pub mod state;
