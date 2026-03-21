@@ -397,12 +397,9 @@ impl<B: ComputeBackend> AppController<B> {
                     .iter()
                     .find(|tool| tool.id == toolpath.tool_id)?
                     .clone();
-                Some((
-                    toolpath.id,
-                    toolpath.name.clone(),
-                    Arc::clone(&result.toolpath),
-                    tool,
-                ))
+                // Inverse-transform toolpath moves from setup-local to global frame
+                let tp = self.inverse_transform_toolpath_if_needed(toolpath.id, &result.toolpath);
+                Some((toolpath.id, toolpath.name.clone(), tp, tool))
             })
             .collect();
 
@@ -442,12 +439,8 @@ impl<B: ComputeBackend> AppController<B> {
                     .iter()
                     .find(|tool| tool.id == toolpath.tool_id)?
                     .clone();
-                Some((
-                    toolpath.id,
-                    toolpath.name.clone(),
-                    Arc::clone(&result.toolpath),
-                    tool,
-                ))
+                let tp = self.inverse_transform_toolpath_if_needed(toolpath.id, &result.toolpath);
+                Some((toolpath.id, toolpath.name.clone(), tp, tool))
             })
             .collect();
 
@@ -469,6 +462,27 @@ impl<B: ComputeBackend> AppController<B> {
                 model_mesh,
             });
         }
+    }
+
+    /// If the toolpath belongs to a setup with a non-identity transform,
+    /// clone it and inverse-transform all move targets back to the global frame.
+    fn inverse_transform_toolpath_if_needed(
+        &self,
+        tp_id: ToolpathId,
+        toolpath: &Arc<rs_cam_core::toolpath::Toolpath>,
+    ) -> Arc<rs_cam_core::toolpath::Toolpath> {
+        let setup_id = self.state.job.setup_of_toolpath(tp_id);
+        let setup = setup_id.and_then(|sid| self.state.job.setups.iter().find(|s| s.id == sid));
+        if let Some(setup) = setup
+            && setup.needs_transform()
+        {
+            let mut tp = (**toolpath).clone();
+            for m in &mut tp.moves {
+                m.target = setup.inverse_transform_point(m.target, &self.state.job.stock);
+            }
+            return Arc::new(tp);
+        }
+        Arc::clone(toolpath)
     }
 
     pub fn request_collision_check(&mut self) {
