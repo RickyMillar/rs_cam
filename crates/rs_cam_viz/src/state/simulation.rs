@@ -69,6 +69,10 @@ pub struct SimulationState {
     pub holder_collision_count: usize,
     /// Min safe stickout from last collision check.
     pub min_safe_stickout: Option<f64>,
+    /// Cached mesh from last simulation result (for re-coloring on viz mode change).
+    pub current_mesh: Option<HeightmapMesh>,
+    /// Per-vertex deviations from model surface (for deviation coloring).
+    pub current_deviations: Option<Vec<f32>>,
     /// Stock visualization mode.
     pub stock_viz_mode: StockVizMode,
     /// Stock opacity (0.0 = transparent, 1.0 = solid).
@@ -100,6 +104,8 @@ impl SimulationState {
             collision_report: None,
             holder_collision_count: 0,
             min_safe_stickout: None,
+            current_mesh: None,
+            current_deviations: None,
             stock_viz_mode: StockVizMode::Solid,
             stock_opacity: 1.0,
             saved_show_cutting: true,

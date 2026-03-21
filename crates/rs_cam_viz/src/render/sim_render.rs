@@ -1,8 +1,42 @@
 use egui_wgpu::wgpu;
 use rs_cam_core::simulation::HeightmapMesh;
 
-use super::mesh_render::MeshVertex;
 use super::LineVertex;
+
+/// GPU vertex for per-vertex colored mesh rendering (simulation stock).
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ColoredMeshVertex {
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    pub color: [f32; 3],
+}
+
+impl ColoredMeshVertex {
+    pub fn layout() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<ColoredMeshVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: 12,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: 24,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+            ],
+        }
+    }
+}
 
 /// Simulation result mesh uploaded to GPU.
 pub struct SimMeshGpuData {
@@ -93,22 +127,40 @@ pub fn operation_placeholder_colors(num_verts: usize) -> Vec<[f32; 3]> {
 }
 
 impl SimMeshGpuData {
-    /// Upload a HeightmapMesh (from heightmap_to_mesh) to the GPU.
-    /// The HeightmapMesh has flat arrays: vertices [x,y,z,...], colors [r,g,b,...], indices [i0,i1,i2,...].
+    /// Upload a HeightmapMesh to the GPU using its embedded wood-tone colors.
     pub fn from_heightmap_mesh(device: &wgpu::Device, hm: &HeightmapMesh) -> Self {
+        let num_verts = hm.vertices.len() / 3;
+        let colors: Vec<[f32; 3]> = if hm.colors.len() >= num_verts * 3 {
+            (0..num_verts)
+                .map(|i| [hm.colors[i * 3], hm.colors[i * 3 + 1], hm.colors[i * 3 + 2]])
+                .collect()
+        } else {
+            vec![[0.65, 0.45, 0.25]; num_verts]
+        };
+        Self::from_heightmap_mesh_colored(device, hm, &colors)
+    }
+
+    /// Upload a HeightmapMesh with per-vertex custom colors.
+    /// `colors` is one `[r, g, b]` per vertex (from deviation_colors, height_gradient_colors, etc.).
+    pub fn from_heightmap_mesh_colored(
+        device: &wgpu::Device,
+        hm: &HeightmapMesh,
+        colors: &[[f32; 3]],
+    ) -> Self {
         use wgpu::util::DeviceExt;
 
         let num_verts = hm.vertices.len() / 3;
         let mut mesh_verts = Vec::with_capacity(num_verts);
 
         for i in 0..num_verts {
-            let vx = hm.vertices[i * 3];
-            let vy = hm.vertices[i * 3 + 1];
-            let vz = hm.vertices[i * 3 + 2];
-
-            mesh_verts.push(MeshVertex {
-                position: [vx, vy, vz],
-                normal: [0.0, 0.0, 1.0], // placeholder, overwritten below
+            mesh_verts.push(ColoredMeshVertex {
+                position: [
+                    hm.vertices[i * 3],
+                    hm.vertices[i * 3 + 1],
+                    hm.vertices[i * 3 + 2],
+                ],
+                normal: [0.0, 0.0, 1.0],
+                color: colors.get(i).copied().unwrap_or([0.65, 0.45, 0.25]),
             });
         }
 
@@ -165,17 +217,6 @@ impl SimMeshGpuData {
             index_buffer,
             index_count: hm.indices.len() as u32,
         }
-    }
-
-    /// Upload a HeightmapMesh with per-vertex custom colors.
-    /// `colors` is one `[r, g, b]` per vertex (from deviation_colors, height_gradient_colors, etc.).
-    /// The mesh pipeline currently uses Phong shading with a fixed color, so per-vertex colors
-    /// will require a shader extension to be visible. This method prepares the data for that.
-    pub fn from_heightmap_mesh_colored(device: &wgpu::Device, hm: &HeightmapMesh, _colors: &[[f32; 3]]) -> Self {
-        // For now, delegate to the standard upload. When the colored mesh shader is added,
-        // this method will encode per-vertex colors into a separate color buffer or
-        // extended vertex format.
-        Self::from_heightmap_mesh(device, hm)
     }
 }
 

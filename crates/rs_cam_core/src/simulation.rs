@@ -453,6 +453,7 @@ pub fn simulate_toolpath(
 }
 
 /// Triangle mesh data exported from a heightmap, suitable for 3D rendering.
+#[derive(Clone)]
 pub struct HeightmapMesh {
     /// Vertex positions as flat [x, y, z, ...] in f32.
     pub vertices: Vec<f32>,

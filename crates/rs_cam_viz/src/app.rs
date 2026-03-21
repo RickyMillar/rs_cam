@@ -6,10 +6,11 @@ use crate::state::history::UndoAction;
 use crate::io::import;
 use crate::render::camera::OrbitCamera;
 use crate::render::mesh_render::MeshGpuData;
-use crate::render::sim_render::{SimMeshGpuData, ToolModelGpuData};
+use crate::render::sim_render::{self, SimMeshGpuData, ToolModelGpuData};
 use crate::render::stock_render::StockGpuData;
 use crate::render::toolpath_render::ToolpathGpuData;
 use crate::render::{LineUniforms, MeshUniforms, RenderResources, ViewportCallback};
+use crate::state::simulation::StockVizMode;
 use crate::state::{AppMode, AppState};
 use crate::state::job::ToolConfig;
 use crate::state::selection::Selection;
@@ -543,16 +544,22 @@ impl RsCamApp {
     /// Uses `checkpoint_for_move()` to find the right snapshot and uploads it to GPU.
     fn load_checkpoint_for_move(&mut self, move_idx: usize, frame: &mut eframe::Frame) {
         if let Some(cp_idx) = self.state.simulation.checkpoint_for_move(move_idx) {
-            if let Some(checkpoint) = self.state.simulation.checkpoints.get(cp_idx) {
-                if let Some(rs) = frame.wgpu_render_state() {
-                    let mut renderer = rs.renderer.write();
-                    let resources: &mut RenderResources =
-                        renderer.callback_resources.get_mut().unwrap();
-                    // Upload the checkpoint mesh as the current sim mesh
-                    let hm_mesh = &checkpoint.mesh;
-                    resources.sim_mesh_data =
-                        Some(SimMeshGpuData::from_heightmap_mesh(&rs.device, hm_mesh));
-                }
+            let mesh = match self.state.simulation.checkpoints.get(cp_idx) {
+                Some(c) => c.mesh.clone(),
+                None => return,
+            };
+            let colors = self.compute_sim_colors(&mesh);
+            self.state.simulation.current_mesh = Some(mesh);
+            if let Some(rs) = frame.wgpu_render_state() {
+                let mesh_ref = self.state.simulation.current_mesh.as_ref().unwrap();
+                let mut renderer = rs.renderer.write();
+                let resources: &mut RenderResources =
+                    renderer.callback_resources.get_mut().unwrap();
+                resources.sim_mesh_data = Some(SimMeshGpuData::from_heightmap_mesh_colored(
+                    &rs.device,
+                    mesh_ref,
+                    &colors,
+                ));
             }
         }
     }
@@ -561,6 +568,32 @@ impl RsCamApp {
     fn first_model_mesh(&self) -> Option<Arc<rs_cam_core::mesh::TriangleMesh>> {
         self.state.job.models.iter()
             .find_map(|m| m.mesh.clone())
+    }
+
+    /// Compute per-vertex colors for the sim mesh based on current viz mode.
+    fn compute_sim_colors(&self, mesh: &rs_cam_core::simulation::HeightmapMesh) -> Vec<[f32; 3]> {
+        let num_verts = mesh.vertices.len() / 3;
+        match self.state.simulation.stock_viz_mode {
+            StockVizMode::Solid => {
+                if mesh.colors.len() >= num_verts * 3 {
+                    (0..num_verts)
+                        .map(|i| [mesh.colors[i * 3], mesh.colors[i * 3 + 1], mesh.colors[i * 3 + 2]])
+                        .collect()
+                } else {
+                    vec![[0.65, 0.45, 0.25]; num_verts]
+                }
+            }
+            StockVizMode::Deviation => {
+                if let Some(devs) = &self.state.simulation.current_deviations {
+                    sim_render::deviation_colors(devs)
+                } else {
+                    // Fall back to solid when no model mesh was available
+                    vec![[0.65, 0.45, 0.25]; num_verts]
+                }
+            }
+            StockVizMode::ByHeight => sim_render::height_gradient_colors(&mesh.vertices),
+            StockVizMode::ByOperation => sim_render::operation_placeholder_colors(num_verts),
+        }
     }
 
     fn run_simulation_with_all(&mut self) {
@@ -835,13 +868,18 @@ impl RsCamApp {
                     self.state.simulation.rapid_collisions = sim.rapid_collisions;
                     self.state.simulation.rapid_collision_move_indices = sim.rapid_collision_move_indices;
 
-                    // Upload final sim mesh to GPU
+                    // Cache mesh and deviations for viz mode re-coloring
+                    self.state.simulation.current_deviations = sim.deviations;
+                    self.state.simulation.current_mesh = Some(sim.mesh.clone());
+
+                    // Upload final sim mesh to GPU with viz mode colors
+                    let colors = self.compute_sim_colors(&sim.mesh);
                     if let Some(rs) = frame.wgpu_render_state() {
                         let mut renderer = rs.renderer.write();
                         let resources: &mut RenderResources =
                             renderer.callback_resources.get_mut().unwrap();
                         resources.sim_mesh_data =
-                            Some(SimMeshGpuData::from_heightmap_mesh(&rs.device, &sim.mesh));
+                            Some(SimMeshGpuData::from_heightmap_mesh_colored(&rs.device, &sim.mesh, &colors));
                     }
                 }
                 Err(e) => {
@@ -898,8 +936,17 @@ impl RsCamApp {
         let stock_bbox = self.state.job.stock.bbox();
         resources.stock_data = Some(StockGpuData::from_bbox(&render_state.device, &stock_bbox));
 
-        // Clear sim mesh if simulation was reset
-        if !self.state.simulation.active {
+        // Re-upload sim mesh with current viz mode colors, or clear if sim is inactive
+        if self.state.simulation.active {
+            if let Some(mesh) = &self.state.simulation.current_mesh {
+                let colors = self.compute_sim_colors(mesh);
+                resources.sim_mesh_data = Some(SimMeshGpuData::from_heightmap_mesh_colored(
+                    &render_state.device,
+                    mesh,
+                    &colors,
+                ));
+            }
+        } else {
             resources.sim_mesh_data = None;
             resources.tool_model_data = None;
         }
@@ -1138,6 +1185,7 @@ impl RsCamApp {
             show_stock: self.state.viewport.show_stock
                 && self.state.job.models.iter().any(|m| m.mesh.is_some()),
             show_sim_mesh: self.state.simulation.active,
+            sim_mesh_opacity: self.state.simulation.stock_opacity,
             show_cutting: self.state.viewport.show_cutting,
             show_rapids: self.state.viewport.show_rapids,
             show_collisions: self.state.viewport.show_collisions,

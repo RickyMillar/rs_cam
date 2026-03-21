@@ -11,7 +11,7 @@ use mesh_render::{MeshGpuData, MeshVertex};
 use grid_render::GridGpuData;
 use stock_render::StockGpuData;
 use toolpath_render::ToolpathGpuData;
-use sim_render::{SimMeshGpuData, ToolModelGpuData};
+use sim_render::{ColoredMeshVertex, SimMeshGpuData, ToolModelGpuData};
 
 /// GPU uniform data for mesh rendering (Phong shading).
 #[repr(C)]
@@ -22,6 +22,17 @@ pub struct MeshUniforms {
     pub _pad0: f32,
     pub camera_pos: [f32; 3],
     pub _pad1: f32,
+}
+
+/// GPU uniform data for colored mesh rendering (simulation stock with opacity).
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ColoredMeshUniforms {
+    pub view_proj: [[f32; 4]; 4],
+    pub light_dir: [f32; 3],
+    pub _pad0: f32,
+    pub camera_pos: [f32; 3],
+    pub opacity: f32,
 }
 
 /// GPU uniform data for line rendering.
@@ -52,10 +63,13 @@ struct OffscreenTargets {
 pub struct RenderResources {
     // 3D scene pipelines (render to offscreen with depth)
     mesh_pipeline: wgpu::RenderPipeline,
+    sim_mesh_pipeline: wgpu::RenderPipeline,
     line_pipeline: wgpu::RenderPipeline,
     mesh_uniform_buffer: wgpu::Buffer,
+    sim_mesh_uniform_buffer: wgpu::Buffer,
     line_uniform_buffer: wgpu::Buffer,
     mesh_bind_group: wgpu::BindGroup,
+    sim_mesh_bind_group: wgpu::BindGroup,
     line_bind_group: wgpu::BindGroup,
 
     // Blit pipeline (copy offscreen to egui render pass)
@@ -147,6 +161,66 @@ impl RenderResources {
                 targets: &[Some(wgpu::ColorTargetState {
                     format: target_format,
                     blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(depth_stencil.clone()),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        // --- Sim mesh pipeline (per-vertex colored, alpha blending) ---
+        let sim_mesh_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("sim_mesh_shader"),
+            source: wgpu::ShaderSource::Wgsl(COLORED_MESH_SHADER_SRC.into()),
+        });
+
+        let sim_mesh_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("sim_mesh_uniforms"),
+            size: std::mem::size_of::<ColoredMeshUniforms>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let sim_mesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("sim_mesh_bg"),
+            layout: &mesh_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: sim_mesh_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        let sim_mesh_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("sim_mesh_pl"),
+                bind_group_layouts: &[&mesh_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let sim_mesh_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("sim_mesh_pipeline"),
+            layout: Some(&sim_mesh_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &sim_mesh_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[ColoredMeshVertex::layout()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &sim_mesh_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: target_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
@@ -329,10 +403,13 @@ impl RenderResources {
 
         Self {
             mesh_pipeline,
+            sim_mesh_pipeline,
             line_pipeline,
             mesh_uniform_buffer,
+            sim_mesh_uniform_buffer,
             line_uniform_buffer,
             mesh_bind_group,
+            sim_mesh_bind_group,
             line_bind_group,
             blit_pipeline,
             blit_bind_group_layout,
@@ -425,6 +502,7 @@ pub struct ViewportCallback {
     pub show_grid: bool,
     pub show_stock: bool,
     pub show_sim_mesh: bool,
+    pub sim_mesh_opacity: f32,
     pub show_cutting: bool,
     pub show_rapids: bool,
     pub show_collisions: bool,
@@ -455,6 +533,20 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             0,
             bytemuck::bytes_of(&self.mesh_uniforms),
         );
+        if self.show_sim_mesh {
+            let sim_uniforms = ColoredMeshUniforms {
+                view_proj: self.mesh_uniforms.view_proj,
+                light_dir: self.mesh_uniforms.light_dir,
+                _pad0: 0.0,
+                camera_pos: self.mesh_uniforms.camera_pos,
+                opacity: self.sim_mesh_opacity,
+            };
+            queue.write_buffer(
+                &resources.sim_mesh_uniform_buffer,
+                0,
+                bytemuck::bytes_of(&sim_uniforms),
+            );
+        }
         queue.write_buffer(
             &resources.line_uniform_buffer,
             0,
@@ -523,8 +615,8 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             // Draw mesh (sim mesh replaces raw STL when simulation is active)
             if self.show_sim_mesh {
                 if let Some(sim) = &resources.sim_mesh_data {
-                    pass.set_pipeline(&resources.mesh_pipeline);
-                    pass.set_bind_group(0, &resources.mesh_bind_group, &[]);
+                    pass.set_pipeline(&resources.sim_mesh_pipeline);
+                    pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
                     pass.set_vertex_buffer(0, sim.vertex_buffer.slice(..));
                     pass.set_index_buffer(sim.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                     pass.draw_indexed(0..sim.index_count, 0, 0..1);
@@ -673,6 +765,65 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let color = ambient + diffuse + specular;
     return vec4<f32>(color, 1.0);
+}
+"#;
+
+const COLORED_MESH_SHADER_SRC: &str = r#"
+struct Uniforms {
+    view_proj: mat4x4<f32>,
+    light_dir: vec3<f32>,
+    camera_pos: vec3<f32>,
+    opacity: f32,
+};
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+struct VertexInput {
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) color: vec3<f32>,
+};
+
+struct VertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) world_normal: vec3<f32>,
+    @location(1) world_pos: vec3<f32>,
+    @location(2) vertex_color: vec3<f32>,
+};
+
+@vertex
+fn vs_main(in: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    out.clip_position = uniforms.view_proj * vec4<f32>(in.position, 1.0);
+    out.world_normal = in.normal;
+    out.world_pos = in.position;
+    out.vertex_color = in.color;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let normal = normalize(in.world_normal);
+    let light = normalize(uniforms.light_dir);
+
+    // Ambient (tinted by vertex color so unlit areas retain hue)
+    let ambient = in.vertex_color * 0.25;
+
+    // Two-sided lighting: flip normal if facing away from light
+    let n = select(normal, -normal, dot(normal, light) < 0.0);
+
+    // Diffuse (Lambert)
+    let ndotl = max(dot(n, light), 0.0);
+    let diffuse = in.vertex_color * ndotl;
+
+    // Specular (Blinn-Phong)
+    let view_dir = normalize(uniforms.camera_pos - in.world_pos);
+    let half_dir = normalize(light + view_dir);
+    let spec = pow(max(dot(n, half_dir), 0.0), 32.0);
+    let specular = vec3<f32>(0.2, 0.2, 0.2) * spec;
+
+    let color = ambient + diffuse + specular;
+    return vec4<f32>(color, uniforms.opacity);
 }
 "#;
 
