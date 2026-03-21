@@ -362,7 +362,7 @@ fn draw_machine_panel(
                 for (i, (label, _)) in presets.iter().enumerate() {
                     if ui.selectable_value(&mut selected_idx, i, *label).changed() {
                         state.job.machine = presets[i].1.clone();
-                        state.job.dirty = true;
+                        state.job.mark_edited();
                     }
                 }
             });
@@ -407,7 +407,7 @@ fn draw_machine_panel(
                 .text("")
                 .show_value(true),
         ).changed() {
-            state.job.dirty = true;
+            state.job.mark_edited();
         }
     });
     ui.label(
