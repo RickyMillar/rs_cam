@@ -13,16 +13,18 @@ use viewport::ViewportState;
 
 /// Which top-level workspace the user is in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AppMode {
+pub enum Workspace {
+    /// Setup definition: stock orientation, datum, workholding, fixtures.
+    Setup,
     /// Toolpath authoring — parameters, feeds, strategies.
-    Editor,
+    Toolpaths,
     /// Verification — material removal, collisions, cycle time, safety.
     Simulation,
 }
 
 /// Top-level application state. Single source of truth.
 pub struct AppState {
-    pub mode: AppMode,
+    pub workspace: Workspace,
     pub job: JobState,
     pub selection: Selection,
     pub viewport: ViewportState,
@@ -35,7 +37,7 @@ pub struct AppState {
 impl AppState {
     pub fn new() -> Self {
         Self {
-            mode: AppMode::Editor,
+            workspace: Workspace::Toolpaths,
             job: JobState::new(),
             selection: Selection::None,
             viewport: ViewportState::new(),

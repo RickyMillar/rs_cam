@@ -3598,6 +3598,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui-wgpu",
+ "image",
  "nalgebra",
  "rfd",
  "rs_cam_core",

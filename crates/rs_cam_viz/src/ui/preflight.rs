@@ -17,7 +17,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             let sim = &state.simulation;
 
             // 1. Simulation run status
-            if sim.active {
+            if sim.has_results() {
                 let stale = sim.is_stale(state.job.edit_counter);
                 if stale {
                     checklist_item(
@@ -33,30 +33,30 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 checklist_item(ui, CheckStatus::Warning, "Simulation run", "Not run");
             }
 
-            // 2. Holder collisions
-            if sim.holder_collision_count > 0 {
+            // 2. Holder clearance (first path only)
+            if sim.checks.holder_collision_count > 0 {
                 checklist_item(
                     ui,
                     CheckStatus::Fail,
-                    "Holder collisions",
-                    &format!("{} detected", sim.holder_collision_count),
+                    "Holder clearance",
+                    &format!("{} issues", sim.checks.holder_collision_count),
                 );
-            } else if sim.min_safe_stickout.is_some() {
-                checklist_item(ui, CheckStatus::Pass, "Holder collisions", "None");
+            } else if sim.checks.min_safe_stickout.is_some() {
+                checklist_item(ui, CheckStatus::Pass, "Holder clearance", "Clear");
             } else {
-                checklist_item(ui, CheckStatus::Warning, "Holder collisions", "Not checked");
+                checklist_item(ui, CheckStatus::Warning, "Holder clearance", "Not checked");
             }
 
             // 3. Rapid collisions
-            if sim.active {
-                if sim.rapid_collisions.is_empty() {
+            if sim.has_results() {
+                if sim.checks.rapid_collisions.is_empty() {
                     checklist_item(ui, CheckStatus::Pass, "Rapid collisions", "None");
                 } else {
                     checklist_item(
                         ui,
                         CheckStatus::Fail,
                         "Rapid collisions",
-                        &format!("{} detected", sim.rapid_collisions.len()),
+                        &format!("{} detected", sim.checks.rapid_collisions.len()),
                     );
                 }
             } else {
@@ -110,11 +110,14 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             ui.separator();
             ui.add_space(4.0);
 
-            let has_failures = sim.holder_collision_count > 0 || !sim.rapid_collisions.is_empty();
+            let has_failures =
+                sim.checks.holder_collision_count > 0 || !sim.checks.rapid_collisions.is_empty();
 
             ui.horizontal(|ui| {
                 if has_failures && ui.button("Fix Issues").clicked() {
-                    events.push(AppEvent::EnterSimulation);
+                    events.push(AppEvent::SwitchWorkspace(
+                        crate::state::Workspace::Simulation,
+                    ));
                     still_open = false;
                 }
 

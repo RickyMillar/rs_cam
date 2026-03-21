@@ -8,8 +8,10 @@ pub mod sim_op_list;
 pub mod sim_timeline;
 pub mod status_bar;
 pub mod viewport_overlay;
+pub mod workspace_bar;
 
 use crate::render::camera::ViewPreset;
+use crate::state::Workspace;
 use crate::state::job::{FixtureId, KeepOutId, SetupId, ToolId, ToolType};
 use crate::state::toolpath::{OperationType, ToolpathId};
 use std::path::PathBuf;
@@ -71,9 +73,8 @@ pub enum AppEvent {
     ToggleSimPlayback,
     ToggleSimToolpath(ToolpathId),
 
-    // Simulation workspace
-    EnterSimulation,
-    ExitSimulation,
+    // Workspace navigation
+    SwitchWorkspace(Workspace),
     SimStepForward,
     SimStepBackward,
     SimJumpToStart,

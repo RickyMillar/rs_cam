@@ -9,7 +9,7 @@ pub fn draw(ui: &mut egui::Ui, sim: &SimulationState, job: &JobState, events: &m
     ui.heading("Operations");
     ui.separator();
 
-    if sim.boundaries.is_empty() {
+    if sim.boundaries().is_empty() {
         ui.label(
             egui::RichText::new("No simulation results yet")
                 .italics()
@@ -36,14 +36,13 @@ pub fn draw(ui: &mut egui::Ui, sim: &SimulationState, job: &JobState, events: &m
     }
 
     // Collect selected toolpath IDs for checkbox state
-    let all_selected = sim.selected_toolpaths.is_none();
-    let selected_set: Vec<ToolpathId> =
-        sim.selected_toolpaths.as_ref().cloned().unwrap_or_default();
+    let all_selected = sim.selected_toolpaths().is_none();
+    let selected_set: Vec<ToolpathId> = sim.selected_toolpaths().cloned().unwrap_or_default();
 
     // Track if user toggled any checkbox
     let mut toggled_id: Option<ToolpathId> = None;
 
-    for (i, boundary) in sim.boundaries.iter().enumerate() {
+    for (i, boundary) in sim.boundaries().iter().enumerate() {
         let is_current = sim.current_boundary().map(|b| b.id) == Some(boundary.id);
         let pc = palette_color(i);
         let color = egui::Color32::from_rgb(
@@ -110,12 +109,12 @@ pub fn draw(ui: &mut egui::Ui, sim: &SimulationState, job: &JobState, events: &m
             let op_moves = boundary.end_move.saturating_sub(boundary.start_move);
             let progress = if op_moves == 0 {
                 0.0
-            } else if sim.current_move >= boundary.end_move {
+            } else if sim.playback.current_move >= boundary.end_move {
                 1.0
-            } else if sim.current_move <= boundary.start_move {
+            } else if sim.playback.current_move <= boundary.start_move {
                 0.0
             } else {
-                (sim.current_move - boundary.start_move) as f32 / op_moves as f32
+                (sim.playback.current_move - boundary.start_move) as f32 / op_moves as f32
             };
 
             let bar_height = 4.0;
@@ -145,7 +144,8 @@ pub fn draw(ui: &mut egui::Ui, sim: &SimulationState, job: &JobState, events: &m
                 }
                 let move_info = format!(
                     "{} / {}",
-                    sim.current_move
+                    sim.playback
+                        .current_move
                         .saturating_sub(boundary.start_move)
                         .min(op_moves),
                     op_moves,
@@ -165,7 +165,7 @@ pub fn draw(ui: &mut egui::Ui, sim: &SimulationState, job: &JobState, events: &m
             });
         });
 
-        if i + 1 < sim.boundaries.len() {
+        if i + 1 < sim.boundaries().len() {
             ui.add_space(2.0);
         }
     }
@@ -174,7 +174,7 @@ pub fn draw(ui: &mut egui::Ui, sim: &SimulationState, job: &JobState, events: &m
     if let Some(id) = toggled_id {
         let mut new_selection: Vec<ToolpathId> = if all_selected {
             // Was "all" — now exclude the toggled one
-            sim.boundaries
+            sim.boundaries()
                 .iter()
                 .map(|b| b.id)
                 .filter(|bid| *bid != id)
@@ -190,7 +190,7 @@ pub fn draw(ui: &mut egui::Ui, sim: &SimulationState, job: &JobState, events: &m
         };
 
         // If all are selected again, use None (meaning "all")
-        if new_selection.len() == sim.boundaries.len() {
+        if new_selection.len() == sim.boundaries().len() {
             new_selection.clear();
         }
 

@@ -86,7 +86,7 @@ pub fn draw(
     egui::CollapsingHeader::new("Current State")
         .default_open(true)
         .show(ui, |ui| {
-            if let Some(pos) = sim.tool_position {
+            if let Some(pos) = sim.playback.tool_position {
                 ui.horizontal(|ui| {
                     ui.label("Position:");
                     ui.label(
@@ -121,7 +121,11 @@ pub fn draw(
             let move_info = current_move_info(sim, job);
             ui.horizontal(|ui| {
                 ui.label("Move:");
-                ui.label(format!("{} / {}", sim.current_move, sim.total_moves));
+                ui.label(format!(
+                    "{} / {}",
+                    sim.playback.current_move,
+                    sim.total_moves()
+                ));
                 if let Some((mt, _feed)) = &move_info {
                     ui.label(egui::RichText::new(format!("({})", mt)).small().color(
                         match mt.as_str() {
@@ -140,10 +144,10 @@ pub fn draw(
                 });
             }
 
-            if !sim.tool_type_label.is_empty() {
+            if !sim.playback.tool_type_label.is_empty() {
                 ui.horizontal(|ui| {
                     ui.label("Tool type:");
-                    ui.label(&sim.tool_type_label);
+                    ui.label(&sim.playback.tool_type_label);
                 });
             }
         });
@@ -154,31 +158,36 @@ pub fn draw(
     egui::CollapsingHeader::new("Warnings & Flags")
         .default_open(true)
         .show(ui, |ui| {
-            // Holder collisions
-            if sim.holder_collision_count == 0 {
+            // Holder clearance (first path only)
+            if sim.checks.holder_collision_count == 0 && sim.checks.min_safe_stickout.is_some() {
                 ui.label(
-                    egui::RichText::new("\u{2705} Holder collisions: None")
+                    egui::RichText::new("\u{2705} Holder clearance: Clear")
                         .color(egui::Color32::from_rgb(100, 180, 100)),
                 );
-            } else {
+            } else if sim.checks.holder_collision_count > 0 {
                 ui.label(
                     egui::RichText::new(format!(
-                        "\u{274C} Holder collisions: {}",
-                        sim.holder_collision_count
+                        "\u{274C} Holder clearance: {} issues",
+                        sim.checks.holder_collision_count
                     ))
                     .color(egui::Color32::from_rgb(220, 80, 80)),
                 );
-                if let Some(stickout) = sim.min_safe_stickout {
+                if let Some(stickout) = sim.checks.min_safe_stickout {
                     ui.label(
                         egui::RichText::new(format!("   Min safe stickout: {:.1} mm", stickout))
                             .small()
                             .color(egui::Color32::from_rgb(180, 140, 80)),
                     );
                 }
+            } else {
+                ui.label(
+                    egui::RichText::new("\u{26A0} Holder clearance: Not checked")
+                        .color(egui::Color32::from_rgb(220, 180, 60)),
+                );
             }
 
             // Rapid collisions
-            if sim.rapid_collisions.is_empty() {
+            if sim.checks.rapid_collisions.is_empty() {
                 ui.label(
                     egui::RichText::new("\u{2705} Rapid collisions: None")
                         .color(egui::Color32::from_rgb(100, 180, 100)),
@@ -187,7 +196,7 @@ pub fn draw(
                 ui.label(
                     egui::RichText::new(format!(
                         "\u{274C} Rapid collisions: {}",
-                        sim.rapid_collisions.len()
+                        sim.checks.rapid_collisions.len()
                     ))
                     .color(egui::Color32::from_rgb(220, 80, 80)),
                 );
@@ -202,9 +211,9 @@ pub fn draw(
             }
 
             // Run collision check button
-            if sim.holder_collision_count == 0
-                && sim.min_safe_stickout.is_none()
-                && ui.small_button("Run Collision Check").clicked()
+            if sim.checks.holder_collision_count == 0
+                && sim.checks.min_safe_stickout.is_none()
+                && ui.small_button("Check Holder Clearance").clicked()
             {
                 events.push(AppEvent::RunCollisionCheck);
             }
@@ -218,11 +227,11 @@ pub fn draw(
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Total moves:");
-                ui.label(format!("{}", sim.total_moves));
+                ui.label(format!("{}", sim.total_moves()));
             });
             ui.horizontal(|ui| {
                 ui.label("Operations:");
-                ui.label(format!("{}", sim.boundaries.len()));
+                ui.label(format!("{}", sim.boundaries().len()));
             });
 
             // Aggregate stats from job toolpaths
@@ -249,7 +258,7 @@ pub fn draw(
             });
 
             // Per-op breakdown table
-            if sim.boundaries.len() > 1 {
+            if sim.boundaries().len() > 1 {
                 ui.add_space(4.0);
                 ui.label(egui::RichText::new("Per-operation:").small().strong());
 
@@ -262,7 +271,7 @@ pub fn draw(
                         ui.label(egui::RichText::new("Time").small().strong());
                         ui.end_row();
 
-                        for boundary in &sim.boundaries {
+                        for boundary in sim.boundaries() {
                             if let Some(tp) = job.find_toolpath(boundary.id)
                                 && let Some(result) = &tp.result
                             {
@@ -290,7 +299,7 @@ pub fn draw(
 
 /// Determine the move type and feed rate at the current move index.
 fn current_move_info(sim: &SimulationState, job: &JobState) -> Option<(String, Option<f64>)> {
-    let current = sim.current_move;
+    let current = sim.playback.current_move;
     let mut cumulative = 0;
     for tp in job.all_toolpaths() {
         if !tp.enabled {
@@ -328,7 +337,7 @@ fn aggregate_stats(sim: &SimulationState, job: &JobState) -> (f64, f64, f64) {
     let mut total_rapid = 0.0;
     let mut total_time_min = 0.0;
 
-    for boundary in &sim.boundaries {
+    for boundary in sim.boundaries() {
         if let Some(tp) = job.find_toolpath(boundary.id)
             && let Some(result) = &tp.result
         {

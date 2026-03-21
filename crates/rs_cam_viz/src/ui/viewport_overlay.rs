@@ -1,13 +1,13 @@
 use super::AppEvent;
 use crate::compute::LaneSnapshot;
 use crate::render::camera::ViewPreset;
-use crate::state::AppMode;
+use crate::state::Workspace;
 use crate::state::viewport::{RenderMode, ViewportState};
 use crate::ui::automation;
 
 pub fn draw(
     ui: &mut egui::Ui,
-    mode: AppMode,
+    workspace: Workspace,
     sim_active: bool,
     viewport: &mut ViewportState,
     lanes: &[LaneSnapshot; 2],
@@ -71,11 +71,11 @@ pub fn draw(
             ui.separator();
         }
 
-        // Simulation controls — only shown in Editor mode (sim workspace has its own)
-        if mode == AppMode::Editor {
+        // Simulation controls — only shown outside Simulation workspace (sim has its own)
+        if matches!(workspace, Workspace::Setup | Workspace::Toolpaths) {
             if sim_active {
                 if ui.small_button("Open Sim").clicked() {
-                    events.push(AppEvent::EnterSimulation);
+                    events.push(AppEvent::SwitchWorkspace(Workspace::Simulation));
                 }
                 if ui.small_button("Reset").clicked() {
                     events.push(AppEvent::ResetSimulation);
@@ -88,8 +88,8 @@ pub fn draw(
                 }
             }
 
-            let collision = ui.small_button("Collision");
-            automation::record(ui, "overlay_collision_check", &collision, "Collision");
+            let collision = ui.small_button("Check Holder");
+            automation::record(ui, "overlay_collision_check", &collision, "Check Holder");
             if collision.clicked() {
                 events.push(AppEvent::RunCollisionCheck);
             }

@@ -113,6 +113,25 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                 }
             });
 
+            ui.menu_button("Workspace", |ui| {
+                if ui.button("Setup").clicked() {
+                    ui.close_menu();
+                    events.push(AppEvent::SwitchWorkspace(crate::state::Workspace::Setup));
+                }
+                if ui.button("Toolpaths").clicked() {
+                    ui.close_menu();
+                    events.push(AppEvent::SwitchWorkspace(
+                        crate::state::Workspace::Toolpaths,
+                    ));
+                }
+                if ui.button("Simulation").clicked() {
+                    ui.close_menu();
+                    events.push(AppEvent::SwitchWorkspace(
+                        crate::state::Workspace::Simulation,
+                    ));
+                }
+            });
+
             ui.menu_button("Simulation", |ui| {
                 if ui.button("Run Simulation").clicked() {
                     ui.close_menu();
@@ -123,7 +142,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                     events.push(AppEvent::ResetSimulation);
                 }
                 ui.separator();
-                if ui.button("Check Collisions").clicked() {
+                if ui.button("Check Holder Clearance").clicked() {
                     ui.close_menu();
                     events.push(AppEvent::RunCollisionCheck);
                 }

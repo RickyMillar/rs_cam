@@ -133,8 +133,8 @@ fn render_snapshot(
             let events = &mut controller.events;
             crate::ui::viewport_overlay::draw(
                 ui,
-                controller.state.mode,
-                controller.state.simulation.active,
+                controller.state.workspace,
+                controller.state.simulation.has_results(),
                 &mut controller.state.viewport,
                 &lanes,
                 events,
@@ -325,21 +325,21 @@ fn simulation_results_capture_setup_boundaries() {
 
     controller.drain_compute_results();
 
-    assert_eq!(controller.state.simulation.setup_boundaries.len(), 2);
+    assert_eq!(controller.state.simulation.setup_boundaries().len(), 2);
     assert_eq!(
-        controller.state.simulation.setup_boundaries[0].setup_name,
+        controller.state.simulation.setup_boundaries()[0].setup_name,
         "Setup 1"
     );
     assert_eq!(
-        controller.state.simulation.setup_boundaries[1].setup_name,
+        controller.state.simulation.setup_boundaries()[1].setup_name,
         "Bottom Side"
     );
     assert_eq!(
-        controller.state.simulation.setup_boundaries[0].start_move,
+        controller.state.simulation.setup_boundaries()[0].start_move,
         0
     );
     assert_eq!(
-        controller.state.simulation.setup_boundaries[1].start_move,
+        controller.state.simulation.setup_boundaries()[1].start_move,
         10
     );
 }

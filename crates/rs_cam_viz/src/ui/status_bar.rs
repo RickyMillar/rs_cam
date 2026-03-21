@@ -65,7 +65,7 @@ pub fn draw(
             );
         }
 
-        if state.simulation.active {
+        if state.simulation.has_results() {
             ui.separator();
             ui.label(egui::RichText::new("SIM").color(egui::Color32::from_rgb(100, 180, 100)));
         }

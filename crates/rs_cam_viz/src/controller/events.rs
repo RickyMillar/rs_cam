@@ -9,7 +9,7 @@ use rs_cam_core::geo::BoundingBox3;
 use crate::state::history::UndoAction;
 use crate::state::job::{Fixture, KeepOutZone, Setup, ToolConfig};
 use crate::state::selection::Selection;
-use crate::state::simulation::SimulationState;
+use crate::state::simulation::{SimulationResults, SimulationRunMeta};
 use crate::state::toolpath::{ComputeStatus, OperationConfig, ToolpathEntry, ToolpathId};
 use crate::ui::AppEvent;
 
@@ -280,49 +280,70 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::RunSimulation => self.run_simulation_with_all(),
             AppEvent::RunSimulationWith(ids) => self.run_simulation_with_ids(&ids),
             AppEvent::ToggleSimPlayback => {
-                self.state.simulation.playing = !self.state.simulation.playing;
+                self.state.simulation.playback.playing = !self.state.simulation.playback.playing;
             }
             AppEvent::ResetSimulation => {
-                self.state.simulation = SimulationState::new();
+                let sim = &mut self.state.simulation;
+                sim.results = None;
+                sim.playback = Default::default();
+                sim.checks = Default::default();
+                sim.last_run = None;
+                self.collision_positions.clear();
                 self.pending_upload = true;
             }
             AppEvent::ToggleSimToolpath(_) => {}
             AppEvent::SimStepForward => {
-                if self.state.simulation.active {
-                    self.state.simulation.playing = false;
-                    self.state.simulation.current_move = (self.state.simulation.current_move + 1)
-                        .min(self.state.simulation.total_moves);
+                if self.state.simulation.has_results() {
+                    let total = self.state.simulation.total_moves();
+                    let pb = &mut self.state.simulation.playback;
+                    pb.playing = false;
+                    pb.current_move = (pb.current_move + 1).min(total);
                 }
             }
             AppEvent::SimStepBackward => {
-                if self.state.simulation.active {
-                    self.state.simulation.playing = false;
-                    self.state.simulation.current_move =
-                        self.state.simulation.current_move.saturating_sub(1);
+                if self.state.simulation.has_results() {
+                    let pb = &mut self.state.simulation.playback;
+                    pb.playing = false;
+                    pb.current_move = pb.current_move.saturating_sub(1);
                 }
             }
             AppEvent::SimJumpToStart => {
-                if self.state.simulation.active {
-                    self.state.simulation.playing = false;
-                    self.state.simulation.current_move = 0;
+                if self.state.simulation.has_results() {
+                    let pb = &mut self.state.simulation.playback;
+                    pb.playing = false;
+                    pb.current_move = 0;
                 }
             }
             AppEvent::SimJumpToEnd => {
-                if self.state.simulation.active {
-                    self.state.simulation.playing = false;
-                    self.state.simulation.current_move = self.state.simulation.total_moves;
+                if self.state.simulation.has_results() {
+                    let total = self.state.simulation.total_moves();
+                    let pb = &mut self.state.simulation.playback;
+                    pb.playing = false;
+                    pb.current_move = total;
                 }
             }
             AppEvent::SimJumpToOpStart(boundary_idx) => {
-                if let Some(boundary) = self.state.simulation.boundaries.get(boundary_idx) {
-                    self.state.simulation.playing = false;
-                    self.state.simulation.current_move = boundary.start_move;
+                if let Some(start) = self
+                    .state
+                    .simulation
+                    .boundaries()
+                    .get(boundary_idx)
+                    .map(|b| b.start_move)
+                {
+                    self.state.simulation.playback.playing = false;
+                    self.state.simulation.playback.current_move = start;
                 }
             }
             AppEvent::SimJumpToOpEnd(boundary_idx) => {
-                if let Some(boundary) = self.state.simulation.boundaries.get(boundary_idx) {
-                    self.state.simulation.playing = false;
-                    self.state.simulation.current_move = boundary.end_move;
+                if let Some(end) = self
+                    .state
+                    .simulation
+                    .boundaries()
+                    .get(boundary_idx)
+                    .map(|b| b.end_move)
+                {
+                    self.state.simulation.playback.playing = false;
+                    self.state.simulation.playback.current_move = end;
                 }
             }
             AppEvent::RescaleModel(model_id, units) => {
@@ -355,8 +376,7 @@ impl<B: ComputeBackend> AppController<B> {
             | AppEvent::OpenJob
             | AppEvent::SetViewPreset(_)
             | AppEvent::ResetView
-            | AppEvent::EnterSimulation
-            | AppEvent::ExitSimulation
+            | AppEvent::SwitchWorkspace(_)
             | AppEvent::SimVizModeChanged
             | AppEvent::Quit => {}
         }
@@ -672,13 +692,8 @@ impl<B: ComputeBackend> AppController<B> {
                 }
                 ComputeMessage::Simulation(result) => match result {
                     Ok(simulation) => {
-                        self.state.simulation.active = true;
-                        self.state.simulation.total_moves = simulation.total_moves;
-                        self.state.simulation.current_move = simulation.total_moves;
-                        self.state.simulation.sim_generation += 1;
-                        self.state.simulation.last_sim_edit_counter = self.state.job.edit_counter;
-
-                        self.state.simulation.boundaries = simulation
+                        // Build boundaries
+                        let boundaries: Vec<_> = simulation
                             .boundaries
                             .iter()
                             .map(|boundary| crate::state::simulation::ToolpathBoundary {
@@ -689,10 +704,12 @@ impl<B: ComputeBackend> AppController<B> {
                                 end_move: boundary.end_move,
                             })
                             .collect();
-                        self.state.simulation.setup_boundaries = {
-                            let mut setup_boundaries = Vec::new();
+
+                        // Build setup boundaries
+                        let setup_boundaries = {
+                            let mut sbs = Vec::new();
                             let mut last_setup_id = None;
-                            for boundary in &self.state.simulation.boundaries {
+                            for boundary in &boundaries {
                                 let setup_id = self.state.job.setup_of_toolpath(boundary.id);
                                 if setup_id != last_setup_id {
                                     if let Some(setup_id) = setup_id {
@@ -704,29 +721,20 @@ impl<B: ComputeBackend> AppController<B> {
                                             .find(|setup| setup.id == setup_id)
                                             .map(|setup| setup.name.clone())
                                             .unwrap_or_default();
-                                        setup_boundaries.push(
-                                            crate::state::simulation::SetupBoundary {
-                                                setup_id,
-                                                setup_name,
-                                                start_move: boundary.start_move,
-                                            },
-                                        );
+                                        sbs.push(crate::state::simulation::SetupBoundary {
+                                            setup_id,
+                                            setup_name,
+                                            start_move: boundary.start_move,
+                                        });
                                     }
                                     last_setup_id = setup_id;
                                 }
                             }
-                            setup_boundaries
+                            sbs
                         };
-                        // Store the initial (fresh stock) heightmap for playback
-                        let initial_heightmap = rs_cam_core::simulation::Heightmap::from_bounds(
-                            &self.state.job.stock.bbox(),
-                            Some(self.state.job.stock.bbox().max.z),
-                            self.state.simulation.resolution,
-                        );
-                        self.state.simulation.live_heightmap = Some(initial_heightmap);
-                        self.state.simulation.live_sim_move = 0;
 
-                        self.state.simulation.checkpoints = simulation
+                        // Build checkpoints
+                        let checkpoints: Vec<_> = simulation
                             .checkpoints
                             .into_iter()
                             .map(|checkpoint| crate::state::simulation::SimCheckpoint {
@@ -736,21 +744,55 @@ impl<B: ComputeBackend> AppController<B> {
                             })
                             .collect();
 
-                        // Store rapid collision data
+                        // Store rapid collision data in checks
                         if !simulation.rapid_collisions.is_empty() {
                             tracing::warn!(
                                 "{} rapid collisions detected",
                                 simulation.rapid_collisions.len()
                             );
                         }
-                        self.state.simulation.rapid_collisions = simulation.rapid_collisions;
-                        self.state.simulation.rapid_collision_move_indices =
+                        self.state.simulation.checks.rapid_collisions = simulation.rapid_collisions;
+                        self.state.simulation.checks.rapid_collision_move_indices =
                             simulation.rapid_collision_move_indices;
 
-                        // Cache mesh and deviations for viz mode re-coloring
-                        self.state.simulation.current_deviations = simulation.deviations;
-                        self.state.simulation.current_mesh = Some(simulation.mesh.clone());
-                        self.state.simulation.mesh = Some(simulation.mesh);
+                        // Cache display mesh and deviations for viz mode re-coloring
+                        self.state.simulation.playback.display_deviations = simulation.deviations;
+                        self.state.simulation.playback.display_mesh = Some(simulation.mesh.clone());
+
+                        // Store results as cached artifact
+                        self.state.simulation.results = Some(SimulationResults {
+                            mesh: simulation.mesh,
+                            total_moves: simulation.total_moves,
+                            boundaries,
+                            setup_boundaries,
+                            checkpoints,
+                            selected_toolpaths: None,
+                        });
+
+                        // Update playback to end position
+                        self.state.simulation.playback.current_move = simulation.total_moves;
+
+                        // Store the initial (fresh stock) heightmap for playback
+                        let initial_heightmap = rs_cam_core::simulation::Heightmap::from_bounds(
+                            &self.state.job.stock.bbox(),
+                            Some(self.state.job.stock.bbox().max.z),
+                            self.state.simulation.resolution,
+                        );
+                        self.state.simulation.playback.live_heightmap = Some(initial_heightmap);
+                        self.state.simulation.playback.live_sim_move = 0;
+
+                        // Update staleness metadata
+                        let prev_gen = self
+                            .state
+                            .simulation
+                            .last_run
+                            .as_ref()
+                            .map_or(0, |m| m.sim_generation);
+                        self.state.simulation.last_run = Some(SimulationRunMeta {
+                            sim_generation: prev_gen + 1,
+                            last_sim_edit_counter: self.state.job.edit_counter,
+                        });
+
                         self.pending_upload = true;
                     }
                     Err(ComputeError::Cancelled) => {}
@@ -762,14 +804,22 @@ impl<B: ComputeBackend> AppController<B> {
                     Ok(collision) => {
                         let count = collision.report.collisions.len();
                         if count == 0 {
-                            tracing::info!("No collisions detected");
+                            tracing::info!("No holder clearance issues detected");
                         } else {
                             tracing::warn!(
-                                "{} collisions detected, min safe stickout: {:.1} mm",
+                                "{} holder clearance issues, min safe stickout: {:.1} mm",
                                 count,
                                 collision.report.min_safe_stickout
                             );
                         }
+                        // Wire results into simulation checks state
+                        self.state.simulation.checks.holder_collision_count = count;
+                        self.state.simulation.checks.min_safe_stickout = if count > 0 {
+                            Some(collision.report.min_safe_stickout)
+                        } else {
+                            None
+                        };
+                        self.state.simulation.checks.collision_report = Some(collision.report);
                         self.collision_positions = collision.positions;
                         self.pending_upload = true;
                     }

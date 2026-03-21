@@ -14,8 +14,8 @@ static VENDOR_LUT: std::sync::LazyLock<rs_cam_core::feeds::vendor_lut::VendorLut
     std::sync::LazyLock::new(rs_cam_core::feeds::vendor_lut::VendorLut::embedded);
 
 pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
-    // When simulation is active, show simulation panel instead of normal properties
-    if state.simulation.active {
+    // Show simulation panel only when in the Simulation workspace
+    if state.workspace == crate::state::Workspace::Simulation && state.simulation.has_results() {
         draw_simulation_panel(ui, state, events);
         return;
     }
@@ -322,44 +322,57 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, _events: &mut 
             .color(egui::Color32::from_rgb(180, 180, 195)),
     );
 
-    for (i, boundary) in state.simulation.boundaries.iter().enumerate() {
+    // Snapshot boundary data to avoid borrow conflicts with playback mutation below.
+    let boundary_snapshots: Vec<_> = state
+        .simulation
+        .boundaries()
+        .iter()
+        .map(|b| {
+            (
+                b.id,
+                b.name.clone(),
+                b.tool_name.clone(),
+                b.start_move,
+                b.end_move,
+            )
+        })
+        .collect();
+    let current_boundary_id = state.simulation.current_boundary().map(|b| b.id);
+
+    for (i, (id, name, tool_name, start_move, end_move)) in boundary_snapshots.iter().enumerate() {
         let pc = crate::render::toolpath_render::palette_color(i);
         let color = egui::Color32::from_rgb(
             (pc[0] * 255.0) as u8,
             (pc[1] * 255.0) as u8,
             (pc[2] * 255.0) as u8,
         );
-        let is_current = state
-            .simulation
-            .current_boundary()
-            .map(|b| b.id == boundary.id)
-            .unwrap_or(false);
+        let is_current = current_boundary_id == Some(*id);
 
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("\u{25CF}").color(color));
             let text = if is_current {
-                egui::RichText::new(&boundary.name)
+                egui::RichText::new(name)
                     .strong()
                     .color(egui::Color32::WHITE)
             } else {
-                egui::RichText::new(&boundary.name).color(egui::Color32::from_rgb(180, 180, 190))
+                egui::RichText::new(name).color(egui::Color32::from_rgb(180, 180, 190))
             };
             ui.label(text);
             ui.label(
-                egui::RichText::new(&boundary.tool_name)
+                egui::RichText::new(tool_name)
                     .small()
                     .color(egui::Color32::from_rgb(130, 130, 140)),
             );
         });
 
         // Progress bar for this toolpath
-        let progress = if state.simulation.current_move >= boundary.end_move {
+        let current = state.simulation.playback.current_move;
+        let progress = if current >= *end_move {
             1.0
-        } else if state.simulation.current_move <= boundary.start_move {
+        } else if current <= *start_move {
             0.0
         } else {
-            (state.simulation.current_move - boundary.start_move) as f32
-                / (boundary.end_move - boundary.start_move).max(1) as f32
+            (current - start_move) as f32 / (end_move - start_move).max(1) as f32
         };
         let bar = egui::ProgressBar::new(progress)
             .fill(color)
@@ -367,11 +380,11 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, _events: &mut 
         ui.add(bar);
 
         // Jump-to-boundary button
-        let boundary_start = boundary.start_move;
+        let boundary_start = *start_move;
         ui.horizontal(|ui| {
             if ui.small_button("Jump to start").clicked() {
-                state.simulation.current_move = boundary_start;
-                state.simulation.playing = false;
+                state.simulation.playback.current_move = boundary_start;
+                state.simulation.playback.playing = false;
             }
         });
 
@@ -381,7 +394,7 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, _events: &mut 
     ui.add_space(8.0);
 
     // Tool position readout
-    if let Some(pos) = state.simulation.tool_position {
+    if let Some(pos) = state.simulation.playback.tool_position {
         ui.label(
             egui::RichText::new("Tool Position")
                 .strong()

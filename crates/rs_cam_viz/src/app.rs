@@ -7,7 +7,7 @@ use crate::render::sim_render::{self, SimMeshGpuData, ToolModelGpuData};
 use crate::render::stock_render::StockGpuData;
 use crate::render::toolpath_render::ToolpathGpuData;
 use crate::render::{LineUniforms, MeshUniforms, RenderResources, ViewportCallback};
-use crate::state::AppMode;
+use crate::state::Workspace;
 use crate::state::selection::Selection;
 use crate::state::simulation::StockVizMode;
 use crate::ui::AppEvent;
@@ -19,6 +19,8 @@ pub struct RsCamApp {
     viewport_rect: egui::Rect,
     /// Flag: need to load checkpoint mesh for backward scrubbing on next frame.
     pending_checkpoint_load: bool,
+    /// Frame counter for auto-screenshot mode (RS_CAM_SCREENSHOT env var).
+    auto_screenshot_frame: Option<u32>,
 }
 
 impl RsCamApp {
@@ -34,11 +36,28 @@ impl RsCamApp {
                 .insert(resources);
         }
 
+        // Auto-screenshot mode: set RS_CAM_SCREENSHOT=1 (or workspace name) to capture and exit.
+        let auto_screenshot_frame = std::env::var("RS_CAM_SCREENSHOT").ok().map(|_| 0u32);
+
+        let mut controller = AppController::new();
+
+        // Switch workspace if requested via env var
+        if let Ok(val) = std::env::var("RS_CAM_SCREENSHOT") {
+            match val.to_lowercase().as_str() {
+                "setup" => controller.state_mut().workspace = Workspace::Setup,
+                "simulation" | "sim" => {
+                    controller.state_mut().workspace = Workspace::Simulation;
+                }
+                _ => {}
+            }
+        }
+
         Self {
-            controller: AppController::new(),
+            controller,
             camera: OrbitCamera::new(),
             viewport_rect: egui::Rect::NOTHING,
             pending_checkpoint_load: false,
+            auto_screenshot_frame,
         }
     }
 
@@ -72,42 +91,46 @@ impl RsCamApp {
                 AppEvent::SetViewPreset(preset) => self.camera.set_preset(preset),
                 AppEvent::ResetView => self.fit_camera_to_first_mesh(),
 
-                // Simulation workspace transitions (need camera/viewport changes in app)
-                AppEvent::EnterSimulation => {
-                    if !self.controller.state().simulation.active {
-                        self.controller
-                            .handle_internal_event(AppEvent::RunSimulation);
+                // Workspace transitions (need camera/viewport changes in app)
+                AppEvent::SwitchWorkspace(target) => {
+                    let state = self.controller.state_mut();
+                    let old = state.workspace;
+                    if old != target {
+                        // Entering Simulation: save viewport, set sim-friendly defaults
+                        if old != Workspace::Simulation && target == Workspace::Simulation {
+                            state.simulation.saved_viewport.show_cutting =
+                                state.viewport.show_cutting;
+                            state.simulation.saved_viewport.show_rapids =
+                                state.viewport.show_rapids;
+                            state.simulation.saved_viewport.show_stock = state.viewport.show_stock;
+                            state.viewport.show_cutting = false;
+                            state.viewport.show_rapids = false;
+                            state.viewport.show_stock = true;
+                        }
+                        // Leaving Simulation: restore viewport
+                        if old == Workspace::Simulation && target != Workspace::Simulation {
+                            state.viewport.show_cutting =
+                                state.simulation.saved_viewport.show_cutting;
+                            state.viewport.show_rapids =
+                                state.simulation.saved_viewport.show_rapids;
+                            state.viewport.show_stock = state.simulation.saved_viewport.show_stock;
+                        }
+                        state.workspace = target;
                     }
-                    let state = self.controller.state_mut();
-                    state.simulation.saved_show_cutting = state.viewport.show_cutting;
-                    state.simulation.saved_show_rapids = state.viewport.show_rapids;
-                    state.simulation.saved_show_stock = state.viewport.show_stock;
-                    state.viewport.show_cutting = false;
-                    state.viewport.show_rapids = false;
-                    state.viewport.show_stock = true;
-                    state.mode = AppMode::Simulation;
-                }
-                AppEvent::ExitSimulation => {
-                    let state = self.controller.state_mut();
-                    state.viewport.show_cutting = state.simulation.saved_show_cutting;
-                    state.viewport.show_rapids = state.simulation.saved_show_rapids;
-                    state.viewport.show_stock = state.simulation.saved_show_stock;
-                    state.mode = AppMode::Editor;
                 }
                 AppEvent::SimStepBackward => {
-                    if self.controller.state().simulation.active {
-                        let state = self.controller.state_mut();
-                        state.simulation.playing = false;
-                        state.simulation.current_move =
-                            state.simulation.current_move.saturating_sub(1);
+                    if self.controller.state().simulation.has_results() {
+                        let pb = &mut self.controller.state_mut().simulation.playback;
+                        pb.playing = false;
+                        pb.current_move = pb.current_move.saturating_sub(1);
                         self.pending_checkpoint_load = true;
                     }
                 }
                 AppEvent::SimJumpToStart => {
-                    if self.controller.state().simulation.active {
-                        let state = self.controller.state_mut();
-                        state.simulation.playing = false;
-                        state.simulation.current_move = 0;
+                    if self.controller.state().simulation.has_results() {
+                        let pb = &mut self.controller.state_mut().simulation.playback;
+                        pb.playing = false;
+                        pb.current_move = 0;
                         self.pending_checkpoint_load = true;
                     }
                 }
@@ -116,13 +139,13 @@ impl RsCamApp {
                         .controller
                         .state()
                         .simulation
-                        .boundaries
+                        .boundaries()
                         .get(boundary_idx)
                         .map(|b| b.start_move)
                     {
-                        let state = self.controller.state_mut();
-                        state.simulation.playing = false;
-                        state.simulation.current_move = start;
+                        let pb = &mut self.controller.state_mut().simulation.playback;
+                        pb.playing = false;
+                        pb.current_move = start;
                         self.pending_checkpoint_load = true;
                     }
                 }
@@ -288,18 +311,19 @@ impl RsCamApp {
             .simulation
             .checkpoint_for_move(move_idx)
         {
-            let mesh = match self.controller.state().simulation.checkpoints.get(cp_idx) {
+            let mesh = match self.controller.state().simulation.checkpoints().get(cp_idx) {
                 Some(c) => c.mesh.clone(),
                 None => return,
             };
             let colors = self.compute_sim_colors(&mesh);
-            self.controller.state_mut().simulation.current_mesh = Some(mesh);
+            self.controller.state_mut().simulation.playback.display_mesh = Some(mesh);
             if let Some(rs) = frame.wgpu_render_state() {
                 let mesh_ref = self
                     .controller
                     .state()
                     .simulation
-                    .current_mesh
+                    .playback
+                    .display_mesh
                     .as_ref()
                     .unwrap();
                 let mut renderer = rs.renderer.write();
@@ -332,7 +356,13 @@ impl RsCamApp {
                 }
             }
             StockVizMode::Deviation => {
-                if let Some(devs) = &self.controller.state().simulation.current_deviations {
+                if let Some(devs) = &self
+                    .controller
+                    .state()
+                    .simulation
+                    .playback
+                    .display_deviations
+                {
                     sim_render::deviation_colors(devs)
                 } else {
                     vec![[0.65, 0.45, 0.25]; num_verts]
@@ -350,8 +380,8 @@ impl RsCamApp {
     fn update_live_sim(&mut self, frame: &mut eframe::Frame) {
         use rs_cam_core::simulation::{heightmap_to_mesh, simulate_toolpath_range};
 
-        let target_move = self.controller.state().simulation.current_move;
-        let live_move = self.controller.state().simulation.live_sim_move;
+        let target_move = self.controller.state().simulation.playback.current_move;
+        let live_move = self.controller.state().simulation.playback.live_sim_move;
 
         if target_move == live_move {
             return; // nothing changed
@@ -385,7 +415,7 @@ impl RsCamApp {
         // If moving backward, reset from nearest checkpoint
         if target_move < live_move {
             // Find the highest checkpoint at or before target_move
-            let boundaries = &self.controller.state().simulation.boundaries;
+            let boundaries = self.controller.state().simulation.boundaries();
             let mut best_cp: Option<usize> = None;
             for (i, b) in boundaries.iter().enumerate() {
                 if b.end_move <= target_move {
@@ -394,14 +424,14 @@ impl RsCamApp {
             }
 
             if let Some(cp_idx) = best_cp {
-                if let Some(cp) = self.controller.state().simulation.checkpoints.get(cp_idx)
+                if let Some(cp) = self.controller.state().simulation.checkpoints().get(cp_idx)
                     && let Some(hm) = &cp.heightmap
                 {
                     let hm_clone = hm.clone();
                     let cp_end = boundaries[cp_idx].end_move;
-                    let sim = &mut self.controller.state_mut().simulation;
-                    sim.live_heightmap = Some(hm_clone);
-                    sim.live_sim_move = cp_end;
+                    let pb = &mut self.controller.state_mut().simulation.playback;
+                    pb.live_heightmap = Some(hm_clone);
+                    pb.live_sim_move = cp_end;
                 }
             } else {
                 // Before any checkpoint — reset to fresh stock
@@ -409,17 +439,23 @@ impl RsCamApp {
                 let res = self.controller.state().simulation.resolution;
                 let fresh =
                     rs_cam_core::simulation::Heightmap::from_bounds(&bbox, Some(bbox.max.z), res);
-                let sim = &mut self.controller.state_mut().simulation;
-                sim.live_heightmap = Some(fresh);
-                sim.live_sim_move = 0;
+                let pb = &mut self.controller.state_mut().simulation.playback;
+                pb.live_heightmap = Some(fresh);
+                pb.live_sim_move = 0;
             }
         }
 
         // Now simulate forward from live_sim_move to target_move
-        let current_live = self.controller.state().simulation.live_sim_move;
+        let current_live = self.controller.state().simulation.playback.live_sim_move;
         if current_live < target_move {
             // Take the heightmap out to avoid borrow conflicts
-            let mut heightmap = self.controller.state_mut().simulation.live_heightmap.take();
+            let mut heightmap = self
+                .controller
+                .state_mut()
+                .simulation
+                .playback
+                .live_heightmap
+                .take();
 
             if let Some(ref mut heightmap) = heightmap {
                 let mut global_offset = 0;
@@ -450,23 +486,24 @@ impl RsCamApp {
             }
 
             // Put it back
-            let sim = &mut self.controller.state_mut().simulation;
-            sim.live_heightmap = heightmap;
-            sim.live_sim_move = target_move;
+            let pb = &mut self.controller.state_mut().simulation.playback;
+            pb.live_heightmap = heightmap;
+            pb.live_sim_move = target_move;
         }
 
         // Convert heightmap to mesh and upload to GPU
-        if let Some(heightmap) = &self.controller.state().simulation.live_heightmap {
+        if let Some(heightmap) = &self.controller.state().simulation.playback.live_heightmap {
             let mesh = heightmap_to_mesh(heightmap);
             let colors = self.compute_sim_colors(&mesh);
-            self.controller.state_mut().simulation.current_mesh = Some(mesh);
+            self.controller.state_mut().simulation.playback.display_mesh = Some(mesh);
 
             if let Some(rs) = frame.wgpu_render_state() {
                 let mesh_ref = self
                     .controller
                     .state()
                     .simulation
-                    .current_mesh
+                    .playback
+                    .display_mesh
                     .as_ref()
                     .unwrap();
                 let mut renderer = rs.renderer.write();
@@ -649,9 +686,9 @@ impl RsCamApp {
             }
         }
 
-        // Re-upload sim mesh with current viz mode colors, or clear if sim is inactive
-        if self.controller.state().simulation.active {
-            if let Some(mesh) = &self.controller.state().simulation.current_mesh {
+        // Re-upload sim mesh with current viz mode colors, or clear if no results
+        if self.controller.state().simulation.has_results() {
+            if let Some(mesh) = &self.controller.state().simulation.playback.display_mesh {
                 let colors = self.compute_sim_colors(mesh);
                 resources.sim_mesh_data = Some(SimMeshGpuData::from_heightmap_mesh_colored(
                     &render_state.device,
@@ -739,15 +776,19 @@ impl RsCamApp {
 
     /// Update tool model position during simulation playback.
     fn update_sim_tool_position(&mut self, frame: &mut eframe::Frame) {
-        if !self.controller.state().simulation.active
-            || self.controller.state().simulation.total_moves == 0
+        if !self.controller.state().simulation.has_results()
+            || self.controller.state().simulation.total_moves() == 0
         {
-            self.controller.state_mut().simulation.tool_position = None;
+            self.controller
+                .state_mut()
+                .simulation
+                .playback
+                .tool_position = None;
             return;
         }
 
         // Find which toolpath and move index we're at
-        let current = self.controller.state().simulation.current_move;
+        let current = self.controller.state().simulation.playback.current_move;
         let mut cumulative = 0;
         let mut found = None;
         for tp in self.controller.state().job.all_toolpaths() {
@@ -788,16 +829,20 @@ impl RsCamApp {
         }
 
         let Some((pos, tool_info)) = found else {
-            self.controller.state_mut().simulation.tool_position = None;
+            self.controller
+                .state_mut()
+                .simulation
+                .playback
+                .tool_position = None;
             return;
         };
 
         {
-            let simulation = &mut self.controller.state_mut().simulation;
-            simulation.tool_position = Some([pos.x, pos.y, pos.z]);
+            let pb = &mut self.controller.state_mut().simulation.playback;
+            pb.tool_position = Some([pos.x, pos.y, pos.z]);
             if let Some((tool_radius, _, tool_type_label, _)) = &tool_info {
-                simulation.tool_radius = *tool_radius;
-                simulation.tool_type_label = tool_type_label.clone();
+                pb.tool_radius = *tool_radius;
+                pb.tool_type_label = tool_type_label.clone();
             }
         }
 
@@ -873,13 +918,13 @@ impl RsCamApp {
 
     fn draw_viewport(&mut self, ui: &mut egui::Ui) {
         let lane_snapshots = self.controller.lane_snapshots();
-        let mode = self.controller.state().mode;
-        let sim_active = self.controller.state().simulation.active;
+        let workspace = self.controller.state().workspace;
+        let sim_active = self.controller.state().simulation.has_results();
         {
             let (state, events) = self.controller.state_and_events_mut();
             crate::ui::viewport_overlay::draw(
                 ui,
-                mode,
+                workspace,
                 sim_active,
                 &mut state.viewport,
                 &lane_snapshots,
@@ -940,16 +985,20 @@ impl RsCamApp {
             show_stock: state.viewport.show_stock
                 && state.job.models.iter().any(|model| model.mesh.is_some()),
             show_fixtures: state.viewport.show_fixtures,
-            show_sim_mesh: state.simulation.active,
+            show_sim_mesh: state.workspace == Workspace::Simulation
+                && state.simulation.has_results(),
             sim_mesh_opacity: state.simulation.stock_opacity,
             show_cutting: state.viewport.show_cutting,
             show_rapids: state.viewport.show_rapids,
             show_collisions: state.viewport.show_collisions,
-            show_tool_model: state.simulation.active && state.simulation.tool_position.is_some(),
-            toolpath_move_limit: if state.simulation.active
-                && state.simulation.current_move < state.simulation.total_moves
+            show_tool_model: state.workspace == Workspace::Simulation
+                && state.simulation.has_results()
+                && state.simulation.playback.tool_position.is_some(),
+            toolpath_move_limit: if state.workspace == Workspace::Simulation
+                && state.simulation.has_results()
+                && state.simulation.playback.current_move < state.simulation.total_moves()
             {
-                Some(state.simulation.current_move)
+                Some(state.simulation.playback.current_move)
             } else {
                 None
             },
@@ -991,9 +1040,11 @@ impl RsCamApp {
                 }
             }
 
-            // Space: play/pause simulation or enter sim workspace
-            if i.key_pressed(egui::Key::Space) && self.controller.state().simulation.active {
-                self.controller.events_mut().push(AppEvent::EnterSimulation);
+            // Space: switch to simulation workspace if results exist
+            if i.key_pressed(egui::Key::Space) && self.controller.state().simulation.has_results() {
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
             }
 
             // I: toggle isolation mode
@@ -1066,27 +1117,30 @@ impl RsCamApp {
                     .push(AppEvent::ToggleSimPlayback);
             }
 
-            // Escape: back to editor
+            // Escape: back to toolpaths workspace
             if i.key_pressed(egui::Key::Escape) {
-                self.controller.events_mut().push(AppEvent::ExitSimulation);
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Toolpaths));
             }
 
             // [ / ]: speed down/up
             if i.key_pressed(egui::Key::OpenBracket) {
-                self.controller.state_mut().simulation.speed =
-                    (self.controller.state().simulation.speed * 0.5).max(10.0);
+                let pb = &mut self.controller.state_mut().simulation.playback;
+                pb.speed = (pb.speed * 0.5).max(10.0);
             }
             if i.key_pressed(egui::Key::CloseBracket) {
-                self.controller.state_mut().simulation.speed =
-                    (self.controller.state().simulation.speed * 2.0).min(50000.0);
+                let pb = &mut self.controller.state_mut().simulation.playback;
+                pb.speed = (pb.speed * 2.0).min(50000.0);
             }
         });
     }
 
     // --- Layout methods ---
 
-    fn draw_editor_layout(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::left("project_tree")
+    fn draw_setup_layout(&mut self, ctx: &egui::Context) {
+        // Left panel: project tree (setup-focused items)
+        egui::SidePanel::left("setup_tree")
             .default_width(220.0)
             .resizable(true)
             .show(ctx, |ui| {
@@ -1096,7 +1150,48 @@ impl RsCamApp {
                 });
             });
 
-        egui::SidePanel::right("properties")
+        // Right panel: setup properties
+        egui::SidePanel::right("setup_properties")
+            .default_width(280.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    let (state, events) = self.controller.state_and_events_mut();
+                    crate::ui::properties::draw(ui, state, events);
+                });
+            });
+
+        let col_count = self.controller.collision_positions().len();
+        let lane_snapshots = self.controller.lane_snapshots();
+        egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+            crate::ui::status_bar::draw(ui, self.controller.state(), col_count, &lane_snapshots);
+        });
+
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::default()
+                    .fill(egui::Color32::from_rgb(26, 26, 38))
+                    .inner_margin(0.0),
+            )
+            .show(ctx, |ui| {
+                self.draw_viewport(ui);
+            });
+    }
+
+    fn draw_toolpath_layout(&mut self, ctx: &egui::Context) {
+        // Left panel: project tree (toolpath-focused)
+        egui::SidePanel::left("toolpath_tree")
+            .default_width(220.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    let (state, events) = self.controller.state_ref_and_events_mut();
+                    crate::ui::project_tree::draw(ui, state, events);
+                });
+            });
+
+        // Right panel: operation/tool parameters
+        egui::SidePanel::right("toolpath_properties")
             .default_width(280.0)
             .resizable(true)
             .show(ctx, |ui| {
@@ -1124,21 +1219,9 @@ impl RsCamApp {
     }
 
     fn draw_simulation_layout(&mut self, ctx: &egui::Context) {
-        // Top bar: Back button + SIMULATION label + display toggles
+        // Sim action bar: display toggles + re-run/reset
         egui::TopBottomPanel::top("sim_top_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                if ui.button("\u{2190} Back to Editor").clicked() {
-                    self.controller.events_mut().push(AppEvent::ExitSimulation);
-                }
-                ui.separator();
-                ui.label(
-                    egui::RichText::new("SIMULATION")
-                        .strong()
-                        .color(egui::Color32::from_rgb(100, 180, 220)),
-                );
-                ui.separator();
-
-                // Display toggles relevant to sim mode
                 {
                     let viewport = &mut self.controller.state_mut().viewport;
                     ui.checkbox(&mut viewport.show_cutting, "Paths");
@@ -1148,7 +1231,7 @@ impl RsCamApp {
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Re-run Simulation").clicked() {
+                    if ui.button("Re-run").clicked() {
                         self.controller.events_mut().push(AppEvent::RunSimulation);
                     }
                     if ui.button("Reset").clicked() {
@@ -1199,10 +1282,51 @@ impl RsCamApp {
                 self.draw_viewport(ui);
             });
     }
+
+    /// Save an egui screenshot to a PNG file in the current directory.
+    fn save_screenshot(image: &egui::ColorImage) {
+        let pixels: Vec<u8> = image
+            .pixels
+            .iter()
+            .flat_map(|c| [c.r(), c.g(), c.b(), c.a()])
+            .collect();
+        let img_buf: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
+            match image::ImageBuffer::from_raw(image.size[0] as u32, image.size[1] as u32, pixels) {
+                Some(buf) => buf,
+                None => {
+                    tracing::error!("Failed to create image buffer from screenshot");
+                    return;
+                }
+            };
+
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let path = format!("screenshot_{timestamp}.png");
+        match img_buf.save(&path) {
+            Ok(()) => tracing::info!("Screenshot saved to {path}"),
+            Err(e) => tracing::error!("Failed to save screenshot: {e}"),
+        }
+    }
 }
 
 impl eframe::App for RsCamApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // Handle screenshot results from previous frame
+        ctx.input(|i| {
+            for event in &i.raw.events {
+                if let egui::Event::Screenshot { image, .. } = event {
+                    Self::save_screenshot(image);
+                }
+            }
+        });
+
+        // F12: request screenshot
+        if ctx.input(|i| i.key_pressed(egui::Key::F12)) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+        }
+
         crate::ui::automation::begin_frame(ctx);
 
         self.controller.drain_compute_results();
@@ -1211,26 +1335,41 @@ impl eframe::App for RsCamApp {
             self.upload_gpu_data(frame);
         }
 
-        if self.controller.state().simulation.active {
+        if self.controller.state().workspace == Workspace::Simulation
+            && self.controller.state().simulation.has_results()
+        {
             self.update_sim_tool_position(frame);
         }
 
         // Handle keyboard shortcuts (before UI to prevent conflicts)
-        match self.controller.state().mode {
-            AppMode::Editor => self.handle_keyboard_shortcuts(ctx),
-            AppMode::Simulation => self.handle_simulation_shortcuts(ctx),
+        match self.controller.state().workspace {
+            Workspace::Setup | Workspace::Toolpaths => self.handle_keyboard_shortcuts(ctx),
+            Workspace::Simulation => self.handle_simulation_shortcuts(ctx),
         }
 
-        // Menu bar (shown in both modes)
+        // Menu bar (shown in all workspaces)
         {
             let (state, events) = self.controller.state_ref_and_events_mut();
             crate::ui::menu_bar::draw(ctx, state, events);
         }
 
-        // Draw mode-specific layout
-        match self.controller.state().mode {
-            AppMode::Editor => self.draw_editor_layout(ctx),
-            AppMode::Simulation => self.draw_simulation_layout(ctx),
+        // Workspace switcher bar (shown in all workspaces)
+        egui::TopBottomPanel::top("workspace_bar")
+            .frame(
+                egui::Frame::default()
+                    .fill(egui::Color32::from_rgb(34, 34, 42))
+                    .inner_margin(egui::Margin::symmetric(8.0, 2.0)),
+            )
+            .show(ctx, |ui| {
+                let (state, events) = self.controller.state_ref_and_events_mut();
+                crate::ui::workspace_bar::draw(ui, state, events);
+            });
+
+        // Draw workspace-specific layout
+        match self.controller.state().workspace {
+            Workspace::Setup => self.draw_setup_layout(ctx),
+            Workspace::Toolpaths => self.draw_toolpath_layout(ctx),
+            Workspace::Simulation => self.draw_simulation_layout(ctx),
         }
 
         // Pre-flight checklist modal (shown on top of either layout)
@@ -1246,7 +1385,7 @@ impl eframe::App for RsCamApp {
         // Load checkpoint mesh for backward scrubbing
         if self.pending_checkpoint_load {
             self.pending_checkpoint_load = false;
-            let move_idx = self.controller.state().simulation.current_move;
+            let move_idx = self.controller.state().simulation.playback.current_move;
             self.load_checkpoint_for_move(move_idx, frame);
         }
 
@@ -1274,14 +1413,16 @@ impl eframe::App for RsCamApp {
         }
 
         // Advance simulation playback
-        if self.controller.state().simulation.playing {
+        if self.controller.state().simulation.playback.playing {
             let dt = ctx.input(|i| i.stable_dt);
             self.controller.state_mut().simulation.advance(dt);
             ctx.request_repaint();
         }
 
         // Incremental stock simulation: update live heightmap to match current_move
-        if self.controller.state().simulation.active {
+        if self.controller.state().workspace == Workspace::Simulation
+            && self.controller.state().simulation.has_results()
+        {
             self.update_live_sim(frame);
         }
 
@@ -1292,7 +1433,20 @@ impl eframe::App for RsCamApp {
             .lane_snapshots()
             .into_iter()
             .any(|lane| lane.is_active() || lane.queue_depth > 0);
-        if active_lanes || self.controller.state().simulation.playing {
+        if active_lanes || self.controller.state().simulation.playback.playing {
+            ctx.request_repaint();
+        }
+
+        // Auto-screenshot mode: request on frame 3, save on frame 4, exit on frame 5
+        if let Some(ref mut frame_count) = self.auto_screenshot_frame {
+            *frame_count += 1;
+            if *frame_count == 3 {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+                ctx.request_repaint();
+            }
+            if *frame_count >= 6 {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
             ctx.request_repaint();
         }
     }
