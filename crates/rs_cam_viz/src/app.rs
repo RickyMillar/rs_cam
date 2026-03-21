@@ -616,6 +616,19 @@ impl RsCamApp {
         let stock_bbox = self.controller.state().job.stock.bbox();
         resources.stock_data = Some(StockGpuData::from_bbox(&render_state.device, &stock_bbox));
 
+        // Upload origin axes at stock origin
+        {
+            let s = &self.controller.state().job.stock;
+            let origin = [s.origin_x as f32, s.origin_y as f32, s.origin_z as f32];
+            let min_dim = s.x.min(s.y).min(s.z) as f32;
+            let length = (min_dim * 0.3).clamp(5.0, 50.0);
+            resources.origin_axes_data = Some(crate::render::grid_render::OriginAxesGpuData::new(
+                &render_state.device,
+                origin,
+                length,
+            ));
+        }
+
         // Upload fixture and keep-out wireframes.
         {
             use crate::render::fixture_render::FixtureGpuData;
@@ -777,6 +790,8 @@ impl RsCamApp {
 
     /// Update tool model position during simulation playback.
     fn update_sim_tool_position(&mut self, frame: &mut eframe::Frame) {
+        use crate::render::sim_render::{ToolGeometry, ToolShape};
+
         if !self.controller.state().simulation.has_results()
             || self.controller.state().simulation.total_moves() == 0
         {
@@ -809,18 +824,7 @@ impl RsCamApp {
                             .tools
                             .iter()
                             .find(|tool| tool.id == tp.tool_id)
-                            .map(|tool| {
-                                (
-                                    tool.diameter / 2.0,
-                                    tool.cutting_length as f32,
-                                    tool.tool_type.label().to_string(),
-                                    matches!(
-                                        tool.tool_type,
-                                        crate::state::job::ToolType::BallNose
-                                            | crate::state::job::ToolType::TaperedBallNose
-                                    ),
-                                )
-                            });
+                            .cloned();
                         found = Some((pos, tool_info));
                     }
                     break;
@@ -841,22 +845,35 @@ impl RsCamApp {
         {
             let pb = &mut self.controller.state_mut().simulation.playback;
             pb.tool_position = Some([pos.x, pos.y, pos.z]);
-            if let Some((tool_radius, _, tool_type_label, _)) = &tool_info {
-                pb.tool_radius = *tool_radius;
-                pb.tool_type_label = tool_type_label.clone();
+            if let Some(tool) = &tool_info {
+                pb.tool_radius = tool.diameter / 2.0;
+                pb.tool_type_label = tool.tool_type.label().to_string();
             }
         }
 
-        if let Some((tool_radius, cutting_length, _, is_ball)) = tool_info
+        if let Some(tool) = tool_info
             && let Some(rs) = frame.wgpu_render_state()
         {
+            let shape = match tool.tool_type {
+                crate::state::job::ToolType::EndMill => ToolShape::FlatEnd,
+                crate::state::job::ToolType::BallNose => ToolShape::BallNose,
+                crate::state::job::ToolType::BullNose => ToolShape::BullNose,
+                crate::state::job::ToolType::VBit => ToolShape::VBit,
+                crate::state::job::ToolType::TaperedBallNose => ToolShape::TaperedBallNose,
+            };
+            let geom = ToolGeometry {
+                radius: (tool.diameter / 2.0) as f32,
+                cutting_length: tool.cutting_length as f32,
+                shape,
+                corner_radius: tool.corner_radius as f32,
+                included_angle: tool.included_angle as f32,
+                taper_half_angle: tool.taper_half_angle as f32,
+            };
             let mut renderer = rs.renderer.write();
             let resources: &mut RenderResources = renderer.callback_resources.get_mut().unwrap();
-            resources.tool_model_data = Some(ToolModelGpuData::from_tool(
+            resources.tool_model_data = Some(ToolModelGpuData::from_tool_geometry(
                 &rs.device,
-                tool_radius as f32,
-                cutting_length,
-                is_ball,
+                &geom,
                 [pos.x as f32, pos.y as f32, pos.z as f32],
             ));
         }
@@ -1032,12 +1049,91 @@ impl RsCamApp {
             } else {
                 None
             },
+            show_origin_axes: state.viewport.show_stock
+                && state.job.models.iter().any(|model| model.mesh.is_some()),
+            origin_axes_origin: [
+                state.job.stock.origin_x as f32,
+                state.job.stock.origin_y as f32,
+                state.job.stock.origin_z as f32,
+            ],
+            origin_axes_length: {
+                let s = &state.job.stock;
+                let min_dim = s.x.min(s.y).min(s.z) as f32;
+                (min_dim * 0.3).clamp(5.0, 50.0)
+            },
             viewport_width: (rect.width() * ppp) as u32,
             viewport_height: (rect.height() * ppp) as u32,
         };
 
         let cb = egui_wgpu::Callback::new_paint_callback(rect, callback);
         ui.painter().add(cb);
+
+        // Draw orientation gizmo overlay (2D, on top of the 3D viewport)
+        self.draw_orientation_gizmo(ui, rect);
+    }
+
+    /// Draw a small XYZ orientation gizmo in the top-right corner of the viewport.
+    /// Uses the camera view matrix to rotate unit vectors, then draws 2D lines.
+    fn draw_orientation_gizmo(&self, ui: &mut egui::Ui, viewport_rect: egui::Rect) {
+        let gizmo_size = 50.0;
+        let margin = 10.0;
+        let gizmo_center = egui::pos2(
+            viewport_rect.max.x - margin - gizmo_size * 0.5,
+            viewport_rect.min.y + margin + gizmo_size * 0.5,
+        );
+        let axis_len = 20.0;
+
+        let view = self.camera.view_matrix();
+        let painter = ui.painter();
+
+        // Background circle for readability
+        painter.circle_filled(
+            gizmo_center,
+            gizmo_size * 0.5,
+            egui::Color32::from_rgba_premultiplied(20, 20, 30, 160),
+        );
+
+        let axes: [(nalgebra::Vector3<f32>, egui::Color32, &str); 3] = [
+            (
+                nalgebra::Vector3::new(1.0, 0.0, 0.0),
+                egui::Color32::from_rgb(220, 60, 60),
+                "X",
+            ),
+            (
+                nalgebra::Vector3::new(0.0, 1.0, 0.0),
+                egui::Color32::from_rgb(60, 200, 60),
+                "Y",
+            ),
+            (
+                nalgebra::Vector3::new(0.0, 0.0, 1.0),
+                egui::Color32::from_rgb(70, 100, 230),
+                "Z",
+            ),
+        ];
+
+        // Sort axes by depth (draw back-to-front)
+        let mut axis_data: Vec<(f32, egui::Pos2, egui::Color32, &str)> = axes
+            .iter()
+            .map(|(axis, color, label)| {
+                let rotated = view.transform_vector(axis);
+                let screen_end =
+                    gizmo_center + egui::vec2(rotated.x * axis_len, -rotated.y * axis_len);
+                // Use Z for depth sorting (more negative = further back)
+                (rotated.z, screen_end, *color, *label)
+            })
+            .collect();
+        axis_data.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        for (_, end, color, label) in &axis_data {
+            painter.line_segment([gizmo_center, *end], egui::Stroke::new(2.0, *color));
+            painter.text(
+                *end,
+                egui::Align2::CENTER_CENTER,
+                label,
+                egui::FontId::proportional(10.0),
+                *color,
+            );
+        }
     }
 
     /// Handle keyboard shortcuts for the viewport and application.

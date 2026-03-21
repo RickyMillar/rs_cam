@@ -62,6 +62,10 @@ pub enum AppEvent {
     RemoveToolpath(ToolpathId),
     MoveToolpathUp(ToolpathId),
     MoveToolpathDown(ToolpathId),
+    /// Reorder a toolpath within its current setup to a target index.
+    ReorderToolpath(ToolpathId, usize),
+    /// Move a toolpath from its current setup to a different setup at a target index.
+    MoveToolpathToSetup(ToolpathId, SetupId, usize),
     ToggleToolpathEnabled(ToolpathId),
     GenerateToolpath(ToolpathId),
     GenerateAll,

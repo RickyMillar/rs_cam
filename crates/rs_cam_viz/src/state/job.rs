@@ -1147,6 +1147,63 @@ impl JobState {
             .map(|setup| setup.id)
     }
 
+    /// Reorder a toolpath within its current setup to a target index. Returns true if moved.
+    pub fn reorder_toolpath(&mut self, id: super::toolpath::ToolpathId, target_idx: usize) -> bool {
+        for setup in &mut self.setups {
+            if let Some(pos) = setup
+                .toolpaths
+                .iter()
+                .position(|toolpath| toolpath.id == id)
+            {
+                let clamped = target_idx.min(setup.toolpaths.len().saturating_sub(1));
+                if pos != clamped {
+                    let entry = setup.toolpaths.remove(pos);
+                    setup.toolpaths.insert(clamped, entry);
+                    return true;
+                }
+                return false;
+            }
+        }
+        false
+    }
+
+    /// Move a toolpath from its current setup to a target setup at a given index. Returns true if moved.
+    pub fn move_toolpath_to_setup(
+        &mut self,
+        id: super::toolpath::ToolpathId,
+        target_setup_id: SetupId,
+        index: usize,
+    ) -> bool {
+        // Find and remove from source setup
+        let mut entry = None;
+        for setup in &mut self.setups {
+            if let Some(pos) = setup
+                .toolpaths
+                .iter()
+                .position(|toolpath| toolpath.id == id)
+            {
+                entry = Some(setup.toolpaths.remove(pos));
+                break;
+            }
+        }
+        let Some(entry) = entry else {
+            return false;
+        };
+
+        // Insert into target setup
+        if let Some(target) = self
+            .setups
+            .iter_mut()
+            .find(|setup| setup.id == target_setup_id)
+        {
+            let clamped = index.min(target.toolpaths.len());
+            target.toolpaths.insert(clamped, entry);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Mark the job as edited (increments edit counter for staleness tracking).
     pub fn mark_edited(&mut self) {
         self.dirty = true;

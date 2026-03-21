@@ -233,6 +233,17 @@ impl<B: ComputeBackend> AppController<B> {
                     self.state.job.mark_edited();
                 }
             }
+            AppEvent::ReorderToolpath(tp_id, target_idx) => {
+                if self.state.job.reorder_toolpath(tp_id, target_idx) {
+                    self.state.job.mark_edited();
+                }
+            }
+            AppEvent::MoveToolpathToSetup(tp_id, setup_id, idx) => {
+                if self.state.job.move_toolpath_to_setup(tp_id, setup_id, idx) {
+                    self.pending_upload = true;
+                    self.state.job.mark_edited();
+                }
+            }
             AppEvent::ToggleToolpathEnabled(tp_id) => {
                 if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
                     toolpath.enabled = !toolpath.enabled;

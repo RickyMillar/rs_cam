@@ -93,6 +93,7 @@ pub struct RenderResources {
     pub tool_model_data: Option<ToolModelGpuData>,
     pub collision_vertex_buffer: Option<wgpu::Buffer>,
     pub collision_vertex_count: u32,
+    pub origin_axes_data: Option<grid_render::OriginAxesGpuData>,
 }
 
 impl RenderResources {
@@ -425,6 +426,7 @@ impl RenderResources {
             tool_model_data: None,
             collision_vertex_buffer: None,
             collision_vertex_count: 0,
+            origin_axes_data: None,
         }
     }
 
@@ -512,6 +514,12 @@ pub struct ViewportCallback {
     pub show_tool_model: bool,
     /// If Some, only draw toolpath moves up to this index (sim scrubbing).
     pub toolpath_move_limit: Option<usize>,
+    /// Show XYZ axes at the stock origin.
+    pub show_origin_axes: bool,
+    /// Stock origin position [x, y, z].
+    pub origin_axes_origin: [f32; 3],
+    /// Length of origin axes lines.
+    pub origin_axes_length: f32,
     pub viewport_width: u32,
     pub viewport_height: u32,
 }
@@ -613,6 +621,16 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 pass.set_bind_group(0, &resources.line_bind_group, &[]);
                 pass.set_vertex_buffer(0, stock.vertex_buffer.slice(..));
                 pass.draw(0..stock.vertex_count, 0..1);
+            }
+
+            // Draw origin axes at stock origin
+            if self.show_origin_axes
+                && let Some(axes) = &resources.origin_axes_data
+            {
+                pass.set_pipeline(&resources.line_pipeline);
+                pass.set_bind_group(0, &resources.line_bind_group, &[]);
+                pass.set_vertex_buffer(0, axes.vertex_buffer.slice(..));
+                pass.draw(0..axes.vertex_count, 0..1);
             }
 
             // Draw fixture and keep-out wireframes
