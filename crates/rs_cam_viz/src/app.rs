@@ -725,98 +725,72 @@ impl RsCamApp {
                 }
             }
 
-            // Add datum crosshair markers in Setup workspace
+            // Add datum crosshair markers in Setup workspace.
+            // Compute datum position in setup-local frame, then inverse-transform to global.
             if self.controller.state().workspace == Workspace::Setup
                 && let Some(setup) = job.setups.first()
             {
-                use crate::state::job::{Corner, FaceUp, XYDatum};
-                let stock_bbox = job.stock.bbox();
-                // Datum Z corresponds to the setup's effective top surface in the global frame
-                let z = match setup.face_up {
-                    FaceUp::Top => stock_bbox.max.z,
-                    FaceUp::Bottom => stock_bbox.min.z,
-                    FaceUp::Front => stock_bbox.max.y,
-                    FaceUp::Back => stock_bbox.min.y,
-                    FaceUp::Left => stock_bbox.min.x,
-                    FaceUp::Right => stock_bbox.max.x,
-                } as f32;
+                use crate::state::job::{Corner, XYDatum};
+                use rs_cam_core::geo::P3;
+
+                let (eff_w, eff_d, eff_h) = setup.effective_stock(&job.stock);
                 let color = [0.9_f32, 0.2, 0.9]; // magenta
 
-                let datum_xy: Option<(f32, f32)> = match &setup.datum.xy_method {
+                // Datum in setup-local frame: XY at corner/center, Z at top surface
+                let local_datum: Option<P3> = match &setup.datum.xy_method {
                     XYDatum::CornerProbe(corner) => {
                         let x = match corner {
-                            Corner::FrontLeft | Corner::BackLeft => stock_bbox.min.x,
-                            Corner::FrontRight | Corner::BackRight => stock_bbox.max.x,
+                            Corner::FrontLeft | Corner::BackLeft => 0.0,
+                            Corner::FrontRight | Corner::BackRight => eff_w,
                         };
                         let y = match corner {
-                            Corner::FrontLeft | Corner::FrontRight => stock_bbox.min.y,
-                            Corner::BackLeft | Corner::BackRight => stock_bbox.max.y,
+                            Corner::FrontLeft | Corner::FrontRight => 0.0,
+                            Corner::BackLeft | Corner::BackRight => eff_d,
                         };
-                        Some((x as f32, y as f32))
+                        Some(P3::new(x, y, eff_h))
                     }
-                    XYDatum::CenterOfStock => {
-                        let cx = ((stock_bbox.min.x + stock_bbox.max.x) / 2.0) as f32;
-                        let cy = ((stock_bbox.min.y + stock_bbox.max.y) / 2.0) as f32;
-                        Some((cx, cy))
-                    }
-                    _ => None, // AlignmentPins already rendered, Manual has no position
+                    XYDatum::CenterOfStock => Some(P3::new(eff_w / 2.0, eff_d / 2.0, eff_h)),
+                    _ => None,
                 };
 
-                if let Some((dx, dy)) = datum_xy {
-                    let arm = 15.0_f32; // crosshair half-length in mm
-                    let diamond = 3.0_f32; // diamond half-size
+                if let Some(local) = local_datum {
+                    // Inverse-transform to global frame
+                    let global = setup.inverse_transform_point(local, &job.stock);
+                    let dx = global.x as f32;
+                    let dy = global.y as f32;
+                    let dz = global.z as f32;
 
-                    // Horizontal crosshair line (X direction)
-                    pin_vertices.push(crate::render::LineVertex {
-                        position: [dx - arm, dy, z],
-                        color,
-                    });
-                    pin_vertices.push(crate::render::LineVertex {
-                        position: [dx + arm, dy, z],
-                        color,
-                    });
-                    // Vertical crosshair line (Y direction)
-                    pin_vertices.push(crate::render::LineVertex {
-                        position: [dx, dy - arm, z],
-                        color,
-                    });
-                    pin_vertices.push(crate::render::LineVertex {
-                        position: [dx, dy + arm, z],
-                        color,
-                    });
-                    // Diamond shape (4 edges)
-                    pin_vertices.push(crate::render::LineVertex {
-                        position: [dx + diamond, dy, z],
-                        color,
-                    });
-                    pin_vertices.push(crate::render::LineVertex {
-                        position: [dx, dy + diamond, z],
-                        color,
-                    });
-                    pin_vertices.push(crate::render::LineVertex {
-                        position: [dx, dy + diamond, z],
-                        color,
-                    });
-                    pin_vertices.push(crate::render::LineVertex {
-                        position: [dx - diamond, dy, z],
-                        color,
-                    });
-                    pin_vertices.push(crate::render::LineVertex {
-                        position: [dx - diamond, dy, z],
-                        color,
-                    });
-                    pin_vertices.push(crate::render::LineVertex {
-                        position: [dx, dy - diamond, z],
-                        color,
-                    });
-                    pin_vertices.push(crate::render::LineVertex {
-                        position: [dx, dy - diamond, z],
-                        color,
-                    });
-                    pin_vertices.push(crate::render::LineVertex {
-                        position: [dx + diamond, dy, z],
-                        color,
-                    });
+                    let arm = 15.0_f32;
+                    let diamond = 3.0_f32;
+
+                    // Crosshair lines in all 3 directions (works for any face)
+                    for &(ax, ay, az) in &[(arm, 0.0, 0.0), (0.0, arm, 0.0), (0.0, 0.0, arm)] {
+                        pin_vertices.push(crate::render::LineVertex {
+                            position: [dx - ax, dy - ay, dz - az],
+                            color,
+                        });
+                        pin_vertices.push(crate::render::LineVertex {
+                            position: [dx + ax, dy + ay, dz + az],
+                            color,
+                        });
+                    }
+
+                    // Diamond in XY plane at datum Z
+                    for &[(x1, y1), (x2, y2)] in &[
+                        [(diamond, 0.0), (0.0, diamond)],
+                        [(0.0, diamond), (-diamond, 0.0)],
+                        [(-diamond, 0.0), (0.0, -diamond)],
+                        [(0.0, -diamond), (diamond, 0.0)],
+                    ] {
+                        pin_vertices.push(crate::render::LineVertex {
+                            position: [dx + x1, dy + y1, dz],
+                            color,
+                        });
+                        pin_vertices.push(crate::render::LineVertex {
+                            position: [dx + x2, dy + y2, dz],
+                            color,
+                        });
+                    }
                 }
             }
 
