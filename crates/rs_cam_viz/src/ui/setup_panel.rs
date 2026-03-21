@@ -79,26 +79,25 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
 fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &mut Vec<AppEvent>) {
     let is_selected = state.selection == Selection::Setup(setup.id);
-    let border_color = if is_selected {
+    let base_border = if is_selected {
         egui::Color32::from_rgb(100, 160, 220)
     } else {
         egui::Color32::from_rgb(55, 55, 65)
     };
 
-    egui::Frame::default()
+    let card_response = egui::Frame::default()
         .fill(egui::Color32::from_rgb(38, 40, 50))
-        .stroke(egui::Stroke::new(1.0, border_color))
+        .stroke(egui::Stroke::new(1.0, base_border))
         .inner_margin(8.0)
         .rounding(4.0)
         .show(ui, |ui| {
             // Header: setup name + face label
             ui.horizontal(|ui| {
-                let name_text = egui::RichText::new(&setup.name)
-                    .strong()
-                    .color(egui::Color32::from_rgb(200, 205, 220));
-                if ui.selectable_label(is_selected, name_text).clicked() {
-                    events.push(AppEvent::Select(Selection::Setup(setup.id)));
-                }
+                ui.label(
+                    egui::RichText::new(&setup.name)
+                        .strong()
+                        .color(egui::Color32::from_rgb(200, 205, 220)),
+                );
 
                 if setup.face_up != FaceUp::Top {
                     ui.label(
@@ -187,7 +186,23 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &
                         .color(egui::Color32::from_rgb(200, 170, 60)),
                 );
             }
-        });
+        })
+        .response
+        .interact(egui::Sense::click());
+
+    if card_response.clicked() {
+        events.push(AppEvent::Select(Selection::Setup(setup.id)));
+    }
+
+    // Update border color on hover
+    if card_response.hovered() && !is_selected {
+        let hover_border = egui::Color32::from_rgb(80, 120, 170);
+        ui.painter().rect_stroke(
+            card_response.rect,
+            4.0,
+            egui::Stroke::new(1.0, hover_border),
+        );
+    }
 }
 
 /// A compact label chip: "Key: Value" in a tinted style.

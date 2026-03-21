@@ -83,3 +83,62 @@ impl GridGpuData {
         }
     }
 }
+
+/// XYZ axes at the stock origin, rendered in the 3D scene.
+pub struct OriginAxesGpuData {
+    pub vertex_buffer: wgpu::Buffer,
+    pub vertex_count: u32,
+}
+
+impl OriginAxesGpuData {
+    /// Create XYZ axes at a given origin with a given length.
+    pub fn new(device: &wgpu::Device, origin: [f32; 3], length: f32) -> Self {
+        use wgpu::util::DeviceExt;
+
+        let ox = origin[0];
+        let oy = origin[1];
+        let oz = origin[2];
+
+        let vertices = [
+            // X axis (red)
+            LineVertex {
+                position: [ox, oy, oz],
+                color: [0.9, 0.2, 0.2],
+            },
+            LineVertex {
+                position: [ox + length, oy, oz],
+                color: [0.9, 0.2, 0.2],
+            },
+            // Y axis (green)
+            LineVertex {
+                position: [ox, oy, oz],
+                color: [0.2, 0.9, 0.2],
+            },
+            LineVertex {
+                position: [ox, oy + length, oz],
+                color: [0.2, 0.9, 0.2],
+            },
+            // Z axis (blue)
+            LineVertex {
+                position: [ox, oy, oz],
+                color: [0.3, 0.4, 0.95],
+            },
+            LineVertex {
+                position: [ox, oy, oz + length],
+                color: [0.3, 0.4, 0.95],
+            },
+        ];
+
+        let vertex_count = vertices.len() as u32;
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("origin_axes_vertices"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        Self {
+            vertex_buffer,
+            vertex_count,
+        }
+    }
+}
