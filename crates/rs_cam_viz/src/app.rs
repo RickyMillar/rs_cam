@@ -1139,14 +1139,14 @@ impl RsCamApp {
     // --- Layout methods ---
 
     fn draw_setup_layout(&mut self, ctx: &egui::Context) {
-        // Left panel: project tree (setup-focused items)
+        // Left panel: setup list with summary cards
         egui::SidePanel::left("setup_tree")
-            .default_width(220.0)
+            .default_width(240.0)
             .resizable(true)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_ref_and_events_mut();
-                    crate::ui::project_tree::draw(ui, state, events);
+                    crate::ui::setup_panel::draw(ui, state, events);
                 });
             });
 

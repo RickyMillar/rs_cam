@@ -1,0 +1,200 @@
+use super::AppEvent;
+use crate::state::AppState;
+use crate::state::job::{FaceUp, Setup, XYDatum};
+use crate::state::selection::Selection;
+
+/// Left panel for the Setup workspace: setup list with summary cards.
+pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
+    ui.heading("Setups");
+    ui.separator();
+
+    // Stock summary (always relevant to setup)
+    let stock = &state.job.stock;
+    egui::Frame::default()
+        .fill(egui::Color32::from_rgb(36, 36, 44))
+        .inner_margin(6.0)
+        .rounding(4.0)
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("Stock")
+                        .strong()
+                        .color(egui::Color32::from_rgb(160, 170, 190)),
+                );
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{:.0} x {:.0} x {:.0} mm",
+                        stock.x, stock.y, stock.z
+                    ))
+                    .small()
+                    .color(egui::Color32::from_rgb(140, 140, 150)),
+                );
+            });
+            let selected = state.selection == Selection::Stock;
+            if ui
+                .selectable_label(selected, "Edit stock dimensions")
+                .clicked()
+            {
+                events.push(AppEvent::Select(Selection::Stock));
+            }
+        });
+
+    ui.add_space(6.0);
+
+    // Setup cards
+    for setup in &state.job.setups {
+        draw_setup_card(ui, setup, state, events);
+        ui.add_space(4.0);
+    }
+
+    // Add setup button
+    if state.job.setups.len() > 1 || !state.job.setups.is_empty() {
+        ui.add_space(4.0);
+        if ui.button("+ Add Setup").clicked() {
+            events.push(AppEvent::AddSetup);
+        }
+    }
+
+    ui.add_space(12.0);
+
+    // Models section (compact)
+    egui::CollapsingHeader::new("Models")
+        .default_open(false)
+        .show(ui, |ui| {
+            if state.job.models.is_empty() {
+                ui.label(
+                    egui::RichText::new("No models imported")
+                        .italics()
+                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                );
+            }
+            for model in &state.job.models {
+                let selected = state.selection == Selection::Model(model.id);
+                if ui.selectable_label(selected, &model.name).clicked() {
+                    events.push(AppEvent::Select(Selection::Model(model.id)));
+                }
+            }
+        });
+}
+
+fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &mut Vec<AppEvent>) {
+    let is_selected = state.selection == Selection::Setup(setup.id);
+    let border_color = if is_selected {
+        egui::Color32::from_rgb(100, 160, 220)
+    } else {
+        egui::Color32::from_rgb(55, 55, 65)
+    };
+
+    egui::Frame::default()
+        .fill(egui::Color32::from_rgb(38, 40, 50))
+        .stroke(egui::Stroke::new(1.0, border_color))
+        .inner_margin(8.0)
+        .rounding(4.0)
+        .show(ui, |ui| {
+            // Header: setup name + face label
+            ui.horizontal(|ui| {
+                let name_text = egui::RichText::new(&setup.name)
+                    .strong()
+                    .color(egui::Color32::from_rgb(200, 205, 220));
+                if ui.selectable_label(is_selected, name_text).clicked() {
+                    events.push(AppEvent::Select(Selection::Setup(setup.id)));
+                }
+
+                if setup.face_up != FaceUp::Top {
+                    ui.label(
+                        egui::RichText::new(format!("[{}]", setup.face_up.label()))
+                            .small()
+                            .color(egui::Color32::from_rgb(220, 180, 60)),
+                    );
+                }
+            });
+
+            // Summary row: orientation + datum
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 12.0;
+
+                // Orientation chip
+                let orient = if setup.z_rotation == crate::state::job::ZRotation::Deg0 {
+                    setup.face_up.label().to_string()
+                } else {
+                    format!("{} +{}", setup.face_up.label(), setup.z_rotation.label())
+                };
+                chip(
+                    ui,
+                    "Orient",
+                    &orient,
+                    egui::Color32::from_rgb(100, 140, 180),
+                );
+
+                // Datum chip
+                let datum = match &setup.datum.xy_method {
+                    XYDatum::CornerProbe(c) => format!("Corner ({})", c.label()),
+                    XYDatum::CenterOfStock => "Center".into(),
+                    XYDatum::AlignmentPins => "Pins".into(),
+                    XYDatum::Manual => "Manual".into(),
+                };
+                chip(ui, "XY", &datum, egui::Color32::from_rgb(140, 160, 100));
+            });
+
+            // Counts row
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 12.0;
+
+                let fixture_count = setup.fixtures.len();
+                let keepout_count = setup.keep_out_zones.len();
+                let pin_count = setup.alignment_pins.len();
+
+                if fixture_count > 0 {
+                    chip(
+                        ui,
+                        "Fix",
+                        &fixture_count.to_string(),
+                        egui::Color32::from_rgb(160, 130, 100),
+                    );
+                }
+                if keepout_count > 0 {
+                    chip(
+                        ui,
+                        "KO",
+                        &keepout_count.to_string(),
+                        egui::Color32::from_rgb(180, 100, 100),
+                    );
+                }
+                if pin_count > 0 {
+                    chip(
+                        ui,
+                        "Pins",
+                        &pin_count.to_string(),
+                        egui::Color32::from_rgb(100, 160, 140),
+                    );
+                }
+                if fixture_count == 0 && keepout_count == 0 && pin_count == 0 {
+                    ui.label(
+                        egui::RichText::new("No workholding")
+                            .small()
+                            .italics()
+                            .color(egui::Color32::from_rgb(120, 120, 130)),
+                    );
+                }
+            });
+
+            // Flip instruction
+            if setup.face_up != FaceUp::Top {
+                ui.label(
+                    egui::RichText::new(setup.face_up.flip_instruction())
+                        .small()
+                        .italics()
+                        .color(egui::Color32::from_rgb(200, 170, 60)),
+                );
+            }
+        });
+}
+
+/// A compact label chip: "Key: Value" in a tinted style.
+fn chip(ui: &mut egui::Ui, key: &str, value: &str, color: egui::Color32) {
+    ui.label(
+        egui::RichText::new(format!("{key}: {value}"))
+            .small()
+            .color(color),
+    );
+}

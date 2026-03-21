@@ -3,6 +3,7 @@ pub mod menu_bar;
 pub mod preflight;
 pub mod project_tree;
 pub mod properties;
+pub mod setup_panel;
 pub mod sim_diagnostics;
 pub mod sim_op_list;
 pub mod sim_timeline;
