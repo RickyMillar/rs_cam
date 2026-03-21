@@ -33,8 +33,24 @@ impl<B: ComputeBackend> AppController<B> {
                     tracing::error!("DXF import failed: {error}");
                 }
             }
-            AppEvent::Select(selection) => {
-                self.state.selection = selection;
+            AppEvent::Select(ref selection) => {
+                // Re-upload GPU data when active setup changes (triggers machine view update)
+                let old_setup = match &self.state.selection {
+                    Selection::Setup(id) => Some(*id),
+                    Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
+                    Selection::Toolpath(tp_id) => self.state.job.setup_of_toolpath(*tp_id),
+                    _ => None,
+                };
+                let new_setup = match selection {
+                    Selection::Setup(id) => Some(*id),
+                    Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
+                    Selection::Toolpath(tp_id) => self.state.job.setup_of_toolpath(*tp_id),
+                    _ => None,
+                };
+                if old_setup != new_setup {
+                    self.pending_upload = true;
+                }
+                self.state.selection = selection.clone();
             }
             AppEvent::AddTool(tool_type) => {
                 let id = self.state.job.next_tool_id();
