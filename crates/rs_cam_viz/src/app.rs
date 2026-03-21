@@ -42,6 +42,24 @@ impl RsCamApp {
 
         let mut controller = AppController::new();
 
+        // Load job file if RS_CAM_JOB is set
+        if let Ok(job_path) = std::env::var("RS_CAM_JOB") {
+            let path = std::path::Path::new(&job_path);
+            match controller.open_job_from_path(path) {
+                Ok(()) => tracing::info!("Loaded job from {}", path.display()),
+                Err(e) => tracing::error!("Failed to load job: {e}"),
+            }
+        }
+
+        // Select a specific setup by index via RS_CAM_SETUP
+        if let Ok(setup_str) = std::env::var("RS_CAM_SETUP")
+            && let Ok(idx) = setup_str.parse::<usize>()
+            && let Some(setup) = controller.state().job.setups.get(idx)
+        {
+            let setup_id = setup.id;
+            controller.state_mut().selection = crate::state::selection::Selection::Setup(setup_id);
+        }
+
         // Switch workspace if requested via env var
         if let Ok(val) = std::env::var("RS_CAM_SCREENSHOT") {
             match val.to_lowercase().as_str() {
@@ -633,7 +651,24 @@ impl RsCamApp {
         // In Simulation workspace, keep global frame (heightmap is global).
         let workspace = self.controller.state().workspace;
         let active_setup_ref = if matches!(workspace, Workspace::Setup | Workspace::Toolpaths) {
-            self.controller.state().job.setups.first()
+            // Determine active setup from selection
+            let sel = &self.controller.state().selection;
+            let setup_id = match sel {
+                Selection::Setup(id) => Some(*id),
+                Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
+                Selection::Toolpath(tp_id) => self.controller.state().job.setup_of_toolpath(*tp_id),
+                _ => None,
+            };
+            if let Some(sid) = setup_id {
+                self.controller
+                    .state()
+                    .job
+                    .setups
+                    .iter()
+                    .find(|s| s.id == sid)
+            } else {
+                self.controller.state().job.setups.first()
+            }
         } else {
             None
         };
