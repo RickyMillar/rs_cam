@@ -9,6 +9,7 @@ use rs_cam_core::toolpath::Toolpath;
 use super::*;
 use crate::compute::{
     CollisionRequest, ComputeMessage, ComputeRequest, LaneState, SimulationRequest,
+    SimulationResult,
 };
 use crate::state::job::{
     LoadedModel, ModelId, ModelKind, ModelUnits, Setup, ToolConfig, ToolId, ToolType,
@@ -342,4 +343,154 @@ fn simulation_results_capture_setup_boundaries() {
         controller.state.simulation.setup_boundaries()[1].start_move,
         10
     );
+}
+
+// ---------------------------------------------------------------------------
+// Workspace behavior tests (Phase 7)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn workspace_defaults_to_toolpaths() {
+    let controller = AppController::with_backend(ScriptedBackend::new());
+    assert_eq!(
+        controller.state.workspace,
+        crate::state::Workspace::Toolpaths
+    );
+}
+
+#[test]
+fn workspace_switch_preserves_simulation_results() {
+    let mut controller = sample_controller();
+
+    // Inject simulation results
+    inject_sim_results(&mut controller, 1);
+
+    assert!(controller.state.simulation.has_results());
+
+    // Switch to Toolpaths
+    controller.state.workspace = crate::state::Workspace::Toolpaths;
+    assert!(
+        controller.state.simulation.has_results(),
+        "Simulation results should persist when leaving Simulation workspace"
+    );
+
+    // Switch to Setup
+    controller.state.workspace = crate::state::Workspace::Setup;
+    assert!(
+        controller.state.simulation.has_results(),
+        "Simulation results should persist in Setup workspace"
+    );
+}
+
+#[test]
+fn reset_simulation_clears_results_and_checks() {
+    let mut controller = sample_controller();
+    inject_sim_results(&mut controller, 1);
+
+    assert!(controller.state.simulation.has_results());
+
+    controller.handle_internal_event(crate::ui::AppEvent::ResetSimulation);
+
+    assert!(
+        !controller.state.simulation.has_results(),
+        "Reset should clear results"
+    );
+    assert!(
+        controller
+            .state
+            .simulation
+            .checks
+            .rapid_collisions
+            .is_empty(),
+        "Reset should clear rapid collisions"
+    );
+    assert_eq!(
+        controller.state.simulation.checks.holder_collision_count, 0,
+        "Reset should clear holder collision count"
+    );
+    assert!(
+        controller.state.simulation.last_run.is_none(),
+        "Reset should clear run metadata"
+    );
+}
+
+#[test]
+fn simulation_staleness_tracks_edits() {
+    let mut controller = sample_controller();
+    inject_sim_results(&mut controller, 1);
+
+    // Should not be stale immediately
+    assert!(
+        !controller
+            .state
+            .simulation
+            .is_stale(controller.state.job.edit_counter),
+        "Fresh simulation should not be stale"
+    );
+
+    // Mark an edit
+    controller.state.job.mark_edited();
+
+    assert!(
+        controller
+            .state
+            .simulation
+            .is_stale(controller.state.job.edit_counter),
+        "Simulation should be stale after job edit"
+    );
+}
+
+#[test]
+fn playback_defaults_after_reset() {
+    let mut controller = sample_controller();
+    inject_sim_results(&mut controller, 1);
+
+    // Mutate playback
+    controller.state.simulation.playback.current_move = 5;
+    controller.state.simulation.playback.playing = true;
+    controller.state.simulation.playback.speed = 9999.0;
+
+    controller.handle_internal_event(crate::ui::AppEvent::ResetSimulation);
+
+    assert_eq!(controller.state.simulation.playback.current_move, 0);
+    assert!(!controller.state.simulation.playback.playing);
+    assert!((controller.state.simulation.playback.speed - 500.0).abs() < f32::EPSILON);
+}
+
+/// Helper: inject minimal simulation results into the controller.
+fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setups: usize) {
+    use rs_cam_core::simulation::HeightmapMesh;
+
+    let mesh = HeightmapMesh {
+        vertices: vec![0.0; 9],
+        indices: vec![0, 1, 2],
+        colors: vec![0.5; 9],
+    };
+
+    let total_moves = 10 * num_setups;
+    let mut boundaries = Vec::new();
+    for i in 0..num_setups {
+        boundaries.push(crate::compute::worker::SimBoundary {
+            id: ToolpathId(1),
+            name: format!("Op {}", i + 1),
+            tool_name: "EndMill".to_string(),
+            start_move: i * 10,
+            end_move: (i + 1) * 10,
+        });
+    }
+
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Simulation(Ok(SimulationResult {
+            mesh,
+            total_moves,
+            deviations: None,
+            boundaries,
+            checkpoints: Vec::new(),
+            rapid_collisions: Vec::new(),
+            rapid_collision_move_indices: Vec::new(),
+        })));
+
+    controller.drain_compute_results();
 }
