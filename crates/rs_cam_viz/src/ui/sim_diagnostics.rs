@@ -24,7 +24,7 @@ pub fn draw(
                     .selected_text(match sim.stock_viz_mode {
                         StockVizMode::Solid => "Solid",
                         StockVizMode::Deviation => "Deviation",
-                        StockVizMode::ByOperation => "By Operation",
+                        StockVizMode::ByOperation => "Solid", // placeholder: treated as Solid
                         StockVizMode::ByHeight => "By Height",
                     })
                     .show_ui(ui, |ui| {
@@ -33,11 +33,6 @@ pub fn draw(
                             &mut sim.stock_viz_mode,
                             StockVizMode::Deviation,
                             "Deviation",
-                        );
-                        ui.selectable_value(
-                            &mut sim.stock_viz_mode,
-                            StockVizMode::ByOperation,
-                            "By Operation",
                         );
                         ui.selectable_value(
                             &mut sim.stock_viz_mode,

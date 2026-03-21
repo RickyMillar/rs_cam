@@ -6,18 +6,59 @@ use crate::state::toolpath::ToolpathId;
 
 /// Left panel in simulation workspace: operation list with checkboxes, progress bars, and jump buttons.
 pub fn draw(ui: &mut egui::Ui, sim: &SimulationState, job: &JobState, events: &mut Vec<AppEvent>) {
-    ui.heading("Operations");
+    ui.heading("Verification");
     ui.separator();
 
+    // Empty state: no results yet
     if sim.boundaries().is_empty() {
-        ui.label(
-            egui::RichText::new("No simulation results yet")
-                .italics()
-                .color(egui::Color32::from_rgb(120, 120, 130)),
-        );
-        if ui.button("Run Simulation").clicked() {
-            events.push(AppEvent::RunSimulation);
-        }
+        let has_computed = job
+            .all_toolpaths()
+            .any(|tp| tp.enabled && tp.result.is_some());
+
+        egui::Frame::default()
+            .fill(egui::Color32::from_rgb(36, 36, 44))
+            .inner_margin(12.0)
+            .rounding(4.0)
+            .show(ui, |ui| {
+                if has_computed {
+                    ui.label(
+                        egui::RichText::new("Ready to simulate")
+                            .strong()
+                            .color(egui::Color32::from_rgb(180, 180, 195)),
+                    );
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(
+                            "Run simulation to verify toolpaths, check collisions, and review stock removal.",
+                        )
+                        .small()
+                        .color(egui::Color32::from_rgb(140, 140, 155)),
+                    );
+                    ui.add_space(8.0);
+                    if ui.button("Run Simulation").clicked() {
+                        events.push(AppEvent::RunSimulation);
+                    }
+                } else {
+                    ui.label(
+                        egui::RichText::new("No toolpaths computed")
+                            .color(egui::Color32::from_rgb(180, 140, 80)),
+                    );
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(
+                            "Switch to Toolpaths workspace to add and generate operations first.",
+                        )
+                        .small()
+                        .color(egui::Color32::from_rgb(140, 140, 155)),
+                    );
+                    ui.add_space(8.0);
+                    if ui.button("Go to Toolpaths").clicked() {
+                        events.push(AppEvent::SwitchWorkspace(
+                            crate::state::Workspace::Toolpaths,
+                        ));
+                    }
+                }
+            });
         return;
     }
 
