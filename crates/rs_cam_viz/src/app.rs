@@ -1318,12 +1318,15 @@ impl RsCamApp {
             },
             line_uniforms: LineUniforms { view_proj },
             has_mesh: state.job.models.iter().any(|model| model.mesh.is_some())
-                && state.viewport.render_mode == crate::state::viewport::RenderMode::Shaded,
+                && state.viewport.render_mode == crate::state::viewport::RenderMode::Shaded
+                && state.workspace != Workspace::Simulation,
             show_grid: state.viewport.show_grid,
             show_stock: state.viewport.show_stock
                 && state.job.models.iter().any(|model| model.mesh.is_some()),
-            show_fixtures: state.viewport.show_fixtures,
-            show_solid_stock: state.viewport.show_stock && state.workspace != Workspace::Simulation,
+            show_fixtures: state.viewport.show_fixtures
+                && state.workspace != Workspace::Simulation,
+            show_solid_stock: state.viewport.show_stock
+                && state.workspace == Workspace::Setup,
             show_height_planes: state.workspace == Workspace::Toolpaths
                 && matches!(state.selection, Selection::Toolpath(_)),
             show_sim_mesh: state.workspace == Workspace::Simulation

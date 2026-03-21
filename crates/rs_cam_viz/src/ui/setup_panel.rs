@@ -8,8 +8,13 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     ui.heading("Setups");
     ui.separator();
 
-    // Stock summary (always relevant to setup)
+    // Stock summary — show effective dims for the active setup orientation
     let stock = &state.job.stock;
+    let (eff_w, eff_d, eff_h) = if let Some(setup) = active_setup(state) {
+        setup.effective_stock(stock)
+    } else {
+        (stock.x, stock.y, stock.z)
+    };
     egui::Frame::default()
         .fill(egui::Color32::from_rgb(36, 36, 44))
         .inner_margin(6.0)
@@ -24,7 +29,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 ui.label(
                     egui::RichText::new(format!(
                         "{:.0} x {:.0} x {:.0} mm",
-                        stock.x, stock.y, stock.z
+                        eff_w, eff_d, eff_h
                     ))
                     .small()
                     .color(egui::Color32::from_rgb(140, 140, 150)),
@@ -186,6 +191,16 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &
                         .color(egui::Color32::from_rgb(200, 170, 60)),
                 );
             }
+
+            // Fresh-stock warning for non-first setups
+            if state.job.setups.first().map(|s| s.id) != Some(setup.id) {
+                ui.label(
+                    egui::RichText::new("Toolpaths use fresh stock")
+                        .small()
+                        .italics()
+                        .color(egui::Color32::from_rgb(200, 160, 60)),
+                );
+            }
         })
         .response
         .interact(egui::Sense::click());
@@ -212,4 +227,19 @@ fn chip(ui: &mut egui::Ui, key: &str, value: &str, color: egui::Color32) {
             .small()
             .color(color),
     );
+}
+
+/// Determine the active setup from the current selection.
+fn active_setup(state: &AppState) -> Option<&Setup> {
+    let setup_id = match &state.selection {
+        Selection::Setup(id) => Some(*id),
+        Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
+        Selection::Toolpath(tp_id) => state.job.setup_of_toolpath(*tp_id),
+        _ => None,
+    };
+    if let Some(sid) = setup_id {
+        state.job.setups.iter().find(|s| s.id == sid)
+    } else {
+        state.job.setups.first()
+    }
 }

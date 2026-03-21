@@ -556,7 +556,7 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             let opacity = if self.show_sim_mesh {
                 self.sim_mesh_opacity
             } else {
-                0.08 // solid stock / height planes translucency
+                0.18 // solid stock / height planes translucency
             };
             let sim_uniforms = ColoredMeshUniforms {
                 view_proj: self.mesh_uniforms.view_proj,
