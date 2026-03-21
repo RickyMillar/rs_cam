@@ -89,6 +89,33 @@ impl RsCamApp {
                     }
                 }
                 AppEvent::SetViewPreset(preset) => self.camera.set_preset(preset),
+                AppEvent::PreviewOrientation(face_up) => {
+                    use crate::state::job::FaceUp;
+                    match face_up {
+                        FaceUp::Top => {
+                            self.camera.pitch = std::f32::consts::FRAC_PI_2 - 0.01;
+                        }
+                        FaceUp::Bottom => {
+                            self.camera.pitch = -(std::f32::consts::FRAC_PI_2 - 0.01);
+                        }
+                        FaceUp::Front => {
+                            self.camera.yaw = 0.0;
+                            self.camera.pitch = 0.0;
+                        }
+                        FaceUp::Back => {
+                            self.camera.yaw = std::f32::consts::PI;
+                            self.camera.pitch = 0.0;
+                        }
+                        FaceUp::Left => {
+                            self.camera.yaw = std::f32::consts::FRAC_PI_2;
+                            self.camera.pitch = 0.0;
+                        }
+                        FaceUp::Right => {
+                            self.camera.yaw = -std::f32::consts::FRAC_PI_2;
+                            self.camera.pitch = 0.0;
+                        }
+                    }
+                }
                 AppEvent::ResetView => self.fit_camera_to_first_mesh(),
 
                 // Workspace transitions (need camera/viewport changes in app)
@@ -638,6 +665,10 @@ impl RsCamApp {
                             [0.9_f32, 0.7, 0.2]
                         };
                         boxes.push((fixture.clearance_bbox(), color));
+                        // When selected, also show inner physical bbox in white
+                        if selected {
+                            boxes.push((fixture.bbox(), [0.9_f32, 0.9, 0.9]));
+                        }
                     }
                 }
                 for keep_out in &setup.keep_out_zones {
@@ -676,6 +707,93 @@ impl RsCamApp {
                     });
                     pin_vertices.push(crate::render::LineVertex {
                         position: [x, y + radius, z],
+                        color,
+                    });
+                }
+            }
+
+            // Add datum crosshair markers in Setup workspace
+            if self.controller.state().workspace == Workspace::Setup
+                && let Some(setup) = job.setups.first()
+            {
+                use crate::state::job::{Corner, XYDatum};
+                let stock_bbox = job.stock.bbox();
+                let z = (stock_bbox.max.z) as f32;
+                let color = [0.9_f32, 0.2, 0.9]; // magenta
+
+                let datum_xy: Option<(f32, f32)> = match &setup.datum.xy_method {
+                    XYDatum::CornerProbe(corner) => {
+                        let x = match corner {
+                            Corner::FrontLeft | Corner::BackLeft => stock_bbox.min.x,
+                            Corner::FrontRight | Corner::BackRight => stock_bbox.max.x,
+                        };
+                        let y = match corner {
+                            Corner::FrontLeft | Corner::FrontRight => stock_bbox.min.y,
+                            Corner::BackLeft | Corner::BackRight => stock_bbox.max.y,
+                        };
+                        Some((x as f32, y as f32))
+                    }
+                    XYDatum::CenterOfStock => {
+                        let cx = ((stock_bbox.min.x + stock_bbox.max.x) / 2.0) as f32;
+                        let cy = ((stock_bbox.min.y + stock_bbox.max.y) / 2.0) as f32;
+                        Some((cx, cy))
+                    }
+                    _ => None, // AlignmentPins already rendered, Manual has no position
+                };
+
+                if let Some((dx, dy)) = datum_xy {
+                    let arm = 15.0_f32; // crosshair half-length in mm
+                    let diamond = 3.0_f32; // diamond half-size
+
+                    // Horizontal crosshair line (X direction)
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx - arm, dy, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx + arm, dy, z],
+                        color,
+                    });
+                    // Vertical crosshair line (Y direction)
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx, dy - arm, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx, dy + arm, z],
+                        color,
+                    });
+                    // Diamond shape (4 edges)
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx + diamond, dy, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx, dy + diamond, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx, dy + diamond, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx - diamond, dy, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx - diamond, dy, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx, dy - diamond, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx, dy - diamond, z],
+                        color,
+                    });
+                    pin_vertices.push(crate::render::LineVertex {
+                        position: [dx + diamond, dy, z],
                         color,
                     });
                 }
@@ -807,6 +925,34 @@ impl RsCamApp {
 
                 resources.toolpath_data.push(gpu_data);
             }
+        }
+
+        // Upload height plane overlays when a toolpath is selected in Toolpaths workspace
+        if self.controller.state().workspace == Workspace::Toolpaths
+            && let Selection::Toolpath(tp_id) = self.controller.state().selection
+        {
+            let job = &self.controller.state().job;
+            if let Some(tp) = job.all_toolpaths().find(|t| t.id == tp_id) {
+                let safe_z = job.post.safe_z;
+                let op_depth = tp.operation.default_depth_for_heights();
+                let heights = tp.heights.resolve(safe_z, op_depth);
+                let stock_bbox = job.stock.bbox();
+                resources.height_planes_data = Some(
+                    crate::render::height_planes::HeightPlanesGpuData::from_heights(
+                        &render_state.device,
+                        &stock_bbox,
+                        heights.clearance_z,
+                        heights.retract_z,
+                        heights.feed_z,
+                        heights.top_z,
+                        heights.bottom_z,
+                    ),
+                );
+            } else {
+                resources.height_planes_data = None;
+            }
+        } else {
+            resources.height_planes_data = None;
         }
     }
 
@@ -1058,6 +1204,8 @@ impl RsCamApp {
                 && state.job.models.iter().any(|model| model.mesh.is_some()),
             show_fixtures: state.viewport.show_fixtures,
             show_solid_stock: state.viewport.show_stock && state.workspace != Workspace::Simulation,
+            show_height_planes: state.workspace == Workspace::Toolpaths
+                && matches!(state.selection, Selection::Toolpath(_)),
             show_sim_mesh: state.workspace == Workspace::Simulation
                 && state.simulation.has_results(),
             sim_mesh_opacity: state.simulation.stock_opacity,

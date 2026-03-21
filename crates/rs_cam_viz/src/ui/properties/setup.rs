@@ -37,6 +37,7 @@ pub fn draw(ui: &mut egui::Ui, setup_id: SetupId, setup: &mut Setup, events: &mu
                     {
                         setup.face_up = face;
                         events.push(AppEvent::FixtureChanged);
+                        events.push(AppEvent::PreviewOrientation(face));
                     }
                 }
             });

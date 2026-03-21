@@ -14,7 +14,7 @@ pub mod workspace_bar;
 
 use crate::render::camera::ViewPreset;
 use crate::state::Workspace;
-use crate::state::job::{FixtureId, KeepOutId, SetupId, ToolId, ToolType};
+use crate::state::job::{FaceUp, FixtureId, KeepOutId, SetupId, ToolId, ToolType};
 use crate::state::toolpath::{OperationType, ToolpathId};
 use std::path::PathBuf;
 
@@ -37,6 +37,7 @@ pub enum AppEvent {
     // Selection / view
     Select(crate::state::selection::Selection),
     SetViewPreset(ViewPreset),
+    PreviewOrientation(FaceUp),
     ResetView,
 
     // Tools

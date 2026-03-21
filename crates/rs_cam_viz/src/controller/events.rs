@@ -375,6 +375,7 @@ impl<B: ComputeBackend> AppController<B> {
             | AppEvent::SaveJob
             | AppEvent::OpenJob
             | AppEvent::SetViewPreset(_)
+            | AppEvent::PreviewOrientation(_)
             | AppEvent::ResetView
             | AppEvent::SwitchWorkspace(_)
             | AppEvent::SimVizModeChanged
