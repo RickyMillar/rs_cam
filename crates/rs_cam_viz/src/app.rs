@@ -89,6 +89,33 @@ impl RsCamApp {
                     }
                 }
                 AppEvent::SetViewPreset(preset) => self.camera.set_preset(preset),
+                AppEvent::PreviewOrientation(face_up) => {
+                    use crate::state::job::FaceUp;
+                    match face_up {
+                        FaceUp::Top => {
+                            self.camera.pitch = std::f32::consts::FRAC_PI_2 - 0.01;
+                        }
+                        FaceUp::Bottom => {
+                            self.camera.pitch = -(std::f32::consts::FRAC_PI_2 - 0.01);
+                        }
+                        FaceUp::Front => {
+                            self.camera.yaw = 0.0;
+                            self.camera.pitch = 0.0;
+                        }
+                        FaceUp::Back => {
+                            self.camera.yaw = std::f32::consts::PI;
+                            self.camera.pitch = 0.0;
+                        }
+                        FaceUp::Left => {
+                            self.camera.yaw = std::f32::consts::FRAC_PI_2;
+                            self.camera.pitch = 0.0;
+                        }
+                        FaceUp::Right => {
+                            self.camera.yaw = -std::f32::consts::FRAC_PI_2;
+                            self.camera.pitch = 0.0;
+                        }
+                    }
+                }
                 AppEvent::ResetView => self.fit_camera_to_first_mesh(),
 
                 // Workspace transitions (need camera/viewport changes in app)
