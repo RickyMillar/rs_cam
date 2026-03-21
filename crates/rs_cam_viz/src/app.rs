@@ -480,8 +480,16 @@ impl RsCamApp {
                     pb.live_sim_move = cp_end;
                 }
             } else {
-                // Before any checkpoint — reset to fresh stock
-                let bbox = self.controller.state().job.stock.bbox();
+                // Before any checkpoint — reset to fresh stock (local frame)
+                let bbox = if let Some(setup) = self.controller.state().job.setups.first() {
+                    let (w, d, h) = setup.effective_stock(&self.controller.state().job.stock);
+                    rs_cam_core::geo::BoundingBox3 {
+                        min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
+                        max: rs_cam_core::geo::P3::new(w, d, h),
+                    }
+                } else {
+                    self.controller.state().job.stock.bbox()
+                };
                 let res = self.controller.state().simulation.resolution;
                 let fresh =
                     rs_cam_core::simulation::Heightmap::from_bounds(&bbox, Some(bbox.max.z), res);
@@ -645,13 +653,11 @@ impl RsCamApp {
         let mut renderer = render_state.renderer.write();
         let resources: &mut RenderResources = renderer.callback_resources.get_mut().unwrap();
 
-        // Determine whether to show in the setup's local coordinate frame.
-        // In Setup/Toolpaths workspaces with a non-identity setup, display
-        // everything in the setup-local frame ("machine view").
-        // In Simulation workspace, keep global frame (heightmap is global).
+        // Everything is always displayed in the active setup's local coordinate
+        // frame ("machine view").  Toolpaths, simulation, mesh, stock — all at
+        // (0,0,0)-relative local coords.
         let workspace = self.controller.state().workspace;
-        let active_setup_ref = if matches!(workspace, Workspace::Setup | Workspace::Toolpaths) {
-            // Determine active setup from selection
+        let active_setup_ref = {
             let sel = &self.controller.state().selection;
             let setup_id = match sel {
                 Selection::Setup(id) => Some(*id),
@@ -669,8 +675,6 @@ impl RsCamApp {
             } else {
                 self.controller.state().job.setups.first()
             }
-        } else {
-            None
         };
         let use_local_frame = active_setup_ref.is_some();
 
@@ -760,8 +764,13 @@ impl RsCamApp {
                     )
                 };
 
+            // Only show fixtures/keepouts/pins from the active setup (each
+            // setup has its own local frame, so mixing them is wrong).
+            let active_setups: Vec<&crate::state::job::Setup> =
+                active_setup_ref.into_iter().collect();
+
             let mut boxes = Vec::new();
-            for setup in &job.setups {
+            for setup in &active_setups {
                 for fixture in &setup.fixtures {
                     if fixture.enabled {
                         let selected = *selection == Selection::Fixture(setup.id, fixture.id);
@@ -770,21 +779,13 @@ impl RsCamApp {
                         } else {
                             [0.9_f32, 0.7, 0.2]
                         };
+                        // Fixture is defined in global coords — transform to local
                         let clearance = fixture.clearance_bbox();
-                        let display_clearance = if use_local_frame {
-                            transform_bbox(clearance, active_setup_ref.unwrap())
-                        } else {
-                            clearance
-                        };
+                        let display_clearance = transform_bbox(clearance, setup);
                         boxes.push((display_clearance, color));
-                        // When selected, also show inner physical bbox in white
                         if selected {
                             let inner = fixture.bbox();
-                            let display_inner = if use_local_frame {
-                                transform_bbox(inner, active_setup_ref.unwrap())
-                            } else {
-                                inner
-                            };
+                            let display_inner = transform_bbox(inner, setup);
                             boxes.push((display_inner, [0.9_f32, 0.9, 0.9]));
                         }
                     }
@@ -798,31 +799,21 @@ impl RsCamApp {
                             [0.9_f32, 0.2, 0.2]
                         };
                         let ko_bb = keep_out.bbox(&job.stock);
-                        let display_ko = if use_local_frame {
-                            transform_bbox(ko_bb, active_setup_ref.unwrap())
-                        } else {
-                            ko_bb
-                        };
+                        let display_ko = transform_bbox(ko_bb, setup);
                         boxes.push((display_ko, color));
                     }
                 }
             }
 
             let mut pin_vertices = Vec::new();
-            for setup in &job.setups {
+            for setup in &active_setups {
                 for pin in &setup.alignment_pins {
                     let radius = (pin.diameter / 2.0) as f32;
-                    // Pin is defined in global frame at stock top
-                    let (x, y, z) = if use_local_frame {
-                        let s = active_setup_ref.unwrap();
-                        let stock_top = job.stock.origin_z + job.stock.z;
-                        let global_pt = P3::new(pin.x, pin.y, stock_top);
-                        let local_pt = s.transform_point(global_pt, &job.stock);
-                        (local_pt.x as f32, local_pt.y as f32, local_pt.z as f32)
-                    } else {
-                        let stock_top = job.stock.origin_z + job.stock.z;
-                        (pin.x as f32, pin.y as f32, stock_top as f32)
-                    };
+                    // Pin is defined in global frame at stock top — transform to local
+                    let stock_top = job.stock.origin_z + job.stock.z;
+                    let global_pt = P3::new(pin.x, pin.y, stock_top);
+                    let local_pt = setup.transform_point(global_pt, &job.stock);
+                    let (x, y, z) = (local_pt.x as f32, local_pt.y as f32, local_pt.z as f32);
                     let color = [0.2_f32, 0.9, 0.3];
                     pin_vertices.push(crate::render::LineVertex {
                         position: [x - radius, y, z],
@@ -844,11 +835,9 @@ impl RsCamApp {
             }
 
             // Add datum crosshair markers in Setup workspace.
-            // Compute datum position in setup-local frame. When in local frame
-            // (machine view), use local coords directly; otherwise inverse-transform
-            // back to global coords.
+            // Datum is always in local frame coords.
             if self.controller.state().workspace == Workspace::Setup
-                && let Some(setup) = job.setups.first()
+                && let Some(setup) = active_setup_ref
             {
                 use crate::state::job::{Corner, XYDatum};
 
@@ -873,16 +862,10 @@ impl RsCamApp {
                 };
 
                 if let Some(local) = local_datum {
-                    // In local frame, use local coords directly; otherwise
-                    // inverse-transform to global for the global viewport.
-                    let display_pt = if use_local_frame {
-                        local
-                    } else {
-                        setup.inverse_transform_point(local, &job.stock)
-                    };
-                    let dx = display_pt.x as f32;
-                    let dy = display_pt.y as f32;
-                    let dz = display_pt.z as f32;
+                    // Always in local frame — use local coords directly.
+                    let dx = local.x as f32;
+                    let dy = local.y as f32;
+                    let dz = local.z as f32;
 
                     let arm = 15.0_f32;
                     let diamond = 3.0_f32;
@@ -1023,28 +1006,12 @@ impl RsCamApp {
                 let selected = selected_tp_id == Some(tp.id);
 
                 // In Setup/Toolpaths workspace (local frame), toolpaths are already
-                // in local coords — use them directly.  In Simulation workspace
-                // (global frame), inverse-transform so they align with the heightmap.
-                let render_tp: std::borrow::Cow<'_, rs_cam_core::toolpath::Toolpath> = {
-                    let job = &self.controller.state().job;
-                    let setup_id = job.setup_of_toolpath(tp.id);
-                    let setup = setup_id.and_then(|sid| job.setups.iter().find(|s| s.id == sid));
-                    if workspace == Workspace::Simulation
-                        && let Some(setup) = setup
-                        && setup.needs_transform()
-                    {
-                        let mut tp_clone = (*result.toolpath).clone();
-                        for m in &mut tp_clone.moves {
-                            m.target = setup.inverse_transform_point(m.target, &job.stock);
-                        }
-                        std::borrow::Cow::Owned(tp_clone)
-                    } else {
-                        std::borrow::Cow::Borrowed(result.toolpath.as_ref())
-                    }
-                };
+                // Toolpaths are always in local coords, viewport is always in
+                // local frame — use directly, no transform needed.
+                let render_tp = result.toolpath.as_ref();
 
                 let mut gpu_data =
-                    ToolpathGpuData::from_toolpath(&render_state.device, &render_tp, i, selected);
+                    ToolpathGpuData::from_toolpath(&render_state.device, render_tp, i, selected);
 
                 // Generate entry path preview for selected toolpaths with a non-None entry style
                 if selected {
@@ -1132,21 +1099,8 @@ impl RsCamApp {
                 if current <= cumulative + tp_moves {
                     let local_idx = current.saturating_sub(cumulative);
                     if local_idx < result.toolpath.moves.len() {
-                        let mut pos = result.toolpath.moves[local_idx].target;
-                        // Inverse-transform from setup-local to global coords
-                        let setup_id = self.controller.state().job.setup_of_toolpath(tp.id);
-                        if let Some(setup) = setup_id.and_then(|sid| {
-                            self.controller
-                                .state()
-                                .job
-                                .setups
-                                .iter()
-                                .find(|s| s.id == sid)
-                        }) && setup.needs_transform()
-                        {
-                            pos = setup
-                                .inverse_transform_point(pos, &self.controller.state().job.stock);
-                        }
+                        // Toolpath is in local coords, viewport is in local frame — use directly
+                        let pos = result.toolpath.moves[local_idx].target;
                         let tool_info = self
                             .controller
                             .state()
