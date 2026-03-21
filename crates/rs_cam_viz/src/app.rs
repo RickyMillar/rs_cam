@@ -672,7 +672,7 @@ impl RsCamApp {
         } else {
             None
         };
-        let use_local_frame = active_setup_ref.is_some_and(|s| s.needs_transform());
+        let use_local_frame = active_setup_ref.is_some();
 
         // Upload mesh data for the first STL model
         if let Some(model) = self
