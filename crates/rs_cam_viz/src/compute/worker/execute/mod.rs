@@ -1295,6 +1295,7 @@ mod tests {
             keep_out_footprints: Vec::new(),
             heights: HeightsConfig::default().resolve(10.0, 6.0),
             debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+            prior_stock: None,
         }
     }
 

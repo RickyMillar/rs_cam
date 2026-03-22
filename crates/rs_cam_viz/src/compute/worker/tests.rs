@@ -32,6 +32,7 @@ fn sample_request(operation: OperationConfig, stock_source: StockSource) -> Comp
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(10.0, 5.0),
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+        prior_stock: None,
     }
 }
 
@@ -109,6 +110,7 @@ fn quick_pocket_request(id: usize) -> ComputeRequest {
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(10.0, 5.0),
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+        prior_stock: None,
     }
 }
 
@@ -143,6 +145,7 @@ fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(10.0, 5.0),
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+        prior_stock: None,
     }
 }
 
@@ -179,6 +182,7 @@ fn waterline_request(id: usize) -> ComputeRequest {
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(10.0, 5.0),
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+        prior_stock: None,
     }
 }
 
@@ -215,6 +219,7 @@ fn adaptive3d_request(id: usize) -> ComputeRequest {
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(10.0, 5.0),
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+        prior_stock: None,
     }
 }
 
@@ -270,6 +275,7 @@ fn drill_request(id: usize) -> ComputeRequest {
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(10.0, 5.0),
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+        prior_stock: None,
     }
 }
 
@@ -298,6 +304,7 @@ fn steep_shallow_request(id: usize) -> ComputeRequest {
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(10.0, 5.0),
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+        prior_stock: None,
     }
 }
 
@@ -339,6 +346,7 @@ fn pencil_request(id: usize) -> ComputeRequest {
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(10.0, 5.0),
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+        prior_stock: None,
     }
 }
 
@@ -373,6 +381,7 @@ fn scallop_request(id: usize) -> ComputeRequest {
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(20.0, 5.0),
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+        prior_stock: None,
     }
 }
 
@@ -407,6 +416,7 @@ fn ramp_finish_request(id: usize) -> ComputeRequest {
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(20.0, 5.0),
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+        prior_stock: None,
     }
 }
 
@@ -439,6 +449,7 @@ fn spiral_finish_request(id: usize) -> ComputeRequest {
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(20.0, 5.0),
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+        prior_stock: None,
     }
 }
 
@@ -472,6 +483,7 @@ fn radial_finish_request(id: usize) -> ComputeRequest {
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(15.0, 5.0),
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+        prior_stock: None,
     }
 }
 
@@ -504,6 +516,7 @@ fn horizontal_finish_request(id: usize) -> ComputeRequest {
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(15.0, 5.0),
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+        prior_stock: None,
     }
 }
 
@@ -540,6 +553,7 @@ fn project_curve_request(id: usize) -> ComputeRequest {
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(15.0, 5.0),
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+        prior_stock: None,
     }
 }
 

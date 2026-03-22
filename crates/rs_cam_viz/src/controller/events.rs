@@ -13,8 +13,8 @@ use crate::state::job::{AlignmentPin, FaceUp, Fixture, FlipAxis, KeepOutZone, Se
 use crate::state::selection::Selection;
 use crate::state::simulation::{SimulationResults, SimulationRunMeta};
 use crate::state::toolpath::{
-    AlignmentPinDrillConfig, ComputeStatus, OperationConfig, ToolpathEntry, ToolpathEntryInit,
-    ToolpathId,
+    AlignmentPinDrillConfig, ComputeStatus, OperationConfig, StockSource, ToolpathEntry,
+    ToolpathEntryInit, ToolpathId,
 };
 use crate::ui::AppEvent;
 
@@ -1113,6 +1113,14 @@ impl<B: ComputeBackend> AppController<B> {
             Some(self.state.job.stock.bbox())
         };
 
+        let prior_stock = if stock_source == StockSource::FromRemainingStock {
+            stock_bbox.as_ref().and_then(|bbox| {
+                self.build_prior_stock(tp_id, bbox, tool.diameter)
+            })
+        } else {
+            None
+        };
+
         self.compute.submit_toolpath(ComputeRequest {
             toolpath_id: tp_id,
             toolpath_name,
@@ -1132,7 +1140,60 @@ impl<B: ComputeBackend> AppController<B> {
             boundary_containment,
             keep_out_footprints,
             heights,
+            prior_stock,
         });
+    }
+
+    /// Build a TriDexelStock representing the remaining material after simulating
+    /// all prior enabled toolpaths (those that appear before `tp_id`) in the same
+    /// setup.  Returns `None` when there are no prior results to simulate.
+    fn build_prior_stock(
+        &self,
+        tp_id: ToolpathId,
+        stock_bbox: &BoundingBox3,
+        tool_diameter: f64,
+    ) -> Option<TriDexelStock> {
+        // Find the setup that contains this toolpath and the position within it.
+        let (setup, tp_index) = self.state.job.setups.iter().find_map(|setup| {
+            let pos = setup.toolpaths.iter().position(|tp| tp.id == tp_id)?;
+            Some((setup, pos))
+        })?;
+
+        // Collect prior toolpaths: those before tp_index that are enabled and
+        // have a computed result.
+        let prior: Vec<_> = setup.toolpaths[..tp_index]
+            .iter()
+            .filter(|tp| tp.enabled && tp.result.is_some())
+            .collect();
+
+        if prior.is_empty() {
+            return None;
+        }
+
+        // Resolution: tool_diameter / 4, clamped to [0.25, 2.0].
+        let resolution = (tool_diameter / 4.0).clamp(0.25, 2.0);
+        let mut stock = TriDexelStock::from_bounds(stock_bbox, resolution);
+
+        // In the setup-local frame the cutting direction is always FromTop
+        // because the mesh and toolpaths have already been rotated so that the
+        // face-up direction aligns with +Z.
+        let direction = rs_cam_core::dexel_stock::StockCutDirection::FromTop;
+
+        for tp in &prior {
+            let result = tp.result.as_ref().expect("filtered for Some above");
+            let tool = self
+                .state
+                .job
+                .tools
+                .iter()
+                .find(|t| t.id == tp.tool_id);
+            if let Some(tool) = tool {
+                let cutter = crate::compute::worker::helpers::build_cutter(tool);
+                stock.simulate_toolpath(&result.toolpath, cutter.as_ref(), direction);
+            }
+        }
+
+        Some(stock)
     }
 
     pub fn drain_compute_results(&mut self) {

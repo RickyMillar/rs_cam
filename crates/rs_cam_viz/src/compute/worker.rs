@@ -79,6 +79,8 @@ pub struct ComputeRequest {
     /// Fixture and keep-out footprints to subtract from the machining boundary.
     pub keep_out_footprints: Vec<Polygon2>,
     pub heights: crate::state::toolpath::ResolvedHeights,
+    /// Pre-simulated remaining stock from prior toolpaths in the same setup.
+    pub prior_stock: Option<TriDexelStock>,
 }
 
 pub struct ComputeResult {
