@@ -1,0 +1,12 @@
+[package]
+name = "step_validation"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+truck-stepio = { version = "0.3", features = ["in"] }
+truck-topology = "0.6"
+truck-meshalgo = "0.4"
+truck-geometry = "0.5"
+truck-polymesh = "0.6"
