@@ -16,7 +16,7 @@ use truck_stepio::r#in::Table;
 use crate::enriched_mesh::{
     FaceGroupId, FaceTessellation, SurfaceParams, SurfaceType, build_enriched_mesh, EnrichedMesh,
 };
-use crate::geo::{BoundingBox3, P3, V3};
+use crate::geo::{BoundingBox3, P2, P3, V3};
 
 #[derive(Error, Debug)]
 pub enum StepImportError {
@@ -52,6 +52,7 @@ pub fn load_step(path: &Path, tolerance: f64) -> Result<EnrichedMesh, StepImport
 
     let mut face_tessellations: Vec<FaceTessellation> = Vec::new();
     let mut adjacency_pairs: Vec<(FaceGroupId, FaceGroupId)> = Vec::new();
+    let mut brep_edges: Vec<crate::enriched_mesh::BrepEdge> = Vec::new();
 
     for (shell_idx, step_shell) in table.shell.values().enumerate() {
         let cshell = table.to_compressed_shell(step_shell).map_err(|e| {
@@ -139,12 +140,27 @@ pub fn load_step(path: &Path, tolerance: f64) -> Result<EnrichedMesh, StepImport
             });
         }
 
-        // Build adjacency for faces within this shell
+        // Build adjacency and BREP edges for faces within this shell
         let face_end_idx = face_tessellations.len();
         for i in face_base_idx..face_end_idx {
             for j in (i + 1)..face_end_idx {
-                if faces_share_edge(&face_tessellations[i], &face_tessellations[j]) {
-                    adjacency_pairs.push((FaceGroupId(i as u16), FaceGroupId(j as u16)));
+                if let Some(shared_verts) =
+                    find_shared_edge_vertices(&face_tessellations[i], &face_tessellations[j])
+                {
+                    let face_a = FaceGroupId(i as u16);
+                    let face_b = FaceGroupId(j as u16);
+                    adjacency_pairs.push((face_a, face_b));
+
+                    // Build a BrepEdge from the shared vertices
+                    let edge = build_brep_edge(
+                        brep_edges.len(),
+                        face_a,
+                        face_b,
+                        shared_verts,
+                        &face_tessellations[i],
+                        &face_tessellations[j],
+                    );
+                    brep_edges.push(edge);
                 }
             }
         }
@@ -156,9 +172,14 @@ pub fn load_step(path: &Path, tolerance: f64) -> Result<EnrichedMesh, StepImport
 
     let face_count = face_tessellations.len();
     let tri_count: usize = face_tessellations.iter().map(|f| f.triangles.len()).sum();
-    info!(faces = face_count, triangles = tri_count, "Building enriched mesh");
+    info!(
+        faces = face_count,
+        triangles = tri_count,
+        edges = brep_edges.len(),
+        "Building enriched mesh"
+    );
 
-    build_enriched_mesh(face_tessellations, adjacency_pairs)
+    build_enriched_mesh(face_tessellations, adjacency_pairs, brep_edges)
         .map_err(|e| StepImportError::TessellationFailed {
             shell_index: 0,
             message: e,
@@ -305,18 +326,111 @@ fn extract_boundary_loops(vertices: &[P3], triangles: &[[u32; 3]]) -> Vec<Vec<P3
     loops
 }
 
-/// Check if two face tessellations share at least one edge (via shared vertex positions).
-fn faces_share_edge(a: &FaceTessellation, b: &FaceTessellation) -> bool {
+/// Find shared vertices between two face tessellations.
+/// Returns the shared vertices as P3 points if at least 2 are shared (forming an edge).
+fn find_shared_edge_vertices(a: &FaceTessellation, b: &FaceTessellation) -> Option<Vec<P3>> {
     let a_positions: std::collections::HashSet<[i64; 3]> =
         a.vertices.iter().map(|v| quantize_point(v)).collect();
 
-    let shared = b
+    let shared: Vec<P3> = b
         .vertices
         .iter()
         .filter(|v| a_positions.contains(&quantize_point(v)))
-        .count();
+        .copied()
+        .collect();
 
-    shared >= 2
+    if shared.len() >= 2 { Some(shared) } else { None }
+}
+
+/// Build a BrepEdge from shared vertices between two adjacent faces.
+fn build_brep_edge(
+    id: usize,
+    face_a: FaceGroupId,
+    face_b: FaceGroupId,
+    shared_verts: Vec<P3>,
+    tess_a: &FaceTessellation,
+    tess_b: &FaceTessellation,
+) -> crate::enriched_mesh::BrepEdge {
+    // Compute average face normals for dihedral angle
+    let normal_a = face_avg_normal(tess_a);
+    let normal_b = face_avg_normal(tess_b);
+
+    let dot = normal_a.dot(&normal_b).clamp(-1.0, 1.0);
+    let dihedral_angle = dot.acos();
+
+    // Determine concavity: if the edge midpoint is "inside" relative to both normals,
+    // the crease is concave. Use the cross product method.
+    let is_concave = if shared_verts.len() >= 2 {
+        let edge_mid = P3::new(
+            (shared_verts[0].x + shared_verts[shared_verts.len() - 1].x) / 2.0,
+            (shared_verts[0].y + shared_verts[shared_verts.len() - 1].y) / 2.0,
+            (shared_verts[0].z + shared_verts[shared_verts.len() - 1].z) / 2.0,
+        );
+        let face_a_center = face_center(tess_a);
+        let face_b_center = face_center(tess_b);
+        let to_a = face_a_center - edge_mid;
+        let to_b = face_b_center - edge_mid;
+        // Concave if normals point toward each other (face centers are on the same side)
+        normal_a.dot(&to_b) > 0.0 || normal_b.dot(&to_a) > 0.0
+    } else {
+        false
+    };
+
+    // Project to 2D if edge is approximately horizontal
+    let vertices_2d = if shared_verts.iter().all(|v| {
+        let z_range = shared_verts.iter().map(|p| p.z).fold(f64::INFINITY, f64::min);
+        let z_max = shared_verts.iter().map(|p| p.z).fold(f64::NEG_INFINITY, f64::max);
+        (z_max - z_range) < 0.1 // within 0.1mm Z range
+    }) {
+        Some(shared_verts.iter().map(|p| P2::new(p.x, p.y)).collect())
+    } else {
+        None
+    };
+
+    crate::enriched_mesh::BrepEdge {
+        id,
+        face_a,
+        face_b,
+        vertices: shared_verts,
+        vertices_2d,
+        is_concave,
+        dihedral_angle,
+    }
+}
+
+/// Compute the average normal of a face tessellation from its surface params.
+fn face_avg_normal(tess: &FaceTessellation) -> V3 {
+    match &tess.surface_params {
+        SurfaceParams::Plane { normal, .. } => *normal,
+        _ => {
+            // Compute from first triangle if surface params don't give a normal
+            if tess.vertices.len() >= 3 && !tess.triangles.is_empty() {
+                let tri = &tess.triangles[0];
+                let v0 = tess.vertices[tri[0] as usize];
+                let v1 = tess.vertices[tri[1] as usize];
+                let v2 = tess.vertices[tri[2] as usize];
+                let e1 = v1 - v0;
+                let e2 = v2 - v0;
+                let n = e1.cross(&e2);
+                let len = n.norm();
+                if len > 1e-15 { n / len } else { V3::new(0.0, 0.0, 1.0) }
+            } else {
+                V3::new(0.0, 0.0, 1.0)
+            }
+        }
+    }
+}
+
+/// Compute the centroid of a face tessellation.
+fn face_center(tess: &FaceTessellation) -> P3 {
+    if tess.vertices.is_empty() {
+        return P3::new(0.0, 0.0, 0.0);
+    }
+    let n = tess.vertices.len() as f64;
+    let sum_x: f64 = tess.vertices.iter().map(|v| v.x).sum();
+    let sum_y: f64 = tess.vertices.iter().map(|v| v.y).sum();
+    let sum_z: f64 = tess.vertices.iter().map(|v| v.z).sum();
+    P3::new(sum_x / n, sum_y / n, sum_z / n)
 }
 
 fn quantize_point(p: &P3) -> [i64; 3] {

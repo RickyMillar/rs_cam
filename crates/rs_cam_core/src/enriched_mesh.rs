@@ -61,6 +61,26 @@ pub struct FaceGroup {
     pub boundary_loops_2d: Option<Vec<Vec<P2>>>,
 }
 
+/// A BREP edge between two adjacent faces, with geometry and classification.
+#[derive(Debug, Clone)]
+pub struct BrepEdge {
+    /// Index of this edge (for reference).
+    pub id: usize,
+    /// First adjacent face.
+    pub face_a: FaceGroupId,
+    /// Second adjacent face.
+    pub face_b: FaceGroupId,
+    /// 3D polyline vertices along this edge (tessellated from BREP curve).
+    pub vertices: Vec<P3>,
+    /// 2D projected vertices (only for approximately-horizontal edges).
+    pub vertices_2d: Option<Vec<P2>>,
+    /// True if the two faces form a concave crease at this edge.
+    pub is_concave: bool,
+    /// Dihedral angle between face normals at this edge (radians).
+    /// 0 = faces are coplanar, PI = faces point in opposite directions.
+    pub dihedral_angle: f64,
+}
+
 /// A triangle mesh enriched with BREP face group metadata.
 ///
 /// The inner `TriangleMesh` can be extracted for use with existing operations
@@ -76,6 +96,8 @@ pub struct EnrichedMesh {
     pub triangle_to_face: Vec<u16>,
     /// Pairs of face groups that share at least one edge.
     pub adjacency: Vec<(FaceGroupId, FaceGroupId)>,
+    /// BREP edges between adjacent faces with geometry and classification.
+    pub edges: Vec<BrepEdge>,
 }
 
 impl EnrichedMesh {
@@ -105,6 +127,44 @@ impl EnrichedMesh {
     /// Number of face groups.
     pub fn face_count(&self) -> usize {
         self.face_groups.len()
+    }
+
+    /// Get all concave edges with dihedral angle below a threshold (in radians).
+    ///
+    /// Used by pencil-like operations to find crease edges to trace.
+    pub fn concave_edges(&self, max_dihedral: f64) -> Vec<&BrepEdge> {
+        self.edges
+            .iter()
+            .filter(|e| e.is_concave && e.dihedral_angle < max_dihedral)
+            .collect()
+    }
+
+    /// Get all edges adjacent to a specific face.
+    pub fn edges_for_face(&self, face_id: FaceGroupId) -> Vec<&BrepEdge> {
+        self.edges
+            .iter()
+            .filter(|e| e.face_a == face_id || e.face_b == face_id)
+            .collect()
+    }
+
+    /// Get edges shared between two specific faces.
+    pub fn edges_between(&self, a: FaceGroupId, b: FaceGroupId) -> Vec<&BrepEdge> {
+        self.edges
+            .iter()
+            .filter(|e| {
+                (e.face_a == a && e.face_b == b) || (e.face_a == b && e.face_b == a)
+            })
+            .collect()
+    }
+
+    /// Get all edges as 2D polylines (for trace/engrave operations).
+    /// Only returns edges that have 2D projections available.
+    pub fn edge_chains_2d(&self) -> Vec<Vec<P2>> {
+        self.edges
+            .iter()
+            .filter_map(|e| e.vertices_2d.clone())
+            .filter(|pts| pts.len() >= 2)
+            .collect()
     }
 
     /// Project a single planar face's boundary loops to a 2D `Polygon2`.
@@ -190,6 +250,7 @@ impl EnrichedMesh {
 pub fn build_enriched_mesh(
     face_data: Vec<FaceTessellation>,
     adjacency: Vec<(FaceGroupId, FaceGroupId)>,
+    edges: Vec<BrepEdge>,
 ) -> Result<EnrichedMesh, String> {
     if face_data.is_empty() {
         return Err("No faces to build enriched mesh from".to_string());
@@ -243,6 +304,7 @@ pub fn build_enriched_mesh(
         face_groups,
         triangle_to_face,
         adjacency,
+        edges,
     })
 }
 
@@ -393,7 +455,7 @@ mod tests {
             (FaceGroupId(3), FaceGroupId(5)), // back-left
         ];
 
-        build_enriched_mesh(faces, adjacency).expect("Failed to build test box")
+        build_enriched_mesh(faces, adjacency, Vec::new()).expect("Failed to build test box")
     }
 
     #[test]
