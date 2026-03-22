@@ -82,7 +82,6 @@ pub enum AppEvent {
     RunSimulationWith(Vec<ToolpathId>),
     ResetSimulation,
     ToggleSimPlayback,
-    ToggleSimToolpath(ToolpathId),
 
     // Workspace navigation
     SwitchWorkspace(Workspace),
@@ -109,7 +108,6 @@ pub enum AppEvent {
     StockChanged,
     StockMaterialChanged,
     MachineChanged,
-    RecalculateFeeds(ToolpathId),
     Undo,
     Redo,
 
