@@ -71,7 +71,9 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 - lead-in / lead-out arcs
 - link moves / keep-tool-down linking
 - arc fitting to `G2` / `G3`
-- feed optimization dressup with stock-aware heightmap engagement estimation on supported workflows
+- feed optimization dressup with stock-aware engagement estimation on supported workflows
+- air-cut filter dressup: removes cutting moves through cleared stock when using remaining-stock mode
+- stock-aware generation: per-toolpath "Use remaining stock" toggle pre-simulates prior operations to build actual material state
 - TSP rapid-order optimization
 - stock-boundary clipping with center / inside / outside containment
 - dual compute lanes: toolpath generation plus analysis (simulation / collision)
@@ -109,7 +111,7 @@ These features exist in state, UI, or helper code, but are not yet end-to-end co
 | Manual per-operation G-code | `pre_gcode` / `post_gcode` are editable in the GUI but not emitted during export |
 | Project save/load | editable state round-trips and model files are re-imported on load, but computed toolpaths, simulation checkpoints, and collision outputs are not persisted |
 | Controller-side compensation | Profile UI exposes “In Control” compensation, but `G41` / `G42` output is not emitted |
-| Feed-optimization dressup | Supported only for fresh-stock, flat-stock workflows with known stock bounds; remaining-stock and mesh-derived cases are intentionally disabled |
+| Feed-optimization dressup | Supported only for fresh-stock, flat-stock workflows with known stock bounds; remaining-stock workflows use the air-cut filter instead |
 | Rapid collision rendering | Core collision detection exists, but rapid collisions are not yet rendered in the viewport |
 | Simulation deviation colors | Helper exists, but deviation data is not currently fed into the renderer |
 | Vendor LUT integration | Fully wired: embedded Amana vendor observations are auto-loaded at startup via `LazyLock` and passed into the feeds calculator for all GUI operations |
