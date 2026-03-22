@@ -464,6 +464,9 @@ mod tests {
                 cutting_distance: 5000.0,
                 rapid_distance: 200.0,
             },
+            debug_trace: None,
+            semantic_trace: None,
+            debug_trace_path: None,
         });
         job.push_toolpath(toolpath);
 

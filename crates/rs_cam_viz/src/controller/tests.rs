@@ -67,6 +67,127 @@ fn temp_path(name: &str, extension: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("rs_cam_{name}_{nanos}.{extension}"))
 }
 
+#[test]
+fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_exist() {
+    let mut controller = sample_controller();
+    controller.state.simulation.results = Some(crate::state::simulation::SimulationResults {
+        mesh: rs_cam_core::simulation::HeightmapMesh {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+            colors: Vec::new(),
+        },
+        total_moves: 12,
+        boundaries: vec![crate::state::simulation::ToolpathBoundary {
+            id: ToolpathId(1),
+            name: "Adaptive 3D".to_string(),
+            tool_name: "Tool".to_string(),
+            start_move: 4,
+            end_move: 12,
+            direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+        }],
+        setup_boundaries: vec![crate::state::simulation::SetupBoundary {
+            setup_id: crate::state::job::SetupId(1),
+            setup_name: "Setup 1".to_string(),
+            start_move: 0,
+        }],
+        checkpoints: Vec::new(),
+        selected_toolpaths: None,
+        playback_data: Vec::new(),
+        stock_bbox: rs_cam_core::geo::BoundingBox3 {
+            min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
+            max: rs_cam_core::geo::P3::new(10.0, 10.0, 10.0),
+        },
+    });
+
+    controller.handle_internal_event(crate::ui::AppEvent::InspectToolpathInSimulation(
+        ToolpathId(1),
+    ));
+    let events = controller.drain_events();
+
+    assert!(events.iter().any(|event| matches!(
+        event,
+        crate::ui::AppEvent::SwitchWorkspace(crate::state::Workspace::Simulation)
+    )));
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, crate::ui::AppEvent::SimJumpToMove(4)))
+    );
+    assert!(
+        controller
+            .state
+            .simulation
+            .debug
+            .pending_inspect_toolpath
+            .is_none()
+    );
+}
+
+#[test]
+fn inspect_toolpath_in_simulation_queues_targeted_run_when_results_missing() {
+    let mut controller = sample_controller();
+
+    controller.handle_internal_event(crate::ui::AppEvent::InspectToolpathInSimulation(
+        ToolpathId(1),
+    ));
+    let events = controller.drain_events();
+
+    assert!(events.iter().any(|event| matches!(
+        event,
+        crate::ui::AppEvent::SwitchWorkspace(crate::state::Workspace::Simulation)
+    )));
+    assert!(events.iter().any(|event| matches!(
+        event,
+        crate::ui::AppEvent::RunSimulationWith(ids) if ids == &vec![ToolpathId(1)]
+    )));
+    assert_eq!(
+        controller.state.simulation.debug.pending_inspect_toolpath,
+        Some(ToolpathId(1))
+    );
+}
+
+#[test]
+fn simulation_results_land_on_pending_inspect_toolpath_start() {
+    let mut controller = sample_controller();
+    controller.state.simulation.debug.pending_inspect_toolpath = Some(ToolpathId(1));
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Simulation(Ok(SimulationResult {
+            mesh: rs_cam_core::simulation::HeightmapMesh {
+                vertices: Vec::new(),
+                indices: Vec::new(),
+                colors: Vec::new(),
+            },
+            total_moves: 8,
+            deviations: None,
+            boundaries: vec![crate::compute::worker::SimBoundary {
+                id: ToolpathId(1),
+                name: "Adaptive 3D".to_string(),
+                tool_name: "Tool".to_string(),
+                start_move: 2,
+                end_move: 8,
+                direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+            }],
+            checkpoints: Vec::new(),
+            playback_data: Vec::new(),
+            rapid_collisions: Vec::new(),
+            rapid_collision_move_indices: Vec::new(),
+        })));
+
+    controller.drain_compute_results();
+
+    assert_eq!(controller.state.simulation.playback.current_move, 2);
+    assert!(
+        controller
+            .state
+            .simulation
+            .debug
+            .pending_inspect_toolpath
+            .is_none()
+    );
+}
+
 fn fixture_path(name: &str) -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
@@ -104,6 +225,9 @@ fn sample_controller() -> AppController<ScriptedBackend> {
     entry.result = Some(ToolpathResult {
         toolpath: Arc::new(Toolpath::new()),
         stats: Default::default(),
+        debug_trace: None,
+        semantic_trace: None,
+        debug_trace_path: None,
     });
     controller.state.job.push_toolpath(entry);
     controller.state.selection = Selection::Toolpath(ToolpathId(1));
@@ -169,6 +293,7 @@ fn ui_harness_records_lane_status_overlay_and_stock_to_leave() {
         state: LaneState::Running,
         queue_depth: 1,
         current_job: Some("Adaptive 3D".to_string()),
+        current_phase: Some("Pass 12".to_string()),
         started_at: Some(std::time::Instant::now()),
     };
     controller.compute.analysis_lane = LaneSnapshot {
@@ -176,6 +301,7 @@ fn ui_harness_records_lane_status_overlay_and_stock_to_leave() {
         state: LaneState::Queued,
         queue_depth: 1,
         current_job: Some("Simulation".to_string()),
+        current_phase: None,
         started_at: None,
     };
 
@@ -241,6 +367,9 @@ fn controller_save_open_and_export_smoke() {
             toolpath
         }),
         stats: Default::default(),
+        debug_trace: None,
+        semantic_trace: None,
+        debug_trace_path: None,
     });
 
     let gcode = controller.export_gcode().expect("export gcode");
@@ -498,4 +627,137 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
         })));
 
     controller.drain_compute_results();
+}
+
+#[test]
+fn toolpath_results_persist_debug_trace_metadata() {
+    let mut controller = sample_controller();
+    let recorder = rs_cam_core::debug_trace::ToolpathDebugRecorder::new("Adaptive 3D", "3D Rough");
+    let ctx = recorder.root_context();
+    let span = ctx.start_span("core_generate", "Generate");
+    span.finish();
+    let trace = Arc::new(recorder.finish());
+    let semantic_recorder =
+        rs_cam_core::semantic_trace::ToolpathSemanticRecorder::new("Adaptive 3D", "3D Rough");
+    let semantic_root = semantic_recorder.root_context();
+    let pass = semantic_root.start_item(
+        rs_cam_core::semantic_trace::ToolpathSemanticKind::Pass,
+        "Pass 1",
+    );
+    let toolpath = Arc::new(Toolpath::new());
+    pass.bind_to_toolpath(toolpath.as_ref(), 0, 0);
+    let semantic_trace = Arc::new(semantic_recorder.finish());
+    let debug_path = temp_path("toolpath_trace_metadata", "json");
+
+    controller.compute.drained.push(ComputeMessage::Toolpath(
+        crate::compute::worker::ComputeResult {
+            toolpath_id: ToolpathId(1),
+            result: Ok(ToolpathResult {
+                toolpath: Arc::clone(&toolpath),
+                stats: Default::default(),
+                debug_trace: Some(Arc::clone(&trace)),
+                semantic_trace: Some(Arc::clone(&semantic_trace)),
+                debug_trace_path: Some(debug_path.clone()),
+            }),
+            debug_trace: Some(Arc::clone(&trace)),
+            semantic_trace: Some(Arc::clone(&semantic_trace)),
+            debug_trace_path: Some(debug_path.clone()),
+        },
+    ));
+
+    controller.drain_compute_results();
+
+    let entry = controller
+        .state
+        .job
+        .find_toolpath(ToolpathId(1))
+        .expect("toolpath should exist");
+    let result = entry.result.as_ref().expect("result should be stored");
+    let stored_trace = result
+        .debug_trace
+        .as_ref()
+        .expect("debug trace should be preserved");
+    assert_eq!(stored_trace.summary.span_count, trace.summary.span_count);
+    assert_eq!(
+        result
+            .semantic_trace
+            .as_ref()
+            .map(|trace| trace.summary.item_count),
+        Some(1)
+    );
+    assert_eq!(
+        entry
+            .semantic_trace
+            .as_ref()
+            .map(|trace| trace.summary.item_count),
+        Some(1)
+    );
+    assert_eq!(
+        entry
+            .debug_trace
+            .as_ref()
+            .map(|trace| trace.summary.span_count),
+        Some(1)
+    );
+    assert_eq!(result.debug_trace_path.as_ref(), Some(&debug_path));
+    assert_eq!(entry.debug_trace_path.as_ref(), Some(&debug_path));
+}
+
+#[test]
+fn cancelled_toolpath_preserves_debug_trace_metadata() {
+    let mut controller = sample_controller();
+    let recorder = rs_cam_core::debug_trace::ToolpathDebugRecorder::new("Adaptive 3D", "3D Rough");
+    let ctx = recorder.root_context();
+    let span = ctx.start_span("adaptive_pass", "Pass 1");
+    span.finish();
+    let trace = Arc::new(recorder.finish());
+    let semantic_recorder =
+        rs_cam_core::semantic_trace::ToolpathSemanticRecorder::new("Adaptive 3D", "3D Rough");
+    let semantic_root = semantic_recorder.root_context();
+    let pass = semantic_root.start_item(
+        rs_cam_core::semantic_trace::ToolpathSemanticKind::Pass,
+        "Pass 1",
+    );
+    let toolpath = Toolpath::new();
+    pass.bind_to_toolpath(&toolpath, 0, 0);
+    let semantic_trace = Arc::new(semantic_recorder.finish());
+    let debug_path = temp_path("cancelled_toolpath_trace_metadata", "json");
+
+    controller.compute.drained.push(ComputeMessage::Toolpath(
+        crate::compute::worker::ComputeResult {
+            toolpath_id: ToolpathId(1),
+            result: Err(crate::compute::ComputeError::Cancelled),
+            debug_trace: Some(Arc::clone(&trace)),
+            semantic_trace: Some(Arc::clone(&semantic_trace)),
+            debug_trace_path: Some(debug_path.clone()),
+        },
+    ));
+
+    controller.drain_compute_results();
+
+    let entry = controller
+        .state
+        .job
+        .find_toolpath(ToolpathId(1))
+        .expect("toolpath should exist");
+    assert!(matches!(
+        entry.status,
+        crate::state::toolpath::ComputeStatus::Pending
+    ));
+    assert!(entry.result.is_none());
+    assert_eq!(
+        entry
+            .debug_trace
+            .as_ref()
+            .map(|trace| trace.summary.span_count),
+        Some(1)
+    );
+    assert_eq!(
+        entry
+            .semantic_trace
+            .as_ref()
+            .map(|trace| trace.summary.item_count),
+        Some(1)
+    );
+    assert_eq!(entry.debug_trace_path.as_ref(), Some(&debug_path));
 }

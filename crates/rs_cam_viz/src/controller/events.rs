@@ -7,6 +7,7 @@ use crate::compute::{
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::BoundingBox3;
 
+use crate::state::Workspace;
 use crate::state::history::UndoAction;
 use crate::state::job::{FaceUp, Fixture, KeepOutZone, Setup, ToolConfig};
 use crate::state::selection::Selection;
@@ -305,6 +306,29 @@ impl<B: ComputeBackend> AppController<B> {
                     self.pending_upload = true;
                 }
             }
+            AppEvent::InspectToolpathInSimulation(tp_id) => {
+                self.events
+                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
+                if let Some(boundary) = self
+                    .state
+                    .simulation
+                    .boundaries()
+                    .iter()
+                    .find(|boundary| boundary.id == tp_id)
+                {
+                    self.events
+                        .push(AppEvent::SimJumpToMove(boundary.start_move));
+                } else if self
+                    .state
+                    .job
+                    .find_toolpath(tp_id)
+                    .and_then(|toolpath| toolpath.result.as_ref())
+                    .is_some()
+                {
+                    self.state.simulation.debug.pending_inspect_toolpath = Some(tp_id);
+                    self.events.push(AppEvent::RunSimulationWith(vec![tp_id]));
+                }
+            }
             AppEvent::RunSimulation => self.run_simulation_with_all(),
             AppEvent::RunSimulationWith(ids) => self.run_simulation_with_ids(&ids),
             AppEvent::ToggleSimPlayback => {
@@ -320,6 +344,13 @@ impl<B: ComputeBackend> AppController<B> {
                 self.pending_upload = true;
             }
             AppEvent::ToggleSimToolpath(_) => {}
+            AppEvent::SimJumpToMove(move_idx) => {
+                if self.state.simulation.has_results() {
+                    let total = self.state.simulation.total_moves();
+                    self.state.simulation.playback.playing = false;
+                    self.state.simulation.playback.current_move = move_idx.min(total);
+                }
+            }
             AppEvent::SimStepForward => {
                 if self.state.simulation.has_results() {
                     let total = self.state.simulation.total_moves();
@@ -635,6 +666,7 @@ impl<B: ComputeBackend> AppController<B> {
             toolpath_name,
             boundary_enabled,
             boundary_containment,
+            debug_options,
         )) = self.state.job.find_toolpath(tp_id).map(|toolpath| {
             (
                 toolpath.tool_id,
@@ -646,6 +678,7 @@ impl<B: ComputeBackend> AppController<B> {
                 toolpath.name.clone(),
                 toolpath.boundary_enabled,
                 toolpath.boundary_containment,
+                toolpath.debug_options,
             )
         })
         else {
@@ -755,6 +788,9 @@ impl<B: ComputeBackend> AppController<B> {
         if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
             toolpath.status = ComputeStatus::Computing;
             toolpath.result = None;
+            toolpath.debug_trace = None;
+            toolpath.semantic_trace = None;
+            toolpath.debug_trace_path = None;
         }
 
         let safe_z = self.state.job.post.safe_z;
@@ -772,6 +808,7 @@ impl<B: ComputeBackend> AppController<B> {
         self.compute.submit_toolpath(ComputeRequest {
             toolpath_id: tp_id,
             toolpath_name,
+            debug_options,
             polygons,
             mesh,
             operation,
@@ -793,6 +830,9 @@ impl<B: ComputeBackend> AppController<B> {
             match message {
                 ComputeMessage::Toolpath(result) => {
                     if let Some(toolpath) = self.state.job.find_toolpath_mut(result.toolpath_id) {
+                        toolpath.debug_trace = result.debug_trace.clone();
+                        toolpath.semantic_trace = result.semantic_trace.clone();
+                        toolpath.debug_trace_path = result.debug_trace_path.clone();
                         match result.result {
                             Ok(computed) => {
                                 toolpath.status = ComputeStatus::Done;
@@ -800,9 +840,11 @@ impl<B: ComputeBackend> AppController<B> {
                             }
                             Err(ComputeError::Cancelled) => {
                                 toolpath.status = ComputeStatus::Pending;
+                                toolpath.result = None;
                             }
                             Err(ComputeError::Message(error)) => {
                                 toolpath.status = ComputeStatus::Error(error);
+                                toolpath.result = None;
                             }
                         }
                     }
@@ -903,10 +945,24 @@ impl<B: ComputeBackend> AppController<B> {
                             stock_bbox,
                         });
 
-                        // Start playback from the beginning so the user sees
-                        // the tool progressively cutting the uncut block.
-                        self.state.simulation.playback.current_move = 0;
-                        self.state.simulation.playback.playing = true;
+                        let inspect_target =
+                            self.state.simulation.debug.pending_inspect_toolpath.take();
+                        if let Some(move_index) = inspect_target.and_then(|toolpath_id| {
+                            self.state
+                                .simulation
+                                .boundaries()
+                                .iter()
+                                .find(|boundary| boundary.id == toolpath_id)
+                                .map(|boundary| boundary.start_move)
+                        }) {
+                            self.state.simulation.playback.current_move = move_index;
+                            self.state.simulation.playback.playing = false;
+                        } else {
+                            // Start playback from the beginning so the user sees
+                            // the tool progressively cutting the uncut block.
+                            self.state.simulation.playback.current_move = 0;
+                            self.state.simulation.playback.playing = true;
+                        }
 
                         // Store fresh tri-dexel stock for playback (global frame)
                         let initial_stock = TriDexelStock::from_bounds(

@@ -38,6 +38,14 @@ Fixed four visual bugs that made the simulation look like separate per-setup run
 - **Stock carry-forward in partial re-sim**: `run_simulation_with_ids` now includes all enabled toolpaths from preceding setups as additional groups, so Setup 2 shows Setup 1's residual stock (through-holes, prior cuts)
 - Extracted `transform_mesh_to_local_frame` helper for shared mesh frame transform logic
 
+### Semantic simulation debugger
+
+Added a generic trace-driven debugger surface in the Simulation workspace:
+- toolpaths can emit both performance traces and move-linked semantic traces, persisted at runtime with JSON artifacts
+- Simulation now exposes semantic trees, linked spans, annotations, issue navigation, viewport picking, and inspect-in-simulation flow
+- adaptive/adaptive3d emit richer semantic structure and math-stage attribution instead of only generic pass buckets
+- runtime hotspots now estimate cutting/rapid time per semantic item so expensive runtime regions are visible alongside compute hotspots
+
 ### Tri-dexel Phase 6: Side-face grids and multi-grid mesh
 
 Extended the tri-dexel simulation to support all six cardinal face orientations:

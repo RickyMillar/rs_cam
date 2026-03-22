@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use super::AppEvent;
+use super::sim_debug::draw_trace_badge;
 use crate::render::toolpath_render::palette_color;
 use crate::state::AppState;
 use crate::state::job::SetupId;
 use crate::state::selection::Selection;
+use crate::state::simulation::SimulationState;
 use crate::state::toolpath::{ComputeStatus, OperationType, ToolpathId};
 
 /// Left panel for the Toolpath workspace: operation queue with status chips.
@@ -195,6 +197,10 @@ fn draw_toolpath_card(
                                 .strong()
                                 .color(status_color),
                         );
+                        draw_trace_badge(
+                            ui,
+                            SimulationState::trace_availability_for_toolpath(&state.job, tp_id),
+                        );
 
                         // Name
                         let text_color = if dim {
@@ -232,6 +238,15 @@ fn draw_toolpath_card(
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if tp.result.is_some()
+                            && ui
+                                .small_button("Sim")
+                                .on_hover_text("Inspect in Simulation")
+                                .clicked()
+                        {
+                            events.push(AppEvent::InspectToolpathInSimulation(tp_id));
+                        }
+
                         // Quick generate button
                         if matches!(tp.status, ComputeStatus::Pending)
                             && ui
@@ -248,6 +263,10 @@ fn draw_toolpath_card(
                 response.context_menu(|ui| {
                     if ui.button("Generate").clicked() {
                         events.push(AppEvent::GenerateToolpath(tp_id));
+                        ui.close_menu();
+                    }
+                    if tp.result.is_some() && ui.button("Inspect in Simulation").clicked() {
+                        events.push(AppEvent::InspectToolpathInSimulation(tp_id));
                         ui.close_menu();
                     }
                     let vis_label = if tp.visible { "Hide" } else { "Show" };

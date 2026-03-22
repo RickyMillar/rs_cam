@@ -1,6 +1,9 @@
 use super::AppEvent;
+use super::sim_debug::{
+    debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
+};
 use crate::state::job::JobState;
-use crate::state::simulation::{SimulationState, StockVizMode};
+use crate::state::simulation::{SimulationIssueKind, SimulationState, StockVizMode};
 use crate::state::toolpath::OperationConfig;
 
 /// Right panel in simulation workspace: current state, warnings, and summary stats.
@@ -12,6 +15,47 @@ pub fn draw(
 ) {
     ui.heading("Diagnostics");
     ui.separator();
+
+    let active_semantic = sim.active_semantic_item(job);
+    let linked_span = sim.active_debug_span(job);
+    let current_boundary_id = sim.current_boundary().map(|boundary| boundary.id);
+
+    if sim.debug.enabled {
+        ui.horizontal_wrapped(|ui| {
+            if sim.debug.pinned_semantic_item.is_some() && ui.button("Clear Pin").clicked() {
+                sim.clear_pinned_semantic_item();
+            }
+            if ui.small_button("Prev Issue").clicked()
+                && let Some(target) = sim.focus_issue_delta(job, -1)
+            {
+                events.push(AppEvent::SimJumpToMove(target.move_index));
+            }
+            if ui.small_button("Next Issue").clicked()
+                && let Some(target) = sim.focus_issue_delta(job, 1)
+            {
+                events.push(AppEvent::SimJumpToMove(target.move_index));
+            }
+            if let Some(issue) = sim.current_issue(job) {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{}: {}",
+                        issue_kind_label(issue.kind),
+                        issue.label
+                    ))
+                    .small()
+                    .color(egui::Color32::from_rgb(220, 190, 120)),
+                );
+                if let Some(toolpath_id) = issue.toolpath_id {
+                    ui.label(
+                        egui::RichText::new(format!("TP {}", toolpath_id.0 + 1))
+                            .small()
+                            .color(egui::Color32::from_rgb(150, 150, 165)),
+                    );
+                }
+            }
+        });
+        ui.add_space(4.0);
+    }
 
     // --- Stock Display ---
     egui::CollapsingHeader::new("Stock Display")
@@ -73,6 +117,168 @@ pub fn draw(
                     );
                 }
             });
+        });
+
+    ui.add_space(4.0);
+
+    // --- Semantic Context ---
+    egui::CollapsingHeader::new("Semantic Context")
+        .default_open(true)
+        .show(ui, |ui| {
+            if let Some(active) = active_semantic.as_ref() {
+                let color = semantic_kind_color(&active.item.kind);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        egui::RichText::new(&active.item.label)
+                            .strong()
+                            .color(color),
+                    );
+                    if sim.debug.pinned_semantic_item == Some((active.toolpath_id, active.item.id))
+                    {
+                        ui.label(
+                            egui::RichText::new("Pinned")
+                                .small()
+                                .color(egui::Color32::from_rgb(255, 210, 120)),
+                        );
+                    }
+                    if ui.small_button("Start").clicked()
+                        && let Some(target) = sim.trace_target_for_item(
+                            job,
+                            active.toolpath_id,
+                            active.item.id,
+                            false,
+                        )
+                    {
+                        events.push(AppEvent::SimJumpToMove(target.move_index));
+                    }
+                    if ui.small_button("End").clicked()
+                        && let Some(target) =
+                            sim.trace_target_for_item(job, active.toolpath_id, active.item.id, true)
+                    {
+                        events.push(AppEvent::SimJumpToMove(target.move_index));
+                    }
+                });
+                ui.label(
+                    egui::RichText::new(semantic_kind_label(&active.item.kind))
+                        .small()
+                        .color(egui::Color32::from_rgb(140, 140, 155)),
+                );
+                if let (Some(move_start), Some(move_end)) =
+                    (active.item.move_start, active.item.move_end)
+                {
+                    ui.label(format!("Moves: {move_start}..{move_end}"));
+                }
+                if let Some(bounds) = active.item.xy_bbox {
+                    ui.label(format!(
+                        "XY: {:.2}, {:.2} → {:.2}, {:.2}",
+                        bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y
+                    ));
+                }
+                if let (Some(z_min), Some(z_max)) = (active.item.z_min, active.item.z_max) {
+                    ui.label(format!("Z: {:.3} → {:.3}", z_min, z_max));
+                }
+                if let Some(metrics) =
+                    sim.semantic_runtime_metrics(job, active.toolpath_id, active.item.id)
+                {
+                    ui.label(format!(
+                        "Runtime: {:.2}s total | {:.2}s cutting | {:.2}s rapid",
+                        metrics.total_seconds, metrics.cutting_seconds, metrics.rapid_seconds
+                    ));
+                }
+                if !active.item.params.values.is_empty() {
+                    ui.add_space(4.0);
+                    egui::Grid::new("sim_semantic_context_grid")
+                        .num_columns(2)
+                        .spacing([8.0, 2.0])
+                        .show(ui, |ui| {
+                            for (idx, (key, value)) in active.item.params.values.iter().enumerate()
+                            {
+                                if idx >= 6 {
+                                    break;
+                                }
+                                ui.label(
+                                    egui::RichText::new(key)
+                                        .small()
+                                        .color(egui::Color32::from_rgb(140, 140, 155)),
+                                );
+                                ui.label(egui::RichText::new(format_json_value(value)).small());
+                                ui.end_row();
+                            }
+                        });
+                }
+            } else {
+                ui.label(
+                    egui::RichText::new("No semantic item at the current move")
+                        .small()
+                        .italics()
+                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                );
+            }
+        });
+
+    ui.add_space(4.0);
+
+    // --- Performance Trace ---
+    egui::CollapsingHeader::new("Performance Trace")
+        .default_open(true)
+        .show(ui, |ui| {
+            let debug_trace = current_boundary_id
+                .and_then(|toolpath_id| job.find_toolpath(toolpath_id))
+                .and_then(|toolpath| toolpath.debug_trace.as_ref());
+
+            if let Some(trace) = debug_trace {
+                ui.label(format!(
+                    "Total: {:.1} ms",
+                    trace.summary.total_elapsed_us as f64 / 1000.0
+                ));
+                if let Some(label) = &trace.summary.dominant_span_label {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Dominant: {} ({:.1} ms)",
+                            label,
+                            trace.summary.dominant_span_elapsed_us.unwrap_or_default() as f64
+                                / 1000.0
+                        ))
+                        .small()
+                        .color(egui::Color32::from_rgb(140, 190, 230)),
+                    );
+                }
+                ui.label(format!("Hotspots: {}", trace.hotspots.len()));
+                if let Some((toolpath_id, span)) = linked_span.as_ref()
+                    && Some(*toolpath_id) == current_boundary_id
+                {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Linked span: {} ({:.1} ms)",
+                            span.label,
+                            span.elapsed_us as f64 / 1000.0
+                        ))
+                        .small()
+                        .color(egui::Color32::from_rgb(140, 190, 230)),
+                    );
+                    if let Some(summary) = debug_span_math_summary(&span.kind) {
+                        ui.label(
+                            egui::RichText::new(summary)
+                                .small()
+                                .color(egui::Color32::from_rgb(130, 130, 145)),
+                        );
+                    }
+                }
+                if let Some((_, annotation)) = sim.current_debug_annotation(job) {
+                    ui.label(
+                        egui::RichText::new(format!("Annotation: {}", annotation.label))
+                            .small()
+                            .color(egui::Color32::from_rgb(255, 210, 120)),
+                    );
+                }
+            } else {
+                ui.label(
+                    egui::RichText::new("No performance trace available")
+                        .small()
+                        .italics()
+                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                );
+            }
         });
 
     ui.add_space(4.0);
@@ -290,6 +496,15 @@ pub fn draw(
                     });
             }
         });
+}
+
+fn issue_kind_label(kind: SimulationIssueKind) -> &'static str {
+    match kind {
+        SimulationIssueKind::Hotspot => "Hotspot",
+        SimulationIssueKind::Annotation => "Annotation",
+        SimulationIssueKind::RapidCollision => "Rapid collision",
+        SimulationIssueKind::HolderCollision => "Holder collision",
+    }
 }
 
 /// Determine the move type and feed rate at the current move index.

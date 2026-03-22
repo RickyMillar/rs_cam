@@ -4,6 +4,7 @@ pub mod preflight;
 pub mod project_tree;
 pub mod properties;
 pub mod setup_panel;
+pub mod sim_debug;
 pub mod sim_diagnostics;
 pub mod sim_op_list;
 pub mod sim_timeline;
@@ -72,6 +73,7 @@ pub enum AppEvent {
     GenerateAll,
     ToggleToolpathVisibility(ToolpathId),
     ToggleIsolateToolpath,
+    InspectToolpathInSimulation(ToolpathId),
 
     // Simulation
     RunSimulation,
@@ -86,6 +88,7 @@ pub enum AppEvent {
     SimStepBackward,
     SimJumpToStart,
     SimJumpToEnd,
+    SimJumpToMove(usize),
     SimJumpToOpStart(usize),
     SimJumpToOpEnd(usize),
 

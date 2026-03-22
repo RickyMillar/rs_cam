@@ -1,8 +1,10 @@
 use super::AppEvent;
+use super::sim_debug::draw_trace_badge;
 use crate::render::toolpath_render::palette_color;
 use crate::state::AppState;
 use crate::state::job::ToolType;
 use crate::state::selection::Selection;
+use crate::state::simulation::SimulationState;
 use crate::state::toolpath::{ComputeStatus, OperationType};
 
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
@@ -261,6 +263,10 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                             selected,
                             egui::RichText::new(&label).color(text_color),
                         );
+                        draw_trace_badge(
+                            ui,
+                            SimulationState::trace_availability_for_toolpath(&state.job, tp.id),
+                        );
                         if resp.clicked() {
                             events.push(AppEvent::Select(Selection::Toolpath(tp.id)));
                         }
@@ -281,6 +287,10 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     }
                     if ui.button("Duplicate").clicked() {
                         events.push(AppEvent::DuplicateToolpath(tp.id));
+                        ui.close_menu();
+                    }
+                    if tp.result.is_some() && ui.button("Inspect in Simulation").clicked() {
+                        events.push(AppEvent::InspectToolpathInSimulation(tp.id));
                         ui.close_menu();
                     }
                     ui.separator();

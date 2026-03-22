@@ -205,6 +205,8 @@ pub struct ProjectToolpathSection {
     pub auto_regen: Option<bool>,
     #[serde(default)]
     pub feeds_auto: FeedsAutoMode,
+    #[serde(default)]
+    pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -483,6 +485,7 @@ impl ProjectToolpathSection {
             stock_source: toolpath.stock_source,
             auto_regen: Some(toolpath.auto_regen),
             feeds_auto: toolpath.feeds_auto.clone(),
+            debug_options: toolpath.debug_options,
         }
     }
 }
@@ -1022,6 +1025,7 @@ fn restore_project_toolpath(
     init.stock_source = section.stock_source;
     init.auto_regen = section.auto_regen;
     init.feeds_auto = section.feeds_auto;
+    init.debug_options = section.debug_options;
     let mut toolpath = ToolpathEntry::from_init(init);
     toolpath.clear_runtime_state();
     toolpath.stale_since = Some(loaded_at);
@@ -1355,6 +1359,7 @@ mod tests {
         toolpath.post_gcode = "M9".to_string();
         toolpath.auto_regen = false;
         toolpath.feeds_auto.feed_rate = false;
+        toolpath.debug_options.enabled = true;
         job.push_toolpath(toolpath);
 
         save_project(&job, &project_path).unwrap();
@@ -1377,6 +1382,7 @@ mod tests {
         assert_eq!(toolpath.post_gcode, "M9");
         assert!(!toolpath.auto_regen);
         assert!(!toolpath.feeds_auto.feed_rate);
+        assert!(toolpath.debug_options.enabled);
         assert!(toolpath.result.is_none());
         assert!(toolpath.stale_since.is_some());
         assert!(matches!(toolpath.operation, OperationConfig::Pocket(_)));
