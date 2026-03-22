@@ -2,7 +2,7 @@
 //! based on material engagement.
 //!
 //! Works as a dressup (post-processing pass) on any operation's toolpath.
-//! Simulates material removal using a heightmap, computes engagement at
+//! Simulates material removal using a tri-dexel stock, computes engagement at
 //! each move, and adjusts feed rates using the Radial Chip Thinning Factor
 //! (RCTF) to maintain consistent chip load.
 //!
@@ -12,7 +12,9 @@
 //! - Consistent chip load → better surface finish
 
 use crate::geo::P3;
-use crate::simulation::{Heightmap, stamp_tool_at};
+use crate::dexel::ray_top;
+use crate::dexel_stock::{StockCutDirection, TriDexelStock};
+use crate::simulation::RadialProfileLUT;
 use crate::tool::MillingCutter;
 use crate::toolpath::{Move, MoveType, Toolpath};
 
@@ -42,12 +44,12 @@ fn rctf(ae_fraction: f64) -> f64 {
     crate::feeds::geometry::radial_chip_thinning_factor(ae_fraction, 1.0)
 }
 
-/// Estimate material engagement fraction at a point using the heightmap.
+/// Estimate material engagement fraction at a point using the tri-dexel stock.
 ///
 /// Samples points on the tool circumference and counts how many are above
-/// the heightmap (i.e., material exists there).
+/// the stock surface (i.e., material exists there).
 fn estimate_engagement(
-    heightmap: &Heightmap,
+    stock: &TriDexelStock,
     cx: f64,
     cy: f64,
     tool_z: f64,
@@ -56,28 +58,22 @@ fn estimate_engagement(
 ) -> f64 {
     let mut engaged = 0;
     let step = std::f64::consts::TAU / n_samples as f64;
+    let grid = &stock.z_grid;
 
     for i in 0..n_samples {
         let angle = i as f64 * step;
         let sx = cx + tool_radius * angle.cos();
         let sy = cy + tool_radius * angle.sin();
 
-        // Look up heightmap Z at this point
-        let col = ((sx - heightmap.origin_x) / heightmap.cell_size).round() as isize;
-        let row = ((sy - heightmap.origin_y) / heightmap.cell_size).round() as isize;
-
-        if col < 0 || row < 0 {
-            continue;
-        }
-        let col = col as usize;
-        let row = row as usize;
-        if col >= heightmap.cols || row >= heightmap.rows {
-            continue;
-        }
-
-        let cell_z = heightmap.cells[row * heightmap.cols + col];
-        if cell_z > tool_z + 0.01 {
-            engaged += 1;
+        // Look up top Z at this point in the z_grid
+        if let Some((row, col)) = grid.world_to_cell(sx, sy) {
+            let ray = grid.ray(row, col);
+            if let Some(top_z) = ray_top(ray) {
+                let cell_z = top_z as f64;
+                if cell_z > tool_z + 0.01 {
+                    engaged += 1;
+                }
+            }
         }
     }
 
@@ -91,11 +87,12 @@ fn estimate_engagement(
 pub fn optimize_feed_rates(
     toolpath: &Toolpath,
     cutter: &dyn MillingCutter,
-    heightmap: &mut Heightmap,
+    stock: &mut TriDexelStock,
     params: &FeedOptParams,
 ) -> Toolpath {
     let tool_radius = cutter.radius();
     let n_samples = 24; // circumference samples for engagement
+    let lut = RadialProfileLUT::from_cutter(cutter, 256);
 
     // First pass: compute optimal feed rate for each move
     let mut feed_rates: Vec<f64> = Vec::with_capacity(toolpath.moves.len());
@@ -111,7 +108,7 @@ pub fn optimize_feed_rates(
                 let cz = mv.target.z;
 
                 // Estimate engagement before stamping
-                let engagement = estimate_engagement(heightmap, cx, cy, cz, tool_radius, n_samples);
+                let engagement = estimate_engagement(stock, cx, cy, cz, tool_radius, n_samples);
 
                 // Compute adjusted feed rate
                 let adjusted = if engagement < params.air_cut_threshold {
@@ -124,8 +121,8 @@ pub fn optimize_feed_rates(
 
                 feed_rates.push(adjusted);
 
-                // Stamp tool into heightmap (update material state)
-                stamp_tool_at(heightmap, cutter, cx, cy, cz);
+                // Stamp tool into stock (update material state)
+                stock.stamp_tool_at(&lut, tool_radius, cx, cy, cz, StockCutDirection::FromTop);
             }
         }
     }
@@ -193,7 +190,6 @@ fn move_distance(a: &P3, b: &P3) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::simulation::Heightmap;
     use crate::tool::FlatEndmill;
 
     fn default_params() -> FeedOptParams {
@@ -250,19 +246,15 @@ mod tests {
         let tool = FlatEndmill::new(10.0, 25.0);
         let params = default_params();
 
-        // Heightmap at stock_top_z = 0 (already cut to zero)
-        let mut hm = Heightmap::from_stock(0.0, 0.0, 50.0, 50.0, 0.0, 1.0);
-        // Set all cells to -10 (below tool path) — no material
-        for c in hm.cells.iter_mut() {
-            *c = -10.0;
-        }
+        // Stock with top at -10 — all material well below tool path (air cutting)
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 50.0, 50.0, -20.0, -10.0, 1.0);
 
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(10.0, 10.0, 5.0));
         tp.feed_to(P3::new(20.0, 10.0, 5.0), 1000.0);
         tp.feed_to(P3::new(30.0, 10.0, 5.0), 1000.0);
 
-        let result = optimize_feed_rates(&tp, &tool, &mut hm, &params);
+        let result = optimize_feed_rates(&tp, &tool, &mut stock, &params);
 
         // Air cutting should get max feed (or close)
         for mv in &result.moves {
@@ -281,15 +273,15 @@ mod tests {
         let tool = FlatEndmill::new(10.0, 25.0);
         let params = default_params();
 
-        // Full block of material at Z=10
-        let mut hm = Heightmap::from_stock(0.0, 0.0, 50.0, 50.0, 10.0, 1.0);
+        // Full block of material: Z from 0 to 10
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 50.0, 50.0, 0.0, 10.0, 1.0);
 
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(10.0, 10.0, 15.0));
         tp.feed_to(P3::new(10.0, 10.0, 5.0), 1000.0); // plunge into material
         tp.feed_to(P3::new(20.0, 10.0, 5.0), 1000.0); // full engagement cut
 
-        let result = optimize_feed_rates(&tp, &tool, &mut hm, &params);
+        let result = optimize_feed_rates(&tp, &tool, &mut stock, &params);
 
         // With smoothing, feeds should stay reasonable
         for mv in &result.moves {
