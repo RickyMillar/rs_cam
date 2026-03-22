@@ -9,10 +9,13 @@ use rs_cam_core::geo::BoundingBox3;
 
 use crate::state::Workspace;
 use crate::state::history::UndoAction;
-use crate::state::job::{FaceUp, Fixture, KeepOutZone, Setup, ToolConfig};
+use crate::state::job::{AlignmentPin, FaceUp, Fixture, FlipAxis, KeepOutZone, Setup, ToolConfig};
 use crate::state::selection::Selection;
 use crate::state::simulation::{SimulationResults, SimulationRunMeta};
-use crate::state::toolpath::{ComputeStatus, OperationConfig, ToolpathEntry, ToolpathId};
+use crate::state::toolpath::{
+    AlignmentPinDrillConfig, ComputeStatus, OperationConfig, ToolpathEntry, ToolpathEntryInit,
+    ToolpathId,
+};
 use crate::ui::AppEvent;
 
 use super::AppController;
@@ -85,6 +88,50 @@ impl<B: ComputeBackend> AppController<B> {
                 self.state.job.setups.push(Setup::new(id, name));
                 self.state.selection = Selection::Setup(id);
                 self.state.job.mark_edited();
+            }
+            AppEvent::SetupTwoSided => {
+                // Create flipped Setup 2 if one doesn't exist yet.
+                let has_flipped = self
+                    .state
+                    .job
+                    .setups
+                    .iter()
+                    .any(|s| s.face_up == FaceUp::Bottom);
+                if !has_flipped {
+                    let id = self.state.job.next_setup_id();
+                    let mut setup = Setup::new(id, format!("Setup {}", id.0 + 1));
+                    setup.face_up = FaceUp::Bottom;
+                    self.state.job.setups.push(setup);
+                }
+                // Set flip axis if not already set.
+                if self.state.job.stock.flip_axis.is_none() {
+                    self.state.job.stock.flip_axis = Some(FlipAxis::Horizontal);
+                }
+                // Auto-place 2 pins if none exist.
+                if self.state.job.stock.alignment_pins.is_empty() {
+                    let margin = if self.state.job.stock.padding > 2.0 {
+                        self.state.job.stock.padding / 2.0
+                    } else {
+                        10.0_f64
+                            .min(self.state.job.stock.x / 4.0)
+                            .min(self.state.job.stock.y / 4.0)
+                    };
+                    let cy = self.state.job.stock.y / 2.0;
+                    self.state
+                        .job
+                        .stock
+                        .alignment_pins
+                        .push(AlignmentPin::new(margin, cy, 6.0));
+                    self.state.job.stock.alignment_pins.push(AlignmentPin::new(
+                        self.state.job.stock.x - margin,
+                        cy,
+                        6.0,
+                    ));
+                }
+                self.pending_upload = true;
+                self.state.job.mark_edited();
+                self.sync_alignment_pin_drill();
+                self.state.selection = Selection::Stock;
             }
             AppEvent::RemoveSetup(setup_id) => {
                 if self.state.job.setups.len() > 1 {
@@ -415,8 +462,21 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::Undo => self.undo(),
             AppEvent::Redo => self.redo(),
             AppEvent::StockChanged => {
+                // Re-derive stock dimensions from model bbox when auto_from_model is on
+                // (e.g. when padding changes).
+                if self.state.job.stock.auto_from_model
+                    && let Some(bbox) = self
+                        .state
+                        .job
+                        .models
+                        .iter()
+                        .find_map(|m| m.mesh.as_ref().map(|mesh| mesh.bbox))
+                {
+                    self.state.job.stock.update_from_bbox(&bbox);
+                }
                 self.pending_upload = true;
                 self.state.job.mark_edited();
+                self.sync_alignment_pin_drill();
             }
             AppEvent::StockMaterialChanged => {
                 self.state.job.mark_edited();
@@ -681,11 +741,93 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
+    /// Create, update, or remove the auto-generated alignment pin drill toolpath.
+    fn sync_alignment_pin_drill(&mut self) {
+        let has_pins = !self.state.job.stock.alignment_pins.is_empty();
+
+        // Find existing pin drill toolpath across all setups.
+        let existing = self
+            .state
+            .job
+            .setups
+            .iter()
+            .flat_map(|s| s.toolpaths.iter().map(move |tp| (s.id, tp)))
+            .find(|(_, tp)| matches!(tp.operation, OperationConfig::AlignmentPinDrill(_)))
+            .map(|(sid, tp)| (sid, tp.id));
+
+        if has_pins && existing.is_none() {
+            // Auto-create in Setup 1 at index 0.
+            if let Some(setup) = self.state.job.setups.first() {
+                let setup_id = setup.id;
+                let id = self.state.job.next_toolpath_id();
+                let tool_id = self
+                    .state
+                    .job
+                    .tools
+                    .first()
+                    .map(|t| t.id)
+                    .unwrap_or(crate::state::job::ToolId(0));
+                let model_id = self
+                    .state
+                    .job
+                    .models
+                    .first()
+                    .map(|m| m.id)
+                    .unwrap_or(crate::state::job::ModelId(0));
+                let holes: Vec<[f64; 2]> = self
+                    .state
+                    .job
+                    .stock
+                    .alignment_pins
+                    .iter()
+                    .map(|p| [p.x, p.y])
+                    .collect();
+                let cfg = AlignmentPinDrillConfig {
+                    holes,
+                    ..Default::default()
+                };
+                let entry = ToolpathEntry::from_init(ToolpathEntryInit::new(
+                    id,
+                    "Pin Drill".to_string(),
+                    tool_id,
+                    model_id,
+                    OperationConfig::AlignmentPinDrill(cfg),
+                ));
+                // Insert at index 0 (first operation in setup).
+                if let Some(setup) = self.state.job.setups.iter_mut().find(|s| s.id == setup_id) {
+                    setup.toolpaths.insert(0, entry);
+                }
+            }
+        } else if !has_pins {
+            // Remove pin drill toolpath if pins were all deleted.
+            if let Some((_, tp_id)) = existing {
+                self.state.job.remove_toolpath(tp_id);
+            }
+        } else if let Some((_, tp_id)) = existing {
+            // Pins exist and toolpath exists — update hole positions and mark stale.
+            let new_holes: Vec<[f64; 2]> = self
+                .state
+                .job
+                .stock
+                .alignment_pins
+                .iter()
+                .map(|p| [p.x, p.y])
+                .collect();
+            if let Some(tp) = self.state.job.find_toolpath_mut(tp_id) {
+                if let OperationConfig::AlignmentPinDrill(ref mut cfg) = tp.operation {
+                    cfg.holes = new_holes;
+                }
+                tp.result = None;
+                tp.stale_since = Some(std::time::Instant::now());
+            }
+        }
+    }
+
     pub fn submit_toolpath_compute(&mut self, tp_id: ToolpathId) {
         let Some((
             tool_id,
             model_id,
-            operation,
+            mut operation,
             dressups,
             heights_config,
             stock_source,
@@ -790,7 +932,7 @@ impl<B: ComputeBackend> AppController<B> {
             }
             return;
         }
-        if !is_3d && polygons.is_none() {
+        if !is_3d && !operation.is_stock_based() && polygons.is_none() {
             if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
                 toolpath.status =
                     ComputeStatus::Error("No 2D geometry (import SVG first)".to_string());
@@ -810,6 +952,18 @@ impl<B: ComputeBackend> AppController<B> {
         } else {
             None
         };
+
+        // Refresh pin drill holes from current stock state before submitting.
+        if let OperationConfig::AlignmentPinDrill(ref mut cfg) = operation {
+            cfg.holes = self
+                .state
+                .job
+                .stock
+                .alignment_pins
+                .iter()
+                .map(|p| [p.x, p.y])
+                .collect();
+        }
 
         if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
             toolpath.status = ComputeStatus::Computing;

@@ -9,8 +9,8 @@ use rs_cam_core::geo::{P3, V3};
 pub enum PickHit {
     /// Hit a collision marker at the given index in `collision_positions`.
     CollisionMarker { index: usize },
-    /// Hit an alignment pin.
-    AlignmentPin { setup_id: SetupId, pin_index: usize },
+    /// Hit a stock-level alignment pin.
+    AlignmentPin { pin_index: usize },
     /// Hit a fixture bounding box.
     Fixture {
         setup_id: SetupId,
@@ -53,7 +53,7 @@ pub fn pick(
         return Some(hit);
     }
 
-    if workspace == Workspace::Setup
+    if matches!(workspace, Workspace::Setup | Workspace::Toolpaths)
         && let Some(hit) = pick_alignment_pins(ctx, job)
     {
         return Some(hit);
@@ -167,25 +167,22 @@ fn pick_alignment_pins(ctx: &PickContext<'_>, job: &JobState) -> Option<PickHit>
     let threshold = 12.0f32;
     let mut best_dist = threshold;
     let mut best_hit = None;
-    let stock_top = (job.stock.origin_z + job.stock.z) as f32;
+    // Pin coords are stock-relative; in the local frame (Top/Deg0) the stock
+    // sits at (0,0,0) so pin positions are (pin.x, pin.y, stock.z).
+    let local_top = job.stock.z as f32;
 
-    for setup in &job.setups {
-        for (pin_idx, pin) in setup.alignment_pins.iter().enumerate() {
-            let world = [pin.x as f32, pin.y as f32, stock_top];
-            if let Some(screen) = ctx
-                .camera
-                .project_to_screen(world, ctx.aspect, ctx.vw, ctx.vh)
-            {
-                let dx = screen[0] - ctx.screen_x;
-                let dy = screen[1] - ctx.screen_y;
-                let dist = (dx * dx + dy * dy).sqrt();
-                if dist < best_dist {
-                    best_dist = dist;
-                    best_hit = Some(PickHit::AlignmentPin {
-                        setup_id: setup.id,
-                        pin_index: pin_idx,
-                    });
-                }
+    for (pin_idx, pin) in job.stock.alignment_pins.iter().enumerate() {
+        let world = [pin.x as f32, pin.y as f32, local_top];
+        if let Some(screen) = ctx
+            .camera
+            .project_to_screen(world, ctx.aspect, ctx.vw, ctx.vh)
+        {
+            let dx = screen[0] - ctx.screen_x;
+            let dy = screen[1] - ctx.screen_y;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist < best_dist {
+                best_dist = dist;
+                best_hit = Some(PickHit::AlignmentPin { pin_index: pin_idx });
             }
         }
     }

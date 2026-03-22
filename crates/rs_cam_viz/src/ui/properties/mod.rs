@@ -33,7 +33,12 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             if state.history.stock_snapshot.is_none() {
                 state.history.stock_snapshot = Some(state.job.stock.clone());
             }
-            stock::draw(ui, &mut state.job.stock, events);
+            let has_flipped_setup = state
+                .job
+                .setups
+                .iter()
+                .any(|s| s.face_up != crate::state::job::FaceUp::Top);
+            stock::draw(ui, &mut state.job.stock, has_flipped_setup, events);
             // If an edit just finished (DragValue released), push undo
             if events.iter().any(|e| matches!(e, AppEvent::StockChanged))
                 && let Some(old) = state.history.stock_snapshot.take()
@@ -74,7 +79,9 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .iter_mut()
                 .find(|setup| setup.id == setup_id)
             {
-                setup::draw(ui, setup_id, setup_state, events);
+                let pin_count = state.job.stock.alignment_pins.len();
+                let has_flip_axis = state.job.stock.flip_axis.is_some();
+                setup::draw(ui, setup_id, setup_state, pin_count, has_flip_axis, events);
             }
         }
         Selection::Fixture(setup_id, fixture_id) => {
@@ -824,6 +831,7 @@ fn draw_toolpath_panel(
         OperationConfig::RadialFinish(cfg) => draw_radial_finish_params(ui, cfg),
         OperationConfig::HorizontalFinish(cfg) => draw_horizontal_finish_params(ui, cfg),
         OperationConfig::ProjectCurve(cfg) => draw_project_curve_params(ui, cfg),
+        OperationConfig::AlignmentPinDrill(cfg) => draw_alignment_pin_drill_params(ui, cfg),
     }
 
     // --- Feeds & Speeds calculation ---
@@ -2169,6 +2177,66 @@ fn draw_drill_params(ui: &mut egui::Ui, cfg: &mut DrillConfig) {
                     " mm",
                     0.1,
                     0.1..=5.0,
+                );
+            }
+        });
+}
+
+fn draw_alignment_pin_drill_params(ui: &mut egui::Ui, cfg: &mut AlignmentPinDrillConfig) {
+    ui.label(
+        egui::RichText::new("Drills alignment pin holes through stock into spoilboard")
+            .italics()
+            .color(egui::Color32::from_rgb(140, 180, 140)),
+    );
+    ui.label(format!("{} hole(s)", cfg.holes.len()));
+    egui::Grid::new("pin_drill_p")
+        .num_columns(2)
+        .spacing([8.0, 4.0])
+        .show(ui, |ui| {
+            dv(
+                ui,
+                "Spoilboard:",
+                &mut cfg.spoilboard_penetration,
+                " mm",
+                0.5,
+                0.5..=20.0,
+            );
+            ui.label("Cycle:");
+            egui::ComboBox::from_id_salt("pin_drill_cycle")
+                .selected_text(match cfg.cycle {
+                    DrillCycleType::Simple => "Simple (G81)",
+                    DrillCycleType::Dwell => "Dwell (G82)",
+                    DrillCycleType::Peck => "Peck (G83)",
+                    DrillCycleType::ChipBreak => "Chip Break (G73)",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut cfg.cycle, DrillCycleType::Simple, "Simple (G81)");
+                    ui.selectable_value(&mut cfg.cycle, DrillCycleType::Dwell, "Dwell (G82)");
+                    ui.selectable_value(&mut cfg.cycle, DrillCycleType::Peck, "Peck (G83)");
+                    ui.selectable_value(
+                        &mut cfg.cycle,
+                        DrillCycleType::ChipBreak,
+                        "Chip Break (G73)",
+                    );
+                });
+            ui.end_row();
+            dv(
+                ui,
+                "Feed Rate:",
+                &mut cfg.feed_rate,
+                " mm/min",
+                10.0,
+                1.0..=5000.0,
+            );
+            dv(ui, "Retract Z:", &mut cfg.retract_z, " mm", 0.5, 0.5..=50.0);
+            if matches!(cfg.cycle, DrillCycleType::Peck | DrillCycleType::ChipBreak) {
+                dv(
+                    ui,
+                    "Peck Depth:",
+                    &mut cfg.peck_depth,
+                    " mm",
+                    0.5,
+                    0.5..=50.0,
                 );
             }
         });

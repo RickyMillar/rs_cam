@@ -333,6 +333,12 @@ pub struct StockConfig {
     pub auto_from_model: bool,
     pub padding: f64,
     pub material: rs_cam_core::material::Material,
+    /// Alignment pins for multi-setup registration (stock-level, persists across flips).
+    #[serde(default)]
+    pub alignment_pins: Vec<AlignmentPin>,
+    /// Flip axis for multi-setup work — constrains pin symmetry.
+    #[serde(default)]
+    pub flip_axis: Option<FlipAxis>,
 }
 
 impl Default for StockConfig {
@@ -347,6 +353,8 @@ impl Default for StockConfig {
             auto_from_model: true,
             padding: 5.0,
             material: rs_cam_core::material::Material::default(),
+            alignment_pins: Vec::new(),
+            flip_axis: None,
         }
     }
 }
@@ -734,8 +742,29 @@ pub struct DatumConfig {
     pub notes: String,
 }
 
+/// Which axis the stock flips about when changing setups.
+///
+/// Determines the symmetry constraint for alignment pin placement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FlipAxis {
+    /// Flip left↔right (mirror about the X centerline, Y stays).
+    Horizontal,
+    /// Flip front↔back (mirror about the Y centerline, X stays).
+    Vertical,
+}
+
+impl FlipAxis {
+    pub fn label(&self) -> &'static str {
+        match self {
+            FlipAxis::Horizontal => "Horizontal",
+            FlipAxis::Vertical => "Vertical",
+        }
+    }
+}
+
 /// A physical alignment pin position for part registration between setups.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AlignmentPin {
     pub x: f64,
     pub y: f64,
@@ -902,7 +931,6 @@ pub struct Setup {
     pub face_up: FaceUp,
     pub z_rotation: ZRotation,
     pub datum: DatumConfig,
-    pub alignment_pins: Vec<AlignmentPin>,
     pub fixtures: Vec<Fixture>,
     pub keep_out_zones: Vec<KeepOutZone>,
     pub toolpaths: Vec<super::toolpath::ToolpathEntry>,
@@ -916,7 +944,6 @@ impl Setup {
             face_up: FaceUp::default(),
             z_rotation: ZRotation::default(),
             datum: DatumConfig::default(),
-            alignment_pins: Vec::new(),
             fixtures: Vec::new(),
             keep_out_zones: Vec::new(),
             toolpaths: Vec::new(),

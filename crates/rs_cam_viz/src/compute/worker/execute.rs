@@ -66,6 +66,7 @@ impl OperationConfig {
             OperationConfig::RadialFinish(cfg) => cfg,
             OperationConfig::HorizontalFinish(cfg) => cfg,
             OperationConfig::ProjectCurve(cfg) => cfg,
+            OperationConfig::AlignmentPinDrill(cfg) => cfg,
         }
     }
 }
@@ -2720,6 +2721,40 @@ impl SemanticToolpathOp for ChamferConfig {
             }
         }
         Ok(tp)
+    }
+}
+
+impl SemanticToolpathOp for AlignmentPinDrillConfig {
+    fn generate_with_tracing(
+        &self,
+        ctx: &OperationExecutionContext<'_>,
+    ) -> Result<Toolpath, ComputeError> {
+        if self.holes.is_empty() {
+            return Err(ComputeError::Message(
+                "No alignment pin positions defined".to_string(),
+            ));
+        }
+        let stock_z = ctx
+            .req
+            .stock_bbox
+            .as_ref()
+            .map(|b| b.max.z - b.min.z)
+            .unwrap_or(25.0);
+        let depth = stock_z + self.spoilboard_penetration;
+        let cycle = match self.cycle {
+            DrillCycleType::Simple => DrillCycle::Simple,
+            DrillCycleType::Dwell => DrillCycle::Dwell(0.5),
+            DrillCycleType::Peck => DrillCycle::Peck(self.peck_depth),
+            DrillCycleType::ChipBreak => DrillCycle::ChipBreak(self.peck_depth, 0.5),
+        };
+        let params = DrillParams {
+            depth,
+            cycle,
+            feed_rate: self.feed_rate,
+            safe_z: effective_safe_z(ctx.req),
+            retract_z: self.retract_z,
+        };
+        Ok(drill_toolpath(&self.holes, &params))
     }
 }
 

@@ -10,6 +10,7 @@ This directory contains active planning notes, status snapshots, and archived hi
 | [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) | Prioritized near-term engineering backlog |
 | [`TECH_DEBT_PLAN.md`](TECH_DEBT_PLAN.md) | Phase-status tracker for debt cleanup; Phase 3 is the latest completed tranche |
 | [`Performance_review.md`](Performance_review.md) | Active performance backlog and benchmark gaps |
+| [`FUTURE_PLANS.md`](FUTURE_PLANS.md) | Deferred product and engineering follow-ons, including benchmark mode |
 | [`VENDOR_LUT_GUI_PLAN.md`](VENDOR_LUT_GUI_PLAN.md) | Remaining feeds/speeds UI work |
 | [`WORKSPACE_UX_REDESIGN_PLAN.md`](WORKSPACE_UX_REDESIGN_PLAN.md) | Detailed handoff plan for the setup/toolpaths/simulation workspace redesign |
 

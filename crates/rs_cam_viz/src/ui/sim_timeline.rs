@@ -397,6 +397,7 @@ fn op_feed_rate(op: &OperationConfig) -> f64 {
         OperationConfig::RadialFinish(c) => c.feed_rate,
         OperationConfig::HorizontalFinish(c) => c.feed_rate,
         OperationConfig::ProjectCurve(c) => c.feed_rate,
+        OperationConfig::AlignmentPinDrill(c) => c.feed_rate,
     }
 }
 

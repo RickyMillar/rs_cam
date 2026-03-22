@@ -80,6 +80,8 @@ pub enum OperationType {
     RadialFinish,
     HorizontalFinish,
     ProjectCurve,
+    /// Auto-generated drilling operation for stock alignment pin holes.
+    AlignmentPinDrill,
 }
 
 impl OperationType {
@@ -358,6 +360,16 @@ impl OperationType {
                 feeds_family: FeedsOperationFamily::Trace,
                 feeds_pass_role: PassRole::Finish,
             },
+            OperationType::AlignmentPinDrill => OperationSpec {
+                label: "Pin Drill",
+                family: OperationFamily::TwoPointFiveD,
+                geometry: GeometryRequirement::Stock,
+                default_auto_regen: true,
+                ui_family: UiOperationFamily::Pocket,
+                ui_process_role: UiProcessRole::Roughing,
+                feeds_family: FeedsOperationFamily::Pocket,
+                feeds_pass_role: PassRole::Roughing,
+            },
         }
     }
 
@@ -392,6 +404,7 @@ pub enum OperationConfig {
     RadialFinish(RadialFinishConfig),
     HorizontalFinish(HorizontalFinishConfig),
     ProjectCurve(ProjectCurveConfig),
+    AlignmentPinDrill(AlignmentPinDrillConfig),
 }
 
 impl OperationConfig {
@@ -419,6 +432,7 @@ impl OperationConfig {
             OperationConfig::RadialFinish(_) => OperationType::RadialFinish,
             OperationConfig::HorizontalFinish(_) => OperationType::HorizontalFinish,
             OperationConfig::ProjectCurve(_) => OperationType::ProjectCurve,
+            OperationConfig::AlignmentPinDrill(_) => OperationType::AlignmentPinDrill,
         }
     }
 
@@ -488,6 +502,7 @@ impl OperationConfig {
             OperationConfig::RadialFinish(config) => config.feed_rate,
             OperationConfig::HorizontalFinish(config) => config.feed_rate,
             OperationConfig::ProjectCurve(config) => config.feed_rate,
+            OperationConfig::AlignmentPinDrill(config) => config.feed_rate,
         }
     }
 
@@ -515,6 +530,7 @@ impl OperationConfig {
             OperationConfig::RadialFinish(config) => config.feed_rate = value,
             OperationConfig::HorizontalFinish(config) => config.feed_rate = value,
             OperationConfig::ProjectCurve(config) => config.feed_rate = value,
+            OperationConfig::AlignmentPinDrill(config) => config.feed_rate = value,
         }
     }
 
@@ -542,6 +558,7 @@ impl OperationConfig {
             OperationConfig::RadialFinish(config) => config.plunge_rate,
             OperationConfig::HorizontalFinish(config) => config.plunge_rate,
             OperationConfig::ProjectCurve(config) => config.plunge_rate,
+            OperationConfig::AlignmentPinDrill(config) => config.feed_rate,
         }
     }
 
@@ -556,7 +573,7 @@ impl OperationConfig {
             OperationConfig::Inlay(config) => config.plunge_rate = value,
             OperationConfig::Zigzag(config) => config.plunge_rate = value,
             OperationConfig::Trace(config) => config.plunge_rate = value,
-            OperationConfig::Drill(_) => {}
+            OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_) => {}
             OperationConfig::Chamfer(config) => config.plunge_rate = value,
             OperationConfig::DropCutter(config) => config.plunge_rate = value,
             OperationConfig::Adaptive3d(config) => config.plunge_rate = value,
@@ -666,6 +683,9 @@ impl OperationConfig {
             OperationConfig::RadialFinish(_) => DepthSemantics::None,
             OperationConfig::HorizontalFinish(_) => DepthSemantics::None,
             OperationConfig::ProjectCurve(config) => DepthSemantics::Explicit(config.depth),
+            OperationConfig::AlignmentPinDrill(config) => {
+                DepthSemantics::Explicit(config.spoilboard_penetration)
+            }
         }
     }
 
@@ -709,6 +729,9 @@ impl OperationConfig {
             }
             OperationType::ProjectCurve => {
                 OperationConfig::ProjectCurve(ProjectCurveConfig::default())
+            }
+            OperationType::AlignmentPinDrill => {
+                OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default())
             }
         }
     }

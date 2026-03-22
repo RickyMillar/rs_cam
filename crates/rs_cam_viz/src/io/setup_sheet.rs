@@ -225,14 +225,36 @@ tr:nth-child(even) {{ background: #24242e; }}
     }
 
     // --- Datum / Alignment section ---
-    let has_datum_info = job.setups.iter().any(|setup| {
-        !setup.alignment_pins.is_empty()
-            || !setup.datum.notes.is_empty()
-            || setup.datum.xy_method != crate::state::job::XYDatum::default()
-            || setup.datum.z_method != crate::state::job::ZDatum::default()
-    });
+    let has_datum_info = !job.stock.alignment_pins.is_empty()
+        || job.setups.iter().any(|setup| {
+            !setup.datum.notes.is_empty()
+                || setup.datum.xy_method != crate::state::job::XYDatum::default()
+                || setup.datum.z_method != crate::state::job::ZDatum::default()
+        });
     if has_datum_info || job.setups.len() > 1 {
         let _ = writeln!(html, "<h2>Datum / Alignment</h2>");
+
+        // Stock-level alignment pins (shared across all setups).
+        if !job.stock.alignment_pins.is_empty() {
+            let _ = write!(
+                html,
+                "<h4>Alignment Pins</h4>\n\
+                 <table>\n\
+                 <tr><th>Pin</th><th>Position</th><th>Diameter</th></tr>\n"
+            );
+            for (pin_index, pin) in job.stock.alignment_pins.iter().enumerate() {
+                let _ = writeln!(
+                    html,
+                    "<tr><td>{}</td><td>({:.1}, {:.1})</td><td>{:.1} mm</td></tr>",
+                    pin_index + 1,
+                    pin.x,
+                    pin.y,
+                    pin.diameter,
+                );
+            }
+            let _ = writeln!(html, "</table>");
+        }
+
         for (i, setup) in job.setups.iter().enumerate() {
             if job.setups.len() > 1 {
                 let _ = writeln!(
@@ -257,25 +279,6 @@ tr:nth-child(even) {{ background: #24242e; }}
                     "<p class=\"meta\">Notes: {}</p>",
                     escape_html(&setup.datum.notes)
                 );
-            }
-            if !setup.alignment_pins.is_empty() {
-                let _ = write!(
-                    html,
-                    "<h4>Alignment Pins</h4>\n\
-                     <table>\n\
-                     <tr><th>Pin</th><th>Position</th><th>Diameter</th></tr>\n"
-                );
-                for (pin_index, pin) in setup.alignment_pins.iter().enumerate() {
-                    let _ = writeln!(
-                        html,
-                        "<tr><td>{}</td><td>({:.1}, {:.1})</td><td>{:.1} mm</td></tr>",
-                        pin_index + 1,
-                        pin.x,
-                        pin.y,
-                        pin.diameter,
-                    );
-                }
-                let _ = writeln!(html, "</table>");
             }
             if i > 0
                 && matches!(
@@ -482,7 +485,7 @@ mod tests {
             top_setup.name = "Top Side".to_string();
             top_setup.datum.xy_method = XYDatum::AlignmentPins;
             top_setup.datum.notes = "Probe on the pin pair".to_string();
-            top_setup
+            job.stock
                 .alignment_pins
                 .push(AlignmentPin::new(10.0, 20.0, 6.0));
 
@@ -500,7 +503,7 @@ mod tests {
         bottom_setup.z_rotation = ZRotation::Deg90;
         bottom_setup.datum.xy_method = XYDatum::AlignmentPins;
         bottom_setup.datum.z_method = ZDatum::MachineTable;
-        bottom_setup
+        job.stock
             .alignment_pins
             .push(AlignmentPin::new(12.0, 22.0, 6.0));
         job.setups.push(bottom_setup);

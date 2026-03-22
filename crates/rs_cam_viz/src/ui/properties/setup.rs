@@ -1,12 +1,22 @@
 use crate::state::job::{
-    AlignmentPin, Corner, FaceUp, Fixture, FixtureKind, KeepOutZone, Setup, SetupId, XYDatum,
-    ZDatum, ZRotation,
+    Corner, FaceUp, Fixture, FixtureKind, KeepOutZone, Setup, SetupId, XYDatum, ZDatum, ZRotation,
 };
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
 
 /// Draw the setup overview panel (fixtures list, keep-out list, setup name).
-pub fn draw(ui: &mut egui::Ui, setup_id: SetupId, setup: &mut Setup, events: &mut Vec<AppEvent>) {
+///
+/// `pin_count` is the number of alignment pins on the stock (pins are now
+/// stock-level, not per-setup). `has_flip_axis` indicates whether a flip axis
+/// is configured on the stock.
+pub fn draw(
+    ui: &mut egui::Ui,
+    setup_id: SetupId,
+    setup: &mut Setup,
+    pin_count: usize,
+    has_flip_axis: bool,
+    events: &mut Vec<AppEvent>,
+) {
     ui.heading("Setup Properties");
     ui.separator();
 
@@ -60,6 +70,16 @@ pub fn draw(ui: &mut egui::Ui, setup_id: SetupId, setup: &mut Setup, events: &mu
                 .italics()
                 .color(egui::Color32::from_rgb(220, 180, 60)),
         );
+        // Hint: suggest alignment pins when flipped setup has no pins configured
+        if pin_count == 0 && !has_flip_axis {
+            ui.add_space(4.0);
+            if ui
+                .small_button("Add alignment pins for this flip")
+                .clicked()
+            {
+                events.push(AppEvent::SetupTwoSided);
+            }
+        }
     }
 
     ui.add_space(8.0);
@@ -187,56 +207,19 @@ pub fn draw(ui: &mut egui::Ui, setup_id: SetupId, setup: &mut Setup, events: &mu
 
     ui.add_space(4.0);
 
-    ui.label(
-        egui::RichText::new("Alignment Pins")
-            .small()
-            .strong()
-            .color(egui::Color32::from_rgb(160, 160, 175)),
-    );
-    let mut pin_to_remove = None;
-    for (i, pin) in setup.alignment_pins.iter_mut().enumerate() {
-        ui.horizontal(|ui| {
-            ui.label(format!("Pin {}:", i + 1));
-            ui.label("X");
-            if ui
-                .add(egui::DragValue::new(&mut pin.x).speed(0.5))
-                .changed()
-            {
-                events.push(AppEvent::FixtureChanged);
-            }
-            ui.label("Y");
-            if ui
-                .add(egui::DragValue::new(&mut pin.y).speed(0.5))
-                .changed()
-            {
-                events.push(AppEvent::FixtureChanged);
-            }
-            ui.label("\u{2300}");
-            if ui
-                .add(
-                    egui::DragValue::new(&mut pin.diameter)
-                        .speed(0.1)
-                        .range(1.0..=25.0)
-                        .suffix(" mm"),
-                )
-                .changed()
-            {
-                events.push(AppEvent::FixtureChanged);
-            }
-            if ui.small_button("x").clicked() {
-                pin_to_remove = Some(i);
-            }
-        });
-    }
-    if let Some(idx) = pin_to_remove {
-        setup.alignment_pins.remove(idx);
-        events.push(AppEvent::FixtureChanged);
-    }
-    if ui.small_button("+ Add Pin").clicked() {
-        setup
-            .alignment_pins
-            .push(AlignmentPin::new(50.0, 50.0, 6.0));
-        events.push(AppEvent::FixtureChanged);
+    // Alignment pins are now defined on the stock (shared across setups).
+    if pin_count > 0 {
+        ui.label(
+            egui::RichText::new(format!("{pin_count} alignment pin(s) on stock"))
+                .small()
+                .color(egui::Color32::from_rgb(140, 180, 140)),
+        );
+    } else if setup.datum.xy_method == XYDatum::AlignmentPins {
+        ui.label(
+            egui::RichText::new("No pins defined — add them in Stock properties")
+                .small()
+                .color(egui::Color32::from_rgb(220, 180, 60)),
+        );
     }
 
     ui.add_space(8.0);
