@@ -94,3 +94,138 @@ impl Default for UndoHistory {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper: create a simple stock-change action with distinguishable stock sizes.
+    fn stock_action(old_x: f64, new_x: f64) -> UndoAction {
+        UndoAction::StockChange {
+            old: StockConfig {
+                x: old_x,
+                ..StockConfig::default()
+            },
+            new: StockConfig {
+                x: new_x,
+                ..StockConfig::default()
+            },
+        }
+    }
+
+    fn extract_stock_old_x(action: &UndoAction) -> f64 {
+        match action {
+            UndoAction::StockChange { old, .. } => old.x,
+            _ => panic!("Expected StockChange"),
+        }
+    }
+
+    fn extract_stock_new_x(action: &UndoAction) -> f64 {
+        match action {
+            UndoAction::StockChange { new, .. } => new.x,
+            _ => panic!("Expected StockChange"),
+        }
+    }
+
+    #[test]
+    fn push_and_undo_returns_correct_action() {
+        let mut history = UndoHistory::new();
+        history.push(stock_action(100.0, 200.0));
+
+        assert!(history.can_undo());
+        let undone = history.undo().expect("should have an action to undo");
+        assert_eq!(extract_stock_old_x(&undone), 100.0);
+        assert_eq!(extract_stock_new_x(&undone), 200.0);
+        assert!(!history.can_undo());
+    }
+
+    #[test]
+    fn redo_after_undo_returns_undone_state() {
+        let mut history = UndoHistory::new();
+        history.push(stock_action(100.0, 200.0));
+
+        let undone = history.undo().expect("undo");
+        assert!(history.can_redo());
+        let redone = history.redo().expect("redo");
+
+        assert_eq!(extract_stock_old_x(&redone), extract_stock_old_x(&undone));
+        assert_eq!(extract_stock_new_x(&redone), extract_stock_new_x(&undone));
+        assert!(!history.can_redo());
+        assert!(history.can_undo());
+    }
+
+    #[test]
+    fn new_push_after_undo_clears_redo_stack() {
+        let mut history = UndoHistory::new();
+        history.push(stock_action(100.0, 200.0));
+        history.push(stock_action(200.0, 300.0));
+
+        // Undo once
+        history.undo().expect("undo");
+        assert!(history.can_redo());
+
+        // Push a new action — redo stack should be cleared
+        history.push(stock_action(200.0, 400.0));
+        assert!(
+            !history.can_redo(),
+            "Redo stack should be cleared after new push"
+        );
+
+        // Undo should get the newly pushed action
+        let undone = history.undo().expect("undo newly pushed");
+        assert_eq!(extract_stock_new_x(&undone), 400.0);
+    }
+
+    #[test]
+    fn stack_overflow_drops_oldest() {
+        let mut history = UndoHistory::new();
+
+        // Push 105 actions (overflow threshold is 100)
+        for i in 0..105 {
+            history.push(stock_action(i as f64, (i + 1) as f64));
+        }
+
+        // Should have at most 100 entries
+        let mut count = 0;
+        while history.undo().is_some() {
+            count += 1;
+        }
+        assert_eq!(count, 100, "Stack should cap at 100 entries");
+    }
+
+    #[test]
+    fn empty_undo_redo_returns_none() {
+        let mut history = UndoHistory::new();
+
+        assert!(!history.can_undo());
+        assert!(!history.can_redo());
+        assert!(history.undo().is_none());
+        assert!(history.redo().is_none());
+    }
+
+    #[test]
+    fn multiple_undo_redo_sequence() {
+        let mut history = UndoHistory::new();
+        history.push(stock_action(10.0, 20.0));
+        history.push(stock_action(20.0, 30.0));
+        history.push(stock_action(30.0, 40.0));
+
+        // Undo all three
+        let u3 = history.undo().expect("undo 3rd");
+        assert_eq!(extract_stock_new_x(&u3), 40.0);
+        let u2 = history.undo().expect("undo 2nd");
+        assert_eq!(extract_stock_new_x(&u2), 30.0);
+        let u1 = history.undo().expect("undo 1st");
+        assert_eq!(extract_stock_new_x(&u1), 20.0);
+        assert!(history.undo().is_none());
+
+        // Redo all three
+        let r1 = history.redo().expect("redo 1st");
+        assert_eq!(extract_stock_new_x(&r1), 20.0);
+        let r2 = history.redo().expect("redo 2nd");
+        assert_eq!(extract_stock_new_x(&r2), 30.0);
+        let r3 = history.redo().expect("redo 3rd");
+        assert_eq!(extract_stock_new_x(&r3), 40.0);
+        assert!(history.redo().is_none());
+    }
+}

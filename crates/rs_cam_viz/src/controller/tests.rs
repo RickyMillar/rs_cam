@@ -850,3 +850,267 @@ fn add_toolpath_blocked_when_no_tools_exist() {
         "No toolpath should be created when no tools exist"
     );
 }
+
+// ---------------------------------------------------------------------------
+// E-crud: Controller CRUD tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn add_tool_and_remove_tool_lifecycle() {
+    let mut controller = AppController::with_backend(ScriptedBackend::new());
+    assert!(controller.state.job.tools.is_empty());
+
+    // Add a tool
+    controller.handle_internal_event(crate::ui::AppEvent::AddTool(ToolType::EndMill));
+    assert_eq!(controller.state.job.tools.len(), 1);
+    let tool_id = controller.state.job.tools[0].id;
+    assert_eq!(controller.state.job.tools[0].tool_type, ToolType::EndMill);
+
+    // Verify selection was set to the new tool
+    assert_eq!(controller.state.selection, Selection::Tool(tool_id));
+
+    // Remove the tool (no toolpaths reference it)
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveTool(tool_id));
+    assert!(
+        controller.state.job.tools.is_empty(),
+        "Tool should be removed when no toolpaths reference it"
+    );
+}
+
+#[test]
+fn add_setup_and_remove_setup_lifecycle() {
+    let mut controller = AppController::with_backend(ScriptedBackend::new());
+    // Starts with one default setup
+    assert_eq!(controller.state.job.setups.len(), 1);
+    let original_setup_id = controller.state.job.setups[0].id;
+
+    // Add a second setup
+    controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
+    assert_eq!(controller.state.job.setups.len(), 2);
+    let new_setup_id = controller.state.job.setups[1].id;
+    assert_ne!(original_setup_id, new_setup_id);
+
+    // Remove the second setup
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(new_setup_id));
+    assert_eq!(controller.state.job.setups.len(), 1);
+    assert_eq!(controller.state.job.setups[0].id, original_setup_id);
+
+    // Min 1 setup enforced: try to remove the last one
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(original_setup_id));
+    assert_eq!(
+        controller.state.job.setups.len(),
+        1,
+        "Cannot remove the last setup — minimum 1 enforced"
+    );
+}
+
+#[test]
+fn add_toolpath_and_remove_toolpath_lifecycle() {
+    let mut controller = sample_controller();
+    let tp_count_before = controller.state.job.toolpath_count();
+    assert!(tp_count_before >= 1, "sample_controller starts with 1 toolpath");
+
+    // Add a toolpath
+    controller.handle_internal_event(crate::ui::AppEvent::AddToolpath(
+        crate::state::toolpath::OperationType::Pocket,
+    ));
+    let tp_count_after = controller.state.job.toolpath_count();
+    assert_eq!(
+        tp_count_after,
+        tp_count_before + 1,
+        "Toolpath should be added"
+    );
+
+    // Find the newly added toolpath ID (it should be the selected one)
+    let new_tp_id = match controller.state.selection {
+        Selection::Toolpath(id) => id,
+        _ => panic!("Selection should be the new toolpath"),
+    };
+
+    // Remove it
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveToolpath(new_tp_id));
+    assert_eq!(
+        controller.state.job.toolpath_count(),
+        tp_count_before,
+        "Toolpath should be removed"
+    );
+    assert!(
+        controller.state.job.find_toolpath(new_tp_id).is_none(),
+        "Removed toolpath should not be findable"
+    );
+}
+
+#[test]
+fn duplicate_tool_creates_independent_copy() {
+    let mut controller = sample_controller();
+    let original_tool = controller.state.job.tools[0].clone();
+    let original_id = original_tool.id;
+
+    controller.handle_internal_event(crate::ui::AppEvent::DuplicateTool(original_id));
+    assert_eq!(
+        controller.state.job.tools.len(),
+        2,
+        "Should have original + copy"
+    );
+
+    let copy = &controller.state.job.tools[1];
+    assert_ne!(copy.id, original_id, "Copy should have a different ID");
+    assert!(
+        copy.name.contains("(copy)"),
+        "Copy name should contain '(copy)': {}",
+        copy.name
+    );
+    assert_eq!(copy.tool_type, original_tool.tool_type);
+    assert_eq!(copy.diameter, original_tool.diameter);
+
+    // Modifying the copy should not affect the original (they are independent)
+    // We verify they are separate entries in the tools list
+    assert_eq!(controller.state.job.tools[0].id, original_id);
+    assert_ne!(controller.state.job.tools[1].id, original_id);
+}
+
+#[test]
+fn rename_setup_updates_name() {
+    let mut controller = AppController::with_backend(ScriptedBackend::new());
+    let setup_id = controller.state.job.setups[0].id;
+
+    controller.handle_internal_event(crate::ui::AppEvent::RenameSetup(
+        setup_id,
+        "My Custom Setup".to_string(),
+    ));
+
+    assert_eq!(
+        controller.state.job.setups[0].name, "My Custom Setup",
+        "Setup name should be updated"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// E-sel: Selection cascade tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn delete_selected_tool_clears_selection() {
+    let mut controller = AppController::with_backend(ScriptedBackend::new());
+
+    // Add a tool and select it
+    controller.handle_internal_event(crate::ui::AppEvent::AddTool(ToolType::BallNose));
+    let tool_id = controller.state.job.tools[0].id;
+    assert_eq!(controller.state.selection, Selection::Tool(tool_id));
+
+    // Remove the tool
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveTool(tool_id));
+
+    assert_eq!(
+        controller.state.selection,
+        Selection::None,
+        "Selection should be cleared after deleting the selected tool"
+    );
+}
+
+#[test]
+fn delete_setup_containing_selected_fixture_clears_selection() {
+    let mut controller = AppController::with_backend(ScriptedBackend::new());
+
+    // Add a second setup so we can delete it (min 1 enforced)
+    controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
+    assert_eq!(controller.state.job.setups.len(), 2);
+    let second_setup_id = controller.state.job.setups[1].id;
+
+    // Add a fixture to the second setup
+    controller.handle_internal_event(crate::ui::AppEvent::AddFixture(second_setup_id));
+    let fixture_id = controller.state.job.setups[1].fixtures[0].id;
+
+    // Select the fixture
+    controller.handle_internal_event(crate::ui::AppEvent::Select(Selection::Fixture(
+        second_setup_id,
+        fixture_id,
+    )));
+    assert_eq!(
+        controller.state.selection,
+        Selection::Fixture(second_setup_id, fixture_id)
+    );
+
+    // Remove the setup containing the fixture
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(second_setup_id));
+
+    assert_eq!(
+        controller.state.selection,
+        Selection::None,
+        "Selection should be cleared when setup containing selected fixture is deleted"
+    );
+}
+
+#[test]
+fn delete_selected_toolpath_clears_selection() {
+    let mut controller = sample_controller();
+    let tp_id = ToolpathId(1);
+    controller.state.selection = Selection::Toolpath(tp_id);
+
+    // Remove the selected toolpath
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveToolpath(tp_id));
+
+    assert_eq!(
+        controller.state.selection,
+        Selection::None,
+        "Selection should be cleared after deleting the selected toolpath"
+    );
+}
+
+#[test]
+fn delete_unselected_toolpath_preserves_selection() {
+    let mut controller = sample_controller();
+
+    // Add another toolpath
+    controller.handle_internal_event(crate::ui::AppEvent::AddToolpath(
+        crate::state::toolpath::OperationType::Pocket,
+    ));
+    let new_tp_id = match controller.state.selection {
+        Selection::Toolpath(id) => id,
+        _ => panic!("Selection should be new toolpath"),
+    };
+
+    // Select back to the original toolpath
+    controller.state.selection = Selection::Toolpath(ToolpathId(1));
+
+    // Delete the other toolpath
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveToolpath(new_tp_id));
+
+    assert_eq!(
+        controller.state.selection,
+        Selection::Toolpath(ToolpathId(1)),
+        "Selection should be preserved when a different toolpath is deleted"
+    );
+}
+
+#[test]
+fn delete_setup_with_selected_keep_out_clears_selection() {
+    let mut controller = AppController::with_backend(ScriptedBackend::new());
+
+    // Add a second setup
+    controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
+    let second_setup_id = controller.state.job.setups[1].id;
+
+    // Add a keep-out zone to the second setup
+    controller.handle_internal_event(crate::ui::AppEvent::AddKeepOut(second_setup_id));
+    let keep_out_id = controller.state.job.setups[1].keep_out_zones[0].id;
+
+    // Select the keep-out
+    controller.handle_internal_event(crate::ui::AppEvent::Select(Selection::KeepOut(
+        second_setup_id,
+        keep_out_id,
+    )));
+    assert_eq!(
+        controller.state.selection,
+        Selection::KeepOut(second_setup_id, keep_out_id)
+    );
+
+    // Remove the setup
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(second_setup_id));
+
+    assert_eq!(
+        controller.state.selection,
+        Selection::None,
+        "Selection should be cleared when setup containing selected keep-out is deleted"
+    );
+}

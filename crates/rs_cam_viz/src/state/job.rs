@@ -1457,4 +1457,197 @@ mod tests {
             }
         }
     }
+
+    /// Round-trip with multiple different test points per combination,
+    /// including corners and center of stock volume.
+    #[test]
+    fn setup_transform_round_trip_multiple_points() {
+        let stock = stock_at_origin();
+
+        let test_points = [
+            // Interior point
+            P3::new(30.0, 20.0, 10.0),
+            // Origin corner
+            P3::new(0.0, 0.0, 0.0),
+            // Far corner
+            P3::new(stock.x, stock.y, stock.z),
+            // Center of stock
+            P3::new(stock.x / 2.0, stock.y / 2.0, stock.z / 2.0),
+            // Edge midpoints
+            P3::new(stock.x / 2.0, 0.0, stock.z / 2.0),
+            P3::new(0.0, stock.y / 2.0, stock.z / 2.0),
+        ];
+
+        for &face in FaceUp::ALL {
+            for &rot in ZRotation::ALL {
+                let setup = Setup {
+                    face_up: face,
+                    z_rotation: rot,
+                    ..Setup::new(SetupId(0), "Test".to_string())
+                };
+
+                for &point in &test_points {
+                    let transformed = setup.transform_point(point, &stock);
+                    let recovered = setup.inverse_transform_point(transformed, &stock);
+
+                    assert!(
+                        (recovered.x - point.x).abs() < 1e-10
+                            && (recovered.y - point.y).abs() < 1e-10
+                            && (recovered.z - point.z).abs() < 1e-10,
+                        "Round-trip failed for face={:?} rot={:?} point={:?}: got {:?}",
+                        face,
+                        rot,
+                        point,
+                        recovered,
+                    );
+                }
+            }
+        }
+    }
+
+    /// Verify specific known transforms produce expected results.
+    #[test]
+    fn face_up_bottom_flips_z() {
+        let stock = stock_at_origin();
+        let setup = Setup {
+            face_up: FaceUp::Bottom,
+            z_rotation: ZRotation::Deg0,
+            ..Setup::new(SetupId(0), "Test".to_string())
+        };
+
+        // A point at the top of the stock (z = stock.z) should map to z = 0
+        let top_point = P3::new(50.0, 40.0, stock.z);
+        let transformed = setup.transform_point(top_point, &stock);
+        assert!(
+            transformed.z.abs() < 1e-10,
+            "FaceUp::Bottom should map stock top (z={}) to z=0, got z={}",
+            stock.z,
+            transformed.z
+        );
+
+        // A point at z = 0 should map to z = stock.z
+        let bottom_point = P3::new(50.0, 40.0, 0.0);
+        let transformed = setup.transform_point(bottom_point, &stock);
+        assert!(
+            (transformed.z - stock.z).abs() < 1e-10,
+            "FaceUp::Bottom should map z=0 to z={}, got z={}",
+            stock.z,
+            transformed.z
+        );
+    }
+
+    /// Verify FaceUp::Top with Deg0 is identity (no transform).
+    #[test]
+    fn identity_setup_is_passthrough() {
+        let stock = stock_at_origin();
+        let setup = Setup::new(SetupId(0), "Test".to_string());
+
+        let point = P3::new(30.0, 20.0, 10.0);
+        let transformed = setup.transform_point(point, &stock);
+
+        assert!(
+            (transformed.x - point.x).abs() < 1e-10
+                && (transformed.y - point.y).abs() < 1e-10
+                && (transformed.z - point.z).abs() < 1e-10,
+            "Identity setup should be passthrough: {:?} -> {:?}",
+            point,
+            transformed
+        );
+    }
+
+    /// Verify ZRotation::Deg90 swaps X and Y dimensions.
+    #[test]
+    fn z_rotation_90_swaps_axes() {
+        let stock = stock_at_origin();
+        let setup = Setup {
+            face_up: FaceUp::Top,
+            z_rotation: ZRotation::Deg90,
+            ..Setup::new(SetupId(0), "Test".to_string())
+        };
+
+        // The origin (0,0,z) should map to (D, 0, z) under 90 deg rotation
+        // since Deg90 formula: new_x = D - y, new_y = x
+        let point = P3::new(0.0, 0.0, 10.0);
+        let transformed = setup.transform_point(point, &stock);
+
+        assert!(
+            (transformed.x - stock.y).abs() < 1e-10,
+            "Deg90: origin.x should map to stock.y={}, got {}",
+            stock.y,
+            transformed.x
+        );
+        assert!(
+            transformed.y.abs() < 1e-10,
+            "Deg90: origin.y should map to 0, got {}",
+            transformed.y
+        );
+        assert!(
+            (transformed.z - 10.0).abs() < 1e-10,
+            "Deg90: z should be preserved, got {}",
+            transformed.z
+        );
+    }
+
+    /// Verify FaceUp::Front rotates Y and Z.
+    #[test]
+    fn face_up_front_rotates_y_z() {
+        let stock = stock_at_origin();
+        let setup = Setup {
+            face_up: FaceUp::Front,
+            z_rotation: ZRotation::Deg0,
+            ..Setup::new(SetupId(0), "Test".to_string())
+        };
+
+        // Front: new = (x, H-z, y) where H = stock.z
+        let point = P3::new(30.0, 20.0, 10.0);
+        let transformed = setup.transform_point(point, &stock);
+
+        assert!(
+            (transformed.x - 30.0).abs() < 1e-10,
+            "Front: x should be preserved"
+        );
+        assert!(
+            (transformed.y - (stock.z - 10.0)).abs() < 1e-10,
+            "Front: new_y should be H - old_z = {}, got {}",
+            stock.z - 10.0,
+            transformed.y
+        );
+        assert!(
+            (transformed.z - 20.0).abs() < 1e-10,
+            "Front: new_z should be old_y = 20, got {}",
+            transformed.z
+        );
+    }
+
+    /// Transformed coordinates should stay non-negative within stock bounds.
+    #[test]
+    fn transformed_coords_stay_non_negative_for_interior_points() {
+        let stock = stock_at_origin();
+
+        for &face in FaceUp::ALL {
+            for &rot in ZRotation::ALL {
+                let setup = Setup {
+                    face_up: face,
+                    z_rotation: rot,
+                    ..Setup::new(SetupId(0), "Test".to_string())
+                };
+
+                // A point in the interior of the stock
+                let point = P3::new(
+                    stock.x * 0.3,
+                    stock.y * 0.3,
+                    stock.z * 0.3,
+                );
+                let transformed = setup.transform_point(point, &stock);
+
+                assert!(
+                    transformed.x >= -1e-10
+                        && transformed.y >= -1e-10
+                        && transformed.z >= -1e-10,
+                    "Interior point should transform to non-negative coords for face={:?} rot={:?}: got {:?}",
+                    face, rot, transformed
+                );
+            }
+        }
+    }
 }
