@@ -73,12 +73,21 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 crate::state::job::ModelKind::Svg => "SVG",
                 crate::state::job::ModelKind::Dxf => "DXF",
             };
-            if ui
-                .selectable_label(selected, format!("[{}] {}", icon, model.name))
-                .clicked()
-            {
+            let response =
+                ui.selectable_label(selected, format!("[{}] {}", icon, model.name));
+            if response.clicked() {
                 events.push(AppEvent::Select(Selection::Model(model.id)));
             }
+            response.context_menu(|ui| {
+                if ui.button("Reload from disk").clicked() {
+                    events.push(AppEvent::ReloadModel(model.id));
+                    ui.close_menu();
+                }
+                if ui.button("Delete").clicked() {
+                    events.push(AppEvent::RemoveModel(model.id));
+                    ui.close_menu();
+                }
+            });
         }
     });
 
@@ -152,7 +161,11 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui.button("Delete Setup").clicked() {
+                    let can_delete = state.job.setups.len() > 1;
+                    if ui
+                        .add_enabled(can_delete, egui::Button::new("Delete Setup"))
+                        .clicked()
+                    {
                         events.push(AppEvent::RemoveSetup(setup.id));
                         ui.close_menu();
                     }

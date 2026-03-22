@@ -4,6 +4,7 @@ pub mod setup;
 pub mod stock;
 pub mod tool;
 
+pub use operations::validate_toolpath;
 use operations::*;
 
 use crate::state::AppState;

@@ -15,7 +15,7 @@ pub mod workspace_bar;
 
 use crate::render::camera::ViewPreset;
 use crate::state::Workspace;
-use crate::state::job::{FaceUp, FixtureId, KeepOutId, SetupId, ToolId, ToolType};
+use crate::state::job::{FaceUp, FixtureId, KeepOutId, ModelId, SetupId, ToolId, ToolType};
 use crate::state::toolpath::{OperationType, ToolpathId};
 use std::path::PathBuf;
 
@@ -26,7 +26,9 @@ pub enum AppEvent {
     ImportStl(PathBuf),
     ImportSvg(PathBuf),
     ImportDxf(PathBuf),
-    RescaleModel(crate::state::job::ModelId, crate::state::job::ModelUnits),
+    RescaleModel(ModelId, crate::state::job::ModelUnits),
+    RemoveModel(ModelId),
+    ReloadModel(ModelId),
     ExportGcode,
     ExportCombinedGcode,
     ExportSetupGcode(SetupId),

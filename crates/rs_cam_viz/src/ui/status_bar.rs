@@ -48,12 +48,18 @@ pub fn draw(
             }
             ui.separator();
             let label = lane_chip_label(lane);
-            let response = ui.label(egui::RichText::new(&label).color(match lane.state {
-                LaneState::Idle => egui::Color32::from_rgb(140, 140, 150),
-                LaneState::Queued => egui::Color32::from_rgb(150, 170, 210),
-                LaneState::Running => egui::Color32::from_rgb(210, 190, 90),
-                LaneState::Cancelling => egui::Color32::from_rgb(220, 120, 90),
-            }));
+            let tooltip = match lane.lane {
+                ComputeLane::Toolpath => "Toolpath compute lane",
+                ComputeLane::Analysis => "Analysis compute lane",
+            };
+            let response = ui
+                .label(egui::RichText::new(&label).color(match lane.state {
+                    LaneState::Idle => egui::Color32::from_rgb(140, 140, 150),
+                    LaneState::Queued => egui::Color32::from_rgb(150, 170, 210),
+                    LaneState::Running => egui::Color32::from_rgb(210, 190, 90),
+                    LaneState::Cancelling => egui::Color32::from_rgb(220, 120, 90),
+                }))
+                .on_hover_text(tooltip);
             automation::record(
                 ui,
                 match lane.lane {
@@ -67,7 +73,8 @@ pub fn draw(
 
         if state.simulation.has_results() {
             ui.separator();
-            ui.label(egui::RichText::new("SIM").color(egui::Color32::from_rgb(100, 180, 100)));
+            ui.label(egui::RichText::new("SIM").color(egui::Color32::from_rgb(100, 180, 100)))
+                .on_hover_text("Simulation results available");
         }
 
         if collision_count > 0 {

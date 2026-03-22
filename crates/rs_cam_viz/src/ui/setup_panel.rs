@@ -72,9 +72,20 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             }
             for model in &state.job.models {
                 let selected = state.selection == Selection::Model(model.id);
-                if ui.selectable_label(selected, &model.name).clicked() {
+                let response = ui.selectable_label(selected, &model.name);
+                if response.clicked() {
                     events.push(AppEvent::Select(Selection::Model(model.id)));
                 }
+                response.context_menu(|ui| {
+                    if ui.button("Reload from disk").clicked() {
+                        events.push(AppEvent::ReloadModel(model.id));
+                        ui.close_menu();
+                    }
+                    if ui.button("Delete").clicked() {
+                        events.push(AppEvent::RemoveModel(model.id));
+                        ui.close_menu();
+                    }
+                });
             }
         });
 }
@@ -217,13 +228,21 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &
     }
 }
 
-/// A compact label chip: "Key: Value" in a tinted style.
+/// A compact label chip: "Key: Value" in a tinted style with a tooltip.
 fn chip(ui: &mut egui::Ui, key: &str, value: &str, color: egui::Color32) {
+    let tooltip = match key {
+        "Fix" => "Fixtures",
+        "KO" => "Keep-out zones",
+        "Orient" => "Setup orientation",
+        "XY" => "XY datum method",
+        _ => key,
+    };
     ui.label(
         egui::RichText::new(format!("{key}: {value}"))
             .small()
             .color(color),
-    );
+    )
+    .on_hover_text(tooltip);
 }
 
 /// Determine the active setup from the current selection.
