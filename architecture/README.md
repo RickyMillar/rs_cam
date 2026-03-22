@@ -9,6 +9,7 @@ This directory holds the durable design documents for the current `rs_cam` works
 | [`user_stories.md`](user_stories.md) | User goals and contributor-facing expectations |
 | [`requirements.md`](requirements.md) | Functional and non-functional requirements |
 | [`high_level_design.md`](high_level_design.md) | Current crate layout, data flow, and extension points |
+| [`TRI_DEXEL_SIMULATION.md`](TRI_DEXEL_SIMULATION.md) | Tri-dexel volumetric simulation design, rationale, and implementation plan |
 
 ## Current system summary
 

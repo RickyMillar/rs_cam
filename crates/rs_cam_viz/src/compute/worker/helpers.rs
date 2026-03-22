@@ -87,6 +87,20 @@ fn apply_dressup_with_tracing(
     result
 }
 
+/// Apply all enabled dressup transforms to a computed toolpath.
+///
+/// Dressups are applied in the following fixed order:
+///
+/// 1. **Entry style** — replaces plunge moves with ramp or helix entries
+/// 2. **Dogbones** — adds corner overcuts for inside-corner clearance
+/// 3. **Lead-in / lead-out** — adds arc transitions at profile entry/exit points
+/// 4. **Link moves** — replaces short retract-rapid-plunge sequences with keep-tool-down links
+/// 5. **Arc fitting** — converts co-circular linear segments into G2/G3 arcs
+/// 6. **Feed optimization** — adjusts feed rates based on stock-aware engagement estimation
+/// 7. **TSP rapid-order optimization** — reorders disconnected cutting segments to minimize rapid travel
+///
+/// Tabs are not applied here; they are handled inline during per-operation depth
+/// stepping (e.g. profile final pass) before the toolpath reaches this function.
 pub(super) fn apply_dressups(
     mut tp: Toolpath,
     req: &ComputeRequest,

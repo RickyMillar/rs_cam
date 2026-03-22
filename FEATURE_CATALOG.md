@@ -112,7 +112,7 @@ These features exist in state, UI, or helper code, but are not yet end-to-end co
 | Feed-optimization dressup | Supported only for fresh-stock, flat-stock workflows with known stock bounds; remaining-stock and mesh-derived cases are intentionally disabled |
 | Rapid collision rendering | Core collision detection exists, but rapid collisions are not yet rendered in the viewport |
 | Simulation deviation colors | Helper exists, but deviation data is not currently fed into the renderer |
-| Vendor LUT loading UI | Backend loader exists, but no GUI entry point yet |
+| Vendor LUT integration | Fully wired: embedded Amana vendor observations are auto-loaded at startup via `LazyLock` and passed into the feeds calculator for all GUI operations |
 | Workholding rigidity UI | Feeds calculator supports it, but the GUI still hardcodes `Medium` |
 
 ## CLI surface

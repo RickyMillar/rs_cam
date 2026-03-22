@@ -8,7 +8,7 @@
 - Output formats: GRBL, LinuxCNC, and Mach3 G-code, plus SVG preview and HTML setup-sheet export
 - Tool families: flat end mill, ball nose, bull nose, V-bit, tapered ball nose
 - Operations: 22 GUI-exposed machining strategies across 2.5D, roughing, and 3D finishing
-- Verification: heightmap stock simulation, playback, and holder/shank collision checks
+- Verification: tri-dexel volumetric stock simulation (Z/X/Y grids, 6 cardinal cut directions), playback, and holder/shank collision checks
 - Responsive compute: separate toolpath and analysis lanes with explicit queue/cancel state
 - Automation: direct CLI commands plus TOML-driven job execution
 - Feeds and speeds: machine + material models with vendor-LUT-assisted recommendations

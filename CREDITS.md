@@ -75,6 +75,24 @@ Primary upstream:
 
 - Kiri:Moto: <https://github.com/GridSpace/grid-apps>
 
+### Tri-dexel volumetric simulation
+
+The stock simulation in `rs_cam` uses a tri-dexel approach: three orthogonal grids of ray segment lists that represent material presence along the Z, X, and Y axes. This is the industry-standard technique for 3-axis CNC simulation, used by commercial engines including ModuleWorks (Mastercam, Siemens NX) and MecSoft (RhinoCAM, VisualCAD/CAM).
+
+The implementation uses `SmallVec<[DexelSegment; 1]>` for allocation-free single-segment fast paths and supports all six cardinal cut directions for multi-setup machining.
+
+Repo references:
+
+- `crates/rs_cam_core/src/dexel.rs` — core segment, ray, and grid primitives
+- `crates/rs_cam_core/src/dexel_stock.rs` — volumetric stock representation with tool stamping
+- `crates/rs_cam_core/src/dexel_mesh.rs` — mesh extraction for viewport rendering
+- `architecture/TRI_DEXEL_SIMULATION.md` — design rationale and implementation plan
+
+Industry references:
+
+- ModuleWorks tri-dexel simulation: <https://www.moduleworks.com/>
+- MecSoft GPU tri-dexel: <https://mecsoft.com/>
+
 ### Other named algorithm references in the repo
 
 The repo text or code explicitly references these algorithm families or techniques:
