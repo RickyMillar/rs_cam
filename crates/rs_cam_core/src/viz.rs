@@ -9,7 +9,9 @@
 
 use crate::geo::BoundingBox3;
 use crate::mesh::TriangleMesh;
-use crate::simulation::{Heightmap, heightmap_to_mesh, linearize_arc};
+use crate::dexel_mesh::dexel_stock_to_mesh;
+use crate::dexel_stock::TriDexelStock;
+use crate::simulation::linearize_arc;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveType, Toolpath};
 use std::fmt::Write;
@@ -621,14 +623,14 @@ animate();
 /// `annotations`: optional `(move_index, label)` pairs shown during replay.
 /// The label for the highest move_index <= current moveIdx is displayed.
 pub fn simulation_3d_html(
-    heightmap: &Heightmap,
+    stock: &TriDexelStock,
     toolpath: &Toolpath,
     source_mesh: Option<&TriangleMesh>,
     cutter: &dyn MillingCutter,
     annotations: &[(usize, String)],
 ) -> String {
-    let hm_mesh = heightmap_to_mesh(heightmap);
-    let hm_bbox = heightmap.bbox();
+    let hm_mesh = dexel_stock_to_mesh(stock);
+    let hm_bbox = stock.stock_bbox;
 
     let center = hm_bbox.center();
     let extent = (hm_bbox.max.x - hm_bbox.min.x)
@@ -744,14 +746,14 @@ pub fn simulation_3d_html(
                     anim_move_count += 1;
                 }
                 MoveType::ArcCW { i, j, .. } => {
-                    let points = linearize_arc(start, end, i, j, true, heightmap.cell_size);
+                    let points = linearize_arc(start, end, i, j, true, stock.z_grid.cell_size);
                     for p in points.iter().skip(1) {
                         let _ = write!(anim_tp, "{:.3},{:.3},{:.3},1,", p.x, p.y, p.z);
                         anim_move_count += 1;
                     }
                 }
                 MoveType::ArcCCW { i, j, .. } => {
-                    let points = linearize_arc(start, end, i, j, false, heightmap.cell_size);
+                    let points = linearize_arc(start, end, i, j, false, stock.z_grid.cell_size);
                     for p in points.iter().skip(1) {
                         let _ = write!(anim_tp, "{:.3},{:.3},{:.3},1,", p.x, p.y, p.z);
                         anim_move_count += 1;
@@ -1200,9 +1202,9 @@ function animate() {{
 animate();
 </script>
 </body></html>"##,
-        hm_rows = heightmap.rows,
-        hm_cols = heightmap.cols,
-        cell_size = heightmap.cell_size,
+        hm_rows = stock.z_grid.rows,
+        hm_cols = stock.z_grid.cols,
+        cell_size = stock.z_grid.cell_size,
         tp_moves = toolpath.moves.len(),
         anim_moves = anim_move_count,
         tp_cut = toolpath.total_cutting_distance(),
@@ -1245,11 +1247,11 @@ scene.add(new THREE.Mesh(srcGeo, srcMat));"#,
         tool_profile_data = tool_profile.trim_end_matches(','),
         tool_radius = tool_radius,
         num_profile_samples = num_profile_samples,
-        origin_x = heightmap.origin_x,
-        origin_y = heightmap.origin_y,
-        cell_size_val = heightmap.cell_size,
-        stock_top_z = heightmap.stock_top_z,
-        z_range_val = (heightmap.stock_top_z - hm_bbox.min.z).max(1e-6),
+        origin_x = stock.z_grid.origin_u,
+        origin_y = stock.z_grid.origin_v,
+        cell_size_val = stock.z_grid.cell_size,
+        stock_top_z = stock.stock_bbox.max.z,
+        z_range_val = (stock.stock_bbox.max.z - hm_bbox.min.z).max(1e-6),
         anim_tp_data = anim_tp.trim_end_matches(','),
         anim_move_count = anim_move_count,
         annotations_js = annotations_js,
@@ -1278,11 +1280,11 @@ pub struct SimPhase<'a> {
 /// shows the final combined result.
 pub fn stacked_simulation_3d_html(
     phases: &[SimPhase],
-    heightmap: &Heightmap,
+    stock: &TriDexelStock,
     source_mesh: Option<&TriangleMesh>,
 ) -> String {
-    let hm_mesh = heightmap_to_mesh(heightmap);
-    let hm_bbox = heightmap.bbox();
+    let hm_mesh = dexel_stock_to_mesh(stock);
+    let hm_bbox = stock.stock_bbox;
 
     let center = hm_bbox.center();
     let extent = (hm_bbox.max.x - hm_bbox.min.x)
@@ -1442,14 +1444,14 @@ pub fn stacked_simulation_3d_html(
                     anim_move_count += 1;
                 }
                 MoveType::ArcCW { i: ai, j: aj, .. } => {
-                    let points = linearize_arc(start, end, ai, aj, true, heightmap.cell_size);
+                    let points = linearize_arc(start, end, ai, aj, true, stock.z_grid.cell_size);
                     for p in points.iter().skip(1) {
                         let _ = write!(anim_tp, "{:.3},{:.3},{:.3},1,", p.x, p.y, p.z);
                         anim_move_count += 1;
                     }
                 }
                 MoveType::ArcCCW { i: ai, j: aj, .. } => {
-                    let points = linearize_arc(start, end, ai, aj, false, heightmap.cell_size);
+                    let points = linearize_arc(start, end, ai, aj, false, stock.z_grid.cell_size);
                     for p in points.iter().skip(1) {
                         let _ = write!(anim_tp, "{:.3},{:.3},{:.3},1,", p.x, p.y, p.z);
                         anim_move_count += 1;
@@ -1790,9 +1792,9 @@ animate();
 </script>
 </body></html>"##,
         num_phases = phases.len(),
-        hm_rows = heightmap.rows,
-        hm_cols = heightmap.cols,
-        cell_size = heightmap.cell_size,
+        hm_rows = stock.z_grid.rows,
+        hm_cols = stock.z_grid.cols,
+        cell_size = stock.z_grid.cell_size,
         total_moves = total_moves,
         anim_moves = anim_move_count,
         total_cut = total_cut_dist,
@@ -1830,11 +1832,11 @@ scene.add(new THREE.Mesh(srcG,new THREE.MeshPhongMaterial({{
         lathe_profiles_js = lathe_profiles_js.trim_end_matches(','),
         phase_labels_js = phase_labels_js.trim_end_matches(','),
         num_profile_samples = num_profile_samples,
-        origin_x = heightmap.origin_x,
-        origin_y = heightmap.origin_y,
-        cell_size_val = heightmap.cell_size,
-        stock_top_z = heightmap.stock_top_z,
-        z_range_val = (heightmap.stock_top_z - hm_bbox.min.z).max(1e-6),
+        origin_x = stock.z_grid.origin_u,
+        origin_y = stock.z_grid.origin_v,
+        cell_size_val = stock.z_grid.cell_size,
+        stock_top_z = stock.stock_bbox.max.z,
+        z_range_val = (stock.stock_bbox.max.z - hm_bbox.min.z).max(1e-6),
         anim_tp_data = anim_tp.trim_end_matches(','),
         anim_move_count = anim_move_count,
         grid_size = extent * 1.2,

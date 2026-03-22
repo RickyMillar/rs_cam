@@ -22,7 +22,7 @@ use rs_cam_core::{
     ramp_finish::{CutDirection, RampFinishParams, ramp_finish_toolpath},
     rest::{RestParams, rest_machining_toolpath},
     scallop::{ScallopDirection, ScallopParams, scallop_toolpath},
-    simulation::{Heightmap, simulate_toolpath},
+    dexel_stock::{StockCutDirection, TriDexelStock},
     steep_shallow::{SteepShallowParams, steep_shallow_toolpath},
     tool::{
         BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill,
@@ -1185,17 +1185,18 @@ fn write_3d_view(
     if let Some(view_path) = view {
         let html = if simulate {
             debug!(resolution_mm = sim_res, "Running simulation");
-            let mut hm = Heightmap::from_stock(
+            let mut stock = TriDexelStock::from_stock(
                 mesh.bbox.min.x - cutter.radius(),
                 mesh.bbox.min.y - cutter.radius(),
                 mesh.bbox.max.x + cutter.radius(),
                 mesh.bbox.max.y + cutter.radius(),
+                mesh.bbox.min.z,
                 stock_top,
                 sim_res,
             );
-            simulate_toolpath(tp, cutter, &mut hm);
-            debug!(cols = hm.cols, rows = hm.rows, "Heightmap generated");
-            rs_cam_core::viz::simulation_3d_html(&hm, tp, Some(mesh), cutter, &[])
+            stock.simulate_toolpath(tp, cutter, StockCutDirection::FromTop);
+            debug!(cols = stock.z_grid.cols, rows = stock.z_grid.rows, "Simulation stock generated");
+            rs_cam_core::viz::simulation_3d_html(&stock, tp, Some(mesh), cutter, &[])
         } else {
             rs_cam_core::viz::toolpath_to_3d_html(mesh, tp)
         };
@@ -1226,10 +1227,10 @@ fn write_2d_view(
                 ),
                 max: rs_cam_core::geo::P3::new(tp_bbox.max.x + margin, tp_bbox.max.y + margin, 0.0),
             };
-            let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_res);
-            simulate_toolpath(tp, cutter, &mut hm);
-            debug!(cols = hm.cols, rows = hm.rows, "Heightmap generated");
-            rs_cam_core::viz::simulation_3d_html(&hm, tp, None, cutter, &[])
+            let mut stock = TriDexelStock::from_bounds(&sim_bbox, sim_res);
+            stock.simulate_toolpath(tp, cutter, StockCutDirection::FromTop);
+            debug!(cols = stock.z_grid.cols, rows = stock.z_grid.rows, "Simulation stock generated");
+            rs_cam_core::viz::simulation_3d_html(&stock, tp, None, cutter, &[])
         } else {
             rs_cam_core::viz::toolpath_standalone_3d_html(tp, None)
         };
@@ -1435,9 +1436,8 @@ fn main() -> Result<()> {
                             stock_top,
                         ),
                     };
-                    let mut hm = Heightmap::from_bounds(
+                    let mut stock = TriDexelStock::from_bounds(
                         &sim_bbox,
-                        Some(stock_top),
                         job_file.job.sim_resolution,
                     );
 
@@ -1449,13 +1449,13 @@ fn main() -> Result<()> {
 
                     // Simulate each phase with its own cutter
                     for phase in &job_result.phases {
-                        simulate_toolpath(&phase.toolpath, phase.cutter.as_ref(), &mut hm);
+                        stock.simulate_toolpath(&phase.toolpath, phase.cutter.as_ref(), StockCutDirection::FromTop);
                     }
                     debug!(
-                        cols = hm.cols,
-                        rows = hm.rows,
+                        cols = stock.z_grid.cols,
+                        rows = stock.z_grid.rows,
                         phases = job_result.phases.len(),
-                        "Heightmap generated"
+                        "Simulation stock generated"
                     );
 
                     // Try to load source mesh for overlay (from first STL-based operation)
@@ -1486,7 +1486,7 @@ fn main() -> Result<()> {
 
                     rs_cam_core::viz::stacked_simulation_3d_html(
                         &sim_phases,
-                        &hm,
+                        &stock,
                         source_mesh.as_ref(),
                     )
                 } else {
@@ -2133,15 +2133,15 @@ fn main() -> Result<()> {
                         prev_toolpath.moves.extend(prev_tp.moves);
                     }
 
-                    // Simulate both into the heightmap for final state
-                    let mut hm = Heightmap::from_bounds(&sim_bbox, Some(0.0), sim_resolution);
-                    simulate_toolpath(&prev_toolpath, prev_cutter.as_ref(), &mut hm);
-                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
+                    // Simulate both into the stock for final state
+                    let mut stock = TriDexelStock::from_bounds(&sim_bbox, sim_resolution);
+                    stock.simulate_toolpath(&prev_toolpath, prev_cutter.as_ref(), StockCutDirection::FromTop);
+                    stock.simulate_toolpath(&toolpath, cutter.as_ref(), StockCutDirection::FromTop);
                     debug!(
-                        cols = hm.cols,
-                        rows = hm.rows,
+                        cols = stock.z_grid.cols,
+                        rows = stock.z_grid.rows,
                         phases = 2,
-                        "Heightmap generated"
+                        "Simulation stock generated"
                     );
 
                     // Stacked viewer: animates roughing then rest
@@ -2162,7 +2162,7 @@ fn main() -> Result<()> {
                             label: format!("Rest ({:.2}mm {})", cutter.diameter(), tool),
                         },
                     ];
-                    rs_cam_core::viz::stacked_simulation_3d_html(&phases, &hm, None)
+                    rs_cam_core::viz::stacked_simulation_3d_html(&phases, &stock, None)
                 } else {
                     rs_cam_core::viz::toolpath_standalone_3d_html(&toolpath, None)
                 };
@@ -2266,17 +2266,18 @@ fn main() -> Result<()> {
             if let Some(view_path) = &view {
                 let html = if simulate {
                     debug!(resolution_mm = sim_resolution, "Running simulation");
-                    let mut hm = Heightmap::from_stock(
+                    let mut stock = TriDexelStock::from_stock(
                         mesh.bbox.min.x - cutter.radius(),
                         mesh.bbox.min.y - cutter.radius(),
                         mesh.bbox.max.x + cutter.radius(),
                         mesh.bbox.max.y + cutter.radius(),
+                        mesh.bbox.min.z,
                         stock_z,
                         sim_resolution,
                     );
-                    simulate_toolpath(&toolpath, cutter.as_ref(), &mut hm);
+                    stock.simulate_toolpath(&toolpath, cutter.as_ref(), StockCutDirection::FromTop);
                     rs_cam_core::viz::simulation_3d_html(
-                        &hm,
+                        &stock,
                         &toolpath,
                         Some(&mesh),
                         cutter.as_ref(),
