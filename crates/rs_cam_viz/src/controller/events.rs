@@ -411,87 +411,129 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub fn run_simulation_with_all(&mut self) {
-        let toolpaths: Vec<_> = self
-            .state
-            .job
-            .all_toolpaths()
-            .filter(|toolpath| toolpath.enabled)
-            .filter_map(|toolpath| {
-                let result = toolpath.result.as_ref()?;
+        // Simulation runs per-setup in local frame. A 2.5D heightmap can only
+        // model cuts from one direction, so each setup gets its own heightmap.
+        // For now, simulate the first setup that has computed toolpaths.
+        let setup = self.state.job.setups.iter().find(|s| {
+            s.toolpaths.iter().any(|tp| tp.enabled && tp.result.is_some())
+        });
+        let Some(setup) = setup else {
+            tracing::warn!("No computed toolpaths to simulate");
+            return;
+        };
+
+        let toolpaths: Vec<_> = setup
+            .toolpaths
+            .iter()
+            .filter(|tp| tp.enabled)
+            .filter_map(|tp| {
+                let result = tp.result.as_ref()?;
                 let tool = self
                     .state
                     .job
                     .tools
                     .iter()
-                    .find(|tool| tool.id == toolpath.tool_id)?
+                    .find(|t| t.id == tp.tool_id)?
                     .clone();
-                // Inverse-transform from setup-local to global for simulation
-                let tp = inverse_transform_toolpath(toolpath.id, &result.toolpath, &self.state.job);
-                Some((toolpath.id, toolpath.name.clone(), tp, tool))
+                // Toolpaths are already in this setup's local frame
+                Some((tp.id, tp.name.clone(), Arc::clone(&result.toolpath), tool))
             })
             .collect();
 
         if toolpaths.is_empty() {
-            tracing::warn!("No computed toolpaths to simulate");
-        } else {
-            // Simulation runs in global frame
-            let stock_bbox = self.state.job.stock.bbox();
-
-            if self.state.simulation.auto_resolution {
-                self.state.simulation.resolution =
-                    auto_resolution_for_tools(&toolpaths, &stock_bbox);
-            }
-
-            let model_mesh = self.state.job.models.iter().find_map(|m| m.mesh.clone());
-            self.compute.submit_simulation(SimulationRequest {
-                toolpaths,
-                stock_bbox,
-                stock_top_z: stock_bbox.max.z,
-                resolution: self.state.simulation.resolution,
-                model_mesh,
-            });
+            return;
         }
+
+        // Use setup's local stock bbox and transformed model mesh
+        let (w, d, h) = setup.effective_stock(&self.state.job.stock);
+        let stock_bbox = BoundingBox3 {
+            min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
+            max: rs_cam_core::geo::P3::new(w, d, h),
+        };
+
+        if self.state.simulation.auto_resolution {
+            self.state.simulation.resolution =
+                auto_resolution_for_tools(&toolpaths, &stock_bbox);
+        }
+
+        let model_mesh = self.state.job.models.iter().find_map(|m| {
+            m.mesh.as_ref().map(|mesh| {
+                Arc::new(crate::state::job::transform_mesh(
+                    mesh,
+                    setup,
+                    &self.state.job.stock,
+                ))
+            })
+        });
+
+        self.compute.submit_simulation(SimulationRequest {
+            toolpaths,
+            stock_bbox,
+            stock_top_z: stock_bbox.max.z,
+            resolution: self.state.simulation.resolution,
+            model_mesh,
+        });
     }
 
     pub fn run_simulation_with_ids(&mut self, ids: &[ToolpathId]) {
-        let toolpaths: Vec<_> = self
-            .state
-            .job
-            .all_toolpaths()
-            .filter(|toolpath| ids.contains(&toolpath.id))
-            .filter_map(|toolpath| {
-                let result = toolpath.result.as_ref()?;
+        // Find which setup contains these toolpaths
+        let setup = self.state.job.setups.iter().find(|s| {
+            s.toolpaths.iter().any(|tp| ids.contains(&tp.id))
+        });
+        let Some(setup) = setup else {
+            tracing::warn!("No computed toolpaths to simulate");
+            return;
+        };
+
+        let toolpaths: Vec<_> = setup
+            .toolpaths
+            .iter()
+            .filter(|tp| ids.contains(&tp.id))
+            .filter_map(|tp| {
+                let result = tp.result.as_ref()?;
                 let tool = self
                     .state
                     .job
                     .tools
                     .iter()
-                    .find(|tool| tool.id == toolpath.tool_id)?
+                    .find(|t| t.id == tp.tool_id)?
                     .clone();
-                let tp = inverse_transform_toolpath(toolpath.id, &result.toolpath, &self.state.job);
-                Some((toolpath.id, toolpath.name.clone(), tp, tool))
+                Some((tp.id, tp.name.clone(), Arc::clone(&result.toolpath), tool))
             })
             .collect();
 
         if toolpaths.is_empty() {
-            tracing::warn!("No computed toolpaths to simulate");
-        } else {
-            let stock_bbox = self.state.job.stock.bbox();
-
-            if self.state.simulation.auto_resolution {
-                self.state.simulation.resolution =
-                    auto_resolution_for_tools(&toolpaths, &stock_bbox);
-            }
-
-            let model_mesh = self.state.job.models.iter().find_map(|m| m.mesh.clone());
-            self.compute.submit_simulation(SimulationRequest {
-                toolpaths,
-                stock_bbox,
-                stock_top_z: stock_bbox.max.z,
-                resolution: self.state.simulation.resolution,
-                model_mesh,
-            });
+            return;
         }
+
+        let (w, d, h) = setup.effective_stock(&self.state.job.stock);
+        let stock_bbox = BoundingBox3 {
+            min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
+            max: rs_cam_core::geo::P3::new(w, d, h),
+        };
+
+        if self.state.simulation.auto_resolution {
+            self.state.simulation.resolution =
+                auto_resolution_for_tools(&toolpaths, &stock_bbox);
+        }
+
+        let model_mesh = self.state.job.models.iter().find_map(|m| {
+            m.mesh.as_ref().map(|mesh| {
+                Arc::new(crate::state::job::transform_mesh(
+                    mesh,
+                    setup,
+                    &self.state.job.stock,
+                ))
+            })
+        });
+
+        self.compute.submit_simulation(SimulationRequest {
+            toolpaths,
+            stock_bbox,
+            stock_top_z: stock_bbox.max.z,
+            resolution: self.state.simulation.resolution,
+            model_mesh,
+        });
     }
 
     pub fn request_collision_check(&mut self) {
@@ -927,27 +969,6 @@ impl<B: ComputeBackend> AppController<B> {
                 }
             }
         }
-    }
-}
-
-/// Calculate heightmap resolution from the smallest tool in the simulation.
-///
-/// Inverse-transform a toolpath from its setup's local frame to global coords.
-fn inverse_transform_toolpath(
-    tp_id: crate::state::toolpath::ToolpathId,
-    toolpath: &Arc<rs_cam_core::toolpath::Toolpath>,
-    job: &crate::state::job::JobState,
-) -> Arc<rs_cam_core::toolpath::Toolpath> {
-    let setup_id = job.setup_of_toolpath(tp_id);
-    let setup = setup_id.and_then(|sid| job.setups.iter().find(|s| s.id == sid));
-    if let Some(setup) = setup {
-        let mut tp = (**toolpath).clone();
-        for m in &mut tp.moves {
-            m.target = setup.inverse_transform_point(m.target, &job.stock);
-        }
-        Arc::new(tp)
-    } else {
-        Arc::clone(toolpath)
     }
 }
 
