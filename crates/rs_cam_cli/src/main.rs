@@ -8,6 +8,7 @@ use rs_cam_core::{
     adaptive3d::{Adaptive3dParams, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath_annotated},
     arcfit::fit_arcs,
     depth::{DepthStepping, depth_stepped_toolpath},
+    dexel_stock::{StockCutDirection, TriDexelStock},
     dressup::{
         LinkMoveParams, apply_dogbones, apply_entry, apply_link_moves, apply_tabs, even_tabs,
     },
@@ -22,7 +23,7 @@ use rs_cam_core::{
     ramp_finish::{CutDirection, RampFinishParams, ramp_finish_toolpath},
     rest::{RestParams, rest_machining_toolpath},
     scallop::{ScallopDirection, ScallopParams, scallop_toolpath},
-    dexel_stock::{StockCutDirection, TriDexelStock},
+    simulation_cut::{SimulationCutArtifact, SimulationCutIssueKind, SimulationCutTrace},
     steep_shallow::{SteepShallowParams, steep_shallow_toolpath},
     tool::{
         BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill,
@@ -60,6 +61,14 @@ enum Commands {
     Job {
         /// Path to the .toml job file
         input: PathBuf,
+
+        /// Enable cutting metrics analysis (requires simulate = true in job file)
+        #[arg(long)]
+        diagnostics: bool,
+
+        /// Write diagnostics JSON artifact to this path
+        #[arg(long)]
+        diagnostics_json: Option<PathBuf>,
     },
 
     /// Generate 3D finishing toolpath using drop-cutter algorithm
@@ -1195,7 +1204,11 @@ fn write_3d_view(
                 sim_res,
             );
             stock.simulate_toolpath(tp, cutter, StockCutDirection::FromTop);
-            debug!(cols = stock.z_grid.cols, rows = stock.z_grid.rows, "Simulation stock generated");
+            debug!(
+                cols = stock.z_grid.cols,
+                rows = stock.z_grid.rows,
+                "Simulation stock generated"
+            );
             rs_cam_core::viz::simulation_3d_html(&stock, tp, Some(mesh), cutter, &[])
         } else {
             rs_cam_core::viz::toolpath_to_3d_html(mesh, tp)
@@ -1229,7 +1242,11 @@ fn write_2d_view(
             };
             let mut stock = TriDexelStock::from_bounds(&sim_bbox, sim_res);
             stock.simulate_toolpath(tp, cutter, StockCutDirection::FromTop);
-            debug!(cols = stock.z_grid.cols, rows = stock.z_grid.rows, "Simulation stock generated");
+            debug!(
+                cols = stock.z_grid.cols,
+                rows = stock.z_grid.rows,
+                "Simulation stock generated"
+            );
             rs_cam_core::viz::simulation_3d_html(&stock, tp, None, cutter, &[])
         } else {
             rs_cam_core::viz::toolpath_standalone_3d_html(tp, None)
@@ -1238,6 +1255,92 @@ fn write_2d_view(
         info!(path = %view_path.display(), "Wrote 3D viewer");
     }
     Ok(())
+}
+
+/// Print a human-readable simulation diagnostics report to stderr.
+fn print_diagnostics_report(trace: &SimulationCutTrace, toolpath_labels: &[String]) {
+    eprintln!();
+    eprintln!("=== Simulation Diagnostics ===");
+    eprintln!();
+
+    for ts in &trace.toolpath_summaries {
+        let label = toolpath_labels
+            .get(ts.toolpath_id)
+            .map(|s| s.as_str())
+            .unwrap_or("unknown");
+        let air_runtime = trace.summary.total_runtime_s - ts.cutting_runtime_s - ts.rapid_runtime_s;
+        let air_pct = if ts.total_runtime_s > 1e-9 {
+            ts.air_cut_time_s / ts.total_runtime_s * 100.0
+        } else {
+            0.0
+        };
+
+        eprintln!("Toolpath: {}", label);
+        eprintln!(
+            "  Runtime: {:.1}s (cutting: {:.1}s, rapid: {:.1}s, air: {:.1}s)",
+            ts.total_runtime_s,
+            ts.cutting_runtime_s,
+            ts.rapid_runtime_s,
+            air_runtime.max(0.0),
+        );
+        eprintln!("  Air cut: {:.1}% of runtime", air_pct);
+        eprintln!("  Avg engagement: {:.2}", ts.average_engagement);
+        eprintln!(
+            "  Peak chipload: {:.3} mm/tooth",
+            ts.peak_chipload_mm_per_tooth
+        );
+        eprintln!("  Peak DOC: {:.1} mm", ts.peak_axial_doc_mm);
+        eprintln!("  MRR avg: {:.1} mm3/s", ts.average_mrr_mm3_s);
+
+        // Count issues for this toolpath
+        let air_issues = trace
+            .issues
+            .iter()
+            .filter(|i| i.toolpath_id == ts.toolpath_id && i.kind == SimulationCutIssueKind::AirCut)
+            .count();
+        let low_eng_issues = trace
+            .issues
+            .iter()
+            .filter(|i| {
+                i.toolpath_id == ts.toolpath_id && i.kind == SimulationCutIssueKind::LowEngagement
+            })
+            .count();
+        if air_issues > 0 || low_eng_issues > 0 {
+            let mut parts = Vec::new();
+            if air_issues > 0 {
+                parts.push(format!("{} air cuts", air_issues));
+            }
+            if low_eng_issues > 0 {
+                parts.push(format!("{} low engagement", low_eng_issues));
+            }
+            eprintln!("  Issues: {}", parts.join(", "));
+        }
+        eprintln!();
+    }
+
+    // Top hotspots by wasted time
+    if !trace.hotspots.is_empty() {
+        eprintln!("Top issues by wasted time:");
+        for (i, hs) in trace.hotspots.iter().take(10).enumerate() {
+            let kind_label = if hs.air_cut_time_s > hs.low_engagement_time_s {
+                "AirCut"
+            } else {
+                "LowEngagement"
+            };
+            let [x, y, z] = hs.representative_position;
+            eprintln!(
+                "  {}. {} at ({:.1}, {:.1}, {:.1}) -- {:.1}s wasted, engagement {:.2}",
+                i + 1,
+                kind_label,
+                x,
+                y,
+                z,
+                hs.wasted_runtime_s,
+                hs.average_engagement,
+            );
+        }
+        eprintln!();
+    }
 }
 
 fn toolpath_bbox(toolpath: &Toolpath) -> BoundingBox3 {
@@ -1287,14 +1390,25 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Job { input } => {
+        Commands::Job {
+            input,
+            diagnostics,
+            diagnostics_json,
+        } => {
             let job_path = input
                 .canonicalize()
                 .context(format!("Job file not found: {}", input.display()))?;
             let job_dir = job_path.parent().unwrap_or(Path::new("."));
             debug!(path = %job_path.display(), "Loading job file");
 
-            let job_file = job::parse_job_file(&job_path)?;
+            let mut job_file = job::parse_job_file(&job_path)?;
+            // CLI flags override TOML config
+            if diagnostics {
+                job_file.job.diagnostics = true;
+            }
+            if diagnostics_json.is_some() {
+                job_file.job.diagnostics_json = diagnostics_json;
+            }
             info!(
                 tools = job_file.tools.len(),
                 operations = job_file.operation.len(),
@@ -1436,10 +1550,8 @@ fn main() -> Result<()> {
                             stock_top,
                         ),
                     };
-                    let mut stock = TriDexelStock::from_bounds(
-                        &sim_bbox,
-                        job_file.job.sim_resolution,
-                    );
+                    let mut stock =
+                        TriDexelStock::from_bounds(&sim_bbox, job_file.job.sim_resolution);
 
                     debug!(
                         phases = job_result.phases.len(),
@@ -1449,7 +1561,11 @@ fn main() -> Result<()> {
 
                     // Simulate each phase with its own cutter
                     for phase in &job_result.phases {
-                        stock.simulate_toolpath(&phase.toolpath, phase.cutter.as_ref(), StockCutDirection::FromTop);
+                        stock.simulate_toolpath(
+                            &phase.toolpath,
+                            phase.cutter.as_ref(),
+                            StockCutDirection::FromTop,
+                        );
                     }
                     debug!(
                         cols = stock.z_grid.cols,
@@ -1494,6 +1610,89 @@ fn main() -> Result<()> {
                 };
                 std::fs::write(&view_path, &html).context("Failed to write 3D viewer file")?;
                 info!(path = %view_path.display(), "Wrote 3D viewer");
+            }
+
+            // Diagnostics: run metric simulation and print report
+            if job_file.job.diagnostics && job_file.job.simulate {
+                let tp_bbox = toolpath_bbox(toolpath);
+                let max_margin = job_result
+                    .phases
+                    .iter()
+                    .map(|p| p.cutter.radius())
+                    .fold(0.0_f64, f64::max);
+                let stock_top = job_file
+                    .operation
+                    .iter()
+                    .find_map(|op| op.stock_top_z)
+                    .unwrap_or(tp_bbox.max.z + 5.0);
+                let sim_bbox = BoundingBox3 {
+                    min: rs_cam_core::geo::P3::new(
+                        tp_bbox.min.x - max_margin,
+                        tp_bbox.min.y - max_margin,
+                        tp_bbox.min.z,
+                    ),
+                    max: rs_cam_core::geo::P3::new(
+                        tp_bbox.max.x + max_margin,
+                        tp_bbox.max.y + max_margin,
+                        stock_top,
+                    ),
+                };
+                let resolution = job_file.job.sim_resolution;
+                let sample_step = resolution;
+                let never_cancel = || false;
+                let mut diag_stock = TriDexelStock::from_bounds(&sim_bbox, resolution);
+
+                debug!("Running diagnostics metric simulation");
+
+                let mut all_samples = Vec::new();
+                let mut labels = Vec::new();
+                for (idx, phase) in job_result.phases.iter().enumerate() {
+                    labels.push(phase.label.clone());
+                    let rapid_feed = 3000.0_f64; // typical rapid rate for diagnostics
+                    match diag_stock.simulate_toolpath_with_metrics_with_cancel(
+                        &phase.toolpath,
+                        phase.cutter.as_ref(),
+                        StockCutDirection::FromTop,
+                        idx,
+                        phase.spindle_speed,
+                        phase.flute_count,
+                        rapid_feed,
+                        sample_step,
+                        None,
+                        &never_cancel,
+                    ) {
+                        Ok(samples) => all_samples.extend(samples),
+                        Err(_) => {
+                            eprintln!("Diagnostics simulation cancelled for phase {}", idx);
+                        }
+                    }
+                }
+
+                let trace = SimulationCutTrace::from_samples(sample_step, all_samples);
+                print_diagnostics_report(&trace, &labels);
+
+                if let Some(json_path) = &job_file.job.diagnostics_json {
+                    let json_out = if json_path.is_absolute() {
+                        json_path.clone()
+                    } else {
+                        job_dir.join(json_path)
+                    };
+                    let artifact = SimulationCutArtifact::new(
+                        resolution,
+                        sample_step,
+                        [sim_bbox.min.x, sim_bbox.min.y, sim_bbox.min.z],
+                        [sim_bbox.max.x, sim_bbox.max.y, sim_bbox.max.z],
+                        (0..job_result.phases.len()).collect(),
+                        serde_json::json!({"source": "cli_diagnostics"}),
+                        trace,
+                    );
+                    let json = serde_json::to_string_pretty(&artifact)
+                        .context("Failed to serialize diagnostics artifact")?;
+                    std::fs::write(&json_out, &json).context("Failed to write diagnostics JSON")?;
+                    info!(path = %json_out.display(), "Wrote diagnostics JSON");
+                }
+            } else if job_file.job.diagnostics && !job_file.job.simulate {
+                eprintln!("Warning: --diagnostics requires simulate = true in the job file");
             }
         }
 
@@ -2135,7 +2334,11 @@ fn main() -> Result<()> {
 
                     // Simulate both into the stock for final state
                     let mut stock = TriDexelStock::from_bounds(&sim_bbox, sim_resolution);
-                    stock.simulate_toolpath(&prev_toolpath, prev_cutter.as_ref(), StockCutDirection::FromTop);
+                    stock.simulate_toolpath(
+                        &prev_toolpath,
+                        prev_cutter.as_ref(),
+                        StockCutDirection::FromTop,
+                    );
                     stock.simulate_toolpath(&toolpath, cutter.as_ref(), StockCutDirection::FromTop);
                     debug!(
                         cols = stock.z_grid.cols,

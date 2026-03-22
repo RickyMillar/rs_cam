@@ -84,6 +84,9 @@ pub struct JobConfig {
     pub simulate: bool,
     #[serde(default = "default_sim_resolution")]
     pub sim_resolution: f64,
+    #[serde(default)]
+    pub diagnostics: bool,
+    pub diagnostics_json: Option<PathBuf>,
 }
 
 fn default_post() -> String {
@@ -105,6 +108,8 @@ pub struct ToolDef {
     pub tool_type: String,
     pub number: Option<u32>,
     pub diameter: f64,
+    /// Number of cutting flutes (default: 2). Used for chipload calculation in diagnostics.
+    pub flute_count: Option<u32>,
     /// Corner radius for bull nose
     pub corner_radius: Option<f64>,
     /// Included angle in degrees for V-bit
@@ -272,6 +277,8 @@ pub struct OpResult {
     pub spindle_speed: u32,
     pub tool_number: Option<u32>,
     pub coolant: CoolantMode,
+    /// Number of cutting flutes on the tool (for chipload calculation).
+    pub flute_count: u32,
     /// Which setup this operation belongs to (None = default/single setup).
     pub setup_name: Option<String>,
 }
@@ -637,6 +644,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
         );
         // Build a fresh cutter for the phase (the original was consumed above)
         let phase_cutter = build_tool(tool_def)?;
+        let flute_count = tool_def.flute_count.unwrap_or(2);
         phases.push(OpResult {
             toolpath: tp,
             cutter: phase_cutter,
@@ -644,6 +652,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
             spindle_speed,
             tool_number,
             coolant: op.coolant,
+            flute_count,
             setup_name: op.setup.clone(),
         });
     }
@@ -664,6 +673,7 @@ mod tests {
             tool_type: "flat".into(),
             number: None,
             diameter: 6.0,
+            flute_count: None,
             corner_radius: None,
             included_angle: None,
             taper_angle: None,
@@ -680,6 +690,7 @@ mod tests {
             tool_type: "ball".into(),
             number: None,
             diameter: 10.0,
+            flute_count: None,
             corner_radius: None,
             included_angle: None,
             taper_angle: None,
@@ -699,6 +710,7 @@ mod tests {
             tool_type: "tapered_ball".into(),
             number: None,
             diameter: 6.0,
+            flute_count: None,
             corner_radius: None,
             included_angle: None,
             taper_angle: Some(10.0),
