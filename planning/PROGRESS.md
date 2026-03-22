@@ -22,13 +22,50 @@
 
 ## Current priorities
 
+- **Tri-dexel simulation** — replace the 2.5D heightmap with a segment-based volumetric representation to enable multi-setup stock removal simulation. Design doc: `architecture/TRI_DEXEL_SIMULATION.md`, implementation plan: `planning/VOXEL_SIM_DESIGN.md`
 - keep public docs aligned with the actual code surface
 - preserve explicit attribution for algorithms, datasets, and runtime assets
-- focus remaining work on user-facing gaps rather than structural cleanup
 - maintain the lint/test gate as the default merge bar
+
+## Recent work (2026-03-22)
+
+### Workspace UX redesign — multi-setup coordinate frames
+
+Unified the coordinate frame pipeline so all toolpaths are generated and
+displayed in setup-local coordinates. Previously, identity setups (Top+Deg0)
+generated in global coords while non-identity setups used local, causing
+intermittent alignment bugs.
+
+Key changes:
+- Generation always transforms mesh/stock to local frame (even for identity setups)
+- All workspaces (including Simulation) display in the active setup's local frame
+- Per-workspace display rules: solid stock in Setup only, model hidden in Simulation, etc.
+- Setup panel shows effective stock dimensions for active orientation
+- "Toolpaths use fresh stock" badge on non-first setups
+
+### Multi-setup simulation — 2.5D heightmap limitation discovered
+
+The 2.5D heightmap can only model cuts from one direction (top-down).
+Attempting to simulate flipped setups on one heightmap causes gouging:
+bottom cuts are misinterpreted as deep top-to-bottom cuts. This is a
+fundamental data structure limitation, not a transform bug.
+
+Current workaround: each setup simulates independently in its own local
+frame with fresh stock. Correct for single-setup and same-orientation
+multi-setup. Cross-setup material carry-forward deferred to tri-dexel.
+
+### Tri-dexel simulation design
+
+Completed research and design for replacing the heightmap with a tri-dexel
+representation. Three orthogonal grids of ray segments (Z, X, Y) handle
+cuts from any cardinal direction natively. SmallVec fast path keeps
+single-setup performance within 20% of the current heightmap. Six-phase
+implementation plan from core data types through multi-setup carry-forward.
+See `architecture/TRI_DEXEL_SIMULATION.md`.
 
 ## Known open work
 
+- **tri-dexel implementation** (6 phases, see `planning/VOXEL_SIM_DESIGN.md`)
 - emit per-operation manual pre/post G-code in export
 - wire profile controller compensation (`G41` / `G42`)
 - surface rapid-collision rendering and simulation deviation coloring
