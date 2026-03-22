@@ -1099,6 +1099,27 @@ fn draw_toolpath_panel(
         );
     }
 
+    // Stock source toggle
+    ui.add_space(8.0);
+    {
+        let mut use_remaining = entry.stock_source == StockSource::FromRemainingStock;
+        let resp = ui
+            .checkbox(&mut use_remaining, "Use remaining stock")
+            .on_hover_text(
+                "When enabled, prior operations in this setup are simulated to determine \
+                 remaining material. The toolpath will skip air cuts and adapt to the \
+                 actual stock state.",
+            );
+        if resp.changed() {
+            entry.stock_source = if use_remaining {
+                StockSource::FromRemainingStock
+            } else {
+                StockSource::Fresh
+            };
+            entry.stale_since = Some(std::time::Instant::now());
+        }
+    }
+
     ui.add_space(8.0);
     ui.label(
         egui::RichText::new("Cutting Parameters")
