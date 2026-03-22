@@ -44,200 +44,223 @@ pub(super) fn require_mesh(req: &ComputeRequest) -> Result<(&TriangleMesh, Spati
     Ok((mesh, index))
 }
 
+/// Identifiers for a traced dressup step.
+struct DressupTraceInfo<'a> {
+    debug_key: &'a str,
+    debug_label: &'a str,
+    kind: rs_cam_core::semantic_trace::ToolpathSemanticKind,
+    semantic_label: &'a str,
+}
+
+/// Apply a dressup transformation with debug and semantic tracing boilerplate.
+///
+/// `info` names the debug span and semantic trace item.
+/// `set_params` configures operation-specific parameters on the semantic scope.
+/// `transform` receives the current toolpath and returns the transformed toolpath.
+fn apply_dressup_with_tracing(
+    tp: Toolpath,
+    debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
+    semantic: Option<&rs_cam_core::semantic_trace::ToolpathSemanticContext>,
+    info: DressupTraceInfo<'_>,
+    set_params: impl FnOnce(&rs_cam_core::semantic_trace::ToolpathSemanticScope),
+    transform: impl FnOnce(&Toolpath) -> Toolpath,
+) -> Toolpath {
+    let debug_scope = debug.map(|ctx| ctx.start_span(info.debug_key, info.debug_label));
+    let debug_span_id = debug_scope.as_ref().map(|scope| scope.id());
+    let semantic_scope = semantic.map(|ctx| {
+        let scope = ctx.start_item(info.kind, info.semantic_label);
+        if let Some(span_id) = debug_span_id {
+            scope.set_debug_span_id(span_id);
+        }
+        set_params(&scope);
+        scope
+    });
+    let result = transform(&tp);
+    if let Some(scope) = semantic_scope.as_ref() {
+        scope.bind_to_toolpath(&result, 0, result.moves.len());
+    }
+    if let Some(scope) = debug_scope.as_ref()
+        && !result.moves.is_empty()
+    {
+        scope.set_move_range(0, result.moves.len() - 1);
+    }
+    result
+}
+
 pub(super) fn apply_dressups(
     mut tp: Toolpath,
     req: &ComputeRequest,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
     semantic: Option<&rs_cam_core::semantic_trace::ToolpathSemanticContext>,
 ) -> Toolpath {
+    use rs_cam_core::semantic_trace::ToolpathSemanticKind;
+
     let cfg = &req.dressups;
     let tool = &req.tool;
     let safe_z = effective_safe_z(req);
 
     match cfg.entry_style {
         DressupEntryStyle::Ramp => {
-            let debug_scope = debug.map(|ctx| ctx.start_span("entry_style", "Ramp entry"));
-            let debug_span_id = debug_scope.as_ref().map(|scope| scope.id());
-            let semantic_scope = semantic.map(|ctx| {
-                let scope = ctx.start_item(
-                    rs_cam_core::semantic_trace::ToolpathSemanticKind::Entry,
-                    "Ramp entry",
-                );
-                if let Some(span_id) = debug_span_id {
-                    scope.set_debug_span_id(span_id);
-                }
-                scope.set_param("kind", "ramp");
-                scope.set_param("max_angle_deg", cfg.ramp_angle);
-                scope
-            });
-            tp = apply_entry(
-                &tp,
-                CoreEntryStyle::Ramp {
-                    max_angle_deg: cfg.ramp_angle,
+            let ramp_angle = cfg.ramp_angle;
+            let tool_radius = tool.diameter / 2.0;
+            tp = apply_dressup_with_tracing(
+                tp,
+                debug,
+                semantic,
+                DressupTraceInfo {
+                    debug_key: "entry_style",
+                    debug_label: "Ramp entry",
+                    kind: ToolpathSemanticKind::Entry,
+                    semantic_label: "Ramp entry",
                 },
-                tool.diameter / 2.0,
+                |scope| {
+                    scope.set_param("kind", "ramp");
+                    scope.set_param("max_angle_deg", ramp_angle);
+                },
+                |tp| {
+                    apply_entry(
+                        tp,
+                        CoreEntryStyle::Ramp {
+                            max_angle_deg: ramp_angle,
+                        },
+                        tool_radius,
+                    )
+                },
             );
-            if let Some(scope) = semantic_scope.as_ref() {
-                scope.bind_to_toolpath(&tp, 0, tp.moves.len());
-            }
-            if let Some(scope) = debug_scope.as_ref()
-                && !tp.moves.is_empty()
-            {
-                scope.set_move_range(0, tp.moves.len() - 1);
-            }
         }
         DressupEntryStyle::Helix => {
-            let debug_scope = debug.map(|ctx| ctx.start_span("entry_style", "Helix entry"));
-            let debug_span_id = debug_scope.as_ref().map(|scope| scope.id());
-            let semantic_scope = semantic.map(|ctx| {
-                let scope = ctx.start_item(
-                    rs_cam_core::semantic_trace::ToolpathSemanticKind::Entry,
-                    "Helix entry",
-                );
-                if let Some(span_id) = debug_span_id {
-                    scope.set_debug_span_id(span_id);
-                }
-                scope.set_param("kind", "helix");
-                scope.set_param("radius", cfg.helix_radius);
-                scope.set_param("pitch", cfg.helix_pitch);
-                scope
-            });
-            tp = apply_entry(
-                &tp,
-                CoreEntryStyle::Helix {
-                    radius: cfg.helix_radius,
-                    pitch: cfg.helix_pitch,
+            let helix_radius = cfg.helix_radius;
+            let helix_pitch = cfg.helix_pitch;
+            let tool_radius = tool.diameter / 2.0;
+            tp = apply_dressup_with_tracing(
+                tp,
+                debug,
+                semantic,
+                DressupTraceInfo {
+                    debug_key: "entry_style",
+                    debug_label: "Helix entry",
+                    kind: ToolpathSemanticKind::Entry,
+                    semantic_label: "Helix entry",
                 },
-                tool.diameter / 2.0,
+                |scope| {
+                    scope.set_param("kind", "helix");
+                    scope.set_param("radius", helix_radius);
+                    scope.set_param("pitch", helix_pitch);
+                },
+                |tp| {
+                    apply_entry(
+                        tp,
+                        CoreEntryStyle::Helix {
+                            radius: helix_radius,
+                            pitch: helix_pitch,
+                        },
+                        tool_radius,
+                    )
+                },
             );
-            if let Some(scope) = semantic_scope.as_ref() {
-                scope.bind_to_toolpath(&tp, 0, tp.moves.len());
-            }
-            if let Some(scope) = debug_scope.as_ref()
-                && !tp.moves.is_empty()
-            {
-                scope.set_move_range(0, tp.moves.len() - 1);
-            }
         }
         DressupEntryStyle::None => {}
     }
     if cfg.dogbone {
-        let debug_scope = debug.map(|ctx| ctx.start_span("dogbones", "Apply dogbones"));
-        let debug_span_id = debug_scope.as_ref().map(|scope| scope.id());
-        let semantic_scope = semantic.map(|ctx| {
-            let scope = ctx.start_item(
-                rs_cam_core::semantic_trace::ToolpathSemanticKind::Dressup,
-                "Dogbones",
-            );
-            if let Some(span_id) = debug_span_id {
-                scope.set_debug_span_id(span_id);
-            }
-            scope.set_param("angle_deg", cfg.dogbone_angle);
-            scope
-        });
-        tp = apply_dogbones(&tp, tool.diameter / 2.0, cfg.dogbone_angle);
-        if let Some(scope) = semantic_scope.as_ref() {
-            scope.bind_to_toolpath(&tp, 0, tp.moves.len());
-        }
-        if let Some(scope) = debug_scope.as_ref()
-            && !tp.moves.is_empty()
-        {
-            scope.set_move_range(0, tp.moves.len() - 1);
-        }
+        let tool_radius = tool.diameter / 2.0;
+        let angle = cfg.dogbone_angle;
+        tp = apply_dressup_with_tracing(
+            tp,
+            debug,
+            semantic,
+            DressupTraceInfo {
+                debug_key: "dogbones",
+                debug_label: "Apply dogbones",
+                kind: ToolpathSemanticKind::Dressup,
+                semantic_label: "Dogbones",
+            },
+            |scope| {
+                scope.set_param("angle_deg", angle);
+            },
+            |tp| apply_dogbones(tp, tool_radius, angle),
+        );
     }
     if cfg.lead_in_out {
-        let debug_scope = debug.map(|ctx| ctx.start_span("lead_in_out", "Apply lead in/out"));
-        let debug_span_id = debug_scope.as_ref().map(|scope| scope.id());
-        let semantic_scope = semantic.map(|ctx| {
-            let scope = ctx.start_item(
-                rs_cam_core::semantic_trace::ToolpathSemanticKind::Dressup,
-                "Lead in/out",
-            );
-            if let Some(span_id) = debug_span_id {
-                scope.set_debug_span_id(span_id);
-            }
-            scope.set_param("radius", cfg.lead_radius);
-            scope
-        });
-        tp = apply_lead_in_out(&tp, cfg.lead_radius);
-        if let Some(scope) = semantic_scope.as_ref() {
-            scope.bind_to_toolpath(&tp, 0, tp.moves.len());
-        }
-        if let Some(scope) = debug_scope.as_ref()
-            && !tp.moves.is_empty()
-        {
-            scope.set_move_range(0, tp.moves.len() - 1);
-        }
+        let radius = cfg.lead_radius;
+        tp = apply_dressup_with_tracing(
+            tp,
+            debug,
+            semantic,
+            DressupTraceInfo {
+                debug_key: "lead_in_out",
+                debug_label: "Apply lead in/out",
+                kind: ToolpathSemanticKind::Dressup,
+                semantic_label: "Lead in/out",
+            },
+            |scope| {
+                scope.set_param("radius", radius);
+            },
+            |tp| apply_lead_in_out(tp, radius),
+        );
     }
     if cfg.link_moves {
-        let debug_scope = debug.map(|ctx| ctx.start_span("link_moves", "Apply link moves"));
-        let debug_span_id = debug_scope.as_ref().map(|scope| scope.id());
-        let semantic_scope = semantic.map(|ctx| {
-            let scope = ctx.start_item(
-                rs_cam_core::semantic_trace::ToolpathSemanticKind::Dressup,
-                "Link moves",
-            );
-            if let Some(span_id) = debug_span_id {
-                scope.set_debug_span_id(span_id);
-            }
-            scope.set_param("max_link_distance", cfg.link_max_distance);
-            scope.set_param("link_feed_rate", cfg.link_feed_rate);
-            scope
-        });
-        tp = apply_link_moves(
-            &tp,
-            &LinkMoveParams {
-                max_link_distance: cfg.link_max_distance,
-                link_feed_rate: cfg.link_feed_rate,
-                safe_z_threshold: safe_z * 0.9,
+        let max_dist = cfg.link_max_distance;
+        let link_feed = cfg.link_feed_rate;
+        let sz = safe_z;
+        tp = apply_dressup_with_tracing(
+            tp,
+            debug,
+            semantic,
+            DressupTraceInfo {
+                debug_key: "link_moves",
+                debug_label: "Apply link moves",
+                kind: ToolpathSemanticKind::Dressup,
+                semantic_label: "Link moves",
+            },
+            |scope| {
+                scope.set_param("max_link_distance", max_dist);
+                scope.set_param("link_feed_rate", link_feed);
+            },
+            |tp| {
+                apply_link_moves(
+                    tp,
+                    &LinkMoveParams {
+                        max_link_distance: max_dist,
+                        link_feed_rate: link_feed,
+                        safe_z_threshold: sz * 0.9,
+                    },
+                )
             },
         );
-        if let Some(scope) = semantic_scope.as_ref() {
-            scope.bind_to_toolpath(&tp, 0, tp.moves.len());
-        }
-        if let Some(scope) = debug_scope.as_ref()
-            && !tp.moves.is_empty()
-        {
-            scope.set_move_range(0, tp.moves.len() - 1);
-        }
     }
     if cfg.arc_fitting {
-        let debug_scope = debug.map(|ctx| ctx.start_span("arc_fit", "Fit arcs"));
-        let debug_span_id = debug_scope.as_ref().map(|scope| scope.id());
-        let semantic_scope = semantic.map(|ctx| {
-            let scope = ctx.start_item(
-                rs_cam_core::semantic_trace::ToolpathSemanticKind::Optimization,
-                "Arc fitting",
-            );
-            if let Some(span_id) = debug_span_id {
-                scope.set_debug_span_id(span_id);
-            }
-            scope.set_param("tolerance", cfg.arc_tolerance);
-            scope
-        });
-        tp = fit_arcs(&tp, cfg.arc_tolerance);
-        if let Some(scope) = semantic_scope.as_ref() {
-            scope.bind_to_toolpath(&tp, 0, tp.moves.len());
-        }
-        if let Some(scope) = debug_scope.as_ref()
-            && !tp.moves.is_empty()
-        {
-            scope.set_move_range(0, tp.moves.len() - 1);
-        }
+        let tolerance = cfg.arc_tolerance;
+        tp = apply_dressup_with_tracing(
+            tp,
+            debug,
+            semantic,
+            DressupTraceInfo {
+                debug_key: "arc_fit",
+                debug_label: "Fit arcs",
+                kind: ToolpathSemanticKind::Optimization,
+                semantic_label: "Arc fitting",
+            },
+            |scope| {
+                scope.set_param("tolerance", tolerance);
+            },
+            |tp| fit_arcs(tp, tolerance),
+        );
     }
     if cfg.feed_optimization {
-        let debug_scope = debug.map(|ctx| ctx.start_span("feed_optimization", "Optimize feeds"));
+        let max_rate = cfg.feed_max_rate;
+        let ramp_rate = cfg.feed_ramp_rate;
+        // Feed optimization needs a mutable heightmap and special error handling,
+        // so we use the tracing helper for scope management but handle the transform inline.
+        let debug_scope =
+            debug.map(|ctx| ctx.start_span("feed_optimization", "Optimize feeds"));
         let debug_span_id = debug_scope.as_ref().map(|scope| scope.id());
         let semantic_scope = semantic.map(|ctx| {
-            let scope = ctx.start_item(
-                rs_cam_core::semantic_trace::ToolpathSemanticKind::Optimization,
-                "Feed optimization",
-            );
+            let scope = ctx.start_item(ToolpathSemanticKind::Optimization, "Feed optimization");
             if let Some(span_id) = debug_span_id {
                 scope.set_debug_span_id(span_id);
             }
-            scope.set_param("max_feed_rate", cfg.feed_max_rate);
-            scope.set_param("ramp_rate", cfg.feed_ramp_rate);
+            scope.set_param("max_feed_rate", max_rate);
+            scope.set_param("ramp_rate", ramp_rate);
             scope
         });
         match feed_optimization_heightmap(req) {
@@ -253,9 +276,9 @@ pub(super) fn apply_dressups(
                 let cutter = build_cutter(tool);
                 let params = FeedOptParams {
                     nominal_feed_rate: nominal,
-                    max_feed_rate: cfg.feed_max_rate,
+                    max_feed_rate: max_rate,
                     min_feed_rate: nominal * 0.5,
-                    ramp_rate: cfg.feed_ramp_rate,
+                    ramp_rate,
                     air_cut_threshold: 0.05,
                 };
                 tp = optimize_feed_rates(&tp, cutter.as_ref(), &mut hm, &params);
@@ -277,28 +300,22 @@ pub(super) fn apply_dressups(
         }
     }
     if cfg.optimize_rapid_order {
-        let debug_scope = debug.map(|ctx| ctx.start_span("rapid_order", "Optimize rapid order"));
-        let debug_span_id = debug_scope.as_ref().map(|scope| scope.id());
-        let semantic_scope = semantic.map(|ctx| {
-            let scope = ctx.start_item(
-                rs_cam_core::semantic_trace::ToolpathSemanticKind::Optimization,
-                "Rapid ordering",
-            );
-            if let Some(span_id) = debug_span_id {
-                scope.set_debug_span_id(span_id);
-            }
-            scope.set_param("safe_z", safe_z);
-            scope
-        });
-        tp = rs_cam_core::tsp::optimize_rapid_order(&tp, safe_z);
-        if let Some(scope) = semantic_scope.as_ref() {
-            scope.bind_to_toolpath(&tp, 0, tp.moves.len());
-        }
-        if let Some(scope) = debug_scope.as_ref()
-            && !tp.moves.is_empty()
-        {
-            scope.set_move_range(0, tp.moves.len() - 1);
-        }
+        let sz = safe_z;
+        tp = apply_dressup_with_tracing(
+            tp,
+            debug,
+            semantic,
+            DressupTraceInfo {
+                debug_key: "rapid_order",
+                debug_label: "Optimize rapid order",
+                kind: ToolpathSemanticKind::Optimization,
+                semantic_label: "Rapid ordering",
+            },
+            |scope| {
+                scope.set_param("safe_z", sz);
+            },
+            |tp| rs_cam_core::tsp::optimize_rapid_order(tp, sz),
+        );
     }
     tp
 }

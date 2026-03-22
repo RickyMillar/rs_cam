@@ -4,6 +4,12 @@ use crate::state::job::{FixtureId, JobState, KeepOutId, SetupId};
 use crate::state::toolpath::ToolpathId;
 use rs_cam_core::geo::{P3, V3};
 
+/// Screen-space pick threshold for point-like markers (collision dots, pins).
+const PICK_THRESHOLD_POINT: f32 = 12.0;
+/// Screen-space pick threshold for toolpath line segments (slightly larger
+/// because lines are thin and harder to click precisely).
+const PICK_THRESHOLD_TOOLPATH: f32 = 15.0;
+
 /// The result of a viewport pick operation.
 #[derive(Debug, Clone)]
 pub enum PickHit {
@@ -141,7 +147,7 @@ pub fn pick(
 }
 
 fn pick_collision_markers(ctx: &PickContext<'_>, positions: &[[f32; 3]]) -> Option<PickHit> {
-    let threshold = 12.0f32;
+    let threshold = PICK_THRESHOLD_POINT;
     let mut best_dist = threshold;
     let mut best_idx = None;
 
@@ -164,7 +170,7 @@ fn pick_collision_markers(ctx: &PickContext<'_>, positions: &[[f32; 3]]) -> Opti
 }
 
 fn pick_alignment_pins(ctx: &PickContext<'_>, job: &JobState) -> Option<PickHit> {
-    let threshold = 12.0f32;
+    let threshold = PICK_THRESHOLD_POINT;
     let mut best_dist = threshold;
     let mut best_hit = None;
     // Pin coords are stock-relative; in the local frame (Top/Deg0) the stock
@@ -195,7 +201,7 @@ fn pick_toolpaths(
     job: &JobState,
     isolate_toolpath: Option<ToolpathId>,
 ) -> Option<PickHit> {
-    let threshold = 15.0f32;
+    let threshold = PICK_THRESHOLD_TOOLPATH;
     let mut best_dist = threshold;
     let mut best_id = None;
 

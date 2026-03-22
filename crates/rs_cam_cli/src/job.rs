@@ -173,7 +173,9 @@ pub struct OperationDef {
     // 3D adaptive-specific
     pub stock_top_z: Option<f64>,
     pub stock_to_leave: Option<f64>,
-    pub entry_style: Option<String>,
+    /// Entry style for 3D ops. Accepts both `entry` and legacy `entry_style`.
+    #[serde(alias = "entry_style")]
+    pub entry_3d: Option<String>,
     pub fine_stepdown: Option<f64>,
     pub detect_flat_areas: Option<bool>,
     pub max_stay_down_dist: Option<f64>,
@@ -525,7 +527,14 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                     "Adaptive3d STL details"
                 );
 
-                let entry = match op.entry_style.as_deref().unwrap_or("plunge") {
+                // Use entry_3d (supports legacy alias `entry_style`), then fall
+                // back to the shared `entry` field for backward-compat.
+                let entry_str = op
+                    .entry_3d
+                    .as_deref()
+                    .or(op.entry.as_deref())
+                    .unwrap_or("plunge");
+                let entry = match entry_str {
                     "helix" => EntryStyle3d::Helix {
                         radius: tool_radius * 0.8,
                         pitch: 1.0,
