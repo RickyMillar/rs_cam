@@ -216,29 +216,24 @@ impl EnrichedMesh {
             polygons.push(self.face_boundary_as_polygon(id)?);
         }
 
-        // Simple union: merge all exteriors into one polygon.
-        // For a proper union we'd use a boolean operation, but for the common case
-        // of adjacent coplanar faces, concatenating boundaries works as a starting point.
-        // TODO: use geo boolean union for proper multi-face polygon merging
-        if polygons.len() == 1 {
-            return Some(polygons.remove(0));
+        // Boolean union of multiple face polygons using the geo crate.
+        use geo::BooleanOps;
+
+        let mut result_geo = polygons[0].to_geo_polygon();
+        for poly in &polygons[1..] {
+            let other = poly.to_geo_polygon();
+            let union = result_geo.union(&other);
+            // BooleanOps returns a MultiPolygon; take the largest polygon
+            if let Some(largest) = union.iter().max_by(|a, b| {
+                geo::Area::unsigned_area(*a)
+                    .partial_cmp(&geo::Area::unsigned_area(*b))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }) {
+                result_geo = largest.clone();
+            }
         }
 
-        // For now, compute the convex-hull-like bounding polygon from all exterior points.
-        // This is a simplification — proper face union requires boolean ops.
-        let mut all_exterior_pts: Vec<P2> = Vec::new();
-        let mut all_holes: Vec<Vec<P2>> = Vec::new();
-        for poly in &polygons {
-            all_exterior_pts.extend_from_slice(&poly.exterior);
-            all_holes.extend(poly.holes.iter().cloned());
-        }
-
-        // Use the first polygon's exterior as the boundary if faces are adjacent.
-        // This is intentionally simple for v1 — real polygon union is Phase 2 work.
-        Some(Polygon2 {
-            exterior: all_exterior_pts,
-            holes: all_holes,
-        })
+        Some(Polygon2::from_geo_polygon(&result_geo))
     }
 }
 
