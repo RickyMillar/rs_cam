@@ -852,9 +852,10 @@ impl RsCamApp {
                 }
             }
 
+            // Render stock-level alignment pins (visible in all setups).
             let mut pin_vertices = Vec::new();
             for setup in &active_setups {
-                for pin in &setup.alignment_pins {
+                for pin in &job.stock.alignment_pins {
                     let radius = (pin.diameter / 2.0) as f32;
                     // Pin is defined in global frame at stock top — transform to local
                     let stock_top = job.stock.origin_z + job.stock.z;
@@ -1272,8 +1273,8 @@ impl RsCamApp {
             ) => {
                 self.controller.state_mut().selection = Selection::KeepOut(setup_id, keep_out_id);
             }
-            (Workspace::Setup, PickHit::AlignmentPin { setup_id, .. }) => {
-                self.controller.state_mut().selection = Selection::Setup(setup_id);
+            (Workspace::Setup, PickHit::AlignmentPin { .. }) => {
+                // Pins are stock-level; selecting a pin keeps the current setup selected.
             }
             (_, PickHit::StockFace { .. }) => {
                 self.controller.state_mut().selection = Selection::Stock;

@@ -143,7 +143,7 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &
 
                 let fixture_count = setup.fixtures.len();
                 let keepout_count = setup.keep_out_zones.len();
-                let pin_count = setup.alignment_pins.len();
+                let pin_count = state.job.stock.alignment_pins.len();
 
                 if fixture_count > 0 {
                     chip(

@@ -74,7 +74,8 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .iter_mut()
                 .find(|setup| setup.id == setup_id)
             {
-                setup::draw(ui, setup_id, setup_state, events);
+                let pin_count = state.job.stock.alignment_pins.len();
+                setup::draw(ui, setup_id, setup_state, pin_count, events);
             }
         }
         Selection::Fixture(setup_id, fixture_id) => {

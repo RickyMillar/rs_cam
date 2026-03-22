@@ -497,15 +497,7 @@ impl ProjectSetupSection {
             xy_datum: setup.datum.xy_method.to_key(),
             z_datum: setup.datum.z_method.to_key(),
             datum_notes: setup.datum.notes.clone(),
-            alignment_pins: setup
-                .alignment_pins
-                .iter()
-                .map(|pin| ProjectPinSection {
-                    x: pin.x,
-                    y: pin.y,
-                    diameter: pin.diameter,
-                })
-                .collect(),
+            alignment_pins: Vec::new(), // pins now live on StockConfig
             fixtures: setup
                 .fixtures
                 .iter()
@@ -605,6 +597,30 @@ fn load_typed_project(path: &Path, project: ProjectFile) -> Result<LoadedProject
     let mut next_keep_out_id = 0usize;
     let mut used_toolpath_ids = BTreeSet::new();
     let mut next_toolpath_id = 0usize;
+
+    // Migrate old-format alignment pins from setup sections to stock.
+    // In format_version <= 2, pins lived on each setup.  Collect them
+    // before consuming the setup sections.
+    if job.stock.alignment_pins.is_empty() {
+        let mut migrated: Vec<AlignmentPin> = Vec::new();
+        for section in &project.setups {
+            for pin in &section.alignment_pins {
+                let dup = migrated
+                    .iter()
+                    .any(|p| (p.x - pin.x).abs() < 0.01 && (p.y - pin.y).abs() < 0.01);
+                if !dup {
+                    migrated.push(AlignmentPin::new(pin.x, pin.y, pin.diameter));
+                }
+            }
+        }
+        if !migrated.is_empty() {
+            tracing::info!(
+                "Migrated {} alignment pin(s) from setup sections to stock",
+                migrated.len()
+            );
+            job.stock.alignment_pins = migrated;
+        }
+    }
 
     if !project.setups.is_empty() {
         job.setups.clear();
@@ -919,11 +935,8 @@ fn restore_project_setup(
         setup.datum.z_method = ZDatum::from_key(&section.z_datum);
     }
     setup.datum.notes = section.datum_notes;
-    setup.alignment_pins = section
-        .alignment_pins
-        .into_iter()
-        .map(|pin| AlignmentPin::new(pin.x, pin.y, pin.diameter))
-        .collect();
+    // Pins are now on StockConfig; old-format pins on setups are migrated
+    // after all setups are loaded (see migrate_setup_pins_to_stock below).
     setup.fixtures = section
         .fixtures
         .into_iter()
@@ -1466,7 +1479,8 @@ mod tests {
             top_setup.datum.xy_method = XYDatum::AlignmentPins;
             top_setup.datum.z_method = ZDatum::MachineTable;
             top_setup.datum.notes = "Probe pins first".to_string();
-            top_setup
+            // Pins are stock-level now.
+            job.stock
                 .alignment_pins
                 .push(AlignmentPin::new(10.0, 20.0, 6.0));
 
@@ -1488,7 +1502,7 @@ mod tests {
         bottom_setup.z_rotation = ZRotation::Deg90;
         bottom_setup.datum.xy_method = XYDatum::AlignmentPins;
         bottom_setup.datum.notes = "Locate from dowel pins".to_string();
-        bottom_setup
+        job.stock
             .alignment_pins
             .push(AlignmentPin::new(15.0, 25.0, 6.0));
         job.setups.push(bottom_setup);
@@ -1530,7 +1544,8 @@ mod tests {
         assert_eq!(top_setup.datum.xy_method, XYDatum::AlignmentPins);
         assert_eq!(top_setup.datum.z_method, ZDatum::MachineTable);
         assert_eq!(top_setup.datum.notes, "Probe pins first");
-        assert_eq!(top_setup.alignment_pins.len(), 1);
+        // Pins are on stock, not setup.
+        assert_eq!(loaded.job.stock.alignment_pins.len(), 2);
         assert_eq!(top_setup.fixtures.len(), 1);
         assert_eq!(top_setup.fixtures[0].name, "Toe Clamp");
         assert_eq!(top_setup.keep_out_zones.len(), 1);
