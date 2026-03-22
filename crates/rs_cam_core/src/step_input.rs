@@ -10,7 +10,7 @@ use std::path::Path;
 use thiserror::Error;
 use tracing::{info, warn};
 
-use truck_meshalgo::tessellation::{MeshableShape, MeshedShape};
+use truck_meshalgo::tessellation::{MeshedShape, RobustMeshableShape};
 use truck_stepio::r#in::Table;
 
 use crate::enriched_mesh::{
@@ -78,7 +78,7 @@ pub fn load_step(path: &Path, tolerance: f64) -> Result<EnrichedMesh, StepImport
             };
 
             let face_poly = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                single_face_shell.triangulation(tolerance).to_polygon()
+                single_face_shell.robust_triangulation(tolerance).to_polygon()
             })) {
                 Ok(p) => p,
                 Err(_) => {
