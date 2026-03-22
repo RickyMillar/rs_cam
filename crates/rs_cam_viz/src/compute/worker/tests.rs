@@ -983,8 +983,8 @@ fn adaptive3d_semantic_trace_records_runtime_structure() {
         .find(|item| item.label.starts_with("Adaptive pass "))
         .expect("expected adaptive pass semantic item");
     assert!(pass.move_start.is_some() && pass.move_end.is_some());
-    assert!(pass.params.values.get("step_count").is_some());
-    assert!(pass.params.values.get("yield_ratio").is_some());
+    assert!(pass.params.values.contains_key("step_count"));
+    assert!(pass.params.values.contains_key("yield_ratio"));
 
     if let Some(path) = result.debug_trace_path.as_ref() {
         std::fs::remove_file(path).ok();
@@ -1023,8 +1023,8 @@ fn adaptive_semantic_trace_records_runtime_structure() {
         .iter()
         .find(|item| item.label.starts_with("Adaptive pass "))
         .expect("expected adaptive pass item");
-    assert!(pass.params.values.get("step_count").is_some());
-    assert!(pass.params.values.get("exit_reason").is_some());
+    assert!(pass.params.values.contains_key("step_count"));
+    assert!(pass.params.values.contains_key("exit_reason"));
     assert_cutting_moves_are_semantically_covered(&result);
 }
 
@@ -1178,7 +1178,7 @@ fn scallop_semantic_trace_records_band_and_ring_structure() {
         .iter()
         .find(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Ring)
         .expect("expected ring semantics");
-    assert!(ring.params.values.get("ring_index").is_some());
+    assert!(ring.params.values.contains_key("ring_index"));
     assert!(ring.move_start.is_some() && ring.move_end.is_some());
     assert_cutting_moves_are_semantically_covered(&result);
 }
@@ -1208,8 +1208,8 @@ fn ramp_finish_semantic_trace_records_terrace_and_ramp_structure() {
         .iter()
         .find(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Ramp)
         .expect("expected ramp semantics");
-    assert!(ramp.params.values.get("upper_z").is_some());
-    assert!(ramp.params.values.get("lower_z").is_some());
+    assert!(ramp.params.values.contains_key("upper_z"));
+    assert!(ramp.params.values.contains_key("lower_z"));
     assert_cutting_moves_are_semantically_covered(&result);
 }
 
@@ -1239,7 +1239,7 @@ fn spiral_finish_semantic_trace_records_band_and_ring_structure() {
         .iter()
         .find(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Ring)
         .expect("expected ring semantics");
-    assert!(ring.params.values.get("radius_mm").is_some());
+    assert!(ring.params.values.contains_key("radius_mm"));
     assert_cutting_moves_are_semantically_covered(&result);
 }
 
@@ -1262,8 +1262,8 @@ fn radial_finish_semantic_trace_records_ray_angles() {
         .iter()
         .find(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Ray)
         .expect("expected ray semantics");
-    assert!(ray.params.values.get("angle_deg").is_some());
-    assert!(ray.params.values.get("direction").is_some());
+    assert!(ray.params.values.contains_key("angle_deg"));
+    assert!(ray.params.values.contains_key("direction"));
     assert_cutting_moves_are_semantically_covered(&result);
 }
 
@@ -1324,8 +1324,8 @@ fn project_curve_semantic_trace_records_source_curve_groups() {
         .iter()
         .find(|item| item.label.starts_with("Projected curve "))
         .expect("expected projected curve semantics");
-    assert!(curve.params.values.get("source_curve_index").is_some());
-    assert!(curve.params.values.get("depth").is_some());
+    assert!(curve.params.values.contains_key("source_curve_index"));
+    assert!(curve.params.values.contains_key("depth"));
     assert_cutting_moves_are_semantically_covered(&result);
 }
 

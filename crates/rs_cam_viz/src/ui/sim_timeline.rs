@@ -712,6 +712,7 @@ fn draw_semantic_drawer(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_semantic_drawer_item(
     ui: &mut egui::Ui,
     trace: &rs_cam_core::semantic_trace::ToolpathSemanticTrace,

@@ -362,6 +362,7 @@ pub fn draw(
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_semantic_item_row(
         ui: &mut egui::Ui,
         trace: &rs_cam_core::semantic_trace::ToolpathSemanticTrace,
@@ -419,7 +420,7 @@ pub fn draw(
                 draw_semantic_item_row(
                     ui,
                     trace,
-                    &index,
+                    index,
                     sim,
                     boundary,
                     *child_index,

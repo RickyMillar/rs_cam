@@ -181,6 +181,20 @@ struct RecorderState {
     hotspots: HashMap<HotspotKey, HotspotAccumulator>,
 }
 
+/// Bundled parameters for recording a hotspot measurement.
+pub struct HotspotRecord {
+    pub kind: String,
+    pub center_x: f64,
+    pub center_y: f64,
+    pub z_level: Option<f64>,
+    pub bucket_size_xy: f64,
+    pub bucket_size_z: Option<f64>,
+    pub elapsed_us: u64,
+    pub pass_count: u32,
+    pub step_count: u64,
+    pub low_yield_exit_count: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct HotspotKey {
     kind: String,
@@ -341,28 +355,17 @@ impl ToolpathDebugRecorder {
             .sort_by_key(|annotation| (annotation.move_index, annotation.label.clone()));
     }
 
-    pub fn record_hotspot(
-        &self,
-        kind: impl Into<String>,
-        center_x: f64,
-        center_y: f64,
-        z_level: Option<f64>,
-        bucket_size_xy: f64,
-        bucket_size_z: Option<f64>,
-        elapsed_us: u64,
-        pass_count: u32,
-        step_count: u64,
-        low_yield_exit_count: u32,
-    ) {
-        if bucket_size_xy <= 0.0 {
+    pub fn record_hotspot(&self, record: &HotspotRecord) {
+        if record.bucket_size_xy <= 0.0 {
             return;
         }
 
-        let kind = kind.into();
-        let x_bucket = (center_x / bucket_size_xy).floor() as i64;
-        let y_bucket = (center_y / bucket_size_xy).floor() as i64;
-        let z_bucket = bucket_size_z
-            .zip(z_level)
+        let kind = record.kind.clone();
+        let x_bucket = (record.center_x / record.bucket_size_xy).floor() as i64;
+        let y_bucket = (record.center_y / record.bucket_size_xy).floor() as i64;
+        let z_bucket = record
+            .bucket_size_z
+            .zip(record.z_level)
             .map(|(size, z)| (z / size).floor() as i64);
 
         let key = HotspotKey {
@@ -370,8 +373,8 @@ impl ToolpathDebugRecorder {
             x_bucket,
             y_bucket,
             z_bucket,
-            bucket_size_xy_bits: bucket_size_xy.to_bits(),
-            bucket_size_z_bits: bucket_size_z.map(f64::to_bits),
+            bucket_size_xy_bits: record.bucket_size_xy.to_bits(),
+            bucket_size_z_bits: record.bucket_size_z.map(f64::to_bits),
         };
 
         let mut state = self.inner.lock().expect("debug recorder poisoned");
@@ -383,19 +386,19 @@ impl ToolpathDebugRecorder {
                 x_bucket,
                 y_bucket,
                 z_bucket,
-                bucket_size_xy,
-                bucket_size_z,
+                bucket_size_xy: record.bucket_size_xy,
+                bucket_size_z: record.bucket_size_z,
                 total_elapsed_us: 0,
                 span_count: 0,
                 pass_count: 0,
                 step_count: 0,
                 low_yield_exit_count: 0,
             });
-        entry.total_elapsed_us += elapsed_us;
+        entry.total_elapsed_us += record.elapsed_us;
         entry.span_count += 1;
-        entry.pass_count += pass_count;
-        entry.step_count += step_count;
-        entry.low_yield_exit_count += low_yield_exit_count;
+        entry.pass_count += record.pass_count;
+        entry.step_count += record.step_count;
+        entry.low_yield_exit_count += record.low_yield_exit_count;
     }
 
     fn publish_phase(&self, phase: Option<String>) {
@@ -415,31 +418,8 @@ impl ToolpathDebugContext {
             .start_span_with_parent(self.parent_id, kind, label)
     }
 
-    pub fn record_hotspot(
-        &self,
-        kind: impl Into<String>,
-        center_x: f64,
-        center_y: f64,
-        z_level: Option<f64>,
-        bucket_size_xy: f64,
-        bucket_size_z: Option<f64>,
-        elapsed_us: u64,
-        pass_count: u32,
-        step_count: u64,
-        low_yield_exit_count: u32,
-    ) {
-        self.recorder.record_hotspot(
-            kind,
-            center_x,
-            center_y,
-            z_level,
-            bucket_size_xy,
-            bucket_size_z,
-            elapsed_us,
-            pass_count,
-            step_count,
-            low_yield_exit_count,
-        );
+    pub fn record_hotspot(&self, record: &HotspotRecord) {
+        self.recorder.record_hotspot(record);
     }
 
     pub fn add_annotation(&self, move_index: usize, label: impl Into<String>) {
@@ -586,18 +566,18 @@ mod tests {
         span.set_z_level(-2.5);
         span.set_counter("passes", 3.0);
         span.finish();
-        ctx.record_hotspot(
-            "adaptive_pass",
-            12.0,
-            -4.0,
-            Some(-2.5),
-            6.0,
-            Some(0.5),
-            3_200,
-            1,
-            24,
-            1,
-        );
+        ctx.record_hotspot(&HotspotRecord {
+            kind: "adaptive_pass".into(),
+            center_x: 12.0,
+            center_y: -4.0,
+            z_level: Some(-2.5),
+            bucket_size_xy: 6.0,
+            bucket_size_z: Some(0.5),
+            elapsed_us: 3_200,
+            pass_count: 1,
+            step_count: 24,
+            low_yield_exit_count: 1,
+        });
         ctx.add_annotation(17, "Pass 1");
         let trace = recorder.finish();
 
@@ -614,30 +594,30 @@ mod tests {
     fn hotspot_aggregation_merges_nearby_samples() {
         let recorder = ToolpathDebugRecorder::new("Adaptive", "2D Rough");
         let ctx = recorder.root_context();
-        ctx.record_hotspot(
-            "adaptive_pass",
-            10.0,
-            10.0,
-            Some(-1.0),
-            6.0,
-            Some(0.5),
-            1_000,
-            1,
-            12,
-            0,
-        );
-        ctx.record_hotspot(
-            "adaptive_pass",
-            10.5,
-            9.5,
-            Some(-0.9),
-            6.0,
-            Some(0.5),
-            2_500,
-            2,
-            18,
-            1,
-        );
+        ctx.record_hotspot(&HotspotRecord {
+            kind: "adaptive_pass".into(),
+            center_x: 10.0,
+            center_y: 10.0,
+            z_level: Some(-1.0),
+            bucket_size_xy: 6.0,
+            bucket_size_z: Some(0.5),
+            elapsed_us: 1_000,
+            pass_count: 1,
+            step_count: 12,
+            low_yield_exit_count: 0,
+        });
+        ctx.record_hotspot(&HotspotRecord {
+            kind: "adaptive_pass".into(),
+            center_x: 10.5,
+            center_y: 9.5,
+            z_level: Some(-0.9),
+            bucket_size_xy: 6.0,
+            bucket_size_z: Some(0.5),
+            elapsed_us: 2_500,
+            pass_count: 2,
+            step_count: 18,
+            low_yield_exit_count: 1,
+        });
 
         let trace = recorder.finish();
         assert_eq!(trace.hotspots.len(), 1);

@@ -15,7 +15,7 @@
 use crate::adaptive_shared::{
     angle_diff, average_angles, blend_corners, refine_angle_bracket, target_engagement_fraction,
 };
-use crate::debug_trace::{ToolpathDebugBounds2, ToolpathDebugContext};
+use crate::debug_trace::{HotspotRecord, ToolpathDebugBounds2, ToolpathDebugContext};
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
@@ -1553,18 +1553,18 @@ fn clear_z_level(
                 scope.set_xy_bbox(bounds);
                 let (center_x, center_y) = bounds.center();
                 if let Some(debug_ctx) = pass_ctx.as_ref() {
-                    debug_ctx.record_hotspot(
-                        "adaptive3d_pass",
+                    debug_ctx.record_hotspot(&HotspotRecord {
+                        kind: "adaptive3d_pass".into(),
                         center_x,
                         center_y,
-                        Some(z_level),
-                        tool_radius * 2.0,
-                        Some(ctx.tolerance.max(ctx.depth_per_pass * 0.5)),
-                        pass_started.elapsed().as_micros() as u64,
-                        1,
-                        pass_steps as u64,
-                        u32::from(is_low_yield),
-                    );
+                        z_level: Some(z_level),
+                        bucket_size_xy: tool_radius * 2.0,
+                        bucket_size_z: Some(ctx.tolerance.max(ctx.depth_per_pass * 0.5)),
+                        elapsed_us: pass_started.elapsed().as_micros() as u64,
+                        pass_count: 1,
+                        step_count: pass_steps as u64,
+                        low_yield_exit_count: u32::from(is_low_yield),
+                    });
                 }
             }
         }
