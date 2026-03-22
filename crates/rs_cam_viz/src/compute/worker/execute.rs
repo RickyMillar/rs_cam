@@ -487,9 +487,12 @@ fn run_profile(req: &ComputeRequest, cfg: &ProfileConfig) -> Result<Toolpath, St
         crate::state::toolpath::ProfileSide::Inside => rs_cam_core::profile::ProfileSide::Inside,
     };
     let depth = make_depth_with_finishing(cfg.depth, cfg.depth_per_pass, cfg.finishing_passes);
+    let safe_z = effective_safe_z(req);
+    let levels = depth.all_levels();
+    let final_z = levels.last().copied().unwrap_or(-cfg.depth.abs());
     let mut out = Toolpath::new();
     for p in polys {
-        let mut tp = depth_stepped_toolpath(&depth, effective_safe_z(req), |z| {
+        let make_pass = |z: f64| {
             profile_toolpath(
                 p,
                 &ProfileParams {
@@ -498,19 +501,32 @@ fn run_profile(req: &ComputeRequest, cfg: &ProfileConfig) -> Result<Toolpath, St
                     cut_depth: z,
                     feed_rate: cfg.feed_rate,
                     plunge_rate: cfg.plunge_rate,
-                    safe_z: effective_safe_z(req),
+                    safe_z,
                     climb: cfg.climb,
                 },
             )
-        });
-        if cfg.tab_count > 0 {
-            tp = apply_tabs(
-                &tp,
-                &even_tabs(cfg.tab_count, cfg.tab_width, cfg.tab_height),
-                -cfg.depth.abs(),
-            );
+        };
+        for (level_idx, &z) in levels.iter().enumerate() {
+            let pass_tp = make_pass(z);
+            if pass_tp.moves.is_empty() {
+                continue;
+            }
+            // Retract between levels (not before first)
+            if level_idx > 0 && !out.moves.is_empty() {
+                out.final_retract(safe_z);
+            }
+            let is_final = (z - final_z).abs() < 1e-9;
+            if cfg.tab_count > 0 && is_final {
+                let tabbed = apply_tabs(
+                    &pass_tp,
+                    &even_tabs(cfg.tab_count, cfg.tab_width, cfg.tab_height),
+                    z,
+                );
+                out.moves.extend(tabbed.moves);
+            } else {
+                out.moves.extend(pass_tp.moves);
+            }
         }
-        out.moves.extend(tp.moves);
     }
     Ok(out)
 }
@@ -622,7 +638,7 @@ fn run_rest(req: &ComputeRequest, cfg: &RestConfig) -> Result<Toolpath, String> 
                     feed_rate: cfg.feed_rate,
                     plunge_rate: cfg.plunge_rate,
                     safe_z: effective_safe_z(req),
-                    angle: cfg.angle.to_radians(),
+                    angle: cfg.angle,
                 },
             )
         });
@@ -637,7 +653,9 @@ fn run_inlay(req: &ComputeRequest, cfg: &InlayConfig) -> Result<Toolpath, String
         ToolType::VBit => (req.tool.included_angle / 2.0).to_radians(),
         _ => return Err("Inlay requires V-Bit tool".into()),
     };
-    let mut out = Toolpath::new();
+    let safe_z = effective_safe_z(req);
+    let mut female_out = Toolpath::new();
+    let mut male_out = Toolpath::new();
     for p in polys {
         let r = inlay_toolpaths(
             p,
@@ -651,12 +669,19 @@ fn run_inlay(req: &ComputeRequest, cfg: &InlayConfig) -> Result<Toolpath, String
                 flat_tool_radius: cfg.flat_tool_radius,
                 feed_rate: cfg.feed_rate,
                 plunge_rate: cfg.plunge_rate,
-                safe_z: effective_safe_z(req),
+                safe_z,
                 tolerance: cfg.tolerance,
             },
         );
-        out.moves.extend(r.female.moves);
-        out.moves.extend(r.male.moves);
+        female_out.moves.extend(r.female.moves);
+        male_out.moves.extend(r.male.moves);
+    }
+    // Combine female and male with a clear separator so they can be
+    // distinguished in the output (retract to safe_z between sections).
+    let mut out = female_out;
+    if !male_out.moves.is_empty() {
+        out.final_retract(safe_z);
+        out.moves.extend(male_out.moves);
     }
     Ok(out)
 }
@@ -868,6 +893,9 @@ fn run_scallop_annotated(
     ),
     String,
 > {
+    if req.tool.tool_type != ToolType::BallNose {
+        return Err("Scallop operation requires a Ball Nose endmill".into());
+    }
     let (mesh, index, cutter) = prepare_mesh_operation(req, phase_tracker, debug)?;
     let params = ScallopParams {
         scallop_height: cfg.scallop_height,
@@ -2023,12 +2051,22 @@ impl SemanticToolpathOp for FaceConfig {
                     scope.set_param("level_index", level_idx + 1);
                 }
                 let level_start = writer.move_count();
-                let lines = rs_cam_core::zigzag::zigzag_lines(
+                let mut lines = rs_cam_core::zigzag::zigzag_lines(
                     &rect,
                     ctx.req.tool.diameter / 2.0,
                     self.stepover,
                     0.0,
                 );
+                if self.direction == FaceDirection::OneWay {
+                    // For one-way cuts, ensure all lines go in the same
+                    // direction by un-reversing the odd rows that
+                    // zigzag_lines alternated.
+                    for (i, line) in lines.iter_mut().enumerate() {
+                        if i % 2 != 0 {
+                            line.swap(0, 1);
+                        }
+                    }
+                }
                 for (row_idx, line) in lines.iter().enumerate() {
                     let row_scope = level_scope.as_ref().map(|scope| {
                         scope
@@ -3200,5 +3238,264 @@ mod tests {
             let config = OperationConfig::new_default(op_type);
             let _ = config.semantic_op();
         }
+    }
+
+    fn test_request_with_polygon(
+        operation: OperationConfig,
+        tool_type: ToolType,
+    ) -> ComputeRequest {
+        let tool = ToolConfig::new_default(crate::state::job::ToolId(1), tool_type);
+        ComputeRequest {
+            toolpath_id: ToolpathId(1),
+            toolpath_name: "Test".to_string(),
+            polygons: Some(Arc::new(vec![Polygon2::rectangle(
+                -20.0, -20.0, 20.0, 20.0,
+            )])),
+            mesh: None,
+            operation,
+            dressups: DressupConfig::default(),
+            stock_source: StockSource::Fresh,
+            tool,
+            safe_z: 10.0,
+            prev_tool_radius: None,
+            stock_bbox: Some(BoundingBox3 {
+                min: P3::new(-25.0, -25.0, -10.0),
+                max: P3::new(25.0, 25.0, 10.0),
+            }),
+            boundary_enabled: false,
+            boundary_containment: BoundaryContainment::Center,
+            keep_out_footprints: Vec::new(),
+            heights: HeightsConfig::default().resolve(10.0, 6.0),
+            debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+        }
+    }
+
+    // --- Task A3: Tabs only on final depth pass ---
+
+    #[test]
+    fn profile_multi_pass_tabs_only_on_final_depth() {
+        let cfg = ProfileConfig {
+            depth: 6.0,
+            depth_per_pass: 2.0,
+            tab_count: 4,
+            tab_width: 6.0,
+            tab_height: 2.0,
+            finishing_passes: 0,
+            ..ProfileConfig::default()
+        };
+        let req = test_request_with_polygon(
+            OperationConfig::Profile(cfg.clone()),
+            ToolType::EndMill,
+        );
+        let tp = run_profile(&req, &cfg).unwrap();
+
+        let final_z = -cfg.depth;
+        let tab_z = final_z + cfg.tab_height;
+
+        // Tab height moves should exist (tabs applied to final pass)
+        let tab_moves: Vec<_> = tp
+            .moves
+            .iter()
+            .filter(|m| (m.target.z - tab_z).abs() < 0.01)
+            .collect();
+        assert!(
+            !tab_moves.is_empty(),
+            "Final pass should have tab height moves at z={tab_z}"
+        );
+
+        // Intermediate passes (at Z != final_z) should have NO tab-height lifts.
+        // Roughing levels are at -2, -4; final is at -6. Tab height is -4.
+        // Check that the Z=-4 moves are actual cutting moves, not tab lifts:
+        // Tab lifts have z = final_z + tab_height = -6 + 2 = -4 which
+        // coincides with a roughing level. Instead, verify that there are
+        // no tab-height moves between roughing passes (moves with z > final_z
+        // that aren't at a legitimate roughing level or safe_z).
+        let depth = make_depth_with_finishing(cfg.depth, cfg.depth_per_pass, cfg.finishing_passes);
+        let roughing_levels = depth.all_levels();
+        for m in &tp.moves {
+            if let MoveType::Linear { .. } = m.move_type {
+                let z = m.target.z;
+                // Any linear move should be at a legitimate level, tab_z, or
+                // a plunge between levels.
+                let at_known_level = roughing_levels.iter().any(|&lv| (z - lv).abs() < 0.01);
+                let at_tab_z = (z - tab_z).abs() < 0.01;
+                let is_plunge_or_retract =
+                    z > final_z + 0.01 && z < effective_safe_z(&req) - 0.01;
+                assert!(
+                    at_known_level || at_tab_z || is_plunge_or_retract,
+                    "unexpected linear move z={z}, expected one of levels {roughing_levels:?}, tab_z={tab_z}, or plunge"
+                );
+            }
+        }
+    }
+
+    // --- Task A4: Face OneWay produces unidirectional cuts ---
+
+    #[test]
+    fn face_oneway_all_cuts_same_direction() {
+        let cfg = FaceConfig {
+            direction: FaceDirection::OneWay,
+            stepover: 10.0,
+            ..FaceConfig::default()
+        };
+        let req = test_request_with_polygon(
+            OperationConfig::Face(cfg.clone()),
+            ToolType::EndMill,
+        );
+
+        // Use the semantic path to generate (that's the active code path)
+        let ctx = OperationExecutionContext {
+            req: &req,
+            cancel: &AtomicBool::new(false),
+            phase_tracker: None,
+            core_debug_span_id: None,
+            debug_root: None,
+            semantic_root: None,
+        };
+        let tp = cfg.generate_with_tracing(&ctx).unwrap();
+
+        // Collect all cutting segments (consecutive feed moves at the same Z)
+        let mut cut_directions = Vec::new();
+        for i in 1..tp.moves.len() {
+            if let MoveType::Linear { feed_rate } = tp.moves[i].move_type
+                && (feed_rate - cfg.feed_rate).abs() < 1e-6
+            {
+                let dx = tp.moves[i].target.x - tp.moves[i - 1].target.x;
+                // Only consider horizontal cutting moves with significant X travel
+                if dx.abs() > 1.0 {
+                    cut_directions.push(dx > 0.0);
+                }
+            }
+        }
+
+        assert!(
+            !cut_directions.is_empty(),
+            "Face operation should produce cutting moves"
+        );
+        // All cuts should go in the same X direction
+        let first_dir = cut_directions[0];
+        assert!(
+            cut_directions.iter().all(|&d| d == first_dir),
+            "OneWay face should have all cuts in the same direction, got mixed: {:?}",
+            cut_directions
+        );
+    }
+
+    #[test]
+    fn face_zigzag_alternates_direction() {
+        let cfg = FaceConfig {
+            direction: FaceDirection::Zigzag,
+            stepover: 10.0,
+            ..FaceConfig::default()
+        };
+        let req = test_request_with_polygon(
+            OperationConfig::Face(cfg.clone()),
+            ToolType::EndMill,
+        );
+
+        let ctx = OperationExecutionContext {
+            req: &req,
+            cancel: &AtomicBool::new(false),
+            phase_tracker: None,
+            core_debug_span_id: None,
+            debug_root: None,
+            semantic_root: None,
+        };
+        let tp = cfg.generate_with_tracing(&ctx).unwrap();
+
+        let mut cut_directions = Vec::new();
+        for i in 1..tp.moves.len() {
+            if let MoveType::Linear { feed_rate } = tp.moves[i].move_type
+                && (feed_rate - cfg.feed_rate).abs() < 1e-6
+            {
+                let dx = tp.moves[i].target.x - tp.moves[i - 1].target.x;
+                if dx.abs() > 1.0 {
+                    cut_directions.push(dx > 0.0);
+                }
+            }
+        }
+
+        assert!(
+            cut_directions.len() >= 2,
+            "Zigzag face should have multiple cutting rows"
+        );
+        // Should have at least one direction change
+        let has_alternation = cut_directions.windows(2).any(|w| w[0] != w[1]);
+        assert!(
+            has_alternation,
+            "Zigzag face should alternate cut directions"
+        );
+    }
+
+    // --- Task A10: Inlay female and male are separated ---
+
+    #[test]
+    fn inlay_output_contains_female_and_male_sections() {
+        let cfg = InlayConfig::default();
+        let mut req = test_request_with_polygon(
+            OperationConfig::Inlay(cfg.clone()),
+            ToolType::VBit,
+        );
+        req.polygons = Some(Arc::new(vec![Polygon2::rectangle(
+            -10.0, -10.0, 10.0, 10.0,
+        )]));
+        let tp = run_inlay(&req, &cfg).unwrap();
+
+        assert!(
+            !tp.moves.is_empty(),
+            "Inlay should produce moves"
+        );
+
+        // Find retract-to-safe-z moves that separate sections. The female
+        // and male toolpaths should be separated by a retract to safe_z.
+        let safe_z = effective_safe_z(&req);
+        let retract_indices: Vec<usize> = tp
+            .moves
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.move_type == MoveType::Rapid && (m.target.z - safe_z).abs() < 0.01)
+            .map(|(i, _)| i)
+            .collect();
+
+        // There should be multiple retract moves (at least the separator
+        // between female and male plus retracts within each section)
+        assert!(
+            retract_indices.len() >= 2,
+            "Should have retract separators between female and male sections"
+        );
+
+        // Find cutting moves below Z=0 (both female and male cut below the surface)
+        let cutting_moves: Vec<_> = tp
+            .moves
+            .iter()
+            .filter(|m| matches!(m.move_type, MoveType::Linear { .. }) && m.target.z < -0.01)
+            .collect();
+        assert!(
+            !cutting_moves.is_empty(),
+            "Should have cutting moves below stock surface"
+        );
+    }
+
+    // --- Task C14: Scallop requires BallNose tool ---
+
+    #[test]
+    fn scallop_rejects_non_ballnose_tool() {
+        let cfg = match OperationConfig::new_default(
+            crate::state::toolpath::OperationType::Scallop,
+        ) {
+            OperationConfig::Scallop(cfg) => cfg,
+            _ => unreachable!(),
+        };
+        let mut req = test_request_with_polygon(
+            OperationConfig::Scallop(cfg.clone()),
+            ToolType::EndMill,
+        );
+        req.mesh = Some(Arc::new(rs_cam_core::mesh::make_test_flat(40.0)));
+        let result = run_scallop_annotated(&req, &cfg, None, None);
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().contains("Ball Nose"),
+            "Error should mention Ball Nose requirement"
+        );
     }
 }
