@@ -241,6 +241,10 @@ pub struct GcodePhase<'a> {
     pub toolpath: &'a Toolpath,
     pub spindle_rpm: u32,
     pub label: &'a str,
+    /// Raw G-code to emit before this toolpath's moves (user-defined).
+    pub pre_gcode: Option<&'a str>,
+    /// Raw G-code to emit after this toolpath's moves (user-defined).
+    pub post_gcode: Option<&'a str>,
 }
 
 /// Emit G-code from multiple phases, inserting spindle speed changes between operations.
@@ -262,6 +266,15 @@ pub fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &dyn PostProcessor) ->
         if phase.spindle_rpm != current_rpm {
             let _ = writeln!(output, "M3 S{}", phase.spindle_rpm);
             current_rpm = phase.spindle_rpm;
+        }
+
+        if let Some(pre) = phase.pre_gcode
+            && !pre.is_empty()
+        {
+            output.push_str(pre);
+            if !pre.ends_with('\n') {
+                output.push('\n');
+            }
         }
 
         for m in &phase.toolpath.moves {
@@ -296,6 +309,15 @@ pub fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &dyn PostProcessor) ->
                     );
                     last_feed = Some(feed_rate);
                 }
+            }
+        }
+
+        if let Some(post_gc) = phase.post_gcode
+            && !post_gc.is_empty()
+        {
+            output.push_str(post_gc);
+            if !post_gc.ends_with('\n') {
+                output.push('\n');
             }
         }
     }
@@ -359,6 +381,15 @@ pub fn emit_gcode_multi_setup(
                 current_rpm = phase.spindle_rpm;
             }
 
+            if let Some(pre) = phase.pre_gcode
+                && !pre.is_empty()
+            {
+                output.push_str(pre);
+                if !pre.ends_with('\n') {
+                    output.push('\n');
+                }
+            }
+
             for m in &phase.toolpath.moves {
                 match m.move_type {
                     MoveType::Rapid => {
@@ -391,6 +422,15 @@ pub fn emit_gcode_multi_setup(
                         );
                         last_feed = Some(feed_rate);
                     }
+                }
+            }
+
+            if let Some(post_gc) = phase.post_gcode
+                && !post_gc.is_empty()
+            {
+                output.push_str(post_gc);
+                if !post_gc.ends_with('\n') {
+                    output.push('\n');
                 }
             }
         }
@@ -503,11 +543,15 @@ mod tests {
                 toolpath: &tp1,
                 spindle_rpm: 18000,
                 label: "Op 0 — pocket",
+                pre_gcode: None,
+                post_gcode: None,
             },
             GcodePhase {
                 toolpath: &tp2,
                 spindle_rpm: 18000,
                 label: "Op 1 — profile",
+                pre_gcode: None,
+                post_gcode: None,
             },
         ];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
@@ -537,11 +581,15 @@ mod tests {
                 toolpath: &tp1,
                 spindle_rpm: 18000,
                 label: "Op 0 — rough",
+                pre_gcode: None,
+                post_gcode: None,
             },
             GcodePhase {
                 toolpath: &tp2,
                 spindle_rpm: 24000,
                 label: "Op 1 — finish",
+                pre_gcode: None,
+                post_gcode: None,
             },
         ];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
@@ -581,6 +629,8 @@ mod tests {
                     toolpath: &tp1,
                     spindle_rpm: 18_000,
                     label: "Pocket",
+                    pre_gcode: None,
+                    post_gcode: None,
                 }],
             },
             GcodeSetupPhase {
@@ -589,6 +639,8 @@ mod tests {
                     toolpath: &tp2,
                     spindle_rpm: 24_000,
                     label: "Profile",
+                    pre_gcode: None,
+                    post_gcode: None,
                 }],
             },
         ];
@@ -602,5 +654,93 @@ mod tests {
         assert!(gcode.contains("M0"));
         assert!(gcode.contains("M3 S18000"));
         assert!(gcode.contains("M3 S24000"));
+    }
+
+    #[test]
+    fn test_pre_post_gcode_emitted_in_phased() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp.feed_to(P3::new(10.0, 0.0, 0.0), 1000.0);
+
+        let phases = vec![GcodePhase {
+            toolpath: &tp,
+            spindle_rpm: 18000,
+            label: "Test Op",
+            pre_gcode: Some("G55\nG10 L20 P2 X0 Y0 Z0"),
+            post_gcode: Some("M9"),
+        }];
+        let gcode = emit_gcode_phased(&phases, &GrblPost);
+
+        // pre_gcode should appear after the label comment, before moves
+        let label_pos = gcode.find("(Test Op)").expect("label comment");
+        let pre_pos = gcode.find("G55").expect("pre_gcode G55");
+        let move_pos = gcode.find("G0 X0.000").expect("first rapid move");
+        let post_pos = gcode.find("M9").expect("post_gcode M9");
+        let postamble_pos = gcode.find("M30").expect("postamble");
+
+        assert!(
+            label_pos < pre_pos,
+            "pre_gcode should follow label comment"
+        );
+        assert!(pre_pos < move_pos, "pre_gcode should precede moves");
+        assert!(move_pos < post_pos, "post_gcode should follow moves");
+        assert!(
+            post_pos < postamble_pos,
+            "post_gcode should precede postamble"
+        );
+
+        // Verify multi-line pre_gcode is emitted correctly
+        assert!(gcode.contains("G10 L20 P2 X0 Y0 Z0"));
+    }
+
+    #[test]
+    fn test_pre_post_gcode_emitted_in_multi_setup() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp.feed_to(P3::new(10.0, 0.0, 0.0), 1000.0);
+
+        let setups = vec![GcodeSetupPhase {
+            setup_label: "Top",
+            phases: vec![GcodePhase {
+                toolpath: &tp,
+                spindle_rpm: 18_000,
+                label: "Pocket",
+                pre_gcode: Some("G55"),
+                post_gcode: Some("M9"),
+            }],
+        }];
+
+        let gcode = emit_gcode_multi_setup(&setups, &GrblPost, 15.0);
+
+        let label_pos = gcode.find("(Pocket)").expect("label comment");
+        let pre_pos = gcode.find("G55").expect("pre_gcode G55");
+        let move_pos = gcode.find("G0 X0.000").expect("first rapid move");
+        let post_pos = gcode.find("M9").expect("post_gcode M9");
+
+        assert!(label_pos < pre_pos);
+        assert!(pre_pos < move_pos);
+        assert!(move_pos < post_pos);
+    }
+
+    #[test]
+    fn test_empty_pre_post_gcode_omitted() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+
+        let phases = vec![GcodePhase {
+            toolpath: &tp,
+            spindle_rpm: 18000,
+            label: "Empty",
+            pre_gcode: Some(""),
+            post_gcode: None,
+        }];
+        let gcode = emit_gcode_phased(&phases, &GrblPost);
+
+        // Should not have extra blank lines from empty pre/post
+        let lines: Vec<&str> = gcode.lines().collect();
+        assert!(
+            !lines.iter().any(|l| l.is_empty()),
+            "No blank lines from empty pre/post gcode"
+        );
     }
 }

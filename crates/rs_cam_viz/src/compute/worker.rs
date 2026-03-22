@@ -29,7 +29,6 @@ use rs_cam_core::dressup::{
 };
 use rs_cam_core::drill::{DrillCycle, DrillParams, drill_toolpath};
 use rs_cam_core::dropcutter::batch_drop_cutter_with_cancel;
-use rs_cam_core::face::{FaceDirection as CoreFaceDir, FaceParams, face_toolpath};
 use rs_cam_core::feedopt::{FeedOptParams, optimize_feed_rates};
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::horizontal_finish::{HorizontalFinishParams, horizontal_finish_toolpath};
