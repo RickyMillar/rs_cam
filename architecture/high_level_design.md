@@ -111,13 +111,25 @@ The GUI stores auto/manual toggles per field and writes calculated values back i
 
 ### Simulation and collision
 
-Simulation is currently heightmap-based:
+Simulation uses a tri-dexel volumetric representation (`TriDexelStock`) with three orthogonal dexel grids (Z, X, Y). Each grid cell stores a sorted list of material segments (`DexelRay`) rather than a single height value, enabling correct material removal from all six cardinal directions (top, bottom, front, back, left, right). The Z-grid is always present; X and Y grids are created lazily for side-face cuts.
 
-- stock is rasterized to a heightmap
-- tool motion stamps removal into the grid
-- the result is converted back into a renderable mesh
+Key modules:
+
+- `dexel.rs` — core segment, ray, and grid primitives using `SmallVec<[DexelSegment; 1]>` for allocation-free single-segment fast paths
+- `dexel_stock.rs` — `TriDexelStock` struct with tool stamping and toolpath simulation
+- `dexel_mesh.rs` — closed solid mesh extraction (top face, bottom face, perimeter skirt) for viewport rendering
+
+The cutter trait, radial profile LUT, and arc linearization from the original simulation module are reused unchanged. See `architecture/TRI_DEXEL_SIMULATION.md` for the full design rationale and implementation plan.
 
 Collision checks focus on holder/shank clearance against stock and toolpath motion.
+
+### Diagnostics and tracing
+
+The core library includes three modules for debugging and analysis:
+
+- `semantic_trace.rs` — structured semantic tree that records the hierarchical decomposition of a toolpath (operation, depth levels, regions, passes, dressups) and binds each node to a move range; used for interactive debugger overlays and artifact export
+- `debug_trace.rs` — performance tracing infrastructure that records timed spans for each computation phase and dressup step, producing exportable JSON artifacts for offline analysis
+- `simulation_cut.rs` — per-sample cutting analytics collected during simulation (axial DOC, radial engagement, chipload, MRR, volume removed) with issue detection for air cuts and low engagement; produces a `SimulationCutArtifact` alongside the simulation mesh
 
 ## Extension path
 
