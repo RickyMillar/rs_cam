@@ -1,11 +1,17 @@
 use super::AppEvent;
+use super::sim_debug::{draw_trace_badge, semantic_kind_color, semantic_kind_label};
 use crate::render::toolpath_render::palette_color;
 use crate::state::job::{JobState, SetupId};
 use crate::state::simulation::SimulationState;
 use crate::state::toolpath::ToolpathId;
 
 /// Left panel in simulation workspace: operation list with checkboxes, progress bars, and jump buttons.
-pub fn draw(ui: &mut egui::Ui, sim: &SimulationState, job: &JobState, events: &mut Vec<AppEvent>) {
+pub fn draw(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    job: &JobState,
+    events: &mut Vec<AppEvent>,
+) {
     ui.heading("Verification");
     ui.separator();
 
@@ -79,15 +85,21 @@ pub fn draw(ui: &mut egui::Ui, sim: &SimulationState, job: &JobState, events: &m
     // Collect selected toolpath IDs for checkbox state
     let all_selected = sim.selected_toolpaths().is_none();
     let selected_set: Vec<ToolpathId> = sim.selected_toolpaths().cloned().unwrap_or_default();
+    let boundaries = sim.boundaries().to_vec();
+    let setup_boundaries = sim.setup_boundaries().to_vec();
+    sim.sync_debug_state(job);
+    let active_item = sim.active_semantic_item(job);
+    let active_item_id = active_item
+        .as_ref()
+        .map(|item| (item.toolpath_id, item.item.id));
 
     // Track if user toggled any checkbox
     let mut toggled_id: Option<ToolpathId> = None;
     let mut current_setup_id: Option<SetupId> = None;
 
-    for (i, boundary) in sim.boundaries().iter().enumerate() {
+    for (i, boundary) in boundaries.iter().enumerate() {
         // Insert setup transition divider when the setup changes
-        let this_setup = sim
-            .setup_boundaries()
+        let this_setup = setup_boundaries
             .iter()
             .rev()
             .find(|sb| sb.start_move <= boundary.start_move);
@@ -146,6 +158,13 @@ pub fn draw(ui: &mut egui::Ui, sim: &SimulationState, job: &JobState, events: &m
                     name_text
                 };
                 ui.label(name_text);
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    draw_trace_badge(
+                        ui,
+                        SimulationState::trace_availability_for_toolpath(job, boundary.id),
+                    );
+                });
             });
 
             // Tool name + time estimate on same row
@@ -226,9 +245,40 @@ pub fn draw(ui: &mut egui::Ui, sim: &SimulationState, job: &JobState, events: &m
                     events.push(AppEvent::SimJumpToOpEnd(i));
                 }
             });
+
+            if sim.debug.enabled {
+                let has_semantic = job
+                    .find_toolpath(boundary.id)
+                    .and_then(|toolpath| toolpath.semantic_trace.as_ref())
+                    .is_some();
+                if is_current && has_semantic {
+                    sim.debug.set_toolpath_expanded(boundary.id, true);
+                }
+
+                if has_semantic {
+                    ui.add_space(4.0);
+                    let expanded = sim.debug.is_toolpath_expanded(boundary.id);
+                    let toggle_label = if expanded {
+                        "Hide semantics"
+                    } else {
+                        "Show semantics"
+                    };
+                    if ui
+                        .small_button(toggle_label)
+                        .on_hover_text("Expand semantic trace for this toolpath")
+                        .clicked()
+                    {
+                        sim.debug.toggle_toolpath_expanded(boundary.id);
+                    }
+
+                    if sim.debug.is_toolpath_expanded(boundary.id) {
+                        draw_semantic_outline(ui, sim, job, boundary, active_item_id, events);
+                    }
+                }
+            }
         });
 
-        if i + 1 < sim.boundaries().len() {
+        if i + 1 < boundaries.len() {
             ui.add_space(2.0);
         }
     }
@@ -253,7 +303,7 @@ pub fn draw(ui: &mut egui::Ui, sim: &SimulationState, job: &JobState, events: &m
         };
 
         // If all are selected again, use None (meaning "all")
-        if new_selection.len() == sim.boundaries().len() {
+        if new_selection.len() == boundaries.len() {
             new_selection.clear();
         }
 
@@ -261,6 +311,119 @@ pub fn draw(ui: &mut egui::Ui, sim: &SimulationState, job: &JobState, events: &m
             events.push(AppEvent::RunSimulation);
         } else {
             events.push(AppEvent::RunSimulationWith(new_selection));
+        }
+    }
+
+    fn draw_semantic_outline(
+        ui: &mut egui::Ui,
+        sim: &SimulationState,
+        job: &JobState,
+        boundary: &crate::state::simulation::ToolpathBoundary,
+        active_item_id: Option<(ToolpathId, u64)>,
+        events: &mut Vec<AppEvent>,
+    ) {
+        let Some(toolpath) = job.find_toolpath(boundary.id) else {
+            return;
+        };
+        let Some(trace) = toolpath.semantic_trace.as_ref() else {
+            return;
+        };
+        let Some(index) = sim.debug.semantic_indexes.get(&boundary.id) else {
+            return;
+        };
+        let root_items = index
+            .child_indices_by_parent
+            .get(&None)
+            .cloned()
+            .unwrap_or_default();
+        if root_items.is_empty() {
+            ui.label(
+                egui::RichText::new("No move-linked semantics")
+                    .small()
+                    .italics()
+                    .color(egui::Color32::from_rgb(120, 120, 130)),
+            );
+            return;
+        }
+
+        ui.add_space(2.0);
+        for item_index in root_items {
+            draw_semantic_item_row(
+                ui,
+                trace,
+                index,
+                boundary,
+                item_index,
+                0,
+                active_item_id,
+                events,
+            );
+        }
+    }
+
+    fn draw_semantic_item_row(
+        ui: &mut egui::Ui,
+        trace: &rs_cam_core::semantic_trace::ToolpathSemanticTrace,
+        index: &crate::state::simulation::SimulationSemanticIndex,
+        boundary: &crate::state::simulation::ToolpathBoundary,
+        item_index: usize,
+        depth: usize,
+        active_item_id: Option<(ToolpathId, u64)>,
+        events: &mut Vec<AppEvent>,
+    ) {
+        let item = &trace.items[item_index];
+        let color = semantic_kind_color(&item.kind);
+        let is_active = active_item_id == Some((boundary.id, item.id));
+
+        ui.horizontal(|ui| {
+            ui.add_space(depth as f32 * 12.0);
+            ui.label(
+                egui::RichText::new(semantic_kind_label(&item.kind))
+                    .small()
+                    .color(color),
+            );
+
+            let text = if is_active {
+                egui::RichText::new(&item.label).small().strong()
+            } else {
+                egui::RichText::new(&item.label).small()
+            };
+            let response = ui.selectable_label(is_active, text);
+            if response.clicked() {
+                if let Some(move_start) = item.move_start {
+                    events.push(AppEvent::SimJumpToMove(boundary.start_move + move_start));
+                }
+            }
+
+            if let (Some(move_start), Some(move_end)) = (item.move_start, item.move_end) {
+                if ui
+                    .small_button(">|")
+                    .on_hover_text("Jump to semantic item end")
+                    .clicked()
+                {
+                    events.push(AppEvent::SimJumpToMove(boundary.start_move + move_end));
+                }
+                ui.label(
+                    egui::RichText::new(format!("{move_start}-{move_end}"))
+                        .small()
+                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                );
+            }
+        });
+
+        if let Some(children) = index.child_indices_by_parent.get(&Some(item.id)) {
+            for child_index in children {
+                draw_semantic_item_row(
+                    ui,
+                    trace,
+                    index,
+                    boundary,
+                    *child_index,
+                    depth + 1,
+                    active_item_id,
+                    events,
+                );
+            }
         }
     }
 }

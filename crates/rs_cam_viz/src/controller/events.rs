@@ -7,6 +7,7 @@ use crate::compute::{
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::BoundingBox3;
 
+use crate::state::Workspace;
 use crate::state::history::UndoAction;
 use crate::state::job::{FaceUp, Fixture, KeepOutZone, Setup, ToolConfig};
 use crate::state::selection::Selection;
@@ -305,6 +306,29 @@ impl<B: ComputeBackend> AppController<B> {
                     self.pending_upload = true;
                 }
             }
+            AppEvent::InspectToolpathInSimulation(tp_id) => {
+                self.events
+                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
+                if let Some(boundary) = self
+                    .state
+                    .simulation
+                    .boundaries()
+                    .iter()
+                    .find(|boundary| boundary.id == tp_id)
+                {
+                    self.events
+                        .push(AppEvent::SimJumpToMove(boundary.start_move));
+                } else if self
+                    .state
+                    .job
+                    .find_toolpath(tp_id)
+                    .and_then(|toolpath| toolpath.result.as_ref())
+                    .is_some()
+                {
+                    self.state.simulation.debug.pending_inspect_toolpath = Some(tp_id);
+                    self.events.push(AppEvent::RunSimulationWith(vec![tp_id]));
+                }
+            }
             AppEvent::RunSimulation => self.run_simulation_with_all(),
             AppEvent::RunSimulationWith(ids) => self.run_simulation_with_ids(&ids),
             AppEvent::ToggleSimPlayback => {
@@ -320,6 +344,13 @@ impl<B: ComputeBackend> AppController<B> {
                 self.pending_upload = true;
             }
             AppEvent::ToggleSimToolpath(_) => {}
+            AppEvent::SimJumpToMove(move_idx) => {
+                if self.state.simulation.has_results() {
+                    let total = self.state.simulation.total_moves();
+                    self.state.simulation.playback.playing = false;
+                    self.state.simulation.playback.current_move = move_idx.min(total);
+                }
+            }
             AppEvent::SimStepForward => {
                 if self.state.simulation.has_results() {
                     let total = self.state.simulation.total_moves();
@@ -873,8 +904,18 @@ impl<B: ComputeBackend> AppController<B> {
                             stock_bbox,
                         });
 
-                        // Update playback to end position
-                        self.state.simulation.playback.current_move = simulation.total_moves;
+                        let inspect_target =
+                            self.state.simulation.debug.pending_inspect_toolpath.take();
+                        self.state.simulation.playback.current_move = inspect_target
+                            .and_then(|toolpath_id| {
+                                self.state
+                                    .simulation
+                                    .boundaries()
+                                    .iter()
+                                    .find(|boundary| boundary.id == toolpath_id)
+                                    .map(|boundary| boundary.start_move)
+                            })
+                            .unwrap_or(simulation.total_moves);
 
                         // Store fresh tri-dexel stock for playback (global frame)
                         let initial_stock = TriDexelStock::from_bounds(

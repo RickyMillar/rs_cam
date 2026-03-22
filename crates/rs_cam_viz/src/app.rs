@@ -10,7 +10,7 @@ use crate::render::{LineUniforms, MeshUniforms, RenderResources, ViewportCallbac
 use crate::state::Workspace;
 use crate::state::job::transform_mesh;
 use crate::state::selection::Selection;
-use crate::state::simulation::StockVizMode;
+use crate::state::simulation::{ActiveSemanticItem, StockVizMode};
 use crate::ui::AppEvent;
 
 pub struct RsCamApp {
@@ -178,6 +178,16 @@ impl RsCamApp {
                         pb.playing = false;
                         pb.current_move = 0;
                         self.pending_checkpoint_load = true;
+                    }
+                }
+                AppEvent::SimJumpToMove(move_idx) => {
+                    if self.controller.state().simulation.has_results() {
+                        let total = self.controller.state().simulation.total_moves();
+                        let previous = self.controller.state().simulation.playback.current_move;
+                        let pb = &mut self.controller.state_mut().simulation.playback;
+                        pb.playing = false;
+                        pb.current_move = move_idx.min(total);
+                        self.pending_checkpoint_load = pb.current_move < previous;
                     }
                 }
                 AppEvent::SimJumpToOpStart(boundary_idx) => {
@@ -1354,6 +1364,20 @@ impl RsCamApp {
 
         // Draw orientation gizmo overlay (2D, on top of the 3D viewport)
         self.draw_orientation_gizmo(ui, rect);
+
+        if workspace == Workspace::Simulation {
+            let active_semantic = {
+                let state = self.controller.state_mut();
+                if state.simulation.debug.enabled && state.simulation.debug.highlight_active_item {
+                    state.simulation.active_semantic_item(&state.job)
+                } else {
+                    None
+                }
+            };
+            if let Some(active_semantic) = active_semantic.as_ref() {
+                self.draw_semantic_item_overlay(ui, rect, active_semantic);
+            }
+        }
     }
 
     /// Draw a small XYZ orientation gizmo in the top-right corner of the viewport.
@@ -1416,6 +1440,81 @@ impl RsCamApp {
                 label,
                 egui::FontId::proportional(10.0),
                 *color,
+            );
+        }
+    }
+
+    fn draw_semantic_item_overlay(
+        &self,
+        ui: &mut egui::Ui,
+        viewport_rect: egui::Rect,
+        active_semantic: &ActiveSemanticItem,
+    ) {
+        let Some(bounds) = active_semantic.item.xy_bbox else {
+            return;
+        };
+        let Some(z_min) = active_semantic.item.z_min else {
+            return;
+        };
+        let Some(z_max) = active_semantic.item.z_max else {
+            return;
+        };
+
+        let width = viewport_rect.width().max(1.0);
+        let height = viewport_rect.height().max(1.0);
+        let aspect = width / height;
+        let corners = [
+            [bounds.min_x as f32, bounds.min_y as f32, z_min as f32],
+            [bounds.max_x as f32, bounds.min_y as f32, z_min as f32],
+            [bounds.max_x as f32, bounds.max_y as f32, z_min as f32],
+            [bounds.min_x as f32, bounds.max_y as f32, z_min as f32],
+            [bounds.min_x as f32, bounds.min_y as f32, z_max as f32],
+            [bounds.max_x as f32, bounds.min_y as f32, z_max as f32],
+            [bounds.max_x as f32, bounds.max_y as f32, z_max as f32],
+            [bounds.min_x as f32, bounds.max_y as f32, z_max as f32],
+        ];
+        let projected: Vec<_> = corners
+            .iter()
+            .map(|corner| {
+                self.camera
+                    .project_to_screen(*corner, aspect, width, height)
+                    .map(|point| {
+                        egui::pos2(
+                            viewport_rect.min.x + point[0],
+                            viewport_rect.min.y + point[1],
+                        )
+                    })
+            })
+            .collect();
+        let edges = [
+            (0usize, 1usize),
+            (1, 2),
+            (2, 3),
+            (3, 0),
+            (4, 5),
+            (5, 6),
+            (6, 7),
+            (7, 4),
+            (0, 4),
+            (1, 5),
+            (2, 6),
+            (3, 7),
+        ];
+        let color = egui::Color32::from_rgb(255, 210, 120);
+        let painter = ui.painter();
+        for (start_idx, end_idx) in edges {
+            if let (Some(start), Some(end)) = (projected[start_idx], projected[end_idx]) {
+                painter.line_segment([start, end], egui::Stroke::new(1.5, color));
+            }
+        }
+
+        if let Some(anchor) = projected.iter().flatten().next().copied() {
+            painter.text(
+                anchor + egui::vec2(6.0, -6.0),
+                egui::Align2::LEFT_BOTTOM,
+                &active_semantic.item.label,
+                egui::FontId::proportional(12.0),
+                color,
             );
         }
     }
@@ -1633,11 +1732,22 @@ impl RsCamApp {
         egui::TopBottomPanel::top("sim_top_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 {
-                    let viewport = &mut self.controller.state_mut().viewport;
+                    let (simulation, viewport, _) =
+                        self.controller.simulation_viewport_and_events_mut();
                     ui.checkbox(&mut viewport.show_cutting, "Paths");
                     ui.checkbox(&mut viewport.show_stock, "Stock");
                     ui.checkbox(&mut viewport.show_fixtures, "Fixtures");
                     ui.checkbox(&mut viewport.show_collisions, "Collisions");
+                    ui.separator();
+                    let debug_changed = ui
+                        .checkbox(&mut simulation.debug.enabled, "Debug")
+                        .changed();
+                    if debug_changed && simulation.debug.enabled {
+                        simulation.debug.drawer_open = true;
+                    }
+                    if simulation.debug.enabled {
+                        ui.checkbox(&mut simulation.debug.highlight_active_item, "Highlight");
+                    }
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1665,8 +1775,8 @@ impl RsCamApp {
             .resizable(true)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    let (state, events) = self.controller.state_ref_and_events_mut();
-                    crate::ui::sim_op_list::draw(ui, &state.simulation, &state.job, events);
+                    let (state, events) = self.controller.state_and_events_mut();
+                    crate::ui::sim_op_list::draw(ui, &mut state.simulation, &state.job, events);
                 });
             });
 

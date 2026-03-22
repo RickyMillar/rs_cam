@@ -1,4 +1,5 @@
 use super::AppEvent;
+use super::sim_debug::{format_json_value, semantic_kind_color, semantic_kind_label};
 use crate::state::job::JobState;
 use crate::state::simulation::{SimulationState, StockVizMode};
 use crate::state::toolpath::OperationConfig;
@@ -12,6 +13,9 @@ pub fn draw(
 ) {
     ui.heading("Diagnostics");
     ui.separator();
+
+    let active_semantic = sim.active_semantic_item(job);
+    let current_boundary_id = sim.current_boundary().map(|boundary| boundary.id);
 
     // --- Stock Display ---
     egui::CollapsingHeader::new("Stock Display")
@@ -73,6 +77,114 @@ pub fn draw(
                     );
                 }
             });
+        });
+
+    ui.add_space(4.0);
+
+    // --- Semantic Context ---
+    egui::CollapsingHeader::new("Semantic Context")
+        .default_open(true)
+        .show(ui, |ui| {
+            if let Some(active) = active_semantic.as_ref() {
+                let color = semantic_kind_color(&active.item.kind);
+                ui.label(
+                    egui::RichText::new(&active.item.label)
+                        .strong()
+                        .color(color),
+                );
+                ui.label(
+                    egui::RichText::new(semantic_kind_label(&active.item.kind))
+                        .small()
+                        .color(egui::Color32::from_rgb(140, 140, 155)),
+                );
+                if let (Some(move_start), Some(move_end)) =
+                    (active.item.move_start, active.item.move_end)
+                {
+                    ui.label(format!("Moves: {move_start}..{move_end}"));
+                }
+                if let Some(bounds) = active.item.xy_bbox {
+                    ui.label(format!(
+                        "XY: {:.2}, {:.2} → {:.2}, {:.2}",
+                        bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y
+                    ));
+                }
+                if let (Some(z_min), Some(z_max)) = (active.item.z_min, active.item.z_max) {
+                    ui.label(format!("Z: {:.3} → {:.3}", z_min, z_max));
+                }
+                if !active.item.params.values.is_empty() {
+                    ui.add_space(4.0);
+                    egui::Grid::new("sim_semantic_context_grid")
+                        .num_columns(2)
+                        .spacing([8.0, 2.0])
+                        .show(ui, |ui| {
+                            for (idx, (key, value)) in active.item.params.values.iter().enumerate()
+                            {
+                                if idx >= 6 {
+                                    break;
+                                }
+                                ui.label(
+                                    egui::RichText::new(key)
+                                        .small()
+                                        .color(egui::Color32::from_rgb(140, 140, 155)),
+                                );
+                                ui.label(egui::RichText::new(format_json_value(value)).small());
+                                ui.end_row();
+                            }
+                        });
+                }
+            } else {
+                ui.label(
+                    egui::RichText::new("No semantic item at the current move")
+                        .small()
+                        .italics()
+                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                );
+            }
+        });
+
+    ui.add_space(4.0);
+
+    // --- Performance Trace ---
+    egui::CollapsingHeader::new("Performance Trace")
+        .default_open(true)
+        .show(ui, |ui| {
+            let debug_trace = current_boundary_id
+                .and_then(|toolpath_id| job.find_toolpath(toolpath_id))
+                .and_then(|toolpath| toolpath.debug_trace.as_ref());
+
+            if let Some(trace) = debug_trace {
+                ui.label(format!(
+                    "Total: {:.1} ms",
+                    trace.summary.total_elapsed_us as f64 / 1000.0
+                ));
+                if let Some(label) = &trace.summary.dominant_span_label {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Dominant: {} ({:.1} ms)",
+                            label,
+                            trace.summary.dominant_span_elapsed_us.unwrap_or_default() as f64
+                                / 1000.0
+                        ))
+                        .small()
+                        .color(egui::Color32::from_rgb(140, 190, 230)),
+                    );
+                }
+                ui.label(format!("Hotspots: {}", trace.hotspots.len()));
+                if let Some((_, annotation)) = sim.current_debug_annotation(job) {
+                    ui.label(
+                        egui::RichText::new(format!("Annotation: {}", annotation.label))
+                            .small()
+                            .color(egui::Color32::from_rgb(255, 210, 120)),
+                    );
+                }
+            } else {
+                ui.label(
+                    egui::RichText::new("No performance trace available")
+                        .small()
+                        .italics()
+                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                );
+            }
         });
 
     ui.add_space(4.0);

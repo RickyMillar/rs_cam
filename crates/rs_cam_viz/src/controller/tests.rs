@@ -67,6 +67,121 @@ fn temp_path(name: &str, extension: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("rs_cam_{name}_{nanos}.{extension}"))
 }
 
+#[test]
+fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_exist() {
+    let mut controller = sample_controller();
+    controller.state.simulation.results = Some(crate::state::simulation::SimulationResults {
+        mesh: rs_cam_core::simulation::HeightmapMesh {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+            colors: Vec::new(),
+        },
+        total_moves: 12,
+        boundaries: vec![crate::state::simulation::ToolpathBoundary {
+            id: ToolpathId(1),
+            name: "Adaptive 3D".to_string(),
+            tool_name: "Tool".to_string(),
+            start_move: 4,
+            end_move: 12,
+        }],
+        setup_boundaries: vec![crate::state::simulation::SetupBoundary {
+            setup_id: crate::state::job::SetupId(1),
+            setup_name: "Setup 1".to_string(),
+            start_move: 0,
+        }],
+        checkpoints: Vec::new(),
+        selected_toolpaths: None,
+        direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+    });
+
+    controller.handle_internal_event(crate::ui::AppEvent::InspectToolpathInSimulation(
+        ToolpathId(1),
+    ));
+    let events = controller.drain_events();
+
+    assert!(events.iter().any(|event| matches!(
+        event,
+        crate::ui::AppEvent::SwitchWorkspace(crate::state::Workspace::Simulation)
+    )));
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, crate::ui::AppEvent::SimJumpToMove(4)))
+    );
+    assert!(
+        controller
+            .state
+            .simulation
+            .debug
+            .pending_inspect_toolpath
+            .is_none()
+    );
+}
+
+#[test]
+fn inspect_toolpath_in_simulation_queues_targeted_run_when_results_missing() {
+    let mut controller = sample_controller();
+
+    controller.handle_internal_event(crate::ui::AppEvent::InspectToolpathInSimulation(
+        ToolpathId(1),
+    ));
+    let events = controller.drain_events();
+
+    assert!(events.iter().any(|event| matches!(
+        event,
+        crate::ui::AppEvent::SwitchWorkspace(crate::state::Workspace::Simulation)
+    )));
+    assert!(events.iter().any(|event| matches!(
+        event,
+        crate::ui::AppEvent::RunSimulationWith(ids) if ids == &vec![ToolpathId(1)]
+    )));
+    assert_eq!(
+        controller.state.simulation.debug.pending_inspect_toolpath,
+        Some(ToolpathId(1))
+    );
+}
+
+#[test]
+fn simulation_results_land_on_pending_inspect_toolpath_start() {
+    let mut controller = sample_controller();
+    controller.state.simulation.debug.pending_inspect_toolpath = Some(ToolpathId(1));
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Simulation(Ok(SimulationResult {
+            mesh: rs_cam_core::simulation::HeightmapMesh {
+                vertices: Vec::new(),
+                indices: Vec::new(),
+                colors: Vec::new(),
+            },
+            total_moves: 8,
+            deviations: None,
+            boundaries: vec![crate::compute::worker::SimBoundary {
+                id: ToolpathId(1),
+                name: "Adaptive 3D".to_string(),
+                tool_name: "Tool".to_string(),
+                start_move: 2,
+                end_move: 8,
+            }],
+            checkpoints: Vec::new(),
+            direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+            rapid_collisions: Vec::new(),
+            rapid_collision_move_indices: Vec::new(),
+        })));
+
+    controller.drain_compute_results();
+
+    assert_eq!(controller.state.simulation.playback.current_move, 2);
+    assert!(
+        controller
+            .state
+            .simulation
+            .debug
+            .pending_inspect_toolpath
+            .is_none()
+    );
+}
+
 fn fixture_path(name: &str) -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
