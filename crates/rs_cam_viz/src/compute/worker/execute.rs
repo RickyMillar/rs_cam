@@ -112,6 +112,9 @@ pub(super) fn run_compute(
         OperationConfig::ProjectCurve(c) => {
             run_project_curve(req, c).map_err(ComputeError::Message)
         }
+        OperationConfig::AlignmentPinDrill(c) => {
+            run_alignment_pin_drill(req, c).map_err(ComputeError::Message)
+        }
     }?;
 
     tp = apply_dressups(tp, req);
@@ -717,6 +720,35 @@ fn run_drill(req: &ComputeRequest, cfg: &DrillConfig) -> Result<Toolpath, String
         retract_z: cfg.retract_z,
     };
     Ok(drill_toolpath(&holes, &params))
+}
+
+fn run_alignment_pin_drill(
+    req: &ComputeRequest,
+    cfg: &AlignmentPinDrillConfig,
+) -> Result<Toolpath, String> {
+    if cfg.holes.is_empty() {
+        return Err("No alignment pin positions defined".to_string());
+    }
+    let stock_z = req
+        .stock_bbox
+        .as_ref()
+        .map(|b| b.max.z - b.min.z)
+        .unwrap_or(25.0);
+    let depth = stock_z + cfg.spoilboard_penetration;
+    let cycle = match cfg.cycle {
+        DrillCycleType::Simple => DrillCycle::Simple,
+        DrillCycleType::Dwell => DrillCycle::Dwell(0.5),
+        DrillCycleType::Peck => DrillCycle::Peck(cfg.peck_depth),
+        DrillCycleType::ChipBreak => DrillCycle::ChipBreak(cfg.peck_depth, 0.5),
+    };
+    let params = DrillParams {
+        depth,
+        cycle,
+        feed_rate: cfg.feed_rate,
+        safe_z: effective_safe_z(req),
+        retract_z: cfg.retract_z,
+    };
+    Ok(drill_toolpath(&cfg.holes, &params))
 }
 
 fn run_chamfer(req: &ComputeRequest, cfg: &ChamferConfig) -> Result<Toolpath, String> {

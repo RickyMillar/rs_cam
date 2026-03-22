@@ -53,7 +53,7 @@ pub fn pick(
         return Some(hit);
     }
 
-    if workspace == Workspace::Setup
+    if matches!(workspace, Workspace::Setup | Workspace::Toolpaths)
         && let Some(hit) = pick_alignment_pins(ctx, job)
     {
         return Some(hit);
@@ -167,10 +167,12 @@ fn pick_alignment_pins(ctx: &PickContext<'_>, job: &JobState) -> Option<PickHit>
     let threshold = 12.0f32;
     let mut best_dist = threshold;
     let mut best_hit = None;
-    let stock_top = (job.stock.origin_z + job.stock.z) as f32;
+    // Pin coords are stock-relative; in the local frame (Top/Deg0) the stock
+    // sits at (0,0,0) so pin positions are (pin.x, pin.y, stock.z).
+    let local_top = job.stock.z as f32;
 
     for (pin_idx, pin) in job.stock.alignment_pins.iter().enumerate() {
-        let world = [pin.x as f32, pin.y as f32, stock_top];
+        let world = [pin.x as f32, pin.y as f32, local_top];
         if let Some(screen) = ctx
             .camera
             .project_to_screen(world, ctx.aspect, ctx.vw, ctx.vh)

@@ -754,6 +754,15 @@ pub enum FlipAxis {
     Vertical,
 }
 
+impl FlipAxis {
+    pub fn label(&self) -> &'static str {
+        match self {
+            FlipAxis::Horizontal => "Horizontal",
+            FlipAxis::Vertical => "Vertical",
+        }
+    }
+}
+
 /// A physical alignment pin position for part registration between setups.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AlignmentPin {

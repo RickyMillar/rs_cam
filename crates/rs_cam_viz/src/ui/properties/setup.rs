@@ -196,12 +196,17 @@ pub fn draw(
     ui.add_space(4.0);
 
     // Alignment pins are now defined on the stock (shared across setups).
-    // Show a read-only reference if pins exist.
     if pin_count > 0 {
         ui.label(
             egui::RichText::new(format!("{pin_count} alignment pin(s) on stock"))
                 .small()
                 .color(egui::Color32::from_rgb(140, 180, 140)),
+        );
+    } else if setup.datum.xy_method == XYDatum::AlignmentPins {
+        ui.label(
+            egui::RichText::new("No pins defined — add them in Stock properties")
+                .small()
+                .color(egui::Color32::from_rgb(220, 180, 60)),
         );
     }
 

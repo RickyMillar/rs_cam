@@ -156,6 +156,32 @@ impl Default for DrillConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlignmentPinDrillConfig {
+    /// Pin hole XY positions (snapshot from stock.alignment_pins at submit time).
+    #[serde(default)]
+    pub holes: Vec<[f64; 2]>,
+    /// How far below stock bottom to drill into spoilboard (mm).
+    pub spoilboard_penetration: f64,
+    pub cycle: DrillCycleType,
+    pub peck_depth: f64,
+    pub feed_rate: f64,
+    pub retract_z: f64,
+}
+
+impl Default for AlignmentPinDrillConfig {
+    fn default() -> Self {
+        Self {
+            holes: Vec::new(),
+            spoilboard_penetration: 2.0,
+            cycle: DrillCycleType::Peck,
+            peck_depth: 3.0,
+            feed_rate: 300.0,
+            retract_z: 2.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChamferConfig {
     pub chamfer_width: f64,
     pub tip_offset: f64,

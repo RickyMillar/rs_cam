@@ -816,69 +816,86 @@ impl RsCamApp {
             let active_setups: Vec<&crate::state::job::Setup> =
                 active_setup_ref.into_iter().collect();
 
+            // Fixture/keep-out boxes are only shown outside Simulation.
             let mut boxes = Vec::new();
-            for setup in &active_setups {
-                for fixture in &setup.fixtures {
-                    if fixture.enabled {
-                        let selected = *selection == Selection::Fixture(setup.id, fixture.id);
-                        let color = if selected {
-                            [1.0_f32, 0.9, 0.4] // bright highlight
-                        } else {
-                            [0.9_f32, 0.7, 0.2]
-                        };
-                        // Fixture is defined in global coords — transform to local
-                        let clearance = fixture.clearance_bbox();
-                        let display_clearance = transform_bbox(clearance, setup);
-                        boxes.push((display_clearance, color));
-                        if selected {
-                            let inner = fixture.bbox();
-                            let display_inner = transform_bbox(inner, setup);
-                            boxes.push((display_inner, [0.9_f32, 0.9, 0.9]));
+            let in_sim = self.controller.state().workspace == Workspace::Simulation;
+            if !in_sim {
+                for setup in &active_setups {
+                    for fixture in &setup.fixtures {
+                        if fixture.enabled {
+                            let selected = *selection == Selection::Fixture(setup.id, fixture.id);
+                            let color = if selected {
+                                [1.0_f32, 0.9, 0.4] // bright highlight
+                            } else {
+                                [0.9_f32, 0.7, 0.2]
+                            };
+                            let clearance = fixture.clearance_bbox();
+                            let display_clearance = transform_bbox(clearance, setup);
+                            boxes.push((display_clearance, color));
+                            if selected {
+                                let inner = fixture.bbox();
+                                let display_inner = transform_bbox(inner, setup);
+                                boxes.push((display_inner, [0.9_f32, 0.9, 0.9]));
+                            }
                         }
                     }
-                }
-                for keep_out in &setup.keep_out_zones {
-                    if keep_out.enabled {
-                        let selected = *selection == Selection::KeepOut(setup.id, keep_out.id);
-                        let color = if selected {
-                            [1.0_f32, 0.4, 0.4] // bright highlight
-                        } else {
-                            [0.9_f32, 0.2, 0.2]
-                        };
-                        let ko_bb = keep_out.bbox(&job.stock);
-                        let display_ko = transform_bbox(ko_bb, setup);
-                        boxes.push((display_ko, color));
+                    for keep_out in &setup.keep_out_zones {
+                        if keep_out.enabled {
+                            let selected = *selection == Selection::KeepOut(setup.id, keep_out.id);
+                            let color = if selected {
+                                [1.0_f32, 0.4, 0.4] // bright highlight
+                            } else {
+                                [0.9_f32, 0.2, 0.2]
+                            };
+                            let ko_bb = keep_out.bbox(&job.stock);
+                            let display_ko = transform_bbox(ko_bb, setup);
+                            boxes.push((display_ko, color));
+                        }
                     }
                 }
             }
 
-            // Render stock-level alignment pins (visible in all setups).
-            let mut pin_vertices = Vec::new();
+            // Render stock-level alignment pins as circles (visible in all setups).
+            // Pin coords are stock-relative — add origin to get global for transform_point.
+            let mut pin_vertices: Vec<crate::render::LineVertex> = Vec::new();
+            let ox = job.stock.origin_x;
+            let oy = job.stock.origin_y;
+            let oz = job.stock.origin_z;
             for setup in &active_setups {
                 for pin in &job.stock.alignment_pins {
                     let radius = (pin.diameter / 2.0) as f32;
-                    // Pin is defined in global frame at stock top — transform to local
-                    let stock_top = job.stock.origin_z + job.stock.z;
-                    let global_pt = P3::new(pin.x, pin.y, stock_top);
+                    let global_pt = P3::new(pin.x + ox, pin.y + oy, oz + job.stock.z);
                     let local_pt = setup.transform_point(global_pt, &job.stock);
-                    let (x, y, z) = (local_pt.x as f32, local_pt.y as f32, local_pt.z as f32);
+                    let (cx, cy, cz) = (local_pt.x as f32, local_pt.y as f32, local_pt.z as f32);
                     let color = [0.2_f32, 0.9, 0.3];
-                    pin_vertices.push(crate::render::LineVertex {
-                        position: [x - radius, y, z],
-                        color,
-                    });
-                    pin_vertices.push(crate::render::LineVertex {
-                        position: [x + radius, y, z],
-                        color,
-                    });
-                    pin_vertices.push(crate::render::LineVertex {
-                        position: [x, y - radius, z],
-                        color,
-                    });
-                    pin_vertices.push(crate::render::LineVertex {
-                        position: [x, y + radius, z],
-                        color,
-                    });
+                    push_circle_vertices(&mut pin_vertices, cx, cy, cz, radius, color, 16);
+                }
+
+                // Flip axis dashed centerline
+                if let Some(axis) = job.stock.flip_axis {
+                    let stock_top = oz + job.stock.z;
+                    let (start_g, end_g) = match axis {
+                        crate::state::job::FlipAxis::Horizontal => {
+                            let y = job.stock.y / 2.0 + oy;
+                            (
+                                P3::new(ox, y, stock_top),
+                                P3::new(ox + job.stock.x, y, stock_top),
+                            )
+                        }
+                        crate::state::job::FlipAxis::Vertical => {
+                            let x = job.stock.x / 2.0 + ox;
+                            (
+                                P3::new(x, oy, stock_top),
+                                P3::new(x, oy + job.stock.y, stock_top),
+                            )
+                        }
+                    };
+                    let start_l = setup.transform_point(start_g, &job.stock);
+                    let end_l = setup.transform_point(end_g, &job.stock);
+                    let s = [start_l.x as f32, start_l.y as f32, start_l.z as f32];
+                    let e = [end_l.x as f32, end_l.y as f32, end_l.z as f32];
+                    let axis_color = [0.9_f32, 0.7, 0.2];
+                    push_dashed_line_vertices(&mut pin_vertices, s, e, axis_color, 5.0, 3.0);
                 }
             }
 
@@ -1273,8 +1290,9 @@ impl RsCamApp {
             ) => {
                 self.controller.state_mut().selection = Selection::KeepOut(setup_id, keep_out_id);
             }
-            (Workspace::Setup, PickHit::AlignmentPin { .. }) => {
-                // Pins are stock-level; selecting a pin keeps the current setup selected.
+            (Workspace::Setup | Workspace::Toolpaths, PickHit::AlignmentPin { .. }) => {
+                // Pins are stock-level; selecting a pin selects the stock.
+                self.controller.state_mut().selection = Selection::Stock;
             }
             (_, PickHit::StockFace { .. }) => {
                 self.controller.state_mut().selection = Selection::Stock;
@@ -1371,7 +1389,9 @@ impl RsCamApp {
             show_grid: state.viewport.show_grid,
             show_stock: state.viewport.show_stock
                 && state.job.models.iter().any(|model| model.mesh.is_some()),
-            show_fixtures: state.viewport.show_fixtures && state.workspace != Workspace::Simulation,
+            show_fixtures: state.viewport.show_fixtures
+                && (state.workspace != Workspace::Simulation
+                    || !state.job.stock.alignment_pins.is_empty()),
             show_solid_stock: state.viewport.show_stock && state.workspace == Workspace::Setup,
             show_height_planes: state.workspace == Workspace::Toolpaths
                 && matches!(state.selection, Selection::Toolpath(_)),
@@ -1942,4 +1962,69 @@ fn configure_theme(ctx: &egui::Context) {
     let mut style = (*ctx.style()).clone();
     style.spacing.item_spacing = egui::vec2(6.0, 4.0);
     ctx.set_style(style);
+}
+
+/// Push line-segment vertices approximating a circle in the XY plane at height `cz`.
+fn push_circle_vertices(
+    verts: &mut Vec<crate::render::LineVertex>,
+    cx: f32,
+    cy: f32,
+    cz: f32,
+    radius: f32,
+    color: [f32; 3],
+    segments: usize,
+) {
+    let step = std::f32::consts::TAU / segments as f32;
+    for i in 0..segments {
+        let a0 = i as f32 * step;
+        let a1 = (i + 1) as f32 * step;
+        verts.push(crate::render::LineVertex {
+            position: [cx + radius * a0.cos(), cy + radius * a0.sin(), cz],
+            color,
+        });
+        verts.push(crate::render::LineVertex {
+            position: [cx + radius * a1.cos(), cy + radius * a1.sin(), cz],
+            color,
+        });
+    }
+}
+
+/// Push line-segment vertices for a dashed line from `start` to `end`.
+fn push_dashed_line_vertices(
+    verts: &mut Vec<crate::render::LineVertex>,
+    start: [f32; 3],
+    end: [f32; 3],
+    color: [f32; 3],
+    dash_len: f32,
+    gap_len: f32,
+) {
+    let dx = end[0] - start[0];
+    let dy = end[1] - start[1];
+    let dz = end[2] - start[2];
+    let total = (dx * dx + dy * dy + dz * dz).sqrt();
+    if total < 1e-6 {
+        return;
+    }
+    let ux = dx / total;
+    let uy = dy / total;
+    let uz = dz / total;
+
+    let cycle = dash_len + gap_len;
+    let mut t = 0.0_f32;
+    while t < total {
+        let t_end = (t + dash_len).min(total);
+        verts.push(crate::render::LineVertex {
+            position: [start[0] + ux * t, start[1] + uy * t, start[2] + uz * t],
+            color,
+        });
+        verts.push(crate::render::LineVertex {
+            position: [
+                start[0] + ux * t_end,
+                start[1] + uy * t_end,
+                start[2] + uz * t_end,
+            ],
+            color,
+        });
+        t += cycle;
+    }
 }
