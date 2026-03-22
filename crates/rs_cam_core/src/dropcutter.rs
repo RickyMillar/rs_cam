@@ -254,8 +254,11 @@ fn batch_compute_points<C: MillingCutter + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mesh::{SpatialIndex, make_test_flat};
-    use crate::tool::BallEndmill;
+    use crate::geo::P3;
+    use crate::mesh::{SpatialIndex, make_test_flat, make_test_hemisphere};
+    use crate::tool::{
+        BallEndmill, BullNoseEndmill, FlatEndmill, TaperedBallEndmill, VBitEndmill,
+    };
 
     #[test]
     fn test_batch_drop_cutter_flat() {
@@ -321,6 +324,397 @@ mod tests {
             (center.z - 0.0).abs() < 0.5,
             "Center CL.z on flat = {}, expected ~0.0",
             center.z
+        );
+    }
+
+    // --- Task E-dc: All 5 tool types on flat mesh ---
+
+    #[test]
+    fn test_flat_endmill_on_flat_mesh() {
+        let mesh = make_test_flat(100.0);
+        let index = SpatialIndex::build(&mesh, 20.0);
+        let tool = FlatEndmill::new(10.0, 25.0);
+
+        let grid = batch_drop_cutter(&mesh, &index, &tool, 5.0, 0.0, -100.0);
+        assert!(grid.rows > 0 && grid.cols > 0);
+
+        let cl = grid.get(grid.rows / 2, grid.cols / 2);
+        assert!(cl.contacted, "FlatEndmill center should contact flat mesh");
+        assert!(
+            (cl.z - 0.0).abs() < 0.5,
+            "FlatEndmill CL.z = {}, expected ~0.0 on flat mesh",
+            cl.z
+        );
+    }
+
+    #[test]
+    fn test_ball_endmill_on_flat_mesh() {
+        let mesh = make_test_flat(100.0);
+        let index = SpatialIndex::build(&mesh, 20.0);
+        let tool = BallEndmill::new(10.0, 25.0);
+
+        let cl = point_drop_cutter(0.0, 0.0, &mesh, &index, &tool);
+        assert!(cl.contacted);
+        // Ball on flat: facet_drop yields z = surface_z + R*nz - R = 0
+        assert!(
+            (cl.z - 0.0).abs() < 0.5,
+            "BallEndmill CL.z = {}, expected ~0.0",
+            cl.z
+        );
+    }
+
+    #[test]
+    fn test_bullnose_endmill_on_flat_mesh() {
+        let mesh = make_test_flat(100.0);
+        let index = SpatialIndex::build(&mesh, 20.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+
+        let grid = batch_drop_cutter(&mesh, &index, &tool, 5.0, 0.0, -100.0);
+        assert!(grid.rows > 0 && grid.cols > 0);
+
+        let cl = grid.get(grid.rows / 2, grid.cols / 2);
+        assert!(
+            cl.contacted,
+            "BullNoseEndmill center should contact flat mesh"
+        );
+        assert!(
+            (cl.z - 0.0).abs() < 0.5,
+            "BullNoseEndmill CL.z = {}, expected ~0.0 on flat mesh",
+            cl.z
+        );
+    }
+
+    #[test]
+    fn test_vbit_endmill_on_flat_mesh() {
+        let mesh = make_test_flat(100.0);
+        let index = SpatialIndex::build(&mesh, 20.0);
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+
+        let grid = batch_drop_cutter(&mesh, &index, &tool, 5.0, 0.0, -100.0);
+        assert!(grid.rows > 0 && grid.cols > 0);
+
+        let cl = grid.get(grid.rows / 2, grid.cols / 2);
+        assert!(cl.contacted, "VBitEndmill center should contact flat mesh");
+        // V-bit tip contact on flat surface: z = 0
+        assert!(
+            (cl.z - 0.0).abs() < 0.5,
+            "VBitEndmill CL.z = {}, expected ~0.0 on flat mesh",
+            cl.z
+        );
+    }
+
+    #[test]
+    fn test_tapered_ball_endmill_on_flat_mesh() {
+        let mesh = make_test_flat(100.0);
+        let index = SpatialIndex::build(&mesh, 20.0);
+        let tool = TaperedBallEndmill::new(6.0, 10.0, 12.0, 30.0);
+
+        let grid = batch_drop_cutter(&mesh, &index, &tool, 5.0, 0.0, -100.0);
+        assert!(grid.rows > 0 && grid.cols > 0);
+
+        let cl = grid.get(grid.rows / 2, grid.cols / 2);
+        assert!(
+            cl.contacted,
+            "TaperedBallEndmill center should contact flat mesh"
+        );
+        assert!(
+            (cl.z - 0.0).abs() < 0.5,
+            "TaperedBallEndmill CL.z = {}, expected ~0.0 on flat mesh",
+            cl.z
+        );
+    }
+
+    // --- All 5 tool types on hemisphere mesh ---
+
+    #[test]
+    fn test_all_tools_on_hemisphere_produce_valid_heights() {
+        let hemisphere_r = 20.0;
+        let mesh = make_test_hemisphere(hemisphere_r, 16);
+        let index = SpatialIndex::build(&mesh, 10.0);
+
+        let flat = FlatEndmill::new(10.0, 25.0);
+        let ball = BallEndmill::new(10.0, 25.0);
+        let bull = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let vbit = VBitEndmill::new(10.0, 90.0, 25.0);
+        let tapered = TaperedBallEndmill::new(6.0, 10.0, 12.0, 30.0);
+
+        // Drop each tool at the apex (0,0)
+        let tools: Vec<(&str, &dyn crate::tool::MillingCutter)> = vec![
+            ("flat", &flat),
+            ("ball", &ball),
+            ("bullnose", &bull),
+            ("vbit", &vbit),
+            ("tapered_ball", &tapered),
+        ];
+
+        for (name, tool) in &tools {
+            let cl = point_drop_cutter(0.0, 0.0, &mesh, &index, *tool);
+            assert!(cl.contacted, "{} should contact hemisphere at apex", name);
+            assert!(
+                cl.z.is_finite() && cl.z > 0.0,
+                "{} CL.z = {} should be finite and positive on hemisphere apex",
+                name,
+                cl.z
+            );
+            // At the apex, all tools should land near hemisphere_r
+            assert!(
+                (cl.z - hemisphere_r).abs() < 1.0,
+                "{} CL.z = {}, expected ~{} at hemisphere apex",
+                name,
+                cl.z,
+                hemisphere_r
+            );
+        }
+    }
+
+    // --- Edge cases ---
+
+    #[test]
+    fn test_single_triangle_mesh() {
+        // Build a mesh from a single triangle
+        let vertices = vec![
+            P3::new(-10.0, -10.0, 5.0),
+            P3::new(10.0, -10.0, 5.0),
+            P3::new(0.0, 10.0, 5.0),
+        ];
+        let triangles = vec![[0, 1, 2]];
+        let mesh = crate::mesh::TriangleMesh::from_raw(vertices, triangles);
+        let index = SpatialIndex::build(&mesh, 20.0);
+        let tool = FlatEndmill::new(10.0, 25.0);
+
+        // Point inside the single triangle
+        let cl = point_drop_cutter(0.0, 0.0, &mesh, &index, &tool);
+        assert!(cl.contacted, "Should contact single triangle");
+        assert!(
+            (cl.z - 5.0).abs() < 1e-6,
+            "Flat endmill on single triangle at z=5 should give CL.z=5, got {}",
+            cl.z
+        );
+    }
+
+    #[test]
+    fn test_near_boundary_grid_points() {
+        // Mesh is from -50 to +50. Points near the boundary should still
+        // be contacted (tool radius extends the query range).
+        let mesh = make_test_flat(100.0);
+        let index = SpatialIndex::build(&mesh, 20.0);
+        let tool = BallEndmill::new(10.0, 25.0);
+
+        // Point at the mesh boundary edge: tool extends 5mm past edge,
+        // so at x=49 we should still have contact via vertex/edge
+        let cl = point_drop_cutter(49.0, 0.0, &mesh, &index, &tool);
+        assert!(
+            cl.contacted,
+            "Near-boundary point at x=49 should be contacted (tool radius=5)"
+        );
+        assert!(
+            cl.z.is_finite(),
+            "Near-boundary CL.z should be finite, got {}",
+            cl.z
+        );
+    }
+
+    #[test]
+    fn test_vertical_edge_mesh() {
+        // Mesh with a vertical wall: two triangles forming a 90-degree step
+        let vertices = vec![
+            P3::new(-20.0, -20.0, 0.0),
+            P3::new(0.0, -20.0, 0.0),
+            P3::new(0.0, -20.0, 10.0),
+            P3::new(-20.0, -20.0, 10.0),
+            P3::new(0.0, 20.0, 0.0),
+            P3::new(0.0, 20.0, 10.0),
+            // Top surface
+            P3::new(-20.0, 20.0, 10.0),
+            P3::new(20.0, 20.0, 10.0),
+            P3::new(20.0, -20.0, 10.0),
+        ];
+        let triangles = vec![
+            [0, 1, 2],
+            [0, 2, 3],
+            [1, 4, 5],
+            [1, 5, 2],
+            // Top surface
+            [3, 2, 5],
+            [3, 5, 6],
+            [2, 8, 7],
+            [2, 7, 5],
+        ];
+        let mesh = crate::mesh::TriangleMesh::from_raw(vertices, triangles);
+        let index = SpatialIndex::build(&mesh, 10.0);
+        let tool = BallEndmill::new(6.0, 20.0);
+
+        // Drop on the top surface, well inside
+        let cl_top = point_drop_cutter(5.0, 0.0, &mesh, &index, &tool);
+        assert!(cl_top.contacted, "Should contact top surface");
+        assert!(
+            cl_top.z > 5.0,
+            "CL on top surface should be above 5, got {}",
+            cl_top.z
+        );
+
+        // Drop at the vertical wall boundary: should still get valid results
+        let cl_wall = point_drop_cutter(0.0, 0.0, &mesh, &index, &tool);
+        assert!(
+            cl_wall.z.is_finite(),
+            "CL at vertical wall should be finite, got {}",
+            cl_wall.z
+        );
+    }
+
+    #[test]
+    fn test_min_z_clamping() {
+        let mesh = make_test_flat(100.0);
+        let index = SpatialIndex::build(&mesh, 20.0);
+        let tool = BallEndmill::new(10.0, 25.0);
+
+        // With min_z = 5.0, all points should be at least 5.0
+        let grid = batch_drop_cutter(&mesh, &index, &tool, 10.0, 0.0, 5.0);
+        for row in 0..grid.rows {
+            for col in 0..grid.cols {
+                let cl = grid.get(row, col);
+                assert!(
+                    cl.z >= 5.0 - 1e-10,
+                    "CL.z = {} should be >= min_z=5.0 at ({}, {})",
+                    cl.z,
+                    row,
+                    col
+                );
+            }
+        }
+    }
+
+    // --- Cancellation ---
+
+    #[test]
+    fn test_cancellation_returns_error() {
+        let mesh = make_test_flat(100.0);
+        let index = SpatialIndex::build(&mesh, 20.0);
+        let tool = BallEndmill::new(10.0, 25.0);
+
+        // Cancel immediately
+        let always_cancel = || true;
+        let result = batch_drop_cutter_with_cancel(
+            &mesh,
+            &index,
+            &tool,
+            5.0,
+            0.0,
+            -100.0,
+            &always_cancel,
+        );
+        assert!(
+            result.is_err(),
+            "Immediately-cancelling predicate should return Err(Cancelled)"
+        );
+    }
+
+    #[test]
+    fn test_no_cancellation_succeeds() {
+        let mesh = make_test_flat(100.0);
+        let index = SpatialIndex::build(&mesh, 20.0);
+        let tool = BallEndmill::new(10.0, 25.0);
+
+        let never_cancel = || false;
+        let result = batch_drop_cutter_with_cancel(
+            &mesh,
+            &index,
+            &tool,
+            5.0,
+            0.0,
+            -100.0,
+            &never_cancel,
+        );
+        assert!(
+            result.is_ok(),
+            "Never-cancelling predicate should return Ok"
+        );
+        let grid = result.unwrap();
+        assert!(grid.rows > 0 && grid.cols > 0);
+    }
+
+    #[test]
+    fn test_cancellation_after_some_work() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let mesh = make_test_flat(100.0);
+        let index = SpatialIndex::build(&mesh, 20.0);
+        let tool = BallEndmill::new(10.0, 25.0);
+
+        // Cancel after being checked a few times
+        let check_count = AtomicUsize::new(0);
+        let cancel_after_3 = || {
+            check_count.fetch_add(1, Ordering::Relaxed);
+            check_count.load(Ordering::Relaxed) > 3
+        };
+
+        let result = batch_drop_cutter_with_cancel(
+            &mesh,
+            &index,
+            &tool,
+            5.0,
+            0.0,
+            -100.0,
+            &cancel_after_3,
+        );
+
+        // Depending on parallelism, it may or may not cancel in time, but
+        // the cancel predicate should have been called at least once
+        assert!(
+            check_count.load(Ordering::Relaxed) > 0,
+            "Cancel check should have been invoked at least once"
+        );
+        // The result should be either Ok or Err(Cancelled) - never a panic
+        let _ = result;
+    }
+
+    // --- Grid accessor ---
+
+    #[test]
+    fn test_drop_cutter_grid_get_accessor() {
+        let mesh = make_test_flat(100.0);
+        let index = SpatialIndex::build(&mesh, 20.0);
+        let tool = FlatEndmill::new(10.0, 25.0);
+
+        let grid = batch_drop_cutter(&mesh, &index, &tool, 10.0, 0.0, -100.0);
+
+        // Verify that get(row, col) matches the underlying flat array
+        for row in 0..grid.rows {
+            for col in 0..grid.cols {
+                let cl = grid.get(row, col);
+                let flat_cl = &grid.points[row * grid.cols + col];
+                assert_eq!(cl.x, flat_cl.x);
+                assert_eq!(cl.y, flat_cl.y);
+                assert_eq!(cl.z, flat_cl.z);
+            }
+        }
+    }
+
+    #[test]
+    fn test_batch_grid_dimensions_match_step_over() {
+        let mesh = make_test_flat(100.0);
+        let index = SpatialIndex::build(&mesh, 20.0);
+        let tool = FlatEndmill::new(10.0, 25.0);
+
+        let grid = batch_drop_cutter(&mesh, &index, &tool, 10.0, 0.0, -100.0);
+
+        // Grid should have rows*cols points
+        assert_eq!(
+            grid.points.len(),
+            grid.rows * grid.cols,
+            "Grid points count should be rows * cols"
+        );
+
+        // Step sizes should match
+        assert!(
+            (grid.x_step - 10.0).abs() < 1e-10,
+            "x_step should be 10.0, got {}",
+            grid.x_step
+        );
+        assert!(
+            (grid.y_step - 10.0).abs() < 1e-10,
+            "y_step should be 10.0, got {}",
+            grid.y_step
         );
     }
 }
