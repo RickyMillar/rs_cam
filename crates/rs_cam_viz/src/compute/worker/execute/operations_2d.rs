@@ -124,6 +124,7 @@ fn run_adaptive_annotated(
                         tolerance: cfg.tolerance,
                         slot_clearing: cfg.slot_clearing,
                         min_cutting_radius: cfg.min_cutting_radius,
+                        initial_stock: req.prior_stock.clone(),
                     },
                     &|| cancel.load(Ordering::SeqCst),
                     debug,

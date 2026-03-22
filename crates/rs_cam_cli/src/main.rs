@@ -2090,6 +2090,7 @@ fn main() -> Result<()> {
                             tolerance,
                             slot_clearing,
                             min_cutting_radius,
+                            initial_stock: None,
                         },
                     )
                 });

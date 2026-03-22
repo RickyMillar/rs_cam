@@ -18,6 +18,7 @@ pub(crate) use crate::adaptive_shared::{
     angle_diff, average_angles, blend_corners, refine_angle_bracket, target_engagement_fraction,
 };
 use crate::debug_trace::{HotspotRecord, ToolpathDebugBounds2, ToolpathDebugContext};
+use crate::dexel_stock::TriDexelStock;
 use crate::geo::P2;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::polygon::{Polygon2, offset_polygon};
@@ -42,6 +43,10 @@ pub struct AdaptiveParams {
     /// Minimum cutting radius: blend sharp inside corners with arcs of at
     /// least this radius. Prevents chatter on sharp corners. 0.0 = disabled.
     pub min_cutting_radius: f64,
+    /// Optional prior stock state. When provided, the material grid is
+    /// initialized from the tri-dexel stock so that cells already cleared
+    /// by earlier operations are not re-cut.
+    pub initial_stock: Option<TriDexelStock>,
 }
 
 // ── Material grid ──────────────────────────────────────────────────────
@@ -190,6 +195,51 @@ impl MaterialGrid {
                         self.cells[idx] = CELL_CLEARED;
                         self.material_count -= 1;
                     }
+                }
+            }
+        }
+    }
+
+    /// Mark cells as cleared where the tri-dexel stock surface is below
+    /// the cutting depth. This lets the adaptive algorithm skip regions
+    /// already machined by prior operations.
+    pub fn apply_initial_stock(&mut self, stock: &TriDexelStock, cut_depth: f64) {
+        let z_grid = &stock.z_grid;
+        let cut_z = cut_depth as f32;
+        for row in 0..self.rows {
+            let world_y = self.origin_y + row as f64 * self.cell_size;
+            for col in 0..self.cols {
+                let idx = row * self.cols + col;
+                if self.cells[idx] != CELL_MATERIAL {
+                    continue;
+                }
+                let world_x = self.origin_x + col as f64 * self.cell_size;
+
+                // Map world coords to dexel grid cell
+                let dexel_col_f = (world_x - z_grid.origin_u) / z_grid.cell_size;
+                let dexel_row_f = (world_y - z_grid.origin_v) / z_grid.cell_size;
+                if dexel_col_f < 0.0 || dexel_row_f < 0.0 {
+                    continue;
+                }
+                let dexel_col = dexel_col_f as usize;
+                let dexel_row = dexel_row_f as usize;
+                if dexel_col >= z_grid.cols || dexel_row >= z_grid.rows {
+                    continue;
+                }
+
+                // If the stock top at this cell is at or below the cutting
+                // depth, the material was already removed.
+                match z_grid.top_z_at(dexel_row, dexel_col) {
+                    Some(top_z) if top_z <= cut_z => {
+                        self.cells[idx] = CELL_CLEARED;
+                        self.material_count -= 1;
+                    }
+                    None => {
+                        // No material at all in this dexel ray — cleared.
+                        self.cells[idx] = CELL_CLEARED;
+                        self.material_count -= 1;
+                    }
+                    _ => {}
                 }
             }
         }
@@ -1017,6 +1067,7 @@ fn adaptive_segments(
         plunge_rate: 0.0,
         safe_z: 0.0,
         min_cutting_radius: 0.0,
+        initial_stock: None,
     };
     adaptive_segments_with_debug(polygon, &params, cancel, None)
 }
@@ -1043,6 +1094,12 @@ fn adaptive_segments_with_debug(
     // Build material grid from the original polygon (not inset)
     let cell_size = (tool_radius / 6.0).max(tolerance);
     let mut grid = MaterialGrid::from_polygon(polygon, cell_size);
+
+    // If prior stock state is available, mark cells already cleared by
+    // earlier operations so the adaptive algorithm does not re-cut them.
+    if let Some(ref stock) = params.initial_stock {
+        grid.apply_initial_stock(stock, cut_depth);
+    }
 
     // Cache the machinable region as a boolean mask for fast lookups
     let machinable_mask = MaterialGrid::build_machinable_mask(
@@ -1582,6 +1639,7 @@ mod tests {
             tolerance: 0.2,
             slot_clearing: false,
             min_cutting_radius: 0.0,
+            initial_stock: None,
         }
     }
 
@@ -2519,6 +2577,61 @@ mod tests {
                 .iter()
                 .any(|hotspot| hotspot.kind == "adaptive_pass"),
             "adaptive trace should record at least one hotspot"
+        );
+    }
+
+    #[test]
+    fn initial_stock_reduces_adaptive_moves() {
+        use crate::geo::{BoundingBox3, P3};
+
+        let poly = square_polygon(20.0);
+        let tool_radius = 2.0;
+        let stepover = 1.5;
+
+        // Run without initial stock (full material).
+        let params_full = default_params(tool_radius, stepover);
+        let tp_full = adaptive_toolpath(&poly, &params_full);
+        assert!(!tp_full.moves.is_empty(), "full run should produce moves");
+
+        // Build a stock that covers the polygon, with the left half cleared.
+        // Stock: x=-10..10, y=-10..10, z=-10..0
+        let bbox = BoundingBox3 {
+            min: P3::new(-10.0, -10.0, -10.0),
+            max: P3::new(10.0, 10.0, 0.0),
+        };
+        let cell_size = 0.5;
+        let mut stock = TriDexelStock::from_bounds(&bbox, cell_size);
+
+        // Clear the left half (x < 0) by subtracting above z = -10 (removes
+        // all material in those cells).
+        let grid = &mut stock.z_grid;
+        for row in 0..grid.rows {
+            for col in 0..grid.cols {
+                let world_x = grid.origin_u + col as f64 * grid.cell_size;
+                if world_x < 0.0 {
+                    crate::dexel::ray_subtract_above(&mut grid.rays[row * grid.cols + col], -10.0);
+                }
+            }
+        }
+
+        // Run with the half-cleared stock.
+        let params_stock = AdaptiveParams {
+            initial_stock: Some(stock),
+            ..default_params(tool_radius, stepover)
+        };
+        let tp_stock = adaptive_toolpath(&poly, &params_stock);
+        assert!(
+            !tp_stock.moves.is_empty(),
+            "stock-aware run should still produce moves for remaining material"
+        );
+
+        // The stock-aware run should produce fewer moves because half
+        // the material is already gone.
+        assert!(
+            tp_stock.moves.len() < tp_full.moves.len(),
+            "stock-aware ({} moves) should be fewer than full ({} moves)",
+            tp_stock.moves.len(),
+            tp_full.moves.len(),
         );
     }
 }

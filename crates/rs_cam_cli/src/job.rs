@@ -464,6 +464,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                                 tolerance,
                                 slot_clearing,
                                 min_cutting_radius,
+                                initial_stock: None,
                             },
                         )
                     });
