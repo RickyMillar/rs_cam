@@ -26,6 +26,11 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      - name: Demo job smoke test
+        run: |
+          mkdir -p demos
+          cargo run -p rs_cam_cli -- job fixtures/demo_job.toml
+
   viz-regression:
     runs-on: ubuntu-latest
 
