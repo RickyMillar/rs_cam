@@ -750,4 +750,482 @@ mod tests {
         std::fs::remove_file(path).ok();
         std::fs::remove_dir(dir).ok();
     }
+
+    // --- Task E-simcut: Empty samples produce valid defaults ---
+
+    #[test]
+    fn trace_from_empty_samples() {
+        let trace = SimulationCutTrace::from_samples(1.0, Vec::new());
+
+        assert_eq!(trace.summary.sample_count, 0);
+        assert_eq!(trace.summary.toolpath_count, 0);
+        assert_eq!(trace.summary.issue_count, 0);
+        assert_eq!(trace.summary.hotspot_count, 0);
+        assert!((trace.summary.total_runtime_s).abs() < 1e-9);
+        assert!((trace.summary.cutting_runtime_s).abs() < 1e-9);
+        assert!((trace.summary.rapid_runtime_s).abs() < 1e-9);
+        assert!((trace.summary.average_engagement).abs() < 1e-9);
+        assert!((trace.summary.total_removed_volume_est_mm3).abs() < 1e-9);
+        assert!(trace.toolpath_summaries.is_empty());
+        assert!(trace.issues.is_empty());
+        assert!(trace.hotspots.is_empty());
+        assert!(trace.samples.is_empty());
+    }
+
+    // --- Rapid-only toolpath (no cutting) ---
+
+    #[test]
+    fn trace_rapid_only_has_zero_cutting_time() {
+        let samples = vec![
+            SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 0,
+                sample_index: 0,
+                position: [0.0, 0.0, 10.0],
+                cumulative_time_s: 0.1,
+                segment_time_s: 0.1,
+                is_cutting: false,
+                feed_rate_mm_min: 5000.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 0.0,
+                radial_engagement: 0.0,
+                chipload_mm_per_tooth: 0.0,
+                removed_volume_est_mm3: 0.0,
+                mrr_mm3_s: 0.0,
+                semantic_item_id: None,
+            },
+            SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 1,
+                sample_index: 1,
+                position: [50.0, 0.0, 10.0],
+                cumulative_time_s: 0.3,
+                segment_time_s: 0.2,
+                is_cutting: false,
+                feed_rate_mm_min: 5000.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 0.0,
+                radial_engagement: 0.0,
+                chipload_mm_per_tooth: 0.0,
+                removed_volume_est_mm3: 0.0,
+                mrr_mm3_s: 0.0,
+                semantic_item_id: None,
+            },
+        ];
+
+        let trace = SimulationCutTrace::from_samples(1.0, samples);
+
+        assert_eq!(trace.summary.sample_count, 2);
+        assert_eq!(trace.summary.toolpath_count, 1);
+        assert!((trace.summary.total_runtime_s - 0.3).abs() < 1e-9);
+        assert!((trace.summary.cutting_runtime_s).abs() < 1e-9);
+        assert!((trace.summary.rapid_runtime_s - 0.3).abs() < 1e-9);
+        assert_eq!(trace.summary.issue_count, 0);
+        assert!((trace.summary.average_engagement).abs() < 1e-9);
+        assert!((trace.summary.total_removed_volume_est_mm3).abs() < 1e-9);
+    }
+
+    // --- Engagement metrics classification ---
+
+    #[test]
+    fn trace_classifies_air_cut_and_low_engagement() {
+        let samples = vec![
+            // Air cut: is_cutting=true, engagement < 0.02
+            SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 0,
+                sample_index: 0,
+                position: [0.0, 0.0, -1.0],
+                cumulative_time_s: 0.1,
+                segment_time_s: 0.1,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 1.0,
+                radial_engagement: 0.01,
+                chipload_mm_per_tooth: 0.01,
+                removed_volume_est_mm3: 0.1,
+                mrr_mm3_s: 1.0,
+                semantic_item_id: None,
+            },
+            // Low engagement: is_cutting=true, 0.02 <= engagement < 0.10
+            SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 1,
+                sample_index: 1,
+                position: [1.0, 0.0, -1.0],
+                cumulative_time_s: 0.2,
+                segment_time_s: 0.1,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 1.0,
+                radial_engagement: 0.05,
+                chipload_mm_per_tooth: 0.01,
+                removed_volume_est_mm3: 0.3,
+                mrr_mm3_s: 3.0,
+                semantic_item_id: None,
+            },
+            // Good engagement: is_cutting=true, engagement >= 0.10
+            SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 2,
+                sample_index: 2,
+                position: [2.0, 0.0, -1.0],
+                cumulative_time_s: 0.3,
+                segment_time_s: 0.1,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 2.0,
+                radial_engagement: 0.50,
+                chipload_mm_per_tooth: 0.02,
+                removed_volume_est_mm3: 1.0,
+                mrr_mm3_s: 10.0,
+                semantic_item_id: None,
+            },
+        ];
+
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+
+        // Two issues: one air cut and one low engagement
+        assert_eq!(trace.summary.issue_count, 2);
+        assert_eq!(trace.issues.len(), 2);
+
+        let air_cuts: Vec<_> = trace
+            .issues
+            .iter()
+            .filter(|i| i.kind == SimulationCutIssueKind::AirCut)
+            .collect();
+        let low_engs: Vec<_> = trace
+            .issues
+            .iter()
+            .filter(|i| i.kind == SimulationCutIssueKind::LowEngagement)
+            .collect();
+        assert_eq!(air_cuts.len(), 1, "Should have exactly 1 air cut issue");
+        assert_eq!(
+            low_engs.len(),
+            1,
+            "Should have exactly 1 low engagement issue"
+        );
+
+        // Air cut time = 0.1s, low engagement time = 0.1s
+        assert!((trace.summary.air_cut_time_s - 0.1).abs() < 1e-9);
+        assert!((trace.summary.low_engagement_time_s - 0.1).abs() < 1e-9);
+    }
+
+    // --- Peak metrics tracking ---
+
+    #[test]
+    fn trace_tracks_peak_chipload_and_axial_doc() {
+        let samples = vec![
+            SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 0,
+                sample_index: 0,
+                position: [0.0, 0.0, -1.0],
+                cumulative_time_s: 0.1,
+                segment_time_s: 0.1,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 1.5,
+                radial_engagement: 0.30,
+                chipload_mm_per_tooth: 0.05,
+                removed_volume_est_mm3: 2.0,
+                mrr_mm3_s: 20.0,
+                semantic_item_id: None,
+            },
+            SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 1,
+                sample_index: 1,
+                position: [1.0, 0.0, -2.0],
+                cumulative_time_s: 0.2,
+                segment_time_s: 0.1,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 3.0,
+                radial_engagement: 0.60,
+                chipload_mm_per_tooth: 0.08,
+                removed_volume_est_mm3: 5.0,
+                mrr_mm3_s: 50.0,
+                semantic_item_id: None,
+            },
+        ];
+
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+
+        assert!(
+            (trace.summary.peak_chipload_mm_per_tooth - 0.08).abs() < 1e-9,
+            "Peak chipload should be 0.08, got {}",
+            trace.summary.peak_chipload_mm_per_tooth
+        );
+        assert!(
+            (trace.summary.peak_axial_doc_mm - 3.0).abs() < 1e-9,
+            "Peak axial DOC should be 3.0, got {}",
+            trace.summary.peak_axial_doc_mm
+        );
+        assert!(
+            (trace.summary.total_removed_volume_est_mm3 - 7.0).abs() < 1e-9,
+            "Total removed volume should be 7.0, got {}",
+            trace.summary.total_removed_volume_est_mm3
+        );
+    }
+
+    // --- Multiple toolpaths produce separate summaries ---
+
+    #[test]
+    fn trace_multiple_toolpaths_produce_separate_summaries() {
+        let samples = vec![
+            SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 0,
+                sample_index: 0,
+                position: [0.0, 0.0, -1.0],
+                cumulative_time_s: 0.1,
+                segment_time_s: 0.1,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 1.0,
+                radial_engagement: 0.40,
+                chipload_mm_per_tooth: 0.01,
+                removed_volume_est_mm3: 1.0,
+                mrr_mm3_s: 10.0,
+                semantic_item_id: None,
+            },
+            SimulationCutSample {
+                toolpath_id: 1,
+                move_index: 0,
+                sample_index: 1,
+                position: [10.0, 0.0, -2.0],
+                cumulative_time_s: 0.3,
+                segment_time_s: 0.2,
+                is_cutting: true,
+                feed_rate_mm_min: 300.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 2.0,
+                radial_engagement: 0.50,
+                chipload_mm_per_tooth: 0.02,
+                removed_volume_est_mm3: 3.0,
+                mrr_mm3_s: 15.0,
+                semantic_item_id: None,
+            },
+        ];
+
+        let trace = SimulationCutTrace::from_samples(1.0, samples);
+
+        assert_eq!(trace.summary.sample_count, 2);
+        assert_eq!(trace.summary.toolpath_count, 2);
+        assert_eq!(trace.toolpath_summaries.len(), 2);
+
+        let tp0 = trace
+            .toolpath_summaries
+            .iter()
+            .find(|s| s.toolpath_id == 0)
+            .expect("should have toolpath 0");
+        let tp1 = trace
+            .toolpath_summaries
+            .iter()
+            .find(|s| s.toolpath_id == 1)
+            .expect("should have toolpath 1");
+
+        assert_eq!(tp0.sample_count, 1);
+        assert_eq!(tp1.sample_count, 1);
+        assert!((tp0.total_runtime_s - 0.1).abs() < 1e-9);
+        assert!((tp1.total_runtime_s - 0.2).abs() < 1e-9);
+        assert!(
+            (tp0.total_removed_volume_est_mm3 - 1.0).abs() < 1e-9,
+            "TP0 removed volume should be 1.0, got {}",
+            tp0.total_removed_volume_est_mm3
+        );
+        assert!(
+            (tp1.total_removed_volume_est_mm3 - 3.0).abs() < 1e-9,
+            "TP1 removed volume should be 3.0, got {}",
+            tp1.total_removed_volume_est_mm3
+        );
+    }
+
+    // --- Average engagement is time-weighted ---
+
+    #[test]
+    fn trace_average_engagement_is_time_weighted() {
+        let samples = vec![
+            // 0.1s at engagement=0.20
+            SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 0,
+                sample_index: 0,
+                position: [0.0, 0.0, -1.0],
+                cumulative_time_s: 0.1,
+                segment_time_s: 0.1,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 1.0,
+                radial_engagement: 0.20,
+                chipload_mm_per_tooth: 0.01,
+                removed_volume_est_mm3: 0.5,
+                mrr_mm3_s: 5.0,
+                semantic_item_id: None,
+            },
+            // 0.3s at engagement=0.80
+            SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 1,
+                sample_index: 1,
+                position: [1.0, 0.0, -1.0],
+                cumulative_time_s: 0.4,
+                segment_time_s: 0.3,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 2.0,
+                radial_engagement: 0.80,
+                chipload_mm_per_tooth: 0.02,
+                removed_volume_est_mm3: 2.0,
+                mrr_mm3_s: 6.67,
+                semantic_item_id: None,
+            },
+        ];
+
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+
+        // Time-weighted average: (0.20*0.1 + 0.80*0.3) / (0.1+0.3)
+        // = (0.02 + 0.24) / 0.4 = 0.26 / 0.4 = 0.65
+        let expected_avg = (0.20 * 0.1 + 0.80 * 0.3) / (0.1 + 0.3);
+        assert!(
+            (trace.summary.average_engagement - expected_avg).abs() < 1e-6,
+            "Average engagement should be {}, got {}",
+            expected_avg,
+            trace.summary.average_engagement
+        );
+    }
+
+    // --- Hotspots are created per (toolpath_id, semantic_item_id) ---
+
+    #[test]
+    fn trace_hotspots_grouped_by_toolpath_and_semantic_id() {
+        let samples = vec![
+            SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 0,
+                sample_index: 0,
+                position: [0.0, 0.0, -1.0],
+                cumulative_time_s: 0.1,
+                segment_time_s: 0.1,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 1.0,
+                radial_engagement: 0.50,
+                chipload_mm_per_tooth: 0.01,
+                removed_volume_est_mm3: 1.0,
+                mrr_mm3_s: 10.0,
+                semantic_item_id: Some(1),
+            },
+            SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 1,
+                sample_index: 1,
+                position: [1.0, 0.0, -1.0],
+                cumulative_time_s: 0.2,
+                segment_time_s: 0.1,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 1.0,
+                radial_engagement: 0.50,
+                chipload_mm_per_tooth: 0.01,
+                removed_volume_est_mm3: 1.0,
+                mrr_mm3_s: 10.0,
+                semantic_item_id: Some(2),
+            },
+            SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 2,
+                sample_index: 2,
+                position: [2.0, 0.0, -1.0],
+                cumulative_time_s: 0.3,
+                segment_time_s: 0.1,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 1.0,
+                radial_engagement: 0.50,
+                chipload_mm_per_tooth: 0.01,
+                removed_volume_est_mm3: 1.0,
+                mrr_mm3_s: 10.0,
+                semantic_item_id: Some(1),
+            },
+        ];
+
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+
+        // Hotspots are keyed by (toolpath_id, semantic_item_id).
+        // We have 2 unique keys: (0, Some(1)) and (0, Some(2))
+        assert_eq!(
+            trace.hotspots.len(),
+            2,
+            "Should have 2 hotspots for 2 distinct semantic_item_ids, got {}",
+            trace.hotspots.len()
+        );
+
+        // The hotspot for semantic_item_id=1 should have 2 samples
+        let hotspot_1 = trace
+            .hotspots
+            .iter()
+            .find(|h| h.semantic_item_id == Some(1))
+            .expect("should have hotspot for semantic_item_id=1");
+        assert_eq!(
+            hotspot_1.sample_index_start, 0,
+            "Hotspot 1 sample start should be 0"
+        );
+        assert_eq!(
+            hotspot_1.sample_index_end, 2,
+            "Hotspot 1 sample end should be 2"
+        );
+    }
+
+    // --- Sanitize filename component ---
+
+    #[test]
+    fn sanitize_filename_handles_special_chars() {
+        assert_eq!(
+            sanitize_filename_component("Adaptive 3D"),
+            "adaptive_3d"
+        );
+        assert_eq!(
+            sanitize_filename_component("my/file:name.ext"),
+            "my_file_name_ext"
+        );
+        assert_eq!(
+            sanitize_filename_component("---test---"),
+            "---test---"
+        );
+        assert_eq!(
+            sanitize_filename_component(""),
+            "simulation_cut_trace"
+        );
+        assert_eq!(
+            sanitize_filename_component("___"),
+            "simulation_cut_trace"
+        );
+    }
 }

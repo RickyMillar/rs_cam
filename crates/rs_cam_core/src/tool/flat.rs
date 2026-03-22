@@ -165,4 +165,190 @@ mod tests {
         // Flat endmill: CL.z = edge z = 7
         assert!((cl.z - 7.0).abs() < 1e-10);
     }
+
+    // --- Task E-flat: edge_drop with vertical edge ---
+
+    #[test]
+    fn test_flat_edge_drop_vertical_edge_is_ignored() {
+        let tool = FlatEndmill::new(10.0, 25.0);
+
+        // Vertical edge: same XY, different Z
+        let p1 = P3::new(2.0, 3.0, 0.0);
+        let p2 = P3::new(2.0, 3.0, 10.0);
+
+        let mut cl = CLPoint::new(0.0, 0.0);
+        tool.edge_drop(&mut cl, &p1, &p2);
+        // Vertical edge has zero XY length, should be skipped
+        assert_eq!(
+            cl.z,
+            f64::NEG_INFINITY,
+            "Vertical edge should not produce contact"
+        );
+    }
+
+    // --- edge_drop with horizontal edge (parallel to X) ---
+
+    #[test]
+    fn test_flat_edge_drop_horizontal_along_x() {
+        let tool = FlatEndmill::new(10.0, 25.0);
+
+        // Edge along X axis at y=4, z=3
+        let p1 = P3::new(-10.0, 4.0, 3.0);
+        let p2 = P3::new(10.0, 4.0, 3.0);
+
+        let mut cl = CLPoint::new(0.0, 0.0);
+        tool.edge_drop(&mut cl, &p1, &p2);
+        // Distance from CL(0,0) to edge line at y=4 is 4, which is within radius 5
+        // Flat endmill: CL.z = edge z = 3
+        assert!(
+            (cl.z - 3.0).abs() < 1e-10,
+            "Horizontal edge along X: CL.z = {}, expected 3.0",
+            cl.z
+        );
+    }
+
+    // --- edge_drop with diagonal edge ---
+
+    #[test]
+    fn test_flat_edge_drop_diagonal_sloped() {
+        let tool = FlatEndmill::new(10.0, 25.0);
+
+        // Diagonal sloped edge from (0,-5,0) to (0,5,10)
+        // Edge is along Y with a Z slope of 10/10 = 1
+        let p1 = P3::new(0.0, -5.0, 0.0);
+        let p2 = P3::new(0.0, 5.0, 10.0);
+
+        let mut cl = CLPoint::new(3.0, 0.0);
+        tool.edge_drop(&mut cl, &p1, &p2);
+        // d = 3 (within radius 5)
+        // s = sqrt(25 - 9) / 10 = 4/10 = 0.4
+        // t_closest = ((3-0)*0 + (0-(-5))*10) / (0+100) = 50/100 = 0.5
+        // t = 0.5 +/- 0.4 => 0.1 and 0.9
+        // z at t=0.1: 0 + 0.1*10 = 1.0
+        // z at t=0.9: 0 + 0.9*10 = 9.0
+        // Flat endmill picks max z: 9.0
+        assert!(
+            (cl.z - 9.0).abs() < 1e-10,
+            "Diagonal sloped edge: CL.z = {}, expected 9.0",
+            cl.z
+        );
+    }
+
+    // --- edge_drop at exact tool radius boundary ---
+
+    #[test]
+    fn test_flat_edge_drop_at_exact_radius() {
+        let tool = FlatEndmill::new(10.0, 25.0); // radius = 5
+
+        // Edge exactly at distance = radius (5.0) from CL
+        let p1 = P3::new(5.0, -10.0, 2.0);
+        let p2 = P3::new(5.0, 10.0, 2.0);
+
+        let mut cl = CLPoint::new(0.0, 0.0);
+        tool.edge_drop(&mut cl, &p1, &p2);
+        // d = 5 = r, so d_sq = r*r => s = 0
+        // This means one contact point at t_closest
+        assert!(
+            (cl.z - 2.0).abs() < 1e-6,
+            "Edge at exact radius: CL.z = {}, expected 2.0",
+            cl.z
+        );
+    }
+
+    #[test]
+    fn test_flat_edge_drop_just_beyond_radius() {
+        let tool = FlatEndmill::new(10.0, 25.0); // radius = 5
+
+        // Edge just beyond radius (5.01 from CL)
+        let p1 = P3::new(5.01, -10.0, 2.0);
+        let p2 = P3::new(5.01, 10.0, 2.0);
+
+        let mut cl = CLPoint::new(0.0, 0.0);
+        tool.edge_drop(&mut cl, &p1, &p2);
+        // d = 5.01 > r = 5, so no contact
+        assert_eq!(
+            cl.z,
+            f64::NEG_INFINITY,
+            "Edge beyond radius should produce no contact"
+        );
+    }
+
+    // --- vertex_drop edge cases ---
+
+    #[test]
+    fn test_flat_vertex_drop_at_exact_radius() {
+        let tool = FlatEndmill::new(10.0, 25.0); // radius = 5
+
+        // Vertex at exactly the tool radius
+        let mut cl = CLPoint::new(0.0, 0.0);
+        tool.vertex_drop(&mut cl, &P3::new(5.0, 0.0, 8.0));
+        // height_at_radius(5.0) = Some(0.0), so CL.z = 8 - 0 = 8
+        assert!(
+            (cl.z - 8.0).abs() < 1e-10,
+            "Vertex at exact radius: CL.z = {}, expected 8.0",
+            cl.z
+        );
+    }
+
+    #[test]
+    fn test_flat_vertex_drop_beyond_radius() {
+        let tool = FlatEndmill::new(10.0, 25.0); // radius = 5
+
+        // Vertex beyond tool radius
+        let mut cl = CLPoint::new(0.0, 0.0);
+        tool.vertex_drop(&mut cl, &P3::new(6.0, 0.0, 8.0));
+        // height_at_radius(6.0) = None, so no contact
+        assert_eq!(
+            cl.z,
+            f64::NEG_INFINITY,
+            "Vertex beyond radius should not update CL"
+        );
+    }
+
+    // --- facet_drop edge cases ---
+
+    #[test]
+    fn test_flat_facet_drop_vertical_triangle_returns_false() {
+        let tool = FlatEndmill::new(10.0, 25.0);
+
+        // Vertical triangle (normal in XY plane, nz ~ 0)
+        let tri = Triangle::new(
+            P3::new(0.0, 0.0, 0.0),
+            P3::new(0.0, 0.0, 10.0),
+            P3::new(0.0, 10.0, 5.0),
+        );
+
+        let mut cl = CLPoint::new(0.0, 0.0);
+        let hit = tool.facet_drop(&mut cl, &tri);
+        assert!(!hit, "Facet drop on vertical triangle should return false");
+    }
+
+    #[test]
+    fn test_flat_facet_drop_cl_outside_triangle() {
+        let tool = FlatEndmill::new(10.0, 25.0);
+
+        // Small triangle, CL is far outside
+        let tri = Triangle::new(
+            P3::new(100.0, 100.0, 5.0),
+            P3::new(101.0, 100.0, 5.0),
+            P3::new(100.5, 101.0, 5.0),
+        );
+
+        let mut cl = CLPoint::new(0.0, 0.0);
+        let hit = tool.facet_drop(&mut cl, &tri);
+        assert!(
+            !hit,
+            "Facet drop with CL far outside triangle should return false"
+        );
+    }
+
+    // --- Zero-radius tool ---
+
+    #[test]
+    fn test_flat_zero_radius_profile() {
+        let tool = FlatEndmill::new(0.0, 10.0);
+        assert_eq!(tool.radius(), 0.0);
+        assert_eq!(tool.height_at_radius(0.0), Some(0.0));
+        assert!(tool.height_at_radius(0.1).is_none());
+    }
 }

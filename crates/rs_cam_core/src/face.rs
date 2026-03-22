@@ -253,4 +253,205 @@ mod tests {
             );
         }
     }
+
+    // --- Task E-face: Zigzag direction produces alternating X directions ---
+
+    #[test]
+    fn face_zigzag_has_alternating_x_directions() {
+        let bounds = stock_100x100();
+        let params = default_params(); // FaceDirection::Zigzag, angle=0 means raster along X
+
+        let tp = face_toolpath(&bounds, &params);
+
+        // Collect X coordinates of sequential cutting moves at feed_rate
+        let cutting_xs: Vec<f64> = tp
+            .moves
+            .iter()
+            .filter(|m| {
+                matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - params.feed_rate).abs() < 1e-10)
+            })
+            .map(|m| m.target.x)
+            .collect();
+
+        // In zigzag at angle=0, each pass rasters along X. The zigzag means
+        // consecutive passes alternate X direction (left-to-right then right-to-left).
+        // We verify: both increasing and decreasing X transitions should appear
+        // in the cutting moves.
+        if cutting_xs.len() > 2 {
+            let mut has_increase = false;
+            let mut has_decrease = false;
+            for w in cutting_xs.windows(2) {
+                let dx = w[1] - w[0];
+                if dx > 1.0 {
+                    has_increase = true;
+                }
+                if dx < -1.0 {
+                    has_decrease = true;
+                }
+            }
+            assert!(
+                has_increase && has_decrease,
+                "Zigzag should have both increasing and decreasing X transitions among cutting moves"
+            );
+        }
+    }
+
+    // --- Stepover larger than stock width ---
+
+    #[test]
+    fn face_stepover_larger_than_width() {
+        let bounds = stock_100x100();
+        let mut params = default_params();
+        params.stepover = 200.0; // stepover > stock width
+
+        let tp = face_toolpath(&bounds, &params);
+
+        // Should still produce some moves (at least one pass)
+        assert!(
+            !tp.moves.is_empty(),
+            "Stepover > width should still produce moves"
+        );
+
+        // All cutting moves at Z=0
+        for m in &tp.moves {
+            if let MoveType::Linear { feed_rate } = m.move_type
+                && (feed_rate - params.feed_rate).abs() < 1e-10
+            {
+                assert!(
+                    (m.target.z - 0.0).abs() < 1e-10,
+                    "Single-pass cut should be at Z=0, got {}",
+                    m.target.z
+                );
+            }
+        }
+    }
+
+    // --- Very small stepover ---
+
+    #[test]
+    fn face_very_small_stepover_produces_many_passes() {
+        let bounds = stock_100x100();
+        let mut params = default_params();
+        params.stepover = 1.0; // very small stepover
+
+        let tp = face_toolpath(&bounds, &params);
+
+        // Should produce many more moves than with stepover=20
+        let mut params_normal = default_params();
+        params_normal.stepover = 20.0;
+        let tp_normal = face_toolpath(&bounds, &params_normal);
+
+        assert!(
+            tp.moves.len() > tp_normal.moves.len(),
+            "Small stepover ({} moves) should produce more moves than normal stepover ({} moves)",
+            tp.moves.len(),
+            tp_normal.moves.len()
+        );
+    }
+
+    // --- Tool larger than stock ---
+
+    #[test]
+    fn face_tool_larger_than_stock() {
+        let bounds = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(10.0, 10.0, 5.0),
+        };
+        let mut params = default_params();
+        params.tool_radius = 25.0; // 50mm diameter >> 10mm stock
+
+        let tp = face_toolpath(&bounds, &params);
+
+        // Should produce moves (the zigzag still operates on the expanded polygon)
+        // Even with a huge tool, the facing operation is still valid
+        // (the tool covers the entire stock in one or very few passes)
+        // The result is either some moves or empty, depending on how the
+        // polygon inset handles a tool wider than the stock + offset.
+        // This is an edge case -- we just verify no panic.
+        let _ = tp;
+    }
+
+    // --- Negative depth treated as zero ---
+
+    #[test]
+    fn face_negative_depth_treated_as_single_pass() {
+        let bounds = stock_100x100();
+        let mut params = default_params();
+        params.depth = -5.0;
+
+        let tp = face_toolpath(&bounds, &params);
+
+        // depth <= 0.0 should take the single-pass path
+        // All cutting moves should be at Z=0
+        let cut_zs: Vec<f64> = tp
+            .moves
+            .iter()
+            .filter(|m| {
+                matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - params.feed_rate).abs() < 1e-10)
+            })
+            .map(|m| m.target.z)
+            .collect();
+
+        for z in &cut_zs {
+            assert!(
+                z.abs() < 1e-10,
+                "Negative depth face should produce cuts at Z=0, got Z={}",
+                z
+            );
+        }
+    }
+
+    // --- Depth stepping with large depth_per_pass ---
+
+    #[test]
+    fn face_depth_per_pass_larger_than_total_depth() {
+        let bounds = stock_100x100();
+        let mut params = default_params();
+        params.depth = 3.0;
+        params.depth_per_pass = 10.0; // one pass covers all depth
+
+        let tp = face_toolpath(&bounds, &params);
+
+        assert!(!tp.moves.is_empty(), "Should produce moves");
+
+        // Should produce only one Z level (-3.0)
+        let mut cut_zs: Vec<f64> = tp
+            .moves
+            .iter()
+            .filter(|m| {
+                matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - params.feed_rate).abs() < 1e-10)
+            })
+            .map(|m| (m.target.z * 1000.0).round() / 1000.0)
+            .collect();
+        cut_zs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        cut_zs.dedup();
+
+        assert_eq!(
+            cut_zs.len(),
+            1,
+            "depth_per_pass > depth should produce 1 Z level, got {:?}",
+            cut_zs
+        );
+        assert!(
+            (cut_zs[0] - (-3.0)).abs() < 0.01,
+            "Single Z level should be -3.0, got {}",
+            cut_zs[0]
+        );
+    }
+
+    // --- Small stock ---
+
+    #[test]
+    fn face_tiny_stock_no_panic() {
+        let bounds = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(1.0, 1.0, 1.0),
+        };
+        let params = default_params();
+
+        // With tool_radius=12.5 and stock 1x1, the inset polygon may be empty.
+        // Verify no panic.
+        let tp = face_toolpath(&bounds, &params);
+        let _ = tp;
+    }
 }
