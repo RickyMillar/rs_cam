@@ -298,6 +298,28 @@ impl DexelGrid {
     pub fn ray_mut(&mut self, row: usize, col: usize) -> &mut DexelRay {
         &mut self.rays[row * self.cols + col]
     }
+
+    /// Top material Z at cell. Returns `None` if the ray is empty.
+    ///
+    /// Equivalent to `Heightmap::get(row, col)` for cells with material.
+    #[inline]
+    pub fn top_z_at(&self, row: usize, col: usize) -> Option<f32> {
+        let ray = &self.rays[row * self.cols + col];
+        ray_top(ray)
+    }
+
+    /// Does any material exist above `z_floor` at this cell?
+    #[inline]
+    pub fn has_material_above(&self, row: usize, col: usize, z_floor: f32) -> bool {
+        let ray = &self.rays[row * self.cols + col];
+        ray.iter().any(|seg| seg.exit > z_floor)
+    }
+
+    /// Total material length at cell (sum of all segment lengths along the ray).
+    #[inline]
+    pub fn material_length_at(&self, row: usize, col: usize) -> f32 {
+        ray_material_length(&self.rays[row * self.cols + col])
+    }
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────
@@ -679,5 +701,76 @@ mod tests {
         assert!(grid.cell_size > 0.0, "cell_size should be clamped above zero");
         assert!(grid.cols > 0);
         assert!(grid.rows > 0);
+    }
+
+    // ── DexelGrid query helpers ────────────────────────────────────────
+
+    #[test]
+    fn test_top_z_at() {
+        let bbox = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(4.0, 4.0, 10.0),
+        };
+        let mut grid = DexelGrid::z_grid_from_bounds(&bbox, 1.0);
+
+        // Uncut cell should return stock top.
+        assert_eq!(grid.top_z_at(0, 0), Some(10.0));
+
+        // Cut a cell and verify top lowered.
+        ray_subtract_above(grid.ray_mut(2, 3), 5.0);
+        assert_eq!(grid.top_z_at(2, 3), Some(5.0));
+
+        // Neighboring cell untouched.
+        assert_eq!(grid.top_z_at(2, 2), Some(10.0));
+
+        // Clear a ray entirely and verify None.
+        grid.ray_mut(1, 1).clear();
+        assert_eq!(grid.top_z_at(1, 1), None);
+    }
+
+    #[test]
+    fn test_has_material_above() {
+        let bbox = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(2.0, 2.0, 10.0),
+        };
+        let mut grid = DexelGrid::z_grid_from_bounds(&bbox, 1.0);
+
+        // Full stock: material exists above z=5.
+        assert!(grid.has_material_above(0, 0, 5.0));
+
+        // Material does NOT exist above the stock top.
+        assert!(!grid.has_material_above(0, 0, 10.0));
+
+        // Cut to z=6: material above 5 still exists (exit=6 > 5).
+        ray_subtract_above(grid.ray_mut(1, 1), 6.0);
+        assert!(grid.has_material_above(1, 1, 5.0));
+
+        // But no material above 6.
+        assert!(!grid.has_material_above(1, 1, 6.0));
+
+        // Empty ray has no material above anything.
+        grid.ray_mut(0, 1).clear();
+        assert!(!grid.has_material_above(0, 1, 0.0));
+    }
+
+    #[test]
+    fn test_material_length_at() {
+        let bbox = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(2.0, 2.0, 10.0),
+        };
+        let mut grid = DexelGrid::z_grid_from_bounds(&bbox, 1.0);
+
+        // Full stock: length = 10.
+        assert!((grid.material_length_at(0, 0) - 10.0).abs() < 1e-6);
+
+        // Cut a gap: subtract interval [3, 7] leaves [0,3] + [7,10] = 6.
+        crate::dexel::ray_subtract_interval(grid.ray_mut(1, 1), 3.0, 7.0);
+        assert!((grid.material_length_at(1, 1) - 6.0).abs() < 1e-6);
+
+        // Empty ray: length = 0.
+        grid.ray_mut(0, 1).clear();
+        assert!((grid.material_length_at(0, 1) - 0.0).abs() < 1e-6);
     }
 }

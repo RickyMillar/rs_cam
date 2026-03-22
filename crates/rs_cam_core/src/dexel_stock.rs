@@ -525,6 +525,61 @@ impl TriDexelStock {
             (pre_volume - post_volume).max(0.0),
         )
     }
+
+    /// Sum of material top-Z values in a circular window around (cx, cy).
+    ///
+    /// Iterates all Z-grid cells within `radius` of (cx, cy) and sums their
+    /// top-Z values (or 0.0 if the ray is empty). This is the tri-dexel
+    /// equivalent of adaptive3d's `local_material_sum()` which sums heightmap
+    /// cell values in a local radius for engagement tracking.
+    pub fn local_material_sum(&self, cx: f64, cy: f64, radius: f64) -> f64 {
+        let grid = &self.z_grid;
+        let cs = grid.cell_size;
+        let r_cells = (radius / cs).ceil() as isize;
+
+        // Convert world (cx, cy) to grid cell
+        let center_col = ((cx - grid.origin_u) / cs).round() as isize;
+        let center_row = ((cy - grid.origin_v) / cs).round() as isize;
+
+        let col_min = (center_col - r_cells).max(0) as usize;
+        let col_max = ((center_col + r_cells) as usize).min(grid.cols.saturating_sub(1));
+        let row_min = (center_row - r_cells).max(0) as usize;
+        let row_max = ((center_row + r_cells) as usize).min(grid.rows.saturating_sub(1));
+
+        let r_sq = radius * radius;
+        let mut sum = 0.0;
+
+        for row in row_min..=row_max {
+            let cell_y = grid.origin_v + row as f64 * cs;
+            let dy = cell_y - cy;
+            let dy_sq = dy * dy;
+            if dy_sq > r_sq {
+                continue;
+            }
+            for col in col_min..=col_max {
+                let cell_x = grid.origin_u + col as f64 * cs;
+                let dx = cell_x - cx;
+                let dist_sq = dx * dx + dy_sq;
+                if dist_sq > r_sq {
+                    continue;
+                }
+                if let Some(top) = grid.top_z_at(row, col) {
+                    sum += top as f64;
+                }
+            }
+        }
+        sum
+    }
+
+    /// Clear all material above `z` at the given cell on the Z-grid.
+    ///
+    /// After this call, no material exists above `z` at (row, col).
+    /// Used for border clearing in adaptive3d where cells outside the mesh
+    /// footprint are set to the surface height.
+    pub fn clear_above_at(&mut self, row: usize, col: usize, z: f32) {
+        let ray = &mut self.z_grid.rays[row * self.z_grid.cols + col];
+        crate::dexel::ray_subtract_above(ray, z);
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1518,5 +1573,72 @@ mod tests {
         // Cell at (x=10, z=10) should be cut.
         let (row, col) = y_grid.world_to_cell(10.0, 10.0).unwrap();
         assert!(ray_top(y_grid.ray(row, col)).unwrap() < 20.0);
+    }
+
+    // ── Query helper tests ─────────────────────────────────────────────
+
+    #[test]
+    fn test_local_material_sum() {
+        // 10x10 stock, z 0..5, cell_size=1. All cells have top=5.
+        let stock = TriDexelStock::from_stock(0.0, 0.0, 10.0, 10.0, 0.0, 5.0, 1.0);
+
+        // Sum in a radius of 1.5 around the center (5, 5).
+        // Cells within radius 1.5 of (5,5): the center plus 4 axis-neighbors
+        // plus 4 diagonal neighbors (dist = sqrt(2) ~= 1.414 < 1.5).
+        // That's 9 cells, each with top=5 => sum = 45.
+        let sum = stock.local_material_sum(5.0, 5.0, 1.5);
+        assert!(
+            (sum - 45.0).abs() < 1e-6,
+            "Expected 45.0, got {sum}"
+        );
+    }
+
+    #[test]
+    fn test_local_material_sum_after_stamp() {
+        let tool = FlatEndmill::new(4.0, 20.0); // radius 2
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 10.0, 10.0, 0.0, 5.0, 1.0);
+
+        // Before stamping: sum around center should reflect full stock.
+        let sum_before = stock.local_material_sum(5.0, 5.0, 3.0);
+
+        // Stamp tool at center, cutting to z=2.
+        let lut = RadialProfileLUT::from_cutter(&tool, 256);
+        stock.stamp_tool_at(&lut, tool.radius(), 5.0, 5.0, 2.0, StockCutDirection::FromTop);
+
+        let sum_after = stock.local_material_sum(5.0, 5.0, 3.0);
+
+        // The stamp removed material, so sum should decrease.
+        assert!(
+            sum_after < sum_before,
+            "Sum should decrease after stamp: before={sum_before}, after={sum_after}"
+        );
+    }
+
+    #[test]
+    fn test_clear_above_at() {
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 4.0, 4.0, 0.0, 10.0, 1.0);
+
+        // Clear above z=6 at cell (2, 2).
+        stock.clear_above_at(2, 2, 6.0);
+
+        let ray = stock.z_grid.ray(2, 2);
+        assert_eq!(ray_top(ray), Some(6.0));
+
+        // Neighboring cell should be untouched.
+        let neighbor = stock.z_grid.ray(2, 1);
+        assert_eq!(ray_top(neighbor), Some(10.0));
+    }
+
+    #[test]
+    fn test_clear_above_at_empty_ray() {
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 4.0, 4.0, 0.0, 10.0, 1.0);
+
+        // Clear the ray entirely first.
+        stock.z_grid.ray_mut(1, 1).clear();
+        assert!(stock.z_grid.ray(1, 1).is_empty());
+
+        // clear_above_at on an empty ray should not panic.
+        stock.clear_above_at(1, 1, 5.0);
+        assert!(stock.z_grid.ray(1, 1).is_empty());
     }
 }
