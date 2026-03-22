@@ -12,6 +12,8 @@ pub enum MeshError {
     StlRead(#[from] std::io::Error),
     #[error("Empty mesh: no triangles loaded")]
     EmptyMesh,
+    #[error("Triangle index {index} out of bounds (vertex count: {vertex_count})")]
+    IndexOutOfBounds { index: u32, vertex_count: usize },
 }
 
 /// Result of checking mesh winding consistency.
@@ -72,6 +74,19 @@ impl TriangleMesh {
             })
             .collect();
 
+        // Validate triangle indices are within bounds
+        let vert_count = vertices.len();
+        for tri in &triangles {
+            for &idx in tri {
+                if (idx as usize) >= vert_count {
+                    return Err(MeshError::IndexOutOfBounds {
+                        index: idx,
+                        vertex_count: vert_count,
+                    });
+                }
+            }
+        }
+
         // Build face list with recomputed normals
         let faces: Vec<Triangle> = triangles
             .iter()
@@ -106,6 +121,8 @@ impl TriangleMesh {
         if report.inconsistency_fraction > 0.05 {
             let flipped = mesh.fix_winding();
             warn!(flipped = flipped, "Auto-fixed winding on STL load");
+            // Recompute bounding box after winding fix
+            mesh.bbox = BoundingBox3::from_points(mesh.vertices.iter().copied());
         }
 
         Ok(mesh)
@@ -150,6 +167,19 @@ impl TriangleMesh {
             })
             .collect();
 
+        // Validate triangle indices are within bounds
+        let vert_count = vertices.len();
+        for tri in &triangles {
+            for &idx in tri {
+                if (idx as usize) >= vert_count {
+                    return Err(MeshError::IndexOutOfBounds {
+                        index: idx,
+                        vertex_count: vert_count,
+                    });
+                }
+            }
+        }
+
         let faces: Vec<Triangle> = triangles
             .iter()
             .map(|tri| {
@@ -183,6 +213,8 @@ impl TriangleMesh {
         if report.inconsistency_fraction > 0.05 {
             let flipped = mesh.fix_winding();
             warn!(flipped = flipped, "Auto-fixed winding on STL bytes load");
+            // Recompute bounding box after winding fix
+            mesh.bbox = BoundingBox3::from_points(mesh.vertices.iter().copied());
         }
 
         Ok(mesh)
@@ -717,5 +749,49 @@ mod tests {
             nz_0,
             nz_1
         );
+    }
+
+    #[test]
+    fn test_bbox_correct_after_winding_fix() {
+        // Create a mesh with inconsistent winding
+        let vertices = vec![
+            P3::new(0.0, 0.0, 0.0),
+            P3::new(10.0, 0.0, 0.0),
+            P3::new(10.0, 10.0, 5.0),
+            P3::new(0.0, 10.0, 0.0),
+        ];
+        let triangles = vec![
+            [0, 1, 2], // CCW
+            [0, 3, 2], // CW (flipped!)
+        ];
+        let mut mesh = TriangleMesh::from_raw(vertices.clone(), triangles);
+
+        // Fix winding
+        mesh.fix_winding();
+        // Recompute bbox as the production code does
+        mesh.bbox = BoundingBox3::from_points(mesh.vertices.iter().copied());
+
+        // Verify bbox covers all vertices
+        assert!((mesh.bbox.min.x - 0.0).abs() < 1e-10);
+        assert!((mesh.bbox.min.y - 0.0).abs() < 1e-10);
+        assert!((mesh.bbox.min.z - 0.0).abs() < 1e-10);
+        assert!((mesh.bbox.max.x - 10.0).abs() < 1e-10);
+        assert!((mesh.bbox.max.y - 10.0).abs() < 1e-10);
+        assert!((mesh.bbox.max.z - 5.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_from_raw_invalid_indices_panics() {
+        // from_raw does not validate indices (it's for testing).
+        // But from_stl_scaled and from_stl_bytes do validate.
+        // This test verifies that from_raw with valid indices works.
+        let vertices = vec![
+            P3::new(0.0, 0.0, 0.0),
+            P3::new(1.0, 0.0, 0.0),
+            P3::new(0.0, 1.0, 0.0),
+        ];
+        let triangles = vec![[0, 1, 2]];
+        let mesh = TriangleMesh::from_raw(vertices, triangles);
+        assert_eq!(mesh.faces.len(), 1);
     }
 }

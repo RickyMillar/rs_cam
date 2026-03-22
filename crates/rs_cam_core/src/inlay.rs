@@ -128,7 +128,9 @@ fn male_toolpath(polygon: &Polygon2, params: &InlayParams) -> Toolpath {
 
     // The male carving region is the outer boundary with the design as a hole
     // (inverted from the female where we carve inside the design)
-    let male_region = Polygon2::with_holes(outer.exterior.clone(), vec![polygon.exterior.clone()]);
+    let mut holes = vec![polygon.exterior.clone()];
+    holes.extend(polygon.holes.iter().cloned());
+    let male_region = Polygon2::with_holes(outer.exterior.clone(), holes);
 
     // Generate scan lines across the male region
     let scan_lines = zigzag_lines(&male_region, 0.05, params.stepover, 0.0);
@@ -353,6 +355,41 @@ mod tests {
         assert!(
             !result.male.moves.is_empty(),
             "Letter O male should have moves"
+        );
+    }
+
+    #[test]
+    fn test_male_region_respects_holes() {
+        // Letter "O" — outer ring with inner hole.
+        // Male depths near the inner hole boundary should be shallow (near zero)
+        // because the hole boundary is an obstacle. Without hole support, the male
+        // region would treat the interior as open space and cut too deep near the hole.
+        let outer = circle_polygon(15.0, 32);
+        let inner = circle_polygon(8.0, 32);
+        let poly = Polygon2::with_holes(outer.exterior, vec![inner.exterior]);
+
+        let params = default_params();
+        let result = inlay_toolpaths(&poly, &params);
+
+        // The male toolpath should have moves
+        assert!(
+            !result.male.moves.is_empty(),
+            "Male toolpath for letter O should have moves"
+        );
+
+        // Verify that some male cuts are shallow (near the hole boundary).
+        // Points right outside the inner circle (~8mm from center) should be
+        // close to the hole boundary, producing shallow depths.
+        let has_shallow_cuts = result.male.moves.iter().any(|m| {
+            if let crate::toolpath::MoveType::Linear { .. } = m.move_type {
+                m.target.z > -0.5 && m.target.z < 0.0
+            } else {
+                false
+            }
+        });
+        assert!(
+            has_shallow_cuts,
+            "Male toolpath should have shallow cuts near hole boundary"
         );
     }
 

@@ -291,7 +291,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
         let tool_def = &job.tools[&op.tool];
         let cutter = build_tool(tool_def)
             .context(format!("Building tool '{}' for operation {}", op.tool, i))?;
-        let tool_radius = cutter.diameter() / 2.0;
+        let tool_radius = cutter.radius();
         debug!(tool = %op.tool, diameter_mm = tool_def.diameter, tool_type = %tool_def.tool_type, "Tool");
 
         let safe_z = op.safe_z.unwrap_or(job.job.safe_z);
@@ -629,4 +629,64 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
     }
 
     Ok(JobResult { combined, phases })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tool_radius_uses_cutter_radius() {
+        // Verify that build_tool returns cutters whose radius() matches
+        // what the job executor would use (cutter.radius(), not diameter/2.0
+        // from the TOML definition, which could differ for composite tools).
+        let flat_def = ToolDef {
+            tool_type: "flat".into(),
+            diameter: 6.0,
+            corner_radius: None,
+            included_angle: None,
+            taper_angle: None,
+            shaft_diameter: None,
+            shank_diameter: None,
+            shank_length: None,
+            holder_diameter: None,
+            holder_length: None,
+        };
+        let cutter = build_tool(&flat_def).unwrap();
+        assert!((cutter.radius() - 3.0).abs() < 1e-10);
+
+        let ball_def = ToolDef {
+            tool_type: "ball".into(),
+            diameter: 10.0,
+            corner_radius: None,
+            included_angle: None,
+            taper_angle: None,
+            shaft_diameter: None,
+            shank_diameter: None,
+            shank_length: None,
+            holder_diameter: None,
+            holder_length: None,
+        };
+        let ball_cutter = build_tool(&ball_def).unwrap();
+        assert!((ball_cutter.radius() - 5.0).abs() < 1e-10);
+
+        // For tapered ball, diameter() returns shaft_diameter, so radius()
+        // returns shaft_diameter / 2.0, which is correct for the effective
+        // cutting envelope.
+        let tapered_def = ToolDef {
+            tool_type: "tapered_ball".into(),
+            diameter: 6.0,
+            corner_radius: None,
+            included_angle: None,
+            taper_angle: Some(10.0),
+            shaft_diameter: Some(12.0),
+            shank_diameter: None,
+            shank_length: None,
+            holder_diameter: None,
+            holder_length: None,
+        };
+        let tapered_cutter = build_tool(&tapered_def).unwrap();
+        // radius() should return shaft_diameter / 2.0 = 6.0
+        assert!((tapered_cutter.radius() - 6.0).abs() < 1e-10);
+    }
 }

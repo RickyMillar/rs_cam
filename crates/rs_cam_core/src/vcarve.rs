@@ -20,7 +20,7 @@ pub struct VCarveParams {
     /// V-bit half-angle in radians (e.g. π/4 for a 90° V-bit).
     pub half_angle: f64,
     /// Maximum cut depth in mm (positive). Clamps depth for wide areas.
-    /// If 0.0, uses the full cone depth (tool_radius / tan(half_angle)).
+    /// If 0.0 or negative, depth is unlimited (no clamping).
     pub max_depth: f64,
     /// Distance between scan lines in mm.
     pub stepover: f64,
@@ -105,7 +105,11 @@ pub fn vcarve_toolpath(polygon: &Polygon2, params: &VCarveParams) -> Toolpath {
             let y = line[0].y + t * dy;
 
             let dist = point_to_polygon_distance(&P2::new(x, y), polygon);
-            let depth = (dist / tan_half).min(params.max_depth);
+            let depth = if params.max_depth > 0.0 {
+                (dist / tan_half).min(params.max_depth)
+            } else {
+                dist / tan_half
+            };
             points.push(P3::new(x, y, -depth));
         }
 
@@ -302,6 +306,33 @@ mod tests {
         assert!(
             tp.moves.len() <= 2,
             "Tiny polygon should produce minimal toolpath"
+        );
+    }
+
+    #[test]
+    fn test_vcarve_max_depth_zero_means_unlimited() {
+        // max_depth=0.0 should mean unlimited — no clamping
+        let sq = square_polygon(20.0);
+        let params = VCarveParams {
+            max_depth: 0.0,
+            ..default_params()
+        };
+
+        let tp = vcarve_toolpath(&sq, &params);
+
+        // The center of a 20mm square is 10mm from the wall.
+        // With 90° V-bit (tan=1), depth at center = 10mm.
+        // If max_depth=0.0 erroneously clamped, all depths would be 0.
+        let has_nonzero_depth = tp.moves.iter().any(|m| {
+            if let crate::toolpath::MoveType::Linear { .. } = m.move_type {
+                m.target.z < -0.1
+            } else {
+                false
+            }
+        });
+        assert!(
+            has_nonzero_depth,
+            "max_depth=0.0 should produce non-zero depths (unlimited)"
         );
     }
 
