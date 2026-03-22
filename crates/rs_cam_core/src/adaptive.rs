@@ -913,6 +913,79 @@ fn is_clear_path(grid: &MaterialGrid, mask: &[bool], from: P2, to: P2, _tool_rad
 // ── Main adaptive path generation ──────────────────────────────────────
 
 /// A segment of the adaptive path: cutting, rapid reposition, or link (tool-down reposition).
+#[derive(Debug, Clone, PartialEq)]
+pub enum AdaptiveRuntimeEvent {
+    SlotClearing {
+        line_index: usize,
+        line_total: usize,
+    },
+    PassEntry {
+        pass_index: usize,
+        entry_x: f64,
+        entry_y: f64,
+    },
+    PassSummary {
+        pass_index: usize,
+        step_count: usize,
+        idle_count: usize,
+        search_evaluations: usize,
+        exit_reason: String,
+    },
+    ForcedClear {
+        pass_index: usize,
+        center_x: f64,
+        center_y: f64,
+        radius: f64,
+    },
+    BoundaryCleanup {
+        contour_index: usize,
+        contour_total: usize,
+    },
+}
+
+impl AdaptiveRuntimeEvent {
+    pub fn label(&self) -> String {
+        match self {
+            Self::SlotClearing {
+                line_index,
+                line_total,
+            } => format!("Slot clearing {line_index}/{line_total}"),
+            Self::PassEntry {
+                pass_index,
+                entry_x,
+                entry_y,
+            } => format!("Pass {pass_index} — entry at ({entry_x:.1}, {entry_y:.1})"),
+            Self::PassSummary {
+                pass_index,
+                step_count,
+                idle_count,
+                search_evaluations,
+                exit_reason,
+            } => format!(
+                "Pass {pass_index} — {step_count} steps ({exit_reason}, idle {idle_count}, search {search_evaluations})"
+            ),
+            Self::ForcedClear {
+                pass_index,
+                center_x,
+                center_y,
+                radius,
+            } => format!(
+                "Pass {pass_index} — forced clear at ({center_x:.1}, {center_y:.1}) r {radius:.1}"
+            ),
+            Self::BoundaryCleanup {
+                contour_index,
+                contour_total,
+            } => format!("Boundary cleanup {contour_index}/{contour_total}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AdaptiveRuntimeAnnotation {
+    pub move_index: usize,
+    pub event: AdaptiveRuntimeEvent,
+}
+
 enum AdaptiveSegment {
     /// Cutting moves: a sequence of 2D points.
     Cut(Vec<P2>),
@@ -920,6 +993,8 @@ enum AdaptiveSegment {
     Rapid(P2),
     /// Link move: reposition at cut depth without retracting (cleared path).
     Link(P2),
+    /// Structured runtime marker at the current point in the toolpath.
+    Marker(AdaptiveRuntimeEvent),
 }
 
 /// Generate the 2D adaptive clearing path segments.
@@ -997,8 +1072,14 @@ fn adaptive_segments_with_debug(
         let perp_span = if w >= h { h } else { w };
         let slot_lines = crate::zigzag::zigzag_lines(polygon, tool_radius, perp_span, slot_angle);
 
-        for line in &slot_lines {
+        for (line_idx, line) in slot_lines.iter().enumerate() {
             check_cancel(cancel)?;
+            segments.push(AdaptiveSegment::Marker(
+                AdaptiveRuntimeEvent::SlotClearing {
+                    line_index: line_idx + 1,
+                    line_total: slot_lines.len(),
+                },
+            ));
             segments.push(AdaptiveSegment::Rapid(line[0]));
 
             // Walk along the line and clear material in the grid
@@ -1071,6 +1152,11 @@ fn adaptive_segments_with_debug(
 
         // Link or retract to entry point
         let max_link_dist = tool_radius * 6.0; // ~3 tool diameters
+        segments.push(AdaptiveSegment::Marker(AdaptiveRuntimeEvent::PassEntry {
+            pass_index: pass_count,
+            entry_x: entry.x,
+            entry_y: entry.y,
+        }));
         if let Some(last) = last_pos {
             let dx = entry.x - last.x;
             let dy = entry.y - last.y;
@@ -1192,6 +1278,12 @@ fn adaptive_segments_with_debug(
                 .as_ref()
                 .map(|ctx| ctx.start_span("forced_clear", format!("Forced clear {pass_count}")));
             grid.clear_circle(cx, cy, tool_radius * 2.0);
+            segments.push(AdaptiveSegment::Marker(AdaptiveRuntimeEvent::ForcedClear {
+                pass_index: pass_count,
+                center_x: cx,
+                center_y: cy,
+                radius: tool_radius * 2.0,
+            }));
             if let Some(scope) = forced_clear_scope.as_ref() {
                 scope.set_xy_bbox(ToolpathDebugBounds2 {
                     min_x: cx - tool_radius * 2.0,
@@ -1230,6 +1322,13 @@ fn adaptive_segments_with_debug(
             }
             scope.set_z_level(cut_depth);
         }
+        segments.push(AdaptiveSegment::Marker(AdaptiveRuntimeEvent::PassSummary {
+            pass_index: pass_count,
+            step_count: path_len,
+            idle_count,
+            search_evaluations: search_evaluations as usize,
+            exit_reason: exit_reason.to_string(),
+        }));
     }
 
     // ── Boundary cleanup pass ─────────────────────────────────────────
@@ -1247,8 +1346,14 @@ fn adaptive_segments_with_debug(
     }
 
     let cleanup_scope = debug.map(|ctx| ctx.start_span("boundary_cleanup", "Boundary cleanup"));
-    for boundary in &contours {
+    for (contour_idx, boundary) in contours.iter().enumerate() {
         check_cancel(cancel)?;
+        segments.push(AdaptiveSegment::Marker(
+            AdaptiveRuntimeEvent::BoundaryCleanup {
+                contour_index: contour_idx + 1,
+                contour_total: contours.len(),
+            },
+        ));
         segments.push(AdaptiveSegment::Rapid(boundary[0]));
 
         let mut cleanup_path = vec![boundary[0]];
@@ -1332,6 +1437,71 @@ pub(crate) fn simplify_path(points: &[P2], tolerance: f64) -> Vec<P2> {
 
 // ── Public API ─────────────────────────────────────────────────────────
 
+fn segments_to_toolpath(
+    segments: &[AdaptiveSegment],
+    params: &AdaptiveParams,
+) -> (Toolpath, Vec<AdaptiveRuntimeAnnotation>) {
+    let mut tp = Toolpath::new();
+    let mut annotations = Vec::new();
+
+    for segment in segments {
+        match segment {
+            AdaptiveSegment::Marker(event) => {
+                annotations.push(AdaptiveRuntimeAnnotation {
+                    move_index: tp.moves.len(),
+                    event: event.clone(),
+                });
+            }
+            AdaptiveSegment::Rapid(entry) => {
+                tp.rapid_to(crate::geo::P3::new(entry.x, entry.y, params.safe_z));
+                tp.feed_to(
+                    crate::geo::P3::new(entry.x, entry.y, params.cut_depth),
+                    params.plunge_rate,
+                );
+            }
+            AdaptiveSegment::Link(entry) => {
+                tp.feed_to(
+                    crate::geo::P3::new(entry.x, entry.y, params.cut_depth),
+                    params.feed_rate,
+                );
+            }
+            AdaptiveSegment::Cut(path) => {
+                let simplified = simplify_path(path, params.tolerance);
+                let final_path = if params.min_cutting_radius > 0.0 {
+                    blend_corners(&simplified, params.min_cutting_radius)
+                } else {
+                    simplified
+                };
+                for p in final_path.iter().skip(1) {
+                    tp.feed_to(
+                        crate::geo::P3::new(p.x, p.y, params.cut_depth),
+                        params.feed_rate,
+                    );
+                }
+            }
+        }
+    }
+
+    if let Some(last) = tp.moves.last() {
+        tp.rapid_to(crate::geo::P3::new(
+            last.target.x,
+            last.target.y,
+            params.safe_z,
+        ));
+    }
+
+    (tp, annotations)
+}
+
+fn runtime_annotations_to_labels(
+    annotations: &[AdaptiveRuntimeAnnotation],
+) -> Vec<(usize, String)> {
+    annotations
+        .iter()
+        .map(|annotation| (annotation.move_index, annotation.event.label()))
+        .collect()
+}
+
 /// Generate an adaptive clearing toolpath for a 2D polygon region.
 ///
 /// The toolpath maintains approximately constant engagement by dynamically
@@ -1357,6 +1527,17 @@ pub fn adaptive_toolpath_traced_with_cancel(
     cancel: &dyn CancelCheck,
     debug: Option<&ToolpathDebugContext>,
 ) -> Result<Toolpath, Cancelled> {
+    let (tp, _) =
+        adaptive_toolpath_structured_annotated_traced_with_cancel(polygon, params, cancel, debug)?;
+    Ok(tp)
+}
+
+pub fn adaptive_toolpath_structured_annotated_traced_with_cancel(
+    polygon: &Polygon2,
+    params: &AdaptiveParams,
+    cancel: &dyn CancelCheck,
+    debug: Option<&ToolpathDebugContext>,
+) -> Result<(Toolpath, Vec<AdaptiveRuntimeAnnotation>), Cancelled> {
     let segments = adaptive_segments_with_debug(
         polygon,
         params.tool_radius,
@@ -1367,58 +1548,24 @@ pub fn adaptive_toolpath_traced_with_cancel(
         cancel,
         debug,
     )?;
-
-    let mut tp = Toolpath::new();
-    if segments.is_empty() {
-        return Ok(tp);
-    }
-
-    for segment in &segments {
-        check_cancel(cancel)?;
-        match segment {
-            AdaptiveSegment::Rapid(entry) => {
-                // Retract, rapid to entry, plunge
-                tp.rapid_to(crate::geo::P3::new(entry.x, entry.y, params.safe_z));
-                tp.feed_to(
-                    crate::geo::P3::new(entry.x, entry.y, params.cut_depth),
-                    params.plunge_rate,
-                );
-            }
-            AdaptiveSegment::Link(entry) => {
-                // Stay at cut depth, feed directly to entry (no retract)
-                tp.feed_to(
-                    crate::geo::P3::new(entry.x, entry.y, params.cut_depth),
-                    params.feed_rate,
-                );
-            }
-            AdaptiveSegment::Cut(path) => {
-                // Simplify, then blend sharp corners if min_cutting_radius > 0
-                let simplified = simplify_path(path, params.tolerance);
-                let final_path = if params.min_cutting_radius > 0.0 {
-                    blend_corners(&simplified, params.min_cutting_radius)
-                } else {
-                    simplified
-                };
-                for p in final_path.iter().skip(1) {
-                    tp.feed_to(
-                        crate::geo::P3::new(p.x, p.y, params.cut_depth),
-                        params.feed_rate,
-                    );
-                }
-            }
+    let (tp, annotations) = segments_to_toolpath(&segments, params);
+    if let Some(debug_ctx) = debug {
+        for annotation in &annotations {
+            debug_ctx.add_annotation(annotation.move_index, annotation.event.label());
         }
     }
+    Ok((tp, annotations))
+}
 
-    // Final retract
-    if let Some(last) = tp.moves.last() {
-        tp.rapid_to(crate::geo::P3::new(
-            last.target.x,
-            last.target.y,
-            params.safe_z,
-        ));
-    }
-
-    Ok(tp)
+pub fn adaptive_toolpath_annotated_traced_with_cancel(
+    polygon: &Polygon2,
+    params: &AdaptiveParams,
+    cancel: &dyn CancelCheck,
+    debug: Option<&ToolpathDebugContext>,
+) -> Result<(Toolpath, Vec<(usize, String)>), Cancelled> {
+    let (tp, annotations) =
+        adaptive_toolpath_structured_annotated_traced_with_cancel(polygon, params, cancel, debug)?;
+    Ok((tp, runtime_annotations_to_labels(&annotations)))
 }
 
 #[cfg(test)]

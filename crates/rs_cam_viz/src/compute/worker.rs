@@ -12,7 +12,7 @@ use std::sync::mpsc;
 use std::sync::{Condvar, Mutex};
 use std::time::Instant;
 
-use rs_cam_core::adaptive::{AdaptiveParams, adaptive_toolpath_traced_with_cancel};
+use rs_cam_core::adaptive::AdaptiveParams;
 use rs_cam_core::adaptive3d::{Adaptive3dParams, EntryStyle3d};
 use rs_cam_core::arcfit::fit_arcs;
 use rs_cam_core::chamfer::{ChamferParams, chamfer_toolpath};
@@ -34,21 +34,17 @@ use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::horizontal_finish::{HorizontalFinishParams, horizontal_finish_toolpath};
 use rs_cam_core::inlay::{InlayParams, inlay_toolpaths};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::pencil::{PencilParams, pencil_toolpath};
+use rs_cam_core::pencil::PencilParams;
 use rs_cam_core::pocket::{PocketParams, pocket_toolpath};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::profile::{ProfileParams, profile_toolpath};
 use rs_cam_core::project_curve::{ProjectCurveParams, project_curve_toolpath};
 use rs_cam_core::radial_finish::{RadialFinishParams, radial_finish_toolpath};
-use rs_cam_core::ramp_finish::{
-    CutDirection as CoreCutDir, RampFinishParams, ramp_finish_toolpath,
-};
+use rs_cam_core::ramp_finish::{CutDirection as CoreCutDir, RampFinishParams};
 use rs_cam_core::rest::{RestParams, rest_machining_toolpath};
-use rs_cam_core::scallop::{ScallopDirection as CoreScalDir, ScallopParams, scallop_toolpath};
+use rs_cam_core::scallop::{ScallopDirection as CoreScalDir, ScallopParams};
 use rs_cam_core::simulation::HeightmapMesh;
-use rs_cam_core::spiral_finish::{
-    SpiralDirection as CoreSpiralDir, SpiralFinishParams, spiral_finish_toolpath,
-};
+use rs_cam_core::spiral_finish::{SpiralDirection as CoreSpiralDir, SpiralFinishParams};
 use rs_cam_core::steep_shallow::{SteepShallowParams, steep_shallow_toolpath};
 use rs_cam_core::tool::{
     BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill,
@@ -91,9 +87,18 @@ pub struct ComputeResult {
     pub debug_trace_path: Option<PathBuf>,
 }
 
+#[derive(Clone)]
+pub struct SetupSimToolpath {
+    pub id: ToolpathId,
+    pub name: String,
+    pub toolpath: Arc<Toolpath>,
+    pub tool: ToolConfig,
+    pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
+}
+
 /// A group of toolpaths from one setup, pre-transformed to the global stock frame.
 pub struct SetupSimGroup {
-    pub toolpaths: Vec<(ToolpathId, String, Arc<Toolpath>, ToolConfig)>,
+    pub toolpaths: Vec<SetupSimToolpath>,
     /// Cut direction derived from the setup's FaceUp orientation.
     pub direction: StockCutDirection,
 }
@@ -104,6 +109,9 @@ pub struct SimulationRequest {
     pub stock_bbox: BoundingBox3,
     pub stock_top_z: f64,
     pub resolution: f64,
+    pub metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions,
+    pub spindle_rpm: u32,
+    pub rapid_feed_mm_min: f64,
     /// Optional model mesh for deviation computation (sim_z vs model_z).
     pub model_mesh: Option<Arc<TriangleMesh>>,
 }
@@ -137,6 +145,8 @@ pub struct SimulationResult {
     pub rapid_collisions: Vec<RapidCollision>,
     /// Move indices with rapid collisions (for timeline markers).
     pub rapid_collision_move_indices: Vec<usize>,
+    pub cut_trace: Option<Arc<rs_cam_core::simulation_cut::SimulationCutTrace>>,
+    pub cut_trace_path: Option<PathBuf>,
 }
 
 pub struct CollisionRequest {

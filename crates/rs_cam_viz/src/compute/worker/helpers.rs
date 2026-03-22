@@ -442,6 +442,10 @@ pub(super) fn debug_artifact_dir() -> PathBuf {
     workspace_root().join("target").join("toolpath_debug")
 }
 
+pub(super) fn simulation_metric_artifact_dir() -> PathBuf {
+    workspace_root().join("target").join("simulation_metrics")
+}
+
 pub(super) fn build_trace_artifact(
     req: &ComputeRequest,
     debug_trace: Option<rs_cam_core::debug_trace::ToolpathDebugTrace>,
@@ -485,5 +489,65 @@ pub(super) fn build_trace_artifact(
         request_snapshot,
         debug_trace,
         semantic_trace,
+    )
+}
+
+pub(super) fn build_simulation_cut_artifact(
+    req: &SimulationRequest,
+    trace: rs_cam_core::simulation_cut::SimulationCutTrace,
+) -> rs_cam_core::simulation_cut::SimulationCutArtifact {
+    let included_toolpath_ids: Vec<_> = req
+        .groups
+        .iter()
+        .flat_map(|group| group.toolpaths.iter().map(|toolpath| toolpath.id.0))
+        .collect();
+    let request_snapshot = json!({
+        "resolution_mm": req.resolution,
+        "sample_step_mm": req.resolution.max(0.25),
+        "metric_options": &req.metric_options,
+        "spindle_rpm": req.spindle_rpm,
+        "rapid_feed_mm_min": req.rapid_feed_mm_min,
+        "stock_bbox": {
+            "min": {
+                "x": req.stock_bbox.min.x,
+                "y": req.stock_bbox.min.y,
+                "z": req.stock_bbox.min.z
+            },
+            "max": {
+                "x": req.stock_bbox.max.x,
+                "y": req.stock_bbox.max.y,
+                "z": req.stock_bbox.max.z
+            },
+        },
+        "toolpaths": req.groups.iter().map(|group| {
+            json!({
+                "direction": format!("{:?}", group.direction),
+                "toolpaths": group.toolpaths.iter().map(|toolpath| {
+                    json!({
+                        "toolpath_id": toolpath.id.0,
+                        "name": toolpath.name,
+                        "tool": toolpath.tool.summary(),
+                    })
+                }).collect::<Vec<_>>(),
+            })
+        }).collect::<Vec<_>>(),
+    });
+
+    rs_cam_core::simulation_cut::SimulationCutArtifact::new(
+        req.resolution,
+        trace.sample_step_mm,
+        [
+            req.stock_bbox.min.x,
+            req.stock_bbox.min.y,
+            req.stock_bbox.min.z,
+        ],
+        [
+            req.stock_bbox.max.x,
+            req.stock_bbox.max.y,
+            req.stock_bbox.max.z,
+        ],
+        included_toolpath_ids,
+        request_snapshot,
+        trace,
     )
 }

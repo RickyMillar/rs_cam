@@ -15,6 +15,7 @@
 //! 4. Interpolate between matched contours to create continuous helical descent
 //! 5. Apply slope confinement to restrict to steep regions
 
+use crate::debug_trace::ToolpathDebugContext;
 use crate::geo::P3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::slope::{SlopeMap, SurfaceHeightmap};
@@ -60,6 +61,50 @@ pub struct RampFinishParams {
     pub stock_to_leave: f64,
     /// Path tolerance for simplification.
     pub tolerance: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum RampFinishRuntimeEvent {
+    Ramp {
+        terrace_index: usize,
+        terrace_total: usize,
+        upper_level_index: usize,
+        lower_level_index: usize,
+        upper_z: f64,
+        lower_z: f64,
+        ramp_index: usize,
+        ramp_total: usize,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RampFinishRuntimeAnnotation {
+    pub move_index: usize,
+    pub event: RampFinishRuntimeEvent,
+}
+
+impl RampFinishRuntimeEvent {
+    pub fn label(&self) -> String {
+        match self {
+            Self::Ramp {
+                terrace_index,
+                ramp_index,
+                ..
+            } => format!("Terrace {terrace_index} ramp {ramp_index}"),
+        }
+    }
+}
+
+struct RampSegmentRecord {
+    path: Vec<P3>,
+    terrace_index: usize,
+    terrace_total: usize,
+    upper_level_index: usize,
+    lower_level_index: usize,
+    upper_z: f64,
+    lower_z: f64,
+    ramp_index: usize,
+    ramp_total: usize,
 }
 
 impl Default for RampFinishParams {
@@ -283,6 +328,26 @@ pub fn ramp_finish_toolpath(
     cutter: &dyn MillingCutter,
     params: &RampFinishParams,
 ) -> Toolpath {
+    let (tp, _) = ramp_finish_toolpath_structured_annotated(mesh, index, cutter, params, None);
+    tp
+}
+
+fn runtime_annotations_to_labels(
+    annotations: &[RampFinishRuntimeAnnotation],
+) -> Vec<(usize, String)> {
+    annotations
+        .iter()
+        .map(|annotation| (annotation.move_index, annotation.event.label()))
+        .collect()
+}
+
+pub fn ramp_finish_toolpath_structured_annotated(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &RampFinishParams,
+    debug: Option<&ToolpathDebugContext>,
+) -> (Toolpath, Vec<RampFinishRuntimeAnnotation>) {
     let tool_radius = cutter.radius();
     let bbox = &mesh.bbox;
 
@@ -316,7 +381,7 @@ pub fn ramp_finish_toolpath(
 
     if z_levels.len() < 2 {
         info!("Ramp finish: insufficient Z range for ramping");
-        return Toolpath::new();
+        return (Toolpath::new(), Vec::new());
     }
 
     info!(
@@ -347,7 +412,7 @@ pub fn ramp_finish_toolpath(
     let step_len = cell_size * 2.0;
 
     // Generate ramp paths between adjacent Z levels
-    let mut all_ramp_segments: Vec<Vec<P3>> = Vec::new();
+    let mut all_ramp_segments: Vec<RampSegmentRecord> = Vec::new();
 
     let level_pairs: Vec<(usize, usize)> = (0..z_levels.len() - 1).map(|i| (i, i + 1)).collect();
 
@@ -358,7 +423,7 @@ pub fn ramp_finish_toolpath(
         level_pairs
     };
 
-    for &(upper_idx, lower_idx) in &level_pairs {
+    for (terrace_pos, &(upper_idx, lower_idx)) in level_pairs.iter().enumerate() {
         let upper_contours = &level_contours[upper_idx];
         let lower_contours = &level_contours[lower_idx];
 
@@ -367,6 +432,12 @@ pub fn ramp_finish_toolpath(
         }
 
         let matches = match_contours(upper_contours, lower_contours);
+
+        let terrace_index = terrace_pos + 1;
+        let terrace_total = level_pairs.len();
+        let upper_z = z_levels[upper_idx];
+        let lower_z = z_levels[lower_idx];
+        let mut terrace_segments = Vec::new();
 
         for &(ui, li) in &matches {
             let ramp_path = ramp_between_contours(
@@ -385,12 +456,27 @@ pub fn ramp_finish_toolpath(
                     slope_confined_segments(&ramp_path, &slope_map, slope_from_rad, slope_to_rad);
                 for seg in segments {
                     if seg.len() >= 2 {
-                        all_ramp_segments.push(seg);
+                        terrace_segments.push(seg);
                     }
                 }
             } else {
-                all_ramp_segments.push(ramp_path);
+                terrace_segments.push(ramp_path);
             }
+        }
+
+        let ramp_total = terrace_segments.len();
+        for (ramp_index, path) in terrace_segments.into_iter().enumerate() {
+            all_ramp_segments.push(RampSegmentRecord {
+                path,
+                terrace_index,
+                terrace_total,
+                upper_level_index: upper_idx + 1,
+                lower_level_index: lower_idx + 1,
+                upper_z,
+                lower_z,
+                ramp_index: ramp_index + 1,
+                ramp_total,
+            });
         }
     }
 
@@ -401,12 +487,13 @@ pub fn ramp_finish_toolpath(
 
     // Convert to toolpath
     let mut tp = Toolpath::new();
+    let mut annotations = Vec::new();
 
     // Handle direction: for Conventional, reverse each segment
     let should_reverse = matches!(params.direction, CutDirection::Conventional);
 
     for (i, segment) in all_ramp_segments.iter().enumerate() {
-        let simplified = simplify_path_3d(segment, params.tolerance);
+        let simplified = simplify_path_3d(&segment.path, params.tolerance);
         if simplified.len() < 2 {
             continue;
         }
@@ -421,7 +508,21 @@ pub fn ramp_finish_toolpath(
             simplified
         };
 
+        let move_index = tp.moves.len();
         tp.emit_path_segment(&path, params.safe_z, params.feed_rate, params.plunge_rate);
+        annotations.push(RampFinishRuntimeAnnotation {
+            move_index,
+            event: RampFinishRuntimeEvent::Ramp {
+                terrace_index: segment.terrace_index,
+                terrace_total: segment.terrace_total,
+                upper_level_index: segment.upper_level_index,
+                lower_level_index: segment.lower_level_index,
+                upper_z: segment.upper_z,
+                lower_z: segment.lower_z,
+                ramp_index: segment.ramp_index,
+                ramp_total: segment.ramp_total,
+            },
+        });
     }
 
     tp.final_retract(params.safe_z);
@@ -433,7 +534,25 @@ pub fn ramp_finish_toolpath(
         "Ramp finish toolpath complete"
     );
 
-    tp
+    if let Some(debug_ctx) = debug {
+        for annotation in &annotations {
+            debug_ctx.add_annotation(annotation.move_index, annotation.event.label());
+        }
+    }
+
+    (tp, annotations)
+}
+
+pub fn ramp_finish_toolpath_annotated(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &RampFinishParams,
+    debug: Option<&ToolpathDebugContext>,
+) -> (Toolpath, Vec<(usize, String)>) {
+    let (tp, annotations) =
+        ramp_finish_toolpath_structured_annotated(mesh, index, cutter, params, debug);
+    (tp, runtime_annotations_to_labels(&annotations))
 }
 
 #[cfg(test)]

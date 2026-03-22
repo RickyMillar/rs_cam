@@ -97,6 +97,8 @@ fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_
             min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
             max: rs_cam_core::geo::P3::new(10.0, 10.0, 10.0),
         },
+        cut_trace: None,
+        cut_trace_path: None,
     });
 
     controller.handle_internal_event(crate::ui::AppEvent::InspectToolpathInSimulation(
@@ -173,6 +175,8 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
             playback_data: Vec::new(),
             rapid_collisions: Vec::new(),
             rapid_collision_move_indices: Vec::new(),
+            cut_trace: None,
+            cut_trace_path: None,
         })));
 
     controller.drain_compute_results();
@@ -453,6 +457,8 @@ fn simulation_results_capture_setup_boundaries() {
                 playback_data: Vec::new(),
                 rapid_collisions: Vec::new(),
                 rapid_collision_move_indices: Vec::new(),
+                cut_trace: None,
+                cut_trace_path: None,
             },
         )));
 
@@ -624,6 +630,8 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
             playback_data: Vec::new(),
             rapid_collisions: Vec::new(),
             rapid_collision_move_indices: Vec::new(),
+            cut_trace: None,
+            cut_trace_path: None,
         })));
 
     controller.drain_compute_results();

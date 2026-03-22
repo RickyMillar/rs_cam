@@ -1,4 +1,6 @@
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use super::job::{JobState, SetupId};
 use super::toolpath::ToolpathId;
@@ -10,12 +12,17 @@ use rs_cam_core::semantic_trace::{
     ToolpathSemanticItem, ToolpathSemanticKind, ToolpathSemanticTrace,
 };
 use rs_cam_core::simulation::HeightmapMesh;
+use rs_cam_core::simulation_cut::{
+    SimulationCutHotspot, SimulationCutIssue, SimulationCutIssueKind, SimulationCutSample,
+    SimulationCutTrace, SimulationMetricOptions, SimulationSemanticCutSummary,
+};
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SimulationDebugTab {
     Semantic,
-    Performance,
+    Generation,
+    Cutting,
     Trace,
 }
 
@@ -49,6 +56,8 @@ pub struct SimulationTraceTarget {
 pub enum SimulationIssueKind {
     Hotspot,
     Annotation,
+    AirCut,
+    LowEngagement,
     RapidCollision,
     HolderCollision,
 }
@@ -104,6 +113,14 @@ pub struct SimulationRuntimeHotspot {
     pub cutting_seconds: f64,
     pub rapid_seconds: f64,
     pub debug_span_id: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ActiveCutSample {
+    pub toolpath_id: ToolpathId,
+    pub boundary_index: usize,
+    pub local_move: usize,
+    pub sample: SimulationCutSample,
 }
 
 #[derive(Default)]
@@ -190,6 +207,10 @@ pub struct SimulationResults {
     )>,
     /// Global stock bounding box used for this simulation (for fresh-stock reset).
     pub stock_bbox: rs_cam_core::geo::BoundingBox3,
+    /// Simulation-time cutting metrics captured during the run.
+    pub cut_trace: Option<Arc<SimulationCutTrace>>,
+    /// Artifact path for the simulation cutting metrics trace.
+    pub cut_trace_path: Option<PathBuf>,
 }
 
 /// Transport / playback state — independent of whether results exist.
@@ -264,6 +285,8 @@ pub struct SimulationState {
     pub resolution: f64,
     /// When true, resolution is auto-calculated from the smallest tool.
     pub auto_resolution: bool,
+    /// Runtime-only capture options for simulation cutting metrics.
+    pub metric_options: SimulationMetricOptions,
     /// Stock visualization mode.
     pub stock_viz_mode: StockVizMode,
     /// Stock opacity (0.0 = transparent, 1.0 = solid).
@@ -300,6 +323,7 @@ impl SimulationState {
             last_run: None,
             resolution: 0.25,
             auto_resolution: true,
+            metric_options: SimulationMetricOptions::default(),
             stock_viz_mode: StockVizMode::Solid,
             stock_opacity: 1.0,
             saved_viewport: SavedViewportState {
@@ -500,6 +524,103 @@ impl SimulationState {
         let (move_start, move_end) = (item.move_start?, item.move_end?);
         let profile = self.debug.runtime_profiles.get(&toolpath_id)?;
         profile.metrics_for_range(move_start, move_end + 1)
+    }
+
+    pub fn toolpath_cut_summary(
+        &self,
+        toolpath_id: ToolpathId,
+    ) -> Option<&rs_cam_core::simulation_cut::SimulationToolpathCutSummary> {
+        self.results
+            .as_ref()?
+            .cut_trace
+            .as_ref()?
+            .toolpath_summaries
+            .iter()
+            .find(|summary| summary.toolpath_id == toolpath_id.0)
+    }
+
+    pub fn semantic_cut_summary(
+        &self,
+        toolpath_id: ToolpathId,
+        item_id: u64,
+    ) -> Option<&SimulationSemanticCutSummary> {
+        self.results
+            .as_ref()?
+            .cut_trace
+            .as_ref()?
+            .semantic_summaries
+            .iter()
+            .find(|summary| {
+                summary.toolpath_id == toolpath_id.0 && summary.semantic_item_id == item_id
+            })
+    }
+
+    pub fn cut_worst_items(
+        &self,
+        toolpath_id: ToolpathId,
+        limit: usize,
+    ) -> Vec<SimulationSemanticCutSummary> {
+        let Some(trace) = self
+            .results
+            .as_ref()
+            .and_then(|results| results.cut_trace.as_ref())
+        else {
+            return Vec::new();
+        };
+        let mut items: Vec<_> = trace
+            .semantic_summaries
+            .iter()
+            .filter(|summary| summary.toolpath_id == toolpath_id.0)
+            .cloned()
+            .collect();
+        items.sort_by(|left, right| {
+            right
+                .wasted_runtime_s
+                .total_cmp(&left.wasted_runtime_s)
+                .then_with(|| left.average_mrr_mm3_s.total_cmp(&right.average_mrr_mm3_s))
+                .then_with(|| right.total_runtime_s.total_cmp(&left.total_runtime_s))
+                .then_with(|| left.move_start.cmp(&right.move_start))
+        });
+        items.truncate(limit);
+        items
+    }
+
+    pub fn cut_hotspots(&self, toolpath_id: ToolpathId, limit: usize) -> Vec<SimulationCutHotspot> {
+        let Some(trace) = self
+            .results
+            .as_ref()
+            .and_then(|results| results.cut_trace.as_ref())
+        else {
+            return Vec::new();
+        };
+        trace
+            .hotspots
+            .iter()
+            .filter(|hotspot| hotspot.toolpath_id == toolpath_id.0)
+            .take(limit)
+            .cloned()
+            .collect()
+    }
+
+    pub fn current_cut_sample(&self) -> Option<ActiveCutSample> {
+        let (boundary_index, toolpath_id, local_move) = self.current_local_toolpath_move()?;
+        let trace = self.results.as_ref()?.cut_trace.as_ref()?;
+        let sample = trace
+            .samples
+            .iter()
+            .filter(|sample| sample.toolpath_id == toolpath_id.0 && sample.move_index <= local_move)
+            .max_by(|left, right| {
+                left.move_index
+                    .cmp(&right.move_index)
+                    .then_with(|| left.sample_index.cmp(&right.sample_index))
+            })
+            .cloned()?;
+        Some(ActiveCutSample {
+            toolpath_id,
+            boundary_index,
+            local_move,
+            sample,
+        })
     }
 
     pub fn runtime_hotspots(
@@ -747,6 +868,20 @@ impl SimulationState {
         })
     }
 
+    pub fn trace_target_for_cut_issue(
+        &mut self,
+        _job: &JobState,
+        issue: &SimulationCutIssue,
+    ) -> Option<SimulationTraceTarget> {
+        let toolpath_id = ToolpathId(issue.toolpath_id);
+        Some(SimulationTraceTarget {
+            toolpath_id,
+            move_index: self.global_move_for_local(toolpath_id, issue.move_index)?,
+            semantic_item_id: issue.semantic_item_id,
+            debug_span_id: None,
+        })
+    }
+
     pub fn current_debug_annotation_with_index(
         &self,
         job: &JobState,
@@ -877,6 +1012,33 @@ impl SimulationState {
             }
         }
 
+        if let Some(trace) = self
+            .results
+            .as_ref()
+            .and_then(|results| results.cut_trace.as_ref())
+        {
+            for issue in &trace.issues {
+                let toolpath_id = ToolpathId(issue.toolpath_id);
+                let Some(global_move) = self.global_move_for_local(toolpath_id, issue.move_index)
+                else {
+                    continue;
+                };
+                issues.push(SimulationIssue {
+                    kind: match issue.kind {
+                        SimulationCutIssueKind::AirCut => SimulationIssueKind::AirCut,
+                        SimulationCutIssueKind::LowEngagement => SimulationIssueKind::LowEngagement,
+                    },
+                    toolpath_id: Some(toolpath_id),
+                    move_index: global_move,
+                    label: issue.label.clone(),
+                    semantic_item_id: issue.semantic_item_id,
+                    debug_span_id: None,
+                    hotspot_index: None,
+                    annotation_index: None,
+                });
+            }
+        }
+
         for &move_index in &self.checks.rapid_collision_move_indices {
             let toolpath_id = self
                 .move_to_local_toolpath_move(move_index)
@@ -965,6 +1127,20 @@ impl SimulationState {
                     self.pin_semantic_item(toolpath_id, item_id);
                 }
                 return self.trace_target_for_annotation(toolpath_id, annotation);
+            }
+            if matches!(
+                issue.kind,
+                SimulationIssueKind::AirCut | SimulationIssueKind::LowEngagement
+            ) {
+                if let Some(item_id) = issue.semantic_item_id {
+                    self.pin_semantic_item(toolpath_id, item_id);
+                }
+                return Some(SimulationTraceTarget {
+                    toolpath_id,
+                    move_index: issue.move_index,
+                    semantic_item_id: issue.semantic_item_id,
+                    debug_span_id: issue.debug_span_id,
+                });
             }
             if let Some(item_id) = issue.semantic_item_id {
                 self.pin_semantic_item(toolpath_id, item_id);
@@ -1395,8 +1571,10 @@ fn issue_kind_rank(kind: SimulationIssueKind) -> u8 {
     match kind {
         SimulationIssueKind::Hotspot => 0,
         SimulationIssueKind::Annotation => 1,
-        SimulationIssueKind::RapidCollision => 2,
-        SimulationIssueKind::HolderCollision => 3,
+        SimulationIssueKind::AirCut => 2,
+        SimulationIssueKind::LowEngagement => 3,
+        SimulationIssueKind::RapidCollision => 4,
+        SimulationIssueKind::HolderCollision => 5,
     }
 }
 
@@ -1551,8 +1729,57 @@ mod tests {
                 min: P3::new(0.0, 0.0, 0.0),
                 max: P3::new(10.0, 10.0, 10.0),
             },
+            cut_trace: None,
+            cut_trace_path: None,
         });
         sim
+    }
+
+    fn attach_cut_trace(sim: &mut SimulationState) {
+        let trace = rs_cam_core::simulation_cut::SimulationCutTrace::from_samples(
+            0.5,
+            vec![
+                rs_cam_core::simulation_cut::SimulationCutSample {
+                    toolpath_id: 1,
+                    move_index: 1,
+                    sample_index: 0,
+                    position: [0.0, 0.0, -1.0],
+                    cumulative_time_s: 0.2,
+                    segment_time_s: 0.2,
+                    is_cutting: true,
+                    feed_rate_mm_min: 300.0,
+                    spindle_rpm: 18_000,
+                    flute_count: 2,
+                    axial_doc_mm: 1.0,
+                    radial_engagement: 0.01,
+                    chipload_mm_per_tooth: 0.0083,
+                    removed_volume_est_mm3: 0.1,
+                    mrr_mm3_s: 0.5,
+                    semantic_item_id: Some(2),
+                },
+                rs_cam_core::simulation_cut::SimulationCutSample {
+                    toolpath_id: 1,
+                    move_index: 7,
+                    sample_index: 1,
+                    position: [8.0, 8.0, -1.0],
+                    cumulative_time_s: 0.6,
+                    segment_time_s: 0.4,
+                    is_cutting: true,
+                    feed_rate_mm_min: 1000.0,
+                    spindle_rpm: 18_000,
+                    flute_count: 2,
+                    axial_doc_mm: 0.4,
+                    radial_engagement: 0.08,
+                    chipload_mm_per_tooth: 0.0277,
+                    removed_volume_est_mm3: 2.0,
+                    mrr_mm3_s: 5.0,
+                    semantic_item_id: Some(3),
+                },
+            ],
+        );
+        if let Some(results) = sim.results.as_mut() {
+            results.cut_trace = Some(Arc::new(trace));
+        }
     }
 
     #[test]
@@ -1666,5 +1893,29 @@ mod tests {
             .expect("runtime metrics for entry item");
         assert!(metrics.total_seconds > 0.0);
         assert!(metrics.cutting_seconds > 0.0);
+    }
+
+    #[test]
+    fn cut_trace_surfaces_current_sample_and_cutting_issues() {
+        let job = job_with_traces();
+        let mut sim = simulation_for_toolpath();
+        attach_cut_trace(&mut sim);
+        sim.playback.current_move = 7;
+
+        let sample = sim.current_cut_sample().expect("current cut sample");
+        assert_eq!(sample.toolpath_id, ToolpathId(1));
+        assert_eq!(sample.sample.move_index, 7);
+
+        let issues = sim.issues(&job);
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.kind == SimulationIssueKind::AirCut)
+        );
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.kind == SimulationIssueKind::LowEngagement)
+        );
     }
 }

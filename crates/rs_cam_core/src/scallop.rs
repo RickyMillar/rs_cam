@@ -15,6 +15,7 @@
 //! From Fusion 360 docs: "passes follow sloping and vertical walls to maintain
 //! the stepover."
 
+use crate::debug_trace::ToolpathDebugContext;
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::mesh::{SpatialIndex, TriangleMesh};
@@ -58,6 +59,29 @@ pub struct ScallopParams {
     pub safe_z: f64,
     /// Stock to leave on the surface (mm).
     pub stock_to_leave: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScallopRuntimeEvent {
+    Ring {
+        ring_index: usize,
+        ring_total: usize,
+        continuous: bool,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScallopRuntimeAnnotation {
+    pub move_index: usize,
+    pub event: ScallopRuntimeEvent,
+}
+
+impl ScallopRuntimeEvent {
+    pub fn label(&self) -> String {
+        match self {
+            Self::Ring { ring_index, .. } => format!("Ring {ring_index}"),
+        }
+    }
 }
 
 impl Default for ScallopParams {
@@ -265,6 +289,24 @@ pub fn scallop_toolpath(
     cutter: &dyn MillingCutter,
     params: &ScallopParams,
 ) -> Toolpath {
+    let (tp, _) = scallop_toolpath_structured_annotated(mesh, index, cutter, params, None);
+    tp
+}
+
+fn runtime_annotations_to_labels(annotations: &[ScallopRuntimeAnnotation]) -> Vec<(usize, String)> {
+    annotations
+        .iter()
+        .map(|annotation| (annotation.move_index, annotation.event.label()))
+        .collect()
+}
+
+pub fn scallop_toolpath_structured_annotated(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &ScallopParams,
+    debug: Option<&ToolpathDebugContext>,
+) -> (Toolpath, Vec<ScallopRuntimeAnnotation>) {
     let tool_radius = cutter.radius();
     let bbox = &mesh.bbox;
 
@@ -359,7 +401,7 @@ pub fn scallop_toolpath(
     info!(rings = rings.len(), "Scallop rings generated");
 
     if rings.is_empty() {
-        return Toolpath::new();
+        return (Toolpath::new(), Vec::new());
     }
 
     // Apply direction
@@ -374,6 +416,7 @@ pub fn scallop_toolpath(
 
     // Convert rings to toolpath
     let mut tp = Toolpath::new();
+    let mut annotations = Vec::new();
 
     if params.continuous && rings.len() >= 2 {
         // Continuous spiral mode: connect adjacent rings at their nearest points
@@ -384,6 +427,15 @@ pub fn scallop_toolpath(
             // Rotate ring to start at the closest point to the previous endpoint
             let start_idx = closest_point_idx(ring, &prev_end);
             let rotated = rotate_ring(ring, start_idx);
+            let move_index = tp.moves.len();
+            annotations.push(ScallopRuntimeAnnotation {
+                move_index,
+                event: ScallopRuntimeEvent::Ring {
+                    ring_index: i + 1,
+                    ring_total: rings.len(),
+                    continuous: true,
+                },
+            });
 
             if i == 0 {
                 // First ring: rapid to start
@@ -414,6 +466,7 @@ pub fn scallop_toolpath(
         tp.rapid_to(P3::new(prev_end.x, prev_end.y, params.safe_z));
     } else {
         // Discrete ring mode: rapid between rings
+        let mut emitted_rings = Vec::new();
         for ring in &rings {
             if ring.len() < 3 {
                 continue;
@@ -436,7 +489,19 @@ pub fn scallop_toolpath(
             if filtered.len() < 3 {
                 continue;
             }
+            emitted_rings.push(filtered);
+        }
 
+        for (ring_index, filtered) in emitted_rings.iter().enumerate() {
+            let move_index = tp.moves.len();
+            annotations.push(ScallopRuntimeAnnotation {
+                move_index,
+                event: ScallopRuntimeEvent::Ring {
+                    ring_index: ring_index + 1,
+                    ring_total: emitted_rings.len(),
+                    continuous: false,
+                },
+            });
             tp.rapid_to(P3::new(filtered[0].x, filtered[0].y, params.safe_z));
             tp.feed_to(filtered[0], params.plunge_rate);
             for pt in &filtered[1..] {
@@ -461,7 +526,25 @@ pub fn scallop_toolpath(
         "Scallop toolpath complete"
     );
 
-    tp
+    if let Some(debug_ctx) = debug {
+        for annotation in &annotations {
+            debug_ctx.add_annotation(annotation.move_index, annotation.event.label());
+        }
+    }
+
+    (tp, annotations)
+}
+
+pub fn scallop_toolpath_annotated(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &ScallopParams,
+    debug: Option<&ToolpathDebugContext>,
+) -> (Toolpath, Vec<(usize, String)>) {
+    let (tp, annotations) =
+        scallop_toolpath_structured_annotated(mesh, index, cutter, params, debug);
+    (tp, runtime_annotations_to_labels(&annotations))
 }
 
 #[cfg(test)]

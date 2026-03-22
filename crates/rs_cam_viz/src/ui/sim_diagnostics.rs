@@ -218,8 +218,8 @@ pub fn draw(
 
     ui.add_space(4.0);
 
-    // --- Performance Trace ---
-    egui::CollapsingHeader::new("Performance Trace")
+    // --- Generation Metrics ---
+    egui::CollapsingHeader::new("Generation Metrics")
         .default_open(true)
         .show(ui, |ui| {
             let debug_trace = current_boundary_id
@@ -274,6 +274,86 @@ pub fn draw(
             } else {
                 ui.label(
                     egui::RichText::new("No performance trace available")
+                        .small()
+                        .italics()
+                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                );
+            }
+        });
+
+    ui.add_space(4.0);
+
+    // --- Cutting Metrics ---
+    egui::CollapsingHeader::new("Cutting Metrics")
+        .default_open(true)
+        .show(ui, |ui| {
+            let current_boundary = sim.current_boundary().map(|boundary| boundary.id);
+            let cut_trace = sim
+                .results
+                .as_ref()
+                .and_then(|results| results.cut_trace.as_ref());
+
+            if let Some(toolpath_id) = current_boundary
+                && let Some(summary) = sim.toolpath_cut_summary(toolpath_id)
+            {
+                ui.label(format!("Runtime: {:.2}s", summary.total_runtime_s));
+                ui.label(format!(
+                    "Cut {:.2}s | rapid {:.2}s",
+                    summary.cutting_runtime_s, summary.rapid_runtime_s
+                ));
+                ui.label(format!(
+                    "Air {:.2}s | low engage {:.2}s",
+                    summary.air_cut_time_s, summary.low_engagement_time_s
+                ));
+                ui.label(format!(
+                    "Avg engagement {:.1}% | avg MRR {:.1} mm^3/s",
+                    summary.average_engagement * 100.0,
+                    summary.average_mrr_mm3_s
+                ));
+                if let Some(active_sample) = sim.current_cut_sample()
+                    && active_sample.toolpath_id == toolpath_id
+                {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Sample: move {} | {:.1}% engage | {:.3} mm DOC | {:.4} chipload",
+                            active_sample.sample.move_index,
+                            active_sample.sample.radial_engagement * 100.0,
+                            active_sample.sample.axial_doc_mm,
+                            active_sample.sample.chipload_mm_per_tooth
+                        ))
+                        .small()
+                        .color(egui::Color32::from_rgb(120, 210, 150)),
+                    );
+                }
+                let hotspot_count = sim.cut_hotspots(toolpath_id, 5).len();
+                ui.label(format!("Runtime hotspots: {}", hotspot_count));
+                if let Some(active) = active_semantic.as_ref()
+                    && active.toolpath_id == toolpath_id
+                    && let Some(item_summary) =
+                        sim.semantic_cut_summary(toolpath_id, active.item.id)
+                {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Item: {} | wasted {:.2}s | avg engage {:.1}% | avg MRR {:.1}",
+                            active.item.label,
+                            item_summary.wasted_runtime_s,
+                            item_summary.average_engagement * 100.0,
+                            item_summary.average_mrr_mm3_s
+                        ))
+                        .small()
+                        .color(egui::Color32::from_rgb(120, 210, 150)),
+                    );
+                }
+            } else if cut_trace.is_none() {
+                ui.label(
+                    egui::RichText::new("Enable Capture Metrics and re-run simulation")
+                        .small()
+                        .italics()
+                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                );
+            } else {
+                ui.label(
+                    egui::RichText::new("No cutting metrics for the current toolpath")
                         .small()
                         .italics()
                         .color(egui::Color32::from_rgb(120, 120, 130)),
@@ -502,6 +582,8 @@ fn issue_kind_label(kind: SimulationIssueKind) -> &'static str {
     match kind {
         SimulationIssueKind::Hotspot => "Hotspot",
         SimulationIssueKind::Annotation => "Annotation",
+        SimulationIssueKind::AirCut => "Air cut",
+        SimulationIssueKind::LowEngagement => "Low engagement",
         SimulationIssueKind::RapidCollision => "Rapid collision",
         SimulationIssueKind::HolderCollision => "Holder collision",
     }

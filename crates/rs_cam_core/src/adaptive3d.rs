@@ -901,6 +901,104 @@ fn interpolate_z_from_path(path: &[P3], x: f64, y: f64) -> f64 {
 
 // ── Segment types ─────────────────────────────────────────────────────
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum Adaptive3dRuntimeEvent {
+    RegionStart {
+        region_index: usize,
+        region_total: usize,
+        cell_count: usize,
+    },
+    RegionZLevel {
+        region_index: usize,
+        z_level: f64,
+        level_index: usize,
+        level_total: usize,
+    },
+    GlobalZLevel {
+        z_level: f64,
+        level_index: usize,
+        level_total: usize,
+    },
+    WaterlineCleanup,
+    PassEntry {
+        pass_index: usize,
+        entry_x: f64,
+        entry_y: f64,
+        entry_z: f64,
+    },
+    PassPreflightSkip {
+        pass_index: usize,
+    },
+    PassSummary {
+        pass_index: usize,
+        step_count: usize,
+        exit_reason: String,
+        yield_ratio: f64,
+        short: bool,
+    },
+}
+
+impl Adaptive3dRuntimeEvent {
+    pub fn label(&self) -> String {
+        match self {
+            Self::RegionStart {
+                region_index,
+                region_total,
+                cell_count,
+            } => format!("Region {region_index}/{region_total} ({cell_count} cells)"),
+            Self::RegionZLevel {
+                region_index,
+                z_level,
+                level_index,
+                level_total,
+            } => format!(
+                "Region {region_index} — Z {:.1} ({level_index}/{level_total})",
+                z_level
+            ),
+            Self::GlobalZLevel {
+                z_level,
+                level_index,
+                level_total,
+            } => format!("Adaptive Z {:.1} ({level_index}/{level_total})", z_level),
+            Self::WaterlineCleanup => "Waterline cleanup".to_string(),
+            Self::PassEntry {
+                pass_index,
+                entry_x,
+                entry_y,
+                entry_z,
+            } => {
+                format!("Pass {pass_index} — entry at ({entry_x:.1}, {entry_y:.1}) Z {entry_z:.1}")
+            }
+            Self::PassPreflightSkip { pass_index } => {
+                format!("Pass {pass_index} — preflight skip (no viable direction)")
+            }
+            Self::PassSummary {
+                pass_index,
+                step_count,
+                exit_reason,
+                yield_ratio,
+                short,
+            } => {
+                if *short {
+                    format!(
+                        "Pass {pass_index} — short ({step_count} steps, {exit_reason}, yield {yield_ratio:.3})"
+                    )
+                } else {
+                    format!(
+                        "Pass {pass_index} — {step_count} steps ({exit_reason}, yield {yield_ratio:.3})"
+                    )
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Adaptive3dRuntimeAnnotation {
+    pub move_index: usize,
+    pub event: Adaptive3dRuntimeEvent,
+}
+
 enum Adaptive3dSegment {
     /// 3D cutting path with variable Z
     Cut(Vec<P3>),
@@ -908,8 +1006,8 @@ enum Adaptive3dSegment {
     Rapid(P3),
     /// Feed directly at cutting depth (no retract)
     Link(P3),
-    /// Annotation label at the current point in the toolpath
-    Label(String),
+    /// Structured runtime marker at the current point in the toolpath
+    Marker(Adaptive3dRuntimeEvent),
 }
 
 // ── Z-level clearing helper ──────────────────────────────────────────
@@ -1231,10 +1329,11 @@ fn clear_z_level(
             pass_endpoints.push(entry_xy);
             short_pass_streak += 1;
             skipped_preflight += 1;
-            segments.push(Adaptive3dSegment::Label(format!(
-                "Pass {} — preflight skip (no viable direction)",
-                pass_count
-            )));
+            segments.push(Adaptive3dSegment::Marker(
+                Adaptive3dRuntimeEvent::PassPreflightSkip {
+                    pass_index: pass_count,
+                },
+            ));
             if let Some(scope) = pass_scope.as_ref() {
                 scope.set_exit_reason("preflight skip");
                 scope.set_counter("skipped_preflight", 1.0);
@@ -1242,10 +1341,14 @@ fn clear_z_level(
             continue;
         }
 
-        segments.push(Adaptive3dSegment::Label(format!(
-            "Pass {} — entry at ({:.1}, {:.1}) Z {:.1}",
-            pass_count, entry_xy.x, entry_xy.y, entry_z
-        )));
+        segments.push(Adaptive3dSegment::Marker(
+            Adaptive3dRuntimeEvent::PassEntry {
+                pass_index: pass_count,
+                entry_x: entry_xy.x,
+                entry_y: entry_xy.y,
+                entry_z,
+            },
+        ));
 
         if let Some(last) = *last_pos {
             let dx = entry_3d.x - last.x;
@@ -1469,17 +1572,27 @@ fn clear_z_level(
         if is_low_yield {
             short_passes += 1;
             short_pass_streak += 1;
-            segments.push(Adaptive3dSegment::Label(format!(
-                "Pass {} — short ({} steps, {}, yield {:.3})",
-                pass_count, pass_steps, exit_reason, yield_ratio
-            )));
+            segments.push(Adaptive3dSegment::Marker(
+                Adaptive3dRuntimeEvent::PassSummary {
+                    pass_index: pass_count,
+                    step_count: pass_steps,
+                    exit_reason: exit_reason.to_string(),
+                    yield_ratio,
+                    short: true,
+                },
+            ));
         } else {
             long_passes += 1;
             short_pass_streak = 0;
-            segments.push(Adaptive3dSegment::Label(format!(
-                "Pass {} — {} steps ({}, yield {:.3})",
-                pass_count, pass_steps, exit_reason, yield_ratio
-            )));
+            segments.push(Adaptive3dSegment::Marker(
+                Adaptive3dRuntimeEvent::PassSummary {
+                    pass_index: pass_count,
+                    step_count: pass_steps,
+                    exit_reason: exit_reason.to_string(),
+                    yield_ratio,
+                    short: false,
+                },
+            ));
         }
 
         if was_idle {
@@ -1941,12 +2054,13 @@ fn adaptive_3d_segments(
                     z_max = format!("{:.1}", region.surface_z_max),
                     "Processing region"
                 );
-                segments.push(Adaptive3dSegment::Label(format!(
-                    "Region {}/{} ({} cells)",
-                    region_idx + 1,
-                    regions.len(),
-                    region.cell_count
-                )));
+                segments.push(Adaptive3dSegment::Marker(
+                    Adaptive3dRuntimeEvent::RegionStart {
+                        region_index: region_idx + 1,
+                        region_total: regions.len(),
+                        cell_count: region.cell_count,
+                    },
+                ));
 
                 let region_z_levels: Vec<f64> = z_levels
                     .iter()
@@ -1956,13 +2070,14 @@ fn adaptive_3d_segments(
 
                 for (li, &z_level) in region_z_levels.iter().enumerate() {
                     check_cancel(cancel)?;
-                    segments.push(Adaptive3dSegment::Label(format!(
-                        "Region {} — Z {:.1} ({}/{})",
-                        region_idx + 1,
-                        z_level,
-                        li + 1,
-                        region_z_levels.len()
-                    )));
+                    segments.push(Adaptive3dSegment::Marker(
+                        Adaptive3dRuntimeEvent::RegionZLevel {
+                            region_index: region_idx + 1,
+                            z_level,
+                            level_index: li + 1,
+                            level_total: region_z_levels.len(),
+                        },
+                    ));
                     clear_z_level(
                         &ctx,
                         &mut material_hm,
@@ -1978,7 +2093,9 @@ fn adaptive_3d_segments(
 
             // Waterline cleanup once at bottom Z
             if let Some(&z_bottom_level) = z_levels.last() {
-                segments.push(Adaptive3dSegment::Label("Waterline cleanup".to_string()));
+                segments.push(Adaptive3dSegment::Marker(
+                    Adaptive3dRuntimeEvent::WaterlineCleanup,
+                ));
                 waterline_cleanup(
                     mesh,
                     index,
@@ -1999,12 +2116,13 @@ fn adaptive_3d_segments(
         RegionOrdering::Global => {
             for (level_idx, &z_level) in z_levels.iter().enumerate() {
                 check_cancel(cancel)?;
-                segments.push(Adaptive3dSegment::Label(format!(
-                    "Adaptive Z {:.1} ({}/{})",
-                    z_level,
-                    level_idx + 1,
-                    z_levels.len()
-                )));
+                segments.push(Adaptive3dSegment::Marker(
+                    Adaptive3dRuntimeEvent::GlobalZLevel {
+                        z_level,
+                        level_index: level_idx + 1,
+                        level_total: z_levels.len(),
+                    },
+                ));
                 clear_z_level(
                     &ctx,
                     &mut material_hm,
@@ -2018,7 +2136,9 @@ fn adaptive_3d_segments(
 
                 let is_last_level = level_idx == z_levels.len() - 1;
                 if is_last_level {
-                    segments.push(Adaptive3dSegment::Label("Waterline cleanup".to_string()));
+                    segments.push(Adaptive3dSegment::Marker(
+                        Adaptive3dRuntimeEvent::WaterlineCleanup,
+                    ));
                     waterline_cleanup(
                         mesh,
                         index,
@@ -2048,14 +2168,17 @@ fn adaptive_3d_segments(
 fn segments_to_toolpath(
     segments: &[Adaptive3dSegment],
     params: &Adaptive3dParams,
-) -> (Toolpath, Vec<(usize, String)>) {
+) -> (Toolpath, Vec<Adaptive3dRuntimeAnnotation>) {
     let mut tp = Toolpath::new();
     let mut annotations = Vec::new();
 
     for segment in segments {
         match segment {
-            Adaptive3dSegment::Label(text) => {
-                annotations.push((tp.moves.len(), text.clone()));
+            Adaptive3dSegment::Marker(event) => {
+                annotations.push(Adaptive3dRuntimeAnnotation {
+                    move_index: tp.moves.len(),
+                    event: event.clone(),
+                });
             }
             Adaptive3dSegment::Rapid(entry) => match params.entry_style {
                 EntryStyle3d::Plunge => {
@@ -2108,6 +2231,15 @@ fn segments_to_toolpath(
     }
 
     (tp, annotations)
+}
+
+fn runtime_annotations_to_labels(
+    annotations: &[Adaptive3dRuntimeAnnotation],
+) -> Vec<(usize, String)> {
+    annotations
+        .iter()
+        .map(|annotation| (annotation.move_index, annotation.event.label()))
+        .collect()
 }
 
 /// Generate a 3D adaptive clearing toolpath for roughing a mesh surface.
@@ -2178,19 +2310,19 @@ pub fn adaptive_3d_toolpath_annotated_with_cancel(
     adaptive_3d_toolpath_annotated_traced_with_cancel(mesh, index, cutter, params, cancel, None)
 }
 
-pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(
+pub fn adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &Adaptive3dParams,
     cancel: &dyn CancelCheck,
     debug: Option<&ToolpathDebugContext>,
-) -> Result<(Toolpath, Vec<(usize, String)>), Cancelled> {
+) -> Result<(Toolpath, Vec<Adaptive3dRuntimeAnnotation>), Cancelled> {
     let segments = adaptive_3d_segments(mesh, index, cutter, params, debug, cancel)?;
     let (tp, annotations) = segments_to_toolpath(&segments, params);
     if let Some(debug_ctx) = debug {
-        for (move_index, label) in &annotations {
-            debug_ctx.add_annotation(*move_index, label.clone());
+        for annotation in &annotations {
+            debug_ctx.add_annotation(annotation.move_index, annotation.event.label());
         }
     }
 
@@ -2203,6 +2335,20 @@ pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(
     );
 
     Ok((tp, annotations))
+}
+
+pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &Adaptive3dParams,
+    cancel: &dyn CancelCheck,
+    debug: Option<&ToolpathDebugContext>,
+) -> Result<(Toolpath, Vec<(usize, String)>), Cancelled> {
+    let (tp, annotations) = adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
+        mesh, index, cutter, params, cancel, debug,
+    )?;
+    Ok((tp, runtime_annotations_to_labels(&annotations)))
 }
 
 #[cfg(test)]

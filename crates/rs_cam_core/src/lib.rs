@@ -41,6 +41,7 @@ pub mod scallop;
 pub mod scallop_math;
 pub mod semantic_trace;
 pub mod simulation;
+pub mod simulation_cut;
 pub mod slope;
 pub mod spiral_finish;
 pub mod steep_shallow;

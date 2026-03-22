@@ -20,6 +20,20 @@ struct OperationExecutionContext<'a> {
     semantic_root: Option<&'a rs_cam_core::semantic_trace::ToolpathSemanticContext>,
 }
 
+struct AdaptiveLevelSlice {
+    polygon_index: usize,
+    level_index: usize,
+    z: f64,
+    move_start: usize,
+    move_end_exclusive: usize,
+}
+
+struct ProjectCurveSlice {
+    source_curve_index: usize,
+    move_start: usize,
+    move_end_exclusive: usize,
+}
+
 trait SemanticToolpathOp {
     fn generate_with_tracing(
         &self,
@@ -74,27 +88,54 @@ where
 {
     set_phase("Initialize stock");
     let mut stock = TriDexelStock::from_bounds(&req.stock_bbox, req.resolution);
+    let sample_step_mm = req.resolution.max(0.25);
 
     let mut total_moves = 0;
     let mut boundary_index = 0;
     let mut boundaries = Vec::new();
     let mut checkpoints = Vec::new();
     let mut playback_data = Vec::new();
+    let mut cut_samples = Vec::new();
 
     for group in &req.groups {
-        for (tp_id, tp_name, toolpath, tool_config) in &group.toolpaths {
+        for sim_toolpath in &group.toolpaths {
+            let tp_id = sim_toolpath.id;
+            let tp_name = &sim_toolpath.name;
+            let toolpath = &sim_toolpath.toolpath;
+            let tool_config = &sim_toolpath.tool;
             set_phase(&format!("Simulate {tp_name}"));
             let start_move = total_moves;
             let cutter = build_cutter(tool_config);
-            stock
-                .simulate_toolpath_with_cancel(toolpath, cutter.as_ref(), group.direction, &|| {
-                    cancel.load(Ordering::SeqCst)
-                })
-                .map_err(|_| ComputeError::Cancelled)?;
+            if req.metric_options.enabled {
+                let mut samples = stock
+                    .simulate_toolpath_with_metrics_with_cancel(
+                        toolpath,
+                        cutter.as_ref(),
+                        group.direction,
+                        tp_id.0,
+                        req.spindle_rpm,
+                        tool_config.flute_count,
+                        req.rapid_feed_mm_min,
+                        sample_step_mm,
+                        sim_toolpath.semantic_trace.as_deref(),
+                        &|| cancel.load(Ordering::SeqCst),
+                    )
+                    .map_err(|_| ComputeError::Cancelled)?;
+                cut_samples.append(&mut samples);
+            } else {
+                stock
+                    .simulate_toolpath_with_cancel(
+                        toolpath,
+                        cutter.as_ref(),
+                        group.direction,
+                        &|| cancel.load(Ordering::SeqCst),
+                    )
+                    .map_err(|_| ComputeError::Cancelled)?;
+            }
             total_moves += toolpath.moves.len();
 
             boundaries.push(SimBoundary {
-                id: *tp_id,
+                id: tp_id,
                 name: tp_name.clone(),
                 tool_name: tool_config.summary(),
                 start_move,
@@ -122,16 +163,51 @@ where
         use rs_cam_core::collision::check_rapid_collisions;
         let mut cumulative_offset = 0;
         for group in &req.groups {
-            for (_tp_id, _tp_name, toolpath, _tool_config) in &group.toolpaths {
-                let rapids = check_rapid_collisions(toolpath, &req.stock_bbox);
+            for sim_toolpath in &group.toolpaths {
+                let rapids = check_rapid_collisions(&sim_toolpath.toolpath, &req.stock_bbox);
                 for rc in &rapids {
                     rapid_collision_move_indices.push(cumulative_offset + rc.move_index);
                 }
                 rapid_collisions.extend(rapids);
-                cumulative_offset += toolpath.moves.len();
+                cumulative_offset += sim_toolpath.toolpath.moves.len();
             }
         }
     }
+
+    let (cut_trace, cut_trace_path) = if req.metric_options.enabled {
+        let semantic_traces: Vec<_> = req
+            .groups
+            .iter()
+            .flat_map(|group| {
+                group.toolpaths.iter().filter_map(|toolpath| {
+                    toolpath
+                        .semantic_trace
+                        .as_deref()
+                        .map(|trace| (toolpath.id.0, trace))
+                })
+            })
+            .collect();
+        let trace = rs_cam_core::simulation_cut::SimulationCutTrace::from_samples_with_semantics(
+            sample_step_mm,
+            cut_samples,
+            semantic_traces,
+        );
+        let artifact = build_simulation_cut_artifact(req, trace.clone());
+        let path = match rs_cam_core::simulation_cut::write_simulation_cut_artifact(
+            &simulation_metric_artifact_dir(),
+            "simulation_metrics",
+            &artifact,
+        ) {
+            Ok(path) => Some(path),
+            Err(error) => {
+                tracing::warn!("Failed to write simulation cut artifact: {error}");
+                None
+            }
+        };
+        (Some(Arc::new(trace)), path)
+    } else {
+        (None, None)
+    };
 
     set_phase("Build simulation mesh");
     Ok(SimulationResult {
@@ -143,6 +219,8 @@ where
         playback_data,
         rapid_collisions,
         rapid_collision_move_indices,
+        cut_trace,
+        cut_trace_path,
     })
 }
 
@@ -436,44 +514,68 @@ fn run_profile(req: &ComputeRequest, cfg: &ProfileConfig) -> Result<Toolpath, St
     Ok(out)
 }
 
-fn run_adaptive(
+fn run_adaptive_annotated(
     req: &ComputeRequest,
     cfg: &AdaptiveConfig,
     cancel: &AtomicBool,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
-) -> Result<Toolpath, ComputeError> {
+) -> Result<
+    (
+        Toolpath,
+        Vec<AdaptiveLevelSlice>,
+        Vec<rs_cam_core::adaptive::AdaptiveRuntimeAnnotation>,
+    ),
+    ComputeError,
+> {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
     let depth = make_depth(cfg.depth, cfg.depth_per_pass);
     let mut out = Toolpath::new();
-    for p in polys {
+    let mut level_slices = Vec::new();
+    let mut annotations = Vec::new();
+    for (polygon_idx, p) in polys.iter().enumerate() {
         for (level_idx, z) in depth.all_levels().into_iter().enumerate() {
-            let tp = adaptive_toolpath_traced_with_cancel(
-                p,
-                &AdaptiveParams {
-                    tool_radius: tr,
-                    stepover: cfg.stepover,
-                    cut_depth: z,
-                    feed_rate: cfg.feed_rate,
-                    plunge_rate: cfg.plunge_rate,
-                    safe_z: effective_safe_z(req),
-                    tolerance: cfg.tolerance,
-                    slot_clearing: cfg.slot_clearing,
-                    min_cutting_radius: cfg.min_cutting_radius,
-                },
-                &|| cancel.load(Ordering::SeqCst),
-                debug,
-            )
-            .map_err(|_| ComputeError::Cancelled)?;
+            let (tp, level_annotations) =
+                rs_cam_core::adaptive::adaptive_toolpath_structured_annotated_traced_with_cancel(
+                    p,
+                    &AdaptiveParams {
+                        tool_radius: tr,
+                        stepover: cfg.stepover,
+                        cut_depth: z,
+                        feed_rate: cfg.feed_rate,
+                        plunge_rate: cfg.plunge_rate,
+                        safe_z: effective_safe_z(req),
+                        tolerance: cfg.tolerance,
+                        slot_clearing: cfg.slot_clearing,
+                        min_cutting_radius: cfg.min_cutting_radius,
+                    },
+                    &|| cancel.load(Ordering::SeqCst),
+                    debug,
+                )
+                .map_err(|_| ComputeError::Cancelled)?;
             if !tp.moves.is_empty() {
                 if level_idx > 0 && !out.moves.is_empty() {
                     out.final_retract(effective_safe_z(req));
                 }
+                let move_start = out.moves.len();
+                annotations.extend(level_annotations.into_iter().map(|annotation| {
+                    rs_cam_core::adaptive::AdaptiveRuntimeAnnotation {
+                        move_index: move_start + annotation.move_index,
+                        event: annotation.event,
+                    }
+                }));
                 out.moves.extend(tp.moves);
+                level_slices.push(AdaptiveLevelSlice {
+                    polygon_index: polygon_idx,
+                    level_index: level_idx,
+                    z,
+                    move_start,
+                    move_end_exclusive: out.moves.len(),
+                });
             }
         }
     }
-    Ok(out)
+    Ok((out, level_slices, annotations))
 }
 
 fn run_vcarve(req: &ComputeRequest, cfg: &VCarveConfig) -> Result<Toolpath, String> {
@@ -633,7 +735,13 @@ fn run_adaptive3d_annotated(
     cancel: &AtomicBool,
     phase_tracker: Option<&ToolpathPhaseTracker>,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
-) -> Result<(Toolpath, Vec<(usize, String)>), ComputeError> {
+) -> Result<
+    (
+        Toolpath,
+        Vec<rs_cam_core::adaptive3d::Adaptive3dRuntimeAnnotation>,
+    ),
+    ComputeError,
+> {
     let (mesh, index, cutter) =
         prepare_mesh_operation(req, phase_tracker, debug).map_err(ComputeError::Message)?;
     let entry = match cfg.entry_style {
@@ -674,7 +782,7 @@ fn run_adaptive3d_annotated(
             }
         },
     };
-    rs_cam_core::adaptive3d::adaptive_3d_toolpath_annotated_traced_with_cancel(
+    rs_cam_core::adaptive3d::adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
         mesh,
         &index,
         cutter.as_ref(),
@@ -719,12 +827,12 @@ fn run_waterline(
     }
 }
 
-fn run_pencil(
+fn run_pencil_annotated(
     req: &ComputeRequest,
     cfg: &PencilConfig,
     phase_tracker: Option<&ToolpathPhaseTracker>,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
-) -> Result<Toolpath, String> {
+) -> Result<(Toolpath, Vec<rs_cam_core::pencil::PencilRuntimeAnnotation>), String> {
     let (mesh, index, cutter) = prepare_mesh_operation(req, phase_tracker, debug)?;
     let params = PencilParams {
         bitangency_angle: cfg.bitangency_angle,
@@ -738,15 +846,27 @@ fn run_pencil(
         safe_z: effective_safe_z(req),
         stock_to_leave: cfg.stock_to_leave_axial,
     };
-    Ok(pencil_toolpath(mesh, &index, cutter.as_ref(), &params))
+    Ok(rs_cam_core::pencil::pencil_toolpath_structured_annotated(
+        mesh,
+        &index,
+        cutter.as_ref(),
+        &params,
+        debug,
+    ))
 }
 
-fn run_scallop(
+fn run_scallop_annotated(
     req: &ComputeRequest,
     cfg: &ScallopConfig,
     phase_tracker: Option<&ToolpathPhaseTracker>,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
-) -> Result<Toolpath, String> {
+) -> Result<
+    (
+        Toolpath,
+        Vec<rs_cam_core::scallop::ScallopRuntimeAnnotation>,
+    ),
+    String,
+> {
     let (mesh, index, cutter) = prepare_mesh_operation(req, phase_tracker, debug)?;
     let params = ScallopParams {
         scallop_height: cfg.scallop_height,
@@ -763,7 +883,13 @@ fn run_scallop(
         safe_z: effective_safe_z(req),
         stock_to_leave: cfg.stock_to_leave_axial,
     };
-    Ok(scallop_toolpath(mesh, &index, cutter.as_ref(), &params))
+    Ok(rs_cam_core::scallop::scallop_toolpath_structured_annotated(
+        mesh,
+        &index,
+        cutter.as_ref(),
+        &params,
+        debug,
+    ))
 }
 
 fn run_steep_shallow(
@@ -795,12 +921,18 @@ fn run_steep_shallow(
     ))
 }
 
-fn run_ramp_finish(
+fn run_ramp_finish_annotated(
     req: &ComputeRequest,
     cfg: &RampFinishConfig,
     phase_tracker: Option<&ToolpathPhaseTracker>,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
-) -> Result<Toolpath, String> {
+) -> Result<
+    (
+        Toolpath,
+        Vec<rs_cam_core::ramp_finish::RampFinishRuntimeAnnotation>,
+    ),
+    String,
+> {
     let (mesh, index, cutter) = prepare_mesh_operation(req, phase_tracker, debug)?;
     let params = RampFinishParams {
         max_stepdown: cfg.max_stepdown,
@@ -819,15 +951,29 @@ fn run_ramp_finish(
         stock_to_leave: cfg.stock_to_leave_axial,
         tolerance: cfg.tolerance,
     };
-    Ok(ramp_finish_toolpath(mesh, &index, cutter.as_ref(), &params))
+    Ok(
+        rs_cam_core::ramp_finish::ramp_finish_toolpath_structured_annotated(
+            mesh,
+            &index,
+            cutter.as_ref(),
+            &params,
+            debug,
+        ),
+    )
 }
 
-fn run_spiral_finish(
+fn run_spiral_finish_annotated(
     req: &ComputeRequest,
     cfg: &SpiralFinishConfig,
     phase_tracker: Option<&ToolpathPhaseTracker>,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
-) -> Result<Toolpath, String> {
+) -> Result<
+    (
+        Toolpath,
+        Vec<rs_cam_core::spiral_finish::SpiralFinishRuntimeAnnotation>,
+    ),
+    String,
+> {
     let (mesh, index, cutter) = prepare_mesh_operation(req, phase_tracker, debug)?;
     let params = SpiralFinishParams {
         stepover: cfg.stepover,
@@ -840,12 +986,15 @@ fn run_spiral_finish(
         safe_z: effective_safe_z(req),
         stock_to_leave: cfg.stock_to_leave_axial,
     };
-    Ok(spiral_finish_toolpath(
-        mesh,
-        &index,
-        cutter.as_ref(),
-        &params,
-    ))
+    Ok(
+        rs_cam_core::spiral_finish::spiral_finish_toolpath_structured_annotated(
+            mesh,
+            &index,
+            cutter.as_ref(),
+            &params,
+            debug,
+        ),
+    )
 }
 
 fn run_radial_finish(
@@ -894,12 +1043,12 @@ fn run_horizontal_finish(
     ))
 }
 
-fn run_project_curve(
+fn run_project_curve_annotated(
     req: &ComputeRequest,
     cfg: &ProjectCurveConfig,
     phase_tracker: Option<&ToolpathPhaseTracker>,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
-) -> Result<Toolpath, String> {
+) -> Result<(Toolpath, Vec<ProjectCurveSlice>), String> {
     let polys = require_polygons(req)?;
     let (mesh, index, cutter) = prepare_mesh_operation(req, phase_tracker, debug)?;
     let params = ProjectCurveParams {
@@ -910,11 +1059,21 @@ fn run_project_curve(
         safe_z: effective_safe_z(req),
     };
     let mut out = Toolpath::new();
-    for p in polys {
+    let mut slices = Vec::new();
+    for (source_curve_index, p) in polys.iter().enumerate() {
+        let move_start = out.moves.len();
         let tp = project_curve_toolpath(p, mesh, &index, cutter.as_ref(), &params);
         out.moves.extend(tp.moves);
+        let move_end_exclusive = out.moves.len();
+        if move_end_exclusive > move_start {
+            slices.push(ProjectCurveSlice {
+                source_curve_index: source_curve_index + 1,
+                move_start,
+                move_end_exclusive,
+            });
+        }
     }
-    Ok(out)
+    Ok((out, slices))
 }
 
 #[allow(dead_code)]
@@ -1053,47 +1212,17 @@ fn semantic_child_context(
     scope.map(|scope| scope.context())
 }
 
-fn annotate_cut_runs(
-    semantic_ctx: Option<&rs_cam_core::semantic_trace::ToolpathSemanticContext>,
-    debug_span_id: Option<u64>,
+fn bind_scope_to_offset_run(
+    scope: &rs_cam_core::semantic_trace::ToolpathSemanticScope,
     toolpath: &Toolpath,
-    default_kind: rs_cam_core::semantic_trace::ToolpathSemanticKind,
-    label_prefix: &str,
+    offset: usize,
+    run: &CutRun,
 ) {
-    if let Some(ctx) = semantic_ctx {
-        for (run_idx, run) in cutting_runs(toolpath).iter().enumerate() {
-            let kind = label_run_kind(run, default_kind.clone());
-            let scope = ctx.start_item(kind, format!("{label_prefix} {}", run_idx + 1));
-            if let Some(debug_span_id) = debug_span_id {
-                scope.set_debug_span_id(debug_span_id);
-            }
-            scope.set_param("run_index", run_idx + 1);
-            scope.set_param("closed_loop", run.closed_loop);
-            scope.set_param("constant_z", run.constant_z);
-            scope.set_param("z_min", run.z_min);
-            scope.set_param("z_max", run.z_max);
-            if let Some(bbox) = run.xy_bbox {
-                scope.set_xy_bbox(bbox);
-            }
-            bind_scope_to_run(&scope, toolpath, run);
-        }
-    }
-}
-
-fn annotate_full_toolpath_item(
-    semantic_ctx: Option<&rs_cam_core::semantic_trace::ToolpathSemanticContext>,
-    debug_span_id: Option<u64>,
-    kind: rs_cam_core::semantic_trace::ToolpathSemanticKind,
-    label: impl Into<String>,
-    toolpath: &Toolpath,
-) {
-    if let Some(ctx) = semantic_ctx {
-        let scope = ctx.start_item(kind, label);
-        if let Some(debug_span_id) = debug_span_id {
-            scope.set_debug_span_id(debug_span_id);
-        }
-        scope.bind_to_toolpath(toolpath, 0, toolpath.moves.len());
-    }
+    scope.bind_to_toolpath(
+        toolpath,
+        offset + run.move_start,
+        offset + run.move_end_exclusive,
+    );
 }
 
 struct OpenRuntimeSemanticItem {
@@ -1103,165 +1232,8 @@ struct OpenRuntimeSemanticItem {
 
 struct OpenAdaptivePassItem {
     pass_index: usize,
+    start_move: usize,
     scope: rs_cam_core::semantic_trace::ToolpathSemanticScope,
-}
-
-enum Adaptive3dRuntimeLabel {
-    RegionStart {
-        region_index: usize,
-        region_total: usize,
-        cell_count: usize,
-    },
-    RegionZLevel {
-        region_index: usize,
-        z_level: f64,
-        level_index: usize,
-        level_total: usize,
-    },
-    GlobalZLevel {
-        z_level: f64,
-        level_index: usize,
-        level_total: usize,
-    },
-    WaterlineCleanup,
-    PassEntry {
-        pass_index: usize,
-        entry_x: f64,
-        entry_y: f64,
-        entry_z: f64,
-    },
-    PassPreflightSkip {
-        pass_index: usize,
-    },
-    PassSummary {
-        pass_index: usize,
-        step_count: usize,
-        exit_reason: String,
-        yield_ratio: f64,
-        short: bool,
-    },
-}
-
-fn split_runtime_label(label: &str) -> Option<(&str, &str)> {
-    label.split_once(" — ").or_else(|| label.split_once(" - "))
-}
-
-fn parse_usize_text(text: &str) -> Option<usize> {
-    text.trim().parse::<usize>().ok()
-}
-
-fn parse_f64_text(text: &str) -> Option<f64> {
-    text.trim().parse::<f64>().ok()
-}
-
-fn parse_pair_usize(text: &str) -> Option<(usize, usize)> {
-    let (left, right) = text.split_once('/')?;
-    Some((parse_usize_text(left)?, parse_usize_text(right)?))
-}
-
-fn parse_adaptive3d_pass_summary(pass_index: usize, body: &str) -> Option<Adaptive3dRuntimeLabel> {
-    if let Some(inner) = body
-        .strip_prefix("short (")
-        .and_then(|value| value.strip_suffix(')'))
-    {
-        let mut parts = inner.split(", ");
-        let step_part = parts.next()?.strip_suffix(" steps")?;
-        let exit_reason = parts.next()?.to_string();
-        let yield_ratio = parts
-            .next()?
-            .strip_prefix("yield ")
-            .and_then(parse_f64_text)?;
-        return Some(Adaptive3dRuntimeLabel::PassSummary {
-            pass_index,
-            step_count: parse_usize_text(step_part)?,
-            exit_reason,
-            yield_ratio,
-            short: true,
-        });
-    }
-
-    let (step_part, tail) = body.split_once(" steps (")?;
-    let inner = tail.strip_suffix(')')?;
-    let (exit_reason, yield_part) = inner.rsplit_once(", yield ")?;
-    Some(Adaptive3dRuntimeLabel::PassSummary {
-        pass_index,
-        step_count: parse_usize_text(step_part)?,
-        exit_reason: exit_reason.to_string(),
-        yield_ratio: parse_f64_text(yield_part)?,
-        short: false,
-    })
-}
-
-fn parse_adaptive3d_runtime_label(label: &str) -> Option<Adaptive3dRuntimeLabel> {
-    if let Some(rest) = label.strip_prefix("Region ")
-        && let Some((head, tail)) = rest.split_once(" (")
-        && tail.ends_with(" cells)")
-    {
-        let cells = tail
-            .trim_end_matches(" cells)")
-            .trim()
-            .parse::<usize>()
-            .ok()?;
-        let (region_index, region_total) = parse_pair_usize(head)?;
-        return Some(Adaptive3dRuntimeLabel::RegionStart {
-            region_index,
-            region_total,
-            cell_count: cells,
-        });
-    }
-
-    if let Some((prefix, body)) = split_runtime_label(label) {
-        if let Some(region_part) = prefix.strip_prefix("Region ")
-            && let Some(region_index) = parse_usize_text(region_part)
-            && let Some(z_part) = body.strip_prefix("Z ")
-            && let Some((z_text, levels_part)) = z_part.split_once(" (")
-        {
-            let levels = levels_part.trim_end_matches(')');
-            let (level_index, level_total) = parse_pair_usize(levels)?;
-            return Some(Adaptive3dRuntimeLabel::RegionZLevel {
-                region_index,
-                z_level: parse_f64_text(z_text)?,
-                level_index,
-                level_total,
-            });
-        }
-
-        if let Some(pass_part) = prefix.strip_prefix("Pass ")
-            && let Some(pass_index) = parse_usize_text(pass_part)
-        {
-            if let Some(entry_part) = body.strip_prefix("entry at (")
-                && let Some((coords, z_part)) = entry_part.split_once(") Z ")
-            {
-                let (x_text, y_text) = coords.split_once(", ")?;
-                return Some(Adaptive3dRuntimeLabel::PassEntry {
-                    pass_index,
-                    entry_x: parse_f64_text(x_text)?,
-                    entry_y: parse_f64_text(y_text)?,
-                    entry_z: parse_f64_text(z_part)?,
-                });
-            }
-
-            if body.starts_with("preflight skip") {
-                return Some(Adaptive3dRuntimeLabel::PassPreflightSkip { pass_index });
-            }
-
-            return parse_adaptive3d_pass_summary(pass_index, body);
-        }
-    }
-
-    if let Some(z_part) = label.strip_prefix("Adaptive Z ")
-        && let Some((z_text, levels_part)) = z_part.split_once(" (")
-    {
-        let levels = levels_part.trim_end_matches(')');
-        let (level_index, level_total) = parse_pair_usize(levels)?;
-        return Some(Adaptive3dRuntimeLabel::GlobalZLevel {
-            z_level: parse_f64_text(z_text)?,
-            level_index,
-            level_total,
-        });
-    }
-
-    (label == "Waterline cleanup").then_some(Adaptive3dRuntimeLabel::WaterlineCleanup)
 }
 
 fn finish_runtime_scope(
@@ -1279,7 +1251,7 @@ fn finish_runtime_scope(
 fn annotate_adaptive3d_runtime_semantics(
     op_scope: Option<&rs_cam_core::semantic_trace::ToolpathSemanticScope>,
     toolpath: &Toolpath,
-    annotations: &[(usize, String)],
+    annotations: &[rs_cam_core::adaptive3d::Adaptive3dRuntimeAnnotation],
     detect_flat_areas: bool,
     region_ordering: crate::state::toolpath::RegionOrdering,
 ) {
@@ -1317,41 +1289,42 @@ fn annotate_adaptive3d_runtime_semantics(
     let mut current_level: Option<OpenRuntimeSemanticItem> = None;
     let mut current_pass: Option<OpenAdaptivePassItem> = None;
 
-    for (index, (move_start, label)) in annotations.iter().enumerate() {
+    for (index, annotation) in annotations.iter().enumerate() {
+        let move_start = annotation.move_index;
         let move_end_exclusive = annotations
             .get(index + 1)
-            .map_or(toolpath.moves.len(), |(next_move, _)| *next_move);
+            .map_or(toolpath.moves.len(), |next| next.move_index);
 
-        match parse_adaptive3d_runtime_label(label) {
-            Some(Adaptive3dRuntimeLabel::RegionStart {
+        match &annotation.event {
+            rs_cam_core::adaptive3d::Adaptive3dRuntimeEvent::RegionStart {
                 region_index,
                 region_total,
                 cell_count,
-            }) => {
+            } => {
                 current_pass = None;
-                finish_runtime_scope(&mut current_level, toolpath, *move_start);
-                finish_runtime_scope(&mut current_region, toolpath, *move_start);
+                finish_runtime_scope(&mut current_level, toolpath, move_start);
+                finish_runtime_scope(&mut current_region, toolpath, move_start);
 
                 let scope = op_ctx.start_item(
                     ToolpathSemanticKind::Region,
                     format!("Region {region_index}/{region_total}"),
                 );
-                scope.set_param("region_index", region_index);
-                scope.set_param("region_total", region_total);
-                scope.set_param("cell_count", cell_count);
+                scope.set_param("region_index", *region_index);
+                scope.set_param("region_total", *region_total);
+                scope.set_param("cell_count", *cell_count);
                 current_region = Some(OpenRuntimeSemanticItem {
                     scope,
-                    start_move: *move_start,
+                    start_move: move_start,
                 });
             }
-            Some(Adaptive3dRuntimeLabel::RegionZLevel {
+            rs_cam_core::adaptive3d::Adaptive3dRuntimeEvent::RegionZLevel {
                 region_index,
                 z_level,
                 level_index,
                 level_total,
-            }) => {
+            } => {
                 current_pass = None;
-                finish_runtime_scope(&mut current_level, toolpath, *move_start);
+                finish_runtime_scope(&mut current_level, toolpath, move_start);
 
                 let parent_ctx = current_region
                     .as_ref()
@@ -1361,36 +1334,36 @@ fn annotate_adaptive3d_runtime_semantics(
                     ToolpathSemanticKind::DepthLevel,
                     format!("Z {:.3}", z_level),
                 );
-                scope.set_param("region_index", region_index);
-                scope.set_param("z_level", z_level);
-                scope.set_param("level_index", level_index);
-                scope.set_param("level_total", level_total);
+                scope.set_param("region_index", *region_index);
+                scope.set_param("z_level", *z_level);
+                scope.set_param("level_index", *level_index);
+                scope.set_param("level_total", *level_total);
                 current_level = Some(OpenRuntimeSemanticItem {
                     scope,
-                    start_move: *move_start,
+                    start_move: move_start,
                 });
             }
-            Some(Adaptive3dRuntimeLabel::GlobalZLevel {
+            rs_cam_core::adaptive3d::Adaptive3dRuntimeEvent::GlobalZLevel {
                 z_level,
                 level_index,
                 level_total,
-            }) => {
+            } => {
                 current_pass = None;
-                finish_runtime_scope(&mut current_level, toolpath, *move_start);
+                finish_runtime_scope(&mut current_level, toolpath, move_start);
 
                 let scope = op_ctx.start_item(
                     ToolpathSemanticKind::DepthLevel,
                     format!("Z {:.3}", z_level),
                 );
-                scope.set_param("z_level", z_level);
-                scope.set_param("level_index", level_index);
-                scope.set_param("level_total", level_total);
+                scope.set_param("z_level", *z_level);
+                scope.set_param("level_index", *level_index);
+                scope.set_param("level_total", *level_total);
                 current_level = Some(OpenRuntimeSemanticItem {
                     scope,
-                    start_move: *move_start,
+                    start_move: move_start,
                 });
             }
-            Some(Adaptive3dRuntimeLabel::WaterlineCleanup) => {
+            rs_cam_core::adaptive3d::Adaptive3dRuntimeEvent::WaterlineCleanup => {
                 current_pass = None;
                 let parent_ctx = current_level
                     .as_ref()
@@ -1402,14 +1375,14 @@ fn annotate_adaptive3d_runtime_semantics(
                     "algorithm",
                     "contour steep boundaries and skip predominantly shallow contours",
                 );
-                scope.bind_to_toolpath(toolpath, *move_start, move_end_exclusive);
+                scope.bind_to_toolpath(toolpath, move_start, move_end_exclusive);
             }
-            Some(Adaptive3dRuntimeLabel::PassEntry {
+            rs_cam_core::adaptive3d::Adaptive3dRuntimeEvent::PassEntry {
                 pass_index,
                 entry_x,
                 entry_y,
                 entry_z,
-            }) => {
+            } => {
                 let parent_ctx = current_level
                     .as_ref()
                     .map(|item| item.scope.context())
@@ -1418,18 +1391,22 @@ fn annotate_adaptive3d_runtime_semantics(
                     ToolpathSemanticKind::Pass,
                     format!("Adaptive pass {pass_index}"),
                 );
-                scope.set_param("pass_index", pass_index);
-                scope.set_param("entry_x", entry_x);
-                scope.set_param("entry_y", entry_y);
-                scope.set_param("entry_z", entry_z);
+                scope.set_param("pass_index", *pass_index);
+                scope.set_param("entry_x", *entry_x);
+                scope.set_param("entry_y", *entry_y);
+                scope.set_param("entry_z", *entry_z);
                 scope.set_param(
                     "algorithm",
                     "constant-engagement stepping with direction search over the sampled material field",
                 );
-                scope.bind_to_toolpath(toolpath, *move_start, move_end_exclusive);
-                current_pass = Some(OpenAdaptivePassItem { pass_index, scope });
+                scope.bind_to_toolpath(toolpath, move_start, move_end_exclusive);
+                current_pass = Some(OpenAdaptivePassItem {
+                    pass_index: *pass_index,
+                    start_move: move_start,
+                    scope,
+                });
             }
-            Some(Adaptive3dRuntimeLabel::PassPreflightSkip { pass_index }) => {
+            rs_cam_core::adaptive3d::Adaptive3dRuntimeEvent::PassPreflightSkip { pass_index } => {
                 let parent_ctx = current_level
                     .as_ref()
                     .map(|item| item.scope.context())
@@ -1446,28 +1423,555 @@ fn annotate_adaptive3d_runtime_semantics(
                 );
                 current_pass = None;
             }
-            Some(Adaptive3dRuntimeLabel::PassSummary {
+            rs_cam_core::adaptive3d::Adaptive3dRuntimeEvent::PassSummary {
                 pass_index,
                 step_count,
                 exit_reason,
                 yield_ratio,
                 short,
-            }) => {
+            } => {
                 if let Some(open_pass) = current_pass.as_ref()
-                    && open_pass.pass_index == pass_index
+                    && open_pass.pass_index == *pass_index
                 {
-                    open_pass.scope.set_param("step_count", step_count);
+                    open_pass.scope.set_param("step_count", *step_count);
                     open_pass.scope.set_param("exit_reason", exit_reason);
-                    open_pass.scope.set_param("yield_ratio", yield_ratio);
-                    open_pass.scope.set_param("short_pass", short);
+                    open_pass.scope.set_param("yield_ratio", *yield_ratio);
+                    open_pass.scope.set_param("short_pass", *short);
                 }
             }
-            None => {}
         }
     }
 
     finish_runtime_scope(&mut current_level, toolpath, toolpath.moves.len());
     finish_runtime_scope(&mut current_region, toolpath, toolpath.moves.len());
+}
+
+fn annotate_adaptive_runtime_semantics(
+    op_scope: Option<&rs_cam_core::semantic_trace::ToolpathSemanticScope>,
+    toolpath: &Toolpath,
+    level_slices: &[AdaptiveLevelSlice],
+    annotations: &[rs_cam_core::adaptive::AdaptiveRuntimeAnnotation],
+) {
+    let Some(op_scope) = op_scope else {
+        return;
+    };
+
+    if level_slices.is_empty() {
+        return;
+    }
+
+    let op_ctx = op_scope.context();
+    let polygon_total = level_slices
+        .iter()
+        .map(|slice| slice.polygon_index)
+        .max()
+        .map_or(1, |max_index| max_index + 1);
+
+    let mut polygon_scopes = Vec::new();
+    for polygon_index in 0..polygon_total {
+        let polygon_slices: Vec<_> = level_slices
+            .iter()
+            .filter(|slice| slice.polygon_index == polygon_index)
+            .collect();
+        if polygon_slices.is_empty() {
+            continue;
+        }
+        let scope = if polygon_total > 1 {
+            let scope = op_ctx.start_item(
+                ToolpathSemanticKind::Region,
+                format!("Region {}", polygon_index + 1),
+            );
+            scope.bind_to_toolpath(
+                toolpath,
+                polygon_slices.first().expect("polygon slices").move_start,
+                polygon_slices
+                    .last()
+                    .expect("polygon slices")
+                    .move_end_exclusive,
+            );
+            Some(scope)
+        } else {
+            None
+        };
+        polygon_scopes.push((polygon_index, scope));
+    }
+
+    for level_slice in level_slices {
+        let parent_ctx = polygon_scopes
+            .iter()
+            .find(|(polygon_index, _)| *polygon_index == level_slice.polygon_index)
+            .and_then(|(_, scope)| scope.as_ref().map(|scope| scope.context()))
+            .unwrap_or_else(|| op_scope.context());
+        let level_scope = parent_ctx.start_item(
+            ToolpathSemanticKind::DepthLevel,
+            format!("Level {}", level_slice.level_index + 1),
+        );
+        level_scope.set_param("level_index", level_slice.level_index + 1);
+        level_scope.set_param("z", level_slice.z);
+        level_scope.bind_to_toolpath(
+            toolpath,
+            level_slice.move_start,
+            level_slice.move_end_exclusive,
+        );
+        let level_ctx = level_scope.context();
+
+        let mut current_runtime_item: Option<OpenRuntimeSemanticItem> = None;
+        let mut current_pass: Option<OpenAdaptivePassItem> = None;
+
+        for annotation in annotations.iter().filter(|annotation| {
+            annotation.move_index >= level_slice.move_start
+                && annotation.move_index <= level_slice.move_end_exclusive
+        }) {
+            let move_start = annotation.move_index;
+            match &annotation.event {
+                rs_cam_core::adaptive::AdaptiveRuntimeEvent::SlotClearing {
+                    line_index,
+                    line_total,
+                } => {
+                    finish_runtime_scope(&mut current_runtime_item, toolpath, move_start);
+                    if let Some(open_pass) = current_pass.take() {
+                        open_pass.scope.bind_to_toolpath(
+                            toolpath,
+                            open_pass.start_move,
+                            move_start,
+                        );
+                    }
+                    let scope = level_ctx.start_item(
+                        ToolpathSemanticKind::SlotClearing,
+                        format!("Slot clearing {}", line_index),
+                    );
+                    scope.set_param("line_index", *line_index);
+                    scope.set_param("line_total", *line_total);
+                    current_runtime_item = Some(OpenRuntimeSemanticItem {
+                        scope,
+                        start_move: move_start,
+                    });
+                }
+                rs_cam_core::adaptive::AdaptiveRuntimeEvent::PassEntry {
+                    pass_index,
+                    entry_x,
+                    entry_y,
+                } => {
+                    finish_runtime_scope(&mut current_runtime_item, toolpath, move_start);
+                    if let Some(open_pass) = current_pass.take() {
+                        open_pass.scope.bind_to_toolpath(
+                            toolpath,
+                            open_pass.start_move,
+                            move_start,
+                        );
+                    }
+                    let scope = level_ctx.start_item(
+                        ToolpathSemanticKind::Pass,
+                        format!("Adaptive pass {}", pass_index),
+                    );
+                    scope.set_param("pass_index", *pass_index);
+                    scope.set_param("entry_x", *entry_x);
+                    scope.set_param("entry_y", *entry_y);
+                    current_pass = Some(OpenAdaptivePassItem {
+                        pass_index: *pass_index,
+                        start_move: move_start,
+                        scope,
+                    });
+                }
+                rs_cam_core::adaptive::AdaptiveRuntimeEvent::PassSummary {
+                    pass_index,
+                    step_count,
+                    idle_count,
+                    search_evaluations,
+                    exit_reason,
+                } => {
+                    if let Some(open_pass) = current_pass.take() {
+                        if open_pass.pass_index == *pass_index {
+                            open_pass.scope.set_param("step_count", *step_count);
+                            open_pass.scope.set_param("idle_count", *idle_count);
+                            open_pass
+                                .scope
+                                .set_param("search_evaluations", *search_evaluations);
+                            open_pass.scope.set_param("exit_reason", exit_reason);
+                            open_pass.scope.bind_to_toolpath(
+                                toolpath,
+                                open_pass.start_move,
+                                move_start.max(open_pass.start_move + 1),
+                            );
+                        }
+                    }
+                }
+                rs_cam_core::adaptive::AdaptiveRuntimeEvent::ForcedClear {
+                    pass_index,
+                    center_x,
+                    center_y,
+                    radius,
+                } => {
+                    let scope = level_ctx.start_item(
+                        ToolpathSemanticKind::ForcedClear,
+                        format!("Forced clear {}", pass_index),
+                    );
+                    scope.set_param("pass_index", *pass_index);
+                    scope.set_param("center_x", *center_x);
+                    scope.set_param("center_y", *center_y);
+                    scope.set_param("radius", *radius);
+                    scope.set_xy_bbox(rs_cam_core::debug_trace::ToolpathDebugBounds2 {
+                        min_x: center_x - radius,
+                        max_x: center_x + radius,
+                        min_y: center_y - radius,
+                        max_y: center_y + radius,
+                    });
+                    scope.set_z_range(level_slice.z, level_slice.z);
+                }
+                rs_cam_core::adaptive::AdaptiveRuntimeEvent::BoundaryCleanup {
+                    contour_index,
+                    contour_total,
+                } => {
+                    finish_runtime_scope(&mut current_runtime_item, toolpath, move_start);
+                    let scope = level_ctx.start_item(
+                        ToolpathSemanticKind::Cleanup,
+                        format!("Boundary cleanup {}", contour_index),
+                    );
+                    scope.set_param("contour_index", *contour_index);
+                    scope.set_param("contour_total", *contour_total);
+                    current_runtime_item = Some(OpenRuntimeSemanticItem {
+                        scope,
+                        start_move: move_start,
+                    });
+                }
+            }
+        }
+
+        finish_runtime_scope(
+            &mut current_runtime_item,
+            toolpath,
+            level_slice.move_end_exclusive,
+        );
+        if let Some(open_pass) = current_pass.take() {
+            open_pass.scope.bind_to_toolpath(
+                toolpath,
+                open_pass.start_move,
+                level_slice.move_end_exclusive,
+            );
+        }
+    }
+}
+
+fn annotate_pencil_runtime_semantics(
+    op_scope: Option<&rs_cam_core::semantic_trace::ToolpathSemanticScope>,
+    toolpath: &Toolpath,
+    annotations: &[rs_cam_core::pencil::PencilRuntimeAnnotation],
+) {
+    let Some(op_scope) = op_scope else {
+        return;
+    };
+    let op_ctx = op_scope.context();
+    let mut chain_scopes = std::collections::BTreeMap::new();
+
+    for (index, annotation) in annotations.iter().enumerate() {
+        let move_start = annotation.move_index;
+        let move_end_exclusive = annotations
+            .get(index + 1)
+            .map_or(toolpath.moves.len(), |next| next.move_index);
+
+        let rs_cam_core::pencil::PencilRuntimeEvent::OffsetPass {
+            chain_index,
+            chain_total,
+            offset_index,
+            offset_total,
+            offset_mm,
+            is_centerline,
+        } = &annotation.event;
+        let chain_scope = chain_scopes.entry(*chain_index).or_insert_with(|| {
+            let scope = op_ctx.start_item(
+                ToolpathSemanticKind::Chain,
+                format!("Chain {chain_index}/{chain_total}"),
+            );
+            scope.set_param("chain_index", *chain_index);
+            scope.set_param("chain_total", *chain_total);
+            scope.set_param("offset_total", *offset_total);
+            scope
+        });
+        let kind = if *is_centerline {
+            ToolpathSemanticKind::Centerline
+        } else {
+            ToolpathSemanticKind::OffsetPass
+        };
+        let label = if *is_centerline {
+            format!("Centerline {chain_index}")
+        } else {
+            format!("Offset pass {}", offset_index.saturating_sub(1))
+        };
+        let scope = chain_scope.context().start_item(kind, label);
+        scope.set_param("chain_index", *chain_index);
+        scope.set_param("offset_index", *offset_index);
+        scope.set_param("offset_total", *offset_total);
+        scope.set_param("offset_mm", *offset_mm);
+        scope.set_param("is_centerline", *is_centerline);
+        scope.bind_to_toolpath(toolpath, move_start, move_end_exclusive);
+    }
+}
+
+fn annotate_scallop_runtime_semantics(
+    op_scope: Option<&rs_cam_core::semantic_trace::ToolpathSemanticScope>,
+    toolpath: &Toolpath,
+    annotations: &[rs_cam_core::scallop::ScallopRuntimeAnnotation],
+    direction: &crate::state::toolpath::ScallopDirection,
+    continuous: bool,
+) {
+    let Some(op_scope) = op_scope else {
+        return;
+    };
+    let band_scope = op_scope.context().start_item(
+        ToolpathSemanticKind::Band,
+        if continuous {
+            "Continuous scallop band"
+        } else {
+            "Scallop band"
+        },
+    );
+    band_scope.set_param("continuous", continuous);
+    band_scope.set_param("direction", format!("{direction:?}"));
+    if !toolpath.moves.is_empty() {
+        band_scope.bind_to_toolpath(toolpath, 0, toolpath.moves.len());
+    }
+
+    for (index, annotation) in annotations.iter().enumerate() {
+        let move_start = annotation.move_index;
+        let move_end_exclusive = annotations
+            .get(index + 1)
+            .map_or(toolpath.moves.len(), |next| next.move_index);
+        let rs_cam_core::scallop::ScallopRuntimeEvent::Ring {
+            ring_index,
+            ring_total,
+            continuous,
+        } = &annotation.event;
+        let scope = band_scope.context().start_item(
+            ToolpathSemanticKind::Ring,
+            format!("Ring {ring_index}/{ring_total}"),
+        );
+        scope.set_param("ring_index", *ring_index);
+        scope.set_param("ring_total", *ring_total);
+        scope.set_param("continuous", *continuous);
+        scope.bind_to_toolpath(toolpath, move_start, move_end_exclusive);
+    }
+}
+
+fn annotate_ramp_finish_runtime_semantics(
+    op_scope: Option<&rs_cam_core::semantic_trace::ToolpathSemanticScope>,
+    toolpath: &Toolpath,
+    annotations: &[rs_cam_core::ramp_finish::RampFinishRuntimeAnnotation],
+) {
+    let Some(op_scope) = op_scope else {
+        return;
+    };
+    let op_ctx = op_scope.context();
+    let mut terrace_scopes = std::collections::BTreeMap::new();
+
+    for (index, annotation) in annotations.iter().enumerate() {
+        let move_start = annotation.move_index;
+        let move_end_exclusive = annotations
+            .get(index + 1)
+            .map_or(toolpath.moves.len(), |next| next.move_index);
+        let rs_cam_core::ramp_finish::RampFinishRuntimeEvent::Ramp {
+            terrace_index,
+            terrace_total,
+            upper_level_index,
+            lower_level_index,
+            upper_z,
+            lower_z,
+            ramp_index,
+            ramp_total,
+        } = &annotation.event;
+        let terrace_scope = terrace_scopes.entry(*terrace_index).or_insert_with(|| {
+            let scope = op_ctx.start_item(
+                ToolpathSemanticKind::Band,
+                format!("Terrace {terrace_index}/{terrace_total}"),
+            );
+            scope.set_param("terrace_index", *terrace_index);
+            scope.set_param("terrace_total", *terrace_total);
+            scope.set_param("upper_level_index", *upper_level_index);
+            scope.set_param("lower_level_index", *lower_level_index);
+            scope.set_param("upper_z", *upper_z);
+            scope.set_param("lower_z", *lower_z);
+            scope
+        });
+        let scope = terrace_scope.context().start_item(
+            ToolpathSemanticKind::Ramp,
+            format!("Ramp {ramp_index}/{ramp_total}"),
+        );
+        scope.set_param("terrace_index", *terrace_index);
+        scope.set_param("upper_level_index", *upper_level_index);
+        scope.set_param("lower_level_index", *lower_level_index);
+        scope.set_param("upper_z", *upper_z);
+        scope.set_param("lower_z", *lower_z);
+        scope.set_param("ramp_index", *ramp_index);
+        scope.set_param("ramp_total", *ramp_total);
+        scope.bind_to_toolpath(toolpath, move_start, move_end_exclusive);
+    }
+}
+
+fn annotate_spiral_finish_runtime_semantics(
+    op_scope: Option<&rs_cam_core::semantic_trace::ToolpathSemanticScope>,
+    toolpath: &Toolpath,
+    annotations: &[rs_cam_core::spiral_finish::SpiralFinishRuntimeAnnotation],
+    direction: &crate::state::toolpath::SpiralDirection,
+) {
+    let Some(op_scope) = op_scope else {
+        return;
+    };
+    let band_scope = op_scope
+        .context()
+        .start_item(ToolpathSemanticKind::Band, "Spiral band");
+    band_scope.set_param("direction", format!("{direction:?}"));
+    if !toolpath.moves.is_empty() {
+        band_scope.bind_to_toolpath(toolpath, 0, toolpath.moves.len());
+    }
+
+    for (index, annotation) in annotations.iter().enumerate() {
+        let move_start = annotation.move_index;
+        let move_end_exclusive = annotations
+            .get(index + 1)
+            .map_or(toolpath.moves.len(), |next| next.move_index);
+        let rs_cam_core::spiral_finish::SpiralFinishRuntimeEvent::Ring {
+            ring_index,
+            ring_total,
+            radius_mm,
+        } = &annotation.event;
+        let scope = band_scope.context().start_item(
+            ToolpathSemanticKind::Ring,
+            format!("Ring {ring_index}/{ring_total}"),
+        );
+        scope.set_param("ring_index", *ring_index);
+        scope.set_param("ring_total", *ring_total);
+        scope.set_param("radius_mm", *radius_mm);
+        scope.bind_to_toolpath(toolpath, move_start, move_end_exclusive);
+    }
+}
+
+fn annotate_radial_finish_semantics(
+    op_scope: Option<&rs_cam_core::semantic_trace::ToolpathSemanticScope>,
+    toolpath: &Toolpath,
+    center_x: f64,
+    center_y: f64,
+) {
+    let Some(op_scope) = op_scope else {
+        return;
+    };
+    for (ray_index, run) in cutting_runs(toolpath).iter().enumerate() {
+        let start = toolpath.moves[run.move_start].target;
+        let end = toolpath.moves[run.move_end_exclusive - 1].target;
+        let start_radius = ((start.x - center_x).powi(2) + (start.y - center_y).powi(2)).sqrt();
+        let end_radius = ((end.x - center_x).powi(2) + (end.y - center_y).powi(2)).sqrt();
+        let angle_source = if end_radius >= start_radius {
+            end
+        } else {
+            start
+        };
+        let angle_deg = (angle_source.y - center_y)
+            .atan2(angle_source.x - center_x)
+            .to_degrees()
+            .rem_euclid(360.0);
+        let direction = if end_radius >= start_radius {
+            "outward"
+        } else {
+            "inward"
+        };
+        let scope = op_scope
+            .context()
+            .start_item(ToolpathSemanticKind::Ray, format!("Ray {}", ray_index + 1));
+        scope.set_param("ray_index", ray_index + 1);
+        scope.set_param("angle_deg", angle_deg);
+        scope.set_param("direction", direction);
+        bind_scope_to_run(&scope, toolpath, run);
+    }
+}
+
+fn annotate_horizontal_finish_semantics(
+    op_scope: Option<&rs_cam_core::semantic_trace::ToolpathSemanticScope>,
+    toolpath: &Toolpath,
+    stepover: f64,
+) {
+    let Some(op_scope) = op_scope else {
+        return;
+    };
+    let runs = cutting_runs(toolpath);
+    let tolerance = (stepover / 2.0).max(0.01);
+    let mut current_slice: Option<OpenRuntimeSemanticItem> = None;
+    let mut current_slice_z = 0.0;
+    let mut current_pass_count = 0usize;
+    let mut slice_index = 0usize;
+
+    for run in &runs {
+        let avg_z = (run.z_min + run.z_max) * 0.5;
+        if current_slice
+            .as_ref()
+            .is_none_or(|_| (avg_z - current_slice_z).abs() > tolerance)
+        {
+            if let Some(open_slice) = current_slice.take() {
+                open_slice
+                    .scope
+                    .bind_to_toolpath(toolpath, open_slice.start_move, run.move_start);
+            }
+            slice_index += 1;
+            current_slice_z = avg_z;
+            current_pass_count = 0;
+            let scope = op_scope
+                .context()
+                .start_item(ToolpathSemanticKind::Slice, format!("Slice {slice_index}"));
+            scope.set_param("slice_index", slice_index);
+            scope.set_param("z", avg_z);
+            current_slice = Some(OpenRuntimeSemanticItem {
+                scope,
+                start_move: run.move_start,
+            });
+        }
+
+        current_pass_count += 1;
+        let pass_scope = current_slice
+            .as_ref()
+            .expect("slice scope")
+            .scope
+            .context()
+            .start_item(
+                ToolpathSemanticKind::Pass,
+                format!("Flat pass {}", current_pass_count),
+            );
+        pass_scope.set_param("slice_index", slice_index);
+        pass_scope.set_param("pass_index", current_pass_count);
+        pass_scope.set_param("z", avg_z);
+        bind_scope_to_run(&pass_scope, toolpath, run);
+    }
+
+    if let Some(open_slice) = current_slice.take() {
+        open_slice
+            .scope
+            .bind_to_toolpath(toolpath, open_slice.start_move, toolpath.moves.len());
+    }
+}
+
+fn annotate_project_curve_semantics(
+    op_scope: Option<&rs_cam_core::semantic_trace::ToolpathSemanticScope>,
+    toolpath: &Toolpath,
+    slices: &[ProjectCurveSlice],
+    depth: f64,
+    point_spacing: f64,
+) {
+    let Some(op_scope) = op_scope else {
+        return;
+    };
+    for slice in slices {
+        let parent = op_scope.context().start_item(
+            ToolpathSemanticKind::Curve,
+            format!("Source curve {}", slice.source_curve_index),
+        );
+        parent.set_param("source_curve_index", slice.source_curve_index);
+        parent.bind_to_toolpath(toolpath, slice.move_start, slice.move_end_exclusive);
+
+        let child = parent.context().start_item(
+            ToolpathSemanticKind::Curve,
+            format!("Projected curve {}", slice.source_curve_index),
+        );
+        child.set_param("source_curve_index", slice.source_curve_index);
+        child.set_param("depth", depth);
+        child.set_param("point_spacing", point_spacing);
+        child.bind_to_toolpath(toolpath, slice.move_start, slice.move_end_exclusive);
+    }
 }
 
 impl SemanticToolpathOp for FaceConfig {
@@ -1579,6 +2083,7 @@ impl SemanticToolpathOp for PocketConfig {
         let op_ctx = op_scope.as_ref().map(|scope| scope.context());
         let depth =
             make_depth_with_finishing(self.depth, self.depth_per_pass, self.finishing_passes);
+        let levels = depth.all_levels();
         let reverse = self.climb;
         let mut out = Toolpath::new();
         {
@@ -1594,7 +2099,7 @@ impl SemanticToolpathOp for PocketConfig {
                     scope.set_param("polygon_index", poly_idx + 1);
                 }
                 let poly_ctx = poly_scope.as_ref().map(|scope| scope.context());
-                for (level_idx, z) in depth.all_levels().into_iter().enumerate() {
+                for (level_idx, z) in levels.iter().copied().enumerate() {
                     let level_scope = poly_ctx.as_ref().map(|ctx| {
                         ctx.start_item(
                             ToolpathSemanticKind::DepthLevel,
@@ -1613,11 +2118,21 @@ impl SemanticToolpathOp for PocketConfig {
                                 ctx.req.tool.diameter / 2.0,
                                 self.stepover,
                             );
+                            let is_finish = self.finishing_passes > 0
+                                && level_idx >= levels.len().saturating_sub(self.finishing_passes);
                             for (contour_idx, contour) in contours.iter().enumerate() {
                                 let contour_scope = level_scope.as_ref().map(|scope| {
                                     scope.context().start_item(
-                                        ToolpathSemanticKind::Contour,
-                                        format!("Contour {}", contour_idx + 1),
+                                        if is_finish {
+                                            ToolpathSemanticKind::FinishPass
+                                        } else {
+                                            ToolpathSemanticKind::Contour
+                                        },
+                                        if is_finish {
+                                            format!("Finish contour {}", contour_idx + 1)
+                                        } else {
+                                            format!("Contour {}", contour_idx + 1)
+                                        },
                                     )
                                 });
                                 if let Some(scope) = contour_scope.as_ref() {
@@ -1646,11 +2161,21 @@ impl SemanticToolpathOp for PocketConfig {
                                 self.stepover,
                                 self.angle.to_radians(),
                             );
+                            let is_finish = self.finishing_passes > 0
+                                && level_idx >= levels.len().saturating_sub(self.finishing_passes);
                             for (row_idx, line) in lines.iter().enumerate() {
                                 let row_scope = level_scope.as_ref().map(|scope| {
                                     scope.context().start_item(
-                                        ToolpathSemanticKind::Raster,
-                                        format!("Raster {}", row_idx + 1),
+                                        if is_finish {
+                                            ToolpathSemanticKind::FinishPass
+                                        } else {
+                                            ToolpathSemanticKind::Raster
+                                        },
+                                        if is_finish {
+                                            format!("Finish raster {}", row_idx + 1)
+                                        } else {
+                                            format!("Raster {}", row_idx + 1)
+                                        },
                                     )
                                 });
                                 if let Some(scope) = row_scope.as_ref() {
@@ -1691,6 +2216,7 @@ impl SemanticToolpathOp for ProfileConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
+        let polys = require_polygons(ctx.req).map_err(ComputeError::Message)?;
         let tp = run_profile(ctx.req, self).map_err(ComputeError::Message)?;
         let op_scope =
             annotate_operation_scope(ctx.semantic_root, ctx.core_debug_span_id, "Profile", &tp);
@@ -1698,23 +2224,64 @@ impl SemanticToolpathOp for ProfileConfig {
             scope.set_param("side", format!("{:?}", self.side));
             scope.set_param("tab_count", self.tab_count);
             scope.set_param("climb", self.climb);
+            scope.set_param("compensation", format!("{:?}", self.compensation));
         }
-        let op_ctx = semantic_child_context(op_scope.as_ref());
-        annotate_cut_runs(
-            op_ctx.as_ref(),
-            ctx.core_debug_span_id,
-            &tp,
-            ToolpathSemanticKind::Contour,
-            "Contour",
-        );
-        if self.tab_count > 0 {
-            annotate_full_toolpath_item(
-                op_ctx.as_ref(),
-                ctx.core_debug_span_id,
-                ToolpathSemanticKind::FinishPass,
-                "Tabs",
-                &tp,
-            );
+        if let Some(op_ctx) = semantic_child_context(op_scope.as_ref()) {
+            let mut run_iter = cutting_runs(&tp).into_iter();
+            let levels =
+                make_depth_with_finishing(self.depth, self.depth_per_pass, self.finishing_passes)
+                    .all_levels();
+            let total_levels = levels.len();
+            for (poly_idx, _) in polys.iter().enumerate() {
+                let poly_scope = if polys.len() > 1 {
+                    let scope = op_ctx.start_item(
+                        ToolpathSemanticKind::Chain,
+                        format!("Chain {}", poly_idx + 1),
+                    );
+                    scope.set_param("chain_index", poly_idx + 1);
+                    Some(scope)
+                } else {
+                    None
+                };
+                let poly_ctx = poly_scope
+                    .as_ref()
+                    .map(|scope| scope.context())
+                    .unwrap_or_else(|| op_ctx.clone());
+                for (level_idx, z) in levels.iter().copied().enumerate() {
+                    let level_scope = poly_ctx.start_item(
+                        ToolpathSemanticKind::DepthLevel,
+                        format!("Level {}", level_idx + 1),
+                    );
+                    level_scope.set_param("level_index", level_idx + 1);
+                    level_scope.set_param("z", z);
+                    if let Some(run) = run_iter.next() {
+                        let is_finish = self.finishing_passes > 0
+                            && level_idx >= total_levels.saturating_sub(self.finishing_passes);
+                        let kind = if is_finish {
+                            ToolpathSemanticKind::FinishPass
+                        } else {
+                            ToolpathSemanticKind::Contour
+                        };
+                        let contour_scope = level_scope.context().start_item(
+                            kind,
+                            if is_finish {
+                                format!("Finish contour {}", poly_idx + 1)
+                            } else {
+                                format!("Contour {}", poly_idx + 1)
+                            },
+                        );
+                        contour_scope.set_param("chain_index", poly_idx + 1);
+                        contour_scope.set_param("level_index", level_idx + 1);
+                        contour_scope.set_param("z", z);
+                        contour_scope.set_param("side", format!("{:?}", self.side));
+                        contour_scope.set_param("climb", self.climb);
+                        contour_scope.set_param("compensation", format!("{:?}", self.compensation));
+                        contour_scope.set_param("has_tabs", self.tab_count > 0);
+                        bind_scope_to_run(&contour_scope, &tp, &run);
+                        level_scope.bind_to_toolpath(&tp, run.move_start, run.move_end_exclusive);
+                    }
+                }
+            }
         }
         Ok(tp)
     }
@@ -1725,7 +2292,8 @@ impl SemanticToolpathOp for AdaptiveConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
-        let tp = run_adaptive(ctx.req, self, ctx.cancel, ctx.debug_root)?;
+        let (tp, level_slices, annotations) =
+            run_adaptive_annotated(ctx.req, self, ctx.cancel, ctx.debug_root)?;
         let op_scope =
             annotate_operation_scope(ctx.semantic_root, ctx.core_debug_span_id, "Adaptive", &tp);
         if let Some(scope) = op_scope.as_ref() {
@@ -1733,25 +2301,7 @@ impl SemanticToolpathOp for AdaptiveConfig {
             scope.set_param("slot_clearing", self.slot_clearing);
             scope.set_param("tolerance", self.tolerance);
         }
-        let op_ctx = op_scope.as_ref().map(|scope| scope.context());
-        let depth = make_depth(self.depth, self.depth_per_pass);
-        for (level_idx, z) in depth.all_levels().into_iter().enumerate() {
-            if let Some(op_ctx) = op_ctx.as_ref() {
-                let level_scope = op_ctx.start_item(
-                    ToolpathSemanticKind::DepthLevel,
-                    format!("Level {}", level_idx + 1),
-                );
-                level_scope.set_param("z", z);
-                level_scope.bind_to_toolpath(&tp, 0, tp.moves.len());
-            }
-        }
-        annotate_cut_runs(
-            op_ctx.as_ref(),
-            ctx.core_debug_span_id,
-            &tp,
-            ToolpathSemanticKind::Pass,
-            "Pass",
-        );
+        annotate_adaptive_runtime_semantics(op_scope.as_ref(), &tp, &level_slices, &annotations);
         Ok(tp)
     }
 }
@@ -1761,6 +2311,7 @@ impl SemanticToolpathOp for VCarveConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
+        let polys = require_polygons(ctx.req).map_err(ComputeError::Message)?;
         let tp = run_vcarve(ctx.req, self).map_err(ComputeError::Message)?;
         let op_scope =
             annotate_operation_scope(ctx.semantic_root, ctx.core_debug_span_id, "VCarve", &tp);
@@ -1769,14 +2320,40 @@ impl SemanticToolpathOp for VCarveConfig {
             scope.set_param("stepover", self.stepover);
             scope.set_param("tolerance", self.tolerance);
         }
-        let op_ctx = semantic_child_context(op_scope.as_ref());
-        annotate_cut_runs(
-            op_ctx.as_ref(),
-            ctx.core_debug_span_id,
-            &tp,
-            ToolpathSemanticKind::Contour,
-            "Contour",
-        );
+        if let Some(op_ctx) = semantic_child_context(op_scope.as_ref()) {
+            let runs = cutting_runs(&tp);
+            let mut run_iter = runs.iter();
+            for (poly_idx, _) in polys.iter().enumerate() {
+                let curve_scope = op_ctx.start_item(
+                    ToolpathSemanticKind::Curve,
+                    format!("Source curve {}", poly_idx + 1),
+                );
+                curve_scope.set_param("source_curve_index", poly_idx + 1);
+                let curve_ctx = curve_scope.context();
+                while let Some(run) = run_iter.next() {
+                    let kind = if run.constant_z && run.closed_loop {
+                        ToolpathSemanticKind::Contour
+                    } else if run.constant_z {
+                        ToolpathSemanticKind::FinishPass
+                    } else {
+                        ToolpathSemanticKind::Centerline
+                    };
+                    let label = match kind {
+                        ToolpathSemanticKind::Centerline => "Centerline".to_string(),
+                        ToolpathSemanticKind::FinishPass => "Finish pass".to_string(),
+                        _ => "Contour".to_string(),
+                    };
+                    let scope = curve_ctx.start_item(kind, label);
+                    scope.set_param("source_curve_index", poly_idx + 1);
+                    scope.set_param("z_min", run.z_min);
+                    scope.set_param("z_max", run.z_max);
+                    bind_scope_to_run(&scope, &tp, run);
+                    if run.closed_loop {
+                        break;
+                    }
+                }
+            }
+        }
         Ok(tp)
     }
 }
@@ -1786,6 +2363,7 @@ impl SemanticToolpathOp for RestConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
+        let polys = require_polygons(ctx.req).map_err(ComputeError::Message)?;
         let tp = run_rest(ctx.req, self).map_err(ComputeError::Message)?;
         let op_scope = annotate_operation_scope(
             ctx.semantic_root,
@@ -1801,14 +2379,59 @@ impl SemanticToolpathOp for RestConfig {
                 scope.set_param("previous_tool_radius", prev_tool_radius);
             }
         }
-        let op_ctx = semantic_child_context(op_scope.as_ref());
-        annotate_cut_runs(
-            op_ctx.as_ref(),
-            ctx.core_debug_span_id,
-            &tp,
-            ToolpathSemanticKind::Pass,
-            "Rest pass",
-        );
+        if let Some(op_ctx) = semantic_child_context(op_scope.as_ref()) {
+            let tr = ctx.req.tool.diameter / 2.0;
+            let ptr = ctx.req.prev_tool_radius.unwrap_or_default();
+            let depth = make_depth(self.depth, self.depth_per_pass);
+            let actual_runs = cutting_runs(&tp);
+            let mut run_cursor = 0usize;
+            for (poly_idx, polygon) in polys.iter().enumerate() {
+                let region_scope = op_ctx.start_item(
+                    ToolpathSemanticKind::Region,
+                    format!("Region {}", poly_idx + 1),
+                );
+                region_scope.set_param("region_index", poly_idx + 1);
+                let region_ctx = region_scope.context();
+                for (level_idx, z) in depth.all_levels().into_iter().enumerate() {
+                    let level_scope = region_ctx.start_item(
+                        ToolpathSemanticKind::DepthLevel,
+                        format!("Level {}", level_idx + 1),
+                    );
+                    level_scope.set_param("level_index", level_idx + 1);
+                    level_scope.set_param("z", z);
+                    let expected_tp = rest_machining_toolpath(
+                        polygon,
+                        &RestParams {
+                            prev_tool_radius: ptr,
+                            tool_radius: tr,
+                            cut_depth: z,
+                            stepover: self.stepover,
+                            feed_rate: self.feed_rate,
+                            plunge_rate: self.plunge_rate,
+                            safe_z: effective_safe_z(ctx.req),
+                            angle: self.angle.to_radians(),
+                        },
+                    );
+                    let expected_runs = cutting_runs(&expected_tp);
+                    for pass_idx in 0..expected_runs.len() {
+                        if let Some(run) = actual_runs.get(run_cursor) {
+                            let scope = level_scope.context().start_item(
+                                ToolpathSemanticKind::Pass,
+                                format!("Rest pass {}", pass_idx + 1),
+                            );
+                            scope.set_param("region_index", poly_idx + 1);
+                            scope.set_param("level_index", level_idx + 1);
+                            scope.set_param("pass_index", pass_idx + 1);
+                            if let Some(prev_tool_radius) = ctx.req.prev_tool_radius {
+                                scope.set_param("previous_tool_radius", prev_tool_radius);
+                            }
+                            bind_scope_to_run(&scope, &tp, run);
+                            run_cursor += 1;
+                        }
+                    }
+                }
+            }
+        }
         Ok(tp)
     }
 }
@@ -1818,6 +2441,7 @@ impl SemanticToolpathOp for InlayConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
+        let polys = require_polygons(ctx.req).map_err(ComputeError::Message)?;
         let tp = run_inlay(ctx.req, self).map_err(ComputeError::Message)?;
         let op_scope =
             annotate_operation_scope(ctx.semantic_root, ctx.core_debug_span_id, "Inlay", &tp);
@@ -1826,14 +2450,54 @@ impl SemanticToolpathOp for InlayConfig {
             scope.set_param("glue_gap", self.glue_gap);
             scope.set_param("flat_depth", self.flat_depth);
         }
-        let op_ctx = semantic_child_context(op_scope.as_ref());
-        annotate_cut_runs(
-            op_ctx.as_ref(),
-            ctx.core_debug_span_id,
-            &tp,
-            ToolpathSemanticKind::Contour,
-            "Inlay pass",
-        );
+        if let Some(op_ctx) = semantic_child_context(op_scope.as_ref()) {
+            let ha = match ctx.req.tool.tool_type {
+                ToolType::VBit => (ctx.req.tool.included_angle / 2.0).to_radians(),
+                _ => return Err(ComputeError::Message("Inlay requires V-Bit tool".into())),
+            };
+            let actual_runs = cutting_runs(&tp);
+            let mut run_cursor = 0usize;
+            for (poly_idx, polygon) in polys.iter().enumerate() {
+                let region_scope = op_ctx.start_item(
+                    ToolpathSemanticKind::Curve,
+                    format!("Source curve {}", poly_idx + 1),
+                );
+                region_scope.set_param("source_curve_index", poly_idx + 1);
+                let region_ctx = region_scope.context();
+                let generated = inlay_toolpaths(
+                    polygon,
+                    &InlayParams {
+                        half_angle: ha,
+                        pocket_depth: self.pocket_depth,
+                        glue_gap: self.glue_gap,
+                        flat_depth: self.flat_depth,
+                        boundary_offset: self.boundary_offset,
+                        stepover: self.stepover,
+                        flat_tool_radius: self.flat_tool_radius,
+                        feed_rate: self.feed_rate,
+                        plunge_rate: self.plunge_rate,
+                        safe_z: effective_safe_z(ctx.req),
+                        tolerance: self.tolerance,
+                    },
+                );
+                for (label, kind_runs) in [
+                    ("Pocket contour", cutting_runs(&generated.female)),
+                    ("Male contour", cutting_runs(&generated.male)),
+                ] {
+                    for (run_idx, _) in kind_runs.iter().enumerate() {
+                        if let Some(run) = actual_runs.get(run_cursor) {
+                            let scope = region_ctx.start_item(
+                                ToolpathSemanticKind::Contour,
+                                format!("{label} {}", run_idx + 1),
+                            );
+                            scope.set_param("source_curve_index", poly_idx + 1);
+                            bind_scope_to_run(&scope, &tp, run);
+                            run_cursor += 1;
+                        }
+                    }
+                }
+            }
+        }
         Ok(tp)
     }
 }
@@ -1843,6 +2507,7 @@ impl SemanticToolpathOp for ZigzagConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
+        let polys = require_polygons(ctx.req).map_err(ComputeError::Message)?;
         let tp = run_zigzag(ctx.req, self).map_err(ComputeError::Message)?;
         let op_scope =
             annotate_operation_scope(ctx.semantic_root, ctx.core_debug_span_id, "Zigzag", &tp);
@@ -1851,14 +2516,44 @@ impl SemanticToolpathOp for ZigzagConfig {
             scope.set_param("stepover", self.stepover);
             scope.set_param("angle_deg", self.angle);
         }
-        let op_ctx = semantic_child_context(op_scope.as_ref());
-        annotate_cut_runs(
-            op_ctx.as_ref(),
-            ctx.core_debug_span_id,
-            &tp,
-            ToolpathSemanticKind::Raster,
-            "Raster",
-        );
+        if let Some(op_ctx) = semantic_child_context(op_scope.as_ref()) {
+            let runs = cutting_runs(&tp);
+            let mut run_cursor = 0usize;
+            let depth = make_depth(self.depth, self.depth_per_pass);
+            for (poly_idx, polygon) in polys.iter().enumerate() {
+                let region_scope = op_ctx.start_item(
+                    ToolpathSemanticKind::Region,
+                    format!("Region {}", poly_idx + 1),
+                );
+                let region_ctx = region_scope.context();
+                for (level_idx, z) in depth.all_levels().into_iter().enumerate() {
+                    let level_scope = region_ctx.start_item(
+                        ToolpathSemanticKind::DepthLevel,
+                        format!("Level {}", level_idx + 1),
+                    );
+                    level_scope.set_param("level_index", level_idx + 1);
+                    level_scope.set_param("z", z);
+                    let lines = rs_cam_core::zigzag::zigzag_lines(
+                        polygon,
+                        ctx.req.tool.diameter / 2.0,
+                        self.stepover,
+                        self.angle.to_radians(),
+                    );
+                    for (row_idx, _) in lines.iter().enumerate() {
+                        if let Some(run) = runs.get(run_cursor) {
+                            let scope = level_scope.context().start_item(
+                                ToolpathSemanticKind::Raster,
+                                format!("Raster {}", row_idx + 1),
+                            );
+                            scope.set_param("row_index", row_idx + 1);
+                            scope.set_param("angle_deg", self.angle);
+                            bind_scope_to_run(&scope, &tp, run);
+                            run_cursor += 1;
+                        }
+                    }
+                }
+            }
+        }
         Ok(tp)
     }
 }
@@ -1868,6 +2563,7 @@ impl SemanticToolpathOp for TraceConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
+        let polys = require_polygons(ctx.req).map_err(ComputeError::Message)?;
         let tp = run_trace(ctx.req, self).map_err(ComputeError::Message)?;
         let op_scope =
             annotate_operation_scope(ctx.semantic_root, ctx.core_debug_span_id, "Trace", &tp);
@@ -1875,14 +2571,37 @@ impl SemanticToolpathOp for TraceConfig {
             scope.set_param("depth", self.depth);
             scope.set_param("compensation", format!("{:?}", self.compensation));
         }
-        let op_ctx = semantic_child_context(op_scope.as_ref());
-        annotate_cut_runs(
-            op_ctx.as_ref(),
-            ctx.core_debug_span_id,
-            &tp,
-            ToolpathSemanticKind::Contour,
-            "Trace contour",
-        );
+        if let Some(op_ctx) = semantic_child_context(op_scope.as_ref()) {
+            let runs = cutting_runs(&tp);
+            let mut run_iter = runs.iter();
+            let levels = make_depth(self.depth, self.depth_per_pass).all_levels();
+            for (poly_idx, _) in polys.iter().enumerate() {
+                let curve_scope = op_ctx.start_item(
+                    ToolpathSemanticKind::Curve,
+                    format!("Source curve {}", poly_idx + 1),
+                );
+                curve_scope.set_param("source_curve_index", poly_idx + 1);
+                let curve_ctx = curve_scope.context();
+                for (level_idx, z) in levels.iter().copied().enumerate() {
+                    let level_scope = curve_ctx.start_item(
+                        ToolpathSemanticKind::DepthLevel,
+                        format!("Level {}", level_idx + 1),
+                    );
+                    level_scope.set_param("level_index", level_idx + 1);
+                    level_scope.set_param("z", z);
+                    if let Some(run) = run_iter.next() {
+                        let scope = level_scope.context().start_item(
+                            ToolpathSemanticKind::Contour,
+                            format!("Trace contour {}", poly_idx + 1),
+                        );
+                        scope.set_param("source_curve_index", poly_idx + 1);
+                        scope.set_param("compensation", format!("{:?}", self.compensation));
+                        bind_scope_to_run(&scope, &tp, run);
+                        level_scope.bind_to_toolpath(&tp, run.move_start, run.move_end_exclusive);
+                    }
+                }
+            }
+        }
         Ok(tp)
     }
 }
@@ -1949,11 +2668,22 @@ impl SemanticToolpathOp for DrillConfig {
                     scope.set_param("y", hole[1]);
                     scope.set_param("cycle", format!("{:?}", self.cycle));
                 }
-                append_toolpath(
-                    &mut writer,
-                    hole_scope.as_ref(),
-                    drill_toolpath(&[*hole], &params),
-                );
+                let start = writer.move_count();
+                let hole_tp = drill_toolpath(&[*hole], &params);
+                append_toolpath(&mut writer, hole_scope.as_ref(), hole_tp.clone());
+                if let Some(scope) = hole_scope.as_ref() {
+                    let hole_runs = cutting_runs(&hole_tp);
+                    for (cycle_idx, run) in hole_runs.iter().enumerate() {
+                        let cycle_scope = scope.context().start_item(
+                            ToolpathSemanticKind::Cycle,
+                            format!("Cycle {}", cycle_idx + 1),
+                        );
+                        cycle_scope.set_param("hole_index", hole_idx + 1);
+                        cycle_scope.set_param("cycle_index", cycle_idx + 1);
+                        cycle_scope.set_param("cycle", format!("{:?}", self.cycle));
+                        bind_scope_to_offset_run(&cycle_scope, writer.toolpath(), start, run);
+                    }
+                }
             }
         }
         if let Some(scope) = op_scope.as_ref() {
@@ -1968,6 +2698,7 @@ impl SemanticToolpathOp for ChamferConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
+        let polys = require_polygons(ctx.req).map_err(ComputeError::Message)?;
         let tp = run_chamfer(ctx.req, self).map_err(ComputeError::Message)?;
         let op_scope =
             annotate_operation_scope(ctx.semantic_root, ctx.core_debug_span_id, "Chamfer", &tp);
@@ -1975,14 +2706,19 @@ impl SemanticToolpathOp for ChamferConfig {
             scope.set_param("chamfer_width", self.chamfer_width);
             scope.set_param("tip_offset", self.tip_offset);
         }
-        let op_ctx = semantic_child_context(op_scope.as_ref());
-        annotate_cut_runs(
-            op_ctx.as_ref(),
-            ctx.core_debug_span_id,
-            &tp,
-            ToolpathSemanticKind::Contour,
-            "Chamfer contour",
-        );
+        if let Some(op_ctx) = semantic_child_context(op_scope.as_ref()) {
+            let runs = cutting_runs(&tp);
+            for (poly_idx, run) in polys.iter().enumerate().zip(runs.iter()) {
+                let scope = op_ctx.start_item(
+                    ToolpathSemanticKind::Contour,
+                    format!("Source edge {}", poly_idx.0 + 1),
+                );
+                scope.set_param("source_curve_index", poly_idx.0 + 1);
+                scope.set_param("chamfer_width", self.chamfer_width);
+                scope.set_param("tip_offset", self.tip_offset);
+                bind_scope_to_run(&scope, &tp, run);
+            }
+        }
         Ok(tp)
     }
 }
@@ -2201,22 +2937,17 @@ impl SemanticToolpathOp for PencilConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
-        let tp = run_pencil(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
-            .map_err(ComputeError::Message)?;
+        let (tp, annotations) =
+            run_pencil_annotated(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
+                .map_err(ComputeError::Message)?;
         let op_scope =
             annotate_operation_scope(ctx.semantic_root, ctx.core_debug_span_id, "Pencil", &tp);
         if let Some(scope) = op_scope.as_ref() {
             scope.set_param("bitangency_angle", self.bitangency_angle);
             scope.set_param("offset_passes", self.num_offset_passes);
+            scope.set_param("offset_stepover", self.offset_stepover);
         }
-        let op_ctx = semantic_child_context(op_scope.as_ref());
-        annotate_cut_runs(
-            op_ctx.as_ref(),
-            ctx.core_debug_span_id,
-            &tp,
-            ToolpathSemanticKind::Chain,
-            "Chain",
-        );
+        annotate_pencil_runtime_semantics(op_scope.as_ref(), &tp, &annotations);
         Ok(tp)
     }
 }
@@ -2226,21 +2957,22 @@ impl SemanticToolpathOp for ScallopConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
-        let tp = run_scallop(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
-            .map_err(ComputeError::Message)?;
+        let (tp, annotations) =
+            run_scallop_annotated(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
+                .map_err(ComputeError::Message)?;
         let op_scope =
             annotate_operation_scope(ctx.semantic_root, ctx.core_debug_span_id, "Scallop", &tp);
         if let Some(scope) = op_scope.as_ref() {
             scope.set_param("scallop_height", self.scallop_height);
             scope.set_param("continuous", self.continuous);
+            scope.set_param("direction", format!("{:?}", self.direction));
         }
-        let op_ctx = semantic_child_context(op_scope.as_ref());
-        annotate_cut_runs(
-            op_ctx.as_ref(),
-            ctx.core_debug_span_id,
+        annotate_scallop_runtime_semantics(
+            op_scope.as_ref(),
             &tp,
-            ToolpathSemanticKind::Ring,
-            "Ring",
+            &annotations,
+            &self.direction,
+            self.continuous,
         );
         Ok(tp)
     }
@@ -2265,18 +2997,28 @@ impl SemanticToolpathOp for SteepShallowConfig {
             scope.set_param("steep_first", self.steep_first);
         }
         if let Some(ctx) = op_scope.as_ref().map(|scope| scope.context()) {
+            let steep_scope = ctx.start_item(ToolpathSemanticKind::Region, "Steep contours");
+            steep_scope.set_param("kind", "steep");
+            let shallow_scope = ctx.start_item(ToolpathSemanticKind::Region, "Shallow raster");
+            shallow_scope.set_param("kind", "shallow");
             for (run_idx, run) in cutting_runs(&tp).iter().enumerate() {
                 let kind = if run.closed_loop && run.constant_z {
                     ToolpathSemanticKind::Contour
                 } else {
                     ToolpathSemanticKind::Raster
                 };
-                let label = if kind == ToolpathSemanticKind::Contour {
-                    format!("Steep contour {}", run_idx + 1)
+                let (parent_ctx, label) = if kind == ToolpathSemanticKind::Contour {
+                    (
+                        steep_scope.context(),
+                        format!("Steep contour {}", run_idx + 1),
+                    )
                 } else {
-                    format!("Shallow pass {}", run_idx + 1)
+                    (
+                        shallow_scope.context(),
+                        format!("Shallow pass {}", run_idx + 1),
+                    )
                 };
-                let scope = ctx.start_item(kind, label);
+                let scope = parent_ctx.start_item(kind, label);
                 scope.set_param("run_index", run_idx + 1);
                 bind_scope_to_run(&scope, &tp, run);
             }
@@ -2290,8 +3032,9 @@ impl SemanticToolpathOp for RampFinishConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
-        let tp = run_ramp_finish(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
-            .map_err(ComputeError::Message)?;
+        let (tp, annotations) =
+            run_ramp_finish_annotated(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
+                .map_err(ComputeError::Message)?;
         let op_scope = annotate_operation_scope(
             ctx.semantic_root,
             ctx.core_debug_span_id,
@@ -2302,14 +3045,7 @@ impl SemanticToolpathOp for RampFinishConfig {
             scope.set_param("max_stepdown", self.max_stepdown);
             scope.set_param("direction", format!("{:?}", self.direction));
         }
-        let op_ctx = semantic_child_context(op_scope.as_ref());
-        annotate_cut_runs(
-            op_ctx.as_ref(),
-            ctx.core_debug_span_id,
-            &tp,
-            ToolpathSemanticKind::Ramp,
-            "Ramp",
-        );
+        annotate_ramp_finish_runtime_semantics(op_scope.as_ref(), &tp, &annotations);
         Ok(tp)
     }
 }
@@ -2319,8 +3055,9 @@ impl SemanticToolpathOp for SpiralFinishConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
-        let tp = run_spiral_finish(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
-            .map_err(ComputeError::Message)?;
+        let (tp, annotations) =
+            run_spiral_finish_annotated(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
+                .map_err(ComputeError::Message)?;
         let op_scope = annotate_operation_scope(
             ctx.semantic_root,
             ctx.core_debug_span_id,
@@ -2331,13 +3068,11 @@ impl SemanticToolpathOp for SpiralFinishConfig {
             scope.set_param("stepover", self.stepover);
             scope.set_param("direction", format!("{:?}", self.direction));
         }
-        let op_ctx = semantic_child_context(op_scope.as_ref());
-        annotate_cut_runs(
-            op_ctx.as_ref(),
-            ctx.core_debug_span_id,
+        annotate_spiral_finish_runtime_semantics(
+            op_scope.as_ref(),
             &tp,
-            ToolpathSemanticKind::Ring,
-            "Ring",
+            &annotations,
+            &self.direction,
         );
         Ok(tp)
     }
@@ -2360,14 +3095,11 @@ impl SemanticToolpathOp for RadialFinishConfig {
             scope.set_param("angular_step", self.angular_step);
             scope.set_param("point_spacing", self.point_spacing);
         }
-        let op_ctx = semantic_child_context(op_scope.as_ref());
-        annotate_cut_runs(
-            op_ctx.as_ref(),
-            ctx.core_debug_span_id,
-            &tp,
-            ToolpathSemanticKind::Ray,
-            "Ray",
-        );
+        if let Some(mesh) = ctx.req.mesh.as_ref() {
+            let center_x = (mesh.bbox.min.x + mesh.bbox.max.x) * 0.5;
+            let center_y = (mesh.bbox.min.y + mesh.bbox.max.y) * 0.5;
+            annotate_radial_finish_semantics(op_scope.as_ref(), &tp, center_x, center_y);
+        }
         Ok(tp)
     }
 }
@@ -2389,14 +3121,7 @@ impl SemanticToolpathOp for HorizontalFinishConfig {
             scope.set_param("angle_threshold", self.angle_threshold);
             scope.set_param("stepover", self.stepover);
         }
-        let op_ctx = semantic_child_context(op_scope.as_ref());
-        annotate_cut_runs(
-            op_ctx.as_ref(),
-            ctx.core_debug_span_id,
-            &tp,
-            ToolpathSemanticKind::Slice,
-            "Slice",
-        );
+        annotate_horizontal_finish_semantics(op_scope.as_ref(), &tp, self.stepover);
         Ok(tp)
     }
 }
@@ -2406,8 +3131,9 @@ impl SemanticToolpathOp for ProjectCurveConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
-        let tp = run_project_curve(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
-            .map_err(ComputeError::Message)?;
+        let (tp, slices) =
+            run_project_curve_annotated(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
+                .map_err(ComputeError::Message)?;
         let op_scope = annotate_operation_scope(
             ctx.semantic_root,
             ctx.core_debug_span_id,
@@ -2418,13 +3144,12 @@ impl SemanticToolpathOp for ProjectCurveConfig {
             scope.set_param("depth", self.depth);
             scope.set_param("point_spacing", self.point_spacing);
         }
-        let op_ctx = semantic_child_context(op_scope.as_ref());
-        annotate_cut_runs(
-            op_ctx.as_ref(),
-            ctx.core_debug_span_id,
+        annotate_project_curve_semantics(
+            op_scope.as_ref(),
             &tp,
-            ToolpathSemanticKind::Curve,
-            "Curve",
+            &slices,
+            self.depth,
+            self.point_spacing,
         );
         Ok(tp)
     }

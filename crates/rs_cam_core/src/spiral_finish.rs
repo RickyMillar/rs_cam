@@ -12,6 +12,7 @@
 //! 3. Drop-cutter each spiral point onto the mesh.
 //! 4. Build a single continuous toolpath segment.
 
+use crate::debug_trace::ToolpathDebugContext;
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::{BoundingBox3, P3};
 use crate::mesh::{SpatialIndex, TriangleMesh};
@@ -43,6 +44,37 @@ pub struct SpiralFinishParams {
     pub stock_to_leave: f64,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum SpiralFinishRuntimeEvent {
+    Ring {
+        ring_index: usize,
+        ring_total: usize,
+        radius_mm: f64,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpiralFinishRuntimeAnnotation {
+    pub move_index: usize,
+    pub event: SpiralFinishRuntimeEvent,
+}
+
+impl SpiralFinishRuntimeEvent {
+    pub fn label(&self) -> String {
+        match self {
+            Self::Ring { ring_index, .. } => format!("Ring {ring_index}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SpiralSample2d {
+    x: f64,
+    y: f64,
+    theta: f64,
+    radius: f64,
+}
+
 /// Generate a spiral finishing toolpath over a 3D mesh.
 ///
 /// Produces an Archimedean spiral of drop-cutter points covering the mesh XY
@@ -53,6 +85,26 @@ pub fn spiral_finish_toolpath(
     cutter: &dyn MillingCutter,
     params: &SpiralFinishParams,
 ) -> Toolpath {
+    let (tp, _) = spiral_finish_toolpath_structured_annotated(mesh, index, cutter, params, None);
+    tp
+}
+
+fn runtime_annotations_to_labels(
+    annotations: &[SpiralFinishRuntimeAnnotation],
+) -> Vec<(usize, String)> {
+    annotations
+        .iter()
+        .map(|annotation| (annotation.move_index, annotation.event.label()))
+        .collect()
+}
+
+pub fn spiral_finish_toolpath_structured_annotated(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &SpiralFinishParams,
+    debug: Option<&ToolpathDebugContext>,
+) -> (Toolpath, Vec<SpiralFinishRuntimeAnnotation>) {
     let bbox = &mesh.bbox;
     let cx = (bbox.min.x + bbox.max.x) * 0.5;
     let cy = (bbox.min.y + bbox.max.y) * 0.5;
@@ -62,21 +114,22 @@ pub fn spiral_finish_toolpath(
     let max_radius = corner_distance(bbox, cx, cy) + cutter.radius();
 
     // Generate spiral XY coordinates.
-    let spiral_xy = generate_spiral_points(cx, cy, max_radius, params.stepover);
+    let spiral_xy = generate_spiral_samples(cx, cy, max_radius, params.stepover);
 
     // Drop-cut each point onto the mesh.
-    let mut path: Vec<P3> = Vec::with_capacity(spiral_xy.len());
-    for (sx, sy) in &spiral_xy {
-        let cl = point_drop_cutter(*sx, *sy, mesh, index, cutter);
+    let mut path: Vec<(P3, usize, f64)> = Vec::with_capacity(spiral_xy.len());
+    for sample in &spiral_xy {
+        let cl = point_drop_cutter(sample.x, sample.y, mesh, index, cutter);
         if cl.contacted {
             let z = cl.z - params.stock_to_leave;
-            path.push(P3::new(cl.x, cl.y, z));
+            let ring_index = (sample.theta / std::f64::consts::TAU).floor() as usize + 1;
+            path.push((P3::new(cl.x, cl.y, z), ring_index, sample.radius));
         }
         // Non-contacted points are outside the mesh footprint — skip them.
     }
 
     if path.is_empty() {
-        return Toolpath::new();
+        return (Toolpath::new(), Vec::new());
     }
 
     // Reverse for outside-in cutting.
@@ -84,11 +137,62 @@ pub fn spiral_finish_toolpath(
         path.reverse();
     }
 
+    let ring_total = path
+        .iter()
+        .map(|(_, ring_index, _)| *ring_index)
+        .max()
+        .unwrap_or(0);
+
     // Build toolpath: rapid → plunge → feed → retract.
     let mut tp = Toolpath::new();
-    tp.emit_path_segment(&path, params.safe_z, params.feed_rate, params.plunge_rate);
+    let mut annotations = Vec::new();
+    let first = path[0].0;
+    tp.rapid_to(P3::new(first.x, first.y, params.safe_z));
+    tp.feed_to(first, params.plunge_rate);
+    annotations.push(SpiralFinishRuntimeAnnotation {
+        move_index: 0,
+        event: SpiralFinishRuntimeEvent::Ring {
+            ring_index: path[0].1,
+            ring_total,
+            radius_mm: path[0].2,
+        },
+    });
+    let mut current_ring = path[0].1;
+    for (point, ring_index, radius_mm) in path.iter().skip(1) {
+        if *ring_index != current_ring {
+            current_ring = *ring_index;
+            annotations.push(SpiralFinishRuntimeAnnotation {
+                move_index: tp.moves.len(),
+                event: SpiralFinishRuntimeEvent::Ring {
+                    ring_index: *ring_index,
+                    ring_total,
+                    radius_mm: *radius_mm,
+                },
+            });
+        }
+        tp.feed_to(*point, params.feed_rate);
+    }
     tp.final_retract(params.safe_z);
-    tp
+
+    if let Some(debug_ctx) = debug {
+        for annotation in &annotations {
+            debug_ctx.add_annotation(annotation.move_index, annotation.event.label());
+        }
+    }
+
+    (tp, annotations)
+}
+
+pub fn spiral_finish_toolpath_annotated(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &SpiralFinishParams,
+    debug: Option<&ToolpathDebugContext>,
+) -> (Toolpath, Vec<(usize, String)>) {
+    let (tp, annotations) =
+        spiral_finish_toolpath_structured_annotated(mesh, index, cutter, params, debug);
+    (tp, runtime_annotations_to_labels(&annotations))
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -118,7 +222,20 @@ fn corner_distance(bbox: &BoundingBox3, cx: f64, cy: f64) -> f64 {
 ///
 /// The angular increment is adaptive: dθ = stepover / max(r, stepover) so that
 /// the linear spacing between consecutive points stays roughly constant.
+#[cfg_attr(not(test), allow(dead_code))]
 fn generate_spiral_points(cx: f64, cy: f64, max_radius: f64, stepover: f64) -> Vec<(f64, f64)> {
+    generate_spiral_samples(cx, cy, max_radius, stepover)
+        .into_iter()
+        .map(|sample| (sample.x, sample.y))
+        .collect()
+}
+
+fn generate_spiral_samples(
+    cx: f64,
+    cy: f64,
+    max_radius: f64,
+    stepover: f64,
+) -> Vec<SpiralSample2d> {
     let two_pi = std::f64::consts::TAU;
     // θ_max where r(θ_max) = max_radius  ⟹  θ_max = max_radius * 2π / stepover
     let theta_max = max_radius * two_pi / stepover;
@@ -130,7 +247,12 @@ fn generate_spiral_points(cx: f64, cy: f64, max_radius: f64, stepover: f64) -> V
         let r = stepover * theta / two_pi;
         let x = cx + r * theta.cos();
         let y = cy + r * theta.sin();
-        points.push((x, y));
+        points.push(SpiralSample2d {
+            x,
+            y,
+            theta,
+            radius: r,
+        });
 
         // Adaptive step: at small r use a minimum to avoid near-zero division.
         let dtheta = stepover / r.max(stepover);
@@ -142,7 +264,12 @@ fn generate_spiral_points(cx: f64, cy: f64, max_radius: f64, stepover: f64) -> V
     if (r_last - max_radius).abs() > stepover * 0.1 {
         let x = cx + max_radius * theta_max.cos();
         let y = cy + max_radius * theta_max.sin();
-        points.push((x, y));
+        points.push(SpiralSample2d {
+            x,
+            y,
+            theta: theta_max,
+            radius: max_radius,
+        });
     }
 
     points

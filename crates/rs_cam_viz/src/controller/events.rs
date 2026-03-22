@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::compute::{
     CollisionRequest, ComputeBackend, ComputeError, ComputeMessage, ComputeRequest, SetupSimGroup,
-    SimulationRequest,
+    SetupSimToolpath, SimulationRequest,
 };
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::BoundingBox3;
@@ -480,7 +480,13 @@ impl<B: ComputeBackend> AppController<B> {
                     } else {
                         Arc::clone(&result.toolpath)
                     };
-                    Some((tp.id, tp.name.clone(), transformed, tool))
+                    Some(SetupSimToolpath {
+                        id: tp.id,
+                        name: tp.name.clone(),
+                        toolpath: transformed,
+                        tool,
+                        semantic_trace: tp.semantic_trace.clone(),
+                    })
                 })
                 .collect();
 
@@ -519,6 +525,13 @@ impl<B: ComputeBackend> AppController<B> {
             stock_bbox,
             stock_top_z: stock_bbox.max.z,
             resolution: self.state.simulation.resolution,
+            metric_options: self.state.simulation.metric_options,
+            spindle_rpm: self.state.job.post.spindle_speed,
+            rapid_feed_mm_min: if self.state.job.post.high_feedrate_mode {
+                self.state.job.post.high_feedrate.max(1.0)
+            } else {
+                self.state.job.machine.max_feed_mm_min.max(1.0)
+            },
             model_mesh,
         });
     }
@@ -582,7 +595,13 @@ impl<B: ComputeBackend> AppController<B> {
                     } else {
                         Arc::clone(&result.toolpath)
                     };
-                    Some((tp.id, tp.name.clone(), transformed, tool))
+                    Some(SetupSimToolpath {
+                        id: tp.id,
+                        name: tp.name.clone(),
+                        toolpath: transformed,
+                        tool,
+                        semantic_trace: tp.semantic_trace.clone(),
+                    })
                 })
                 .collect();
 
@@ -620,6 +639,13 @@ impl<B: ComputeBackend> AppController<B> {
             stock_bbox,
             stock_top_z: stock_bbox.max.z,
             resolution: self.state.simulation.resolution,
+            metric_options: self.state.simulation.metric_options,
+            spindle_rpm: self.state.job.post.spindle_speed,
+            rapid_feed_mm_min: if self.state.job.post.high_feedrate_mode {
+                self.state.job.post.high_feedrate.max(1.0)
+            } else {
+                self.state.job.machine.max_feed_mm_min.max(1.0)
+            },
             model_mesh,
         });
     }
@@ -943,6 +969,8 @@ impl<B: ComputeBackend> AppController<B> {
                             selected_toolpaths: None,
                             playback_data: simulation.playback_data,
                             stock_bbox,
+                            cut_trace: simulation.cut_trace,
+                            cut_trace_path: simulation.cut_trace_path,
                         });
 
                         let inspect_target =
@@ -1202,18 +1230,10 @@ fn transform_toolpath_to_stock_frame(
     Toolpath { moves: new_moves }
 }
 
-fn auto_resolution_for_tools(
-    toolpaths: &[(
-        ToolpathId,
-        String,
-        Arc<rs_cam_core::toolpath::Toolpath>,
-        ToolConfig,
-    )],
-    stock_bbox: &BoundingBox3,
-) -> f64 {
+fn auto_resolution_for_tools(toolpaths: &[SetupSimToolpath], stock_bbox: &BoundingBox3) -> f64 {
     let min_radius = toolpaths
         .iter()
-        .map(|(_, _, _, tool)| tool.diameter / 2.0)
+        .map(|toolpath| toolpath.tool.diameter / 2.0)
         .fold(f64::INFINITY, f64::min);
 
     // 5 cells across the radius gives decent curve resolution

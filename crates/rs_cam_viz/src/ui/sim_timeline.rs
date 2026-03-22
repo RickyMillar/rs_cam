@@ -6,6 +6,7 @@ use crate::render::toolpath_render::palette_color;
 use crate::state::job::JobState;
 use crate::state::simulation::{ActiveSemanticItem, SimulationDebugTab, SimulationState};
 use crate::state::toolpath::OperationConfig;
+use egui_plot::{Bar, BarChart, Legend, Line, Plot, PlotPoints};
 
 /// Bottom panel in simulation workspace: transport controls, timeline scrubber, speed control.
 pub fn draw(
@@ -280,8 +281,13 @@ pub fn draw(
                 );
                 ui.selectable_value(
                     &mut sim.debug.active_tab,
-                    SimulationDebugTab::Performance,
-                    "Performance",
+                    SimulationDebugTab::Generation,
+                    "Generation",
+                );
+                ui.selectable_value(
+                    &mut sim.debug.active_tab,
+                    SimulationDebugTab::Cutting,
+                    "Cutting",
                 );
                 ui.selectable_value(
                     &mut sim.debug.active_tab,
@@ -304,8 +310,18 @@ pub fn draw(
                         events,
                     );
                 }
-                SimulationDebugTab::Performance => {
-                    draw_performance_drawer(
+                SimulationDebugTab::Generation => {
+                    draw_generation_drawer(
+                        ui,
+                        sim,
+                        job,
+                        current_boundary.as_ref(),
+                        active_semantic.as_ref(),
+                        events,
+                    );
+                }
+                SimulationDebugTab::Cutting => {
+                    draw_cutting_drawer(
                         ui,
                         sim,
                         job,
@@ -448,6 +464,29 @@ fn draw_semantic_band(
         }
     }
 
+    if let Some(cut_trace) = sim
+        .results
+        .as_ref()
+        .and_then(|results| results.cut_trace.as_ref())
+    {
+        for issue in cut_trace
+            .issues
+            .iter()
+            .filter(|issue| issue.toolpath_id == boundary.id.0)
+        {
+            let x = rect.min.x + (issue.move_index as f32 / local_total as f32) * total_width;
+            let color = match issue.kind {
+                rs_cam_core::simulation_cut::SimulationCutIssueKind::AirCut => {
+                    egui::Color32::from_rgb(255, 120, 80)
+                }
+                rs_cam_core::simulation_cut::SimulationCutIssueKind::LowEngagement => {
+                    egui::Color32::from_rgb(250, 200, 100)
+                }
+            };
+            painter.circle_filled(egui::pos2(x, rect.center().y), 2.5, color);
+        }
+    }
+
     let local_move = sim
         .playback
         .current_move
@@ -484,6 +523,35 @@ fn draw_semantic_band(
                 sim.debug.focused_hotspot = None;
                 sim.clear_pinned_semantic_item();
                 let _ = annotation_index;
+                events.push(AppEvent::SimJumpToMove(target.move_index));
+                return;
+            }
+        }
+
+        if let Some(cut_trace) = sim
+            .results
+            .as_ref()
+            .and_then(|results| results.cut_trace.as_ref())
+        {
+            let nearest_issue = cut_trace
+                .issues
+                .iter()
+                .filter(|issue| issue.toolpath_id == boundary.id.0)
+                .map(|issue| {
+                    let x =
+                        rect.min.x + (issue.move_index as f32 / local_total as f32) * total_width;
+                    (issue.clone(), (pointer.x - x).abs())
+                })
+                .filter(|(_, distance)| *distance <= 6.0)
+                .min_by(|left, right| left.1.total_cmp(&right.1));
+            if let Some((issue, _)) = nearest_issue
+                && let Some(target) = sim.trace_target_for_cut_issue(job, &issue)
+            {
+                if let Some(item_id) = target.semantic_item_id {
+                    sim.pin_semantic_item(boundary.id, item_id);
+                }
+                sim.debug.focused_issue_index = None;
+                sim.debug.focused_hotspot = None;
                 events.push(AppEvent::SimJumpToMove(target.move_index));
                 return;
             }
@@ -699,7 +767,7 @@ fn draw_semantic_drawer_item(
     }
 }
 
-fn draw_performance_drawer(
+fn draw_generation_drawer(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
     job: &JobState,
@@ -760,50 +828,6 @@ fn draw_performance_drawer(
                     .small()
                     .color(egui::Color32::from_rgb(130, 130, 145)),
             );
-        }
-    }
-
-    let runtime_hotspots = sim.runtime_hotspots(job, boundary.id, 5);
-    if !runtime_hotspots.is_empty() {
-        ui.separator();
-        ui.label(egui::RichText::new("Runtime hotspots").small().strong());
-        for hotspot in runtime_hotspots {
-            let is_active = active_semantic.is_some_and(|active| {
-                active.toolpath_id == boundary.id && active.item.id == hotspot.item_id
-            });
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(semantic_kind_label(&hotspot.kind))
-                        .small()
-                        .color(semantic_kind_color(&hotspot.kind)),
-                );
-                let response = ui.add(
-                    egui::Button::new(
-                        egui::RichText::new(format!(
-                            "{} {:.2}s",
-                            hotspot.label, hotspot.total_seconds
-                        ))
-                        .small(),
-                    )
-                    .selected(is_active),
-                );
-                if response.clicked() {
-                    sim.pin_semantic_item(boundary.id, hotspot.item_id);
-                    sim.debug.focused_issue_index = None;
-                    sim.debug.focused_hotspot = None;
-                    events.push(AppEvent::SimJumpToMove(
-                        boundary.start_move + hotspot.move_start,
-                    ));
-                }
-                ui.label(
-                    egui::RichText::new(format!(
-                        "cut {:.2}s | rapid {:.2}s",
-                        hotspot.cutting_seconds, hotspot.rapid_seconds
-                    ))
-                    .small()
-                    .color(egui::Color32::from_rgb(130, 130, 145)),
-                );
-            });
         }
     }
 
@@ -928,6 +952,320 @@ fn draw_performance_drawer(
     }
 }
 
+fn draw_cutting_drawer(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    job: &JobState,
+    current_boundary: Option<&crate::state::simulation::ToolpathBoundary>,
+    active_semantic: Option<&ActiveSemanticItem>,
+    events: &mut Vec<AppEvent>,
+) {
+    let Some(boundary) = current_boundary else {
+        ui.label("No active toolpath.");
+        return;
+    };
+    let Some(trace) = sim
+        .results
+        .as_ref()
+        .and_then(|results| results.cut_trace.clone())
+    else {
+        ui.label("Enable Capture Metrics and re-run simulation to collect cutting metrics.");
+        return;
+    };
+
+    let samples: Vec<_> = trace
+        .samples
+        .iter()
+        .filter(|sample| sample.toolpath_id == boundary.id.0)
+        .cloned()
+        .collect();
+    if samples.is_empty() {
+        ui.label("No cutting samples for the active toolpath.");
+        return;
+    }
+
+    if let Some(summary) = sim.toolpath_cut_summary(boundary.id) {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(format!("Samples: {}", summary.sample_count));
+            ui.separator();
+            ui.label(format!("Runtime: {:.2}s", summary.total_runtime_s));
+            ui.separator();
+            ui.label(format!("Cut: {:.2}s", summary.cutting_runtime_s));
+            ui.separator();
+            ui.label(format!("Rapid: {:.2}s", summary.rapid_runtime_s));
+            ui.separator();
+            ui.label(format!("Air: {:.2}s", summary.air_cut_time_s));
+            ui.separator();
+            ui.label(format!(
+                "Low engagement: {:.2}s",
+                summary.low_engagement_time_s
+            ));
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.label(format!(
+                "Avg engagement: {:.1}%",
+                summary.average_engagement * 100.0
+            ));
+            ui.separator();
+            ui.label(format!(
+                "Peak chipload: {:.4} mm/tooth",
+                summary.peak_chipload_mm_per_tooth
+            ));
+            ui.separator();
+            ui.label(format!(
+                "Peak axial DOC: {:.3} mm",
+                summary.peak_axial_doc_mm
+            ));
+            ui.separator();
+            ui.label(format!(
+                "Removed volume: {:.1} mm^3",
+                summary.total_removed_volume_est_mm3
+            ));
+            ui.separator();
+            ui.label(format!("Avg MRR: {:.1} mm^3/s", summary.average_mrr_mm3_s));
+        });
+    }
+
+    if let Some(active_sample) = sim.current_cut_sample()
+        && active_sample.toolpath_id == boundary.id
+    {
+        ui.add_space(4.0);
+        ui.label(egui::RichText::new("Active sample").small().strong());
+        ui.horizontal_wrapped(|ui| {
+            ui.label(format!(
+                "Move {} sample {}",
+                active_sample.sample.move_index, active_sample.sample.sample_index
+            ));
+            ui.separator();
+            ui.label(format!(
+                "t = {:.2}s",
+                active_sample.sample.cumulative_time_s
+            ));
+            ui.separator();
+            ui.label(if active_sample.sample.is_cutting {
+                "Cutting"
+            } else {
+                "Rapid"
+            });
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.label(format!(
+                "Engagement {:.1}%",
+                active_sample.sample.radial_engagement * 100.0
+            ));
+            ui.separator();
+            ui.label(format!(
+                "Axial DOC {:.3} mm",
+                active_sample.sample.axial_doc_mm
+            ));
+            ui.separator();
+            ui.label(format!(
+                "Chipload {:.4} mm/tooth",
+                active_sample.sample.chipload_mm_per_tooth
+            ));
+            ui.separator();
+            ui.label(format!("MRR {:.1} mm^3/s", active_sample.sample.mrr_mm3_s));
+        });
+    }
+
+    if let Some(active_semantic) = active_semantic
+        && active_semantic.toolpath_id == boundary.id
+        && let Some(summary) = sim.semantic_cut_summary(boundary.id, active_semantic.item.id)
+    {
+        ui.add_space(4.0);
+        ui.label(egui::RichText::new("Active semantic item").small().strong());
+        ui.horizontal_wrapped(|ui| {
+            ui.label(format!(
+                "{} ({})",
+                active_semantic.item.label,
+                semantic_kind_label(&active_semantic.item.kind)
+            ));
+            ui.separator();
+            ui.label(format!("moves {}-{}", summary.move_start, summary.move_end));
+            ui.separator();
+            ui.label(format!("wasted {:.2}s", summary.wasted_runtime_s));
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.label(format!(
+                "Avg engage {:.1}% | peak {:.1}%",
+                summary.average_engagement * 100.0,
+                summary.peak_engagement * 100.0
+            ));
+            ui.separator();
+            ui.label(format!(
+                "Avg MRR {:.1} | peak MRR {:.1}",
+                summary.average_mrr_mm3_s, summary.peak_mrr_mm3_s
+            ));
+            ui.separator();
+            ui.label(format!(
+                "Air {:.2}s / {} | low {:.2}s / {}",
+                summary.air_cut_time_s,
+                summary.air_cut_issue_count,
+                summary.low_engagement_time_s,
+                summary.low_engagement_issue_count
+            ));
+        });
+    }
+
+    let worst_items = sim.cut_worst_items(boundary.id, 6);
+    if !worst_items.is_empty() {
+        ui.separator();
+        ui.label(egui::RichText::new("Worst items").small().strong());
+        for item in worst_items {
+            let is_active = active_semantic.is_some_and(|active| {
+                active.toolpath_id == boundary.id && active.item.id == item.semantic_item_id
+            });
+            ui.horizontal(|ui| {
+                let response = ui.add(
+                    egui::Button::new(
+                        egui::RichText::new(format!(
+                            "{} | wasted {:.2}s | MRR {:.1}",
+                            item.label, item.wasted_runtime_s, item.average_mrr_mm3_s
+                        ))
+                        .small(),
+                    )
+                    .selected(is_active),
+                );
+                if response.clicked()
+                    && let Some(target) =
+                        sim.trace_target_for_item(job, boundary.id, item.semantic_item_id, false)
+                {
+                    sim.pin_semantic_item(boundary.id, item.semantic_item_id);
+                    sim.debug.focused_issue_index = None;
+                    sim.debug.focused_hotspot = None;
+                    events.push(AppEvent::SimJumpToMove(target.move_index));
+                }
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{:.1}% engage | air {:.2}s | low {:.2}s",
+                        item.average_engagement * 100.0,
+                        item.air_cut_time_s,
+                        item.low_engagement_time_s
+                    ))
+                    .small()
+                    .color(egui::Color32::from_rgb(130, 130, 145)),
+                );
+            });
+        }
+    }
+
+    let toolpath_issues: Vec<_> = trace
+        .issues
+        .iter()
+        .filter(|issue| issue.toolpath_id == boundary.id.0)
+        .cloned()
+        .collect();
+    if !toolpath_issues.is_empty() {
+        ui.separator();
+        ui.label(egui::RichText::new("Cutting issues").small().strong());
+        for issue in toolpath_issues.iter().take(6) {
+            let response = ui.add(
+                egui::Button::new(
+                    egui::RichText::new(format!(
+                        "{} @ {:.2}s ({:.1}%)",
+                        issue.label,
+                        issue.cumulative_time_s,
+                        issue.radial_engagement * 100.0
+                    ))
+                    .small(),
+                )
+                .selected(sim.current_issue(job).as_ref().is_some_and(|current| {
+                    current.toolpath_id == Some(boundary.id)
+                        && current.move_index == boundary.start_move + issue.move_index
+                        && current.kind == match issue.kind {
+                            rs_cam_core::simulation_cut::SimulationCutIssueKind::AirCut => {
+                                crate::state::simulation::SimulationIssueKind::AirCut
+                            }
+                            rs_cam_core::simulation_cut::SimulationCutIssueKind::LowEngagement => {
+                                crate::state::simulation::SimulationIssueKind::LowEngagement
+                            }
+                        }
+                })),
+            );
+            if response.clicked()
+                && let Some(target) = sim.trace_target_for_cut_issue(job, issue)
+            {
+                if let Some(item_id) = target.semantic_item_id {
+                    sim.pin_semantic_item(boundary.id, item_id);
+                }
+                sim.debug.focused_hotspot = None;
+                sim.debug.focused_issue_index = None;
+                events.push(AppEvent::SimJumpToMove(target.move_index));
+            }
+        }
+    }
+
+    let cut_hotspots = sim.cut_hotspots(boundary.id, 5);
+    if !cut_hotspots.is_empty() {
+        ui.separator();
+        ui.label(egui::RichText::new("Runtime hotspots").small().strong());
+        for hotspot in cut_hotspots {
+            let is_active =
+                hotspot
+                    .semantic_item_id
+                    .zip(active_semantic)
+                    .is_some_and(|(item_id, active)| {
+                        active.toolpath_id == boundary.id && active.item.id == item_id
+                    });
+            ui.horizontal(|ui| {
+                let response = ui.add(
+                    egui::Button::new(
+                        egui::RichText::new(format!(
+                            "{} | wasted {:.2}s | total {:.2}s",
+                            cut_hotspot_label(job, boundary.id, &hotspot),
+                            hotspot.wasted_runtime_s,
+                            hotspot.total_runtime_s
+                        ))
+                        .small(),
+                    )
+                    .selected(is_active),
+                );
+                if response.clicked() {
+                    if let Some(item_id) = hotspot.semantic_item_id {
+                        sim.pin_semantic_item(boundary.id, item_id);
+                    }
+                    sim.debug.focused_issue_index = None;
+                    sim.debug.focused_hotspot = None;
+                    events.push(AppEvent::SimJumpToMove(
+                        boundary.start_move + hotspot.move_start,
+                    ));
+                }
+                ui.label(
+                    egui::RichText::new(format!(
+                        "air {:.2}s | low {:.2}s | MRR {:.1}",
+                        hotspot.air_cut_time_s,
+                        hotspot.low_engagement_time_s,
+                        hotspot.average_mrr_mm3_s
+                    ))
+                    .small()
+                    .color(egui::Color32::from_rgb(130, 130, 145)),
+                );
+            });
+        }
+    }
+
+    ui.separator();
+    ui.label(egui::RichText::new("Time series").small().strong());
+    let engagement_points =
+        decimate_plot_points(&samples, 300, |sample| sample.radial_engagement * 100.0);
+    let chipload_points =
+        decimate_plot_points(&samples, 300, |sample| sample.chipload_mm_per_tooth);
+    let axial_doc_points = decimate_plot_points(&samples, 300, |sample| sample.axial_doc_mm);
+    let mrr_points = decimate_plot_points(&samples, 300, |sample| sample.mrr_mm3_s);
+    let bars = runtime_breakdown_bars(sim, boundary.id);
+
+    Plot::new("cutting_metrics_plot")
+        .height(210.0)
+        .legend(Legend::default())
+        .show(ui, |plot_ui| {
+            plot_ui.line(Line::new(engagement_points).name("Engagement %"));
+            plot_ui.line(Line::new(chipload_points).name("Chipload"));
+            plot_ui.line(Line::new(axial_doc_points).name("Axial DOC"));
+            plot_ui.line(Line::new(mrr_points).name("MRR"));
+            plot_ui.bar_chart(BarChart::new(bars).name("Runtime"));
+        });
+}
+
 fn draw_trace_drawer(
     ui: &mut egui::Ui,
     sim: &SimulationState,
@@ -974,6 +1312,25 @@ fn draw_trace_drawer(
             debug_trace.annotations.len()
         ));
     }
+    if let Some(results) = sim.results.as_ref() {
+        if let Some(path) = &results.cut_trace_path {
+            ui.label("Cut trace artifact:");
+            ui.label(
+                egui::RichText::new(path.display().to_string())
+                    .small()
+                    .monospace()
+                    .color(egui::Color32::from_rgb(120, 210, 150)),
+            );
+        }
+        if let Some(cut_trace) = results.cut_trace.as_ref() {
+            ui.label(format!(
+                "Cut samples: {} | cut issues: {} | cut hotspots: {}",
+                cut_trace.samples.len(),
+                cut_trace.issues.len(),
+                cut_trace.hotspots.len()
+            ));
+        }
+    }
 
     if let Some(target) = sim.debug.pending_inspect_toolpath {
         ui.label(
@@ -982,4 +1339,60 @@ fn draw_trace_drawer(
                 .color(egui::Color32::from_rgb(220, 180, 90)),
         );
     }
+}
+
+fn cut_hotspot_label(
+    job: &JobState,
+    toolpath_id: crate::state::toolpath::ToolpathId,
+    hotspot: &rs_cam_core::simulation_cut::SimulationCutHotspot,
+) -> String {
+    job.find_toolpath(toolpath_id)
+        .and_then(|toolpath| toolpath.semantic_trace.as_ref())
+        .and_then(|trace| {
+            hotspot.semantic_item_id.and_then(|item_id| {
+                trace
+                    .items
+                    .iter()
+                    .find(|item| item.id == item_id)
+                    .map(|item| item.label.clone())
+            })
+        })
+        .unwrap_or_else(|| format!("Moves {}..{}", hotspot.move_start, hotspot.move_end))
+}
+
+fn decimate_plot_points(
+    samples: &[rs_cam_core::simulation_cut::SimulationCutSample],
+    max_points: usize,
+    value_fn: impl Fn(&rs_cam_core::simulation_cut::SimulationCutSample) -> f64,
+) -> PlotPoints {
+    if samples.is_empty() {
+        return PlotPoints::from(Vec::<[f64; 2]>::new());
+    }
+    let stride = ((samples.len() as f64 / max_points.max(1) as f64).ceil() as usize).max(1);
+    let mut points = Vec::with_capacity(samples.len().div_ceil(stride));
+    for sample in samples.iter().step_by(stride) {
+        points.push([sample.cumulative_time_s, value_fn(sample)]);
+    }
+    if let Some(last) = samples.last() {
+        let last_point = [last.cumulative_time_s, value_fn(last)];
+        if points.last().copied() != Some(last_point) {
+            points.push(last_point);
+        }
+    }
+    PlotPoints::from(points)
+}
+
+fn runtime_breakdown_bars(
+    sim: &SimulationState,
+    toolpath_id: crate::state::toolpath::ToolpathId,
+) -> Vec<Bar> {
+    let Some(summary) = sim.toolpath_cut_summary(toolpath_id) else {
+        return Vec::new();
+    };
+    vec![
+        Bar::new(0.0, summary.cutting_runtime_s).name("Cutting"),
+        Bar::new(1.0, summary.rapid_runtime_s).name("Rapid"),
+        Bar::new(2.0, summary.air_cut_time_s).name("Air"),
+        Bar::new(3.0, summary.low_engagement_time_s).name("Low engage"),
+    ]
 }

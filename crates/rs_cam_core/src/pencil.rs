@@ -18,6 +18,7 @@ use std::collections::HashMap;
 
 use tracing::info;
 
+use crate::debug_trace::ToolpathDebugContext;
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::P3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
@@ -49,6 +50,54 @@ pub struct PencilParams {
     pub safe_z: f64,
     /// Stock to leave on the surface (mm).
     pub stock_to_leave: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PencilRuntimeEvent {
+    OffsetPass {
+        chain_index: usize,
+        chain_total: usize,
+        offset_index: usize,
+        offset_total: usize,
+        offset_mm: f64,
+        is_centerline: bool,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PencilRuntimeAnnotation {
+    pub move_index: usize,
+    pub event: PencilRuntimeEvent,
+}
+
+impl PencilRuntimeEvent {
+    pub fn label(&self) -> String {
+        match self {
+            Self::OffsetPass {
+                chain_index,
+                offset_index,
+                is_centerline,
+                ..
+            } => {
+                if *is_centerline {
+                    format!("Chain {chain_index} centerline")
+                } else {
+                    format!("Chain {chain_index} offset pass {offset_index}")
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+struct PencilPath {
+    points: Vec<P3>,
+    chain_index: usize,
+    chain_total: usize,
+    offset_index: usize,
+    offset_total: usize,
+    offset_mm: f64,
+    is_centerline: bool,
 }
 
 /// A single mesh edge identified by sorted vertex indices.
@@ -418,21 +467,21 @@ fn lift_to_surface(
 }
 
 /// Order chains by nearest-neighbor to minimize rapids.
-fn order_chains_nearest(chains: &mut [Vec<P3>]) {
-    if chains.len() <= 1 {
+fn order_paths_nearest(paths: &mut [PencilPath]) {
+    if paths.len() <= 1 {
         return;
     }
 
-    let mut ordered_indices = Vec::with_capacity(chains.len());
-    let mut used = vec![false; chains.len()];
+    let mut ordered_indices = Vec::with_capacity(paths.len());
+    let mut used = vec![false; paths.len()];
 
     // Start with first chain
     ordered_indices.push(0);
     used[0] = true;
 
-    for _ in 1..chains.len() {
-        let last_chain = &chains[ordered_indices[ordered_indices.len() - 1]];
-        let last_pt = if let Some(p) = last_chain.last() {
+    for _ in 1..paths.len() {
+        let last_path = &paths[ordered_indices[ordered_indices.len() - 1]];
+        let last_pt = if let Some(p) = last_path.points.last() {
             *p
         } else {
             continue;
@@ -441,18 +490,18 @@ fn order_chains_nearest(chains: &mut [Vec<P3>]) {
         let mut best_idx = 0;
         let mut best_dist = f64::MAX;
 
-        for (i, chain) in chains.iter().enumerate() {
-            if used[i] || chain.is_empty() {
+        for (i, path) in paths.iter().enumerate() {
+            if used[i] || path.points.is_empty() {
                 continue;
             }
             // Check distance to start and end of candidate chain
             let d_start = {
-                let p = chain[0];
+                let p = path.points[0];
                 let dx = p.x - last_pt.x;
                 let dy = p.y - last_pt.y;
                 dx * dx + dy * dy
             };
-            let d_end = if let Some(p) = chain.last() {
+            let d_end = if let Some(p) = path.points.last() {
                 let dx = p.x - last_pt.x;
                 let dy = p.y - last_pt.y;
                 dx * dx + dy * dy
@@ -468,13 +517,13 @@ fn order_chains_nearest(chains: &mut [Vec<P3>]) {
         }
 
         // If end is closer than start, reverse the chain
-        if !chains[best_idx].is_empty() {
-            let start_pt = chains[best_idx][0];
-            let end_pt = chains[best_idx][chains[best_idx].len() - 1];
+        if !paths[best_idx].points.is_empty() {
+            let start_pt = paths[best_idx].points[0];
+            let end_pt = paths[best_idx].points[paths[best_idx].points.len() - 1];
             let d_start = (start_pt.x - last_pt.x).powi(2) + (start_pt.y - last_pt.y).powi(2);
             let d_end = (end_pt.x - last_pt.x).powi(2) + (end_pt.y - last_pt.y).powi(2);
             if d_end < d_start {
-                chains[best_idx].reverse();
+                paths[best_idx].points.reverse();
             }
         }
 
@@ -483,12 +532,25 @@ fn order_chains_nearest(chains: &mut [Vec<P3>]) {
     }
 
     // Reorder chains in-place using the ordering
-    let mut temp: Vec<Vec<P3>> = ordered_indices
+    let mut temp: Vec<PencilPath> = ordered_indices
         .into_iter()
-        .map(|i| std::mem::take(&mut chains[i]))
+        .map(|i| {
+            std::mem::replace(
+                &mut paths[i],
+                PencilPath {
+                    points: Vec::new(),
+                    chain_index: 0,
+                    chain_total: 0,
+                    offset_index: 0,
+                    offset_total: 0,
+                    offset_mm: 0.0,
+                    is_centerline: false,
+                },
+            )
+        })
         .collect();
-    for (i, chain) in temp.drain(..).enumerate() {
-        chains[i] = chain;
+    for (i, path) in temp.drain(..).enumerate() {
+        paths[i] = path;
     }
 }
 
@@ -502,7 +564,26 @@ pub fn pencil_toolpath(
     cutter: &dyn MillingCutter,
     params: &PencilParams,
 ) -> Toolpath {
+    let (tp, _) = pencil_toolpath_structured_annotated(mesh, index, cutter, params, None);
+    tp
+}
+
+fn runtime_annotations_to_labels(annotations: &[PencilRuntimeAnnotation]) -> Vec<(usize, String)> {
+    annotations
+        .iter()
+        .map(|annotation| (annotation.move_index, annotation.event.label()))
+        .collect()
+}
+
+pub fn pencil_toolpath_structured_annotated(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &PencilParams,
+    debug: Option<&ToolpathDebugContext>,
+) -> (Toolpath, Vec<PencilRuntimeAnnotation>) {
     let mut tp = Toolpath::new();
+    let mut annotations = Vec::new();
 
     // Step 1: Build edge adjacency
     let edge_map = build_edge_adjacency(mesh);
@@ -522,7 +603,7 @@ pub fn pencil_toolpath(
             "No concave edges found below {:.0}° threshold",
             params.bitangency_angle
         );
-        return tp;
+        return (tp, annotations);
     }
 
     info!(
@@ -543,23 +624,34 @@ pub fn pencil_toolpath(
             "No chains above minimum length {:.1}mm",
             params.min_cut_length
         );
-        return tp;
+        return (tp, annotations);
     }
 
     info!(chains = chains.len(), "Chained concave edges");
 
     // Step 5: Sample points along each chain
-    let mut all_paths: Vec<Vec<P3>> = Vec::new();
+    let chain_total = chains.len();
+    let mut all_paths: Vec<PencilPath> = Vec::new();
 
-    for chain in &chains {
+    for (chain_index, chain) in chains.iter().enumerate() {
         let sampled = sample_chain(mesh, chain, params.sampling);
         if sampled.len() < 2 {
             continue;
         }
 
+        let offset_total = 1 + params.num_offset_passes * 2;
+
         // Lift centerline to surface
         let centerline = lift_to_surface(&sampled, mesh, index, cutter, params.stock_to_leave);
-        all_paths.push(centerline.clone());
+        all_paths.push(PencilPath {
+            points: centerline,
+            chain_index: chain_index + 1,
+            chain_total,
+            offset_index: 1,
+            offset_total,
+            offset_mm: 0.0,
+            is_centerline: true,
+        });
 
         // Generate offset passes
         for pass_num in 1..=params.num_offset_passes {
@@ -568,26 +660,43 @@ pub fn pencil_toolpath(
             // Positive offset (left side)
             let left = offset_polyline(&sampled, offset);
             let left_lifted = lift_to_surface(&left, mesh, index, cutter, params.stock_to_leave);
-            all_paths.push(left_lifted);
+            all_paths.push(PencilPath {
+                points: left_lifted,
+                chain_index: chain_index + 1,
+                chain_total,
+                offset_index: pass_num * 2,
+                offset_total,
+                offset_mm: offset,
+                is_centerline: false,
+            });
 
             // Negative offset (right side)
             let right = offset_polyline(&sampled, -offset);
             let right_lifted = lift_to_surface(&right, mesh, index, cutter, params.stock_to_leave);
-            all_paths.push(right_lifted);
+            all_paths.push(PencilPath {
+                points: right_lifted,
+                chain_index: chain_index + 1,
+                chain_total,
+                offset_index: pass_num * 2 + 1,
+                offset_total,
+                offset_mm: -offset,
+                is_centerline: false,
+            });
         }
     }
 
     // Step 6: Order paths by nearest-neighbor
-    order_chains_nearest(&mut all_paths);
+    order_paths_nearest(&mut all_paths);
 
     // Step 7: Emit toolpath
     for path in &all_paths {
-        if path.len() < 2 {
+        if path.points.len() < 2 {
             continue;
         }
 
         // Filter out points where drop-cutter had no contact
         let valid_points: Vec<P3> = path
+            .points
             .iter()
             .filter(|p| p.z > f64::NEG_INFINITY + 1.0)
             .copied()
@@ -597,12 +706,30 @@ pub fn pencil_toolpath(
             continue;
         }
 
+        let move_index = tp.moves.len();
         tp.emit_path_segment(
             &valid_points,
             params.safe_z,
             params.feed_rate,
             params.plunge_rate,
         );
+        annotations.push(PencilRuntimeAnnotation {
+            move_index,
+            event: PencilRuntimeEvent::OffsetPass {
+                chain_index: path.chain_index,
+                chain_total: path.chain_total,
+                offset_index: path.offset_index,
+                offset_total: path.offset_total,
+                offset_mm: path.offset_mm,
+                is_centerline: path.is_centerline,
+            },
+        });
+    }
+
+    if let Some(debug_ctx) = debug {
+        for annotation in &annotations {
+            debug_ctx.add_annotation(annotation.move_index, annotation.event.label());
+        }
     }
 
     info!(
@@ -612,7 +739,19 @@ pub fn pencil_toolpath(
         "Pencil toolpath complete"
     );
 
-    tp
+    (tp, annotations)
+}
+
+pub fn pencil_toolpath_annotated(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &PencilParams,
+    debug: Option<&ToolpathDebugContext>,
+) -> (Toolpath, Vec<(usize, String)>) {
+    let (tp, annotations) =
+        pencil_toolpath_structured_annotated(mesh, index, cutter, params, debug);
+    (tp, runtime_annotations_to_labels(&annotations))
 }
 
 #[cfg(test)]

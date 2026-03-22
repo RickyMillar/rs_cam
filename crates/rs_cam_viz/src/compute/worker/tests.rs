@@ -1,7 +1,7 @@
 use super::*;
 use crate::compute::{ComputeBackend, ComputeLane, ComputeMessage, LaneState};
 use rs_cam_core::geo::P3;
-use rs_cam_core::mesh::make_test_flat;
+use rs_cam_core::mesh::{make_test_flat, make_test_hemisphere};
 use rs_cam_core::toolpath::Toolpath;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -208,6 +208,339 @@ fn adaptive3d_request(id: usize) -> ComputeRequest {
     }
 }
 
+fn adaptive_request(id: usize) -> ComputeRequest {
+    let mut request = quick_pocket_request(id);
+    request.toolpath_name = format!("Adaptive {id}");
+    request.operation = OperationConfig::new_default(OperationType::Adaptive);
+    request
+}
+
+fn profile_request(id: usize) -> ComputeRequest {
+    let mut request = quick_pocket_request(id);
+    request.toolpath_name = format!("Profile {id}");
+    let mut cfg = match OperationConfig::new_default(OperationType::Profile) {
+        OperationConfig::Profile(cfg) => cfg,
+        _ => unreachable!("default op kind mismatch"),
+    };
+    cfg.finishing_passes = 1;
+    cfg.tab_count = 2;
+    request.operation = OperationConfig::Profile(cfg);
+    request
+}
+
+fn drill_request(id: usize) -> ComputeRequest {
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut cfg = match OperationConfig::new_default(OperationType::Drill) {
+        OperationConfig::Drill(cfg) => cfg,
+        _ => unreachable!("default op kind mismatch"),
+    };
+    cfg.cycle = crate::state::toolpath::DrillCycleType::Peck;
+    ComputeRequest {
+        toolpath_id: ToolpathId(id),
+        toolpath_name: format!("Drill {id}"),
+        polygons: Some(Arc::new(vec![
+            Polygon2::rectangle(-10.0, -10.0, -6.0, -6.0),
+            Polygon2::rectangle(6.0, 6.0, 10.0, 10.0),
+        ])),
+        mesh: None,
+        operation: OperationConfig::Drill(cfg),
+        dressups: DressupConfig::default(),
+        stock_source: StockSource::Fresh,
+        tool,
+        safe_z: 10.0,
+        prev_tool_radius: None,
+        stock_bbox: Some(BoundingBox3 {
+            min: P3::new(-20.0, -20.0, -15.0),
+            max: P3::new(20.0, 20.0, 10.0),
+        }),
+        boundary_enabled: false,
+        boundary_containment: BoundaryContainment::Center,
+        keep_out_footprints: Vec::new(),
+        heights: HeightsConfig::default().resolve(10.0, 5.0),
+        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+    }
+}
+
+fn steep_shallow_request(id: usize) -> ComputeRequest {
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    let mesh = make_test_hemisphere(20.0, 16);
+    ComputeRequest {
+        toolpath_id: ToolpathId(id),
+        toolpath_name: format!("SteepShallow {id}"),
+        polygons: None,
+        mesh: Some(Arc::new(mesh)),
+        operation: OperationConfig::new_default(OperationType::SteepShallow),
+        dressups: DressupConfig::default(),
+        stock_source: StockSource::Fresh,
+        tool,
+        safe_z: 10.0,
+        prev_tool_radius: None,
+        stock_bbox: Some(BoundingBox3 {
+            min: P3::new(-20.0, -20.0, -20.0),
+            max: P3::new(20.0, 20.0, 20.0),
+        }),
+        boundary_enabled: false,
+        boundary_containment: BoundaryContainment::Center,
+        keep_out_footprints: Vec::new(),
+        heights: HeightsConfig::default().resolve(10.0, 5.0),
+        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+    }
+}
+
+fn make_v_groove_mesh(length: f64, depth: f64, width: f64) -> TriangleMesh {
+    TriangleMesh::from_raw(
+        vec![
+            P3::new(0.0, -width, 0.0),
+            P3::new(length, -width, 0.0),
+            P3::new(0.0, 0.0, -depth),
+            P3::new(length, 0.0, -depth),
+            P3::new(0.0, width, 0.0),
+            P3::new(length, width, 0.0),
+        ],
+        vec![[0, 2, 1], [1, 2, 3], [2, 4, 3], [3, 4, 5]],
+    )
+}
+
+fn pencil_request(id: usize) -> ComputeRequest {
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    ComputeRequest {
+        toolpath_id: ToolpathId(id),
+        toolpath_name: format!("Pencil {id}"),
+        polygons: None,
+        mesh: Some(Arc::new(make_v_groove_mesh(40.0, 6.0, 12.0))),
+        operation: OperationConfig::new_default(OperationType::Pencil),
+        dressups: DressupConfig::default(),
+        stock_source: StockSource::Fresh,
+        tool,
+        safe_z: 10.0,
+        prev_tool_radius: None,
+        stock_bbox: Some(BoundingBox3 {
+            min: P3::new(0.0, -15.0, -10.0),
+            max: P3::new(40.0, 15.0, 10.0),
+        }),
+        boundary_enabled: false,
+        boundary_containment: BoundaryContainment::Center,
+        keep_out_footprints: Vec::new(),
+        heights: HeightsConfig::default().resolve(10.0, 5.0),
+        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+    }
+}
+
+fn scallop_request(id: usize) -> ComputeRequest {
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    let mut cfg = match OperationConfig::new_default(OperationType::Scallop) {
+        OperationConfig::Scallop(cfg) => cfg,
+        _ => unreachable!("default op kind mismatch"),
+    };
+    cfg.continuous = true;
+    cfg.scallop_height = 0.2;
+    cfg.tolerance = 0.2;
+    ComputeRequest {
+        toolpath_id: ToolpathId(id),
+        toolpath_name: format!("Scallop {id}"),
+        polygons: None,
+        mesh: Some(Arc::new(make_test_hemisphere(20.0, 16))),
+        operation: OperationConfig::Scallop(cfg),
+        dressups: DressupConfig::default(),
+        stock_source: StockSource::Fresh,
+        tool,
+        safe_z: 20.0,
+        prev_tool_radius: None,
+        stock_bbox: Some(BoundingBox3 {
+            min: P3::new(-25.0, -25.0, -5.0),
+            max: P3::new(25.0, 25.0, 25.0),
+        }),
+        boundary_enabled: false,
+        boundary_containment: BoundaryContainment::Center,
+        keep_out_footprints: Vec::new(),
+        heights: HeightsConfig::default().resolve(20.0, 5.0),
+        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+    }
+}
+
+fn ramp_finish_request(id: usize) -> ComputeRequest {
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    let mut cfg = match OperationConfig::new_default(OperationType::RampFinish) {
+        OperationConfig::RampFinish(cfg) => cfg,
+        _ => unreachable!("default op kind mismatch"),
+    };
+    cfg.max_stepdown = 2.0;
+    cfg.sampling = 2.0;
+    cfg.tolerance = 0.2;
+    ComputeRequest {
+        toolpath_id: ToolpathId(id),
+        toolpath_name: format!("Ramp finish {id}"),
+        polygons: None,
+        mesh: Some(Arc::new(make_test_hemisphere(20.0, 16))),
+        operation: OperationConfig::RampFinish(cfg),
+        dressups: DressupConfig::default(),
+        stock_source: StockSource::Fresh,
+        tool,
+        safe_z: 20.0,
+        prev_tool_radius: None,
+        stock_bbox: Some(BoundingBox3 {
+            min: P3::new(-25.0, -25.0, -5.0),
+            max: P3::new(25.0, 25.0, 25.0),
+        }),
+        boundary_enabled: false,
+        boundary_containment: BoundaryContainment::Center,
+        keep_out_footprints: Vec::new(),
+        heights: HeightsConfig::default().resolve(20.0, 5.0),
+        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+    }
+}
+
+fn spiral_finish_request(id: usize) -> ComputeRequest {
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    let mut cfg = match OperationConfig::new_default(OperationType::SpiralFinish) {
+        OperationConfig::SpiralFinish(cfg) => cfg,
+        _ => unreachable!("default op kind mismatch"),
+    };
+    cfg.stepover = 2.0;
+    ComputeRequest {
+        toolpath_id: ToolpathId(id),
+        toolpath_name: format!("Spiral finish {id}"),
+        polygons: None,
+        mesh: Some(Arc::new(make_test_hemisphere(20.0, 16))),
+        operation: OperationConfig::SpiralFinish(cfg),
+        dressups: DressupConfig::default(),
+        stock_source: StockSource::Fresh,
+        tool,
+        safe_z: 20.0,
+        prev_tool_radius: None,
+        stock_bbox: Some(BoundingBox3 {
+            min: P3::new(-25.0, -25.0, -5.0),
+            max: P3::new(25.0, 25.0, 25.0),
+        }),
+        boundary_enabled: false,
+        boundary_containment: BoundaryContainment::Center,
+        keep_out_footprints: Vec::new(),
+        heights: HeightsConfig::default().resolve(20.0, 5.0),
+        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+    }
+}
+
+fn radial_finish_request(id: usize) -> ComputeRequest {
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    let mut cfg = match OperationConfig::new_default(OperationType::RadialFinish) {
+        OperationConfig::RadialFinish(cfg) => cfg,
+        _ => unreachable!("default op kind mismatch"),
+    };
+    cfg.angular_step = 30.0;
+    cfg.point_spacing = 2.0;
+    ComputeRequest {
+        toolpath_id: ToolpathId(id),
+        toolpath_name: format!("Radial finish {id}"),
+        polygons: None,
+        mesh: Some(Arc::new(make_test_flat(80.0))),
+        operation: OperationConfig::RadialFinish(cfg),
+        dressups: DressupConfig::default(),
+        stock_source: StockSource::Fresh,
+        tool,
+        safe_z: 15.0,
+        prev_tool_radius: None,
+        stock_bbox: Some(BoundingBox3 {
+            min: P3::new(-40.0, -40.0, -5.0),
+            max: P3::new(40.0, 40.0, 15.0),
+        }),
+        boundary_enabled: false,
+        boundary_containment: BoundaryContainment::Center,
+        keep_out_footprints: Vec::new(),
+        heights: HeightsConfig::default().resolve(15.0, 5.0),
+        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+    }
+}
+
+fn horizontal_finish_request(id: usize) -> ComputeRequest {
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    let mut cfg = match OperationConfig::new_default(OperationType::HorizontalFinish) {
+        OperationConfig::HorizontalFinish(cfg) => cfg,
+        _ => unreachable!("default op kind mismatch"),
+    };
+    cfg.stepover = 3.0;
+    ComputeRequest {
+        toolpath_id: ToolpathId(id),
+        toolpath_name: format!("Horizontal finish {id}"),
+        polygons: None,
+        mesh: Some(Arc::new(make_test_flat(80.0))),
+        operation: OperationConfig::HorizontalFinish(cfg),
+        dressups: DressupConfig::default(),
+        stock_source: StockSource::Fresh,
+        tool,
+        safe_z: 15.0,
+        prev_tool_radius: None,
+        stock_bbox: Some(BoundingBox3 {
+            min: P3::new(-40.0, -40.0, -5.0),
+            max: P3::new(40.0, 40.0, 15.0),
+        }),
+        boundary_enabled: false,
+        boundary_containment: BoundaryContainment::Center,
+        keep_out_footprints: Vec::new(),
+        heights: HeightsConfig::default().resolve(15.0, 5.0),
+        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+    }
+}
+
+fn project_curve_request(id: usize) -> ComputeRequest {
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    let mut cfg = match OperationConfig::new_default(OperationType::ProjectCurve) {
+        OperationConfig::ProjectCurve(cfg) => cfg,
+        _ => unreachable!("default op kind mismatch"),
+    };
+    cfg.depth = 0.75;
+    cfg.point_spacing = 1.0;
+    ComputeRequest {
+        toolpath_id: ToolpathId(id),
+        toolpath_name: format!("Project curve {id}"),
+        polygons: Some(Arc::new(vec![
+            Polygon2::rectangle(-12.0, -12.0, 12.0, 12.0),
+            Polygon2::rectangle(-6.0, -4.0, 6.0, 4.0),
+        ])),
+        mesh: Some(Arc::new(make_test_hemisphere(20.0, 16))),
+        operation: OperationConfig::ProjectCurve(cfg),
+        dressups: DressupConfig::default(),
+        stock_source: StockSource::Fresh,
+        tool,
+        safe_z: 15.0,
+        prev_tool_radius: None,
+        stock_bbox: Some(BoundingBox3 {
+            min: P3::new(-25.0, -25.0, -5.0),
+            max: P3::new(25.0, 25.0, 25.0),
+        }),
+        boundary_enabled: false,
+        boundary_containment: BoundaryContainment::Center,
+        keep_out_footprints: Vec::new(),
+        heights: HeightsConfig::default().resolve(15.0, 5.0),
+        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+    }
+}
+
+fn assert_cutting_moves_are_semantically_covered(result: &ToolpathResult) {
+    let semantic_trace = result
+        .semantic_trace
+        .as_ref()
+        .expect("semantic trace should be attached");
+    for (move_idx, mv) in result.toolpath.moves.iter().enumerate() {
+        let is_cut = matches!(
+            mv.move_type,
+            rs_cam_core::toolpath::MoveType::Linear { .. }
+                | rs_cam_core::toolpath::MoveType::ArcCW { .. }
+                | rs_cam_core::toolpath::MoveType::ArcCCW { .. }
+        );
+        if !is_cut {
+            continue;
+        }
+        assert!(
+            semantic_trace.items.iter().any(|item| {
+                item.kind != rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation
+                    && item.move_start.is_some_and(|start| start <= move_idx)
+                    && item.move_end.is_some_and(|end| move_idx <= end)
+            }),
+            "expected move {move_idx} to be covered by a non-root semantic item"
+        );
+    }
+}
+
 fn long_simulation_request() -> SimulationRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     let mut toolpath = Toolpath::new();
@@ -220,12 +553,13 @@ fn long_simulation_request() -> SimulationRequest {
 
     SimulationRequest {
         groups: vec![SetupSimGroup {
-            toolpaths: vec![(
-                ToolpathId(99),
-                "Long Sim".to_string(),
-                Arc::new(toolpath),
+            toolpaths: vec![SetupSimToolpath {
+                id: ToolpathId(99),
+                name: "Long Sim".to_string(),
+                toolpath: Arc::new(toolpath),
                 tool,
-            )],
+                semantic_trace: None,
+            }],
             direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
         }],
         stock_bbox: BoundingBox3 {
@@ -234,8 +568,63 @@ fn long_simulation_request() -> SimulationRequest {
         },
         stock_top_z: 10.0,
         resolution: 0.5,
+        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions::default(),
+        spindle_rpm: 18_000,
+        rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
     }
+}
+
+fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut toolpath = Toolpath::new();
+    toolpath.rapid_to(P3::new(2.0, 2.0, 8.0));
+    toolpath.feed_to(P3::new(2.0, 2.0, 4.0), 400.0);
+    toolpath.feed_to(P3::new(12.0, 2.0, 4.0), 400.0);
+    toolpath.rapid_to(P3::new(12.0, 2.0, 8.0));
+
+    SimulationRequest {
+        groups: vec![SetupSimGroup {
+            toolpaths: vec![SetupSimToolpath {
+                id: ToolpathId(1),
+                name: "Metrics".to_string(),
+                toolpath: Arc::new(toolpath),
+                tool,
+                semantic_trace: None,
+            }],
+            direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+        }],
+        stock_bbox: BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(20.0, 20.0, 10.0),
+        },
+        stock_top_z: 10.0,
+        resolution: 0.5,
+        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions { enabled },
+        spindle_rpm: 18_000,
+        rapid_feed_mm_min: 5_000.0,
+        model_mesh: None,
+    }
+}
+
+fn small_simulation_request_with_semantic_metrics(enabled: bool) -> SimulationRequest {
+    let mut req = small_simulation_request_with_metrics(enabled);
+    let recorder = rs_cam_core::semantic_trace::ToolpathSemanticRecorder::new("Metrics", "Metrics");
+    let root = recorder.root_context();
+    let op = root.start_item(
+        rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation,
+        "Metrics",
+    );
+    let pass = op.context().start_item(
+        rs_cam_core::semantic_trace::ToolpathSemanticKind::Pass,
+        "Pass 1",
+    );
+    if let Some(toolpath) = req.groups.first().and_then(|group| group.toolpaths.first()) {
+        pass.bind_to_toolpath(&toolpath.toolpath, 0, toolpath.toolpath.moves.len());
+    }
+    let semantic_trace = Arc::new(recorder.finish());
+    req.groups[0].toolpaths[0].semantic_trace = Some(semantic_trace);
+    req
 }
 
 fn wait_for<F>(
@@ -603,6 +992,344 @@ fn adaptive3d_semantic_trace_records_runtime_structure() {
 }
 
 #[test]
+fn adaptive_semantic_trace_records_runtime_structure() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = adaptive_request(92);
+    request.debug_options.enabled = true;
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("adaptive debug compute should succeed");
+    let semantic_trace = result
+        .semantic_trace
+        .as_ref()
+        .expect("semantic trace should be attached");
+
+    assert!(
+        semantic_trace.items.iter().any(
+            |item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::SlotClearing
+        ),
+        "expected slot-clearing semantics"
+    );
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Cleanup),
+        "expected cleanup semantics"
+    );
+    let pass = semantic_trace
+        .items
+        .iter()
+        .find(|item| item.label.starts_with("Adaptive pass "))
+        .expect("expected adaptive pass item");
+    assert!(pass.params.values.get("step_count").is_some());
+    assert!(pass.params.values.get("exit_reason").is_some());
+    assert_cutting_moves_are_semantically_covered(&result);
+}
+
+#[test]
+fn profile_semantic_trace_records_depth_and_finish_structure() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = profile_request(93);
+    request.debug_options.enabled = true;
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("profile debug compute should succeed");
+    let semantic_trace = result
+        .semantic_trace
+        .as_ref()
+        .expect("semantic trace should be attached");
+
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::DepthLevel),
+        "expected depth-level semantics"
+    );
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::FinishPass),
+        "expected finish-pass semantics"
+    );
+    assert_cutting_moves_are_semantically_covered(&result);
+}
+
+#[test]
+fn drill_semantic_trace_records_cycle_children() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = drill_request(94);
+    request.debug_options.enabled = true;
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("drill debug compute should succeed");
+    let semantic_trace = result
+        .semantic_trace
+        .as_ref()
+        .expect("semantic trace should be attached");
+
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Hole),
+        "expected hole semantics"
+    );
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Cycle),
+        "expected cycle semantics"
+    );
+    assert_cutting_moves_are_semantically_covered(&result);
+}
+
+#[test]
+fn steep_shallow_semantic_trace_splits_steep_and_shallow_regions() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = steep_shallow_request(95);
+    request.debug_options.enabled = true;
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("steep/shallow debug compute should succeed");
+    let semantic_trace = result
+        .semantic_trace
+        .as_ref()
+        .expect("semantic trace should be attached");
+
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.label == "Steep contours"),
+        "expected steep partition"
+    );
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.label == "Shallow raster"),
+        "expected shallow partition"
+    );
+    assert_cutting_moves_are_semantically_covered(&result);
+}
+
+#[test]
+fn pencil_semantic_trace_records_chain_and_offset_pass_structure() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = pencil_request(96);
+    request.debug_options.enabled = true;
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("pencil debug compute should succeed");
+    let semantic_trace = result
+        .semantic_trace
+        .as_ref()
+        .expect("semantic trace should be attached");
+
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Chain),
+        "expected chain semantics"
+    );
+    assert!(
+        semantic_trace.items.iter().any(|item| {
+            item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Centerline
+                || item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::OffsetPass
+        }),
+        "expected centerline or offset-pass semantics"
+    );
+    assert_cutting_moves_are_semantically_covered(&result);
+}
+
+#[test]
+fn scallop_semantic_trace_records_band_and_ring_structure() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = scallop_request(97);
+    request.debug_options.enabled = true;
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("scallop debug compute should succeed");
+    let semantic_trace = result
+        .semantic_trace
+        .as_ref()
+        .expect("semantic trace should be attached");
+
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Band),
+        "expected band semantics"
+    );
+    let ring = semantic_trace
+        .items
+        .iter()
+        .find(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Ring)
+        .expect("expected ring semantics");
+    assert!(ring.params.values.get("ring_index").is_some());
+    assert!(ring.move_start.is_some() && ring.move_end.is_some());
+    assert_cutting_moves_are_semantically_covered(&result);
+}
+
+#[test]
+fn ramp_finish_semantic_trace_records_terrace_and_ramp_structure() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = ramp_finish_request(98);
+    request.debug_options.enabled = true;
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("ramp finish debug compute should succeed");
+    let semantic_trace = result
+        .semantic_trace
+        .as_ref()
+        .expect("semantic trace should be attached");
+
+    assert!(
+        semantic_trace.items.iter().any(|item| item.kind
+            == rs_cam_core::semantic_trace::ToolpathSemanticKind::Band
+            && item.label.starts_with("Terrace ")),
+        "expected terrace band semantics"
+    );
+    let ramp = semantic_trace
+        .items
+        .iter()
+        .find(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Ramp)
+        .expect("expected ramp semantics");
+    assert!(ramp.params.values.get("upper_z").is_some());
+    assert!(ramp.params.values.get("lower_z").is_some());
+    assert_cutting_moves_are_semantically_covered(&result);
+}
+
+#[test]
+fn spiral_finish_semantic_trace_records_band_and_ring_structure() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = spiral_finish_request(99);
+    request.debug_options.enabled = true;
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("spiral finish debug compute should succeed");
+    let semantic_trace = result
+        .semantic_trace
+        .as_ref()
+        .expect("semantic trace should be attached");
+
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.label == "Spiral band"),
+        "expected spiral band semantics"
+    );
+    let ring = semantic_trace
+        .items
+        .iter()
+        .find(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Ring)
+        .expect("expected ring semantics");
+    assert!(ring.params.values.get("radius_mm").is_some());
+    assert_cutting_moves_are_semantically_covered(&result);
+}
+
+#[test]
+fn radial_finish_semantic_trace_records_ray_angles() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = radial_finish_request(100);
+    request.debug_options.enabled = true;
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("radial finish debug compute should succeed");
+    let semantic_trace = result
+        .semantic_trace
+        .as_ref()
+        .expect("semantic trace should be attached");
+
+    let ray = semantic_trace
+        .items
+        .iter()
+        .find(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Ray)
+        .expect("expected ray semantics");
+    assert!(ray.params.values.get("angle_deg").is_some());
+    assert!(ray.params.values.get("direction").is_some());
+    assert_cutting_moves_are_semantically_covered(&result);
+}
+
+#[test]
+fn horizontal_finish_semantic_trace_records_slice_passes() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = horizontal_finish_request(101);
+    request.debug_options.enabled = true;
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("horizontal finish debug compute should succeed");
+    let semantic_trace = result
+        .semantic_trace
+        .as_ref()
+        .expect("semantic trace should be attached");
+
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Slice),
+        "expected slice semantics"
+    );
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Pass),
+        "expected pass semantics"
+    );
+    assert_cutting_moves_are_semantically_covered(&result);
+}
+
+#[test]
+fn project_curve_semantic_trace_records_source_curve_groups() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = project_curve_request(102);
+    request.debug_options.enabled = true;
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("project curve debug compute should succeed");
+    let semantic_trace = result
+        .semantic_trace
+        .as_ref()
+        .expect("semantic trace should be attached");
+
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.label.starts_with("Source curve ")),
+        "expected source-curve grouping"
+    );
+    let curve = semantic_trace
+        .items
+        .iter()
+        .find(|item| item.label.starts_with("Projected curve "))
+        .expect("expected projected curve semantics");
+    assert!(curve.params.values.get("source_curve_index").is_some());
+    assert!(curve.params.values.get("depth").is_some());
+    assert_cutting_moves_are_semantically_covered(&result);
+}
+
+#[test]
 fn running_lane_snapshot_reports_current_phase() {
     let mut backend = ThreadedComputeBackend::new();
     backend.submit_toolpath(heavy_dropcutter_request(89));
@@ -861,27 +1588,32 @@ fn multi_setup_top_bottom_simulation() {
     let request = SimulationRequest {
         groups: vec![
             SetupSimGroup {
-                toolpaths: vec![(
-                    ToolpathId(1),
-                    "Top Cut".to_string(),
-                    Arc::new(top_tp),
-                    tool.clone(),
-                )],
+                toolpaths: vec![SetupSimToolpath {
+                    id: ToolpathId(1),
+                    name: "Top Cut".to_string(),
+                    toolpath: Arc::new(top_tp),
+                    tool: tool.clone(),
+                    semantic_trace: None,
+                }],
                 direction: StockCutDirection::FromTop,
             },
             SetupSimGroup {
-                toolpaths: vec![(
-                    ToolpathId(2),
-                    "Bottom Cut".to_string(),
-                    Arc::new(bottom_tp),
-                    tool.clone(),
-                )],
+                toolpaths: vec![SetupSimToolpath {
+                    id: ToolpathId(2),
+                    name: "Bottom Cut".to_string(),
+                    toolpath: Arc::new(bottom_tp),
+                    tool: tool.clone(),
+                    semantic_trace: None,
+                }],
                 direction: StockCutDirection::FromBottom,
             },
         ],
         stock_bbox,
         stock_top_z: 20.0,
         resolution: 0.5,
+        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions::default(),
+        spindle_rpm: 18_000,
+        rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
     };
 
@@ -982,27 +1714,32 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
     let request = SimulationRequest {
         groups: vec![
             SetupSimGroup {
-                toolpaths: vec![(
-                    ToolpathId(1),
-                    "Top".to_string(),
-                    Arc::new(tp1),
-                    tool.clone(),
-                )],
+                toolpaths: vec![SetupSimToolpath {
+                    id: ToolpathId(1),
+                    name: "Top".to_string(),
+                    toolpath: Arc::new(tp1),
+                    tool: tool.clone(),
+                    semantic_trace: None,
+                }],
                 direction: StockCutDirection::FromTop,
             },
             SetupSimGroup {
-                toolpaths: vec![(
-                    ToolpathId(2),
-                    "Bottom".to_string(),
-                    Arc::new(tp2),
-                    tool.clone(),
-                )],
+                toolpaths: vec![SetupSimToolpath {
+                    id: ToolpathId(2),
+                    name: "Bottom".to_string(),
+                    toolpath: Arc::new(tp2),
+                    tool: tool.clone(),
+                    semantic_trace: None,
+                }],
                 direction: StockCutDirection::FromBottom,
             },
         ],
         stock_bbox,
         stock_top_z: 10.0,
         resolution: 0.5,
+        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions::default(),
+        spindle_rpm: 18_000,
+        rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
     };
 
@@ -1047,4 +1784,65 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
         result.boundaries[1].direction,
         StockCutDirection::FromBottom
     );
+}
+
+#[test]
+fn simulation_metrics_capture_emits_cut_trace_and_artifact() {
+    let mut backend = ThreadedComputeBackend::new();
+    backend.submit_simulation(small_simulation_request_with_metrics(true));
+
+    let result = wait_for(&mut backend, Duration::from_secs(10), |msg| {
+        matches!(msg, ComputeMessage::Simulation(Ok(_)))
+    })
+    .expect("simulation result");
+    let result = match result {
+        ComputeMessage::Simulation(Ok(result)) => result,
+        _ => panic!("expected successful simulation"),
+    };
+
+    let trace = result.cut_trace.as_ref().expect("cut trace");
+    assert!(trace.summary.sample_count > 0);
+    assert!(trace.summary.total_runtime_s > 0.0);
+    assert!(
+        trace
+            .toolpath_summaries
+            .iter()
+            .any(|summary| summary.toolpath_id == 1)
+    );
+    if let Some(path) = result.cut_trace_path.as_ref() {
+        assert!(path.exists(), "expected cut trace artifact to exist");
+        std::fs::remove_file(path).ok();
+    } else {
+        panic!("expected cut trace artifact path");
+    }
+}
+
+#[test]
+fn simulation_metrics_capture_emits_semantic_cut_summaries() {
+    let mut backend = ThreadedComputeBackend::new();
+    backend.submit_simulation(small_simulation_request_with_semantic_metrics(true));
+
+    let result = wait_for(&mut backend, Duration::from_secs(10), |msg| {
+        matches!(msg, ComputeMessage::Simulation(Ok(_)))
+    })
+    .expect("simulation result");
+    let result = match result {
+        ComputeMessage::Simulation(Ok(result)) => result,
+        _ => panic!("expected successful simulation"),
+    };
+
+    let trace = result.cut_trace.as_ref().expect("cut trace");
+    let summary = trace
+        .semantic_summaries
+        .iter()
+        .find(|summary| summary.toolpath_id == 1)
+        .expect("semantic cut summary");
+    assert_eq!(summary.label, "Pass 1");
+    assert!(summary.sample_count > 0);
+    assert!(summary.average_mrr_mm3_s >= 0.0);
+    assert!(summary.representative_sample_index <= summary.sample_count);
+
+    if let Some(path) = result.cut_trace_path.as_ref() {
+        std::fs::remove_file(path).ok();
+    }
 }

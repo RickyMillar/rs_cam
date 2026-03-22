@@ -4,10 +4,15 @@
 //! is always present; X and Y grids are created lazily when side-face cuts are
 //! needed (future work).
 
-use crate::dexel::{DexelAxis, DexelGrid, ray_subtract_above, ray_subtract_below};
+use crate::dexel::{
+    DexelAxis, DexelGrid, ray_bottom, ray_material_length, ray_subtract_above, ray_subtract_below,
+    ray_top,
+};
 use crate::geo::{BoundingBox3, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
+use crate::semantic_trace::ToolpathSemanticTrace;
 use crate::simulation::RadialProfileLUT;
+use crate::simulation_cut::SimulationCutSample;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveType, Toolpath};
 
@@ -44,7 +49,7 @@ impl StockCutDirection {
     ///
     /// High-side entry removes material via `subtract_above`;
     /// low-side entry removes material via `subtract_below`.
-    fn cuts_from_high_side(self) -> bool {
+    pub fn cuts_from_high_side(self) -> bool {
         match self {
             Self::FromTop | Self::FromBack | Self::FromRight => true,
             Self::FromBottom | Self::FromFront | Self::FromLeft => false,
@@ -249,6 +254,137 @@ impl TriDexelStock {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn simulate_toolpath_with_metrics_with_cancel(
+        &mut self,
+        toolpath: &Toolpath,
+        cutter: &dyn MillingCutter,
+        direction: StockCutDirection,
+        toolpath_id: usize,
+        spindle_rpm: u32,
+        flute_count: u32,
+        rapid_feed_mm_min: f64,
+        sample_step_mm: f64,
+        semantic_trace: Option<&ToolpathSemanticTrace>,
+        cancel: &dyn CancelCheck,
+    ) -> Result<Vec<SimulationCutSample>, Cancelled> {
+        if toolpath.moves.len() < 2 {
+            return Ok(Vec::new());
+        }
+
+        let lut = RadialProfileLUT::from_cutter(cutter, 256);
+        let radius = cutter.radius();
+        let sample_step_mm = sample_step_mm.max(1e-3);
+        let semantic_lookup = build_move_semantic_lookup(toolpath.moves.len(), semantic_trace);
+
+        let mut samples = Vec::new();
+        let mut cumulative_time_s = 0.0;
+        let mut next_sample_index = 0usize;
+
+        for move_index in 1..toolpath.moves.len() {
+            check_cancel(cancel)?;
+            let start = toolpath.moves[move_index - 1].target;
+            let end = toolpath.moves[move_index].target;
+            let semantic_item_id = semantic_lookup.get(move_index).copied().flatten();
+
+            match toolpath.moves[move_index].move_type {
+                MoveType::Rapid => {
+                    sample_segment_runtime(
+                        start,
+                        end,
+                        move_index,
+                        toolpath_id,
+                        sample_step_mm,
+                        rapid_feed_mm_min.max(1.0),
+                        false,
+                        spindle_rpm,
+                        flute_count,
+                        semantic_item_id,
+                        &mut cumulative_time_s,
+                        &mut next_sample_index,
+                        &mut samples,
+                    );
+                }
+                MoveType::Linear { feed_rate } => {
+                    self.capture_cutting_segment(
+                        &lut,
+                        radius,
+                        start,
+                        end,
+                        direction,
+                        CuttingCaptureParams {
+                            toolpath_id,
+                            move_index,
+                            feed_rate_mm_min: feed_rate,
+                            spindle_rpm,
+                            flute_count,
+                            semantic_item_id,
+                            sample_step_mm,
+                        },
+                        cancel,
+                        &mut cumulative_time_s,
+                        &mut next_sample_index,
+                        &mut samples,
+                    )?;
+                }
+                MoveType::ArcCW { i, j, feed_rate } => {
+                    let points = linearize_arc(start, end, i, j, true, self.z_grid.cell_size);
+                    for window in points.windows(2) {
+                        check_cancel(cancel)?;
+                        self.capture_cutting_segment(
+                            &lut,
+                            radius,
+                            window[0],
+                            window[1],
+                            direction,
+                            CuttingCaptureParams {
+                                toolpath_id,
+                                move_index,
+                                feed_rate_mm_min: feed_rate,
+                                spindle_rpm,
+                                flute_count,
+                                semantic_item_id,
+                                sample_step_mm,
+                            },
+                            cancel,
+                            &mut cumulative_time_s,
+                            &mut next_sample_index,
+                            &mut samples,
+                        )?;
+                    }
+                }
+                MoveType::ArcCCW { i, j, feed_rate } => {
+                    let points = linearize_arc(start, end, i, j, false, self.z_grid.cell_size);
+                    for window in points.windows(2) {
+                        check_cancel(cancel)?;
+                        self.capture_cutting_segment(
+                            &lut,
+                            radius,
+                            window[0],
+                            window[1],
+                            direction,
+                            CuttingCaptureParams {
+                                toolpath_id,
+                                move_index,
+                                feed_rate_mm_min: feed_rate,
+                                spindle_rpm,
+                                flute_count,
+                                semantic_item_id,
+                                sample_step_mm,
+                            },
+                            cancel,
+                            &mut cumulative_time_s,
+                            &mut next_sample_index,
+                            &mut samples,
+                        )?;
+                    }
+                }
+            }
+        }
+
+        Ok(samples)
+    }
+
     /// Simulate only moves `start_move..end_move` (for incremental playback).
     pub fn simulate_toolpath_range(
         &mut self,
@@ -292,6 +428,112 @@ impl TriDexelStock {
             }
         }
     }
+
+    #[allow(clippy::too_many_arguments)]
+    fn capture_cutting_segment(
+        &mut self,
+        lut: &RadialProfileLUT,
+        radius: f64,
+        start: P3,
+        end: P3,
+        direction: StockCutDirection,
+        params: CuttingCaptureParams,
+        cancel: &dyn CancelCheck,
+        cumulative_time_s: &mut f64,
+        next_sample_index: &mut usize,
+        samples: &mut Vec<SimulationCutSample>,
+    ) -> Result<(), Cancelled> {
+        let segment_length = (end - start).norm();
+        if segment_length <= 1e-9 {
+            return Ok(());
+        }
+
+        let subsegments = ((segment_length / params.sample_step_mm).ceil() as usize).max(1);
+        for subsegment in 0..subsegments {
+            check_cancel(cancel)?;
+            let t0 = subsegment as f64 / subsegments as f64;
+            let t1 = (subsegment + 1) as f64 / subsegments as f64;
+            let seg_start = lerp_point(start, end, t0);
+            let seg_end = lerp_point(start, end, t1);
+            let midpoint = lerp_point(seg_start, seg_end, 0.5);
+            let segment_len = (seg_end - seg_start).norm();
+            if segment_len <= 1e-9 {
+                continue;
+            }
+            let segment_time_s = (segment_len / params.feed_rate_mm_min.max(1.0)) * 60.0;
+            let (axial_doc_mm, radial_engagement, removed_volume_est_mm3) = self
+                .estimate_and_stamp_cutting_subsegment(
+                    lut, radius, seg_start, seg_end, midpoint, direction,
+                );
+
+            *cumulative_time_s += segment_time_s;
+            samples.push(SimulationCutSample {
+                toolpath_id: params.toolpath_id,
+                move_index: params.move_index,
+                sample_index: *next_sample_index,
+                position: [midpoint.x, midpoint.y, midpoint.z],
+                cumulative_time_s: *cumulative_time_s,
+                segment_time_s,
+                is_cutting: true,
+                feed_rate_mm_min: params.feed_rate_mm_min,
+                spindle_rpm: params.spindle_rpm,
+                flute_count: params.flute_count,
+                axial_doc_mm,
+                radial_engagement,
+                chipload_mm_per_tooth: chipload_mm_per_tooth(
+                    params.feed_rate_mm_min,
+                    params.spindle_rpm,
+                    params.flute_count,
+                ),
+                removed_volume_est_mm3,
+                mrr_mm3_s: if segment_time_s <= 1e-9 {
+                    0.0
+                } else {
+                    removed_volume_est_mm3 / segment_time_s
+                },
+                semantic_item_id: params.semantic_item_id,
+            });
+            *next_sample_index += 1;
+        }
+        Ok(())
+    }
+
+    fn estimate_and_stamp_cutting_subsegment(
+        &mut self,
+        lut: &RadialProfileLUT,
+        radius: f64,
+        seg_start: P3,
+        seg_end: P3,
+        midpoint: P3,
+        direction: StockCutDirection,
+    ) -> (f64, f64, f64) {
+        let (su, sv, sd) = direction.decompose(seg_start.x, seg_start.y, seg_start.z);
+        let (eu, ev, ed) = direction.decompose(seg_end.x, seg_end.y, seg_end.z);
+        let (mu, mv, md) = direction.decompose(midpoint.x, midpoint.y, midpoint.z);
+        let from_high = direction.cuts_from_high_side();
+        let grid = self.ensure_grid(direction);
+        let (axial_doc_mm, radial_engagement) =
+            estimate_disk_cut_metrics(grid, lut, radius, mu, mv, md, from_high);
+        let pre_volume = window_material_volume_for_segment(grid, radius, su, sv, eu, ev);
+        stamp_segment_on_grid(grid, lut, radius, (su, sv, sd), (eu, ev, ed), from_high);
+        let post_volume = window_material_volume_for_segment(grid, radius, su, sv, eu, ev);
+        (
+            axial_doc_mm,
+            radial_engagement,
+            (pre_volume - post_volume).max(0.0),
+        )
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CuttingCaptureParams {
+    toolpath_id: usize,
+    move_index: usize,
+    feed_rate_mm_min: f64,
+    spindle_rpm: u32,
+    flute_count: u32,
+    semantic_item_id: Option<u64>,
+    sample_step_mm: f64,
 }
 
 // ── Grid-generic stamp helpers ───────────────────────────────────────────
@@ -416,6 +658,228 @@ fn stamp_segment_on_grid(
             }
         }
     }
+}
+
+fn sample_segment_runtime(
+    start: P3,
+    end: P3,
+    move_index: usize,
+    toolpath_id: usize,
+    sample_step_mm: f64,
+    feed_rate_mm_min: f64,
+    is_cutting: bool,
+    spindle_rpm: u32,
+    flute_count: u32,
+    semantic_item_id: Option<u64>,
+    cumulative_time_s: &mut f64,
+    next_sample_index: &mut usize,
+    samples: &mut Vec<SimulationCutSample>,
+) {
+    let segment_length = (end - start).norm();
+    if segment_length <= 1e-9 {
+        return;
+    }
+
+    let subsegments = ((segment_length / sample_step_mm.max(1e-3)).ceil() as usize).max(1);
+    for subsegment in 0..subsegments {
+        let t0 = subsegment as f64 / subsegments as f64;
+        let t1 = (subsegment + 1) as f64 / subsegments as f64;
+        let seg_start = lerp_point(start, end, t0);
+        let seg_end = lerp_point(start, end, t1);
+        let midpoint = lerp_point(seg_start, seg_end, 0.5);
+        let segment_len = (seg_end - seg_start).norm();
+        if segment_len <= 1e-9 {
+            continue;
+        }
+        let segment_time_s = (segment_len / feed_rate_mm_min.max(1.0)) * 60.0;
+        *cumulative_time_s += segment_time_s;
+        samples.push(SimulationCutSample {
+            toolpath_id,
+            move_index,
+            sample_index: *next_sample_index,
+            position: [midpoint.x, midpoint.y, midpoint.z],
+            cumulative_time_s: *cumulative_time_s,
+            segment_time_s,
+            is_cutting,
+            feed_rate_mm_min,
+            spindle_rpm,
+            flute_count,
+            axial_doc_mm: 0.0,
+            radial_engagement: 0.0,
+            chipload_mm_per_tooth: 0.0,
+            removed_volume_est_mm3: 0.0,
+            mrr_mm3_s: 0.0,
+            semantic_item_id,
+        });
+        *next_sample_index += 1;
+    }
+}
+
+fn estimate_disk_cut_metrics(
+    grid: &DexelGrid,
+    lut: &RadialProfileLUT,
+    radius: f64,
+    center_u: f64,
+    center_v: f64,
+    tip_depth: f64,
+    from_high: bool,
+) -> (f64, f64) {
+    let cs = grid.cell_size;
+    let col_min = ((center_u - radius - grid.origin_u) / cs).floor() as isize;
+    let col_max = ((center_u + radius - grid.origin_u) / cs).ceil() as isize;
+    let row_min = ((center_v - radius - grid.origin_v) / cs).floor() as isize;
+    let row_max = ((center_v + radius - grid.origin_v) / cs).ceil() as isize;
+
+    let col_lo = col_min.max(0) as usize;
+    let col_hi = (col_max.max(col_min) as usize).min(grid.cols.saturating_sub(1));
+    let row_lo = row_min.max(0) as usize;
+    let row_hi = (row_max.max(row_min) as usize).min(grid.rows.saturating_sub(1));
+    if row_lo > row_hi || col_lo > col_hi {
+        return (0.0, 0.0);
+    }
+
+    let cell_area = cs * cs;
+    let mut engaged_area = 0.0f64;
+    let mut total_area = 0.0f64;
+    let mut max_penetration = 0.0f64;
+    let radius_sq = lut.radius_sq();
+
+    for row in row_lo..=row_hi {
+        let cell_v = grid.origin_v + row as f64 * cs;
+        let dv = cell_v - center_v;
+        let dv_sq = dv * dv;
+        if dv_sq > radius_sq {
+            continue;
+        }
+        for col in col_lo..=col_hi {
+            let cell_u = grid.origin_u + col as f64 * cs;
+            let du = cell_u - center_u;
+            let dist_sq = du * du + dv_sq;
+            if let Some(height) = lut.height_at_dist_sq(dist_sq) {
+                total_area += cell_area;
+                let tool_surface = tip_depth + height;
+                let ray = grid.ray(row, col);
+                let penetration = if from_high {
+                    ray_top(ray)
+                        .map(|top| (top as f64 - tool_surface).max(0.0))
+                        .unwrap_or(0.0)
+                } else {
+                    ray_bottom(ray)
+                        .map(|bottom| (tool_surface - bottom as f64).max(0.0))
+                        .unwrap_or(0.0)
+                };
+                if penetration > 1e-6 {
+                    engaged_area += cell_area;
+                    max_penetration = max_penetration.max(penetration);
+                }
+            }
+        }
+    }
+
+    let radial_engagement = if total_area <= 1e-9 {
+        0.0
+    } else {
+        (engaged_area / total_area).clamp(0.0, 1.0)
+    };
+    (max_penetration.max(0.0), radial_engagement)
+}
+
+fn window_material_volume_for_segment(
+    grid: &DexelGrid,
+    radius: f64,
+    start_u: f64,
+    start_v: f64,
+    end_u: f64,
+    end_v: f64,
+) -> f64 {
+    let cs = grid.cell_size;
+    let u_min = start_u.min(end_u) - radius;
+    let u_max = start_u.max(end_u) + radius;
+    let v_min = start_v.min(end_v) - radius;
+    let v_max = start_v.max(end_v) + radius;
+    let col_lo = ((u_min - grid.origin_u) / cs).floor().max(0.0) as usize;
+    let col_hi = (((u_max - grid.origin_u) / cs).ceil() as usize).min(grid.cols.saturating_sub(1));
+    let row_lo = ((v_min - grid.origin_v) / cs).floor().max(0.0) as usize;
+    let row_hi = (((v_max - grid.origin_v) / cs).ceil() as usize).min(grid.rows.saturating_sub(1));
+    if row_lo > row_hi || col_lo > col_hi {
+        return 0.0;
+    }
+
+    let cell_area = cs * cs;
+    let mut volume = 0.0;
+    for row in row_lo..=row_hi {
+        for col in col_lo..=col_hi {
+            volume += ray_material_length(grid.ray(row, col)) as f64 * cell_area;
+        }
+    }
+    volume
+}
+
+fn chipload_mm_per_tooth(feed_rate_mm_min: f64, spindle_rpm: u32, flute_count: u32) -> f64 {
+    if spindle_rpm == 0 || flute_count == 0 {
+        0.0
+    } else {
+        feed_rate_mm_min / spindle_rpm as f64 / flute_count as f64
+    }
+}
+
+fn lerp_point(start: P3, end: P3, t: f64) -> P3 {
+    start + (end - start) * t
+}
+
+fn build_move_semantic_lookup(
+    move_count: usize,
+    trace: Option<&ToolpathSemanticTrace>,
+) -> Vec<Option<u64>> {
+    let Some(trace) = trace else {
+        return vec![None; move_count];
+    };
+
+    let mut item_index_by_id = std::collections::HashMap::with_capacity(trace.items.len());
+    for (item_index, item) in trace.items.iter().enumerate() {
+        item_index_by_id.insert(item.id, item_index);
+    }
+
+    let mut depths = vec![0usize; trace.items.len()];
+    for (item_index, item) in trace.items.iter().enumerate() {
+        let mut depth = 0usize;
+        let mut parent = item.parent_id;
+        while let Some(parent_id) = parent {
+            depth += 1;
+            parent = item_index_by_id
+                .get(&parent_id)
+                .and_then(|parent_index| trace.items.get(*parent_index))
+                .and_then(|parent_item| parent_item.parent_id);
+        }
+        depths[item_index] = depth;
+    }
+
+    let mut lookup = vec![None; move_count];
+    let mut best_depth = vec![0usize; move_count];
+    let mut best_span = vec![usize::MAX; move_count];
+
+    for (item_index, item) in trace.items.iter().enumerate() {
+        let (Some(move_start), Some(move_end)) = (item.move_start, item.move_end) else {
+            continue;
+        };
+        if move_count == 0 || move_start >= move_count {
+            continue;
+        }
+        let last = move_end.min(move_count.saturating_sub(1));
+        let span = last.saturating_sub(move_start);
+        for move_index in move_start..=last {
+            let replace = lookup[move_index].is_none()
+                || depths[item_index] > best_depth[move_index]
+                || (depths[item_index] == best_depth[move_index] && span < best_span[move_index]);
+            if replace {
+                lookup[move_index] = Some(item.id);
+                best_depth[move_index] = depths[item_index];
+                best_span[move_index] = span;
+            }
+        }
+    }
+
+    lookup
 }
 
 // ── Arc linearization (ported from simulation.rs) ───────────────────────

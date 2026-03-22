@@ -1861,6 +1861,8 @@ impl RsCamApp {
                     if debug_changed && simulation.debug.enabled {
                         simulation.debug.drawer_open = true;
                     }
+                    ui.checkbox(&mut simulation.metric_options.enabled, "Capture Metrics")
+                        .on_hover_text("Capture simulation-time cutting metrics on the next run.");
                     if simulation.debug.enabled {
                         ui.checkbox(&mut simulation.debug.highlight_active_item, "Highlight");
                     }

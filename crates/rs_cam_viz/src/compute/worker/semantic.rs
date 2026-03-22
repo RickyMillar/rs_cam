@@ -1,8 +1,5 @@
-use rs_cam_core::debug_trace::ToolpathDebugBounds2;
 use rs_cam_core::geo::{P2, P3};
-use rs_cam_core::semantic_trace::{
-    ToolpathSemanticKind, ToolpathSemanticScope, ToolpathSemanticWriter,
-};
+use rs_cam_core::semantic_trace::{ToolpathSemanticScope, ToolpathSemanticWriter};
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 
 pub(super) struct CutRun {
@@ -12,7 +9,6 @@ pub(super) struct CutRun {
     pub constant_z: bool,
     pub z_min: f64,
     pub z_max: f64,
-    pub xy_bbox: Option<ToolpathDebugBounds2>,
 }
 
 pub(super) fn cutting_runs(toolpath: &Toolpath) -> Vec<CutRun> {
@@ -71,7 +67,6 @@ fn describe_run(
         z_max = z_max.max(mv.target.z);
     }
 
-    let xy_bbox = ToolpathDebugBounds2::from_points(points.iter());
     let first = toolpath.moves.get(move_start)?.target;
     let last = toolpath.moves.get(move_end_exclusive - 1)?.target;
     let closed_loop = (first.x - last.x).abs() < 1e-6 && (first.y - last.y).abs() < 1e-6;
@@ -83,7 +78,6 @@ fn describe_run(
         constant_z: (z_max - z_min).abs() < 1e-6,
         z_min,
         z_max,
-        xy_bbox,
     })
 }
 
@@ -146,22 +140,4 @@ pub(super) fn contour_toolpath(
     tp.feed_to(P3::new(start.x, start.y, cut_depth), feed_rate);
     tp.rapid_to(P3::new(start.x, start.y, safe_z));
     tp
-}
-
-pub(super) fn label_run_kind(
-    run: &CutRun,
-    default_kind: ToolpathSemanticKind,
-) -> ToolpathSemanticKind {
-    match default_kind {
-        ToolpathSemanticKind::Pass => {
-            if run.closed_loop && run.constant_z {
-                ToolpathSemanticKind::Contour
-            } else if run.constant_z {
-                ToolpathSemanticKind::Slice
-            } else {
-                ToolpathSemanticKind::Pass
-            }
-        }
-        other => other,
-    }
 }
