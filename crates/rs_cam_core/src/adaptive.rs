@@ -17,6 +17,7 @@
 pub(crate) use crate::adaptive_shared::{
     angle_diff, average_angles, blend_corners, refine_angle_bracket, target_engagement_fraction,
 };
+use crate::debug_trace::{ToolpathDebugBounds2, ToolpathDebugContext};
 use crate::geo::P2;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::polygon::{Polygon2, offset_polygon};
@@ -24,6 +25,7 @@ use crate::toolpath::Toolpath;
 
 use std::collections::VecDeque;
 use std::f64::consts::{PI, TAU};
+use std::time::Instant;
 
 /// Parameters for adaptive clearing.
 pub struct AdaptiveParams {
@@ -422,6 +424,17 @@ pub(crate) fn compute_engagement(grid: &MaterialGrid, cx: f64, cy: f64, radius: 
     material_cells as f64 / total_cells as f64
 }
 
+#[derive(Debug, Clone, Copy)]
+struct SearchDirectionResult {
+    angle: f64,
+    evaluations: u32,
+}
+
+fn path_bounds(path: &[P2]) -> Option<ToolpathDebugBounds2> {
+    let points: Vec<(f64, f64)> = path.iter().map(|point| (point.x, point.y)).collect();
+    ToolpathDebugBounds2::from_points(points.iter())
+}
+
 // ── Direction search ───────────────────────────────────────────────────
 
 /// Search for the best direction to move from (cx, cy) that produces
@@ -441,6 +454,7 @@ pub(crate) fn compute_engagement(grid: &MaterialGrid, cx: f64, cy: f64, radius: 
 /// When near a wall (boundary_distance < 2 × tool_radius), a tangential
 /// bias steers the tool along the wall instead of into it.
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 pub(crate) fn search_direction(
     grid: &MaterialGrid,
     machinable_mask: &[bool],
@@ -452,14 +466,42 @@ pub(crate) fn search_direction(
     prev_angle: f64,
     boundary_distances: &[f64],
 ) -> Option<f64> {
+    search_direction_with_metrics(
+        grid,
+        machinable_mask,
+        cx,
+        cy,
+        tool_radius,
+        step_len,
+        target_frac,
+        prev_angle,
+        boundary_distances,
+    )
+    .map(|result| result.angle)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn search_direction_with_metrics(
+    grid: &MaterialGrid,
+    machinable_mask: &[bool],
+    cx: f64,
+    cy: f64,
+    tool_radius: f64,
+    step_len: f64,
+    target_frac: f64,
+    prev_angle: f64,
+    boundary_distances: &[f64],
+) -> Option<SearchDirectionResult> {
     let tolerance = 0.20; // allow ±20% of target
     let min_frac = (target_frac * (1.0 - tolerance)).max(0.005);
     let max_frac = target_frac * (1.0 + tolerance);
 
     let wall_threshold = 2.0 * tool_radius;
+    let mut evaluations = 0u32;
 
     // Helper: evaluate a candidate angle, returns (angle, engagement, score) or None.
-    let eval_candidate = |angle: f64| -> Option<(f64, f64, f64)> {
+    let mut eval_candidate = |angle: f64| -> Option<(f64, f64, f64)> {
+        evaluations += 1;
         let nx = cx + step_len * angle.cos();
         let ny = cy + step_len * angle.sin();
 
@@ -533,7 +575,7 @@ pub(crate) fn search_direction(
 
         if let (Some(lo), Some(hi)) = (lo_bracket, hi_bracket)
             && let Some((angle, eng, score)) =
-                refine_angle_bracket(lo, hi, target_frac, 2, &eval_candidate)
+                refine_angle_bracket(lo, hi, target_frac, 2, &mut eval_candidate)
             && eng >= min_frac
             && eng <= max_frac
             && best_good.is_none_or(|b| score < b.0)
@@ -542,7 +584,7 @@ pub(crate) fn search_direction(
         }
 
         if let Some((_, angle)) = best_good {
-            return Some(angle);
+            return Some(SearchDirectionResult { angle, evaluations });
         }
     }
 
@@ -590,9 +632,9 @@ pub(crate) fn search_direction(
         }
 
         if let Some((_, angle)) = best_good {
-            return Some(angle);
+            return Some(SearchDirectionResult { angle, evaluations });
         }
-        best_any.map(|(_, a)| a)
+        best_any.map(|(_, angle)| SearchDirectionResult { angle, evaluations })
     }
 }
 
@@ -881,6 +923,7 @@ enum AdaptiveSegment {
 }
 
 /// Generate the 2D adaptive clearing path segments.
+#[allow(dead_code)]
 fn adaptive_segments(
     polygon: &Polygon2,
     tool_radius: f64,
@@ -888,6 +931,29 @@ fn adaptive_segments(
     tolerance: f64,
     slot_clearing: bool,
     cancel: &dyn CancelCheck,
+) -> Result<Vec<AdaptiveSegment>, Cancelled> {
+    adaptive_segments_with_debug(
+        polygon,
+        tool_radius,
+        stepover,
+        tolerance,
+        slot_clearing,
+        0.0,
+        cancel,
+        None,
+    )
+}
+
+/// Generate 2D adaptive segments and optionally record detailed debug spans.
+fn adaptive_segments_with_debug(
+    polygon: &Polygon2,
+    tool_radius: f64,
+    stepover: f64,
+    tolerance: f64,
+    slot_clearing: bool,
+    cut_depth: f64,
+    cancel: &dyn CancelCheck,
+    debug: Option<&ToolpathDebugContext>,
 ) -> Result<Vec<AdaptiveSegment>, Cancelled> {
     // Inset polygon by tool radius to get the machinable region
     let machinable_vec = offset_polygon(polygon, tool_radius);
@@ -921,6 +987,7 @@ fn adaptive_segments(
 
     // ── Slot clearing (Fusion-style first pass) ───────────────────────
     if slot_clearing {
+        let slot_scope = debug.map(|ctx| ctx.start_span("slot_clearing", "Slot clearing"));
         let (x_min, y_min, x_max, y_max) = polygon_bbox(&polygon.exterior);
         let w = x_max - x_min;
         let h = y_max - y_min;
@@ -949,6 +1016,9 @@ fn adaptive_segments(
             segments.push(AdaptiveSegment::Cut(vec![line[0], line[1]]));
             last_pos = Some(line[1]);
         }
+        if let Some(scope) = slot_scope.as_ref() {
+            scope.set_counter("line_count", slot_lines.len() as f64);
+        }
     }
 
     // ── Adaptive passes ───────────────────────────────────────────────
@@ -959,7 +1029,20 @@ fn adaptive_segments(
         check_cancel(cancel)?;
         pass_count += 1;
 
+        let pass_started = Instant::now();
+        let material_before = grid.material_fraction();
+        let pass_scope =
+            debug.map(|ctx| ctx.start_span("adaptive_pass", format!("Pass {pass_count}")));
+        if let Some(scope) = pass_scope.as_ref() {
+            scope.set_z_level(cut_depth);
+            scope.set_counter("material_fraction_before", material_before);
+        }
+        let pass_ctx = pass_scope.as_ref().map(|scope| scope.context());
+
         // Find entry point (spread away from previous endpoints)
+        let entry_scope = pass_ctx
+            .as_ref()
+            .map(|ctx| ctx.start_span("entry_search", format!("Entry {pass_count}")));
         let entry = match find_entry_point(
             &grid,
             &machinable_mask,
@@ -969,8 +1052,22 @@ fn adaptive_segments(
             &pass_endpoints,
         ) {
             Some(p) => p,
-            None => break,
+            None => {
+                if let Some(scope) = pass_scope.as_ref() {
+                    scope.set_exit_reason("no entry");
+                    scope.set_counter("pass_index", pass_count as f64);
+                }
+                break;
+            }
         };
+        if let Some(scope) = entry_scope.as_ref() {
+            scope.set_xy_bbox(ToolpathDebugBounds2 {
+                min_x: entry.x,
+                max_x: entry.x,
+                min_y: entry.y,
+                max_y: entry.y,
+            });
+        }
 
         // Link or retract to entry point
         let max_link_dist = tool_radius * 6.0; // ~3 tool diameters
@@ -1013,6 +1110,7 @@ fn adaptive_segments(
 
         let max_steps = 5000;
         let mut idle_count = 0;
+        let mut search_evaluations = 0u32;
         for _ in 0..max_steps {
             check_cancel(cancel)?;
             let before = grid.material_count;
@@ -1025,7 +1123,7 @@ fn adaptive_segments(
             };
 
             // Search for next direction
-            let angle = match search_direction(
+            let search_result = match search_direction_with_metrics(
                 &grid,
                 &machinable_mask,
                 cx,
@@ -1036,9 +1134,11 @@ fn adaptive_segments(
                 smoothed_angle,
                 &boundary_distances,
             ) {
-                Some(a) => a,
+                Some(result) => result,
                 None => break,
             };
+            search_evaluations += search_result.evaluations;
+            let angle = search_result.angle;
 
             // Move in that direction
             cx += step_len * angle.cos();
@@ -1069,8 +1169,12 @@ fn adaptive_segments(
         }
 
         let was_idle = idle_count > 15;
+        let exit_reason = if was_idle { "idle" } else { "no direction" };
 
-        if path.len() >= 2 {
+        let path_len = path.len();
+        let path_debug_bounds = path_bounds(&path);
+
+        if path_len >= 2 {
             let endpoint = *path.last().expect("path is non-empty after loop");
             last_pos = Some(endpoint);
             pass_endpoints.push(endpoint);
@@ -1084,7 +1188,47 @@ fn adaptive_segments(
         // nearby is too small or inaccessible. Force-clear a wider area
         // around the last position to prevent revisiting the same spot.
         if was_idle {
+            let forced_clear_scope = pass_ctx
+                .as_ref()
+                .map(|ctx| ctx.start_span("forced_clear", format!("Forced clear {pass_count}")));
             grid.clear_circle(cx, cy, tool_radius * 2.0);
+            if let Some(scope) = forced_clear_scope.as_ref() {
+                scope.set_xy_bbox(ToolpathDebugBounds2 {
+                    min_x: cx - tool_radius * 2.0,
+                    max_x: cx + tool_radius * 2.0,
+                    min_y: cy - tool_radius * 2.0,
+                    max_y: cy + tool_radius * 2.0,
+                });
+                scope.set_z_level(cut_depth);
+            }
+        }
+
+        if let Some(scope) = pass_scope.as_ref() {
+            scope.set_counter("pass_index", pass_count as f64);
+            scope.set_counter("step_count", path_len as f64);
+            scope.set_counter("idle_count", idle_count as f64);
+            scope.set_counter("search_evaluations", search_evaluations as f64);
+            scope.set_counter("material_fraction_after", grid.material_fraction());
+            scope.set_exit_reason(exit_reason);
+            if let Some(bounds) = path_debug_bounds {
+                scope.set_xy_bbox(bounds);
+                let (center_x, center_y) = bounds.center();
+                if let Some(ctx) = pass_ctx.as_ref() {
+                    ctx.record_hotspot(
+                        "adaptive_pass",
+                        center_x,
+                        center_y,
+                        Some(cut_depth),
+                        tool_radius * 2.0,
+                        Some(tolerance.max(step_len)),
+                        pass_started.elapsed().as_micros() as u64,
+                        1,
+                        path_len as u64,
+                        0,
+                    );
+                }
+            }
+            scope.set_z_level(cut_depth);
         }
     }
 
@@ -1102,6 +1246,7 @@ fn adaptive_segments(
         }
     }
 
+    let cleanup_scope = debug.map(|ctx| ctx.start_span("boundary_cleanup", "Boundary cleanup"));
     for boundary in &contours {
         check_cancel(cancel)?;
         segments.push(AdaptiveSegment::Rapid(boundary[0]));
@@ -1128,6 +1273,10 @@ fn adaptive_segments(
         grid.clear_circle(boundary[0].x, boundary[0].y, tool_radius);
         cleanup_path.push(boundary[0]);
         segments.push(AdaptiveSegment::Cut(cleanup_path));
+    }
+    if let Some(scope) = cleanup_scope.as_ref() {
+        scope.set_counter("contour_count", contours.len() as f64);
+        scope.set_z_level(cut_depth);
     }
 
     Ok(segments)
@@ -1199,13 +1348,24 @@ pub fn adaptive_toolpath_with_cancel(
     params: &AdaptiveParams,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
-    let segments = adaptive_segments(
+    adaptive_toolpath_traced_with_cancel(polygon, params, cancel, None)
+}
+
+pub fn adaptive_toolpath_traced_with_cancel(
+    polygon: &Polygon2,
+    params: &AdaptiveParams,
+    cancel: &dyn CancelCheck,
+    debug: Option<&ToolpathDebugContext>,
+) -> Result<Toolpath, Cancelled> {
+    let segments = adaptive_segments_with_debug(
         polygon,
         params.tool_radius,
         params.stepover,
         params.tolerance,
         params.slot_clearing,
+        params.cut_depth,
         cancel,
+        debug,
     )?;
 
     let mut tp = Toolpath::new();
@@ -2177,6 +2337,47 @@ mod tests {
             dist < 1.0,
             "Center of full grid should find material right there, got dist={:.1}",
             dist
+        );
+    }
+
+    #[test]
+    fn traced_adaptive_emits_pass_spans_and_hotspots() {
+        let poly = square_polygon(20.0);
+        let params = AdaptiveParams {
+            slot_clearing: true,
+            ..default_params(2.0, 1.5)
+        };
+        let recorder = crate::debug_trace::ToolpathDebugRecorder::new("Adaptive", "2D Rough");
+        let ctx = recorder.root_context();
+        let never_cancel = || false;
+
+        let tp = adaptive_toolpath_traced_with_cancel(&poly, &params, &never_cancel, Some(&ctx))
+            .expect("debug run should complete");
+        let trace = recorder.finish();
+
+        assert!(!tp.moves.is_empty(), "expected a non-empty toolpath");
+        assert!(trace.spans.iter().any(|span| span.kind == "slot_clearing"));
+        assert!(trace.spans.iter().any(|span| span.kind == "adaptive_pass"));
+        assert!(
+            trace
+                .spans
+                .iter()
+                .any(|span| span.kind == "boundary_cleanup")
+        );
+        assert!(
+            trace
+                .spans
+                .iter()
+                .filter(|span| span.kind == "adaptive_pass")
+                .any(|span| span.exit_reason.is_some()),
+            "adaptive pass spans should record exit reasons"
+        );
+        assert!(
+            trace
+                .hotspots
+                .iter()
+                .any(|hotspot| hotspot.kind == "adaptive_pass"),
+            "adaptive trace should record at least one hotspot"
         );
     }
 }

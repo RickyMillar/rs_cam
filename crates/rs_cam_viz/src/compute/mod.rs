@@ -27,6 +27,7 @@ pub struct LaneSnapshot {
     pub state: LaneState,
     pub queue_depth: usize,
     pub current_job: Option<String>,
+    pub current_phase: Option<String>,
     pub started_at: Option<Instant>,
 }
 
@@ -37,6 +38,7 @@ impl LaneSnapshot {
             state: LaneState::Idle,
             queue_depth: 0,
             current_job: None,
+            current_phase: None,
             started_at: None,
         }
     }

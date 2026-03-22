@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use rs_cam_core::toolpath::Toolpath;
@@ -29,6 +30,7 @@ pub struct ToolpathEntryInit {
     pub stock_source: StockSource,
     pub auto_regen: Option<bool>,
     pub feeds_auto: FeedsAutoMode,
+    pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
 }
 
 impl ToolpathEntryInit {
@@ -57,6 +59,7 @@ impl ToolpathEntryInit {
             stock_source: StockSource::Fresh,
             auto_regen: None,
             feeds_auto: FeedsAutoMode::default(),
+            debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         }
     }
 
@@ -105,6 +108,7 @@ impl ToolpathEntryInit {
             stock_source: source.stock_source,
             auto_regen: Some(source.auto_regen),
             feeds_auto: source.feeds_auto.clone(),
+            debug_options: source.debug_options,
         }
     }
 }
@@ -131,11 +135,18 @@ pub struct ToolpathEntry {
     pub auto_regen: bool,
     pub feeds_auto: FeedsAutoMode,
     pub feeds_result: Option<rs_cam_core::feeds::FeedsResult>,
+    pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
+    pub debug_trace: Option<Arc<rs_cam_core::debug_trace::ToolpathDebugTrace>>,
+    pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
+    pub debug_trace_path: Option<PathBuf>,
 }
 
 pub struct ToolpathResult {
     pub toolpath: Arc<Toolpath>,
     pub stats: ToolpathStats,
+    pub debug_trace: Option<Arc<rs_cam_core::debug_trace::ToolpathDebugTrace>>,
+    pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
+    pub debug_trace_path: Option<PathBuf>,
 }
 
 impl ToolpathEntry {
@@ -165,6 +176,10 @@ impl ToolpathEntry {
             auto_regen,
             feeds_auto: init.feeds_auto,
             feeds_result: None,
+            debug_options: init.debug_options,
+            debug_trace: None,
+            semantic_trace: None,
+            debug_trace_path: None,
         }
     }
 
@@ -201,6 +216,9 @@ impl ToolpathEntry {
         self.result = None;
         self.stale_since = None;
         self.feeds_result = None;
+        self.debug_trace = None;
+        self.semantic_trace = None;
+        self.debug_trace_path = None;
     }
 }
 
@@ -240,6 +258,9 @@ mod tests {
         source.result = Some(ToolpathResult {
             toolpath: Arc::new(Toolpath::new()),
             stats: ToolpathStats::default(),
+            debug_trace: None,
+            semantic_trace: None,
+            debug_trace_path: None,
         });
 
         let duplicate = source.duplicate_as(ToolpathId(9), "Adaptive 3D Copy".to_string());
@@ -271,12 +292,21 @@ mod tests {
         entry.result = Some(ToolpathResult {
             toolpath: Arc::new(Toolpath::new()),
             stats: ToolpathStats::default(),
+            debug_trace: None,
+            semantic_trace: None,
+            debug_trace_path: None,
         });
+        let recorder = rs_cam_core::debug_trace::ToolpathDebugRecorder::new("Loaded", "DropCutter");
+        let trace = Arc::new(recorder.finish());
+        entry.debug_trace = Some(trace);
+        entry.debug_trace_path = Some(std::env::temp_dir().join("loaded_trace.json"));
         entry.stale_since = Some(std::time::Instant::now());
         entry.clear_runtime_state();
         assert!(matches!(entry.status, ComputeStatus::Pending));
         assert!(entry.result.is_none());
         assert!(entry.feeds_result.is_none());
+        assert!(entry.debug_trace.is_none());
+        assert!(entry.debug_trace_path.is_none());
         assert!(entry.stale_since.is_none());
     }
 }

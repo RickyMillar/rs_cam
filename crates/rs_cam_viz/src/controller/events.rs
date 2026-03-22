@@ -639,6 +639,7 @@ impl<B: ComputeBackend> AppController<B> {
             toolpath_name,
             boundary_enabled,
             boundary_containment,
+            debug_options,
         )) = self.state.job.find_toolpath(tp_id).map(|toolpath| {
             (
                 toolpath.tool_id,
@@ -650,6 +651,7 @@ impl<B: ComputeBackend> AppController<B> {
                 toolpath.name.clone(),
                 toolpath.boundary_enabled,
                 toolpath.boundary_containment,
+                toolpath.debug_options,
             )
         })
         else {
@@ -759,6 +761,9 @@ impl<B: ComputeBackend> AppController<B> {
         if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
             toolpath.status = ComputeStatus::Computing;
             toolpath.result = None;
+            toolpath.debug_trace = None;
+            toolpath.semantic_trace = None;
+            toolpath.debug_trace_path = None;
         }
 
         let safe_z = self.state.job.post.safe_z;
@@ -776,6 +781,7 @@ impl<B: ComputeBackend> AppController<B> {
         self.compute.submit_toolpath(ComputeRequest {
             toolpath_id: tp_id,
             toolpath_name,
+            debug_options,
             polygons,
             mesh,
             operation,
@@ -797,6 +803,9 @@ impl<B: ComputeBackend> AppController<B> {
             match message {
                 ComputeMessage::Toolpath(result) => {
                     if let Some(toolpath) = self.state.job.find_toolpath_mut(result.toolpath_id) {
+                        toolpath.debug_trace = result.debug_trace.clone();
+                        toolpath.semantic_trace = result.semantic_trace.clone();
+                        toolpath.debug_trace_path = result.debug_trace_path.clone();
                         match result.result {
                             Ok(computed) => {
                                 toolpath.status = ComputeStatus::Done;
@@ -804,9 +813,11 @@ impl<B: ComputeBackend> AppController<B> {
                             }
                             Err(ComputeError::Cancelled) => {
                                 toolpath.status = ComputeStatus::Pending;
+                                toolpath.result = None;
                             }
                             Err(ComputeError::Message(error)) => {
                                 toolpath.status = ComputeStatus::Error(error);
+                                toolpath.result = None;
                             }
                         }
                     }

@@ -2,6 +2,7 @@ use super::*;
 use crate::compute::{ComputeBackend, ComputeLane, ComputeMessage, LaneState};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
+use rs_cam_core::toolpath::Toolpath;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -28,6 +29,7 @@ fn sample_request(operation: OperationConfig, stock_source: StockSource) -> Comp
         boundary_containment: BoundaryContainment::Center,
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(10.0, 5.0),
+        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
     }
 }
 
@@ -102,6 +104,7 @@ fn quick_pocket_request(id: usize) -> ComputeRequest {
         boundary_containment: BoundaryContainment::Center,
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(10.0, 5.0),
+        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
     }
 }
 
@@ -133,6 +136,41 @@ fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
         boundary_containment: BoundaryContainment::Center,
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(10.0, 5.0),
+        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+    }
+}
+
+fn waterline_request(id: usize) -> ComputeRequest {
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mesh = make_test_flat(60.0);
+    let mut cfg = match OperationConfig::new_default(OperationType::Waterline) {
+        OperationConfig::Waterline(cfg) => cfg,
+        _ => unreachable!("default op kind mismatch"),
+    };
+    cfg.start_z = 0.0;
+    cfg.final_z = -2.0;
+    cfg.z_step = 1.0;
+    cfg.sampling = 1.0;
+    ComputeRequest {
+        toolpath_id: ToolpathId(id),
+        toolpath_name: format!("Waterline {id}"),
+        polygons: None,
+        mesh: Some(Arc::new(mesh)),
+        operation: OperationConfig::Waterline(cfg),
+        dressups: DressupConfig::default(),
+        stock_source: StockSource::Fresh,
+        tool,
+        safe_z: 10.0,
+        prev_tool_radius: None,
+        stock_bbox: Some(BoundingBox3 {
+            min: P3::new(-30.0, -30.0, -5.0),
+            max: P3::new(30.0, 30.0, 10.0),
+        }),
+        boundary_enabled: false,
+        boundary_containment: BoundaryContainment::Center,
+        keep_out_footprints: Vec::new(),
+        heights: HeightsConfig::default().resolve(10.0, 5.0),
+        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
     }
 }
 
@@ -186,6 +224,336 @@ where
     None
 }
 
+fn assert_toolpaths_match(left: &Toolpath, right: &Toolpath) {
+    assert_eq!(
+        left.moves.len(),
+        right.moves.len(),
+        "toolpaths should have the same move count"
+    );
+
+    for (index, (lhs, rhs)) in left.moves.iter().zip(&right.moves).enumerate() {
+        assert_eq!(
+            lhs.move_type, rhs.move_type,
+            "move type mismatch at index {index}"
+        );
+        assert!(
+            (lhs.target.x - rhs.target.x).abs() < 1e-9,
+            "x mismatch at move {index}: {} vs {}",
+            lhs.target.x,
+            rhs.target.x
+        );
+        assert!(
+            (lhs.target.y - rhs.target.y).abs() < 1e-9,
+            "y mismatch at move {index}: {} vs {}",
+            lhs.target.y,
+            rhs.target.y
+        );
+        assert!(
+            (lhs.target.z - rhs.target.z).abs() < 1e-9,
+            "z mismatch at move {index}: {} vs {}",
+            lhs.target.z,
+            rhs.target.z
+        );
+    }
+}
+
+#[test]
+fn debug_enabled_compute_attaches_trace_and_keeps_geometry_stable() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut debug_req = quick_pocket_request(41);
+    debug_req.debug_options.enabled = true;
+
+    let debug_result = super::execute::run_compute(&debug_req, &cancel);
+    let debug_toolpath = debug_result.result.expect("debug compute should succeed");
+    let trace = debug_toolpath
+        .debug_trace
+        .as_ref()
+        .expect("debug compute should return a trace");
+    let semantic_trace = debug_toolpath
+        .semantic_trace
+        .as_ref()
+        .expect("debug compute should return a semantic trace");
+    let trace_path = debug_toolpath
+        .debug_trace_path
+        .clone()
+        .expect("debug compute should write a trace artifact");
+    assert!(
+        trace_path.exists(),
+        "expected trace artifact at {:?}",
+        trace_path
+    );
+    assert!(trace.spans.iter().any(|span| span.kind == "core_generate"));
+    assert!(trace.spans.iter().any(|span| span.kind == "dressups"));
+    assert!(trace.spans.iter().any(|span| span.kind == "final_stats"));
+    assert!(semantic_trace.summary.item_count > 0);
+    assert!(
+        semantic_trace.summary.move_linked_item_count > 0,
+        "semantic trace should contain move-linked items"
+    );
+
+    let payload = std::fs::read_to_string(&trace_path).expect("read trace artifact");
+    assert!(payload.contains("\"toolpath_name\": \"Pocket 41\""));
+    assert!(payload.contains("\"semantic_trace\""));
+    std::fs::remove_file(&trace_path).ok();
+
+    let plain_result = super::execute::run_compute(&quick_pocket_request(42), &cancel)
+        .result
+        .expect("plain compute should succeed");
+    assert!(plain_result.debug_trace.is_none());
+    assert!(plain_result.semantic_trace.is_none());
+    assert!(plain_result.debug_trace_path.is_none());
+    assert_toolpaths_match(&debug_toolpath.toolpath, &plain_result.toolpath);
+    assert_eq!(
+        debug_toolpath.stats.move_count,
+        plain_result.stats.move_count
+    );
+    assert!(
+        (debug_toolpath.stats.cutting_distance - plain_result.stats.cutting_distance).abs() < 1e-9
+    );
+    assert!((debug_toolpath.stats.rapid_distance - plain_result.stats.rapid_distance).abs() < 1e-9);
+}
+
+#[test]
+fn debug_trace_records_arc_fit_and_feed_optimization_phases() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = sample_request(
+        OperationConfig::new_default(OperationType::Pocket),
+        StockSource::Fresh,
+    );
+    request.toolpath_id = ToolpathId(77);
+    request.toolpath_name = "Dressup phases".to_string();
+    request.polygons = Some(Arc::new(vec![Polygon2::rectangle(
+        -20.0, -20.0, 20.0, 20.0,
+    )]));
+    request.dressups.arc_fitting = true;
+    request.dressups.feed_optimization = true;
+    request.debug_options.enabled = true;
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("debug compute should succeed");
+    let trace = result
+        .debug_trace
+        .as_ref()
+        .expect("debug compute should return a trace");
+
+    assert!(trace.spans.iter().any(|span| span.kind == "arc_fit"));
+    assert!(
+        trace
+            .spans
+            .iter()
+            .any(|span| span.kind == "feed_optimization")
+    );
+
+    if let Some(path) = result.debug_trace_path.as_ref() {
+        std::fs::remove_file(path).ok();
+    }
+}
+
+#[test]
+fn debug_trace_records_dropcutter_prepare_and_rasterize_phases() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = heavy_dropcutter_request(78);
+    request.debug_options.enabled = true;
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("dropcutter debug compute should succeed");
+    let trace = result
+        .debug_trace
+        .as_ref()
+        .expect("dropcutter debug compute should return a trace");
+
+    assert!(trace.spans.iter().any(|span| span.kind == "prepare_input"));
+    assert!(
+        trace
+            .spans
+            .iter()
+            .any(|span| span.kind == "dropcutter_grid")
+    );
+    assert!(trace.spans.iter().any(|span| span.kind == "rasterize_grid"));
+
+    if let Some(path) = result.debug_trace_path.as_ref() {
+        std::fs::remove_file(path).ok();
+    }
+}
+
+#[test]
+fn debug_trace_records_waterline_prepare_and_slice_phases() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = waterline_request(79);
+    request.debug_options.enabled = true;
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("waterline debug compute should succeed");
+    let trace = result
+        .debug_trace
+        .as_ref()
+        .expect("waterline debug compute should return a trace");
+
+    assert!(trace.spans.iter().any(|span| span.kind == "prepare_input"));
+    assert!(
+        trace
+            .spans
+            .iter()
+            .any(|span| span.kind == "waterline_slices")
+    );
+
+    if let Some(path) = result.debug_trace_path.as_ref() {
+        std::fs::remove_file(path).ok();
+    }
+}
+
+#[test]
+fn cancelled_toolpath_returns_partial_debug_trace() {
+    let mut backend = ThreadedComputeBackend::new();
+    let mut request = heavy_dropcutter_request(88);
+    request.debug_options.enabled = true;
+    backend.submit_toolpath(request);
+    thread::sleep(Duration::from_millis(20));
+    backend.cancel_lane(ComputeLane::Toolpath);
+
+    let cancelled = wait_for(&mut backend, Duration::from_secs(5), |message| {
+        matches!(
+            message,
+            ComputeMessage::Toolpath(ComputeResult {
+                toolpath_id: ToolpathId(88),
+                result: Err(ComputeError::Cancelled),
+                ..
+            })
+        )
+    });
+    let cancelled = match cancelled {
+        Some(ComputeMessage::Toolpath(result)) => result,
+        Some(_) => panic!("expected toolpath result"),
+        None => panic!("expected cancelled toolpath result"),
+    };
+    assert!(
+        cancelled.debug_trace.is_some(),
+        "cancelled debug run should return a partial trace"
+    );
+    assert!(
+        cancelled.semantic_trace.is_some(),
+        "cancelled debug run should return a partial semantic trace"
+    );
+    let trace_path = cancelled
+        .debug_trace_path
+        .as_ref()
+        .expect("cancelled debug run should write an artifact");
+    assert!(
+        trace_path.exists(),
+        "expected trace artifact at {:?}",
+        trace_path
+    );
+    std::fs::remove_file(trace_path).ok();
+}
+
+#[test]
+fn semantic_trace_records_entry_params_and_boundary_clip() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = quick_pocket_request(90);
+    request.debug_options.enabled = true;
+    request.boundary_enabled = true;
+    request.stock_bbox = Some(BoundingBox3 {
+        min: P3::new(-10.0, -10.0, -5.0),
+        max: P3::new(10.0, 10.0, 10.0),
+    });
+    request.dressups.entry_style = crate::state::toolpath::DressupEntryStyle::Helix;
+    request.dressups.lead_in_out = true;
+    request.dressups.link_moves = true;
+    request.dressups.arc_fitting = true;
+    request.dressups.optimize_rapid_order = true;
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("semantic debug compute should succeed");
+    let semantic_trace = result
+        .semantic_trace
+        .as_ref()
+        .expect("semantic trace should be attached");
+
+    let helix = semantic_trace
+        .items
+        .iter()
+        .find(|item| {
+            item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Entry
+                && item.label == "Helix entry"
+        })
+        .expect("helix entry item should be present");
+    assert_eq!(
+        helix.params.values.get("radius"),
+        Some(&serde_json::json!(request.dressups.helix_radius))
+    );
+    assert_eq!(
+        helix.params.values.get("pitch"),
+        Some(&serde_json::json!(request.dressups.helix_pitch))
+    );
+
+    let boundary_clip = semantic_trace
+        .items
+        .iter()
+        .find(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::BoundaryClip)
+        .expect("boundary clip item should be present");
+    assert_eq!(
+        boundary_clip.params.values.get("containment"),
+        Some(&serde_json::json!("center"))
+    );
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.move_start.is_some() && item.move_end.is_some()),
+        "expected move-linked semantic items"
+    );
+
+    if let Some(path) = result.debug_trace_path.as_ref() {
+        std::fs::remove_file(path).ok();
+    }
+}
+
+#[test]
+fn running_lane_snapshot_reports_current_phase() {
+    let mut backend = ThreadedComputeBackend::new();
+    backend.submit_toolpath(heavy_dropcutter_request(89));
+
+    let start = Instant::now();
+    let mut saw_phase = false;
+    while start.elapsed() < Duration::from_secs(2) && !saw_phase {
+        let snapshot = backend.lane_snapshot(ComputeLane::Toolpath);
+        saw_phase = snapshot.state == LaneState::Running && snapshot.current_phase.is_some();
+        if !saw_phase {
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    assert!(
+        saw_phase,
+        "expected running lane snapshot to expose current_phase"
+    );
+}
+
+#[test]
+fn analysis_lane_snapshot_reports_current_phase() {
+    let mut backend = ThreadedComputeBackend::new();
+    backend.submit_simulation(long_simulation_request());
+
+    let start = Instant::now();
+    let mut saw_phase = false;
+    while start.elapsed() < Duration::from_secs(2) && !saw_phase {
+        let snapshot = backend.lane_snapshot(ComputeLane::Analysis);
+        saw_phase = snapshot.state == LaneState::Running && snapshot.current_phase.is_some();
+        if !saw_phase {
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    assert!(
+        saw_phase,
+        "expected analysis lane snapshot to expose current_phase"
+    );
+}
+
 #[test]
 fn analysis_cancel_completes_quickly() {
     let mut backend = ThreadedComputeBackend::new();
@@ -220,7 +588,8 @@ fn toolpath_and_analysis_lanes_run_independently() {
             message,
             ComputeMessage::Toolpath(ComputeResult {
                 toolpath_id: ToolpathId(7),
-                result: Ok(_)
+                result: Ok(_),
+                ..
             })
         )
     });
@@ -274,12 +643,14 @@ fn resubmitting_active_toolpath_cancels_and_replaces_it() {
                 ComputeMessage::Toolpath(ComputeResult {
                     toolpath_id: ToolpathId(3),
                     result: Err(ComputeError::Cancelled),
+                    ..
                 }) => {
                     saw_cancelled = true;
                 }
                 ComputeMessage::Toolpath(ComputeResult {
                     toolpath_id: ToolpathId(3),
                     result: Ok(_),
+                    ..
                 }) => {
                     saw_replacement = true;
                 }

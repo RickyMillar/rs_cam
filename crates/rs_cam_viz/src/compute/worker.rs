@@ -1,17 +1,21 @@
 mod execute;
 pub mod helpers;
+mod semantic;
 #[cfg(test)]
 mod tests;
 
 use std::collections::VecDeque;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Condvar, Mutex};
 use std::time::Instant;
 
-use rs_cam_core::adaptive::{AdaptiveParams, adaptive_toolpath_with_cancel};
-use rs_cam_core::adaptive3d::{Adaptive3dParams, EntryStyle3d, adaptive_3d_toolpath_with_cancel};
+use rs_cam_core::adaptive::{AdaptiveParams, adaptive_toolpath_traced_with_cancel};
+use rs_cam_core::adaptive3d::{
+    Adaptive3dParams, EntryStyle3d, adaptive_3d_toolpath_traced_with_cancel,
+};
 use rs_cam_core::arcfit::fit_arcs;
 use rs_cam_core::chamfer::{ChamferParams, chamfer_toolpath};
 use rs_cam_core::collision::{
@@ -64,6 +68,7 @@ use crate::state::toolpath::*;
 pub struct ComputeRequest {
     pub toolpath_id: ToolpathId,
     pub toolpath_name: String,
+    pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
     pub polygons: Option<Arc<Vec<Polygon2>>>,
     pub mesh: Option<Arc<TriangleMesh>>,
     pub operation: OperationConfig,
@@ -83,6 +88,9 @@ pub struct ComputeRequest {
 pub struct ComputeResult {
     pub toolpath_id: ToolpathId,
     pub result: Result<ToolpathResult, ComputeError>,
+    pub debug_trace: Option<Arc<rs_cam_core::debug_trace::ToolpathDebugTrace>>,
+    pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
+    pub debug_trace_path: Option<PathBuf>,
 }
 
 /// A group of toolpaths from one setup, pre-transformed to the global stock frame.
@@ -154,6 +162,7 @@ struct LaneInner<Request> {
     queue: VecDeque<Request>,
     state: LaneState,
     current_job: Option<String>,
+    current_phase: Option<String>,
     started_at: Option<Instant>,
     active_toolpath_id: Option<ToolpathId>,
 }
@@ -164,6 +173,7 @@ impl<Request> LaneInner<Request> {
             queue: VecDeque::new(),
             state: LaneState::Idle,
             current_job: None,
+            current_phase: None,
             started_at: None,
             active_toolpath_id: None,
         }
@@ -194,8 +204,68 @@ impl<Request> LaneQueue<Request> {
             state: inner.state,
             queue_depth: inner.queue.len(),
             current_job: inner.current_job.clone(),
+            current_phase: inner.current_phase.clone(),
             started_at: inner.started_at,
         }
+    }
+}
+
+#[derive(Clone)]
+struct ToolpathPhaseTracker {
+    lane: Arc<LaneQueue<ComputeRequest>>,
+}
+
+struct ToolpathPhaseScope {
+    tracker: ToolpathPhaseTracker,
+    previous_phase: Option<String>,
+    finished: bool,
+}
+
+impl ToolpathPhaseTracker {
+    fn new(lane: Arc<LaneQueue<ComputeRequest>>) -> Self {
+        Self { lane }
+    }
+
+    fn start_phase(&self, phase: impl Into<String>) -> ToolpathPhaseScope {
+        let previous_phase = self.replace_phase(Some(phase.into()));
+        ToolpathPhaseScope {
+            tracker: self.clone(),
+            previous_phase,
+            finished: false,
+        }
+    }
+
+    fn clear(&self) {
+        self.replace_phase(None);
+    }
+
+    fn replace_phase(&self, phase: Option<String>) -> Option<String> {
+        let mut inner = self.lane.inner.lock().expect("lane mutex poisoned");
+        let previous = inner.current_phase.clone();
+        inner.current_phase = phase;
+        previous
+    }
+}
+
+impl rs_cam_core::debug_trace::ToolpathPhaseSink for ToolpathPhaseTracker {
+    fn set_phase(&self, phase: Option<String>) {
+        self.replace_phase(phase);
+    }
+}
+
+impl ToolpathPhaseScope {
+    fn finish_inner(&mut self) {
+        if self.finished {
+            return;
+        }
+        self.tracker.replace_phase(self.previous_phase.clone());
+        self.finished = true;
+    }
+}
+
+impl Drop for ToolpathPhaseScope {
+    fn drop(&mut self) {
+        self.finish_inner();
     }
 }
 
@@ -248,6 +318,7 @@ impl ComputeBackend for ThreadedComputeBackend {
         if inner.started_at.is_none() {
             inner.state = LaneState::Queued;
             inner.current_job = inner.queue.front().map(toolpath_job_label);
+            inner.current_phase = None;
         }
         self.toolpath_lane.wake.notify_one();
     }
@@ -318,6 +389,7 @@ impl ThreadedComputeBackend {
         } else {
             inner.state = LaneState::Queued;
             inner.current_job = inner.queue.front().map(analysis_job_label);
+            inner.current_phase = None;
         }
         self.analysis_lane.wake.notify_one();
     }
@@ -348,6 +420,7 @@ fn spawn_toolpath_lane(
                 while inner.queue.is_empty() {
                     inner.state = LaneState::Idle;
                     inner.current_job = None;
+                    inner.current_phase = None;
                     inner.started_at = None;
                     inner.active_toolpath_id = None;
                     inner = lane.wake.wait(inner).expect("lane mutex poisoned");
@@ -356,22 +429,25 @@ fn spawn_toolpath_lane(
                 lane.cancel.store(false, Ordering::SeqCst);
                 inner.state = LaneState::Running;
                 inner.current_job = Some(toolpath_job_label(&request));
+                inner.current_phase = None;
                 inner.started_at = Some(Instant::now());
                 inner.active_toolpath_id = Some(request.toolpath_id);
                 request
             };
 
-            let result = execute::run_compute(&request, lane.cancel.as_ref());
-            let result = if lane.cancel.load(Ordering::SeqCst) && result.is_ok() {
-                Err(ComputeError::Cancelled)
-            } else {
-                result
-            };
+            let phase_tracker = ToolpathPhaseTracker::new(Arc::clone(&lane));
+            let mut outcome =
+                execute::run_compute_with_phase(&request, lane.cancel.as_ref(), &phase_tracker);
+            if lane.cancel.load(Ordering::SeqCst) && outcome.result.is_ok() {
+                outcome.result = Err(ComputeError::Cancelled);
+            }
+            phase_tracker.clear();
 
             {
                 let mut inner = lane.inner.lock().expect("lane mutex poisoned");
                 inner.active_toolpath_id = None;
                 inner.started_at = None;
+                inner.current_phase = None;
                 if inner.queue.is_empty() {
                     inner.state = LaneState::Idle;
                     inner.current_job = None;
@@ -383,7 +459,10 @@ fn spawn_toolpath_lane(
 
             let _ = result_tx.send(ComputeMessage::Toolpath(ComputeResult {
                 toolpath_id: request.toolpath_id,
-                result,
+                result: outcome.result,
+                debug_trace: outcome.debug_trace,
+                semantic_trace: outcome.semantic_trace,
+                debug_trace_path: outcome.debug_trace_path,
             }));
         }
     });
@@ -400,6 +479,7 @@ fn spawn_analysis_lane(
                 while inner.queue.is_empty() {
                     inner.state = LaneState::Idle;
                     inner.current_job = None;
+                    inner.current_phase = None;
                     inner.started_at = None;
                     inner.active_toolpath_id = None;
                     inner = lane.wake.wait(inner).expect("lane mutex poisoned");
@@ -408,13 +488,22 @@ fn spawn_analysis_lane(
                 lane.cancel.store(false, Ordering::SeqCst);
                 inner.state = LaneState::Running;
                 inner.current_job = Some(analysis_job_label(&request));
+                inner.current_phase = None;
                 inner.started_at = Some(Instant::now());
                 request
             };
 
             let result = match request {
                 AnalysisRequest::Simulation(request) => {
-                    let result = execute::run_simulation(&request, lane.cancel.as_ref());
+                    let set_phase = |phase: &str| {
+                        let mut inner = lane.inner.lock().expect("lane mutex poisoned");
+                        inner.current_phase = Some(phase.to_string());
+                    };
+                    let result = execute::run_simulation_with_phase(
+                        &request,
+                        lane.cancel.as_ref(),
+                        set_phase,
+                    );
                     let result = if lane.cancel.load(Ordering::SeqCst) && result.is_ok() {
                         Err(ComputeError::Cancelled)
                     } else {
@@ -423,7 +512,15 @@ fn spawn_analysis_lane(
                     ComputeMessage::Simulation(result)
                 }
                 AnalysisRequest::Collision(request) => {
-                    let result = helpers::run_collision_check(&request, lane.cancel.as_ref());
+                    let set_phase = |phase: &str| {
+                        let mut inner = lane.inner.lock().expect("lane mutex poisoned");
+                        inner.current_phase = Some(phase.to_string());
+                    };
+                    let result = helpers::run_collision_check_with_phase(
+                        &request,
+                        lane.cancel.as_ref(),
+                        set_phase,
+                    );
                     let result = if lane.cancel.load(Ordering::SeqCst) && result.is_ok() {
                         Err(ComputeError::Cancelled)
                     } else {
@@ -436,6 +533,7 @@ fn spawn_analysis_lane(
             {
                 let mut inner = lane.inner.lock().expect("lane mutex poisoned");
                 inner.started_at = None;
+                inner.current_phase = None;
                 if inner.queue.is_empty() {
                     inner.state = LaneState::Idle;
                     inner.current_job = None;
