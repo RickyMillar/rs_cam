@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::compute::{
-    CollisionRequest, ComputeBackend, ComputeError, ComputeMessage, ComputeRequest, SetupSimGroup,
-    SetupSimToolpath, SimulationRequest,
+    CollisionRequest, ComputeBackend, ComputeError, ComputeLane, ComputeMessage, ComputeRequest,
+    SetupSimGroup, SetupSimToolpath, SimulationRequest,
 };
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::BoundingBox3;
@@ -419,6 +419,14 @@ impl<B: ComputeBackend> AppController<B> {
             tracing::warn!("Cannot add toolpath: no tools defined");
             return;
         };
+        let operation = OperationConfig::new_default(op_type);
+        if !operation.is_stock_based() && self.state.job.models.is_empty() {
+            tracing::warn!(
+                "Cannot add {} toolpath: import geometry first",
+                operation.label()
+            );
+            return;
+        }
         let id = self.state.job.next_toolpath_id();
         let model_id = self
             .state
@@ -427,12 +435,12 @@ impl<B: ComputeBackend> AppController<B> {
             .first()
             .map(|model| model.id)
             .unwrap_or(crate::state::job::ModelId(0));
-        let entry = ToolpathEntry::for_operation(
+        let entry = ToolpathEntry::new(
             id,
             format!("{} {}", op_type.label(), id.0 + 1),
             tool_id,
             model_id,
-            op_type,
+            operation,
         );
         self.state.selection = Selection::Toolpath(id);
         if let Some(setup_id) = target_setup_id {
@@ -550,6 +558,7 @@ impl<B: ComputeBackend> AppController<B> {
     // ── Simulation helpers ───────────────────────────────────────────────
 
     fn handle_reset_simulation(&mut self) {
+        self.compute.cancel_lane(ComputeLane::Analysis);
         let sim = &mut self.state.simulation;
         sim.results = None;
         sim.playback = Default::default();
@@ -848,10 +857,7 @@ impl<B: ComputeBackend> AppController<B> {
         if has_pins && existing.is_none() {
             // Auto-create in Setup 1 at index 0, but only if a tool exists.
             let first_tool_id = self.state.job.tools.first().map(|t| t.id);
-            if let (Some(setup), Some(tool_id)) = (
-                self.state.job.setups.first(),
-                first_tool_id,
-            ) {
+            if let (Some(setup), Some(tool_id)) = (self.state.job.setups.first(), first_tool_id) {
                 let setup_id = setup.id;
                 let id = self.state.job.next_toolpath_id();
                 let model_id = self
@@ -961,8 +967,7 @@ impl<B: ComputeBackend> AppController<B> {
                 .map(|t| (t.id, t.summary(), t.diameter))
                 .collect();
             if let Some(entry) = self.state.job.find_toolpath(tp_id) {
-                let errs =
-                    crate::ui::properties::validate_toolpath(entry, &tools_snapshot);
+                let errs = crate::ui::properties::validate_toolpath(entry, &tools_snapshot);
                 if !errs.is_empty() {
                     if let Some(tp) = self.state.job.find_toolpath_mut(tp_id) {
                         tp.status = ComputeStatus::Error(errs.join("; "));

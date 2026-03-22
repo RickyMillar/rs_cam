@@ -90,18 +90,16 @@ impl RsCamApp {
                     Ok(None) => {}
                     Err(error) => tracing::error!("STL import failed: {error}"),
                 },
-                AppEvent::ImportSvg(path) => {
-                    match self.controller.import_svg_path(&path) {
-                        Ok(()) => self.fit_camera_to_first_mesh(),
-                        Err(error) => tracing::error!("SVG import failed: {error}"),
-                    }
-                }
-                AppEvent::ImportDxf(path) => {
-                    match self.controller.import_dxf_path(&path) {
-                        Ok(()) => self.fit_camera_to_first_mesh(),
-                        Err(error) => tracing::error!("DXF import failed: {error}"),
-                    }
-                }
+                AppEvent::ImportSvg(path) => match self.controller.import_svg_path(&path) {
+                    Ok(Some(bbox)) => self.fit_camera_to_bbox(&bbox),
+                    Ok(None) => self.fit_camera_to_first_model(),
+                    Err(error) => tracing::error!("SVG import failed: {error}"),
+                },
+                AppEvent::ImportDxf(path) => match self.controller.import_dxf_path(&path) {
+                    Ok(Some(bbox)) => self.fit_camera_to_bbox(&bbox),
+                    Ok(None) => self.fit_camera_to_first_model(),
+                    Err(error) => tracing::error!("DXF import failed: {error}"),
+                },
                 AppEvent::RescaleModel(model_id, new_units) => {
                     match self.controller.rescale_model(model_id, new_units) {
                         Ok(Some(bbox)) => self.fit_camera_to_bbox(&bbox),
@@ -137,7 +135,7 @@ impl RsCamApp {
                         }
                     }
                 }
-                AppEvent::ResetView => self.fit_camera_to_first_mesh(),
+                AppEvent::ResetView => self.fit_camera_to_first_model(),
 
                 // Workspace transitions (need camera/viewport changes in app)
                 AppEvent::SwitchWorkspace(target) => {
@@ -344,14 +342,14 @@ impl RsCamApp {
         );
     }
 
-    fn fit_camera_to_first_mesh(&mut self) {
+    fn fit_camera_to_first_model(&mut self) {
         if let Some(bbox) = self
             .controller
             .state()
             .job
             .models
             .iter()
-            .find_map(|model| model.mesh.as_ref().map(|mesh| mesh.bbox))
+            .find_map(|model| model.bbox())
         {
             self.fit_camera_to_bbox(&bbox);
         } else {

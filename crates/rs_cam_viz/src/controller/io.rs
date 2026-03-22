@@ -13,7 +13,7 @@ impl<B: ComputeBackend> AppController<B> {
     pub fn import_stl_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, String> {
         let id = self.state.job.next_model_id();
         let model = import::import_stl(path, id, 1.0)?;
-        let bbox = model.mesh.as_ref().map(|mesh| mesh.bbox);
+        let bbox = model.bbox();
         if let Some(mesh) = &model.mesh
             && self.state.job.stock.auto_from_model
         {
@@ -26,24 +26,26 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(bbox)
     }
 
-    pub fn import_svg_path(&mut self, path: &Path) -> Result<(), String> {
+    pub fn import_svg_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, String> {
         let id = self.state.job.next_model_id();
         let model = import::import_svg(path, id)?;
+        let bbox = model.bbox();
         self.state.selection = Selection::Model(model.id);
         self.state.job.models.push(model);
         self.state.job.dirty = true;
         self.pending_upload = true;
-        Ok(())
+        Ok(bbox)
     }
 
-    pub fn import_dxf_path(&mut self, path: &Path) -> Result<(), String> {
+    pub fn import_dxf_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, String> {
         let id = self.state.job.next_model_id();
         let model = import::import_dxf(path, id)?;
+        let bbox = model.bbox();
         self.state.selection = Selection::Model(model.id);
         self.state.job.models.push(model);
         self.state.job.dirty = true;
         self.pending_upload = true;
-        Ok(())
+        Ok(bbox)
     }
 
     pub fn rescale_model(
@@ -88,10 +90,7 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(bbox)
     }
 
-    pub fn reload_model(
-        &mut self,
-        model_id: crate::state::job::ModelId,
-    ) -> Result<(), String> {
+    pub fn reload_model(&mut self, model_id: crate::state::job::ModelId) -> Result<(), String> {
         let Some(model) = self
             .state
             .job

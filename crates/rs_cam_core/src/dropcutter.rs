@@ -106,16 +106,13 @@ pub fn batch_drop_cutter_with_cancel<C: MillingCutter + ?Sized>(
         let cols = ((x_end - x_start) / step_over).ceil() as usize + 1;
         let rows = ((y_end - y_start) / step_over).ceil() as usize + 1;
 
-        let points = batch_compute_points(
-            rows, cols, cancel, mesh, index, cutter, min_z,
-            |i| {
-                let row = i / cols;
-                let col = i % cols;
-                let x = x_start + col as f64 * step_over;
-                let y = y_start + row as f64 * step_over;
-                (x, y)
-            },
-        )?;
+        let points = batch_compute_points(rows, cols, cancel, mesh, index, cutter, min_z, |i| {
+            let row = i / cols;
+            let col = i % cols;
+            let x = x_start + col as f64 * step_over;
+            let y = y_start + row as f64 * step_over;
+            (x, y)
+        })?;
 
         return Ok(DropCutterGrid {
             points,
@@ -154,19 +151,16 @@ pub fn batch_drop_cutter_with_cancel<C: MillingCutter + ?Sized>(
     let cols = ((u_max - u_min) / step_over).ceil() as usize + 1;
     let rows = ((v_max - v_min) / step_over).ceil() as usize + 1;
 
-    let points = batch_compute_points(
-        rows, cols, cancel, mesh, index, cutter, min_z,
-        |i| {
-            let row = i / cols;
-            let col = i % cols;
-            let u = u_min + col as f64 * step_over;
-            let v = v_min + row as f64 * step_over;
-            // Inverse rotation: (u,v) -> (x,y)
-            let x = u * cos_a - v * sin_a;
-            let y = u * sin_a + v * cos_a;
-            (x, y)
-        },
-    )?;
+    let points = batch_compute_points(rows, cols, cancel, mesh, index, cutter, min_z, |i| {
+        let row = i / cols;
+        let col = i % cols;
+        let u = u_min + col as f64 * step_over;
+        let v = v_min + row as f64 * step_over;
+        // Inverse rotation: (u,v) -> (x,y)
+        let x = u * cos_a - v * sin_a;
+        let y = u * sin_a + v * cos_a;
+        (x, y)
+    })?;
 
     Ok(DropCutterGrid {
         points,
@@ -256,9 +250,7 @@ mod tests {
     use super::*;
     use crate::geo::P3;
     use crate::mesh::{SpatialIndex, make_test_flat, make_test_hemisphere};
-    use crate::tool::{
-        BallEndmill, BullNoseEndmill, FlatEndmill, TaperedBallEndmill, VBitEndmill,
-    };
+    use crate::tool::{BallEndmill, BullNoseEndmill, FlatEndmill, TaperedBallEndmill, VBitEndmill};
 
     #[test]
     fn test_batch_drop_cutter_flat() {
@@ -594,15 +586,8 @@ mod tests {
 
         // Cancel immediately
         let always_cancel = || true;
-        let result = batch_drop_cutter_with_cancel(
-            &mesh,
-            &index,
-            &tool,
-            5.0,
-            0.0,
-            -100.0,
-            &always_cancel,
-        );
+        let result =
+            batch_drop_cutter_with_cancel(&mesh, &index, &tool, 5.0, 0.0, -100.0, &always_cancel);
         assert!(
             result.is_err(),
             "Immediately-cancelling predicate should return Err(Cancelled)"
@@ -616,15 +601,8 @@ mod tests {
         let tool = BallEndmill::new(10.0, 25.0);
 
         let never_cancel = || false;
-        let result = batch_drop_cutter_with_cancel(
-            &mesh,
-            &index,
-            &tool,
-            5.0,
-            0.0,
-            -100.0,
-            &never_cancel,
-        );
+        let result =
+            batch_drop_cutter_with_cancel(&mesh, &index, &tool, 5.0, 0.0, -100.0, &never_cancel);
         assert!(
             result.is_ok(),
             "Never-cancelling predicate should return Ok"
@@ -648,15 +626,8 @@ mod tests {
             check_count.load(Ordering::Relaxed) > 3
         };
 
-        let result = batch_drop_cutter_with_cancel(
-            &mesh,
-            &index,
-            &tool,
-            5.0,
-            0.0,
-            -100.0,
-            &cancel_after_3,
-        );
+        let result =
+            batch_drop_cutter_with_cancel(&mesh, &index, &tool, 5.0, 0.0, -100.0, &cancel_after_3);
 
         // Depending on parallelism, it may or may not cancel in time, but
         // the cancel predicate should have been called at least once

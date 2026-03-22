@@ -62,10 +62,7 @@ fn flush_post_snapshot(state: &mut AppState) {
 /// Flush machine undo snapshot if the user navigated away from machine.
 fn flush_machine_snapshot(state: &mut AppState) {
     if let Some(old) = state.history.machine_snapshot.take() {
-        if !matches!(
-            state.selection,
-            crate::state::selection::Selection::Machine
-        ) {
+        if !matches!(state.selection, crate::state::selection::Selection::Machine) {
             state
                 .history
                 .push(crate::state::history::UndoAction::MachineChange {
@@ -85,15 +82,15 @@ fn flush_toolpath_snapshot(state: &mut AppState) {
         if !matches!(state.selection, crate::state::selection::Selection::Toolpath(id) if id == tp_id)
         {
             if let Some(entry) = state.job.find_toolpath(tp_id) {
-                state.history.push(
-                    crate::state::history::UndoAction::ToolpathParamChange {
+                state
+                    .history
+                    .push(crate::state::history::UndoAction::ToolpathParamChange {
                         tp_id,
                         old_op,
                         new_op: entry.operation.clone(),
                         old_dressups,
                         new_dressups: entry.dressups.clone(),
-                    },
-                );
+                    });
                 state.job.mark_edited();
             }
         } else {
@@ -226,11 +223,8 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             if state.history.toolpath_snapshot.is_none()
                 && let Some(entry) = state.job.find_toolpath(id)
             {
-                state.history.toolpath_snapshot = Some((
-                    id,
-                    entry.operation.clone(),
-                    entry.dressups.clone(),
-                ));
+                state.history.toolpath_snapshot =
+                    Some((id, entry.operation.clone(), entry.dressups.clone()));
             }
             // Snapshot tool/model lists to avoid borrow conflict with toolpaths
             let tools: Vec<_> = state
@@ -1252,7 +1246,6 @@ fn tooltip_for(label: &str) -> Option<&'static str> {
         _ => return None,
     })
 }
-
 
 // ── Dressup configuration ────────────────────────────────────────────────
 

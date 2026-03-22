@@ -1340,8 +1340,8 @@ fn main() -> Result<()> {
                             label: &phase.label,
                             pre_gcode: None,
                             post_gcode: None,
-                            tool_number: None,
-                            coolant: rs_cam_core::gcode::CoolantMode::Off,
+                            tool_number: phase.tool_number,
+                            coolant: phase.coolant,
                         })
                         .collect();
                     if setup_phases.is_empty() {
@@ -1387,8 +1387,8 @@ fn main() -> Result<()> {
                         label: &phase.label,
                         pre_gcode: None,
                         post_gcode: None,
-                        tool_number: None,
-                        coolant: rs_cam_core::gcode::CoolantMode::Off,
+                        tool_number: phase.tool_number,
+                        coolant: phase.coolant,
                     })
                     .collect();
                 info!("Emitting G-code ({})...", post_proc.name());

@@ -652,7 +652,10 @@ mod tests {
             max: P3::new(1e-5, 1e-5, 1e-5),
         };
         let grid = DexelGrid::z_grid_from_bounds(&bbox, 0.0);
-        assert!(grid.cell_size > 0.0, "cell_size should be clamped above zero");
+        assert!(
+            grid.cell_size > 0.0,
+            "cell_size should be clamped above zero"
+        );
         assert!(grid.cols > 0);
         assert!(grid.rows > 0);
     }
@@ -664,7 +667,10 @@ mod tests {
             max: P3::new(1e-5, 1e-5, 1e-5),
         };
         let grid = DexelGrid::x_grid_from_bounds(&bbox, -5.0);
-        assert!(grid.cell_size > 0.0, "cell_size should be clamped above zero");
+        assert!(
+            grid.cell_size > 0.0,
+            "cell_size should be clamped above zero"
+        );
         assert!(grid.cols > 0);
         assert!(grid.rows > 0);
     }
@@ -676,7 +682,10 @@ mod tests {
             max: P3::new(1e-5, 1e-5, 1e-5),
         };
         let grid = DexelGrid::y_grid_from_bounds(&bbox, 0.0);
-        assert!(grid.cell_size > 0.0, "cell_size should be clamped above zero");
+        assert!(
+            grid.cell_size > 0.0,
+            "cell_size should be clamped above zero"
+        );
         assert!(grid.cols > 0);
         assert!(grid.rows > 0);
     }

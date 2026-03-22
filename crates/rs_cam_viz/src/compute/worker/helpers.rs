@@ -265,8 +265,7 @@ pub(super) fn apply_dressups(
         let ramp_rate = cfg.feed_ramp_rate;
         // Feed optimization needs a mutable heightmap and special error handling,
         // so we use the tracing helper for scope management but handle the transform inline.
-        let debug_scope =
-            debug.map(|ctx| ctx.start_span("feed_optimization", "Optimize feeds"));
+        let debug_scope = debug.map(|ctx| ctx.start_span("feed_optimization", "Optimize feeds"));
         let debug_span_id = debug_scope.as_ref().map(|scope| scope.id());
         let semantic_scope = semantic.map(|ctx| {
             let scope = ctx.start_item(ToolpathSemanticKind::Optimization, "Feed optimization");

@@ -1207,25 +1207,13 @@ mod tests {
 
     #[test]
     fn sanitize_filename_handles_special_chars() {
-        assert_eq!(
-            sanitize_filename_component("Adaptive 3D"),
-            "adaptive_3d"
-        );
+        assert_eq!(sanitize_filename_component("Adaptive 3D"), "adaptive_3d");
         assert_eq!(
             sanitize_filename_component("my/file:name.ext"),
             "my_file_name_ext"
         );
-        assert_eq!(
-            sanitize_filename_component("---test---"),
-            "---test---"
-        );
-        assert_eq!(
-            sanitize_filename_component(""),
-            "simulation_cut_trace"
-        );
-        assert_eq!(
-            sanitize_filename_component("___"),
-            "simulation_cut_trace"
-        );
+        assert_eq!(sanitize_filename_component("---test---"), "---test---");
+        assert_eq!(sanitize_filename_component(""), "simulation_cut_trace");
+        assert_eq!(sanitize_filename_component("___"), "simulation_cut_trace");
     }
 }

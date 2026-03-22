@@ -908,7 +908,10 @@ fn add_setup_and_remove_setup_lifecycle() {
 fn add_toolpath_and_remove_toolpath_lifecycle() {
     let mut controller = sample_controller();
     let tp_count_before = controller.state.job.toolpath_count();
-    assert!(tp_count_before >= 1, "sample_controller starts with 1 toolpath");
+    assert!(
+        tp_count_before >= 1,
+        "sample_controller starts with 1 toolpath"
+    );
 
     // Add a toolpath
     controller.handle_internal_event(crate::ui::AppEvent::AddToolpath(
@@ -938,6 +941,55 @@ fn add_toolpath_and_remove_toolpath_lifecycle() {
         controller.state.job.find_toolpath(new_tp_id).is_none(),
         "Removed toolpath should not be findable"
     );
+}
+
+#[test]
+fn add_toolpath_requires_geometry_for_polygon_operations() {
+    let mut controller = AppController::with_backend(ScriptedBackend::new());
+    controller.handle_internal_event(crate::ui::AppEvent::AddTool(ToolType::EndMill));
+
+    controller.handle_internal_event(crate::ui::AppEvent::AddToolpath(
+        crate::state::toolpath::OperationType::Pocket,
+    ));
+
+    assert_eq!(
+        controller.state.job.toolpath_count(),
+        0,
+        "Polygon-based toolpaths should not be created without an imported model"
+    );
+}
+
+#[test]
+fn reset_simulation_cancels_analysis_lane() {
+    let mut controller = AppController::with_backend(ScriptedBackend::new());
+    controller.state.simulation.results = Some(crate::state::simulation::SimulationResults {
+        mesh: rs_cam_core::simulation::HeightmapMesh {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+            colors: Vec::new(),
+        },
+        total_moves: 1,
+        boundaries: Vec::new(),
+        setup_boundaries: Vec::new(),
+        checkpoints: Vec::new(),
+        selected_toolpaths: None,
+        playback_data: Vec::new(),
+        stock_bbox: rs_cam_core::geo::BoundingBox3 {
+            min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
+            max: rs_cam_core::geo::P3::new(1.0, 1.0, 1.0),
+        },
+        cut_trace: None,
+        cut_trace_path: None,
+    });
+
+    controller.handle_internal_event(crate::ui::AppEvent::ResetSimulation);
+
+    assert_eq!(
+        controller.compute.analysis_lane.state,
+        LaneState::Cancelling,
+        "Reset should cancel in-flight analysis work"
+    );
+    assert!(controller.state.simulation.results.is_none());
 }
 
 #[test]

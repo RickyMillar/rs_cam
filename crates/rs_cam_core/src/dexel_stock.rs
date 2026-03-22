@@ -688,8 +688,7 @@ fn sample_segment_runtime(
         return;
     }
 
-    let subsegments =
-        ((segment_length / params.sample_step_mm.max(1e-3)).ceil() as usize).max(1);
+    let subsegments = ((segment_length / params.sample_step_mm.max(1e-3)).ceil() as usize).max(1);
     for subsegment in 0..subsegments {
         let t0 = subsegment as f64 / subsegments as f64;
         let t1 = (subsegment + 1) as f64 / subsegments as f64;

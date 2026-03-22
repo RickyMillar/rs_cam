@@ -15,6 +15,7 @@ use crate::state::toolpath::{
     BoundaryContainment, DressupConfig, FeedsAutoMode, HeightsConfig, OperationConfig,
     OperationType, StockSource, ToolpathEntry, ToolpathEntryInit, ToolpathId,
 };
+use rs_cam_core::gcode::CoolantMode;
 
 const PROJECT_FORMAT_VERSION: u32 = 2;
 
@@ -119,6 +120,8 @@ pub struct ProjectToolSection {
     pub id: Option<ToolId>,
     #[serde(default = "default_tool_name")]
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_number: Option<u32>,
     #[serde(rename = "type", default = "default_tool_type")]
     pub tool_type: ToolType,
     #[serde(default = "default_tool_diameter")]
@@ -195,6 +198,8 @@ pub struct ProjectToolpathSection {
     pub boundary_enabled: bool,
     #[serde(default)]
     pub boundary_containment: BoundaryContainment,
+    #[serde(default)]
+    pub coolant: CoolantMode,
     #[serde(default)]
     pub pre_gcode: String,
     #[serde(default)]
@@ -416,6 +421,7 @@ impl ProjectToolSection {
         Self {
             id: Some(tool.id),
             name: tool.name.clone(),
+            tool_number: Some(tool.tool_number),
             tool_type: tool.tool_type,
             diameter: tool.diameter,
             cutting_length: tool.cutting_length,
@@ -438,6 +444,7 @@ impl ProjectToolSection {
     fn into_runtime(self, id: ToolId) -> ToolConfig {
         let mut tool = ToolConfig::new_default(id, self.tool_type);
         tool.name = self.name;
+        tool.tool_number = self.tool_number.unwrap_or(id.0 as u32 + 1);
         tool.diameter = self.diameter;
         tool.cutting_length = self.cutting_length;
         tool.corner_radius = self.corner_radius;
@@ -485,6 +492,7 @@ impl ProjectToolpathSection {
             heights: toolpath.heights.clone(),
             boundary_enabled: toolpath.boundary_enabled,
             boundary_containment: toolpath.boundary_containment,
+            coolant: toolpath.coolant,
             pre_gcode: toolpath.pre_gcode.clone(),
             post_gcode: toolpath.post_gcode.clone(),
             stock_source: toolpath.stock_source,
@@ -1038,6 +1046,7 @@ fn restore_project_toolpath(
     init.heights = section.heights;
     init.boundary_enabled = section.boundary_enabled;
     init.boundary_containment = section.boundary_containment;
+    init.coolant = section.coolant;
     init.pre_gcode = section.pre_gcode;
     init.post_gcode = section.post_gcode;
     init.stock_source = section.stock_source;
@@ -1300,6 +1309,7 @@ fn default_legacy_safe_z() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rs_cam_core::gcode::CoolantMode;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1365,6 +1375,7 @@ mod tests {
             job.models[0].id,
             OperationType::Pocket,
         );
+        job.tools[0].tool_number = 23;
         toolpath.enabled = false;
         toolpath.visible = false;
         toolpath.locked = true;
@@ -1373,6 +1384,7 @@ mod tests {
         toolpath.heights.bottom_z = HeightMode::Manual(-4.2);
         toolpath.boundary_enabled = true;
         toolpath.boundary_containment = BoundaryContainment::Inside;
+        toolpath.coolant = CoolantMode::Mist;
         toolpath.pre_gcode = "M7".to_string();
         toolpath.post_gcode = "M9".to_string();
         toolpath.auto_regen = false;
@@ -1389,6 +1401,7 @@ mod tests {
         assert_eq!(loaded.job.models.len(), 1);
         assert_eq!(loaded.job.toolpath_count(), 1);
         assert_eq!(loaded.job.models[0].path, fixture_path);
+        assert_eq!(loaded.job.tools[0].tool_number, 23);
         let toolpath = loaded.job.all_toolpaths().next().unwrap();
         assert!(!toolpath.enabled);
         assert!(!toolpath.visible);
@@ -1396,6 +1409,7 @@ mod tests {
         assert!(
             matches!(toolpath.heights.bottom_z, HeightMode::Manual(v) if (v + 4.2).abs() < 1e-9)
         );
+        assert_eq!(toolpath.coolant, CoolantMode::Mist);
         assert_eq!(toolpath.pre_gcode, "M7");
         assert_eq!(toolpath.post_gcode, "M9");
         assert!(!toolpath.auto_regen);
@@ -1754,7 +1768,10 @@ type = "scallop"
         save_project(&job, &project_path).unwrap();
 
         // The file should exist and be valid
-        assert!(project_path.exists(), "Project file should exist after save");
+        assert!(
+            project_path.exists(),
+            "Project file should exist after save"
+        );
         let content = fs::read_to_string(&project_path).unwrap();
         assert!(
             toml::from_str::<ProjectFile>(&content).is_ok(),

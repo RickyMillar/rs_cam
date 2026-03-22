@@ -31,10 +31,7 @@ fn test_polygons() -> Vec<(&'static str, Polygon2)> {
             "large_rectangle",
             Polygon2::rectangle(0.0, 0.0, 100.0, 50.0),
         ),
-        (
-            "thin_rectangle",
-            Polygon2::rectangle(0.0, 0.0, 80.0, 8.0),
-        ),
+        ("thin_rectangle", Polygon2::rectangle(0.0, 0.0, 80.0, 8.0)),
         ("circle_16", regular_polygon(50.0, 50.0, 25.0, 16)),
         ("circle_64", regular_polygon(0.0, 0.0, 40.0, 64)),
         (
@@ -110,7 +107,14 @@ fn test_pocket_toolpath_within_bounds() {
                     && y >= min_y - tool_radius - tolerance
                     && y <= max_y + tool_radius + tolerance,
                 "Polygon '{}': cutting move ({:.3}, {:.3}) outside bbox [{:.1}..{:.1}] x [{:.1}..{:.1}] + tool_radius {:.3}",
-                name, x, y, min_x, max_x, min_y, max_y, tool_radius
+                name,
+                x,
+                y,
+                min_x,
+                max_x,
+                min_y,
+                max_y,
+                tool_radius
             );
         }
     }
@@ -242,7 +246,10 @@ fn test_offset_preserves_ccw_winding() {
                 assert!(
                     area > 0.0,
                     "Polygon '{}' offset by {:.1}: result {} has non-CCW winding (signed_area = {:.4})",
-                    name, dist, j, area
+                    name,
+                    dist,
+                    j,
+                    area
                 );
             }
         }
@@ -280,7 +287,10 @@ fn test_inward_offset_shrinks_area() {
                 assert!(
                     total_offset_area < original_area - 1e-6,
                     "Polygon '{}': inward offset by {:.1} should strictly shrink (original={:.2}, offset={:.2})",
-                    name, dist, original_area, total_offset_area
+                    name,
+                    dist,
+                    original_area,
+                    total_offset_area
                 );
             }
         }
@@ -331,7 +341,9 @@ fn test_zigzag_toolpath_within_bounds() {
                     && y >= min_y - tool_radius - tolerance
                     && y <= max_y + tool_radius + tolerance,
                 "Polygon '{}': zigzag cutting move ({:.3}, {:.3}) outside bounds",
-                name, x, y
+                name,
+                x,
+                y
             );
         }
     }

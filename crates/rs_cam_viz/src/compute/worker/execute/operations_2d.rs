@@ -1,10 +1,7 @@
 use super::*;
 
 #[allow(dead_code)]
-fn run_pocket(
-    req: &ComputeRequest,
-    cfg: &PocketConfig,
-) -> Result<Toolpath, String> {
+fn run_pocket(req: &ComputeRequest, cfg: &PocketConfig) -> Result<Toolpath, String> {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
     let depth = make_depth_with_finishing(cfg.depth, cfg.depth_per_pass, cfg.finishing_passes);
@@ -32,7 +29,7 @@ fn run_pocket(
                     feed_rate: cfg.feed_rate,
                     plunge_rate: cfg.plunge_rate,
                     safe_z: effective_safe_z(req),
-                    angle: cfg.angle.to_radians(),
+                    angle: cfg.angle,
                 },
             ),
         });
@@ -41,10 +38,7 @@ fn run_pocket(
     Ok(out)
 }
 
-pub(super) fn run_profile(
-    req: &ComputeRequest,
-    cfg: &ProfileConfig,
-) -> Result<Toolpath, String> {
+pub(super) fn run_profile(req: &ComputeRequest, cfg: &ProfileConfig) -> Result<Toolpath, String> {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
     let side = match cfg.side {
@@ -212,10 +206,7 @@ fn run_rest(req: &ComputeRequest, cfg: &RestConfig) -> Result<Toolpath, String> 
     Ok(out)
 }
 
-pub(super) fn run_inlay(
-    req: &ComputeRequest,
-    cfg: &InlayConfig,
-) -> Result<Toolpath, String> {
+pub(super) fn run_inlay(req: &ComputeRequest, cfg: &InlayConfig) -> Result<Toolpath, String> {
     let polys = require_polygons(req)?;
     let ha = match req.tool.tool_type {
         ToolType::VBit => (req.tool.included_angle / 2.0).to_radians(),
@@ -254,7 +245,7 @@ pub(super) fn run_inlay(
     Ok(out)
 }
 
-fn run_zigzag(req: &ComputeRequest, cfg: &ZigzagConfig) -> Result<Toolpath, String> {
+pub(super) fn run_zigzag(req: &ComputeRequest, cfg: &ZigzagConfig) -> Result<Toolpath, String> {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
     let depth = make_depth(cfg.depth, cfg.depth_per_pass);
@@ -270,7 +261,7 @@ fn run_zigzag(req: &ComputeRequest, cfg: &ZigzagConfig) -> Result<Toolpath, Stri
                     feed_rate: cfg.feed_rate,
                     plunge_rate: cfg.plunge_rate,
                     safe_z: effective_safe_z(req),
-                    angle: cfg.angle.to_radians(),
+                    angle: cfg.angle,
                 },
             )
         });
@@ -562,7 +553,7 @@ impl SemanticToolpathOp for PocketConfig {
                                 polygon,
                                 ctx.req.tool.diameter / 2.0,
                                 self.stepover,
-                                self.angle.to_radians(),
+                                self.angle,
                             );
                             let is_finish = self.finishing_passes > 0
                                 && level_idx >= levels.len().saturating_sub(self.finishing_passes);
@@ -812,7 +803,7 @@ impl SemanticToolpathOp for RestConfig {
                             feed_rate: self.feed_rate,
                             plunge_rate: self.plunge_rate,
                             safe_z: effective_safe_z(ctx.req),
-                            angle: self.angle.to_radians(),
+                            angle: self.angle,
                         },
                     );
                     let expected_runs = cutting_runs(&expected_tp);
@@ -940,7 +931,7 @@ impl SemanticToolpathOp for ZigzagConfig {
                         polygon,
                         ctx.req.tool.diameter / 2.0,
                         self.stepover,
-                        self.angle.to_radians(),
+                        self.angle,
                     );
                     for (row_idx, _) in lines.iter().enumerate() {
                         if let Some(run) = runs.get(run_cursor) {

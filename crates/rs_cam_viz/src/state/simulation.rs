@@ -1248,7 +1248,6 @@ impl Default for SimulationState {
     }
 }
 
-
 impl SimulationDebugState {
     pub fn is_toolpath_expanded(&self, toolpath_id: ToolpathId) -> bool {
         self.expanded_toolpaths.contains(&toolpath_id)

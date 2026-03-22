@@ -111,6 +111,40 @@ impl LoadedModel {
             load_error: Some(load_error),
         }
     }
+
+    pub fn bbox(&self) -> Option<BoundingBox3> {
+        if let Some(mesh) = &self.mesh {
+            return Some(mesh.bbox);
+        }
+
+        let polygons = self.polygons.as_deref()?;
+        let mut min_x = f64::INFINITY;
+        let mut min_y = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+
+        for polygon in polygons {
+            for point in polygon
+                .exterior
+                .iter()
+                .chain(polygon.holes.iter().flat_map(|hole| hole.iter()))
+            {
+                min_x = min_x.min(point.x);
+                min_y = min_y.min(point.y);
+                max_x = max_x.max(point.x);
+                max_y = max_y.max(point.y);
+            }
+        }
+
+        if !min_x.is_finite() {
+            return None;
+        }
+
+        Some(BoundingBox3 {
+            min: rs_cam_core::geo::P3::new(min_x, min_y, 0.0),
+            max: rs_cam_core::geo::P3::new(max_x, max_y, 0.0),
+        })
+    }
 }
 
 /// Tool type matching the five cutter types in rs_cam_core.
@@ -193,6 +227,8 @@ impl CutDirection {
 pub struct ToolConfig {
     pub id: ToolId,
     pub name: String,
+    /// G-code tool number used for M6 output.
+    pub tool_number: u32,
     pub tool_type: ToolType,
     pub diameter: f64,
     pub cutting_length: f64,
@@ -229,6 +265,7 @@ impl ToolConfig {
         Self {
             id,
             name,
+            tool_number: id.0 as u32 + 1,
             tool_type,
             diameter,
             cutting_length: 25.0,
@@ -1633,19 +1670,15 @@ mod tests {
                 };
 
                 // A point in the interior of the stock
-                let point = P3::new(
-                    stock.x * 0.3,
-                    stock.y * 0.3,
-                    stock.z * 0.3,
-                );
+                let point = P3::new(stock.x * 0.3, stock.y * 0.3, stock.z * 0.3);
                 let transformed = setup.transform_point(point, &stock);
 
                 assert!(
-                    transformed.x >= -1e-10
-                        && transformed.y >= -1e-10
-                        && transformed.z >= -1e-10,
+                    transformed.x >= -1e-10 && transformed.y >= -1e-10 && transformed.z >= -1e-10,
                     "Interior point should transform to non-negative coords for face={:?} rot={:?}: got {:?}",
-                    face, rot, transformed
+                    face,
+                    rot,
+                    transformed
                 );
             }
         }

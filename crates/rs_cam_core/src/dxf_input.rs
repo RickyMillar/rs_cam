@@ -715,17 +715,18 @@ mod tests {
         assert!(polys.is_empty(), "2-vertex polyline should be ignored");
     }
 
-    fn make_arc_drawing(cx: f64, cy: f64, radius: f64, start_deg: f64, end_deg: f64) -> dxf::Drawing {
+    fn make_arc_drawing(
+        cx: f64,
+        cy: f64,
+        radius: f64,
+        start_deg: f64,
+        end_deg: f64,
+    ) -> dxf::Drawing {
         let mut drawing = dxf::Drawing::new();
-        let arc = dxf::entities::Arc::new(
-            dxf::Point::new(cx, cy, 0.0),
-            radius,
-            start_deg,
-            end_deg,
-        );
-        drawing.add_entity(dxf::entities::Entity::new(
-            dxf::entities::EntityType::Arc(arc),
-        ));
+        let arc = dxf::entities::Arc::new(dxf::Point::new(cx, cy, 0.0), radius, start_deg, end_deg);
+        drawing.add_entity(dxf::entities::Entity::new(dxf::entities::EntityType::Arc(
+            arc,
+        )));
         drawing
     }
 
@@ -899,9 +900,9 @@ mod tests {
                 p2: dxf::Point::new(x2, y2, 0.0),
                 ..Default::default()
             };
-            drawing.add_entity(dxf::entities::Entity::new(
-                dxf::entities::EntityType::Line(line),
-            ));
+            drawing.add_entity(dxf::entities::Entity::new(dxf::entities::EntityType::Line(
+                line,
+            )));
         }
         drawing
     }
@@ -928,12 +929,13 @@ mod tests {
     #[test]
     fn test_line_chain_open_path() {
         // Two connected segments forming an open path: (0,0)-(5,0)-(5,5)
-        let drawing = make_line_drawing(&[
-            (0.0, 0.0, 5.0, 0.0),
-            (5.0, 0.0, 5.0, 5.0),
-        ]);
+        let drawing = make_line_drawing(&[(0.0, 0.0, 5.0, 0.0), (5.0, 0.0, 5.0, 5.0)]);
         let polys = extract_polygons(&drawing, 5.0);
-        assert_eq!(polys.len(), 1, "Connected open path should produce 1 polygon");
+        assert_eq!(
+            polys.len(),
+            1,
+            "Connected open path should produce 1 polygon"
+        );
         assert_eq!(
             polys[0].exterior.len(),
             3,
@@ -944,13 +946,11 @@ mod tests {
     #[test]
     fn test_line_chain_disconnected_segments() {
         // Two disconnected segments far apart
-        let drawing = make_line_drawing(&[
-            (0.0, 0.0, 1.0, 0.0),
-            (100.0, 100.0, 101.0, 100.0),
-        ]);
+        let drawing = make_line_drawing(&[(0.0, 0.0, 1.0, 0.0), (100.0, 100.0, 101.0, 100.0)]);
         let polys = extract_polygons(&drawing, 5.0);
         assert_eq!(
-            polys.len(), 2,
+            polys.len(),
+            2,
             "Disconnected segments should produce 2 separate polygons"
         );
     }

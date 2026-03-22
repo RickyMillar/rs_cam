@@ -5,14 +5,7 @@ use super::dv;
 /// Draw the standard "Feed Rate" + "Plunge Rate" parameter pair used by
 /// most cutting operations.
 fn draw_feed_params(ui: &mut egui::Ui, feed_rate: &mut f64, plunge_rate: &mut f64) {
-    dv(
-        ui,
-        "Feed Rate:",
-        feed_rate,
-        " mm/min",
-        10.0,
-        1.0..=50000.0,
-    );
+    dv(ui, "Feed Rate:", feed_rate, " mm/min", 10.0, 1.0..=50000.0);
     dv(
         ui,
         "Plunge Rate:",
@@ -909,7 +902,10 @@ pub(super) fn draw_drill_params(ui: &mut egui::Ui, cfg: &mut DrillConfig) {
         });
 }
 
-pub(super) fn draw_alignment_pin_drill_params(ui: &mut egui::Ui, cfg: &mut AlignmentPinDrillConfig) {
+pub(super) fn draw_alignment_pin_drill_params(
+    ui: &mut egui::Ui,
+    cfg: &mut AlignmentPinDrillConfig,
+) {
     ui.label(
         egui::RichText::new("Drills alignment pin holes through stock into spoilboard")
             .italics()

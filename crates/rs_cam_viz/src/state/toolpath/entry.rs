@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::toolpath::Toolpath;
 
 use crate::state::job::{ModelId, ToolId};
@@ -25,6 +26,7 @@ pub struct ToolpathEntryInit {
     pub heights: HeightsConfig,
     pub boundary_enabled: bool,
     pub boundary_containment: BoundaryContainment,
+    pub coolant: CoolantMode,
     pub pre_gcode: String,
     pub post_gcode: String,
     pub stock_source: StockSource,
@@ -54,6 +56,7 @@ impl ToolpathEntryInit {
             heights: HeightsConfig::default(),
             boundary_enabled: false,
             boundary_containment: BoundaryContainment::Center,
+            coolant: CoolantMode::Off,
             pre_gcode: String::new(),
             post_gcode: String::new(),
             stock_source: StockSource::Fresh,
@@ -103,6 +106,7 @@ impl ToolpathEntryInit {
             heights: source.heights.clone(),
             boundary_enabled: source.boundary_enabled,
             boundary_containment: source.boundary_containment,
+            coolant: source.coolant,
             pre_gcode: source.pre_gcode.clone(),
             post_gcode: source.post_gcode.clone(),
             stock_source: source.stock_source,
@@ -126,6 +130,7 @@ pub struct ToolpathEntry {
     pub heights: HeightsConfig,
     pub boundary_enabled: bool,
     pub boundary_containment: BoundaryContainment,
+    pub coolant: CoolantMode,
     pub pre_gcode: String,
     pub post_gcode: String,
     pub stock_source: StockSource,
@@ -167,6 +172,7 @@ impl ToolpathEntry {
             heights: init.heights,
             boundary_enabled: init.boundary_enabled,
             boundary_containment: init.boundary_containment,
+            coolant: init.coolant,
             pre_gcode: init.pre_gcode,
             post_gcode: init.post_gcode,
             stock_source: init.stock_source,

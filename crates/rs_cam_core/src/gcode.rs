@@ -5,10 +5,12 @@
 //! so discarding the `Result` with `let _ =` is safe.
 
 use crate::toolpath::{MoveType, Toolpath};
+use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 
 /// Coolant mode for G-code output.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CoolantMode {
     /// No coolant (default).
     #[default]
@@ -340,7 +342,10 @@ pub fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &dyn PostProcessor) ->
         }
 
         // Coolant mode change (only if we didn't already handle it in tool change)
-        if idx > 0 && phase.coolant != current_coolant && !(phase.tool_number.is_some() && current_tool == phase.tool_number) {
+        if idx > 0
+            && phase.coolant != current_coolant
+            && !(phase.tool_number.is_some() && current_tool == phase.tool_number)
+        {
             if current_coolant.is_active() && !phase.coolant.is_active() {
                 let _ = writeln!(output, "M9");
             } else if phase.coolant.is_active() {
@@ -519,7 +524,9 @@ pub fn emit_gcode_multi_setup(
             }
 
             // Coolant mode change
-            if phase.coolant != current_coolant && !(phase.tool_number.is_some() && current_tool == phase.tool_number) {
+            if phase.coolant != current_coolant
+                && !(phase.tool_number.is_some() && current_tool == phase.tool_number)
+            {
                 if current_coolant.is_active() && !phase.coolant.is_active() {
                     let _ = writeln!(output, "M9");
                 } else if phase.coolant.is_active() {
@@ -847,10 +854,7 @@ mod tests {
         let post_pos = gcode.find("M9").expect("post_gcode M9");
         let postamble_pos = gcode.find("M30").expect("postamble");
 
-        assert!(
-            label_pos < pre_pos,
-            "pre_gcode should follow label comment"
-        );
+        assert!(label_pos < pre_pos, "pre_gcode should follow label comment");
         assert!(pre_pos < move_pos, "pre_gcode should precede moves");
         assert!(move_pos < post_pos, "post_gcode should follow moves");
         assert!(
@@ -1000,10 +1004,7 @@ mod tests {
         ];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
 
-        assert!(
-            !gcode.contains("M6"),
-            "Same tool number should not emit M6"
-        );
+        assert!(!gcode.contains("M6"), "Same tool number should not emit M6");
     }
 
     #[test]
@@ -1134,6 +1135,9 @@ mod tests {
         // M9 should appear before M6 (coolant off before tool change)
         let m9_pos = gcode.find("M9").expect("M9");
         let m6_pos = gcode.find("M6 T2").expect("M6 T2");
-        assert!(m9_pos < m6_pos, "M9 should precede M6 (coolant off before tool change)");
+        assert!(
+            m9_pos < m6_pos,
+            "M9 should precede M6 (coolant off before tool change)"
+        );
     }
 }

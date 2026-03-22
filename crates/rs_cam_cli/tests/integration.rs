@@ -21,9 +21,7 @@ use rs_cam_core::tool::{
 fn parse_tool_spec(spec: &str) -> Result<Box<dyn MillingCutter>, String> {
     let parts: Vec<&str> = spec.split(':').collect();
     if parts.len() < 2 {
-        return Err(
-            "Tool spec must be type:diameter[:params] (e.g., ball:6.35)".to_string(),
-        );
+        return Err("Tool spec must be type:diameter[:params] (e.g., ball:6.35)".to_string());
     }
 
     let diameter: f64 = parts[1]
@@ -144,7 +142,8 @@ fn test_parse_tool_spec_vbit() {
 
 #[test]
 fn test_parse_tool_spec_tapered_ball() {
-    let cutter = parse_tool_spec("tapered_ball:6:10:12").expect("Should parse tapered_ball:6:10:12");
+    let cutter =
+        parse_tool_spec("tapered_ball:6:10:12").expect("Should parse tapered_ball:6:10:12");
     // TaperedBallEndmill::diameter() returns shaft_diameter
     assert!(
         (cutter.diameter() - 12.0).abs() < 1e-10,
@@ -214,7 +213,10 @@ fn test_pocket_operation_produces_gcode() {
 
     // G-code should be non-empty and contain expected patterns
     assert!(!gcode.is_empty(), "G-code should not be empty");
-    assert!(gcode.contains("G0"), "G-code should contain rapid moves (G0)");
+    assert!(
+        gcode.contains("G0"),
+        "G-code should contain rapid moves (G0)"
+    );
     assert!(
         gcode.contains("G1"),
         "G-code should contain linear feed moves (G1)"
@@ -287,19 +289,15 @@ plunge_rate = 400
         Some("grbl")
     );
     assert_eq!(
-        job_section.get("spindle_speed").and_then(|v| v.as_integer()),
+        job_section
+            .get("spindle_speed")
+            .and_then(|v| v.as_integer()),
         Some(18000)
     );
 
     let tools = value.get("tools").expect("Should have [tools] section");
-    assert!(
-        tools.get("flat_6mm").is_some(),
-        "Should have flat_6mm tool"
-    );
-    assert!(
-        tools.get("flat_3mm").is_some(),
-        "Should have flat_3mm tool"
-    );
+    assert!(tools.get("flat_6mm").is_some(), "Should have flat_6mm tool");
+    assert!(tools.get("flat_3mm").is_some(), "Should have flat_3mm tool");
 
     let ops = value
         .get("operation")
@@ -313,20 +311,14 @@ plunge_rate = 400
         ops[0].get("tool").and_then(|v| v.as_str()),
         Some("flat_6mm")
     );
-    assert_eq!(
-        ops[0].get("type").and_then(|v| v.as_str()),
-        Some("pocket")
-    );
+    assert_eq!(ops[0].get("type").and_then(|v| v.as_str()), Some("pocket"));
 
     // Second operation references flat_3mm
     assert_eq!(
         ops[1].get("tool").and_then(|v| v.as_str()),
         Some("flat_3mm")
     );
-    assert_eq!(
-        ops[1].get("type").and_then(|v| v.as_str()),
-        Some("profile")
-    );
+    assert_eq!(ops[1].get("type").and_then(|v| v.as_str()), Some("profile"));
 
     // Verify tool references are valid (all operation tools exist in [tools])
     let tools_table = tools.as_table().expect("tools should be a table");

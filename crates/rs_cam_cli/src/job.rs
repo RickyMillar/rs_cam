@@ -39,6 +39,7 @@ use rs_cam_core::{
     depth::{DepthStepping, depth_stepped_toolpath},
     dressup::{apply_dogbones, apply_entry, apply_tabs, even_tabs},
     dropcutter::batch_drop_cutter,
+    gcode::CoolantMode,
     mesh::{SpatialIndex, TriangleMesh},
     pocket::{PocketParams, pocket_toolpath},
     profile::{ProfileParams, ProfileSide, profile_toolpath},
@@ -102,6 +103,7 @@ fn default_sim_resolution() -> f64 {
 pub struct ToolDef {
     #[serde(rename = "type")]
     pub tool_type: String,
+    pub number: Option<u32>,
     pub diameter: f64,
     /// Corner radius for bull nose
     pub corner_radius: Option<f64>,
@@ -143,6 +145,8 @@ pub struct OperationDef {
     pub plunge_rate: Option<f64>,
     pub safe_z: Option<f64>,
     pub spindle_speed: Option<u32>,
+    #[serde(default)]
+    pub coolant: CoolantMode,
 
     // Pocket-specific
     pub pattern: Option<String>,
@@ -266,6 +270,8 @@ pub struct OpResult {
     pub cutter: Box<dyn rs_cam_core::tool::MillingCutter>,
     pub label: String,
     pub spindle_speed: u32,
+    pub tool_number: Option<u32>,
+    pub coolant: CoolantMode,
     /// Which setup this operation belongs to (None = default/single setup).
     pub setup_name: Option<String>,
 }
@@ -279,6 +285,8 @@ pub struct JobResult {
 pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
     let mut combined = Toolpath::new();
     let mut phases = Vec::new();
+    let mut next_tool_number = 1u32;
+    let mut tool_numbers = HashMap::new();
 
     for (i, op) in job.operation.iter().enumerate() {
         info!(index = i, op_type = %op.op_type, "=== Operation ===");
@@ -287,6 +295,13 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
         let cutter = build_tool(tool_def)
             .context(format!("Building tool '{}' for operation {}", op.tool, i))?;
         let tool_radius = cutter.radius();
+        let tool_number = Some(*tool_numbers.entry(op.tool.clone()).or_insert_with(|| {
+            tool_def.number.unwrap_or_else(|| {
+                let assigned = next_tool_number;
+                next_tool_number += 1;
+                assigned
+            })
+        }));
         debug!(tool = %op.tool, diameter_mm = tool_def.diameter, tool_type = %tool_def.tool_type, "Tool");
 
         let safe_z = op.safe_z.unwrap_or(job.job.safe_z);
@@ -626,6 +641,8 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
             cutter: phase_cutter,
             label,
             spindle_speed,
+            tool_number,
+            coolant: op.coolant,
             setup_name: op.setup.clone(),
         });
     }
@@ -644,6 +661,7 @@ mod tests {
         // from the TOML definition, which could differ for composite tools).
         let flat_def = ToolDef {
             tool_type: "flat".into(),
+            number: None,
             diameter: 6.0,
             corner_radius: None,
             included_angle: None,
@@ -659,6 +677,7 @@ mod tests {
 
         let ball_def = ToolDef {
             tool_type: "ball".into(),
+            number: None,
             diameter: 10.0,
             corner_radius: None,
             included_angle: None,
@@ -677,6 +696,7 @@ mod tests {
         // cutting envelope.
         let tapered_def = ToolDef {
             tool_type: "tapered_ball".into(),
+            number: None,
             diameter: 6.0,
             corner_radius: None,
             included_angle: None,

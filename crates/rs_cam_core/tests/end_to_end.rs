@@ -115,8 +115,7 @@ fn assert_no_nan_coords(tp: &Toolpath, label: &str) {
             m.target
         );
         match m.move_type {
-            MoveType::ArcCW { i, j, feed_rate }
-            | MoveType::ArcCCW { i, j, feed_rate } => {
+            MoveType::ArcCW { i, j, feed_rate } | MoveType::ArcCCW { i, j, feed_rate } => {
                 assert!(
                     !i.is_nan() && !j.is_nan() && !feed_rate.is_nan(),
                     "{label}: arc move {0} has NaN arc params",
@@ -266,7 +265,10 @@ fn svg_import_pocket_gcode() {
     let gcode = emit_gcode(&pocket_tp, &GrblPost, 18000);
 
     // Verify expected G-code patterns
-    assert!(gcode.contains("G0"), "G-code should contain rapid moves (G0)");
+    assert!(
+        gcode.contains("G0"),
+        "G-code should contain rapid moves (G0)"
+    );
     assert!(
         gcode.contains("G1"),
         "G-code should contain linear feed moves (G1)"
@@ -283,10 +285,7 @@ fn svg_import_pocket_gcode() {
         gcode.contains("M3 S18000"),
         "G-code should contain spindle start"
     );
-    assert!(
-        gcode.contains("M30"),
-        "G-code should contain program end"
-    );
+    assert!(gcode.contains("M30"), "G-code should contain program end");
     assert!(
         gcode.len() > 200,
         "G-code output should be substantial, got {} bytes",
@@ -305,8 +304,8 @@ fn svg_fixture_file_import_pocket_gcode() {
         return;
     }
 
-    let polygons = rs_cam_core::svg_input::load_svg(&svg_path, 0.1)
-        .expect("demo_pocket.svg should parse");
+    let polygons =
+        rs_cam_core::svg_input::load_svg(&svg_path, 0.1).expect("demo_pocket.svg should parse");
     assert!(
         !polygons.is_empty(),
         "demo_pocket.svg should produce polygons"
@@ -420,9 +419,10 @@ fn tridexel_simulation_two_toolpaths_carry_forward() {
 
     // Verify: the first cut should still be present (carry-forward)
     // Check a ray along the first slot
-    let first_slot_modified = stock_after_first.z_grid.rays.iter().any(|ray| {
-        rs_cam_core::dexel::ray_top(ray).is_some_and(|t| (t - 20.0_f32).abs() > 0.01)
-    });
+    let first_slot_modified =
+        stock_after_first.z_grid.rays.iter().any(|ray| {
+            rs_cam_core::dexel::ray_top(ray).is_some_and(|t| (t - 20.0_f32).abs() > 0.01)
+        });
     assert!(first_slot_modified, "First slot should have modified stock");
 
     // After second toolpath, both slots should be cut
@@ -435,7 +435,8 @@ fn tridexel_simulation_two_toolpaths_carry_forward() {
             let top = rs_cam_core::dexel::ray_top(&stock.z_grid.rays[idx]);
             let first_top = rs_cam_core::dexel::ray_top(&stock_after_first.z_grid.rays[idx]);
             if let Some(t) = top
-                && (t - 20.0_f32).abs() > 0.01 && t < 20.0
+                && (t - 20.0_f32).abs() > 0.01
+                && t < 20.0
             {
                 // This ray was cut
                 let y = stock.z_grid.origin_v + row as f64 * stock.z_grid.cell_size;

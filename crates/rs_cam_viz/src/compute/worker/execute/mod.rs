@@ -1283,6 +1283,34 @@ mod tests {
         }
     }
 
+    fn dominant_cut_axis(tp: &Toolpath, feed_rate: f64) -> Option<char> {
+        let mut x_travel = 0.0;
+        let mut y_travel = 0.0;
+
+        for idx in 1..tp.moves.len() {
+            if let MoveType::Linear {
+                feed_rate: move_feed,
+            } = tp.moves[idx].move_type
+                && (move_feed - feed_rate).abs() < 1e-6
+            {
+                let dx = tp.moves[idx].target.x - tp.moves[idx - 1].target.x;
+                let dy = tp.moves[idx].target.y - tp.moves[idx - 1].target.y;
+                if dx.abs().max(dy.abs()) > 1e-3 {
+                    x_travel += dx.abs();
+                    y_travel += dy.abs();
+                }
+            }
+        }
+
+        if x_travel <= 1e-6 && y_travel <= 1e-6 {
+            None
+        } else if y_travel > x_travel {
+            Some('y')
+        } else {
+            Some('x')
+        }
+    }
+
     // --- Task A3: Tabs only on final depth pass ---
 
     #[test]
@@ -1296,10 +1324,8 @@ mod tests {
             finishing_passes: 0,
             ..ProfileConfig::default()
         };
-        let req = test_request_with_polygon(
-            OperationConfig::Profile(cfg.clone()),
-            ToolType::EndMill,
-        );
+        let req =
+            test_request_with_polygon(OperationConfig::Profile(cfg.clone()), ToolType::EndMill);
         let tp = run_profile(&req, &cfg).unwrap();
 
         let final_z = -cfg.depth;
@@ -1332,8 +1358,7 @@ mod tests {
                 // a plunge between levels.
                 let at_known_level = roughing_levels.iter().any(|&lv| (z - lv).abs() < 0.01);
                 let at_tab_z = (z - tab_z).abs() < 0.01;
-                let is_plunge_or_retract =
-                    z > final_z + 0.01 && z < effective_safe_z(&req) - 0.01;
+                let is_plunge_or_retract = z > final_z + 0.01 && z < effective_safe_z(&req) - 0.01;
                 assert!(
                     at_known_level || at_tab_z || is_plunge_or_retract,
                     "unexpected linear move z={z}, expected one of levels {roughing_levels:?}, tab_z={tab_z}, or plunge"
@@ -1351,10 +1376,7 @@ mod tests {
             stepover: 10.0,
             ..FaceConfig::default()
         };
-        let req = test_request_with_polygon(
-            OperationConfig::Face(cfg.clone()),
-            ToolType::EndMill,
-        );
+        let req = test_request_with_polygon(OperationConfig::Face(cfg.clone()), ToolType::EndMill);
 
         // Use the semantic path to generate (that's the active code path)
         let ctx = OperationExecutionContext {
@@ -1401,10 +1423,7 @@ mod tests {
             stepover: 10.0,
             ..FaceConfig::default()
         };
-        let req = test_request_with_polygon(
-            OperationConfig::Face(cfg.clone()),
-            ToolType::EndMill,
-        );
+        let req = test_request_with_polygon(OperationConfig::Face(cfg.clone()), ToolType::EndMill);
 
         let ctx = OperationExecutionContext {
             req: &req,
@@ -1440,24 +1459,69 @@ mod tests {
         );
     }
 
+    #[test]
+    fn zigzag_angle_uses_degrees_for_runtime_path() {
+        let cfg = ZigzagConfig {
+            angle: 90.0,
+            stepover: 6.0,
+            depth: 2.0,
+            depth_per_pass: 2.0,
+            ..ZigzagConfig::default()
+        };
+        let req =
+            test_request_with_polygon(OperationConfig::Zigzag(cfg.clone()), ToolType::EndMill);
+        let tp = crate::compute::worker::execute::operations_2d::run_zigzag(&req, &cfg).unwrap();
+
+        assert_eq!(
+            dominant_cut_axis(&tp, cfg.feed_rate),
+            Some('y'),
+            "90 degree zigzag should cut along Y, not a radian-converted skew"
+        );
+    }
+
+    #[test]
+    fn rest_semantic_angle_uses_degrees() {
+        let cfg = RestConfig {
+            angle: 90.0,
+            stepover: 4.0,
+            depth: 2.0,
+            depth_per_pass: 2.0,
+            ..RestConfig::default()
+        };
+        let mut req =
+            test_request_with_polygon(OperationConfig::Rest(cfg.clone()), ToolType::EndMill);
+        req.prev_tool_radius = Some(8.0);
+
+        let ctx = OperationExecutionContext {
+            req: &req,
+            cancel: &AtomicBool::new(false),
+            phase_tracker: None,
+            core_debug_span_id: None,
+            debug_root: None,
+            semantic_root: None,
+        };
+        let tp = cfg.generate_with_tracing(&ctx).unwrap();
+
+        assert_eq!(
+            dominant_cut_axis(&tp, cfg.feed_rate),
+            Some('y'),
+            "semantic rest reconstruction should preserve the degree-based raster angle"
+        );
+    }
+
     // --- Task A10: Inlay female and male are separated ---
 
     #[test]
     fn inlay_output_contains_female_and_male_sections() {
         let cfg = InlayConfig::default();
-        let mut req = test_request_with_polygon(
-            OperationConfig::Inlay(cfg.clone()),
-            ToolType::VBit,
-        );
+        let mut req =
+            test_request_with_polygon(OperationConfig::Inlay(cfg.clone()), ToolType::VBit);
         req.polygons = Some(Arc::new(vec![Polygon2::rectangle(
             -10.0, -10.0, 10.0, 10.0,
         )]));
         let tp = run_inlay(&req, &cfg).unwrap();
 
-        assert!(
-            !tp.moves.is_empty(),
-            "Inlay should produce moves"
-        );
+        assert!(!tp.moves.is_empty(), "Inlay should produce moves");
 
         // Find retract-to-safe-z moves that separate sections. The female
         // and male toolpaths should be separated by a retract to safe_z.
@@ -1493,16 +1557,13 @@ mod tests {
 
     #[test]
     fn scallop_rejects_non_ballnose_tool() {
-        let cfg = match OperationConfig::new_default(
-            crate::state::toolpath::OperationType::Scallop,
-        ) {
+        let cfg = match OperationConfig::new_default(crate::state::toolpath::OperationType::Scallop)
+        {
             OperationConfig::Scallop(cfg) => cfg,
             _ => unreachable!(),
         };
-        let mut req = test_request_with_polygon(
-            OperationConfig::Scallop(cfg.clone()),
-            ToolType::EndMill,
-        );
+        let mut req =
+            test_request_with_polygon(OperationConfig::Scallop(cfg.clone()), ToolType::EndMill);
         req.mesh = Some(Arc::new(rs_cam_core::mesh::make_test_flat(40.0)));
         let result = run_scallop_annotated(&req, &cfg, None, None);
         assert!(result.is_err());

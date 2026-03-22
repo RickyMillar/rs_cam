@@ -450,11 +450,8 @@ fn spawn_toolpath_lane(
             let toolpath_id = request.toolpath_id;
             let caught = std::panic::catch_unwind(AssertUnwindSafe(|| {
                 let phase_tracker = ToolpathPhaseTracker::new(Arc::clone(&lane));
-                let mut outcome = execute::run_compute_with_phase(
-                    &request,
-                    lane.cancel.as_ref(),
-                    &phase_tracker,
-                );
+                let mut outcome =
+                    execute::run_compute_with_phase(&request, lane.cancel.as_ref(), &phase_tracker);
                 if lane.cancel.load(Ordering::SeqCst) && outcome.result.is_ok() {
                     outcome.result = Err(ComputeError::Cancelled);
                 }
@@ -547,8 +544,7 @@ fn spawn_analysis_lane(
                 let result = match request {
                     AnalysisRequest::Simulation(request) => {
                         let set_phase = |phase: &str| {
-                            let mut inner =
-                                lane.inner.lock().unwrap_or_else(|e| e.into_inner());
+                            let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
                             inner.current_phase = Some(phase.to_string());
                         };
                         let result = execute::run_simulation_with_phase(
@@ -565,8 +561,7 @@ fn spawn_analysis_lane(
                     }
                     AnalysisRequest::Collision(request) => {
                         let set_phase = |phase: &str| {
-                            let mut inner =
-                                lane.inner.lock().unwrap_or_else(|e| e.into_inner());
+                            let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
                             inner.current_phase = Some(phase.to_string());
                         };
                         let result = helpers::run_collision_check_with_phase(

@@ -73,8 +73,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 crate::state::job::ModelKind::Svg => "SVG",
                 crate::state::job::ModelKind::Dxf => "DXF",
             };
-            let response =
-                ui.selectable_label(selected, format!("[{}] {}", icon, model.name));
+            let response = ui.selectable_label(selected, format!("[{}] {}", icon, model.name));
             if response.clicked() {
                 events.push(AppEvent::Select(Selection::Model(model.id)));
             }

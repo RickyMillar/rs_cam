@@ -237,8 +237,7 @@ impl SimMeshGpuData {
         let mesh_verts = Self::build_vertex_data(hm, colors);
         queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&mesh_verts));
         self.cached_color_fingerprint = new_fingerprint;
-        self.generation =
-            NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.generation = NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         true
     }
 
