@@ -33,6 +33,8 @@ pub fn export_gcode(job: &JobState) -> Result<String, String> {
                 } else {
                     Some(&tp.post_gcode)
                 },
+                tool_number: None,
+                coolant: rs_cam_core::gcode::CoolantMode::Off,
             })
         })
         .collect();
@@ -84,6 +86,8 @@ pub fn export_combined_gcode(job: &JobState) -> Result<String, String> {
                         } else {
                             Some(&tp.post_gcode)
                         },
+                        tool_number: None,
+                        coolant: rs_cam_core::gcode::CoolantMode::Off,
                     })
                 })
                 .collect();
@@ -146,6 +150,8 @@ pub fn export_setup_gcode(job: &JobState, setup_id: SetupId) -> Result<String, S
                 } else {
                     Some(&tp.post_gcode)
                 },
+                tool_number: None,
+                coolant: rs_cam_core::gcode::CoolantMode::Off,
             })
         })
         .collect();

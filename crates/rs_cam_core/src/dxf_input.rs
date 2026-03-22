@@ -1,7 +1,20 @@
 //! DXF file input — extracts closed entities as Polygon2.
 //!
-//! Supports LwPolyline, Polyline, Circle, and Ellipse entities.
+//! Supports LwPolyline, Polyline, Circle, Ellipse, and Arc entities.
 //! Arc segments (bulge values) are tessellated to line segments.
+//!
+//! ### Entity handling notes
+//! - **Arc**: Full-circle arcs (360 degrees) are treated as circles. Partial arcs
+//!   are tessellated as closed polygons (chord closing the arc).
+//! - **Line**: Silently skipped — produces open 2-point segments that cannot form
+//!   a closed polygon on their own. Chain-linking lines into closed paths is deferred.
+//! - **Spline**: Silently skipped — B-spline evaluation from control points/knots
+//!   is not yet implemented. Deferred.
+//!
+//! ### Unit handling
+//! The `$INSUNITS` header variable is read (via `drawing.header.default_drawing_units`).
+//! When the DXF specifies units other than millimeters, all coordinates are scaled
+//! to mm automatically.
 
 use crate::geo::P2;
 use crate::polygon::Polygon2;
@@ -16,10 +29,36 @@ pub enum DxfError {
     NoEntities,
 }
 
+/// Return a scale factor to convert from `$INSUNITS` to millimeters.
+///
+/// Falls back to 1.0 (assume mm) for unrecognized or unitless drawings.
+fn insunits_to_mm_scale(units: dxf::enums::Units) -> f64 {
+    use dxf::enums::Units;
+    match units {
+        Units::Inches => 25.4,
+        Units::Feet => 304.8,
+        Units::Millimeters => 1.0,
+        Units::Centimeters => 10.0,
+        Units::Meters => 1000.0,
+        Units::Microinches => 25.4e-6,
+        Units::Mils => 0.0254,
+        Units::Yards => 914.4,
+        Units::Nanometers => 1e-6,
+        Units::Microns => 0.001,
+        Units::Decimeters => 100.0,
+        Units::Decameters => 10_000.0,
+        Units::Hectometers => 100_000.0,
+        Units::Kilometers => 1_000_000.0,
+        // Unitless or exotic (Angstroms, AU, LightYears, etc.) — assume mm
+        _ => 1.0,
+    }
+}
+
 /// Load closed polygon entities from a DXF file.
 ///
 /// Arc segments (bulge values in polylines, circles, ellipses) are
 /// tessellated to line segments with the given angular tolerance in degrees.
+/// Coordinates are scaled from `$INSUNITS` to millimeters automatically.
 pub fn load_dxf(path: &Path, arc_tolerance_deg: f64) -> Result<Vec<Polygon2>, DxfError> {
     let drawing = dxf::Drawing::load_file(path.to_str().unwrap_or(""))?;
     Ok(extract_polygons(&drawing, arc_tolerance_deg))
@@ -27,7 +66,22 @@ pub fn load_dxf(path: &Path, arc_tolerance_deg: f64) -> Result<Vec<Polygon2>, Dx
 
 /// Load closed polygon entities from a DXF Drawing.
 pub fn extract_polygons(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<Polygon2> {
-    let raw = extract_polygons_flat(drawing, arc_tolerance_deg);
+    let scale = insunits_to_mm_scale(drawing.header.default_drawing_units);
+    let mut raw = extract_polygons_flat(drawing, arc_tolerance_deg);
+    if (scale - 1.0).abs() > 1e-12 {
+        for poly in &mut raw {
+            for pt in &mut poly.exterior {
+                pt.x *= scale;
+                pt.y *= scale;
+            }
+            for hole in &mut poly.holes {
+                for pt in hole {
+                    pt.x *= scale;
+                    pt.y *= scale;
+                }
+            }
+        }
+    }
     // Detect containment: inner shapes become holes of outer shapes
     crate::polygon::detect_containment(raw)
 }
@@ -83,6 +137,16 @@ fn extract_polygons_flat(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<
                     polygons.push(poly);
                 }
             }
+            dxf::entities::EntityType::Arc(arc) => {
+                let pts = arc_entity_to_points(arc, arc_step_rad);
+                if pts.len() >= 3 {
+                    let mut poly = Polygon2::new(pts);
+                    poly.ensure_winding();
+                    polygons.push(poly);
+                }
+            }
+            // Line entities produce open 2-point segments; skipped (see module docs).
+            // Spline entities require B-spline evaluation; skipped (see module docs).
             _ => {}
         }
     }
@@ -197,6 +261,48 @@ fn circle_to_points(cx: f64, cy: f64, radius: f64, arc_step: f64) -> Vec<P2> {
             P2::new(cx + radius * angle.cos(), cy + radius * angle.sin())
         })
         .collect()
+}
+
+/// Tessellate a DXF Arc entity into polygon points.
+///
+/// DXF Arc angles are in degrees, measured CCW from the +X axis.
+/// The resulting polygon is closed by connecting the arc endpoints with a chord,
+/// producing a "pie-slice" or "segment" shape that can be used as a closed region.
+/// A full-circle arc (start == end or sweep ~360) is treated like a Circle entity.
+fn arc_entity_to_points(arc: &dxf::entities::Arc, arc_step: f64) -> Vec<P2> {
+    let cx = arc.center.x;
+    let cy = arc.center.y;
+    let r = arc.radius;
+
+    // DXF arc angles are in degrees
+    let start_deg = arc.start_angle;
+    let end_deg = arc.end_angle;
+
+    // Compute sweep (always positive, CCW direction)
+    let mut sweep_deg = end_deg - start_deg;
+    if sweep_deg <= 0.0 {
+        sweep_deg += 360.0;
+    }
+
+    // Full circle check (within ~0.01 degree tolerance)
+    if (sweep_deg - 360.0).abs() < 0.01 {
+        return circle_to_points(cx, cy, r, arc_step);
+    }
+
+    let start_rad = start_deg.to_radians();
+    let sweep_rad = sweep_deg.to_radians();
+
+    let n = (sweep_rad / arc_step).ceil() as usize;
+    let n = n.max(3);
+
+    // Generate arc points (including start and end)
+    let mut pts = Vec::with_capacity(n + 1);
+    for i in 0..=n {
+        let t = start_rad + sweep_rad * i as f64 / n as f64;
+        pts.push(P2::new(cx + r * t.cos(), cy + r * t.sin()));
+    }
+
+    pts
 }
 
 fn ellipse_to_points(ell: &dxf::entities::Ellipse, arc_step: f64) -> Vec<P2> {
@@ -405,5 +511,179 @@ mod tests {
         let drawing = make_lwpolyline_drawing(vec![(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)], true);
         let polys = extract_polygons(&drawing, 5.0);
         assert!(polys.is_empty(), "2-vertex polyline should be ignored");
+    }
+
+    fn make_arc_drawing(cx: f64, cy: f64, radius: f64, start_deg: f64, end_deg: f64) -> dxf::Drawing {
+        let mut drawing = dxf::Drawing::new();
+        let arc = dxf::entities::Arc::new(
+            dxf::Point::new(cx, cy, 0.0),
+            radius,
+            start_deg,
+            end_deg,
+        );
+        drawing.add_entity(dxf::entities::Entity::new(
+            dxf::entities::EntityType::Arc(arc),
+        ));
+        drawing
+    }
+
+    #[test]
+    fn test_arc_full_circle() {
+        // A full-circle arc (0 to 360) should produce the same result as a Circle entity
+        let drawing = make_arc_drawing(50.0, 50.0, 25.0, 0.0, 360.0);
+        let polys = extract_polygons(&drawing, 5.0);
+        assert_eq!(polys.len(), 1, "Full-circle arc should produce 1 polygon");
+
+        let expected = std::f64::consts::PI * 25.0 * 25.0;
+        let area = polys[0].area();
+        assert!(
+            (area - expected).abs() < expected * 0.05,
+            "Full-circle arc area {} should be ~{} (within 5%)",
+            area,
+            expected
+        );
+    }
+
+    #[test]
+    fn test_arc_semicircle() {
+        // A 180-degree arc (semicircle) from 0 to 180 degrees
+        let drawing = make_arc_drawing(0.0, 0.0, 10.0, 0.0, 180.0);
+        let polys = extract_polygons(&drawing, 5.0);
+        assert_eq!(polys.len(), 1, "Semicircle arc should produce 1 polygon");
+
+        // The polygon is the semicircle closed by a chord (diameter).
+        // Area of a semicircular segment = pi*r^2/2
+        let expected = std::f64::consts::PI * 10.0 * 10.0 / 2.0;
+        let area = polys[0].area();
+        assert!(
+            (area - expected).abs() < expected * 0.10,
+            "Semicircle area {} should be ~{} (within 10%)",
+            area,
+            expected
+        );
+    }
+
+    #[test]
+    fn test_arc_quarter_circle() {
+        // A 90-degree arc
+        let drawing = make_arc_drawing(0.0, 0.0, 10.0, 0.0, 90.0);
+        let polys = extract_polygons(&drawing, 5.0);
+        assert_eq!(polys.len(), 1, "Quarter arc should produce 1 polygon");
+        assert!(
+            polys[0].exterior.len() >= 3,
+            "Quarter arc should have at least 3 points"
+        );
+    }
+
+    #[test]
+    fn test_arc_wrap_around() {
+        // Arc from 270 to 90 degrees (wraps through 0)
+        let drawing = make_arc_drawing(0.0, 0.0, 10.0, 270.0, 90.0);
+        let polys = extract_polygons(&drawing, 5.0);
+        assert_eq!(polys.len(), 1, "Wrap-around arc should produce 1 polygon");
+        // This is a 180-degree arc (270 -> 360 -> 90)
+        let expected = std::f64::consts::PI * 10.0 * 10.0 / 2.0;
+        let area = polys[0].area();
+        assert!(
+            (area - expected).abs() < expected * 0.10,
+            "Wrap-around arc area {} should be ~{} (within 10%)",
+            area,
+            expected
+        );
+    }
+
+    #[test]
+    fn test_insunits_inches_scale() {
+        let mut drawing = dxf::Drawing::new();
+        drawing.header.default_drawing_units = dxf::enums::Units::Inches;
+
+        // Add a 1x1 inch rectangle
+        let mut lwp = dxf::entities::LwPolyline::default();
+        for (x, y) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
+            lwp.vertices.push(dxf::LwPolylineVertex {
+                x,
+                y,
+                ..Default::default()
+            });
+        }
+        lwp.set_is_closed(true);
+        drawing.add_entity(dxf::entities::Entity::new(
+            dxf::entities::EntityType::LwPolyline(lwp),
+        ));
+
+        let polys = extract_polygons(&drawing, 5.0);
+        assert_eq!(polys.len(), 1);
+
+        // 1x1 inch = 25.4x25.4 mm = 645.16 mm^2
+        let expected = 25.4 * 25.4;
+        let area = polys[0].area();
+        assert!(
+            (area - expected).abs() < 1.0,
+            "1x1 inch square area {} should be ~{} mm^2",
+            area,
+            expected
+        );
+    }
+
+    #[test]
+    fn test_insunits_mm_no_scale() {
+        let mut drawing = dxf::Drawing::new();
+        drawing.header.default_drawing_units = dxf::enums::Units::Millimeters;
+
+        let mut lwp = dxf::entities::LwPolyline::default();
+        for (x, y) in [(0.0, 0.0), (100.0, 0.0), (100.0, 50.0), (0.0, 50.0)] {
+            lwp.vertices.push(dxf::LwPolylineVertex {
+                x,
+                y,
+                ..Default::default()
+            });
+        }
+        lwp.set_is_closed(true);
+        drawing.add_entity(dxf::entities::Entity::new(
+            dxf::entities::EntityType::LwPolyline(lwp),
+        ));
+
+        let polys = extract_polygons(&drawing, 5.0);
+        assert_eq!(polys.len(), 1);
+
+        let area = polys[0].area();
+        assert!(
+            (area - 5000.0).abs() < 1.0,
+            "mm drawing should not scale: area {} should be 5000",
+            area
+        );
+    }
+
+    #[test]
+    fn test_insunits_centimeters_scale() {
+        let mut drawing = dxf::Drawing::new();
+        drawing.header.default_drawing_units = dxf::enums::Units::Centimeters;
+
+        // 10x10 cm square
+        let mut lwp = dxf::entities::LwPolyline::default();
+        for (x, y) in [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)] {
+            lwp.vertices.push(dxf::LwPolylineVertex {
+                x,
+                y,
+                ..Default::default()
+            });
+        }
+        lwp.set_is_closed(true);
+        drawing.add_entity(dxf::entities::Entity::new(
+            dxf::entities::EntityType::LwPolyline(lwp),
+        ));
+
+        let polys = extract_polygons(&drawing, 5.0);
+        assert_eq!(polys.len(), 1);
+
+        // 10x10 cm = 100x100 mm = 10000 mm^2
+        let expected = 10_000.0;
+        let area = polys[0].area();
+        assert!(
+            (area - expected).abs() < 1.0,
+            "10x10 cm square area {} should be ~{} mm^2",
+            area,
+            expected
+        );
     }
 }
