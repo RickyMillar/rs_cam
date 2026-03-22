@@ -129,6 +129,7 @@ pub struct RenderResources {
 
     // Scene data
     pub mesh_data: Option<MeshGpuData>,
+    pub enriched_mesh_data: Option<mesh_render::EnrichedMeshGpuData>,
     pub grid_data: GridGpuData,
     pub stock_data: Option<StockGpuData>,
     pub solid_stock_data: Option<stock_render::SolidStockGpuData>,
@@ -467,6 +468,7 @@ impl RenderResources {
             offscreen: None,
             target_format,
             mesh_data: None,
+            enriched_mesh_data: None,
             grid_data,
             stock_data: None,
             solid_stock_data: None,
@@ -722,6 +724,16 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                     pass.set_index_buffer(sim.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                     pass.draw_indexed(0..sim.index_count, 0, 0..1);
                 }
+            } else if let Some(enriched) = &resources.enriched_mesh_data {
+                // STEP model with per-face coloring — use sim_mesh_pipeline (ColoredMeshVertex)
+                pass.set_pipeline(&resources.sim_mesh_pipeline);
+                pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
+                pass.set_vertex_buffer(0, enriched.vertex_buffer.slice(..));
+                pass.set_index_buffer(
+                    enriched.index_buffer.slice(..),
+                    wgpu::IndexFormat::Uint32,
+                );
+                pass.draw_indexed(0..enriched.index_count, 0, 0..1);
             } else if self.has_mesh
                 && let Some(mesh) = &resources.mesh_data
             {

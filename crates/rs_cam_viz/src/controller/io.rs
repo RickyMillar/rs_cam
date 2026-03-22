@@ -132,6 +132,7 @@ impl<B: ComputeBackend> AppController<B> {
         {
             model.mesh = reloaded.mesh;
             model.polygons = reloaded.polygons;
+            model.enriched_mesh = reloaded.enriched_mesh;
             model.winding_report = reloaded.winding_report;
             model.load_error = reloaded.load_error;
         }

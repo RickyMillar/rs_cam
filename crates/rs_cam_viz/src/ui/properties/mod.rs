@@ -402,6 +402,47 @@ fn draw_model_properties(
             );
         }
 
+        // BREP face metadata (STEP only)
+        if let Some(enriched) = &model.enriched_mesh {
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new("BREP Topology")
+                    .strong()
+                    .color(egui::Color32::from_rgb(180, 180, 195)),
+            );
+            egui::Grid::new("brep_info")
+                .num_columns(2)
+                .spacing([8.0, 3.0])
+                .show(ui, |ui| {
+                    ui.label("Faces:");
+                    ui.label(format!("{}", enriched.face_count()));
+                    ui.end_row();
+                    ui.label("Adjacency pairs:");
+                    ui.label(format!("{}", enriched.adjacency.len()));
+                    ui.end_row();
+
+                    // Surface type histogram
+                    use rs_cam_core::enriched_mesh::SurfaceType;
+                    let mut planes = 0;
+                    let mut cylinders = 0;
+                    let mut other = 0;
+                    for group in &enriched.face_groups {
+                        match group.surface_type {
+                            SurfaceType::Plane => planes += 1,
+                            SurfaceType::Cylinder => cylinders += 1,
+                            _ => other += 1,
+                        }
+                    }
+                    ui.label("Surface types:");
+                    let mut parts = Vec::new();
+                    if planes > 0 { parts.push(format!("{planes} plane")); }
+                    if cylinders > 0 { parts.push(format!("{cylinders} cyl")); }
+                    if other > 0 { parts.push(format!("{other} other")); }
+                    ui.label(parts.join(", "));
+                    ui.end_row();
+                });
+        }
+
         // Units / scale selector (STL only)
         if model.kind == ModelKind::Stl {
             ui.add_space(8.0);
