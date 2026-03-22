@@ -1023,14 +1023,12 @@ impl<B: ComputeBackend> AppController<B> {
         // Derive polygons from selected BREP faces when no explicit polygons exist.
         // This enables all 2.5D operations (pocket, profile, adaptive, trace, etc.)
         // to work with STEP models by extracting face boundary loops as Polygon2.
-        if polygons.is_none() {
-            if let (Some(face_ids), Some(enriched)) = (&face_selection, &enriched_mesh) {
-                if !face_ids.is_empty() {
-                    if let Some(poly) = enriched.faces_boundary_as_polygon(face_ids) {
-                        polygons = Some(Arc::new(vec![poly]));
-                    }
-                }
-            }
+        if polygons.is_none()
+            && let (Some(face_ids), Some(enriched)) = (&face_selection, &enriched_mesh)
+            && !face_ids.is_empty()
+            && let Some(poly) = enriched.faces_boundary_as_polygon(face_ids)
+        {
+            polygons = Some(Arc::new(vec![poly]));
         }
 
         if let Some(transform_setup) = transform_setup.as_ref() {

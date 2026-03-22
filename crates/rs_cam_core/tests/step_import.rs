@@ -41,7 +41,7 @@ fn test_load_step_cylinder() {
 
     assert_eq!(enriched.face_count(), 3, "Cylinder should have 3 faces");
     assert!(
-        enriched.as_mesh().triangles.len() > 0,
+        !enriched.as_mesh().triangles.is_empty(),
         "Cylinder should have triangles"
     );
 
@@ -64,7 +64,7 @@ fn test_load_step_cone() {
     let enriched = load_step(&path, 0.1).expect("Failed to load cone STEP");
 
     assert_eq!(enriched.face_count(), 3, "Cone should have 3 faces");
-    assert!(enriched.as_mesh().triangles.len() > 0);
+    assert!(!enriched.as_mesh().triangles.is_empty());
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn test_load_step_sphere() {
     let enriched = load_step(&path, 0.1).expect("Failed to load sphere STEP");
 
     assert!(enriched.face_count() >= 1, "Sphere should have at least 1 face");
-    assert!(enriched.as_mesh().triangles.len() > 0);
+    assert!(!enriched.as_mesh().triangles.is_empty());
 }
 
 #[test]

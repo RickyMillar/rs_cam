@@ -293,11 +293,7 @@ fn extract_boundary_loops(vertices: &[P3], triangles: &[[u32; 3]]) -> Vec<Vec<P3
         let mut current = start_a;
         let mut prev = u32::MAX;
 
-        loop {
-            let neighbors = match adj.get(&current) {
-                Some(n) => n,
-                None => break,
-            };
+        while let Some(neighbors) = adj.get(&current) {
 
             let next = neighbors.iter().find(|&&n| n != prev).copied();
             match next {
@@ -330,7 +326,7 @@ fn extract_boundary_loops(vertices: &[P3], triangles: &[[u32; 3]]) -> Vec<Vec<P3
 /// Returns the shared vertices as P3 points if at least 2 are shared (forming an edge).
 fn find_shared_edge_vertices(a: &FaceTessellation, b: &FaceTessellation) -> Option<Vec<P3>> {
     let a_positions: std::collections::HashSet<[i64; 3]> =
-        a.vertices.iter().map(|v| quantize_point(v)).collect();
+        a.vertices.iter().map(quantize_point).collect();
 
     let shared: Vec<P3> = b
         .vertices
@@ -377,7 +373,7 @@ fn build_brep_edge(
     };
 
     // Project to 2D if edge is approximately horizontal
-    let vertices_2d = if shared_verts.iter().all(|v| {
+    let vertices_2d = if shared_verts.iter().all(|_| {
         let z_range = shared_verts.iter().map(|p| p.z).fold(f64::INFINITY, f64::min);
         let z_max = shared_verts.iter().map(|p| p.z).fold(f64::NEG_INFINITY, f64::max);
         (z_max - z_range) < 0.1 // within 0.1mm Z range

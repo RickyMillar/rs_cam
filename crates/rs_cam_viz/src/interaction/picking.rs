@@ -148,15 +148,15 @@ pub fn pick(
                 if mesh.bbox.ray_intersect(&origin, &dir).is_none() {
                     continue;
                 }
-                if let Some((tri_idx, t)) = ray_pick_triangle(mesh, &origin, &dir) {
-                    if t < best_t {
-                        best_t = t;
-                        let face_id = enriched.face_for_triangle(tri_idx);
-                        best_hit = Some(PickHit::ModelFace {
-                            model_id: model.id,
-                            face_id,
-                        });
-                    }
+                if let Some((tri_idx, t)) = ray_pick_triangle(mesh, &origin, &dir)
+                    && t < best_t
+                {
+                    best_t = t;
+                    let face_id = enriched.face_for_triangle(tri_idx);
+                    best_hit = Some(PickHit::ModelFace {
+                        model_id: model.id,
+                        face_id,
+                    });
                 }
             }
         }

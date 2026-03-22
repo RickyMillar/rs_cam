@@ -406,11 +406,11 @@ pub fn ray_pick_triangle(mesh: &TriangleMesh, origin: &P3, dir: &V3) -> Option<(
     let mut best_idx = None;
 
     for (i, face) in mesh.faces.iter().enumerate() {
-        if let Some(t) = face.ray_intersect(origin, dir) {
-            if t < best_t {
-                best_t = t;
-                best_idx = Some(i);
-            }
+        if let Some(t) = face.ray_intersect(origin, dir)
+            && t < best_t
+        {
+            best_t = t;
+            best_idx = Some(i);
         }
     }
 
