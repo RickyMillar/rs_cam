@@ -1105,29 +1105,6 @@ fn run_project_curve_annotated(
     Ok((out, slices))
 }
 
-#[allow(dead_code)]
-fn run_face(req: &ComputeRequest, cfg: &FaceConfig) -> Result<Toolpath, String> {
-    let bbox = req
-        .stock_bbox
-        .ok_or("No stock defined for face operation")?;
-    let tr = req.tool.diameter / 2.0;
-    let params = FaceParams {
-        tool_radius: tr,
-        stepover: cfg.stepover,
-        depth: cfg.depth,
-        depth_per_pass: cfg.depth_per_pass,
-        feed_rate: cfg.feed_rate,
-        plunge_rate: cfg.plunge_rate,
-        safe_z: effective_safe_z(req),
-        stock_offset: cfg.stock_offset,
-        direction: match cfg.direction {
-            self::FaceDirection::OneWay => CoreFaceDir::OneWay,
-            self::FaceDirection::Zigzag => CoreFaceDir::Zigzag,
-        },
-    };
-    Ok(face_toolpath(&bbox, &params))
-}
-
 fn run_trace(req: &ComputeRequest, cfg: &TraceConfig) -> Result<Toolpath, String> {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;

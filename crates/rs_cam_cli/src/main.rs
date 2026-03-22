@@ -1334,6 +1334,8 @@ fn main() -> Result<()> {
                             toolpath: &phase.toolpath,
                             spindle_rpm: phase.spindle_speed,
                             label: &phase.label,
+                            pre_gcode: None,
+                            post_gcode: None,
                         })
                         .collect();
                     if setup_phases.is_empty() {
@@ -1377,6 +1379,8 @@ fn main() -> Result<()> {
                         toolpath: &phase.toolpath,
                         spindle_rpm: phase.spindle_speed,
                         label: &phase.label,
+                        pre_gcode: None,
+                        post_gcode: None,
                     })
                     .collect();
                 info!("Emitting G-code ({})...", post_proc.name());

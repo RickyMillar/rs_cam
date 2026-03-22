@@ -23,6 +23,16 @@ pub fn export_gcode(job: &JobState) -> Result<String, String> {
                 toolpath: &r.toolpath,
                 spindle_rpm: job.post.spindle_speed,
                 label: &tp.name,
+                pre_gcode: if tp.pre_gcode.is_empty() {
+                    None
+                } else {
+                    Some(&tp.pre_gcode)
+                },
+                post_gcode: if tp.post_gcode.is_empty() {
+                    None
+                } else {
+                    Some(&tp.post_gcode)
+                },
             })
         })
         .collect();
@@ -64,6 +74,16 @@ pub fn export_combined_gcode(job: &JobState) -> Result<String, String> {
                         toolpath: &result.toolpath,
                         spindle_rpm: job.post.spindle_speed,
                         label: &tp.name,
+                        pre_gcode: if tp.pre_gcode.is_empty() {
+                            None
+                        } else {
+                            Some(&tp.pre_gcode)
+                        },
+                        post_gcode: if tp.post_gcode.is_empty() {
+                            None
+                        } else {
+                            Some(&tp.post_gcode)
+                        },
                     })
                 })
                 .collect();
@@ -116,6 +136,16 @@ pub fn export_setup_gcode(job: &JobState, setup_id: SetupId) -> Result<String, S
                 toolpath: &result.toolpath,
                 spindle_rpm: job.post.spindle_speed,
                 label: &tp.name,
+                pre_gcode: if tp.pre_gcode.is_empty() {
+                    None
+                } else {
+                    Some(&tp.pre_gcode)
+                },
+                post_gcode: if tp.post_gcode.is_empty() {
+                    None
+                } else {
+                    Some(&tp.post_gcode)
+                },
             })
         })
         .collect();

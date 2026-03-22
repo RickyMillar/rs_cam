@@ -64,13 +64,6 @@ pub struct JobFile {
 #[derive(Deserialize)]
 pub struct SetupDef {
     pub name: String,
-    /// Orientation metadata (informational, used in setup sheets).
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub face_up: Option<String>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub z_rotation: Option<String>,
     /// Per-setup output file. If absent, uses the global job output.
     pub output: Option<PathBuf>,
 }
