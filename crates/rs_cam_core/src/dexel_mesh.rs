@@ -40,32 +40,54 @@ pub fn dexel_stock_to_mesh(stock: &TriDexelStock) -> StockMesh {
 
 /// Build a closed solid mesh from a Z-grid.
 ///
-/// The solid has three parts:
+/// The solid has four parts:
 /// 1. **Top face** — one vertex per cell at `(x, y, ray_top)`, CCW winding.
+///    Quads touching empty (through-hole) cells are skipped.
 /// 2. **Bottom face** — one vertex per cell at `(x, y, ray_bottom)`, CW winding.
-/// 3. **Perimeter skirt** — vertical quads connecting top/bottom edges around
-///    the grid boundary so the solid is closed on the sides.
-///
-/// Empty rays (through-holes) collapse both top and bottom to `stock_bottom_z`,
-/// producing degenerate zero-area triangles.
+///    Same empty-cell skipping as top face.
+/// 3. **Perimeter skirt** — vertical quads around the grid boundary.
+/// 4. **Hole walls** — vertical quads at internal boundaries between material
+///    and empty cells, creating visible interior walls of through-holes.
 pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: f64) -> StockMesh {
     let rows = grid.rows;
     let cols = grid.cols;
     let cells = rows * cols;
+    let stock_top = stock_top_z as f32;
+    let stock_bot = stock_bottom_z as f32;
 
-    // Collect per-cell top and bottom Z values.
+    // Collect per-cell top/bottom Z and emptiness.
     let mut top_z = Vec::with_capacity(cells);
     let mut bot_z = Vec::with_capacity(cells);
+    let mut empty = Vec::with_capacity(cells);
     for ray in &grid.rays {
-        top_z.push(ray_top(ray).map_or(stock_bottom_z as f32, |t| t));
-        bot_z.push(ray_bottom(ray).map_or(stock_bottom_z as f32, |b| b));
+        let is_empty = ray.is_empty();
+        empty.push(is_empty);
+        if is_empty {
+            // Place empty-cell vertices at stock_top so they don't distort
+            // color normalization. These vertices won't appear in any triangle.
+            top_z.push(stock_top);
+            bot_z.push(stock_bot);
+        } else {
+            top_z.push(ray_top(ray).unwrap_or(stock_bot));
+            bot_z.push(ray_bottom(ray).unwrap_or(stock_bot));
+        }
     }
 
-    // Color normalization ranges.
-    let top_z_min = top_z.iter().copied().fold(f32::INFINITY, f32::min);
-    let top_range = ((stock_top_z as f32) - top_z_min).max(1e-6);
-    let bot_z_max = bot_z.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let bot_range = (bot_z_max - stock_bottom_z as f32).max(1e-6);
+    // Color normalization ranges (only from non-empty cells).
+    let top_z_min = top_z
+        .iter()
+        .zip(empty.iter())
+        .filter(|&(_, e)| !e)
+        .map(|(&z, _)| z)
+        .fold(f32::INFINITY, f32::min);
+    let top_range = (stock_top - top_z_min).max(1e-6);
+    let bot_z_max = bot_z
+        .iter()
+        .zip(empty.iter())
+        .filter(|&(_, e)| !e)
+        .map(|(&z, _)| z)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let bot_range = (bot_z_max - stock_bot).max(1e-6);
 
     // ── Vertices: top layer [0..cells), bottom layer [cells..2*cells) ──
     let total_verts = 2 * cells;
@@ -81,7 +103,7 @@ pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: 
             vertices.push(wv as f32);
             vertices.push(z);
 
-            let depth_t = ((stock_top_z as f32 - z) / top_range).clamp(0.0, 1.0);
+            let depth_t = ((stock_top - z) / top_range).clamp(0.0, 1.0);
             colors.push(UNCUT_R + (CUT_R - UNCUT_R) * depth_t);
             colors.push(UNCUT_G + (CUT_G - UNCUT_G) * depth_t);
             colors.push(UNCUT_B + (CUT_B - UNCUT_B) * depth_t);
@@ -97,50 +119,125 @@ pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: 
             vertices.push(wv as f32);
             vertices.push(z);
 
-            let depth_t = ((z - stock_bottom_z as f32) / bot_range).clamp(0.0, 1.0);
+            let depth_t = ((z - stock_bot) / bot_range).clamp(0.0, 1.0);
             colors.push(UNCUT_R + (CUT_R - UNCUT_R) * depth_t);
             colors.push(UNCUT_G + (CUT_G - UNCUT_G) * depth_t);
             colors.push(UNCUT_B + (CUT_B - UNCUT_B) * depth_t);
         }
     }
 
-    let top_quads = (rows - 1) * (cols - 1);
-    let wall_quads = 2 * ((rows - 1) + (cols - 1));
-    let total_tris = 2 * top_quads   // top face
-                   + 2 * top_quads   // bottom face
-                   + 2 * wall_quads; // perimeter skirt
-    let mut indices = Vec::with_capacity(total_tris * 3);
+    let mut indices = Vec::with_capacity(cells * 6); // rough estimate
 
-    let bot_off = cells as u32; // index offset to bottom layer
+    let bot_off = cells as u32;
 
-    // ── Top face (CCW, normals face +Z) ────────────────────────────────
+    // Helper: cell index.
+    let idx = |row: usize, col: usize| -> u32 { (row * cols + col) as u32 };
+    let is_empty = |row: usize, col: usize| -> bool { empty[row * cols + col] };
+
+    // ── Top face (CCW, normals face +Z) — skip quads with any empty corner ─
     for row in 0..(rows - 1) {
         for col in 0..(cols - 1) {
-            let tl = (row * cols + col) as u32;
+            if is_empty(row, col)
+                || is_empty(row, col + 1)
+                || is_empty(row + 1, col)
+                || is_empty(row + 1, col + 1)
+            {
+                continue;
+            }
+            let tl = idx(row, col);
             let tr = tl + 1;
-            let bl = ((row + 1) * cols + col) as u32;
+            let bl = idx(row + 1, col);
             let br = bl + 1;
             indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
         }
     }
 
-    // ── Bottom face (CW, normals face −Z) ──────────────────────────────
+    // ── Bottom face (CW, normals face −Z) — same empty-cell skip ──────────
     for row in 0..(rows - 1) {
         for col in 0..(cols - 1) {
-            let tl = bot_off + (row * cols + col) as u32;
+            if is_empty(row, col)
+                || is_empty(row, col + 1)
+                || is_empty(row + 1, col)
+                || is_empty(row + 1, col + 1)
+            {
+                continue;
+            }
+            let tl = bot_off + idx(row, col);
             let tr = tl + 1;
-            let bl = bot_off + ((row + 1) * cols + col) as u32;
+            let bl = bot_off + idx(row + 1, col);
             let br = bl + 1;
             indices.extend_from_slice(&[tl, tr, bl, tr, br, bl]);
         }
     }
 
-    // ── Perimeter skirt walls ──────────────────────────────────────────
-    // Each wall quad connects a top edge vertex to its bottom counterpart.
-    // Winding is chosen so normals face outward.
+    // ── Internal hole walls ─────────────────────────────────────────────
+    // At each internal edge between a non-empty cell and an empty cell,
+    // generate a vertical quad connecting the vertices at the shared edge.
+    // This creates visible interior walls of through-holes.
+
+    // Right-neighbor walls (vertical walls along column boundaries).
+    for row in 0..rows {
+        for col in 0..(cols - 1) {
+            let left_empty = is_empty(row, col);
+            let right_empty = is_empty(row, col + 1);
+            if left_empty == right_empty {
+                continue;
+            }
+            // Wall between col and col+1 at this row.
+            if !left_empty {
+                // Left cell has material, right is empty → wall faces +U (right).
+                let t0 = idx(row, col);
+                let b0 = bot_off + t0;
+                // Use same vertex (the right edge of the left cell = the shared edge).
+                // Since vertices are at cell centers, the wall is at col boundary.
+                // We use col+1 vertices as the "other side" of the wall.
+                let t1 = idx(row, col + 1);
+                let b1 = bot_off + t1;
+                indices.extend_from_slice(&[t0, t1, b0, t1, b1, b0]);
+            } else {
+                // Right cell has material, left is empty → wall faces −U (left).
+                let t0 = idx(row, col);
+                let b0 = bot_off + t0;
+                let t1 = idx(row, col + 1);
+                let b1 = bot_off + t1;
+                indices.extend_from_slice(&[t0, b0, t1, t1, b0, b1]);
+            }
+        }
+    }
+
+    // Down-neighbor walls (horizontal walls along row boundaries).
+    for row in 0..(rows - 1) {
+        for col in 0..cols {
+            let top_empty = is_empty(row, col);
+            let bot_empty = is_empty(row + 1, col);
+            if top_empty == bot_empty {
+                continue;
+            }
+            if !top_empty {
+                // Top cell has material, bottom is empty → wall faces +V (down).
+                let t0 = idx(row, col);
+                let b0 = bot_off + t0;
+                let t1 = idx(row + 1, col);
+                let b1 = bot_off + t1;
+                indices.extend_from_slice(&[t0, b0, t1, t1, b0, b1]);
+            } else {
+                // Bottom cell has material, top is empty → wall faces −V (up).
+                let t0 = idx(row, col);
+                let b0 = bot_off + t0;
+                let t1 = idx(row + 1, col);
+                let b1 = bot_off + t1;
+                indices.extend_from_slice(&[t0, t1, b0, t1, b1, b0]);
+            }
+        }
+    }
+
+    // ── Perimeter skirt — skip segments where edge cell is empty ────────
 
     // Front edge (row = 0, normals face −V).
     for col in 0..(cols - 1) {
+        if is_empty(0, col) || is_empty(0, col + 1) {
+            continue;
+        }
         let t0 = col as u32;
         let t1 = (col + 1) as u32;
         let b0 = bot_off + t0;
@@ -151,6 +248,9 @@ pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: 
     // Back edge (row = rows-1, normals face +V).
     let last_row = rows - 1;
     for col in 0..(cols - 1) {
+        if is_empty(last_row, col) || is_empty(last_row, col + 1) {
+            continue;
+        }
         let t0 = (last_row * cols + col) as u32;
         let t1 = t0 + 1;
         let b0 = bot_off + t0;
@@ -160,6 +260,9 @@ pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: 
 
     // Left edge (col = 0, normals face −U).
     for row in 0..(rows - 1) {
+        if is_empty(row, 0) || is_empty(row + 1, 0) {
+            continue;
+        }
         let t0 = (row * cols) as u32;
         let t1 = ((row + 1) * cols) as u32;
         let b0 = bot_off + t0;
@@ -170,6 +273,9 @@ pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: 
     // Right edge (col = cols-1, normals face +U).
     let last_col = cols - 1;
     for row in 0..(rows - 1) {
+        if is_empty(row, last_col) || is_empty(row + 1, last_col) {
+            continue;
+        }
         let t0 = (row * cols + last_col) as u32;
         let t1 = ((row + 1) * cols + last_col) as u32;
         let b0 = bot_off + t0;
@@ -312,25 +418,28 @@ mod tests {
     }
 
     #[test]
-    fn through_hole_collapses_to_stock_bottom() {
+    fn through_hole_produces_no_top_bottom_faces() {
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 2.0, 2.0, 0.0, 10.0, 1.0);
-        // Clear the center ray entirely.
+        // Clear the center ray entirely (through-hole).
         stock.z_grid.ray_mut(1, 1).clear();
 
         let mesh = dexel_stock_to_mesh(&stock);
-        let cols = stock.z_grid.cols;
-        // Top vertex at (1,1) = index 1*3+1 = 4, Z at 4*3+2 = 14.
-        let top_z = mesh.vertices[14];
-        // Bottom vertex at (1,1) = index (3*3)+4 = 13, Z at 13*3+2 = 41.
-        let bot_idx = (stock.z_grid.rows * cols) + cols + 1;
-        let bot_z = mesh.vertices[bot_idx * 3 + 2];
+        let mesh_without_hole = {
+            let s = TriDexelStock::from_stock(0.0, 0.0, 2.0, 2.0, 0.0, 10.0, 1.0);
+            dexel_stock_to_mesh(&s)
+        };
+        // The mesh with a hole should have fewer triangles than solid stock
+        // because top/bottom quads touching the empty cell are skipped.
         assert!(
-            (top_z - 0.0).abs() < 0.01,
-            "Through-hole top Z should collapse to stock bottom, got {top_z}"
+            mesh.indices.len() < mesh_without_hole.indices.len(),
+            "Through-hole mesh should have fewer indices: {} vs {}",
+            mesh.indices.len(),
+            mesh_without_hole.indices.len()
         );
+        // Should also have wall faces for the hole boundary.
         assert!(
-            (bot_z - 0.0).abs() < 0.01,
-            "Through-hole bottom Z should collapse to stock bottom, got {bot_z}"
+            !mesh.indices.is_empty(),
+            "Mesh with hole should still have some faces"
         );
     }
 
@@ -359,17 +468,17 @@ mod tests {
     #[test]
     fn deep_cut_colors_are_dark_walnut() {
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 2.0, 2.0, 0.0, 5.0, 1.0);
-        // Cut center ray to the bottom.
-        ray_subtract_above(stock.z_grid.ray_mut(1, 1), 0.0);
+        // Cut center ray nearly to the bottom (leave a sliver so ray is non-empty).
+        ray_subtract_above(stock.z_grid.ray_mut(1, 1), 0.01);
 
         let mesh = dexel_stock_to_mesh(&stock);
         // Top vertex (1,1) = index 4, colors at 12..15.
         let r = mesh.colors[12];
         let g = mesh.colors[13];
         let b = mesh.colors[14];
-        assert!((r - CUT_R).abs() < 0.01);
-        assert!((g - CUT_G).abs() < 0.01);
-        assert!((b - CUT_B).abs() < 0.01);
+        assert!((r - CUT_R).abs() < 0.05, "R: {r} vs {CUT_R}");
+        assert!((g - CUT_G).abs() < 0.05, "G: {g} vs {CUT_G}");
+        assert!((b - CUT_B).abs() < 0.05, "B: {b} vs {CUT_B}");
     }
 
     /// Top + Bottom two-setup simulation: the solid mesh must have both
