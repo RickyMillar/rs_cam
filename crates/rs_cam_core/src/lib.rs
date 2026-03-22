@@ -15,6 +15,7 @@ pub mod dexel_stock;
 pub mod dressup;
 pub mod drill;
 pub mod dropcutter;
+pub mod enriched_mesh;
 pub mod dxf_input;
 pub mod face;
 pub mod feedopt;
