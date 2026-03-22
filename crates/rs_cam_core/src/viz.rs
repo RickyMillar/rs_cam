@@ -11,7 +11,7 @@ use crate::geo::BoundingBox3;
 use crate::mesh::TriangleMesh;
 use crate::dexel_mesh::dexel_stock_to_mesh;
 use crate::dexel_stock::TriDexelStock;
-use crate::simulation::linearize_arc;
+use crate::arc_util::linearize_arc;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveType, Toolpath};
 use std::fmt::Write;

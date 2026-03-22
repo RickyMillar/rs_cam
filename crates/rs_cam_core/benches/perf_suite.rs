@@ -11,8 +11,9 @@ use rs_cam_core::dropcutter::{batch_drop_cutter, point_drop_cutter};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
 use rs_cam_core::polygon::{Polygon2, offset_polygon, pocket_offsets};
-use rs_cam_core::simulation::{Heightmap, simulate_toolpath, stamp_linear_segment, stamp_tool_at};
-use rs_cam_core::tool::{BallEndmill, FlatEndmill};
+use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
+use rs_cam_core::radial_profile::RadialProfileLUT;
+use rs_cam_core::tool::{BallEndmill, FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::waterline::waterline_contours;
 
@@ -124,25 +125,27 @@ fn bench_spatial_index(c: &mut Criterion) {
     group.finish();
 }
 
-// ── 3. Heightmap stamping benchmarks ─────────────────────────────────────
+// ── 3. Tri-dexel stamping benchmarks ─────────────────────────────────────
 
 fn bench_stamp_tool(c: &mut Criterion) {
     let mut group = c.benchmark_group("stamp_tool");
 
     let ball = BallEndmill::new(6.35, 25.0);
     let flat = FlatEndmill::new(6.35, 25.0);
+    let ball_lut = RadialProfileLUT::from_cutter(&ball, 256);
+    let flat_lut = RadialProfileLUT::from_cutter(&flat, 256);
 
     for cell_size in [0.5, 1.0] {
-        let mut hm = Heightmap::from_stock(0.0, 0.0, 100.0, 100.0, 10.0, cell_size);
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, 0.0, 10.0, cell_size);
         group.bench_function(
             BenchmarkId::new("ball_6mm", format!("cs{cell_size}")),
-            |b| b.iter(|| stamp_tool_at(&mut hm, &ball, 50.0, 50.0, black_box(-2.0))),
+            |b| b.iter(|| stock.stamp_tool_at(&ball_lut, ball.radius(), 50.0, 50.0, black_box(-2.0), StockCutDirection::FromTop)),
         );
 
-        let mut hm = Heightmap::from_stock(0.0, 0.0, 100.0, 100.0, 10.0, cell_size);
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, 0.0, 10.0, cell_size);
         group.bench_function(
             BenchmarkId::new("flat_6mm", format!("cs{cell_size}")),
-            |b| b.iter(|| stamp_tool_at(&mut hm, &flat, 50.0, 50.0, black_box(-2.0))),
+            |b| b.iter(|| stock.stamp_tool_at(&flat_lut, flat.radius(), 50.0, 50.0, black_box(-2.0), StockCutDirection::FromTop)),
         );
     }
 
@@ -220,12 +223,13 @@ fn bench_stamp_linear_segment(c: &mut Criterion) {
     group.sample_size(20);
 
     let ball = BallEndmill::new(6.0, 25.0);
-    let mut hm = Heightmap::from_stock(0.0, 0.0, 60.0, 10.0, 10.0, 0.25);
+    let lut = RadialProfileLUT::from_cutter(&ball, 256);
+    let mut stock = TriDexelStock::from_stock(0.0, 0.0, 60.0, 10.0, 0.0, 10.0, 0.25);
     let start = P3::new(5.0, 5.0, -2.0);
     let end = P3::new(55.0, 5.0, -2.0);
 
     group.bench_function("50mm_ball6_cs025", |b| {
-        b.iter(|| stamp_linear_segment(&mut hm, &ball, black_box(start), black_box(end)))
+        b.iter(|| stock.stamp_linear_segment(&lut, ball.radius(), black_box(start), black_box(end), StockCutDirection::FromTop))
     });
 
     group.finish();
@@ -237,14 +241,13 @@ fn bench_simulate_toolpath(c: &mut Criterion) {
 
     let ball = BallEndmill::new(6.0, 25.0);
     let tp = make_linear_toolpath(2000);
-    let mut hm = Heightmap::from_stock(0.0, 0.0, 1050.0, 20.0, 10.0, 0.25);
+    let fresh = TriDexelStock::from_stock(0.0, 0.0, 1050.0, 20.0, 0.0, 10.0, 0.25);
 
     group.bench_function("2000moves_ball6_cs025", |b| {
-        // Reset heightmap before each iteration
         b.iter(|| {
-            hm.cells.fill(hm.stock_top_z);
-            simulate_toolpath(&tp, &ball, &mut hm);
-            black_box(&hm);
+            let mut stock = fresh.clone();
+            stock.simulate_toolpath(&tp, &ball, StockCutDirection::FromTop);
+            black_box(&stock);
         })
     });
 

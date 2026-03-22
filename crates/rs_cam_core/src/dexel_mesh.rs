@@ -386,7 +386,7 @@ mod tests {
     #[test]
     fn top_bottom_job_mesh_shows_both_cuts() {
         use crate::dexel::{ray_bottom, ray_top};
-        use crate::simulation::RadialProfileLUT;
+        use crate::radial_profile::RadialProfileLUT;
 
         let stock_h = 10.6;
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 110.0, 110.0, 0.0, stock_h, 1.0);
@@ -445,7 +445,7 @@ mod tests {
         let z_only_mesh = dexel_stock_to_mesh(&stock);
 
         let tool = FlatEndmill::new(4.0, 20.0);
-        let lut = crate::simulation::RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = crate::radial_profile::RadialProfileLUT::from_cutter(&tool, 256);
         stock.stamp_tool_at(
             &lut,
             tool.radius(),

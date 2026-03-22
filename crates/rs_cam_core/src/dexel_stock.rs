@@ -12,7 +12,7 @@ use crate::arc_util::linearize_arc;
 use crate::geo::{BoundingBox3, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::semantic_trace::ToolpathSemanticTrace;
-use crate::simulation::RadialProfileLUT;
+use crate::radial_profile::RadialProfileLUT;
 use crate::simulation_cut::SimulationCutSample;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveType, Toolpath};
@@ -951,14 +951,11 @@ fn build_move_semantic_lookup(
 mod tests {
     use super::*;
     use crate::dexel::{ray_bottom, ray_top};
-    use crate::simulation::{
-        Heightmap, simulate_toolpath as hm_simulate_toolpath,
-        stamp_linear_segment as hm_stamp_linear_segment,
-    };
+    use crate::radial_profile::RadialProfileLUT;
     use crate::tool::{BallEndmill, FlatEndmill};
 
-    /// Helper: create a TriDexelStock and Heightmap with matching dimensions.
-    fn make_pair(
+    /// Helper: create a TriDexelStock with the given dimensions.
+    fn make_stock(
         x_min: f64,
         y_min: f64,
         x_max: f64,
@@ -966,32 +963,30 @@ mod tests {
         z_min: f64,
         z_max: f64,
         cell_size: f64,
-    ) -> (TriDexelStock, Heightmap) {
-        let stock = TriDexelStock::from_stock(x_min, y_min, x_max, y_max, z_min, z_max, cell_size);
-        let hm = Heightmap::from_stock(x_min, y_min, x_max, y_max, z_max, cell_size);
-        (stock, hm)
+    ) -> TriDexelStock {
+        TriDexelStock::from_stock(x_min, y_min, x_max, y_max, z_min, z_max, cell_size)
     }
 
     // ── Basic construction ──────────────────────────────────────────────
 
     #[test]
-    fn from_bounds_dimensions_match_heightmap() {
+    fn from_bounds_dimensions_correct() {
         let bbox = BoundingBox3 {
             min: P3::new(0.0, 0.0, -5.0),
             max: P3::new(10.0, 10.0, 5.0),
         };
         let stock = TriDexelStock::from_bounds(&bbox, 1.0);
-        let hm = Heightmap::from_bounds(&bbox, None, 1.0);
-        assert_eq!(stock.z_grid.rows, hm.rows);
-        assert_eq!(stock.z_grid.cols, hm.cols);
+        // 10mm / 1mm cell + 1 = 11 rows and cols
+        assert_eq!(stock.z_grid.rows, 11);
+        assert_eq!(stock.z_grid.cols, 11);
     }
 
     // ── Single stamp equivalence ────────────────────────────────────────
 
     #[test]
-    fn stamp_flat_endmill_matches_heightmap() {
+    fn stamp_flat_endmill_cuts_correctly() {
         let tool = FlatEndmill::new(10.0, 25.0); // radius 5
-        let (mut stock, mut hm) = make_pair(-10.0, -10.0, 10.0, 10.0, 0.0, 5.0, 0.5);
+        let mut stock = make_stock(-10.0, -10.0, 10.0, 10.0, 0.0, 5.0, 0.5);
 
         let lut = RadialProfileLUT::from_cutter(&tool, 256);
         stock.stamp_tool_at(
@@ -1003,26 +998,21 @@ mod tests {
             StockCutDirection::FromTop,
         );
 
-        crate::simulation::stamp_tool_at_lut(&mut hm, &lut, tool.radius(), 0.0, 0.0, 2.0);
+        // Center cell: flat endmill tip at z=2, so top should be 2.0.
+        let (cr, cc) = stock.z_grid.world_to_cell(0.0, 0.0).unwrap();
+        let center_z = ray_top(stock.z_grid.ray(cr, cc)).unwrap() as f64;
+        assert!((center_z - 2.0).abs() < 0.01, "center z={center_z:.4}");
 
-        // Compare: dexel ray top should match heightmap cell value.
-        for row in 0..hm.rows {
-            for col in 0..hm.cols {
-                let hm_z = hm.get(row, col);
-                let ray = stock.z_grid.ray(row, col);
-                let dex_z = ray_top(ray).unwrap_or(0.0) as f64;
-                assert!(
-                    (dex_z - hm_z).abs() < 0.01,
-                    "Mismatch at ({row},{col}): dexel={dex_z:.4}, hm={hm_z:.4}"
-                );
-            }
-        }
+        // Cell outside tool radius: should still be at stock top (5.0).
+        let (or, oc) = stock.z_grid.world_to_cell(-8.0, -8.0).unwrap();
+        let outer_z = ray_top(stock.z_grid.ray(or, oc)).unwrap() as f64;
+        assert!((outer_z - 5.0).abs() < 0.01, "outer z={outer_z:.4}");
     }
 
     #[test]
-    fn stamp_ball_endmill_matches_heightmap() {
+    fn stamp_ball_endmill_cuts_correctly() {
         let tool = BallEndmill::new(6.0, 25.0); // radius 3
-        let (mut stock, mut hm) = make_pair(-10.0, -10.0, 10.0, 10.0, 0.0, 5.0, 0.5);
+        let mut stock = make_stock(-10.0, -10.0, 10.0, 10.0, 0.0, 5.0, 0.5);
 
         let lut = RadialProfileLUT::from_cutter(&tool, 256);
         stock.stamp_tool_at(
@@ -1034,77 +1024,77 @@ mod tests {
             StockCutDirection::FromTop,
         );
 
-        crate::simulation::stamp_tool_at_lut(&mut hm, &lut, tool.radius(), 0.0, 0.0, 1.0);
+        // Center cell: ball tip at z=1, so top should be 1.0.
+        let (cr, cc) = stock.z_grid.world_to_cell(0.0, 0.0).unwrap();
+        let center_z = ray_top(stock.z_grid.ray(cr, cc)).unwrap() as f64;
+        assert!((center_z - 1.0).abs() < 0.02, "center z={center_z:.4}");
 
-        for row in 0..hm.rows {
-            for col in 0..hm.cols {
-                let hm_z = hm.get(row, col);
-                let ray = stock.z_grid.ray(row, col);
-                let dex_z = ray_top(ray).unwrap_or(0.0) as f64;
-                assert!(
-                    (dex_z - hm_z).abs() < 0.02,
-                    "Mismatch at ({row},{col}): dexel={dex_z:.4}, hm={hm_z:.4}"
-                );
-            }
-        }
+        // Cell at tool radius edge (3mm away): ball profile rises to tip_z + r = 4.0,
+        // but clipped to stock top 5.0, so should be near 4.0.
+        let (er, ec) = stock.z_grid.world_to_cell(3.0, 0.0).unwrap();
+        let edge_z = ray_top(stock.z_grid.ray(er, ec)).unwrap() as f64;
+        assert!(edge_z > 3.5 && edge_z <= 5.0, "edge z={edge_z:.4}");
+
+        // Cell outside tool radius: still at stock top.
+        let (or, oc) = stock.z_grid.world_to_cell(-8.0, -8.0).unwrap();
+        let outer_z = ray_top(stock.z_grid.ray(or, oc)).unwrap() as f64;
+        assert!((outer_z - 5.0).abs() < 0.01, "outer z={outer_z:.4}");
     }
 
     // ── Linear segment equivalence ──────────────────────────────────────
 
     #[test]
-    fn linear_segment_flat_matches_heightmap() {
-        let tool = FlatEndmill::new(4.0, 20.0);
-        let (mut stock, mut hm) = make_pair(-5.0, -5.0, 15.0, 5.0, 0.0, 5.0, 0.5);
+    fn linear_segment_flat_cuts_correctly() {
+        let tool = FlatEndmill::new(4.0, 20.0); // radius 2
+        let mut stock = make_stock(-5.0, -5.0, 15.0, 5.0, 0.0, 5.0, 0.5);
 
         let start = P3::new(0.0, 0.0, 2.0);
         let end = P3::new(10.0, 0.0, 2.0);
 
         let lut = RadialProfileLUT::from_cutter(&tool, 256);
         stock.stamp_linear_segment(&lut, tool.radius(), start, end, StockCutDirection::FromTop);
-        hm_stamp_linear_segment(&mut hm, &tool, start, end);
 
-        let mut max_diff = 0.0_f64;
-        for row in 0..hm.rows {
-            for col in 0..hm.cols {
-                let hm_z = hm.get(row, col);
-                let dex_z = ray_top(stock.z_grid.ray(row, col)).unwrap_or(0.0) as f64;
-                let diff = (dex_z - hm_z).abs();
-                max_diff = max_diff.max(diff);
-            }
+        // Along the path center (y=0): z should be at tip_z = 2.0.
+        for x in [0.0, 5.0, 10.0] {
+            let (r, c) = stock.z_grid.world_to_cell(x, 0.0).unwrap();
+            let z = ray_top(stock.z_grid.ray(r, c)).unwrap() as f64;
+            assert!((z - 2.0).abs() < 0.02, "x={x} z={z:.4}");
         }
-        assert!(max_diff < 0.02, "Max diff: {max_diff:.4}mm");
+
+        // Outside tool radius (y=4): should still be stock top (5.0).
+        let (r, c) = stock.z_grid.world_to_cell(5.0, 4.0).unwrap();
+        let z = ray_top(stock.z_grid.ray(r, c)).unwrap() as f64;
+        assert!((z - 5.0).abs() < 0.01, "outside z={z:.4}");
     }
 
     #[test]
-    fn linear_segment_ball_diagonal_matches_heightmap() {
-        let tool = BallEndmill::new(6.0, 25.0);
-        let (mut stock, mut hm) = make_pair(0.0, 0.0, 30.0, 30.0, -5.0, 5.0, 0.25);
+    fn linear_segment_ball_diagonal_cuts_correctly() {
+        let tool = BallEndmill::new(6.0, 25.0); // radius 3
+        let mut stock = make_stock(0.0, 0.0, 30.0, 30.0, -5.0, 5.0, 0.25);
 
         let start = P3::new(5.0, 5.0, -1.0);
         let end = P3::new(25.0, 25.0, -1.0);
 
         let lut = RadialProfileLUT::from_cutter(&tool, 256);
         stock.stamp_linear_segment(&lut, tool.radius(), start, end, StockCutDirection::FromTop);
-        hm_stamp_linear_segment(&mut hm, &tool, start, end);
 
-        let mut max_diff = 0.0_f64;
-        for row in 0..hm.rows {
-            for col in 0..hm.cols {
-                let hm_z = hm.get(row, col);
-                let dex_z = ray_top(stock.z_grid.ray(row, col)).unwrap_or(-5.0) as f64;
-                let diff = (dex_z - hm_z).abs();
-                max_diff = max_diff.max(diff);
-            }
-        }
-        assert!(max_diff < 0.02, "Max diff: {max_diff:.4}mm");
+        // Midpoint of the diagonal (15,15): ball tip at z=-1, so center z = -1.0.
+        let (r, c) = stock.z_grid.world_to_cell(15.0, 15.0).unwrap();
+        let z = ray_top(stock.z_grid.ray(r, c)).unwrap() as f64;
+        assert!((z - (-1.0)).abs() < 0.02, "midpoint z={z:.4}");
+
+        // Far from the path (0,0): should still be stock top (5.0).
+        let (r, c) = stock.z_grid.world_to_cell(0.0, 0.0).unwrap();
+        let z = ray_top(stock.z_grid.ray(r, c)).unwrap() as f64;
+        assert!((z - 5.0).abs() < 0.01, "corner z={z:.4}");
     }
 
     // ── Toolpath simulation equivalence ─────────────────────────────────
 
     #[test]
-    fn simulate_toolpath_matches_heightmap() {
-        let tool = FlatEndmill::new(4.0, 20.0);
-        let (mut stock, mut hm) = make_pair(-5.0, -5.0, 15.0, 5.0, -5.0, 0.0, 0.5);
+    fn simulate_toolpath_cuts_correctly() {
+        let tool = FlatEndmill::new(4.0, 20.0); // radius 2
+        let mut stock = make_stock(-5.0, -5.0, 15.0, 5.0, -5.0, 0.0, 0.5);
 
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(0.0, 0.0, 10.0));
@@ -1112,18 +1102,18 @@ mod tests {
         tp.feed_to(P3::new(10.0, 0.0, -3.0), 1000.0);
 
         stock.simulate_toolpath(&tp, &tool, StockCutDirection::FromTop);
-        hm_simulate_toolpath(&tp, &tool, &mut hm);
 
-        let mut max_diff = 0.0_f64;
-        for row in 0..hm.rows {
-            for col in 0..hm.cols {
-                let hm_z = hm.get(row, col);
-                let dex_z = ray_top(stock.z_grid.ray(row, col)).unwrap_or(-5.0) as f64;
-                let diff = (dex_z - hm_z).abs();
-                max_diff = max_diff.max(diff);
-            }
+        // Along the path (y=0): plunge to z=-3, then cut at z=-3 to x=10.
+        for x in [0.0, 5.0, 10.0] {
+            let (r, c) = stock.z_grid.world_to_cell(x, 0.0).unwrap();
+            let z = ray_top(stock.z_grid.ray(r, c)).unwrap() as f64;
+            assert!((z - (-3.0)).abs() < 0.02, "x={x} z={z:.4}");
         }
-        assert!(max_diff < 0.02, "Max diff: {max_diff:.4}mm");
+
+        // Far from the path: should still be stock top (0.0).
+        let (r, c) = stock.z_grid.world_to_cell(-4.0, -4.0).unwrap();
+        let z = ray_top(stock.z_grid.ray(r, c)).unwrap() as f64;
+        assert!((z - 0.0).abs() < 0.01, "outside z={z:.4}");
     }
 
     // ── Bottom cuts ─────────────────────────────────────────────────────

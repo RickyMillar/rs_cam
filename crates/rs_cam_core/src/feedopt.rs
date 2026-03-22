@@ -14,7 +14,7 @@
 use crate::geo::P3;
 use crate::dexel::ray_top;
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
-use crate::simulation::RadialProfileLUT;
+use crate::radial_profile::RadialProfileLUT;
 use crate::tool::MillingCutter;
 use crate::toolpath::{Move, MoveType, Toolpath};
 

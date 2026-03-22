@@ -22,7 +22,7 @@ use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::dexel::{ray_subtract_above, ray_top};
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
-use crate::simulation::RadialProfileLUT;
+use crate::radial_profile::RadialProfileLUT;
 use crate::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
 use crate::toolpath::{Toolpath, simplify_path_3d};

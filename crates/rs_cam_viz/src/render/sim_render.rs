@@ -1,5 +1,5 @@
 use egui_wgpu::wgpu;
-use rs_cam_core::simulation::HeightmapMesh;
+use rs_cam_core::stock_mesh::StockMesh as HeightmapMesh;
 
 use super::LineVertex;
 

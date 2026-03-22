@@ -150,7 +150,7 @@ pub enum DexelAxis {
 /// A 2-D grid of dexel rays running along one axis.
 ///
 /// For a Z-grid the grid is indexed by (row=Y, col=X) — matching
-/// [`crate::simulation::Heightmap`] layout — and each ray stores segments
+/// the heightmap layout — and each ray stores segments
 /// along the Z axis.
 pub struct DexelGrid {
     pub rays: Vec<DexelRay>,

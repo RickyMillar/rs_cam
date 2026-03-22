@@ -597,7 +597,7 @@ fn playback_defaults_after_reset() {
 
 /// Helper: inject minimal simulation results into the controller.
 fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setups: usize) {
-    use rs_cam_core::simulation::HeightmapMesh;
+    use rs_cam_core::stock_mesh::StockMesh as HeightmapMesh;
 
     let mesh = HeightmapMesh {
         vertices: vec![0.0; 9],
