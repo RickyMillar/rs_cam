@@ -1,15 +1,20 @@
-//! DXF file input — extracts closed entities as Polygon2.
+//! DXF file input — extracts entities as [`Polygon2`].
 //!
-//! Supports LwPolyline, Polyline, Circle, Ellipse, and Arc entities.
-//! Arc segments (bulge values) are tessellated to line segments.
+//! ### Supported entity types
+//! - **LwPolyline** — closed lightweight polylines (with optional bulge arcs)
+//! - **Polyline** — closed legacy polylines (with optional bulge arcs)
+//! - **Circle** — tessellated to a closed polygon
+//! - **Ellipse** — tessellated to a closed polygon (full or partial)
+//! - **Arc** — full-circle arcs become circles; partial arcs are chord-closed
+//! - **Line** — individual 2-point segments are chain-linked by shared endpoints;
+//!   closed chains become closed polygons, open chains become open-path polygons
+//!   (useful for trace/engraving toolpaths)
+//! - **Spline** — B-spline curves evaluated via De Boor's algorithm; both closed
+//!   and open splines are returned
 //!
-//! ### Entity handling notes
-//! - **Arc**: Full-circle arcs (360 degrees) are treated as circles. Partial arcs
-//!   are tessellated as closed polygons (chord closing the arc).
-//! - **Line**: Silently skipped — produces open 2-point segments that cannot form
-//!   a closed polygon on their own. Chain-linking lines into closed paths is deferred.
-//! - **Spline**: Silently skipped — B-spline evaluation from control points/knots
-//!   is not yet implemented. Deferred.
+//! Both closed and open paths are returned. Closed paths are suitable for pocket
+//! and profile operations; open paths are suitable for trace and engraving
+//! toolpaths.
 //!
 //! ### Unit handling
 //! The `$INSUNITS` header variable is read (via `drawing.header.default_drawing_units`).
@@ -91,6 +96,9 @@ fn extract_polygons_flat(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<
     let mut polygons = Vec::new();
     let arc_step_rad = arc_tolerance_deg.to_radians();
 
+    // Collect Line segments for chain-linking after the main loop.
+    let mut line_segments: Vec<(P2, P2)> = Vec::new();
+
     for entity in drawing.entities() {
         match &entity.specific {
             dxf::entities::EntityType::LwPolyline(lwp) => {
@@ -145,9 +153,32 @@ fn extract_polygons_flat(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<
                     polygons.push(poly);
                 }
             }
-            // Line entities produce open 2-point segments; skipped (see module docs).
-            // Spline entities require B-spline evaluation; skipped (see module docs).
+            dxf::entities::EntityType::Line(line) => {
+                let p1 = P2::new(line.p1.x, line.p1.y);
+                let p2 = P2::new(line.p2.x, line.p2.y);
+                line_segments.push((p1, p2));
+            }
+            dxf::entities::EntityType::Spline(spline) => {
+                let pts = spline_to_points(spline, arc_step_rad);
+                if pts.len() >= 2 {
+                    let mut poly = Polygon2::new(pts);
+                    poly.ensure_winding();
+                    polygons.push(poly);
+                }
+            }
             _ => {}
+        }
+    }
+
+    // Chain-link Line segments into polygons.
+    if !line_segments.is_empty() {
+        let chains = chain_line_segments(&line_segments);
+        for chain in chains {
+            if chain.len() >= 2 {
+                let mut poly = Polygon2::new(chain);
+                poly.ensure_winding();
+                polygons.push(poly);
+            }
         }
     }
 
@@ -343,6 +374,177 @@ fn ellipse_to_points(ell: &dxf::entities::Ellipse, arc_step: f64) -> Vec<P2> {
             P2::new(x, y)
         })
         .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Line chain-linking
+// ---------------------------------------------------------------------------
+
+/// Epsilon for endpoint matching when chain-linking line segments.
+const CHAIN_EPS: f64 = 1e-6;
+
+fn pts_near(a: P2, b: P2) -> bool {
+    let dx = a.x - b.x;
+    let dy = a.y - b.y;
+    dx * dx + dy * dy < CHAIN_EPS * CHAIN_EPS
+}
+
+/// Chain-link a set of individual line segments into connected polyline chains.
+///
+/// Greedy algorithm: pick an unused segment, then extend the chain in both
+/// directions by finding unused segments whose endpoint matches the chain's
+/// current head or tail.  Returns one `Vec<P2>` per chain.
+fn chain_line_segments(segments: &[(P2, P2)]) -> Vec<Vec<P2>> {
+    let n = segments.len();
+    let mut used = vec![false; n];
+    let mut chains: Vec<Vec<P2>> = Vec::new();
+
+    for seed in 0..n {
+        if used[seed] {
+            continue;
+        }
+        used[seed] = true;
+        let mut chain = vec![segments[seed].0, segments[seed].1];
+
+        // Extend the chain until no more segments attach.
+        let mut changed = true;
+        while changed {
+            changed = false;
+            let tail = *chain.last().unwrap();
+            let head = chain[0];
+
+            for i in 0..n {
+                if used[i] {
+                    continue;
+                }
+                let (a, b) = segments[i];
+                if pts_near(tail, a) {
+                    // a matches tail — append b
+                    chain.push(b);
+                    used[i] = true;
+                    changed = true;
+                } else if pts_near(tail, b) {
+                    // b matches tail — append a
+                    chain.push(a);
+                    used[i] = true;
+                    changed = true;
+                } else if pts_near(head, b) {
+                    // b matches head — prepend a
+                    chain.insert(0, a);
+                    used[i] = true;
+                    changed = true;
+                } else if pts_near(head, a) {
+                    // a matches head — prepend b
+                    chain.insert(0, b);
+                    used[i] = true;
+                    changed = true;
+                }
+            }
+        }
+
+        chains.push(chain);
+    }
+
+    chains
+}
+
+// ---------------------------------------------------------------------------
+// Spline evaluation (De Boor's algorithm)
+// ---------------------------------------------------------------------------
+
+/// Evaluate a B-spline at parameter `t` using De Boor's algorithm.
+///
+/// - `degree`: spline degree (p)
+/// - `knots`: knot vector of length `control_points.len() + degree + 1`
+/// - `control_points`: control-point (x, y) list
+///
+/// Returns `None` if `t` is out of range or inputs are invalid.
+fn de_boor_eval(degree: usize, knots: &[f64], control_points: &[P2], t: f64) -> Option<P2> {
+    let n = control_points.len();
+    let p = degree;
+    if n == 0 || knots.len() < n + p + 1 || p == 0 {
+        return None;
+    }
+
+    // Find knot span index k such that knots[k] <= t < knots[k+1],
+    // restricted to [p, n-1].  For t == knots[n] (the end), clamp to n-1.
+    let mut k = p;
+    for i in p..n {
+        if knots[i + 1] > t {
+            k = i;
+            break;
+        }
+        k = i;
+    }
+
+    // Copy the p+1 relevant control points: d[j] = control_points[j + k - p]
+    let mut d: Vec<P2> = Vec::with_capacity(p + 1);
+    for j in 0..=p {
+        let idx = j + k - p;
+        if idx >= n {
+            return None;
+        }
+        d.push(control_points[idx]);
+    }
+
+    // Triangular computation
+    for r in 1..=p {
+        for j in (r..=p).rev() {
+            // Original index in the control-point array
+            let i = j + k - p;
+            let left = knots[i];
+            let right = knots[i + p + 1 - r];
+            let denom = right - left;
+            if denom.abs() < 1e-14 {
+                continue;
+            }
+            let alpha = (t - left) / denom;
+            d[j] = P2::new(
+                (1.0 - alpha) * d[j - 1].x + alpha * d[j].x,
+                (1.0 - alpha) * d[j - 1].y + alpha * d[j].y,
+            );
+        }
+    }
+
+    Some(d[p])
+}
+
+/// Tessellate a DXF Spline entity into polyline points using De Boor's algorithm.
+fn spline_to_points(spline: &dxf::entities::Spline, arc_step: f64) -> Vec<P2> {
+    let degree = spline.degree_of_curve as usize;
+    let knots = &spline.knot_values;
+    let cp_dxf = &spline.control_points;
+
+    if cp_dxf.len() < 2 || knots.len() < cp_dxf.len() + degree + 1 || degree == 0 {
+        return Vec::new();
+    }
+
+    let control_points: Vec<P2> = cp_dxf.iter().map(|p| P2::new(p.x, p.y)).collect();
+
+    // Valid parameter range: [knots[degree], knots[n]] where n = control_points.len().
+    let t_start = knots[degree];
+    let t_end = knots[control_points.len()];
+    let span = t_end - t_start;
+    if span.abs() < 1e-14 {
+        return Vec::new();
+    }
+
+    // Choose the number of evaluation steps.  Use the arc_step angular
+    // tolerance as a rough proxy: more segments for smaller tolerances.
+    // A reasonable heuristic: number of spans * ceil(pi / arc_step).
+    let n_spans = control_points.len().saturating_sub(degree);
+    let steps_per_span = (std::f64::consts::PI / arc_step).ceil() as usize;
+    let n_steps = (n_spans * steps_per_span).max(2);
+
+    let mut pts = Vec::with_capacity(n_steps + 1);
+    for i in 0..=n_steps {
+        let t = t_start + span * (i as f64 / n_steps as f64);
+        if let Some(pt) = de_boor_eval(degree, knots, &control_points, t) {
+            pts.push(pt);
+        }
+    }
+
+    pts
 }
 
 #[cfg(test)]
@@ -684,6 +886,202 @@ mod tests {
             "10x10 cm square area {} should be ~{} mm^2",
             area,
             expected
+        );
+    }
+
+    // ----- Line chain-linking tests -----
+
+    fn make_line_drawing(segments: &[(f64, f64, f64, f64)]) -> dxf::Drawing {
+        let mut drawing = dxf::Drawing::new();
+        for &(x1, y1, x2, y2) in segments {
+            let line = dxf::entities::Line {
+                p1: dxf::Point::new(x1, y1, 0.0),
+                p2: dxf::Point::new(x2, y2, 0.0),
+                ..Default::default()
+            };
+            drawing.add_entity(dxf::entities::Entity::new(
+                dxf::entities::EntityType::Line(line),
+            ));
+        }
+        drawing
+    }
+
+    #[test]
+    fn test_line_chain_triangle_closed() {
+        // Three line segments forming a triangle (0,0)-(10,0)-(5,8)-(0,0)
+        let drawing = make_line_drawing(&[
+            (0.0, 0.0, 10.0, 0.0),
+            (10.0, 0.0, 5.0, 8.0),
+            (5.0, 8.0, 0.0, 0.0),
+        ]);
+        let polys = extract_polygons(&drawing, 5.0);
+        assert_eq!(polys.len(), 1, "Triangle should produce 1 polygon");
+        // The chain has 4 points (3 segments, first == last for closed).
+        // After Polygon2 construction, winding is ensured.
+        assert!(
+            polys[0].exterior.len() >= 3,
+            "Triangle polygon should have at least 3 points, got {}",
+            polys[0].exterior.len()
+        );
+    }
+
+    #[test]
+    fn test_line_chain_open_path() {
+        // Two connected segments forming an open path: (0,0)-(5,0)-(5,5)
+        let drawing = make_line_drawing(&[
+            (0.0, 0.0, 5.0, 0.0),
+            (5.0, 0.0, 5.0, 5.0),
+        ]);
+        let polys = extract_polygons(&drawing, 5.0);
+        assert_eq!(polys.len(), 1, "Connected open path should produce 1 polygon");
+        assert_eq!(
+            polys[0].exterior.len(),
+            3,
+            "Open 2-segment chain should have 3 points"
+        );
+    }
+
+    #[test]
+    fn test_line_chain_disconnected_segments() {
+        // Two disconnected segments far apart
+        let drawing = make_line_drawing(&[
+            (0.0, 0.0, 1.0, 0.0),
+            (100.0, 100.0, 101.0, 100.0),
+        ]);
+        let polys = extract_polygons(&drawing, 5.0);
+        assert_eq!(
+            polys.len(), 2,
+            "Disconnected segments should produce 2 separate polygons"
+        );
+    }
+
+    #[test]
+    fn test_chain_line_segments_direct() {
+        // Unit test on the chaining function itself.
+        let segs = vec![
+            (P2::new(0.0, 0.0), P2::new(1.0, 0.0)),
+            (P2::new(2.0, 0.0), P2::new(1.0, 0.0)), // reversed segment
+            (P2::new(2.0, 0.0), P2::new(3.0, 0.0)),
+        ];
+        let chains = chain_line_segments(&segs);
+        assert_eq!(chains.len(), 1, "All segments connect into one chain");
+        assert_eq!(chains[0].len(), 4, "Chain should have 4 points");
+    }
+
+    // ----- Spline tests -----
+
+    /// Helper: build a cubic B-spline entity in a Drawing from control points and knots.
+    fn make_spline_drawing(
+        control_points: &[(f64, f64)],
+        knots: &[f64],
+        degree: i32,
+        closed: bool,
+    ) -> dxf::Drawing {
+        let mut drawing = dxf::Drawing::new();
+        let mut spline = dxf::entities::Spline {
+            degree_of_curve: degree,
+            knot_values: knots.to_vec(),
+            ..Default::default()
+        };
+        for &(x, y) in control_points {
+            spline.control_points.push(dxf::Point::new(x, y, 0.0));
+        }
+        spline.set_is_closed(closed);
+        drawing.add_entity(dxf::entities::Entity::new(
+            dxf::entities::EntityType::Spline(spline),
+        ));
+        drawing
+    }
+
+    #[test]
+    fn test_spline_cubic_line() {
+        // A cubic B-spline with 4 collinear control points should produce
+        // a roughly straight set of points from (0,0) to (3,0).
+        let cp = [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0)];
+        let knots = [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0];
+        let drawing = make_spline_drawing(&cp, &knots, 3, false);
+        let polys = extract_polygons(&drawing, 5.0);
+        assert_eq!(polys.len(), 1, "Spline should produce 1 polygon");
+        let ext = &polys[0].exterior;
+        assert!(ext.len() >= 2, "Spline should produce at least 2 points");
+
+        // All points should have y ≈ 0 (collinear control points).
+        for pt in ext {
+            assert!(
+                pt.y.abs() < 0.01,
+                "Collinear cubic spline point should have y~0, got {}",
+                pt.y
+            );
+        }
+        // First point near (0,0), last near (3,0).
+        assert!(
+            (ext[0].x).abs() < 0.01,
+            "Start x should be ~0, got {}",
+            ext[0].x
+        );
+        assert!(
+            (ext[ext.len() - 1].x - 3.0).abs() < 0.01,
+            "End x should be ~3, got {}",
+            ext[ext.len() - 1].x
+        );
+    }
+
+    #[test]
+    fn test_spline_closed_square_like() {
+        // Build a closed cubic B-spline that approximates a loop.
+        // Use 7 control points (4 unique + 3 overlapping for closure)
+        // with a uniform knot vector.
+        let cp = [
+            (0.0, 0.0),
+            (10.0, 0.0),
+            (10.0, 10.0),
+            (0.0, 10.0),
+            (0.0, 0.0),   // overlap to close
+            (10.0, 0.0),  // overlap
+            (10.0, 10.0), // overlap
+        ];
+        // Uniform knots for 7 control points, degree 3: length = 7+3+1 = 11
+        let knots = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+        let drawing = make_spline_drawing(&cp, &knots, 3, true);
+        let polys = extract_polygons(&drawing, 5.0);
+        assert_eq!(polys.len(), 1, "Closed spline should produce 1 polygon");
+        let ext = &polys[0].exterior;
+        // The first and last evaluated points should be near each other
+        // (spline is periodic / closed).
+        let first = ext[0];
+        let last = ext[ext.len() - 1];
+        let dist = ((first.x - last.x).powi(2) + (first.y - last.y).powi(2)).sqrt();
+        assert!(
+            dist < 1.0,
+            "Closed spline endpoints should be near each other, distance = {}",
+            dist
+        );
+    }
+
+    #[test]
+    fn test_de_boor_eval_basic() {
+        // Degree-1 (linear) B-spline = polyline interpolation.
+        // 3 control points, knots = [0,0,0.5,1,1]
+        let cp = [P2::new(0.0, 0.0), P2::new(5.0, 10.0), P2::new(10.0, 0.0)];
+        let knots = [0.0, 0.0, 0.5, 1.0, 1.0];
+        // At t=0 -> first control point
+        let p0 = de_boor_eval(1, &knots, &cp, 0.0).unwrap();
+        assert!((p0.x).abs() < 0.01 && (p0.y).abs() < 0.01, "t=0 -> (0,0)");
+        // At t=0.5 -> second control point
+        let p1 = de_boor_eval(1, &knots, &cp, 0.5).unwrap();
+        assert!(
+            (p1.x - 5.0).abs() < 0.01 && (p1.y - 10.0).abs() < 0.01,
+            "t=0.5 -> (5,10), got ({}, {})",
+            p1.x,
+            p1.y
+        );
+        // At t=1.0 -> last control point
+        let p2 = de_boor_eval(1, &knots, &cp, 1.0).unwrap();
+        assert!(
+            (p2.x - 10.0).abs() < 0.01 && (p2.y).abs() < 0.01,
+            "t=1 -> (10,0), got ({}, {})",
+            p2.x,
+            p2.y
         );
     }
 }
