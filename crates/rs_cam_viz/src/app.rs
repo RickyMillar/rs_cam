@@ -864,7 +864,8 @@ impl RsCamApp {
             for setup in &active_setups {
                 for pin in &job.stock.alignment_pins {
                     let radius = (pin.diameter / 2.0) as f32;
-                    let global_pt = P3::new(pin.x + ox, pin.y + oy, oz + job.stock.z);
+                    // Slight Z offset above stock top to avoid Z-fighting with stock surface.
+                    let global_pt = P3::new(pin.x + ox, pin.y + oy, oz + job.stock.z + 0.1);
                     let local_pt = setup.transform_point(global_pt, &job.stock);
                     let (cx, cy, cz) = (local_pt.x as f32, local_pt.y as f32, local_pt.z as f32);
                     let color = [0.2_f32, 0.9, 0.3];
