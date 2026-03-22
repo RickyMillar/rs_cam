@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use rs_cam_core::enriched_mesh::EnrichedMesh;
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::polygon::Polygon2;
@@ -33,6 +34,7 @@ pub enum ModelKind {
     Stl,
     Svg,
     Dxf,
+    Step,
 }
 
 /// Assumed units of the imported STL (determines scale factor to mm).
@@ -83,6 +85,7 @@ pub struct LoadedModel {
     pub kind: ModelKind,
     pub mesh: Option<Arc<TriangleMesh>>,
     pub polygons: Option<Arc<Vec<Polygon2>>>,
+    pub enriched_mesh: Option<Arc<EnrichedMesh>>,
     pub units: ModelUnits,
     /// Percentage of inconsistent winding edges (from check_winding). None if not STL.
     pub winding_report: Option<f64>,
@@ -106,6 +109,7 @@ impl LoadedModel {
             kind,
             mesh: None,
             polygons: None,
+            enriched_mesh: None,
             units,
             winding_report: None,
             load_error: Some(load_error),

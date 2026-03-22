@@ -1125,6 +1125,7 @@ fn infer_model_kind(path: &Path) -> Option<ModelKind> {
         Some(ext) if ext.eq_ignore_ascii_case("stl") => Some(ModelKind::Stl),
         Some(ext) if ext.eq_ignore_ascii_case("svg") => Some(ModelKind::Svg),
         Some(ext) if ext.eq_ignore_ascii_case("dxf") => Some(ModelKind::Dxf),
+        Some(ext) if ext.eq_ignore_ascii_case("step") || ext.eq_ignore_ascii_case("stp") => Some(ModelKind::Step),
         _ => None,
     }
 }
@@ -1136,6 +1137,7 @@ fn default_model_name(path: &Path, kind: ModelKind) -> String {
             ModelKind::Stl => "model.stl".to_string(),
             ModelKind::Svg => "model.svg".to_string(),
             ModelKind::Dxf => "model.dxf".to_string(),
+            ModelKind::Step => "model.step".to_string(),
         })
 }
 
