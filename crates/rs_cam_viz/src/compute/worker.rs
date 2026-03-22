@@ -25,7 +25,7 @@ use rs_cam_core::dexel_mesh::dexel_stock_to_mesh;
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dressup::{
     EntryStyle as CoreEntryStyle, LinkMoveParams, apply_dogbones, apply_entry, apply_lead_in_out,
-    apply_link_moves, apply_tabs, even_tabs,
+    apply_link_moves, apply_tabs, even_tabs, filter_air_cuts,
 };
 use rs_cam_core::drill::{DrillCycle, DrillParams, drill_toolpath};
 use rs_cam_core::dropcutter::batch_drop_cutter_with_cancel;

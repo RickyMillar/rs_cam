@@ -6,6 +6,7 @@
 //! - **Ramp entry**: Replace vertical plunges with helical or ramped entry
 //! - **Tab/bridge**: Insert material tabs to hold parts during profile cutting
 
+use crate::dexel_stock::TriDexelStock;
 use crate::geo::P3;
 use crate::toolpath::{Move, MoveType, Toolpath};
 
@@ -737,6 +738,142 @@ pub fn even_tabs(count: usize, width: f64, height: f64) -> Vec<Tab> {
         .collect()
 }
 
+// ---------------------------------------------------------------------------
+// Air-cut filter dressup
+// ---------------------------------------------------------------------------
+
+/// Check if position (x, y, z) is in air (no material above z at this XY).
+fn is_in_air(stock: &TriDexelStock, x: f64, y: f64, z: f64, tolerance: f64) -> bool {
+    if let Some((row, col)) = stock.z_grid.world_to_cell(x, y) {
+        match stock.z_grid.top_z_at(row, col) {
+            Some(top) => (top as f64) < z - tolerance,
+            None => true, // Empty ray = through-hole = definitely air
+        }
+    } else {
+        true // Outside stock bounds = air
+    }
+}
+
+/// Remove cutting moves that pass through empty stock (no remaining material).
+///
+/// For each cutting move, checks if material exists at the move's position in
+/// the prior stock. Moves where both endpoints are in air (no material above
+/// the cutting Z) are converted to rapids. This is conservative — moves that
+/// partially contact material are preserved.
+///
+/// Arc moves additionally check the arc center point for extra conservatism.
+///
+/// `tool_radius` is currently reserved for future per-cell radius checks.
+pub fn filter_air_cuts(
+    toolpath: &Toolpath,
+    prior_stock: &TriDexelStock,
+    _tool_radius: f64,
+    safe_z: f64,
+    tolerance: f64,
+) -> Toolpath {
+    let moves = &toolpath.moves;
+    if moves.is_empty() {
+        return toolpath.clone();
+    }
+
+    // Phase 1: classify each move as "in air" or not.
+    // A move is "fully in air" when both its source and target positions are
+    // above the remaining stock surface.
+    let mut air_flags: Vec<bool> = Vec::with_capacity(moves.len());
+
+    for (i, m) in moves.iter().enumerate() {
+        // Rapids always pass through unchanged (they are already non-cutting).
+        if m.move_type == MoveType::Rapid {
+            air_flags.push(false);
+            continue;
+        }
+
+        let target_air = is_in_air(prior_stock, m.target.x, m.target.y, m.target.z, tolerance);
+
+        let source_air = if i > 0 {
+            let prev = &moves[i - 1].target;
+            is_in_air(prior_stock, prev.x, prev.y, prev.z, tolerance)
+        } else {
+            true // No source → treat as air
+        };
+
+        // For arcs, also check the center point (conservative: if center has
+        // material, keep the move).
+        let center_air = match m.move_type {
+            MoveType::ArcCW { i: io, j: jo, .. } | MoveType::ArcCCW { i: io, j: jo, .. } => {
+                if i > 0 {
+                    let prev = &moves[i - 1].target;
+                    let cx = prev.x + io;
+                    let cy = prev.y + jo;
+                    is_in_air(prior_stock, cx, cy, m.target.z, tolerance)
+                } else {
+                    true
+                }
+            }
+            _ => true,
+        };
+
+        air_flags.push(source_air && target_air && center_air);
+    }
+
+    // Phase 2: emit the filtered toolpath.
+    // Consecutive air moves are collapsed into: rapid up to safe_z, then
+    // before the next non-air move, rapid to its XY at safe_z and rapid down.
+    let mut result = Toolpath::new();
+    let mut in_air_run = false;
+
+    for (i, m) in moves.iter().enumerate() {
+        if air_flags[i] {
+            // This cutting move is in air.
+            if !in_air_run {
+                // Start of a new air run: emit rapid up to safe_z from
+                // the current position.
+                let prev_target = if let Some(last) = result.moves.last() {
+                    last.target
+                } else if i > 0 {
+                    moves[i - 1].target
+                } else {
+                    m.target
+                };
+                if prev_target.z < safe_z - 0.001 {
+                    result.rapid_to(P3::new(prev_target.x, prev_target.y, safe_z));
+                }
+                in_air_run = true;
+            }
+            // Skip this move (intermediate air moves are dropped).
+        } else {
+            // This move is NOT in air (or is a rapid).
+            if in_air_run {
+                // End of an air run: rapid to the target's XY at safe_z,
+                // then rapid down to the target's Z (so the next cutting
+                // move starts at the right position).
+                //
+                // For rapids we just emit them directly. For cutting moves
+                // we need the positioning sequence.
+                if m.move_type != MoveType::Rapid {
+                    // Determine position we need to reach before this cutting
+                    // move starts. The move's source is the previous move's
+                    // target in the *original* toolpath.
+                    let source = if i > 0 { moves[i - 1].target } else { m.target };
+                    result.rapid_to(P3::new(source.x, source.y, safe_z));
+                    // Rapid down to the source Z so the feed move distance
+                    // is correct.
+                    if source.z < safe_z - 0.001 {
+                        result.rapid_to(source);
+                    }
+                }
+                in_air_run = false;
+            }
+            result.moves.push(m.clone());
+        }
+    }
+
+    // If the toolpath ends while still in an air run, no further action is
+    // needed — we already emitted the retract at the start of the air run.
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1279,6 +1416,132 @@ mod tests {
             "Linking should significantly reduce rapids: {:.1} -> {:.1}",
             orig_rapid,
             linked_rapid
+        );
+    }
+
+    // --- Air-cut filter tests ---
+
+    use crate::dexel_stock::TriDexelStock;
+
+    /// Build a stock where x < 50 has material (top_z = 5.0) and x >= 50 is
+    /// cleared (top_z lowered to -10.0 by simulating a cut).  The stock spans
+    /// x: 0..100, y: 0..100, z: -10..5 with 5mm cells.
+    fn half_cleared_stock() -> TriDexelStock {
+        use crate::dexel::ray_subtract_above;
+        let stock = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, -10.0, 5.0, 5.0);
+        // Clear material above z=-10 for columns where x >= 50.
+        // This effectively removes all material in the right half.
+        let grid = &stock.z_grid;
+        let cols = grid.cols;
+        let rows = grid.rows;
+        // We need mutable access, so rebuild with cleared rays.
+        let mut cleared = stock;
+        for row in 0..rows {
+            for col in 0..cols {
+                let (world_x, _world_y) = {
+                    let u = cleared.z_grid.origin_u + col as f64 * cleared.z_grid.cell_size;
+                    let v = cleared.z_grid.origin_v + row as f64 * cleared.z_grid.cell_size;
+                    (u, v)
+                };
+                if world_x >= 50.0 {
+                    ray_subtract_above(cleared.z_grid.ray_mut(row, col), -10.0);
+                }
+            }
+        }
+        cleared
+    }
+
+    #[test]
+    fn filter_air_cuts_removes_air_moves() {
+        // Toolpath cuts across the stock: left half has material, right half is air.
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(10.0, 50.0, 10.0)); // rapid to start above stock
+        tp.feed_to(P3::new(10.0, 50.0, 2.0), 500.0); // plunge into material (stock top = 5)
+        tp.feed_to(P3::new(30.0, 50.0, 2.0), 1000.0); // cut in material
+        tp.feed_to(P3::new(60.0, 50.0, 2.0), 1000.0); // cut into air (x>=50 is cleared)
+        tp.feed_to(P3::new(90.0, 50.0, 2.0), 1000.0); // still in air
+        tp.rapid_to(P3::new(90.0, 50.0, 10.0)); // retract
+
+        let stock = half_cleared_stock();
+        let result = filter_air_cuts(&tp, &stock, 3.0, 10.0, 0.1);
+
+        // The moves at x=60 and x=90 should have been removed (both endpoints in air).
+        // Specifically, the move from x=60 to x=90 is fully in air (source and target).
+        // The move from x=30 to x=60 has source in material, target in air — conservative: preserved.
+        // So the result should have fewer cutting moves than the original.
+        let original_cutting = tp
+            .moves
+            .iter()
+            .filter(|m| matches!(m.move_type, MoveType::Linear { .. }))
+            .count();
+        let result_cutting = result
+            .moves
+            .iter()
+            .filter(|m| matches!(m.move_type, MoveType::Linear { .. }))
+            .count();
+        assert!(
+            result_cutting < original_cutting,
+            "Air moves should be removed: orig_cutting={}, result_cutting={}",
+            original_cutting,
+            result_cutting
+        );
+
+        // The result should still contain the initial plunge and the material cuts.
+        let has_material_cut = result.moves.iter().any(|m| {
+            matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-6)
+                && m.target.x <= 50.0
+        });
+        assert!(
+            has_material_cut,
+            "Material-region cutting moves should be preserved"
+        );
+    }
+
+    #[test]
+    fn filter_air_cuts_preserves_cutting_moves() {
+        // All moves are in material — nothing should be removed.
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(10.0, 50.0, 10.0));
+        tp.feed_to(P3::new(10.0, 50.0, 2.0), 500.0);
+        tp.feed_to(P3::new(20.0, 50.0, 2.0), 1000.0);
+        tp.feed_to(P3::new(30.0, 50.0, 2.0), 1000.0);
+        tp.rapid_to(P3::new(30.0, 50.0, 10.0));
+
+        let stock = half_cleared_stock();
+        let result = filter_air_cuts(&tp, &stock, 3.0, 10.0, 0.1);
+
+        // All cutting moves are in the left half (x < 50) where material exists
+        // at top_z=5.0 and tool is at z=2.0 (below stock top). No air cuts.
+        assert_eq!(
+            result.moves.len(),
+            tp.moves.len(),
+            "All-material toolpath should be unchanged: result={}, orig={}",
+            result.moves.len(),
+            tp.moves.len()
+        );
+    }
+
+    #[test]
+    fn filter_air_cuts_conservative_partial() {
+        // Move starts in air, ends in material — should be preserved (conservative).
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(70.0, 50.0, 10.0)); // rapid to air region
+        tp.feed_to(P3::new(70.0, 50.0, 2.0), 500.0); // plunge in air
+        tp.feed_to(P3::new(30.0, 50.0, 2.0), 1000.0); // move from air into material
+        tp.rapid_to(P3::new(30.0, 50.0, 10.0));
+
+        let stock = half_cleared_stock();
+        let result = filter_air_cuts(&tp, &stock, 3.0, 10.0, 0.1);
+
+        // The move from x=70 to x=30 has source in air but target in material.
+        // Conservative rule: it should be preserved because the target has material.
+        let has_crossing_cut = result.moves.iter().any(|m| {
+            matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-6)
+                && (m.target.x - 30.0).abs() < 0.01
+        });
+        assert!(
+            has_crossing_cut,
+            "Partial air-to-material move should be preserved (conservative)"
         );
     }
 }

@@ -260,6 +260,26 @@ pub(super) fn apply_dressups(
             |tp| fit_arcs(tp, tolerance),
         );
     }
+    if let Some(ref prior_stock) = req.prior_stock {
+        let tool_radius = tool.diameter / 2.0;
+        let sz = safe_z;
+        tp = apply_dressup_with_tracing(
+            tp,
+            debug,
+            semantic,
+            DressupTraceInfo {
+                debug_key: "air_cut_filter",
+                debug_label: "Filter air cuts",
+                kind: ToolpathSemanticKind::Optimization,
+                semantic_label: "Air-cut filter",
+            },
+            |scope| {
+                scope.set_param("tool_radius", tool_radius);
+                scope.set_param("safe_z", sz);
+            },
+            |tp| filter_air_cuts(tp, prior_stock, tool_radius, sz, 0.1),
+        );
+    }
     if cfg.feed_optimization {
         let max_rate = cfg.feed_max_rate;
         let ramp_rate = cfg.feed_ramp_rate;
