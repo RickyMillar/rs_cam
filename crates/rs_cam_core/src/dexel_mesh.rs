@@ -7,7 +7,7 @@
 
 use crate::dexel::{DexelAxis, DexelGrid, ray_bottom, ray_top};
 use crate::dexel_stock::TriDexelStock;
-use crate::simulation::HeightmapMesh;
+use crate::stock_mesh::StockMesh;
 
 // Wood colors: uncut = light tan, cut = dark walnut.
 const UNCUT_R: f32 = 0.76;
@@ -18,7 +18,7 @@ const CUT_G: f32 = 0.25;
 const CUT_B: f32 = 0.10;
 
 /// Extract a combined mesh from all active grids of a [`TriDexelStock`].
-pub fn dexel_stock_to_mesh(stock: &TriDexelStock) -> HeightmapMesh {
+pub fn dexel_stock_to_mesh(stock: &TriDexelStock) -> StockMesh {
     let mut mesh = z_grid_to_solid_mesh(
         &stock.z_grid,
         stock.stock_bbox.max.z,
@@ -52,7 +52,7 @@ pub fn z_grid_to_solid_mesh(
     grid: &DexelGrid,
     stock_top_z: f64,
     stock_bottom_z: f64,
-) -> HeightmapMesh {
+) -> StockMesh {
     let rows = grid.rows;
     let cols = grid.cols;
     let cells = rows * cols;
@@ -181,7 +181,7 @@ pub fn z_grid_to_solid_mesh(
         indices.extend_from_slice(&[t0, t1, b0, t1, b1, b0]);
     }
 
-    HeightmapMesh {
+    StockMesh {
         vertices,
         indices,
         colors,
@@ -198,7 +198,7 @@ fn side_grid_to_mesh(
     grid: &DexelGrid,
     stock_top_depth: f64,
     stock_bottom_depth: f64,
-) -> HeightmapMesh {
+) -> StockMesh {
     let rows = grid.rows;
     let cols = grid.cols;
     let num_verts = rows * cols;
@@ -258,7 +258,7 @@ fn side_grid_to_mesh(
         }
     }
 
-    HeightmapMesh {
+    StockMesh {
         vertices,
         indices,
         colors,
@@ -266,7 +266,7 @@ fn side_grid_to_mesh(
 }
 
 /// Append `other` mesh onto `base`, offsetting indices.
-fn append_mesh(base: &mut HeightmapMesh, other: &HeightmapMesh) {
+fn append_mesh(base: &mut StockMesh, other: &StockMesh) {
     let index_offset = (base.vertices.len() / 3) as u32;
     base.vertices.extend_from_slice(&other.vertices);
     base.colors.extend_from_slice(&other.colors);
