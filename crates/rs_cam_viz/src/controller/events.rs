@@ -23,6 +23,7 @@ use super::AppController;
 impl<B: ComputeBackend> AppController<B> {
     pub fn handle_internal_event(&mut self, event: AppEvent) {
         match event {
+            // --- Import / model events ---
             AppEvent::ImportStl(path) => {
                 if let Err(error) = self.import_stl_path(&path) {
                     tracing::error!("STL import failed: {error}");
@@ -38,464 +39,97 @@ impl<B: ComputeBackend> AppController<B> {
                     tracing::error!("DXF import failed: {error}");
                 }
             }
-            AppEvent::Select(ref selection) => {
-                // Re-upload GPU data when active setup changes (triggers machine view update)
-                let old_setup = match &self.state.selection {
-                    Selection::Setup(id) => Some(*id),
-                    Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
-                    Selection::Toolpath(tp_id) => self.state.job.setup_of_toolpath(*tp_id),
-                    _ => None,
-                };
-                let new_setup = match selection {
-                    Selection::Setup(id) => Some(*id),
-                    Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
-                    Selection::Toolpath(tp_id) => self.state.job.setup_of_toolpath(*tp_id),
-                    _ => None,
-                };
-                if old_setup != new_setup {
-                    self.pending_upload = true;
-                }
-                self.state.selection = selection.clone();
-            }
-            AppEvent::AddTool(tool_type) => {
-                let id = self.state.job.next_tool_id();
-                let tool = ToolConfig::new_default(id, tool_type);
-                self.state.selection = Selection::Tool(id);
-                self.state.job.tools.push(tool);
-                self.state.job.mark_edited();
-            }
-            AppEvent::DuplicateTool(tool_id) => {
-                if let Some(src) = self.state.job.tools.iter().find(|tool| tool.id == tool_id) {
-                    let mut duplicate = src.clone();
-                    let new_id = self.state.job.next_tool_id();
-                    duplicate.id = new_id;
-                    duplicate.name = format!("{} (copy)", duplicate.name);
-                    self.state.selection = Selection::Tool(new_id);
-                    self.state.job.tools.push(duplicate);
-                    self.state.job.mark_edited();
+            AppEvent::RescaleModel(model_id, units) => {
+                if let Err(error) = self.rescale_model(model_id, units) {
+                    tracing::error!("Rescale failed: {error}");
                 }
             }
-            AppEvent::RemoveTool(tool_id) => {
-                // Block deletion if any toolpath references this tool.
-                let in_use = self
-                    .state
-                    .job
-                    .setups
-                    .iter()
-                    .flat_map(|setup| setup.toolpaths.iter())
-                    .any(|entry| entry.tool_id == tool_id);
-                if in_use {
-                    tracing::warn!(
-                        "Cannot remove tool {:?}: still referenced by one or more toolpaths",
-                        tool_id
-                    );
-                } else {
-                    self.state.job.tools.retain(|tool| tool.id != tool_id);
-                    if self.state.selection == Selection::Tool(tool_id) {
-                        self.state.selection = Selection::None;
-                    }
-                    self.state.job.mark_edited();
-                }
-            }
-            AppEvent::AddSetup => {
-                let id = self.state.job.next_setup_id();
-                let name = format!("Setup {}", id.0 + 1);
-                self.state.job.setups.push(Setup::new(id, name));
-                self.state.selection = Selection::Setup(id);
-                self.state.job.mark_edited();
-            }
-            AppEvent::SetupTwoSided => {
-                // Create flipped Setup 2 if one doesn't exist yet.
-                let has_flipped = self
-                    .state
-                    .job
-                    .setups
-                    .iter()
-                    .any(|s| s.face_up == FaceUp::Bottom);
-                if !has_flipped {
-                    let id = self.state.job.next_setup_id();
-                    let mut setup = Setup::new(id, format!("Setup {}", id.0 + 1));
-                    setup.face_up = FaceUp::Bottom;
-                    self.state.job.setups.push(setup);
-                }
-                // Set flip axis if not already set.
-                if self.state.job.stock.flip_axis.is_none() {
-                    self.state.job.stock.flip_axis = Some(FlipAxis::Horizontal);
-                }
-                // Auto-place 2 pins if none exist.
-                if self.state.job.stock.alignment_pins.is_empty() {
-                    let margin = if self.state.job.stock.padding > 2.0 {
-                        self.state.job.stock.padding / 2.0
-                    } else {
-                        10.0_f64
-                            .min(self.state.job.stock.x / 4.0)
-                            .min(self.state.job.stock.y / 4.0)
-                    };
-                    let cy = self.state.job.stock.y / 2.0;
-                    self.state
-                        .job
-                        .stock
-                        .alignment_pins
-                        .push(AlignmentPin::new(margin, cy, 6.0));
-                    self.state.job.stock.alignment_pins.push(AlignmentPin::new(
-                        self.state.job.stock.x - margin,
-                        cy,
-                        6.0,
-                    ));
-                }
-                self.pending_upload = true;
-                self.state.job.mark_edited();
-                self.sync_alignment_pin_drill();
-                self.state.selection = Selection::Stock;
-            }
-            AppEvent::RemoveSetup(setup_id) => {
-                if self.state.job.setups.len() > 1 {
-                    self.state.job.setups.retain(|setup| setup.id != setup_id);
-                    match self.state.selection {
-                        Selection::Setup(id) if id == setup_id => {
-                            self.state.selection = Selection::None;
-                        }
-                        Selection::Fixture(id, _) if id == setup_id => {
-                            self.state.selection = Selection::None;
-                        }
-                        Selection::KeepOut(id, _) if id == setup_id => {
-                            self.state.selection = Selection::None;
-                        }
-                        _ => {}
-                    }
-                    self.pending_upload = true;
-                    self.state.job.mark_edited();
-                }
-            }
-            AppEvent::RenameSetup(setup_id, name) => {
-                if let Some(setup) = self
-                    .state
-                    .job
-                    .setups
-                    .iter_mut()
-                    .find(|setup| setup.id == setup_id)
-                {
-                    setup.name = name;
-                    self.state.job.mark_edited();
-                }
-            }
-            AppEvent::AddFixture(setup_id) => {
-                let fixture_id = self.state.job.next_fixture_id();
-                if let Some(setup) = self
-                    .state
-                    .job
-                    .setups
-                    .iter_mut()
-                    .find(|setup| setup.id == setup_id)
-                {
-                    setup.fixtures.push(Fixture::new_default(fixture_id));
-                    self.state.selection = Selection::Fixture(setup_id, fixture_id);
-                    self.pending_upload = true;
-                    self.state.job.mark_edited();
-                }
-            }
+
+            // --- Tree / selection events ---
+            AppEvent::Select(ref selection) => self.handle_select(selection),
+            AppEvent::AddTool(tool_type) => self.handle_add_tool(tool_type),
+            AppEvent::DuplicateTool(tool_id) => self.handle_duplicate_tool(tool_id),
+            AppEvent::RemoveTool(tool_id) => self.handle_remove_tool(tool_id),
+            AppEvent::AddSetup => self.handle_add_setup(),
+            AppEvent::SetupTwoSided => self.handle_setup_two_sided(),
+            AppEvent::RemoveSetup(setup_id) => self.handle_remove_setup(setup_id),
+            AppEvent::RenameSetup(setup_id, name) => self.handle_rename_setup(setup_id, name),
+            AppEvent::AddFixture(setup_id) => self.handle_add_fixture(setup_id),
             AppEvent::RemoveFixture(setup_id, fixture_id) => {
-                if let Some(setup) = self
-                    .state
-                    .job
-                    .setups
-                    .iter_mut()
-                    .find(|setup| setup.id == setup_id)
-                {
-                    setup.fixtures.retain(|fixture| fixture.id != fixture_id);
-                    if self.state.selection == Selection::Fixture(setup_id, fixture_id) {
-                        self.state.selection = Selection::Setup(setup_id);
-                    }
-                    self.pending_upload = true;
-                    self.state.job.mark_edited();
-                }
+                self.handle_remove_fixture(setup_id, fixture_id)
             }
-            AppEvent::AddKeepOut(setup_id) => {
-                let keep_out_id = self.state.job.next_keep_out_id();
-                if let Some(setup) = self
-                    .state
-                    .job
-                    .setups
-                    .iter_mut()
-                    .find(|setup| setup.id == setup_id)
-                {
-                    setup
-                        .keep_out_zones
-                        .push(KeepOutZone::new_default(keep_out_id));
-                    self.state.selection = Selection::KeepOut(setup_id, keep_out_id);
-                    self.pending_upload = true;
-                    self.state.job.mark_edited();
-                }
-            }
+            AppEvent::AddKeepOut(setup_id) => self.handle_add_keep_out(setup_id),
             AppEvent::RemoveKeepOut(setup_id, keep_out_id) => {
-                if let Some(setup) = self
-                    .state
-                    .job
-                    .setups
-                    .iter_mut()
-                    .find(|setup| setup.id == setup_id)
-                {
-                    setup
-                        .keep_out_zones
-                        .retain(|keep_out| keep_out.id != keep_out_id);
-                    if self.state.selection == Selection::KeepOut(setup_id, keep_out_id) {
-                        self.state.selection = Selection::Setup(setup_id);
-                    }
-                    self.pending_upload = true;
-                    self.state.job.mark_edited();
-                }
+                self.handle_remove_keep_out(setup_id, keep_out_id)
             }
             AppEvent::FixtureChanged => {
                 self.pending_upload = true;
                 self.state.job.mark_edited();
             }
-            AppEvent::AddToolpath(op_type) => {
-                let target_setup_id = match self.state.selection {
-                    Selection::Toolpath(tp_id) => self.state.job.setup_of_toolpath(tp_id),
-                    Selection::Setup(setup_id) => Some(setup_id),
-                    Selection::Fixture(setup_id, _) => Some(setup_id),
-                    Selection::KeepOut(setup_id, _) => Some(setup_id),
-                    _ => None,
-                }
-                .or_else(|| self.state.job.setups.first().map(|setup| setup.id));
 
-                // Require at least one tool before creating a toolpath.
-                let Some(tool_id) = self.state.job.tools.first().map(|tool| tool.id) else {
-                    tracing::warn!("Cannot add toolpath: no tools defined");
-                    return;
-                };
-                let id = self.state.job.next_toolpath_id();
-                let model_id = self
-                    .state
-                    .job
-                    .models
-                    .first()
-                    .map(|model| model.id)
-                    .unwrap_or(crate::state::job::ModelId(0));
-                let entry = ToolpathEntry::for_operation(
-                    id,
-                    format!("{} {}", op_type.label(), id.0 + 1),
-                    tool_id,
-                    model_id,
-                    op_type,
-                );
-                self.state.selection = Selection::Toolpath(id);
-                if let Some(setup_id) = target_setup_id {
-                    self.state.job.push_toolpath_to_setup(setup_id, entry);
-                } else {
-                    self.state.job.push_toolpath(entry);
-                }
-                self.state.job.mark_edited();
-            }
-            AppEvent::DuplicateToolpath(tp_id) => {
-                let new_id = self.state.job.next_toolpath_id();
-                let target_setup_id = self.state.job.setup_of_toolpath(tp_id);
-                if let Some(src) = self.state.job.find_toolpath(tp_id) {
-                    self.state.selection = Selection::Toolpath(new_id);
-                    let entry = src.duplicate_as(new_id, format!("{} (copy)", src.name));
-                    if let Some(setup_id) = target_setup_id {
-                        self.state.job.push_toolpath_to_setup(setup_id, entry);
-                    } else {
-                        self.state.job.push_toolpath(entry);
-                    }
-                    self.state.job.mark_edited();
-                }
-            }
-            AppEvent::MoveToolpathUp(tp_id) => {
-                if self.state.job.move_toolpath_up(tp_id) {
-                    self.state.job.mark_edited();
-                }
-            }
-            AppEvent::MoveToolpathDown(tp_id) => {
-                if self.state.job.move_toolpath_down(tp_id) {
-                    self.state.job.mark_edited();
-                }
-            }
+            // --- Toolpath events ---
+            AppEvent::AddToolpath(op_type) => self.handle_add_toolpath(op_type),
+            AppEvent::DuplicateToolpath(tp_id) => self.handle_duplicate_toolpath(tp_id),
+            AppEvent::MoveToolpathUp(tp_id) => self.handle_move_toolpath_up(tp_id),
+            AppEvent::MoveToolpathDown(tp_id) => self.handle_move_toolpath_down(tp_id),
             AppEvent::ReorderToolpath(tp_id, target_idx) => {
-                if self.state.job.reorder_toolpath(tp_id, target_idx) {
-                    self.state.job.mark_edited();
-                }
+                self.handle_reorder_toolpath(tp_id, target_idx)
             }
             AppEvent::MoveToolpathToSetup(tp_id, setup_id, idx) => {
-                if self.state.job.move_toolpath_to_setup(tp_id, setup_id, idx) {
-                    self.pending_upload = true;
-                    self.state.job.mark_edited();
-                }
+                self.handle_move_toolpath_to_setup(tp_id, setup_id, idx)
             }
             AppEvent::ToggleToolpathEnabled(tp_id) => {
                 if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
                     toolpath.enabled = !toolpath.enabled;
                 }
             }
-            AppEvent::RemoveToolpath(tp_id) => {
-                self.state.job.remove_toolpath(tp_id);
-                if self.state.selection == Selection::Toolpath(tp_id) {
-                    self.state.selection = Selection::None;
-                }
-                if self.state.viewport.isolate_toolpath == Some(tp_id) {
-                    self.state.viewport.isolate_toolpath = None;
-                }
-                self.pending_upload = true;
-                self.state.job.mark_edited();
-            }
+            AppEvent::RemoveToolpath(tp_id) => self.handle_remove_toolpath(tp_id),
             AppEvent::GenerateToolpath(tp_id) => self.submit_toolpath_compute(tp_id),
-            AppEvent::GenerateAll => {
-                let ids: Vec<_> = self
-                    .state
-                    .job
-                    .all_toolpaths()
-                    .map(|toolpath| toolpath.id)
-                    .collect();
-                for id in ids {
-                    self.submit_toolpath_compute(id);
-                }
-            }
+            AppEvent::GenerateAll => self.handle_generate_all(),
             AppEvent::ToggleToolpathVisibility(tp_id) => {
                 if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
                     toolpath.visible = !toolpath.visible;
                     self.pending_upload = true;
                 }
             }
-            AppEvent::ToggleIsolateToolpath => {
-                if let Selection::Toolpath(id) = self.state.selection {
-                    if self.state.viewport.isolate_toolpath == Some(id) {
-                        self.state.viewport.isolate_toolpath = None;
-                    } else {
-                        self.state.viewport.isolate_toolpath = Some(id);
-                    }
-                    self.pending_upload = true;
-                }
-            }
+            AppEvent::ToggleIsolateToolpath => self.handle_toggle_isolate_toolpath(),
             AppEvent::InspectToolpathInSimulation(tp_id) => {
-                self.events
-                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
-                if let Some(boundary) = self
-                    .state
-                    .simulation
-                    .boundaries()
-                    .iter()
-                    .find(|boundary| boundary.id == tp_id)
-                {
-                    self.events
-                        .push(AppEvent::SimJumpToMove(boundary.start_move));
-                } else if self
-                    .state
-                    .job
-                    .find_toolpath(tp_id)
-                    .and_then(|toolpath| toolpath.result.as_ref())
-                    .is_some()
-                {
-                    self.state.simulation.debug.pending_inspect_toolpath = Some(tp_id);
-                    self.events.push(AppEvent::RunSimulationWith(vec![tp_id]));
-                }
+                self.handle_inspect_toolpath_in_simulation(tp_id)
             }
+
+            // --- Simulation events ---
             AppEvent::RunSimulation => self.run_simulation_with_all(),
             AppEvent::RunSimulationWith(ids) => self.run_simulation_with_ids(&ids),
             AppEvent::ToggleSimPlayback => {
                 self.state.simulation.playback.playing = !self.state.simulation.playback.playing;
             }
-            AppEvent::ResetSimulation => {
-                let sim = &mut self.state.simulation;
-                sim.results = None;
-                sim.playback = Default::default();
-                sim.checks = Default::default();
-                sim.last_run = None;
-                self.collision_positions.clear();
-                self.pending_upload = true;
-            }
-            AppEvent::SimJumpToMove(move_idx) => {
-                if self.state.simulation.has_results() {
-                    let total = self.state.simulation.total_moves();
-                    self.state.simulation.playback.playing = false;
-                    self.state.simulation.playback.current_move = move_idx.min(total);
-                }
-            }
-            AppEvent::SimStepForward => {
-                if self.state.simulation.has_results() {
-                    let total = self.state.simulation.total_moves();
-                    let pb = &mut self.state.simulation.playback;
-                    pb.playing = false;
-                    pb.current_move = (pb.current_move + 1).min(total);
-                }
-            }
-            AppEvent::SimStepBackward => {
-                if self.state.simulation.has_results() {
-                    let pb = &mut self.state.simulation.playback;
-                    pb.playing = false;
-                    pb.current_move = pb.current_move.saturating_sub(1);
-                }
-            }
-            AppEvent::SimJumpToStart => {
-                if self.state.simulation.has_results() {
-                    let pb = &mut self.state.simulation.playback;
-                    pb.playing = false;
-                    pb.current_move = 0;
-                }
-            }
-            AppEvent::SimJumpToEnd => {
-                if self.state.simulation.has_results() {
-                    let total = self.state.simulation.total_moves();
-                    let pb = &mut self.state.simulation.playback;
-                    pb.playing = false;
-                    pb.current_move = total;
-                }
-            }
-            AppEvent::SimJumpToOpStart(boundary_idx) => {
-                if let Some(start) = self
-                    .state
-                    .simulation
-                    .boundaries()
-                    .get(boundary_idx)
-                    .map(|b| b.start_move)
-                {
-                    self.state.simulation.playback.playing = false;
-                    self.state.simulation.playback.current_move = start;
-                }
-            }
-            AppEvent::SimJumpToOpEnd(boundary_idx) => {
-                if let Some(end) = self
-                    .state
-                    .simulation
-                    .boundaries()
-                    .get(boundary_idx)
-                    .map(|b| b.end_move)
-                {
-                    self.state.simulation.playback.playing = false;
-                    self.state.simulation.playback.current_move = end;
-                }
-            }
-            AppEvent::RescaleModel(model_id, units) => {
-                if let Err(error) = self.rescale_model(model_id, units) {
-                    tracing::error!("Rescale failed: {error}");
-                }
-            }
+            AppEvent::ResetSimulation => self.handle_reset_simulation(),
+            AppEvent::SimJumpToMove(move_idx) => self.handle_sim_jump_to_move(move_idx),
+            AppEvent::SimStepForward => self.handle_sim_step_forward(),
+            AppEvent::SimStepBackward => self.handle_sim_step_backward(),
+            AppEvent::SimJumpToStart => self.handle_sim_jump_to_start(),
+            AppEvent::SimJumpToEnd => self.handle_sim_jump_to_end(),
+            AppEvent::SimJumpToOpStart(idx) => self.handle_sim_jump_to_op_start(idx),
+            AppEvent::SimJumpToOpEnd(idx) => self.handle_sim_jump_to_op_end(idx),
+
+            // --- Compute / check events ---
             AppEvent::RunCollisionCheck => self.request_collision_check(),
             AppEvent::CancelCompute => self.compute.cancel_all(),
+
+            // --- Undo / redo ---
             AppEvent::Undo => self.undo(),
             AppEvent::Redo => self.redo(),
-            AppEvent::StockChanged => {
-                // Re-derive stock dimensions from model bbox when auto_from_model is on
-                // (e.g. when padding changes).
-                if self.state.job.stock.auto_from_model
-                    && let Some(bbox) = self
-                        .state
-                        .job
-                        .models
-                        .iter()
-                        .find_map(|m| m.mesh.as_ref().map(|mesh| mesh.bbox))
-                {
-                    self.state.job.stock.update_from_bbox(&bbox);
-                }
-                self.pending_upload = true;
-                self.state.job.mark_edited();
-                self.sync_alignment_pin_drill();
-            }
+
+            // --- Stock / machine events ---
+            AppEvent::StockChanged => self.handle_stock_changed(),
             AppEvent::StockMaterialChanged => {
                 self.state.job.mark_edited();
             }
             AppEvent::MachineChanged => {
                 self.state.job.mark_edited();
             }
+
+            // --- Pass-through events handled elsewhere ---
             AppEvent::ExportGcode
             | AppEvent::ExportCombinedGcode
             | AppEvent::ExportSetupGcode(_)
@@ -513,25 +147,495 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    pub fn run_simulation_with_all(&mut self) {
-        let stock = &self.state.job.stock;
+    // ── Tree / selection helpers ─────────────────────────────────────────
 
-        // Global stock bbox (stock-relative, origin at 0,0,0)
+    fn handle_select(&mut self, selection: &Selection) {
+        let old_setup = match &self.state.selection {
+            Selection::Setup(id) => Some(*id),
+            Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
+            Selection::Toolpath(tp_id) => self.state.job.setup_of_toolpath(*tp_id),
+            _ => None,
+        };
+        let new_setup = match selection {
+            Selection::Setup(id) => Some(*id),
+            Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
+            Selection::Toolpath(tp_id) => self.state.job.setup_of_toolpath(*tp_id),
+            _ => None,
+        };
+        if old_setup != new_setup {
+            self.pending_upload = true;
+        }
+        self.state.selection = selection.clone();
+    }
+
+    fn handle_add_tool(&mut self, tool_type: crate::state::job::ToolType) {
+        let id = self.state.job.next_tool_id();
+        let tool = ToolConfig::new_default(id, tool_type);
+        self.state.selection = Selection::Tool(id);
+        self.state.job.tools.push(tool);
+        self.state.job.mark_edited();
+    }
+
+    fn handle_duplicate_tool(&mut self, tool_id: crate::state::job::ToolId) {
+        if let Some(src) = self.state.job.tools.iter().find(|tool| tool.id == tool_id) {
+            let mut duplicate = src.clone();
+            let new_id = self.state.job.next_tool_id();
+            duplicate.id = new_id;
+            duplicate.name = format!("{} (copy)", duplicate.name);
+            self.state.selection = Selection::Tool(new_id);
+            self.state.job.tools.push(duplicate);
+            self.state.job.mark_edited();
+        }
+    }
+
+    fn handle_remove_tool(&mut self, tool_id: crate::state::job::ToolId) {
+        let in_use = self
+            .state
+            .job
+            .setups
+            .iter()
+            .flat_map(|setup| setup.toolpaths.iter())
+            .any(|entry| entry.tool_id == tool_id);
+        if in_use {
+            tracing::warn!(
+                "Cannot remove tool {:?}: still referenced by one or more toolpaths",
+                tool_id
+            );
+        } else {
+            self.state.job.tools.retain(|tool| tool.id != tool_id);
+            if self.state.selection == Selection::Tool(tool_id) {
+                self.state.selection = Selection::None;
+            }
+            self.state.job.mark_edited();
+        }
+    }
+
+    fn handle_add_setup(&mut self) {
+        let id = self.state.job.next_setup_id();
+        let name = format!("Setup {}", id.0 + 1);
+        self.state.job.setups.push(Setup::new(id, name));
+        self.state.selection = Selection::Setup(id);
+        self.state.job.mark_edited();
+    }
+
+    fn handle_setup_two_sided(&mut self) {
+        let has_flipped = self
+            .state
+            .job
+            .setups
+            .iter()
+            .any(|s| s.face_up == FaceUp::Bottom);
+        if !has_flipped {
+            let id = self.state.job.next_setup_id();
+            let mut setup = Setup::new(id, format!("Setup {}", id.0 + 1));
+            setup.face_up = FaceUp::Bottom;
+            self.state.job.setups.push(setup);
+        }
+        if self.state.job.stock.flip_axis.is_none() {
+            self.state.job.stock.flip_axis = Some(FlipAxis::Horizontal);
+        }
+        if self.state.job.stock.alignment_pins.is_empty() {
+            let margin = if self.state.job.stock.padding > 2.0 {
+                self.state.job.stock.padding / 2.0
+            } else {
+                10.0_f64
+                    .min(self.state.job.stock.x / 4.0)
+                    .min(self.state.job.stock.y / 4.0)
+            };
+            let cy = self.state.job.stock.y / 2.0;
+            self.state
+                .job
+                .stock
+                .alignment_pins
+                .push(AlignmentPin::new(margin, cy, 6.0));
+            self.state.job.stock.alignment_pins.push(AlignmentPin::new(
+                self.state.job.stock.x - margin,
+                cy,
+                6.0,
+            ));
+        }
+        self.pending_upload = true;
+        self.state.job.mark_edited();
+        self.sync_alignment_pin_drill();
+        self.state.selection = Selection::Stock;
+    }
+
+    fn handle_remove_setup(&mut self, setup_id: crate::state::job::SetupId) {
+        if self.state.job.setups.len() > 1 {
+            self.state.job.setups.retain(|setup| setup.id != setup_id);
+            match self.state.selection {
+                Selection::Setup(id) if id == setup_id => {
+                    self.state.selection = Selection::None;
+                }
+                Selection::Fixture(id, _) if id == setup_id => {
+                    self.state.selection = Selection::None;
+                }
+                Selection::KeepOut(id, _) if id == setup_id => {
+                    self.state.selection = Selection::None;
+                }
+                _ => {}
+            }
+            self.pending_upload = true;
+            self.state.job.mark_edited();
+        }
+    }
+
+    fn handle_rename_setup(&mut self, setup_id: crate::state::job::SetupId, name: String) {
+        if let Some(setup) = self
+            .state
+            .job
+            .setups
+            .iter_mut()
+            .find(|setup| setup.id == setup_id)
+        {
+            setup.name = name;
+            self.state.job.mark_edited();
+        }
+    }
+
+    fn handle_add_fixture(&mut self, setup_id: crate::state::job::SetupId) {
+        let fixture_id = self.state.job.next_fixture_id();
+        if let Some(setup) = self
+            .state
+            .job
+            .setups
+            .iter_mut()
+            .find(|setup| setup.id == setup_id)
+        {
+            setup.fixtures.push(Fixture::new_default(fixture_id));
+            self.state.selection = Selection::Fixture(setup_id, fixture_id);
+            self.pending_upload = true;
+            self.state.job.mark_edited();
+        }
+    }
+
+    fn handle_remove_fixture(
+        &mut self,
+        setup_id: crate::state::job::SetupId,
+        fixture_id: crate::state::job::FixtureId,
+    ) {
+        if let Some(setup) = self
+            .state
+            .job
+            .setups
+            .iter_mut()
+            .find(|setup| setup.id == setup_id)
+        {
+            setup.fixtures.retain(|fixture| fixture.id != fixture_id);
+            if self.state.selection == Selection::Fixture(setup_id, fixture_id) {
+                self.state.selection = Selection::Setup(setup_id);
+            }
+            self.pending_upload = true;
+            self.state.job.mark_edited();
+        }
+    }
+
+    fn handle_add_keep_out(&mut self, setup_id: crate::state::job::SetupId) {
+        let keep_out_id = self.state.job.next_keep_out_id();
+        if let Some(setup) = self
+            .state
+            .job
+            .setups
+            .iter_mut()
+            .find(|setup| setup.id == setup_id)
+        {
+            setup
+                .keep_out_zones
+                .push(KeepOutZone::new_default(keep_out_id));
+            self.state.selection = Selection::KeepOut(setup_id, keep_out_id);
+            self.pending_upload = true;
+            self.state.job.mark_edited();
+        }
+    }
+
+    fn handle_remove_keep_out(
+        &mut self,
+        setup_id: crate::state::job::SetupId,
+        keep_out_id: crate::state::job::KeepOutId,
+    ) {
+        if let Some(setup) = self
+            .state
+            .job
+            .setups
+            .iter_mut()
+            .find(|setup| setup.id == setup_id)
+        {
+            setup
+                .keep_out_zones
+                .retain(|keep_out| keep_out.id != keep_out_id);
+            if self.state.selection == Selection::KeepOut(setup_id, keep_out_id) {
+                self.state.selection = Selection::Setup(setup_id);
+            }
+            self.pending_upload = true;
+            self.state.job.mark_edited();
+        }
+    }
+
+    // ── Toolpath helpers ─────────────────────────────────────────────────
+
+    fn handle_add_toolpath(&mut self, op_type: crate::state::toolpath::OperationType) {
+        let target_setup_id = match self.state.selection {
+            Selection::Toolpath(tp_id) => self.state.job.setup_of_toolpath(tp_id),
+            Selection::Setup(setup_id) => Some(setup_id),
+            Selection::Fixture(setup_id, _) => Some(setup_id),
+            Selection::KeepOut(setup_id, _) => Some(setup_id),
+            _ => None,
+        }
+        .or_else(|| self.state.job.setups.first().map(|setup| setup.id));
+
+        let Some(tool_id) = self.state.job.tools.first().map(|tool| tool.id) else {
+            tracing::warn!("Cannot add toolpath: no tools defined");
+            return;
+        };
+        let id = self.state.job.next_toolpath_id();
+        let model_id = self
+            .state
+            .job
+            .models
+            .first()
+            .map(|model| model.id)
+            .unwrap_or(crate::state::job::ModelId(0));
+        let entry = ToolpathEntry::for_operation(
+            id,
+            format!("{} {}", op_type.label(), id.0 + 1),
+            tool_id,
+            model_id,
+            op_type,
+        );
+        self.state.selection = Selection::Toolpath(id);
+        if let Some(setup_id) = target_setup_id {
+            self.state.job.push_toolpath_to_setup(setup_id, entry);
+        } else {
+            self.state.job.push_toolpath(entry);
+        }
+        self.state.job.mark_edited();
+    }
+
+    fn handle_duplicate_toolpath(&mut self, tp_id: ToolpathId) {
+        let new_id = self.state.job.next_toolpath_id();
+        let target_setup_id = self.state.job.setup_of_toolpath(tp_id);
+        if let Some(src) = self.state.job.find_toolpath(tp_id) {
+            self.state.selection = Selection::Toolpath(new_id);
+            let entry = src.duplicate_as(new_id, format!("{} (copy)", src.name));
+            if let Some(setup_id) = target_setup_id {
+                self.state.job.push_toolpath_to_setup(setup_id, entry);
+            } else {
+                self.state.job.push_toolpath(entry);
+            }
+            self.state.job.mark_edited();
+        }
+    }
+
+    fn handle_move_toolpath_up(&mut self, tp_id: ToolpathId) {
+        if self.state.job.move_toolpath_up(tp_id) {
+            self.state.job.mark_edited();
+        }
+    }
+
+    fn handle_move_toolpath_down(&mut self, tp_id: ToolpathId) {
+        if self.state.job.move_toolpath_down(tp_id) {
+            self.state.job.mark_edited();
+        }
+    }
+
+    fn handle_reorder_toolpath(&mut self, tp_id: ToolpathId, target_idx: usize) {
+        if self.state.job.reorder_toolpath(tp_id, target_idx) {
+            self.state.job.mark_edited();
+        }
+    }
+
+    fn handle_move_toolpath_to_setup(
+        &mut self,
+        tp_id: ToolpathId,
+        setup_id: crate::state::job::SetupId,
+        idx: usize,
+    ) {
+        if self.state.job.move_toolpath_to_setup(tp_id, setup_id, idx) {
+            self.pending_upload = true;
+            self.state.job.mark_edited();
+        }
+    }
+
+    fn handle_remove_toolpath(&mut self, tp_id: ToolpathId) {
+        self.state.job.remove_toolpath(tp_id);
+        if self.state.selection == Selection::Toolpath(tp_id) {
+            self.state.selection = Selection::None;
+        }
+        if self.state.viewport.isolate_toolpath == Some(tp_id) {
+            self.state.viewport.isolate_toolpath = None;
+        }
+        self.pending_upload = true;
+        self.state.job.mark_edited();
+    }
+
+    fn handle_generate_all(&mut self) {
+        let ids: Vec<_> = self
+            .state
+            .job
+            .all_toolpaths()
+            .map(|toolpath| toolpath.id)
+            .collect();
+        for id in ids {
+            self.submit_toolpath_compute(id);
+        }
+    }
+
+    fn handle_toggle_isolate_toolpath(&mut self) {
+        if let Selection::Toolpath(id) = self.state.selection {
+            if self.state.viewport.isolate_toolpath == Some(id) {
+                self.state.viewport.isolate_toolpath = None;
+            } else {
+                self.state.viewport.isolate_toolpath = Some(id);
+            }
+            self.pending_upload = true;
+        }
+    }
+
+    fn handle_inspect_toolpath_in_simulation(&mut self, tp_id: ToolpathId) {
+        self.events
+            .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
+        if let Some(boundary) = self
+            .state
+            .simulation
+            .boundaries()
+            .iter()
+            .find(|boundary| boundary.id == tp_id)
+        {
+            self.events
+                .push(AppEvent::SimJumpToMove(boundary.start_move));
+        } else if self
+            .state
+            .job
+            .find_toolpath(tp_id)
+            .and_then(|toolpath| toolpath.result.as_ref())
+            .is_some()
+        {
+            self.state.simulation.debug.pending_inspect_toolpath = Some(tp_id);
+            self.events.push(AppEvent::RunSimulationWith(vec![tp_id]));
+        }
+    }
+
+    // ── Simulation helpers ───────────────────────────────────────────────
+
+    fn handle_reset_simulation(&mut self) {
+        let sim = &mut self.state.simulation;
+        sim.results = None;
+        sim.playback = Default::default();
+        sim.checks = Default::default();
+        sim.last_run = None;
+        self.collision_positions.clear();
+        self.pending_upload = true;
+    }
+
+    fn handle_sim_jump_to_move(&mut self, move_idx: usize) {
+        if self.state.simulation.has_results() {
+            let total = self.state.simulation.total_moves();
+            self.state.simulation.playback.playing = false;
+            self.state.simulation.playback.current_move = move_idx.min(total);
+        }
+    }
+
+    fn handle_sim_step_forward(&mut self) {
+        if self.state.simulation.has_results() {
+            let total = self.state.simulation.total_moves();
+            let pb = &mut self.state.simulation.playback;
+            pb.playing = false;
+            pb.current_move = (pb.current_move + 1).min(total);
+        }
+    }
+
+    fn handle_sim_step_backward(&mut self) {
+        if self.state.simulation.has_results() {
+            let pb = &mut self.state.simulation.playback;
+            pb.playing = false;
+            pb.current_move = pb.current_move.saturating_sub(1);
+        }
+    }
+
+    fn handle_sim_jump_to_start(&mut self) {
+        if self.state.simulation.has_results() {
+            let pb = &mut self.state.simulation.playback;
+            pb.playing = false;
+            pb.current_move = 0;
+        }
+    }
+
+    fn handle_sim_jump_to_end(&mut self) {
+        if self.state.simulation.has_results() {
+            let total = self.state.simulation.total_moves();
+            let pb = &mut self.state.simulation.playback;
+            pb.playing = false;
+            pb.current_move = total;
+        }
+    }
+
+    fn handle_sim_jump_to_op_start(&mut self, boundary_idx: usize) {
+        if let Some(start) = self
+            .state
+            .simulation
+            .boundaries()
+            .get(boundary_idx)
+            .map(|b| b.start_move)
+        {
+            self.state.simulation.playback.playing = false;
+            self.state.simulation.playback.current_move = start;
+        }
+    }
+
+    fn handle_sim_jump_to_op_end(&mut self, boundary_idx: usize) {
+        if let Some(end) = self
+            .state
+            .simulation
+            .boundaries()
+            .get(boundary_idx)
+            .map(|b| b.end_move)
+        {
+            self.state.simulation.playback.playing = false;
+            self.state.simulation.playback.current_move = end;
+        }
+    }
+
+    // ── Stock / config helpers ───────────────────────────────────────────
+
+    fn handle_stock_changed(&mut self) {
+        if self.state.job.stock.auto_from_model
+            && let Some(bbox) = self
+                .state
+                .job
+                .models
+                .iter()
+                .find_map(|m| m.mesh.as_ref().map(|mesh| mesh.bbox))
+        {
+            self.state.job.stock.update_from_bbox(&bbox);
+        }
+        self.pending_upload = true;
+        self.state.job.mark_edited();
+        self.sync_alignment_pin_drill();
+    }
+
+    /// Build per-setup simulation groups by applying a per-setup toolpath filter.
+    /// Returns `(groups, all_toolpaths_flat, stock_bbox)` or `None` if no
+    /// toolpaths matched.
+    fn build_simulation_groups(
+        &self,
+        mut include_toolpath: impl FnMut(usize, &ToolpathEntry) -> bool,
+        mut stop_after_setup: impl FnMut(usize) -> bool,
+    ) -> Option<(Vec<SetupSimGroup>, Vec<SetupSimToolpath>, BoundingBox3)> {
+        let stock = &self.state.job.stock;
         let stock_bbox = BoundingBox3 {
             min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
             max: rs_cam_core::geo::P3::new(stock.x, stock.y, stock.z),
         };
 
-        // Build per-setup groups with pre-transformed toolpaths
         let mut groups: Vec<SetupSimGroup> = Vec::new();
         let mut all_toolpaths_flat = Vec::new();
 
-        for setup in &self.state.job.setups {
+        for (i, setup) in self.state.job.setups.iter().enumerate() {
             let direction = face_up_to_direction(setup.face_up);
             let toolpaths: Vec<_> = setup
                 .toolpaths
                 .iter()
-                .filter(|tp| tp.enabled)
+                .filter(|tp| include_toolpath(i, tp))
                 .filter_map(|tp| {
                     let result = tp.result.as_ref()?;
                     let tool = self
@@ -541,7 +645,6 @@ impl<B: ComputeBackend> AppController<B> {
                         .iter()
                         .find(|t| t.id == tp.tool_id)?
                         .clone();
-                    // Transform toolpath from setup-local to global stock frame
                     let transformed = if setup.needs_transform() {
                         Arc::new(transform_toolpath_to_stock_frame(
                             &result.toolpath,
@@ -568,23 +671,36 @@ impl<B: ComputeBackend> AppController<B> {
                     direction,
                 });
             }
+
+            if stop_after_setup(i) {
+                break;
+            }
         }
 
         if groups.is_empty() {
-            tracing::warn!("No computed toolpaths to simulate");
-            return;
+            return None;
         }
+        Some((groups, all_toolpaths_flat, stock_bbox))
+    }
 
+    /// Submit a simulation request, handling auto-resolution and model mesh.
+    fn submit_simulation_for_groups(
+        &mut self,
+        groups: Vec<SetupSimGroup>,
+        all_toolpaths_flat: Vec<SetupSimToolpath>,
+        stock_bbox: BoundingBox3,
+        model_setup_idx: Option<usize>,
+    ) {
         if self.state.simulation.auto_resolution {
             self.state.simulation.resolution =
                 auto_resolution_for_tools(&all_toolpaths_flat, &stock_bbox);
         }
 
-        // Model mesh — transform to first setup's frame for deviation calc
-        // (deviation is approximate for multi-setup; future work for per-setup deviation)
+        let stock = &self.state.job.stock;
         let model_mesh = self.state.job.models.iter().find_map(|m| {
             m.mesh.as_ref().and_then(|mesh| {
-                let setup = self.state.job.setups.first()?;
+                let setup_idx = model_setup_idx.unwrap_or(0);
+                let setup = self.state.job.setups.get(setup_idx)?;
                 Some(Arc::new(crate::state::job::transform_mesh(
                     mesh, setup, stock,
                 )))
@@ -607,8 +723,18 @@ impl<B: ComputeBackend> AppController<B> {
         });
     }
 
+    pub fn run_simulation_with_all(&mut self) {
+        let Some((groups, all_toolpaths_flat, stock_bbox)) = self.build_simulation_groups(
+            |_setup_idx, tp| tp.enabled,
+            |_setup_idx| false, // never stop early
+        ) else {
+            tracing::warn!("No computed toolpaths to simulate");
+            return;
+        };
+        self.submit_simulation_for_groups(groups, all_toolpaths_flat, stock_bbox, Some(0));
+    }
+
     pub fn run_simulation_with_ids(&mut self, ids: &[ToolpathId]) {
-        // Find the index of the setup that contains these toolpaths.
         let target_setup_idx = self
             .state
             .job
@@ -620,105 +746,26 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         };
 
-        let stock = &self.state.job.stock;
-        let stock_bbox = BoundingBox3 {
-            min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
-            max: rs_cam_core::geo::P3::new(stock.x, stock.y, stock.z),
-        };
-
-        // Build groups: ALL enabled toolpaths from preceding setups first,
-        // so the stock carries forward, then the selected toolpaths from the
-        // target setup.
-        let mut groups: Vec<SetupSimGroup> = Vec::new();
-        let mut all_toolpaths_flat = Vec::new();
-
-        for (i, setup) in self.state.job.setups.iter().enumerate() {
-            let direction = face_up_to_direction(setup.face_up);
-            let is_target = i == target_setup_idx;
-
-            let toolpaths: Vec<_> = setup
-                .toolpaths
-                .iter()
-                .filter(|tp| {
-                    if is_target {
-                        ids.contains(&tp.id) // only selected toolpaths in target setup
-                    } else if i < target_setup_idx {
-                        tp.enabled // all enabled toolpaths in preceding setups
-                    } else {
-                        false // skip setups after the target
-                    }
-                })
-                .filter_map(|tp| {
-                    let result = tp.result.as_ref()?;
-                    let tool = self
-                        .state
-                        .job
-                        .tools
-                        .iter()
-                        .find(|t| t.id == tp.tool_id)?
-                        .clone();
-                    let transformed = if setup.needs_transform() {
-                        Arc::new(transform_toolpath_to_stock_frame(
-                            &result.toolpath,
-                            setup,
-                            stock,
-                        ))
-                    } else {
-                        Arc::clone(&result.toolpath)
-                    };
-                    Some(SetupSimToolpath {
-                        id: tp.id,
-                        name: tp.name.clone(),
-                        toolpath: transformed,
-                        tool,
-                        semantic_trace: tp.semantic_trace.clone(),
-                    })
-                })
-                .collect();
-
-            if !toolpaths.is_empty() {
-                all_toolpaths_flat.extend(toolpaths.clone());
-                groups.push(SetupSimGroup {
-                    toolpaths,
-                    direction,
-                });
-            }
-
-            if is_target {
-                break; // don't include setups after the target
-            }
-        }
-
-        if groups.is_empty() {
-            return;
-        }
-
-        if self.state.simulation.auto_resolution {
-            self.state.simulation.resolution =
-                auto_resolution_for_tools(&all_toolpaths_flat, &stock_bbox);
-        }
-
-        let target_setup = &self.state.job.setups[target_setup_idx];
-        let model_mesh = self.state.job.models.iter().find_map(|m| {
-            m.mesh
-                .as_ref()
-                .map(|mesh| Arc::new(crate::state::job::transform_mesh(mesh, target_setup, stock)))
-        });
-
-        self.compute.submit_simulation(SimulationRequest {
-            groups,
-            stock_bbox,
-            stock_top_z: stock_bbox.max.z,
-            resolution: self.state.simulation.resolution,
-            metric_options: self.state.simulation.metric_options,
-            spindle_rpm: self.state.job.post.spindle_speed,
-            rapid_feed_mm_min: if self.state.job.post.high_feedrate_mode {
-                self.state.job.post.high_feedrate.max(1.0)
-            } else {
-                self.state.job.machine.max_feed_mm_min.max(1.0)
+        let Some((groups, all_toolpaths_flat, stock_bbox)) = self.build_simulation_groups(
+            |setup_idx, tp| {
+                if setup_idx == target_setup_idx {
+                    ids.contains(&tp.id)
+                } else if setup_idx < target_setup_idx {
+                    tp.enabled
+                } else {
+                    false
+                }
             },
-            model_mesh,
-        });
+            |setup_idx| setup_idx == target_setup_idx,
+        ) else {
+            return;
+        };
+        self.submit_simulation_for_groups(
+            groups,
+            all_toolpaths_flat,
+            stock_bbox,
+            Some(target_setup_idx),
+        );
     }
 
     pub fn request_collision_check(&mut self) {

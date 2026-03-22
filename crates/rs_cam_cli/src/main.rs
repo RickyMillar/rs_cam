@@ -35,6 +35,10 @@ use rs_cam_core::{
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
+/// Default holder length (mm) used for collision checks when the holder
+/// geometry is not explicitly specified.
+const DEFAULT_HOLDER_LENGTH_MM: f64 = 40.0;
+
 #[derive(Parser)]
 #[command(name = "rs_cam", about = "3-axis wood router CAM toolpath generator")]
 struct Cli {
@@ -598,7 +602,7 @@ enum Commands {
 
         /// Entry style: plunge, helix, ramp (default: plunge)
         #[arg(long, default_value = "plunge")]
-        entry_style: String,
+        entry: String,
 
         /// Fine stepdown interval in mm (default: disabled)
         #[arg(long)]
@@ -1571,7 +1575,7 @@ fn main() -> Result<()> {
                     },
                     shank_length,
                     holder_diameter,
-                    holder_length: 40.0,
+                    holder_length: DEFAULT_HOLDER_LENGTH_MM,
                 };
                 let report = rs_cam_core::collision::check_collisions_interpolated(
                     &toolpath, &assembly, &mesh, &index, 2.0,
@@ -2178,7 +2182,7 @@ fn main() -> Result<()> {
             safe_z,
             tolerance,
             min_cutting_radius,
-            entry_style,
+            entry,
             fine_stepdown,
             detect_flat_areas,
             max_stay_down_dist,
@@ -2207,7 +2211,7 @@ fn main() -> Result<()> {
                 "3D Adaptive params"
             );
 
-            let entry = match entry_style.to_lowercase().as_str() {
+            let entry_3d = match entry.to_lowercase().as_str() {
                 "helix" => EntryStyle3d::Helix {
                     radius: cutter.radius() * 0.8,
                     pitch: 1.0,
@@ -2232,7 +2236,7 @@ fn main() -> Result<()> {
                 tolerance,
                 min_cutting_radius,
                 stock_top_z: stock_z,
-                entry_style: entry,
+                entry_style: entry_3d,
                 fine_stepdown,
                 detect_flat_areas,
                 max_stay_down_dist,
@@ -2389,7 +2393,7 @@ fn main() -> Result<()> {
                     },
                     shank_length,
                     holder_diameter,
-                    holder_length: 40.0,
+                    holder_length: DEFAULT_HOLDER_LENGTH_MM,
                 };
                 let report = rs_cam_core::collision::check_collisions_interpolated(
                     &toolpath, &assembly, &mesh, &index, 2.0,
@@ -2527,7 +2531,7 @@ fn main() -> Result<()> {
                     },
                     shank_length,
                     holder_diameter,
-                    holder_length: 40.0,
+                    holder_length: DEFAULT_HOLDER_LENGTH_MM,
                 };
                 let report = rs_cam_core::collision::check_collisions_interpolated(
                     &toolpath, &assembly, &mesh, &index, 2.0,
@@ -2660,7 +2664,7 @@ fn main() -> Result<()> {
                     },
                     shank_length,
                     holder_diameter,
-                    holder_length: 40.0,
+                    holder_length: DEFAULT_HOLDER_LENGTH_MM,
                 };
                 let report = rs_cam_core::collision::check_collisions_interpolated(
                     &toolpath, &assembly, &mesh, &index, 2.0,
@@ -2852,7 +2856,7 @@ fn main() -> Result<()> {
                     },
                     shank_length,
                     holder_diameter,
-                    holder_length: 40.0,
+                    holder_length: DEFAULT_HOLDER_LENGTH_MM,
                 };
                 let report = rs_cam_core::collision::check_collisions_interpolated(
                     &toolpath, &assembly, &mesh, &index, 2.0,
@@ -2986,7 +2990,7 @@ fn main() -> Result<()> {
                     },
                     shank_length,
                     holder_diameter,
-                    holder_length: 40.0,
+                    holder_length: DEFAULT_HOLDER_LENGTH_MM,
                 };
                 let report = rs_cam_core::collision::check_collisions_interpolated(
                     &toolpath, &assembly, &mesh, &index, 2.0,
