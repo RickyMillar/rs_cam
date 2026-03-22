@@ -50,3 +50,28 @@ Do not document or rely on crates that are not currently in those manifests.
 - library code should avoid `unwrap()`
 - if GUI state adds a field, audit setup-sheet, project-IO, and any test initializers for required updates
 - if a feature is only present in UI/state and not end-to-end wired, document that honestly
+
+## Dev workflow quick reference
+
+| Task | Command |
+|------|---------|
+| Run GUI | `cargo run -p rs_cam_viz --bin rs_cam_gui` |
+| Run CLI | `cargo run -p rs_cam_cli -- <subcommand>` |
+| Test all | `cargo test -q` |
+| Lint | `cargo clippy --workspace --all-targets -- -D warnings` |
+| Format | `cargo fmt --check` |
+| Bench | `cargo bench -p rs_cam_core` |
+
+Run `/dev` for the full reference. Run `/verify` before committing.
+
+## Agent skills
+
+Project-level Claude Code customizations in `.claude/`:
+
+| File | Type | Purpose |
+|------|------|---------|
+| `skills/verify/SKILL.md` | `/verify` | Run the CI quality gate locally |
+| `skills/dev/SKILL.md` | `/dev` | Build, test, run, and module quick reference |
+| `skills/sim-analysis/SKILL.md` | `/sim-analysis` | Simulation diagnostic interpretation guide |
+| `agents/cam-navigator.md` | Agent | Codebase navigation: find operations, trace pipelines |
+| `agents/sim-diagnostics.md` | Agent | Simulation diagnostic analysis and interpretation |
