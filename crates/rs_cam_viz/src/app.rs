@@ -1412,6 +1412,28 @@ impl RsCamApp {
             (_, PickHit::Toolpath { id }) => {
                 self.controller.state_mut().selection = Selection::Toolpath(id);
             }
+            (Workspace::Toolpaths, PickHit::ModelFace { model_id, face_id }) => {
+                // If a toolpath is currently selected, add this face to its face_selection
+                if let Selection::Toolpath(tp_id) = self.controller.state().selection {
+                    if let Some(entry) = self.controller.state_mut().job.find_toolpath_mut(tp_id) {
+                        let faces = entry.face_selection.get_or_insert_with(Vec::new);
+                        if let Some(pos) = faces.iter().position(|f| *f == face_id) {
+                            // Toggle off if already selected
+                            faces.remove(pos);
+                        } else {
+                            faces.push(face_id);
+                        }
+                        if faces.is_empty() {
+                            entry.face_selection = None;
+                        }
+                        entry.stale_since = Some(std::time::Instant::now());
+                        self.controller.state_mut().job.dirty = true;
+                    }
+                }
+                // Also update the visual selection
+                self.controller.state_mut().selection = Selection::Face(model_id, face_id);
+                self.controller.set_pending_upload();
+            }
             _ => {}
         }
     }

@@ -265,6 +265,20 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             let machine = state.job.machine.clone();
             let workholding = state.job.stock.workholding_rigidity;
 
+            // Check if the toolpath's model has enriched mesh (for face selection UI)
+            let model_has_enriched = state
+                .job
+                .find_toolpath(id)
+                .and_then(|tp| {
+                    state
+                        .job
+                        .models
+                        .iter()
+                        .find(|m| m.id == tp.model_id)
+                })
+                .map(|m| m.enriched_mesh.is_some())
+                .unwrap_or(false);
+
             // Snapshot operation for stale_since detection
             let op_before = state
                 .job
@@ -281,6 +295,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     &material,
                     &machine,
                     workholding,
+                    model_has_enriched,
                     events,
                 );
             }
@@ -999,6 +1014,7 @@ fn draw_toolpath_panel(
     material: &rs_cam_core::material::Material,
     machine: &rs_cam_core::machine::MachineProfile,
     workholding: rs_cam_core::feeds::WorkholdingRigidity,
+    model_has_enriched: bool,
     events: &mut Vec<AppEvent>,
 ) {
     ui.heading(&entry.name);
@@ -1043,6 +1059,43 @@ fn draw_toolpath_panel(
                 }
             });
     });
+
+    // Face selection (STEP models only)
+    if model_has_enriched {
+        ui.add_space(8.0);
+        ui.label(
+            egui::RichText::new("Face Selection")
+                .strong()
+                .color(egui::Color32::from_rgb(180, 180, 195)),
+        );
+        let face_count = entry
+            .face_selection
+            .as_ref()
+            .map(|f| f.len())
+            .unwrap_or(0);
+        if face_count > 0 {
+            ui.label(format!(
+                "{} face{} selected",
+                face_count,
+                if face_count == 1 { "" } else { "s" }
+            ));
+            if ui.small_button("Clear Faces").clicked() {
+                entry.face_selection = None;
+                entry.stale_since = Some(std::time::Instant::now());
+            }
+        } else {
+            ui.label(
+                egui::RichText::new("Click faces in viewport to select")
+                    .italics()
+                    .color(egui::Color32::from_rgb(120, 120, 130)),
+            );
+        }
+        ui.label(
+            egui::RichText::new("Tip: click faces in the 3D view while this toolpath is selected")
+                .small()
+                .color(egui::Color32::from_rgb(100, 100, 110)),
+        );
+    }
 
     ui.add_space(8.0);
     ui.label(

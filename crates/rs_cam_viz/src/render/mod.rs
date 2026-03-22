@@ -637,12 +637,16 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             0,
             bytemuck::bytes_of(&self.mesh_uniforms),
         );
-        let has_enriched = resources.enriched_mesh_data.is_some();
-        if self.show_sim_mesh || self.show_solid_stock || self.show_height_planes || has_enriched {
+        // Always upload colored mesh uniforms when any colored pipeline will be used.
+        // The colored_opaque_pipeline (STEP) uses REPLACE blend so opacity doesn't
+        // affect it, but it still needs valid view_proj/light_dir uniforms.
+        let needs_colored_uniforms = self.show_sim_mesh
+            || self.show_solid_stock
+            || self.show_height_planes
+            || resources.enriched_mesh_data.is_some();
+        if needs_colored_uniforms {
             let opacity = if self.show_sim_mesh {
                 self.sim_mesh_opacity
-            } else if has_enriched {
-                1.0 // STEP model: fully opaque
             } else {
                 0.18 // solid stock / height planes translucency
             };
