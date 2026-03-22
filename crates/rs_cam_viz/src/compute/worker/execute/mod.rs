@@ -340,9 +340,22 @@ fn run_compute_with_phase_tracker(
             use rs_cam_core::boundary::{
                 ToolContainment, clip_toolpath_to_boundary, effective_boundary, subtract_keepouts,
             };
-            let mut stock_poly = rs_cam_core::polygon::Polygon2::rectangle(
-                bbox.min.x, bbox.min.y, bbox.max.x, bbox.max.y,
-            );
+            // Use face-derived boundary when face_selection is set, otherwise stock bbox.
+            let mut stock_poly = if let (Some(face_ids), Some(enriched)) =
+                (&req.face_selection, &req.enriched_mesh)
+            {
+                enriched
+                    .faces_boundary_as_polygon(face_ids)
+                    .unwrap_or_else(|| {
+                        rs_cam_core::polygon::Polygon2::rectangle(
+                            bbox.min.x, bbox.min.y, bbox.max.x, bbox.max.y,
+                        )
+                    })
+            } else {
+                rs_cam_core::polygon::Polygon2::rectangle(
+                    bbox.min.x, bbox.min.y, bbox.max.x, bbox.max.y,
+                )
+            };
             if !req.keep_out_footprints.is_empty() {
                 stock_poly = subtract_keepouts(&stock_poly, &req.keep_out_footprints);
             }

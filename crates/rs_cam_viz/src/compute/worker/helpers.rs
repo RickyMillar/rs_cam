@@ -35,11 +35,11 @@ pub(super) fn require_polygons(req: &ComputeRequest) -> Result<&[Polygon2], Stri
     req.polygons
         .as_ref()
         .map(|p| p.as_slice())
-        .ok_or_else(|| "No 2D geometry (import SVG)".to_string())
+        .ok_or_else(|| "No 2D geometry (import SVG/DXF or select STEP faces)".to_string())
 }
 
 pub(super) fn require_mesh(req: &ComputeRequest) -> Result<(&TriangleMesh, SpatialIndex), String> {
-    let mesh = req.mesh.as_ref().ok_or("No mesh (import STL)")?;
+    let mesh = req.mesh.as_ref().ok_or("No mesh (import STL or STEP)")?;
     let index = SpatialIndex::build_auto(mesh);
     Ok((mesh, index))
 }

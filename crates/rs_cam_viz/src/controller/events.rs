@@ -1025,6 +1025,19 @@ impl<B: ComputeBackend> AppController<B> {
         let enriched_mesh = model.and_then(|model| model.enriched_mesh.clone());
         let face_selection = face_selection_for_toolpath.clone();
 
+        // Derive polygons from selected BREP faces when no explicit polygons exist.
+        // This enables all 2.5D operations (pocket, profile, adaptive, trace, etc.)
+        // to work with STEP models by extracting face boundary loops as Polygon2.
+        if polygons.is_none() {
+            if let (Some(face_ids), Some(enriched)) = (&face_selection, &enriched_mesh) {
+                if !face_ids.is_empty() {
+                    if let Some(poly) = enriched.faces_boundary_as_polygon(face_ids) {
+                        polygons = Some(Arc::new(vec![poly]));
+                    }
+                }
+            }
+        }
+
         if let Some(transform_setup) = transform_setup.as_ref() {
             if let Some(raw_mesh) = mesh.as_ref() {
                 mesh = Some(Arc::new(crate::state::job::transform_mesh(
@@ -1050,14 +1063,14 @@ impl<B: ComputeBackend> AppController<B> {
         let is_3d = operation.is_3d();
         if is_3d && mesh.is_none() {
             if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
-                toolpath.status = ComputeStatus::Error("No 3D mesh (import STL first)".to_string());
+                toolpath.status = ComputeStatus::Error("No 3D mesh (import STL or STEP)".to_string());
             }
             return;
         }
         if !is_3d && !operation.is_stock_based() && polygons.is_none() {
             if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
                 toolpath.status =
-                    ComputeStatus::Error("No 2D geometry (import SVG first)".to_string());
+                    ComputeStatus::Error("No 2D geometry (import SVG/DXF or select STEP faces)".to_string());
             }
             return;
         }
