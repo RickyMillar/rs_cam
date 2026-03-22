@@ -425,7 +425,8 @@ impl RsCamApp {
     /// On forward playback this simulates the new moves since last frame.
     /// On backward scrub it resets from the nearest checkpoint heightmap.
     fn update_live_sim(&mut self, frame: &mut eframe::Frame) {
-        use rs_cam_core::simulation::{heightmap_to_mesh, simulate_toolpath_range};
+        use rs_cam_core::dexel_mesh::dexel_stock_to_mesh;
+        use rs_cam_core::dexel_stock::TriDexelStock;
 
         let target_move = self.controller.state().simulation.playback.current_move;
         let live_move = self.controller.state().simulation.playback.live_sim_move;
@@ -434,29 +435,18 @@ impl RsCamApp {
             return; // nothing changed
         }
 
-        // Collect toolpath data — already in setup-local frame (matches
-        // the simulation heightmap which is also in local coords).
-        let tp_data: Vec<_> = self
+        // Use pre-transformed playback data from simulation results.
+        // Each entry has the toolpath already in global stock frame + its direction.
+        let playback_data: Vec<_> = self
             .controller
             .state()
-            .job
-            .all_toolpaths()
-            .filter(|tp| tp.enabled)
-            .filter_map(|tp| {
-                let result = tp.result.as_ref()?;
-                let tool = self
-                    .controller
-                    .state()
-                    .job
-                    .tools
-                    .iter()
-                    .find(|t| t.id == tp.tool_id)?
-                    .clone();
-                Some((Arc::clone(&result.toolpath), tool))
-            })
-            .collect();
+            .simulation
+            .results
+            .as_ref()
+            .map(|r| r.playback_data.clone())
+            .unwrap_or_default();
 
-        if tp_data.is_empty() {
+        if playback_data.is_empty() {
             return;
         }
 
@@ -473,30 +463,28 @@ impl RsCamApp {
 
             if let Some(cp_idx) = best_cp {
                 if let Some(cp) = self.controller.state().simulation.checkpoints().get(cp_idx)
-                    && let Some(hm) = &cp.heightmap
+                    && let Some(stock) = &cp.stock
                 {
-                    let hm_clone = hm.clone();
+                    let stock_clone = stock.clone();
                     let cp_end = boundaries[cp_idx].end_move;
                     let pb = &mut self.controller.state_mut().simulation.playback;
-                    pb.live_heightmap = Some(hm_clone);
+                    pb.live_stock = Some(stock_clone);
                     pb.live_sim_move = cp_end;
                 }
             } else {
-                // Before any checkpoint — reset to fresh stock (local frame)
-                let bbox = if let Some(setup) = self.controller.state().job.setups.first() {
-                    let (w, d, h) = setup.effective_stock(&self.controller.state().job.stock);
-                    rs_cam_core::geo::BoundingBox3 {
-                        min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
-                        max: rs_cam_core::geo::P3::new(w, d, h),
-                    }
-                } else {
-                    self.controller.state().job.stock.bbox()
-                };
+                // Before any checkpoint — reset to fresh stock (global frame)
+                let bbox = self
+                    .controller
+                    .state()
+                    .simulation
+                    .results
+                    .as_ref()
+                    .map(|r| r.stock_bbox)
+                    .unwrap_or_else(|| self.controller.state().job.stock.bbox());
                 let res = self.controller.state().simulation.resolution;
-                let fresh =
-                    rs_cam_core::simulation::Heightmap::from_bounds(&bbox, Some(bbox.max.z), res);
+                let fresh = TriDexelStock::from_bounds(&bbox, res);
                 let pb = &mut self.controller.state_mut().simulation.playback;
-                pb.live_heightmap = Some(fresh);
+                pb.live_stock = Some(fresh);
                 pb.live_sim_move = 0;
             }
         }
@@ -504,18 +492,18 @@ impl RsCamApp {
         // Now simulate forward from live_sim_move to target_move
         let current_live = self.controller.state().simulation.playback.live_sim_move;
         if current_live < target_move {
-            // Take the heightmap out to avoid borrow conflicts
-            let mut heightmap = self
+            // Take the stock out to avoid borrow conflicts
+            let mut stock = self
                 .controller
                 .state_mut()
                 .simulation
                 .playback
-                .live_heightmap
+                .live_stock
                 .take();
 
-            if let Some(ref mut heightmap) = heightmap {
+            if let Some(ref mut stock) = stock {
                 let mut global_offset = 0;
-                for (toolpath, tool) in &tp_data {
+                for (toolpath, tool, direction) in &playback_data {
                     let tp_moves = toolpath.moves.len();
                     let tp_start = global_offset;
                     let tp_end = global_offset + tp_moves;
@@ -529,10 +517,10 @@ impl RsCamApp {
                         };
 
                         let cutter = crate::compute::worker::helpers::build_cutter(tool);
-                        simulate_toolpath_range(
+                        stock.simulate_toolpath_range(
                             toolpath,
                             cutter.as_ref(),
-                            heightmap,
+                            *direction,
                             local_start,
                             local_end,
                         );
@@ -543,14 +531,13 @@ impl RsCamApp {
 
             // Put it back
             let pb = &mut self.controller.state_mut().simulation.playback;
-            pb.live_heightmap = heightmap;
+            pb.live_stock = stock;
             pb.live_sim_move = target_move;
         }
 
-        // Convert heightmap to mesh and upload to GPU.
-        // Heightmap is already in the simulated setup's local frame — no transform needed.
-        if let Some(heightmap) = &self.controller.state().simulation.playback.live_heightmap {
-            let mesh = heightmap_to_mesh(heightmap);
+        // Convert stock to mesh and upload to GPU.
+        if let Some(stock) = &self.controller.state().simulation.playback.live_stock {
+            let mesh = dexel_stock_to_mesh(stock);
             let colors = self.compute_sim_colors(&mesh);
             self.controller.state_mut().simulation.playback.display_mesh = Some(mesh);
 
@@ -1325,10 +1312,8 @@ impl RsCamApp {
             show_grid: state.viewport.show_grid,
             show_stock: state.viewport.show_stock
                 && state.job.models.iter().any(|model| model.mesh.is_some()),
-            show_fixtures: state.viewport.show_fixtures
-                && state.workspace != Workspace::Simulation,
-            show_solid_stock: state.viewport.show_stock
-                && state.workspace == Workspace::Setup,
+            show_fixtures: state.viewport.show_fixtures && state.workspace != Workspace::Simulation,
+            show_solid_stock: state.viewport.show_stock && state.workspace == Workspace::Setup,
             show_height_planes: state.workspace == Workspace::Toolpaths
                 && matches!(state.selection, Selection::Toolpath(_)),
             show_sim_mesh: state.workspace == Workspace::Simulation

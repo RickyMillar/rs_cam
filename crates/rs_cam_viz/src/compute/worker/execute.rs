@@ -5,35 +5,44 @@ pub(super) fn run_simulation(
     req: &SimulationRequest,
     cancel: &AtomicBool,
 ) -> Result<SimulationResult, ComputeError> {
-    let mut heightmap =
-        Heightmap::from_bounds(&req.stock_bbox, Some(req.stock_top_z), req.resolution);
+    let mut stock = TriDexelStock::from_bounds(&req.stock_bbox, req.resolution);
 
     let mut total_moves = 0;
+    let mut boundary_index = 0;
     let mut boundaries = Vec::new();
     let mut checkpoints = Vec::new();
+    let mut playback_data = Vec::new();
 
-    for (i, (tp_id, tp_name, toolpath, tool_config)) in req.toolpaths.iter().enumerate() {
-        let start_move = total_moves;
-        let cutter = build_cutter(tool_config);
-        simulate_toolpath_with_cancel(toolpath, cutter.as_ref(), &mut heightmap, &|| {
-            cancel.load(Ordering::SeqCst)
-        })
-        .map_err(|_| ComputeError::Cancelled)?;
-        total_moves += toolpath.moves.len();
+    for group in &req.groups {
+        for (tp_id, tp_name, toolpath, tool_config) in &group.toolpaths {
+            let start_move = total_moves;
+            let cutter = build_cutter(tool_config);
+            stock
+                .simulate_toolpath_with_cancel(toolpath, cutter.as_ref(), group.direction, &|| {
+                    cancel.load(Ordering::SeqCst)
+                })
+                .map_err(|_| ComputeError::Cancelled)?;
+            total_moves += toolpath.moves.len();
 
-        boundaries.push(SimBoundary {
-            id: *tp_id,
-            name: tp_name.clone(),
-            tool_name: tool_config.summary(),
-            start_move,
-            end_move: total_moves,
-        });
+            boundaries.push(SimBoundary {
+                id: *tp_id,
+                name: tp_name.clone(),
+                tool_name: tool_config.summary(),
+                start_move,
+                end_move: total_moves,
+                direction: group.direction,
+            });
 
-        checkpoints.push(SimCheckpointMesh {
-            boundary_index: i,
-            mesh: heightmap_to_mesh(&heightmap),
-            heightmap: heightmap.clone(),
-        });
+            checkpoints.push(SimCheckpointMesh {
+                boundary_index,
+                mesh: dexel_stock_to_mesh(&stock),
+                stock: stock.checkpoint(),
+            });
+
+            playback_data.push((Arc::clone(toolpath), tool_config.clone(), group.direction));
+
+            boundary_index += 1;
+        }
     }
 
     // Check for rapid-through-stock collisions on each toolpath
@@ -42,22 +51,25 @@ pub(super) fn run_simulation(
     {
         use rs_cam_core::collision::check_rapid_collisions;
         let mut cumulative_offset = 0;
-        for (_tp_id, _tp_name, toolpath, _tool_config) in &req.toolpaths {
-            let rapids = check_rapid_collisions(toolpath, &req.stock_bbox);
-            for rc in &rapids {
-                rapid_collision_move_indices.push(cumulative_offset + rc.move_index);
+        for group in &req.groups {
+            for (_tp_id, _tp_name, toolpath, _tool_config) in &group.toolpaths {
+                let rapids = check_rapid_collisions(toolpath, &req.stock_bbox);
+                for rc in &rapids {
+                    rapid_collision_move_indices.push(cumulative_offset + rc.move_index);
+                }
+                rapid_collisions.extend(rapids);
+                cumulative_offset += toolpath.moves.len();
             }
-            rapid_collisions.extend(rapids);
-            cumulative_offset += toolpath.moves.len();
         }
     }
 
     Ok(SimulationResult {
-        mesh: heightmap_to_mesh(&heightmap),
+        mesh: dexel_stock_to_mesh(&stock),
         total_moves,
         deviations: None,
         boundaries,
         checkpoints,
+        playback_data,
         rapid_collisions,
         rapid_collision_move_indices,
     })

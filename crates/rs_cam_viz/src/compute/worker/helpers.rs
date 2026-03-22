@@ -1,5 +1,7 @@
 use super::*;
 
+use rs_cam_core::simulation::Heightmap;
+
 pub fn build_cutter(tool: &ToolConfig) -> Box<dyn MillingCutter> {
     match tool.tool_type {
         ToolType::EndMill => Box::new(FlatEndmill::new(tool.diameter, tool.cutting_length)),

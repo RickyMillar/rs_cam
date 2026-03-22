@@ -13,7 +13,7 @@
 - 5 cutter families
 - GRBL, LinuxCNC, and Mach3 post-processors
 - feeds/speeds calculator with machine, material, and vendor-LUT inputs
-- heightmap stock simulation and holder/shank collision checks
+- tri-dexel stock simulation (Z/X/Y grids, all 6 cardinal faces) and holder/shank collision checks
 - typed GUI project persistence with missing-model warnings and editable-state round-trip
 - dual-lane compute backend with lane-status reporting and active cancel support
 - deterministic renderless `rs_cam_viz` regression harness in CI
@@ -22,12 +22,38 @@
 
 ## Current priorities
 
-- **Tri-dexel simulation** — replace the 2.5D heightmap with a segment-based volumetric representation to enable multi-setup stock removal simulation. Design doc: `architecture/TRI_DEXEL_SIMULATION.md`, implementation plan: `planning/VOXEL_SIM_DESIGN.md`
+- **Tri-dexel simulation** — Phases 1–6 complete (core types, stamping, mesh extraction, viz wiring, multi-setup carry-forward, side-face grids). Design doc: `architecture/TRI_DEXEL_SIMULATION.md`, implementation plan: `planning/VOXEL_SIM_DESIGN.md`
 - keep public docs aligned with the actual code surface
 - preserve explicit attribution for algorithms, datasets, and runtime assets
 - maintain the lint/test gate as the default merge bar
 
 ## Recent work (2026-03-22)
+
+### Tri-dexel Phase 6: Side-face grids and multi-grid mesh
+
+Extended the tri-dexel simulation to support all six cardinal face orientations:
+- `DexelGrid::x_grid_from_bounds` and `y_grid_from_bounds` constructors (rays along X/Y, indexed by YZ/XZ)
+- `StockCutDirection` extended with `FromFront`, `FromBack`, `FromLeft`, `FromRight`
+- Lazy grid initialization: X/Y grids created on first side-face stamp from `stock_bbox`
+- Factored out axis-agnostic `stamp_point_on_grid` / `stamp_segment_on_grid` — Z/X/Y grids share the same inner loop with axis decomposition
+- `face_up_to_direction` now returns the correct direction for all `FaceUp` variants
+- Multi-grid mesh extraction: `dexel_stock_to_mesh` combines Z-grid surface with side-grid surfaces (using `ray_top` heightmap per grid, vertex positions mapped back to world XYZ)
+- Checkpoint correctly deep-copies lazily-created side grids
+- 15 new tests covering X/Y grid constructors, all four side-face stamp directions, linear segment on Y-grid, multi-grid simulation isolation, checkpoint with side grids, and multi-grid mesh vertex count
+
+### Tri-dexel simulation backend (Phases 1–5)
+
+Replaced the 2.5D heightmap simulation backend with a tri-dexel volumetric
+representation throughout the viz crate:
+- Core data types: `DexelSegment`, `DexelRay` (SmallVec), `DexelGrid`, `TriDexelStock` (`dexel.rs`, `dexel_stock.rs`)
+- Tool stamping and toolpath simulation with `StockCutDirection` (FromTop / FromBottom)
+- Mesh extraction via `dexel_stock_to_mesh` producing the same `HeightmapMesh` format (`dexel_mesh.rs`)
+- Viz wiring: `SimulationRequest`, `SimulationResult`, `SimCheckpoint`, and `SimulationPlayback` all use `TriDexelStock` instead of `Heightmap`
+- Live playback (`update_live_sim`) uses `simulate_toolpath_range` on `TriDexelStock`
+- `StockCutDirection` derived from setup's `FaceUp` orientation
+- GPU pipeline unchanged — `HeightmapMesh` remains the render format
+- **Phase 5: Multi-setup sequential simulation** — `run_simulation_with_all` now simulates ALL setups sequentially on one `TriDexelStock` in the global stock frame. Toolpaths are pre-transformed from each setup's local frame to the global stock-relative frame using `FaceUp`/`ZRotation` inverse transforms (including arc direction correction). `SimulationRequest` carries per-setup `SetupSimGroup`s with direction. Per-boundary direction stored in results enables correct multi-direction live playback scrubbing. Checkpoints at each toolpath boundary support backward scrub across setup transitions.
+- 60 core dexel tests + 59 viz tests pass
 
 ### Workspace UX redesign — multi-setup coordinate frames
 
@@ -65,7 +91,7 @@ See `architecture/TRI_DEXEL_SIMULATION.md`.
 
 ## Known open work
 
-- **tri-dexel implementation** (6 phases, see `planning/VOXEL_SIM_DESIGN.md`)
+- **tri-dexel contour-tiling mesh** — full surface reconstruction for non-heightmap views (current side-grid mesh uses ray_top heightmap)
 - emit per-operation manual pre/post G-code in export
 - wire profile controller compensation (`G41` / `G42`)
 - surface rapid-collision rendering and simulation deviation coloring

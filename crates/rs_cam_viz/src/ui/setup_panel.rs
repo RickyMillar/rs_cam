@@ -27,12 +27,9 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                         .color(egui::Color32::from_rgb(160, 170, 190)),
                 );
                 ui.label(
-                    egui::RichText::new(format!(
-                        "{:.0} x {:.0} x {:.0} mm",
-                        eff_w, eff_d, eff_h
-                    ))
-                    .small()
-                    .color(egui::Color32::from_rgb(140, 140, 150)),
+                    egui::RichText::new(format!("{:.0} x {:.0} x {:.0} mm", eff_w, eff_d, eff_h))
+                        .small()
+                        .color(egui::Color32::from_rgb(140, 140, 150)),
                 );
             });
             let selected = state.selection == Selection::Stock;

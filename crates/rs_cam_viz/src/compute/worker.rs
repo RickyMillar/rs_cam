@@ -18,6 +18,8 @@ use rs_cam_core::collision::{
     CollisionReport, RapidCollision, ToolAssembly, check_collisions_interpolated_with_cancel,
 };
 use rs_cam_core::depth::{DepthDistribution, DepthStepping, depth_stepped_toolpath};
+use rs_cam_core::dexel_mesh::dexel_stock_to_mesh;
+use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dressup::{
     EntryStyle as CoreEntryStyle, LinkMoveParams, apply_dogbones, apply_entry, apply_lead_in_out,
     apply_link_moves, apply_tabs, even_tabs,
@@ -41,9 +43,7 @@ use rs_cam_core::ramp_finish::{
 };
 use rs_cam_core::rest::{RestParams, rest_machining_toolpath};
 use rs_cam_core::scallop::{ScallopDirection as CoreScalDir, ScallopParams, scallop_toolpath};
-use rs_cam_core::simulation::{
-    Heightmap, HeightmapMesh, heightmap_to_mesh, simulate_toolpath_with_cancel,
-};
+use rs_cam_core::simulation::HeightmapMesh;
 use rs_cam_core::spiral_finish::{
     SpiralDirection as CoreSpiralDir, SpiralFinishParams, spiral_finish_toolpath,
 };
@@ -85,8 +85,16 @@ pub struct ComputeResult {
     pub result: Result<ToolpathResult, ComputeError>,
 }
 
-pub struct SimulationRequest {
+/// A group of toolpaths from one setup, pre-transformed to the global stock frame.
+pub struct SetupSimGroup {
     pub toolpaths: Vec<(ToolpathId, String, Arc<Toolpath>, ToolConfig)>,
+    /// Cut direction derived from the setup's FaceUp orientation.
+    pub direction: StockCutDirection,
+}
+
+pub struct SimulationRequest {
+    /// Per-setup groups, processed sequentially on one stock.
+    pub groups: Vec<SetupSimGroup>,
     pub stock_bbox: BoundingBox3,
     pub stock_top_z: f64,
     pub resolution: f64,
@@ -100,12 +108,14 @@ pub struct SimBoundary {
     pub tool_name: String,
     pub start_move: usize,
     pub end_move: usize,
+    /// Cut direction for this toolpath's setup.
+    pub direction: StockCutDirection,
 }
 
 pub struct SimCheckpointMesh {
     pub boundary_index: usize,
     pub mesh: HeightmapMesh,
-    pub heightmap: Heightmap,
+    pub stock: TriDexelStock,
 }
 
 pub struct SimulationResult {
@@ -114,6 +124,9 @@ pub struct SimulationResult {
     pub deviations: Option<Vec<f32>>,
     pub boundaries: Vec<SimBoundary>,
     pub checkpoints: Vec<SimCheckpointMesh>,
+    /// Pre-transformed toolpath data for incremental playback.
+    /// Each entry: (toolpath, tool_config, direction).
+    pub playback_data: Vec<(Arc<Toolpath>, ToolConfig, StockCutDirection)>,
     /// Rapid-through-stock collisions detected during simulation.
     pub rapid_collisions: Vec<RapidCollision>,
     /// Move indices with rapid collisions (for timeline markers).
@@ -317,7 +330,8 @@ fn toolpath_job_label(request: &ComputeRequest) -> String {
 fn analysis_job_label(request: &AnalysisRequest) -> String {
     match request {
         AnalysisRequest::Simulation(request) => {
-            format!("Simulation ({} toolpaths)", request.toolpaths.len())
+            let count: usize = request.groups.iter().map(|g| g.toolpaths.len()).sum();
+            format!("Simulation ({count} toolpaths)")
         }
         AnalysisRequest::Collision(_) => "Collision check".to_string(),
     }
