@@ -319,7 +319,7 @@ impl MillingCutter for TaperedBallEndmill {
             let denom_cone = l_sq - r_shaft * r_shaft * slope * slope;
             if denom_cone > 1e-15 {
                 let ccu_sq = r_shaft * r_shaft * slope * slope * d_sq / denom_cone;
-                let ccu = ccu_sq.sqrt();
+                let ccu = ccu_sq.max(0.0).sqrt();
 
                 for &ccu_signed in &[ccu, -ccu] {
                     let dt = ccu_signed / edge_len_xy;
@@ -575,6 +575,37 @@ mod tests {
             "cl.z = {}, expected ~{}",
             cl.z,
             hemisphere_r
+        );
+    }
+
+    #[test]
+    fn test_tapered_ball_edge_drop_near_zero_discriminant_no_nan() {
+        // When ccu_sq is near zero due to floating-point rounding,
+        // the .max(0.0) guard should prevent NaN from sqrt.
+        let tool = make_tool();
+        let rc = tool.r_contact();
+
+        // Edge in the cone region with near-zero slope — ccu_sq will be near zero
+        let d = (rc + tool.shaft_radius()) / 2.0; // midway in cone region
+        let p1 = P3::new(d, -5.0, 0.0);
+        let p2 = P3::new(d, 5.0, 1e-15); // nearly zero slope
+        let mut cl = CLPoint::new(0.0, 0.0);
+        tool.edge_drop(&mut cl, &p1, &p2);
+        assert!(
+            !cl.z.is_nan(),
+            "edge_drop with near-zero slope should not produce NaN, got {}",
+            cl.z
+        );
+
+        // Edge at exactly zero slope
+        let p1 = P3::new(d, -5.0, 0.0);
+        let p2 = P3::new(d, 5.0, 0.0);
+        let mut cl2 = CLPoint::new(0.0, 0.0);
+        tool.edge_drop(&mut cl2, &p1, &p2);
+        assert!(
+            !cl2.z.is_nan(),
+            "edge_drop with zero slope should not produce NaN, got {}",
+            cl2.z
         );
     }
 

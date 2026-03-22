@@ -229,7 +229,7 @@ impl MillingCutter for VBitEndmill {
                 // Fall through to rim contact
             } else if denom > 0.0 {
                 let ccu_sq = big_r * big_r * slope * slope * d_sq / denom;
-                let ccu = ccu_sq.sqrt();
+                let ccu = ccu_sq.max(0.0).sqrt();
                 let ccu_signed = if slope >= 0.0 { ccu } else { -ccu };
 
                 // Parameter along edge
@@ -467,6 +467,36 @@ mod tests {
             "cl.z = {}, expected ~{}",
             cl.z,
             hemisphere_r
+        );
+    }
+
+    #[test]
+    fn test_vbit_edge_drop_near_zero_ccu_sq_no_nan() {
+        // When the edge is nearly parallel to the cone slope, ccu_sq can be
+        // very small or slightly negative due to floating-point rounding.
+        // The .max(0.0) guard should prevent NaN from sqrt.
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+
+        // Horizontal edge at exactly d=0 (on the tool axis) — slope=0 produces ccu_sq=0
+        let p1 = P3::new(0.0, -5.0, 0.0);
+        let p2 = P3::new(0.0, 5.0, 0.0);
+        let mut cl = CLPoint::new(0.0, 0.0);
+        tool.edge_drop(&mut cl, &p1, &p2);
+        assert!(
+            !cl.z.is_nan(),
+            "edge_drop should not produce NaN, got {}",
+            cl.z
+        );
+
+        // Edge very close to the tool axis with a tiny slope
+        let p1 = P3::new(0.001, -5.0, 0.0);
+        let p2 = P3::new(0.001, 5.0, 1e-15);
+        let mut cl2 = CLPoint::new(0.0, 0.0);
+        tool.edge_drop(&mut cl2, &p1, &p2);
+        assert!(
+            !cl2.z.is_nan(),
+            "edge_drop with near-zero slope should not produce NaN, got {}",
+            cl2.z
         );
     }
 

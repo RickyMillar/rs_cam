@@ -388,7 +388,12 @@ pub fn save_project(job: &JobState, path: &Path) -> Result<(), String> {
     };
 
     let toml_str = toml::to_string_pretty(&project).map_err(|e| format!("Serialize error: {e}"))?;
-    std::fs::write(path, toml_str).map_err(|e| format!("Write error: {e}"))?;
+
+    // Atomic write: write to a temporary file in the same directory, then rename.
+    // This prevents corruption if a crash occurs during the write.
+    let tmp_path = path.with_extension("tmp");
+    std::fs::write(&tmp_path, &toml_str).map_err(|e| format!("Write temp file error: {e}"))?;
+    std::fs::rename(&tmp_path, path).map_err(|e| format!("Rename error: {e}"))?;
     Ok(())
 }
 
@@ -1732,6 +1737,36 @@ type = "scallop"
             loaded.job.all_toolpaths().next().unwrap().operation,
             OperationConfig::Scallop(ScallopConfig { .. })
         ));
+
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[test]
+    fn test_save_project_atomic_write() {
+        // Verify that save_project uses temp+rename pattern:
+        // after a successful save, the file should exist and be valid TOML,
+        // and no .tmp file should remain.
+        let temp_dir = unique_temp_dir();
+        fs::create_dir_all(&temp_dir).unwrap();
+        let project_path = temp_dir.join("atomic_test.rcam");
+
+        let job = JobState::new();
+        save_project(&job, &project_path).unwrap();
+
+        // The file should exist and be valid
+        assert!(project_path.exists(), "Project file should exist after save");
+        let content = fs::read_to_string(&project_path).unwrap();
+        assert!(
+            toml::from_str::<ProjectFile>(&content).is_ok(),
+            "Saved file should be valid TOML"
+        );
+
+        // No .tmp file should remain
+        let tmp_path = project_path.with_extension("tmp");
+        assert!(
+            !tmp_path.exists(),
+            "Temporary file should not remain after successful save"
+        );
 
         fs::remove_dir_all(temp_dir).unwrap();
     }
