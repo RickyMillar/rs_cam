@@ -12,7 +12,6 @@ parallel = ["rayon"]
 [dependencies]
 nalgebra = { workspace = true }
 stl_io = { workspace = true }
-kiddo = { workspace = true }
 rayon = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
