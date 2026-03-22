@@ -39,10 +39,52 @@ impl ColoredMeshVertex {
 }
 
 /// Simulation result mesh uploaded to GPU.
+///
+/// Includes a generation counter so callers can avoid redundant re-uploads.
+/// Bump `generation` whenever the mesh geometry or colors change; callers
+/// compare against their last-seen generation to skip work.
 pub struct SimMeshGpuData {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub index_count: u32,
+    /// Monotonically increasing counter bumped on every geometry or color update.
+    /// Callers cache the last-seen value and skip re-upload when it matches.
+    pub generation: u64,
+    /// Cached color fingerprint: (num_vertices, viz_mode_tag, first+last color).
+    /// Used by `update_colors_if_changed` to skip redundant color re-uploads.
+    cached_color_fingerprint: ColorFingerprint,
+}
+
+/// Lightweight fingerprint to detect whether the color array has changed.
+#[derive(Clone, Copy, PartialEq)]
+struct ColorFingerprint {
+    len: usize,
+    first: [f32; 3],
+    last: [f32; 3],
+    /// Simple hash: sum of every 64th color entry for fast change detection.
+    sample_sum: f32,
+}
+
+impl ColorFingerprint {
+    fn from_colors(colors: &[[f32; 3]]) -> Self {
+        let len = colors.len();
+        let first = colors.first().copied().unwrap_or([0.0; 3]);
+        let last = colors.last().copied().unwrap_or([0.0; 3]);
+        let mut sample_sum: f32 = 0.0;
+        let stride = 64;
+        let mut i = 0;
+        while i < len {
+            let c = colors[i];
+            sample_sum += c[0] + c[1] + c[2];
+            i += stride;
+        }
+        Self {
+            len,
+            first,
+            last,
+            sample_sum,
+        }
+    }
 }
 
 /// Compute per-vertex colors based on deviation from model surface.
@@ -126,6 +168,9 @@ pub fn operation_placeholder_colors(num_verts: usize) -> Vec<[f32; 3]> {
     vec![[0.65, 0.45, 0.25]; num_verts]
 }
 
+/// Counter for unique generation IDs across all `SimMeshGpuData` instances.
+static NEXT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 impl SimMeshGpuData {
     /// Upload a HeightmapMesh to the GPU using its embedded wood-tone colors.
     pub fn from_heightmap_mesh(device: &wgpu::Device, hm: &HeightmapMesh) -> Self {
@@ -149,6 +194,56 @@ impl SimMeshGpuData {
     ) -> Self {
         use wgpu::util::DeviceExt;
 
+        let mesh_verts = Self::build_vertex_data(hm, colors);
+        let fingerprint = ColorFingerprint::from_colors(colors);
+
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("sim_mesh_vertices"),
+            contents: bytemuck::cast_slice(&mesh_verts),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("sim_mesh_indices"),
+            contents: bytemuck::cast_slice(&hm.indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        Self {
+            vertex_buffer,
+            index_buffer,
+            index_count: hm.indices.len() as u32,
+            generation: NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            cached_color_fingerprint: fingerprint,
+        }
+    }
+
+    /// Re-upload colors only if they differ from the cached fingerprint.
+    ///
+    /// When only the viz mode changes (not the geometry), this avoids rebuilding
+    /// the full vertex buffer from scratch when the colors haven't actually changed.
+    /// Returns `true` if the buffer was updated, `false` if skipped.
+    pub fn update_colors_if_changed(
+        &mut self,
+        queue: &wgpu::Queue,
+        hm: &HeightmapMesh,
+        colors: &[[f32; 3]],
+    ) -> bool {
+        let new_fingerprint = ColorFingerprint::from_colors(colors);
+        if new_fingerprint == self.cached_color_fingerprint {
+            return false;
+        }
+
+        let mesh_verts = Self::build_vertex_data(hm, colors);
+        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&mesh_verts));
+        self.cached_color_fingerprint = new_fingerprint;
+        self.generation =
+            NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        true
+    }
+
+    /// Build the full vertex array (positions + normals + colors) from a HeightmapMesh.
+    fn build_vertex_data(hm: &HeightmapMesh, colors: &[[f32; 3]]) -> Vec<ColoredMeshVertex> {
         let num_verts = hm.vertices.len() / 3;
         let mut mesh_verts = Vec::with_capacity(num_verts);
 
@@ -200,23 +295,7 @@ impl SimMeshGpuData {
             }
         }
 
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("sim_mesh_vertices"),
-            contents: bytemuck::cast_slice(&mesh_verts),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("sim_mesh_indices"),
-            contents: bytemuck::cast_slice(&hm.indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
-        Self {
-            vertex_buffer,
-            index_buffer,
-            index_count: hm.indices.len() as u32,
-        }
+        mesh_verts
     }
 }
 

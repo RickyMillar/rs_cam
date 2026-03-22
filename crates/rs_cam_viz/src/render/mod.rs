@@ -46,6 +46,48 @@ pub struct LineUniforms {
     pub view_proj: [[f32; 4]; 4],
 }
 
+/// Configuration for line rendering width.
+///
+/// Stored in `RenderResources` so the UI can set a desired width that will be
+/// consumed once thick-line rendering is implemented.
+///
+/// **Current limitation**: wgpu / WebGPU only supports 1-pixel lines via
+/// `PrimitiveTopology::LineList`.  To render wider lines, each line segment
+/// must be expanded to a screen-aligned quad (2 triangles / 4 vertices) on the
+/// CPU or in a vertex shader with instance data.  The expansion requires:
+///
+/// 1. A separate "thick line" pipeline using `TriangleList` topology.
+/// 2. For each line segment (A, B), emit 4 vertices offset by +/- half_width
+///    perpendicular to the screen-space direction of (B - A).
+/// 3. Pass `viewport_size` and `line_width` as uniforms so the vertex shader
+///    can compute the perpendicular offset in clip space.
+/// 4. Round joins at segment endpoints (optional, adds geometry).
+///
+/// Until that pipeline exists, the `line_width` value is stored but not
+/// consumed by the GPU.
+#[derive(Debug, Clone, Copy)]
+pub struct LineWidthConfig {
+    /// Desired line width in logical pixels for toolpath cut lines.
+    /// Default: 1.0 (native `LineList` rendering).
+    pub toolpath_line_width: f32,
+    /// Desired line width for rapid/link moves.
+    /// Default: 1.0.
+    pub rapid_line_width: f32,
+    /// Desired line width for grid, stock wireframe, fixtures, etc.
+    /// Default: 1.0.
+    pub auxiliary_line_width: f32,
+}
+
+impl Default for LineWidthConfig {
+    fn default() -> Self {
+        Self {
+            toolpath_line_width: 1.0,
+            rapid_line_width: 1.0,
+            auxiliary_line_width: 1.0,
+        }
+    }
+}
+
 /// Line vertex for grid, stock wireframe, and toolpath rendering.
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -98,6 +140,9 @@ pub struct RenderResources {
     pub collision_vertex_buffer: Option<wgpu::Buffer>,
     pub collision_vertex_count: u32,
     pub origin_axes_data: Option<grid_render::OriginAxesGpuData>,
+    /// Line width configuration for future thick-line rendering.
+    /// Currently stored but not consumed by the 1-pixel `LineList` pipeline.
+    pub line_width_config: LineWidthConfig,
 }
 
 impl RenderResources {
@@ -433,6 +478,7 @@ impl RenderResources {
             collision_vertex_buffer: None,
             collision_vertex_count: 0,
             origin_axes_data: None,
+            line_width_config: LineWidthConfig::default(),
         }
     }
 
