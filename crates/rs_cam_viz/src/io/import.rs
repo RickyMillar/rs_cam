@@ -89,46 +89,27 @@ pub fn import_dxf(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
 
 /// Import a STEP file, returning a LoadedModel with enriched mesh.
 pub fn import_step(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
-    #[cfg(feature = "step")]
-    {
-        let enriched = rs_cam_core::step_input::load_step(path, 0.1)
-            .map_err(|e| format!("Failed to load STEP: {e}"))?;
+    let enriched = rs_cam_core::step_input::load_step(path, 0.1)
+        .map_err(|e| format!("Failed to load STEP: {e}"))?;
 
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "unknown.step".to_string());
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "unknown.step".to_string());
 
-        let mesh_arc = enriched.mesh_arc();
-        Ok(LoadedModel {
-            id,
-            path: path.to_path_buf(),
-            name,
-            kind: ModelKind::Step,
-            mesh: Some(mesh_arc),
-            polygons: None,
-            enriched_mesh: Some(Arc::new(enriched)),
-            units: ModelUnits::Millimeters,
-            winding_report: None,
-            load_error: None,
-        })
-    }
-    #[cfg(not(feature = "step"))]
-    {
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "unknown.step".to_string());
-
-        Ok(LoadedModel::placeholder(
-            id,
-            path.to_path_buf(),
-            name,
-            ModelKind::Step,
-            ModelUnits::Millimeters,
-            "STEP import requires the 'step' feature".to_string(),
-        ))
-    }
+    let mesh_arc = enriched.mesh_arc();
+    Ok(LoadedModel {
+        id,
+        path: path.to_path_buf(),
+        name,
+        kind: ModelKind::Step,
+        mesh: Some(mesh_arc),
+        polygons: None,
+        enriched_mesh: Some(Arc::new(enriched)),
+        units: ModelUnits::Millimeters,
+        winding_report: None,
+        load_error: None,
+    })
 }
 
 /// Import a model using persisted kind/units metadata.
