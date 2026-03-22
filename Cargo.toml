@@ -5,6 +5,9 @@ members = [
     "crates/rs_cam_cli",
     "crates/rs_cam_viz",
 ]
+exclude = [
+    "tests/step_validation",
+]
 
 [workspace.package]
 version = "0.1.0"

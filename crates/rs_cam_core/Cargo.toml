@@ -8,6 +8,7 @@ description = "Core CAM library for 3-axis wood router toolpath generation"
 [features]
 default = ["parallel"]
 parallel = ["rayon"]
+step = ["truck-stepio", "truck-topology", "truck-meshalgo", "truck-geometry", "truck-polymesh"]
 
 [dependencies]
 nalgebra = { workspace = true }
@@ -22,6 +23,11 @@ cavalier_contours = { workspace = true }
 usvg = { workspace = true }
 dxf = { workspace = true }
 smallvec = { workspace = true }
+truck-stepio = { version = "0.3", features = ["in"], optional = true }
+truck-topology = { version = "0.6", optional = true }
+truck-meshalgo = { version = "0.4", optional = true }
+truck-geometry = { version = "0.5", optional = true }
+truck-polymesh = { version = "0.6", optional = true }
 
 [dev-dependencies]
 approx = "0.5"

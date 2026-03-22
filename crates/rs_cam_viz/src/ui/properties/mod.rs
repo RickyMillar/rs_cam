@@ -218,6 +218,26 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 setup::draw_keep_out_properties(ui, setup_id, zone, events);
             }
         }
+        Selection::Face(model_id, face_id) => {
+            ui.heading("Face Selected");
+            ui.separator();
+            ui.label(format!("Model: {:?}", model_id));
+            ui.label(format!("Face: {}", face_id.0));
+            if let Some(model) = state.job.models.iter().find(|m| m.id == model_id) {
+                if let Some(enriched) = &model.enriched_mesh {
+                    if let Some(group) = enriched.face_group(face_id) {
+                        ui.label(format!("Surface type: {:?}", group.surface_type));
+                        ui.label(format!("Triangles: {}", group.triangle_range.len()));
+                    }
+                }
+            }
+        }
+        Selection::Faces(model_id, ref face_ids) => {
+            ui.heading("Faces Selected");
+            ui.separator();
+            ui.label(format!("Model: {:?}", model_id));
+            ui.label(format!("{} faces selected", face_ids.len()));
+        }
         Selection::Toolpath(id) => {
             // Capture snapshot for undo before editing
             if state.history.toolpath_snapshot.is_none()
@@ -246,6 +266,20 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             let machine = state.job.machine.clone();
             let workholding = state.job.stock.workholding_rigidity;
 
+            // Check if the toolpath's model has enriched mesh (for face selection UI)
+            let model_has_enriched = state
+                .job
+                .find_toolpath(id)
+                .and_then(|tp| {
+                    state
+                        .job
+                        .models
+                        .iter()
+                        .find(|m| m.id == tp.model_id)
+                })
+                .map(|m| m.enriched_mesh.is_some())
+                .unwrap_or(false);
+
             // Snapshot operation for stale_since detection
             let op_before = state
                 .job
@@ -263,6 +297,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     &material,
                     &machine,
                     workholding,
+                    model_has_enriched,
                     events,
                 );
             }
@@ -382,6 +417,47 @@ fn draw_model_properties(
                 ))
                 .color(egui::Color32::from_rgb(220, 190, 60)),
             );
+        }
+
+        // BREP face metadata (STEP only)
+        if let Some(enriched) = &model.enriched_mesh {
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new("BREP Topology")
+                    .strong()
+                    .color(egui::Color32::from_rgb(180, 180, 195)),
+            );
+            egui::Grid::new("brep_info")
+                .num_columns(2)
+                .spacing([8.0, 3.0])
+                .show(ui, |ui| {
+                    ui.label("Faces:");
+                    ui.label(format!("{}", enriched.face_count()));
+                    ui.end_row();
+                    ui.label("Adjacency pairs:");
+                    ui.label(format!("{}", enriched.adjacency.len()));
+                    ui.end_row();
+
+                    // Surface type histogram
+                    use rs_cam_core::enriched_mesh::SurfaceType;
+                    let mut planes = 0;
+                    let mut cylinders = 0;
+                    let mut other = 0;
+                    for group in &enriched.face_groups {
+                        match group.surface_type {
+                            SurfaceType::Plane => planes += 1,
+                            SurfaceType::Cylinder => cylinders += 1,
+                            _ => other += 1,
+                        }
+                    }
+                    ui.label("Surface types:");
+                    let mut parts = Vec::new();
+                    if planes > 0 { parts.push(format!("{planes} plane")); }
+                    if cylinders > 0 { parts.push(format!("{cylinders} cyl")); }
+                    if other > 0 { parts.push(format!("{other} other")); }
+                    ui.label(parts.join(", "));
+                    ui.end_row();
+                });
         }
 
         // Units / scale selector (STL only)
@@ -941,6 +1017,7 @@ fn draw_toolpath_panel(
     material: &rs_cam_core::material::Material,
     machine: &rs_cam_core::machine::MachineProfile,
     workholding: rs_cam_core::feeds::WorkholdingRigidity,
+    model_has_enriched: bool,
     events: &mut Vec<AppEvent>,
 ) {
     ui.heading(&entry.name);
@@ -985,6 +1062,43 @@ fn draw_toolpath_panel(
                 }
             });
     });
+
+    // Face selection (STEP models only)
+    if model_has_enriched {
+        ui.add_space(8.0);
+        ui.label(
+            egui::RichText::new("Face Selection")
+                .strong()
+                .color(egui::Color32::from_rgb(180, 180, 195)),
+        );
+        let face_count = entry
+            .face_selection
+            .as_ref()
+            .map(|f| f.len())
+            .unwrap_or(0);
+        if face_count > 0 {
+            ui.label(format!(
+                "{} face{} selected",
+                face_count,
+                if face_count == 1 { "" } else { "s" }
+            ));
+            if ui.small_button("Clear Faces").clicked() {
+                entry.face_selection = None;
+                entry.stale_since = Some(std::time::Instant::now());
+            }
+        } else {
+            ui.label(
+                egui::RichText::new("Click faces in viewport to select")
+                    .italics()
+                    .color(egui::Color32::from_rgb(120, 120, 130)),
+            );
+        }
+        ui.label(
+            egui::RichText::new("Tip: click faces in the 3D view while this toolpath is selected")
+                .small()
+                .color(egui::Color32::from_rgb(100, 100, 110)),
+        );
+    }
 
     ui.add_space(8.0);
     ui.label(

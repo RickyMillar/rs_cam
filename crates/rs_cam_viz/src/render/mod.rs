@@ -110,6 +110,9 @@ pub struct RenderResources {
     // 3D scene pipelines (render to offscreen with depth)
     mesh_pipeline: wgpu::RenderPipeline,
     sim_mesh_pipeline: wgpu::RenderPipeline,
+    /// Opaque colored mesh pipeline — same vertex format as sim_mesh but no alpha blending.
+    /// Used for STEP models with per-face colors that should render as solid objects.
+    colored_opaque_pipeline: wgpu::RenderPipeline,
     line_pipeline: wgpu::RenderPipeline,
     mesh_uniform_buffer: wgpu::Buffer,
     sim_mesh_uniform_buffer: wgpu::Buffer,
@@ -129,6 +132,7 @@ pub struct RenderResources {
 
     // Scene data
     pub mesh_data: Option<MeshGpuData>,
+    pub enriched_mesh_data: Option<mesh_render::EnrichedMeshGpuData>,
     pub grid_data: GridGpuData,
     pub stock_data: Option<StockGpuData>,
     pub solid_stock_data: Option<stock_render::SolidStockGpuData>,
@@ -288,6 +292,39 @@ impl RenderResources {
             multiview: None,
             cache: None,
         });
+
+        // --- Opaque colored mesh pipeline (STEP face colors, no alpha blending) ---
+        let colored_opaque_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("colored_opaque_pipeline"),
+                layout: Some(&sim_mesh_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &sim_mesh_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[ColoredMeshVertex::layout()],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &sim_mesh_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: target_format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(depth_stencil.clone()),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
 
         // --- Line pipeline (renders to offscreen with depth) ---
         let line_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -454,6 +491,7 @@ impl RenderResources {
         Self {
             mesh_pipeline,
             sim_mesh_pipeline,
+            colored_opaque_pipeline,
             line_pipeline,
             mesh_uniform_buffer,
             sim_mesh_uniform_buffer,
@@ -467,6 +505,7 @@ impl RenderResources {
             offscreen: None,
             target_format,
             mesh_data: None,
+            enriched_mesh_data: None,
             grid_data,
             stock_data: None,
             solid_stock_data: None,
@@ -598,7 +637,14 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             0,
             bytemuck::bytes_of(&self.mesh_uniforms),
         );
-        if self.show_sim_mesh || self.show_solid_stock || self.show_height_planes {
+        // Always upload colored mesh uniforms when any colored pipeline will be used.
+        // The colored_opaque_pipeline (STEP) uses REPLACE blend so opacity doesn't
+        // affect it, but it still needs valid view_proj/light_dir uniforms.
+        let needs_colored_uniforms = self.show_sim_mesh
+            || self.show_solid_stock
+            || self.show_height_planes
+            || resources.enriched_mesh_data.is_some();
+        if needs_colored_uniforms {
             let opacity = if self.show_sim_mesh {
                 self.sim_mesh_opacity
             } else {
@@ -722,6 +768,16 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                     pass.set_index_buffer(sim.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                     pass.draw_indexed(0..sim.index_count, 0, 0..1);
                 }
+            } else if let Some(enriched) = &resources.enriched_mesh_data {
+                // STEP model with per-face coloring — opaque colored pipeline
+                pass.set_pipeline(&resources.colored_opaque_pipeline);
+                pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
+                pass.set_vertex_buffer(0, enriched.vertex_buffer.slice(..));
+                pass.set_index_buffer(
+                    enriched.index_buffer.slice(..),
+                    wgpu::IndexFormat::Uint32,
+                );
+                pass.draw_indexed(0..enriched.index_count, 0, 0..1);
             } else if self.has_mesh
                 && let Some(mesh) = &resources.mesh_data
             {

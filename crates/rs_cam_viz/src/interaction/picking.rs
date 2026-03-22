@@ -1,8 +1,10 @@
 use crate::render::camera::OrbitCamera;
 use crate::state::Workspace;
-use crate::state::job::{FixtureId, JobState, KeepOutId, SetupId};
+use crate::state::job::{FixtureId, JobState, KeepOutId, ModelId, SetupId};
 use crate::state::toolpath::ToolpathId;
+use rs_cam_core::enriched_mesh::FaceGroupId;
 use rs_cam_core::geo::{P3, V3};
+use rs_cam_core::mesh::ray_pick_triangle;
 
 /// Screen-space pick threshold for point-like markers (collision dots, pins).
 const PICK_THRESHOLD_POINT: f32 = 12.0;
@@ -31,6 +33,11 @@ pub enum PickHit {
     StockFace { face_normal: [f32; 3] },
     /// Hit a toolpath.
     Toolpath { id: ToolpathId },
+    /// Hit a BREP face on an enriched mesh model.
+    ModelFace {
+        model_id: ModelId,
+        face_id: FaceGroupId,
+    },
 }
 
 /// Context for a pick operation, bundling camera and viewport parameters.
@@ -129,6 +136,29 @@ pub fn pick(
             let hit_point = origin + dir * t;
             let face_normal = determine_face_normal(&stock_bbox, &hit_point);
             best_hit = Some(PickHit::StockFace { face_normal });
+        }
+    }
+
+    // Model face picking (enriched mesh only, Toolpaths workspace)
+    if matches!(workspace, Workspace::Toolpaths) {
+        for model in &job.models {
+            if let Some(enriched) = &model.enriched_mesh {
+                let mesh = enriched.as_mesh();
+                // Fast AABB rejection
+                if mesh.bbox.ray_intersect(&origin, &dir).is_none() {
+                    continue;
+                }
+                if let Some((tri_idx, t)) = ray_pick_triangle(mesh, &origin, &dir) {
+                    if t < best_t {
+                        best_t = t;
+                        let face_id = enriched.face_for_triangle(tri_idx);
+                        best_hit = Some(PickHit::ModelFace {
+                            model_id: model.id,
+                            face_id,
+                        });
+                    }
+                }
+            }
         }
     }
 

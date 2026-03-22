@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use rs_cam_core::enriched_mesh::FaceGroupId;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::toolpath::Toolpath;
 
@@ -32,6 +33,7 @@ pub struct ToolpathEntryInit {
     pub stock_source: StockSource,
     pub auto_regen: Option<bool>,
     pub feeds_auto: FeedsAutoMode,
+    pub face_selection: Option<Vec<FaceGroupId>>,
     pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
 }
 
@@ -62,6 +64,7 @@ impl ToolpathEntryInit {
             stock_source: StockSource::Fresh,
             auto_regen: None,
             feeds_auto: FeedsAutoMode::default(),
+            face_selection: None,
             debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         }
     }
@@ -112,6 +115,7 @@ impl ToolpathEntryInit {
             stock_source: source.stock_source,
             auto_regen: Some(source.auto_regen),
             feeds_auto: source.feeds_auto.clone(),
+            face_selection: source.face_selection.clone(),
             debug_options: source.debug_options,
         }
     }
@@ -139,6 +143,7 @@ pub struct ToolpathEntry {
     pub stale_since: Option<std::time::Instant>,
     pub auto_regen: bool,
     pub feeds_auto: FeedsAutoMode,
+    pub face_selection: Option<Vec<FaceGroupId>>,
     pub feeds_result: Option<rs_cam_core::feeds::FeedsResult>,
     pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
     pub debug_trace: Option<Arc<rs_cam_core::debug_trace::ToolpathDebugTrace>>,
@@ -181,6 +186,7 @@ impl ToolpathEntry {
             stale_since: None,
             auto_regen,
             feeds_auto: init.feeds_auto,
+            face_selection: init.face_selection,
             feeds_result: None,
             debug_options: init.debug_options,
             debug_trace: None,

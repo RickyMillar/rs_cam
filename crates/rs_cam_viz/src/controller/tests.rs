@@ -212,6 +212,7 @@ fn sample_controller() -> AppController<ScriptedBackend> {
         kind: ModelKind::Stl,
         mesh: Some(Arc::new(mesh)),
         polygons: None,
+        enriched_mesh: None,
         units: ModelUnits::Millimeters,
         winding_report: None,
         load_error: None,

@@ -1,6 +1,6 @@
 //! Triangle mesh loading and spatial indexing.
 
-use crate::geo::{BoundingBox3, P3, Triangle};
+use crate::geo::{BoundingBox3, P3, V3, Triangle};
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use thiserror::Error;
@@ -392,6 +392,29 @@ impl TriangleMesh {
             bbox,
         }
     }
+}
+
+/// Cast a ray against a triangle mesh, returning the nearest hit triangle index and parametric t.
+///
+/// Uses AABB rejection on the mesh bounding box, then brute-force iterates triangles.
+/// Suitable for single-ray picking (not per-pixel rendering).
+pub fn ray_pick_triangle(mesh: &TriangleMesh, origin: &P3, dir: &V3) -> Option<(usize, f64)> {
+    // Fast rejection: check mesh bounding box
+    mesh.bbox.ray_intersect(origin, dir)?;
+
+    let mut best_t = f64::INFINITY;
+    let mut best_idx = None;
+
+    for (i, face) in mesh.faces.iter().enumerate() {
+        if let Some(t) = face.ray_intersect(origin, dir) {
+            if t < best_t {
+                best_t = t;
+                best_idx = Some(i);
+            }
+        }
+    }
+
+    best_idx.map(|i| (i, best_t))
 }
 
 /// Spatial index for fast triangle lookup during drop-cutter.

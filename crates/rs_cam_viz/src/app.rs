@@ -703,6 +703,21 @@ impl RsCamApp {
         }
     }
 
+    /// Get selected BREP face IDs from the current selection state.
+    fn selected_face_ids(&self) -> Vec<rs_cam_core::enriched_mesh::FaceGroupId> {
+        match &self.controller.state().selection {
+            Selection::Face(_, face_id) => vec![*face_id],
+            Selection::Faces(_, face_ids) => face_ids.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Get the currently hovered face ID (for hover highlighting).
+    fn hovered_face_id(&self) -> Option<rs_cam_core::enriched_mesh::FaceGroupId> {
+        // TODO: implement hover tracking in Phase 5 polish
+        None
+    }
+
     fn upload_gpu_data(&mut self, frame: &mut eframe::Frame) {
         let Some(render_state) = frame.wgpu_render_state() else {
             return;
@@ -735,7 +750,8 @@ impl RsCamApp {
         };
         let use_local_frame = active_setup_ref.is_some();
 
-        // Upload mesh data for the first STL model
+        // Upload mesh data for the first model with geometry
+        resources.enriched_mesh_data = None;
         if let Some(model) = self
             .controller
             .state()
@@ -743,17 +759,31 @@ impl RsCamApp {
             .models
             .iter()
             .find(|model| model.mesh.is_some())
-            && let Some(mesh) = &model.mesh
         {
-            if use_local_frame {
-                let setup = active_setup_ref.unwrap();
-                let transformed = transform_mesh(mesh, setup, &self.controller.state().job.stock);
-                resources.mesh_data = Some(MeshGpuData::from_mesh(
-                    &render_state.device,
-                    &Arc::new(transformed),
-                ));
-            } else {
-                resources.mesh_data = Some(MeshGpuData::from_mesh(&render_state.device, mesh));
+            // If model has enriched mesh (STEP), use face-colored rendering
+            if let Some(enriched) = &model.enriched_mesh {
+                let selected_faces = self.selected_face_ids();
+                let hovered_face = self.hovered_face_id();
+                resources.enriched_mesh_data =
+                    Some(crate::render::mesh_render::enriched_mesh_gpu_data(
+                        &render_state.device,
+                        enriched,
+                        &selected_faces,
+                        hovered_face,
+                    ));
+            } else if let Some(mesh) = &model.mesh {
+                if use_local_frame {
+                    let setup = active_setup_ref.unwrap();
+                    let transformed =
+                        transform_mesh(mesh, setup, &self.controller.state().job.stock);
+                    resources.mesh_data = Some(MeshGpuData::from_mesh(
+                        &render_state.device,
+                        &Arc::new(transformed),
+                    ));
+                } else {
+                    resources.mesh_data =
+                        Some(MeshGpuData::from_mesh(&render_state.device, mesh));
+                }
             }
         }
 
@@ -1381,6 +1411,28 @@ impl RsCamApp {
             }
             (_, PickHit::Toolpath { id }) => {
                 self.controller.state_mut().selection = Selection::Toolpath(id);
+            }
+            (Workspace::Toolpaths, PickHit::ModelFace { model_id, face_id }) => {
+                // If a toolpath is currently selected, add this face to its face_selection
+                if let Selection::Toolpath(tp_id) = self.controller.state().selection {
+                    if let Some(entry) = self.controller.state_mut().job.find_toolpath_mut(tp_id) {
+                        let faces = entry.face_selection.get_or_insert_with(Vec::new);
+                        if let Some(pos) = faces.iter().position(|f| *f == face_id) {
+                            // Toggle off if already selected
+                            faces.remove(pos);
+                        } else {
+                            faces.push(face_id);
+                        }
+                        if faces.is_empty() {
+                            entry.face_selection = None;
+                        }
+                        entry.stale_since = Some(std::time::Instant::now());
+                        self.controller.state_mut().job.dirty = true;
+                    }
+                }
+                // Also update the visual selection
+                self.controller.state_mut().selection = Selection::Face(model_id, face_id);
+                self.controller.set_pending_upload();
             }
             _ => {}
         }

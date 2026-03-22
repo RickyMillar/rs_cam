@@ -15,6 +15,7 @@ pub mod dexel_stock;
 pub mod dressup;
 pub mod drill;
 pub mod dropcutter;
+pub mod enriched_mesh;
 pub mod dxf_input;
 pub mod face;
 pub mod feedopt;
@@ -47,6 +48,8 @@ pub mod simulation_cut;
 pub mod slope;
 pub mod spiral_finish;
 pub mod steep_shallow;
+#[cfg(feature = "step")]
+pub mod step_input;
 pub mod stock_mesh;
 pub mod svg_input;
 pub mod tool;

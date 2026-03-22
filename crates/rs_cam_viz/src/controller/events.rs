@@ -39,6 +39,11 @@ impl<B: ComputeBackend> AppController<B> {
                     tracing::error!("DXF import failed: {error}");
                 }
             }
+            AppEvent::ImportStep(path) => {
+                if let Err(error) = self.import_step_path(&path) {
+                    tracing::error!("STEP import failed: {error}");
+                }
+            }
             AppEvent::RescaleModel(model_id, units) => {
                 if let Err(error) = self.rescale_model(model_id, units) {
                     tracing::error!("Rescale failed: {error}");
@@ -928,6 +933,7 @@ impl<B: ComputeBackend> AppController<B> {
             boundary_enabled,
             boundary_containment,
             debug_options,
+            face_selection_for_toolpath,
         )) = self.state.job.find_toolpath(tp_id).map(|toolpath| {
             (
                 toolpath.tool_id,
@@ -940,6 +946,7 @@ impl<B: ComputeBackend> AppController<B> {
                 toolpath.boundary_enabled,
                 toolpath.boundary_containment,
                 toolpath.debug_options,
+                toolpath.face_selection.clone(),
             )
         })
         else {
@@ -1010,6 +1017,21 @@ impl<B: ComputeBackend> AppController<B> {
             .find(|model| model.id == model_id);
         let mut polygons = model.and_then(|model| model.polygons.clone());
         let mut mesh = model.and_then(|model| model.mesh.clone());
+        let enriched_mesh = model.and_then(|model| model.enriched_mesh.clone());
+        let face_selection = face_selection_for_toolpath.clone();
+
+        // Derive polygons from selected BREP faces when no explicit polygons exist.
+        // This enables all 2.5D operations (pocket, profile, adaptive, trace, etc.)
+        // to work with STEP models by extracting face boundary loops as Polygon2.
+        if polygons.is_none() {
+            if let (Some(face_ids), Some(enriched)) = (&face_selection, &enriched_mesh) {
+                if !face_ids.is_empty() {
+                    if let Some(poly) = enriched.faces_boundary_as_polygon(face_ids) {
+                        polygons = Some(Arc::new(vec![poly]));
+                    }
+                }
+            }
+        }
 
         if let Some(transform_setup) = transform_setup.as_ref() {
             if let Some(raw_mesh) = mesh.as_ref() {
@@ -1036,14 +1058,14 @@ impl<B: ComputeBackend> AppController<B> {
         let is_3d = operation.is_3d();
         if is_3d && mesh.is_none() {
             if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
-                toolpath.status = ComputeStatus::Error("No 3D mesh (import STL first)".to_string());
+                toolpath.status = ComputeStatus::Error("No 3D mesh (import STL or STEP)".to_string());
             }
             return;
         }
         if !is_3d && !operation.is_stock_based() && polygons.is_none() {
             if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
                 toolpath.status =
-                    ComputeStatus::Error("No 2D geometry (import SVG first)".to_string());
+                    ComputeStatus::Error("No 2D geometry (import SVG/DXF or select STEP faces)".to_string());
             }
             return;
         }
@@ -1099,6 +1121,8 @@ impl<B: ComputeBackend> AppController<B> {
             debug_options,
             polygons,
             mesh,
+            enriched_mesh,
+            face_selection,
             operation,
             dressups,
             stock_source,

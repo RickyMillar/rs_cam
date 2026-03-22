@@ -72,6 +72,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 crate::state::job::ModelKind::Stl => "STL",
                 crate::state::job::ModelKind::Svg => "SVG",
                 crate::state::job::ModelKind::Dxf => "DXF",
+                crate::state::job::ModelKind::Step => "STEP",
             };
             let response = ui.selectable_label(selected, format!("[{}] {}", icon, model.name));
             if response.clicked() {
@@ -371,6 +372,13 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 .pick_file()
         {
             events.push(AppEvent::ImportDxf(path));
+        }
+        if ui.small_button("+ STEP").clicked()
+            && let Some(path) = rfd::FileDialog::new()
+                .add_filter("STEP", &["step", "stp", "STEP", "STP"])
+                .pick_file()
+        {
+            events.push(AppEvent::ImportStep(path));
         }
     });
 }

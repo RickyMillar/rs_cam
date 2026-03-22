@@ -50,6 +50,15 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                         events.push(AppEvent::ImportDxf(path));
                     }
                 }
+                if ui.button("Import STEP...").clicked() {
+                    ui.close_menu();
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("STEP Files", &["step", "stp", "STEP", "STP"])
+                        .pick_file()
+                    {
+                        events.push(AppEvent::ImportStep(path));
+                    }
+                }
                 ui.separator();
                 if ui.button("Open Job...").clicked() {
                     ui.close_menu();

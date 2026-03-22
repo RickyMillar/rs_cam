@@ -176,6 +176,44 @@ impl Triangle {
         a >= EPS && b >= EPS && c >= EPS
     }
 
+    /// Moller-Trumbore ray-triangle intersection.
+    ///
+    /// Returns the parametric `t` of the intersection point along the ray
+    /// (hit point = origin + t * dir), or `None` if the ray misses.
+    /// Only returns hits with `t >= 0` (in front of the ray origin).
+    pub fn ray_intersect(&self, origin: &P3, dir: &V3) -> Option<f64> {
+        let eps = 1e-10;
+        let e1 = self.v[1] - self.v[0];
+        let e2 = self.v[2] - self.v[0];
+        let h = dir.cross(&e2);
+        let det = e1.dot(&h);
+
+        // Ray parallel to triangle
+        if det.abs() < eps {
+            return None;
+        }
+
+        let inv_det = 1.0 / det;
+        let s = origin - self.v[0];
+        let u = inv_det * s.dot(&h);
+        if u < -eps || u > 1.0 + eps {
+            return None;
+        }
+
+        let q = s.cross(&e1);
+        let v = inv_det * dir.dot(&q);
+        if v < -eps || u + v > 1.0 + eps {
+            return None;
+        }
+
+        let t = inv_det * e2.dot(&q);
+        if t >= 0.0 {
+            Some(t)
+        } else {
+            None // intersection behind the ray
+        }
+    }
+
     /// Compute Z on the triangle plane at (x, y). Returns None if nz ~ 0 (vertical triangle).
     #[inline]
     pub fn z_at_xy(&self, x: f64, y: f64) -> Option<f64> {
@@ -292,6 +330,90 @@ mod tests {
         let p = P2::new(8.0, 9.0);
         let d = point_to_segment_distance(&p, &a, &a);
         assert!((d - 5.0).abs() < 1e-10, "Should be 5.0, got {}", d);
+    }
+
+    #[test]
+    fn test_tri_ray_intersect_hit_center() {
+        let t = Triangle::new(
+            P3::new(0.0, 0.0, 0.0),
+            P3::new(10.0, 0.0, 0.0),
+            P3::new(0.0, 10.0, 0.0),
+        );
+        // Ray from above, pointing down at triangle center
+        let origin = P3::new(2.0, 2.0, 5.0);
+        let dir = V3::new(0.0, 0.0, -1.0);
+        let hit = t.ray_intersect(&origin, &dir);
+        assert!(hit.is_some());
+        assert!((hit.unwrap() - 5.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_tri_ray_intersect_miss() {
+        let t = Triangle::new(
+            P3::new(0.0, 0.0, 0.0),
+            P3::new(10.0, 0.0, 0.0),
+            P3::new(0.0, 10.0, 0.0),
+        );
+        // Ray from above but outside the triangle
+        let origin = P3::new(20.0, 20.0, 5.0);
+        let dir = V3::new(0.0, 0.0, -1.0);
+        assert!(t.ray_intersect(&origin, &dir).is_none());
+    }
+
+    #[test]
+    fn test_tri_ray_intersect_parallel() {
+        let t = Triangle::new(
+            P3::new(0.0, 0.0, 0.0),
+            P3::new(10.0, 0.0, 0.0),
+            P3::new(0.0, 10.0, 0.0),
+        );
+        // Ray parallel to triangle plane
+        let origin = P3::new(2.0, 2.0, 5.0);
+        let dir = V3::new(1.0, 0.0, 0.0);
+        assert!(t.ray_intersect(&origin, &dir).is_none());
+    }
+
+    #[test]
+    fn test_tri_ray_intersect_behind() {
+        let t = Triangle::new(
+            P3::new(0.0, 0.0, 0.0),
+            P3::new(10.0, 0.0, 0.0),
+            P3::new(0.0, 10.0, 0.0),
+        );
+        // Ray pointing away from triangle
+        let origin = P3::new(2.0, 2.0, 5.0);
+        let dir = V3::new(0.0, 0.0, 1.0);
+        assert!(t.ray_intersect(&origin, &dir).is_none());
+    }
+
+    #[test]
+    fn test_tri_ray_intersect_at_edge() {
+        let t = Triangle::new(
+            P3::new(0.0, 0.0, 0.0),
+            P3::new(10.0, 0.0, 0.0),
+            P3::new(0.0, 10.0, 0.0),
+        );
+        // Ray hitting the hypotenuse edge (u+v ≈ 1)
+        let origin = P3::new(5.0, 5.0, 3.0);
+        let dir = V3::new(0.0, 0.0, -1.0);
+        // Point (5,5) is on the hypotenuse line x+y=10, so it should hit
+        let hit = t.ray_intersect(&origin, &dir);
+        assert!(hit.is_some());
+    }
+
+    #[test]
+    fn test_tri_ray_intersect_backface() {
+        let t = Triangle::new(
+            P3::new(0.0, 0.0, 0.0),
+            P3::new(10.0, 0.0, 0.0),
+            P3::new(0.0, 10.0, 0.0),
+        );
+        // Ray from below hitting triangle from the back
+        let origin = P3::new(2.0, 2.0, -5.0);
+        let dir = V3::new(0.0, 0.0, 1.0);
+        let hit = t.ray_intersect(&origin, &dir);
+        assert!(hit.is_some(), "Backface hits should be detected");
+        assert!((hit.unwrap() - 5.0).abs() < 1e-10);
     }
 
     #[test]

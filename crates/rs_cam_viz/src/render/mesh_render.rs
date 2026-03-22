@@ -1,5 +1,8 @@
 use egui_wgpu::wgpu;
+use rs_cam_core::enriched_mesh::{EnrichedMesh, FaceGroupId};
 use rs_cam_core::mesh::TriangleMesh;
+
+use super::sim_render::ColoredMeshVertex;
 
 /// GPU vertex for mesh rendering.
 #[repr(C)]
@@ -168,4 +171,98 @@ impl MeshGpuData {
             index_count: indices.len() as u32,
         }
     }
+}
+
+/// Deterministic pastel color for a face group ID.
+fn face_group_color(id: FaceGroupId) -> [f32; 3] {
+    // Simple hash-to-color: spread face IDs across hue space
+    const PALETTE: &[[f32; 3]] = &[
+        [0.75, 0.85, 0.90], // light blue
+        [0.85, 0.75, 0.90], // light purple
+        [0.75, 0.90, 0.80], // light green
+        [0.90, 0.85, 0.75], // light orange
+        [0.90, 0.78, 0.80], // light pink
+        [0.80, 0.90, 0.88], // light teal
+        [0.88, 0.82, 0.75], // light tan
+        [0.78, 0.82, 0.92], // periwinkle
+        [0.88, 0.90, 0.75], // light yellow-green
+        [0.82, 0.75, 0.85], // light mauve
+    ];
+    PALETTE[id.0 as usize % PALETTE.len()]
+}
+
+/// Build GPU data for an enriched mesh with per-face-group coloring.
+///
+/// Uses the `ColoredMeshVertex` pipeline (same as simulation stock rendering).
+/// Selected faces get a highlight color, hovered face gets a hover tint,
+/// and other faces get deterministic pastel colors.
+pub fn enriched_mesh_gpu_data(
+    device: &wgpu::Device,
+    enriched: &EnrichedMesh,
+    selected_faces: &[FaceGroupId],
+    hovered_face: Option<FaceGroupId>,
+) -> EnrichedMeshGpuData {
+    use wgpu::util::DeviceExt;
+
+    let mesh = enriched.as_mesh();
+    let highlight_color: [f32; 3] = [0.3, 0.5, 1.0]; // bright blue
+    let hover_color: [f32; 3] = [0.4, 0.7, 0.85]; // soft cyan
+
+    let mut vertices = Vec::with_capacity(mesh.triangles.len() * 3);
+    let mut indices = Vec::with_capacity(mesh.triangles.len() * 3);
+
+    for (tri_idx, tri) in mesh.triangles.iter().enumerate() {
+        let face_id = enriched.face_for_triangle(tri_idx);
+        let color = if selected_faces.contains(&face_id) {
+            highlight_color
+        } else if hovered_face == Some(face_id) {
+            hover_color
+        } else {
+            face_group_color(face_id)
+        };
+
+        let n = mesh.faces[tri_idx].normal;
+        let normal = [n.x as f32, n.y as f32, n.z as f32];
+
+        let base = (tri_idx * 3) as u32;
+        for &vi in tri {
+            let v = mesh.vertices[vi as usize];
+            vertices.push(ColoredMeshVertex {
+                position: [v.x as f32, v.y as f32, v.z as f32],
+                normal,
+                color,
+            });
+        }
+        indices.push(base);
+        indices.push(base + 1);
+        indices.push(base + 2);
+    }
+
+    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("enriched_mesh_vertices"),
+        contents: bytemuck::cast_slice(&vertices),
+        usage: wgpu::BufferUsages::VERTEX,
+    });
+
+    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("enriched_mesh_indices"),
+        contents: bytemuck::cast_slice(&indices),
+        usage: wgpu::BufferUsages::INDEX,
+    });
+
+    EnrichedMeshGpuData {
+        vertex_buffer,
+        index_buffer,
+        index_count: indices.len() as u32,
+    }
+}
+
+/// GPU data for an enriched mesh with per-face coloring.
+///
+/// Uses the same `ColoredMeshVertex` layout as the simulation mesh pipeline,
+/// so it can be rendered with `sim_mesh_pipeline`.
+pub struct EnrichedMeshGpuData {
+    pub vertex_buffer: wgpu::Buffer,
+    pub index_buffer: wgpu::Buffer,
+    pub index_count: u32,
 }

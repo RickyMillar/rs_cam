@@ -34,6 +34,7 @@ pub fn import_stl(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, S
         kind: ModelKind::Stl,
         mesh: Some(Arc::new(mesh)),
         polygons: None,
+        enriched_mesh: None,
         units,
         winding_report: Some(winding_pct),
         load_error: None,
@@ -56,6 +57,7 @@ pub fn import_svg(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
         kind: ModelKind::Svg,
         mesh: None,
         polygons: Some(Arc::new(polygons)),
+        enriched_mesh: None,
         units: ModelUnits::Millimeters,
         winding_report: None,
         load_error: None,
@@ -78,6 +80,32 @@ pub fn import_dxf(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
         kind: ModelKind::Dxf,
         mesh: None,
         polygons: Some(Arc::new(polygons)),
+        enriched_mesh: None,
+        units: ModelUnits::Millimeters,
+        winding_report: None,
+        load_error: None,
+    })
+}
+
+/// Import a STEP file, returning a LoadedModel with enriched mesh.
+pub fn import_step(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
+    let enriched = rs_cam_core::step_input::load_step(path, 0.1)
+        .map_err(|e| format!("Failed to load STEP: {e}"))?;
+
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "unknown.step".to_string());
+
+    let mesh_arc = enriched.mesh_arc();
+    Ok(LoadedModel {
+        id,
+        path: path.to_path_buf(),
+        name,
+        kind: ModelKind::Step,
+        mesh: Some(mesh_arc),
+        polygons: None,
+        enriched_mesh: Some(Arc::new(enriched)),
         units: ModelUnits::Millimeters,
         winding_report: None,
         load_error: None,
@@ -95,6 +123,7 @@ pub fn import_model(
         ModelKind::Stl => import_stl(path, id, units.scale_factor())?,
         ModelKind::Svg => import_svg(path, id)?,
         ModelKind::Dxf => import_dxf(path, id)?,
+        ModelKind::Step => import_step(path, id)?,
     };
     model.units = units;
     Ok(model)
