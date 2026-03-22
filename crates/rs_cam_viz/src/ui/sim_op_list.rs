@@ -316,7 +316,7 @@ pub fn draw(
 
     fn draw_semantic_outline(
         ui: &mut egui::Ui,
-        sim: &SimulationState,
+        sim: &mut SimulationState,
         job: &JobState,
         boundary: &crate::state::simulation::ToolpathBoundary,
         active_item_id: Option<(ToolpathId, u64)>,
@@ -328,7 +328,7 @@ pub fn draw(
         let Some(trace) = toolpath.semantic_trace.as_ref() else {
             return;
         };
-        let Some(index) = sim.debug.semantic_indexes.get(&boundary.id) else {
+        let Some(index) = sim.debug.semantic_indexes.get(&boundary.id).cloned() else {
             return;
         };
         let root_items = index
@@ -351,7 +351,8 @@ pub fn draw(
             draw_semantic_item_row(
                 ui,
                 trace,
-                index,
+                &index,
+                sim,
                 boundary,
                 item_index,
                 0,
@@ -365,6 +366,7 @@ pub fn draw(
         ui: &mut egui::Ui,
         trace: &rs_cam_core::semantic_trace::ToolpathSemanticTrace,
         index: &crate::state::simulation::SimulationSemanticIndex,
+        sim: &mut SimulationState,
         boundary: &crate::state::simulation::ToolpathBoundary,
         item_index: usize,
         depth: usize,
@@ -390,6 +392,7 @@ pub fn draw(
             };
             let response = ui.selectable_label(is_active, text);
             if response.clicked() {
+                sim.pin_semantic_item(boundary.id, item.id);
                 if let Some(move_start) = item.move_start {
                     events.push(AppEvent::SimJumpToMove(boundary.start_move + move_start));
                 }
@@ -416,7 +419,8 @@ pub fn draw(
                 draw_semantic_item_row(
                     ui,
                     trace,
-                    index,
+                    &index,
+                    sim,
                     boundary,
                     *child_index,
                     depth + 1,

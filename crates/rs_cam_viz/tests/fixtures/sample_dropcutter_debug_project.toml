@@ -1,0 +1,24 @@
+format_version = 1
+
+[job]
+name = "Drop Cutter Debug Fixture"
+
+[[tools]]
+id = 1
+name = "Fixture Ball Nose"
+type = "ball_nose"
+
+[[models]]
+id = 1
+path = "flat_plate.stl"
+name = "Flat Plate"
+kind = "stl"
+units = { kind = "millimeters" }
+
+[[toolpaths]]
+id = 1
+name = "Drop Cutter Debug"
+type = "drop_cutter"
+tool_id = 1
+model_id = 1
+debug_options = { enabled = true }

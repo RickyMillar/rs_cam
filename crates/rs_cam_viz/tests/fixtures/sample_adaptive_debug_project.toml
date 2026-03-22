@@ -1,0 +1,25 @@
+format_version = 1
+
+[job]
+name = "Adaptive Debug Fixture"
+
+[[tools]]
+id = 1
+name = "Fixture End Mill"
+type = "end_mill"
+
+[[models]]
+id = 1
+path = "square.svg"
+name = "Square"
+kind = "svg"
+units = { kind = "millimeters" }
+
+[[toolpaths]]
+id = 1
+name = "Adaptive Debug"
+type = "adaptive"
+tool_id = 1
+model_id = 1
+boundary_enabled = true
+debug_options = { enabled = true }

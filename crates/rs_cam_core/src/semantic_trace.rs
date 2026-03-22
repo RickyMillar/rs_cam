@@ -1,4 +1,5 @@
 use crate::debug_trace::{TOOLPATH_DEBUG_SCHEMA_VERSION, ToolpathDebugBounds2, ToolpathDebugTrace};
+use crate::geo::{BoundingBox3, P3};
 use crate::toolpath::{Move, Toolpath};
 use serde::Serialize;
 use serde::{Deserialize, Serialize as DeriveSerialize};
@@ -385,6 +386,221 @@ pub fn item_ids_covering_move(trace: &ToolpathSemanticTrace, move_idx: usize) ->
     item_ids.into_iter().collect()
 }
 
+pub fn enrich_traces(
+    debug_trace: &mut ToolpathDebugTrace,
+    semantic_trace: &mut ToolpathSemanticTrace,
+) {
+    for span_idx in 0..debug_trace.spans.len() {
+        let span_id = debug_trace.spans[span_idx].id;
+        let linked_item_index =
+            best_item_for_span(span_id, &debug_trace.spans[span_idx], semantic_trace);
+        if let Some(item_index) = linked_item_index {
+            let item = &semantic_trace.items[item_index];
+            if debug_trace.spans[span_idx].move_start.is_none()
+                && let (Some(move_start), Some(move_end)) = (item.move_start, item.move_end)
+            {
+                debug_trace.spans[span_idx].move_start = Some(move_start);
+                debug_trace.spans[span_idx].move_end = Some(move_end);
+            }
+            if semantic_trace.items[item_index].debug_span_id.is_none() {
+                semantic_trace.items[item_index].debug_span_id = Some(span_id);
+            }
+        }
+    }
+
+    let span_cache: Vec<_> = debug_trace
+        .spans
+        .iter()
+        .map(|span| (span.id, span_bbox3(span)))
+        .collect();
+    let item_cache: Vec<_> = semantic_trace
+        .items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| (index, semantic_item_bbox3(item)))
+        .collect();
+
+    for hotspot in &mut debug_trace.hotspots {
+        let hotspot_bbox = hotspot_bbox3(hotspot);
+        let representative = debug_trace
+            .spans
+            .iter()
+            .enumerate()
+            .filter_map(|(span_index, span)| {
+                let bbox = span_cache[span_index].1.as_ref()?;
+                let overlap = bbox_overlap_volume(bbox, &hotspot_bbox)?;
+                let kind_match =
+                    hotspot.kind.contains(&span.kind) || span.kind.contains(&hotspot.kind);
+                Some((
+                    span_index,
+                    kind_match,
+                    overlap,
+                    span.elapsed_us,
+                    span.move_start.is_some(),
+                ))
+            })
+            .max_by(|left, right| {
+                left.1
+                    .cmp(&right.1)
+                    .then_with(|| left.4.cmp(&right.4))
+                    .then_with(|| left.3.cmp(&right.3))
+                    .then_with(|| left.2.total_cmp(&right.2))
+            })
+            .map(|(span_index, _, _, _, _)| span_index);
+
+        if let Some(span_index) = representative {
+            let span = &debug_trace.spans[span_index];
+            hotspot.representative_span_id = Some(span.id);
+            hotspot.move_start = hotspot.move_start.or(span.move_start);
+            hotspot.move_end = hotspot.move_end.or(span.move_end);
+        }
+
+        let linked_item = representative
+            .and_then(|span_index| {
+                let span_id = debug_trace.spans[span_index].id;
+                semantic_trace
+                    .items
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, item)| item.debug_span_id == Some(span_id))
+                    .max_by_key(|(_, item)| {
+                        std::cmp::Reverse(
+                            item.move_end
+                                .unwrap_or(usize::MAX)
+                                .saturating_sub(item.move_start.unwrap_or(0)),
+                        )
+                    })
+                    .map(|(item_index, _)| item_index)
+            })
+            .or_else(|| {
+                semantic_trace
+                    .items
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(item_index, item)| {
+                        let bbox = item_cache[item_index].1.as_ref()?;
+                        let overlap = bbox_overlap_volume(bbox, &hotspot_bbox)?;
+                        Some((
+                            item_index,
+                            overlap,
+                            item.move_start.is_some() && item.move_end.is_some(),
+                            item.move_end
+                                .unwrap_or(usize::MAX)
+                                .saturating_sub(item.move_start.unwrap_or(0)),
+                        ))
+                    })
+                    .max_by(|left, right| {
+                        left.2
+                            .cmp(&right.2)
+                            .then_with(|| left.1.total_cmp(&right.1))
+                            .then_with(|| right.3.cmp(&left.3))
+                    })
+                    .map(|(item_index, _, _, _)| item_index)
+            });
+
+        if let Some(item_index) = linked_item {
+            let item = &semantic_trace.items[item_index];
+            hotspot.semantic_item_id = Some(item.id);
+            if hotspot.move_start.is_none()
+                && let (Some(move_start), Some(move_end)) = (item.move_start, item.move_end)
+            {
+                hotspot.move_start = Some(move_start);
+                hotspot.move_end = Some(move_end);
+            }
+        }
+    }
+}
+
+fn best_item_for_span(
+    span_id: u64,
+    span: &crate::debug_trace::ToolpathDebugSpan,
+    semantic_trace: &ToolpathSemanticTrace,
+) -> Option<usize> {
+    semantic_trace
+        .items
+        .iter()
+        .enumerate()
+        .filter_map(|(item_index, item)| {
+            let direct = item.debug_span_id == Some(span_id);
+            let bbox_score = match (span_bbox3(span), semantic_item_bbox3(item)) {
+                (Some(span_bbox), Some(item_bbox)) => bbox_overlap_volume(&span_bbox, &item_bbox),
+                _ => None,
+            }
+            .unwrap_or(0.0);
+            let z_match = span
+                .z_level
+                .zip(item.z_min.zip(item.z_max))
+                .is_none_or(|(z, (z_min, z_max))| z >= z_min - 1e-6 && z <= z_max + 1e-6);
+            if !direct && bbox_score <= 0.0 && !z_match {
+                return None;
+            }
+            let move_span = item
+                .move_end
+                .unwrap_or(usize::MAX)
+                .saturating_sub(item.move_start.unwrap_or(0));
+            Some((
+                item_index,
+                direct,
+                z_match,
+                bbox_score,
+                std::cmp::Reverse(move_span),
+            ))
+        })
+        .max_by(|left, right| {
+            left.1
+                .cmp(&right.1)
+                .then_with(|| left.2.cmp(&right.2))
+                .then_with(|| left.3.total_cmp(&right.3))
+                .then_with(|| left.4.cmp(&right.4))
+        })
+        .map(|(item_index, _, _, _, _)| item_index)
+}
+
+fn semantic_item_bbox3(item: &ToolpathSemanticItem) -> Option<BoundingBox3> {
+    let xy = item.xy_bbox?;
+    let z_min = item.z_min?;
+    let z_max = item.z_max?;
+    Some(BoundingBox3 {
+        min: P3::new(xy.min_x, xy.min_y, z_min),
+        max: P3::new(xy.max_x, xy.max_y, z_max),
+    })
+}
+
+fn span_bbox3(span: &crate::debug_trace::ToolpathDebugSpan) -> Option<BoundingBox3> {
+    let xy = span.xy_bbox?;
+    let z = span.z_level?;
+    Some(BoundingBox3 {
+        min: P3::new(xy.min_x, xy.min_y, z),
+        max: P3::new(xy.max_x, xy.max_y, z),
+    })
+}
+
+fn hotspot_bbox3(hotspot: &crate::debug_trace::ToolpathHotspot) -> BoundingBox3 {
+    let half_xy = hotspot.bucket_size_xy * 0.5;
+    let half_z = hotspot.bucket_size_z.unwrap_or(1.0) * 0.5;
+    let z_center = hotspot.z_bucket_center.unwrap_or(0.0);
+    BoundingBox3 {
+        min: P3::new(
+            hotspot.center_x - half_xy,
+            hotspot.center_y - half_xy,
+            z_center - half_z,
+        ),
+        max: P3::new(
+            hotspot.center_x + half_xy,
+            hotspot.center_y + half_xy,
+            z_center + half_z,
+        ),
+    }
+}
+
+fn bbox_overlap_volume(left: &BoundingBox3, right: &BoundingBox3) -> Option<f64> {
+    let overlap_x = (left.max.x.min(right.max.x) - left.min.x.max(right.min.x)).max(0.0);
+    let overlap_y = (left.max.y.min(right.max.y) - left.min.y.max(right.min.y)).max(0.0);
+    let overlap_z = (left.max.z.min(right.max.z) - left.min.z.max(right.min.z)).max(0.0);
+    (overlap_x > 0.0 && overlap_y > 0.0 && overlap_z >= 0.0)
+        .then_some(overlap_x * overlap_y * overlap_z.max(1.0))
+}
+
 pub fn write_toolpath_trace_artifact(
     dir: &Path,
     file_stem: &str,
@@ -476,5 +692,96 @@ mod tests {
         assert!(text.contains("\"toolpath_name\": \"Pocket 1\""));
         std::fs::remove_file(path).ok();
         std::fs::remove_dir(dir).ok();
+    }
+
+    #[test]
+    fn enrich_traces_links_spans_and_hotspots_to_semantic_items() {
+        let mut debug_trace = ToolpathDebugTrace {
+            schema_version: TOOLPATH_DEBUG_SCHEMA_VERSION,
+            toolpath_name: "Adaptive".to_string(),
+            operation_label: "Adaptive".to_string(),
+            summary: crate::debug_trace::ToolpathDebugSummary {
+                total_elapsed_us: 10_000,
+                span_count: 1,
+                hotspot_count: 1,
+                dominant_span_kind: Some("adaptive_pass".to_string()),
+                dominant_span_label: Some("Pass 1".to_string()),
+                dominant_span_elapsed_us: Some(10_000),
+            },
+            spans: vec![crate::debug_trace::ToolpathDebugSpan {
+                id: 7,
+                parent_id: None,
+                kind: "adaptive_pass".to_string(),
+                label: "Pass 1".to_string(),
+                start_us: 0,
+                elapsed_us: 10_000,
+                xy_bbox: Some(ToolpathDebugBounds2 {
+                    min_x: 0.0,
+                    max_x: 10.0,
+                    min_y: 0.0,
+                    max_y: 10.0,
+                }),
+                z_level: Some(-1.0),
+                move_start: None,
+                move_end: None,
+                exit_reason: None,
+                counters: BTreeMap::new(),
+            }],
+            hotspots: vec![crate::debug_trace::ToolpathHotspot {
+                kind: "adaptive_pass".to_string(),
+                center_x: 5.0,
+                center_y: 5.0,
+                z_bucket_center: Some(-1.0),
+                bucket_size_xy: 10.0,
+                bucket_size_z: Some(1.0),
+                total_elapsed_us: 10_000,
+                span_count: 1,
+                pass_count: 1,
+                step_count: 20,
+                low_yield_exit_count: 0,
+                representative_span_id: None,
+                move_start: None,
+                move_end: None,
+                semantic_item_id: None,
+            }],
+            annotations: Vec::new(),
+        };
+
+        let mut semantic_trace = ToolpathSemanticTrace {
+            schema_version: TOOLPATH_DEBUG_SCHEMA_VERSION,
+            toolpath_name: "Adaptive".to_string(),
+            operation_label: "Adaptive".to_string(),
+            summary: ToolpathSemanticSummary {
+                item_count: 1,
+                move_linked_item_count: 1,
+            },
+            items: vec![ToolpathSemanticItem {
+                id: 3,
+                parent_id: None,
+                kind: ToolpathSemanticKind::Pass,
+                label: "Pass 1".to_string(),
+                move_start: Some(4),
+                move_end: Some(12),
+                xy_bbox: Some(ToolpathDebugBounds2 {
+                    min_x: 0.0,
+                    max_x: 10.0,
+                    min_y: 0.0,
+                    max_y: 10.0,
+                }),
+                z_min: Some(-1.0),
+                z_max: Some(-1.0),
+                params: ToolpathSemanticParams::default(),
+                debug_span_id: Some(7),
+            }],
+        };
+
+        enrich_traces(&mut debug_trace, &mut semantic_trace);
+
+        assert_eq!(debug_trace.spans[0].move_start, Some(4));
+        assert_eq!(debug_trace.spans[0].move_end, Some(12));
+        assert_eq!(debug_trace.hotspots[0].representative_span_id, Some(7));
+        assert_eq!(debug_trace.hotspots[0].semantic_item_id, Some(3));
+        assert_eq!(debug_trace.hotspots[0].move_start, Some(4));
+        assert_eq!(debug_trace.hotspots[0].move_end, Some(12));
     }
 }

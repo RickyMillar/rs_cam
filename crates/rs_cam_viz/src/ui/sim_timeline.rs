@@ -1,5 +1,7 @@
 use super::AppEvent;
-use super::sim_debug::{format_json_value, semantic_kind_color, semantic_kind_label};
+use super::sim_debug::{
+    debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
+};
 use crate::render::toolpath_render::palette_color;
 use crate::state::job::JobState;
 use crate::state::simulation::{ActiveSemanticItem, SimulationDebugTab, SimulationState};
@@ -309,6 +311,7 @@ pub fn draw(
                         job,
                         current_boundary.as_ref(),
                         active_semantic.as_ref(),
+                        events,
                     );
                 }
                 SimulationDebugTab::Trace => {
@@ -383,7 +386,7 @@ fn op_feed_rate(op: &OperationConfig) -> f64 {
 
 fn draw_semantic_band(
     ui: &mut egui::Ui,
-    sim: &SimulationState,
+    sim: &mut SimulationState,
     job: &JobState,
     boundary: &crate::state::simulation::ToolpathBoundary,
     active_semantic: Option<&ActiveSemanticItem>,
@@ -395,7 +398,7 @@ fn draw_semantic_band(
     let Some(trace) = toolpath.semantic_trace.as_ref() else {
         return;
     };
-    let Some(index) = sim.debug.semantic_indexes.get(&boundary.id) else {
+    let Some(index) = sim.debug.semantic_indexes.get(&boundary.id).cloned() else {
         return;
     };
 
@@ -462,15 +465,73 @@ fn draw_semantic_band(
     if response.clicked()
         && let Some(pointer) = response.interact_pointer_pos()
     {
+        if let Some(debug_trace) = toolpath.debug_trace.as_ref() {
+            let nearest_annotation = debug_trace
+                .annotations
+                .iter()
+                .enumerate()
+                .map(|(index, annotation)| {
+                    let x = rect.min.x
+                        + (annotation.move_index as f32 / local_total as f32) * total_width;
+                    (index, annotation, (pointer.x - x).abs())
+                })
+                .filter(|(_, _, distance)| *distance <= 5.0)
+                .min_by(|left, right| left.2.total_cmp(&right.2));
+            if let Some((annotation_index, annotation, _)) = nearest_annotation
+                && let Some(target) = sim.trace_target_for_annotation(boundary.id, annotation)
+            {
+                sim.debug.focused_issue_index = None;
+                sim.debug.focused_hotspot = None;
+                sim.clear_pinned_semantic_item();
+                let _ = annotation_index;
+                events.push(AppEvent::SimJumpToMove(target.move_index));
+                return;
+            }
+        }
+
+        let semantic_hit = index
+            .move_item_indices
+            .iter()
+            .copied()
+            .filter_map(|item_index| {
+                let item = trace.items.get(item_index)?;
+                let (Some(move_start), Some(move_end)) = (item.move_start, item.move_end) else {
+                    return None;
+                };
+                let x_start = rect.min.x + (move_start as f32 / local_total as f32) * total_width;
+                let x_end = rect.min.x + ((move_end + 1) as f32 / local_total as f32) * total_width;
+                (pointer.x >= x_start && pointer.x <= x_end).then_some((
+                    item_index,
+                    index.depths[item_index],
+                    move_end.saturating_sub(move_start),
+                ))
+            })
+            .max_by(|left, right| left.1.cmp(&right.1).then_with(|| right.2.cmp(&left.2)))
+            .map(|(item_index, _, _)| item_index);
+
+        if let Some(item_index) = semantic_hit {
+            let item = &trace.items[item_index];
+            sim.pin_semantic_item(boundary.id, item.id);
+            sim.debug.focused_issue_index = None;
+            sim.debug.focused_hotspot = None;
+            if let Some(target) = sim.trace_target_for_item(job, boundary.id, item.id, false) {
+                events.push(AppEvent::SimJumpToMove(target.move_index));
+            }
+            return;
+        }
+
         let frac = ((pointer.x - rect.min.x) / total_width).clamp(0.0, 1.0);
         let local_move = (frac * local_total as f32) as usize;
+        sim.clear_pinned_semantic_item();
+        sim.debug.focused_issue_index = None;
+        sim.debug.focused_hotspot = None;
         events.push(AppEvent::SimJumpToMove(boundary.start_move + local_move));
     }
 }
 
 fn draw_semantic_drawer(
     ui: &mut egui::Ui,
-    sim: &SimulationState,
+    sim: &mut SimulationState,
     job: &JobState,
     current_boundary: Option<&crate::state::simulation::ToolpathBoundary>,
     active_semantic: Option<&ActiveSemanticItem>,
@@ -488,7 +549,7 @@ fn draw_semantic_drawer(
         ui.label("No semantic trace available.");
         return;
     };
-    let Some(index) = sim.debug.semantic_indexes.get(&boundary.id) else {
+    let Some(index) = sim.debug.semantic_indexes.get(&boundary.id).cloned() else {
         ui.label("Semantic index unavailable.");
         return;
     };
@@ -511,7 +572,8 @@ fn draw_semantic_drawer(
                 draw_semantic_drawer_item(
                     ui,
                     trace,
-                    index,
+                    &index,
+                    sim,
                     boundary,
                     item_index,
                     0,
@@ -585,6 +647,7 @@ fn draw_semantic_drawer_item(
     ui: &mut egui::Ui,
     trace: &rs_cam_core::semantic_trace::ToolpathSemanticTrace,
     index: &crate::state::simulation::SimulationSemanticIndex,
+    sim: &mut SimulationState,
     boundary: &crate::state::simulation::ToolpathBoundary,
     item_index: usize,
     depth: usize,
@@ -610,10 +673,13 @@ fn draw_semantic_drawer_item(
                 egui::RichText::new(&item.label).small()
             },
         );
-        if response.clicked()
-            && let Some(move_start) = item.move_start
-        {
-            events.push(AppEvent::SimJumpToMove(boundary.start_move + move_start));
+        if response.clicked() {
+            sim.pin_semantic_item(boundary.id, item.id);
+            sim.debug.focused_issue_index = None;
+            sim.debug.focused_hotspot = None;
+            if let Some(move_start) = item.move_start {
+                events.push(AppEvent::SimJumpToMove(boundary.start_move + move_start));
+            }
         }
     });
     if let Some(children) = index.child_indices_by_parent.get(&Some(item.id)) {
@@ -622,6 +688,7 @@ fn draw_semantic_drawer_item(
                 ui,
                 trace,
                 index,
+                sim,
                 boundary,
                 *child_index,
                 depth + 1,
@@ -634,10 +701,11 @@ fn draw_semantic_drawer_item(
 
 fn draw_performance_drawer(
     ui: &mut egui::Ui,
-    sim: &SimulationState,
+    sim: &mut SimulationState,
     job: &JobState,
     current_boundary: Option<&crate::state::simulation::ToolpathBoundary>,
     active_semantic: Option<&ActiveSemanticItem>,
+    events: &mut Vec<AppEvent>,
 ) {
     let Some(boundary) = current_boundary else {
         ui.label("No active toolpath.");
@@ -674,10 +742,8 @@ fn draw_performance_drawer(
         );
     }
 
-    if let Some(active) = active_semantic
-        && active.toolpath_id == boundary.id
-        && let Some(debug_span_id) = active.item.debug_span_id
-        && let Some(span) = trace.spans.iter().find(|span| span.id == debug_span_id)
+    if let Some((_, span)) = sim.active_debug_span(job)
+        && boundary.id == current_boundary.map(|b| b.id).unwrap_or(boundary.id)
     {
         ui.label(
             egui::RichText::new(format!(
@@ -688,6 +754,57 @@ fn draw_performance_drawer(
             .small()
             .color(egui::Color32::from_rgb(140, 190, 230)),
         );
+        if let Some(summary) = debug_span_math_summary(&span.kind) {
+            ui.label(
+                egui::RichText::new(summary)
+                    .small()
+                    .color(egui::Color32::from_rgb(130, 130, 145)),
+            );
+        }
+    }
+
+    let runtime_hotspots = sim.runtime_hotspots(job, boundary.id, 5);
+    if !runtime_hotspots.is_empty() {
+        ui.separator();
+        ui.label(egui::RichText::new("Runtime hotspots").small().strong());
+        for hotspot in runtime_hotspots {
+            let is_active = active_semantic.is_some_and(|active| {
+                active.toolpath_id == boundary.id && active.item.id == hotspot.item_id
+            });
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(semantic_kind_label(&hotspot.kind))
+                        .small()
+                        .color(semantic_kind_color(&hotspot.kind)),
+                );
+                let response = ui.add(
+                    egui::Button::new(
+                        egui::RichText::new(format!(
+                            "{} {:.2}s",
+                            hotspot.label, hotspot.total_seconds
+                        ))
+                        .small(),
+                    )
+                    .selected(is_active),
+                );
+                if response.clicked() {
+                    sim.pin_semantic_item(boundary.id, hotspot.item_id);
+                    sim.debug.focused_issue_index = None;
+                    sim.debug.focused_hotspot = None;
+                    events.push(AppEvent::SimJumpToMove(
+                        boundary.start_move + hotspot.move_start,
+                    ));
+                }
+                ui.label(
+                    egui::RichText::new(format!(
+                        "cut {:.2}s | rapid {:.2}s",
+                        hotspot.cutting_seconds, hotspot.rapid_seconds
+                    ))
+                    .small()
+                    .color(egui::Color32::from_rgb(130, 130, 145)),
+                );
+            });
+        }
     }
 
     ui.add_space(4.0);
@@ -704,7 +821,31 @@ fn draw_performance_drawer(
                             .small()
                             .color(egui::Color32::from_rgb(130, 170, 220)),
                     );
-                    ui.label(egui::RichText::new(&span.label).small());
+                    let button = egui::Button::new(egui::RichText::new(&span.label).small())
+                        .selected(active_semantic.is_some_and(|active| {
+                            active.toolpath_id == boundary.id
+                                && active
+                                    .ancestry
+                                    .iter()
+                                    .rev()
+                                    .find_map(|item| item.debug_span_id)
+                                    == Some(span.id)
+                        }));
+                    let response = ui.add(button);
+                    if let Some(summary) = debug_span_math_summary(&span.kind) {
+                        response.clone().on_hover_text(summary);
+                    }
+                    if response.clicked()
+                        && let Some(target) =
+                            sim.trace_target_for_span(job, boundary.id, span.id, false)
+                    {
+                        if let Some(item_id) = target.semantic_item_id {
+                            sim.pin_semantic_item(boundary.id, item_id);
+                        }
+                        sim.debug.focused_issue_index = None;
+                        sim.debug.focused_hotspot = None;
+                        events.push(AppEvent::SimJumpToMove(target.move_index));
+                    }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
                             egui::RichText::new(format!(
@@ -723,7 +864,7 @@ fn draw_performance_drawer(
         ui.separator();
         ui.label(egui::RichText::new("Hotspots").small().strong());
         for (index, hotspot) in trace.hotspots.iter().take(5).enumerate() {
-            let is_focused = sim.debug.focused_hotspot_index == Some(index);
+            let is_focused = sim.debug.focused_hotspot == Some((boundary.id, index));
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(format!("#{}", index + 1))
@@ -735,22 +876,53 @@ fn draw_performance_drawer(
                             egui::Color32::from_rgb(180, 180, 195)
                         }),
                 );
-                ui.label(
-                    egui::RichText::new(format!(
-                        "{} {:.1} ms",
-                        hotspot.kind,
-                        hotspot.total_elapsed_us as f64 / 1000.0
-                    ))
-                    .small(),
+                let response = ui.add(
+                    egui::Button::new(
+                        egui::RichText::new(format!(
+                            "{} {:.1} ms",
+                            hotspot.kind,
+                            hotspot.total_elapsed_us as f64 / 1000.0
+                        ))
+                        .small(),
+                    )
+                    .selected(is_focused),
                 );
-                ui.label(
-                    egui::RichText::new(format!(
-                        "@ {:.2}, {:.2}",
-                        hotspot.center_x, hotspot.center_y
-                    ))
-                    .small()
-                    .color(egui::Color32::from_rgb(130, 130, 145)),
-                );
+                if response.clicked()
+                    && let Some(target) = sim.trace_target_for_hotspot(job, boundary.id, index)
+                {
+                    sim.debug.focused_hotspot = Some((boundary.id, index));
+                    if let Some(item_id) = target.semantic_item_id {
+                        sim.pin_semantic_item(boundary.id, item_id);
+                    }
+                    sim.debug.focused_issue_index = None;
+                    events.push(AppEvent::SimJumpToMove(target.move_index));
+                }
+                ui.vertical(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "@ {:.2}, {:.2}",
+                            hotspot.center_x, hotspot.center_y
+                        ))
+                        .small()
+                        .color(egui::Color32::from_rgb(130, 130, 145)),
+                    );
+                    if let Some(span_id) = hotspot.representative_span_id
+                        && let Some(span) = trace.spans.iter().find(|span| span.id == span_id)
+                    {
+                        ui.label(
+                            egui::RichText::new(&span.label)
+                                .small()
+                                .color(egui::Color32::from_rgb(140, 190, 230)),
+                        );
+                        if let Some(summary) = debug_span_math_summary(&span.kind) {
+                            ui.label(
+                                egui::RichText::new(summary)
+                                    .small()
+                                    .color(egui::Color32::from_rgb(120, 120, 135)),
+                            );
+                        }
+                    }
+                });
             });
         }
     }

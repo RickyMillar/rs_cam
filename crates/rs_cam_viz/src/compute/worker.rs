@@ -13,9 +13,7 @@ use std::sync::{Condvar, Mutex};
 use std::time::Instant;
 
 use rs_cam_core::adaptive::{AdaptiveParams, adaptive_toolpath_traced_with_cancel};
-use rs_cam_core::adaptive3d::{
-    Adaptive3dParams, EntryStyle3d, adaptive_3d_toolpath_traced_with_cancel,
-};
+use rs_cam_core::adaptive3d::{Adaptive3dParams, EntryStyle3d};
 use rs_cam_core::arcfit::fit_arcs;
 use rs_cam_core::chamfer::{ChamferParams, chamfer_toolpath};
 use rs_cam_core::collision::{

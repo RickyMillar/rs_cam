@@ -174,6 +174,40 @@ fn waterline_request(id: usize) -> ComputeRequest {
     }
 }
 
+fn adaptive3d_request(id: usize) -> ComputeRequest {
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mesh = make_test_flat(60.0);
+    let mut cfg = match OperationConfig::new_default(OperationType::Adaptive3d) {
+        OperationConfig::Adaptive3d(cfg) => cfg,
+        _ => unreachable!("default op kind mismatch"),
+    };
+    cfg.depth_per_pass = 2.0;
+    cfg.stock_top_z = 6.0;
+    cfg.detect_flat_areas = true;
+    cfg.region_ordering = crate::state::toolpath::RegionOrdering::ByArea;
+    ComputeRequest {
+        toolpath_id: ToolpathId(id),
+        toolpath_name: format!("Adaptive3d {id}"),
+        polygons: None,
+        mesh: Some(Arc::new(mesh)),
+        operation: OperationConfig::Adaptive3d(cfg),
+        dressups: DressupConfig::default(),
+        stock_source: StockSource::Fresh,
+        tool,
+        safe_z: 10.0,
+        prev_tool_radius: None,
+        stock_bbox: Some(BoundingBox3 {
+            min: P3::new(-30.0, -30.0, -5.0),
+            max: P3::new(30.0, 30.0, 10.0),
+        }),
+        boundary_enabled: false,
+        boundary_containment: BoundaryContainment::Center,
+        keep_out_footprints: Vec::new(),
+        heights: HeightsConfig::default().resolve(10.0, 5.0),
+        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+    }
+}
+
 fn long_simulation_request() -> SimulationRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     let mut toolpath = Toolpath::new();
@@ -506,6 +540,62 @@ fn semantic_trace_records_entry_params_and_boundary_clip() {
             .any(|item| item.move_start.is_some() && item.move_end.is_some()),
         "expected move-linked semantic items"
     );
+
+    if let Some(path) = result.debug_trace_path.as_ref() {
+        std::fs::remove_file(path).ok();
+    }
+}
+
+#[test]
+fn adaptive3d_semantic_trace_records_runtime_structure() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = adaptive3d_request(91);
+    request.debug_options.enabled = true;
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("adaptive3d debug compute should succeed");
+    let semantic_trace = result
+        .semantic_trace
+        .as_ref()
+        .expect("semantic trace should be attached");
+
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.label == "Z level planning"),
+        "expected planning item"
+    );
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.label == "Flat shelf detection"),
+        "expected flat detection item"
+    );
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.label == "Region detection"),
+        "expected region detection item"
+    );
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::DepthLevel),
+        "expected depth-level semantics"
+    );
+    let pass = semantic_trace
+        .items
+        .iter()
+        .find(|item| item.label.starts_with("Adaptive pass "))
+        .expect("expected adaptive pass semantic item");
+    assert!(pass.move_start.is_some() && pass.move_end.is_some());
+    assert!(pass.params.values.get("step_count").is_some());
+    assert!(pass.params.values.get("yield_ratio").is_some());
 
     if let Some(path) = result.debug_trace_path.as_ref() {
         std::fs::remove_file(path).ok();

@@ -125,3 +125,52 @@ pub fn format_json_value(value: &serde_json::Value) -> String {
         }
     }
 }
+
+pub fn json_f64(value: Option<&serde_json::Value>) -> Option<f64> {
+    value.and_then(|value| match value {
+        serde_json::Value::Number(number) => number.as_f64(),
+        _ => None,
+    })
+}
+
+pub fn debug_span_math_summary(kind: &str) -> Option<&'static str> {
+    match kind {
+        "surface_heightmap" => {
+            Some("Drop-cutter sampling over a grid to approximate the model surface.")
+        }
+        "z_level_plan" => Some(
+            "Build Z levels from stepdown, optional shelf detection, and optional fine-stepdown expansion.",
+        ),
+        "region_detect" => {
+            Some("Flood-fill connected remaining-material regions on the heightmap.")
+        }
+        "z_level" => Some("Per-level orchestration and remaining-material accounting."),
+        "pre_stamp" => Some("Pre-stamp thin steep-wall bands to avoid low-yield recuts."),
+        "adaptive_pass" => Some(
+            "Constant-engagement stepping: direction search, local material checks, and tool stamping.",
+        ),
+        "entry_search" => {
+            Some("Search the remaining-material grid for the next viable entry point.")
+        }
+        "preflight" => Some("Cheap direction-search preflight from the candidate entry point."),
+        "widen_band" => {
+            Some("Stamp offset bands around productive passes to widen the cleared channel.")
+        }
+        "waterline_cleanup" => {
+            Some("Contour steep walls to clean boundary material missed by the adaptive spiral.")
+        }
+        "prepare_input" => {
+            Some("Precompute and transform operation inputs before toolpath generation.")
+        }
+        "core_generate" => Some("The main toolpath kernel for the selected operation."),
+        "dressups" => {
+            Some("Apply entries, links, leads, clips, and other post-generation modifiers.")
+        }
+        "arc_fit" => Some("Fit linear segments into XY arcs where possible."),
+        "feed_optimization" => {
+            Some("Estimate cutter engagement and retime feed rates against stock.")
+        }
+        "final_stats" => Some("Compute final toolpath statistics and summarize the result."),
+        _ => None,
+    }
+}

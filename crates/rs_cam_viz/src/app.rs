@@ -10,7 +10,7 @@ use crate::render::{LineUniforms, MeshUniforms, RenderResources, ViewportCallbac
 use crate::state::Workspace;
 use crate::state::job::transform_mesh;
 use crate::state::selection::Selection;
-use crate::state::simulation::{ActiveSemanticItem, StockVizMode};
+use crate::state::simulation::StockVizMode;
 use crate::ui::AppEvent;
 
 pub struct RsCamApp {
@@ -1176,6 +1176,10 @@ impl RsCamApp {
             return;
         }
 
+        if self.handle_simulation_semantic_pick(click_pos) {
+            return;
+        }
+
         let ctx = crate::interaction::picking::PickContext {
             camera: &self.camera,
             screen_x: click_pos.x - rect.min.x,
@@ -1199,6 +1203,57 @@ impl RsCamApp {
         if let Some(hit) = hit {
             self.handle_pick_hit(hit);
         }
+    }
+
+    fn handle_simulation_semantic_pick(&mut self, click_pos: egui::Pos2) -> bool {
+        if self.controller.state().workspace != Workspace::Simulation
+            || !self.controller.state().simulation.debug.enabled
+        {
+            return false;
+        }
+
+        let rect = self.viewport_rect;
+        let Some((ray_origin, ray_dir)) = self.camera.unproject_ray(
+            click_pos.x - rect.min.x,
+            click_pos.y - rect.min.y,
+            rect.width() / rect.height(),
+            rect.width(),
+            rect.height(),
+        ) else {
+            return false;
+        };
+
+        let target = {
+            let state = self.controller.state_mut();
+            state.simulation.pick_semantic_item_with_ray(
+                &state.job,
+                &rs_cam_core::geo::P3::new(
+                    ray_origin.x as f64,
+                    ray_origin.y as f64,
+                    ray_origin.z as f64,
+                ),
+                &rs_cam_core::geo::V3::new(ray_dir.x as f64, ray_dir.y as f64, ray_dir.z as f64),
+            )
+        };
+
+        if let Some(target) = target {
+            {
+                let state = self.controller.state_mut();
+                if let Some(item_id) = target.semantic_item_id {
+                    state
+                        .simulation
+                        .pin_semantic_item(target.toolpath_id, item_id);
+                }
+                state.simulation.debug.focused_issue_index = None;
+                state.simulation.debug.focused_hotspot = None;
+            }
+            self.controller
+                .events_mut()
+                .push(AppEvent::SimJumpToMove(target.move_index));
+            return true;
+        }
+
+        false
     }
 
     fn handle_pick_hit(&mut self, hit: crate::interaction::PickHit) {
@@ -1366,16 +1421,28 @@ impl RsCamApp {
         self.draw_orientation_gizmo(ui, rect);
 
         if workspace == Workspace::Simulation {
-            let active_semantic = {
+            let active_overlay = {
                 let state = self.controller.state_mut();
                 if state.simulation.debug.enabled && state.simulation.debug.highlight_active_item {
-                    state.simulation.active_semantic_item(&state.job)
+                    state
+                        .simulation
+                        .active_semantic_item(&state.job)
+                        .and_then(|active| {
+                            state
+                                .simulation
+                                .semantic_item_bbox_in_simulation(
+                                    &state.job,
+                                    active.toolpath_id,
+                                    &active.item,
+                                )
+                                .map(|bbox| (active.item.label.clone(), bbox))
+                        })
                 } else {
                     None
                 }
             };
-            if let Some(active_semantic) = active_semantic.as_ref() {
-                self.draw_semantic_item_overlay(ui, rect, active_semantic);
+            if let Some((label, bbox)) = active_overlay.as_ref() {
+                self.draw_semantic_item_overlay(ui, rect, label, bbox);
             }
         }
     }
@@ -1448,30 +1515,21 @@ impl RsCamApp {
         &self,
         ui: &mut egui::Ui,
         viewport_rect: egui::Rect,
-        active_semantic: &ActiveSemanticItem,
+        label: &str,
+        bbox: &rs_cam_core::geo::BoundingBox3,
     ) {
-        let Some(bounds) = active_semantic.item.xy_bbox else {
-            return;
-        };
-        let Some(z_min) = active_semantic.item.z_min else {
-            return;
-        };
-        let Some(z_max) = active_semantic.item.z_max else {
-            return;
-        };
-
         let width = viewport_rect.width().max(1.0);
         let height = viewport_rect.height().max(1.0);
         let aspect = width / height;
         let corners = [
-            [bounds.min_x as f32, bounds.min_y as f32, z_min as f32],
-            [bounds.max_x as f32, bounds.min_y as f32, z_min as f32],
-            [bounds.max_x as f32, bounds.max_y as f32, z_min as f32],
-            [bounds.min_x as f32, bounds.max_y as f32, z_min as f32],
-            [bounds.min_x as f32, bounds.min_y as f32, z_max as f32],
-            [bounds.max_x as f32, bounds.min_y as f32, z_max as f32],
-            [bounds.max_x as f32, bounds.max_y as f32, z_max as f32],
-            [bounds.min_x as f32, bounds.max_y as f32, z_max as f32],
+            [bbox.min.x as f32, bbox.min.y as f32, bbox.min.z as f32],
+            [bbox.max.x as f32, bbox.min.y as f32, bbox.min.z as f32],
+            [bbox.max.x as f32, bbox.max.y as f32, bbox.min.z as f32],
+            [bbox.min.x as f32, bbox.max.y as f32, bbox.min.z as f32],
+            [bbox.min.x as f32, bbox.min.y as f32, bbox.max.z as f32],
+            [bbox.max.x as f32, bbox.min.y as f32, bbox.max.z as f32],
+            [bbox.max.x as f32, bbox.max.y as f32, bbox.max.z as f32],
+            [bbox.min.x as f32, bbox.max.y as f32, bbox.max.z as f32],
         ];
         let projected: Vec<_> = corners
             .iter()
@@ -1512,7 +1570,7 @@ impl RsCamApp {
             painter.text(
                 anchor + egui::vec2(6.0, -6.0),
                 egui::Align2::LEFT_BOTTOM,
-                &active_semantic.item.label,
+                label,
                 egui::FontId::proportional(12.0),
                 color,
             );

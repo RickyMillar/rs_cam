@@ -88,6 +88,10 @@ pub struct ToolpathHotspot {
     pub pass_count: u32,
     pub step_count: u64,
     pub low_yield_exit_count: u32,
+    pub representative_span_id: Option<u64>,
+    pub move_start: Option<usize>,
+    pub move_end: Option<usize>,
+    pub semantic_item_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -254,6 +258,10 @@ impl ToolpathDebugRecorder {
                 pass_count: agg.pass_count,
                 step_count: agg.step_count,
                 low_yield_exit_count: agg.low_yield_exit_count,
+                representative_span_id: None,
+                move_start: None,
+                move_end: None,
+                semantic_item_id: None,
             })
             .collect();
         hotspots.sort_by(|a, b| {

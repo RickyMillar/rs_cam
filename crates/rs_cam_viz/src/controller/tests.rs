@@ -83,6 +83,7 @@ fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_
             tool_name: "Tool".to_string(),
             start_move: 4,
             end_move: 12,
+            direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
         }],
         setup_boundaries: vec![crate::state::simulation::SetupBoundary {
             setup_id: crate::state::job::SetupId(1),
@@ -91,7 +92,11 @@ fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_
         }],
         checkpoints: Vec::new(),
         selected_toolpaths: None,
-        direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+        playback_data: Vec::new(),
+        stock_bbox: rs_cam_core::geo::BoundingBox3 {
+            min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
+            max: rs_cam_core::geo::P3::new(10.0, 10.0, 10.0),
+        },
     });
 
     controller.handle_internal_event(crate::ui::AppEvent::InspectToolpathInSimulation(
@@ -162,9 +167,10 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
                 tool_name: "Tool".to_string(),
                 start_move: 2,
                 end_move: 8,
+                direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
             }],
             checkpoints: Vec::new(),
-            direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+            playback_data: Vec::new(),
             rapid_collisions: Vec::new(),
             rapid_collision_move_indices: Vec::new(),
         })));

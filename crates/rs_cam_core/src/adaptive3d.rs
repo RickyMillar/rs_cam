@@ -2178,7 +2178,7 @@ pub fn adaptive_3d_toolpath_annotated_with_cancel(
     adaptive_3d_toolpath_annotated_traced_with_cancel(mesh, index, cutter, params, cancel, None)
 }
 
-fn adaptive_3d_toolpath_annotated_traced_with_cancel(
+pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,

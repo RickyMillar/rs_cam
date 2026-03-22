@@ -1,7 +1,9 @@
 use super::AppEvent;
-use super::sim_debug::{format_json_value, semantic_kind_color, semantic_kind_label};
+use super::sim_debug::{
+    debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
+};
 use crate::state::job::JobState;
-use crate::state::simulation::{SimulationState, StockVizMode};
+use crate::state::simulation::{SimulationIssueKind, SimulationState, StockVizMode};
 use crate::state::toolpath::OperationConfig;
 
 /// Right panel in simulation workspace: current state, warnings, and summary stats.
@@ -15,7 +17,45 @@ pub fn draw(
     ui.separator();
 
     let active_semantic = sim.active_semantic_item(job);
+    let linked_span = sim.active_debug_span(job);
     let current_boundary_id = sim.current_boundary().map(|boundary| boundary.id);
+
+    if sim.debug.enabled {
+        ui.horizontal_wrapped(|ui| {
+            if sim.debug.pinned_semantic_item.is_some() && ui.button("Clear Pin").clicked() {
+                sim.clear_pinned_semantic_item();
+            }
+            if ui.small_button("Prev Issue").clicked()
+                && let Some(target) = sim.focus_issue_delta(job, -1)
+            {
+                events.push(AppEvent::SimJumpToMove(target.move_index));
+            }
+            if ui.small_button("Next Issue").clicked()
+                && let Some(target) = sim.focus_issue_delta(job, 1)
+            {
+                events.push(AppEvent::SimJumpToMove(target.move_index));
+            }
+            if let Some(issue) = sim.current_issue(job) {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{}: {}",
+                        issue_kind_label(issue.kind),
+                        issue.label
+                    ))
+                    .small()
+                    .color(egui::Color32::from_rgb(220, 190, 120)),
+                );
+                if let Some(toolpath_id) = issue.toolpath_id {
+                    ui.label(
+                        egui::RichText::new(format!("TP {}", toolpath_id.0 + 1))
+                            .small()
+                            .color(egui::Color32::from_rgb(150, 150, 165)),
+                    );
+                }
+            }
+        });
+        ui.add_space(4.0);
+    }
 
     // --- Stock Display ---
     egui::CollapsingHeader::new("Stock Display")
@@ -87,11 +127,37 @@ pub fn draw(
         .show(ui, |ui| {
             if let Some(active) = active_semantic.as_ref() {
                 let color = semantic_kind_color(&active.item.kind);
-                ui.label(
-                    egui::RichText::new(&active.item.label)
-                        .strong()
-                        .color(color),
-                );
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        egui::RichText::new(&active.item.label)
+                            .strong()
+                            .color(color),
+                    );
+                    if sim.debug.pinned_semantic_item == Some((active.toolpath_id, active.item.id))
+                    {
+                        ui.label(
+                            egui::RichText::new("Pinned")
+                                .small()
+                                .color(egui::Color32::from_rgb(255, 210, 120)),
+                        );
+                    }
+                    if ui.small_button("Start").clicked()
+                        && let Some(target) = sim.trace_target_for_item(
+                            job,
+                            active.toolpath_id,
+                            active.item.id,
+                            false,
+                        )
+                    {
+                        events.push(AppEvent::SimJumpToMove(target.move_index));
+                    }
+                    if ui.small_button("End").clicked()
+                        && let Some(target) =
+                            sim.trace_target_for_item(job, active.toolpath_id, active.item.id, true)
+                    {
+                        events.push(AppEvent::SimJumpToMove(target.move_index));
+                    }
+                });
                 ui.label(
                     egui::RichText::new(semantic_kind_label(&active.item.kind))
                         .small()
@@ -110,6 +176,14 @@ pub fn draw(
                 }
                 if let (Some(z_min), Some(z_max)) = (active.item.z_min, active.item.z_max) {
                     ui.label(format!("Z: {:.3} → {:.3}", z_min, z_max));
+                }
+                if let Some(metrics) =
+                    sim.semantic_runtime_metrics(job, active.toolpath_id, active.item.id)
+                {
+                    ui.label(format!(
+                        "Runtime: {:.2}s total | {:.2}s cutting | {:.2}s rapid",
+                        metrics.total_seconds, metrics.cutting_seconds, metrics.rapid_seconds
+                    ));
                 }
                 if !active.item.params.values.is_empty() {
                     ui.add_space(4.0);
@@ -170,6 +244,26 @@ pub fn draw(
                     );
                 }
                 ui.label(format!("Hotspots: {}", trace.hotspots.len()));
+                if let Some((toolpath_id, span)) = linked_span.as_ref()
+                    && Some(*toolpath_id) == current_boundary_id
+                {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Linked span: {} ({:.1} ms)",
+                            span.label,
+                            span.elapsed_us as f64 / 1000.0
+                        ))
+                        .small()
+                        .color(egui::Color32::from_rgb(140, 190, 230)),
+                    );
+                    if let Some(summary) = debug_span_math_summary(&span.kind) {
+                        ui.label(
+                            egui::RichText::new(summary)
+                                .small()
+                                .color(egui::Color32::from_rgb(130, 130, 145)),
+                        );
+                    }
+                }
                 if let Some((_, annotation)) = sim.current_debug_annotation(job) {
                     ui.label(
                         egui::RichText::new(format!("Annotation: {}", annotation.label))
@@ -402,6 +496,15 @@ pub fn draw(
                     });
             }
         });
+}
+
+fn issue_kind_label(kind: SimulationIssueKind) -> &'static str {
+    match kind {
+        SimulationIssueKind::Hotspot => "Hotspot",
+        SimulationIssueKind::Annotation => "Annotation",
+        SimulationIssueKind::RapidCollision => "Rapid collision",
+        SimulationIssueKind::HolderCollision => "Holder collision",
+    }
 }
 
 /// Determine the move type and feed rate at the current move index.

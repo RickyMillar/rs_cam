@@ -5,8 +5,12 @@ use super::toolpath::ToolpathId;
 use rs_cam_core::collision::{CollisionReport, RapidCollision};
 use rs_cam_core::debug_trace::{ToolpathDebugAnnotation, ToolpathDebugBounds2};
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
-use rs_cam_core::semantic_trace::{ToolpathSemanticItem, ToolpathSemanticTrace};
+use rs_cam_core::geo::{BoundingBox3, P3, V3};
+use rs_cam_core::semantic_trace::{
+    ToolpathSemanticItem, ToolpathSemanticKind, ToolpathSemanticTrace,
+};
 use rs_cam_core::simulation::HeightmapMesh;
+use rs_cam_core::toolpath::{MoveType, Toolpath};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SimulationDebugTab {
@@ -33,7 +37,35 @@ pub struct ActiveSemanticItem {
     pub ancestry: Vec<ToolpathSemanticItem>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SimulationTraceTarget {
+    pub toolpath_id: ToolpathId,
+    pub move_index: usize,
+    pub semantic_item_id: Option<u64>,
+    pub debug_span_id: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SimulationIssueKind {
+    Hotspot,
+    Annotation,
+    RapidCollision,
+    HolderCollision,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SimulationIssue {
+    pub kind: SimulationIssueKind,
+    pub toolpath_id: Option<ToolpathId>,
+    pub move_index: usize,
+    pub label: String,
+    pub semantic_item_id: Option<u64>,
+    pub debug_span_id: Option<u64>,
+    pub hotspot_index: Option<usize>,
+    pub annotation_index: Option<usize>,
+}
+
+#[derive(Clone, Default)]
 pub(crate) struct SimulationSemanticIndex {
     trace_item_count: usize,
     pub(crate) move_item_indices: Vec<usize>,
@@ -42,16 +74,51 @@ pub(crate) struct SimulationSemanticIndex {
     pub(crate) depths: Vec<usize>,
 }
 
+#[derive(Clone, Default)]
+struct SimulationRuntimeProfile {
+    move_count: usize,
+    trace_item_count: usize,
+    rapid_feed_mm_min: f64,
+    cumulative_total_seconds: Vec<f64>,
+    cumulative_cutting_seconds: Vec<f64>,
+    cumulative_rapid_seconds: Vec<f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SimulationRuntimeMetrics {
+    pub total_seconds: f64,
+    pub cutting_seconds: f64,
+    pub rapid_seconds: f64,
+    pub move_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SimulationRuntimeHotspot {
+    pub toolpath_id: ToolpathId,
+    pub item_id: u64,
+    pub label: String,
+    pub kind: ToolpathSemanticKind,
+    pub move_start: usize,
+    pub move_end: usize,
+    pub total_seconds: f64,
+    pub cutting_seconds: f64,
+    pub rapid_seconds: f64,
+    pub debug_span_id: Option<u64>,
+}
+
 #[derive(Default)]
 pub struct SimulationDebugState {
     pub enabled: bool,
     pub drawer_open: bool,
     pub active_tab: SimulationDebugTab,
     pub expanded_toolpaths: HashSet<ToolpathId>,
-    pub focused_hotspot_index: Option<usize>,
+    pub focused_hotspot: Option<(ToolpathId, usize)>,
+    pub pinned_semantic_item: Option<(ToolpathId, u64)>,
+    pub focused_issue_index: Option<usize>,
     pub highlight_active_item: bool,
     pub pending_inspect_toolpath: Option<ToolpathId>,
     pub(crate) semantic_indexes: HashMap<ToolpathId, SimulationSemanticIndex>,
+    runtime_profiles: HashMap<ToolpathId, SimulationRuntimeProfile>,
 }
 
 /// How the simulation stock mesh is colored.
@@ -245,10 +312,13 @@ impl SimulationState {
                 drawer_open: true,
                 active_tab: SimulationDebugTab::Semantic,
                 expanded_toolpaths: HashSet::new(),
-                focused_hotspot_index: None,
+                focused_hotspot: None,
+                pinned_semantic_item: None,
+                focused_issue_index: None,
                 highlight_active_item: true,
                 pending_inspect_toolpath: None,
                 semantic_indexes: HashMap::new(),
+                runtime_profiles: HashMap::new(),
             },
         }
     }
@@ -354,6 +424,21 @@ impl SimulationState {
         self.move_to_local_toolpath_move(self.playback.current_move)
     }
 
+    pub fn boundary_for_toolpath_id(&self, toolpath_id: ToolpathId) -> Option<&ToolpathBoundary> {
+        self.boundaries()
+            .iter()
+            .find(|boundary| boundary.id == toolpath_id)
+    }
+
+    pub fn global_move_for_local(
+        &self,
+        toolpath_id: ToolpathId,
+        local_move: usize,
+    ) -> Option<usize> {
+        let boundary = self.boundary_for_toolpath_id(toolpath_id)?;
+        Some(boundary.start_move + local_move)
+    }
+
     pub fn trace_availability_for_toolpath(
         job: &JobState,
         toolpath_id: ToolpathId,
@@ -382,9 +467,106 @@ impl SimulationState {
     pub fn sync_debug_state(&mut self, job: &JobState) {
         let boundaries = self.boundaries().to_vec();
         self.debug.sync_semantic_indexes(job, &boundaries);
+        self.debug.sync_runtime_profiles(job, &boundaries);
+        let boundary_ids: HashSet<_> = boundaries.iter().map(|boundary| boundary.id).collect();
+        if self
+            .debug
+            .focused_hotspot
+            .is_some_and(|(toolpath_id, _)| !boundary_ids.contains(&toolpath_id))
+        {
+            self.debug.focused_hotspot = None;
+        }
+        if self
+            .debug
+            .pinned_semantic_item
+            .is_some_and(|(toolpath_id, _)| !boundary_ids.contains(&toolpath_id))
+        {
+            self.debug.pinned_semantic_item = None;
+        }
     }
 
-    pub fn active_semantic_item(&mut self, job: &JobState) -> Option<ActiveSemanticItem> {
+    pub fn semantic_runtime_metrics(
+        &mut self,
+        job: &JobState,
+        toolpath_id: ToolpathId,
+        item_id: u64,
+    ) -> Option<SimulationRuntimeMetrics> {
+        self.sync_debug_state(job);
+        let toolpath = job.find_toolpath(toolpath_id)?;
+        let trace = toolpath.semantic_trace.as_ref()?;
+        let index = self.debug.semantic_indexes.get(&toolpath_id)?;
+        let item_index = index.item_index_by_id.get(&item_id).copied()?;
+        let item = trace.items.get(item_index)?;
+        let (move_start, move_end) = (item.move_start?, item.move_end?);
+        let profile = self.debug.runtime_profiles.get(&toolpath_id)?;
+        profile.metrics_for_range(move_start, move_end + 1)
+    }
+
+    pub fn runtime_hotspots(
+        &mut self,
+        job: &JobState,
+        toolpath_id: ToolpathId,
+        limit: usize,
+    ) -> Vec<SimulationRuntimeHotspot> {
+        self.sync_debug_state(job);
+        let Some(toolpath) = job.find_toolpath(toolpath_id) else {
+            return Vec::new();
+        };
+        let Some(trace) = toolpath.semantic_trace.as_ref() else {
+            return Vec::new();
+        };
+        let Some(index) = self.debug.semantic_indexes.get(&toolpath_id) else {
+            return Vec::new();
+        };
+        let Some(profile) = self.debug.runtime_profiles.get(&toolpath_id) else {
+            return Vec::new();
+        };
+
+        let mut hotspots: Vec<_> = trace
+            .items
+            .iter()
+            .filter_map(|item| {
+                let (move_start, move_end) = (item.move_start?, item.move_end?);
+                let has_move_linked_child = index
+                    .child_indices_by_parent
+                    .get(&Some(item.id))
+                    .is_some_and(|children| {
+                        children.iter().any(|child_index| {
+                            let child = &trace.items[*child_index];
+                            child.move_start.is_some() && child.move_end.is_some()
+                        })
+                    });
+                if has_move_linked_child {
+                    return None;
+                }
+                let metrics = profile.metrics_for_range(move_start, move_end + 1)?;
+                Some(SimulationRuntimeHotspot {
+                    toolpath_id,
+                    item_id: item.id,
+                    label: item.label.clone(),
+                    kind: item.kind.clone(),
+                    move_start,
+                    move_end,
+                    total_seconds: metrics.total_seconds,
+                    cutting_seconds: metrics.cutting_seconds,
+                    rapid_seconds: metrics.rapid_seconds,
+                    debug_span_id: item.debug_span_id,
+                })
+            })
+            .collect();
+
+        hotspots.sort_by(|left, right| {
+            right
+                .total_seconds
+                .total_cmp(&left.total_seconds)
+                .then_with(|| left.move_start.cmp(&right.move_start))
+                .then_with(|| left.label.cmp(&right.label))
+        });
+        hotspots.truncate(limit);
+        hotspots
+    }
+
+    pub fn playback_semantic_item(&mut self, job: &JobState) -> Option<ActiveSemanticItem> {
         let (boundary_index, toolpath_id, local_move) = self.current_local_toolpath_move()?;
         self.sync_debug_state(job);
         let toolpath = job.find_toolpath(toolpath_id)?;
@@ -400,20 +582,193 @@ impl SimulationState {
         })
     }
 
-    pub fn current_debug_annotation(
+    pub fn semantic_item_by_id(
+        &mut self,
+        job: &JobState,
+        toolpath_id: ToolpathId,
+        item_id: u64,
+    ) -> Option<ActiveSemanticItem> {
+        self.sync_debug_state(job);
+        let toolpath = job.find_toolpath(toolpath_id)?;
+        let trace = toolpath.semantic_trace.as_ref()?;
+        let index = self.debug.semantic_indexes.get(&toolpath_id)?;
+        let item_index = index.item_index_by_id.get(&item_id).copied()?;
+        let boundary_index = self
+            .boundaries()
+            .iter()
+            .position(|boundary| boundary.id == toolpath_id)?;
+        let item = trace.items.get(item_index)?.clone();
+        let local_move = item.move_start.unwrap_or_default();
+        Some(ActiveSemanticItem {
+            toolpath_id,
+            boundary_index,
+            local_move,
+            item: item.clone(),
+            ancestry: index.ancestry(trace, item_index),
+        })
+    }
+
+    pub fn active_semantic_item(&mut self, job: &JobState) -> Option<ActiveSemanticItem> {
+        self.sync_debug_state(job);
+        if let Some((toolpath_id, item_id)) = self.debug.pinned_semantic_item
+            && let Some(active) = self.semantic_item_by_id(job, toolpath_id, item_id)
+        {
+            return Some(active);
+        }
+        self.playback_semantic_item(job)
+    }
+
+    pub fn pin_semantic_item(&mut self, toolpath_id: ToolpathId, item_id: u64) {
+        self.debug.pinned_semantic_item = Some((toolpath_id, item_id));
+    }
+
+    pub fn clear_pinned_semantic_item(&mut self) {
+        self.debug.pinned_semantic_item = None;
+    }
+
+    pub fn active_debug_span(
+        &mut self,
+        job: &JobState,
+    ) -> Option<(ToolpathId, rs_cam_core::debug_trace::ToolpathDebugSpan)> {
+        let active = self.active_semantic_item(job)?;
+        let toolpath = job.find_toolpath(active.toolpath_id)?;
+        let trace = toolpath.debug_trace.as_ref()?;
+        let span_id = active
+            .ancestry
+            .iter()
+            .rev()
+            .find_map(|item| item.debug_span_id)?;
+        trace
+            .spans
+            .iter()
+            .find(|span| span.id == span_id)
+            .cloned()
+            .map(|span| (active.toolpath_id, span))
+    }
+
+    pub fn trace_target_for_item(
+        &mut self,
+        job: &JobState,
+        toolpath_id: ToolpathId,
+        item_id: u64,
+        prefer_end: bool,
+    ) -> Option<SimulationTraceTarget> {
+        let active = self.semantic_item_by_id(job, toolpath_id, item_id)?;
+        let local_move = if prefer_end {
+            active.item.move_end.or(active.item.move_start)?
+        } else {
+            active.item.move_start.or(active.item.move_end)?
+        };
+        Some(SimulationTraceTarget {
+            toolpath_id,
+            move_index: self.global_move_for_local(toolpath_id, local_move)?,
+            semantic_item_id: Some(item_id),
+            debug_span_id: active
+                .ancestry
+                .iter()
+                .rev()
+                .find_map(|item| item.debug_span_id),
+        })
+    }
+
+    pub fn trace_target_for_span(
+        &mut self,
+        job: &JobState,
+        toolpath_id: ToolpathId,
+        span_id: u64,
+        prefer_end: bool,
+    ) -> Option<SimulationTraceTarget> {
+        let toolpath = job.find_toolpath(toolpath_id)?;
+        let debug_trace = toolpath.debug_trace.as_ref()?;
+        let span = debug_trace.spans.iter().find(|span| span.id == span_id)?;
+        if let (Some(move_start), Some(move_end)) = (span.move_start, span.move_end) {
+            return Some(SimulationTraceTarget {
+                toolpath_id,
+                move_index: self.global_move_for_local(
+                    toolpath_id,
+                    if prefer_end { move_end } else { move_start },
+                )?,
+                semantic_item_id: toolpath.semantic_trace.as_ref().and_then(|trace| {
+                    trace
+                        .items
+                        .iter()
+                        .find(|item| item.debug_span_id == Some(span_id))
+                        .map(|item| item.id)
+                }),
+                debug_span_id: Some(span_id),
+            });
+        }
+
+        let semantic_item_id = toolpath.semantic_trace.as_ref().and_then(|trace| {
+            trace
+                .items
+                .iter()
+                .find(|item| item.debug_span_id == Some(span_id))
+                .map(|item| item.id)
+        })?;
+        self.trace_target_for_item(job, toolpath_id, semantic_item_id, prefer_end)
+    }
+
+    pub fn trace_target_for_hotspot(
+        &mut self,
+        job: &JobState,
+        toolpath_id: ToolpathId,
+        hotspot_index: usize,
+    ) -> Option<SimulationTraceTarget> {
+        let toolpath = job.find_toolpath(toolpath_id)?;
+        let debug_trace = toolpath.debug_trace.as_ref()?;
+        let hotspot = debug_trace.hotspots.get(hotspot_index)?;
+        if let Some(item_id) = hotspot.semantic_item_id {
+            return self.trace_target_for_item(job, toolpath_id, item_id, false);
+        }
+        if let (Some(move_start), Some(_)) = (hotspot.move_start, hotspot.move_end) {
+            return Some(SimulationTraceTarget {
+                toolpath_id,
+                move_index: self.global_move_for_local(toolpath_id, move_start)?,
+                semantic_item_id: None,
+                debug_span_id: hotspot.representative_span_id,
+            });
+        }
+        hotspot
+            .representative_span_id
+            .and_then(|span_id| self.trace_target_for_span(job, toolpath_id, span_id, false))
+    }
+
+    pub fn trace_target_for_annotation(
+        &self,
+        toolpath_id: ToolpathId,
+        annotation: &ToolpathDebugAnnotation,
+    ) -> Option<SimulationTraceTarget> {
+        Some(SimulationTraceTarget {
+            toolpath_id,
+            move_index: self.global_move_for_local(toolpath_id, annotation.move_index)?,
+            semantic_item_id: None,
+            debug_span_id: None,
+        })
+    }
+
+    pub fn current_debug_annotation_with_index(
         &self,
         job: &JobState,
-    ) -> Option<(ToolpathId, ToolpathDebugAnnotation)> {
+    ) -> Option<(ToolpathId, usize, ToolpathDebugAnnotation)> {
         let (_, toolpath_id, local_move) = self.current_local_toolpath_move()?;
         let toolpath = job.find_toolpath(toolpath_id)?;
         let trace = toolpath.debug_trace.as_ref()?;
         trace
             .annotations
             .iter()
+            .enumerate()
             .rev()
-            .find(|annotation| annotation.move_index <= local_move)
-            .cloned()
-            .map(|annotation| (toolpath_id, annotation))
+            .find(|(_, annotation)| annotation.move_index <= local_move)
+            .map(|(index, annotation)| (toolpath_id, index, annotation.clone()))
+    }
+
+    pub fn current_debug_annotation(
+        &self,
+        job: &JobState,
+    ) -> Option<(ToolpathId, ToolpathDebugAnnotation)> {
+        self.current_debug_annotation_with_index(job)
+            .map(|(toolpath_id, _, annotation)| (toolpath_id, annotation))
     }
 
     pub fn current_item_bbox(
@@ -421,12 +776,269 @@ impl SimulationState {
         job: &JobState,
     ) -> Option<(ToolpathId, ToolpathDebugBounds2, f64, f64)> {
         let active = self.active_semantic_item(job)?;
+        let bbox = self.semantic_item_bbox_in_simulation(job, active.toolpath_id, &active.item)?;
         Some((
             active.toolpath_id,
-            active.item.xy_bbox?,
-            active.item.z_min?,
-            active.item.z_max?,
+            ToolpathDebugBounds2 {
+                min_x: bbox.min.x,
+                max_x: bbox.max.x,
+                min_y: bbox.min.y,
+                max_y: bbox.max.y,
+            },
+            bbox.min.z,
+            bbox.max.z,
         ))
+    }
+
+    pub fn semantic_item_bbox_in_simulation(
+        &self,
+        job: &JobState,
+        toolpath_id: ToolpathId,
+        item: &ToolpathSemanticItem,
+    ) -> Option<BoundingBox3> {
+        let xy = item.xy_bbox?;
+        let z_min = item.z_min?;
+        let z_max = item.z_max?;
+        let local_corners = [
+            P3::new(xy.min_x, xy.min_y, z_min),
+            P3::new(xy.max_x, xy.min_y, z_min),
+            P3::new(xy.max_x, xy.max_y, z_min),
+            P3::new(xy.min_x, xy.max_y, z_min),
+            P3::new(xy.min_x, xy.min_y, z_max),
+            P3::new(xy.max_x, xy.min_y, z_max),
+            P3::new(xy.max_x, xy.max_y, z_max),
+            P3::new(xy.min_x, xy.max_y, z_max),
+        ];
+        let setup = job
+            .setup_of_toolpath(toolpath_id)
+            .and_then(|setup_id| job.setups.iter().find(|setup| setup.id == setup_id));
+        Some(BoundingBox3::from_points(local_corners.into_iter().map(
+            |corner| {
+                setup.map_or(corner, |setup| {
+                    setup.inverse_transform_point(corner, &job.stock)
+                })
+            },
+        )))
+    }
+
+    pub fn issues(&mut self, job: &JobState) -> Vec<SimulationIssue> {
+        self.sync_debug_state(job);
+        let mut issues = Vec::new();
+
+        for boundary in self.boundaries().to_vec() {
+            let Some(toolpath) = job.find_toolpath(boundary.id) else {
+                continue;
+            };
+            if let Some(trace) = toolpath.debug_trace.as_ref() {
+                for (annotation_index, annotation) in trace.annotations.iter().enumerate() {
+                    issues.push(SimulationIssue {
+                        kind: SimulationIssueKind::Annotation,
+                        toolpath_id: Some(boundary.id),
+                        move_index: boundary.start_move + annotation.move_index,
+                        label: annotation.label.clone(),
+                        semantic_item_id: toolpath.semantic_trace.as_ref().and_then(
+                            |semantic_trace| {
+                                semantic_trace
+                                    .items
+                                    .iter()
+                                    .find(|item| {
+                                        item.move_start
+                                            .is_some_and(|start| start <= annotation.move_index)
+                                            && item
+                                                .move_end
+                                                .is_some_and(|end| annotation.move_index <= end)
+                                    })
+                                    .map(|item| item.id)
+                            },
+                        ),
+                        debug_span_id: None,
+                        hotspot_index: None,
+                        annotation_index: Some(annotation_index),
+                    });
+                }
+
+                for (hotspot_index, hotspot) in trace.hotspots.iter().enumerate() {
+                    let Some(target) =
+                        self.trace_target_for_hotspot(job, boundary.id, hotspot_index)
+                    else {
+                        continue;
+                    };
+                    issues.push(SimulationIssue {
+                        kind: SimulationIssueKind::Hotspot,
+                        toolpath_id: Some(boundary.id),
+                        move_index: target.move_index,
+                        label: format!("{} hotspot {}", hotspot.kind, hotspot_index + 1),
+                        semantic_item_id: target.semantic_item_id,
+                        debug_span_id: hotspot.representative_span_id.or(target.debug_span_id),
+                        hotspot_index: Some(hotspot_index),
+                        annotation_index: None,
+                    });
+                }
+            }
+        }
+
+        for &move_index in &self.checks.rapid_collision_move_indices {
+            let toolpath_id = self
+                .move_to_local_toolpath_move(move_index)
+                .map(|(_, id, _)| id);
+            issues.push(SimulationIssue {
+                kind: SimulationIssueKind::RapidCollision,
+                toolpath_id,
+                move_index,
+                label: "Rapid collision".to_string(),
+                semantic_item_id: None,
+                debug_span_id: None,
+                hotspot_index: None,
+                annotation_index: None,
+            });
+        }
+
+        if let Some(report) = self.checks.collision_report.as_ref() {
+            for collision in &report.collisions {
+                let toolpath_id = self
+                    .move_to_local_toolpath_move(collision.move_idx)
+                    .map(|(_, id, _)| id);
+                issues.push(SimulationIssue {
+                    kind: SimulationIssueKind::HolderCollision,
+                    toolpath_id,
+                    move_index: collision.move_idx,
+                    label: format!("{} collision", collision.segment),
+                    semantic_item_id: None,
+                    debug_span_id: None,
+                    hotspot_index: None,
+                    annotation_index: None,
+                });
+            }
+        }
+
+        issues.sort_by(|left, right| {
+            left.move_index
+                .cmp(&right.move_index)
+                .then_with(|| issue_kind_rank(left.kind).cmp(&issue_kind_rank(right.kind)))
+                .then_with(|| left.label.cmp(&right.label))
+        });
+        issues
+    }
+
+    pub fn current_issue(&mut self, job: &JobState) -> Option<SimulationIssue> {
+        let issues = self.issues(job);
+        let index = self.debug.focused_issue_index?;
+        issues.get(index).cloned()
+    }
+
+    pub fn focus_issue_delta(
+        &mut self,
+        job: &JobState,
+        delta: isize,
+    ) -> Option<SimulationTraceTarget> {
+        let issues = self.issues(job);
+        if issues.is_empty() {
+            self.debug.focused_issue_index = None;
+            self.debug.focused_hotspot = None;
+            return None;
+        }
+
+        let len = issues.len() as isize;
+        let current = self.debug.focused_issue_index.map(|index| index as isize);
+        let next = match current {
+            Some(index) => (index + delta).rem_euclid(len),
+            None if delta < 0 => len - 1,
+            None => 0,
+        } as usize;
+        self.debug.focused_issue_index = Some(next);
+        let issue = issues.get(next)?.clone();
+        self.debug.focused_hotspot = issue.toolpath_id.zip(issue.hotspot_index);
+
+        if let Some(toolpath_id) = issue.toolpath_id {
+            if let Some(hotspot_index) = issue.hotspot_index {
+                if let Some(item_id) = issue.semantic_item_id {
+                    self.pin_semantic_item(toolpath_id, item_id);
+                }
+                return self.trace_target_for_hotspot(job, toolpath_id, hotspot_index);
+            }
+            if let Some(annotation_index) = issue.annotation_index
+                && let Some(toolpath) = job.find_toolpath(toolpath_id)
+                && let Some(trace) = toolpath.debug_trace.as_ref()
+                && let Some(annotation) = trace.annotations.get(annotation_index)
+            {
+                if let Some(item_id) = issue.semantic_item_id {
+                    self.pin_semantic_item(toolpath_id, item_id);
+                }
+                return self.trace_target_for_annotation(toolpath_id, annotation);
+            }
+            if let Some(item_id) = issue.semantic_item_id {
+                self.pin_semantic_item(toolpath_id, item_id);
+                return self.trace_target_for_item(job, toolpath_id, item_id, false);
+            }
+        }
+
+        let toolpath_id = issue.toolpath_id.or_else(|| {
+            self.move_to_local_toolpath_move(issue.move_index)
+                .map(|(_, id, _)| id)
+        })?;
+
+        Some(SimulationTraceTarget {
+            toolpath_id,
+            move_index: issue.move_index,
+            semantic_item_id: issue.semantic_item_id,
+            debug_span_id: issue.debug_span_id,
+        })
+    }
+
+    pub fn pick_semantic_item_with_ray(
+        &mut self,
+        job: &JobState,
+        origin: &P3,
+        dir: &V3,
+    ) -> Option<SimulationTraceTarget> {
+        self.sync_debug_state(job);
+        let mut best_hit: Option<(f64, usize, usize, ToolpathId, u64)> = None;
+
+        for boundary in self.boundaries().to_vec() {
+            let Some(toolpath) = job.find_toolpath(boundary.id) else {
+                continue;
+            };
+            let Some(trace) = toolpath.semantic_trace.as_ref() else {
+                continue;
+            };
+            let Some(index) = self.debug.semantic_indexes.get(&boundary.id) else {
+                continue;
+            };
+
+            for (item_index, item) in trace.items.iter().enumerate() {
+                if item.move_start.is_none() || item.move_end.is_none() {
+                    continue;
+                }
+                let Some(bbox) = self.semantic_item_bbox_in_simulation(job, boundary.id, item)
+                else {
+                    continue;
+                };
+                let Some(t) = bbox.ray_intersect(origin, dir) else {
+                    continue;
+                };
+                let depth = index.depths[item_index];
+                let move_span = item
+                    .move_end
+                    .unwrap_or(usize::MAX)
+                    .saturating_sub(item.move_start.unwrap_or(0));
+                let candidate = (t, depth, move_span, boundary.id, item.id);
+                let replace = match best_hit {
+                    None => true,
+                    Some(current) => {
+                        candidate.0 < current.0 - 1e-6
+                            || ((candidate.0 - current.0).abs() <= 1e-6
+                                && (candidate.1 > current.1
+                                    || (candidate.1 == current.1 && candidate.2 < current.2)))
+                    }
+                };
+                if replace {
+                    best_hit = Some(candidate);
+                }
+            }
+        }
+
+        let (_, _, _, toolpath_id, item_id) = best_hit?;
+        self.trace_target_for_item(job, toolpath_id, item_id, false)
     }
 
     /// Progress within the current toolpath (0.0..1.0).
@@ -506,6 +1118,47 @@ impl SimulationDebugState {
             if needs_rebuild {
                 self.semantic_indexes
                     .insert(toolpath_id, SimulationSemanticIndex::build(trace));
+            }
+        }
+    }
+
+    fn sync_runtime_profiles(&mut self, job: &JobState, boundaries: &[ToolpathBoundary]) {
+        let boundary_ids: HashSet<_> = boundaries.iter().map(|boundary| boundary.id).collect();
+        self.runtime_profiles
+            .retain(|toolpath_id, _| boundary_ids.contains(toolpath_id));
+
+        for toolpath_id in boundary_ids {
+            let Some(toolpath) = job.find_toolpath(toolpath_id) else {
+                self.runtime_profiles.remove(&toolpath_id);
+                continue;
+            };
+            let Some(result) = toolpath.result.as_ref() else {
+                self.runtime_profiles.remove(&toolpath_id);
+                continue;
+            };
+            let Some(trace) = toolpath.semantic_trace.as_ref() else {
+                self.runtime_profiles.remove(&toolpath_id);
+                continue;
+            };
+
+            let rapid_feed_mm_min = job.machine.max_feed_mm_min.max(1.0);
+            let needs_rebuild = self
+                .runtime_profiles
+                .get(&toolpath_id)
+                .is_none_or(|profile| {
+                    profile.move_count != result.toolpath.moves.len()
+                        || profile.trace_item_count != trace.items.len()
+                        || (profile.rapid_feed_mm_min - rapid_feed_mm_min).abs() > 1e-6
+                });
+            if needs_rebuild {
+                self.runtime_profiles.insert(
+                    toolpath_id,
+                    SimulationRuntimeProfile::build(
+                        result.toolpath.as_ref(),
+                        trace,
+                        rapid_feed_mm_min,
+                    ),
+                );
             }
         }
     }
@@ -593,6 +1246,124 @@ impl SimulationSemanticIndex {
     }
 }
 
+impl SimulationRuntimeProfile {
+    fn build(toolpath: &Toolpath, trace: &ToolpathSemanticTrace, rapid_feed_mm_min: f64) -> Self {
+        let mut cumulative_total_seconds = Vec::with_capacity(toolpath.moves.len() + 1);
+        let mut cumulative_cutting_seconds = Vec::with_capacity(toolpath.moves.len() + 1);
+        let mut cumulative_rapid_seconds = Vec::with_capacity(toolpath.moves.len() + 1);
+        cumulative_total_seconds.push(0.0);
+        cumulative_cutting_seconds.push(0.0);
+        cumulative_rapid_seconds.push(0.0);
+
+        for move_index in 0..toolpath.moves.len() {
+            let metrics = estimate_move_runtime_seconds(toolpath, move_index, rapid_feed_mm_min);
+            cumulative_total_seconds
+                .push(cumulative_total_seconds.last().copied().unwrap_or_default() + metrics.0);
+            cumulative_cutting_seconds.push(
+                cumulative_cutting_seconds
+                    .last()
+                    .copied()
+                    .unwrap_or_default()
+                    + metrics.1,
+            );
+            cumulative_rapid_seconds
+                .push(cumulative_rapid_seconds.last().copied().unwrap_or_default() + metrics.2);
+        }
+
+        Self {
+            move_count: toolpath.moves.len(),
+            trace_item_count: trace.items.len(),
+            rapid_feed_mm_min,
+            cumulative_total_seconds,
+            cumulative_cutting_seconds,
+            cumulative_rapid_seconds,
+        }
+    }
+
+    fn metrics_for_range(
+        &self,
+        move_start: usize,
+        move_end_exclusive: usize,
+    ) -> Option<SimulationRuntimeMetrics> {
+        if move_start >= move_end_exclusive
+            || move_end_exclusive > self.cumulative_total_seconds.len() - 1
+        {
+            return None;
+        }
+        Some(SimulationRuntimeMetrics {
+            total_seconds: self.cumulative_total_seconds[move_end_exclusive]
+                - self.cumulative_total_seconds[move_start],
+            cutting_seconds: self.cumulative_cutting_seconds[move_end_exclusive]
+                - self.cumulative_cutting_seconds[move_start],
+            rapid_seconds: self.cumulative_rapid_seconds[move_end_exclusive]
+                - self.cumulative_rapid_seconds[move_start],
+            move_count: move_end_exclusive - move_start,
+        })
+    }
+}
+
+fn estimate_move_runtime_seconds(
+    toolpath: &Toolpath,
+    move_index: usize,
+    rapid_feed_mm_min: f64,
+) -> (f64, f64, f64) {
+    if move_index == 0 {
+        return (0.0, 0.0, 0.0);
+    }
+
+    let current = &toolpath.moves[move_index];
+    let previous = &toolpath.moves[move_index - 1];
+    let length_mm = move_length_mm(previous.target, current);
+    if length_mm <= 1e-9 {
+        return (0.0, 0.0, 0.0);
+    }
+
+    match current.move_type {
+        MoveType::Rapid => {
+            let seconds = (length_mm / rapid_feed_mm_min.max(1.0)) * 60.0;
+            (seconds, 0.0, seconds)
+        }
+        MoveType::Linear { feed_rate }
+        | MoveType::ArcCW { feed_rate, .. }
+        | MoveType::ArcCCW { feed_rate, .. } => {
+            let seconds = (length_mm / feed_rate.max(1.0)) * 60.0;
+            (seconds, seconds, 0.0)
+        }
+    }
+}
+
+fn move_length_mm(start: P3, mv: &rs_cam_core::toolpath::Move) -> f64 {
+    match mv.move_type {
+        MoveType::Rapid | MoveType::Linear { .. } => (mv.target - start).norm(),
+        MoveType::ArcCW { i, j, .. } => arc_move_length(start, mv.target, i, j, true),
+        MoveType::ArcCCW { i, j, .. } => arc_move_length(start, mv.target, i, j, false),
+    }
+}
+
+fn arc_move_length(start: P3, end: P3, i: f64, j: f64, clockwise: bool) -> f64 {
+    let center_x = start.x + i;
+    let center_y = start.y + j;
+    let start_angle = (start.y - center_y).atan2(start.x - center_x);
+    let end_angle = (end.y - center_y).atan2(end.x - center_x);
+    let radius = (i * i + j * j).sqrt();
+    if radius <= 1e-9 {
+        return (end - start).norm();
+    }
+
+    let mut sweep = end_angle - start_angle;
+    if clockwise {
+        if sweep >= 0.0 {
+            sweep -= std::f64::consts::TAU;
+        }
+    } else if sweep <= 0.0 {
+        sweep += std::f64::consts::TAU;
+    }
+
+    let arc_xy = radius * sweep.abs();
+    let dz = end.z - start.z;
+    (arc_xy * arc_xy + dz * dz).sqrt()
+}
+
 impl Default for SimulationPlayback {
     fn default() -> Self {
         Self {
@@ -620,6 +1391,15 @@ impl Default for SavedViewportState {
     }
 }
 
+fn issue_kind_rank(kind: SimulationIssueKind) -> u8 {
+    match kind {
+        SimulationIssueKind::Hotspot => 0,
+        SimulationIssueKind::Annotation => 1,
+        SimulationIssueKind::RapidCollision => 2,
+        SimulationIssueKind::HolderCollision => 3,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -627,7 +1407,9 @@ mod tests {
     use crate::state::toolpath::{OperationType, ToolpathEntry};
     use rs_cam_core::debug_trace::ToolpathDebugRecorder;
     use rs_cam_core::dexel_stock::StockCutDirection;
-    use rs_cam_core::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder};
+    use rs_cam_core::semantic_trace::{
+        ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces,
+    };
     use rs_cam_core::toolpath::Toolpath;
     use std::sync::Arc;
 
@@ -646,26 +1428,90 @@ mod tests {
         let root = semantic.root_context();
         let pass = root.start_item(ToolpathSemanticKind::Pass, "Pass 1");
         pass.set_move_range(0, 8);
+        pass.set_xy_bbox(ToolpathDebugBounds2 {
+            min_x: 0.0,
+            max_x: 10.0,
+            min_y: 0.0,
+            max_y: 10.0,
+        });
+        pass.set_z_range(-1.0, -1.0);
         let entry_item = pass
             .context()
             .start_item(ToolpathSemanticKind::Entry, "Helix entry");
         entry_item.set_move_range(0, 2);
+        entry_item.set_xy_bbox(ToolpathDebugBounds2 {
+            min_x: 0.0,
+            max_x: 4.0,
+            min_y: 0.0,
+            max_y: 4.0,
+        });
+        entry_item.set_z_range(-1.0, -1.0);
         entry_item.finish();
         let cleanup = pass
             .context()
             .start_item(ToolpathSemanticKind::Cleanup, "Cleanup");
         cleanup.set_move_range(6, 8);
+        cleanup.set_xy_bbox(ToolpathDebugBounds2 {
+            min_x: 6.0,
+            max_x: 10.0,
+            min_y: 6.0,
+            max_y: 10.0,
+        });
+        cleanup.set_z_range(-1.0, -1.0);
         cleanup.finish();
         pass.finish();
-        entry.semantic_trace = Some(Arc::new(semantic.finish()));
+        let mut semantic_trace = semantic.finish();
 
         let debug = ToolpathDebugRecorder::new("Adaptive", "Adaptive");
         let debug_ctx = debug.root_context();
+        let pass_span = debug_ctx.start_span("adaptive_pass", "Pass 1");
+        pass_span.set_move_range(0, 8);
+        pass_span.set_xy_bbox(ToolpathDebugBounds2 {
+            min_x: 0.0,
+            max_x: 10.0,
+            min_y: 0.0,
+            max_y: 10.0,
+        });
+        pass_span.set_z_level(-1.0);
+        let pass_span_id = pass_span.id();
+        pass_span.finish();
         debug_ctx.add_annotation(1, "Entry");
         debug_ctx.add_annotation(7, "Cleanup");
-        entry.debug_trace = Some(Arc::new(debug.finish()));
+        debug_ctx.record_hotspot(
+            "adaptive_pass",
+            5.0,
+            5.0,
+            Some(-1.0),
+            10.0,
+            Some(1.0),
+            1_000,
+            1,
+            8,
+            0,
+        );
+        if let Some(pass_item) = semantic_trace
+            .items
+            .iter_mut()
+            .find(|item| item.label == "Pass 1")
+        {
+            pass_item.debug_span_id = Some(pass_span_id);
+        }
+        let mut debug_trace = debug.finish();
+        enrich_traces(&mut debug_trace, &mut semantic_trace);
+        entry.semantic_trace = Some(Arc::new(semantic_trace));
+        entry.debug_trace = Some(Arc::new(debug_trace));
+        let mut toolpath = Toolpath::new();
+        toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
+        toolpath.feed_to(P3::new(0.0, 0.0, -1.0), 300.0);
+        toolpath.feed_to(P3::new(2.0, 0.0, -1.0), 1000.0);
+        toolpath.feed_to(P3::new(4.0, 0.0, -1.0), 1000.0);
+        toolpath.rapid_to(P3::new(4.0, 0.0, 5.0));
+        toolpath.rapid_to(P3::new(6.0, 6.0, 5.0));
+        toolpath.feed_to(P3::new(6.0, 6.0, -1.0), 300.0);
+        toolpath.feed_to(P3::new(8.0, 8.0, -1.0), 1000.0);
+        toolpath.rapid_to(P3::new(8.0, 8.0, 5.0));
         entry.result = Some(crate::state::toolpath::ToolpathResult {
-            toolpath: Arc::new(Toolpath::new()),
+            toolpath: Arc::new(toolpath),
             stats: Default::default(),
             debug_trace: entry.debug_trace.clone(),
             semantic_trace: entry.semantic_trace.clone(),
@@ -691,6 +1537,7 @@ mod tests {
                 tool_name: "6mm End Mill".to_string(),
                 start_move: 0,
                 end_move: 8,
+                direction: StockCutDirection::FromTop,
             }],
             setup_boundaries: vec![SetupBoundary {
                 setup_id: SetupId(1),
@@ -699,7 +1546,11 @@ mod tests {
             }],
             checkpoints: Vec::new(),
             selected_toolpaths: None,
-            direction: StockCutDirection::FromTop,
+            playback_data: Vec::new(),
+            stock_bbox: BoundingBox3 {
+                min: P3::new(0.0, 0.0, 0.0),
+                max: P3::new(10.0, 10.0, 10.0),
+            },
         });
         sim
     }
@@ -733,5 +1584,87 @@ mod tests {
             .expect("annotation for current move");
         assert_eq!(annotation.0, ToolpathId(1));
         assert_eq!(annotation.1.label, "Cleanup");
+    }
+
+    #[test]
+    fn pinned_semantic_item_overrides_playback_resolution() {
+        let job = job_with_traces();
+        let mut sim = simulation_for_toolpath();
+        sim.playback.current_move = 7;
+        sim.pin_semantic_item(ToolpathId(1), 2);
+
+        let active = sim
+            .active_semantic_item(&job)
+            .expect("pinned semantic item");
+        assert_eq!(active.item.label, "Helix entry");
+
+        sim.clear_pinned_semantic_item();
+        let active = sim
+            .active_semantic_item(&job)
+            .expect("playback semantic item");
+        assert_eq!(active.item.label, "Cleanup");
+    }
+
+    #[test]
+    fn hotspot_target_resolves_move_and_semantic_item() {
+        let job = job_with_traces();
+        let mut sim = simulation_for_toolpath();
+
+        let target = sim
+            .trace_target_for_hotspot(&job, ToolpathId(1), 0)
+            .expect("hotspot target");
+        assert_eq!(target.toolpath_id, ToolpathId(1));
+        assert_eq!(target.move_index, 0);
+        assert!(target.semantic_item_id.is_some());
+        assert!(target.debug_span_id.is_some());
+    }
+
+    #[test]
+    fn issue_navigation_prioritizes_hotspots_then_annotations() {
+        let job = job_with_traces();
+        let mut sim = simulation_for_toolpath();
+
+        let first = sim.focus_issue_delta(&job, 1).expect("first issue target");
+        assert_eq!(first.move_index, 0);
+        assert_eq!(
+            sim.current_issue(&job).expect("focused issue").kind,
+            SimulationIssueKind::Hotspot
+        );
+
+        let second = sim.focus_issue_delta(&job, 1).expect("second issue target");
+        assert_eq!(second.move_index, 1);
+        assert_eq!(
+            sim.current_issue(&job).expect("focused issue").kind,
+            SimulationIssueKind::Annotation
+        );
+    }
+
+    #[test]
+    fn semantic_pick_prefers_deeper_item_then_smaller_move_span() {
+        let job = job_with_traces();
+        let mut sim = simulation_for_toolpath();
+
+        let target = sim
+            .pick_semantic_item_with_ray(&job, &P3::new(2.0, 2.0, 10.0), &V3::new(0.0, 0.0, -1.0))
+            .expect("semantic pick target");
+        assert_eq!(target.toolpath_id, ToolpathId(1));
+        assert_eq!(target.semantic_item_id, Some(2));
+        assert_eq!(target.move_index, 0);
+    }
+
+    #[test]
+    fn runtime_hotspots_rank_leaf_semantics_and_metrics_are_available() {
+        let job = job_with_traces();
+        let mut sim = simulation_for_toolpath();
+
+        let hotspots = sim.runtime_hotspots(&job, ToolpathId(1), 5);
+        assert!(!hotspots.is_empty(), "expected runtime hotspots");
+        assert!(hotspots[0].total_seconds > 0.0);
+
+        let metrics = sim
+            .semantic_runtime_metrics(&job, ToolpathId(1), 2)
+            .expect("runtime metrics for entry item");
+        assert!(metrics.total_seconds > 0.0);
+        assert!(metrics.cutting_seconds > 0.0);
     }
 }
