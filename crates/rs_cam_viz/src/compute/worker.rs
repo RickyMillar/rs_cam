@@ -65,6 +65,8 @@ pub struct ComputeRequest {
     pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
     pub polygons: Option<Arc<Vec<Polygon2>>>,
     pub mesh: Option<Arc<TriangleMesh>>,
+    pub enriched_mesh: Option<Arc<rs_cam_core::enriched_mesh::EnrichedMesh>>,
+    pub face_selection: Option<Vec<rs_cam_core::enriched_mesh::FaceGroupId>>,
     pub operation: OperationConfig,
     pub dressups: DressupConfig,
     pub stock_source: StockSource,

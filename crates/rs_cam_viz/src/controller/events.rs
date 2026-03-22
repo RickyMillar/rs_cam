@@ -933,6 +933,7 @@ impl<B: ComputeBackend> AppController<B> {
             boundary_enabled,
             boundary_containment,
             debug_options,
+            face_selection_for_toolpath,
         )) = self.state.job.find_toolpath(tp_id).map(|toolpath| {
             (
                 toolpath.tool_id,
@@ -945,6 +946,7 @@ impl<B: ComputeBackend> AppController<B> {
                 toolpath.boundary_enabled,
                 toolpath.boundary_containment,
                 toolpath.debug_options,
+                toolpath.face_selection.clone(),
             )
         })
         else {
@@ -1020,6 +1022,8 @@ impl<B: ComputeBackend> AppController<B> {
             .find(|model| model.id == model_id);
         let mut polygons = model.and_then(|model| model.polygons.clone());
         let mut mesh = model.and_then(|model| model.mesh.clone());
+        let enriched_mesh = model.and_then(|model| model.enriched_mesh.clone());
+        let face_selection = face_selection_for_toolpath.clone();
 
         if let Some(transform_setup) = transform_setup.as_ref() {
             if let Some(raw_mesh) = mesh.as_ref() {
@@ -1109,6 +1113,8 @@ impl<B: ComputeBackend> AppController<B> {
             debug_options,
             polygons,
             mesh,
+            enriched_mesh,
+            face_selection,
             operation,
             dressups,
             stock_source,

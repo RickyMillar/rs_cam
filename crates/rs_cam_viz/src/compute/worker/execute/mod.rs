@@ -1265,6 +1265,8 @@ mod tests {
                 -20.0, -20.0, 20.0, 20.0,
             )])),
             mesh: None,
+            enriched_mesh: None,
+            face_selection: None,
             operation,
             dressups: DressupConfig::default(),
             stock_source: StockSource::Fresh,

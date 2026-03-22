@@ -218,6 +218,26 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 setup::draw_keep_out_properties(ui, setup_id, zone, events);
             }
         }
+        Selection::Face(model_id, face_id) => {
+            ui.heading("Face Selected");
+            ui.separator();
+            ui.label(format!("Model: {:?}", model_id));
+            ui.label(format!("Face: {}", face_id.0));
+            if let Some(model) = state.job.models.iter().find(|m| m.id == model_id) {
+                if let Some(enriched) = &model.enriched_mesh {
+                    if let Some(group) = enriched.face_group(face_id) {
+                        ui.label(format!("Surface type: {:?}", group.surface_type));
+                        ui.label(format!("Triangles: {}", group.triangle_range.len()));
+                    }
+                }
+            }
+        }
+        Selection::Faces(model_id, ref face_ids) => {
+            ui.heading("Faces Selected");
+            ui.separator();
+            ui.label(format!("Model: {:?}", model_id));
+            ui.label(format!("{} faces selected", face_ids.len()));
+        }
         Selection::Toolpath(id) => {
             // Capture snapshot for undo before editing
             if state.history.toolpath_snapshot.is_none()
