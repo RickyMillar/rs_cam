@@ -769,3 +769,84 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
     );
     assert_eq!(entry.debug_trace_path.as_ref(), Some(&debug_path));
 }
+
+// ---------------------------------------------------------------------------
+// Tool deletion safety tests (C5)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn remove_tool_blocked_when_toolpath_references_it() {
+    let mut controller = sample_controller();
+    let tool_count_before = controller.state.job.tools.len();
+    assert_eq!(tool_count_before, 1);
+
+    // ToolId(1) is referenced by the sample toolpath — deletion must be blocked.
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveTool(ToolId(1)));
+    assert_eq!(
+        controller.state.job.tools.len(),
+        tool_count_before,
+        "Tool should not be removed while a toolpath references it"
+    );
+}
+
+#[test]
+fn remove_tool_succeeds_when_no_toolpath_references_it() {
+    let mut controller = sample_controller();
+
+    // Add a second tool that is not referenced by any toolpath.
+    let unreferenced_id = ToolId(99);
+    let extra_tool = ToolConfig::new_default(unreferenced_id, ToolType::EndMill);
+    controller.state.job.tools.push(extra_tool);
+    let tool_count_before = controller.state.job.tools.len();
+
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveTool(unreferenced_id));
+    assert_eq!(
+        controller.state.job.tools.len(),
+        tool_count_before - 1,
+        "Unreferenced tool should be removed"
+    );
+    assert!(
+        controller
+            .state
+            .job
+            .tools
+            .iter()
+            .all(|t| t.id != unreferenced_id),
+        "The specific tool should no longer be in the list"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// AddToolpath validation tests (C16)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn add_toolpath_blocked_when_no_tools_exist() {
+    let mut controller = AppController::with_backend(ScriptedBackend::new());
+    // No tools added — controller.state.job.tools is empty.
+    assert!(controller.state.job.tools.is_empty());
+
+    let tp_count_before: usize = controller
+        .state
+        .job
+        .setups
+        .iter()
+        .map(|s| s.toolpaths.len())
+        .sum();
+
+    controller.handle_internal_event(crate::ui::AppEvent::AddToolpath(
+        crate::state::toolpath::OperationType::Adaptive3d,
+    ));
+
+    let tp_count_after: usize = controller
+        .state
+        .job
+        .setups
+        .iter()
+        .map(|s| s.toolpaths.len())
+        .sum();
+    assert_eq!(
+        tp_count_before, tp_count_after,
+        "No toolpath should be created when no tools exist"
+    );
+}

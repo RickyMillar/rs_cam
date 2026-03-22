@@ -5,6 +5,7 @@ mod semantic;
 mod tests;
 
 use std::collections::VecDeque;
+use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -206,7 +207,7 @@ impl<Request> LaneQueue<Request> {
     }
 
     fn snapshot(&self) -> LaneSnapshot {
-        let inner = self.inner.lock().expect("lane mutex poisoned");
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         LaneSnapshot {
             lane: self.lane,
             state: inner.state,
@@ -248,7 +249,7 @@ impl ToolpathPhaseTracker {
     }
 
     fn replace_phase(&self, phase: Option<String>) -> Option<String> {
-        let mut inner = self.lane.inner.lock().expect("lane mutex poisoned");
+        let mut inner = self.lane.inner.lock().unwrap_or_else(|e| e.into_inner());
         let previous = inner.current_phase.clone();
         inner.current_phase = phase;
         previous
@@ -312,7 +313,7 @@ impl ComputeBackend for ThreadedComputeBackend {
             .toolpath_lane
             .inner
             .lock()
-            .expect("lane mutex poisoned");
+            .unwrap_or_else(|e| e.into_inner());
         inner
             .queue
             .retain(|queued| queued.toolpath_id != request.toolpath_id);
@@ -346,7 +347,7 @@ impl ComputeBackend for ThreadedComputeBackend {
                     .toolpath_lane
                     .inner
                     .lock()
-                    .expect("lane mutex poisoned");
+                    .unwrap_or_else(|e| e.into_inner());
                 if inner.started_at.is_some() {
                     self.toolpath_lane.cancel.store(true, Ordering::SeqCst);
                     inner.state = LaneState::Cancelling;
@@ -357,7 +358,7 @@ impl ComputeBackend for ThreadedComputeBackend {
                     .analysis_lane
                     .inner
                     .lock()
-                    .expect("lane mutex poisoned");
+                    .unwrap_or_else(|e| e.into_inner());
                 if inner.started_at.is_some() {
                     self.analysis_lane.cancel.store(true, Ordering::SeqCst);
                     inner.state = LaneState::Cancelling;
@@ -388,7 +389,7 @@ impl ThreadedComputeBackend {
             .analysis_lane
             .inner
             .lock()
-            .expect("lane mutex poisoned");
+            .unwrap_or_else(|e| e.into_inner());
         inner.queue.clear();
         inner.queue.push_back(request);
         if inner.started_at.is_some() {
@@ -424,14 +425,14 @@ fn spawn_toolpath_lane(
     std::thread::spawn(move || {
         loop {
             let request = {
-                let mut inner = lane.inner.lock().expect("lane mutex poisoned");
+                let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
                 while inner.queue.is_empty() {
                     inner.state = LaneState::Idle;
                     inner.current_job = None;
                     inner.current_phase = None;
                     inner.started_at = None;
                     inner.active_toolpath_id = None;
-                    inner = lane.wake.wait(inner).expect("lane mutex poisoned");
+                    inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
                 }
                 let request = inner.queue.pop_front().expect("queue checked");
                 lane.cancel.store(false, Ordering::SeqCst);
@@ -443,16 +444,52 @@ fn spawn_toolpath_lane(
                 request
             };
 
-            let phase_tracker = ToolpathPhaseTracker::new(Arc::clone(&lane));
-            let mut outcome =
-                execute::run_compute_with_phase(&request, lane.cancel.as_ref(), &phase_tracker);
-            if lane.cancel.load(Ordering::SeqCst) && outcome.result.is_ok() {
-                outcome.result = Err(ComputeError::Cancelled);
-            }
-            phase_tracker.clear();
+            // Wrap the compute + result-send body in catch_unwind so a panic
+            // in any operation does not kill the worker thread or poison mutexes
+            // permanently.  On panic we log the error, reset the lane to Idle,
+            // send an error result back, and continue the loop.
+            let toolpath_id = request.toolpath_id;
+            let caught = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                let phase_tracker = ToolpathPhaseTracker::new(Arc::clone(&lane));
+                let mut outcome = execute::run_compute_with_phase(
+                    &request,
+                    lane.cancel.as_ref(),
+                    &phase_tracker,
+                );
+                if lane.cancel.load(Ordering::SeqCst) && outcome.result.is_ok() {
+                    outcome.result = Err(ComputeError::Cancelled);
+                }
+                phase_tracker.clear();
 
-            {
-                let mut inner = lane.inner.lock().expect("lane mutex poisoned");
+                {
+                    let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
+                    inner.active_toolpath_id = None;
+                    inner.started_at = None;
+                    inner.current_phase = None;
+                    if inner.queue.is_empty() {
+                        inner.state = LaneState::Idle;
+                        inner.current_job = None;
+                    } else {
+                        inner.state = LaneState::Queued;
+                        inner.current_job = inner.queue.front().map(toolpath_job_label);
+                    }
+                }
+
+                let _ = result_tx.send(ComputeMessage::Toolpath(ComputeResult {
+                    toolpath_id: request.toolpath_id,
+                    result: outcome.result,
+                    debug_trace: outcome.debug_trace,
+                    semantic_trace: outcome.semantic_trace,
+                    debug_trace_path: outcome.debug_trace_path,
+                }));
+            }));
+
+            if let Err(panic_payload) = caught {
+                let msg = panic_message(&panic_payload);
+                eprintln!("[toolpath worker] panic recovered: {msg}");
+
+                // Reset lane state so subsequent jobs can still run.
+                let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
                 inner.active_toolpath_id = None;
                 inner.started_at = None;
                 inner.current_phase = None;
@@ -463,15 +500,18 @@ fn spawn_toolpath_lane(
                     inner.state = LaneState::Queued;
                     inner.current_job = inner.queue.front().map(toolpath_job_label);
                 }
-            }
+                drop(inner);
 
-            let _ = result_tx.send(ComputeMessage::Toolpath(ComputeResult {
-                toolpath_id: request.toolpath_id,
-                result: outcome.result,
-                debug_trace: outcome.debug_trace,
-                semantic_trace: outcome.semantic_trace,
-                debug_trace_path: outcome.debug_trace_path,
-            }));
+                let _ = result_tx.send(ComputeMessage::Toolpath(ComputeResult {
+                    toolpath_id,
+                    result: Err(ComputeError::Message(format!(
+                        "Internal error (panic): {msg}"
+                    ))),
+                    debug_trace: None,
+                    semantic_trace: None,
+                    debug_trace_path: None,
+                }));
+            }
         }
     });
 }
@@ -483,14 +523,14 @@ fn spawn_analysis_lane(
     std::thread::spawn(move || {
         loop {
             let request = {
-                let mut inner = lane.inner.lock().expect("lane mutex poisoned");
+                let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
                 while inner.queue.is_empty() {
                     inner.state = LaneState::Idle;
                     inner.current_job = None;
                     inner.current_phase = None;
                     inner.started_at = None;
                     inner.active_toolpath_id = None;
-                    inner = lane.wake.wait(inner).expect("lane mutex poisoned");
+                    inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
                 }
                 let request = inner.queue.pop_front().expect("queue checked");
                 lane.cancel.store(false, Ordering::SeqCst);
@@ -501,45 +541,71 @@ fn spawn_analysis_lane(
                 request
             };
 
-            let result = match request {
-                AnalysisRequest::Simulation(request) => {
-                    let set_phase = |phase: &str| {
-                        let mut inner = lane.inner.lock().expect("lane mutex poisoned");
-                        inner.current_phase = Some(phase.to_string());
-                    };
-                    let result = execute::run_simulation_with_phase(
-                        &request,
-                        lane.cancel.as_ref(),
-                        set_phase,
-                    );
-                    let result = if lane.cancel.load(Ordering::SeqCst) && result.is_ok() {
-                        Err(ComputeError::Cancelled)
-                    } else {
-                        result
-                    };
-                    ComputeMessage::Simulation(result)
-                }
-                AnalysisRequest::Collision(request) => {
-                    let set_phase = |phase: &str| {
-                        let mut inner = lane.inner.lock().expect("lane mutex poisoned");
-                        inner.current_phase = Some(phase.to_string());
-                    };
-                    let result = helpers::run_collision_check_with_phase(
-                        &request,
-                        lane.cancel.as_ref(),
-                        set_phase,
-                    );
-                    let result = if lane.cancel.load(Ordering::SeqCst) && result.is_ok() {
-                        Err(ComputeError::Cancelled)
-                    } else {
-                        result
-                    };
-                    ComputeMessage::Collision(result)
-                }
-            };
+            // Wrap the analysis body in catch_unwind so a panic in simulation
+            // or collision checking does not kill the worker thread.  On panic
+            // we log the error, reset lane state to Idle, and continue.
+            let caught = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                let result = match request {
+                    AnalysisRequest::Simulation(request) => {
+                        let set_phase = |phase: &str| {
+                            let mut inner =
+                                lane.inner.lock().unwrap_or_else(|e| e.into_inner());
+                            inner.current_phase = Some(phase.to_string());
+                        };
+                        let result = execute::run_simulation_with_phase(
+                            &request,
+                            lane.cancel.as_ref(),
+                            set_phase,
+                        );
+                        let result = if lane.cancel.load(Ordering::SeqCst) && result.is_ok() {
+                            Err(ComputeError::Cancelled)
+                        } else {
+                            result
+                        };
+                        ComputeMessage::Simulation(result)
+                    }
+                    AnalysisRequest::Collision(request) => {
+                        let set_phase = |phase: &str| {
+                            let mut inner =
+                                lane.inner.lock().unwrap_or_else(|e| e.into_inner());
+                            inner.current_phase = Some(phase.to_string());
+                        };
+                        let result = helpers::run_collision_check_with_phase(
+                            &request,
+                            lane.cancel.as_ref(),
+                            set_phase,
+                        );
+                        let result = if lane.cancel.load(Ordering::SeqCst) && result.is_ok() {
+                            Err(ComputeError::Cancelled)
+                        } else {
+                            result
+                        };
+                        ComputeMessage::Collision(result)
+                    }
+                };
 
-            {
-                let mut inner = lane.inner.lock().expect("lane mutex poisoned");
+                {
+                    let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
+                    inner.started_at = None;
+                    inner.current_phase = None;
+                    if inner.queue.is_empty() {
+                        inner.state = LaneState::Idle;
+                        inner.current_job = None;
+                    } else {
+                        inner.state = LaneState::Queued;
+                        inner.current_job = inner.queue.front().map(analysis_job_label);
+                    }
+                }
+
+                let _ = result_tx.send(result);
+            }));
+
+            if let Err(panic_payload) = caught {
+                let msg = panic_message(&panic_payload);
+                eprintln!("[analysis worker] panic recovered: {msg}");
+
+                // Reset lane state so subsequent jobs can still run.
+                let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
                 inner.started_at = None;
                 inner.current_phase = None;
                 if inner.queue.is_empty() {
@@ -550,8 +616,17 @@ fn spawn_analysis_lane(
                     inner.current_job = inner.queue.front().map(analysis_job_label);
                 }
             }
-
-            let _ = result_tx.send(result);
         }
     });
+}
+
+/// Extract a human-readable message from a panic payload.
+fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic".to_string()
+    }
 }
