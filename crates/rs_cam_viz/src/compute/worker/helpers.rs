@@ -2,7 +2,7 @@ use super::*;
 use serde_json::json;
 use std::path::PathBuf;
 
-use rs_cam_core::simulation::Heightmap;
+use rs_cam_core::dexel_stock::TriDexelStock;
 
 pub fn build_cutter(tool: &ToolConfig) -> Box<dyn MillingCutter> {
     match tool.tool_type {
@@ -277,8 +277,8 @@ pub(super) fn apply_dressups(
             scope.set_param("ramp_rate", ramp_rate);
             scope
         });
-        match feed_optimization_heightmap(req) {
-            Ok(mut hm) => {
+        match feed_optimization_stock(req) {
+            Ok(mut stock) => {
                 let nominal = tp
                     .moves
                     .iter()
@@ -295,7 +295,7 @@ pub(super) fn apply_dressups(
                     ramp_rate,
                     air_cut_threshold: 0.05,
                 };
-                tp = optimize_feed_rates(&tp, cutter.as_ref(), &mut hm, &params);
+                tp = optimize_feed_rates(&tp, cutter.as_ref(), &mut stock, &params);
             }
             Err(reason) => {
                 tracing::warn!(
@@ -334,7 +334,7 @@ pub(super) fn apply_dressups(
     tp
 }
 
-pub(super) fn feed_optimization_heightmap(req: &ComputeRequest) -> Result<Heightmap, &'static str> {
+pub(super) fn feed_optimization_stock(req: &ComputeRequest) -> Result<TriDexelStock, &'static str> {
     if let Some(reason) = crate::state::toolpath::feed_optimization_unavailable_reason(
         &req.operation,
         req.stock_source,
@@ -347,7 +347,7 @@ pub(super) fn feed_optimization_heightmap(req: &ComputeRequest) -> Result<Height
         .as_ref()
         .ok_or("Feed optimization requires known stock bounds.")?;
     let cell_size = (req.tool.diameter / 4.0).clamp(0.25, 2.0);
-    Ok(Heightmap::from_bounds(bbox, Some(bbox.max.z), cell_size))
+    Ok(TriDexelStock::from_bounds(bbox, cell_size))
 }
 
 pub(super) fn make_depth(depth: f64, per_pass: f64) -> DepthStepping {

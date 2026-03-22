@@ -40,11 +40,11 @@ fn feed_optimization_uses_real_stock_bounds() {
         StockSource::Fresh,
     );
 
-    let heightmap = helpers::feed_optimization_heightmap(&request).unwrap();
-    assert_eq!(heightmap.origin_x, 10.0);
-    assert_eq!(heightmap.origin_y, 20.0);
-    assert_eq!(heightmap.stock_top_z, 12.0);
-    assert_eq!(heightmap.cell_size, 1.5875);
+    let stock = helpers::feed_optimization_stock(&request).unwrap();
+    assert!((stock.z_grid.origin_u - 10.0).abs() < 0.001);
+    assert!((stock.z_grid.origin_v - 20.0).abs() < 0.001);
+    assert!((stock.stock_bbox.max.z - 12.0).abs() < 0.001);
+    assert!((stock.z_grid.cell_size - 1.5875).abs() < 0.001);
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn feed_optimization_rejects_remaining_stock() {
         StockSource::FromRemainingStock,
     );
 
-    let error = match helpers::feed_optimization_heightmap(&request) {
+    let error = match helpers::feed_optimization_stock(&request) {
         Ok(_) => panic!("remaining-stock feed optimization should be rejected"),
         Err(error) => error,
     };
@@ -71,7 +71,7 @@ fn feed_optimization_rejects_mesh_derived_operations() {
         StockSource::Fresh,
     );
 
-    let error = match helpers::feed_optimization_heightmap(&request) {
+    let error = match helpers::feed_optimization_stock(&request) {
         Ok(_) => panic!("mesh-derived feed optimization should be rejected"),
         Err(error) => error,
     };
