@@ -7,6 +7,38 @@
 use crate::toolpath::{MoveType, Toolpath};
 use std::fmt::Write;
 
+/// Coolant mode for G-code output.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CoolantMode {
+    /// No coolant (default).
+    #[default]
+    Off,
+    /// Mist coolant (M7).
+    Mist,
+    /// Flood coolant (M8).
+    Flood,
+    /// Both mist and flood (M7 + M8).
+    Both,
+}
+
+impl CoolantMode {
+    /// Emit the G-code command(s) to activate this coolant mode.
+    /// Returns an empty string for `Off`.
+    pub fn start_gcode(self) -> &'static str {
+        match self {
+            CoolantMode::Off => "",
+            CoolantMode::Mist => "M7\n",
+            CoolantMode::Flood => "M8\n",
+            CoolantMode::Both => "M7\nM8\n",
+        }
+    }
+
+    /// Returns true if coolant is active (not Off).
+    pub fn is_active(self) -> bool {
+        self != CoolantMode::Off
+    }
+}
+
 /// Post-processor trait for machine-specific G-code dialects.
 pub trait PostProcessor {
     fn name(&self) -> &str;
@@ -245,9 +277,16 @@ pub struct GcodePhase<'a> {
     pub pre_gcode: Option<&'a str>,
     /// Raw G-code to emit after this toolpath's moves (user-defined).
     pub post_gcode: Option<&'a str>,
+    /// Tool number for M6 tool change. If `Some` and different from previous phase,
+    /// an M6 T{n} command is emitted before this phase.
+    pub tool_number: Option<u32>,
+    /// Coolant mode for this phase. Coolant on/off commands are emitted
+    /// when the mode changes between phases.
+    pub coolant: CoolantMode,
 }
 
-/// Emit G-code from multiple phases, inserting spindle speed changes between operations.
+/// Emit G-code from multiple phases, inserting tool changes, spindle speed
+/// changes, and coolant commands between operations as needed.
 pub fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &dyn PostProcessor) -> String {
     if phases.is_empty() {
         return String::new();
@@ -257,15 +296,60 @@ pub fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &dyn PostProcessor) ->
     let first_rpm = phases[0].spindle_rpm;
     output.push_str(&post.preamble(first_rpm));
 
+    // Emit coolant start if the first phase has coolant enabled
+    let first_coolant = phases[0].coolant;
+    if first_coolant.is_active() {
+        output.push_str(first_coolant.start_gcode());
+    }
+
     let mut current_rpm = first_rpm;
+    let mut current_tool: Option<u32> = phases[0].tool_number;
+    let mut current_coolant = first_coolant;
     let mut last_feed: Option<f64> = None;
 
-    for phase in phases {
+    for (idx, phase) in phases.iter().enumerate() {
         output.push_str(&post.comment(phase.label));
 
+        // Tool change: emit M6 T{n} if tool number changed
+        if idx > 0
+            && let Some(tool_num) = phase.tool_number
+            && current_tool != Some(tool_num)
+        {
+            // Stop spindle and coolant before tool change
+            if current_coolant.is_active() {
+                let _ = writeln!(output, "M9");
+            }
+            let _ = writeln!(output, "M5");
+            let _ = writeln!(output, "M6 T{tool_num}");
+            // Restart spindle after tool change
+            let _ = writeln!(output, "M3 S{}", phase.spindle_rpm);
+            current_rpm = phase.spindle_rpm;
+            current_tool = Some(tool_num);
+            // Restart coolant after tool change if needed
+            if phase.coolant.is_active() {
+                output.push_str(phase.coolant.start_gcode());
+            }
+            current_coolant = phase.coolant;
+            last_feed = None;
+        }
+
+        // Spindle speed change (only if we didn't already emit it in the tool change block)
         if phase.spindle_rpm != current_rpm {
             let _ = writeln!(output, "M3 S{}", phase.spindle_rpm);
             current_rpm = phase.spindle_rpm;
+        }
+
+        // Coolant mode change (only if we didn't already handle it in tool change)
+        if idx > 0 && phase.coolant != current_coolant && !(phase.tool_number.is_some() && current_tool == phase.tool_number) {
+            if current_coolant.is_active() && !phase.coolant.is_active() {
+                let _ = writeln!(output, "M9");
+            } else if phase.coolant.is_active() {
+                if current_coolant.is_active() {
+                    let _ = writeln!(output, "M9");
+                }
+                output.push_str(phase.coolant.start_gcode());
+            }
+            current_coolant = phase.coolant;
         }
 
         if let Some(pre) = phase.pre_gcode
@@ -322,6 +406,11 @@ pub fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &dyn PostProcessor) ->
         }
     }
 
+    // Turn off coolant before postamble if it was active
+    if current_coolant.is_active() {
+        let _ = writeln!(output, "M9");
+    }
+
     output.push_str(&post.postamble());
     output
 }
@@ -352,12 +441,30 @@ pub fn emit_gcode_multi_setup(
 
     output.push_str(&post.preamble(first_rpm));
 
+    let first_coolant = setups
+        .iter()
+        .flat_map(|setup| setup.phases.iter())
+        .map(|phase| phase.coolant)
+        .next()
+        .unwrap_or(CoolantMode::Off);
+    if first_coolant.is_active() {
+        output.push_str(first_coolant.start_gcode());
+    }
+
     let mut current_rpm = first_rpm;
+    let mut current_tool: Option<u32> = setups
+        .iter()
+        .flat_map(|setup| setup.phases.iter())
+        .find_map(|phase| phase.tool_number);
+    let mut current_coolant = first_coolant;
     let mut last_feed: Option<f64> = None;
     let dp = post.decimal_places();
 
     for (setup_index, setup) in setups.iter().enumerate() {
         if setup_index > 0 {
+            if current_coolant.is_active() {
+                let _ = writeln!(output, "M9");
+            }
             let _ = writeln!(output, "G0 Z{safe_z:.dp$}");
             output.push_str(&post.program_pause(&format!("Setup change: {}", setup.setup_label)));
 
@@ -369,6 +476,17 @@ pub fn emit_gcode_multi_setup(
             let _ = writeln!(output, "M3 S{next_rpm}");
             current_rpm = next_rpm;
             last_feed = None;
+
+            // Restart coolant for the first phase of this setup
+            let next_coolant = setup
+                .phases
+                .first()
+                .map(|phase| phase.coolant)
+                .unwrap_or(CoolantMode::Off);
+            if next_coolant.is_active() {
+                output.push_str(next_coolant.start_gcode());
+            }
+            current_coolant = next_coolant;
         }
 
         output.push_str(&post.comment(&format!("=== {} ===", setup.setup_label)));
@@ -376,9 +494,41 @@ pub fn emit_gcode_multi_setup(
         for phase in &setup.phases {
             output.push_str(&post.comment(phase.label));
 
+            // Tool change
+            if let Some(tool_num) = phase.tool_number
+                && current_tool != Some(tool_num)
+            {
+                if current_coolant.is_active() {
+                    let _ = writeln!(output, "M9");
+                }
+                let _ = writeln!(output, "M5");
+                let _ = writeln!(output, "M6 T{tool_num}");
+                let _ = writeln!(output, "M3 S{}", phase.spindle_rpm);
+                current_rpm = phase.spindle_rpm;
+                current_tool = Some(tool_num);
+                if phase.coolant.is_active() {
+                    output.push_str(phase.coolant.start_gcode());
+                }
+                current_coolant = phase.coolant;
+                last_feed = None;
+            }
+
             if phase.spindle_rpm != current_rpm {
                 let _ = writeln!(output, "M3 S{}", phase.spindle_rpm);
                 current_rpm = phase.spindle_rpm;
+            }
+
+            // Coolant mode change
+            if phase.coolant != current_coolant && !(phase.tool_number.is_some() && current_tool == phase.tool_number) {
+                if current_coolant.is_active() && !phase.coolant.is_active() {
+                    let _ = writeln!(output, "M9");
+                } else if phase.coolant.is_active() {
+                    if current_coolant.is_active() {
+                        let _ = writeln!(output, "M9");
+                    }
+                    output.push_str(phase.coolant.start_gcode());
+                }
+                current_coolant = phase.coolant;
             }
 
             if let Some(pre) = phase.pre_gcode
@@ -434,6 +584,11 @@ pub fn emit_gcode_multi_setup(
                 }
             }
         }
+    }
+
+    // Turn off coolant before postamble if it was active
+    if current_coolant.is_active() {
+        let _ = writeln!(output, "M9");
     }
 
     output.push_str(&post.postamble());
@@ -545,6 +700,8 @@ mod tests {
                 label: "Op 0 — pocket",
                 pre_gcode: None,
                 post_gcode: None,
+                tool_number: None,
+                coolant: CoolantMode::Off,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -552,6 +709,8 @@ mod tests {
                 label: "Op 1 — profile",
                 pre_gcode: None,
                 post_gcode: None,
+                tool_number: None,
+                coolant: CoolantMode::Off,
             },
         ];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
@@ -583,6 +742,8 @@ mod tests {
                 label: "Op 0 — rough",
                 pre_gcode: None,
                 post_gcode: None,
+                tool_number: None,
+                coolant: CoolantMode::Off,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -590,6 +751,8 @@ mod tests {
                 label: "Op 1 — finish",
                 pre_gcode: None,
                 post_gcode: None,
+                tool_number: None,
+                coolant: CoolantMode::Off,
             },
         ];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
@@ -631,6 +794,8 @@ mod tests {
                     label: "Pocket",
                     pre_gcode: None,
                     post_gcode: None,
+                    tool_number: None,
+                    coolant: CoolantMode::Off,
                 }],
             },
             GcodeSetupPhase {
@@ -641,6 +806,8 @@ mod tests {
                     label: "Profile",
                     pre_gcode: None,
                     post_gcode: None,
+                    tool_number: None,
+                    coolant: CoolantMode::Off,
                 }],
             },
         ];
@@ -668,6 +835,8 @@ mod tests {
             label: "Test Op",
             pre_gcode: Some("G55\nG10 L20 P2 X0 Y0 Z0"),
             post_gcode: Some("M9"),
+            tool_number: None,
+            coolant: CoolantMode::Off,
         }];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
 
@@ -707,6 +876,8 @@ mod tests {
                 label: "Pocket",
                 pre_gcode: Some("G55"),
                 post_gcode: Some("M9"),
+                tool_number: None,
+                coolant: CoolantMode::Off,
             }],
         }];
 
@@ -733,6 +904,8 @@ mod tests {
             label: "Empty",
             pre_gcode: Some(""),
             post_gcode: None,
+            tool_number: None,
+            coolant: CoolantMode::Off,
         }];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
 
@@ -742,5 +915,225 @@ mod tests {
             !lines.iter().any(|l| l.is_empty()),
             "No blank lines from empty pre/post gcode"
         );
+    }
+
+    #[test]
+    fn test_m6_tool_change_between_phases() {
+        let mut tp1 = Toolpath::new();
+        tp1.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp1.feed_to(P3::new(10.0, 0.0, 0.0), 1000.0);
+
+        let mut tp2 = Toolpath::new();
+        tp2.rapid_to(P3::new(20.0, 0.0, 10.0));
+        tp2.feed_to(P3::new(30.0, 0.0, 0.0), 800.0);
+
+        let phases = vec![
+            GcodePhase {
+                toolpath: &tp1,
+                spindle_rpm: 18000,
+                label: "Op 0 — 6mm endmill",
+                pre_gcode: None,
+                post_gcode: None,
+                tool_number: Some(1),
+                coolant: CoolantMode::Off,
+            },
+            GcodePhase {
+                toolpath: &tp2,
+                spindle_rpm: 24000,
+                label: "Op 1 — 3mm ballnose",
+                pre_gcode: None,
+                post_gcode: None,
+                tool_number: Some(2),
+                coolant: CoolantMode::Off,
+            },
+        ];
+        let gcode = emit_gcode_phased(&phases, &GrblPost);
+
+        // M6 T2 should appear between the two phases
+        assert!(
+            gcode.contains("M6 T2"),
+            "Should emit M6 T2 for tool change to tool 2"
+        );
+        // M5 should appear before the tool change (spindle stop)
+        let m5_pos = gcode.find("M5\nM6").expect("M5 before M6");
+        let m6_pos = gcode.find("M6 T2").expect("M6 T2");
+        assert!(m5_pos < m6_pos, "M5 should precede M6");
+
+        // M3 S24000 should appear after the tool change (spindle restart)
+        let m3_pos = gcode[m6_pos..].find("M3 S24000").expect("M3 after M6");
+        assert!(m3_pos > 0, "M3 should follow M6");
+
+        // No M6 T1 — first tool is assumed already loaded
+        assert!(
+            !gcode.contains("M6 T1"),
+            "First tool should not emit M6 (already loaded)"
+        );
+    }
+
+    #[test]
+    fn test_no_m6_when_same_tool() {
+        let mut tp1 = Toolpath::new();
+        tp1.rapid_to(P3::new(0.0, 0.0, 10.0));
+
+        let mut tp2 = Toolpath::new();
+        tp2.rapid_to(P3::new(20.0, 0.0, 10.0));
+
+        let phases = vec![
+            GcodePhase {
+                toolpath: &tp1,
+                spindle_rpm: 18000,
+                label: "Op 0",
+                pre_gcode: None,
+                post_gcode: None,
+                tool_number: Some(1),
+                coolant: CoolantMode::Off,
+            },
+            GcodePhase {
+                toolpath: &tp2,
+                spindle_rpm: 18000,
+                label: "Op 1",
+                pre_gcode: None,
+                post_gcode: None,
+                tool_number: Some(1),
+                coolant: CoolantMode::Off,
+            },
+        ];
+        let gcode = emit_gcode_phased(&phases, &GrblPost);
+
+        assert!(
+            !gcode.contains("M6"),
+            "Same tool number should not emit M6"
+        );
+    }
+
+    #[test]
+    fn test_coolant_mist_m7() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp.feed_to(P3::new(10.0, 0.0, 0.0), 1000.0);
+
+        let phases = vec![GcodePhase {
+            toolpath: &tp,
+            spindle_rpm: 18000,
+            label: "Mist coolant op",
+            pre_gcode: None,
+            post_gcode: None,
+            tool_number: None,
+            coolant: CoolantMode::Mist,
+        }];
+        let gcode = emit_gcode_phased(&phases, &GrblPost);
+
+        assert!(gcode.contains("M7"), "Mist coolant should emit M7");
+        assert!(gcode.contains("M9"), "Should emit M9 before postamble");
+
+        // M7 should appear before moves, M9 before postamble
+        let m7_pos = gcode.find("M7").expect("M7");
+        let move_pos = gcode.find("G0 X0.000").expect("move");
+        let m9_pos = gcode.find("M9").expect("M9");
+        let m5_pos = gcode.rfind("M5").expect("M5 in postamble");
+        assert!(m7_pos < move_pos, "M7 should precede moves");
+        assert!(m9_pos < m5_pos, "M9 should precede postamble M5");
+    }
+
+    #[test]
+    fn test_coolant_flood_m8() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+
+        let phases = vec![GcodePhase {
+            toolpath: &tp,
+            spindle_rpm: 18000,
+            label: "Flood coolant op",
+            pre_gcode: None,
+            post_gcode: None,
+            tool_number: None,
+            coolant: CoolantMode::Flood,
+        }];
+        let gcode = emit_gcode_phased(&phases, &GrblPost);
+
+        assert!(gcode.contains("M8"), "Flood coolant should emit M8");
+        assert!(gcode.contains("M9"), "Should emit M9 before postamble");
+    }
+
+    #[test]
+    fn test_coolant_both_m7_m8() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+
+        let phases = vec![GcodePhase {
+            toolpath: &tp,
+            spindle_rpm: 18000,
+            label: "Both coolant op",
+            pre_gcode: None,
+            post_gcode: None,
+            tool_number: None,
+            coolant: CoolantMode::Both,
+        }];
+        let gcode = emit_gcode_phased(&phases, &GrblPost);
+
+        assert!(gcode.contains("M7"), "Both mode should emit M7");
+        assert!(gcode.contains("M8"), "Both mode should emit M8");
+        assert!(gcode.contains("M9"), "Should emit M9 before postamble");
+    }
+
+    #[test]
+    fn test_coolant_off_no_commands() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+
+        let phases = vec![GcodePhase {
+            toolpath: &tp,
+            spindle_rpm: 18000,
+            label: "No coolant",
+            pre_gcode: None,
+            post_gcode: None,
+            tool_number: None,
+            coolant: CoolantMode::Off,
+        }];
+        let gcode = emit_gcode_phased(&phases, &GrblPost);
+
+        assert!(!gcode.contains("M7"), "Off should not emit M7");
+        assert!(!gcode.contains("M8"), "Off should not emit M8");
+        assert!(!gcode.contains("M9"), "Off should not emit M9");
+    }
+
+    #[test]
+    fn test_tool_change_with_coolant() {
+        let mut tp1 = Toolpath::new();
+        tp1.rapid_to(P3::new(0.0, 0.0, 10.0));
+
+        let mut tp2 = Toolpath::new();
+        tp2.rapid_to(P3::new(20.0, 0.0, 10.0));
+
+        let phases = vec![
+            GcodePhase {
+                toolpath: &tp1,
+                spindle_rpm: 18000,
+                label: "Op 0",
+                pre_gcode: None,
+                post_gcode: None,
+                tool_number: Some(1),
+                coolant: CoolantMode::Flood,
+            },
+            GcodePhase {
+                toolpath: &tp2,
+                spindle_rpm: 24000,
+                label: "Op 1",
+                pre_gcode: None,
+                post_gcode: None,
+                tool_number: Some(2),
+                coolant: CoolantMode::Mist,
+            },
+        ];
+        let gcode = emit_gcode_phased(&phases, &GrblPost);
+
+        // Should have M8 for first phase, M9 before tool change, M6 T2, M3, M7 for second
+        assert!(gcode.contains("M8"), "First phase should have M8 flood");
+        assert!(gcode.contains("M6 T2"), "Should have tool change");
+        assert!(gcode.contains("M7"), "Second phase should have M7 mist");
+        // M9 should appear before M6 (coolant off before tool change)
+        let m9_pos = gcode.find("M9").expect("M9");
+        let m6_pos = gcode.find("M6 T2").expect("M6 T2");
+        assert!(m9_pos < m6_pos, "M9 should precede M6 (coolant off before tool change)");
     }
 }
