@@ -96,7 +96,7 @@ fn run_adaptive3d_annotated(
                 rs_cam_core::adaptive3d::RegionOrdering::ByArea
             }
         },
-        initial_stock: None,
+        initial_stock: req.prior_stock.clone(),
     };
     rs_cam_core::adaptive3d::adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
         mesh,
