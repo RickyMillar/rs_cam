@@ -44,10 +44,14 @@ pub fn draw(
         ui.separator();
 
         // Visibility toggles
-        ui.checkbox(&mut viewport.show_cutting, "Cut");
-        ui.checkbox(&mut viewport.show_rapids, "Rapid");
-        ui.checkbox(&mut viewport.show_collisions, "Col");
-        ui.checkbox(&mut viewport.show_fixtures, "Fix");
+        ui.checkbox(&mut viewport.show_cutting, "Cut")
+            .on_hover_text("Show cutting moves");
+        ui.checkbox(&mut viewport.show_rapids, "Rapid")
+            .on_hover_text("Show rapid moves");
+        ui.checkbox(&mut viewport.show_collisions, "Col")
+            .on_hover_text("Show collisions");
+        ui.checkbox(&mut viewport.show_fixtures, "Fix")
+            .on_hover_text("Show fixtures");
 
         ui.separator();
 

@@ -91,13 +91,15 @@ impl RsCamApp {
                     Err(error) => tracing::error!("STL import failed: {error}"),
                 },
                 AppEvent::ImportSvg(path) => {
-                    if let Err(error) = self.controller.import_svg_path(&path) {
-                        tracing::error!("SVG import failed: {error}");
+                    match self.controller.import_svg_path(&path) {
+                        Ok(()) => self.fit_camera_to_first_mesh(),
+                        Err(error) => tracing::error!("SVG import failed: {error}"),
                     }
                 }
                 AppEvent::ImportDxf(path) => {
-                    if let Err(error) = self.controller.import_dxf_path(&path) {
-                        tracing::error!("DXF import failed: {error}");
+                    match self.controller.import_dxf_path(&path) {
+                        Ok(()) => self.fit_camera_to_first_mesh(),
+                        Err(error) => tracing::error!("DXF import failed: {error}"),
                     }
                 }
                 AppEvent::RescaleModel(model_id, new_units) => {
@@ -1425,8 +1427,15 @@ impl RsCamApp {
             self.camera.pan(delta.x, delta.y);
         }
 
-        let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-        if rect.contains(ui.input(|i| i.pointer.hover_pos().unwrap_or_default())) && scroll != 0.0 {
+        let scroll_raw = ui.input(|i| i.smooth_scroll_delta.y);
+        if rect.contains(ui.input(|i| i.pointer.hover_pos().unwrap_or_default()))
+            && scroll_raw != 0.0
+        {
+            // Normalize scroll direction: use signum for consistent zoom
+            // across platforms, then scale by the absolute magnitude clamped
+            // to a reasonable range so track-pad and mouse-wheel both feel right.
+            let magnitude = scroll_raw.abs().clamp(1.0, 120.0);
+            let scroll = scroll_raw.signum() * magnitude;
             self.camera.zoom(scroll);
         }
 
@@ -1736,7 +1745,13 @@ impl RsCamApp {
 
     /// Handle keyboard shortcuts for the simulation workspace.
     fn handle_simulation_shortcuts(&mut self, ctx: &egui::Context) {
-        if ctx.memory(|m| m.focused().is_some()) {
+        // Record whether a text field (or any widget) has focus *before*
+        // processing key events.  Escape causes egui to clear focus, so
+        // checking inside the input closure would miss the just-cleared
+        // widget and fire the workspace-switch shortcut unexpectedly.
+        let has_focus = ctx.memory(|m| m.focused().is_some());
+
+        if has_focus {
             return;
         }
 

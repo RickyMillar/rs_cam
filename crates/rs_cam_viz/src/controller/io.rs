@@ -32,6 +32,7 @@ impl<B: ComputeBackend> AppController<B> {
         self.state.selection = Selection::Model(model.id);
         self.state.job.models.push(model);
         self.state.job.dirty = true;
+        self.pending_upload = true;
         Ok(())
     }
 
@@ -41,6 +42,7 @@ impl<B: ComputeBackend> AppController<B> {
         self.state.selection = Selection::Model(model.id);
         self.state.job.models.push(model);
         self.state.job.dirty = true;
+        self.pending_upload = true;
         Ok(())
     }
 
@@ -84,6 +86,44 @@ impl<B: ComputeBackend> AppController<B> {
         self.pending_upload = true;
         self.state.job.dirty = true;
         Ok(bbox)
+    }
+
+    pub fn reload_model(
+        &mut self,
+        model_id: crate::state::job::ModelId,
+    ) -> Result<(), String> {
+        let Some(model) = self
+            .state
+            .job
+            .models
+            .iter()
+            .find(|model| model.id == model_id)
+        else {
+            return Err(format!("Model {:?} not found", model_id));
+        };
+
+        let path = model.path.clone();
+        let kind = model.kind;
+        let units = model.units;
+
+        let reloaded = import::import_model(&path, model_id, kind, units)?;
+
+        if let Some(model) = self
+            .state
+            .job
+            .models
+            .iter_mut()
+            .find(|model| model.id == model_id)
+        {
+            model.mesh = reloaded.mesh;
+            model.polygons = reloaded.polygons;
+            model.winding_report = reloaded.winding_report;
+            model.load_error = reloaded.load_error;
+        }
+
+        self.pending_upload = true;
+        self.state.job.dirty = true;
+        Ok(())
     }
 
     pub fn save_job_to_path(&mut self, path: &Path) -> Result<(), String> {

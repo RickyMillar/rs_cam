@@ -44,6 +44,12 @@ impl<B: ComputeBackend> AppController<B> {
                     tracing::error!("Rescale failed: {error}");
                 }
             }
+            AppEvent::RemoveModel(model_id) => self.handle_remove_model(model_id),
+            AppEvent::ReloadModel(model_id) => {
+                if let Err(error) = self.reload_model(model_id) {
+                    tracing::error!("Reload model failed: {error}");
+                }
+            }
 
             // --- Tree / selection events ---
             AppEvent::Select(ref selection) => self.handle_select(selection),
@@ -365,6 +371,32 @@ impl<B: ComputeBackend> AppController<B> {
                 .retain(|keep_out| keep_out.id != keep_out_id);
             if self.state.selection == Selection::KeepOut(setup_id, keep_out_id) {
                 self.state.selection = Selection::Setup(setup_id);
+            }
+            self.pending_upload = true;
+            self.state.job.mark_edited();
+        }
+    }
+
+    // ── Model helpers ────────────────────────────────────────────────────
+
+    fn handle_remove_model(&mut self, model_id: crate::state::job::ModelId) {
+        // Check if any toolpath references this model
+        let in_use = self
+            .state
+            .job
+            .setups
+            .iter()
+            .flat_map(|setup| setup.toolpaths.iter())
+            .any(|entry| entry.model_id == model_id);
+        if in_use {
+            tracing::warn!(
+                "Cannot remove model {:?}: still referenced by one or more toolpaths",
+                model_id
+            );
+        } else {
+            self.state.job.models.retain(|model| model.id != model_id);
+            if self.state.selection == Selection::Model(model_id) {
+                self.state.selection = Selection::None;
             }
             self.pending_upload = true;
             self.state.job.mark_edited();
@@ -918,6 +950,27 @@ impl<B: ComputeBackend> AppController<B> {
         else {
             return;
         };
+
+        // Run the same validation the UI uses so both paths are consistent.
+        {
+            let tools_snapshot: Vec<_> = self
+                .state
+                .job
+                .tools
+                .iter()
+                .map(|t| (t.id, t.summary(), t.diameter))
+                .collect();
+            if let Some(entry) = self.state.job.find_toolpath(tp_id) {
+                let errs =
+                    crate::ui::properties::validate_toolpath(entry, &tools_snapshot);
+                if !errs.is_empty() {
+                    if let Some(tp) = self.state.job.find_toolpath_mut(tp_id) {
+                        tp.status = ComputeStatus::Error(errs.join("; "));
+                    }
+                    return;
+                }
+            }
+        }
 
         let setup_ref = self
             .state

@@ -1125,7 +1125,7 @@ pub(super) fn draw_project_curve_params(ui: &mut egui::Ui, cfg: &mut ProjectCurv
 
 // ── Validation ───────────────────────────────────────────────────────────
 
-pub(super) fn validate_toolpath(
+pub fn validate_toolpath(
     entry: &ToolpathEntry,
     tools: &[(crate::state::job::ToolId, String, f64)],
 ) -> Vec<String> {
