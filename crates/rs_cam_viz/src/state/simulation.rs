@@ -1,6 +1,7 @@
 use super::job::SetupId;
 use super::toolpath::ToolpathId;
 use rs_cam_core::collision::{CollisionReport, RapidCollision};
+use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::simulation::HeightmapMesh;
 
 /// How the simulation stock mesh is colored.
@@ -24,6 +25,8 @@ pub struct ToolpathBoundary {
     pub tool_name: String,
     pub start_move: usize,
     pub end_move: usize,
+    /// Cut direction for this toolpath's setup.
+    pub direction: StockCutDirection,
 }
 
 /// Per-setup boundary in the simulation: marks where a setup begins.
@@ -34,12 +37,12 @@ pub struct SetupBoundary {
     pub start_move: usize,
 }
 
-/// Checkpoint: a snapshot of the heightmap at a toolpath boundary.
+/// Checkpoint: a snapshot of the stock at a toolpath boundary.
 pub struct SimCheckpoint {
     pub boundary_index: usize,
     pub mesh: HeightmapMesh,
-    /// The heightmap grid at this checkpoint (for resuming incremental sim).
-    pub heightmap: Option<rs_cam_core::simulation::Heightmap>,
+    /// The tri-dexel stock at this checkpoint (for resuming incremental sim).
+    pub stock: Option<TriDexelStock>,
 }
 
 // ---------------------------------------------------------------------------
@@ -61,6 +64,15 @@ pub struct SimulationResults {
     pub checkpoints: Vec<SimCheckpoint>,
     /// Which toolpaths were included (None = all enabled).
     pub selected_toolpaths: Option<Vec<ToolpathId>>,
+    /// Pre-transformed toolpath data for incremental playback.
+    /// Each entry: (toolpath in global stock frame, tool_config, direction).
+    pub playback_data: Vec<(
+        std::sync::Arc<rs_cam_core::toolpath::Toolpath>,
+        super::job::ToolConfig,
+        StockCutDirection,
+    )>,
+    /// Global stock bounding box used for this simulation (for fresh-stock reset).
+    pub stock_bbox: rs_cam_core::geo::BoundingBox3,
 }
 
 /// Transport / playback state — independent of whether results exist.
@@ -77,8 +89,8 @@ pub struct SimulationPlayback {
     pub tool_radius: f64,
     /// Tool type label for current operation during playback.
     pub tool_type_label: String,
-    /// Live heightmap for incremental playback simulation.
-    pub live_heightmap: Option<rs_cam_core::simulation::Heightmap>,
+    /// Live tri-dexel stock for incremental playback simulation.
+    pub live_stock: Option<TriDexelStock>,
     /// Move index the live heightmap has been simulated up to.
     pub live_sim_move: usize,
     /// Current display mesh (may differ from final mesh during scrubbing).
@@ -154,7 +166,7 @@ impl SimulationState {
                 tool_position: None,
                 tool_radius: 0.0,
                 tool_type_label: String::new(),
-                live_heightmap: None,
+                live_stock: None,
                 live_sim_move: 0,
                 display_mesh: None,
                 display_deviations: None,
@@ -296,7 +308,7 @@ impl Default for SimulationPlayback {
             tool_position: None,
             tool_radius: 0.0,
             tool_type_label: String::new(),
-            live_heightmap: None,
+            live_stock: None,
             live_sim_move: 0,
             display_mesh: None,
             display_deviations: None,

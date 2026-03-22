@@ -94,7 +94,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 
 ### Verification
 
-- heightmap stock simulation
+- tri-dexel stock simulation (Z/X/Y grids, all 6 cardinal face orientations)
 - playback, scrub, and checkpoints
 - tool visualization during playback
 - holder/shank collision checks

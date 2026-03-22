@@ -309,6 +309,7 @@ fn simulation_results_capture_setup_boundaries() {
                         tool_name: "End Mill".to_string(),
                         start_move: 0,
                         end_move: 10,
+                        direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
                     },
                     crate::compute::worker::SimBoundary {
                         id: ToolpathId(2),
@@ -316,9 +317,11 @@ fn simulation_results_capture_setup_boundaries() {
                         tool_name: "End Mill".to_string(),
                         start_move: 10,
                         end_move: 20,
+                        direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
                     },
                 ],
                 checkpoints: Vec::new(),
+                playback_data: Vec::new(),
                 rapid_collisions: Vec::new(),
                 rapid_collision_move_indices: Vec::new(),
             },
@@ -476,6 +479,7 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
             tool_name: "EndMill".to_string(),
             start_move: i * 10,
             end_move: (i + 1) * 10,
+            direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
         });
     }
 
@@ -488,6 +492,7 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
             deviations: None,
             boundaries,
             checkpoints: Vec::new(),
+            playback_data: Vec::new(),
             rapid_collisions: Vec::new(),
             rapid_collision_move_indices: Vec::new(),
         })));

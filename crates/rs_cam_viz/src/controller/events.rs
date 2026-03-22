@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use crate::compute::{
-    CollisionRequest, ComputeBackend, ComputeError, ComputeMessage, ComputeRequest,
+    CollisionRequest, ComputeBackend, ComputeError, ComputeMessage, ComputeRequest, SetupSimGroup,
     SimulationRequest,
 };
+use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::BoundingBox3;
 
 use crate::state::history::UndoAction;
-use crate::state::job::{Fixture, KeepOutZone, Setup, ToolConfig};
+use crate::state::job::{FaceUp, Fixture, KeepOutZone, Setup, ToolConfig};
 use crate::state::selection::Selection;
 use crate::state::simulation::{SimulationResults, SimulationRunMeta};
 use crate::state::toolpath::{ComputeStatus, OperationConfig, ToolpathEntry, ToolpathId};
@@ -411,63 +412,79 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub fn run_simulation_with_all(&mut self) {
-        // Simulation runs per-setup in local frame. A 2.5D heightmap can only
-        // model cuts from one direction, so each setup gets its own heightmap.
-        // For now, simulate the first setup that has computed toolpaths.
-        let setup = self.state.job.setups.iter().find(|s| {
-            s.toolpaths.iter().any(|tp| tp.enabled && tp.result.is_some())
-        });
-        let Some(setup) = setup else {
-            tracing::warn!("No computed toolpaths to simulate");
-            return;
-        };
+        let stock = &self.state.job.stock;
 
-        let toolpaths: Vec<_> = setup
-            .toolpaths
-            .iter()
-            .filter(|tp| tp.enabled)
-            .filter_map(|tp| {
-                let result = tp.result.as_ref()?;
-                let tool = self
-                    .state
-                    .job
-                    .tools
-                    .iter()
-                    .find(|t| t.id == tp.tool_id)?
-                    .clone();
-                // Toolpaths are already in this setup's local frame
-                Some((tp.id, tp.name.clone(), Arc::clone(&result.toolpath), tool))
-            })
-            .collect();
-
-        if toolpaths.is_empty() {
-            return;
-        }
-
-        // Use setup's local stock bbox and transformed model mesh
-        let (w, d, h) = setup.effective_stock(&self.state.job.stock);
+        // Global stock bbox (stock-relative, origin at 0,0,0)
         let stock_bbox = BoundingBox3 {
             min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
-            max: rs_cam_core::geo::P3::new(w, d, h),
+            max: rs_cam_core::geo::P3::new(stock.x, stock.y, stock.z),
         };
+
+        // Build per-setup groups with pre-transformed toolpaths
+        let mut groups: Vec<SetupSimGroup> = Vec::new();
+        let mut all_toolpaths_flat = Vec::new();
+
+        for setup in &self.state.job.setups {
+            let direction = face_up_to_direction(setup.face_up);
+            let toolpaths: Vec<_> = setup
+                .toolpaths
+                .iter()
+                .filter(|tp| tp.enabled)
+                .filter_map(|tp| {
+                    let result = tp.result.as_ref()?;
+                    let tool = self
+                        .state
+                        .job
+                        .tools
+                        .iter()
+                        .find(|t| t.id == tp.tool_id)?
+                        .clone();
+                    // Transform toolpath from setup-local to global stock frame
+                    let transformed = if setup.needs_transform() {
+                        Arc::new(transform_toolpath_to_stock_frame(
+                            &result.toolpath,
+                            setup,
+                            stock,
+                        ))
+                    } else {
+                        Arc::clone(&result.toolpath)
+                    };
+                    Some((tp.id, tp.name.clone(), transformed, tool))
+                })
+                .collect();
+
+            if !toolpaths.is_empty() {
+                all_toolpaths_flat.extend(toolpaths.clone());
+                groups.push(SetupSimGroup {
+                    toolpaths,
+                    direction,
+                });
+            }
+        }
+
+        if groups.is_empty() {
+            tracing::warn!("No computed toolpaths to simulate");
+            return;
+        }
 
         if self.state.simulation.auto_resolution {
             self.state.simulation.resolution =
-                auto_resolution_for_tools(&toolpaths, &stock_bbox);
+                auto_resolution_for_tools(&all_toolpaths_flat, &stock_bbox);
         }
 
+        // Model mesh — transform to first setup's frame for deviation calc
+        // (deviation is approximate for multi-setup; future work for per-setup deviation)
         let model_mesh = self.state.job.models.iter().find_map(|m| {
-            m.mesh.as_ref().map(|mesh| {
-                Arc::new(crate::state::job::transform_mesh(
-                    mesh,
-                    setup,
-                    &self.state.job.stock,
-                ))
+            m.mesh.as_ref().and_then(|mesh| {
+                let setup = self.state.job.setups.first()?;
+                Some(Arc::new(crate::state::job::transform_mesh(
+                    mesh, setup, stock,
+                )))
             })
         });
 
         self.compute.submit_simulation(SimulationRequest {
-            toolpaths,
+            groups,
             stock_bbox,
             stock_top_z: stock_bbox.max.z,
             resolution: self.state.simulation.resolution,
@@ -476,59 +493,99 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub fn run_simulation_with_ids(&mut self, ids: &[ToolpathId]) {
-        // Find which setup contains these toolpaths
-        let setup = self.state.job.setups.iter().find(|s| {
-            s.toolpaths.iter().any(|tp| ids.contains(&tp.id))
-        });
-        let Some(setup) = setup else {
+        // Find the index of the setup that contains these toolpaths.
+        let target_setup_idx = self
+            .state
+            .job
+            .setups
+            .iter()
+            .position(|s| s.toolpaths.iter().any(|tp| ids.contains(&tp.id)));
+        let Some(target_setup_idx) = target_setup_idx else {
             tracing::warn!("No computed toolpaths to simulate");
             return;
         };
 
-        let toolpaths: Vec<_> = setup
-            .toolpaths
-            .iter()
-            .filter(|tp| ids.contains(&tp.id))
-            .filter_map(|tp| {
-                let result = tp.result.as_ref()?;
-                let tool = self
-                    .state
-                    .job
-                    .tools
-                    .iter()
-                    .find(|t| t.id == tp.tool_id)?
-                    .clone();
-                Some((tp.id, tp.name.clone(), Arc::clone(&result.toolpath), tool))
-            })
-            .collect();
+        let stock = &self.state.job.stock;
+        let stock_bbox = BoundingBox3 {
+            min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
+            max: rs_cam_core::geo::P3::new(stock.x, stock.y, stock.z),
+        };
 
-        if toolpaths.is_empty() {
+        // Build groups: ALL enabled toolpaths from preceding setups first,
+        // so the stock carries forward, then the selected toolpaths from the
+        // target setup.
+        let mut groups: Vec<SetupSimGroup> = Vec::new();
+        let mut all_toolpaths_flat = Vec::new();
+
+        for (i, setup) in self.state.job.setups.iter().enumerate() {
+            let direction = face_up_to_direction(setup.face_up);
+            let is_target = i == target_setup_idx;
+
+            let toolpaths: Vec<_> = setup
+                .toolpaths
+                .iter()
+                .filter(|tp| {
+                    if is_target {
+                        ids.contains(&tp.id) // only selected toolpaths in target setup
+                    } else if i < target_setup_idx {
+                        tp.enabled // all enabled toolpaths in preceding setups
+                    } else {
+                        false // skip setups after the target
+                    }
+                })
+                .filter_map(|tp| {
+                    let result = tp.result.as_ref()?;
+                    let tool = self
+                        .state
+                        .job
+                        .tools
+                        .iter()
+                        .find(|t| t.id == tp.tool_id)?
+                        .clone();
+                    let transformed = if setup.needs_transform() {
+                        Arc::new(transform_toolpath_to_stock_frame(
+                            &result.toolpath,
+                            setup,
+                            stock,
+                        ))
+                    } else {
+                        Arc::clone(&result.toolpath)
+                    };
+                    Some((tp.id, tp.name.clone(), transformed, tool))
+                })
+                .collect();
+
+            if !toolpaths.is_empty() {
+                all_toolpaths_flat.extend(toolpaths.clone());
+                groups.push(SetupSimGroup {
+                    toolpaths,
+                    direction,
+                });
+            }
+
+            if is_target {
+                break; // don't include setups after the target
+            }
+        }
+
+        if groups.is_empty() {
             return;
         }
 
-        let (w, d, h) = setup.effective_stock(&self.state.job.stock);
-        let stock_bbox = BoundingBox3 {
-            min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
-            max: rs_cam_core::geo::P3::new(w, d, h),
-        };
-
         if self.state.simulation.auto_resolution {
             self.state.simulation.resolution =
-                auto_resolution_for_tools(&toolpaths, &stock_bbox);
+                auto_resolution_for_tools(&all_toolpaths_flat, &stock_bbox);
         }
 
+        let target_setup = &self.state.job.setups[target_setup_idx];
         let model_mesh = self.state.job.models.iter().find_map(|m| {
-            m.mesh.as_ref().map(|mesh| {
-                Arc::new(crate::state::job::transform_mesh(
-                    mesh,
-                    setup,
-                    &self.state.job.stock,
-                ))
-            })
+            m.mesh
+                .as_ref()
+                .map(|mesh| Arc::new(crate::state::job::transform_mesh(mesh, target_setup, stock)))
         });
 
         self.compute.submit_simulation(SimulationRequest {
-            toolpaths,
+            groups,
             stock_bbox,
             stock_top_z: stock_bbox.max.z,
             resolution: self.state.simulation.resolution,
@@ -763,6 +820,7 @@ impl<B: ComputeBackend> AppController<B> {
                                 tool_name: boundary.tool_name.clone(),
                                 start_move: boundary.start_move,
                                 end_move: boundary.end_move,
+                                direction: boundary.direction,
                             })
                             .collect();
 
@@ -801,7 +859,7 @@ impl<B: ComputeBackend> AppController<B> {
                             .map(|checkpoint| crate::state::simulation::SimCheckpoint {
                                 boundary_index: checkpoint.boundary_index,
                                 mesh: checkpoint.mesh,
-                                heightmap: Some(checkpoint.heightmap),
+                                stock: Some(checkpoint.stock),
                             })
                             .collect();
 
@@ -816,9 +874,22 @@ impl<B: ComputeBackend> AppController<B> {
                         self.state.simulation.checks.rapid_collision_move_indices =
                             simulation.rapid_collision_move_indices;
 
-                        // Cache display mesh and deviations for viz mode re-coloring
+                        // Cache deviations for viz mode re-coloring.
+                        // display_mesh starts as None — the first playback frame
+                        // will fill it in from the live stock, showing progressive
+                        // cutting from the uncut block.
                         self.state.simulation.playback.display_deviations = simulation.deviations;
-                        self.state.simulation.playback.display_mesh = Some(simulation.mesh.clone());
+                        self.state.simulation.playback.display_mesh = None;
+
+                        // Global stock bbox (stock-relative, origin at 0,0,0)
+                        let stock_bbox = rs_cam_core::geo::BoundingBox3 {
+                            min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
+                            max: rs_cam_core::geo::P3::new(
+                                self.state.job.stock.x,
+                                self.state.job.stock.y,
+                                self.state.job.stock.z,
+                            ),
+                        };
 
                         // Store results as cached artifact
                         self.state.simulation.results = Some(SimulationResults {
@@ -828,18 +899,21 @@ impl<B: ComputeBackend> AppController<B> {
                             setup_boundaries,
                             checkpoints,
                             selected_toolpaths: None,
+                            playback_data: simulation.playback_data,
+                            stock_bbox,
                         });
 
-                        // Update playback to end position
-                        self.state.simulation.playback.current_move = simulation.total_moves;
+                        // Start playback from the beginning so the user sees
+                        // the tool progressively cutting the uncut block.
+                        self.state.simulation.playback.current_move = 0;
+                        self.state.simulation.playback.playing = true;
 
-                        // Store the initial (fresh stock) heightmap for playback
-                        let initial_heightmap = rs_cam_core::simulation::Heightmap::from_bounds(
-                            &self.state.job.stock.bbox(),
-                            Some(self.state.job.stock.bbox().max.z),
+                        // Store fresh tri-dexel stock for playback (global frame)
+                        let initial_stock = TriDexelStock::from_bounds(
+                            &stock_bbox,
                             self.state.simulation.resolution,
                         );
-                        self.state.simulation.playback.live_heightmap = Some(initial_heightmap);
+                        self.state.simulation.playback.live_stock = Some(initial_stock);
                         self.state.simulation.playback.live_sim_move = 0;
 
                         // Update staleness metadata
@@ -975,6 +1049,103 @@ impl<B: ComputeBackend> AppController<B> {
 /// Targets ~5 cells across the smallest tool radius so curved profiles
 /// (especially ball nose) are visually resolved.  Clamped to [0.02, 0.5] mm
 /// and further limited so the grid stays under ~8 M cells.
+/// Derive the stock cut direction from a setup's face-up orientation.
+fn face_up_to_direction(face_up: FaceUp) -> StockCutDirection {
+    match face_up {
+        FaceUp::Top => StockCutDirection::FromTop,
+        FaceUp::Bottom => StockCutDirection::FromBottom,
+        FaceUp::Front => StockCutDirection::FromFront,
+        FaceUp::Back => StockCutDirection::FromBack,
+        FaceUp::Left => StockCutDirection::FromLeft,
+        FaceUp::Right => StockCutDirection::FromRight,
+    }
+}
+
+/// Transform a toolpath from a setup's local coordinate frame to the global
+/// stock-relative frame (origin at 0,0,0, axes aligned with physical stock).
+///
+/// For arc moves (CW/CCW), the offset vector (i,j) is transformed by the
+/// linear part of the affine transform, and arc direction is flipped when the
+/// XY component of the transform is a reflection.
+fn transform_toolpath_to_stock_frame(
+    toolpath: &rs_cam_core::toolpath::Toolpath,
+    setup: &Setup,
+    stock: &crate::state::job::StockConfig,
+) -> rs_cam_core::toolpath::Toolpath {
+    use rs_cam_core::geo::P3;
+    use rs_cam_core::toolpath::{Move, MoveType, Toolpath};
+
+    let (eff_w, eff_d, _) = setup.face_up.effective_stock(stock.x, stock.y, stock.z);
+
+    // Point transform: undo ZRotation, then undo FaceUp (local → global stock-relative)
+    let xform = |p: P3| -> P3 {
+        let unrotated = setup.z_rotation.inverse_transform_point(p, eff_w, eff_d);
+        setup
+            .face_up
+            .inverse_transform_point(unrotated, stock.x, stock.y, stock.z)
+    };
+
+    // Direction transform for arc offsets (i,j,0): linear part only (no translation).
+    let o_g = xform(P3::new(0.0, 0.0, 0.0));
+    let dir_xform = |di: f64, dj: f64| -> (f64, f64) {
+        let p_g = xform(P3::new(di, dj, 0.0));
+        (p_g.x - o_g.x, p_g.y - o_g.y)
+    };
+
+    // Determine if XY transform is a reflection (negative determinant → flip arc direction).
+    let ex_g = xform(P3::new(1.0, 0.0, 0.0));
+    let ey_g = xform(P3::new(0.0, 1.0, 0.0));
+    let det = (ex_g.x - o_g.x) * (ey_g.y - o_g.y) - (ex_g.y - o_g.y) * (ey_g.x - o_g.x);
+    let flip_arcs = det < 0.0;
+
+    let new_moves: Vec<Move> = toolpath
+        .moves
+        .iter()
+        .map(|m| {
+            let target = xform(m.target);
+            let move_type = match m.move_type {
+                MoveType::Rapid => MoveType::Rapid,
+                MoveType::Linear { feed_rate } => MoveType::Linear { feed_rate },
+                MoveType::ArcCW { i, j, feed_rate } => {
+                    let (ni, nj) = dir_xform(i, j);
+                    if flip_arcs {
+                        MoveType::ArcCCW {
+                            i: ni,
+                            j: nj,
+                            feed_rate,
+                        }
+                    } else {
+                        MoveType::ArcCW {
+                            i: ni,
+                            j: nj,
+                            feed_rate,
+                        }
+                    }
+                }
+                MoveType::ArcCCW { i, j, feed_rate } => {
+                    let (ni, nj) = dir_xform(i, j);
+                    if flip_arcs {
+                        MoveType::ArcCW {
+                            i: ni,
+                            j: nj,
+                            feed_rate,
+                        }
+                    } else {
+                        MoveType::ArcCCW {
+                            i: ni,
+                            j: nj,
+                            feed_rate,
+                        }
+                    }
+                }
+            };
+            Move { target, move_type }
+        })
+        .collect();
+
+    Toolpath { moves: new_moves }
+}
+
 fn auto_resolution_for_tools(
     toolpaths: &[(
         ToolpathId,
