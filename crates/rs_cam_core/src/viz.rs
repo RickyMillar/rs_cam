@@ -7,11 +7,11 @@
 //! Writing to `String` is infallible (only fails on OOM, which panics regardless),
 //! so discarding the `Result` with `let _ =` is safe.
 
-use crate::geo::BoundingBox3;
-use crate::mesh::TriangleMesh;
+use crate::arc_util::linearize_arc;
 use crate::dexel_mesh::dexel_stock_to_mesh;
 use crate::dexel_stock::TriDexelStock;
-use crate::arc_util::linearize_arc;
+use crate::geo::BoundingBox3;
+use crate::mesh::TriangleMesh;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveType, Toolpath};
 use std::fmt::Write;

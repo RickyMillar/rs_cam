@@ -16,12 +16,12 @@ use crate::adaptive_shared::{
     angle_diff, average_angles, blend_corners, refine_angle_bracket, target_engagement_fraction,
 };
 use crate::debug_trace::{HotspotRecord, ToolpathDebugBounds2, ToolpathDebugContext};
+use crate::dexel::{ray_subtract_above, ray_top};
+use crate::dexel_stock::{StockCutDirection, TriDexelStock};
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::dexel::{ray_subtract_above, ray_top};
-use crate::dexel_stock::{StockCutDirection, TriDexelStock};
 use crate::radial_profile::RadialProfileLUT;
 use crate::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
@@ -298,13 +298,9 @@ fn compute_engagement_3d(
     let grid = &material_stock.z_grid;
     let cs = grid.cell_size;
 
-    let col_min = ((cx - tool_radius - grid.origin_u) / cs)
-        .floor()
-        .max(0.0) as usize;
+    let col_min = ((cx - tool_radius - grid.origin_u) / cs).floor().max(0.0) as usize;
     let col_max = ((cx + tool_radius - grid.origin_u) / cs).ceil() as usize;
-    let row_min = ((cy - tool_radius - grid.origin_v) / cs)
-        .floor()
-        .max(0.0) as usize;
+    let row_min = ((cy - tool_radius - grid.origin_v) / cs).floor().max(0.0) as usize;
     let row_max = ((cy + tool_radius - grid.origin_v) / cs).ceil() as usize;
 
     let col_max = col_max.min(grid.cols.saturating_sub(1));
@@ -675,15 +671,11 @@ fn find_entry_3d(
 
         let mut radius = initial_radius;
         while radius <= max_extent * 1.5 {
-            let row_lo = ((ref_pos.y - radius - grid.origin_v) / cs)
-                .floor()
-                .max(0.0) as usize;
+            let row_lo = ((ref_pos.y - radius - grid.origin_v) / cs).floor().max(0.0) as usize;
             let row_hi = ((ref_pos.y + radius - grid.origin_v) / cs)
                 .ceil()
                 .min(grid.rows.saturating_sub(1) as f64) as usize;
-            let col_lo = ((ref_pos.x - radius - grid.origin_u) / cs)
-                .floor()
-                .max(0.0) as usize;
+            let col_lo = ((ref_pos.x - radius - grid.origin_u) / cs).floor().max(0.0) as usize;
             let col_hi = ((ref_pos.x + radius - grid.origin_u) / cs)
                 .ceil()
                 .min(grid.cols.saturating_sub(1) as f64) as usize;
@@ -1122,7 +1114,10 @@ fn pre_stamp_thin_bands(
             let effective_floor = (surf_z + stock_to_leave).max(z_level);
             let thickness = mat_z - effective_floor;
             if thickness > 0.01 && thickness < thin_threshold {
-                ray_subtract_above(material_stock.z_grid.ray_mut(row, col), effective_floor as f32);
+                ray_subtract_above(
+                    material_stock.z_grid.ray_mut(row, col),
+                    effective_floor as f32,
+                );
                 stamped += 1;
             }
         }
@@ -1361,7 +1356,14 @@ fn clear_z_level(
                 let (sin_a, cos_a) = angle.sin_cos();
                 let px = entry_xy.x + tool_radius * 0.5 * cos_a;
                 let py = entry_xy.y + tool_radius * 0.5 * sin_a;
-                material_stock.stamp_tool_at(ctx.lut, ctx.tool_radius, px, py, entry_z, StockCutDirection::FromTop);
+                material_stock.stamp_tool_at(
+                    ctx.lut,
+                    ctx.tool_radius,
+                    px,
+                    py,
+                    entry_z,
+                    StockCutDirection::FromTop,
+                );
             }
             pass_endpoints.push(entry_xy);
             short_pass_streak += 1;
@@ -1420,7 +1422,14 @@ fn clear_z_level(
             0.0
         };
 
-        material_stock.stamp_tool_at(ctx.lut, ctx.tool_radius, cx, cy, cz, StockCutDirection::FromTop);
+        material_stock.stamp_tool_at(
+            ctx.lut,
+            ctx.tool_radius,
+            cx,
+            cy,
+            cz,
+            StockCutDirection::FromTop,
+        );
 
         const SMOOTH_BUF_LEN: usize = 3;
         let mut angle_buf: Vec<f64> = Vec::with_capacity(SMOOTH_BUF_LEN);
@@ -1484,7 +1493,14 @@ fn clear_z_level(
             cz = z_next.max(cz - max_z_step);
             path.push(P3::new(cx, cy, cz));
 
-            material_stock.stamp_tool_at(ctx.lut, ctx.tool_radius, cx, cy, cz, StockCutDirection::FromTop);
+            material_stock.stamp_tool_at(
+                ctx.lut,
+                ctx.tool_radius,
+                cx,
+                cy,
+                cz,
+                StockCutDirection::FromTop,
+            );
 
             if angle_buf.len() >= SMOOTH_BUF_LEN {
                 angle_buf.remove(0);
@@ -1568,8 +1584,10 @@ fn clear_z_level(
         // Low-yield detection: bail on passes that trace lots of steps but remove
         // negligible material (typical of thin wall contour re-tracing).
         let yield_ratio = if pass_steps > 1 {
-            let expected =
-                pass_steps as f64 * ctx.stepover * ctx.depth_per_pass * material_stock.z_grid.cell_size;
+            let expected = pass_steps as f64
+                * ctx.stepover
+                * ctx.depth_per_pass
+                * material_stock.z_grid.cell_size;
             if expected > 0.0 {
                 pass_removal_sum / expected
             } else {
@@ -1633,7 +1651,14 @@ fn clear_z_level(
         }
 
         if was_idle {
-            material_stock.stamp_tool_at(ctx.lut, ctx.tool_radius, cx, cy, cz, StockCutDirection::FromTop);
+            material_stock.stamp_tool_at(
+                ctx.lut,
+                ctx.tool_radius,
+                cx,
+                cy,
+                cz,
+                StockCutDirection::FromTop,
+            );
             for a in 0..8 {
                 let angle = (a as f64 / 8.0) * TAU;
                 let (sin_a, cos_a) = angle.sin_cos();
@@ -1645,7 +1670,14 @@ fn clear_z_level(
                 } else {
                     (surf_z + ctx.stock_to_leave).max(z_level)
                 };
-                material_stock.stamp_tool_at(ctx.lut, ctx.tool_radius, px, py, pz, StockCutDirection::FromTop);
+                material_stock.stamp_tool_at(
+                    ctx.lut,
+                    ctx.tool_radius,
+                    px,
+                    py,
+                    pz,
+                    StockCutDirection::FromTop,
+                );
             }
         }
 
@@ -1675,7 +1707,14 @@ fn clear_z_level(
                         let sz = surface_hm.surface_z_at_world(px, py);
                         if sz != f64::NEG_INFINITY {
                             let pz = (sz + ctx.stock_to_leave).max(z_level);
-                            material_stock.stamp_tool_at(ctx.lut, ctx.tool_radius, px, py, pz, StockCutDirection::FromTop);
+                            material_stock.stamp_tool_at(
+                                ctx.lut,
+                                ctx.tool_radius,
+                                px,
+                                py,
+                                pz,
+                                StockCutDirection::FromTop,
+                            );
                         }
                     }
                 }
@@ -2403,15 +2442,27 @@ mod tests {
 
     /// Helper: create a TriDexelStock from explicit dimensions (matching old Heightmap::from_stock).
     /// Uses `z_min = -10.0` as default bottom Z unless specified.
-    fn make_stock(x_min: f64, y_min: f64, x_max: f64, y_max: f64, z_top: f64, cell_size: f64) -> TriDexelStock {
+    fn make_stock(
+        x_min: f64,
+        y_min: f64,
+        x_max: f64,
+        y_max: f64,
+        z_top: f64,
+        cell_size: f64,
+    ) -> TriDexelStock {
         TriDexelStock::from_stock(x_min, y_min, x_max, y_max, -10.0, z_top, cell_size)
     }
 
     /// Helper: create a TriDexelStock with custom per-cell Z-top values.
     /// `cell_top_z` is row-major; each cell gets a single segment [z_min, cell_z].
     fn make_stock_with_cells(
-        rows: usize, cols: usize, origin_x: f64, origin_y: f64, cell_size: f64,
-        z_min: f64, cell_top_z: &[f64],
+        rows: usize,
+        cols: usize,
+        origin_x: f64,
+        origin_y: f64,
+        cell_size: f64,
+        z_min: f64,
+        cell_top_z: &[f64],
     ) -> TriDexelStock {
         use smallvec::SmallVec;
         let z_max = cell_top_z.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -2623,7 +2674,14 @@ mod tests {
 
         // Stamp tool at (3, 0) to clear half the area near (0, 0)
         let lut = RadialProfileLUT::from_cutter(&cutter, 256);
-        material_stock.stamp_tool_at(&lut, cutter.radius(), 3.0, 0.0, 10.0, StockCutDirection::FromTop);
+        material_stock.stamp_tool_at(
+            &lut,
+            cutter.radius(),
+            3.0,
+            0.0,
+            10.0,
+            StockCutDirection::FromTop,
+        );
 
         let eng = compute_engagement_3d(&material_stock, &surface_hm, 0.0, 0.0, 3.175, 10.0, 0.5);
         assert!(
@@ -3449,7 +3507,8 @@ mod tests {
                 mat_cells[row * cols + col] = 12.0;
             }
         }
-        let mut material_stock = make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
+        let mut material_stock =
+            make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
 
         let stamped = pre_stamp_thin_bands(
             &mut material_stock,
@@ -3506,7 +3565,15 @@ mod tests {
             cell_size,
         };
         let slope_map = SlopeMap::from_z_grid(&z_values, rows, cols, 0.0, 0.0, cell_size);
-        let mut material_stock = make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &vec![20.0; rows * cols]);
+        let mut material_stock = make_stock_with_cells(
+            rows,
+            cols,
+            0.0,
+            0.0,
+            cell_size,
+            -10.0,
+            &vec![20.0; rows * cols],
+        );
 
         let stamped = pre_stamp_thin_bands(
             &mut material_stock,
@@ -3562,7 +3629,8 @@ mod tests {
                 mat_cells[row * cols + col] = floor + 0.5; // 0.5mm thin band everywhere
             }
         }
-        let mut material_stock = make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
+        let mut material_stock =
+            make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
 
         let stamped = pre_stamp_thin_bands(
             &mut material_stock,
@@ -3627,7 +3695,14 @@ mod tests {
         // Stamp along the path itself
         let lut = RadialProfileLUT::from_cutter(&cutter, 256);
         for p in &path {
-            material_stock.stamp_tool_at(&lut, cutter.radius(), p.x, p.y, p.z, StockCutDirection::FromTop);
+            material_stock.stamp_tool_at(
+                &lut,
+                cutter.radius(),
+                p.x,
+                p.y,
+                p.z,
+                StockCutDirection::FromTop,
+            );
         }
 
         // Now apply widening with double ring at stepover distance
@@ -3649,7 +3724,14 @@ mod tests {
                     let sz = surface_hm.surface_z_at_world(px, py);
                     if sz != f64::NEG_INFINITY {
                         let pz = (sz + 0.5).max(z_level);
-                        material_stock.stamp_tool_at(&lut, cutter.radius(), px, py, pz, StockCutDirection::FromTop);
+                        material_stock.stamp_tool_at(
+                            &lut,
+                            cutter.radius(),
+                            px,
+                            py,
+                            pz,
+                            StockCutDirection::FromTop,
+                        );
                     }
                 }
             }

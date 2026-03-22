@@ -11,11 +11,11 @@ use rs_cam_core::geo::{BoundingBox3, P3, V3};
 use rs_cam_core::semantic_trace::{
     ToolpathSemanticItem, ToolpathSemanticKind, ToolpathSemanticTrace,
 };
-use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::simulation_cut::{
     SimulationCutHotspot, SimulationCutIssue, SimulationCutIssueKind, SimulationCutSample,
     SimulationCutTrace, SimulationMetricOptions, SimulationSemanticCutSummary,
 };
+use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

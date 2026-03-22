@@ -11,9 +11,9 @@
 //! - 15-30% faster cycle times on variable-engagement operations
 //! - Consistent chip load → better surface finish
 
-use crate::geo::P3;
 use crate::dexel::ray_top;
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
+use crate::geo::P3;
 use crate::radial_profile::RadialProfileLUT;
 use crate::tool::MillingCutter;
 use crate::toolpath::{Move, MoveType, Toolpath};

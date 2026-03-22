@@ -43,9 +43,9 @@ use rs_cam_core::radial_finish::{RadialFinishParams, radial_finish_toolpath};
 use rs_cam_core::ramp_finish::{CutDirection as CoreCutDir, RampFinishParams};
 use rs_cam_core::rest::{RestParams, rest_machining_toolpath};
 use rs_cam_core::scallop::{ScallopDirection as CoreScalDir, ScallopParams};
-use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::spiral_finish::{SpiralDirection as CoreSpiralDir, SpiralFinishParams};
 use rs_cam_core::steep_shallow::{SteepShallowParams, steep_shallow_toolpath};
+use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::tool::{
     BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill,
 };

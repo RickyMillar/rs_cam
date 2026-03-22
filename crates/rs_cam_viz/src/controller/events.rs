@@ -959,15 +959,10 @@ impl<B: ComputeBackend> AppController<B> {
 
         // Run the same validation the UI uses so both paths are consistent.
         {
-            let tools_snapshot: Vec<_> = self
-                .state
-                .job
-                .tools
-                .iter()
-                .map(|t| (t.id, t.summary(), t.diameter))
-                .collect();
+            let validation =
+                crate::ui::properties::ToolpathValidationContext::from_job(&self.state.job);
             if let Some(entry) = self.state.job.find_toolpath(tp_id) {
-                let errs = crate::ui::properties::validate_toolpath(entry, &tools_snapshot);
+                let errs = crate::ui::properties::validate_toolpath(entry, &validation);
                 if !errs.is_empty() {
                     if let Some(tp) = self.state.job.find_toolpath_mut(tp_id) {
                         tp.status = ComputeStatus::Error(errs.join("; "));

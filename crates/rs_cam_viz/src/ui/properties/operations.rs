@@ -1,3 +1,4 @@
+use crate::state::job::{JobState, ToolType};
 use crate::state::toolpath::*;
 
 use super::dv;
@@ -1121,57 +1122,110 @@ pub(super) fn draw_project_curve_params(ui: &mut egui::Ui, cfg: &mut ProjectCurv
 
 // ── Validation ───────────────────────────────────────────────────────────
 
-pub fn validate_toolpath(
-    entry: &ToolpathEntry,
-    tools: &[(crate::state::job::ToolId, String, f64)],
-) -> Vec<String> {
+pub struct ToolpathValidationContext {
+    tools: Vec<ValidationTool>,
+    models: Vec<ValidationModel>,
+    setups: Vec<ValidationSetup>,
+}
+
+struct ValidationTool {
+    id: crate::state::job::ToolId,
+    tool_type: ToolType,
+    diameter: f64,
+}
+
+struct ValidationModel {
+    id: crate::state::job::ModelId,
+    has_polygons: bool,
+    has_mesh: bool,
+}
+
+struct ValidationSetup {
+    toolpaths: Vec<ValidationToolpath>,
+}
+
+struct ValidationToolpath {
+    id: ToolpathId,
+    tool_id: crate::state::job::ToolId,
+    model_id: crate::state::job::ModelId,
+    enabled: bool,
+}
+
+impl ToolpathValidationContext {
+    pub fn from_job(job: &JobState) -> Self {
+        Self {
+            tools: job
+                .tools
+                .iter()
+                .map(|tool| ValidationTool {
+                    id: tool.id,
+                    tool_type: tool.tool_type,
+                    diameter: tool.diameter,
+                })
+                .collect(),
+            models: job
+                .models
+                .iter()
+                .map(|model| ValidationModel {
+                    id: model.id,
+                    has_polygons: model.polygons.is_some(),
+                    has_mesh: model.mesh.is_some(),
+                })
+                .collect(),
+            setups: job
+                .setups
+                .iter()
+                .map(|setup| ValidationSetup {
+                    toolpaths: setup
+                        .toolpaths
+                        .iter()
+                        .map(|toolpath| ValidationToolpath {
+                            id: toolpath.id,
+                            tool_id: toolpath.tool_id,
+                            model_id: toolpath.model_id,
+                            enabled: toolpath.enabled,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
+}
+
+pub fn validate_toolpath(entry: &ToolpathEntry, ctx: &ToolpathValidationContext) -> Vec<String> {
     let mut errs = Vec::new();
 
-    let tool = tools.iter().find(|(id, _, _)| *id == entry.tool_id);
-    if tool.is_none() {
+    let Some(tool) = ctx.tools.iter().find(|tool| tool.id == entry.tool_id) else {
         errs.push("No tool selected".into());
         return errs;
-    }
-    let (_, _, tool_diameter) = tool.unwrap();
+    };
+    let tool_diameter = tool.diameter;
+
+    validate_geometry_selection(entry, ctx, &mut errs);
 
     match &entry.operation {
         OperationConfig::Pocket(c) => {
-            if c.stepover >= *tool_diameter {
+            if c.stepover >= tool_diameter {
                 errs.push("Stepover must be less than tool diameter".into());
             }
         }
         OperationConfig::Adaptive(c) => {
-            if c.stepover >= *tool_diameter {
+            if c.stepover >= tool_diameter {
                 errs.push("Stepover must be less than tool diameter".into());
             }
         }
         OperationConfig::VCarve(_) => {
-            let is_vbit = tools
-                .iter()
-                .find(|(id, _, _)| *id == entry.tool_id)
-                .map(|(_, name, _)| name.contains("V-Bit"))
-                .unwrap_or(false);
-            if !is_vbit {
+            if tool.tool_type != ToolType::VBit {
                 errs.push("VCarve requires a V-Bit tool".into());
             }
         }
         OperationConfig::Inlay(_) => {
-            let is_vbit = tools
-                .iter()
-                .find(|(id, _, _)| *id == entry.tool_id)
-                .map(|(_, name, _)| name.contains("V-Bit"))
-                .unwrap_or(false);
-            if !is_vbit {
+            if tool.tool_type != ToolType::VBit {
                 errs.push("Inlay requires a V-Bit tool".into());
             }
         }
         OperationConfig::Chamfer(_) => {
-            let is_vbit = tools
-                .iter()
-                .find(|(id, _, _)| *id == entry.tool_id)
-                .map(|(_, name, _)| name.contains("V-Bit"))
-                .unwrap_or(false);
-            if !is_vbit {
+            if tool.tool_type != ToolType::VBit {
                 errs.push("Chamfer requires a V-Bit tool".into());
             }
         }
@@ -1179,14 +1233,21 @@ pub fn validate_toolpath(
             if c.prev_tool_id.is_none() {
                 errs.push("Previous tool not selected".into());
             } else if let Some(prev) = c.prev_tool_id {
-                let prev_d = tools
+                let prev_d = ctx
+                    .tools
                     .iter()
-                    .find(|(id, _, _)| *id == prev)
-                    .map(|(_, _, d)| *d);
+                    .find(|tool| tool.id == prev)
+                    .map(|tool| tool.diameter);
                 if let Some(pd) = prev_d
-                    && pd <= *tool_diameter
+                    && pd <= tool_diameter
                 {
                     errs.push("Previous tool must be larger than current tool".into());
+                }
+                if !has_prior_rest_source(ctx, entry, prev) {
+                    errs.push(
+                        "Rest machining requires an earlier enabled operation in the same setup using the previous tool on the same model"
+                            .into(),
+                    );
                 }
             }
         }
@@ -1194,4 +1255,207 @@ pub fn validate_toolpath(
     }
 
     errs
+}
+
+fn validate_geometry_selection(
+    entry: &ToolpathEntry,
+    ctx: &ToolpathValidationContext,
+    errs: &mut Vec<String>,
+) {
+    if entry.operation.is_stock_based() {
+        return;
+    }
+
+    let model = ctx.models.iter().find(|model| model.id == entry.model_id);
+    let Some(model) = model else {
+        errs.push("Selected model is missing".into());
+        return;
+    };
+
+    let has_polygons = model.has_polygons;
+    let has_mesh = model.has_mesh;
+
+    if entry.operation.needs_both() {
+        if !has_polygons || !has_mesh {
+            errs.push("Selected model must provide both 2D geometry and a 3D mesh".into());
+        }
+    } else if entry.operation.is_3d() {
+        if !has_mesh {
+            errs.push("Selected model has no 3D mesh".into());
+        }
+    } else if !has_polygons {
+        errs.push("Selected model has no 2D geometry".into());
+    }
+}
+
+fn has_prior_rest_source(
+    ctx: &ToolpathValidationContext,
+    entry: &ToolpathEntry,
+    prev_tool_id: crate::state::job::ToolId,
+) -> bool {
+    let Some(setup) = ctx.setups.iter().find(|setup| {
+        setup
+            .toolpaths
+            .iter()
+            .any(|toolpath| toolpath.id == entry.id)
+    }) else {
+        return false;
+    };
+
+    let Some(current_idx) = setup
+        .toolpaths
+        .iter()
+        .position(|toolpath| toolpath.id == entry.id)
+    else {
+        return false;
+    };
+
+    setup.toolpaths[..current_idx].iter().any(|toolpath| {
+        toolpath.enabled && toolpath.tool_id == prev_tool_id && toolpath.model_id == entry.model_id
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use rs_cam_core::mesh::make_test_flat;
+    use rs_cam_core::polygon::Polygon2;
+
+    use super::*;
+    use crate::state::job::{
+        JobState, LoadedModel, ModelId, ModelKind, ModelUnits, ToolConfig, ToolId,
+    };
+
+    fn polygon_model(id: ModelId) -> LoadedModel {
+        LoadedModel {
+            id,
+            path: PathBuf::from("demo.svg"),
+            name: "2D".to_string(),
+            kind: ModelKind::Svg,
+            mesh: None,
+            polygons: Some(Arc::new(vec![Polygon2::rectangle(
+                -10.0, -10.0, 10.0, 10.0,
+            )])),
+            units: ModelUnits::Millimeters,
+            winding_report: None,
+            load_error: None,
+        }
+    }
+
+    fn mesh_model(id: ModelId) -> LoadedModel {
+        LoadedModel {
+            id,
+            path: PathBuf::from("demo.stl"),
+            name: "3D".to_string(),
+            kind: ModelKind::Stl,
+            mesh: Some(Arc::new(make_test_flat(20.0))),
+            polygons: None,
+            units: ModelUnits::Millimeters,
+            winding_report: None,
+            load_error: None,
+        }
+    }
+
+    fn sample_tool(id: ToolId, tool_type: ToolType, diameter: f64) -> ToolConfig {
+        let mut tool = ToolConfig::new_default(id, tool_type);
+        tool.diameter = diameter;
+        tool
+    }
+
+    #[test]
+    fn validate_toolpath_rejects_wrong_geometry_type() {
+        let mut job = JobState::new();
+        job.tools
+            .push(sample_tool(ToolId(1), ToolType::EndMill, 6.0));
+        job.models.push(mesh_model(ModelId(2)));
+
+        let entry = ToolpathEntry::for_operation(
+            ToolpathId(3),
+            "Pocket".to_string(),
+            ToolId(1),
+            ModelId(2),
+            OperationType::Pocket,
+        );
+
+        let errs = validate_toolpath(&entry, &ToolpathValidationContext::from_job(&job));
+        assert!(
+            errs.iter().any(|err| err.contains("2D geometry")),
+            "expected 2D geometry validation error, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn validate_rest_requires_earlier_matching_operation() {
+        let mut job = JobState::new();
+        job.tools
+            .push(sample_tool(ToolId(1), ToolType::EndMill, 10.0));
+        job.tools
+            .push(sample_tool(ToolId(2), ToolType::EndMill, 6.0));
+        job.models.push(polygon_model(ModelId(4)));
+
+        let mut rest = ToolpathEntry::for_operation(
+            ToolpathId(6),
+            "Rest".to_string(),
+            ToolId(2),
+            ModelId(4),
+            OperationType::Rest,
+        );
+        if let OperationConfig::Rest(cfg) = &mut rest.operation {
+            cfg.prev_tool_id = Some(ToolId(1));
+        }
+        job.push_toolpath(rest);
+
+        let errs = validate_toolpath(
+            job.find_toolpath(ToolpathId(6)).unwrap(),
+            &ToolpathValidationContext::from_job(&job),
+        );
+        assert!(
+            errs.iter()
+                .any(|err| err.contains("earlier enabled operation")),
+            "expected earlier-operation validation error, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn validate_rest_accepts_earlier_matching_operation() {
+        let mut job = JobState::new();
+        job.tools
+            .push(sample_tool(ToolId(1), ToolType::EndMill, 10.0));
+        job.tools
+            .push(sample_tool(ToolId(2), ToolType::EndMill, 6.0));
+        job.models.push(polygon_model(ModelId(4)));
+
+        let roughing = ToolpathEntry::for_operation(
+            ToolpathId(5),
+            "Pocket".to_string(),
+            ToolId(1),
+            ModelId(4),
+            OperationType::Pocket,
+        );
+        let mut rest = ToolpathEntry::for_operation(
+            ToolpathId(6),
+            "Rest".to_string(),
+            ToolId(2),
+            ModelId(4),
+            OperationType::Rest,
+        );
+        if let OperationConfig::Rest(cfg) = &mut rest.operation {
+            cfg.prev_tool_id = Some(ToolId(1));
+        }
+        job.push_toolpath(roughing);
+        job.push_toolpath(rest);
+
+        let errs = validate_toolpath(
+            job.find_toolpath(ToolpathId(6)).unwrap(),
+            &ToolpathValidationContext::from_job(&job),
+        );
+        assert!(
+            !errs
+                .iter()
+                .any(|err| err.contains("earlier enabled operation")),
+            "did not expect rest-ordering error, got {errs:?}"
+        );
+    }
 }

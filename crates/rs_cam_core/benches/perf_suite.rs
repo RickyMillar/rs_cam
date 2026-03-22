@@ -7,11 +7,11 @@ use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_ma
 use std::path::Path;
 
 use rs_cam_core::arcfit::fit_arcs;
+use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dropcutter::{batch_drop_cutter, point_drop_cutter};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
 use rs_cam_core::polygon::{Polygon2, offset_polygon, pocket_offsets};
-use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::radial_profile::RadialProfileLUT;
 use rs_cam_core::tool::{BallEndmill, FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::Toolpath;
@@ -139,13 +139,35 @@ fn bench_stamp_tool(c: &mut Criterion) {
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, 0.0, 10.0, cell_size);
         group.bench_function(
             BenchmarkId::new("ball_6mm", format!("cs{cell_size}")),
-            |b| b.iter(|| stock.stamp_tool_at(&ball_lut, ball.radius(), 50.0, 50.0, black_box(-2.0), StockCutDirection::FromTop)),
+            |b| {
+                b.iter(|| {
+                    stock.stamp_tool_at(
+                        &ball_lut,
+                        ball.radius(),
+                        50.0,
+                        50.0,
+                        black_box(-2.0),
+                        StockCutDirection::FromTop,
+                    )
+                })
+            },
         );
 
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, 0.0, 10.0, cell_size);
         group.bench_function(
             BenchmarkId::new("flat_6mm", format!("cs{cell_size}")),
-            |b| b.iter(|| stock.stamp_tool_at(&flat_lut, flat.radius(), 50.0, 50.0, black_box(-2.0), StockCutDirection::FromTop)),
+            |b| {
+                b.iter(|| {
+                    stock.stamp_tool_at(
+                        &flat_lut,
+                        flat.radius(),
+                        50.0,
+                        50.0,
+                        black_box(-2.0),
+                        StockCutDirection::FromTop,
+                    )
+                })
+            },
         );
     }
 
@@ -229,7 +251,15 @@ fn bench_stamp_linear_segment(c: &mut Criterion) {
     let end = P3::new(55.0, 5.0, -2.0);
 
     group.bench_function("50mm_ball6_cs025", |b| {
-        b.iter(|| stock.stamp_linear_segment(&lut, ball.radius(), black_box(start), black_box(end), StockCutDirection::FromTop))
+        b.iter(|| {
+            stock.stamp_linear_segment(
+                &lut,
+                ball.radius(),
+                black_box(start),
+                black_box(end),
+                StockCutDirection::FromTop,
+            )
+        })
     });
 
     group.finish();

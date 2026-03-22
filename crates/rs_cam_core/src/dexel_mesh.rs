@@ -48,11 +48,7 @@ pub fn dexel_stock_to_mesh(stock: &TriDexelStock) -> StockMesh {
 ///
 /// Empty rays (through-holes) collapse both top and bottom to `stock_bottom_z`,
 /// producing degenerate zero-area triangles.
-pub fn z_grid_to_solid_mesh(
-    grid: &DexelGrid,
-    stock_top_z: f64,
-    stock_bottom_z: f64,
-) -> StockMesh {
+pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: f64) -> StockMesh {
     let rows = grid.rows;
     let cols = grid.cols;
     let cells = rows * cols;
@@ -194,11 +190,7 @@ pub fn z_grid_to_solid_mesh(
 /// Vertex positions are mapped back to (x, y, z) world coordinates:
 /// - Y-grid (u=X, v=Z, depth=Y): vertex = (u, ray_top, v)
 /// - X-grid (u=Y, v=Z, depth=X): vertex = (ray_top, u, v)
-fn side_grid_to_mesh(
-    grid: &DexelGrid,
-    stock_top_depth: f64,
-    stock_bottom_depth: f64,
-) -> StockMesh {
+fn side_grid_to_mesh(grid: &DexelGrid, stock_top_depth: f64, stock_bottom_depth: f64) -> StockMesh {
     let rows = grid.rows;
     let cols = grid.cols;
     let num_verts = rows * cols;

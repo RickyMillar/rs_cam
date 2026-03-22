@@ -4,8 +4,8 @@ pub mod setup;
 pub mod stock;
 pub mod tool;
 
-pub use operations::validate_toolpath;
 use operations::*;
+pub use operations::{ToolpathValidationContext, validate_toolpath};
 
 use crate::state::AppState;
 use crate::state::selection::Selection;
@@ -241,6 +241,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .collect();
             // Snapshot tool configs for feeds calculation
             let tool_configs: Vec<_> = state.job.tools.iter().map(|t| (t.id, t.clone())).collect();
+            let validation = ToolpathValidationContext::from_job(&state.job);
             let material = state.job.stock.material.clone();
             let machine = state.job.machine.clone();
             let workholding = state.job.stock.workholding_rigidity;
@@ -258,6 +259,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     &tools,
                     &models,
                     &tool_configs,
+                    &validation,
                     &material,
                     &machine,
                     workholding,
@@ -935,6 +937,7 @@ fn draw_toolpath_panel(
     tools: &[(crate::state::job::ToolId, String, f64)],
     models: &[(crate::state::job::ModelId, String)],
     tool_configs: &[(crate::state::job::ToolId, crate::state::job::ToolConfig)],
+    validation: &ToolpathValidationContext,
     material: &rs_cam_core::material::Material,
     machine: &rs_cam_core::machine::MachineProfile,
     workholding: rs_cam_core::feeds::WorkholdingRigidity,
@@ -1111,7 +1114,7 @@ fn draw_toolpath_panel(
     ui.add_space(12.0);
 
     // Validation
-    let validation_errors = validate_toolpath(entry, tools);
+    let validation_errors = validate_toolpath(entry, validation);
     if !validation_errors.is_empty() {
         ui.add_space(4.0);
         for err in &validation_errors {

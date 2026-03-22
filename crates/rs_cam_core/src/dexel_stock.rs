@@ -4,15 +4,15 @@
 //! is always present; X and Y grids are created lazily when side-face cuts are
 //! needed (future work).
 
+use crate::arc_util::linearize_arc;
 use crate::dexel::{
     DexelAxis, DexelGrid, ray_bottom, ray_material_length, ray_subtract_above, ray_subtract_below,
     ray_top,
 };
-use crate::arc_util::linearize_arc;
 use crate::geo::{BoundingBox3, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::semantic_trace::ToolpathSemanticTrace;
 use crate::radial_profile::RadialProfileLUT;
+use crate::semantic_trace::ToolpathSemanticTrace;
 use crate::simulation_cut::SimulationCutSample;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveType, Toolpath};
@@ -1498,10 +1498,7 @@ mod tests {
         // plus 4 diagonal neighbors (dist = sqrt(2) ~= 1.414 < 1.5).
         // That's 9 cells, each with top=5 => sum = 45.
         let sum = stock.local_material_sum(5.0, 5.0, 1.5);
-        assert!(
-            (sum - 45.0).abs() < 1e-6,
-            "Expected 45.0, got {sum}"
-        );
+        assert!((sum - 45.0).abs() < 1e-6, "Expected 45.0, got {sum}");
     }
 
     #[test]
@@ -1514,7 +1511,14 @@ mod tests {
 
         // Stamp tool at center, cutting to z=2.
         let lut = RadialProfileLUT::from_cutter(&tool, 256);
-        stock.stamp_tool_at(&lut, tool.radius(), 5.0, 5.0, 2.0, StockCutDirection::FromTop);
+        stock.stamp_tool_at(
+            &lut,
+            tool.radius(),
+            5.0,
+            5.0,
+            2.0,
+            StockCutDirection::FromTop,
+        );
 
         let sum_after = stock.local_material_sum(5.0, 5.0, 3.0);
 
