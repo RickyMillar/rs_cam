@@ -1,5 +1,5 @@
 use egui_wgpu::wgpu;
-use rs_cam_core::stock_mesh::StockMesh as HeightmapMesh;
+use rs_cam_core::stock_mesh::StockMesh;
 
 use super::LineVertex;
 
@@ -172,8 +172,8 @@ pub fn operation_placeholder_colors(num_verts: usize) -> Vec<[f32; 3]> {
 static NEXT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl SimMeshGpuData {
-    /// Upload a HeightmapMesh to the GPU using its embedded wood-tone colors.
-    pub fn from_heightmap_mesh(device: &wgpu::Device, hm: &HeightmapMesh) -> Self {
+    /// Upload a StockMesh to the GPU using its embedded wood-tone colors.
+    pub fn from_heightmap_mesh(device: &wgpu::Device, hm: &StockMesh) -> Self {
         let num_verts = hm.vertices.len() / 3;
         let colors: Vec<[f32; 3]> = if hm.colors.len() >= num_verts * 3 {
             (0..num_verts)
@@ -185,11 +185,11 @@ impl SimMeshGpuData {
         Self::from_heightmap_mesh_colored(device, hm, &colors)
     }
 
-    /// Upload a HeightmapMesh with per-vertex custom colors.
+    /// Upload a StockMesh with per-vertex custom colors.
     /// `colors` is one `[r, g, b]` per vertex (from deviation_colors, height_gradient_colors, etc.).
     pub fn from_heightmap_mesh_colored(
         device: &wgpu::Device,
-        hm: &HeightmapMesh,
+        hm: &StockMesh,
         colors: &[[f32; 3]],
     ) -> Self {
         use wgpu::util::DeviceExt;
@@ -226,7 +226,7 @@ impl SimMeshGpuData {
     pub fn update_colors_if_changed(
         &mut self,
         queue: &wgpu::Queue,
-        hm: &HeightmapMesh,
+        hm: &StockMesh,
         colors: &[[f32; 3]],
     ) -> bool {
         let new_fingerprint = ColorFingerprint::from_colors(colors);
@@ -241,8 +241,8 @@ impl SimMeshGpuData {
         true
     }
 
-    /// Build the full vertex array (positions + normals + colors) from a HeightmapMesh.
-    fn build_vertex_data(hm: &HeightmapMesh, colors: &[[f32; 3]]) -> Vec<ColoredMeshVertex> {
+    /// Build the full vertex array (positions + normals + colors) from a StockMesh.
+    fn build_vertex_data(hm: &StockMesh, colors: &[[f32; 3]]) -> Vec<ColoredMeshVertex> {
         let num_verts = hm.vertices.len() / 3;
         let mut mesh_verts = Vec::with_capacity(num_verts);
 

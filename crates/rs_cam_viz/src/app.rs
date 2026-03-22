@@ -396,7 +396,7 @@ impl RsCamApp {
     }
 
     /// Compute per-vertex colors for the sim mesh based on current viz mode.
-    fn compute_sim_colors(&self, mesh: &rs_cam_core::simulation::HeightmapMesh) -> Vec<[f32; 3]> {
+    fn compute_sim_colors(&self, mesh: &rs_cam_core::simulation::StockMesh) -> Vec<[f32; 3]> {
         let num_verts = mesh.vertices.len() / 3;
         match self.controller.state().simulation.stock_viz_mode {
             StockVizMode::Solid => {
@@ -603,11 +603,11 @@ impl RsCamApp {
         Some((setup.face_up, setup.z_rotation, setup.needs_transform()))
     }
 
-    /// Transform a global-frame `HeightmapMesh` to the active setup's local
+    /// Transform a global-frame `StockMesh` to the active setup's local
     /// frame for the given simulation `move_idx`.  No-op for identity setups.
     fn transform_mesh_to_local_frame(
         &self,
-        mesh: &mut rs_cam_core::simulation::HeightmapMesh,
+        mesh: &mut rs_cam_core::simulation::StockMesh,
         move_idx: usize,
     ) {
         if let Some((face_up, z_rot, true)) = self.active_setup_orientation(move_idx) {

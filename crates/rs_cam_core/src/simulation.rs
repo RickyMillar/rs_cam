@@ -2,4 +2,4 @@
 
 pub use crate::arc_util::linearize_arc;
 pub use crate::radial_profile::RadialProfileLUT;
-pub use crate::stock_mesh::StockMesh as HeightmapMesh;
+pub use crate::stock_mesh::StockMesh;

@@ -2245,6 +2245,7 @@ fn main() -> Result<()> {
                 detect_flat_areas,
                 max_stay_down_dist,
                 region_ordering: region_ord,
+                initial_stock: None,
             };
 
             let start = std::time::Instant::now();

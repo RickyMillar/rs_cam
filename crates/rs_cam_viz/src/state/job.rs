@@ -1065,10 +1065,10 @@ pub fn transform_mesh(
     rs_cam_core::mesh::TriangleMesh::from_raw(new_verts, mesh.triangles.clone())
 }
 
-/// Transform a HeightmapMesh's vertices from global frame to a setup's local frame.
+/// Transform a StockMesh's vertices from global frame to a setup's local frame.
 /// Modifies the mesh in place — vertices are stored as flat [x, y, z, ...] f32.
 pub fn transform_heightmap_mesh(
-    mesh: &mut rs_cam_core::simulation::HeightmapMesh,
+    mesh: &mut rs_cam_core::simulation::StockMesh,
     setup: &Setup,
     stock: &StockConfig,
 ) {

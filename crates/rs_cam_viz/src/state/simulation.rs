@@ -11,7 +11,7 @@ use rs_cam_core::geo::{BoundingBox3, P3, V3};
 use rs_cam_core::semantic_trace::{
     ToolpathSemanticItem, ToolpathSemanticKind, ToolpathSemanticTrace,
 };
-use rs_cam_core::stock_mesh::StockMesh as HeightmapMesh;
+use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::simulation_cut::{
     SimulationCutHotspot, SimulationCutIssue, SimulationCutIssueKind, SimulationCutSample,
     SimulationCutTrace, SimulationMetricOptions, SimulationSemanticCutSummary,
@@ -175,7 +175,7 @@ pub struct SetupBoundary {
 /// Checkpoint: a snapshot of the stock at a toolpath boundary.
 pub struct SimCheckpoint {
     pub boundary_index: usize,
-    pub mesh: HeightmapMesh,
+    pub mesh: StockMesh,
     /// The tri-dexel stock at this checkpoint (for resuming incremental sim).
     pub stock: Option<TriDexelStock>,
 }
@@ -188,7 +188,7 @@ pub struct SimCheckpoint {
 /// across workspace switches until the user explicitly resets.
 pub struct SimulationResults {
     /// The fully-simulated stock mesh (at end of all toolpaths).
-    pub mesh: HeightmapMesh,
+    pub mesh: StockMesh,
     /// Total move count across all simulated toolpaths.
     pub total_moves: usize,
     /// Per-toolpath boundaries for progress tracking and checkpoint lookup.
@@ -233,7 +233,7 @@ pub struct SimulationPlayback {
     /// Move index the live heightmap has been simulated up to.
     pub live_sim_move: usize,
     /// Current display mesh (may differ from final mesh during scrubbing).
-    pub display_mesh: Option<HeightmapMesh>,
+    pub display_mesh: Option<StockMesh>,
     /// Per-vertex deviations from model surface (for deviation coloring).
     pub display_deviations: Option<Vec<f32>>,
 }
@@ -1698,7 +1698,7 @@ mod tests {
     fn simulation_for_toolpath() -> SimulationState {
         let mut sim = SimulationState::new();
         sim.results = Some(SimulationResults {
-            mesh: HeightmapMesh {
+            mesh: StockMesh {
                 vertices: Vec::new(),
                 indices: Vec::new(),
                 colors: Vec::new(),

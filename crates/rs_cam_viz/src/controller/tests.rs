@@ -71,7 +71,7 @@ fn temp_path(name: &str, extension: &str) -> std::path::PathBuf {
 fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_exist() {
     let mut controller = sample_controller();
     controller.state.simulation.results = Some(crate::state::simulation::SimulationResults {
-        mesh: rs_cam_core::simulation::HeightmapMesh {
+        mesh: rs_cam_core::simulation::StockMesh {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
@@ -156,7 +156,7 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
         .compute
         .drained
         .push(ComputeMessage::Simulation(Ok(SimulationResult {
-            mesh: rs_cam_core::simulation::HeightmapMesh {
+            mesh: rs_cam_core::simulation::StockMesh {
                 vertices: Vec::new(),
                 indices: Vec::new(),
                 colors: Vec::new(),
@@ -428,7 +428,7 @@ fn simulation_results_capture_setup_boundaries() {
         .drained
         .push(ComputeMessage::Simulation(Ok(
             crate::compute::SimulationResult {
-                mesh: rs_cam_core::simulation::HeightmapMesh {
+                mesh: rs_cam_core::simulation::StockMesh {
                     vertices: Vec::new(),
                     indices: Vec::new(),
                     colors: Vec::new(),
@@ -597,9 +597,9 @@ fn playback_defaults_after_reset() {
 
 /// Helper: inject minimal simulation results into the controller.
 fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setups: usize) {
-    use rs_cam_core::stock_mesh::StockMesh as HeightmapMesh;
+    use rs_cam_core::stock_mesh::StockMesh;
 
-    let mesh = HeightmapMesh {
+    let mesh = StockMesh {
         vertices: vec![0.0; 9],
         indices: vec![0, 1, 2],
         colors: vec![0.5; 9],
@@ -963,7 +963,7 @@ fn add_toolpath_requires_geometry_for_polygon_operations() {
 fn reset_simulation_cancels_analysis_lane() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
     controller.state.simulation.results = Some(crate::state::simulation::SimulationResults {
-        mesh: rs_cam_core::simulation::HeightmapMesh {
+        mesh: rs_cam_core::simulation::StockMesh {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),

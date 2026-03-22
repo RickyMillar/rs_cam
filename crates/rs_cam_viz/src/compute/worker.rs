@@ -43,7 +43,7 @@ use rs_cam_core::radial_finish::{RadialFinishParams, radial_finish_toolpath};
 use rs_cam_core::ramp_finish::{CutDirection as CoreCutDir, RampFinishParams};
 use rs_cam_core::rest::{RestParams, rest_machining_toolpath};
 use rs_cam_core::scallop::{ScallopDirection as CoreScalDir, ScallopParams};
-use rs_cam_core::stock_mesh::StockMesh as HeightmapMesh;
+use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::spiral_finish::{SpiralDirection as CoreSpiralDir, SpiralFinishParams};
 use rs_cam_core::steep_shallow::{SteepShallowParams, steep_shallow_toolpath};
 use rs_cam_core::tool::{
@@ -128,12 +128,12 @@ pub struct SimBoundary {
 
 pub struct SimCheckpointMesh {
     pub boundary_index: usize,
-    pub mesh: HeightmapMesh,
+    pub mesh: StockMesh,
     pub stock: TriDexelStock,
 }
 
 pub struct SimulationResult {
-    pub mesh: HeightmapMesh,
+    pub mesh: StockMesh,
     pub total_moves: usize,
     pub deviations: Option<Vec<f32>>,
     pub boundaries: Vec<SimBoundary>,

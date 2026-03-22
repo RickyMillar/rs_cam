@@ -94,6 +94,9 @@ pub struct Adaptive3dParams {
     pub max_stay_down_dist: Option<f64>,
     /// Region ordering strategy (default: Global for backward compat).
     pub region_ordering: RegionOrdering,
+    /// Pre-machined stock for two-sided machining.
+    /// When Some, used as starting material instead of a fresh block at stock_top_z.
+    pub initial_stock: Option<TriDexelStock>,
 }
 
 // SurfaceHeightmap is now in crate::slope (shared across finishing strategies)
@@ -1847,15 +1850,18 @@ fn adaptive_3d_segments(
     let cell_size = (tool_radius / 6.0).max(params.tolerance);
 
     // Initialize tri-dexel material stock
-    let mut material_stock = TriDexelStock::from_stock(
-        origin_x,
-        origin_y,
-        extent_x,
-        extent_y,
-        bbox.min.z,
-        params.stock_top_z,
-        cell_size,
-    );
+    let mut material_stock = match &params.initial_stock {
+        Some(stock) => stock.clone(),
+        None => TriDexelStock::from_stock(
+            origin_x,
+            origin_y,
+            extent_x,
+            extent_y,
+            bbox.min.z,
+            params.stock_top_z,
+            cell_size,
+        ),
+    };
 
     // Precompute surface heightmap (rayon parallel drop-cutter)
     #[cfg(not(target_arch = "wasm32"))]
@@ -2477,6 +2483,7 @@ mod tests {
             detect_flat_areas: false,
             max_stay_down_dist: None,
             region_ordering: RegionOrdering::Global,
+            initial_stock: None,
         }
     }
 

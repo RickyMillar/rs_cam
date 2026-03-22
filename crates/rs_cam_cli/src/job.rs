@@ -579,6 +579,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                     detect_flat_areas: op.detect_flat_areas.unwrap_or(false),
                     max_stay_down_dist: op.max_stay_down_dist,
                     region_ordering: region_ord,
+                    initial_stock: None,
                 };
 
                 adaptive_3d_toolpath(&mesh, &si, cutter.as_ref(), &params)
