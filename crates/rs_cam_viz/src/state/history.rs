@@ -1,5 +1,6 @@
 use super::job::{PostConfig, StockConfig, ToolConfig, ToolId};
 use super::toolpath::{DressupConfig, OperationConfig, ToolpathId};
+use rs_cam_core::machine::MachineProfile;
 
 /// A snapshot of undoable state.
 #[derive(Debug, Clone)]
@@ -36,6 +37,14 @@ pub struct UndoHistory {
     redo_stack: Vec<UndoAction>,
     /// Snapshot of stock config before current edit drag.
     pub stock_snapshot: Option<StockConfig>,
+    /// Snapshot of tool config before current edit.
+    pub tool_snapshot: Option<(ToolId, ToolConfig)>,
+    /// Snapshot of post config before current edit.
+    pub post_snapshot: Option<PostConfig>,
+    /// Snapshot of machine config before current edit.
+    pub machine_snapshot: Option<MachineProfile>,
+    /// Snapshot of toolpath params before current edit.
+    pub toolpath_snapshot: Option<(ToolpathId, OperationConfig, DressupConfig)>,
 }
 
 impl UndoHistory {
@@ -44,6 +53,10 @@ impl UndoHistory {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             stock_snapshot: None,
+            tool_snapshot: None,
+            post_snapshot: None,
+            machine_snapshot: None,
+            toolpath_snapshot: None,
         }
     }
 

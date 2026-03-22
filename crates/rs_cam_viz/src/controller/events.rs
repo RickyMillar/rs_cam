@@ -403,7 +403,6 @@ impl<B: ComputeBackend> AppController<B> {
                 self.collision_positions.clear();
                 self.pending_upload = true;
             }
-            AppEvent::ToggleSimToolpath(_) => {}
             AppEvent::SimJumpToMove(move_idx) => {
                 if self.state.simulation.has_results() {
                     let total = self.state.simulation.total_moves();
@@ -497,7 +496,6 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::MachineChanged => {
                 self.state.job.mark_edited();
             }
-            AppEvent::RecalculateFeeds(_) => {}
             AppEvent::ExportGcode
             | AppEvent::ExportCombinedGcode
             | AppEvent::ExportSetupGcode(_)

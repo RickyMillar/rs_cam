@@ -13,12 +13,103 @@ use crate::ui::automation;
 static VENDOR_LUT: std::sync::LazyLock<rs_cam_core::feeds::vendor_lut::VendorLut> =
     std::sync::LazyLock::new(rs_cam_core::feeds::vendor_lut::VendorLut::embedded);
 
+/// Flush tool undo snapshot if the user navigated away from a tool.
+fn flush_tool_snapshot(state: &mut AppState) {
+    if let Some((tool_id, old)) = state.history.tool_snapshot.take() {
+        if !matches!(state.selection, crate::state::selection::Selection::Tool(id) if id == tool_id)
+        {
+            if let Some(current) = state.job.tools.iter().find(|t| t.id == tool_id) {
+                state
+                    .history
+                    .push(crate::state::history::UndoAction::ToolChange {
+                        tool_id,
+                        old,
+                        new: current.clone(),
+                    });
+                state.job.mark_edited();
+            }
+        } else {
+            // Still editing — put the snapshot back.
+            state.history.tool_snapshot = Some((tool_id, old));
+        }
+    }
+}
+
+/// Flush post undo snapshot if the user navigated away from post.
+fn flush_post_snapshot(state: &mut AppState) {
+    if let Some(old) = state.history.post_snapshot.take() {
+        if !matches!(
+            state.selection,
+            crate::state::selection::Selection::PostProcessor
+        ) {
+            state
+                .history
+                .push(crate::state::history::UndoAction::PostChange {
+                    old,
+                    new: state.job.post.clone(),
+                });
+            state.job.mark_edited();
+        } else {
+            state.history.post_snapshot = Some(old);
+        }
+    }
+}
+
+/// Flush machine undo snapshot if the user navigated away from machine.
+fn flush_machine_snapshot(state: &mut AppState) {
+    if let Some(old) = state.history.machine_snapshot.take() {
+        if !matches!(
+            state.selection,
+            crate::state::selection::Selection::Machine
+        ) {
+            state
+                .history
+                .push(crate::state::history::UndoAction::MachineChange {
+                    old,
+                    new: state.job.machine.clone(),
+                });
+            state.job.mark_edited();
+        } else {
+            state.history.machine_snapshot = Some(old);
+        }
+    }
+}
+
+/// Flush toolpath params undo snapshot if the user navigated away from a toolpath.
+fn flush_toolpath_snapshot(state: &mut AppState) {
+    if let Some((tp_id, old_op, old_dressups)) = state.history.toolpath_snapshot.take() {
+        if !matches!(state.selection, crate::state::selection::Selection::Toolpath(id) if id == tp_id)
+        {
+            if let Some(entry) = state.job.find_toolpath(tp_id) {
+                state.history.push(
+                    crate::state::history::UndoAction::ToolpathParamChange {
+                        tp_id,
+                        old_op,
+                        new_op: entry.operation.clone(),
+                        old_dressups,
+                        new_dressups: entry.dressups.clone(),
+                    },
+                );
+                state.job.mark_edited();
+            }
+        } else {
+            state.history.toolpath_snapshot = Some((tp_id, old_op, old_dressups));
+        }
+    }
+}
+
 pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
     // Show simulation panel only when in the Simulation workspace
     if state.workspace == crate::state::Workspace::Simulation && state.simulation.has_results() {
         draw_simulation_panel(ui, state, events);
         return;
     }
+
+    // Flush pending undo snapshots when selection changes away from a tracked panel.
+    flush_tool_snapshot(state);
+    flush_post_snapshot(state);
+    flush_machine_snapshot(state);
+    flush_toolpath_snapshot(state);
 
     match state.selection.clone() {
         Selection::None => {
@@ -59,15 +150,29 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             }
         }
         Selection::PostProcessor => {
+            // Capture snapshot for undo before editing
+            if state.history.post_snapshot.is_none() {
+                state.history.post_snapshot = Some(state.job.post.clone());
+            }
             post::draw(ui, &mut state.job.post);
         }
         Selection::Machine => {
+            // Capture snapshot for undo before editing
+            if state.history.machine_snapshot.is_none() {
+                state.history.machine_snapshot = Some(state.job.machine.clone());
+            }
             draw_machine_panel(ui, state, events);
         }
         Selection::Model(id) => {
             draw_model_properties(ui, id, state, events);
         }
         Selection::Tool(id) => {
+            // Capture snapshot for undo before editing
+            if state.history.tool_snapshot.is_none()
+                && let Some(t) = state.job.tools.iter().find(|t| t.id == id)
+            {
+                state.history.tool_snapshot = Some((id, t.clone()));
+            }
             if let Some(t) = state.job.tools.iter_mut().find(|t| t.id == id) {
                 tool::draw(ui, t);
             }
@@ -113,6 +218,16 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             }
         }
         Selection::Toolpath(id) => {
+            // Capture snapshot for undo before editing
+            if state.history.toolpath_snapshot.is_none()
+                && let Some(entry) = state.job.find_toolpath(id)
+            {
+                state.history.toolpath_snapshot = Some((
+                    id,
+                    entry.operation.clone(),
+                    entry.dressups.clone(),
+                ));
+            }
             // Snapshot tool/model lists to avoid borrow conflict with toolpaths
             let tools: Vec<_> = state
                 .job
@@ -130,6 +245,13 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             let tool_configs: Vec<_> = state.job.tools.iter().map(|t| (t.id, t.clone())).collect();
             let material = state.job.stock.material.clone();
             let machine = state.job.machine.clone();
+            let workholding = state.job.stock.workholding_rigidity;
+
+            // Snapshot operation for stale_since detection
+            let op_before = state
+                .job
+                .find_toolpath(id)
+                .map(|e| serde_json::to_string(&e.operation).unwrap_or_default());
 
             if let Some(entry) = state.job.find_toolpath_mut(id) {
                 draw_toolpath_panel(
@@ -140,8 +262,20 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     &tool_configs,
                     &material,
                     &machine,
+                    workholding,
                     events,
                 );
+            }
+
+            // B3a: set stale_since when parameters change
+            if let Some(before) = op_before
+                && let Some(entry) = state.job.find_toolpath_mut(id)
+            {
+                let after = serde_json::to_string(&entry.operation).unwrap_or_default();
+                if before != after {
+                    entry.stale_since = Some(std::time::Instant::now());
+                    state.job.mark_edited();
+                }
             }
         }
     }
@@ -438,7 +572,7 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, _events: &mut 
     }
 }
 
-fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, _events: &mut Vec<AppEvent>) {
+fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
     ui.heading("Machine Setup");
     ui.separator();
 
@@ -457,7 +591,7 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, _events: &mut Vec
                 for (i, (label, _)) in presets.iter().enumerate() {
                     if ui.selectable_value(&mut selected_idx, i, *label).changed() {
                         state.job.machine = presets[i].1.clone();
-                        state.job.mark_edited();
+                        events.push(AppEvent::MachineChanged);
                     }
                 }
             });
@@ -507,7 +641,7 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, _events: &mut Vec
             )
             .changed()
         {
-            state.job.mark_edited();
+            events.push(AppEvent::MachineChanged);
         }
     });
     ui.label(
@@ -517,6 +651,55 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, _events: &mut Vec
             "Aggressive — experienced operators only"
         } else {
             "Balanced — good for most work"
+        })
+        .small()
+        .color(egui::Color32::from_rgb(140, 140, 150)),
+    );
+
+    ui.add_space(8.0);
+
+    // Workholding rigidity selector
+    let mut rigidity_changed = false;
+    ui.horizontal(|ui| {
+        ui.label("Workholding:");
+        use rs_cam_core::feeds::WorkholdingRigidity;
+        let rigidity = &mut state.job.stock.workholding_rigidity;
+        let label = match rigidity {
+            WorkholdingRigidity::Low => "Low",
+            WorkholdingRigidity::Medium => "Medium",
+            WorkholdingRigidity::High => "High",
+        };
+        egui::ComboBox::from_id_salt("workholding_rigidity")
+            .selected_text(label)
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_value(rigidity, WorkholdingRigidity::Low, "Low")
+                    .changed()
+                    || ui
+                        .selectable_value(rigidity, WorkholdingRigidity::Medium, "Medium")
+                        .changed()
+                    || ui
+                        .selectable_value(rigidity, WorkholdingRigidity::High, "High")
+                        .changed()
+                {
+                    rigidity_changed = true;
+                }
+            });
+    });
+    if rigidity_changed {
+        state.job.mark_edited();
+    }
+    ui.label(
+        egui::RichText::new(match state.job.stock.workholding_rigidity {
+            rs_cam_core::feeds::WorkholdingRigidity::Low => {
+                "Low — tape/CA glue, vacuum table, thin stock"
+            }
+            rs_cam_core::feeds::WorkholdingRigidity::Medium => {
+                "Medium — clamps, toggle clamps, most setups"
+            }
+            rs_cam_core::feeds::WorkholdingRigidity::High => {
+                "High — heavy vise, bolted fixture, thick stock"
+            }
         })
         .small()
         .color(egui::Color32::from_rgb(140, 140, 150)),
@@ -582,6 +765,7 @@ fn calculate_and_apply_feeds(
     tool: &crate::state::job::ToolConfig,
     material: &rs_cam_core::material::Material,
     machine: &rs_cam_core::machine::MachineProfile,
+    workholding: rs_cam_core::feeds::WorkholdingRigidity,
 ) {
     let has_any_auto = entry.feeds_auto.feed_rate
         || entry.feeds_auto.plunge_rate
@@ -617,7 +801,7 @@ fn calculate_and_apply_feeds(
         vendor_lut: Some(&*VENDOR_LUT),
         setup: rs_cam_core::feeds::SetupContext {
             tool_overhang_mm: Some(tool.stickout),
-            workholding_rigidity: rs_cam_core::feeds::WorkholdingRigidity::Medium,
+            workholding_rigidity: workholding,
         },
     };
 
@@ -755,6 +939,7 @@ fn draw_toolpath_panel(
     tool_configs: &[(crate::state::job::ToolId, crate::state::job::ToolConfig)],
     material: &rs_cam_core::material::Material,
     machine: &rs_cam_core::machine::MachineProfile,
+    workholding: rs_cam_core::feeds::WorkholdingRigidity,
     events: &mut Vec<AppEvent>,
 ) {
     ui.heading(&entry.name);
@@ -840,7 +1025,7 @@ fn draw_toolpath_panel(
         .find(|(id, _)| *id == entry.tool_id)
         .map(|(_, t)| t)
     {
-        calculate_and_apply_feeds(ui, entry, tool_cfg, material, machine);
+        calculate_and_apply_feeds(ui, entry, tool_cfg, material, machine, workholding);
     }
 
     // Machining boundary
@@ -1527,6 +1712,14 @@ fn draw_adaptive3d_params(ui: &mut egui::Ui, cfg: &mut Adaptive3dConfig) {
                 ui,
                 "Stock to Leave:",
                 &mut cfg.stock_to_leave_axial,
+                " mm",
+                0.05,
+                0.0..=10.0,
+            );
+            dv(
+                ui,
+                "Wall Stock:",
+                &mut cfg.stock_to_leave_radial,
                 " mm",
                 0.05,
                 0.0..=10.0,

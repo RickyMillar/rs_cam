@@ -339,6 +339,13 @@ pub struct StockConfig {
     /// Flip axis for multi-setup work — constrains pin symmetry.
     #[serde(default)]
     pub flip_axis: Option<FlipAxis>,
+    /// Workholding rigidity for feeds calculation.
+    #[serde(default = "default_workholding_rigidity")]
+    pub workholding_rigidity: rs_cam_core::feeds::WorkholdingRigidity,
+}
+
+fn default_workholding_rigidity() -> rs_cam_core::feeds::WorkholdingRigidity {
+    rs_cam_core::feeds::WorkholdingRigidity::Medium
 }
 
 impl Default for StockConfig {
@@ -355,6 +362,7 @@ impl Default for StockConfig {
             material: rs_cam_core::material::Material::default(),
             alignment_pins: Vec::new(),
             flip_axis: None,
+            workholding_rigidity: rs_cam_core::feeds::WorkholdingRigidity::Medium,
         }
     }
 }

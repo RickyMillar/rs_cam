@@ -79,7 +79,7 @@ impl Default for SetupContext {
 }
 
 /// Workholding rigidity level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum WorkholdingRigidity {
     Low,
     Medium,
