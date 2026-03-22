@@ -26,6 +26,7 @@ pub enum AppEvent {
     ImportStl(PathBuf),
     ImportSvg(PathBuf),
     ImportDxf(PathBuf),
+    ImportStep(PathBuf),
     RescaleModel(ModelId, crate::state::job::ModelUnits),
     RemoveModel(ModelId),
     ReloadModel(ModelId),

@@ -8,7 +8,7 @@ name = "rs_cam_gui"
 path = "src/bin/main.rs"
 
 [dependencies]
-rs_cam_core = { path = "../rs_cam_core" }
+rs_cam_core = { path = "../rs_cam_core", features = ["step"] }
 eframe = { version = "0.30", features = ["wgpu"] }
 egui = "0.30"
 egui-wgpu = "0.30"

@@ -373,5 +373,12 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         {
             events.push(AppEvent::ImportDxf(path));
         }
+        if ui.small_button("+ STEP").clicked()
+            && let Some(path) = rfd::FileDialog::new()
+                .add_filter("STEP", &["step", "stp", "STEP", "STP"])
+                .pick_file()
+        {
+            events.push(AppEvent::ImportStep(path));
+        }
     });
 }

@@ -39,6 +39,11 @@ impl<B: ComputeBackend> AppController<B> {
                     tracing::error!("DXF import failed: {error}");
                 }
             }
+            AppEvent::ImportStep(path) => {
+                if let Err(error) = self.import_step_path(&path) {
+                    tracing::error!("STEP import failed: {error}");
+                }
+            }
             AppEvent::RescaleModel(model_id, units) => {
                 if let Err(error) = self.rescale_model(model_id, units) {
                     tracing::error!("Rescale failed: {error}");

@@ -48,6 +48,22 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(bbox)
     }
 
+    pub fn import_step_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, String> {
+        let id = self.state.job.next_model_id();
+        let model = import::import_step(path, id)?;
+        let bbox = model.bbox();
+        if let Some(mesh) = &model.mesh
+            && self.state.job.stock.auto_from_model
+        {
+            self.state.job.stock.update_from_bbox(&mesh.bbox);
+        }
+        self.state.selection = Selection::Model(model.id);
+        self.state.job.models.push(model);
+        self.state.job.dirty = true;
+        self.pending_upload = true;
+        Ok(bbox)
+    }
+
     pub fn rescale_model(
         &mut self,
         model_id: crate::state::job::ModelId,
