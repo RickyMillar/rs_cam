@@ -3,9 +3,14 @@
 //! Given a cutter at (x,y), find the maximum Z where it contacts the mesh
 //! without gouging. The cutter is "dropped" along Z until first contact.
 
-use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
+#[cfg(not(feature = "parallel"))]
+use crate::interrupt::check_cancel;
+use crate::interrupt::{CancelCheck, Cancelled};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::{CLPoint, MillingCutter};
+
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 /// Drop a single cutter at position (x, y) onto the mesh.
 pub fn point_drop_cutter<C: MillingCutter + ?Sized>(
@@ -77,7 +82,7 @@ pub fn batch_drop_cutter_with_cancel<C: MillingCutter + ?Sized>(
     step_over: f64,
     direction_deg: f64,
     min_z: f64,
-    cancel: &dyn CancelCheck,
+    cancel: &(dyn CancelCheck + Sync),
 ) -> Result<DropCutterGrid, Cancelled> {
     let r = cutter.radius();
     let bbox = mesh.bbox.expand_by(r);
@@ -100,23 +105,17 @@ pub fn batch_drop_cutter_with_cancel<C: MillingCutter + ?Sized>(
 
         let cols = ((x_end - x_start) / step_over).ceil() as usize + 1;
         let rows = ((y_end - y_start) / step_over).ceil() as usize + 1;
-        let total = rows * cols;
 
-        let mut points = Vec::with_capacity(total);
-        for i in 0..total {
-            if i % 64 == 0 {
-                check_cancel(cancel)?;
-            }
-            let row = i / cols;
-            let col = i % cols;
-            let x = x_start + col as f64 * step_over;
-            let y = y_start + row as f64 * step_over;
-            let mut cl = point_drop_cutter(x, y, mesh, index, cutter);
-            if cl.z < min_z {
-                cl.z = min_z;
-            }
-            points.push(cl);
-        }
+        let points = batch_compute_points(
+            rows, cols, cancel, mesh, index, cutter, min_z,
+            |i| {
+                let row = i / cols;
+                let col = i % cols;
+                let x = x_start + col as f64 * step_over;
+                let y = y_start + row as f64 * step_over;
+                (x, y)
+            },
+        )?;
 
         return Ok(DropCutterGrid {
             points,
@@ -154,28 +153,20 @@ pub fn batch_drop_cutter_with_cancel<C: MillingCutter + ?Sized>(
 
     let cols = ((u_max - u_min) / step_over).ceil() as usize + 1;
     let rows = ((v_max - v_min) / step_over).ceil() as usize + 1;
-    let total = rows * cols;
 
-    let mut points = Vec::with_capacity(total);
-    for i in 0..total {
-        if i % 64 == 0 {
-            check_cancel(cancel)?;
-        }
-        let row = i / cols;
-        let col = i % cols;
-        let u = u_min + col as f64 * step_over;
-        let v = v_min + row as f64 * step_over;
-
-        // Inverse rotation: (u,v) -> (x,y)
-        let x = u * cos_a - v * sin_a;
-        let y = u * sin_a + v * cos_a;
-
-        let mut cl = point_drop_cutter(x, y, mesh, index, cutter);
-        if cl.z < min_z {
-            cl.z = min_z;
-        }
-        points.push(cl);
-    }
+    let points = batch_compute_points(
+        rows, cols, cancel, mesh, index, cutter, min_z,
+        |i| {
+            let row = i / cols;
+            let col = i % cols;
+            let u = u_min + col as f64 * step_over;
+            let v = v_min + row as f64 * step_over;
+            // Inverse rotation: (u,v) -> (x,y)
+            let x = u * cos_a - v * sin_a;
+            let y = u * sin_a + v * cos_a;
+            (x, y)
+        },
+    )?;
 
     Ok(DropCutterGrid {
         points,
@@ -186,6 +177,78 @@ pub fn batch_drop_cutter_with_cancel<C: MillingCutter + ?Sized>(
         x_step: step_over,
         y_step: step_over,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+/// Shared helper: compute CL points for a grid, using rayon parallelism when available.
+///
+/// `coord_fn` maps a flat index to (x, y) world coordinates.
+/// With the `parallel` feature, rows are processed in parallel via `par_chunks`.
+/// Cancellation is checked per-chunk in the parallel path, and every 64 points
+/// in the sequential fallback.
+fn batch_compute_points<C: MillingCutter + ?Sized>(
+    rows: usize,
+    cols: usize,
+    cancel: &(dyn CancelCheck + Sync),
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &C,
+    min_z: f64,
+    coord_fn: impl Fn(usize) -> (f64, f64) + Sync,
+) -> Result<Vec<CLPoint>, Cancelled> {
+    let total = rows * cols;
+
+    #[cfg(feature = "parallel")]
+    {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let cancelled = AtomicBool::new(false);
+
+        // Process by rows: each row is `cols` points and is independent.
+        let points: Vec<CLPoint> = (0..rows)
+            .into_par_iter()
+            .flat_map(|row| {
+                // Check cancellation once per row
+                if cancelled.load(Ordering::Relaxed) || cancel.cancelled() {
+                    cancelled.store(true, Ordering::Relaxed);
+                    return Vec::new();
+                }
+                let start = row * cols;
+                (start..start + cols)
+                    .map(|i| {
+                        let (x, y) = coord_fn(i);
+                        let mut cl = point_drop_cutter(x, y, mesh, index, cutter);
+                        if cl.z < min_z {
+                            cl.z = min_z;
+                        }
+                        cl
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(Cancelled);
+        }
+        debug_assert_eq!(points.len(), total);
+        Ok(points)
+    }
+
+    #[cfg(not(feature = "parallel"))]
+    {
+        let mut points = Vec::with_capacity(total);
+        for i in 0..total {
+            if i % 64 == 0 {
+                check_cancel(cancel)?;
+            }
+            let (x, y) = coord_fn(i);
+            let mut cl = point_drop_cutter(x, y, mesh, index, cutter);
+            if cl.z < min_z {
+                cl.z = min_z;
+            }
+            points.push(cl);
+        }
+        Ok(points)
+    }
 }
 
 #[cfg(test)]

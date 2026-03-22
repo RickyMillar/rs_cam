@@ -396,8 +396,8 @@ impl TriangleMesh {
 
 /// Spatial index for fast triangle lookup during drop-cutter.
 ///
-/// Uses kiddo KD-tree over triangle centroids. For a given cutter at (x,y),
-/// we find nearby triangles by querying centroids within cutter radius + max triangle extent.
+/// Uniform XY grid over triangle bounding boxes. For a given cutter at (x,y),
+/// we find nearby triangles by querying cells within cutter radius.
 pub struct SpatialIndex {
     /// Triangle indices grouped into grid cells for spatial lookup.
     /// Simple uniform grid in XY for now. Each cell stores triangle indices.
@@ -493,14 +493,19 @@ impl SpatialIndex {
         let y1 = (y1 as usize).min(self.cell_count_y.saturating_sub(1));
 
         let mut result = Vec::new();
-        let mut seen = vec![false; self.total_triangles];
+        // Use a bitset for dedup: 8x less memory than Vec<bool>.
+        // For 100k triangles: 12.5 KB vs 100 KB per query.
+        let n_words = self.total_triangles.div_ceil(64);
+        let mut seen = vec![0u64; n_words];
 
         for cy_idx in y0..=y1 {
             for cx_idx in x0..=x1 {
                 let cell_idx = cy_idx * self.cell_count_x + cx_idx;
                 for &tri_idx in &self.cells[cell_idx] {
-                    if !seen[tri_idx] {
-                        seen[tri_idx] = true;
+                    let word = tri_idx / 64;
+                    let bit = 1u64 << (tri_idx % 64);
+                    if seen[word] & bit == 0 {
+                        seen[word] |= bit;
                         result.push(tri_idx);
                     }
                 }
