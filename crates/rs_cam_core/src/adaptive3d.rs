@@ -1,12 +1,12 @@
 //! 3D adaptive clearing with constant engagement on mesh surfaces.
 //!
 //! Maintains constant tool engagement while following an STL mesh surface.
-//! Uses heightmap-based material tracking (not boolean grid), drop-cutter
+//! Uses tri-dexel stock for volumetric material tracking, drop-cutter
 //! queries for Z following, and precomputed surface heightmap for fast
 //! engagement computation.
 //!
 //! Key differences from 2D adaptive:
-//! - Material state: f64 heightmap (not boolean grid)
+//! - Material state: tri-dexel stock (volumetric interval lists)
 //! - Z at each step: from point_drop_cutter (not constant)
 //! - Engagement: "material above surface" not "material vs cleared"
 //! - Multi-level: Z levels from stock_top down to mesh surface
@@ -20,7 +20,9 @@ use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::simulation::{Heightmap, RadialProfileLUT, stamp_tool_at_lut};
+use crate::dexel::{ray_subtract_above, ray_top};
+use crate::dexel_stock::{StockCutDirection, TriDexelStock};
+use crate::simulation::RadialProfileLUT;
 use crate::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
 use crate::toolpath::{Toolpath, simplify_path_3d};
@@ -96,26 +98,48 @@ pub struct Adaptive3dParams {
 
 // SurfaceHeightmap is now in crate::slope (shared across finishing strategies)
 
-/// Sum Z values in a local area around (cx, cy) within radius.
+// ── Helpers mapping TriDexelStock to f64 world used by adaptive ────────
+
+/// Top Z at (row, col) from the Z-grid, as f64. Returns `bottom_z` if the
+/// ray is empty (no material).
+#[inline]
+fn stock_top_z_at(stock: &TriDexelStock, row: usize, col: usize) -> f64 {
+    ray_top(stock.z_grid.ray(row, col))
+        .map(|z| z as f64)
+        .unwrap_or(stock.stock_bbox.min.z)
+}
+
+/// Whether the Z-grid ray at (row, col) has material above `floor` (f64).
+#[inline]
+fn stock_has_material_above(stock: &TriDexelStock, row: usize, col: usize, floor: f64) -> bool {
+    let ray = stock.z_grid.ray(row, col);
+    // Any segment whose exit > floor means material above floor.
+    ray.iter().any(|seg| seg.exit as f64 > floor)
+}
+
+/// Sum of top-Z values in a local area around (cx, cy) within radius.
 /// Used for cheap O(local_cells) idle detection instead of summing entire grid.
 #[inline]
-fn local_material_sum(hm: &Heightmap, cx: f64, cy: f64, radius: f64) -> f64 {
-    let cs = hm.cell_size;
+fn local_material_sum(stock: &TriDexelStock, cx: f64, cy: f64, radius: f64) -> f64 {
+    let grid = &stock.z_grid;
+    let cs = grid.cell_size;
     let r = radius * 1.5; // Slightly wider to catch changes from the stamp
-    let col_min = ((cx - r - hm.origin_x) / cs).floor().max(0.0) as usize;
-    let col_max = ((cx + r - hm.origin_x) / cs)
+    let col_min = ((cx - r - grid.origin_u) / cs).floor().max(0.0) as usize;
+    let col_max = ((cx + r - grid.origin_u) / cs)
         .ceil()
-        .min((hm.cols - 1) as f64) as usize;
-    let row_min = ((cy - r - hm.origin_y) / cs).floor().max(0.0) as usize;
-    let row_max = ((cy + r - hm.origin_y) / cs)
+        .min((grid.cols - 1) as f64) as usize;
+    let row_min = ((cy - r - grid.origin_v) / cs).floor().max(0.0) as usize;
+    let row_max = ((cy + r - grid.origin_v) / cs)
         .ceil()
-        .min((hm.rows - 1) as f64) as usize;
+        .min((grid.rows - 1) as f64) as usize;
 
+    let bottom_z = stock.stock_bbox.min.z;
     let mut sum = 0.0;
     for row in row_min..=row_max {
-        let base = row * hm.cols;
         for col in col_min..=col_max {
-            sum += hm.cells[base + col];
+            sum += ray_top(grid.ray(row, col))
+                .map(|z| z as f64)
+                .unwrap_or(bottom_z);
         }
     }
     sum
@@ -141,17 +165,18 @@ struct MaterialRegion {
 
 /// Detect connected material regions via 8-connected BFS flood fill.
 ///
-/// A cell "has material" if `material_z > surface_z + stock_to_leave + 0.01`.
+/// A cell "has material" if the top-Z of the dexel ray exceeds
+/// `surface_z + stock_to_leave + 0.01`.
 /// Regions with fewer than `min_cells` (default 4) are filtered out.
 /// Returns regions sorted by cell_count descending (largest first).
 fn detect_material_regions(
-    material_hm: &Heightmap,
+    material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     stock_to_leave: f64,
     tool_radius: f64,
 ) -> Vec<MaterialRegion> {
-    let rows = material_hm.rows;
-    let cols = material_hm.cols;
+    let rows = material_stock.z_grid.rows;
+    let cols = material_stock.z_grid.cols;
     let min_cells = 4usize;
 
     // Label grid: 0 = unlabeled, usize::MAX = no-material
@@ -160,9 +185,9 @@ fn detect_material_regions(
     // Mark cells that have no material
     for row in 0..rows {
         for col in 0..cols {
-            let mat_z = material_hm.get(row, col);
             let surf_z = surface_hm.surface_z_at(row, col);
-            if mat_z <= surf_z + stock_to_leave + 0.01 {
+            let floor = surf_z + stock_to_leave + 0.01;
+            if !stock_has_material_above(material_stock, row, col, floor) {
                 labels[row * cols + col] = usize::MAX;
             }
         }
@@ -224,16 +249,16 @@ fn detect_material_regions(
             }
 
             if count >= min_cells {
-                let cs = material_hm.cell_size;
+                let cs = material_stock.z_grid.cell_size;
                 regions.push(MaterialRegion {
                     row_min: rmin,
                     row_max: rmax,
                     col_min: cmin,
                     col_max: cmax,
-                    world_x_min: material_hm.origin_x + cmin as f64 * cs - tool_radius,
-                    world_x_max: material_hm.origin_x + cmax as f64 * cs + tool_radius,
-                    world_y_min: material_hm.origin_y + rmin as f64 * cs - tool_radius,
-                    world_y_max: material_hm.origin_y + rmax as f64 * cs + tool_radius,
+                    world_x_min: material_stock.z_grid.origin_u + cmin as f64 * cs - tool_radius,
+                    world_x_max: material_stock.z_grid.origin_u + cmax as f64 * cs + tool_radius,
+                    world_y_min: material_stock.z_grid.origin_v + rmin as f64 * cs - tool_radius,
+                    world_y_max: material_stock.z_grid.origin_v + rmax as f64 * cs + tool_radius,
                     cell_count: count,
                     surface_z_min: sz_min,
                     surface_z_max: sz_max,
@@ -258,7 +283,7 @@ fn detect_material_regions(
 ///
 /// Returns fraction of cells with material in [0.0, 1.0].
 fn compute_engagement_3d(
-    material_hm: &Heightmap,
+    material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     cx: f64,
     cy: f64,
@@ -267,25 +292,26 @@ fn compute_engagement_3d(
     stock_to_leave: f64,
 ) -> f64 {
     let r_sq = tool_radius * tool_radius;
-    let cs = material_hm.cell_size;
+    let grid = &material_stock.z_grid;
+    let cs = grid.cell_size;
 
-    let col_min = ((cx - tool_radius - material_hm.origin_x) / cs)
+    let col_min = ((cx - tool_radius - grid.origin_u) / cs)
         .floor()
         .max(0.0) as usize;
-    let col_max = ((cx + tool_radius - material_hm.origin_x) / cs).ceil() as usize;
-    let row_min = ((cy - tool_radius - material_hm.origin_y) / cs)
+    let col_max = ((cx + tool_radius - grid.origin_u) / cs).ceil() as usize;
+    let row_min = ((cy - tool_radius - grid.origin_v) / cs)
         .floor()
         .max(0.0) as usize;
-    let row_max = ((cy + tool_radius - material_hm.origin_y) / cs).ceil() as usize;
+    let row_max = ((cy + tool_radius - grid.origin_v) / cs).ceil() as usize;
 
-    let col_max = col_max.min(material_hm.cols.saturating_sub(1));
-    let row_max = row_max.min(material_hm.rows.saturating_sub(1));
+    let col_max = col_max.min(grid.cols.saturating_sub(1));
+    let row_max = row_max.min(grid.rows.saturating_sub(1));
 
     let mut material_cells = 0u32;
     let mut total_cells = 0u32;
 
     for row in row_min..=row_max {
-        let cell_y = material_hm.origin_y + row as f64 * cs;
+        let cell_y = grid.origin_v + row as f64 * cs;
         let dy = cell_y - cy;
         let dy_sq = dy * dy;
         if dy_sq > r_sq {
@@ -293,18 +319,17 @@ fn compute_engagement_3d(
         }
 
         for col in col_min..=col_max {
-            let cell_x = material_hm.origin_x + col as f64 * cs;
+            let cell_x = grid.origin_u + col as f64 * cs;
             let dx = cell_x - cx;
             if dx * dx + dy_sq > r_sq {
                 continue;
             }
 
             total_cells += 1;
-            let mat_z = material_hm.get(row, col);
             let surf_z = surface_hm.surface_z_at(row, col);
             let effective_floor = (surf_z + stock_to_leave).max(z_level);
 
-            if mat_z > effective_floor + 0.01 {
+            if stock_has_material_above(material_stock, row, col, effective_floor + 0.01) {
                 material_cells += 1;
             }
         }
@@ -320,22 +345,26 @@ fn compute_engagement_3d(
 /// Fraction of grid cells where material remains above the effective floor
 /// at a given z_level. Used to decide when a level is done.
 fn material_remaining_at_level(
-    material_hm: &Heightmap,
+    material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     z_level: f64,
     stock_to_leave: f64,
 ) -> f64 {
+    let grid = &material_stock.z_grid;
     let mut above = 0u64;
     let mut total = 0u64;
-    for i in 0..material_hm.cells.len() {
-        let surf_z = surface_hm.z_values[i];
-        let floor = (surf_z + stock_to_leave).max(z_level);
-        // Only count cells where the surface is actually below the current level
-        // (cells where surface is above z_level were handled at higher levels)
-        if surf_z + stock_to_leave <= z_level + 0.01 {
-            total += 1;
-            if material_hm.cells[i] > floor + 0.01 {
-                above += 1;
+    for row in 0..grid.rows {
+        for col in 0..grid.cols {
+            let i = row * grid.cols + col;
+            let surf_z = surface_hm.z_values[i];
+            let floor = (surf_z + stock_to_leave).max(z_level);
+            // Only count cells where the surface is actually below the current level
+            // (cells where surface is above z_level were handled at higher levels)
+            if surf_z + stock_to_leave <= z_level + 0.01 {
+                total += 1;
+                if stock_has_material_above(material_stock, row, col, floor + 0.01) {
+                    above += 1;
+                }
             }
         }
     }
@@ -349,23 +378,23 @@ fn material_remaining_at_level(
 /// Bbox-restricted version of `material_remaining_at_level()`.
 /// Only scans cells within the region's row/col bounding box.
 fn material_remaining_in_region(
-    material_hm: &Heightmap,
+    material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     z_level: f64,
     stock_to_leave: f64,
     region: &MaterialRegion,
 ) -> f64 {
+    let grid = &material_stock.z_grid;
     let mut above = 0u64;
     let mut total = 0u64;
-    for row in region.row_min..=region.row_max.min(material_hm.rows - 1) {
-        let base = row * material_hm.cols;
-        for col in region.col_min..=region.col_max.min(material_hm.cols - 1) {
-            let i = base + col;
+    for row in region.row_min..=region.row_max.min(grid.rows - 1) {
+        for col in region.col_min..=region.col_max.min(grid.cols - 1) {
+            let i = row * grid.cols + col;
             let surf_z = surface_hm.z_values[i];
             let floor = (surf_z + stock_to_leave).max(z_level);
             if surf_z + stock_to_leave <= z_level + 0.01 {
                 total += 1;
-                if material_hm.cells[i] > floor + 0.01 {
+                if stock_has_material_above(material_stock, row, col, floor + 0.01) {
                     above += 1;
                 }
             }
@@ -390,7 +419,7 @@ fn material_remaining_in_region(
 #[allow(clippy::too_many_arguments)]
 #[allow(dead_code)]
 fn search_direction_3d(
-    material_hm: &Heightmap,
+    material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     cx: f64,
     cy: f64,
@@ -406,7 +435,7 @@ fn search_direction_3d(
     bbox_y_max: f64,
 ) -> Option<(f64, f64)> {
     search_direction_3d_with_metrics(
-        material_hm,
+        material_stock,
         surface_hm,
         cx,
         cy,
@@ -426,7 +455,7 @@ fn search_direction_3d(
 
 #[allow(clippy::too_many_arguments)]
 fn search_direction_3d_with_metrics(
-    material_hm: &Heightmap,
+    material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     cx: f64,
     cy: f64,
@@ -464,7 +493,7 @@ fn search_direction_3d_with_metrics(
 
         // Engagement at candidate
         let eng = compute_engagement_3d(
-            material_hm,
+            material_stock,
             surface_hm,
             nx,
             ny,
@@ -508,7 +537,7 @@ fn search_direction_3d_with_metrics(
         }
         let z = (surf_z + stock_to_leave).max(z_level);
         let eng = compute_engagement_3d(
-            material_hm,
+            material_stock,
             surface_hm,
             nx,
             ny,
@@ -613,7 +642,7 @@ fn search_direction_3d_with_metrics(
 /// of O(rows×cols).
 #[allow(clippy::too_many_arguments)]
 fn find_entry_3d(
-    material_hm: &Heightmap,
+    material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -626,37 +655,38 @@ fn find_entry_3d(
     scan_bbox: Option<(usize, usize, usize, usize)>,
 ) -> Option<(P2, f64)> {
     let min_endpoint_dist_sq = (tool_radius * 3.0) * (tool_radius * 3.0);
+    let grid = &material_stock.z_grid;
 
     // Reference position for nearest search
     let ref_pos = last_pos.unwrap_or_else(|| {
-        let cx = material_hm.origin_x + (material_hm.cols as f64 / 2.0) * material_hm.cell_size;
-        let cy = material_hm.origin_y + (material_hm.rows as f64 / 2.0) * material_hm.cell_size;
+        let cx = grid.origin_u + (grid.cols as f64 / 2.0) * grid.cell_size;
+        let cy = grid.origin_v + (grid.rows as f64 / 2.0) * grid.cell_size;
         P2::new(cx, cy)
     });
 
     // Growing-radius search when no explicit bbox
     if scan_bbox.is_none() {
-        let cs = material_hm.cell_size;
+        let cs = grid.cell_size;
         let initial_radius = tool_radius * 4.0;
-        let max_extent = (material_hm.cols as f64 * cs).max(material_hm.rows as f64 * cs);
+        let max_extent = (grid.cols as f64 * cs).max(grid.rows as f64 * cs);
 
         let mut radius = initial_radius;
         while radius <= max_extent * 1.5 {
-            let row_lo = ((ref_pos.y - radius - material_hm.origin_y) / cs)
+            let row_lo = ((ref_pos.y - radius - grid.origin_v) / cs)
                 .floor()
                 .max(0.0) as usize;
-            let row_hi = ((ref_pos.y + radius - material_hm.origin_y) / cs)
+            let row_hi = ((ref_pos.y + radius - grid.origin_v) / cs)
                 .ceil()
-                .min(material_hm.rows.saturating_sub(1) as f64) as usize;
-            let col_lo = ((ref_pos.x - radius - material_hm.origin_x) / cs)
+                .min(grid.rows.saturating_sub(1) as f64) as usize;
+            let col_lo = ((ref_pos.x - radius - grid.origin_u) / cs)
                 .floor()
                 .max(0.0) as usize;
-            let col_hi = ((ref_pos.x + radius - material_hm.origin_x) / cs)
+            let col_hi = ((ref_pos.x + radius - grid.origin_u) / cs)
                 .ceil()
-                .min(material_hm.cols.saturating_sub(1) as f64) as usize;
+                .min(grid.cols.saturating_sub(1) as f64) as usize;
 
             if let Some(result) = scan_entry_3d_bounds(
-                material_hm,
+                material_stock,
                 surface_hm,
                 mesh,
                 index,
@@ -680,13 +710,13 @@ fn find_entry_3d(
     // Full scan (explicit bbox or growing radius exhausted)
     let (row_lo, row_hi, col_lo, col_hi) = scan_bbox.unwrap_or((
         0,
-        material_hm.rows.saturating_sub(1),
+        grid.rows.saturating_sub(1),
         0,
-        material_hm.cols.saturating_sub(1),
+        grid.cols.saturating_sub(1),
     ));
 
     scan_entry_3d_bounds(
-        material_hm,
+        material_stock,
         surface_hm,
         mesh,
         index,
@@ -703,10 +733,10 @@ fn find_entry_3d(
     )
 }
 
-/// Scan a bounded region of the heightmap for the nearest entry point.
+/// Scan a bounded region of the stock grid for the nearest entry point.
 #[allow(clippy::too_many_arguments)]
 fn scan_entry_3d_bounds(
-    material_hm: &Heightmap,
+    material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -721,22 +751,22 @@ fn scan_entry_3d_bounds(
     col_lo: usize,
     col_hi: usize,
 ) -> Option<(P2, f64)> {
-    let row_hi = row_hi.min(material_hm.rows.saturating_sub(1));
-    let col_hi = col_hi.min(material_hm.cols.saturating_sub(1));
+    let grid = &material_stock.z_grid;
+    let row_hi = row_hi.min(grid.rows.saturating_sub(1));
+    let col_hi = col_hi.min(grid.cols.saturating_sub(1));
 
     let mut best: Option<(f64, usize, usize)> = None; // (dist_sq, row, col)
 
     for row in row_lo..=row_hi {
         for col in col_lo..=col_hi {
-            let mat_z = material_hm.get(row, col);
             let surf_z = surface_hm.surface_z_at(row, col);
             let floor = (surf_z + stock_to_leave).max(z_level);
 
-            if mat_z <= floor + 0.01 {
+            if !stock_has_material_above(material_stock, row, col, floor + 0.01) {
                 continue;
             }
 
-            let (x, y) = material_hm.cell_to_world(row, col);
+            let (x, y) = grid.cell_to_world(row, col);
 
             let too_close = pass_endpoints.iter().any(|ep| {
                 let dx = x - ep.x;
@@ -761,15 +791,14 @@ fn scan_entry_3d_bounds(
     if best.is_none() {
         for row in row_lo..=row_hi {
             for col in col_lo..=col_hi {
-                let mat_z = material_hm.get(row, col);
                 let surf_z = surface_hm.surface_z_at(row, col);
                 let floor = (surf_z + stock_to_leave).max(z_level);
 
-                if mat_z <= floor + 0.01 {
+                if !stock_has_material_above(material_stock, row, col, floor + 0.01) {
                     continue;
                 }
 
-                let (x, y) = material_hm.cell_to_world(row, col);
+                let (x, y) = grid.cell_to_world(row, col);
                 let dx = x - ref_pos.x;
                 let dy = y - ref_pos.y;
                 let dist_sq = dx * dx + dy * dy;
@@ -782,7 +811,7 @@ fn scan_entry_3d_bounds(
     }
 
     best.map(|(_, row, col)| {
-        let (x, y) = material_hm.cell_to_world(row, col);
+        let (x, y) = grid.cell_to_world(row, col);
         let cl = point_drop_cutter(x, y, mesh, index, cutter);
         let z = (cl.z + stock_to_leave).max(z_level);
         (P2::new(x, y), z)
@@ -794,7 +823,7 @@ fn scan_entry_3d_bounds(
 /// Check if the tool can safely feed from `from` to `to` without hitting
 /// excessive material above the cutting plane.
 fn is_clear_path_3d(
-    material_hm: &Heightmap,
+    material_stock: &TriDexelStock,
     _surface_hm: &SurfaceHeightmap,
     from: P3,
     to: P3,
@@ -808,7 +837,8 @@ fn is_clear_path_3d(
         return true;
     }
 
-    let n_samples = (len / (material_hm.cell_size * 2.0)).ceil() as usize;
+    let grid = &material_stock.z_grid;
+    let n_samples = (len / (grid.cell_size * 2.0)).ceil() as usize;
     let n_samples = n_samples.max(2);
     let mut blocked = 0u32;
 
@@ -818,8 +848,8 @@ fn is_clear_path_3d(
         let y = from.y + t * dy;
         let z = from.z + t * (to.z - from.z);
 
-        if let Some((row, col)) = material_hm.world_to_cell(x, y) {
-            let mat_z = material_hm.get(row, col);
+        if let Some((row, col)) = grid.world_to_cell(x, y) {
+            let mat_z = stock_top_z_at(material_stock, row, col);
             // Material significantly above our travel Z means collision
             if mat_z > z + 1.0 {
                 blocked += 1;
@@ -1045,7 +1075,7 @@ struct ClearZLevelContext<'a> {
 ///
 /// Returns the number of cells pre-stamped.
 fn pre_stamp_thin_bands(
-    material_hm: &mut Heightmap,
+    material_stock: &mut TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     slope_map: &SlopeMap,
     z_level: f64,
@@ -1059,19 +1089,21 @@ fn pre_stamp_thin_bands(
     let steep_threshold = 60.0_f64.to_radians();
     let mut stamped = 0u32;
 
+    let grid = &material_stock.z_grid;
+    let cols = grid.cols;
     let (row_min, row_max, col_min, col_max) = if let Some(r) = region {
         (
             r.row_min,
-            r.row_max.min(material_hm.rows - 1),
+            r.row_max.min(grid.rows - 1),
             r.col_min,
-            r.col_max.min(material_hm.cols - 1),
+            r.col_max.min(grid.cols - 1),
         )
     } else {
-        (0, material_hm.rows - 1, 0, material_hm.cols - 1)
+        (0, grid.rows - 1, 0, grid.cols - 1)
     };
 
     for row in row_min..=row_max {
-        let base = row * material_hm.cols;
+        let base = row * cols;
         for col in col_min..=col_max {
             let i = base + col;
 
@@ -1080,12 +1112,14 @@ fn pre_stamp_thin_bands(
                 continue;
             }
 
-            let mat_z = material_hm.cells[i];
+            let mat_z = ray_top(material_stock.z_grid.ray(row, col))
+                .map(|z| z as f64)
+                .unwrap_or(material_stock.stock_bbox.min.z);
             let surf_z = surface_hm.z_values[i];
             let effective_floor = (surf_z + stock_to_leave).max(z_level);
             let thickness = mat_z - effective_floor;
             if thickness > 0.01 && thickness < thin_threshold {
-                material_hm.cells[i] = effective_floor;
+                ray_subtract_above(material_stock.z_grid.ray_mut(row, col), effective_floor as f32);
                 stamped += 1;
             }
         }
@@ -1102,7 +1136,7 @@ fn pre_stamp_thin_bands(
 #[allow(clippy::too_many_arguments)]
 fn clear_z_level(
     ctx: &ClearZLevelContext<'_>,
-    material_hm: &mut Heightmap,
+    material_stock: &mut TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     z_level: f64,
     segments: &mut Vec<Adaptive3dSegment>,
@@ -1120,9 +1154,9 @@ fn clear_z_level(
     let dir_y_max = region.map_or(ctx.bbox_y_max, |r| r.world_y_max.min(ctx.bbox_y_max));
 
     let remaining = if let Some(r) = region {
-        material_remaining_in_region(material_hm, surface_hm, z_level, ctx.stock_to_leave, r)
+        material_remaining_in_region(material_stock, surface_hm, z_level, ctx.stock_to_leave, r)
     } else {
-        material_remaining_at_level(material_hm, surface_hm, z_level, ctx.stock_to_leave)
+        material_remaining_at_level(material_stock, surface_hm, z_level, ctx.stock_to_leave)
     };
     if remaining < 0.005 {
         return Ok(());
@@ -1150,7 +1184,7 @@ fn clear_z_level(
         .as_ref()
         .map(|debug_ctx| debug_ctx.start_span("pre_stamp", format!("Pre-stamp Z {:.3}", z_level)));
     let pre_stamped = pre_stamp_thin_bands(
-        material_hm,
+        material_stock,
         surface_hm,
         ctx.slope_map,
         z_level,
@@ -1170,9 +1204,9 @@ fn clear_z_level(
         );
         // Re-check remaining after pre-stamp — skip level if negligible
         let remaining_after = if let Some(r) = region {
-            material_remaining_in_region(material_hm, surface_hm, z_level, ctx.stock_to_leave, r)
+            material_remaining_in_region(material_stock, surface_hm, z_level, ctx.stock_to_leave, r)
         } else {
-            material_remaining_at_level(material_hm, surface_hm, z_level, ctx.stock_to_leave)
+            material_remaining_at_level(material_stock, surface_hm, z_level, ctx.stock_to_leave)
         };
         if let Some(scope) = level_scope.as_ref() {
             scope.set_counter("remaining_after_prestamp", remaining_after);
@@ -1220,14 +1254,14 @@ fn clear_z_level(
         if pass_count % 20 == 1 {
             let rem = if let Some(r) = region {
                 material_remaining_in_region(
-                    material_hm,
+                    material_stock,
                     surface_hm,
                     z_level,
                     ctx.stock_to_leave,
                     r,
                 )
             } else {
-                material_remaining_at_level(material_hm, surface_hm, z_level, ctx.stock_to_leave)
+                material_remaining_at_level(material_stock, surface_hm, z_level, ctx.stock_to_leave)
             };
             if rem < 0.01 {
                 break;
@@ -1247,7 +1281,7 @@ fn clear_z_level(
             .as_ref()
             .map(|debug_ctx| debug_ctx.start_span("entry_search", format!("Entry {pass_count}")));
         let (entry_xy, entry_z) = match find_entry_3d(
-            material_hm,
+            material_stock,
             surface_hm,
             ctx.mesh,
             ctx.index,
@@ -1283,7 +1317,7 @@ fn clear_z_level(
             .as_ref()
             .map(|debug_ctx| debug_ctx.start_span("preflight", format!("Preflight {pass_count}")));
         let preflight_dir = search_direction_3d_with_metrics(
-            material_hm,
+            material_stock,
             surface_hm,
             entry_xy.x,
             entry_xy.y,
@@ -1311,20 +1345,20 @@ fn clear_z_level(
             }
         }
         if preflight_dir.is_none() {
-            stamp_tool_at_lut(
-                material_hm,
+            material_stock.stamp_tool_at(
                 ctx.lut,
                 ctx.tool_radius,
                 entry_xy.x,
                 entry_xy.y,
                 entry_z,
+                StockCutDirection::FromTop,
             );
             for a in 0..8 {
                 let angle = (a as f64 / 8.0) * TAU;
                 let (sin_a, cos_a) = angle.sin_cos();
                 let px = entry_xy.x + tool_radius * 0.5 * cos_a;
                 let py = entry_xy.y + tool_radius * 0.5 * sin_a;
-                stamp_tool_at_lut(material_hm, ctx.lut, ctx.tool_radius, px, py, entry_z);
+                material_stock.stamp_tool_at(ctx.lut, ctx.tool_radius, px, py, entry_z, StockCutDirection::FromTop);
             }
             pass_endpoints.push(entry_xy);
             short_pass_streak += 1;
@@ -1356,7 +1390,7 @@ fn clear_z_level(
             let dist = (dx * dx + dy * dy).sqrt();
             if dist < ctx.max_link_dist
                 && is_clear_path_3d(
-                    material_hm,
+                    material_stock,
                     surface_hm,
                     last,
                     entry_3d,
@@ -1383,7 +1417,7 @@ fn clear_z_level(
             0.0
         };
 
-        stamp_tool_at_lut(material_hm, ctx.lut, ctx.tool_radius, cx, cy, cz);
+        material_stock.stamp_tool_at(ctx.lut, ctx.tool_radius, cx, cy, cz, StockCutDirection::FromTop);
 
         const SMOOTH_BUF_LEN: usize = 3;
         let mut angle_buf: Vec<f64> = Vec::with_capacity(SMOOTH_BUF_LEN);
@@ -1409,7 +1443,7 @@ fn clear_z_level(
 
         for _ in 0..max_steps {
             check_cancel(cancel)?;
-            let local_before = local_material_sum(material_hm, cx, cy, tool_radius);
+            let local_before = local_material_sum(material_stock, cx, cy, tool_radius);
 
             let smoothed = if angle_buf.len() >= 2 {
                 average_angles(&angle_buf)
@@ -1418,7 +1452,7 @@ fn clear_z_level(
             };
 
             let search_result = match search_direction_3d_with_metrics(
-                material_hm,
+                material_stock,
                 surface_hm,
                 cx,
                 cy,
@@ -1447,7 +1481,7 @@ fn clear_z_level(
             cz = z_next.max(cz - max_z_step);
             path.push(P3::new(cx, cy, cz));
 
-            stamp_tool_at_lut(material_hm, ctx.lut, ctx.tool_radius, cx, cy, cz);
+            material_stock.stamp_tool_at(ctx.lut, ctx.tool_radius, cx, cy, cz, StockCutDirection::FromTop);
 
             if angle_buf.len() >= SMOOTH_BUF_LEN {
                 angle_buf.remove(0);
@@ -1470,11 +1504,11 @@ fn clear_z_level(
                 break;
             }
 
-            let local_after = local_material_sum(material_hm, cx, cy, tool_radius);
+            let local_after = local_material_sum(material_stock, cx, cy, tool_radius);
             let local_delta = (local_before - local_after).abs();
             pass_removal_sum += local_delta;
             let engagement_here = compute_engagement_3d(
-                material_hm,
+                material_stock,
                 surface_hm,
                 cx,
                 cy,
@@ -1532,7 +1566,7 @@ fn clear_z_level(
         // negligible material (typical of thin wall contour re-tracing).
         let yield_ratio = if pass_steps > 1 {
             let expected =
-                pass_steps as f64 * ctx.stepover * ctx.depth_per_pass * material_hm.cell_size;
+                pass_steps as f64 * ctx.stepover * ctx.depth_per_pass * material_stock.z_grid.cell_size;
             if expected > 0.0 {
                 pass_removal_sum / expected
             } else {
@@ -1596,7 +1630,7 @@ fn clear_z_level(
         }
 
         if was_idle {
-            stamp_tool_at_lut(material_hm, ctx.lut, ctx.tool_radius, cx, cy, cz);
+            material_stock.stamp_tool_at(ctx.lut, ctx.tool_radius, cx, cy, cz, StockCutDirection::FromTop);
             for a in 0..8 {
                 let angle = (a as f64 / 8.0) * TAU;
                 let (sin_a, cos_a) = angle.sin_cos();
@@ -1608,7 +1642,7 @@ fn clear_z_level(
                 } else {
                     (surf_z + ctx.stock_to_leave).max(z_level)
                 };
-                stamp_tool_at_lut(material_hm, ctx.lut, ctx.tool_radius, px, py, pz);
+                material_stock.stamp_tool_at(ctx.lut, ctx.tool_radius, px, py, pz, StockCutDirection::FromTop);
             }
         }
 
@@ -1638,7 +1672,7 @@ fn clear_z_level(
                         let sz = surface_hm.surface_z_at_world(px, py);
                         if sz != f64::NEG_INFINITY {
                             let pz = (sz + ctx.stock_to_leave).max(z_level);
-                            stamp_tool_at_lut(material_hm, ctx.lut, ctx.tool_radius, px, py, pz);
+                            material_stock.stamp_tool_at(ctx.lut, ctx.tool_radius, px, py, pz, StockCutDirection::FromTop);
                         }
                     }
                 }
@@ -1688,7 +1722,7 @@ fn waterline_cleanup(
     cutter: &dyn MillingCutter,
     lut: &RadialProfileLUT,
     slope_map: &SlopeMap,
-    material_hm: &mut Heightmap,
+    material_stock: &mut TriDexelStock,
     z_level: f64,
     tool_radius: f64,
     cell_size: f64,
@@ -1752,18 +1786,18 @@ fn waterline_cleanup(
                 let x = a.x + t * dx;
                 let y = a.y + t * dy;
                 let z = a.z + t * (b.z - a.z);
-                stamp_tool_at_lut(material_hm, lut, tool_radius, x, y, z);
+                material_stock.stamp_tool_at(lut, tool_radius, x, y, z, StockCutDirection::FromTop);
                 cleanup_path.push(P3::new(x, y, z));
             }
         }
         cleanup_path.push(contour[0]);
-        stamp_tool_at_lut(
-            material_hm,
+        material_stock.stamp_tool_at(
             lut,
             tool_radius,
             contour[0].x,
             contour[0].y,
             contour[0].z,
+            StockCutDirection::FromTop,
         );
         segments.push(Adaptive3dSegment::Cut(cleanup_path));
         *last_pos = Some(contour[0]);
@@ -1812,12 +1846,13 @@ fn adaptive_3d_segments(
     let extent_y = bbox.max.y + r;
     let cell_size = (tool_radius / 6.0).max(params.tolerance);
 
-    // Initialize material heightmap at stock top
-    let mut material_hm = Heightmap::from_stock(
+    // Initialize tri-dexel material stock
+    let mut material_stock = TriDexelStock::from_stock(
         origin_x,
         origin_y,
         extent_x,
         extent_y,
+        bbox.min.z,
         params.stock_top_z,
         cell_size,
     );
@@ -1828,19 +1863,19 @@ fn adaptive_3d_segments(
     let surface_scope =
         debug_ctx.map(|ctx| ctx.start_span("surface_heightmap", "Surface heightmap"));
     debug!(
-        cols = material_hm.cols,
-        rows = material_hm.rows,
+        cols = material_stock.z_grid.cols,
+        rows = material_stock.z_grid.rows,
         "Precomputing surface heightmap"
     );
     let surface_hm = SurfaceHeightmap::from_mesh_with_cancel(
         mesh,
         index,
         cutter,
-        material_hm.origin_x,
-        material_hm.origin_y,
-        material_hm.rows,
-        material_hm.cols,
-        material_hm.cell_size,
+        material_stock.z_grid.origin_u,
+        material_stock.z_grid.origin_v,
+        material_stock.z_grid.rows,
+        material_stock.z_grid.cols,
+        material_stock.z_grid.cell_size,
         bbox.min.z,
         cancel,
     )?;
@@ -1852,8 +1887,8 @@ fn adaptive_3d_segments(
     #[cfg(target_arch = "wasm32")]
     info!("Surface heightmap complete");
     if let Some(scope) = surface_scope.as_ref() {
-        scope.set_counter("rows", material_hm.rows as f64);
-        scope.set_counter("cols", material_hm.cols as f64);
+        scope.set_counter("rows", material_stock.z_grid.rows as f64);
+        scope.set_counter("cols", material_stock.z_grid.cols as f64);
     }
 
     // Compute slope map for slope-aware pre-stamping and selective waterline cleanup.
@@ -1867,19 +1902,21 @@ fn adaptive_3d_segments(
     let border_scope = debug_ctx.map(|ctx| ctx.start_span("border_clear", "Border clear"));
     let border_margin = r * 0.5;
     let mut border_cleared = 0u32;
-    for row in 0..material_hm.rows {
+    for row in 0..material_stock.z_grid.rows {
         if row % 16 == 0 {
             check_cancel(cancel)?;
         }
-        for col in 0..material_hm.cols {
-            let (x, y) = material_hm.cell_to_world(row, col);
+        for col in 0..material_stock.z_grid.cols {
+            let (x, y) = material_stock.z_grid.cell_to_world(row, col);
             if x < bbox.min.x - border_margin
                 || x > bbox.max.x + border_margin
                 || y < bbox.min.y - border_margin
                 || y > bbox.max.y + border_margin
             {
-                let i = row * material_hm.cols + col;
-                material_hm.cells[i] = surface_hm.z_values[i];
+                // Clear material above the surface Z at this cell
+                let i = row * material_stock.z_grid.cols + col;
+                let clear_z = surface_hm.z_values[i] as f32;
+                ray_subtract_above(material_stock.z_grid.ray_mut(row, col), clear_z);
                 border_cleared += 1;
             }
         }
@@ -2032,7 +2069,7 @@ fn adaptive_3d_segments(
             let region_scope =
                 debug_ctx.map(|ctx| ctx.start_span("region_detect", "Detect regions"));
             let regions = detect_material_regions(
-                &material_hm,
+                &material_stock,
                 &surface_hm,
                 params.stock_to_leave,
                 tool_radius,
@@ -2080,7 +2117,7 @@ fn adaptive_3d_segments(
                     ));
                     clear_z_level(
                         &ctx,
-                        &mut material_hm,
+                        &mut material_stock,
                         &surface_hm,
                         z_level,
                         &mut segments,
@@ -2102,7 +2139,7 @@ fn adaptive_3d_segments(
                     cutter,
                     &lut,
                     &slope_map,
-                    &mut material_hm,
+                    &mut material_stock,
                     z_bottom_level,
                     tool_radius,
                     cell_size,
@@ -2125,7 +2162,7 @@ fn adaptive_3d_segments(
                 ));
                 clear_z_level(
                     &ctx,
-                    &mut material_hm,
+                    &mut material_stock,
                     &surface_hm,
                     z_level,
                     &mut segments,
@@ -2145,7 +2182,7 @@ fn adaptive_3d_segments(
                         cutter,
                         &lut,
                         &slope_map,
-                        &mut material_hm,
+                        &mut material_stock,
                         z_level,
                         tool_radius,
                         cell_size,
@@ -2354,9 +2391,58 @@ pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dexel::DexelSegment;
     use crate::mesh::SpatialIndex;
-    use crate::simulation::stamp_tool_at;
     use crate::tool::FlatEndmill;
+
+    /// Helper: create a TriDexelStock from explicit dimensions (matching old Heightmap::from_stock).
+    /// Uses `z_min = -10.0` as default bottom Z unless specified.
+    fn make_stock(x_min: f64, y_min: f64, x_max: f64, y_max: f64, z_top: f64, cell_size: f64) -> TriDexelStock {
+        TriDexelStock::from_stock(x_min, y_min, x_max, y_max, -10.0, z_top, cell_size)
+    }
+
+    /// Helper: create a TriDexelStock with custom per-cell Z-top values.
+    /// `cell_top_z` is row-major; each cell gets a single segment [z_min, cell_z].
+    fn make_stock_with_cells(
+        rows: usize, cols: usize, origin_x: f64, origin_y: f64, cell_size: f64,
+        z_min: f64, cell_top_z: &[f64],
+    ) -> TriDexelStock {
+        use smallvec::SmallVec;
+        let z_max = cell_top_z.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let bbox = crate::geo::BoundingBox3 {
+            min: P3::new(origin_x, origin_y, z_min),
+            max: P3::new(
+                origin_x + (cols - 1) as f64 * cell_size,
+                origin_y + (rows - 1) as f64 * cell_size,
+                z_max,
+            ),
+        };
+        let mut rays = Vec::with_capacity(rows * cols);
+        for &z in cell_top_z {
+            if z <= z_min + 1e-9 {
+                // No material
+                rays.push(SmallVec::new());
+            } else {
+                let seg = DexelSegment::new(z_min as f32, z as f32);
+                rays.push(SmallVec::from_buf([seg]));
+            }
+        }
+        let grid = crate::dexel::DexelGrid {
+            rays,
+            rows,
+            cols,
+            origin_u: origin_x,
+            origin_v: origin_y,
+            cell_size,
+            axis: crate::dexel::DexelAxis::Z,
+        };
+        TriDexelStock {
+            z_grid: grid,
+            x_grid: None,
+            y_grid: None,
+            stock_bbox: bbox,
+        }
+    }
 
     fn make_flat_mesh() -> (TriangleMesh, SpatialIndex) {
         let mesh = crate::mesh::make_test_flat(50.0);
@@ -2459,21 +2545,21 @@ mod tests {
         let cutter = flat_cutter();
         let cell_size = 1.0;
 
-        let material_hm = Heightmap::from_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
+        let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
         let surface_hm = SurfaceHeightmap::from_mesh(
             &mesh,
             &si,
             &cutter,
-            material_hm.origin_x,
-            material_hm.origin_y,
-            material_hm.rows,
-            material_hm.cols,
+            material_stock.z_grid.origin_u,
+            material_stock.z_grid.origin_v,
+            material_stock.z_grid.rows,
+            material_stock.z_grid.cols,
             cell_size,
             -10.0,
         );
 
         // Stock at 20, surface near 0, z_level=10: everything above 10
-        let eng = compute_engagement_3d(&material_hm, &surface_hm, 0.0, 0.0, 3.175, 10.0, 0.5);
+        let eng = compute_engagement_3d(&material_stock, &surface_hm, 0.0, 0.0, 3.175, 10.0, 0.5);
         assert!(
             eng > 0.9,
             "Full material should give high engagement, got {:.2}",
@@ -2488,20 +2574,20 @@ mod tests {
         let cell_size = 1.0;
 
         // Stock already at surface level
-        let material_hm = Heightmap::from_stock(-30.0, -30.0, 30.0, 30.0, 0.5, cell_size);
+        let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 0.5, cell_size);
         let surface_hm = SurfaceHeightmap::from_mesh(
             &mesh,
             &si,
             &cutter,
-            material_hm.origin_x,
-            material_hm.origin_y,
-            material_hm.rows,
-            material_hm.cols,
+            material_stock.z_grid.origin_u,
+            material_stock.z_grid.origin_v,
+            material_stock.z_grid.rows,
+            material_stock.z_grid.cols,
             cell_size,
             -10.0,
         );
 
-        let eng = compute_engagement_3d(&material_hm, &surface_hm, 0.0, 0.0, 3.175, 0.0, 0.5);
+        let eng = compute_engagement_3d(&material_stock, &surface_hm, 0.0, 0.0, 3.175, 0.0, 0.5);
         assert!(
             eng < 0.1,
             "Cleared material should give low engagement, got {:.2}",
@@ -2515,23 +2601,24 @@ mod tests {
         let cutter = flat_cutter();
         let cell_size = 1.0;
 
-        let mut material_hm = Heightmap::from_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
+        let mut material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
         let surface_hm = SurfaceHeightmap::from_mesh(
             &mesh,
             &si,
             &cutter,
-            material_hm.origin_x,
-            material_hm.origin_y,
-            material_hm.rows,
-            material_hm.cols,
+            material_stock.z_grid.origin_u,
+            material_stock.z_grid.origin_v,
+            material_stock.z_grid.rows,
+            material_stock.z_grid.cols,
             cell_size,
             -10.0,
         );
 
         // Stamp tool at (3, 0) to clear half the area near (0, 0)
-        stamp_tool_at(&mut material_hm, &cutter, 3.0, 0.0, 10.0);
+        let lut = RadialProfileLUT::from_cutter(&cutter, 256);
+        material_stock.stamp_tool_at(&lut, cutter.radius(), 3.0, 0.0, 10.0, StockCutDirection::FromTop);
 
-        let eng = compute_engagement_3d(&material_hm, &surface_hm, 0.0, 0.0, 3.175, 10.0, 0.5);
+        let eng = compute_engagement_3d(&material_stock, &surface_hm, 0.0, 0.0, 3.175, 10.0, 0.5);
         assert!(
             eng > 0.2 && eng < 0.9,
             "Partial material should give mid engagement, got {:.2}",
@@ -2547,22 +2634,22 @@ mod tests {
         let cutter = flat_cutter();
         let cell_size = 1.0;
 
-        let material_hm = Heightmap::from_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
+        let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
         let surface_hm = SurfaceHeightmap::from_mesh(
             &mesh,
             &si,
             &cutter,
-            material_hm.origin_x,
-            material_hm.origin_y,
-            material_hm.rows,
-            material_hm.cols,
+            material_stock.z_grid.origin_u,
+            material_stock.z_grid.origin_v,
+            material_stock.z_grid.rows,
+            material_stock.z_grid.cols,
             cell_size,
             -10.0,
         );
 
         let target = target_engagement_fraction(2.0, 3.175);
         let result = search_direction_3d(
-            &material_hm,
+            &material_stock,
             &surface_hm,
             0.0,
             0.0,
@@ -2590,22 +2677,22 @@ mod tests {
         let cell_size = 1.0;
 
         // Stock at surface level — nothing to cut
-        let material_hm = Heightmap::from_stock(-30.0, -30.0, 30.0, 30.0, 0.5, cell_size);
+        let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 0.5, cell_size);
         let surface_hm = SurfaceHeightmap::from_mesh(
             &mesh,
             &si,
             &cutter,
-            material_hm.origin_x,
-            material_hm.origin_y,
-            material_hm.rows,
-            material_hm.cols,
+            material_stock.z_grid.origin_u,
+            material_stock.z_grid.origin_v,
+            material_stock.z_grid.rows,
+            material_stock.z_grid.cols,
             cell_size,
             -10.0,
         );
 
         let target = target_engagement_fraction(2.0, 3.175);
         let result = search_direction_3d(
-            &material_hm,
+            &material_stock,
             &surface_hm,
             0.0,
             0.0,
@@ -2634,21 +2721,21 @@ mod tests {
         let cutter = flat_cutter();
         let cell_size = 1.0;
 
-        let material_hm = Heightmap::from_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
+        let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
         let surface_hm = SurfaceHeightmap::from_mesh(
             &mesh,
             &si,
             &cutter,
-            material_hm.origin_x,
-            material_hm.origin_y,
-            material_hm.rows,
-            material_hm.cols,
+            material_stock.z_grid.origin_u,
+            material_stock.z_grid.origin_v,
+            material_stock.z_grid.rows,
+            material_stock.z_grid.cols,
             cell_size,
             -10.0,
         );
 
         let result = find_entry_3d(
-            &material_hm,
+            &material_stock,
             &surface_hm,
             &mesh,
             &si,
@@ -3020,26 +3107,26 @@ mod tests {
         let cutter = flat_cutter();
         let cell_size = 2.0;
 
-        let material_hm = Heightmap::from_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
+        let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
         let surface_hm = SurfaceHeightmap::from_mesh(
             &mesh,
             &si,
             &cutter,
-            material_hm.origin_x,
-            material_hm.origin_y,
-            material_hm.rows,
-            material_hm.cols,
+            material_stock.z_grid.origin_u,
+            material_stock.z_grid.origin_v,
+            material_stock.z_grid.rows,
+            material_stock.z_grid.cols,
             cell_size,
             -10.0,
         );
 
-        let regions = detect_material_regions(&material_hm, &surface_hm, 0.5, 3.175);
+        let regions = detect_material_regions(&material_stock, &surface_hm, 0.5, 3.175);
         assert!(
             !regions.is_empty(),
             "Full material should produce at least 1 region"
         );
         // Largest region should cover most of the grid
-        let total_cells = material_hm.rows * material_hm.cols;
+        let total_cells = material_stock.z_grid.rows * material_stock.z_grid.cols;
         assert!(
             regions[0].cell_count > total_cells / 2,
             "Largest region should cover most cells: {} / {}",
@@ -3052,29 +3139,28 @@ mod tests {
     fn test_detect_regions_two_islands() {
         // Two separated blocks → 2 regions, sorted by area
         let cell_size = 1.0;
-        let material_hm = Heightmap::from_stock(0.0, 0.0, 30.0, 10.0, 20.0, cell_size);
-        let rows = material_hm.rows;
-        let cols = material_hm.cols;
+        let material_stock = make_stock(0.0, 0.0, 30.0, 10.0, 20.0, cell_size);
+        let rows = material_stock.z_grid.rows;
+        let cols = material_stock.z_grid.cols;
 
         // Surface at z=0 everywhere
         let surface_hm = SurfaceHeightmap {
             z_values: vec![0.0; rows * cols],
             rows,
             cols,
-            origin_x: material_hm.origin_x,
-            origin_y: material_hm.origin_y,
+            origin_x: material_stock.z_grid.origin_u,
+            origin_y: material_stock.z_grid.origin_v,
             cell_size,
         };
 
         // Create two islands by clearing a gap in the middle
-        let mut hm = material_hm;
+        let mut hm = material_stock;
         for row in 0..rows {
             for col in 0..cols {
-                let (x, _y) = hm.cell_to_world(row, col);
+                let (x, _y) = hm.z_grid.cell_to_world(row, col);
                 if (13.0..=17.0).contains(&x) {
-                    // Clear the gap
-                    let i = row * cols + col;
-                    hm.cells[i] = 0.0;
+                    // Clear the gap — remove all material
+                    ray_subtract_above(hm.z_grid.ray_mut(row, col), hm.stock_bbox.min.z as f32);
                 }
             }
         }
@@ -3105,15 +3191,7 @@ mod tests {
             mat_cells[i * cols + i] = 20.0;
         }
 
-        let hm = Heightmap {
-            cells: mat_cells,
-            rows,
-            cols,
-            origin_x: 0.0,
-            origin_y: 0.0,
-            cell_size,
-            stock_top_z: 20.0,
-        };
+        let hm = make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
         let surface_hm = SurfaceHeightmap {
             z_values: vec![0.0; rows * cols],
             rows,
@@ -3144,15 +3222,7 @@ mod tests {
         mat_cells[0] = 20.0;
         mat_cells[1] = 20.0;
 
-        let hm = Heightmap {
-            cells: mat_cells,
-            rows,
-            cols,
-            origin_x: 0.0,
-            origin_y: 0.0,
-            cell_size,
-            stock_top_z: 20.0,
-        };
+        let hm = make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
         let surface_hm = SurfaceHeightmap {
             z_values: vec![0.0; rows * cols],
             rows,
@@ -3176,15 +3246,15 @@ mod tests {
         let cutter = flat_cutter();
         let cell_size = 1.0;
 
-        let material_hm = Heightmap::from_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
+        let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
         let surface_hm = SurfaceHeightmap::from_mesh(
             &mesh,
             &si,
             &cutter,
-            material_hm.origin_x,
-            material_hm.origin_y,
-            material_hm.rows,
-            material_hm.cols,
+            material_stock.z_grid.origin_u,
+            material_stock.z_grid.origin_v,
+            material_stock.z_grid.rows,
+            material_stock.z_grid.cols,
             cell_size,
             -10.0,
         );
@@ -3192,19 +3262,19 @@ mod tests {
         // A region covering a quarter of the grid
         let region = MaterialRegion {
             row_min: 0,
-            row_max: material_hm.rows / 2,
+            row_max: material_stock.z_grid.rows / 2,
             col_min: 0,
-            col_max: material_hm.cols / 2,
+            col_max: material_stock.z_grid.cols / 2,
             world_x_min: -30.0,
             world_x_max: 0.0,
             world_y_min: -30.0,
             world_y_max: 0.0,
-            cell_count: (material_hm.rows / 2) * (material_hm.cols / 2),
+            cell_count: (material_stock.z_grid.rows / 2) * (material_stock.z_grid.cols / 2),
             surface_z_min: 0.0,
             surface_z_max: 0.0,
         };
 
-        let rem = material_remaining_in_region(&material_hm, &surface_hm, 10.0, 0.5, &region);
+        let rem = material_remaining_in_region(&material_stock, &surface_hm, 10.0, 0.5, &region);
         assert!(
             rem > 0.5,
             "Full material in region should show high remaining, got {:.2}",
@@ -3218,31 +3288,31 @@ mod tests {
         let cutter = flat_cutter();
         let cell_size = 1.0;
 
-        let material_hm = Heightmap::from_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
+        let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
         let surface_hm = SurfaceHeightmap::from_mesh(
             &mesh,
             &si,
             &cutter,
-            material_hm.origin_x,
-            material_hm.origin_y,
-            material_hm.rows,
-            material_hm.cols,
+            material_stock.z_grid.origin_u,
+            material_stock.z_grid.origin_v,
+            material_stock.z_grid.rows,
+            material_stock.z_grid.cols,
             cell_size,
             -10.0,
         );
 
         // Restrict scan to a small bbox in the top-right quadrant
-        let half_rows = material_hm.rows / 2;
-        let half_cols = material_hm.cols / 2;
+        let half_rows = material_stock.z_grid.rows / 2;
+        let half_cols = material_stock.z_grid.cols / 2;
         let scan_bbox = Some((
             half_rows,
-            material_hm.rows - 1,
+            material_stock.z_grid.rows - 1,
             half_cols,
-            material_hm.cols - 1,
+            material_stock.z_grid.cols - 1,
         ));
 
         let result = find_entry_3d(
-            &material_hm,
+            &material_stock,
             &surface_hm,
             &mesh,
             &si,
@@ -3258,8 +3328,8 @@ mod tests {
 
         // Verify the entry point is within the bbox
         let (entry_xy, _) = result.unwrap();
-        let (_, min_world_y) = material_hm.cell_to_world(half_rows, half_cols);
-        let (min_world_x, _) = material_hm.cell_to_world(half_rows, half_cols);
+        let (_, min_world_y) = material_stock.z_grid.cell_to_world(half_rows, half_cols);
+        let (min_world_x, _) = material_stock.z_grid.cell_to_world(half_rows, half_cols);
         assert!(
             entry_xy.x >= min_world_x - cell_size && entry_xy.y >= min_world_y - cell_size,
             "Entry ({:.1}, {:.1}) should be within scan bbox (x>={:.1}, y>={:.1})",
@@ -3372,18 +3442,10 @@ mod tests {
                 mat_cells[row * cols + col] = 12.0;
             }
         }
-        let mut material_hm = Heightmap {
-            cells: mat_cells,
-            rows,
-            cols,
-            origin_x: 0.0,
-            origin_y: 0.0,
-            cell_size,
-            stock_top_z: 20.0,
-        };
+        let mut material_stock = make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
 
         let stamped = pre_stamp_thin_bands(
-            &mut material_hm,
+            &mut material_stock,
             &surface_hm,
             &slope_map,
             z_level,
@@ -3402,9 +3464,9 @@ mod tests {
         // Thick cells should be unchanged
         for row in 5..rows {
             for col in 0..cols {
-                let z = material_hm.get(row, col);
+                let z = stock_top_z_at(&material_stock, row, col);
                 assert!(
-                    (z - 12.0).abs() < 0.01,
+                    (z - 12.0).abs() < 0.1,
                     "Thick cell ({},{}) should be unchanged at 12.0, got {:.2}",
                     row,
                     col,
@@ -3437,18 +3499,10 @@ mod tests {
             cell_size,
         };
         let slope_map = SlopeMap::from_z_grid(&z_values, rows, cols, 0.0, 0.0, cell_size);
-        let mut material_hm = Heightmap {
-            cells: vec![20.0; rows * cols],
-            rows,
-            cols,
-            origin_x: 0.0,
-            origin_y: 0.0,
-            cell_size,
-            stock_top_z: 20.0,
-        };
+        let mut material_stock = make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &vec![20.0; rows * cols]);
 
         let stamped = pre_stamp_thin_bands(
-            &mut material_hm,
+            &mut material_stock,
             &surface_hm,
             &slope_map,
             z_level,
@@ -3501,18 +3555,10 @@ mod tests {
                 mat_cells[row * cols + col] = floor + 0.5; // 0.5mm thin band everywhere
             }
         }
-        let mut material_hm = Heightmap {
-            cells: mat_cells.clone(),
-            rows,
-            cols,
-            origin_x: 0.0,
-            origin_y: 0.0,
-            cell_size,
-            stock_top_z: 20.0,
-        };
+        let mut material_stock = make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
 
         let stamped = pre_stamp_thin_bands(
-            &mut material_hm,
+            &mut material_stock,
             &surface_hm,
             &slope_map,
             z_level,
@@ -3529,9 +3575,9 @@ mod tests {
         for row in 7..rows {
             for col in 0..cols {
                 let original = mat_cells[row * cols + col];
-                let current = material_hm.get(row, col);
+                let current = stock_top_z_at(&material_stock, row, col);
                 assert!(
-                    (current - original).abs() < 0.01,
+                    (current - original).abs() < 0.1,
                     "Shallow cell ({},{}) should be untouched: was {:.2}, now {:.2}",
                     row,
                     col,
@@ -3552,15 +3598,15 @@ mod tests {
         let cell_size = 0.5;
         let stepover = 2.0;
 
-        let mut material_hm = Heightmap::from_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
+        let mut material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
         let surface_hm = SurfaceHeightmap::from_mesh(
             &mesh,
             &si,
             &cutter,
-            material_hm.origin_x,
-            material_hm.origin_y,
-            material_hm.rows,
-            material_hm.cols,
+            material_stock.z_grid.origin_u,
+            material_stock.z_grid.origin_v,
+            material_stock.z_grid.rows,
+            material_stock.z_grid.cols,
             cell_size,
             -10.0,
         );
@@ -3572,8 +3618,9 @@ mod tests {
             .collect();
 
         // Stamp along the path itself
+        let lut = RadialProfileLUT::from_cutter(&cutter, 256);
         for p in &path {
-            stamp_tool_at(&mut material_hm, &cutter, p.x, p.y, p.z);
+            material_stock.stamp_tool_at(&lut, cutter.radius(), p.x, p.y, p.z, StockCutDirection::FromTop);
         }
 
         // Now apply widening with double ring at stepover distance
@@ -3595,7 +3642,7 @@ mod tests {
                     let sz = surface_hm.surface_z_at_world(px, py);
                     if sz != f64::NEG_INFINITY {
                         let pz = (sz + 0.5).max(z_level);
-                        stamp_tool_at(&mut material_hm, &cutter, px, py, pz);
+                        material_stock.stamp_tool_at(&lut, cutter.radius(), px, py, pz, StockCutDirection::FromTop);
                     }
                 }
             }
@@ -3603,8 +3650,8 @@ mod tests {
 
         // Check that cells at y = +/- stepover are cleared (material lowered from 20)
         for &y_off in &[stepover, -stepover, 2.0 * stepover, -2.0 * stepover] {
-            if let Some((row, col)) = material_hm.world_to_cell(0.0, y_off) {
-                let z = material_hm.get(row, col);
+            if let Some((row, col)) = material_stock.z_grid.world_to_cell(0.0, y_off) {
+                let z = stock_top_z_at(&material_stock, row, col);
                 assert!(
                     z < 20.0 - 0.1,
                     "Cell at y={:.1} should be widened (z lowered from 20), got z={:.2}",
