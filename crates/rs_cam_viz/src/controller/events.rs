@@ -76,11 +76,26 @@ impl<B: ComputeBackend> AppController<B> {
                 }
             }
             AppEvent::RemoveTool(tool_id) => {
-                self.state.job.tools.retain(|tool| tool.id != tool_id);
-                if self.state.selection == Selection::Tool(tool_id) {
-                    self.state.selection = Selection::None;
+                // Block deletion if any toolpath references this tool.
+                let in_use = self
+                    .state
+                    .job
+                    .setups
+                    .iter()
+                    .flat_map(|setup| setup.toolpaths.iter())
+                    .any(|entry| entry.tool_id == tool_id);
+                if in_use {
+                    tracing::warn!(
+                        "Cannot remove tool {:?}: still referenced by one or more toolpaths",
+                        tool_id
+                    );
+                } else {
+                    self.state.job.tools.retain(|tool| tool.id != tool_id);
+                    if self.state.selection == Selection::Tool(tool_id) {
+                        self.state.selection = Selection::None;
+                    }
+                    self.state.job.mark_edited();
                 }
-                self.state.job.mark_edited();
             }
             AppEvent::AddSetup => {
                 let id = self.state.job.next_setup_id();
@@ -244,14 +259,12 @@ impl<B: ComputeBackend> AppController<B> {
                 }
                 .or_else(|| self.state.job.setups.first().map(|setup| setup.id));
 
+                // Require at least one tool before creating a toolpath.
+                let Some(tool_id) = self.state.job.tools.first().map(|tool| tool.id) else {
+                    tracing::warn!("Cannot add toolpath: no tools defined");
+                    return;
+                };
                 let id = self.state.job.next_toolpath_id();
-                let tool_id = self
-                    .state
-                    .job
-                    .tools
-                    .first()
-                    .map(|tool| tool.id)
-                    .unwrap_or(crate::state::job::ToolId(0));
                 let model_id = self
                     .state
                     .job
@@ -756,17 +769,14 @@ impl<B: ComputeBackend> AppController<B> {
             .map(|(sid, tp)| (sid, tp.id));
 
         if has_pins && existing.is_none() {
-            // Auto-create in Setup 1 at index 0.
-            if let Some(setup) = self.state.job.setups.first() {
+            // Auto-create in Setup 1 at index 0, but only if a tool exists.
+            let first_tool_id = self.state.job.tools.first().map(|t| t.id);
+            if let (Some(setup), Some(tool_id)) = (
+                self.state.job.setups.first(),
+                first_tool_id,
+            ) {
                 let setup_id = setup.id;
                 let id = self.state.job.next_toolpath_id();
-                let tool_id = self
-                    .state
-                    .job
-                    .tools
-                    .first()
-                    .map(|t| t.id)
-                    .unwrap_or(crate::state::job::ToolId(0));
                 let model_id = self
                     .state
                     .job
