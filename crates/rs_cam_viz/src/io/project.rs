@@ -17,7 +17,7 @@ use crate::state::toolpath::{
 };
 use rs_cam_core::gcode::CoolantMode;
 
-const PROJECT_FORMAT_VERSION: u32 = 2;
+const PROJECT_FORMAT_VERSION: u32 = 3;
 
 pub struct LoadedProject {
     pub job: JobState,
@@ -210,6 +210,8 @@ pub struct ProjectToolpathSection {
     pub auto_regen: Option<bool>,
     #[serde(default)]
     pub feeds_auto: FeedsAutoMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face_selection: Option<Vec<u16>>,
     #[serde(default)]
     pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
 }
@@ -498,6 +500,9 @@ impl ProjectToolpathSection {
             stock_source: toolpath.stock_source,
             auto_regen: Some(toolpath.auto_regen),
             feeds_auto: toolpath.feeds_auto.clone(),
+            face_selection: toolpath.face_selection.as_ref().map(|faces| {
+                faces.iter().map(|f| f.0).collect()
+            }),
             debug_options: toolpath.debug_options,
         }
     }
@@ -1052,6 +1057,11 @@ fn restore_project_toolpath(
     init.stock_source = section.stock_source;
     init.auto_regen = section.auto_regen;
     init.feeds_auto = section.feeds_auto;
+    init.face_selection = section.face_selection.map(|ids| {
+        ids.into_iter()
+            .map(rs_cam_core::enriched_mesh::FaceGroupId)
+            .collect()
+    });
     init.debug_options = section.debug_options;
     let mut toolpath = ToolpathEntry::from_init(init);
     toolpath.clear_runtime_state();
@@ -1557,7 +1567,7 @@ mod tests {
 
         save_project(&job, &project_path).unwrap();
         let saved = fs::read_to_string(&project_path).unwrap();
-        assert!(saved.contains("format_version = 2"));
+        assert!(saved.contains("format_version = 3"));
         assert!(saved.contains("[[setups]]"));
         assert!(saved.contains("[[setups.toolpaths]]"));
 
