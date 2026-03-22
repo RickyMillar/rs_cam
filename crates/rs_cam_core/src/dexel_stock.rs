@@ -292,14 +292,16 @@ impl TriDexelStock {
                     sample_segment_runtime(
                         start,
                         end,
-                        move_index,
-                        toolpath_id,
-                        sample_step_mm,
-                        rapid_feed_mm_min.max(1.0),
-                        false,
-                        spindle_rpm,
-                        flute_count,
-                        semantic_item_id,
+                        &SegmentSampleParams {
+                            move_index,
+                            toolpath_id,
+                            sample_step_mm,
+                            feed_rate_mm_min: rapid_feed_mm_min.max(1.0),
+                            is_cutting: false,
+                            spindle_rpm,
+                            flute_count,
+                            semantic_item_id,
+                        },
                         &mut cumulative_time_s,
                         &mut next_sample_index,
                         &mut samples,
@@ -660,9 +662,8 @@ fn stamp_segment_on_grid(
     }
 }
 
-fn sample_segment_runtime(
-    start: P3,
-    end: P3,
+/// Bundled parameters for `sample_segment_runtime`.
+struct SegmentSampleParams {
     move_index: usize,
     toolpath_id: usize,
     sample_step_mm: f64,
@@ -671,6 +672,12 @@ fn sample_segment_runtime(
     spindle_rpm: u32,
     flute_count: u32,
     semantic_item_id: Option<u64>,
+}
+
+fn sample_segment_runtime(
+    start: P3,
+    end: P3,
+    params: &SegmentSampleParams,
     cumulative_time_s: &mut f64,
     next_sample_index: &mut usize,
     samples: &mut Vec<SimulationCutSample>,
@@ -680,7 +687,8 @@ fn sample_segment_runtime(
         return;
     }
 
-    let subsegments = ((segment_length / sample_step_mm.max(1e-3)).ceil() as usize).max(1);
+    let subsegments =
+        ((segment_length / params.sample_step_mm.max(1e-3)).ceil() as usize).max(1);
     for subsegment in 0..subsegments {
         let t0 = subsegment as f64 / subsegments as f64;
         let t1 = (subsegment + 1) as f64 / subsegments as f64;
@@ -691,25 +699,25 @@ fn sample_segment_runtime(
         if segment_len <= 1e-9 {
             continue;
         }
-        let segment_time_s = (segment_len / feed_rate_mm_min.max(1.0)) * 60.0;
+        let segment_time_s = (segment_len / params.feed_rate_mm_min.max(1.0)) * 60.0;
         *cumulative_time_s += segment_time_s;
         samples.push(SimulationCutSample {
-            toolpath_id,
-            move_index,
+            toolpath_id: params.toolpath_id,
+            move_index: params.move_index,
             sample_index: *next_sample_index,
             position: [midpoint.x, midpoint.y, midpoint.z],
             cumulative_time_s: *cumulative_time_s,
             segment_time_s,
-            is_cutting,
-            feed_rate_mm_min,
-            spindle_rpm,
-            flute_count,
+            is_cutting: params.is_cutting,
+            feed_rate_mm_min: params.feed_rate_mm_min,
+            spindle_rpm: params.spindle_rpm,
+            flute_count: params.flute_count,
             axial_doc_mm: 0.0,
             radial_engagement: 0.0,
             chipload_mm_per_tooth: 0.0,
             removed_volume_est_mm3: 0.0,
             mrr_mm3_s: 0.0,
-            semantic_item_id,
+            semantic_item_id: params.semantic_item_id,
         });
         *next_sample_index += 1;
     }

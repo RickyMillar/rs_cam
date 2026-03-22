@@ -1581,20 +1581,20 @@ fn annotate_adaptive_runtime_semantics(
                     search_evaluations,
                     exit_reason,
                 } => {
-                    if let Some(open_pass) = current_pass.take() {
-                        if open_pass.pass_index == *pass_index {
-                            open_pass.scope.set_param("step_count", *step_count);
-                            open_pass.scope.set_param("idle_count", *idle_count);
-                            open_pass
-                                .scope
-                                .set_param("search_evaluations", *search_evaluations);
-                            open_pass.scope.set_param("exit_reason", exit_reason);
-                            open_pass.scope.bind_to_toolpath(
-                                toolpath,
-                                open_pass.start_move,
-                                move_start.max(open_pass.start_move + 1),
-                            );
-                        }
+                    if let Some(open_pass) = current_pass.take()
+                        && open_pass.pass_index == *pass_index
+                    {
+                        open_pass.scope.set_param("step_count", *step_count);
+                        open_pass.scope.set_param("idle_count", *idle_count);
+                        open_pass
+                            .scope
+                            .set_param("search_evaluations", *search_evaluations);
+                        open_pass.scope.set_param("exit_reason", exit_reason);
+                        open_pass.scope.bind_to_toolpath(
+                            toolpath,
+                            open_pass.start_move,
+                            move_start.max(open_pass.start_move + 1),
+                        );
                     }
                 }
                 rs_cam_core::adaptive::AdaptiveRuntimeEvent::ForcedClear {
@@ -2331,7 +2331,7 @@ impl SemanticToolpathOp for VCarveConfig {
                 );
                 curve_scope.set_param("source_curve_index", poly_idx + 1);
                 let curve_ctx = curve_scope.context();
-                while let Some(run) = run_iter.next() {
+                for run in run_iter.by_ref() {
                     let kind = if run.constant_z && run.closed_loop {
                         ToolpathSemanticKind::Contour
                     } else if run.constant_z {

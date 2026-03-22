@@ -17,7 +17,7 @@
 pub(crate) use crate::adaptive_shared::{
     angle_diff, average_angles, blend_corners, refine_angle_bracket, target_engagement_fraction,
 };
-use crate::debug_trace::{ToolpathDebugBounds2, ToolpathDebugContext};
+use crate::debug_trace::{HotspotRecord, ToolpathDebugBounds2, ToolpathDebugContext};
 use crate::geo::P2;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::polygon::{Polygon2, offset_polygon};
@@ -1007,29 +1007,32 @@ fn adaptive_segments(
     slot_clearing: bool,
     cancel: &dyn CancelCheck,
 ) -> Result<Vec<AdaptiveSegment>, Cancelled> {
-    adaptive_segments_with_debug(
-        polygon,
+    let params = AdaptiveParams {
         tool_radius,
         stepover,
         tolerance,
         slot_clearing,
-        0.0,
-        cancel,
-        None,
-    )
+        cut_depth: 0.0,
+        feed_rate: 0.0,
+        plunge_rate: 0.0,
+        safe_z: 0.0,
+        min_cutting_radius: 0.0,
+    };
+    adaptive_segments_with_debug(polygon, &params, cancel, None)
 }
 
 /// Generate 2D adaptive segments and optionally record detailed debug spans.
 fn adaptive_segments_with_debug(
     polygon: &Polygon2,
-    tool_radius: f64,
-    stepover: f64,
-    tolerance: f64,
-    slot_clearing: bool,
-    cut_depth: f64,
+    params: &AdaptiveParams,
     cancel: &dyn CancelCheck,
     debug: Option<&ToolpathDebugContext>,
 ) -> Result<Vec<AdaptiveSegment>, Cancelled> {
+    let tool_radius = params.tool_radius;
+    let stepover = params.stepover;
+    let tolerance = params.tolerance;
+    let slot_clearing = params.slot_clearing;
+    let cut_depth = params.cut_depth;
     // Inset polygon by tool radius to get the machinable region
     let machinable_vec = offset_polygon(polygon, tool_radius);
     if machinable_vec.is_empty() {
@@ -1306,18 +1309,18 @@ fn adaptive_segments_with_debug(
                 scope.set_xy_bbox(bounds);
                 let (center_x, center_y) = bounds.center();
                 if let Some(ctx) = pass_ctx.as_ref() {
-                    ctx.record_hotspot(
-                        "adaptive_pass",
+                    ctx.record_hotspot(&HotspotRecord {
+                        kind: "adaptive_pass".into(),
                         center_x,
                         center_y,
-                        Some(cut_depth),
-                        tool_radius * 2.0,
-                        Some(tolerance.max(step_len)),
-                        pass_started.elapsed().as_micros() as u64,
-                        1,
-                        path_len as u64,
-                        0,
-                    );
+                        z_level: Some(cut_depth),
+                        bucket_size_xy: tool_radius * 2.0,
+                        bucket_size_z: Some(tolerance.max(step_len)),
+                        elapsed_us: pass_started.elapsed().as_micros() as u64,
+                        pass_count: 1,
+                        step_count: path_len as u64,
+                        low_yield_exit_count: 0,
+                    });
                 }
             }
             scope.set_z_level(cut_depth);
@@ -1538,16 +1541,7 @@ pub fn adaptive_toolpath_structured_annotated_traced_with_cancel(
     cancel: &dyn CancelCheck,
     debug: Option<&ToolpathDebugContext>,
 ) -> Result<(Toolpath, Vec<AdaptiveRuntimeAnnotation>), Cancelled> {
-    let segments = adaptive_segments_with_debug(
-        polygon,
-        params.tool_radius,
-        params.stepover,
-        params.tolerance,
-        params.slot_clearing,
-        params.cut_depth,
-        cancel,
-        debug,
-    )?;
+    let segments = adaptive_segments_with_debug(polygon, params, cancel, debug)?;
     let (tp, annotations) = segments_to_toolpath(&segments, params);
     if let Some(debug_ctx) = debug {
         for annotation in &annotations {

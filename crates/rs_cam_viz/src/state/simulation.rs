@@ -18,8 +18,9 @@ use rs_cam_core::simulation_cut::{
 };
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SimulationDebugTab {
+    #[default]
     Semantic,
     Generation,
     Cutting,
@@ -1247,11 +1248,6 @@ impl Default for SimulationState {
     }
 }
 
-impl Default for SimulationDebugTab {
-    fn default() -> Self {
-        Self::Semantic
-    }
-}
 
 impl SimulationDebugState {
     pub fn is_toolpath_expanded(&self, toolpath_id: ToolpathId) -> bool {
@@ -1655,18 +1651,18 @@ mod tests {
         pass_span.finish();
         debug_ctx.add_annotation(1, "Entry");
         debug_ctx.add_annotation(7, "Cleanup");
-        debug_ctx.record_hotspot(
-            "adaptive_pass",
-            5.0,
-            5.0,
-            Some(-1.0),
-            10.0,
-            Some(1.0),
-            1_000,
-            1,
-            8,
-            0,
-        );
+        debug_ctx.record_hotspot(&rs_cam_core::debug_trace::HotspotRecord {
+            kind: "adaptive_pass".into(),
+            center_x: 5.0,
+            center_y: 5.0,
+            z_level: Some(-1.0),
+            bucket_size_xy: 10.0,
+            bucket_size_z: Some(1.0),
+            elapsed_us: 1_000,
+            pass_count: 1,
+            step_count: 8,
+            low_yield_exit_count: 0,
+        });
         if let Some(pass_item) = semantic_trace
             .items
             .iter_mut()
