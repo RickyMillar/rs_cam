@@ -1338,6 +1338,7 @@ mod tests {
             polygons: Some(Arc::new(vec![Polygon2::rectangle(
                 -10.0, -10.0, 10.0, 10.0,
             )])),
+            enriched_mesh: None,
             units: ModelUnits::Millimeters,
             winding_report: None,
             load_error: None,
@@ -1352,6 +1353,7 @@ mod tests {
             kind: ModelKind::Stl,
             mesh: Some(Arc::new(make_test_flat(20.0))),
             polygons: None,
+            enriched_mesh: None,
             units: ModelUnits::Millimeters,
             winding_report: None,
             load_error: None,
