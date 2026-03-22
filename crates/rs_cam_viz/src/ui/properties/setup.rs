@@ -7,12 +7,14 @@ use crate::ui::AppEvent;
 /// Draw the setup overview panel (fixtures list, keep-out list, setup name).
 ///
 /// `pin_count` is the number of alignment pins on the stock (pins are now
-/// stock-level, not per-setup).
+/// stock-level, not per-setup). `has_flip_axis` indicates whether a flip axis
+/// is configured on the stock.
 pub fn draw(
     ui: &mut egui::Ui,
     setup_id: SetupId,
     setup: &mut Setup,
     pin_count: usize,
+    has_flip_axis: bool,
     events: &mut Vec<AppEvent>,
 ) {
     ui.heading("Setup Properties");
@@ -68,6 +70,16 @@ pub fn draw(
                 .italics()
                 .color(egui::Color32::from_rgb(220, 180, 60)),
         );
+        // Hint: suggest alignment pins when flipped setup has no pins configured
+        if pin_count == 0 && !has_flip_axis {
+            ui.add_space(4.0);
+            if ui
+                .small_button("Add alignment pins for this flip")
+                .clicked()
+            {
+                events.push(AppEvent::SetupTwoSided);
+            }
+        }
     }
 
     ui.add_space(8.0);

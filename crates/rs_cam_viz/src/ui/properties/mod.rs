@@ -33,7 +33,12 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             if state.history.stock_snapshot.is_none() {
                 state.history.stock_snapshot = Some(state.job.stock.clone());
             }
-            stock::draw(ui, &mut state.job.stock, events);
+            let has_flipped_setup = state
+                .job
+                .setups
+                .iter()
+                .any(|s| s.face_up != crate::state::job::FaceUp::Top);
+            stock::draw(ui, &mut state.job.stock, has_flipped_setup, events);
             // If an edit just finished (DragValue released), push undo
             if events.iter().any(|e| matches!(e, AppEvent::StockChanged))
                 && let Some(old) = state.history.stock_snapshot.take()
@@ -75,7 +80,8 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .find(|setup| setup.id == setup_id)
             {
                 let pin_count = state.job.stock.alignment_pins.len();
-                setup::draw(ui, setup_id, setup_state, pin_count, events);
+                let has_flip_axis = state.job.stock.flip_axis.is_some();
+                setup::draw(ui, setup_id, setup_state, pin_count, has_flip_axis, events);
             }
         }
         Selection::Fixture(setup_id, fixture_id) => {

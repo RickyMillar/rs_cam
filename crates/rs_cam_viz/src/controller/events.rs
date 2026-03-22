@@ -8,7 +8,7 @@ use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::BoundingBox3;
 
 use crate::state::history::UndoAction;
-use crate::state::job::{FaceUp, Fixture, KeepOutZone, Setup, ToolConfig};
+use crate::state::job::{AlignmentPin, FaceUp, Fixture, FlipAxis, KeepOutZone, Setup, ToolConfig};
 use crate::state::selection::Selection;
 use crate::state::simulation::{SimulationResults, SimulationRunMeta};
 use crate::state::toolpath::{
@@ -87,6 +87,50 @@ impl<B: ComputeBackend> AppController<B> {
                 self.state.job.setups.push(Setup::new(id, name));
                 self.state.selection = Selection::Setup(id);
                 self.state.job.mark_edited();
+            }
+            AppEvent::SetupTwoSided => {
+                // Create flipped Setup 2 if one doesn't exist yet.
+                let has_flipped = self
+                    .state
+                    .job
+                    .setups
+                    .iter()
+                    .any(|s| s.face_up == FaceUp::Bottom);
+                if !has_flipped {
+                    let id = self.state.job.next_setup_id();
+                    let mut setup = Setup::new(id, format!("Setup {}", id.0 + 1));
+                    setup.face_up = FaceUp::Bottom;
+                    self.state.job.setups.push(setup);
+                }
+                // Set flip axis if not already set.
+                if self.state.job.stock.flip_axis.is_none() {
+                    self.state.job.stock.flip_axis = Some(FlipAxis::Horizontal);
+                }
+                // Auto-place 2 pins if none exist.
+                if self.state.job.stock.alignment_pins.is_empty() {
+                    let margin = if self.state.job.stock.padding > 2.0 {
+                        self.state.job.stock.padding / 2.0
+                    } else {
+                        10.0_f64
+                            .min(self.state.job.stock.x / 4.0)
+                            .min(self.state.job.stock.y / 4.0)
+                    };
+                    let cy = self.state.job.stock.y / 2.0;
+                    self.state
+                        .job
+                        .stock
+                        .alignment_pins
+                        .push(AlignmentPin::new(margin, cy, 6.0));
+                    self.state.job.stock.alignment_pins.push(AlignmentPin::new(
+                        self.state.job.stock.x - margin,
+                        cy,
+                        6.0,
+                    ));
+                }
+                self.pending_upload = true;
+                self.state.job.mark_edited();
+                self.sync_alignment_pin_drill();
+                self.state.selection = Selection::Stock;
             }
             AppEvent::RemoveSetup(setup_id) => {
                 if self.state.job.setups.len() > 1 {

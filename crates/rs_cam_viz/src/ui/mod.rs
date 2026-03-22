@@ -49,6 +49,8 @@ pub enum AppEvent {
     AddSetup,
     RemoveSetup(SetupId),
     RenameSetup(SetupId, String),
+    /// One-click two-sided setup: create flipped Setup 2, set flip axis, auto-place pins.
+    SetupTwoSided,
 
     // Fixtures and keep-out zones
     AddFixture(SetupId),

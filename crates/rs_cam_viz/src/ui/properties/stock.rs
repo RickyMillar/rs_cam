@@ -1,7 +1,12 @@
 use crate::state::job::{AlignmentPin, FlipAxis, StockConfig};
 use crate::ui::AppEvent;
 
-pub fn draw(ui: &mut egui::Ui, stock: &mut StockConfig, events: &mut Vec<AppEvent>) {
+pub fn draw(
+    ui: &mut egui::Ui,
+    stock: &mut StockConfig,
+    has_flipped_setup: bool,
+    events: &mut Vec<AppEvent>,
+) {
     ui.heading("Stock Setup");
     ui.separator();
 
@@ -161,11 +166,16 @@ pub fn draw(ui: &mut egui::Ui, stock: &mut StockConfig, events: &mut Vec<AppEven
     }
 
     ui.add_space(12.0);
-    draw_alignment_pins(ui, stock, events);
+    draw_alignment_pins(ui, stock, has_flipped_setup, events);
 }
 
 /// Draw the "Alignment Pins" collapsible section in the stock panel.
-fn draw_alignment_pins(ui: &mut egui::Ui, stock: &mut StockConfig, events: &mut Vec<AppEvent>) {
+fn draw_alignment_pins(
+    ui: &mut egui::Ui,
+    stock: &mut StockConfig,
+    has_flipped_setup: bool,
+    events: &mut Vec<AppEvent>,
+) {
     let header = egui::RichText::new("Alignment Pins")
         .strong()
         .color(egui::Color32::from_rgb(180, 180, 195));
@@ -174,6 +184,19 @@ fn draw_alignment_pins(ui: &mut egui::Ui, stock: &mut StockConfig, events: &mut 
         .default_open(true)
         .show(ui, |ui| {
             let mut changed = false;
+
+            // Quick two-sided setup button
+            if !has_flipped_setup && stock.alignment_pins.is_empty() {
+                if ui.button("Two-sided setup").clicked() {
+                    events.push(AppEvent::SetupTwoSided);
+                }
+                ui.label(
+                    egui::RichText::new("Creates flipped Setup 2, sets flip axis, places 2 pins")
+                        .small()
+                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                );
+                ui.add_space(4.0);
+            }
 
             // Flip axis dropdown
             let flip_label = match stock.flip_axis {
