@@ -696,122 +696,88 @@ pub(super) fn draw_ramp_finish_params(ui: &mut egui::Ui, cfg: &mut RampFinishCon
 
 // ── Heights panel ────────────────────────────────────────────────────────
 
-/// Current mode discriminant for the mode combo box.
-#[derive(Clone, Copy, PartialEq)]
-enum HeightModeKind {
-    Auto,
-    Manual,
-    FromReference,
-}
-
-impl HeightModeKind {
-    fn of(mode: &HeightMode) -> Self {
-        match mode {
-            HeightMode::Auto => Self::Auto,
-            HeightMode::Manual(_) => Self::Manual,
-            HeightMode::FromReference(_) => Self::FromReference,
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::Auto => "Auto",
-            Self::Manual => "Manual",
-            Self::FromReference => "From Ref",
-        }
-    }
-}
-
+/// F360-style height row: [offset value] [from Reference ▾]
+/// Auto mode auto-converts to FromReference with the appropriate default.
 fn draw_height_row(
     ui: &mut egui::Ui,
     label: &str,
     mode: &mut HeightMode,
-    auto_value: f64,
+    default_ref: HeightReference,
     ctx: &HeightContext,
     id_salt: &str,
 ) {
-    // Column 1: label
-    ui.label(label);
-
-    // Column 2: mode selector
-    let current_kind = HeightModeKind::of(mode);
-    let mut new_kind = current_kind;
-    egui::ComboBox::from_id_salt(format!("hm_{id_salt}"))
-        .width(65.0)
-        .selected_text(current_kind.label())
-        .show_ui(ui, |ui| {
-            for kind in [
-                HeightModeKind::Auto,
-                HeightModeKind::Manual,
-                HeightModeKind::FromReference,
-            ] {
-                ui.selectable_value(&mut new_kind, kind, kind.label());
-            }
+    // Auto-promote to FromReference on first display
+    if mode.is_auto() {
+        *mode = HeightMode::FromReference(ReferenceOffset {
+            reference: default_ref,
+            offset: 0.0,
         });
-
-    // Handle mode transitions
-    if new_kind != current_kind {
-        match new_kind {
-            HeightModeKind::Auto => *mode = HeightMode::Auto,
-            HeightModeKind::Manual => {
-                // Pre-fill with the current resolved value
-                let resolved = mode.resolve_value(auto_value, ctx);
-                *mode = HeightMode::Manual(resolved);
-            }
-            HeightModeKind::FromReference => {
-                *mode = HeightMode::FromReference(ReferenceOffset {
-                    reference: HeightReference::StockTop,
-                    offset: 0.0,
-                });
-            }
-        }
     }
 
-    // Column 3: value editor (varies by mode)
-    match mode {
-        HeightMode::Auto => {
-            ui.label(
-                egui::RichText::new(format!("{auto_value:.1} mm"))
-                    .italics()
-                    .color(egui::Color32::from_rgb(120, 120, 130)),
-            );
-        }
-        HeightMode::Manual(val) => {
-            ui.add(
-                egui::DragValue::new(val)
-                    .suffix(" mm")
-                    .speed(0.5)
-                    .range(-500.0..=500.0),
-            );
-        }
-        HeightMode::FromReference(ref_offset) => {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 3.0;
-                egui::ComboBox::from_id_salt(format!("hr_{id_salt}"))
-                    .width(80.0)
-                    .selected_text(ref_offset.reference.label())
-                    .show_ui(ui, |ui| {
-                        for &href in HeightReference::ALL {
-                            ui.selectable_value(
-                                &mut ref_offset.reference,
-                                href,
-                                href.label(),
-                            );
-                        }
-                    });
-                let sign_prefix = if ref_offset.offset >= 0.0 { "+" } else { "" };
-                ui.add(
-                    egui::DragValue::new(&mut ref_offset.offset)
-                        .prefix(sign_prefix)
-                        .suffix(" mm")
-                        .speed(0.5)
-                        .range(-500.0..=500.0),
-                );
+    // If Manual, convert to FromReference from the nearest reference
+    if let HeightMode::Manual(abs_z) = *mode {
+        let best_ref = find_nearest_reference(abs_z, ctx);
+        let base_z = best_ref.resolve_z(ctx);
+        *mode = HeightMode::FromReference(ReferenceOffset {
+            reference: best_ref,
+            offset: abs_z - base_z,
+        });
+    }
+
+    ui.label(label);
+
+    if let HeightMode::FromReference(ref_offset) = mode {
+        ui.add(
+            egui::DragValue::new(&mut ref_offset.offset)
+                .suffix(" mm")
+                .speed(0.5)
+                .range(-500.0..=500.0),
+        );
+
+        egui::ComboBox::from_id_salt(format!("hr_{id_salt}"))
+            .width(105.0)
+            .selected_text(ref_label(ref_offset.reference, ref_offset.offset))
+            .show_ui(ui, |ui| {
+                for &href in HeightReference::ALL {
+                    ui.selectable_value(
+                        &mut ref_offset.reference,
+                        href,
+                        href.label(),
+                    );
+                }
             });
-        }
+
+        // Show resolved absolute Z as a dim hint
+        let resolved = ref_offset.reference.resolve_z(ctx) + ref_offset.offset;
+        ui.label(
+            egui::RichText::new(format!("= {resolved:.1}"))
+                .small()
+                .color(egui::Color32::from_rgb(100, 100, 115)),
+        );
     }
 
     ui.end_row();
+}
+
+/// Descriptive label for the reference dropdown: "above/below Stock Top" etc.
+fn ref_label(reference: HeightReference, offset: f64) -> String {
+    let dir = if offset >= 0.0 { "above" } else { "below" };
+    format!("{dir} {}", reference.label())
+}
+
+/// Find the nearest reference point to an absolute Z value.
+fn find_nearest_reference(z: f64, ctx: &HeightContext) -> HeightReference {
+    let mut best = HeightReference::StockTop;
+    let mut best_dist = f64::INFINITY;
+    for &href in HeightReference::ALL {
+        let ref_z = href.resolve_z(ctx);
+        let dist = (z - ref_z).abs();
+        if dist < best_dist {
+            best_dist = dist;
+            best = href;
+        }
+    }
+    best
 }
 
 pub(super) fn draw_heights_params(
@@ -819,38 +785,29 @@ pub(super) fn draw_heights_params(
     heights: &mut HeightsConfig,
     ctx: &HeightContext,
 ) {
-    ui.label(
-        egui::RichText::new("Set heights relative to stock/model geometry")
-            .small()
-            .italics()
-            .color(egui::Color32::from_rgb(130, 130, 140)),
-    );
-
-    // Compute auto defaults for display (same logic as resolve())
-    let retract_auto = ctx.safe_z;
-    let clearance_auto = retract_auto + 10.0;
-    let feed_auto = retract_auto - 2.0;
-    let top_auto = 0.0;
-    let bottom_auto = -ctx.op_depth.abs();
-
     egui::Grid::new("heights_p")
-        .num_columns(3)
-        .spacing([6.0, 4.0])
+        .num_columns(4)
+        .spacing([4.0, 4.0])
         .show(ui, |ui| {
             draw_height_row(
-                ui, "Clearance Z:", &mut heights.clearance_z, clearance_auto, ctx, "h_clear",
+                ui, "Clearance:", &mut heights.clearance_z,
+                HeightReference::StockTop, ctx, "h_clear",
             );
             draw_height_row(
-                ui, "Retract Z:", &mut heights.retract_z, retract_auto, ctx, "h_retract",
+                ui, "Retract:", &mut heights.retract_z,
+                HeightReference::StockTop, ctx, "h_retract",
             );
             draw_height_row(
-                ui, "Feed Z:", &mut heights.feed_z, feed_auto, ctx, "h_feed",
+                ui, "Feed:", &mut heights.feed_z,
+                HeightReference::StockTop, ctx, "h_feed",
             );
             draw_height_row(
-                ui, "Top Z:", &mut heights.top_z, top_auto, ctx, "h_top",
+                ui, "Top:", &mut heights.top_z,
+                HeightReference::StockTop, ctx, "h_top",
             );
             draw_height_row(
-                ui, "Bottom Z:", &mut heights.bottom_z, bottom_auto, ctx, "h_bottom",
+                ui, "Bottom:", &mut heights.bottom_z,
+                HeightReference::StockBottom, ctx, "h_bottom",
             );
         });
 }
@@ -1061,13 +1018,19 @@ pub(super) fn draw_dogbone_diagram(ui: &mut egui::Ui, max_angle: f64) {
     let overcut_color = egui::Color32::from_rgb(220, 160, 50);
     let tool_color = egui::Color32::from_rgb(160, 170, 190);
 
-    // Two profile edges meeting at 90° (an inside corner)
+    // Two profile edges meeting at the configured angle
     let corner = egui::pos2(cx, cy);
     let arm_len = 40.0;
+    let corner_angle_rad = (max_angle as f32).to_radians();
 
-    // Horizontal edge (left) and vertical edge (down)
+    // Edge A: horizontal going left
     let edge_a_end = egui::pos2(cx - arm_len, cy);
-    let edge_b_end = egui::pos2(cx, cy + arm_len);
+    // Edge B: rotated by corner angle from edge A direction
+    let edge_b_angle = std::f32::consts::PI - corner_angle_rad; // interior angle
+    let edge_b_end = egui::pos2(
+        cx + arm_len * (std::f32::consts::PI + edge_b_angle).cos(),
+        cy + arm_len * (std::f32::consts::PI + edge_b_angle).sin(),
+    );
 
     painter.line_segment(
         [edge_a_end, corner],
@@ -1078,23 +1041,28 @@ pub(super) fn draw_dogbone_diagram(ui: &mut egui::Ui, max_angle: f64) {
         egui::Stroke::new(2.0, path_color),
     );
 
-    // Material fill (upper-right quadrant from corner)
-    painter.rect_filled(
-        egui::Rect::from_min_max(corner, egui::pos2(cx + arm_len, cy - arm_len)),
-        0.0,
+    // Material fill (triangle in the corner interior)
+    let fill_pts = vec![
+        corner,
+        egui::pos2(cx + arm_len * 0.7, cy - arm_len * 0.7),
+        egui::pos2(cx + arm_len * 0.7, cy),
+    ];
+    painter.add(egui::Shape::convex_polygon(
+        fill_pts,
         egui::Color32::from_rgb(40, 40, 52),
-    );
+        egui::Stroke::NONE,
+    ));
 
     // Tool circle at corner
     let tool_r = 10.0;
     painter.circle_stroke(corner, tool_r, egui::Stroke::new(1.0, tool_color));
 
-    // Dogbone overcut: bisector direction into the corner (toward upper-right)
-    let bisect_angle = std::f32::consts::FRAC_PI_4; // 45° for a 90° corner
+    // Dogbone overcut: bisector of the corner angle, pointing into material
+    let bisect_angle = (std::f32::consts::PI + edge_b_angle) / 2.0;
     let overcut_dist = tool_r;
     let overcut_pt = egui::pos2(
         cx + overcut_dist * bisect_angle.cos(),
-        cy - overcut_dist * bisect_angle.sin(),
+        cy + overcut_dist * bisect_angle.sin(),
     );
 
     // Dashed overcut line
@@ -1120,10 +1088,26 @@ pub(super) fn draw_dogbone_diagram(ui: &mut egui::Ui, max_angle: f64) {
         egui::FontId::proportional(9.0),
         overcut_color,
     );
+
+    // Angle arc at the corner
+    let arc_r = 18.0_f32;
+    let arc_start = std::f32::consts::PI; // edge A direction (left)
+    let arc_end = std::f32::consts::PI + edge_b_angle;
+    let mut arc_pts = Vec::with_capacity(12);
+    for i in 0..=10 {
+        let t = i as f32 / 10.0;
+        let a = arc_start + (arc_end - arc_start) * t;
+        arc_pts.push(egui::pos2(cx + arc_r * a.cos(), cy + arc_r * a.sin()));
+    }
+    painter.add(egui::Shape::line(
+        arc_pts,
+        egui::Stroke::new(0.8, dim_color),
+    ));
+
     painter.text(
         egui::pos2(rect.right() - 6.0, rect.bottom() - 6.0),
         egui::Align2::RIGHT_BOTTOM,
-        format!("max {max_angle:.0}\u{00B0}"),
+        format!("{max_angle:.0}\u{00B0}"),
         egui::FontId::proportional(8.0),
         dim_color,
     );
