@@ -1280,6 +1280,12 @@ fn compute_deviations(stock_vertices: &[f32], model_mesh: &rs_cam_core::mesh::Tr
     let num_verts = stock_vertices.len() / 3;
     let index = SpatialIndex::build_auto(model_mesh);
 
+    // Compute model thickness to set a relevance threshold. Vertices further
+    // than this from any model surface have no meaningful deviation (e.g. the
+    // flat bottom of a stock beneath a single-surface terrain model).
+    let model_thickness = model_mesh.bbox.max.z - model_mesh.bbox.min.z;
+    let relevance_threshold = (model_thickness * 0.5).max(2.0); // mm
+
     let compute_vertex_deviation = |i: usize| -> f32 {
         let x = stock_vertices[i * 3] as f64;
         let y = stock_vertices[i * 3 + 1] as f64;
@@ -1294,6 +1300,14 @@ fn compute_deviations(stock_vertices: &[f32], model_mesh: &rs_cam_core::mesh::Tr
         // negative = overcut — same formula (sim_z - model_z) for both surfaces.
         let dist_to_top = (sim_z - model_max_z).abs();
         let dist_to_bottom = (sim_z - model_min_z).abs();
+        let nearest_dist = dist_to_top.min(dist_to_bottom);
+
+        // If the vertex is far from any model surface, it's not a surface
+        // the model defines (e.g. stock bottom under a terrain with no base
+        // geometry). Return 0 to show neutral color instead of false overcut.
+        if nearest_dist > relevance_threshold {
+            return 0.0;
+        }
 
         if dist_to_top <= dist_to_bottom {
             (sim_z - model_max_z) as f32
