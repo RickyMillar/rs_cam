@@ -220,10 +220,20 @@ where
     };
 
     set_phase("Build simulation mesh");
+    let mesh = dexel_stock_to_mesh(&stock);
+
+    // Compute per-vertex deviation (sim_z - model_z) if a reference model is available.
+    let deviations = if let Some(model_mesh) = &req.model_mesh {
+        set_phase("Compute deviations");
+        Some(compute_deviations(&mesh.vertices, model_mesh))
+    } else {
+        None
+    };
+
     Ok(SimulationResult {
-        mesh: dexel_stock_to_mesh(&stock),
+        mesh,
         total_moves,
-        deviations: None,
+        deviations,
         boundaries,
         checkpoints,
         playback_data,
@@ -1257,6 +1267,76 @@ fn annotate_project_curve_semantics(
         child.set_param("point_spacing", point_spacing);
         child.bind_to_toolpath(toolpath, slice.move_start, slice.move_end_exclusive);
     }
+}
+
+/// Compute per-vertex deviation: `sim_z - model_z` for each vertex in the stock mesh.
+///
+/// Uses a spatial index on the model mesh for O(1) amortized triangle lookup per vertex.
+/// Vertices with no model triangle beneath them get deviation 0.0 (outside model footprint).
+#[allow(clippy::indexing_slicing)] // stride-3 vertex access bounded by len check
+fn compute_deviations(stock_vertices: &[f32], model_mesh: &rs_cam_core::mesh::TriangleMesh) -> Vec<f32> {
+    use rs_cam_core::mesh::SpatialIndex;
+
+    let num_verts = stock_vertices.len() / 3;
+    let index = SpatialIndex::build_auto(model_mesh);
+
+    // Process vertices in parallel for large meshes
+    if num_verts > 5000 {
+        use rayon::prelude::*;
+        (0..num_verts)
+            .into_par_iter()
+            .map(|i| {
+                let x = stock_vertices[i * 3] as f64;
+                let y = stock_vertices[i * 3 + 1] as f64;
+                let sim_z = stock_vertices[i * 3 + 2] as f64;
+                let model_z = query_model_z(&index, model_mesh, x, y);
+                match model_z {
+                    Some(mz) => (sim_z - mz) as f32,
+                    None => 0.0,
+                }
+            })
+            .collect()
+    } else {
+        (0..num_verts)
+            .map(|i| {
+                let x = stock_vertices[i * 3] as f64;
+                let y = stock_vertices[i * 3 + 1] as f64;
+                let sim_z = stock_vertices[i * 3 + 2] as f64;
+                let model_z = query_model_z(&index, model_mesh, x, y);
+                match model_z {
+                    Some(mz) => (sim_z - mz) as f32,
+                    None => 0.0,
+                }
+            })
+            .collect()
+    }
+}
+
+/// Find the highest model Z at a given XY by querying nearby triangles via spatial index.
+///
+/// Only considers triangles whose 2D footprint contains (x, y).
+/// Returns the highest Z among all matching triangles (handles overlapping geometry).
+#[allow(clippy::indexing_slicing)] // triangle indices bounded by mesh
+fn query_model_z(
+    index: &rs_cam_core::mesh::SpatialIndex,
+    mesh: &rs_cam_core::mesh::TriangleMesh,
+    x: f64,
+    y: f64,
+) -> Option<f64> {
+    let candidates = index.query(x, y, 0.0);
+    let mut best_z: Option<f64> = None;
+    for tri_idx in candidates {
+        let face = &mesh.faces[tri_idx];
+        if face.contains_point_xy(x, y)
+            && let Some(z) = face.z_at_xy(x, y)
+        {
+            best_z = Some(match best_z {
+                Some(bz) => bz.max(z),
+                None => z,
+            });
+        }
+    }
+    best_z
 }
 
 #[cfg(test)]
