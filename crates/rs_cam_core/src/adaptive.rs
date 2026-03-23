@@ -553,7 +553,7 @@ fn search_direction_with_metrics(
     prev_angle: f64,
     boundary_distances: &[f64],
 ) -> Option<SearchDirectionResult> {
-    let tolerance = 0.20; // allow ±20% of target
+    let tolerance = 0.05; // allow ±5% of target (matches libactp reference)
     let min_frac = (target_frac * (1.0 - tolerance)).max(0.005);
     let max_frac = target_frac * (1.0 + tolerance);
 
@@ -596,7 +596,7 @@ fn search_direction_with_metrics(
             }
         };
 
-        let score = error + angle_penalty * 0.12 + wall_bias;
+        let score = error + angle_penalty * 0.03 + wall_bias;
         Some((angle, engagement, score))
     };
 
@@ -636,7 +636,7 @@ fn search_direction_with_metrics(
 
         if let (Some(lo), Some(hi)) = (lo_bracket, hi_bracket)
             && let Some((angle, eng, score)) =
-                refine_angle_bracket(lo, hi, target_frac, 2, &mut eval_candidate)
+                refine_angle_bracket(lo, hi, target_frac, 8, &mut eval_candidate)
             && eng >= min_frac
             && eng <= max_frac
             && best_good.is_none_or(|b| score < b.0)
@@ -653,7 +653,7 @@ fn search_direction_with_metrics(
     // 18 candidates at 20° intervals replaces the old Phase 2 (19 @ ±90°)
     // + Phase 3 (36 @ 360°) = 55 evals. Now ~21 evals total.
     {
-        let n_coarse = 18;
+        let n_coarse = 36;
         let mut best_good: Option<(f64, f64)> = None; // (score, angle)
         let mut best_any: Option<(f64, f64)> = None;
         let mut coarse_lo: Option<(f64, f64, f64)> = None; // (angle, engagement, score)
@@ -684,7 +684,7 @@ fn search_direction_with_metrics(
 
         if let (Some(lo), Some(hi)) = (coarse_lo, coarse_hi)
             && let Some((angle, eng, score)) =
-                refine_angle_bracket(lo, hi, target_frac, 2, eval_candidate)
+                refine_angle_bracket(lo, hi, target_frac, 8, eval_candidate)
             && eng >= min_frac
             && eng <= max_frac
             && best_good.is_none_or(|b| score < b.0)
@@ -1129,12 +1129,15 @@ fn adaptive_segments_with_debug(
     let boundary_distances = grid.compute_boundary_distances();
 
     let target_frac = target_engagement_fraction(stepover, tool_radius);
-    let step_len = cell_size * 1.5;
+    let step_len = cell_size * 3.0;
     let mut segments = Vec::new();
     let mut last_pos: Option<P2> = None;
     let mut pass_endpoints: Vec<P2> = Vec::new();
 
     // ── Slot clearing (Fusion-style first pass) ───────────────────────
+    // Generate sparse zigzag lines at wide spacing to open pockets across
+    // all regions of the polygon. Uses tool_diameter spacing so each line
+    // creates a slot the adaptive spiral can expand from.
     if slot_clearing {
         let slot_scope = debug.map(|ctx| ctx.start_span("slot_clearing", "Slot clearing"));
         let (x_min, y_min, x_max, y_max) = polygon_bbox(&polygon.exterior);
@@ -1142,9 +1145,11 @@ fn adaptive_segments_with_debug(
         let h = y_max - y_min;
         // Slot along the longest axis
         let slot_angle = if w >= h { 0.0 } else { 90.0 };
-        // Use large stepover to get a single center line
-        let perp_span = if w >= h { h } else { w };
-        let slot_lines = crate::zigzag::zigzag_lines(polygon, tool_radius, perp_span, slot_angle);
+        // Target ~3 seeding lines across the pocket's narrow axis.
+        // This opens pockets in all regions without doing the adaptive's job.
+        let narrow_span = if w >= h { h } else { w };
+        let slot_spacing = (narrow_span / 3.0).max(tool_radius * 4.0);
+        let slot_lines = crate::zigzag::zigzag_lines(polygon, tool_radius, slot_spacing, slot_angle);
 
         for (line_idx, line) in slot_lines.iter().enumerate() {
             check_cancel(cancel)?;
