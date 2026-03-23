@@ -47,9 +47,31 @@ Do not document or rely on crates that are not currently in those manifests.
 ## Implementation expectations
 
 - tests live close to the code they validate
-- library code should avoid `unwrap()`
 - if GUI state adds a field, audit setup-sheet, project-IO, and any test initializers for required updates
 - if a feature is only present in UI/state and not end-to-end wired, document that honestly
+
+## Lint policy — zero warnings enforced
+
+All 16 clippy lints below are **deny** at workspace level (`Cargo.toml`). Clippy must pass with zero warnings before committing.
+
+| Lint | What it catches |
+|------|-----------------|
+| `unwrap_used` | `.unwrap()` — use `?`, `.unwrap_or()`, or `#[allow]` + SAFETY comment |
+| `expect_used` | `.expect()` — same; `#[allow]` OK for provably-safe cases with comment |
+| `panic` | `panic!()` in non-test code |
+| `todo` / `unimplemented` | Placeholder code must not ship |
+| `indexing_slicing` | `arr[i]` — use iterators, `.get()`, or `#[allow]` + SAFETY comment |
+| `dbg_macro` | No `dbg!()` in production |
+| `print_stdout` / `print_stderr` | Use `tracing` instead of `println!`/`eprintln!` |
+| `map_err_ignore` | `.map_err(\|_\| ...)` — preserve the original error |
+| `needless_pass_by_value` | Take `&[T]`/`&str` not `Vec<T>`/`String` when not consumed |
+| `large_enum_variant` / `result_large_err` | Keep enums and error types small |
+| `redundant_clone` | Don't `.clone()` what you already own |
+| `unsafe_code` | No `unsafe` in this codebase |
+
+**When you hit a lint:** prefer fixing the code. If the pattern is provably safe (e.g. indexing bounded by a loop, `.expect()` after a `.is_some()` check), use `#[allow(clippy::the_lint)]` with a `// SAFETY:` comment on the specific line or block — never file-level.
+
+**Test code** is exempt: test modules carry `#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]`.
 
 ## Dev workflow quick reference
 
