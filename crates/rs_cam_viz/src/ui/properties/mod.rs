@@ -1276,6 +1276,8 @@ fn draw_toolpath_panel(
         let fallback_ctx = HeightContext::simple(10.0, 5.0);
         let ctx = height_ctx.unwrap_or(&fallback_ctx);
         draw_heights_params(ui, &mut entry.heights, ctx);
+        ui.add_space(6.0);
+        draw_height_diagram(ui, &mut entry.heights, ctx);
     });
 
     // Dressup modifications

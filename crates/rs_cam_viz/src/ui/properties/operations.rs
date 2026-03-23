@@ -851,6 +851,255 @@ pub(super) fn draw_heights_params(
         });
 }
 
+// ── 2D Height Diagram ───────────────────────────────────────────────────
+
+/// Height line definition for diagram rendering and interaction.
+struct DiagramLine {
+    z: f64,
+    color: egui::Color32,
+    label: &'static str,
+    /// Which field index (0..5) for drag targeting.
+    index: usize,
+}
+
+/// Draw an interactive 2D side-view diagram showing stock, model, and height planes.
+pub(super) fn draw_height_diagram(
+    ui: &mut egui::Ui,
+    heights: &mut HeightsConfig,
+    ctx: &HeightContext,
+) {
+    let resolved = heights.resolve(ctx);
+
+    // Build line definitions (ordered top to bottom for rendering)
+    let lines = [
+        DiagramLine {
+            z: resolved.clearance_z,
+            color: egui::Color32::from_rgb(77, 128, 230),
+            label: "CZ",
+            index: 0,
+        },
+        DiagramLine {
+            z: resolved.retract_z,
+            color: egui::Color32::from_rgb(77, 204, 204),
+            label: "RZ",
+            index: 1,
+        },
+        DiagramLine {
+            z: resolved.feed_z,
+            color: egui::Color32::from_rgb(77, 204, 77),
+            label: "FZ",
+            index: 2,
+        },
+        DiagramLine {
+            z: resolved.top_z,
+            color: egui::Color32::from_rgb(230, 204, 51),
+            label: "TZ",
+            index: 3,
+        },
+        DiagramLine {
+            z: resolved.bottom_z,
+            color: egui::Color32::from_rgb(230, 77, 51),
+            label: "BZ",
+            index: 4,
+        },
+    ];
+
+    // Compute Z range with margin
+    let all_z_values = [
+        resolved.clearance_z,
+        resolved.retract_z,
+        resolved.feed_z,
+        resolved.top_z,
+        resolved.bottom_z,
+        ctx.stock_top_z,
+        ctx.stock_bottom_z,
+    ];
+    let z_min_raw = all_z_values
+        .iter()
+        .copied()
+        .reduce(f64::min)
+        .unwrap_or(0.0);
+    let z_max_raw = all_z_values
+        .iter()
+        .copied()
+        .reduce(f64::max)
+        .unwrap_or(10.0);
+    let z_span = (z_max_raw - z_min_raw).max(1.0);
+    let margin = z_span * 0.12;
+    let z_min = z_min_raw - margin;
+    let z_max = z_max_raw + margin;
+
+    // Canvas
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 180.0);
+    let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click_and_drag());
+    let painter = ui.painter_at(rect);
+
+    // Background
+    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+
+    // Coordinate mapping: Z → screen Y (higher Z = higher on screen = lower Y)
+    let z_to_y = |z: f64| -> f32 {
+        let frac = (z - z_min) / (z_max - z_min);
+        rect.bottom() - (frac as f32) * rect.height()
+    };
+
+    // Stock rectangle (centered, ~55% width)
+    let stock_hw = rect.width() * 0.275;
+    let stock_left = rect.center().x - stock_hw;
+    let stock_right = rect.center().x + stock_hw;
+    let stock_top_y = z_to_y(ctx.stock_top_z);
+    let stock_bottom_y = z_to_y(ctx.stock_bottom_z);
+    painter.rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(stock_left, stock_top_y),
+            egui::pos2(stock_right, stock_bottom_y),
+        ),
+        2.0,
+        egui::Color32::from_rgb(45, 45, 55),
+    );
+    painter.rect_stroke(
+        egui::Rect::from_min_max(
+            egui::pos2(stock_left, stock_top_y),
+            egui::pos2(stock_right, stock_bottom_y),
+        ),
+        2.0,
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 80, 95)),
+    );
+
+    // Model rectangle (narrower, different color)
+    if let (Some(mt), Some(mb)) = (ctx.model_top_z, ctx.model_bottom_z) {
+        let model_hw = rect.width() * 0.2;
+        let model_left = rect.center().x - model_hw;
+        let model_right = rect.center().x + model_hw;
+        let model_top_y = z_to_y(mt);
+        let model_bottom_y = z_to_y(mb);
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(model_left, model_top_y),
+                egui::pos2(model_right, model_bottom_y),
+            ),
+            1.0,
+            egui::Color32::from_rgb(55, 55, 75),
+        );
+        painter.rect_stroke(
+            egui::Rect::from_min_max(
+                egui::pos2(model_left, model_top_y),
+                egui::pos2(model_right, model_bottom_y),
+            ),
+            1.0,
+            egui::Stroke::new(1.0, egui::Color32::from_rgb(90, 90, 120)),
+        );
+    }
+
+    // Height lines + labels
+    let label_x = rect.right() - 42.0;
+    let hit_threshold = 6.0_f32;
+
+    // Check pointer proximity for hover cursor
+    let pointer_y = response.hover_pos().map(|p| p.y);
+    let mut nearest_line: Option<(usize, f32)> = None;
+    for line in &lines {
+        let line_y = z_to_y(line.z);
+        if let Some(py) = pointer_y {
+            let dist = (py - line_y).abs();
+            if dist < hit_threshold {
+                if nearest_line.map_or(true, |(_, d)| dist < d) {
+                    nearest_line = Some((line.index, dist));
+                }
+            }
+        }
+    }
+    if nearest_line.is_some() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+    }
+
+    for line in &lines {
+        let y = z_to_y(line.z);
+        let is_hovered = nearest_line.map_or(false, |(idx, _)| idx == line.index);
+
+        // Line
+        let stroke_width = if is_hovered { 2.5 } else { 1.5 };
+        painter.line_segment(
+            [egui::pos2(rect.left() + 2.0, y), egui::pos2(rect.right() - 44.0, y)],
+            egui::Stroke::new(stroke_width, line.color),
+        );
+
+        // Label
+        let label_text = format!("{} {:.1}", line.label, line.z);
+        painter.text(
+            egui::pos2(label_x, y),
+            egui::Align2::LEFT_CENTER,
+            &label_text,
+            egui::FontId::proportional(9.0),
+            line.color,
+        );
+    }
+
+    // Drag interaction
+    let drag_id = ui.id().with("height_drag_idx");
+    let dragging_idx: Option<usize> = ui.memory(|mem| mem.data.get_temp(drag_id));
+
+    if response.drag_started() {
+        if let Some((idx, _)) = nearest_line {
+            ui.memory_mut(|mem| mem.data.insert_temp(drag_id, idx));
+        }
+    }
+
+    if response.dragged() {
+        if let Some(idx) = ui.memory(|mem| mem.data.get_temp::<usize>(drag_id)) {
+            let dy = response.drag_delta().y;
+            // Convert screen delta to Z delta (screen Y is inverted relative to Z)
+            let z_per_pixel = (z_max - z_min) / rect.height() as f64;
+            let dz = -(dy as f64) * z_per_pixel;
+
+            let field = match idx {
+                0 => &mut heights.clearance_z,
+                1 => &mut heights.retract_z,
+                2 => &mut heights.feed_z,
+                3 => &mut heights.top_z,
+                // SAFETY: idx is always 0..5 from DiagramLine definitions above
+                _ => &mut heights.bottom_z,
+            };
+
+            // Get current resolved value and apply delta
+            let current_z = match idx {
+                0 => resolved.clearance_z,
+                1 => resolved.retract_z,
+                2 => resolved.feed_z,
+                3 => resolved.top_z,
+                _ => resolved.bottom_z,
+            };
+            *field = HeightMode::Manual(current_z + dz);
+        }
+    }
+
+    if response.drag_stopped() {
+        ui.memory_mut(|mem| mem.data.remove::<usize>(drag_id));
+    }
+
+    // Legend at bottom: "Stock" and "Model" labels
+    let legend_y = rect.bottom() - 8.0;
+    painter.text(
+        egui::pos2(stock_left + 2.0, legend_y),
+        egui::Align2::LEFT_CENTER,
+        "Stock",
+        egui::FontId::proportional(8.0),
+        egui::Color32::from_rgb(80, 80, 95),
+    );
+    if ctx.model_top_z.is_some() {
+        painter.text(
+            egui::pos2(rect.center().x, legend_y),
+            egui::Align2::CENTER_CENTER,
+            "Model",
+            egui::FontId::proportional(8.0),
+            egui::Color32::from_rgb(90, 90, 120),
+        );
+    }
+
+    // Drop the unused variable hint
+    let _ = dragging_idx;
+}
+
 // ── New operation parameters ─────────────────────────────────────────────
 
 pub(super) fn draw_face_params(ui: &mut egui::Ui, cfg: &mut FaceConfig) {
