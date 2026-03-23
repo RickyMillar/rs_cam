@@ -1757,6 +1757,38 @@ fn draw_toolpath_panel(
 
     match active_tab {
         ToolpathTab::Params => {
+            // Auto-feeds toggles — show which parameters are auto-calculated
+            let auto = &mut entry.feeds_auto;
+            let has_any_auto = auto.feed_rate || auto.plunge_rate || auto.stepover || auto.depth_per_pass;
+            let auto_label = if has_any_auto { "Auto Feeds (on)" } else { "Auto Feeds (off)" };
+            let auto_color = if has_any_auto {
+                egui::Color32::from_rgb(100, 180, 100)
+            } else {
+                egui::Color32::from_rgb(140, 140, 155)
+            };
+            ui.collapsing(egui::RichText::new(auto_label).small().color(auto_color), |ui| {
+                ui.label(
+                    egui::RichText::new("When on, values are computed from tool/material/machine")
+                        .small()
+                        .italics()
+                        .color(egui::Color32::from_rgb(110, 110, 120)),
+                );
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut auto.feed_rate, "Feed");
+                    ui.checkbox(&mut auto.plunge_rate, "Plunge");
+                    ui.checkbox(&mut auto.stepover, "Stepover");
+                    ui.checkbox(&mut auto.depth_per_pass, "DOC");
+                });
+                if has_any_auto {
+                    ui.label(
+                        egui::RichText::new("Auto values shown in Feeds tab; manual edits below are overridden")
+                            .small()
+                            .color(egui::Color32::from_rgb(220, 170, 60)),
+                    );
+                }
+            });
+
+            ui.add_space(4.0);
             ui.label(
                 egui::RichText::new("Cutting Parameters")
                     .strong()
@@ -1814,6 +1846,53 @@ fn draw_toolpath_panel(
             if let Some(result) = &entry.feeds_result {
                 ui.add_space(6.0);
                 draw_engagement_diagram(ui, result, tool_diameter, tool_type);
+
+                // Math breakdown — show how the calculator arrived at these values
+                ui.add_space(6.0);
+                let flute_count = tool_configs
+                    .iter()
+                    .find(|(id, _)| *id == entry.tool_id)
+                    .map(|(_, t)| t.flute_count)
+                    .unwrap_or(2);
+                ui.collapsing(
+                    egui::RichText::new("How these were calculated")
+                        .small()
+                        .color(egui::Color32::from_rgb(120, 120, 135)),
+                    |ui| {
+                        let hint = egui::Color32::from_rgb(130, 130, 145);
+                        let val = egui::Color32::from_rgb(170, 170, 185);
+                        let font = egui::FontId::proportional(9.5);
+
+                        ui.label(egui::RichText::new(format!(
+                            "Feed = RPM \u{00D7} flutes \u{00D7} chipload = {:.0} \u{00D7} {} \u{00D7} {:.4} = {:.0} mm/min",
+                            result.rpm, flute_count, result.chip_load_mm, result.feed_rate_mm_min
+                        )).font(font.clone()).color(val));
+
+                        ui.label(egui::RichText::new(format!(
+                            "MRR = DOC \u{00D7} WOC \u{00D7} Feed = {:.2} \u{00D7} {:.2} \u{00D7} {:.0} = {:.0} mm\u{00B3}/min",
+                            result.axial_depth_mm, result.radial_width_mm, result.feed_rate_mm_min, result.mrr_mm3_min
+                        )).font(font.clone()).color(val));
+
+                        ui.label(egui::RichText::new(format!(
+                            "Power = MRR \u{00D7} Kc / 60e6 = {:.2} kW (of {:.2} kW available)",
+                            result.power_kw, result.available_power_kw
+                        )).font(font.clone()).color(val));
+
+                        if result.power_limited {
+                            ui.label(egui::RichText::new(
+                                "Feed was reduced to stay within spindle power"
+                            ).font(font.clone()).color(egui::Color32::from_rgb(220, 170, 60)));
+                        }
+
+                        ui.label(egui::RichText::new(format!(
+                            "Plunge = {:.0} mm/min ({:.0}% of feed)",
+                            result.plunge_rate_mm_min,
+                            result.plunge_rate_mm_min / result.feed_rate_mm_min.max(1.0) * 100.0
+                        )).font(font).color(val));
+
+                        let _ = hint;
+                    },
+                );
             }
         }
 
