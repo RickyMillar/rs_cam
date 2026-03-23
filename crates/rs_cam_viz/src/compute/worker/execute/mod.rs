@@ -1289,18 +1289,16 @@ fn compute_deviations(stock_vertices: &[f32], model_mesh: &rs_cam_core::mesh::Tr
             return 0.0; // outside model footprint
         };
 
-        // Use closest-surface heuristic: compare this vertex against whichever
-        // model surface (top or bottom) it's nearest to, with the correct sign
-        // convention so that material remaining is always positive.
+        // Compare against whichever model surface (top or bottom) this vertex
+        // is closest to. Sign convention: positive = material remaining,
+        // negative = overcut — same formula (sim_z - model_z) for both surfaces.
         let dist_to_top = (sim_z - model_max_z).abs();
         let dist_to_bottom = (sim_z - model_min_z).abs();
 
         if dist_to_top <= dist_to_bottom {
-            // Closer to top surface: positive = stock above model (material remaining)
             (sim_z - model_max_z) as f32
         } else {
-            // Closer to bottom surface: positive = stock below model (material remaining)
-            (model_min_z - sim_z) as f32
+            (sim_z - model_min_z) as f32
         }
     };
 
