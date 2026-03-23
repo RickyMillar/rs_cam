@@ -115,7 +115,7 @@ pub enum HeightMode {
 
 impl HeightMode {
     /// Resolve to a concrete Z value given auto default and context.
-    fn resolve_value(&self, auto_value: f64, ctx: &HeightContext) -> f64 {
+    pub fn resolve_value(&self, auto_value: f64, ctx: &HeightContext) -> f64 {
         match self {
             HeightMode::Auto => auto_value,
             HeightMode::Manual(value) => *value,

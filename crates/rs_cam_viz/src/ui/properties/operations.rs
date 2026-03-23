@@ -692,62 +692,163 @@ pub(super) fn draw_ramp_finish_params(ui: &mut egui::Ui, cfg: &mut RampFinishCon
 
 // ── Heights panel ────────────────────────────────────────────────────────
 
-pub(super) fn draw_height_row(
+/// Current mode discriminant for the mode combo box.
+#[derive(Clone, Copy, PartialEq)]
+enum HeightModeKind {
+    Auto,
+    Manual,
+    FromReference,
+}
+
+impl HeightModeKind {
+    fn of(mode: &HeightMode) -> Self {
+        match mode {
+            HeightMode::Auto => Self::Auto,
+            HeightMode::Manual(_) => Self::Manual,
+            HeightMode::FromReference(_) => Self::FromReference,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Auto => "Auto",
+            Self::Manual => "Manual",
+            Self::FromReference => "From Ref",
+        }
+    }
+}
+
+fn draw_height_row(
     ui: &mut egui::Ui,
     label: &str,
     mode: &mut HeightMode,
-    tooltip: &str,
-    _id_salt: &str,
+    auto_value: f64,
+    ctx: &HeightContext,
+    id_salt: &str,
 ) {
+    // Column 1: label
     ui.label(label);
-    let is_auto = mode.is_auto();
-    let mut auto_checked = is_auto;
-    ui.checkbox(&mut auto_checked, "Auto");
-    if auto_checked != is_auto {
-        if auto_checked {
-            *mode = HeightMode::Auto;
-        } else {
-            // Switch to manual with current auto value as starting point
-            *mode = HeightMode::Manual(0.0);
+
+    // Column 2: mode selector
+    let current_kind = HeightModeKind::of(mode);
+    let mut new_kind = current_kind;
+    egui::ComboBox::from_id_salt(format!("hm_{id_salt}"))
+        .width(65.0)
+        .selected_text(current_kind.label())
+        .show_ui(ui, |ui| {
+            for kind in [
+                HeightModeKind::Auto,
+                HeightModeKind::Manual,
+                HeightModeKind::FromReference,
+            ] {
+                ui.selectable_value(&mut new_kind, kind, kind.label());
+            }
+        });
+
+    // Handle mode transitions
+    if new_kind != current_kind {
+        match new_kind {
+            HeightModeKind::Auto => *mode = HeightMode::Auto,
+            HeightModeKind::Manual => {
+                // Pre-fill with the current resolved value
+                let resolved = mode.resolve_value(auto_value, ctx);
+                *mode = HeightMode::Manual(resolved);
+            }
+            HeightModeKind::FromReference => {
+                *mode = HeightMode::FromReference(ReferenceOffset {
+                    reference: HeightReference::StockTop,
+                    offset: 0.0,
+                });
+            }
         }
     }
-    if let HeightMode::Manual(val) = mode {
-        let resp = ui.add(
-            egui::DragValue::new(val)
-                .suffix(" mm")
-                .speed(0.5)
-                .range(-500.0..=500.0),
-        );
-        resp.on_hover_text(tooltip);
-    } else {
-        ui.label(
-            egui::RichText::new("(auto)")
-                .italics()
-                .color(egui::Color32::from_rgb(120, 120, 130)),
-        );
+
+    // Column 3: value editor (varies by mode)
+    match mode {
+        HeightMode::Auto => {
+            ui.label(
+                egui::RichText::new(format!("{auto_value:.1} mm"))
+                    .italics()
+                    .color(egui::Color32::from_rgb(120, 120, 130)),
+            );
+        }
+        HeightMode::Manual(val) => {
+            ui.add(
+                egui::DragValue::new(val)
+                    .suffix(" mm")
+                    .speed(0.5)
+                    .range(-500.0..=500.0),
+            );
+        }
+        HeightMode::FromReference(ref_offset) => {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 3.0;
+                egui::ComboBox::from_id_salt(format!("hr_{id_salt}"))
+                    .width(80.0)
+                    .selected_text(ref_offset.reference.label())
+                    .show_ui(ui, |ui| {
+                        for &href in HeightReference::ALL {
+                            ui.selectable_value(
+                                &mut ref_offset.reference,
+                                href,
+                                href.label(),
+                            );
+                        }
+                    });
+                let sign_prefix = if ref_offset.offset >= 0.0 { "+" } else { "" };
+                ui.add(
+                    egui::DragValue::new(&mut ref_offset.offset)
+                        .prefix(sign_prefix)
+                        .suffix(" mm")
+                        .speed(0.5)
+                        .range(-500.0..=500.0),
+                );
+            });
+        }
     }
+
     ui.end_row();
 }
 
-pub(super) fn draw_heights_params(ui: &mut egui::Ui, heights: &mut HeightsConfig) {
+pub(super) fn draw_heights_params(
+    ui: &mut egui::Ui,
+    heights: &mut HeightsConfig,
+    ctx: &HeightContext,
+) {
     ui.label(
-        egui::RichText::new("Override auto-computed heights for precise control")
+        egui::RichText::new("Set heights relative to stock/model geometry")
             .small()
             .italics()
             .color(egui::Color32::from_rgb(130, 130, 140)),
     );
-    egui::Grid::new("heights_p").num_columns(4).spacing([6.0, 4.0]).show(ui, |ui| {
-        draw_height_row(ui, "Clearance Z:", &mut heights.clearance_z,
-            "Highest safe travel height between operations. Auto = retract + 10mm.", "h_clear");
-        draw_height_row(ui, "Retract Z:", &mut heights.retract_z,
-            "Height between passes within one operation. Auto = safe Z from post config.", "h_retract");
-        draw_height_row(ui, "Feed Z:", &mut heights.feed_z,
-            "Height at which tool switches from rapid to feed on approach. Auto = retract - 2mm.", "h_feed");
-        draw_height_row(ui, "Top Z:", &mut heights.top_z,
-            "Starting Z of cut (stock surface). Auto = 0.0.", "h_top");
-        draw_height_row(ui, "Bottom Z:", &mut heights.bottom_z,
-            "Final machining depth. Auto = computed from operation depth.", "h_bottom");
-    });
+
+    // Compute auto defaults for display (same logic as resolve())
+    let retract_auto = ctx.safe_z;
+    let clearance_auto = retract_auto + 10.0;
+    let feed_auto = retract_auto - 2.0;
+    let top_auto = 0.0;
+    let bottom_auto = -ctx.op_depth.abs();
+
+    egui::Grid::new("heights_p")
+        .num_columns(3)
+        .spacing([6.0, 4.0])
+        .show(ui, |ui| {
+            draw_height_row(
+                ui, "Clearance Z:", &mut heights.clearance_z, clearance_auto, ctx, "h_clear",
+            );
+            draw_height_row(
+                ui, "Retract Z:", &mut heights.retract_z, retract_auto, ctx, "h_retract",
+            );
+            draw_height_row(
+                ui, "Feed Z:", &mut heights.feed_z, feed_auto, ctx, "h_feed",
+            );
+            draw_height_row(
+                ui, "Top Z:", &mut heights.top_z, top_auto, ctx, "h_top",
+            );
+            draw_height_row(
+                ui, "Bottom Z:", &mut heights.bottom_z, bottom_auto, ctx, "h_bottom",
+            );
+        });
 }
 
 // ── New operation parameters ─────────────────────────────────────────────

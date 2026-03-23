@@ -293,6 +293,12 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .map(|m| m.enriched_mesh.is_some())
                 .unwrap_or(false);
 
+            // Snapshot height context before mutable borrow (needs stock + model bbox)
+            let height_ctx = state
+                .job
+                .find_toolpath(id)
+                .map(|tp| state.job.height_context_for(tp));
+
             // Snapshot operation and heights for stale_since detection
             let op_before = state
                 .job
@@ -315,6 +321,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     &machine,
                     workholding,
                     model_has_enriched,
+                    height_ctx.as_ref(),
                     events,
                 );
             }
@@ -1050,6 +1057,7 @@ fn draw_toolpath_panel(
     machine: &rs_cam_core::machine::MachineProfile,
     workholding: rs_cam_core::feeds::WorkholdingRigidity,
     model_has_enriched: bool,
+    height_ctx: Option<&HeightContext>,
     events: &mut Vec<AppEvent>,
 ) {
     ui.heading(&entry.name);
@@ -1265,7 +1273,9 @@ fn draw_toolpath_panel(
     // Heights
     ui.add_space(4.0);
     ui.collapsing("Heights", |ui| {
-        draw_heights_params(ui, &mut entry.heights);
+        let fallback_ctx = HeightContext::simple(10.0, 5.0);
+        let ctx = height_ctx.unwrap_or(&fallback_ctx);
+        draw_heights_params(ui, &mut entry.heights, ctx);
     });
 
     // Dressup modifications
