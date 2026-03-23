@@ -133,57 +133,75 @@ impl Toolpath {
     }
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Simplify a 3D path using Douglas-Peucker with cross-product distance.
 ///
 /// Removes points that deviate less than `tolerance` from the line between
 /// their neighbors. Uses 3D perpendicular distance via cross product for
 /// accurate distance computation on slopes.
+///
+/// Iterative stack-based implementation avoids per-recursion Vec allocations.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn simplify_path_3d(points: &[P3], tolerance: f64) -> Vec<P3> {
-    if points.len() <= 2 {
+    let n = points.len();
+    if n <= 2 {
         return points.to_vec();
     }
 
-    let first = points[0];
-    let last = points[points.len() - 1];
-    let dx = last.x - first.x;
-    let dy = last.y - first.y;
-    let dz = last.z - first.z;
-    let seg_len = (dx * dx + dy * dy + dz * dz).sqrt();
+    // Mark which points to keep. First and last are always kept.
+    let mut keep = vec![false; n];
+    keep[0] = true;
+    keep[n - 1] = true;
 
-    if seg_len < 1e-10 {
-        return vec![first, last];
-    }
+    // Explicit stack of (start, end) index ranges to process.
+    let mut stack = Vec::with_capacity(16);
+    stack.push((0usize, n - 1));
 
-    // Find point farthest from the line first→last
-    let mut max_dist = 0.0;
-    let mut max_idx = 0;
+    while let Some((start, end)) = stack.pop() {
+        if end - start < 2 {
+            continue;
+        }
 
-    for (i, p) in points.iter().enumerate().skip(1).take(points.len() - 2) {
-        // Vector from first to p
-        let vx = p.x - first.x;
-        let vy = p.y - first.y;
-        let vz = p.z - first.z;
-        // Cross product magnitude: |v x d| / |d|
-        let cx = vy * dz - vz * dy;
-        let cy = vz * dx - vx * dz;
-        let cz = vx * dy - vy * dx;
-        let dist = (cx * cx + cy * cy + cz * cz).sqrt() / seg_len;
-        if dist > max_dist {
-            max_dist = dist;
-            max_idx = i;
+        let first = points[start];
+        let last = points[end];
+        let dx = last.x - first.x;
+        let dy = last.y - first.y;
+        let dz = last.z - first.z;
+        let seg_len = (dx * dx + dy * dy + dz * dz).sqrt();
+
+        if seg_len < 1e-10 {
+            continue;
+        }
+
+        let mut max_dist = 0.0;
+        let mut max_idx = start;
+
+        for (i, p) in points.iter().enumerate().skip(start + 1).take(end - start - 1) {
+            let vx = p.x - first.x;
+            let vy = p.y - first.y;
+            let vz = p.z - first.z;
+            let cx = vy * dz - vz * dy;
+            let cy = vz * dx - vx * dz;
+            let cz = vx * dy - vy * dx;
+            let dist = (cx * cx + cy * cy + cz * cz).sqrt() / seg_len;
+            if dist > max_dist {
+                max_dist = dist;
+                max_idx = i;
+            }
+        }
+
+        if max_dist > tolerance {
+            keep[max_idx] = true;
+            stack.push((start, max_idx));
+            stack.push((max_idx, end));
         }
     }
 
-    if max_dist <= tolerance {
-        return vec![first, last];
-    }
-
-    let mut left = simplify_path_3d(&points[..=max_idx], tolerance);
-    let right = simplify_path_3d(&points[max_idx..], tolerance);
-    left.pop(); // Remove duplicate at split point
-    left.extend(right);
-    left
+    points
+        .iter()
+        .zip(keep.iter())
+        .filter(|&(_, &k)| k)
+        .map(|(p, _)| *p)
+        .collect()
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -201,18 +219,12 @@ pub fn raster_toolpath_from_grid(
     }
 
     for row in 0..grid.rows {
-        // Zigzag: even rows go left-to-right, odd rows go right-to-left
-        let cols: Box<dyn Iterator<Item = usize>> = if row % 2 == 0 {
-            Box::new(0..grid.cols)
-        } else {
-            Box::new((0..grid.cols).rev())
-        };
-
-        let col_vec: Vec<usize> = cols.collect();
-        if col_vec.is_empty() {
+        if grid.cols == 0 {
             continue;
         }
-        let first_col = col_vec[0];
+        // Zigzag: even rows go left-to-right, odd rows go right-to-left
+        let reverse = row % 2 != 0;
+        let first_col = if reverse { grid.cols - 1 } else { 0 };
         let first_pt = grid.get(row, first_col);
 
         // Rapid to the start of this row at safe Z
@@ -221,13 +233,20 @@ pub fn raster_toolpath_from_grid(
         tp.feed_to(first_pt.position(), plunge_rate);
 
         // Feed along the row
-        for &col in &col_vec[1..] {
-            let cl = grid.get(row, col);
-            tp.feed_to(cl.position(), feed_rate);
+        if reverse {
+            for col in (0..grid.cols.saturating_sub(1)).rev() {
+                let cl = grid.get(row, col);
+                tp.feed_to(cl.position(), feed_rate);
+            }
+        } else {
+            for col in 1..grid.cols {
+                let cl = grid.get(row, col);
+                tp.feed_to(cl.position(), feed_rate);
+            }
         }
 
         // Retract at end of row
-        let last_col = col_vec[col_vec.len() - 1];
+        let last_col = if reverse { 0 } else { grid.cols - 1 };
         let last_pt = grid.get(row, last_col);
         tp.rapid_to(P3::new(last_pt.x, last_pt.y, safe_z));
     }

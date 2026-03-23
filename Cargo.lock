@@ -3748,6 +3748,7 @@ dependencies = [
  "egui_plot",
  "image",
  "nalgebra",
+ "rayon",
  "rfd",
  "rs_cam_core",
  "serde",

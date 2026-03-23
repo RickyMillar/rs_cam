@@ -1,0 +1,744 @@
+{
+  "schema_version": 1,
+  "toolpath_id": 0,
+  "toolpath_name": "op_0_adaptive3d",
+  "operation_label": "Op 0 — adaptive3d",
+  "tool_summary": "6.35mm flat",
+  "request_snapshot": {
+    "input": "/home/ricky/Downloads/wanaka_100mm/wanaka_100.stl",
+    "operation_index": 0,
+    "operation_type": "adaptive3d",
+    "params": {
+      "depth_per_pass": 3.0,
+      "feed_rate": 1500.0,
+      "plunge_rate": 500.0,
+      "safe_z": 20.0,
+      "stepover": 2.0,
+      "stock_to_leave": 0.5,
+      "stock_top_z": 15.0,
+      "tolerance": 0.1
+    },
+    "tool": "flat_6mm",
+    "tool_diameter": 6.35
+  },
+  "debug_trace": {
+    "schema_version": 1,
+    "toolpath_name": "op_0_adaptive3d",
+    "operation_label": "Op 0 — adaptive3d",
+    "summary": {
+      "total_elapsed_us": 3570591,
+      "span_count": 39,
+      "hotspot_count": 0,
+      "dominant_span_kind": "surface_heightmap",
+      "dominant_span_label": "Surface heightmap",
+      "dominant_span_elapsed_us": 3570360
+    },
+    "spans": [
+      {
+        "id": 1,
+        "parent_id": null,
+        "kind": "surface_heightmap",
+        "label": "Surface heightmap",
+        "start_us": 38,
+        "elapsed_us": 3570360,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {
+          "cols": 14.0,
+          "rows": 14.0
+        }
+      },
+      {
+        "id": 2,
+        "parent_id": null,
+        "kind": "border_clear",
+        "label": "Border clear",
+        "start_us": 3428719,
+        "elapsed_us": 141678,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {
+          "cells": 147.0
+        }
+      },
+      {
+        "id": 3,
+        "parent_id": null,
+        "kind": "z_level_plan",
+        "label": "Compute Z levels",
+        "start_us": 3428746,
+        "elapsed_us": 141650,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {
+          "count": 5.0,
+          "z_bottom": 0.49920677667250857,
+          "z_top": 12.0
+        }
+      },
+      {
+        "id": 4,
+        "parent_id": null,
+        "kind": "z_level",
+        "label": "Z 12.000",
+        "start_us": 3428786,
+        "elapsed_us": 23172,
+        "xy_bbox": null,
+        "z_level": 12.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {
+          "long_passes": 0.0,
+          "passes": 2.0,
+          "remaining_before": 0.25,
+          "short_passes": 0.0,
+          "skipped_preflight": 1.0,
+          "total_steps": 0.0
+        }
+      },
+      {
+        "id": 5,
+        "parent_id": 4,
+        "kind": "pre_stamp",
+        "label": "Pre-stamp Z 12.000",
+        "start_us": 3428790,
+        "elapsed_us": 23167,
+        "xy_bbox": null,
+        "z_level": 12.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {
+          "cells": 0.0
+        }
+      },
+      {
+        "id": 6,
+        "parent_id": 4,
+        "kind": "adaptive_pass",
+        "label": "Pass 1",
+        "start_us": 3428803,
+        "elapsed_us": 23126,
+        "xy_bbox": null,
+        "z_level": 12.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": "preflight skip",
+        "counters": {
+          "skipped_preflight": 1.0
+        }
+      },
+      {
+        "id": 7,
+        "parent_id": 6,
+        "kind": "entry_search",
+        "label": "Entry 1",
+        "start_us": 3428804,
+        "elapsed_us": 23124,
+        "xy_bbox": {
+          "min_x": 0.47916540304819755,
+          "max_x": 0.47916540304819755,
+          "min_y": 0.47916370431582145,
+          "max_y": 0.47916370431582145
+        },
+        "z_level": 12.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {}
+      },
+      {
+        "id": 8,
+        "parent_id": 6,
+        "kind": "preflight",
+        "label": "Preflight 1",
+        "start_us": 3451834,
+        "elapsed_us": 93,
+        "xy_bbox": null,
+        "z_level": 12.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": "no viable direction",
+        "counters": {
+          "evaluations": 0.0
+        }
+      },
+      {
+        "id": 9,
+        "parent_id": 4,
+        "kind": "adaptive_pass",
+        "label": "Pass 2",
+        "start_us": 3451931,
+        "elapsed_us": 21,
+        "xy_bbox": null,
+        "z_level": 12.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": "no entry",
+        "counters": {}
+      },
+      {
+        "id": 10,
+        "parent_id": 9,
+        "kind": "entry_search",
+        "label": "Entry 2",
+        "start_us": 3451932,
+        "elapsed_us": 19,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {}
+      },
+      {
+        "id": 11,
+        "parent_id": null,
+        "kind": "z_level",
+        "label": "Z 9.000",
+        "start_us": 3451971,
+        "elapsed_us": 22997,
+        "xy_bbox": null,
+        "z_level": 9.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {
+          "long_passes": 0.0,
+          "passes": 2.0,
+          "remaining_before": 0.25,
+          "short_passes": 0.0,
+          "skipped_preflight": 1.0,
+          "total_steps": 0.0
+        }
+      },
+      {
+        "id": 12,
+        "parent_id": 11,
+        "kind": "pre_stamp",
+        "label": "Pre-stamp Z 9.000",
+        "start_us": 3451973,
+        "elapsed_us": 22995,
+        "xy_bbox": null,
+        "z_level": 9.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {
+          "cells": 0.0
+        }
+      },
+      {
+        "id": 13,
+        "parent_id": 11,
+        "kind": "adaptive_pass",
+        "label": "Pass 1",
+        "start_us": 3451993,
+        "elapsed_us": 22949,
+        "xy_bbox": null,
+        "z_level": 9.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": "preflight skip",
+        "counters": {
+          "skipped_preflight": 1.0
+        }
+      },
+      {
+        "id": 14,
+        "parent_id": 13,
+        "kind": "entry_search",
+        "label": "Entry 1",
+        "start_us": 3451993,
+        "elapsed_us": 22948,
+        "xy_bbox": {
+          "min_x": 0.47916540304819755,
+          "max_x": 0.47916540304819755,
+          "min_y": 0.47916370431582145,
+          "max_y": 0.47916370431582145
+        },
+        "z_level": 9.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {}
+      },
+      {
+        "id": 15,
+        "parent_id": 13,
+        "kind": "preflight",
+        "label": "Preflight 1",
+        "start_us": 3474863,
+        "elapsed_us": 77,
+        "xy_bbox": null,
+        "z_level": 9.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": "no viable direction",
+        "counters": {
+          "evaluations": 0.0
+        }
+      },
+      {
+        "id": 16,
+        "parent_id": 11,
+        "kind": "adaptive_pass",
+        "label": "Pass 2",
+        "start_us": 3474943,
+        "elapsed_us": 20,
+        "xy_bbox": null,
+        "z_level": 9.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": "no entry",
+        "counters": {}
+      },
+      {
+        "id": 17,
+        "parent_id": 16,
+        "kind": "entry_search",
+        "label": "Entry 2",
+        "start_us": 3474944,
+        "elapsed_us": 18,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {}
+      },
+      {
+        "id": 18,
+        "parent_id": null,
+        "kind": "z_level",
+        "label": "Z 6.000",
+        "start_us": 3474981,
+        "elapsed_us": 22937,
+        "xy_bbox": null,
+        "z_level": 6.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {
+          "long_passes": 0.0,
+          "passes": 2.0,
+          "remaining_before": 0.25,
+          "short_passes": 0.0,
+          "skipped_preflight": 1.0,
+          "total_steps": 0.0
+        }
+      },
+      {
+        "id": 19,
+        "parent_id": 18,
+        "kind": "pre_stamp",
+        "label": "Pre-stamp Z 6.000",
+        "start_us": 3474983,
+        "elapsed_us": 22934,
+        "xy_bbox": null,
+        "z_level": 6.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {
+          "cells": 0.0
+        }
+      },
+      {
+        "id": 20,
+        "parent_id": 18,
+        "kind": "adaptive_pass",
+        "label": "Pass 1",
+        "start_us": 3474999,
+        "elapsed_us": 22892,
+        "xy_bbox": null,
+        "z_level": 6.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": "preflight skip",
+        "counters": {
+          "skipped_preflight": 1.0
+        }
+      },
+      {
+        "id": 21,
+        "parent_id": 20,
+        "kind": "entry_search",
+        "label": "Entry 1",
+        "start_us": 3475000,
+        "elapsed_us": 22890,
+        "xy_bbox": {
+          "min_x": 0.47916540304819755,
+          "max_x": 0.47916540304819755,
+          "min_y": 0.47916370431582145,
+          "max_y": 0.47916370431582145
+        },
+        "z_level": 6.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {}
+      },
+      {
+        "id": 22,
+        "parent_id": 20,
+        "kind": "preflight",
+        "label": "Preflight 1",
+        "start_us": 3497814,
+        "elapsed_us": 75,
+        "xy_bbox": null,
+        "z_level": 6.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": "no viable direction",
+        "counters": {
+          "evaluations": 0.0
+        }
+      },
+      {
+        "id": 23,
+        "parent_id": 18,
+        "kind": "adaptive_pass",
+        "label": "Pass 2",
+        "start_us": 3497892,
+        "elapsed_us": 21,
+        "xy_bbox": null,
+        "z_level": 6.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": "no entry",
+        "counters": {}
+      },
+      {
+        "id": 24,
+        "parent_id": 23,
+        "kind": "entry_search",
+        "label": "Entry 2",
+        "start_us": 3497894,
+        "elapsed_us": 18,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {}
+      },
+      {
+        "id": 25,
+        "parent_id": null,
+        "kind": "z_level",
+        "label": "Z 3.000",
+        "start_us": 3497930,
+        "elapsed_us": 24123,
+        "xy_bbox": null,
+        "z_level": 3.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {
+          "long_passes": 0.0,
+          "passes": 2.0,
+          "remaining_before": 0.25,
+          "short_passes": 0.0,
+          "skipped_preflight": 1.0,
+          "total_steps": 0.0
+        }
+      },
+      {
+        "id": 26,
+        "parent_id": 25,
+        "kind": "pre_stamp",
+        "label": "Pre-stamp Z 3.000",
+        "start_us": 3497931,
+        "elapsed_us": 24121,
+        "xy_bbox": null,
+        "z_level": 3.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {
+          "cells": 0.0
+        }
+      },
+      {
+        "id": 27,
+        "parent_id": 25,
+        "kind": "adaptive_pass",
+        "label": "Pass 1",
+        "start_us": 3497946,
+        "elapsed_us": 24059,
+        "xy_bbox": null,
+        "z_level": 3.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": "preflight skip",
+        "counters": {
+          "skipped_preflight": 1.0
+        }
+      },
+      {
+        "id": 28,
+        "parent_id": 27,
+        "kind": "entry_search",
+        "label": "Entry 1",
+        "start_us": 3497947,
+        "elapsed_us": 24057,
+        "xy_bbox": {
+          "min_x": 0.47916540304819755,
+          "max_x": 0.47916540304819755,
+          "min_y": 0.47916370431582145,
+          "max_y": 0.47916370431582145
+        },
+        "z_level": 3.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {}
+      },
+      {
+        "id": 29,
+        "parent_id": 27,
+        "kind": "preflight",
+        "label": "Preflight 1",
+        "start_us": 3521874,
+        "elapsed_us": 128,
+        "xy_bbox": null,
+        "z_level": 3.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": "no viable direction",
+        "counters": {
+          "evaluations": 0.0
+        }
+      },
+      {
+        "id": 30,
+        "parent_id": 25,
+        "kind": "adaptive_pass",
+        "label": "Pass 2",
+        "start_us": 3522008,
+        "elapsed_us": 32,
+        "xy_bbox": null,
+        "z_level": 3.0,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": "no entry",
+        "counters": {}
+      },
+      {
+        "id": 31,
+        "parent_id": 30,
+        "kind": "entry_search",
+        "label": "Entry 2",
+        "start_us": 3522010,
+        "elapsed_us": 30,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {}
+      },
+      {
+        "id": 32,
+        "parent_id": null,
+        "kind": "z_level",
+        "label": "Z 0.499",
+        "start_us": 3522074,
+        "elapsed_us": 23713,
+        "xy_bbox": null,
+        "z_level": 0.49920677667250857,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {
+          "long_passes": 0.0,
+          "passes": 2.0,
+          "remaining_before": 0.25,
+          "short_passes": 0.0,
+          "skipped_preflight": 1.0,
+          "total_steps": 0.0
+        }
+      },
+      {
+        "id": 33,
+        "parent_id": 32,
+        "kind": "pre_stamp",
+        "label": "Pre-stamp Z 0.499",
+        "start_us": 3522076,
+        "elapsed_us": 23711,
+        "xy_bbox": null,
+        "z_level": 0.49920677667250857,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {
+          "cells": 0.0
+        }
+      },
+      {
+        "id": 34,
+        "parent_id": 32,
+        "kind": "adaptive_pass",
+        "label": "Pass 1",
+        "start_us": 3522100,
+        "elapsed_us": 23652,
+        "xy_bbox": null,
+        "z_level": 0.49920677667250857,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": "preflight skip",
+        "counters": {
+          "skipped_preflight": 1.0
+        }
+      },
+      {
+        "id": 35,
+        "parent_id": 34,
+        "kind": "entry_search",
+        "label": "Entry 1",
+        "start_us": 3522101,
+        "elapsed_us": 23651,
+        "xy_bbox": {
+          "min_x": 0.47916540304819755,
+          "max_x": 0.47916540304819755,
+          "min_y": 0.47916370431582145,
+          "max_y": 0.47916370431582145
+        },
+        "z_level": 0.5048343590460718,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {}
+      },
+      {
+        "id": 36,
+        "parent_id": 34,
+        "kind": "preflight",
+        "label": "Preflight 1",
+        "start_us": 3545657,
+        "elapsed_us": 93,
+        "xy_bbox": null,
+        "z_level": 0.49920677667250857,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": "no viable direction",
+        "counters": {
+          "evaluations": 0.0
+        }
+      },
+      {
+        "id": 37,
+        "parent_id": 32,
+        "kind": "adaptive_pass",
+        "label": "Pass 2",
+        "start_us": 3545755,
+        "elapsed_us": 22,
+        "xy_bbox": null,
+        "z_level": 0.49920677667250857,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": "no entry",
+        "counters": {}
+      },
+      {
+        "id": 38,
+        "parent_id": 37,
+        "kind": "entry_search",
+        "label": "Entry 2",
+        "start_us": 3545756,
+        "elapsed_us": 21,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {}
+      },
+      {
+        "id": 39,
+        "parent_id": null,
+        "kind": "waterline_cleanup",
+        "label": "Waterline cleanup Z 0.499",
+        "start_us": 3545792,
+        "elapsed_us": 24599,
+        "xy_bbox": null,
+        "z_level": 0.49920677667250857,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {
+          "contours": 0.0,
+          "traced": 0.0
+        }
+      }
+    ],
+    "hotspots": [],
+    "annotations": [
+      {
+        "move_index": 0,
+        "label": "Adaptive Z 0.5 (5/5)"
+      },
+      {
+        "move_index": 0,
+        "label": "Adaptive Z 12.0 (1/5)"
+      },
+      {
+        "move_index": 0,
+        "label": "Adaptive Z 3.0 (4/5)"
+      },
+      {
+        "move_index": 0,
+        "label": "Adaptive Z 6.0 (3/5)"
+      },
+      {
+        "move_index": 0,
+        "label": "Adaptive Z 9.0 (2/5)"
+      },
+      {
+        "move_index": 0,
+        "label": "Pass 1 — preflight skip (no viable direction)"
+      },
+      {
+        "move_index": 0,
+        "label": "Pass 1 — preflight skip (no viable direction)"
+      },
+      {
+        "move_index": 0,
+        "label": "Pass 1 — preflight skip (no viable direction)"
+      },
+      {
+        "move_index": 0,
+        "label": "Pass 1 — preflight skip (no viable direction)"
+      },
+      {
+        "move_index": 0,
+        "label": "Pass 1 — preflight skip (no viable direction)"
+      },
+      {
+        "move_index": 0,
+        "label": "Waterline cleanup"
+      }
+    ]
+  },
+  "semantic_trace": {
+    "schema_version": 1,
+    "toolpath_name": "op_0_adaptive3d",
+    "operation_label": "Op 0 — adaptive3d",
+    "summary": {
+      "item_count": 0,
+      "move_linked_item_count": 0
+    },
+    "items": []
+  }
+}

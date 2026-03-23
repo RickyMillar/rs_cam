@@ -1,0 +1,36 @@
+# Debug job for adaptive3d on the wanaka 100mm model.
+# Usage:
+#   cargo run -p rs_cam_cli -- job fixtures/debug_adaptive/job.toml \
+#     --diagnostics --debug-trace fixtures/debug_adaptive/traces/
+
+[job]
+output = "wanaka_adaptive.nc"
+post = "grbl"
+spindle_speed = 18000
+safe_z = 20.0
+simulate = true
+diagnostics = true
+diagnostics_json = "wanaka_diag.json"
+svg = "wanaka_toolpath.svg"
+view = "wanaka_3d.html"
+
+[tools.flat_6mm]
+type = "flat"
+diameter = 6.35
+flute_count = 2
+
+[[operation]]
+type = "adaptive3d"
+input = "/home/ricky/Downloads/wanaka_100mm/wanaka_100.stl"
+tool = "flat_6mm"
+scale = 1000.0
+stepover = 2.0
+depth_per_pass = 3.0
+stock_to_leave = 0.5
+stock_top_z = 15.0
+feed_rate = 1500.0
+plunge_rate = 500.0
+tolerance = 0.1
+entry_3d = "helix"
+order_by = "global"
+slot_clearing = true

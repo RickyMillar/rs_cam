@@ -9,16 +9,20 @@ use std::path::Path;
 
 use rs_cam_core::arc_util::linearize_arc;
 use rs_cam_core::arcfit::fit_arcs;
+use rs_cam_core::contour_extract::weave_contours;
 use rs_cam_core::dexel_mesh::dexel_stock_to_mesh;
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
-use rs_cam_core::dropcutter::{batch_drop_cutter, point_drop_cutter};
+use rs_cam_core::dropcutter::{DropCutterGrid, batch_drop_cutter, point_drop_cutter};
 use rs_cam_core::fiber::{Fiber, Interval};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
 use rs_cam_core::polygon::{Polygon2, offset_polygon, pocket_offsets};
+use rs_cam_core::pushcutter::batch_push_cutter;
 use rs_cam_core::radial_profile::RadialProfileLUT;
-use rs_cam_core::tool::{BallEndmill, FlatEndmill, MillingCutter};
-use rs_cam_core::toolpath::Toolpath;
+use rs_cam_core::slope::SlopeMap;
+use rs_cam_core::steep_shallow::dilate_grid;
+use rs_cam_core::tool::{BallEndmill, CLPoint, FlatEndmill, MillingCutter};
+use rs_cam_core::toolpath::{Toolpath, raster_toolpath_from_grid, simplify_path_3d};
 use rs_cam_core::waterline::waterline_contours;
 
 // ── Fixture helpers ──────────────────────────────────────────────────────
@@ -369,6 +373,51 @@ fn bench_simulate_toolpath_metrics(c: &mut Criterion) {
     group.finish();
 }
 
+// ── 8b. Push-cutter batch benchmarks ──────────────────────────────────
+
+fn bench_push_cutter_batch(c: &mut Criterion) {
+    let mut group = c.benchmark_group("push_cutter_batch");
+    group.sample_size(10);
+
+    let (mesh, index) = hemisphere_fixture(20);
+    let ball = BallEndmill::new(6.35, 25.0);
+    let bbox = &mesh.bbox;
+    let z = (bbox.min.z + bbox.max.z) / 2.0;
+
+    group.bench_function("hemisphere_200fibers", |b| {
+        b.iter(|| {
+            let mut fibers: Vec<Fiber> = (0..200)
+                .map(|i| {
+                    let y = bbox.min.y + (i as f64 / 200.0) * (bbox.max.y - bbox.min.y);
+                    Fiber::new_x(y, z, bbox.min.x, bbox.max.x)
+                })
+                .collect();
+            batch_push_cutter(&mut fibers, &mesh, &index, &ball);
+            black_box(fibers.len());
+        })
+    });
+
+    let (mesh, index) = load_terrain();
+    let ball = BallEndmill::new(6.35, 25.0);
+    let bbox_t = &mesh.bbox;
+    let mid_z = (bbox_t.min.z + bbox_t.max.z) / 2.0;
+
+    group.bench_function("terrain_200fibers", |b| {
+        b.iter(|| {
+            let mut fibers: Vec<Fiber> = (0..200)
+                .map(|i| {
+                    let y = bbox_t.min.y + (i as f64 / 200.0) * (bbox_t.max.y - bbox_t.min.y);
+                    Fiber::new_x(y, mid_z, bbox_t.min.x, bbox_t.max.x)
+                })
+                .collect();
+            batch_push_cutter(&mut fibers, &mesh, &index, &ball);
+            black_box(fibers.len());
+        })
+    });
+
+    group.finish();
+}
+
 // ── 10. Mesh extraction benchmarks ────────────────────────────────────
 
 fn bench_dexel_mesh_extraction(c: &mut Criterion) {
@@ -433,6 +482,158 @@ fn bench_arc_linearize(c: &mut Criterion) {
     group.finish();
 }
 
+// ── 9b. Contour weave benchmarks (exercises chain_segments) ───────────
+
+fn bench_weave_contours(c: &mut Criterion) {
+    let mut group = c.benchmark_group("weave_contours");
+    group.sample_size(10);
+
+    // Build fibers from hemisphere push-cutter, then weave.
+    let (mesh, index) = hemisphere_fixture(20);
+    let ball = BallEndmill::new(6.35, 25.0);
+    let bbox = &mesh.bbox;
+    let z = 10.0;
+
+    for n_fibers in [50, 200] {
+        let mut x_fibers: Vec<Fiber> = (0..n_fibers)
+            .map(|i| {
+                let y = bbox.min.y + (i as f64 / n_fibers as f64) * (bbox.max.y - bbox.min.y);
+                Fiber::new_x(y, z, bbox.min.x, bbox.max.x)
+            })
+            .collect();
+        let mut y_fibers: Vec<Fiber> = (0..n_fibers)
+            .map(|i| {
+                let x = bbox.min.x + (i as f64 / n_fibers as f64) * (bbox.max.x - bbox.min.x);
+                Fiber::new_y(x, z, bbox.min.y, bbox.max.y)
+            })
+            .collect();
+        batch_push_cutter(&mut x_fibers, &mesh, &index, &ball);
+        batch_push_cutter(&mut y_fibers, &mesh, &index, &ball);
+
+        group.bench_function(BenchmarkId::new("hemisphere", n_fibers), |b| {
+            b.iter(|| black_box(weave_contours(&x_fibers, &y_fibers, z)))
+        });
+    }
+
+    group.finish();
+}
+
+// ── 10. Grid dilation benchmarks ──────────────────────────────────────
+
+fn bench_dilate_grid(c: &mut Criterion) {
+    let mut group = c.benchmark_group("dilate_grid");
+
+    // 200x200 grid with a circular steep region in center.
+    let rows = 200;
+    let cols = 200;
+    let grid: Vec<bool> = (0..rows * cols)
+        .map(|i| {
+            let r = i / cols;
+            let c_col = i % cols;
+            let dr = r as f64 - 100.0;
+            let dc = c_col as f64 - 100.0;
+            dr * dr + dc * dc < 50.0 * 50.0
+        })
+        .collect();
+
+    for radius in [3, 5, 10] {
+        group.bench_function(BenchmarkId::new("200x200", radius), |b| {
+            b.iter(|| black_box(dilate_grid(&grid, rows, cols, radius)))
+        });
+    }
+
+    group.finish();
+}
+
+// ── 11. Raster toolpath benchmarks ────────────────────────────────────
+
+fn bench_raster_toolpath(c: &mut Criterion) {
+    let mut group = c.benchmark_group("raster_toolpath");
+
+    // Build a synthetic DropCutterGrid.
+    for grid_size in [100, 300] {
+        let mut points = Vec::with_capacity(grid_size * grid_size);
+        for row in 0..grid_size {
+            for col in 0..grid_size {
+                let x = col as f64 * 0.5;
+                let y = row as f64 * 0.5;
+                let z = -2.0 + 0.5 * ((x * 0.1).sin() + (y * 0.1).cos());
+                points.push(CLPoint {
+                    x,
+                    y,
+                    z,
+                    contacted: true,
+                });
+            }
+        }
+        let grid = DropCutterGrid {
+            points,
+            rows: grid_size,
+            cols: grid_size,
+            x_start: 0.0,
+            y_start: 0.0,
+            x_step: 0.5,
+            y_step: 0.5,
+        };
+
+        group.bench_function(BenchmarkId::new("zigzag", grid_size), |b| {
+            b.iter(|| black_box(raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0)))
+        });
+    }
+
+    group.finish();
+}
+
+// ── 12. Path simplification benchmarks ────────────────────────────────
+
+fn bench_simplify_path(c: &mut Criterion) {
+    let mut group = c.benchmark_group("simplify_path");
+
+    for n in [1000, 5000, 10000] {
+        // Noisy sine wave path — good for Douglas-Peucker.
+        let points: Vec<P3> = (0..n)
+            .map(|i| {
+                let t = i as f64 / n as f64 * 100.0;
+                let noise = (t * 7.3).sin() * 0.01;
+                P3::new(t, (t * 0.1).sin() * 10.0 + noise, -2.0 + noise)
+            })
+            .collect();
+
+        group.bench_function(BenchmarkId::new("noisy_sine", n), |b| {
+            b.iter(|| black_box(simplify_path_3d(&points, 0.05)))
+        });
+    }
+
+    group.finish();
+}
+
+// ── 13. Slope map benchmarks ──────────────────────────────────────────
+
+fn bench_slope_map(c: &mut Criterion) {
+    let mut group = c.benchmark_group("slope_map");
+
+    for grid_size in [200, 500] {
+        let rows = grid_size;
+        let cols = grid_size;
+        let cs = 0.5;
+        let z_values: Vec<f64> = (0..rows * cols)
+            .map(|i| {
+                let r = i / cols;
+                let c_col = i % cols;
+                let x = c_col as f64 * cs;
+                let y = r as f64 * cs;
+                5.0 + 2.0 * (x * 0.1).sin() * (y * 0.1).cos()
+            })
+            .collect();
+
+        group.bench_function(BenchmarkId::new("from_z_grid", grid_size), |b| {
+            b.iter(|| black_box(SlopeMap::from_z_grid(&z_values, rows, cols, 0.0, 0.0, cs)))
+        });
+    }
+
+    group.finish();
+}
+
 // ── Group all benchmarks ─────────────────────────────────────────────────
 
 criterion_group!(
@@ -450,5 +651,11 @@ criterion_group!(
     bench_simulate_toolpath_metrics,
     bench_dexel_mesh_extraction,
     bench_arc_linearize,
+    bench_push_cutter_batch,
+    bench_weave_contours,
+    bench_dilate_grid,
+    bench_raster_toolpath,
+    bench_simplify_path,
+    bench_slope_map,
 );
 criterion_main!(benches);

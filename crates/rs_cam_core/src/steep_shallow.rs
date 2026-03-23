@@ -74,10 +74,10 @@ impl Default for SteepShallowParams {
     }
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Dilate a boolean grid by `radius_cells`, setting additional cells to `true`.
 /// 8-connected expansion.
-fn dilate_grid(grid: &[bool], rows: usize, cols: usize, radius_cells: usize) -> Vec<bool> {
+#[allow(clippy::indexing_slicing)] // bounded indexing in grid morphology
+pub fn dilate_grid(grid: &[bool], rows: usize, cols: usize, radius_cells: usize) -> Vec<bool> {
     if radius_cells == 0 {
         return grid.to_vec();
     }
