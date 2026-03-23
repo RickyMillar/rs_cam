@@ -127,7 +127,7 @@ impl<B: ComputeBackend> AppController<B> {
             // --- Face selection ---
             AppEvent::ToggleFaceSelection {
                 toolpath_id,
-                model_id,
+                model_id: _,
                 face_id,
             } => {
                 if let Some(entry) = self.state.job.find_toolpath_mut(toolpath_id) {
@@ -140,11 +140,10 @@ impl<B: ComputeBackend> AppController<B> {
                     if faces.is_empty() {
                         entry.face_selection = None;
                     }
-                    // Update visual selection to reflect multi-face state
-                    self.state.selection = match &entry.face_selection {
-                        Some(ids) if ids.len() > 1 => Selection::Faces(model_id, ids.clone()),
-                        _ => Selection::Face(model_id, face_id),
-                    };
+                    // Keep toolpath selected so properties pane stays visible.
+                    // Face highlighting is driven by the toolpath's face_selection,
+                    // not the visual Selection enum.
+                    self.state.selection = Selection::Toolpath(toolpath_id);
                     entry.stale_since = Some(std::time::Instant::now());
                     self.state.job.dirty = true;
                     self.pending_upload = true;

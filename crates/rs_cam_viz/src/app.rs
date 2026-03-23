@@ -715,9 +715,17 @@ impl RsCamApp {
         }
     }
 
-    /// Get selected BREP face IDs from the current selection state.
+    /// Get selected BREP face IDs for rendering highlights.
+    /// Reads from the active toolpath's face_selection when a toolpath is selected,
+    /// or from the visual Selection::Face/Faces state otherwise.
     fn selected_face_ids(&self) -> Vec<rs_cam_core::enriched_mesh::FaceGroupId> {
-        match &self.controller.state().selection {
+        let state = self.controller.state();
+        match &state.selection {
+            Selection::Toolpath(tp_id) => state
+                .job
+                .find_toolpath(*tp_id)
+                .and_then(|entry| entry.face_selection.clone())
+                .unwrap_or_default(),
             Selection::Face(_, face_id) => vec![*face_id],
             Selection::Faces(_, face_ids) => face_ids.clone(),
             _ => Vec::new(),

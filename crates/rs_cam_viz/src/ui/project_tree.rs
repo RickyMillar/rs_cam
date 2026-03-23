@@ -253,39 +253,40 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
                 let dim = !tp.enabled || !tp.visible;
 
-                let response = ui
-                    .horizontal(|ui| {
-                        let (rect, _) =
-                            ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
-                        ui.painter().rect_filled(rect, 1.0, swatch_color);
-                        ui.label(
-                            egui::RichText::new(status_icon)
-                                .color(status_color)
-                                .size(10.0),
-                        );
+                let row = ui.horizontal(|ui| {
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                    ui.painter().rect_filled(rect, 1.0, swatch_color);
+                    ui.label(
+                        egui::RichText::new(status_icon)
+                            .color(status_color)
+                            .size(10.0),
+                    );
 
-                        let text_color = if dim {
-                            egui::Color32::from_rgb(100, 100, 110)
-                        } else if selected {
-                            egui::Color32::from_rgb(220, 220, 230)
-                        } else {
-                            egui::Color32::from_rgb(180, 180, 190)
-                        };
-                        let label = format!("[{}] {}", i + 1, tp.name);
-                        let resp = ui.selectable_label(
-                            selected,
-                            egui::RichText::new(&label).color(text_color),
-                        );
-                        draw_trace_badge(
-                            ui,
-                            SimulationState::trace_availability_for_toolpath(&state.job, tp.id),
-                        );
-                        if resp.clicked() {
-                            events.push(AppEvent::Select(Selection::Toolpath(tp.id)));
-                        }
-                        resp
-                    })
-                    .inner;
+                    let text_color = if dim {
+                        egui::Color32::from_rgb(100, 100, 110)
+                    } else if selected {
+                        egui::Color32::from_rgb(220, 220, 230)
+                    } else {
+                        egui::Color32::from_rgb(180, 180, 190)
+                    };
+                    let label = format!("[{}] {}", i + 1, tp.name);
+                    let _ = ui
+                        .selectable_label(selected, egui::RichText::new(&label).color(text_color));
+                    draw_trace_badge(
+                        ui,
+                        SimulationState::trace_availability_for_toolpath(&state.job, tp.id),
+                    );
+                });
+                // Make the full row clickable (not just the label text)
+                let response = ui.interact(
+                    row.response.rect,
+                    egui::Id::new(("tp_row", tp.id.0)),
+                    egui::Sense::click(),
+                );
+                if response.clicked() {
+                    events.push(AppEvent::Select(Selection::Toolpath(tp.id)));
+                }
 
                 response.context_menu(|ui| {
                     let vis_label = if tp.visible { "Hide" } else { "Show" };

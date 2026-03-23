@@ -1138,6 +1138,7 @@ struct ValidationModel {
     id: crate::state::job::ModelId,
     has_polygons: bool,
     has_mesh: bool,
+    has_enriched_mesh: bool,
 }
 
 struct ValidationSetup {
@@ -1170,6 +1171,7 @@ impl ToolpathValidationContext {
                     id: model.id,
                     has_polygons: model.polygons.is_some(),
                     has_mesh: model.mesh.is_some(),
+                    has_enriched_mesh: model.enriched_mesh.is_some(),
                 })
                 .collect(),
             setups: job
@@ -1272,7 +1274,10 @@ fn validate_geometry_selection(
         return;
     };
 
-    let has_polygons = model.has_polygons;
+    // STEP models with face selection derive polygons at compute time
+    let has_face_polygons =
+        model.has_enriched_mesh && entry.face_selection.as_ref().is_some_and(|f| !f.is_empty());
+    let has_polygons = model.has_polygons || has_face_polygons;
     let has_mesh = model.has_mesh;
 
     if entry.operation.needs_both() {
