@@ -256,6 +256,14 @@ pub fn build_enriched_mesh(
     let mut triangle_to_face: Vec<u16> = Vec::new();
     let mut face_groups: Vec<FaceGroup> = Vec::new();
 
+    if face_data.len() > u16::MAX as usize + 1 {
+        return Err(format!(
+            "Too many faces ({}) — maximum supported is {}",
+            face_data.len(),
+            u16::MAX as usize + 1
+        ));
+    }
+
     for (face_idx, face) in face_data.into_iter().enumerate() {
         let vertex_offset = all_vertices.len() as u32;
         let tri_start = all_triangles.len();

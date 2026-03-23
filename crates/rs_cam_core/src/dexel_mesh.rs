@@ -55,21 +55,29 @@ pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: 
     let stock_top = stock_top_z as f32;
     let stock_bot = stock_bottom_z as f32;
 
+    // Minimum material thickness to consider a ray "non-empty" for meshing.
+    // Rays thinner than this are treated as through-holes to avoid sub-voxel
+    // noise when opposing cuts nearly meet (e.g., 0mm stock-to-leave).
+    const MIN_MATERIAL_THICKNESS: f32 = 0.05; // 50 microns
+
     // Collect per-cell top/bottom Z and emptiness.
     let mut top_z = Vec::with_capacity(cells);
     let mut bot_z = Vec::with_capacity(cells);
     let mut empty = Vec::with_capacity(cells);
     for ray in &grid.rays {
-        let is_empty = ray.is_empty();
-        empty.push(is_empty);
-        if is_empty {
-            // Place empty-cell vertices at stock_top so they don't distort
-            // color normalization. These vertices won't appear in any triangle.
+        let top = ray_top(ray);
+        let bot = ray_bottom(ray);
+        let effectively_empty = match (top, bot) {
+            (Some(t), Some(b)) => (t - b) < MIN_MATERIAL_THICKNESS,
+            _ => true,
+        };
+        empty.push(effectively_empty);
+        if effectively_empty {
             top_z.push(stock_top);
             bot_z.push(stock_bot);
         } else {
-            top_z.push(ray_top(ray).unwrap_or(stock_bot));
-            bot_z.push(ray_bottom(ray).unwrap_or(stock_bot));
+            top_z.push(top.unwrap_or(stock_bot));
+            bot_z.push(bot.unwrap_or(stock_bot));
         }
     }
 
@@ -171,62 +179,65 @@ pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: 
     }
 
     // ── Internal hole walls ─────────────────────────────────────────────
-    // At each internal edge between a non-empty cell and an empty cell,
-    // generate a vertical quad connecting the vertices at the shared edge.
-    // This creates visible interior walls of through-holes.
+    // At each edge between a non-empty cell and an empty cell, generate a
+    // vertical wall quad using ONLY the material cell's top and bottom
+    // vertices plus those of the next material cell along the hole boundary.
+    // This avoids using empty-cell vertices (which are at stock_top/bot and
+    // would create huge distorted spikes).
+    //
+    // Strategy: for each material cell adjacent to an empty cell, emit a
+    // wall quad connecting this cell's top/bottom to the next material cell
+    // along the boundary in the same direction (row or col).
 
-    // Right-neighbor walls (vertical walls along column boundaries).
+    // Column-direction walls: scan each row for material→empty transitions.
     for row in 0..rows {
         for col in 0..(cols - 1) {
-            let left_empty = is_empty(row, col);
-            let right_empty = is_empty(row, col + 1);
-            if left_empty == right_empty {
+            let a_empty = is_empty(row, col);
+            let b_empty = is_empty(row, col + 1);
+            if a_empty == b_empty {
                 continue;
             }
-            // Wall between col and col+1 at this row.
-            if !left_empty {
-                // Left cell has material, right is empty → wall faces +U (right).
-                let t0 = idx(row, col);
+            // One side has material, the other is empty. Find a neighboring
+            // row to form the quad with (the material cell above or below).
+            let mat_col = if !a_empty { col } else { col + 1 };
+            // Look for adjacent row with material at the same column.
+            if row + 1 < rows && !is_empty(row + 1, mat_col) {
+                let t0 = idx(row, mat_col);
                 let b0 = bot_off + t0;
-                // Use same vertex (the right edge of the left cell = the shared edge).
-                // Since vertices are at cell centers, the wall is at col boundary.
-                // We use col+1 vertices as the "other side" of the wall.
-                let t1 = idx(row, col + 1);
+                let t1 = idx(row + 1, mat_col);
                 let b1 = bot_off + t1;
-                indices.extend_from_slice(&[t0, t1, b0, t1, b1, b0]);
-            } else {
-                // Right cell has material, left is empty → wall faces −U (left).
-                let t0 = idx(row, col);
-                let b0 = bot_off + t0;
-                let t1 = idx(row, col + 1);
-                let b1 = bot_off + t1;
-                indices.extend_from_slice(&[t0, b0, t1, t1, b0, b1]);
+                if !a_empty {
+                    // Material on left, empty on right → wall faces +U.
+                    indices.extend_from_slice(&[t0, t1, b0, t1, b1, b0]);
+                } else {
+                    // Material on right, empty on left → wall faces −U.
+                    indices.extend_from_slice(&[t0, b0, t1, t1, b0, b1]);
+                }
             }
         }
     }
 
-    // Down-neighbor walls (horizontal walls along row boundaries).
+    // Row-direction walls: scan each column for material→empty transitions.
     for row in 0..(rows - 1) {
         for col in 0..cols {
-            let top_empty = is_empty(row, col);
-            let bot_empty = is_empty(row + 1, col);
-            if top_empty == bot_empty {
+            let a_empty = is_empty(row, col);
+            let b_empty = is_empty(row + 1, col);
+            if a_empty == b_empty {
                 continue;
             }
-            if !top_empty {
-                // Top cell has material, bottom is empty → wall faces +V (down).
-                let t0 = idx(row, col);
+            let mat_row = if !a_empty { row } else { row + 1 };
+            if col + 1 < cols && !is_empty(mat_row, col + 1) {
+                let t0 = idx(mat_row, col);
                 let b0 = bot_off + t0;
-                let t1 = idx(row + 1, col);
+                let t1 = idx(mat_row, col + 1);
                 let b1 = bot_off + t1;
-                indices.extend_from_slice(&[t0, b0, t1, t1, b0, b1]);
-            } else {
-                // Bottom cell has material, top is empty → wall faces −V (up).
-                let t0 = idx(row, col);
-                let b0 = bot_off + t0;
-                let t1 = idx(row + 1, col);
-                let b1 = bot_off + t1;
-                indices.extend_from_slice(&[t0, t1, b0, t1, b1, b0]);
+                if !a_empty {
+                    // Material on top, empty below → wall faces +V.
+                    indices.extend_from_slice(&[t0, b0, t1, t1, b0, b1]);
+                } else {
+                    // Material on bottom, empty above → wall faces −V.
+                    indices.extend_from_slice(&[t0, t1, b0, t1, b1, b0]);
+                }
             }
         }
     }
@@ -468,8 +479,8 @@ mod tests {
     #[test]
     fn deep_cut_colors_are_dark_walnut() {
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 2.0, 2.0, 0.0, 5.0, 1.0);
-        // Cut center ray nearly to the bottom (leave a sliver so ray is non-empty).
-        ray_subtract_above(stock.z_grid.ray_mut(1, 1), 0.01);
+        // Cut center ray deep but leave enough material to be above MIN_MATERIAL_THICKNESS.
+        ray_subtract_above(stock.z_grid.ray_mut(1, 1), 0.1);
 
         let mesh = dexel_stock_to_mesh(&stock);
         // Top vertex (1,1) = index 4, colors at 12..15.

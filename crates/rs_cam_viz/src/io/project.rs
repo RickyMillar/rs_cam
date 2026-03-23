@@ -47,6 +47,11 @@ pub enum ProjectLoadWarning {
         toolpath: String,
         model_id: ModelId,
     },
+    FaceSelectionStale {
+        toolpath: String,
+        face_count: usize,
+        invalid_id: u16,
+    },
 }
 
 impl ProjectLoadWarning {
@@ -80,6 +85,16 @@ impl ProjectLoadWarning {
                 format!(
                     "Toolpath '{toolpath}' references missing model id {} and needs reassignment.",
                     model_id.0
+                )
+            }
+            ProjectLoadWarning::FaceSelectionStale {
+                toolpath,
+                face_count,
+                invalid_id,
+            } => {
+                format!(
+                    "Toolpath '{toolpath}' had a stale face selection (face {invalid_id} not in \
+                     model with {face_count} faces). Selection was cleared."
                 )
             }
         }
@@ -1062,6 +1077,25 @@ fn restore_project_toolpath(
             .map(rs_cam_core::enriched_mesh::FaceGroupId)
             .collect()
     });
+    // Validate face_selection IDs against the loaded enriched mesh
+    if let Some(face_ids) = &init.face_selection {
+        let face_count = models
+            .iter()
+            .find(|m| m.id == model_id)
+            .and_then(|m| m.enriched_mesh.as_ref())
+            .map(|e| e.face_groups.len())
+            .unwrap_or(0);
+        if face_count > 0 {
+            if let Some(bad) = face_ids.iter().find(|f| (f.0 as usize) >= face_count) {
+                warnings.push(ProjectLoadWarning::FaceSelectionStale {
+                    toolpath: init.name.clone(),
+                    face_count,
+                    invalid_id: bad.0,
+                });
+                init.face_selection = None;
+            }
+        }
+    }
     init.debug_options = section.debug_options;
     let mut toolpath = ToolpathEntry::from_init(init);
     toolpath.clear_runtime_state();

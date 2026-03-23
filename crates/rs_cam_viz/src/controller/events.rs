@@ -400,7 +400,12 @@ impl<B: ComputeBackend> AppController<B> {
             );
         } else {
             self.state.job.models.retain(|model| model.id != model_id);
-            if self.state.selection == Selection::Model(model_id) {
+            let clear_selection = matches!(
+                self.state.selection,
+                Selection::Model(mid) | Selection::Face(mid, _) | Selection::Faces(mid, _)
+                    if mid == model_id
+            );
+            if clear_selection {
                 self.state.selection = Selection::None;
             }
             self.pending_upload = true;
