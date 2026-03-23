@@ -8,7 +8,7 @@ use truck_meshalgo::tessellation::MeshableShape;
 use truck_polymesh::PolygonMesh;
 
 fn main() {
-    let fixtures_dir = std::path::Path::new("../fixtures/step");
+    let fixtures_dir = std::path::Path::new("../../crates/rs_cam_core/tests/fixtures/step");
 
     if !fixtures_dir.exists() {
         eprintln!("No fixtures directory at {:?}", fixtures_dir);

@@ -7,8 +7,7 @@ use rs_cam_core::step_input::load_step;
 use std::path::Path;
 
 fn fixtures_dir() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/step")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/step")
 }
 
 #[test]
@@ -72,7 +71,10 @@ fn test_load_step_sphere() {
     let path = fixtures_dir().join("occt-sphere.step");
     let enriched = load_step(&path, 0.1).expect("Failed to load sphere STEP");
 
-    assert!(enriched.face_count() >= 1, "Sphere should have at least 1 face");
+    assert!(
+        enriched.face_count() >= 1,
+        "Sphere should have at least 1 face"
+    );
     assert!(!enriched.as_mesh().triangles.is_empty());
 }
 

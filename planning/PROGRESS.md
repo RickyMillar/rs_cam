@@ -9,7 +9,7 @@
 - 3-crate Rust workspace: core library, CLI, and desktop GUI
 - 22 GUI-exposed operations
 - 14 direct CLI commands plus TOML job execution
-- STL, SVG, and DXF import
+- STL, SVG, DXF, and STEP import with BREP face selection
 - 5 cutter families
 - GRBL, LinuxCNC, and Mach3 post-processors
 - feeds/speeds calculator with machine, material, and vendor-LUT inputs
@@ -27,6 +27,17 @@
 - keep public docs aligned with the actual code surface
 - preserve explicit attribution for algorithms, datasets, and runtime assets
 - maintain the lint/test gate as the default merge bar
+
+## Recent work (2026-03-23)
+
+### BREP/STEP post-merge improvements
+
+Addressed findings from the independent BREP/STEP review (`review/BREP_STEP_REVIEW.md`):
+- **State safety**: face selection cleared on model removal; face_selection IDs validated against enriched mesh on project load with `FaceSelectionStale` warning; u16 face count overflow guard
+- **Controller routing**: face pick toggle moved from inline `app.rs` mutation to `AppEvent::ToggleFaceSelection` through the controller event system
+- **Undo support**: toolpath param snapshot extended to include `face_selection`, enabling undo/redo of face selection changes
+- **User feedback**: STEP import now shows status messages (success or error) in the status bar; ImportStep handling moved to app-level for camera fitting; face polygon fallback warns when selected faces are not horizontal planes
+- **UX polish**: operation category labels changed from "from SVG"/"from STL" to "Boundary"/"Surface"; face properties panel shows model name instead of debug `ModelId`
 
 ## Recent work (2026-03-22)
 

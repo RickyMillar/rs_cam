@@ -22,6 +22,8 @@ pub struct RsCamApp {
     pending_checkpoint_load: bool,
     /// Frame counter for auto-screenshot mode (RS_CAM_SCREENSHOT env var).
     auto_screenshot_frame: Option<u32>,
+    /// Currently hovered BREP face (updated on mouse move in Toolpaths workspace).
+    last_hover_face: Option<rs_cam_core::enriched_mesh::FaceGroupId>,
 }
 
 impl RsCamApp {
@@ -77,6 +79,7 @@ impl RsCamApp {
             viewport_rect: egui::Rect::NOTHING,
             pending_checkpoint_load: false,
             auto_screenshot_frame,
+            last_hover_face: None,
         }
     }
 
@@ -99,6 +102,15 @@ impl RsCamApp {
                     Ok(Some(bbox)) => self.fit_camera_to_bbox(&bbox),
                     Ok(None) => self.fit_camera_to_first_model(),
                     Err(error) => tracing::error!("DXF import failed: {error}"),
+                },
+                AppEvent::ImportStep(path) => match self.controller.import_step_path(&path) {
+                    Ok(Some(bbox)) => self.fit_camera_to_bbox(&bbox),
+                    Ok(None) => {}
+                    Err(error) => {
+                        self.controller
+                            .set_status(format!("STEP import failed: {error}"));
+                        tracing::error!("STEP import failed: {error}");
+                    }
                 },
                 AppEvent::RescaleModel(model_id, new_units) => {
                     match self.controller.rescale_model(model_id, new_units) {
@@ -714,8 +726,7 @@ impl RsCamApp {
 
     /// Get the currently hovered face ID (for hover highlighting).
     fn hovered_face_id(&self) -> Option<rs_cam_core::enriched_mesh::FaceGroupId> {
-        // TODO: implement hover tracking in Phase 5 polish
-        None
+        self.last_hover_face
     }
 
     fn upload_gpu_data(&mut self, frame: &mut eframe::Frame) {
@@ -764,12 +775,21 @@ impl RsCamApp {
             if let Some(enriched) = &model.enriched_mesh {
                 let selected_faces = self.selected_face_ids();
                 let hovered_face = self.hovered_face_id();
+                let transform: crate::render::mesh_render::VertexTransform<'_> = if use_local_frame
+                {
+                    let setup = active_setup_ref.unwrap();
+                    let stock = &self.controller.state().job.stock;
+                    Some(Box::new(move |p| setup.transform_point(p, stock)))
+                } else {
+                    None
+                };
                 resources.enriched_mesh_data =
                     Some(crate::render::mesh_render::enriched_mesh_gpu_data(
                         &render_state.device,
                         enriched,
                         &selected_faces,
                         hovered_face,
+                        &transform,
                     ));
             } else if let Some(mesh) = &model.mesh {
                 if use_local_frame {
@@ -781,8 +801,7 @@ impl RsCamApp {
                         &Arc::new(transformed),
                     ));
                 } else {
-                    resources.mesh_data =
-                        Some(MeshGpuData::from_mesh(&render_state.device, mesh));
+                    resources.mesh_data = Some(MeshGpuData::from_mesh(&render_state.device, mesh));
                 }
             }
         }
@@ -1413,26 +1432,17 @@ impl RsCamApp {
                 self.controller.state_mut().selection = Selection::Toolpath(id);
             }
             (Workspace::Toolpaths, PickHit::ModelFace { model_id, face_id }) => {
-                // If a toolpath is currently selected, add this face to its face_selection
-                if let Selection::Toolpath(tp_id) = self.controller.state().selection
-                    && let Some(entry) = self.controller.state_mut().job.find_toolpath_mut(tp_id)
-                {
-                    let faces = entry.face_selection.get_or_insert_with(Vec::new);
-                    if let Some(pos) = faces.iter().position(|f| *f == face_id) {
-                        // Toggle off if already selected
-                        faces.remove(pos);
-                    } else {
-                        faces.push(face_id);
-                    }
-                    if faces.is_empty() {
-                        entry.face_selection = None;
-                    }
-                    entry.stale_since = Some(std::time::Instant::now());
-                    self.controller.state_mut().job.dirty = true;
+                // Route face toggle through controller event for undo support.
+                // The controller handler also updates visual selection and pending_upload.
+                if let Selection::Toolpath(tp_id) = self.controller.state().selection {
+                    self.controller
+                        .events_mut()
+                        .push(crate::ui::AppEvent::ToggleFaceSelection {
+                            toolpath_id: tp_id,
+                            model_id,
+                            face_id,
+                        });
                 }
-                // Also update the visual selection
-                self.controller.state_mut().selection = Selection::Face(model_id, face_id);
-                self.controller.set_pending_upload();
             }
             _ => {}
         }
@@ -1464,6 +1474,45 @@ impl RsCamApp {
             && let Some(pos) = response.interact_pointer_pos()
         {
             self.handle_viewport_click(pos);
+        }
+
+        // Update hovered face for BREP hover highlighting
+        self.last_hover_face = None;
+        if response.hovered()
+            && self.controller.state().workspace == Workspace::Toolpaths
+            && self
+                .controller
+                .state()
+                .job
+                .models
+                .iter()
+                .any(|m| m.enriched_mesh.is_some())
+            && let Some(pos) = ui.input(|i| i.pointer.hover_pos())
+        {
+            let pick_ctx = crate::interaction::picking::PickContext {
+                camera: &self.camera,
+                screen_x: pos.x - rect.min.x,
+                screen_y: pos.y - rect.min.y,
+                aspect: if rect.height() > 0.0 {
+                    rect.width() / rect.height()
+                } else {
+                    1.0
+                },
+                vw: rect.width(),
+                vh: rect.height(),
+            };
+            let state = self.controller.state();
+            if let Some(crate::interaction::picking::PickHit::ModelFace { face_id, .. }) =
+                crate::interaction::picking::pick(
+                    &pick_ctx,
+                    &state.job,
+                    self.controller.collision_positions(),
+                    state.workspace,
+                    state.viewport.isolate_toolpath,
+                )
+            {
+                self.last_hover_face = Some(face_id);
+            }
         }
 
         if response.dragged_by(egui::PointerButton::Primary) {
@@ -1877,6 +1926,10 @@ impl RsCamApp {
         let lane_snapshots = self.controller.lane_snapshots();
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             crate::ui::status_bar::draw(ui, self.controller.state(), col_count, &lane_snapshots);
+            if let Some(msg) = self.controller.status_message() {
+                ui.separator();
+                ui.label(egui::RichText::new(msg).color(egui::Color32::from_rgb(255, 200, 80)));
+            }
         });
 
         egui::CentralPanel::default()
@@ -1917,6 +1970,10 @@ impl RsCamApp {
         let lane_snapshots = self.controller.lane_snapshots();
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             crate::ui::status_bar::draw(ui, self.controller.state(), col_count, &lane_snapshots);
+            if let Some(msg) = self.controller.status_message() {
+                ui.separator();
+                ui.label(egui::RichText::new(msg).color(egui::Color32::from_rgb(255, 200, 80)));
+            }
         });
 
         egui::CentralPanel::default()

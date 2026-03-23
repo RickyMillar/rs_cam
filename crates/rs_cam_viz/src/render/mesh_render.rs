@@ -196,11 +196,16 @@ fn face_group_color(id: FaceGroupId) -> [f32; 3] {
 /// Uses the `ColoredMeshVertex` pipeline (same as simulation stock rendering).
 /// Selected faces get a highlight color, hovered face gets a hover tint,
 /// and other faces get deterministic pastel colors.
+/// Optional vertex transform applied during GPU upload.
+pub type VertexTransform<'a> =
+    Option<Box<dyn Fn(rs_cam_core::geo::P3) -> rs_cam_core::geo::P3 + 'a>>;
+
 pub fn enriched_mesh_gpu_data(
     device: &wgpu::Device,
     enriched: &EnrichedMesh,
     selected_faces: &[FaceGroupId],
     hovered_face: Option<FaceGroupId>,
+    transform: &VertexTransform<'_>,
 ) -> EnrichedMeshGpuData {
     use wgpu::util::DeviceExt;
 
@@ -227,6 +232,7 @@ pub fn enriched_mesh_gpu_data(
         let base = (tri_idx * 3) as u32;
         for &vi in tri {
             let v = mesh.vertices[vi as usize];
+            let v = if let Some(xf) = transform { xf(v) } else { v };
             vertices.push(ColoredMeshVertex {
                 position: [v.x as f32, v.y as f32, v.z as f32],
                 normal,

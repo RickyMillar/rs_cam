@@ -16,6 +16,7 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     collision_positions: Vec<[f32; 3]>,
     load_warnings: Vec<String>,
     show_load_warnings: bool,
+    status_message: Option<(String, std::time::Instant)>,
 }
 
 impl AppController<ThreadedComputeBackend> {
@@ -40,6 +41,7 @@ impl<B: ComputeBackend> AppController<B> {
             collision_positions: Vec::new(),
             load_warnings: Vec::new(),
             show_load_warnings: false,
+            status_message: None,
         }
     }
 
@@ -111,6 +113,21 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub fn set_show_load_warnings(&mut self, show: bool) {
         self.show_load_warnings = show;
+    }
+
+    /// Set a temporary status message (auto-expires after 5 seconds).
+    pub fn set_status(&mut self, message: String) {
+        self.status_message = Some((message, std::time::Instant::now()));
+    }
+
+    /// Get the current status message, or None if expired.
+    pub fn status_message(&self) -> Option<&str> {
+        if let Some((msg, when)) = &self.status_message
+            && when.elapsed().as_secs() < 5
+        {
+            return Some(msg.as_str());
+        }
+        None
     }
 
     pub fn process_auto_regen(&mut self) {

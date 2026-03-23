@@ -1,5 +1,6 @@
 use super::job::{PostConfig, StockConfig, ToolConfig, ToolId};
 use super::toolpath::{DressupConfig, OperationConfig, ToolpathId};
+use rs_cam_core::enriched_mesh::FaceGroupId;
 use rs_cam_core::machine::MachineProfile;
 
 /// A snapshot of undoable state.
@@ -24,6 +25,8 @@ pub enum UndoAction {
         new_op: OperationConfig,
         old_dressups: DressupConfig,
         new_dressups: DressupConfig,
+        old_face_selection: Option<Vec<FaceGroupId>>,
+        new_face_selection: Option<Vec<FaceGroupId>>,
     },
     MachineChange {
         old: rs_cam_core::machine::MachineProfile,
@@ -44,7 +47,12 @@ pub struct UndoHistory {
     /// Snapshot of machine config before current edit.
     pub machine_snapshot: Option<MachineProfile>,
     /// Snapshot of toolpath params before current edit.
-    pub toolpath_snapshot: Option<(ToolpathId, OperationConfig, DressupConfig)>,
+    pub toolpath_snapshot: Option<(
+        ToolpathId,
+        OperationConfig,
+        DressupConfig,
+        Option<Vec<FaceGroupId>>,
+    )>,
 }
 
 impl UndoHistory {

@@ -78,7 +78,7 @@ fn flush_machine_snapshot(state: &mut AppState) {
 
 /// Flush toolpath params undo snapshot if the user navigated away from a toolpath.
 fn flush_toolpath_snapshot(state: &mut AppState) {
-    if let Some((tp_id, old_op, old_dressups)) = state.history.toolpath_snapshot.take() {
+    if let Some((tp_id, old_op, old_dressups, old_faces)) = state.history.toolpath_snapshot.take() {
         if !matches!(state.selection, crate::state::selection::Selection::Toolpath(id) if id == tp_id)
         {
             if let Some(entry) = state.job.find_toolpath(tp_id) {
@@ -90,11 +90,13 @@ fn flush_toolpath_snapshot(state: &mut AppState) {
                         new_op: entry.operation.clone(),
                         old_dressups,
                         new_dressups: entry.dressups.clone(),
+                        old_face_selection: old_faces,
+                        new_face_selection: entry.face_selection.clone(),
                     });
                 state.job.mark_edited();
             }
         } else {
-            state.history.toolpath_snapshot = Some((tp_id, old_op, old_dressups));
+            state.history.toolpath_snapshot = Some((tp_id, old_op, old_dressups, old_faces));
         }
     }
 }
@@ -221,7 +223,14 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
         Selection::Face(model_id, face_id) => {
             ui.heading("Face Selected");
             ui.separator();
-            ui.label(format!("Model: {:?}", model_id));
+            let model_name = state
+                .job
+                .models
+                .iter()
+                .find(|m| m.id == model_id)
+                .map(|m| m.name.as_str())
+                .unwrap_or("Unknown");
+            ui.label(format!("Model: {model_name}"));
             ui.label(format!("Face: {}", face_id.0));
             if let Some(model) = state.job.models.iter().find(|m| m.id == model_id)
                 && let Some(enriched) = &model.enriched_mesh
@@ -234,7 +243,14 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
         Selection::Faces(model_id, ref face_ids) => {
             ui.heading("Faces Selected");
             ui.separator();
-            ui.label(format!("Model: {:?}", model_id));
+            let model_name = state
+                .job
+                .models
+                .iter()
+                .find(|m| m.id == model_id)
+                .map(|m| m.name.as_str())
+                .unwrap_or("Unknown");
+            ui.label(format!("Model: {model_name}"));
             ui.label(format!("{} faces selected", face_ids.len()));
         }
         Selection::Toolpath(id) => {
@@ -242,8 +258,12 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             if state.history.toolpath_snapshot.is_none()
                 && let Some(entry) = state.job.find_toolpath(id)
             {
-                state.history.toolpath_snapshot =
-                    Some((id, entry.operation.clone(), entry.dressups.clone()));
+                state.history.toolpath_snapshot = Some((
+                    id,
+                    entry.operation.clone(),
+                    entry.dressups.clone(),
+                    entry.face_selection.clone(),
+                ));
             }
             // Snapshot tool/model lists to avoid borrow conflict with toolpaths
             let tools: Vec<_> = state
@@ -269,13 +289,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             let model_has_enriched = state
                 .job
                 .find_toolpath(id)
-                .and_then(|tp| {
-                    state
-                        .job
-                        .models
-                        .iter()
-                        .find(|m| m.id == tp.model_id)
-                })
+                .and_then(|tp| state.job.models.iter().find(|m| m.id == tp.model_id))
                 .map(|m| m.enriched_mesh.is_some())
                 .unwrap_or(false);
 
@@ -451,9 +465,15 @@ fn draw_model_properties(
                     }
                     ui.label("Surface types:");
                     let mut parts = Vec::new();
-                    if planes > 0 { parts.push(format!("{planes} plane")); }
-                    if cylinders > 0 { parts.push(format!("{cylinders} cyl")); }
-                    if other > 0 { parts.push(format!("{other} other")); }
+                    if planes > 0 {
+                        parts.push(format!("{planes} plane"));
+                    }
+                    if cylinders > 0 {
+                        parts.push(format!("{cylinders} cyl"));
+                    }
+                    if other > 0 {
+                        parts.push(format!("{other} other"));
+                    }
                     ui.label(parts.join(", "));
                     ui.end_row();
                 });
@@ -1070,11 +1090,7 @@ fn draw_toolpath_panel(
                 .strong()
                 .color(egui::Color32::from_rgb(180, 180, 195)),
         );
-        let face_count = entry
-            .face_selection
-            .as_ref()
-            .map(|f| f.len())
-            .unwrap_or(0);
+        let face_count = entry.face_selection.as_ref().map(|f| f.len()).unwrap_or(0);
         if face_count > 0 {
             ui.label(format!(
                 "{} face{} selected",

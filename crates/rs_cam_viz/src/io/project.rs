@@ -515,9 +515,10 @@ impl ProjectToolpathSection {
             stock_source: toolpath.stock_source,
             auto_regen: Some(toolpath.auto_regen),
             feeds_auto: toolpath.feeds_auto.clone(),
-            face_selection: toolpath.face_selection.as_ref().map(|faces| {
-                faces.iter().map(|f| f.0).collect()
-            }),
+            face_selection: toolpath
+                .face_selection
+                .as_ref()
+                .map(|faces| faces.iter().map(|f| f.0).collect()),
             debug_options: toolpath.debug_options,
         }
     }
@@ -1085,15 +1086,15 @@ fn restore_project_toolpath(
             .and_then(|m| m.enriched_mesh.as_ref())
             .map(|e| e.face_groups.len())
             .unwrap_or(0);
-        if face_count > 0 {
-            if let Some(bad) = face_ids.iter().find(|f| (f.0 as usize) >= face_count) {
-                warnings.push(ProjectLoadWarning::FaceSelectionStale {
-                    toolpath: init.name.clone(),
-                    face_count,
-                    invalid_id: bad.0,
-                });
-                init.face_selection = None;
-            }
+        if face_count > 0
+            && let Some(bad) = face_ids.iter().find(|f| (f.0 as usize) >= face_count)
+        {
+            warnings.push(ProjectLoadWarning::FaceSelectionStale {
+                toolpath: init.name.clone(),
+                face_count,
+                invalid_id: bad.0,
+            });
+            init.face_selection = None;
         }
     }
     init.debug_options = section.debug_options;
@@ -1169,7 +1170,9 @@ fn infer_model_kind(path: &Path) -> Option<ModelKind> {
         Some(ext) if ext.eq_ignore_ascii_case("stl") => Some(ModelKind::Stl),
         Some(ext) if ext.eq_ignore_ascii_case("svg") => Some(ModelKind::Svg),
         Some(ext) if ext.eq_ignore_ascii_case("dxf") => Some(ModelKind::Dxf),
-        Some(ext) if ext.eq_ignore_ascii_case("step") || ext.eq_ignore_ascii_case("stp") => Some(ModelKind::Step),
+        Some(ext) if ext.eq_ignore_ascii_case("step") || ext.eq_ignore_ascii_case("stp") => {
+            Some(ModelKind::Step)
+        }
         _ => None,
     }
 }

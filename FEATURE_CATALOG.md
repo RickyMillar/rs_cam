@@ -86,6 +86,16 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 - STL mesh import
 - SVG vector import
 - DXF vector import
+- STEP file import (AP203/AP214 via truck crate, face-aware tessellation)
+
+### BREP / face selection
+
+- BREP face picking and selection in the viewport (click to toggle faces on/off)
+- Per-face pastel coloring with selection highlighting on enriched meshes
+- Face-derived 2D boundaries for 2.5D operations (horizontal planar faces)
+- Face-derived containment boundaries for 3D operations
+- Face selection persistence in project files (deterministic face IDs from STEP topology)
+- BREP topology metadata panel (face count, adjacency, surface type breakdown)
 
 ### Export
 
@@ -115,6 +125,8 @@ These features exist in state, UI, or helper code, but are not yet end-to-end co
 | Rapid collision rendering | Core collision detection exists, but rapid collisions are not yet rendered in the viewport |
 | Simulation deviation colors | Helper exists, but deviation data is not currently fed into the renderer |
 | Vendor LUT integration | Fully wired: embedded Amana vendor observations are auto-loaded at startup via `LazyLock` and passed into the feeds calculator for all GUI operations |
+| BREP face selection scope | Face-derived boundaries work only for approximately-horizontal planar faces; non-planar and tilted faces produce no polygon (falls back to stock bounds). Surface classifier is heuristic (axis-aligned planes only). |
+| BREP hover highlighting | Rendering path supports hover colors, but hover face tracking is not yet wired (face under cursor is not detected on mouse move) |
 | Workholding rigidity UI | Feeds calculator supports it, but the GUI still hardcodes `Medium` |
 
 ## CLI surface

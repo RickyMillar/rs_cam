@@ -14,7 +14,7 @@ use truck_meshalgo::tessellation::{MeshedShape, RobustMeshableShape};
 use truck_stepio::r#in::Table;
 
 use crate::enriched_mesh::{
-    FaceGroupId, FaceTessellation, SurfaceParams, SurfaceType, build_enriched_mesh, EnrichedMesh,
+    EnrichedMesh, FaceGroupId, FaceTessellation, SurfaceParams, SurfaceType, build_enriched_mesh,
 };
 use crate::geo::{BoundingBox3, P2, P3, V3};
 
@@ -79,11 +79,17 @@ pub fn load_step(path: &Path, tolerance: f64) -> Result<EnrichedMesh, StepImport
             };
 
             let face_poly = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                single_face_shell.robust_triangulation(tolerance).to_polygon()
+                single_face_shell
+                    .robust_triangulation(tolerance)
+                    .to_polygon()
             })) {
                 Ok(p) => p,
                 Err(_) => {
-                    warn!(shell = shell_idx, face = face_idx, "Face tessellation panicked, skipping");
+                    warn!(
+                        shell = shell_idx,
+                        face = face_idx,
+                        "Face tessellation panicked, skipping"
+                    );
                     continue;
                 }
             };
@@ -94,31 +100,16 @@ pub fn load_step(path: &Path, tolerance: f64) -> Result<EnrichedMesh, StepImport
             }
 
             // Convert truck points to our P3
-            let vertices: Vec<P3> = positions
-                .iter()
-                .map(|p| P3::new(p.x, p.y, p.z))
-                .collect();
+            let vertices: Vec<P3> = positions.iter().map(|p| P3::new(p.x, p.y, p.z)).collect();
 
             // Extract triangles
             let mut triangles: Vec<[u32; 3]> = Vec::new();
             for tri in face_poly.tri_faces() {
-                triangles.push([
-                    tri[0].pos as u32,
-                    tri[1].pos as u32,
-                    tri[2].pos as u32,
-                ]);
+                triangles.push([tri[0].pos as u32, tri[1].pos as u32, tri[2].pos as u32]);
             }
             for quad in face_poly.quad_faces() {
-                triangles.push([
-                    quad[0].pos as u32,
-                    quad[1].pos as u32,
-                    quad[2].pos as u32,
-                ]);
-                triangles.push([
-                    quad[0].pos as u32,
-                    quad[2].pos as u32,
-                    quad[3].pos as u32,
-                ]);
+                triangles.push([quad[0].pos as u32, quad[1].pos as u32, quad[2].pos as u32]);
+                triangles.push([quad[0].pos as u32, quad[2].pos as u32, quad[3].pos as u32]);
             }
 
             if triangles.is_empty() {
@@ -179,11 +170,12 @@ pub fn load_step(path: &Path, tolerance: f64) -> Result<EnrichedMesh, StepImport
         "Building enriched mesh"
     );
 
-    build_enriched_mesh(face_tessellations, adjacency_pairs, brep_edges)
-        .map_err(|e| StepImportError::TessellationFailed {
+    build_enriched_mesh(face_tessellations, adjacency_pairs, brep_edges).map_err(|e| {
+        StepImportError::TessellationFailed {
             shell_index: 0,
             message: e,
-        })
+        }
+    })
 }
 
 /// Classify a face's surface type heuristically from vertex positions.
@@ -275,8 +267,7 @@ fn extract_boundary_loops(vertices: &[P3], triangles: &[[u32; 3]]) -> Vec<Vec<P3
         let key = boundary_edges
             .iter()
             .find(|&&(a, b)| {
-                a == start_a
-                    && !visited_edges.contains(&if a < b { (a, b) } else { (b, a) })
+                a == start_a && !visited_edges.contains(&if a < b { (a, b) } else { (b, a) })
             })
             .map(|&(a, b)| if a < b { (a, b) } else { (b, a) });
 
@@ -294,11 +285,14 @@ fn extract_boundary_loops(vertices: &[P3], triangles: &[[u32; 3]]) -> Vec<Vec<P3
         let mut prev = u32::MAX;
 
         while let Some(neighbors) = adj.get(&current) {
-
             let next = neighbors.iter().find(|&&n| n != prev).copied();
             match next {
                 Some(n) => {
-                    let edge_key = if current < n { (current, n) } else { (n, current) };
+                    let edge_key = if current < n {
+                        (current, n)
+                    } else {
+                        (n, current)
+                    };
                     if visited_edges.contains(&edge_key) {
                         break;
                     }
@@ -335,7 +329,11 @@ fn find_shared_edge_vertices(a: &FaceTessellation, b: &FaceTessellation) -> Opti
         .copied()
         .collect();
 
-    if shared.len() >= 2 { Some(shared) } else { None }
+    if shared.len() >= 2 {
+        Some(shared)
+    } else {
+        None
+    }
 }
 
 /// Build a BrepEdge from shared vertices between two adjacent faces.
@@ -374,8 +372,14 @@ fn build_brep_edge(
 
     // Project to 2D if edge is approximately horizontal
     let vertices_2d = if shared_verts.iter().all(|_| {
-        let z_range = shared_verts.iter().map(|p| p.z).fold(f64::INFINITY, f64::min);
-        let z_max = shared_verts.iter().map(|p| p.z).fold(f64::NEG_INFINITY, f64::max);
+        let z_range = shared_verts
+            .iter()
+            .map(|p| p.z)
+            .fold(f64::INFINITY, f64::min);
+        let z_max = shared_verts
+            .iter()
+            .map(|p| p.z)
+            .fold(f64::NEG_INFINITY, f64::max);
         (z_max - z_range) < 0.1 // within 0.1mm Z range
     }) {
         Some(shared_verts.iter().map(|p| P2::new(p.x, p.y)).collect())
@@ -409,7 +413,11 @@ fn face_avg_normal(tess: &FaceTessellation) -> V3 {
                 let e2 = v2 - v0;
                 let n = e1.cross(&e2);
                 let len = n.norm();
-                if len > 1e-15 { n / len } else { V3::new(0.0, 0.0, 1.0) }
+                if len > 1e-15 {
+                    n / len
+                } else {
+                    V3::new(0.0, 0.0, 1.0)
+                }
             } else {
                 V3::new(0.0, 0.0, 1.0)
             }

@@ -325,7 +325,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
             ui.add_space(4.0);
             ui.menu_button("+ Add Toolpath", |ui| {
-                ui.label(egui::RichText::new("2.5D (from SVG)").strong());
+                ui.label(egui::RichText::new("2.5D (Boundary)").strong());
                 for &op in OperationType::ALL_2D {
                     if ui.button(op.label()).clicked() {
                         events.push(AppEvent::AddToolpath(op));
@@ -333,7 +333,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     }
                 }
                 ui.separator();
-                ui.label(egui::RichText::new("3D (from STL)").strong());
+                ui.label(egui::RichText::new("3D (Surface)").strong());
                 for &op in OperationType::ALL_3D {
                     if ui.button(op.label()).clicked() {
                         events.push(AppEvent::AddToolpath(op));

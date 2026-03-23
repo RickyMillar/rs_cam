@@ -1,6 +1,6 @@
 //! Triangle mesh loading and spatial indexing.
 
-use crate::geo::{BoundingBox3, P3, V3, Triangle};
+use crate::geo::{BoundingBox3, P3, Triangle, V3};
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use thiserror::Error;

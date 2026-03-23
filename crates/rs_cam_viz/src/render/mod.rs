@@ -773,10 +773,7 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 pass.set_pipeline(&resources.colored_opaque_pipeline);
                 pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
                 pass.set_vertex_buffer(0, enriched.vertex_buffer.slice(..));
-                pass.set_index_buffer(
-                    enriched.index_buffer.slice(..),
-                    wgpu::IndexFormat::Uint32,
-                );
+                pass.set_index_buffer(enriched.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..enriched.index_count, 0, 0..1);
             } else if self.has_mesh
                 && let Some(mesh) = &resources.mesh_data

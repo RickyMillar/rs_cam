@@ -36,11 +36,30 @@ pub enum SurfaceType {
 /// Parametric description of a surface, for known analytic types.
 #[derive(Debug, Clone)]
 pub enum SurfaceParams {
-    Plane { normal: V3, d: f64 },
-    Cylinder { axis_origin: P3, axis_dir: V3, radius: f64 },
-    Cone { apex: P3, axis: V3, half_angle: f64 },
-    Sphere { center: P3, radius: f64 },
-    Torus { center: P3, axis: V3, major_radius: f64, minor_radius: f64 },
+    Plane {
+        normal: V3,
+        d: f64,
+    },
+    Cylinder {
+        axis_origin: P3,
+        axis_dir: V3,
+        radius: f64,
+    },
+    Cone {
+        apex: P3,
+        axis: V3,
+        half_angle: f64,
+    },
+    Sphere {
+        center: P3,
+        radius: f64,
+    },
+    Torus {
+        center: P3,
+        axis: V3,
+        major_radius: f64,
+        minor_radius: f64,
+    },
     BSpline,
     Unknown,
 }
@@ -151,9 +170,7 @@ impl EnrichedMesh {
     pub fn edges_between(&self, a: FaceGroupId, b: FaceGroupId) -> Vec<&BrepEdge> {
         self.edges
             .iter()
-            .filter(|e| {
-                (e.face_a == a && e.face_b == b) || (e.face_a == b && e.face_b == a)
-            })
+            .filter(|e| (e.face_a == a && e.face_b == b) || (e.face_a == b && e.face_b == a))
             .collect()
     }
 
@@ -192,10 +209,7 @@ impl EnrichedMesh {
             .cloned()
             .collect();
 
-        Some(Polygon2 {
-            exterior,
-            holes,
-        })
+        Some(Polygon2 { exterior, holes })
     }
 
     /// Project multiple coplanar face boundary loops into a union `Polygon2`.
@@ -287,7 +301,11 @@ pub fn build_enriched_mesh(
         let bbox = BoundingBox3::from_points(face.vertices.iter().copied());
 
         // Compute 2D boundary loops for planar faces
-        let boundary_loops_2d = compute_2d_boundary(&face.surface_type, &face.surface_params, &face.boundary_loops);
+        let boundary_loops_2d = compute_2d_boundary(
+            &face.surface_type,
+            &face.surface_params,
+            &face.boundary_loops,
+        );
 
         face_groups.push(FaceGroup {
             id: FaceGroupId(face_idx as u16),
@@ -343,9 +361,7 @@ fn compute_2d_boundary(
     // Project 3D loops to 2D by dropping Z
     let loops_2d: Vec<Vec<P2>> = boundary_loops
         .iter()
-        .map(|loop_3d| {
-            loop_3d.iter().map(|p| P2::new(p.x, p.y)).collect()
-        })
+        .map(|loop_3d| loop_3d.iter().map(|p| P2::new(p.x, p.y)).collect())
         .collect();
 
     if loops_2d.is_empty() || loops_2d[0].len() < 3 {
@@ -572,7 +588,10 @@ mod tests {
         let em = make_test_box();
         // Top (horizontal) + Front (vertical) → None because front is not horizontal
         let poly = em.faces_boundary_as_polygon(&[FaceGroupId(1), FaceGroupId(2)]);
-        assert!(poly.is_none(), "Mixed horizontal/vertical should return None");
+        assert!(
+            poly.is_none(),
+            "Mixed horizontal/vertical should return None"
+        );
     }
 
     #[test]

@@ -17,6 +17,7 @@ use crate::render::camera::ViewPreset;
 use crate::state::Workspace;
 use crate::state::job::{FaceUp, FixtureId, KeepOutId, ModelId, SetupId, ToolId, ToolType};
 use crate::state::toolpath::{OperationType, ToolpathId};
+use rs_cam_core::enriched_mesh::FaceGroupId;
 use std::path::PathBuf;
 
 /// Events emitted by UI components, processed after the UI pass.
@@ -106,6 +107,13 @@ pub enum AppEvent {
 
     // Compute
     CancelCompute,
+
+    // Face selection
+    ToggleFaceSelection {
+        toolpath_id: ToolpathId,
+        model_id: ModelId,
+        face_id: FaceGroupId,
+    },
 
     // Edit
     StockChanged,

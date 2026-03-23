@@ -39,11 +39,8 @@ impl<B: ComputeBackend> AppController<B> {
                     tracing::error!("DXF import failed: {error}");
                 }
             }
-            AppEvent::ImportStep(path) => {
-                if let Err(error) = self.import_step_path(&path) {
-                    tracing::error!("STEP import failed: {error}");
-                }
-            }
+            // ImportStep is handled at the app level (camera fitting + status)
+            AppEvent::ImportStep(_) => {}
             AppEvent::RescaleModel(model_id, units) => {
                 if let Err(error) = self.rescale_model(model_id, units) {
                     tracing::error!("Rescale failed: {error}");
@@ -126,6 +123,33 @@ impl<B: ComputeBackend> AppController<B> {
             // --- Compute / check events ---
             AppEvent::RunCollisionCheck => self.request_collision_check(),
             AppEvent::CancelCompute => self.compute.cancel_all(),
+
+            // --- Face selection ---
+            AppEvent::ToggleFaceSelection {
+                toolpath_id,
+                model_id,
+                face_id,
+            } => {
+                if let Some(entry) = self.state.job.find_toolpath_mut(toolpath_id) {
+                    let faces = entry.face_selection.get_or_insert_with(Vec::new);
+                    if let Some(pos) = faces.iter().position(|f| *f == face_id) {
+                        faces.remove(pos);
+                    } else {
+                        faces.push(face_id);
+                    }
+                    if faces.is_empty() {
+                        entry.face_selection = None;
+                    }
+                    // Update visual selection to reflect multi-face state
+                    self.state.selection = match &entry.face_selection {
+                        Some(ids) if ids.len() > 1 => Selection::Faces(model_id, ids.clone()),
+                        _ => Selection::Face(model_id, face_id),
+                    };
+                    entry.stale_since = Some(std::time::Instant::now());
+                    self.state.job.dirty = true;
+                    self.pending_upload = true;
+                }
+            }
 
             // --- Undo / redo ---
             AppEvent::Undo => self.undo(),
@@ -1031,9 +1055,18 @@ impl<B: ComputeBackend> AppController<B> {
         if polygons.is_none()
             && let (Some(face_ids), Some(enriched)) = (&face_selection, &enriched_mesh)
             && !face_ids.is_empty()
-            && let Some(poly) = enriched.faces_boundary_as_polygon(face_ids)
         {
-            polygons = Some(Arc::new(vec![poly]));
+            if let Some(poly) = enriched.faces_boundary_as_polygon(face_ids) {
+                polygons = Some(Arc::new(vec![poly]));
+            } else {
+                tracing::warn!(
+                    "Selected faces did not produce a boundary polygon (non-horizontal or non-planar)"
+                );
+                self.status_message = Some((
+                    "Face selection ignored: selected faces are not horizontal planes".to_string(),
+                    std::time::Instant::now(),
+                ));
+            }
         }
 
         if let Some(transform_setup) = transform_setup.as_ref() {
@@ -1061,14 +1094,16 @@ impl<B: ComputeBackend> AppController<B> {
         let is_3d = operation.is_3d();
         if is_3d && mesh.is_none() {
             if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
-                toolpath.status = ComputeStatus::Error("No 3D mesh (import STL or STEP)".to_string());
+                toolpath.status =
+                    ComputeStatus::Error("No 3D mesh (import STL or STEP)".to_string());
             }
             return;
         }
         if !is_3d && !operation.is_stock_based() && polygons.is_none() {
             if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
-                toolpath.status =
-                    ComputeStatus::Error("No 2D geometry (import SVG/DXF or select STEP faces)".to_string());
+                toolpath.status = ComputeStatus::Error(
+                    "No 2D geometry (import SVG/DXF or select STEP faces)".to_string(),
+                );
             }
             return;
         }
@@ -1119,9 +1154,9 @@ impl<B: ComputeBackend> AppController<B> {
         };
 
         let prior_stock = if stock_source == StockSource::FromRemainingStock {
-            stock_bbox.as_ref().and_then(|bbox| {
-                self.build_prior_stock(tp_id, bbox, tool.diameter)
-            })
+            stock_bbox
+                .as_ref()
+                .and_then(|bbox| self.build_prior_stock(tp_id, bbox, tool.diameter))
         } else {
             None
         };
@@ -1186,12 +1221,7 @@ impl<B: ComputeBackend> AppController<B> {
 
         for tp in &prior {
             let result = tp.result.as_ref().expect("filtered for Some above");
-            let tool = self
-                .state
-                .job
-                .tools
-                .iter()
-                .find(|t| t.id == tp.tool_id);
+            let tool = self.state.job.tools.iter().find(|t| t.id == tp.tool_id);
             if let Some(tool) = tool {
                 let cutter = crate::compute::worker::helpers::build_cutter(tool);
                 stock.simulate_toolpath(&result.toolpath, cutter.as_ref(), direction);
@@ -1426,11 +1456,13 @@ impl<B: ComputeBackend> AppController<B> {
                     tp_id,
                     old_op,
                     old_dressups,
+                    old_face_selection,
                     ..
                 } => {
                     if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
                         toolpath.operation = old_op;
                         toolpath.dressups = old_dressups;
+                        toolpath.face_selection = old_face_selection;
                     }
                 }
                 UndoAction::MachineChange { old, .. } => {
@@ -1465,11 +1497,13 @@ impl<B: ComputeBackend> AppController<B> {
                     tp_id,
                     new_op,
                     new_dressups,
+                    new_face_selection,
                     ..
                 } => {
                     if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
                         toolpath.operation = new_op;
                         toolpath.dressups = new_dressups;
+                        toolpath.face_selection = new_face_selection;
                     }
                 }
                 UndoAction::MachineChange { new, .. } => {
