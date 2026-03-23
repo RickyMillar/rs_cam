@@ -293,6 +293,12 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .map(|m| m.enriched_mesh.is_some())
                 .unwrap_or(false);
 
+            // Snapshot height context before mutable borrow (needs stock + model bbox)
+            let height_ctx = state
+                .job
+                .find_toolpath(id)
+                .map(|tp| state.job.height_context_for(tp));
+
             // Snapshot operation and heights for stale_since detection
             let op_before = state
                 .job
@@ -315,6 +321,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     &machine,
                     workholding,
                     model_has_enriched,
+                    height_ctx.as_ref(),
                     events,
                 );
             }
@@ -1038,7 +1045,542 @@ fn draw_feeds_card(ui: &mut egui::Ui, entry: &ToolpathEntry) {
     });
 }
 
+// ── Engagement diagram ──────────────────────────────────────────────────
+
+/// Draw a split-view engagement diagram: top-down WOC (left) + side DOC (right).
+fn draw_engagement_diagram(
+    ui: &mut egui::Ui,
+    result: &rs_cam_core::feeds::FeedsResult,
+    tool_diameter: f64,
+    tool_type: crate::state::job::ToolType,
+) {
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 150.0);
+    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+
+    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+
+    let tool_r = tool_diameter / 2.0;
+    let woc = result.radial_width_mm;
+    let doc = result.axial_depth_mm;
+    let tool_color = egui::Color32::from_rgb(160, 170, 190);
+    let mat_color = egui::Color32::from_rgb(50, 50, 65);
+    let dim_color = egui::Color32::from_rgb(100, 160, 220);
+    let info_color = egui::Color32::from_rgb(140, 140, 155);
+
+    // Divider: split canvas at ~55%
+    let mid_x = rect.left() + rect.width() * 0.52;
+    painter.line_segment(
+        [egui::pos2(mid_x, rect.top() + 4.0), egui::pos2(mid_x, rect.bottom() - 4.0)],
+        egui::Stroke::new(0.5, egui::Color32::from_rgb(40, 40, 50)),
+    );
+
+    // ── LEFT: Top-down WOC view ────────────────────────────────────
+    let left_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + 4.0, rect.top() + 16.0),
+        egui::pos2(mid_x - 4.0, rect.bottom() - 16.0),
+    );
+    let scale_woc = (left_rect.width() * 0.35) / tool_r.max(0.01) as f32;
+    let cx = left_rect.center().x;
+    let cy = left_rect.center().y;
+    let tr = tool_r as f32 * scale_woc;
+
+    // Material block
+    let mat_left = cx + tr - (woc as f32 * scale_woc);
+    let mat_right = left_rect.right();
+    painter.rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(mat_left, cy - tr - 6.0),
+            egui::pos2(mat_right, cy + tr + 6.0),
+        ),
+        0.0,
+        mat_color,
+    );
+
+    // WOC crescent
+    if woc > 0.0 && woc <= tool_diameter {
+        let engage_frac = (woc / tool_diameter).clamp(0.0, 1.0);
+        let half_angle = (engage_frac * std::f32::consts::PI as f64).min(std::f64::consts::PI);
+        let mut pts = Vec::with_capacity(34);
+        let steps = 32;
+        for i in 0..=steps {
+            let t = i as f64 / steps as f64;
+            let a = -half_angle + 2.0 * half_angle * t;
+            let px = cx + (tool_r * a.cos()) as f32 * scale_woc;
+            let py = cy + (tool_r * a.sin()) as f32 * scale_woc;
+            if px >= mat_left {
+                pts.push(egui::pos2(px, py));
+            }
+        }
+        if pts.len() >= 2 {
+            let first_y = pts.first().map(|p| p.y).unwrap_or(cy);
+            let last_y = pts.last().map(|p| p.y).unwrap_or(cy);
+            pts.push(egui::pos2(mat_left, last_y));
+            pts.push(egui::pos2(mat_left, first_y));
+            painter.add(egui::Shape::convex_polygon(
+                pts,
+                egui::Color32::from_rgba_premultiplied(60, 140, 200, 50),
+                egui::Stroke::NONE,
+            ));
+        }
+    }
+
+    painter.circle_stroke(egui::pos2(cx, cy), tr, egui::Stroke::new(1.5, tool_color));
+    painter.circle_filled(egui::pos2(cx, cy), 1.5, tool_color);
+
+    // WOC label
+    painter.text(
+        egui::pos2(cx, cy + tr + 10.0),
+        egui::Align2::CENTER_TOP,
+        format!("WOC {woc:.2}"),
+        egui::FontId::proportional(8.0),
+        dim_color,
+    );
+
+    // "Top" label
+    painter.text(
+        egui::pos2(left_rect.center().x, rect.top() + 3.0),
+        egui::Align2::CENTER_TOP,
+        "Top",
+        egui::FontId::proportional(8.0),
+        info_color,
+    );
+
+    // ── RIGHT: Side DOC view ───────────────────────────────────────
+    let right_rect = egui::Rect::from_min_max(
+        egui::pos2(mid_x + 4.0, rect.top() + 16.0),
+        egui::pos2(rect.right() - 4.0, rect.bottom() - 16.0),
+    );
+
+    // Scale: fit max(doc, tool_diameter) into the right panel height
+    let max_z_extent = doc.max(tool_diameter).max(1.0);
+    let scale_doc = (right_rect.height() * 0.7) / max_z_extent as f32;
+    let scx = right_rect.center().x;
+
+    // Material surface at top of side view
+    let surface_y = right_rect.top() + right_rect.height() * 0.15;
+    let tool_hw = tool_r as f32 * scale_doc;
+    let doc_px = doc as f32 * scale_doc;
+
+    // Material block (below surface)
+    painter.rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(right_rect.left(), surface_y),
+            egui::pos2(right_rect.right(), right_rect.bottom()),
+        ),
+        0.0,
+        mat_color,
+    );
+
+    // Material surface line
+    painter.line_segment(
+        [
+            egui::pos2(right_rect.left(), surface_y),
+            egui::pos2(right_rect.right(), surface_y),
+        ],
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 80, 95)),
+    );
+
+    // DOC shaded region (where tool cuts)
+    painter.rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(scx - tool_hw, surface_y),
+            egui::pos2(scx + tool_hw, surface_y + doc_px),
+        ),
+        0.0,
+        egui::Color32::from_rgba_premultiplied(60, 140, 200, 40),
+    );
+
+    // Tool profile (simplified side view)
+    let tool_top = surface_y - tool_hw * 0.4; // shaft extends above surface
+    let tool_bottom = surface_y + doc_px;
+    use crate::state::job::ToolType;
+    match tool_type {
+        ToolType::BallNose => {
+            // Shaft rectangle above, semicircle at bottom
+            let ball_cy = tool_bottom - tool_hw;
+            painter.add(egui::Shape::line(
+                vec![
+                    egui::pos2(scx - tool_hw, ball_cy),
+                    egui::pos2(scx - tool_hw, tool_top),
+                    egui::pos2(scx + tool_hw, tool_top),
+                    egui::pos2(scx + tool_hw, ball_cy),
+                ],
+                egui::Stroke::new(1.5, tool_color),
+            ));
+            let mut arc_pts = vec![egui::pos2(scx + tool_hw, ball_cy)];
+            for i in 0..=16 {
+                let a = std::f32::consts::PI * (i as f32) / 16.0;
+                arc_pts.push(egui::pos2(
+                    scx + tool_hw * a.cos(),
+                    ball_cy + tool_hw * a.sin(),
+                ));
+            }
+            painter.add(egui::Shape::line(arc_pts, egui::Stroke::new(1.5, tool_color)));
+        }
+        _ => {
+            // EndMill / BullNose / VBit — simple rectangle
+            painter.add(egui::Shape::line(
+                vec![
+                    egui::pos2(scx - tool_hw, tool_bottom),
+                    egui::pos2(scx - tool_hw, tool_top),
+                    egui::pos2(scx + tool_hw, tool_top),
+                    egui::pos2(scx + tool_hw, tool_bottom),
+                    egui::pos2(scx - tool_hw, tool_bottom),
+                ],
+                egui::Stroke::new(1.5, tool_color),
+            ));
+        }
+    }
+
+    // DOC dimension line (right side)
+    let dim_x = scx + tool_hw + 8.0;
+    painter.line_segment(
+        [egui::pos2(dim_x, surface_y), egui::pos2(dim_x, surface_y + doc_px)],
+        egui::Stroke::new(1.0, dim_color),
+    );
+    // Ticks
+    painter.line_segment(
+        [egui::pos2(dim_x - 3.0, surface_y), egui::pos2(dim_x + 3.0, surface_y)],
+        egui::Stroke::new(1.0, dim_color),
+    );
+    painter.line_segment(
+        [
+            egui::pos2(dim_x - 3.0, surface_y + doc_px),
+            egui::pos2(dim_x + 3.0, surface_y + doc_px),
+        ],
+        egui::Stroke::new(1.0, dim_color),
+    );
+    painter.text(
+        egui::pos2(dim_x + 2.0, surface_y + doc_px / 2.0),
+        egui::Align2::LEFT_CENTER,
+        format!("{doc:.2}"),
+        egui::FontId::proportional(8.0),
+        dim_color,
+    );
+
+    // "Side" label
+    painter.text(
+        egui::pos2(right_rect.center().x, rect.top() + 3.0),
+        egui::Align2::CENTER_TOP,
+        "Side",
+        egui::FontId::proportional(8.0),
+        info_color,
+    );
+
+    // Stats at bottom
+    let stats_y = rect.bottom() - 4.0;
+    painter.text(
+        egui::pos2(rect.left() + 4.0, stats_y),
+        egui::Align2::LEFT_BOTTOM,
+        format!(
+            "Chip {:.4}  MRR {:.0} mm\u{00B3}/min",
+            result.chip_load_mm, result.mrr_mm3_min
+        ),
+        egui::FontId::proportional(8.0),
+        info_color,
+    );
+}
+
+// ── Entry style preview diagram ─────────────────────────────────────────
+
+/// Draw a 2D side-view of the entry style geometry (ramp or helix).
+fn draw_entry_preview_diagram(
+    ui: &mut egui::Ui,
+    dressups: &DressupConfig,
+    height_ctx: &HeightContext,
+    heights: &HeightsConfig,
+) {
+    let resolved = heights.resolve(height_ctx);
+    let feed_z = resolved.feed_z;
+    let top_z = resolved.top_z;
+    let z_drop = feed_z - top_z;
+    if z_drop <= 0.0 {
+        return;
+    }
+
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 140.0);
+    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+
+    // Background
+    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+
+    // Z range with margin
+    let z_min = top_z - z_drop * 0.15;
+    let z_max = feed_z + z_drop * 0.25;
+
+    let z_to_y = |z: f64| -> f32 {
+        let frac = (z - z_min) / (z_max - z_min);
+        rect.bottom() - (frac as f32) * rect.height()
+    };
+
+    let feed_y = z_to_y(feed_z);
+    let top_y = z_to_y(top_z);
+    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+    let scale_color = egui::Color32::from_rgb(70, 70, 85);
+
+    // Z-axis scale bar on the left edge
+    let scale_x = rect.left() + 3.0;
+    painter.line_segment(
+        [egui::pos2(scale_x, feed_y), egui::pos2(scale_x, top_y)],
+        egui::Stroke::new(1.0, scale_color),
+    );
+    // Ticks + values at feed_z and top_z
+    painter.line_segment(
+        [egui::pos2(scale_x, feed_y), egui::pos2(scale_x + 4.0, feed_y)],
+        egui::Stroke::new(1.0, scale_color),
+    );
+    painter.line_segment(
+        [egui::pos2(scale_x, top_y), egui::pos2(scale_x + 4.0, top_y)],
+        egui::Stroke::new(1.0, scale_color),
+    );
+    // Z drop distance label
+    painter.text(
+        egui::pos2(scale_x + 2.0, (feed_y + top_y) / 2.0),
+        egui::Align2::LEFT_CENTER,
+        format!("{z_drop:.1}"),
+        egui::FontId::proportional(8.0),
+        scale_color,
+    );
+
+    // Dashed horizontal reference lines
+    for &(z, label) in &[(feed_z, "Feed Z"), (top_z, "Top Z")] {
+        let y = z_to_y(z);
+        // Draw dashed line
+        let dash_len = 6.0;
+        let gap_len = 4.0;
+        let mut x = rect.left() + 12.0;
+        while x < rect.right() - 50.0 {
+            let end_x = (x + dash_len).min(rect.right() - 50.0);
+            painter.line_segment(
+                [egui::pos2(x, y), egui::pos2(end_x, y)],
+                egui::Stroke::new(0.5, dim_color),
+            );
+            x += dash_len + gap_len;
+        }
+        painter.text(
+            egui::pos2(rect.right() - 4.0, y),
+            egui::Align2::RIGHT_CENTER,
+            format!("{label} {z:.1}"),
+            egui::FontId::proportional(8.0),
+            dim_color,
+        );
+    }
+
+    let entry_color = egui::Color32::from_rgb(50, 230, 230);
+    let stroke = egui::Stroke::new(2.0, entry_color);
+    let cx = rect.center().x;
+
+    match dressups.entry_style {
+        DressupEntryStyle::Ramp => {
+            let angle_rad = (dressups.ramp_angle as f32).to_radians();
+            let ramp_horiz = z_drop as f32 / angle_rad.tan().max(0.01);
+
+            // Scale horizontal distance to fit canvas
+            let available_w = rect.width() * 0.6;
+            let h_scale = available_w / ramp_horiz.max(1.0);
+            let v_height = (top_y - feed_y).abs();
+            let h_pixels = ramp_horiz * h_scale.min(1.0);
+
+            let start_x = cx - h_pixels / 2.0;
+            let end_x = cx + h_pixels / 2.0;
+
+            // Ramp line
+            painter.add(egui::Shape::line(
+                vec![
+                    egui::pos2(start_x, feed_y),
+                    egui::pos2(end_x, top_y),
+                ],
+                stroke,
+            ));
+
+            // Angle arc annotation
+            let arc_r = 20.0_f32;
+            let mut arc_pts = Vec::with_capacity(12);
+            for i in 0..=10 {
+                let t = i as f32 / 10.0;
+                let a = -angle_rad * t;
+                arc_pts.push(egui::pos2(
+                    start_x + arc_r * a.cos(),
+                    feed_y - arc_r * a.sin(),
+                ));
+            }
+            painter.add(egui::Shape::line(
+                arc_pts,
+                egui::Stroke::new(1.0, entry_color),
+            ));
+            painter.text(
+                egui::pos2(start_x + arc_r + 4.0, feed_y - 8.0),
+                egui::Align2::LEFT_CENTER,
+                format!("{:.1}\u{00B0}", dressups.ramp_angle),
+                egui::FontId::proportional(9.0),
+                entry_color,
+            );
+
+            // Entry point marker
+            painter.circle_filled(egui::pos2(end_x, top_y), 3.0, entry_color);
+
+            // Label
+            painter.text(
+                egui::pos2(rect.left() + 6.0, rect.top() + 8.0),
+                egui::Align2::LEFT_TOP,
+                "Ramp Entry",
+                egui::FontId::proportional(10.0),
+                entry_color,
+            );
+
+            let _ = v_height;
+        }
+        DressupEntryStyle::Helix => {
+            let radius = dressups.helix_radius;
+            let pitch = dressups.helix_pitch;
+            let turns = z_drop / pitch.max(0.01);
+
+            // Side view of helix: sinusoidal wave descending
+            let total_angle = turns * std::f64::consts::TAU;
+            let steps = (turns * 32.0).min(200.0).max(32.0) as usize;
+
+            // Scale radius to fit canvas
+            let available_w = rect.width() * 0.5;
+            let r_pixels = (radius as f32 * available_w / (radius as f32 * 2.0).max(1.0))
+                .min(available_w / 2.0);
+
+            let mut pts = Vec::with_capacity(steps + 1);
+            for i in 0..=steps {
+                let t = i as f64 / steps as f64;
+                let angle = total_angle * t;
+                let z = feed_z - z_drop * t;
+                let x_off = (radius * angle.cos()) as f32 * (r_pixels / radius.max(0.01) as f32);
+                pts.push(egui::pos2(cx + x_off, z_to_y(z)));
+            }
+            painter.add(egui::Shape::line(pts, stroke));
+
+            // Entry point marker
+            painter.circle_filled(egui::pos2(cx, top_y), 3.0, entry_color);
+
+            // Radius annotation
+            painter.line_segment(
+                [egui::pos2(cx, z_to_y(feed_z)), egui::pos2(cx + r_pixels, z_to_y(feed_z))],
+                egui::Stroke::new(1.0, dim_color),
+            );
+            painter.text(
+                egui::pos2(cx + r_pixels / 2.0, z_to_y(feed_z) - 8.0),
+                egui::Align2::CENTER_BOTTOM,
+                format!("r={radius:.1}"),
+                egui::FontId::proportional(8.0),
+                dim_color,
+            );
+
+            // Label
+            painter.text(
+                egui::pos2(rect.left() + 6.0, rect.top() + 8.0),
+                egui::Align2::LEFT_TOP,
+                format!("Helix Entry ({turns:.1} turns)"),
+                egui::FontId::proportional(10.0),
+                entry_color,
+            );
+        }
+        DressupEntryStyle::None => {
+            // Vertical plunge arrow
+            painter.line_segment(
+                [egui::pos2(cx, feed_y), egui::pos2(cx, top_y)],
+                stroke,
+            );
+            // Arrowhead
+            painter.add(egui::Shape::line(
+                vec![
+                    egui::pos2(cx - 4.0, top_y - 8.0),
+                    egui::pos2(cx, top_y),
+                    egui::pos2(cx + 4.0, top_y - 8.0),
+                ],
+                stroke,
+            ));
+            painter.text(
+                egui::pos2(rect.left() + 6.0, rect.top() + 8.0),
+                egui::Align2::LEFT_TOP,
+                "Direct Plunge",
+                egui::FontId::proportional(10.0),
+                entry_color,
+            );
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
+// ── Toolpath property tab system ─────────────────────────────────────────
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ToolpathTab {
+    Params,
+    Feeds,
+    Heights,
+    Mods,
+}
+
+impl ToolpathTab {
+    const ALL: &[ToolpathTab] = &[
+        ToolpathTab::Params,
+        ToolpathTab::Feeds,
+        ToolpathTab::Heights,
+        ToolpathTab::Mods,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            ToolpathTab::Params => "Params",
+            ToolpathTab::Feeds => "Feeds",
+            ToolpathTab::Heights => "Heights",
+            ToolpathTab::Mods => "Mods",
+        }
+    }
+}
+
+fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        for &tab in ToolpathTab::ALL {
+            let is_active = *active == tab;
+            let (bg, text_color) = if is_active {
+                (
+                    egui::Color32::from_rgb(55, 60, 80),
+                    egui::Color32::from_rgb(220, 225, 240),
+                )
+            } else {
+                (
+                    egui::Color32::TRANSPARENT,
+                    egui::Color32::from_rgb(140, 140, 155),
+                )
+            };
+            let button =
+                egui::Button::new(egui::RichText::new(tab.label()).color(text_color).strong())
+                    .fill(bg)
+                    .rounding(egui::Rounding {
+                        nw: 4.0,
+                        ne: 4.0,
+                        sw: 0.0,
+                        se: 0.0,
+                    })
+                    .min_size(egui::vec2(55.0, 24.0));
+            let response = ui.add(button);
+            if response.clicked() && !is_active {
+                *active = tab;
+            }
+            if is_active {
+                let rect = response.rect;
+                ui.painter().line_segment(
+                    [
+                        egui::pos2(rect.min.x + 2.0, rect.max.y),
+                        egui::pos2(rect.max.x - 2.0, rect.max.y),
+                    ],
+                    egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 160, 220)),
+                );
+            }
+            ui.add_space(2.0);
+        }
+    });
+}
+
 fn draw_toolpath_panel(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
@@ -1050,10 +1592,13 @@ fn draw_toolpath_panel(
     machine: &rs_cam_core::machine::MachineProfile,
     workholding: rs_cam_core::feeds::WorkholdingRigidity,
     model_has_enriched: bool,
+    height_ctx: Option<&HeightContext>,
     events: &mut Vec<AppEvent>,
 ) {
     ui.heading(&entry.name);
     ui.separator();
+
+    // ── Shared header (always visible above tabs) ───────────────────
 
     // Name
     ui.horizontal(|ui| {
@@ -1149,147 +1694,9 @@ fn draw_toolpath_panel(
         }
     }
 
-    ui.add_space(8.0);
-    ui.label(
-        egui::RichText::new("Cutting Parameters")
-            .strong()
-            .color(egui::Color32::from_rgb(180, 180, 195)),
-    );
-
-    // Operation-specific parameters
-    match &mut entry.operation {
-        OperationConfig::Face(cfg) => draw_face_params(ui, cfg),
-        OperationConfig::Pocket(cfg) => draw_pocket_params(ui, cfg),
-        OperationConfig::Profile(cfg) => draw_profile_params(ui, cfg),
-        OperationConfig::Adaptive(cfg) => draw_adaptive_params(ui, cfg),
-        OperationConfig::VCarve(cfg) => draw_vcarve_params(ui, cfg),
-        OperationConfig::Rest(cfg) => draw_rest_params(ui, cfg, tools),
-        OperationConfig::Inlay(cfg) => draw_inlay_params(ui, cfg),
-        OperationConfig::Zigzag(cfg) => draw_zigzag_params(ui, cfg),
-        OperationConfig::Trace(cfg) => draw_trace_params(ui, cfg),
-        OperationConfig::Drill(cfg) => draw_drill_params(ui, cfg),
-        OperationConfig::Chamfer(cfg) => draw_chamfer_params(ui, cfg),
-        OperationConfig::DropCutter(cfg) => draw_dropcutter_params(ui, cfg),
-        OperationConfig::Adaptive3d(cfg) => draw_adaptive3d_params(ui, cfg),
-        OperationConfig::Waterline(cfg) => draw_waterline_params(ui, cfg),
-        OperationConfig::Pencil(cfg) => draw_pencil_params(ui, cfg),
-        OperationConfig::Scallop(cfg) => draw_scallop_params(ui, cfg),
-        OperationConfig::SteepShallow(cfg) => draw_steep_shallow_params(ui, cfg),
-        OperationConfig::RampFinish(cfg) => draw_ramp_finish_params(ui, cfg),
-        OperationConfig::SpiralFinish(cfg) => draw_spiral_finish_params(ui, cfg),
-        OperationConfig::RadialFinish(cfg) => draw_radial_finish_params(ui, cfg),
-        OperationConfig::HorizontalFinish(cfg) => draw_horizontal_finish_params(ui, cfg),
-        OperationConfig::ProjectCurve(cfg) => draw_project_curve_params(ui, cfg),
-        OperationConfig::AlignmentPinDrill(cfg) => draw_alignment_pin_drill_params(ui, cfg),
-    }
-
-    // --- Feeds & Speeds calculation ---
-    if let Some(tool_cfg) = tool_configs
-        .iter()
-        .find(|(id, _)| *id == entry.tool_id)
-        .map(|(_, t)| t)
-    {
-        calculate_and_apply_feeds(ui, entry, tool_cfg, material, machine, workholding);
-    }
-
-    // Machining boundary
-    ui.add_space(8.0);
-    ui.collapsing("Machining Boundary", |ui| {
-        ui.checkbox(&mut entry.boundary_enabled, "Clip to stock boundary")
-            .on_hover_text("Restrict toolpath to within the stock material bounds");
-        if entry.boundary_enabled {
-            ui.horizontal(|ui| {
-                ui.label("Containment:");
-                egui::ComboBox::from_id_salt("boundary_contain")
-                    .selected_text(match entry.boundary_containment {
-                        BoundaryContainment::Center => "Center",
-                        BoundaryContainment::Inside => "Inside",
-                        BoundaryContainment::Outside => "Outside",
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut entry.boundary_containment,
-                            BoundaryContainment::Center,
-                            "Center",
-                        )
-                        .on_hover_text("Tool center stays inside boundary");
-                        ui.selectable_value(
-                            &mut entry.boundary_containment,
-                            BoundaryContainment::Inside,
-                            "Inside",
-                        )
-                        .on_hover_text(
-                            "Entire tool stays inside boundary (shrinks by tool radius)",
-                        );
-                        ui.selectable_value(
-                            &mut entry.boundary_containment,
-                            BoundaryContainment::Outside,
-                            "Outside",
-                        )
-                        .on_hover_text("Tool edge can extend outside boundary");
-                    });
-            });
-        }
-    });
-
+    // Generate button + status (always visible)
     ui.add_space(4.0);
-    ui.collapsing("Debugging", |ui| {
-        ui.checkbox(&mut entry.debug_options.enabled, "Capture debug trace")
-            .on_hover_text(
-                "Record semantic and performance trace data for the Simulation debugger. Re-generate to apply changes.",
-            );
-        if entry.debug_options.enabled {
-            ui.label(
-                egui::RichText::new("Re-generate this toolpath to refresh trace data.")
-                    .small()
-                    .color(egui::Color32::from_rgb(140, 170, 230)),
-            );
-        }
-    });
-
-    // Manual G-code
-    ui.add_space(4.0);
-    ui.collapsing("Manual G-code", |ui| {
-        ui.label(
-            egui::RichText::new("Raw G-code inserted before/after this operation in export")
-                .small()
-                .italics()
-                .color(egui::Color32::from_rgb(130, 130, 140)),
-        );
-        ui.label("Before:");
-        ui.text_edit_multiline(&mut entry.pre_gcode);
-        ui.label("After:");
-        ui.text_edit_multiline(&mut entry.post_gcode);
-    });
-
-    // Heights
-    ui.add_space(4.0);
-    ui.collapsing("Heights", |ui| {
-        draw_heights_params(ui, &mut entry.heights);
-    });
-
-    // Dressup modifications
-    ui.add_space(4.0);
-    ui.collapsing("Modifications", |ui| {
-        draw_dressup_params(ui, entry);
-    });
-
-    ui.add_space(12.0);
-
-    // Validation
     let validation_errors = validate_toolpath(entry, validation);
-    if !validation_errors.is_empty() {
-        ui.add_space(4.0);
-        for err in &validation_errors {
-            ui.label(
-                egui::RichText::new(err)
-                    .color(egui::Color32::from_rgb(220, 150, 60))
-                    .small(),
-            );
-        }
-    }
-
-    // Generate button + status
     let can_generate = !tools.is_empty() && validation_errors.is_empty();
     ui.horizontal(|ui| {
         if ui
@@ -1306,7 +1713,9 @@ fn draw_toolpath_panel(
                 ui.label("Computing...");
             }
             ComputeStatus::Done => {
-                ui.label(egui::RichText::new("Done").color(egui::Color32::from_rgb(100, 180, 100)));
+                ui.label(
+                    egui::RichText::new("Done").color(egui::Color32::from_rgb(100, 180, 100)),
+                );
             }
             ComputeStatus::Error(e) => {
                 ui.label(
@@ -1315,13 +1724,319 @@ fn draw_toolpath_panel(
                 );
             }
         }
+        if let Some(result) = &entry.result {
+            ui.label(
+                egui::RichText::new(format!("{} moves", result.stats.move_count))
+                    .small()
+                    .color(egui::Color32::from_rgb(120, 120, 130)),
+            );
+        }
     });
+    if !validation_errors.is_empty() {
+        for err in &validation_errors {
+            ui.label(
+                egui::RichText::new(err)
+                    .color(egui::Color32::from_rgb(220, 150, 60))
+                    .small(),
+            );
+        }
+    }
 
-    if let Some(result) = &entry.result {
-        ui.add_space(4.0);
-        ui.label(format!("Moves: {}", result.stats.move_count));
-        ui.label(format!("Cutting: {:.0} mm", result.stats.cutting_distance));
-        ui.label(format!("Rapid: {:.0} mm", result.stats.rapid_distance));
+    // ── Tab bar ─────────────────────────────────────────────────────
+
+    ui.add_space(8.0);
+    let tab_id = ui.id().with("tp_tab").with(entry.id.0);
+    let mut active_tab: ToolpathTab = ui
+        .memory(|mem| mem.data.get_temp(tab_id))
+        .unwrap_or(ToolpathTab::Params);
+    draw_toolpath_tabs(ui, &mut active_tab);
+    ui.memory_mut(|mem| mem.data.insert_temp(tab_id, active_tab));
+    ui.separator();
+
+    // ── Tab content ─────────────────────────────────────────────────
+
+    match active_tab {
+        ToolpathTab::Params => {
+            // Auto-feeds toggles — show which parameters are auto-calculated
+            let auto = &mut entry.feeds_auto;
+            let has_any_auto = auto.feed_rate || auto.plunge_rate || auto.stepover || auto.depth_per_pass;
+            let auto_label = if has_any_auto { "Auto Feeds (on)" } else { "Auto Feeds (off)" };
+            let auto_color = if has_any_auto {
+                egui::Color32::from_rgb(100, 180, 100)
+            } else {
+                egui::Color32::from_rgb(140, 140, 155)
+            };
+            ui.collapsing(egui::RichText::new(auto_label).small().color(auto_color), |ui| {
+                ui.label(
+                    egui::RichText::new("When on, values are computed from tool/material/machine")
+                        .small()
+                        .italics()
+                        .color(egui::Color32::from_rgb(110, 110, 120)),
+                );
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut auto.feed_rate, "Feed");
+                    ui.checkbox(&mut auto.plunge_rate, "Plunge");
+                    ui.checkbox(&mut auto.stepover, "Stepover");
+                    ui.checkbox(&mut auto.depth_per_pass, "DOC");
+                });
+                if has_any_auto {
+                    ui.label(
+                        egui::RichText::new("Auto values shown in Feeds tab; manual edits below are overridden")
+                            .small()
+                            .color(egui::Color32::from_rgb(220, 170, 60)),
+                    );
+                }
+            });
+
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new("Cutting Parameters")
+                    .strong()
+                    .color(egui::Color32::from_rgb(180, 180, 195)),
+            );
+            match &mut entry.operation {
+                OperationConfig::Face(cfg) => draw_face_params(ui, cfg),
+                OperationConfig::Pocket(cfg) => draw_pocket_params(ui, cfg),
+                OperationConfig::Profile(cfg) => draw_profile_params(ui, cfg),
+                OperationConfig::Adaptive(cfg) => draw_adaptive_params(ui, cfg),
+                OperationConfig::VCarve(cfg) => draw_vcarve_params(ui, cfg),
+                OperationConfig::Rest(cfg) => draw_rest_params(ui, cfg, tools),
+                OperationConfig::Inlay(cfg) => draw_inlay_params(ui, cfg),
+                OperationConfig::Zigzag(cfg) => draw_zigzag_params(ui, cfg),
+                OperationConfig::Trace(cfg) => draw_trace_params(ui, cfg),
+                OperationConfig::Drill(cfg) => draw_drill_params(ui, cfg),
+                OperationConfig::Chamfer(cfg) => draw_chamfer_params(ui, cfg),
+                OperationConfig::DropCutter(cfg) => draw_dropcutter_params(ui, cfg),
+                OperationConfig::Adaptive3d(cfg) => draw_adaptive3d_params(ui, cfg),
+                OperationConfig::Waterline(cfg) => draw_waterline_params(ui, cfg),
+                OperationConfig::Pencil(cfg) => draw_pencil_params(ui, cfg),
+                OperationConfig::Scallop(cfg) => draw_scallop_params(ui, cfg),
+                OperationConfig::SteepShallow(cfg) => draw_steep_shallow_params(ui, cfg),
+                OperationConfig::RampFinish(cfg) => draw_ramp_finish_params(ui, cfg),
+                OperationConfig::SpiralFinish(cfg) => draw_spiral_finish_params(ui, cfg),
+                OperationConfig::RadialFinish(cfg) => draw_radial_finish_params(ui, cfg),
+                OperationConfig::HorizontalFinish(cfg) => draw_horizontal_finish_params(ui, cfg),
+                OperationConfig::ProjectCurve(cfg) => draw_project_curve_params(ui, cfg),
+                OperationConfig::AlignmentPinDrill(cfg) => {
+                    draw_alignment_pin_drill_params(ui, cfg);
+                }
+            }
+
+            // Pattern diagrams for all operation types
+            ui.add_space(6.0);
+            if let Some(pattern) = StepoverPattern::from_operation(&entry.operation) {
+                draw_stepover_diagram(ui, &pattern);
+            } else {
+                match &entry.operation {
+                    OperationConfig::Profile(cfg) => {
+                        let side = match cfg.side {
+                            ProfileSide::Outside => "Outside",
+                            ProfileSide::Inside => "Inside",
+                        };
+                        draw_outline_diagram(ui, &format!("Profile ({side})"), Some(side));
+                    }
+                    OperationConfig::Chamfer(_) => {
+                        draw_outline_diagram(ui, "Chamfer (edge contour)", None);
+                    }
+                    OperationConfig::Trace(cfg) => {
+                        let comp = match cfg.compensation {
+                            TraceCompensation::None => None,
+                            TraceCompensation::Left => Some("Inside"),
+                            TraceCompensation::Right => Some("Outside"),
+                        };
+                        draw_outline_diagram(ui, "Trace", comp);
+                    }
+                    OperationConfig::ProjectCurve(_) => {
+                        draw_outline_diagram(ui, "Project Curve", None);
+                    }
+                    OperationConfig::Adaptive(cfg) => {
+                        draw_spiral_diagram(ui, cfg.stepover, true);
+                    }
+                    OperationConfig::Adaptive3d(cfg) => {
+                        draw_spiral_diagram(ui, cfg.stepover, true);
+                    }
+                    OperationConfig::SpiralFinish(cfg) => {
+                        let outward = cfg.direction == SpiralDirection::InsideOut;
+                        draw_spiral_diagram(ui, cfg.stepover, outward);
+                    }
+                    OperationConfig::RadialFinish(cfg) => {
+                        draw_radial_diagram(ui, cfg.angular_step);
+                    }
+                    OperationConfig::Drill(_) => {
+                        draw_point_set_diagram(ui, "Drill Points");
+                    }
+                    OperationConfig::AlignmentPinDrill(_) => {
+                        draw_point_set_diagram(ui, "Pin Drill Holes");
+                    }
+                    OperationConfig::Pencil(cfg) => {
+                        draw_pencil_diagram(ui, cfg.num_offset_passes, cfg.offset_stepover);
+                    }
+                    OperationConfig::SteepShallow(cfg) => {
+                        draw_steep_shallow_diagram(ui, cfg.threshold_angle);
+                    }
+                    OperationConfig::RampFinish(cfg) => {
+                        draw_ramp_finish_diagram(ui, cfg.max_stepdown);
+                    }
+                    OperationConfig::Inlay(cfg) => {
+                        draw_inlay_diagram(ui, cfg.pocket_depth, cfg.glue_gap, cfg.flat_depth);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        ToolpathTab::Feeds => {
+            let tool_info = tool_configs
+                .iter()
+                .find(|(id, _)| *id == entry.tool_id)
+                .map(|(_, t)| (t.diameter, t.tool_type));
+            let (tool_diameter, tool_type) = tool_info
+                .unwrap_or((6.0, crate::state::job::ToolType::EndMill));
+            if let Some(tool_cfg) = tool_configs
+                .iter()
+                .find(|(id, _)| *id == entry.tool_id)
+                .map(|(_, t)| t)
+            {
+                calculate_and_apply_feeds(ui, entry, tool_cfg, material, machine, workholding);
+            }
+            if let Some(result) = &entry.feeds_result {
+                ui.add_space(6.0);
+                draw_engagement_diagram(ui, result, tool_diameter, tool_type);
+
+                // Math breakdown — show how the calculator arrived at these values
+                ui.add_space(6.0);
+                let flute_count = tool_configs
+                    .iter()
+                    .find(|(id, _)| *id == entry.tool_id)
+                    .map(|(_, t)| t.flute_count)
+                    .unwrap_or(2);
+                ui.collapsing(
+                    egui::RichText::new("How these were calculated")
+                        .small()
+                        .color(egui::Color32::from_rgb(120, 120, 135)),
+                    |ui| {
+                        let hint = egui::Color32::from_rgb(130, 130, 145);
+                        let val = egui::Color32::from_rgb(170, 170, 185);
+                        let font = egui::FontId::proportional(9.5);
+
+                        ui.label(egui::RichText::new(format!(
+                            "Feed = RPM \u{00D7} flutes \u{00D7} chipload = {:.0} \u{00D7} {} \u{00D7} {:.4} = {:.0} mm/min",
+                            result.rpm, flute_count, result.chip_load_mm, result.feed_rate_mm_min
+                        )).font(font.clone()).color(val));
+
+                        ui.label(egui::RichText::new(format!(
+                            "MRR = DOC \u{00D7} WOC \u{00D7} Feed = {:.2} \u{00D7} {:.2} \u{00D7} {:.0} = {:.0} mm\u{00B3}/min",
+                            result.axial_depth_mm, result.radial_width_mm, result.feed_rate_mm_min, result.mrr_mm3_min
+                        )).font(font.clone()).color(val));
+
+                        ui.label(egui::RichText::new(format!(
+                            "Power = MRR \u{00D7} Kc / 60e6 = {:.2} kW (of {:.2} kW available)",
+                            result.power_kw, result.available_power_kw
+                        )).font(font.clone()).color(val));
+
+                        if result.power_limited {
+                            ui.label(egui::RichText::new(
+                                "Feed was reduced to stay within spindle power"
+                            ).font(font.clone()).color(egui::Color32::from_rgb(220, 170, 60)));
+                        }
+
+                        ui.label(egui::RichText::new(format!(
+                            "Plunge = {:.0} mm/min ({:.0}% of feed)",
+                            result.plunge_rate_mm_min,
+                            result.plunge_rate_mm_min / result.feed_rate_mm_min.max(1.0) * 100.0
+                        )).font(font).color(val));
+
+                        let _ = hint;
+                    },
+                );
+            }
+        }
+
+        ToolpathTab::Heights => {
+            let fallback_ctx = HeightContext::simple(10.0, 5.0);
+            let ctx = height_ctx.unwrap_or(&fallback_ctx);
+            draw_heights_params(ui, &mut entry.heights, ctx);
+            ui.add_space(6.0);
+            draw_height_diagram(ui, &mut entry.heights, ctx);
+        }
+
+        ToolpathTab::Mods => {
+            // Machining boundary
+            ui.checkbox(&mut entry.boundary_enabled, "Clip to stock boundary")
+                .on_hover_text("Restrict toolpath to within the stock material bounds");
+            if entry.boundary_enabled {
+                ui.horizontal(|ui| {
+                    ui.label("Containment:");
+                    egui::ComboBox::from_id_salt("boundary_contain")
+                        .selected_text(match entry.boundary_containment {
+                            BoundaryContainment::Center => "Center",
+                            BoundaryContainment::Inside => "Inside",
+                            BoundaryContainment::Outside => "Outside",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut entry.boundary_containment,
+                                BoundaryContainment::Center,
+                                "Center",
+                            )
+                            .on_hover_text("Tool center stays inside boundary");
+                            ui.selectable_value(
+                                &mut entry.boundary_containment,
+                                BoundaryContainment::Inside,
+                                "Inside",
+                            )
+                            .on_hover_text(
+                                "Entire tool stays inside boundary (shrinks by tool radius)",
+                            );
+                            ui.selectable_value(
+                                &mut entry.boundary_containment,
+                                BoundaryContainment::Outside,
+                                "Outside",
+                            )
+                            .on_hover_text("Tool edge can extend outside boundary");
+                        });
+                });
+            }
+
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new("Modifications")
+                    .strong()
+                    .color(egui::Color32::from_rgb(180, 180, 195)),
+            );
+            draw_dressup_params(ui, entry, height_ctx);
+
+            ui.add_space(8.0);
+            ui.collapsing("Debugging", |ui| {
+                ui.checkbox(&mut entry.debug_options.enabled, "Capture debug trace")
+                    .on_hover_text(
+                        "Record semantic and performance trace data for the Simulation debugger. Re-generate to apply changes.",
+                    );
+                if entry.debug_options.enabled {
+                    ui.label(
+                        egui::RichText::new("Re-generate this toolpath to refresh trace data.")
+                            .small()
+                            .color(egui::Color32::from_rgb(140, 170, 230)),
+                    );
+                }
+            });
+
+            ui.add_space(4.0);
+            ui.collapsing("Manual G-code", |ui| {
+                ui.label(
+                    egui::RichText::new(
+                        "Raw G-code inserted before/after this operation in export",
+                    )
+                    .small()
+                    .italics()
+                    .color(egui::Color32::from_rgb(130, 130, 140)),
+                );
+                ui.label("Before:");
+                ui.text_edit_multiline(&mut entry.pre_gcode);
+                ui.label("After:");
+                ui.text_edit_multiline(&mut entry.post_gcode);
+            });
+        }
     }
 }
 
@@ -1415,7 +2130,11 @@ fn tooltip_for(label: &str) -> Option<&'static str> {
 
 // ── Dressup configuration ────────────────────────────────────────────────
 
-fn draw_dressup_params(ui: &mut egui::Ui, entry: &mut ToolpathEntry) {
+fn draw_dressup_params(
+    ui: &mut egui::Ui,
+    entry: &mut ToolpathEntry,
+    height_ctx: Option<&HeightContext>,
+) {
     let cfg = &mut entry.dressups;
     ui.horizontal(|ui| {
         ui.label("Entry Style:");
@@ -1465,6 +2184,14 @@ fn draw_dressup_params(ui: &mut egui::Ui, entry: &mut ToolpathEntry) {
         }
         DressupEntryStyle::None => {}
     }
+    // Entry style preview — bundled right after the settings that control it
+    {
+        let fallback_ctx = HeightContext::simple(10.0, 5.0);
+        let ctx = height_ctx.unwrap_or(&fallback_ctx);
+        ui.add_space(4.0);
+        draw_entry_preview_diagram(ui, cfg, ctx, &entry.heights);
+    }
+
     ui.add_space(4.0);
     ui.checkbox(&mut cfg.dogbone, "Dogbone overcuts");
     if cfg.dogbone {
@@ -1481,6 +2208,7 @@ fn draw_dressup_params(ui: &mut egui::Ui, entry: &mut ToolpathEntry) {
                     45.0..=135.0,
                 );
             });
+        draw_dogbone_diagram(ui, cfg.dogbone_angle);
     }
     ui.checkbox(&mut cfg.lead_in_out, "Lead-in / lead-out");
     if cfg.lead_in_out {
@@ -1497,6 +2225,7 @@ fn draw_dressup_params(ui: &mut egui::Ui, entry: &mut ToolpathEntry) {
                     0.5..=20.0,
                 );
             });
+        draw_lead_in_out_diagram(ui, cfg.lead_radius);
     }
     ui.checkbox(&mut cfg.link_moves, "Link moves (keep tool down)");
     if cfg.link_moves {
