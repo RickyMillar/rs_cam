@@ -7,9 +7,12 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use std::path::Path;
 
+use rs_cam_core::arc_util::linearize_arc;
 use rs_cam_core::arcfit::fit_arcs;
+use rs_cam_core::dexel_mesh::dexel_stock_to_mesh;
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dropcutter::{batch_drop_cutter, point_drop_cutter};
+use rs_cam_core::fiber::{Fiber, Interval};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
 use rs_cam_core::polygon::{Polygon2, offset_polygon, pocket_offsets};
@@ -285,6 +288,151 @@ fn bench_simulate_toolpath(c: &mut Criterion) {
     group.finish();
 }
 
+// ── 8. Fiber interval insertion benchmarks ─────────────────────────────
+
+fn bench_fiber_interval_insert(c: &mut Criterion) {
+    let mut group = c.benchmark_group("fiber_interval_insert");
+
+    for n in [50, 200, 1000] {
+        group.bench_function(BenchmarkId::new("non_overlapping", n), |b| {
+            // Pre-compute intervals so only insertion is timed.
+            let step = 1.0 / (n as f64 + 1.0);
+            let width = step * 0.6;
+            let intervals: Vec<Interval> = (0..n)
+                .map(|i| {
+                    let lo = (i as f64 + 0.5) * step;
+                    Interval::new(lo, lo + width)
+                })
+                .collect();
+            b.iter(|| {
+                let mut fiber = Fiber::new_x(0.0, 0.0, 0.0, 100.0);
+                for iv in &intervals {
+                    fiber.add_interval(*iv);
+                }
+                black_box(fiber.intervals().len());
+            })
+        });
+
+        group.bench_function(BenchmarkId::new("overlapping", n), |b| {
+            // Intervals that all overlap with center region — forces merging.
+            let intervals: Vec<Interval> = (0..n)
+                .map(|i| {
+                    let lo = 0.3 + 0.001 * (i as f64);
+                    Interval::new(lo, lo + 0.05)
+                })
+                .collect();
+            b.iter(|| {
+                let mut fiber = Fiber::new_x(0.0, 0.0, 0.0, 100.0);
+                for iv in &intervals {
+                    fiber.add_interval(*iv);
+                }
+                black_box(fiber.intervals().len());
+            })
+        });
+    }
+
+    group.finish();
+}
+
+// ── 9. Simulation with metrics benchmarks ─────────────────────────────
+
+fn bench_simulate_toolpath_metrics(c: &mut Criterion) {
+    let mut group = c.benchmark_group("simulate_toolpath_metrics");
+    group.sample_size(10);
+
+    let ball = BallEndmill::new(6.0, 25.0);
+    let tp = make_linear_toolpath(500);
+    let fresh = TriDexelStock::from_stock(0.0, 0.0, 300.0, 20.0, 0.0, 10.0, 0.5);
+    let never_cancel = || false;
+
+    group.bench_function("500moves_ball6_cs05", |b| {
+        b.iter(|| {
+            let mut stock = fresh.clone();
+            let samples = stock
+                .simulate_toolpath_with_metrics_with_cancel(
+                    &tp,
+                    &ball,
+                    StockCutDirection::FromTop,
+                    0,      // toolpath_id
+                    18000,  // spindle_rpm
+                    2,      // flute_count
+                    5000.0, // rapid_feed
+                    1.0,    // sample_step
+                    None,   // no semantic trace
+                    &never_cancel,
+                )
+                .expect("no cancel");
+            black_box(samples.len());
+        })
+    });
+
+    group.finish();
+}
+
+// ── 10. Mesh extraction benchmarks ────────────────────────────────────
+
+fn bench_dexel_mesh_extraction(c: &mut Criterion) {
+    let mut group = c.benchmark_group("dexel_mesh_extraction");
+    group.sample_size(20);
+
+    // Small grid: 100x100 at cs=1.0
+    let ball = BallEndmill::new(6.0, 25.0);
+    let lut = RadialProfileLUT::from_cutter(&ball, 256);
+    let mut small = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, 0.0, 10.0, 1.0);
+    // Stamp some geometry so the mesh isn't trivially uniform.
+    for i in 0..5 {
+        small.stamp_tool_at(
+            &lut,
+            ball.radius(),
+            20.0 + 15.0 * i as f64,
+            50.0,
+            -2.0,
+            StockCutDirection::FromTop,
+        );
+    }
+
+    group.bench_function("100x100_cs1", |b| {
+        b.iter(|| black_box(dexel_stock_to_mesh(&small)))
+    });
+
+    // Medium grid: 200x200 at cs=0.5
+    let mut medium = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, 0.0, 10.0, 0.5);
+    for i in 0..10 {
+        medium.stamp_tool_at(
+            &lut,
+            ball.radius(),
+            10.0 + 8.0 * i as f64,
+            50.0,
+            -2.0,
+            StockCutDirection::FromTop,
+        );
+    }
+
+    group.bench_function("200x200_cs05", |b| {
+        b.iter(|| black_box(dexel_stock_to_mesh(&medium)))
+    });
+
+    group.finish();
+}
+
+// ── 11. Arc linearization benchmarks ──────────────────────────────────
+
+fn bench_arc_linearize(c: &mut Criterion) {
+    let mut group = c.benchmark_group("arc_linearize");
+
+    let start = P3::new(5.0, 0.0, 0.0);
+    let end = P3::new(-5.0, 0.0, 0.0);
+
+    for seg_len in [0.1, 0.5, 1.0] {
+        group.bench_function(
+            BenchmarkId::new("semicircle_r5", format!("seg{seg_len}")),
+            |b| b.iter(|| black_box(linearize_arc(start, end, -5.0, 0.0, false, seg_len))),
+        );
+    }
+
+    group.finish();
+}
+
 // ── Group all benchmarks ─────────────────────────────────────────────────
 
 criterion_group!(
@@ -298,5 +446,9 @@ criterion_group!(
     bench_arc_fitting,
     bench_stamp_linear_segment,
     bench_simulate_toolpath,
+    bench_fiber_interval_insert,
+    bench_simulate_toolpath_metrics,
+    bench_dexel_mesh_extraction,
+    bench_arc_linearize,
 );
 criterion_main!(benches);

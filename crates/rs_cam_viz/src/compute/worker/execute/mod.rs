@@ -5,6 +5,7 @@ use super::helpers::*;
 use super::semantic::*;
 use super::*;
 use rs_cam_core::geo::P3;
+use rs_cam_core::radial_profile::RadialProfileLUT;
 use rs_cam_core::semantic_trace::ToolpathSemanticKind;
 
 // Re-export items used by tests within this module
@@ -116,11 +117,14 @@ where
             set_phase(&format!("Simulate {tp_name}"));
             let start_move = total_moves;
             let cutter = build_cutter(tool_config);
+            let lut = RadialProfileLUT::from_cutter(cutter.as_ref(), 256);
+            let radius = cutter.radius();
             if req.metric_options.enabled {
                 let mut samples = stock
-                    .simulate_toolpath_with_metrics_with_cancel(
+                    .simulate_toolpath_with_lut_metrics_cancel(
                         toolpath,
-                        cutter.as_ref(),
+                        &lut,
+                        radius,
                         group.direction,
                         tp_id.0,
                         req.spindle_rpm,
@@ -134,9 +138,10 @@ where
                 cut_samples.append(&mut samples);
             } else {
                 stock
-                    .simulate_toolpath_with_cancel(
+                    .simulate_toolpath_with_lut_cancel(
                         toolpath,
-                        cutter.as_ref(),
+                        &lut,
+                        radius,
                         group.direction,
                         &|| cancel.load(Ordering::SeqCst),
                     )
