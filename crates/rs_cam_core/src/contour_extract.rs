@@ -15,7 +15,7 @@
 //! - O(N) contour extraction (vs O(N²) nearest-neighbor)
 
 use crate::fiber::Fiber;
-use crate::geo::P3;
+use crate::geo::{P2, P3};
 
 /// Build a boolean grid from fiber intervals and extract contour loops
 /// using marching squares.
@@ -371,6 +371,241 @@ fn chain_segments(segments: &[Segment]) -> Vec<Vec<P3>> {
     loops
 }
 
+// ---------------------------------------------------------------------------
+// Standalone marching squares for boolean grids (2D, no fiber dependency)
+// ---------------------------------------------------------------------------
+
+/// A 2D contour segment between two points on the grid boundary.
+#[derive(Debug, Clone)]
+struct Segment2D {
+    p1: P2,
+    p2: P2,
+}
+
+/// The 16 marching squares cases encoded as edge pairs.
+///
+/// Each 2x2 cell block has four edges:
+/// - Left (0):   between (row, col) and (row+1, col)
+/// - Bottom (1): between (row+1, col) and (row+1, col+1)
+/// - Right (2):  between (row, col+1) and (row+1, col+1)
+/// - Top (3):    between (row, col) and (row, col+1)
+///
+/// Each case maps to 0, 1, or 2 segments expressed as pairs of edge indices.
+/// Saddle cases (5, 10) emit two segments each.
+const MS_CASES: [&[(u8, u8)]; 16] = [
+    &[],                  // 0:  0000
+    &[(0, 1)],            // 1:  0001 — left-bottom
+    &[(1, 2)],            // 2:  0010 — bottom-right
+    &[(0, 2)],            // 3:  0011 — left-right
+    &[(2, 3)],            // 4:  0100 — right-top
+    &[(0, 3), (1, 2)],    // 5:  0101 — saddle: left-top + bottom-right
+    &[(1, 3)],            // 6:  0110 — bottom-top
+    &[(0, 3)],            // 7:  0111 — left-top
+    &[(3, 0)],            // 8:  1000 — top-left
+    &[(1, 3)],            // 9:  1001 — top-bottom (equivalent: bottom-top)
+    &[(0, 1), (2, 3)],    // 10: 1010 — saddle: left-bottom + right-top
+    &[(2, 3)],            // 11: 1011 — right-top (== top-right)
+    &[(2, 0)],            // 12: 1100 — right-left
+    &[(1, 2)],            // 13: 1101 — bottom-right (== right-bottom)
+    &[(0, 1)],            // 14: 1110 — left-bottom (== bottom-left)
+    &[],                  // 15: 1111
+];
+
+/// Extract 2D contour loops from a boolean grid using marching squares.
+///
+/// Each cell in `grid` is `true` (material) or `false` (air).
+/// The grid is row-major with `rows` rows and `cols` columns
+/// (i.e. `grid.len() == rows * cols`).
+///
+/// Returns closed contour loops as `Vec<Vec<P2>>`.
+/// Contour points lie on cell edges (midpoints between material/air cells).
+pub fn marching_squares_bool_grid(
+    grid: &[bool],
+    rows: usize,
+    cols: usize,
+    origin_x: f64,
+    origin_y: f64,
+    cell_size: f64,
+) -> Vec<Vec<P2>> {
+    if rows < 2 || cols < 2 || grid.len() != rows * cols {
+        return Vec::new();
+    }
+
+    let segments = ms_bool_segments(grid, rows, cols, origin_x, origin_y, cell_size);
+    chain_segments_2d(&segments)
+}
+
+/// Build marching-squares segments from a flat boolean grid.
+#[allow(clippy::indexing_slicing)] // SAFETY: row/col bounded by loop ranges checked above
+fn ms_bool_segments(
+    grid: &[bool],
+    rows: usize,
+    cols: usize,
+    origin_x: f64,
+    origin_y: f64,
+    cell_size: f64,
+) -> Vec<Segment2D> {
+    let mut segments = Vec::new();
+
+    // Marching squares iterates over (rows-1) x (cols-1) cells.
+    // Cell (r, c) has corners at grid positions:
+    //   top-left  = (r, c)       top-right = (r, c+1)
+    //   bot-left  = (r+1, c)     bot-right = (r+1, c+1)
+    for r in 0..rows - 1 {
+        for c in 0..cols - 1 {
+            // SAFETY: r+1 < rows, c+1 < cols guaranteed by loop bounds
+            let tl = grid[r * cols + c];
+            let tr = grid[r * cols + (c + 1)];
+            let br = grid[(r + 1) * cols + (c + 1)];
+            let bl = grid[(r + 1) * cols + c];
+
+            // Case index: bit0=BL, bit1=BR, bit2=TR, bit3=TL
+            let case_idx =
+                (bl as usize) | ((br as usize) << 1) | ((tr as usize) << 2) | ((tl as usize) << 3);
+
+            // SAFETY: case_idx is 0..15, MS_CASES has exactly 16 entries
+            let edges = MS_CASES[case_idx];
+            if edges.is_empty() {
+                continue;
+            }
+
+            // Precompute the 4 edge midpoints in world coordinates.
+            //
+            // Edge 0 (left):   midpoint between (r, c) and (r+1, c)
+            //   x = origin_x + c * cell_size
+            //   y = origin_y + (r as f64 + 0.5) * cell_size
+            //
+            // Edge 1 (bottom): midpoint between (r+1, c) and (r+1, c+1)
+            //   x = origin_x + (c as f64 + 0.5) * cell_size
+            //   y = origin_y + (r + 1) as f64 * cell_size
+            //
+            // Edge 2 (right):  midpoint between (r, c+1) and (r+1, c+1)
+            //   x = origin_x + (c + 1) as f64 * cell_size
+            //   y = origin_y + (r as f64 + 0.5) * cell_size
+            //
+            // Edge 3 (top):    midpoint between (r, c) and (r, c+1)
+            //   x = origin_x + (c as f64 + 0.5) * cell_size
+            //   y = origin_y + r as f64 * cell_size
+
+            let rf = r as f64;
+            let cf = c as f64;
+
+            let edge_pts = [
+                P2::new(origin_x + cf * cell_size, origin_y + (rf + 0.5) * cell_size),             // 0: left
+                P2::new(origin_x + (cf + 0.5) * cell_size, origin_y + (rf + 1.0) * cell_size),     // 1: bottom
+                P2::new(origin_x + (cf + 1.0) * cell_size, origin_y + (rf + 0.5) * cell_size),     // 2: right
+                P2::new(origin_x + (cf + 0.5) * cell_size, origin_y + rf * cell_size),             // 3: top
+            ];
+
+            for &(a, b) in edges {
+                // SAFETY: a, b are 0..3 from the lookup table
+                segments.push(Segment2D {
+                    p1: edge_pts[a as usize],
+                    p2: edge_pts[b as usize],
+                });
+            }
+        }
+    }
+
+    segments
+}
+
+/// Chain a set of unordered 2D line segments into closed loops.
+///
+/// Uses a spatial hash map on quantized endpoints for O(1) neighbor lookup.
+/// Returns `Vec<Vec<P2>>` where each inner vec is a closed contour loop.
+#[allow(clippy::indexing_slicing)] // SAFETY: indices bounded by segment count
+fn chain_segments_2d(segments: &[Segment2D]) -> Vec<Vec<P2>> {
+    use std::collections::HashMap;
+
+    if segments.is_empty() {
+        return Vec::new();
+    }
+
+    let eps = 1e-6;
+    let n = segments.len();
+
+    // Quantize a coordinate to an integer grid at epsilon scale.
+    let quantize = |v: f64| -> i64 { (v * 1e5).round() as i64 };
+    type GridKey = (i64, i64);
+
+    // Build spatial index: quantized (x, y) -> list of (segment_index, endpoint_id).
+    let mut index: HashMap<GridKey, Vec<(usize, u8)>> = HashMap::with_capacity(n * 2);
+    for (i, seg) in segments.iter().enumerate() {
+        let k1 = (quantize(seg.p1.x), quantize(seg.p1.y));
+        let k2 = (quantize(seg.p2.x), quantize(seg.p2.y));
+        index.entry(k1).or_default().push((i, 0));
+        index.entry(k2).or_default().push((i, 1));
+    }
+
+    let mut used = vec![false; n];
+    let mut loops: Vec<Vec<P2>> = Vec::new();
+
+    for start_idx in 0..n {
+        if used[start_idx] {
+            continue;
+        }
+        used[start_idx] = true;
+        let mut chain = vec![segments[start_idx].p1, segments[start_idx].p2];
+
+        let max_iterations = n + 1;
+        for _ in 0..max_iterations {
+            let tail = chain[chain.len() - 1];
+
+            // Check if loop is closed.
+            let head = chain[0];
+            let dx = tail.x - head.x;
+            let dy = tail.y - head.y;
+            if chain.len() >= 3 && dx * dx + dy * dy < eps * eps {
+                chain.pop();
+                break;
+            }
+
+            // Look up neighbors in the spatial index (3x3 grid cells).
+            let qx = quantize(tail.x);
+            let qy = quantize(tail.y);
+            let mut found = false;
+
+            'search: for dx_cell in -1i64..=1 {
+                for dy_cell in -1i64..=1 {
+                    let key = (qx + dx_cell, qy + dy_cell);
+                    if let Some(entries) = index.get(&key) {
+                        for &(seg_idx, endpoint) in entries {
+                            if used[seg_idx] {
+                                continue;
+                            }
+                            let seg = &segments[seg_idx];
+                            let (match_pt, other_pt) = if endpoint == 0 {
+                                (seg.p1, seg.p2)
+                            } else {
+                                (seg.p2, seg.p1)
+                            };
+                            let d = (match_pt.x - tail.x).powi(2)
+                                + (match_pt.y - tail.y).powi(2);
+                            if d < eps * eps {
+                                chain.push(other_pt);
+                                used[seg_idx] = true;
+                                found = true;
+                                break 'search;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !found {
+                break;
+            }
+        }
+
+        if chain.len() >= 3 {
+            loops.push(chain);
+        }
+    }
+
+    loops
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -528,5 +763,146 @@ mod tests {
 
         let loops = chain_segments(&segments);
         assert_eq!(loops.len(), 2, "Should form two separate loops");
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests for marching_squares_bool_grid
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_marching_squares_empty_grid() {
+        // All false (air) → no contours
+        let grid = vec![false; 4 * 4];
+        let contours = marching_squares_bool_grid(&grid, 4, 4, 0.0, 0.0, 1.0);
+        assert!(contours.is_empty(), "All-air grid should produce no contours");
+    }
+
+    #[test]
+    fn test_marching_squares_full_grid() {
+        // All true (material) → single contour around the boundary
+        let grid = vec![true; 4 * 4];
+        let contours = marching_squares_bool_grid(&grid, 4, 4, 0.0, 0.0, 1.0);
+
+        // All-true means every cell is case 15, so no boundary segments.
+        // A fully filled grid actually produces *no* contours because there are
+        // no inside/outside transitions.
+        assert!(
+            contours.is_empty(),
+            "Fully filled grid has no boundaries, so no contours"
+        );
+    }
+
+    #[test]
+    fn test_marching_squares_full_grid_with_border() {
+        // To get a contour "around the boundary", we need false border cells.
+        // 6×6 grid with a 4×4 true core surrounded by false.
+        let rows = 6;
+        let cols = 6;
+        let mut grid = vec![false; rows * cols];
+        for r in 1..5 {
+            for c in 1..5 {
+                grid[r * cols + c] = true;
+            }
+        }
+        let contours = marching_squares_bool_grid(&grid, rows, cols, 0.0, 0.0, 1.0);
+        assert_eq!(
+            contours.len(),
+            1,
+            "Solid block with air border should produce one contour loop"
+        );
+        // The contour should form a closed loop with multiple points
+        assert!(
+            contours[0].len() >= 4,
+            "Contour should have at least 4 points, got {}",
+            contours[0].len()
+        );
+    }
+
+    #[test]
+    fn test_marching_squares_single_block() {
+        // 4×4 grid with a 2×2 true block in the center
+        let rows = 4;
+        let cols = 4;
+        let mut grid = vec![false; rows * cols];
+        // Place material at (1,1), (1,2), (2,1), (2,2)
+        grid[cols + 1] = true;
+        grid[cols + 2] = true;
+        grid[2 * cols + 1] = true;
+        grid[2 * cols + 2] = true;
+
+        let contours = marching_squares_bool_grid(&grid, rows, cols, 0.0, 0.0, 1.0);
+        assert_eq!(
+            contours.len(),
+            1,
+            "Single 2×2 block should produce one contour loop"
+        );
+
+        let loop0 = &contours[0];
+        assert!(
+            loop0.len() >= 4,
+            "Contour should have at least 4 points, got {}",
+            loop0.len()
+        );
+
+        // Verify all contour points are roughly centered around the block
+        for pt in loop0 {
+            assert!(
+                pt.x >= 0.5 && pt.x <= 3.5,
+                "x out of expected range: {}",
+                pt.x
+            );
+            assert!(
+                pt.y >= 0.5 && pt.y <= 3.5,
+                "y out of expected range: {}",
+                pt.y
+            );
+        }
+    }
+
+    #[test]
+    fn test_marching_squares_ring() {
+        // Material ring with hole → two contours (outer + inner)
+        // 8×8 grid: border of air, ring of material, center of air
+        let rows = 8;
+        let cols = 8;
+        let mut grid = vec![false; rows * cols];
+
+        // Fill a 6×6 block (rows 1..7, cols 1..7) with material
+        for r in 1..7 {
+            for c in 1..7 {
+                grid[r * cols + c] = true;
+            }
+        }
+        // Hollow out the center (rows 3..5, cols 3..5) back to air
+        for r in 3..5 {
+            for c in 3..5 {
+                grid[r * cols + c] = false;
+            }
+        }
+
+        let contours = marching_squares_bool_grid(&grid, rows, cols, 0.0, 0.0, 1.0);
+        assert_eq!(
+            contours.len(),
+            2,
+            "Ring (material with hole) should produce 2 contour loops (outer + inner)"
+        );
+
+        // Both contours should be closed loops with enough points
+        for (i, contour) in contours.iter().enumerate() {
+            assert!(
+                contour.len() >= 4,
+                "Contour {} should have at least 4 points, got {}",
+                i,
+                contour.len()
+            );
+        }
+
+        // One contour should be larger (outer) and one smaller (inner).
+        // Measure by counting points — the outer contour has more boundary cells.
+        let (len0, len1) = (contours[0].len(), contours[1].len());
+        assert_ne!(
+            len0, len1,
+            "Outer and inner contours should have different point counts"
+        );
     }
 }
