@@ -113,7 +113,10 @@ fn stl_model(id: ModelId) -> LoadedModel {
 /// Build a controller with a STEP model and one tool, ready for toolpath creation.
 fn step_controller() -> AppController<ScriptedBackend> {
     let mut c = AppController::with_backend(ScriptedBackend::new());
-    c.state.job.tools.push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    c.state
+        .job
+        .tools
+        .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
     c.state.job.models.push(step_model(ModelId(1)));
     c
 }
@@ -121,7 +124,10 @@ fn step_controller() -> AppController<ScriptedBackend> {
 /// Build a controller with an STL model and one tool.
 fn stl_controller() -> AppController<ScriptedBackend> {
     let mut c = AppController::with_backend(ScriptedBackend::new());
-    c.state.job.tools.push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    c.state
+        .job
+        .tools
+        .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
     c.state.job.models.push(stl_model(ModelId(1)));
     c
 }
@@ -172,7 +178,10 @@ fn add_pocket(controller: &mut AppController<ScriptedBackend>) -> ToolpathId {
 fn w3_step_import_populates_enriched_mesh() {
     let model = step_model(ModelId(1));
 
-    assert!(model.enriched_mesh.is_some(), "enriched_mesh should be populated");
+    assert!(
+        model.enriched_mesh.is_some(),
+        "enriched_mesh should be populated"
+    );
     assert!(model.mesh.is_some(), "mesh should be populated");
     assert_eq!(model.kind, ModelKind::Step);
 
@@ -214,7 +223,10 @@ fn w3_face_toggle_adds_and_removes() {
         "Should have 1 face selected"
     );
     assert_eq!(entry.face_selection.as_ref().unwrap()[0], face_a);
-    assert!(entry.stale_since.is_some(), "Toolpath should be marked stale");
+    assert!(
+        entry.stale_since.is_some(),
+        "Toolpath should be marked stale"
+    );
 
     // Selection should stay on toolpath (not switch to Face panel)
     assert!(
@@ -243,7 +255,10 @@ fn w3_face_selection_derives_polygon() {
     let face_id = find_horizontal_face(&enriched);
 
     let polygon = enriched.face_boundary_as_polygon(face_id);
-    assert!(polygon.is_some(), "Horizontal face should produce a polygon");
+    assert!(
+        polygon.is_some(),
+        "Horizontal face should produce a polygon"
+    );
 
     let poly = polygon.unwrap();
     assert!(
@@ -386,15 +401,17 @@ fn w4_face_selection_in_undo_snapshot() {
         c.state.history.toolpath_snapshot.take()
     {
         if let Some(entry) = c.state.job.find_toolpath(snap_id) {
-            c.state.history.push(crate::state::history::UndoAction::ToolpathParamChange {
-                tp_id: snap_id,
-                old_op,
-                new_op: entry.operation.clone(),
-                old_dressups,
-                new_dressups: entry.dressups.clone(),
-                old_face_selection: old_faces,
-                new_face_selection: entry.face_selection.clone(),
-            });
+            c.state
+                .history
+                .push(crate::state::history::UndoAction::ToolpathParamChange {
+                    tp_id: snap_id,
+                    old_op,
+                    new_op: entry.operation.clone(),
+                    old_dressups,
+                    new_dressups: entry.dressups.clone(),
+                    old_face_selection: old_faces,
+                    new_face_selection: entry.face_selection.clone(),
+                });
         }
     }
 
@@ -430,10 +447,8 @@ fn w5_project_round_trip_preserves_step_face_selection() {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let temp_dir = std::env::temp_dir().join(format!(
-        "rs_cam_wf_test_{nanos}_{}",
-        std::process::id()
-    ));
+    let temp_dir =
+        std::env::temp_dir().join(format!("rs_cam_wf_test_{nanos}_{}", std::process::id()));
     fs::create_dir_all(&temp_dir).unwrap();
 
     // Build a job with STEP model + face selection
@@ -441,7 +456,8 @@ fn w5_project_round_trip_preserves_step_face_selection() {
     let model = step_model(ModelId(1));
     let enriched = model.enriched_mesh.as_ref().unwrap().clone();
     job.models.push(model);
-    job.tools.push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    job.tools
+        .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
 
     let face_id = find_horizontal_face(&enriched);
     let mut entry = ToolpathEntry::for_operation(
@@ -482,7 +498,11 @@ fn w5_project_round_trip_preserves_step_face_selection() {
     assert!(
         loaded.warnings.is_empty(),
         "No warnings expected, got: {:?}",
-        loaded.warnings.iter().map(|w| w.message()).collect::<Vec<_>>()
+        loaded
+            .warnings
+            .iter()
+            .map(|w| w.message())
+            .collect::<Vec<_>>()
     );
 
     fs::remove_dir_all(temp_dir).unwrap();
@@ -497,11 +517,31 @@ fn w6_auto_height_defaults() {
     let config = HeightsConfig::default();
     let h = config.resolve(10.0, 5.0);
 
-    assert!((h.clearance_z - 20.0).abs() < 1e-9, "clearance_z should be 20.0, got {}", h.clearance_z);
-    assert!((h.retract_z - 10.0).abs() < 1e-9, "retract_z should be 10.0, got {}", h.retract_z);
-    assert!((h.feed_z - 8.0).abs() < 1e-9, "feed_z should be 8.0, got {}", h.feed_z);
-    assert!((h.top_z - 0.0).abs() < 1e-9, "top_z should be 0.0, got {}", h.top_z);
-    assert!((h.bottom_z - (-5.0)).abs() < 1e-9, "bottom_z should be -5.0, got {}", h.bottom_z);
+    assert!(
+        (h.clearance_z - 20.0).abs() < 1e-9,
+        "clearance_z should be 20.0, got {}",
+        h.clearance_z
+    );
+    assert!(
+        (h.retract_z - 10.0).abs() < 1e-9,
+        "retract_z should be 10.0, got {}",
+        h.retract_z
+    );
+    assert!(
+        (h.feed_z - 8.0).abs() < 1e-9,
+        "feed_z should be 8.0, got {}",
+        h.feed_z
+    );
+    assert!(
+        (h.top_z - 0.0).abs() < 1e-9,
+        "top_z should be 0.0, got {}",
+        h.top_z
+    );
+    assert!(
+        (h.bottom_z - (-5.0)).abs() < 1e-9,
+        "bottom_z should be -5.0, got {}",
+        h.bottom_z
+    );
 
     // Ordering invariant
     assert!(h.clearance_z > h.retract_z, "clearance > retract");
@@ -557,7 +597,11 @@ fn w6_height_ordering_with_various_depths() {
             h.clearance_z > h.retract_z && h.retract_z > h.feed_z && h.top_z > h.bottom_z,
             "Height ordering violated for safe_z={safe_z}, op_depth={op_depth}: \
              clearance={}, retract={}, feed={}, top={}, bottom={}",
-            h.clearance_z, h.retract_z, h.feed_z, h.top_z, h.bottom_z
+            h.clearance_z,
+            h.retract_z,
+            h.feed_z,
+            h.top_z,
+            h.bottom_z
         );
     }
 }
@@ -584,10 +628,7 @@ fn w10_model_removal_clears_face_selection() {
         Selection::None,
         "Face selection should be cleared when model is removed"
     );
-    assert!(
-        c.state.job.models.is_empty(),
-        "Model should be removed"
-    );
+    assert!(c.state.job.models.is_empty(), "Model should be removed");
 }
 
 #[test]

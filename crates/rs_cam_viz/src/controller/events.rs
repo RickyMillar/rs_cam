@@ -761,13 +761,13 @@ impl<B: ComputeBackend> AppController<B> {
     fn submit_simulation_for_groups(
         &mut self,
         groups: Vec<SetupSimGroup>,
-        all_toolpaths_flat: Vec<SetupSimToolpath>,
+        all_toolpaths_flat: &[SetupSimToolpath],
         stock_bbox: BoundingBox3,
         model_setup_idx: Option<usize>,
     ) {
         if self.state.simulation.auto_resolution {
             self.state.simulation.resolution =
-                auto_resolution_for_tools(&all_toolpaths_flat, &stock_bbox);
+                auto_resolution_for_tools(all_toolpaths_flat, &stock_bbox);
         }
 
         let stock = &self.state.job.stock;
@@ -805,7 +805,7 @@ impl<B: ComputeBackend> AppController<B> {
             tracing::warn!("No computed toolpaths to simulate");
             return;
         };
-        self.submit_simulation_for_groups(groups, all_toolpaths_flat, stock_bbox, Some(0));
+        self.submit_simulation_for_groups(groups, &all_toolpaths_flat, stock_bbox, Some(0));
     }
 
     pub fn run_simulation_with_ids(&mut self, ids: &[ToolpathId]) {
@@ -836,7 +836,7 @@ impl<B: ComputeBackend> AppController<B> {
         };
         self.submit_simulation_for_groups(
             groups,
-            all_toolpaths_flat,
+            &all_toolpaths_flat,
             stock_bbox,
             Some(target_setup_idx),
         );
@@ -1046,7 +1046,7 @@ impl<B: ComputeBackend> AppController<B> {
         let mut polygons = model.and_then(|model| model.polygons.clone());
         let mut mesh = model.and_then(|model| model.mesh.clone());
         let enriched_mesh = model.and_then(|model| model.enriched_mesh.clone());
-        let face_selection = face_selection_for_toolpath.clone();
+        let face_selection = face_selection_for_toolpath;
 
         // Derive polygons from selected BREP faces when no explicit polygons exist.
         // This enables all 2.5D operations (pocket, profile, adaptive, trace, etc.)
@@ -1156,13 +1156,13 @@ impl<B: ComputeBackend> AppController<B> {
         let mut heights = heights_config.resolve(safe_z, operation.default_depth_for_heights());
         // When face selection provides a Z height, use it as the top_z
         // so the toolpath cuts at the face level, not at Z=0.
-        if let Some(fz) = face_top_z {
-            if heights_config.top_z.is_auto() {
-                heights.top_z = fz;
-                // Shift bottom_z relative to the face top
-                if heights_config.bottom_z.is_auto() {
-                    heights.bottom_z = fz - operation.default_depth_for_heights().abs();
-                }
+        if let Some(fz) = face_top_z
+            && heights_config.top_z.is_auto()
+        {
+            heights.top_z = fz;
+            // Shift bottom_z relative to the face top
+            if heights_config.bottom_z.is_auto() {
+                heights.bottom_z = fz - operation.default_depth_for_heights().abs();
             }
         }
         let stock_bbox = if let Some(transform_setup) = transform_setup.as_ref() {
@@ -1244,6 +1244,8 @@ impl<B: ComputeBackend> AppController<B> {
         let direction = rs_cam_core::dexel_stock::StockCutDirection::FromTop;
 
         for tp in &prior {
+            // SAFETY: prior list was filtered to only include entries with Some result
+            #[allow(clippy::expect_used)]
             let result = tp.result.as_ref().expect("filtered for Some above");
             let tool = self.state.job.tools.iter().find(|t| t.id == tp.tool_id);
             if let Some(tool) = tool {

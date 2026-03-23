@@ -1335,6 +1335,8 @@ fn adaptive_segments_with_debug(
         let path_debug_bounds = path_bounds(&path);
 
         if path_len >= 2 {
+            // SAFETY: path.len() >= 2 checked on line above
+            #[allow(clippy::expect_used)]
             let endpoint = *path.last().expect("path is non-empty after loop");
             last_pos = Some(endpoint);
             pass_endpoints.push(endpoint);
@@ -1582,6 +1584,8 @@ fn runtime_annotations_to_labels(
 /// The toolpath maintains approximately constant engagement by dynamically
 /// adjusting direction at each step. Returns a Toolpath with rapids,
 /// plunges, and feeds at the specified cut_depth.
+// infallible: cancel closure always returns false, so Cancelled is unreachable
+#[allow(clippy::expect_used)]
 pub fn adaptive_toolpath(polygon: &Polygon2, params: &AdaptiveParams) -> Toolpath {
     let never_cancel = || false;
     adaptive_toolpath_with_cancel(polygon, params, &never_cancel)
@@ -1635,7 +1639,12 @@ pub fn adaptive_toolpath_annotated_traced_with_cancel(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
 

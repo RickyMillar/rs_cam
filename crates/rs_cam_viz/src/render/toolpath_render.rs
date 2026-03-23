@@ -1,5 +1,5 @@
-use super::gpu_safety::{self, GpuLimits};
 use super::LineVertex;
+use super::gpu_safety::{self, GpuLimits};
 use egui_wgpu::wgpu;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 
@@ -261,7 +261,7 @@ impl ToolpathGpuData {
         &mut self,
         device: &wgpu::Device,
         limits: &GpuLimits,
-        verts: Vec<LineVertex>,
+        verts: &[LineVertex],
     ) {
         if verts.is_empty() {
             return;
@@ -270,7 +270,7 @@ impl ToolpathGpuData {
             device,
             limits,
             "entry_preview",
-            bytemuck::cast_slice(&verts),
+            bytemuck::cast_slice(verts),
             wgpu::BufferUsages::VERTEX,
         );
         self.entry_preview_count = if self.entry_preview_buffer.is_some() {

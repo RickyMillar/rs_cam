@@ -165,6 +165,8 @@ impl ToolpathSemanticRecorder {
         }
     }
 
+    // SAFETY: Mutex::lock only fails if poisoned (panic in another thread)
+    #[allow(clippy::expect_used)]
     pub fn finish(self) -> ToolpathSemanticTrace {
         let state = self.inner.lock().expect("semantic recorder poisoned");
         let mut items: Vec<_> = state.items.values().cloned().collect();
@@ -191,6 +193,8 @@ impl ToolpathSemanticRecorder {
         kind: ToolpathSemanticKind,
         label: impl Into<String>,
     ) -> ToolpathSemanticScope {
+        // SAFETY: Mutex::lock only fails if poisoned (panic in another thread)
+        #[allow(clippy::expect_used)]
         let mut state = self.inner.lock().expect("semantic recorder poisoned");
         let id = state.next_item_id;
         state.next_item_id += 1;
@@ -310,6 +314,8 @@ impl ToolpathSemanticScope {
         self.finish_inner();
     }
 
+    // SAFETY: Mutex::lock only fails if poisoned (panic in another thread)
+    #[allow(clippy::expect_used)]
     fn update_item(&self, apply: impl FnOnce(&mut ToolpathSemanticItem)) {
         let mut state = self
             .recorder
@@ -644,7 +650,12 @@ fn sanitize_filename_component(input: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
     use crate::geo::P3;

@@ -1,5 +1,5 @@
 //! Integration tests for STEP file import via truck.
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![cfg(feature = "step")]
 
 use rs_cam_core::enriched_mesh::SurfaceType;

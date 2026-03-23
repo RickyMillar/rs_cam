@@ -35,7 +35,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 [workspace.lints.clippy]
 # Error handling strictness — prevent panic-prone patterns
 unwrap_used = "deny"
-expect_used = "warn"
+expect_used = "deny"
 panic = "deny"
 todo = "deny"
 unimplemented = "deny"
@@ -47,13 +47,13 @@ print_stdout = "deny"
 print_stderr = "deny"
 
 # Error quality
-map_err_ignore = "warn"
+map_err_ignore = "deny"
 
 # Code quality
-needless_pass_by_value = "warn"
-large_enum_variant = "warn"
-result_large_err = "warn"
-redundant_clone = "warn"
+needless_pass_by_value = "deny"
+large_enum_variant = "deny"
+result_large_err = "deny"
+redundant_clone = "deny"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

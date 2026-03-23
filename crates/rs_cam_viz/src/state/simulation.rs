@@ -728,7 +728,7 @@ impl SimulationState {
             toolpath_id,
             boundary_index,
             local_move,
-            item: item.clone(),
+            item,
             ancestry: index.ancestry(trace, item_index),
         })
     }
@@ -1583,7 +1583,12 @@ fn issue_kind_rank(kind: SimulationIssueKind) -> u8 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
     use crate::state::job::{JobState, ModelId, ToolId};

@@ -1,7 +1,13 @@
 //! End-to-end integration tests: STL -> drop-cutter -> G-code,
 //! pocket + profile on same geometry, SVG -> pocket -> G-code,
 //! and tri-dexel stock simulation.
-#![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing, clippy::print_stderr)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::print_stderr
+)]
 
 use rs_cam_core::{
     dexel_stock::{StockCutDirection, TriDexelStock},

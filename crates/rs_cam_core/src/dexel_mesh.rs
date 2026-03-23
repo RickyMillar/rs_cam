@@ -5,7 +5,6 @@
 //! being progressively carved.  Side-face grids (X, Y) produce additional
 //! surface meshes appended with index offsets.
 
-
 use crate::dexel::{DexelAxis, DexelGrid, ray_bottom, ray_top};
 use crate::dexel_stock::TriDexelStock;
 use crate::stock_mesh::StockMesh;
@@ -387,7 +386,12 @@ fn append_mesh(base: &mut StockMesh, other: &StockMesh) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
     use crate::dexel::ray_subtract_above;

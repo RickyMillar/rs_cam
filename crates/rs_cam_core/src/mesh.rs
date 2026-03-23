@@ -800,7 +800,7 @@ mod tests {
             [0, 1, 2], // CCW
             [0, 3, 2], // CW (flipped!)
         ];
-        let mut mesh = TriangleMesh::from_raw(vertices.clone(), triangles);
+        let mut mesh = TriangleMesh::from_raw(vertices, triangles);
 
         // Fix winding
         mesh.fix_winding();

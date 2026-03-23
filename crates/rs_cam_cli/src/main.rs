@@ -72,6 +72,10 @@ enum Commands {
         /// Write diagnostics JSON artifact to this path
         #[arg(long)]
         diagnostics_json: Option<PathBuf>,
+
+        /// Write toolpath debug trace JSON artifacts to this directory
+        #[arg(long)]
+        debug_trace: Option<PathBuf>,
     },
 
     /// Generate 3D finishing toolpath using drop-cutter algorithm
@@ -1399,6 +1403,7 @@ fn main() -> Result<()> {
             input,
             diagnostics,
             diagnostics_json,
+            debug_trace,
         } => {
             let job_path = input
                 .canonicalize()
@@ -1414,6 +1419,9 @@ fn main() -> Result<()> {
             if diagnostics_json.is_some() {
                 job_file.job.diagnostics_json = diagnostics_json;
             }
+            let debug_trace_dir =
+                debug_trace.map(|p| if p.is_absolute() { p } else { job_dir.join(p) });
+
             info!(
                 tools = job_file.tools.len(),
                 operations = job_file.operation.len(),
@@ -1421,8 +1429,34 @@ fn main() -> Result<()> {
                 "Job loaded"
             );
 
-            let job_result = job::execute_job(&job_file, job_dir)?;
+            let job_result = job::execute_job(&job_file, job_dir, debug_trace_dir.is_some())?;
             let toolpath = &job_result.combined;
+
+            // Export debug trace artifacts if requested
+            if let Some(ref trace_dir) = debug_trace_dir {
+                for (idx, artifact) in job_result.trace_artifacts.iter().enumerate() {
+                    let file_stem = format!(
+                        "{}-{}",
+                        idx,
+                        artifact.toolpath_name.replace(
+                            |c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_',
+                            "_",
+                        )
+                    );
+                    match rs_cam_core::semantic_trace::write_toolpath_trace_artifact(
+                        trace_dir, &file_stem, artifact,
+                    ) {
+                        Ok(path) => info!(path = %path.display(), "Wrote debug trace artifact"),
+                        Err(e) => {
+                            eprintln!(
+                                "Warning: failed to write trace artifact for op {}: {}",
+                                idx, e
+                            );
+                        }
+                    }
+                }
+            }
+
             info!(
                 moves = toolpath.moves.len(),
                 cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),

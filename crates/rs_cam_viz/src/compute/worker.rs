@@ -2,7 +2,12 @@ mod execute;
 pub mod helpers;
 mod semantic;
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests;
 
 use std::collections::VecDeque;
@@ -438,6 +443,8 @@ fn spawn_toolpath_lane(
                     inner.active_toolpath_id = None;
                     inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
                 }
+                // SAFETY: loop condition guarantees queue is non-empty
+                #[allow(clippy::expect_used)]
                 let request = inner.queue.pop_front().expect("queue checked");
                 lane.cancel.store(false, Ordering::SeqCst);
                 inner.state = LaneState::Running;
@@ -533,6 +540,8 @@ fn spawn_analysis_lane(
                     inner.active_toolpath_id = None;
                     inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
                 }
+                // SAFETY: loop condition guarantees queue is non-empty
+                #[allow(clippy::expect_used)]
                 let request = inner.queue.pop_front().expect("queue checked");
                 lane.cancel.store(false, Ordering::SeqCst);
                 inner.state = LaneState::Running;

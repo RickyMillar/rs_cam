@@ -1569,6 +1569,8 @@ fn clear_z_level(
         let path_debug_bounds = path_bounds_3d(&path);
 
         if pass_steps >= 2 {
+            // SAFETY: pass_steps >= 2 checked on line above
+            #[allow(clippy::expect_used)]
             let endpoint = *path.last().expect("path is non-empty after loop");
             *last_pos = Some(endpoint);
             pass_endpoints.push(P2::new(endpoint.x, endpoint.y));
@@ -2338,6 +2340,8 @@ fn runtime_annotations_to_labels(
 /// the STL mesh surface with constant engagement control. Multi-level
 /// passes from top to bottom, waterline boundary cleanup at each level.
 #[tracing::instrument(skip(mesh, index, cutter, params), fields(tool_radius = params.tool_radius, stepover = params.stepover))]
+// infallible: cancel closure always returns false, so Cancelled is unreachable
+#[allow(clippy::expect_used)]
 pub fn adaptive_3d_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -2379,6 +2383,8 @@ pub fn adaptive_3d_toolpath_traced_with_cancel(
 /// Like `adaptive_3d_toolpath` but also returns annotations for simulation display.
 /// Each annotation is `(move_index, label)`.
 #[tracing::instrument(skip(mesh, index, cutter, params), fields(tool_radius = params.tool_radius, stepover = params.stepover))]
+// infallible: cancel closure always returns false, so Cancelled is unreachable
+#[allow(clippy::expect_used)]
 pub fn adaptive_3d_toolpath_annotated(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -2442,7 +2448,12 @@ pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
     use crate::dexel::DexelSegment;

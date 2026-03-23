@@ -409,7 +409,10 @@ impl RsCamApp {
                 let resources: &mut RenderResources =
                     renderer.callback_resources.get_mut().unwrap();
                 resources.sim_mesh_data = SimMeshGpuData::from_heightmap_mesh_colored(
-                    &rs.device, &resources.gpu_limits, mesh_ref, &colors,
+                    &rs.device,
+                    &resources.gpu_limits,
+                    mesh_ref,
+                    &colors,
                 );
             }
         }
@@ -599,7 +602,10 @@ impl RsCamApp {
                 let resources: &mut RenderResources =
                     renderer.callback_resources.get_mut().unwrap();
                 resources.sim_mesh_data = SimMeshGpuData::from_heightmap_mesh_colored(
-                    &rs.device, &resources.gpu_limits, mesh_ref, &colors,
+                    &rs.device,
+                    &resources.gpu_limits,
+                    mesh_ref,
+                    &colors,
                 );
             }
         }
@@ -813,15 +819,14 @@ impl RsCamApp {
                 } else {
                     None
                 };
-                resources.enriched_mesh_data =
-                    crate::render::mesh_render::enriched_mesh_gpu_data(
-                        &render_state.device,
-                        &resources.gpu_limits,
-                        enriched,
-                        &selected_faces,
-                        hovered_face,
-                        &transform,
-                    );
+                resources.enriched_mesh_data = crate::render::mesh_render::enriched_mesh_gpu_data(
+                    &render_state.device,
+                    &resources.gpu_limits,
+                    enriched,
+                    &selected_faces,
+                    hovered_face,
+                    &transform,
+                );
             } else if let Some(mesh) = &model.mesh {
                 if use_local_frame {
                     // SAFETY: use_local_frame is true iff active_setup_ref.is_some().
@@ -835,11 +840,8 @@ impl RsCamApp {
                         &Arc::new(transformed),
                     );
                 } else {
-                    resources.mesh_data = MeshGpuData::from_mesh(
-                        &render_state.device,
-                        &resources.gpu_limits,
-                        mesh,
-                    );
+                    resources.mesh_data =
+                        MeshGpuData::from_mesh(&render_state.device, &resources.gpu_limits, mesh);
                 }
             }
         }
@@ -1188,8 +1190,13 @@ impl RsCamApp {
                 // local frame — use directly, no transform needed.
                 let render_tp = result.toolpath.as_ref();
 
-                let mut gpu_data =
-                    ToolpathGpuData::from_toolpath(&render_state.device, &resources.gpu_limits, render_tp, i, selected);
+                let mut gpu_data = ToolpathGpuData::from_toolpath(
+                    &render_state.device,
+                    &resources.gpu_limits,
+                    render_tp,
+                    i,
+                    selected,
+                );
 
                 // Generate entry path preview for selected toolpaths with a non-None entry style
                 if selected {
@@ -1214,7 +1221,11 @@ impl RsCamApp {
                     };
                     let preview_verts =
                         toolpath_render::entry_preview_vertices(&result.toolpath, &config);
-                    gpu_data.attach_entry_preview(&render_state.device, &resources.gpu_limits, preview_verts);
+                    gpu_data.attach_entry_preview(
+                        &render_state.device,
+                        &resources.gpu_limits,
+                        &preview_verts,
+                    );
                 }
 
                 resources.toolpath_data.push(gpu_data);

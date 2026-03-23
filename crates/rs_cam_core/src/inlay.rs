@@ -130,7 +130,7 @@ fn male_toolpath(polygon: &Polygon2, params: &InlayParams) -> Toolpath {
     // (inverted from the female where we carve inside the design)
     let mut holes = vec![polygon.exterior.clone()];
     holes.extend(polygon.holes.iter().cloned());
-    let male_region = Polygon2::with_holes(outer.exterior.clone(), holes);
+    let male_region = Polygon2::with_holes(outer.exterior, holes);
 
     // Generate scan lines across the male region
     let scan_lines = zigzag_lines(&male_region, 0.05, params.stepover, 0.0);

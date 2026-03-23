@@ -765,7 +765,7 @@ fn load_legacy_project(
         }
 
         let model_id = job.next_model_id();
-        let model = load_legacy_model(path, model_id, toolpath.input.clone(), &mut warnings);
+        let model = load_legacy_model(path, model_id, &toolpath.input, &mut warnings);
         model_ids_by_path.insert(toolpath.input.clone(), model_id);
         job.models.push(model);
     }
@@ -860,10 +860,10 @@ fn restore_legacy_tool(tool: LegacyToolSection, id: ToolId) -> ToolConfig {
 fn load_legacy_model(
     project_path: &Path,
     id: ModelId,
-    raw_input: String,
+    raw_input: &str,
     warnings: &mut Vec<ProjectLoadWarning>,
 ) -> LoadedModel {
-    let resolved_path = resolve_model_path(project_path, &raw_input);
+    let resolved_path = resolve_model_path(project_path, raw_input);
     let kind = infer_model_kind(&resolved_path).unwrap_or(ModelKind::Svg);
     let units = default_units_for_kind(kind);
     let name = default_model_name(&resolved_path, kind);

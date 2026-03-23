@@ -33,9 +33,7 @@ fn split_into_segments(toolpath: &Toolpath) -> Vec<Segment> {
         match m.move_type {
             MoveType::Rapid => {
                 // Flush any accumulated cutting moves as a segment.
-                if let (Some(first), Some(last)) =
-                    (current_moves.first(), current_moves.last())
-                {
+                if let (Some(first), Some(last)) = (current_moves.first(), current_moves.last()) {
                     let start = first.target;
                     let end = last.target;
                     segments.push(Segment {
@@ -87,7 +85,6 @@ fn total_rapid_distance(order: &[usize], segments: &[Segment]) -> f64 {
 /// with proper retract/rapid/plunge moves inserted between segments.
 ///
 /// # Algorithm
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 ///
 /// 1. Split the toolpath into cutting segments (strips rapids).
 /// 2. Apply nearest-neighbor heuristic starting from segment 0.

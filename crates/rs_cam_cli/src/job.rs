@@ -35,7 +35,11 @@ use tracing::{debug, info};
 
 use rs_cam_core::{
     adaptive::{AdaptiveParams, adaptive_toolpath},
-    adaptive3d::{Adaptive3dParams, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath},
+    adaptive3d::{
+        Adaptive3dParams, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
+        adaptive_3d_toolpath_annotated_traced_with_cancel,
+    },
+    debug_trace::ToolpathDebugRecorder,
     depth::{DepthStepping, depth_stepped_toolpath},
     dressup::{apply_dogbones, apply_entry, apply_tabs, even_tabs},
     dropcutter::batch_drop_cutter,
@@ -44,6 +48,7 @@ use rs_cam_core::{
     pocket::{PocketParams, pocket_toolpath},
     profile::{ProfileParams, ProfileSide, profile_toolpath},
     rest::{RestParams, rest_machining_toolpath},
+    semantic_trace::{ToolpathSemanticRecorder, ToolpathTraceArtifact, enrich_traces},
     toolpath::{Toolpath, raster_toolpath_from_grid},
     zigzag::{ZigzagParams, zigzag_toolpath},
 };
@@ -287,13 +292,15 @@ pub struct OpResult {
 pub struct JobResult {
     pub combined: Toolpath,
     pub phases: Vec<OpResult>,
+    pub trace_artifacts: Vec<ToolpathTraceArtifact>,
 }
 
-pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
+pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<JobResult> {
     let mut combined = Toolpath::new();
     let mut phases = Vec::new();
     let mut next_tool_number = 1u32;
     let mut tool_numbers = HashMap::new();
+    let mut trace_artifacts = Vec::new();
 
     for (i, op) in job.operation.iter().enumerate() {
         info!(index = i, op_type = %op.op_type, "=== Operation ===");
@@ -593,7 +600,61 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
                     initial_stock: None,
                 };
 
-                adaptive_3d_toolpath(&mesh, &si, cutter.as_ref(), &params)
+                if debug_trace {
+                    let op_label = format!("Op {} — adaptive3d", i);
+                    let tp_name = format!("op_{}_adaptive3d", i);
+                    let debug_recorder = ToolpathDebugRecorder::new(&tp_name, &op_label);
+                    let semantic_recorder = ToolpathSemanticRecorder::new(&tp_name, &op_label);
+                    let debug_root = debug_recorder.root_context();
+
+                    let never_cancel = || false;
+                    let (tp, _annotations) = adaptive_3d_toolpath_annotated_traced_with_cancel(
+                        &mesh,
+                        &si,
+                        cutter.as_ref(),
+                        &params,
+                        &never_cancel,
+                        Some(&debug_root),
+                    )
+                    .map_err(|e| anyhow::anyhow!("adaptive3d cancelled: {e}"))?;
+
+                    let mut debug_trace_data = debug_recorder.finish();
+                    let mut semantic_trace_data = semantic_recorder.finish();
+                    enrich_traces(&mut debug_trace_data, &mut semantic_trace_data);
+
+                    let request_snapshot = serde_json::json!({
+                        "operation_index": i,
+                        "operation_type": "adaptive3d",
+                        "input": input_path.display().to_string(),
+                        "tool": op.tool,
+                        "tool_diameter": tool_def.diameter,
+                        "params": {
+                            "stepover": params.stepover,
+                            "depth_per_pass": params.depth_per_pass,
+                            "stock_to_leave": params.stock_to_leave,
+                            "stock_top_z": params.stock_top_z,
+                            "tolerance": params.tolerance,
+                            "feed_rate": params.feed_rate,
+                            "plunge_rate": params.plunge_rate,
+                            "safe_z": params.safe_z,
+                        }
+                    });
+
+                    let tool_summary = format!("{:.2}mm {}", tool_def.diameter, tool_def.tool_type);
+                    trace_artifacts.push(ToolpathTraceArtifact::new(
+                        i,
+                        &tp_name,
+                        &op_label,
+                        &tool_summary,
+                        request_snapshot,
+                        Some(debug_trace_data),
+                        Some(semantic_trace_data),
+                    ));
+
+                    tp
+                } else {
+                    adaptive_3d_toolpath(&mesh, &si, cutter.as_ref(), &params)
+                }
             }
 
             "drop-cutter" | "drop_cutter" | "finish" => {
@@ -661,7 +722,11 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
         });
     }
 
-    Ok(JobResult { combined, phases })
+    Ok(JobResult {
+        combined,
+        phases,
+        trace_artifacts,
+    })
 }
 
 #[cfg(test)]

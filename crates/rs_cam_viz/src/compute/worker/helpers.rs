@@ -58,7 +58,7 @@ struct DressupTraceInfo<'a> {
 /// `set_params` configures operation-specific parameters on the semantic scope.
 /// `transform` receives the current toolpath and returns the transformed toolpath.
 fn apply_dressup_with_tracing(
-    tp: Toolpath,
+    tp: &Toolpath,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
     semantic: Option<&rs_cam_core::semantic_trace::ToolpathSemanticContext>,
     info: DressupTraceInfo<'_>,
@@ -75,7 +75,7 @@ fn apply_dressup_with_tracing(
         set_params(&scope);
         scope
     });
-    let result = transform(&tp);
+    let result = transform(tp);
     if let Some(scope) = semantic_scope.as_ref() {
         scope.bind_to_toolpath(&result, 0, result.moves.len());
     }
@@ -118,7 +118,7 @@ pub(super) fn apply_dressups(
             let ramp_angle = cfg.ramp_angle;
             let tool_radius = tool.diameter / 2.0;
             tp = apply_dressup_with_tracing(
-                tp,
+                &tp,
                 debug,
                 semantic,
                 DressupTraceInfo {
@@ -147,7 +147,7 @@ pub(super) fn apply_dressups(
             let helix_pitch = cfg.helix_pitch;
             let tool_radius = tool.diameter / 2.0;
             tp = apply_dressup_with_tracing(
-                tp,
+                &tp,
                 debug,
                 semantic,
                 DressupTraceInfo {
@@ -179,7 +179,7 @@ pub(super) fn apply_dressups(
         let tool_radius = tool.diameter / 2.0;
         let angle = cfg.dogbone_angle;
         tp = apply_dressup_with_tracing(
-            tp,
+            &tp,
             debug,
             semantic,
             DressupTraceInfo {
@@ -197,7 +197,7 @@ pub(super) fn apply_dressups(
     if cfg.lead_in_out {
         let radius = cfg.lead_radius;
         tp = apply_dressup_with_tracing(
-            tp,
+            &tp,
             debug,
             semantic,
             DressupTraceInfo {
@@ -217,7 +217,7 @@ pub(super) fn apply_dressups(
         let link_feed = cfg.link_feed_rate;
         let sz = safe_z;
         tp = apply_dressup_with_tracing(
-            tp,
+            &tp,
             debug,
             semantic,
             DressupTraceInfo {
@@ -245,7 +245,7 @@ pub(super) fn apply_dressups(
     if cfg.arc_fitting {
         let tolerance = cfg.arc_tolerance;
         tp = apply_dressup_with_tracing(
-            tp,
+            &tp,
             debug,
             semantic,
             DressupTraceInfo {
@@ -264,7 +264,7 @@ pub(super) fn apply_dressups(
         let tool_radius = tool.diameter / 2.0;
         let sz = safe_z;
         tp = apply_dressup_with_tracing(
-            tp,
+            &tp,
             debug,
             semantic,
             DressupTraceInfo {
@@ -335,7 +335,7 @@ pub(super) fn apply_dressups(
     if cfg.optimize_rapid_order {
         let sz = safe_z;
         tp = apply_dressup_with_tracing(
-            tp,
+            &tp,
             debug,
             semantic,
             DressupTraceInfo {
@@ -443,7 +443,7 @@ where
         1.0,
         &|| cancel.load(Ordering::SeqCst),
     )
-    .map_err(|_| ComputeError::Cancelled)?;
+    .map_err(|_e| ComputeError::Cancelled)?;
     set_phase("Collect collision markers");
     let positions: Vec<[f32; 3]> = report
         .collisions
@@ -481,6 +481,8 @@ pub(super) fn compute_stats(tp: &Toolpath) -> ToolpathStats {
     }
 }
 
+// SAFETY: CARGO_MANIFEST_DIR always has two parent directories in a workspace layout
+#[allow(clippy::expect_used)]
 pub(super) fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()

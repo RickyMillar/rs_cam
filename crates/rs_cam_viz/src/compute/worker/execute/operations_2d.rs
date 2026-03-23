@@ -129,7 +129,7 @@ fn run_adaptive_annotated(
                     &|| cancel.load(Ordering::SeqCst),
                     debug,
                 )
-                .map_err(|_| ComputeError::Cancelled)?;
+                .map_err(|_e| ComputeError::Cancelled)?;
             if !tp.moves.is_empty() {
                 if level_idx > 0 && !out.moves.is_empty() {
                     out.final_retract(effective_safe_z(req));

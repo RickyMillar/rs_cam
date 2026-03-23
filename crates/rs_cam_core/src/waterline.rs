@@ -86,6 +86,8 @@ pub fn waterline_contours(
 /// Generate waterline toolpaths at multiple Z heights.
 ///
 /// Z heights are generated from start_z down to final_z with the given step.
+// infallible: cancel closure always returns false, so Cancelled is unreachable
+#[allow(clippy::expect_used)]
 pub fn waterline_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,

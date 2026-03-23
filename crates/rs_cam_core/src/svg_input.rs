@@ -148,6 +148,8 @@ fn extract_polygons_from_path(
                         // SAFETY: len >= 2 checked above
                         #[allow(clippy::indexing_slicing)]
                         let first = pts[0];
+                        // SAFETY: pts.len() >= 2 checked above
+                        #[allow(clippy::expect_used)]
                         let last_pt = *pts.last().expect("len >= 2");
                         if (first.x - last_pt.x).abs() < 1e-6 && (first.y - last_pt.y).abs() < 1e-6
                         {

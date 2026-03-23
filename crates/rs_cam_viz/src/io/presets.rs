@@ -172,7 +172,7 @@ fn unescape_toml_string(s: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU32, Ordering};

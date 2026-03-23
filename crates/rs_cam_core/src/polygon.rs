@@ -482,7 +482,7 @@ mod tests {
             P2::new(12.5, 12.5),
             P2::new(12.5, 7.5),
         ];
-        let poly = Polygon2::with_holes(outer.exterior.clone(), vec![hole]);
+        let poly = Polygon2::with_holes(outer.exterior, vec![hole]);
         assert_relative_eq!(poly.area(), 400.0 - 25.0, epsilon = 1e-10);
     }
 
@@ -768,7 +768,7 @@ mod tests {
     #[test]
     fn test_containment_single_polygon() {
         let poly = Polygon2::rectangle(0.0, 0.0, 10.0, 10.0);
-        let result = detect_containment(vec![poly.clone()]);
+        let result = detect_containment(vec![poly]);
         assert_eq!(result.len(), 1);
         assert!(result[0].holes.is_empty());
     }

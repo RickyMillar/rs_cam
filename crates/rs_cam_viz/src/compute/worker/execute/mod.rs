@@ -130,7 +130,7 @@ where
                         sim_toolpath.semantic_trace.as_deref(),
                         &|| cancel.load(Ordering::SeqCst),
                     )
-                    .map_err(|_| ComputeError::Cancelled)?;
+                    .map_err(|_e| ComputeError::Cancelled)?;
                 cut_samples.append(&mut samples);
             } else {
                 stock
@@ -140,7 +140,7 @@ where
                         group.direction,
                         &|| cancel.load(Ordering::SeqCst),
                     )
-                    .map_err(|_| ComputeError::Cancelled)?;
+                    .map_err(|_e| ComputeError::Cancelled)?;
             }
             total_moves += toolpath.moves.len();
 
@@ -761,14 +761,15 @@ fn annotate_adaptive_runtime_semantics(
                 ToolpathSemanticKind::Region,
                 format!("Region {}", polygon_index + 1),
             );
-            scope.bind_to_toolpath(
-                toolpath,
-                polygon_slices.first().expect("polygon slices").move_start,
-                polygon_slices
-                    .last()
-                    .expect("polygon slices")
-                    .move_end_exclusive,
-            );
+            // SAFETY: polygon_slices.is_empty() checked above
+            #[allow(clippy::expect_used)]
+            let first_start = polygon_slices.first().expect("polygon slices").move_start;
+            #[allow(clippy::expect_used)]
+            let last_end = polygon_slices
+                .last()
+                .expect("polygon slices")
+                .move_end_exclusive;
+            scope.bind_to_toolpath(toolpath, first_start, last_end);
             Some(scope)
         } else {
             None
@@ -1205,6 +1206,8 @@ fn annotate_horizontal_finish_semantics(
         }
 
         current_pass_count += 1;
+        // SAFETY: current_slice is always set before reaching this point
+        #[allow(clippy::expect_used)]
         let pass_scope = current_slice
             .as_ref()
             .expect("slice scope")

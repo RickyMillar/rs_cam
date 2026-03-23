@@ -294,6 +294,8 @@ fn chain_segments(segments: Vec<Segment>) -> Vec<Vec<P3>> {
             None => break,
         };
 
+        // SAFETY: start_idx found via .position(|s| s.is_some()) above
+        #[allow(clippy::expect_used)]
         let start_seg = remaining[start_idx].take().expect("checked Some");
         let mut chain = vec![start_seg.p1, start_seg.p2];
 
@@ -345,7 +347,12 @@ fn chain_segments(segments: Vec<Segment>) -> Vec<Vec<P3>> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
     use crate::fiber::{Fiber, Interval};

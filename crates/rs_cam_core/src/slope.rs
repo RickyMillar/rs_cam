@@ -25,7 +25,8 @@ pub struct SurfaceHeightmap {
 
 impl SurfaceHeightmap {
     /// Build via rayon-parallelized drop-cutter queries at each grid cell.
-    #[allow(clippy::too_many_arguments)]
+    // infallible: cancel closure always returns false, so Cancelled is unreachable
+    #[allow(clippy::too_many_arguments, clippy::expect_used)]
     pub fn from_mesh(
         mesh: &TriangleMesh,
         index: &SpatialIndex,
@@ -302,7 +303,12 @@ pub fn classify_steep_shallow(slope_map: &SlopeMap, threshold_deg: f64) -> Vec<b
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
     use std::f64::consts::FRAC_PI_4;

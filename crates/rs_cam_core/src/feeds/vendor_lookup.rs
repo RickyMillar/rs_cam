@@ -187,7 +187,7 @@ fn chipload_midpoint(obs: &VendorObservation) -> f64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

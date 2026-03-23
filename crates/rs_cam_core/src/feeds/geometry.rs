@@ -146,7 +146,7 @@ pub fn vbit_width_at_depth(included_angle: f64, tip_d: f64, ap: f64) -> Option<f
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

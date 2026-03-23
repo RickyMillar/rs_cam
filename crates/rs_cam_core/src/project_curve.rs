@@ -119,6 +119,8 @@ fn close_ring(ring: &[P2]) -> Vec<P2> {
     // SAFETY: len >= 2 checked above
     #[allow(clippy::indexing_slicing)]
     let first = ring[0];
+    // SAFETY: ring.len() >= 2 checked above
+    #[allow(clippy::expect_used)]
     let last = *ring.last().expect("len >= 2");
     let d = ((first.x - last.x).powi(2) + (first.y - last.y).powi(2)).sqrt();
     if d > 1e-9 {

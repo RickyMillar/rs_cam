@@ -247,6 +247,8 @@ pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath
         let ddx = curr.x - prev.x;
         let ddy = curr.y - prev.y;
         let d = (ddx * ddx + ddy * ddy).sqrt();
+        // SAFETY: cum_dist is initialized with [0.0] and only grows
+        #[allow(clippy::expect_used)]
         cum_dist.push(cum_dist.last().expect("cum_dist starts with [0.0]") + d);
     }
 
@@ -882,7 +884,12 @@ pub fn filter_air_cuts(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
 

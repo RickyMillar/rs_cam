@@ -58,6 +58,8 @@ impl DropCutterGrid {
 ///
 /// Generates a regular grid covering the mesh XY extent (plus one cutter radius margin),
 /// with the specified step-over distance.
+// infallible: cancel closure always returns false, so Cancelled is unreachable
+#[allow(clippy::expect_used)]
 pub fn batch_drop_cutter<C: MillingCutter + ?Sized>(
     mesh: &TriangleMesh,
     index: &SpatialIndex,

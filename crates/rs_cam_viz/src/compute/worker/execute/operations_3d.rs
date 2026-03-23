@@ -34,7 +34,7 @@ fn run_dropcutter(
             cfg.min_z,
             &|| cancel.load(Ordering::SeqCst),
         )
-        .map_err(|_| ComputeError::Cancelled)?
+        .map_err(|_e| ComputeError::Cancelled)?
     };
     let toolpath = {
         let _phase_scope = phase_tracker.map(|tracker| tracker.start_phase("Rasterize grid"));
@@ -106,7 +106,7 @@ fn run_adaptive3d_annotated(
         &|| cancel.load(Ordering::SeqCst),
         debug,
     )
-    .map_err(|_| ComputeError::Cancelled)
+    .map_err(|_e| ComputeError::Cancelled)
 }
 
 #[allow(dead_code)]
@@ -139,7 +139,7 @@ fn run_waterline(
             &params,
             &|| cancel.load(Ordering::SeqCst),
         )
-        .map_err(|_| ComputeError::Cancelled)
+        .map_err(|_e| ComputeError::Cancelled)
     }
 }
 
@@ -421,7 +421,7 @@ impl SemanticToolpathOp for DropCutterConfig {
                 self.min_z,
                 &|| ctx.cancel.load(Ordering::SeqCst),
             )
-            .map_err(|_| ComputeError::Cancelled)?
+            .map_err(|_e| ComputeError::Cancelled)?
         };
         let op_scope = ctx
             .semantic_root
@@ -467,6 +467,8 @@ impl SemanticToolpathOp for DropCutterConfig {
                 for &col in cols.iter().skip(1) {
                     row_tp.feed_to(grid.get(row, col).position(), self.feed_rate);
                 }
+                // SAFETY: cols is non-empty (loop only entered when cols has elements)
+                #[allow(clippy::expect_used)]
                 let last_pt = grid.get(row, *cols.last().expect("row has points"));
                 row_tp.rapid_to(P3::new(last_pt.x, last_pt.y, effective_safe_z(ctx.req)));
                 append_toolpath(&mut writer, row_scope.as_ref(), row_tp);
@@ -558,7 +560,7 @@ impl SemanticToolpathOp for WaterlineConfig {
                     self.sampling,
                     &|| ctx.cancel.load(Ordering::SeqCst),
                 )
-                .map_err(|_| ComputeError::Cancelled)?;
+                .map_err(|_e| ComputeError::Cancelled)?;
                 let level_scope = op_ctx.as_ref().map(|ctx| {
                     ctx.start_item(
                         ToolpathSemanticKind::Slice,
