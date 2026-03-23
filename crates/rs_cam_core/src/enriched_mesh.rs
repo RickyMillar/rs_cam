@@ -135,6 +135,8 @@ impl EnrichedMesh {
     /// # Panics
     /// Panics if `tri_idx` is out of bounds.
     pub fn face_for_triangle(&self, tri_idx: usize) -> FaceGroupId {
+        // SAFETY: documented to panic on out-of-bounds tri_idx
+        #[allow(clippy::indexing_slicing)]
         FaceGroupId(self.triangle_to_face[tri_idx])
     }
 
@@ -198,11 +200,14 @@ impl EnrichedMesh {
         }
 
         // First loop is the exterior, rest are holes
+        // SAFETY: loops_2d is non-empty (checked above)
+        #[allow(clippy::indexing_slicing)]
         let exterior = loops_2d[0].clone();
         if exterior.len() < 3 {
             return None;
         }
 
+        #[allow(clippy::indexing_slicing)]
         let holes: Vec<Vec<P2>> = loops_2d[1..]
             .iter()
             .filter(|h| h.len() >= 3)
@@ -221,6 +226,8 @@ impl EnrichedMesh {
             return None;
         }
         if ids.len() == 1 {
+            // SAFETY: len() == 1 checked
+            #[allow(clippy::indexing_slicing)]
             return self.face_boundary_as_polygon(ids[0]);
         }
 
@@ -233,7 +240,10 @@ impl EnrichedMesh {
         // Boolean union of multiple face polygons using the geo crate.
         use geo::BooleanOps;
 
+        // SAFETY: polygons is non-empty (ids.len() > 1, each pushed a polygon)
+        #[allow(clippy::indexing_slicing)]
         let mut result_geo = polygons[0].to_geo_polygon();
+        #[allow(clippy::indexing_slicing)]
         for poly in &polygons[1..] {
             let other = poly.to_geo_polygon();
             let union = result_geo.union(&other);
@@ -364,6 +374,8 @@ fn compute_2d_boundary(
         .map(|loop_3d| loop_3d.iter().map(|p| P2::new(p.x, p.y)).collect())
         .collect();
 
+    // SAFETY: short-circuit on is_empty() ensures [0] is valid
+    #[allow(clippy::indexing_slicing)]
     if loops_2d.is_empty() || loops_2d[0].len() < 3 {
         return None;
     }

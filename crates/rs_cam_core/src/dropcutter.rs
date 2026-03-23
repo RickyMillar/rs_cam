@@ -24,6 +24,8 @@ pub fn point_drop_cutter<C: MillingCutter + ?Sized>(
     let tri_indices = index.query(x, y, cutter.radius());
 
     for &idx in &tri_indices {
+        // SAFETY: idx comes from SpatialIndex which only stores valid face indices
+        #[allow(clippy::indexing_slicing)]
         let tri = &mesh.faces[idx];
         cutter.drop_cutter(&mut cl, tri);
     }
@@ -46,6 +48,8 @@ pub struct DropCutterGrid {
 impl DropCutterGrid {
     /// Get the CL point at grid position (row, col).
     pub fn get(&self, row: usize, col: usize) -> &CLPoint {
+        // SAFETY: callers use row < self.rows and col < self.cols from grid iteration
+        #[allow(clippy::indexing_slicing)]
         &self.points[row * self.cols + col]
     }
 }
@@ -246,7 +250,7 @@ fn batch_compute_points<C: MillingCutter + ?Sized>(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::geo::P3;

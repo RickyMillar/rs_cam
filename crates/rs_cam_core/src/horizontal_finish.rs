@@ -63,6 +63,7 @@ struct FlatRegion {
 /// 3. For each region, raster across the XY bounding box, including only points
 ///    where the underlying triangle is flat.
 /// 4. Insert rapids to skip non-flat stretches; retract between regions.
+#[allow(clippy::indexing_slicing)] // mesh vertex/face indexing is bounded by mesh structure
 pub fn horizontal_finish_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -257,6 +258,7 @@ pub fn horizontal_finish_toolpath(
     tp
 }
 
+#[allow(clippy::indexing_slicing)] // tri_idx bounded by flat_face_set.len() check
 /// Check whether the point (x, y) lies over at least one flat triangle.
 ///
 /// Uses the spatial index to find nearby triangles, then tests XY containment
@@ -282,7 +284,7 @@ fn is_point_over_flat_triangle(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::mesh::{SpatialIndex, make_test_flat};

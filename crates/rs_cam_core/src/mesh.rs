@@ -37,6 +37,7 @@ pub struct TriangleMesh {
 }
 
 impl TriangleMesh {
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Load from an STL file (binary or ASCII auto-detected).
     /// stl_io::read_stl already returns an IndexedMesh with welded vertices.
     /// `scale` multiplies all vertex positions (e.g., 1000.0 to convert meters to mm).
@@ -133,6 +134,7 @@ impl TriangleMesh {
         Self::from_stl_scaled(path, 1.0)
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Load from STL bytes in memory (for WASM or embedded use).
     /// `data` should contain a complete STL file (binary or ASCII).
     pub fn from_stl_bytes(data: &[u8], scale: f64) -> Result<Self, MeshError> {
@@ -220,6 +222,7 @@ impl TriangleMesh {
         Ok(mesh)
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Check winding consistency of the mesh.
     ///
     /// For each undirected edge shared by two faces, checks whether the
@@ -276,6 +279,7 @@ impl TriangleMesh {
         }
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Fix inconsistent winding using BFS from a seed triangle.
     ///
     /// Picks the triangle with the most upward-pointing normal as seed,
@@ -372,6 +376,7 @@ impl TriangleMesh {
         flip_count
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Build from raw vertices and triangle indices (for testing).
     pub fn from_raw(vertices: Vec<P3>, triangles: Vec<[u32; 3]>) -> Self {
         let faces: Vec<Triangle> = triangles
@@ -447,6 +452,7 @@ impl SpatialIndex {
         Self::build(mesh, cell_size)
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Build a uniform grid spatial index over the mesh triangles.
     /// `cell_size` controls the grid resolution (should be ~2x cutter diameter).
     /// If `cell_size` is larger than mesh extent / 4, it is clamped down to avoid
@@ -502,6 +508,7 @@ impl SpatialIndex {
         }
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Find all triangle indices whose bounding boxes potentially overlap with
     /// a cutter centered at (cx, cy) with given radius.
     pub fn query(&self, cx: f64, cy: f64, radius: f64) -> Vec<usize> {
@@ -600,7 +607,7 @@ pub fn make_test_flat(size: f64) -> TriangleMesh {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 

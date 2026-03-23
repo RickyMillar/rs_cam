@@ -38,24 +38,29 @@ pub struct VCarveParams {
 
 /// Compute the minimum distance from a point to any edge of a polygon
 /// (exterior + all holes).
+#[allow(clippy::indexing_slicing)] // windows(2) guarantees w[0] and w[1] exist
 fn point_to_polygon_distance(point: &P2, polygon: &Polygon2) -> f64 {
     let mut min_dist = f64::INFINITY;
 
     // Exterior edges
     let ext = &polygon.exterior;
-    for i in 0..ext.len() {
-        let a = &ext[i];
-        let b = &ext[(i + 1) % ext.len()];
-        let dist = point_to_segment_distance(point, a, b);
+    for w in ext.windows(2) {
+        let dist = point_to_segment_distance(point, &w[0], &w[1]);
+        min_dist = min_dist.min(dist);
+    }
+    if let (Some(last), Some(first)) = (ext.last(), ext.first()) {
+        let dist = point_to_segment_distance(point, last, first);
         min_dist = min_dist.min(dist);
     }
 
     // Hole edges
     for hole in &polygon.holes {
-        for i in 0..hole.len() {
-            let a = &hole[i];
-            let b = &hole[(i + 1) % hole.len()];
-            let dist = point_to_segment_distance(point, a, b);
+        for w in hole.windows(2) {
+            let dist = point_to_segment_distance(point, &w[0], &w[1]);
+            min_dist = min_dist.min(dist);
+        }
+        if let (Some(last), Some(first)) = (hole.last(), hole.first()) {
+            let dist = point_to_segment_distance(point, last, first);
             min_dist = min_dist.min(dist);
         }
     }

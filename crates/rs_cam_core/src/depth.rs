@@ -240,7 +240,7 @@ where
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)] // Tests: unwrap is idiomatic for asserting success
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::pocket::{PocketParams, pocket_toolpath};

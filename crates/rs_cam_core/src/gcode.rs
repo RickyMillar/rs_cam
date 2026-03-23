@@ -295,17 +295,20 @@ pub fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &dyn PostProcessor) ->
     }
 
     let mut output = String::new();
-    let first_rpm = phases[0].spindle_rpm;
+    // SAFETY: early return above guarantees phases is non-empty
+    #[allow(clippy::indexing_slicing)]
+    let first_phase = &phases[0];
+    let first_rpm = first_phase.spindle_rpm;
     output.push_str(&post.preamble(first_rpm));
 
     // Emit coolant start if the first phase has coolant enabled
-    let first_coolant = phases[0].coolant;
+    let first_coolant = first_phase.coolant;
     if first_coolant.is_active() {
         output.push_str(first_coolant.start_gcode());
     }
 
     let mut current_rpm = first_rpm;
-    let mut current_tool: Option<u32> = phases[0].tool_number;
+    let mut current_tool: Option<u32> = first_phase.tool_number;
     let mut current_coolant = first_coolant;
     let mut last_feed: Option<f64> = None;
 

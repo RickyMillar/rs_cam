@@ -72,6 +72,7 @@ const CELL_MATERIAL: u8 = 1;
 const CELL_CLEARED: u8 = 2;
 
 impl MaterialGrid {
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Build a material grid from a polygon. Cells inside the polygon (and
     /// not inside holes) are marked as material.
     pub fn from_polygon(polygon: &Polygon2, cell_size: f64) -> Self {
@@ -110,6 +111,7 @@ impl MaterialGrid {
         }
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Build a boolean grid caching which cells are inside the given polygon.
     /// Used to avoid repeated point-in-polygon calls during direction search.
     pub fn build_machinable_mask(
@@ -149,6 +151,7 @@ impl MaterialGrid {
         Some((row, col))
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Get cell value at world coordinates. Returns CELL_AIR for out-of-bounds.
     #[inline]
     pub fn get_at(&self, x: f64, y: f64) -> u8 {
@@ -164,6 +167,7 @@ impl MaterialGrid {
         self.get_at(x, y) == CELL_MATERIAL
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Clear a circle of material (mark as CELL_CLEARED).
     pub fn clear_circle(&mut self, cx: f64, cy: f64, radius: f64) {
         let r_sq = radius * radius;
@@ -200,6 +204,7 @@ impl MaterialGrid {
         }
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Mark cells as cleared where the tri-dexel stock surface is below
     /// the cutting depth. This lets the adaptive algorithm skip regions
     /// already machined by prior operations.
@@ -253,6 +258,7 @@ impl MaterialGrid {
         self.material_count as f64 / self.total_solid as f64
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Fast check if a position is inside the machinable region using the cached mask.
     #[inline]
     pub fn is_machinable(&self, mask: &[bool], x: f64, y: f64) -> bool {
@@ -281,6 +287,7 @@ impl MaterialGrid {
         self.find_nearest_material_in_radius(x, y, max_radius)
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Search for nearest material within a given radius from (x, y).
     fn find_nearest_material_in_radius(&self, x: f64, y: f64, radius: f64) -> Option<(f64, f64)> {
         let col_min = ((x - radius - self.origin_x) / self.cell_size)
@@ -320,6 +327,7 @@ impl MaterialGrid {
 
     // ── Boundary distance field ───────────────────────────────────────
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Compute distance-to-boundary for every cell using BFS.
     ///
     /// AIR cells have distance 0; material/cleared cells get their
@@ -362,6 +370,7 @@ impl MaterialGrid {
         dist
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Look up boundary distance at world coordinates (nearest cell).
     /// Returns 0.0 for out-of-bounds (treated as on-boundary).
     #[inline]
@@ -372,6 +381,7 @@ impl MaterialGrid {
         }
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Compute gradient of the boundary distance field using central differences.
     /// Returns (gx, gy) pointing away from the nearest boundary (toward interior).
     pub fn boundary_gradient(&self, distances: &[f64], x: f64, y: f64) -> (f64, f64) {
@@ -426,6 +436,7 @@ fn polygon_bbox(pts: &[P2]) -> (f64, f64, f64, f64) {
 
 /// Compute engagement fraction at position (cx, cy) with tool of given radius.
 ///
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Uses disk-area sampling: counts the fraction of grid cells within the
 /// tool circle that contain uncut material. This is more precise than
 /// circumference-only sampling (which only measures the engagement angle)
@@ -716,6 +727,7 @@ fn find_nearest_material_spread(
     find_nearest_material_spread_in_radius(grid, x, y, pass_endpoints, min_dist_sq, max_radius)
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 fn find_nearest_material_spread_in_radius(
     grid: &MaterialGrid,
     x: f64,
@@ -770,6 +782,7 @@ fn find_nearest_material_spread_in_radius(
 }
 
 /// Walk the machinable polygon boundary, sampling engagement at regular
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// intervals. Returns the boundary position with the best engagement
 /// that isn't too close to a previous endpoint.
 ///
@@ -1072,6 +1085,7 @@ fn adaptive_segments(
     adaptive_segments_with_debug(polygon, &params, cancel, None)
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Generate 2D adaptive segments and optionally record detailed debug spans.
 fn adaptive_segments_with_debug(
     polygon: &Polygon2,
@@ -1447,6 +1461,7 @@ fn adaptive_segments_with_debug(
     Ok(segments)
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Simplify a path using the Douglas-Peucker algorithm.
 pub(crate) fn simplify_path(points: &[P2], tolerance: f64) -> Vec<P2> {
     if points.len() <= 2 {
@@ -1620,7 +1635,7 @@ pub fn adaptive_toolpath_annotated_traced_with_cancel(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 

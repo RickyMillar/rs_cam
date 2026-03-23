@@ -48,10 +48,14 @@ fn resample_polyline(points: &[P2], spacing: f64) -> Vec<P2> {
     }
 
     let mut result = Vec::with_capacity((polyline_length(points) / spacing) as usize + 2);
+    // SAFETY: len >= 2 checked above
+    #[allow(clippy::indexing_slicing)]
     result.push(points[0]);
 
     let mut accumulated = 0.0;
 
+    // SAFETY: i ranges 1..len, so i and i-1 are always valid
+    #[allow(clippy::indexing_slicing)]
     for i in 1..points.len() {
         let prev = points[i - 1];
         let curr = points[i];
@@ -82,6 +86,8 @@ fn resample_polyline(points: &[P2], spacing: f64) -> Vec<P2> {
     }
 
     // Always include the last point (avoid duplicate if very close)
+    // SAFETY: len >= 2 checked at function entry
+    #[allow(clippy::indexing_slicing)]
     let last = points[points.len() - 1];
     if let Some(prev) = result.last() {
         let d = ((last.x - prev.x).powi(2) + (last.y - prev.y).powi(2)).sqrt();
@@ -94,11 +100,12 @@ fn resample_polyline(points: &[P2], spacing: f64) -> Vec<P2> {
 }
 
 /// Total length of a polyline.
+#[allow(clippy::indexing_slicing)] // windows(2) guarantees w[0] and w[1] exist
 fn polyline_length(points: &[P2]) -> f64 {
     let mut len = 0.0;
-    for i in 1..points.len() {
-        let dx = points[i].x - points[i - 1].x;
-        let dy = points[i].y - points[i - 1].y;
+    for w in points.windows(2) {
+        let dx = w[1].x - w[0].x;
+        let dy = w[1].y - w[0].y;
         len += (dx * dx + dy * dy).sqrt();
     }
     len
@@ -109,8 +116,10 @@ fn close_ring(ring: &[P2]) -> Vec<P2> {
     if ring.len() < 2 {
         return ring.to_vec();
     }
+    // SAFETY: len >= 2 checked above
+    #[allow(clippy::indexing_slicing)]
     let first = ring[0];
-    let last = ring[ring.len() - 1];
+    let last = *ring.last().expect("len >= 2");
     let d = ((first.x - last.x).powi(2) + (first.y - last.y).powi(2)).sqrt();
     if d > 1e-9 {
         let mut closed = ring.to_vec();
@@ -189,7 +198,7 @@ pub fn project_curve_toolpath(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 

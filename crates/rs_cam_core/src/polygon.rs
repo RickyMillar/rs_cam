@@ -125,6 +125,7 @@ impl Polygon2 {
 ///
 /// Uses cavalier_contours for arc-preserving parallel offset.
 ///
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Sign convention (for CCW exterior, matching cavalier_contours):
 /// - `distance > 0` = **inward** (shrink) — used for pocket clearing
 /// - `distance < 0` = **outward** (grow) — used for profile offset
@@ -177,10 +178,9 @@ pub fn offset_polygon(polygon: &Polygon2, distance: f64) -> Vec<Polygon2> {
             .collect();
 
         for hole in holes {
-            if hole.is_empty() {
+            let Some(test_pt) = hole.first() else {
                 continue;
-            }
-            let test_pt = &hole[0];
+            };
             let mut assigned = false;
             for poly in &mut polygons {
                 if poly.contains_point(test_pt) {
@@ -189,9 +189,9 @@ pub fn offset_polygon(polygon: &Polygon2, distance: f64) -> Vec<Polygon2> {
                     break;
                 }
             }
-            if !assigned && !polygons.is_empty() {
+            if !assigned && let Some(first_poly) = polygons.first_mut() {
                 // Fallback: attach to first polygon (preserves old behavior)
-                polygons[0].holes.push(hole);
+                first_poly.holes.push(hole);
             }
         }
 
@@ -227,6 +227,7 @@ pub fn pocket_offsets(polygon: &Polygon2, stepover: f64) -> Vec<Vec<Polygon2>> {
 /// as holes of their containing polygon.
 ///
 /// Given polygons from an SVG or DXF where separate shapes may represent
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// an outer boundary with interior islands, this function:
 /// 1. Sorts polygons by area (largest first)
 /// 2. For each smaller polygon, checks if it's fully inside a larger one
@@ -251,45 +252,57 @@ pub fn detect_containment(mut polygons: Vec<Polygon2>) -> Vec<Polygon2> {
     });
 
     // Track which polygons have been consumed as holes
-    let mut consumed = vec![false; polygons.len()];
+    let n = polygons.len();
+    let mut consumed = vec![false; n];
     // Track holes to add to each polygon
-    let mut holes_for: Vec<Vec<usize>> = vec![Vec::new(); polygons.len()];
+    let mut holes_for: Vec<Vec<usize>> = vec![Vec::new(); n];
 
     // For each polygon (smallest first), check if it's inside a larger one
-    for i in (0..polygons.len()).rev() {
-        if consumed[i] {
-            continue;
-        }
-        // Check against all larger polygons
-        for j in 0..i {
-            if consumed[j] {
+    // Safety: i and j are bounded by n (polygon count). consumed and holes_for
+    // are sized to n. All indices are valid by loop construction.
+    #[allow(clippy::indexing_slicing)]
+    {
+        for i in (0..n).rev() {
+            if consumed[i] {
                 continue;
             }
-            if polygon_contains_polygon(&polygons[j], &polygons[i]) {
-                holes_for[j].push(i);
-                consumed[i] = true;
-                break; // Only nest one level deep (innermost containing polygon)
+            // Check against all larger polygons
+            for j in 0..i {
+                if consumed[j] {
+                    continue;
+                }
+                if polygon_contains_polygon(&polygons[j], &polygons[i]) {
+                    holes_for[j].push(i);
+                    consumed[i] = true;
+                    break; // Only nest one level deep (innermost containing polygon)
+                }
             }
         }
     }
 
     // Build result: outer polygons with their holes attached
-    let mut result = Vec::new();
-    for (i, poly) in polygons.iter().enumerate() {
-        if consumed[i] {
-            continue;
-        }
-        let mut outer = poly.clone();
-        for &hole_idx in &holes_for[i] {
-            let mut hole_pts = polygons[hole_idx].exterior.clone();
-            // Holes must be CW (reverse if CCW)
-            if shoelace_area(&hole_pts) > 0.0 {
-                hole_pts.reverse();
+    // Safety: i iterates over 0..n, hole_idx values stored in holes_for[i]
+    // are valid polygon indices by construction above.
+    #[allow(clippy::indexing_slicing)]
+    let result = {
+        let mut result = Vec::new();
+        for (i, poly) in polygons.iter().enumerate() {
+            if consumed[i] {
+                continue;
             }
-            outer.holes.push(hole_pts);
+            let mut outer = poly.clone();
+            for &hole_idx in &holes_for[i] {
+                let mut hole_pts = polygons[hole_idx].exterior.clone();
+                // Holes must be CW (reverse if CCW)
+                if shoelace_area(&hole_pts) > 0.0 {
+                    hole_pts.reverse();
+                }
+                outer.holes.push(hole_pts);
+            }
+            result.push(outer);
         }
-        result.push(outer);
-    }
+        result
+    };
 
     result
 }
@@ -314,6 +327,7 @@ fn polygon_contains_polygon(outer: &Polygon2, inner: &Polygon2) -> bool {
         .all(|p| point_in_polygon(p, &outer.exterior))
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Ray-casting point-in-polygon test.
 fn point_in_polygon(point: &P2, polygon: &[P2]) -> bool {
     let n = polygon.len();
@@ -321,16 +335,16 @@ fn point_in_polygon(point: &P2, polygon: &[P2]) -> bool {
         return false;
     }
     let mut inside = false;
-    let mut j = n - 1;
+    // Safety: i is bounded by 0..n, j tracks previous index (also < n).
+    #[allow(clippy::indexing_slicing)]
     for i in 0..n {
         let pi = &polygon[i];
-        let pj = &polygon[j];
+        let pj = &polygon[(i + n - 1) % n];
         if ((pi.y > point.y) != (pj.y > point.y))
             && (point.x < (pj.x - pi.x) * (point.y - pi.y) / (pj.y - pi.y) + pi.x)
         {
             inside = !inside;
         }
-        j = i;
     }
     inside
 }
@@ -351,12 +365,15 @@ fn polygon_bbox(pts: &[P2]) -> (f64, f64, f64, f64) {
 
 // --- helpers ---
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 fn shoelace_area(pts: &[P2]) -> f64 {
     let n = pts.len();
     if n < 3 {
         return 0.0;
     }
     let mut area = 0.0;
+    // Safety: i is bounded by 0..n, j = (i+1)%n is also < n.
+    #[allow(clippy::indexing_slicing)]
     for i in 0..n {
         let j = (i + 1) % n;
         area += pts[i].x * pts[j].y;
@@ -378,25 +395,29 @@ fn ring_to_geo(pts: &[P2]) -> geo::LineString<f64> {
     geo::LineString::new(coords)
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 fn ring_from_geo(ring: &geo::LineString<f64>) -> Vec<P2> {
     let mut pts: Vec<P2> = ring.coords().map(|c| P2::new(c.x, c.y)).collect();
     // Strip duplicated closing vertex
-    if pts.len() >= 2 {
-        let first = pts[0];
-        let last = pts[pts.len() - 1];
-        if (first.x - last.x).abs() < 1e-10 && (first.y - last.y).abs() < 1e-10 {
-            pts.pop();
-        }
+    if let (Some(&first), Some(&last)) = (pts.first(), pts.last())
+        && pts.len() >= 2
+        && (first.x - last.x).abs() < 1e-10
+        && (first.y - last.y).abs() < 1e-10
+    {
+        pts.pop();
     }
     pts
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 fn ring_perimeter(pts: &[P2]) -> f64 {
     let n = pts.len();
     if n < 2 {
         return 0.0;
     }
     let mut perim = 0.0;
+    // Safety: i is bounded by 0..n, j = (i+1)%n is also < n.
+    #[allow(clippy::indexing_slicing)]
     for i in 0..n {
         let j = (i + 1) % n;
         perim += (pts[j] - pts[i]).norm();
@@ -405,7 +426,7 @@ fn ring_perimeter(pts: &[P2]) -> f64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use approx::assert_relative_eq;

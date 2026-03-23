@@ -272,6 +272,8 @@ fn rotate_ring(ring: &[P3], start_idx: usize) -> Vec<P3> {
         return ring.to_vec();
     }
     let mut result = Vec::with_capacity(n);
+    // SAFETY: (start_idx + i) % n is always in 0..n
+    #[allow(clippy::indexing_slicing)]
     for i in 0..n {
         result.push(ring[(start_idx + i) % n]);
     }
@@ -283,6 +285,7 @@ fn rotate_ring(ring: &[P3], start_idx: usize) -> Vec<P3> {
 /// Produces concentric offset contours with variable stepover that maintains
 /// constant scallop height across the surface regardless of slope and curvature.
 #[tracing::instrument(skip(mesh, index, cutter, params), fields(scallop_height = params.scallop_height))]
+#[allow(clippy::indexing_slicing)] // ring/filtered indexing is guarded by len checks
 pub fn scallop_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -421,6 +424,8 @@ pub fn scallop_toolpath_structured_annotated(
     if params.continuous && rings.len() >= 2 {
         // Continuous spiral mode: connect adjacent rings at their nearest points
         // Start from the first ring
+        // SAFETY: rings.len() >= 2 checked above
+        #[allow(clippy::indexing_slicing)]
         let mut prev_end = rings[0].last().copied().unwrap_or(rings[0][0]);
 
         for (i, ring) in rings.iter().enumerate() {
@@ -437,6 +442,8 @@ pub fn scallop_toolpath_structured_annotated(
                 },
             });
 
+            // SAFETY: rotated is non-empty (ring is non-empty)
+            #[allow(clippy::indexing_slicing)]
             if i == 0 {
                 // First ring: rapid to start
                 tp.rapid_to(P3::new(rotated[0].x, rotated[0].y, params.safe_z));
@@ -447,6 +454,7 @@ pub fn scallop_toolpath_structured_annotated(
             }
 
             // Follow the ring
+            #[allow(clippy::indexing_slicing)]
             for pt in &rotated[1..] {
                 if use_slope_filter {
                     let in_range = slope_map
@@ -459,7 +467,10 @@ pub fn scallop_toolpath_structured_annotated(
                 tp.feed_to(*pt, params.feed_rate);
             }
 
-            prev_end = rotated.last().copied().unwrap_or(rotated[0]);
+            #[allow(clippy::indexing_slicing)]
+            {
+                prev_end = rotated.last().copied().unwrap_or(rotated[0]);
+            }
         }
 
         // Final retract
@@ -492,6 +503,8 @@ pub fn scallop_toolpath_structured_annotated(
             emitted_rings.push(filtered);
         }
 
+        // SAFETY: filtered.len() >= 3 checked before pushing to emitted_rings
+        #[allow(clippy::indexing_slicing)]
         for (ring_index, filtered) in emitted_rings.iter().enumerate() {
             let move_index = tp.moves.len();
             annotations.push(ScallopRuntimeAnnotation {
@@ -548,7 +561,7 @@ pub fn scallop_toolpath_annotated(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::mesh::SpatialIndex;

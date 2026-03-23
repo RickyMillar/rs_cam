@@ -48,7 +48,10 @@ impl RadialProfileLUT {
         let idx_f = dist_sq * self.inv_step;
         let idx = idx_f as usize;
         let frac = idx_f - idx as f64;
+        // SAFETY: dist_sq <= radius_sq guarantees idx+1 is within heights.len()
+        #[allow(clippy::indexing_slicing)]
         let h0 = self.heights[idx];
+        #[allow(clippy::indexing_slicing)]
         let h1 = self.heights[idx + 1];
         if h0 == f64::INFINITY {
             return None;

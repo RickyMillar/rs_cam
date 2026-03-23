@@ -137,6 +137,7 @@ struct ParamContour {
 }
 
 impl ParamContour {
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     fn from_contour(contour: &[P3]) -> Self {
         let n = contour.len();
         let mut params = Vec::with_capacity(n);
@@ -165,6 +166,7 @@ impl ParamContour {
         }
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Interpolate a point at parameter t ∈ [0, 1].
     fn point_at(&self, t: f64) -> P3 {
         let t = t.clamp(0.0, 1.0);
@@ -197,6 +199,7 @@ impl ParamContour {
     }
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Match contours between adjacent Z levels by nearest centroid.
 ///
 /// Returns pairs of indices (upper_idx, lower_idx) for matched contours.
@@ -341,6 +344,7 @@ fn runtime_annotations_to_labels(
         .collect()
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn ramp_finish_toolpath_structured_annotated(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -556,7 +560,7 @@ pub fn ramp_finish_toolpath_annotated(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::mesh::SpatialIndex;

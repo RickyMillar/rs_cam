@@ -39,6 +39,7 @@ expect_used = "warn"
 panic = "deny"
 todo = "deny"
 unimplemented = "deny"
+indexing_slicing = "deny"
 
 # Code quality
 needless_pass_by_value = "warn"

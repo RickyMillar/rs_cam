@@ -199,6 +199,7 @@ impl TriDexelStock {
         let _ = self.simulate_toolpath_with_cancel(toolpath, cutter, direction, &never_cancel);
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Simulate with cancellation support.
     pub fn simulate_toolpath_with_cancel(
         &mut self,
@@ -245,6 +246,7 @@ impl TriDexelStock {
         Ok(())
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     #[allow(clippy::too_many_arguments)]
     pub fn simulate_toolpath_with_metrics_with_cancel(
         &mut self,
@@ -378,6 +380,7 @@ impl TriDexelStock {
         Ok(samples)
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Simulate only moves `start_move..end_move` (for incremental playback).
     pub fn simulate_toolpath_range(
         &mut self,
@@ -562,6 +565,7 @@ impl TriDexelStock {
         sum
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Clear all material above `z` at the given cell on the Z-grid.
     ///
     /// After this call, no material exists above `z` at (row, col).
@@ -586,6 +590,7 @@ struct CuttingCaptureParams {
 
 // ── Grid-generic stamp helpers ───────────────────────────────────────────
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Stamp a tool at a single position on a grid (axis-agnostic).
 ///
 /// `(cu, cv)` is the tool center in the grid's planar axes.
@@ -638,6 +643,7 @@ fn stamp_point_on_grid(
     }
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Stamp a tool along a linear segment on a grid (axis-agnostic).
 ///
 /// `start` and `end` are `(u, v, depth)` — the segment endpoints decomposed
@@ -880,6 +886,7 @@ fn lerp_point(start: P3, end: P3, t: f64) -> P3 {
     start + (end - start) * t
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 fn build_move_semantic_lookup(
     move_count: usize,
     trace: Option<&ToolpathSemanticTrace>,
@@ -938,7 +945,7 @@ fn build_move_semantic_lookup(
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::dexel::{ray_bottom, ray_top};

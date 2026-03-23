@@ -133,22 +133,26 @@ pub fn waterline_toolpath_with_cancel(
                 continue;
             }
 
-            // Rapid to above first point
-            toolpath.rapid_to(P3::new(contour[0].x, contour[0].y, params.safe_z));
+            // SAFETY: contour.len() >= 3 checked above; [0] and [1..] are valid
+            #[allow(clippy::indexing_slicing)]
+            {
+                // Rapid to above first point
+                toolpath.rapid_to(P3::new(contour[0].x, contour[0].y, params.safe_z));
 
-            // Plunge to Z
-            toolpath.feed_to(P3::new(contour[0].x, contour[0].y, z), params.plunge_rate);
+                // Plunge to Z
+                toolpath.feed_to(P3::new(contour[0].x, contour[0].y, z), params.plunge_rate);
 
-            // Follow contour
-            for pt in &contour[1..] {
-                toolpath.feed_to(P3::new(pt.x, pt.y, z), params.feed_rate);
+                // Follow contour
+                for pt in &contour[1..] {
+                    toolpath.feed_to(P3::new(pt.x, pt.y, z), params.feed_rate);
+                }
+
+                // Close the contour
+                toolpath.feed_to(P3::new(contour[0].x, contour[0].y, z), params.feed_rate);
+
+                // Retract
+                toolpath.rapid_to(P3::new(contour[0].x, contour[0].y, params.safe_z));
             }
-
-            // Close the contour
-            toolpath.feed_to(P3::new(contour[0].x, contour[0].y, z), params.feed_rate);
-
-            // Retract
-            toolpath.rapid_to(P3::new(contour[0].x, contour[0].y, params.safe_z));
         }
 
         z -= z_step;
@@ -205,6 +209,8 @@ pub fn chain_contours_pub(points: &[P3], max_gap: f64) -> Vec<Vec<P3>> {
     chain_contours(points, max_gap)
 }
 
+// SAFETY: all indexing into points/used is guarded by iterator position or bounds checks
+#[allow(clippy::indexing_slicing)]
 fn chain_contours(points: &[P3], max_gap: f64) -> Vec<Vec<P3>> {
     if points.is_empty() {
         return Vec::new();
@@ -269,7 +275,7 @@ fn chain_contours(points: &[P3], max_gap: f64) -> Vec<Vec<P3>> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::mesh::{SpatialIndex, make_test_hemisphere};

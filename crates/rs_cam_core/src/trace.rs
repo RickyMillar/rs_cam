@@ -92,6 +92,8 @@ fn trace_ring(tp: &mut Toolpath, ring: &[P2], cut_z: f64, params: &TraceParams) 
         return;
     }
 
+    // SAFETY: ring is non-empty (checked above)
+    #[allow(clippy::indexing_slicing)]
     let first = ring[0];
 
     // Rapid to safe_z above the first point
@@ -113,7 +115,7 @@ fn trace_ring(tp: &mut Toolpath, ring: &[P2], cut_z: f64, params: &TraceParams) 
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::toolpath::MoveType;

@@ -125,6 +125,7 @@ struct SharedEdge {
     is_concave: bool,
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Build the edge-to-face adjacency map.
 /// Returns a map from sorted vertex pair to list of face indices.
 fn build_edge_adjacency(mesh: &TriangleMesh) -> HashMap<EdgeKey, Vec<usize>> {
@@ -142,6 +143,7 @@ fn build_edge_adjacency(mesh: &TriangleMesh) -> HashMap<EdgeKey, Vec<usize>> {
     edge_map
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Compute shared edge info for all edges with exactly 2 adjacent faces.
 fn compute_shared_edges(
     mesh: &TriangleMesh,
@@ -194,6 +196,7 @@ fn compute_shared_edges(
     shared
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Chain connected concave edges into polylines.
 /// Returns a list of vertex-index chains, where each chain is an ordered
 /// sequence of vertex indices forming a polyline along concave edges.
@@ -357,6 +360,7 @@ fn chain_concave_edges(
         .collect()
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Sample points along a vertex chain at the given spacing.
 /// Returns 3D points interpolated along the polyline.
 fn sample_chain(mesh: &TriangleMesh, chain: &[u32], spacing: f64) -> Vec<P3> {
@@ -403,6 +407,7 @@ fn sample_chain(mesh: &TriangleMesh, chain: &[u32], spacing: f64) -> Vec<P3> {
     points
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Generate an offset polyline by shifting each point perpendicular to the path
 /// direction in XY by the given offset distance.
 fn offset_polyline(points: &[P3], offset: f64) -> Vec<P3> {
@@ -466,6 +471,7 @@ fn lift_to_surface(
         .collect()
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Order chains by nearest-neighbor to minimize rapids.
 fn order_paths_nearest(paths: &mut [PencilPath]) {
     if paths.len() <= 1 {

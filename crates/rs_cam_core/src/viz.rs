@@ -16,6 +16,7 @@ use crate::tool::MillingCutter;
 use crate::toolpath::{MoveType, Toolpath};
 use std::fmt::Write;
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Generate an SVG showing the toolpath from a top-down (XY) view.
 /// Z is encoded as color: deeper = darker blue, higher = lighter/warmer.
 pub fn toolpath_to_svg(toolpath: &Toolpath, width: f64, height: f64) -> String {
@@ -99,6 +100,7 @@ pub fn toolpath_to_svg(toolpath: &Toolpath, width: f64, height: f64) -> String {
     svg
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Generate a self-contained HTML file with an interactive 3D viewer.
 ///
 /// Shows the mesh surface + toolpath lines using three.js (loaded from CDN).
@@ -339,6 +341,7 @@ animate();
     html
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Generate a 3D HTML viewer for a toolpath without a mesh.
 ///
 /// Shows the toolpath with a wireframe stock outline box.
@@ -616,6 +619,7 @@ animate();
 /// Generate a 3D HTML viewer showing the simulated heightmap surface + toolpath lines,
 /// with animated replay support.
 ///
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// The heightmap mesh is rendered with vertex colors (wood tones) and the toolpath
 /// is overlaid as colored lines. A "Replay" button lets the user watch the tool
 /// cut the material in real-time with a 3D tool model. An optional ghost source mesh
@@ -1273,6 +1277,7 @@ pub struct SimPhase<'a> {
     pub label: String,
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Generate a stacked multi-tool simulation viewer.
 ///
 /// Plays through multiple phases sequentially (e.g. roughing then rest

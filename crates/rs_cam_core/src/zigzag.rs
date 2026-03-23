@@ -38,6 +38,7 @@ pub fn zigzag_toolpath(polygon: &Polygon2, params: &ZigzagParams) -> Toolpath {
     lines_to_toolpath(&lines, params)
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Generate the 2D zigzag scan lines (no Z, no toolpath yet).
 ///
 /// Each line is a pair of P2 endpoints. Lines alternate direction for zigzag.
@@ -211,7 +212,7 @@ fn lines_to_toolpath(lines: &[[P2; 2]], params: &ZigzagParams) -> Toolpath {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::toolpath::MoveType;

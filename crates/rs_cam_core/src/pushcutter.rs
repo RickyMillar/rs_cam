@@ -20,6 +20,7 @@ pub fn push_cutter_triangle(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn Mill
     edge_push(fiber, tri, cutter);
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Push a cutter along a fiber against all triangles near it using the spatial index.
 pub fn push_cutter_fiber(
     fiber: &mut Fiber,
@@ -230,6 +231,7 @@ fn facet_push(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn MillingCutter) {
     fiber.add_interval(Interval::new(t - eps, t + eps));
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Edge push: for each triangle edge, compute the interval on the fiber
 /// where the cutter contacts that edge.
 fn edge_push(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn MillingCutter) {
@@ -240,6 +242,7 @@ fn edge_push(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn MillingCutter) {
     }
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Push-cutter for a single edge against a fiber.
 ///
 /// Finds where the cutter profile, swept along the fiber at constant Z,
@@ -349,7 +352,7 @@ fn edge_push_single(fiber: &mut Fiber, p1: &P3, p2: &P3, cutter: &dyn MillingCut
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::tool::{BallEndmill, FlatEndmill};

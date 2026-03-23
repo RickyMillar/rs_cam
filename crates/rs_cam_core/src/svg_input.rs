@@ -145,8 +145,10 @@ fn extract_polygons_from_path(
                     // Remove closing vertex if it duplicates start
                     let mut pts = current_subpath.clone();
                     if pts.len() >= 2 {
+                        // SAFETY: len >= 2 checked above
+                        #[allow(clippy::indexing_slicing)]
                         let first = pts[0];
-                        let last_pt = pts[pts.len() - 1];
+                        let last_pt = *pts.last().expect("len >= 2");
                         if (first.x - last_pt.x).abs() < 1e-6 && (first.y - last_pt.y).abs() < 1e-6
                         {
                             pts.pop();
@@ -214,7 +216,7 @@ fn flatten_cubic(p0: P2, p1: P2, p2: P2, p3: P2, tolerance: f64, out: &mut Vec<P
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 

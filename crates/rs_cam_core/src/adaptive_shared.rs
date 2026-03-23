@@ -66,13 +66,19 @@ where
 }
 
 /// Blend sharp corners in a path with arcs of at least `min_radius`.
+// SAFETY: path[0] guarded by len<3 early return; path[i-1]/[i]/[i+1] bounded
+// by 1..len-1 loop; path.last() guarded by len>=3 precondition.
+#[allow(clippy::indexing_slicing, clippy::expect_used)]
 pub(crate) fn blend_corners(path: &[P2], min_radius: f64) -> Vec<P2> {
     if min_radius <= 0.0 || path.len() < 3 {
         return path.to_vec();
     }
 
+    // SAFETY: len >= 3 checked above; i-1, i, i+1 all valid for 1..len-1
+    #[allow(clippy::indexing_slicing)]
     let mut result = vec![path[0]];
 
+    #[allow(clippy::indexing_slicing)]
     for i in 1..path.len() - 1 {
         let a = path[i - 1];
         let b = path[i];

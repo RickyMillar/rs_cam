@@ -20,6 +20,7 @@ fn xy_distance(a: &P3, b: &P3) -> f64 {
     (dx * dx + dy * dy).sqrt()
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Split a toolpath into segments of consecutive non-rapid moves.
 ///
 /// Each segment tracks the start and end positions of its cutting moves.
@@ -32,9 +33,11 @@ fn split_into_segments(toolpath: &Toolpath) -> Vec<Segment> {
         match m.move_type {
             MoveType::Rapid => {
                 // Flush any accumulated cutting moves as a segment.
-                if !current_moves.is_empty() {
-                    let start = current_moves[0].target;
-                    let end = current_moves[current_moves.len() - 1].target;
+                if let (Some(first), Some(last)) =
+                    (current_moves.first(), current_moves.last())
+                {
+                    let start = first.target;
+                    let end = last.target;
                     segments.push(Segment {
                         moves: std::mem::take(&mut current_moves),
                         start,
@@ -49,9 +52,9 @@ fn split_into_segments(toolpath: &Toolpath) -> Vec<Segment> {
     }
 
     // Flush trailing cutting moves.
-    if !current_moves.is_empty() {
-        let start = current_moves[0].target;
-        let end = current_moves[current_moves.len() - 1].target;
+    if let (Some(first), Some(last)) = (current_moves.first(), current_moves.last()) {
+        let start = first.target;
+        let end = last.target;
         segments.push(Segment {
             moves: current_moves,
             start,
@@ -62,20 +65,19 @@ fn split_into_segments(toolpath: &Toolpath) -> Vec<Segment> {
     segments
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Total XY rapid travel distance for a given segment visitation order.
 ///
 /// Measures the sum of XY distances from the end of each segment to the
 /// start of the next segment in the order.
 #[cfg(test)]
 fn total_rapid_distance(order: &[usize], segments: &[Segment]) -> f64 {
-    if order.len() <= 1 {
-        return 0.0;
-    }
-    let mut dist = 0.0;
-    for i in 0..order.len() - 1 {
-        dist += xy_distance(&segments[order[i]].end, &segments[order[i + 1]].start);
-    }
-    dist
+    // Safety: each window pair [a, b] is a valid 2-element slice from order.
+    // order values are valid segment indices by construction.
+    #[allow(clippy::indexing_slicing)]
+    order.windows(2).fold(0.0, |dist, pair| {
+        dist + xy_distance(&segments[pair[0]].end, &segments[pair[1]].start)
+    })
 }
 
 /// Reorder independent toolpath segments to minimize total rapid travel distance.
@@ -85,12 +87,17 @@ fn total_rapid_distance(order: &[usize], segments: &[Segment]) -> f64 {
 /// with proper retract/rapid/plunge moves inserted between segments.
 ///
 /// # Algorithm
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 ///
 /// 1. Split the toolpath into cutting segments (strips rapids).
 /// 2. Apply nearest-neighbor heuristic starting from segment 0.
 /// 3. Improve with 2-opt swaps (up to 100 iterations).
 /// 4. Reassemble with rapids between segments: retract to `safe_z`, rapid to
 ///    next segment start XY at `safe_z`, then the segment's cutting moves.
+// Safety: all indexing in this function is bounded by `n` (segment count).
+// `order` contains valid segment indices 0..n, `visited` is sized to n,
+// loop variables i,j are bounded by n, and j+1 is guarded by `j+1 < n`.
+#[allow(clippy::indexing_slicing)]
 pub fn optimize_rapid_order(toolpath: &Toolpath, safe_z: f64) -> Toolpath {
     let segments = split_into_segments(toolpath);
 
@@ -199,7 +206,7 @@ pub fn optimize_rapid_order(toolpath: &Toolpath, safe_z: f64) -> Toolpath {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::toolpath::MoveType;
@@ -208,12 +215,12 @@ mod tests {
     /// rapid retract at the end.
     fn make_segment_toolpath(points: &[P3], safe_z: f64, feed_rate: f64) -> Vec<Move> {
         let mut moves = Vec::new();
-        if points.is_empty() {
+        let (Some(first), Some(last)) = (points.first(), points.last()) else {
             return moves;
-        }
+        };
         // Rapid to above start
         moves.push(Move {
-            target: P3::new(points[0].x, points[0].y, safe_z),
+            target: P3::new(first.x, first.y, safe_z),
             move_type: MoveType::Rapid,
         });
         // Feed through all points
@@ -224,7 +231,6 @@ mod tests {
             });
         }
         // Retract
-        let last = points[points.len() - 1];
         moves.push(Move {
             target: P3::new(last.x, last.y, safe_z),
             move_type: MoveType::Rapid,

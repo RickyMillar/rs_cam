@@ -179,21 +179,26 @@ fn male_toolpath(polygon: &Polygon2, params: &InlayParams) -> Toolpath {
 }
 
 /// Compute the minimum distance from a point to the edges of a polygon boundary.
+#[allow(clippy::indexing_slicing)] // windows(2) guarantees w[0] and w[1] exist
 fn point_to_polygon_boundary(point: &P2, exterior: &[P2], holes: &[Vec<P2>]) -> f64 {
     let mut min_dist = f64::INFINITY;
 
-    for i in 0..exterior.len() {
-        let a = &exterior[i];
-        let b = &exterior[(i + 1) % exterior.len()];
-        let dist = point_to_segment_distance(point, a, b);
+    for w in exterior.windows(2) {
+        let dist = point_to_segment_distance(point, &w[0], &w[1]);
+        min_dist = min_dist.min(dist);
+    }
+    if let (Some(last), Some(first)) = (exterior.last(), exterior.first()) {
+        let dist = point_to_segment_distance(point, last, first);
         min_dist = min_dist.min(dist);
     }
 
     for hole in holes {
-        for i in 0..hole.len() {
-            let a = &hole[i];
-            let b = &hole[(i + 1) % hole.len()];
-            let dist = point_to_segment_distance(point, a, b);
+        for w in hole.windows(2) {
+            let dist = point_to_segment_distance(point, &w[0], &w[1]);
+            min_dist = min_dist.min(dist);
+        }
+        if let (Some(last), Some(first)) = (hole.last(), hole.first()) {
+            let dist = point_to_segment_distance(point, last, first);
             min_dist = min_dist.min(dist);
         }
     }

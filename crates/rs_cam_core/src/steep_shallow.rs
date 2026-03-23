@@ -74,6 +74,7 @@ impl Default for SteepShallowParams {
     }
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Dilate a boolean grid by `radius_cells`, setting additional cells to `true`.
 /// 8-connected expansion.
 fn dilate_grid(grid: &[bool], rows: usize, cols: usize, radius_cells: usize) -> Vec<bool> {
@@ -122,6 +123,7 @@ fn erode_grid(grid: &[bool], rows: usize, cols: usize, radius_cells: usize) -> V
     dilated_inv.iter().map(|&v| !v).collect()
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Generate steep (waterline) passes filtered to steep+overlap region.
 #[allow(clippy::too_many_arguments)]
 fn generate_steep_passes(
@@ -207,6 +209,7 @@ fn generate_steep_passes(
     tp
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Generate shallow (parallel raster) passes filtered to shallow+overlap region.
 #[allow(clippy::too_many_arguments)]
 fn generate_shallow_passes(
@@ -411,7 +414,7 @@ pub fn steep_shallow_toolpath(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::mesh::SpatialIndex;

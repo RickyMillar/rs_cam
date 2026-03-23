@@ -150,11 +150,13 @@ fn trim_uncontacted(points: &[P3], fallback_z: f64) -> Vec<P3> {
         None => return Vec::new(),
     };
 
+    // SAFETY: start and end are valid indices from position/rposition
+    #[allow(clippy::indexing_slicing)]
     points[start..=end].to_vec()
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::mesh::SpatialIndex;

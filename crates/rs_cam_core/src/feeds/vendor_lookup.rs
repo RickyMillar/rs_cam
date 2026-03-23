@@ -118,6 +118,8 @@ pub fn lookup_best(lut: &VendorLut, query: &LookupQuery) -> Option<LookupResult>
     }
 
     best.map(|(score, i)| {
+        // SAFETY: `i` was stored from a valid iteration over `lut.observations`
+        #[allow(clippy::indexing_slicing)]
         let obs = &lut.observations[i];
         let chip_load = chipload_midpoint(obs);
         LookupResult {

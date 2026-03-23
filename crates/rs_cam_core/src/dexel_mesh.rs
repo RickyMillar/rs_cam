@@ -5,6 +5,7 @@
 //! being progressively carved.  Side-face grids (X, Y) produce additional
 //! surface meshes appended with index offsets.
 
+
 use crate::dexel::{DexelAxis, DexelGrid, ray_bottom, ray_top};
 use crate::dexel_stock::TriDexelStock;
 use crate::stock_mesh::StockMesh;
@@ -48,6 +49,7 @@ pub fn dexel_stock_to_mesh(stock: &TriDexelStock) -> StockMesh {
 /// 3. **Perimeter skirt** — vertical quads around the grid boundary.
 /// 4. **Hole walls** — vertical quads at internal boundaries between material
 ///    and empty cells, creating visible interior walls of through-holes.
+#[allow(clippy::indexing_slicing)] // grid indexing bounded by row*cols iteration
 pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: f64) -> StockMesh {
     let rows = grid.rows;
     let cols = grid.cols;
@@ -307,6 +309,7 @@ pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: 
 /// Vertex positions are mapped back to (x, y, z) world coordinates:
 /// - Y-grid (u=X, v=Z, depth=Y): vertex = (u, ray_top, v)
 /// - X-grid (u=Y, v=Z, depth=X): vertex = (ray_top, u, v)
+#[allow(clippy::indexing_slicing)] // grid indexing bounded by row*cols iteration
 fn side_grid_to_mesh(grid: &DexelGrid, stock_top_depth: f64, stock_bottom_depth: f64) -> StockMesh {
     let rows = grid.rows;
     let cols = grid.cols;
@@ -384,7 +387,7 @@ fn append_mesh(base: &mut StockMesh, other: &StockMesh) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::dexel::ray_subtract_above;

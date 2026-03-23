@@ -132,6 +132,8 @@ pub fn optimize_feed_rates(
 
     // Third pass: build output toolpath with adjusted feed rates
     let mut output = Toolpath::new();
+    // SAFETY: feed_rates has same length as toolpath.moves; enumerate index is valid
+    #[allow(clippy::indexing_slicing)]
     for (i, mv) in toolpath.moves.iter().enumerate() {
         match mv.move_type {
             MoveType::Rapid => {
@@ -159,24 +161,28 @@ fn smooth_feed_rates(feeds: &mut [f64], moves: &[Move], ramp_rate: f64) {
         return;
     }
 
-    // Forward pass: limit feed rate increases
-    for i in 1..feeds.len() {
-        if feeds[i] <= 0.0 || feeds[i - 1] <= 0.0 {
-            continue; // Skip rapids
+    // SAFETY: i ranges over valid indices; i-1 and i+1 are checked by loop bounds
+    #[allow(clippy::indexing_slicing)]
+    {
+        // Forward pass: limit feed rate increases
+        for i in 1..feeds.len() {
+            if feeds[i] <= 0.0 || feeds[i - 1] <= 0.0 {
+                continue; // Skip rapids
+            }
+            let dist = move_distance(&moves[i - 1].target, &moves[i].target);
+            let max_increase = ramp_rate * dist;
+            feeds[i] = feeds[i].min(feeds[i - 1] + max_increase);
         }
-        let dist = move_distance(&moves[i - 1].target, &moves[i].target);
-        let max_increase = ramp_rate * dist;
-        feeds[i] = feeds[i].min(feeds[i - 1] + max_increase);
-    }
 
-    // Backward pass: limit feed rate decreases
-    for i in (0..feeds.len() - 1).rev() {
-        if feeds[i] <= 0.0 || feeds[i + 1] <= 0.0 {
-            continue;
+        // Backward pass: limit feed rate decreases
+        for i in (0..feeds.len() - 1).rev() {
+            if feeds[i] <= 0.0 || feeds[i + 1] <= 0.0 {
+                continue;
+            }
+            let dist = move_distance(&moves[i].target, &moves[i + 1].target);
+            let max_increase = ramp_rate * dist;
+            feeds[i] = feeds[i].min(feeds[i + 1] + max_increase);
         }
-        let dist = move_distance(&moves[i].target, &moves[i + 1].target);
-        let max_increase = ramp_rate * dist;
-        feeds[i] = feeds[i].min(feeds[i + 1] + max_increase);
     }
 }
 
@@ -188,7 +194,7 @@ fn move_distance(a: &P3, b: &P3) -> f64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::tool::FlatEndmill;

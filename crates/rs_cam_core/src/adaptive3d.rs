@@ -166,6 +166,7 @@ struct MaterialRegion {
     surface_z_max: f64,
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Detect connected material regions via 8-connected BFS flood fill.
 ///
 /// A cell "has material" if the top-Z of the dexel ray exceeds
@@ -341,6 +342,7 @@ fn compute_engagement_3d(
     }
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Fraction of grid cells where material remains above the effective floor
 /// at a given z_level. Used to decide when a level is done.
 fn material_remaining_at_level(
@@ -374,6 +376,7 @@ fn material_remaining_at_level(
     }
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Bbox-restricted version of `material_remaining_at_level()`.
 /// Only scans cells within the region's row/col bounding box.
 fn material_remaining_in_region(
@@ -884,6 +887,7 @@ fn blend_corners_3d(path: &[P3], min_radius: f64) -> Vec<P3> {
         .collect()
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Find Z at (x, y) by finding the nearest segment on the original 3D path
 /// and interpolating linearly.
 fn interpolate_z_from_path(path: &[P3], x: f64, y: f64) -> f64 {
@@ -1063,6 +1067,7 @@ struct ClearZLevelContext<'a> {
 /// Pre-stamp thin material bands that appear at each Z level on steep walls.
 ///
 /// After cutting at a previous Z level, wall cells retain material_z equal to that
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// level. At the new (lower) Z level, these cells have a thin band of material
 /// (material_z - effective_floor) that is technically real but produces unproductive
 /// contour passes. This function directly cuts those thin bands at the cell level,
@@ -1126,6 +1131,7 @@ fn pre_stamp_thin_bands(
     stamped
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Clear material at a single Z level, optionally restricted to a region.
 ///
 /// When `region` is `Some`, entry point search and material-remaining checks
@@ -1752,6 +1758,7 @@ fn clear_z_level(
     Ok(())
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Run waterline boundary cleanup at a given Z level.
 ///
 /// When `slope_map` is provided, only traces contours through steep regions
@@ -1869,6 +1876,7 @@ fn waterline_cleanup(
 
 // ── Main loop ─────────────────────────────────────────────────────────
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 fn adaptive_3d_segments(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -2434,7 +2442,7 @@ pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::dexel::DexelSegment;

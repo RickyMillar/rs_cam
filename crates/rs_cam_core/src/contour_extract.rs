@@ -51,6 +51,7 @@ pub fn weave_contours(x_fibers: &[Fiber], y_fibers: &[Fiber], z: f64) -> Vec<Vec
     chain_segments(segments)
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Build a 2D boolean grid from fiber intervals.
 fn build_boolean_grid(x_fibers: &[Fiber], y_fibers: &[Fiber]) -> Vec<Vec<bool>> {
     let n_rows = x_fibers.len();
@@ -86,6 +87,7 @@ struct Segment {
     p2: P3,
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Run marching squares on the boolean grid.
 /// Returns line segments at boundaries between inside/outside cells.
 fn marching_squares(
@@ -189,6 +191,7 @@ fn marching_squares(
     segments
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Compute a point on a horizontal cell edge (between two columns at the same row).
 /// The point lies at the X-coordinate where the X-fiber's interval boundary crosses.
 fn edge_point_x(
@@ -211,6 +214,7 @@ fn edge_point_x(
     P3::new(boundary_x, y, z)
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Compute a point on a vertical cell edge (between two rows at the same column).
 fn edge_point_y(
     x_fibers: &[Fiber],
@@ -270,6 +274,7 @@ fn find_interval_boundary_y(fiber: &Fiber, ya: f64, yb: f64) -> f64 {
     (ya + yb) * 0.5
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Chain segments into closed loops by matching endpoints.
 fn chain_segments(segments: Vec<Segment>) -> Vec<Vec<P3>> {
     if segments.is_empty() {
@@ -340,7 +345,7 @@ fn chain_segments(segments: Vec<Segment>) -> Vec<Vec<P3>> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::fiber::{Fiber, Interval};

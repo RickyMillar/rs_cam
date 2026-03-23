@@ -113,6 +113,8 @@ fn contours_to_toolpath(contours: &[Vec<P2>], params: &PocketParams) -> Toolpath
             contour.iter().collect()
         };
 
+        // SAFETY: contour is non-empty (checked above), so pts is non-empty
+        #[allow(clippy::indexing_slicing)]
         let start = pts[0];
 
         // Rapid to start point at safe Z
@@ -123,6 +125,7 @@ fn contours_to_toolpath(contours: &[Vec<P2>], params: &PocketParams) -> Toolpath
             params.plunge_rate,
         );
         // Feed around the contour
+        #[allow(clippy::indexing_slicing)]
         for pt in &pts[1..] {
             tp.feed_to(P3::new(pt.x, pt.y, params.cut_depth), params.feed_rate);
         }
@@ -139,7 +142,7 @@ fn contours_to_toolpath(contours: &[Vec<P2>], params: &PocketParams) -> Toolpath
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::toolpath::MoveType;

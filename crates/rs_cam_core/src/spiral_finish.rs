@@ -146,18 +146,22 @@ pub fn spiral_finish_toolpath_structured_annotated(
     // Build toolpath: rapid → plunge → feed → retract.
     let mut tp = Toolpath::new();
     let mut annotations = Vec::new();
+    // SAFETY: path is non-empty (early return above)
+    #[allow(clippy::indexing_slicing)]
     let first = path[0].0;
     tp.rapid_to(P3::new(first.x, first.y, params.safe_z));
     tp.feed_to(first, params.plunge_rate);
+    #[allow(clippy::indexing_slicing)]
+    let (first_ring_index, first_radius) = (path[0].1, path[0].2);
     annotations.push(SpiralFinishRuntimeAnnotation {
         move_index: 0,
         event: SpiralFinishRuntimeEvent::Ring {
-            ring_index: path[0].1,
+            ring_index: first_ring_index,
             ring_total,
-            radius_mm: path[0].2,
+            radius_mm: first_radius,
         },
     });
-    let mut current_ring = path[0].1;
+    let mut current_ring = first_ring_index;
     for (point, ring_index, radius_mm) in path.iter().skip(1) {
         if *ring_index != current_ring {
             current_ring = *ring_index;
@@ -276,7 +280,7 @@ fn generate_spiral_samples(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::mesh::SpatialIndex;

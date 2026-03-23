@@ -94,12 +94,14 @@ impl SurfaceHeightmap {
         })
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// O(1) surface Z lookup by cell indices.
     #[inline]
     pub fn surface_z_at(&self, row: usize, col: usize) -> f64 {
         self.z_values[row * self.cols + col]
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Surface Z at world coordinates. Returns NEG_INFINITY for out-of-bounds.
     pub fn surface_z_at_world(&self, x: f64, y: f64) -> f64 {
         let col_f = (x - self.origin_x) / self.cell_size;
@@ -153,6 +155,7 @@ pub struct SlopeMap {
 }
 
 impl SlopeMap {
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Build a SlopeMap from a grid of Z values using finite differences.
     ///
     /// Central differences for interior cells, forward/backward at boundaries.
@@ -235,30 +238,35 @@ impl SlopeMap {
         }
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Slope angle at cell indices (radians from horizontal).
     #[inline]
     pub fn angle_at(&self, row: usize, col: usize) -> f64 {
         self.angles[row * self.cols + col]
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Surface normal at cell indices.
     #[inline]
     pub fn normal_at(&self, row: usize, col: usize) -> V3 {
         self.normals[row * self.cols + col]
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Mean curvature at cell indices.
     #[inline]
     pub fn curvature_at(&self, row: usize, col: usize) -> f64 {
         self.curvatures[row * self.cols + col]
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Slope angle at world coordinates. Returns None for out-of-bounds.
     pub fn angle_at_world(&self, x: f64, y: f64) -> Option<f64> {
         let (row, col) = self.world_to_cell(x, y)?;
         Some(self.angles[row * self.cols + col])
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Mean curvature at world coordinates. Returns None for out-of-bounds.
     pub fn curvature_at_world(&self, x: f64, y: f64) -> Option<f64> {
         let (row, col) = self.world_to_cell(x, y)?;
@@ -294,7 +302,7 @@ pub fn classify_steep_shallow(slope_map: &SlopeMap, threshold_deg: f64) -> Vec<b
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use std::f64::consts::FRAC_PI_4;

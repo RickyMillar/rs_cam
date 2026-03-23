@@ -172,10 +172,15 @@ impl MachineProfile {
     pub fn clamp_rpm(&self, rpm: f64) -> f64 {
         match &self.spindle {
             SpindleConfig::Variable { min_rpm, max_rpm } => rpm.clamp(*min_rpm, *max_rpm),
-            SpindleConfig::Discrete { speeds } => *speeds
-                .iter()
-                .min_by(|&&a, &&b| (a - rpm).abs().total_cmp(&(b - rpm).abs()))
-                .unwrap_or(&speeds[speeds.len() / 2]),
+            SpindleConfig::Discrete { speeds } => {
+                // SAFETY: speeds is non-empty by construction; mid-index is always valid
+                #[allow(clippy::indexing_slicing)]
+                let fallback = &speeds[speeds.len() / 2];
+                *speeds
+                    .iter()
+                    .min_by(|&&a, &&b| (a - rpm).abs().total_cmp(&(b - rpm).abs()))
+                    .unwrap_or(fallback)
+            }
         }
     }
 

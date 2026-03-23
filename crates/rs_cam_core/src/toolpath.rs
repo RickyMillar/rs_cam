@@ -65,6 +65,7 @@ impl Toolpath {
         });
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     pub fn total_cutting_distance(&self) -> f64 {
         let mut dist = 0.0;
         for i in 1..self.moves.len() {
@@ -80,6 +81,7 @@ impl Toolpath {
         dist
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Emit rapid→plunge→feed→retract for a 3D path.
     ///
     /// For an empty path, this is a no-op. For a single point, emits
@@ -117,6 +119,7 @@ impl Toolpath {
         }
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     pub fn total_rapid_distance(&self) -> f64 {
         let mut dist = 0.0;
         for i in 1..self.moves.len() {
@@ -130,6 +133,7 @@ impl Toolpath {
     }
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Simplify a 3D path using Douglas-Peucker with cross-product distance.
 ///
 /// Removes points that deviate less than `tolerance` from the line between
@@ -182,6 +186,7 @@ pub fn simplify_path_3d(points: &[P3], tolerance: f64) -> Vec<P3> {
     left
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Convert a drop-cutter grid into a zigzag raster toolpath.
 pub fn raster_toolpath_from_grid(
     grid: &DropCutterGrid,
@@ -231,7 +236,7 @@ pub fn raster_toolpath_from_grid(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 

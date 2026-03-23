@@ -271,6 +271,7 @@ impl ToolpathSemanticScope {
         self.update_item(|item| item.debug_span_id = Some(debug_span_id));
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     pub fn bind_to_toolpath(
         &self,
         toolpath: &Toolpath,
@@ -386,6 +387,7 @@ pub fn item_ids_covering_move(trace: &ToolpathSemanticTrace, move_idx: usize) ->
     item_ids.into_iter().collect()
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn enrich_traces(
     debug_trace: &mut ToolpathDebugTrace,
     semantic_trace: &mut ToolpathSemanticTrace,
@@ -642,7 +644,7 @@ fn sanitize_filename_component(input: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::geo::P3;

@@ -25,6 +25,7 @@ pub enum EntryStyle {
     Helix { radius: f64, pitch: f64 },
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Replace straight plunges in a toolpath with ramped or helical entries.
 ///
 /// A "plunge" is detected as a feed move that goes from safe_z (or higher)
@@ -89,6 +90,7 @@ fn is_plunge(prev: &Move, current: &Move) -> bool {
     }
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 fn find_next_xy_direction(moves: &[Move], from_idx: usize) -> (f64, f64) {
     let base = &moves[from_idx].target;
     for m in &moves[from_idx + 1..] {
@@ -210,6 +212,7 @@ pub struct Tab {
 
 /// Insert holding tabs into a profile toolpath.
 ///
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Tabs create sharp rectangular bridges: the cutter steps up to tab height,
 /// traverses at that height, then steps back down. This leaves material
 /// bridges that hold the part to the stock.
@@ -398,6 +401,7 @@ pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath
 
 /// Insert arc lead-in and lead-out moves at the start/end of cutting passes.
 ///
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// A "cutting pass" is a sequence of feed moves at the same Z bounded by
 /// rapids or plunges. The lead-in is a quarter-circle arc that approaches
 /// the first cut point tangentially (avoiding a witness mark from a direct
@@ -529,6 +533,7 @@ pub fn apply_lead_in_out(toolpath: &Toolpath, radius: f64) -> Toolpath {
 
 /// Insert dogbone overcuts at inside corners of a toolpath.
 ///
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// At each corner sharper than `max_angle_deg`, a small extension is cut
 /// along the corner bisector so that a mating part with a sharp corner can
 /// fit into the CNC-cut pocket. The overcut distance is `tool_radius`,
@@ -643,6 +648,7 @@ pub struct LinkMoveParams {
 /// Replace short retract→rapid→plunge sequences with direct feed moves.
 ///
 /// Detects 3-move windows of (retract to safe_z, rapid reposition, plunge to cut_z)
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// where the XY distance is short, and replaces them with a single feed move.
 ///
 /// Safety rules:
@@ -758,6 +764,7 @@ fn is_in_air(stock: &TriDexelStock, x: f64, y: f64, z: f64, tolerance: f64) -> b
 ///
 /// For each cutting move, checks if material exists at the move's position in
 /// the prior stock. Moves where both endpoints are in air (no material above
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// the cutting Z) are converted to rapids. This is conservative — moves that
 /// partially contact material are preserved.
 ///
@@ -875,7 +882,7 @@ pub fn filter_air_cuts(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 

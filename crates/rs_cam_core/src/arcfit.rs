@@ -7,6 +7,7 @@
 use crate::geo::P3;
 use crate::toolpath::{Move, MoveType, Toolpath};
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Fit arcs to a toolpath, replacing linear segments with G2/G3 where possible.
 ///
 /// `tolerance` is the maximum allowed deviation (mm) between the original linear
@@ -132,6 +133,7 @@ struct ArcParams {
     clockwise: bool,
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Try to fit a circular arc through a sequence of XY points.
 /// Returns arc parameters if all points are within tolerance of the arc.
 fn try_fit_arc(points: &[&P3], tolerance: f64) -> Option<ArcParams> {
@@ -278,7 +280,7 @@ fn circle_from_3_points(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 

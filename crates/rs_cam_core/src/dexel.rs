@@ -38,6 +38,7 @@ impl DexelSegment {
 /// non-overlapping.
 pub type DexelRay = SmallVec<[DexelSegment; 1]>;
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Remove all material **above** `z` (i.e. with coordinate > z).
 ///
 /// Used for top-down cuts on a Z-grid: material above the tool surface is air.
@@ -58,6 +59,7 @@ pub fn ray_subtract_above(ray: &mut DexelRay, z: f32) {
     }
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Remove all material **below** `z` (i.e. with coordinate < z).
 ///
 /// Used for bottom-up cuts on a Z-grid.
@@ -80,6 +82,7 @@ pub fn ray_subtract_below(ray: &mut DexelRay, z: f32) {
     }
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Remove the interval `[a, b]` from the ray (general boolean subtract).
 ///
 /// Any segment fully inside `[a, b]` is deleted.  Segments that partially
@@ -287,18 +290,21 @@ impl DexelGrid {
         )
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Borrow the ray at (row, col).
     #[inline]
     pub fn ray(&self, row: usize, col: usize) -> &DexelRay {
         &self.rays[row * self.cols + col]
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Mutably borrow the ray at (row, col).
     #[inline]
     pub fn ray_mut(&mut self, row: usize, col: usize) -> &mut DexelRay {
         &mut self.rays[row * self.cols + col]
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Top material Z at cell. Returns `None` if the ray is empty.
     ///
     /// Equivalent to `Heightmap::get(row, col)` for cells with material.
@@ -308,6 +314,7 @@ impl DexelGrid {
         ray_top(ray)
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Does any material exist above `z_floor` at this cell?
     #[inline]
     pub fn has_material_above(&self, row: usize, col: usize, z_floor: f32) -> bool {
@@ -315,6 +322,7 @@ impl DexelGrid {
         ray.iter().any(|seg| seg.exit > z_floor)
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Total material length at cell (sum of all segment lengths along the ray).
     #[inline]
     pub fn material_length_at(&self, row: usize, col: usize) -> f32 {
@@ -325,7 +333,7 @@ impl DexelGrid {
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::geo::P3;
