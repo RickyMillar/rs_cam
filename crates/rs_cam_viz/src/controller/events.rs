@@ -763,23 +763,15 @@ impl<B: ComputeBackend> AppController<B> {
         groups: Vec<SetupSimGroup>,
         all_toolpaths_flat: &[SetupSimToolpath],
         stock_bbox: BoundingBox3,
-        model_setup_idx: Option<usize>,
+        _model_setup_idx: Option<usize>,
     ) {
         if self.state.simulation.auto_resolution {
             self.state.simulation.resolution =
                 auto_resolution_for_tools(all_toolpaths_flat, &stock_bbox);
         }
 
-        let stock = &self.state.job.stock;
-        let model_mesh = self.state.job.models.iter().find_map(|m| {
-            m.mesh.as_ref().and_then(|mesh| {
-                let setup_idx = model_setup_idx.unwrap_or(0);
-                let setup = self.state.job.setups.get(setup_idx)?;
-                Some(Arc::new(crate::state::job::transform_mesh(
-                    mesh, setup, stock,
-                )))
-            })
-        });
+        // Pass model mesh in world coordinates — same frame as the dexel stock mesh.
+        let model_mesh = self.state.job.models.iter().find_map(|m| m.mesh.clone());
 
         self.compute.submit_simulation(SimulationRequest {
             groups,
