@@ -1656,6 +1656,12 @@ fn draw_toolpath_panel(
                     draw_alignment_pin_drill_params(ui, cfg);
                 }
             }
+
+            // Stepover pattern diagram (for applicable operations)
+            if let Some(pattern) = StepoverPattern::from_operation(&entry.operation) {
+                ui.add_space(6.0);
+                draw_stepover_diagram(ui, &pattern);
+            }
         }
 
         ToolpathTab::Feeds => {

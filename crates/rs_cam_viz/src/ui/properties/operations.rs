@@ -132,6 +132,10 @@ pub(super) fn draw_profile_params(ui: &mut egui::Ui, cfg: &mut ProfileConfig) {
                     dv(ui, "Height:", &mut cfg.tab_height, " mm", 0.5, 0.5..=20.0);
                 }
             });
+        if cfg.tab_count > 0 {
+            ui.add_space(4.0);
+            draw_tab_diagram(ui, cfg.tab_count, cfg.tab_width, cfg.tab_height);
+        }
     });
     egui::Grid::new("prof_finish")
         .num_columns(2)
@@ -849,6 +853,276 @@ pub(super) fn draw_heights_params(
                 ui, "Bottom Z:", &mut heights.bottom_z, bottom_auto, ctx, "h_bottom",
             );
         });
+}
+
+// ── Stepover Pattern Diagram ─────────────────────────────────────────────
+
+/// Whether an operation has a displayable stepover pattern.
+pub(super) enum StepoverPattern {
+    Zigzag { stepover: f64, angle: f64 },
+    Contour { stepover: f64 },
+}
+
+impl StepoverPattern {
+    /// Extract pattern info from the current operation config (if applicable).
+    pub fn from_operation(op: &OperationConfig) -> Option<Self> {
+        match op {
+            OperationConfig::Pocket(cfg) => Some(match cfg.pattern {
+                PocketPattern::Zigzag => Self::Zigzag {
+                    stepover: cfg.stepover,
+                    angle: cfg.angle,
+                },
+                PocketPattern::Contour => Self::Contour {
+                    stepover: cfg.stepover,
+                },
+            }),
+            OperationConfig::Face(cfg) => Some(Self::Zigzag {
+                stepover: cfg.stepover,
+                angle: 0.0,
+            }),
+            OperationConfig::Zigzag(cfg) => Some(Self::Zigzag {
+                stepover: cfg.stepover,
+                angle: cfg.angle,
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// Draw a top-down minimap showing stepover pass pattern.
+pub(super) fn draw_stepover_diagram(ui: &mut egui::Ui, pattern: &StepoverPattern) {
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 120.0);
+    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+
+    // Background
+    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+
+    // Workpiece rectangle (80% of canvas, centered)
+    let margin = 14.0;
+    let wp = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + margin, rect.top() + margin),
+        egui::pos2(rect.right() - margin, rect.bottom() - margin),
+    );
+    painter.rect_stroke(
+        wp,
+        2.0,
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 80, 95)),
+    );
+
+    let path_color = egui::Color32::from_rgb(50, 200, 180);
+    let path_stroke = egui::Stroke::new(1.2, path_color);
+    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+
+    match pattern {
+        StepoverPattern::Zigzag { stepover, angle } => {
+            let angle_rad = (*angle as f32).to_radians();
+            let cos_a = angle_rad.cos();
+            let sin_a = angle_rad.sin();
+
+            // Determine how many lines fit
+            let perp_span = wp.width() * sin_a.abs() + wp.height() * cos_a.abs();
+            let step_px = (*stepover as f32 / perp_span.max(1.0) * perp_span).max(6.0).min(perp_span / 2.0);
+            let num_lines = (perp_span / step_px).ceil() as usize;
+            let num_lines = num_lines.min(20);
+
+            let cx = wp.center().x;
+            let cy = wp.center().y;
+
+            for i in 0..=num_lines {
+                let t = if num_lines > 0 {
+                    i as f32 / num_lines as f32
+                } else {
+                    0.5
+                };
+                let offset = (t - 0.5) * perp_span;
+
+                // Line center point offset perpendicular to angle
+                let lx = cx + offset * sin_a;
+                let ly = cy + offset * (-cos_a);
+
+                // Line extends along the angle direction
+                let half_diag = (wp.width() + wp.height()) * 0.7;
+                let x0 = lx - half_diag * cos_a;
+                let y0 = ly - half_diag * sin_a;
+                let x1 = lx + half_diag * cos_a;
+                let y1 = ly + half_diag * sin_a;
+
+                // Clip to workpiece (simple rect clip)
+                let p0 = egui::pos2(x0.clamp(wp.left(), wp.right()), y0.clamp(wp.top(), wp.bottom()));
+                let p1 = egui::pos2(x1.clamp(wp.left(), wp.right()), y1.clamp(wp.top(), wp.bottom()));
+
+                if (p0.x - p1.x).abs() > 1.0 || (p0.y - p1.y).abs() > 1.0 {
+                    painter.line_segment([p0, p1], path_stroke);
+
+                    // Direction arrow on middle lines
+                    if i > 0 && i < num_lines && i % 2 == 0 {
+                        let mid = egui::pos2((p0.x + p1.x) / 2.0, (p0.y + p1.y) / 2.0);
+                        let dir = if i % 4 == 0 { 1.0 } else { -1.0 };
+                        let ax = mid.x + dir * cos_a * 5.0;
+                        let ay = mid.y + dir * sin_a * 5.0;
+                        painter.circle_filled(egui::pos2(ax, ay), 2.0, path_color);
+                    }
+                }
+            }
+
+            // Angle label
+            if angle.abs() > 0.1 {
+                painter.text(
+                    egui::pos2(rect.left() + 6.0, rect.top() + 6.0),
+                    egui::Align2::LEFT_TOP,
+                    format!("Zigzag {angle:.0}\u{00B0}"),
+                    egui::FontId::proportional(9.0),
+                    dim_color,
+                );
+            } else {
+                painter.text(
+                    egui::pos2(rect.left() + 6.0, rect.top() + 6.0),
+                    egui::Align2::LEFT_TOP,
+                    "Zigzag",
+                    egui::FontId::proportional(9.0),
+                    dim_color,
+                );
+            }
+
+            // Stepover dimension
+            painter.text(
+                egui::pos2(rect.right() - 6.0, rect.bottom() - 6.0),
+                egui::Align2::RIGHT_BOTTOM,
+                format!("step {stepover:.2} mm"),
+                egui::FontId::proportional(8.0),
+                dim_color,
+            );
+        }
+
+        StepoverPattern::Contour { stepover } => {
+            // Concentric inset rectangles
+            let step_frac = (*stepover as f32 / 50.0).clamp(0.05, 0.3);
+            let max_insets = 8_usize;
+            let mut inset = 0.0_f32;
+            let min_dim = wp.width().min(wp.height());
+
+            for i in 0..max_insets {
+                let r = egui::Rect::from_min_max(
+                    egui::pos2(wp.left() + inset, wp.top() + inset),
+                    egui::pos2(wp.right() - inset, wp.bottom() - inset),
+                );
+                if r.width() < 4.0 || r.height() < 4.0 {
+                    break;
+                }
+                let alpha = if i == 0 { 1.0 } else { 0.6 };
+                painter.rect_stroke(
+                    r,
+                    1.0,
+                    egui::Stroke::new(
+                        1.2,
+                        egui::Color32::from_rgba_premultiplied(
+                            (path_color.r() as f32 * alpha) as u8,
+                            (path_color.g() as f32 * alpha) as u8,
+                            (path_color.b() as f32 * alpha) as u8,
+                            (255.0 * alpha) as u8,
+                        ),
+                    ),
+                );
+                inset += step_frac * min_dim;
+            }
+
+            painter.text(
+                egui::pos2(rect.left() + 6.0, rect.top() + 6.0),
+                egui::Align2::LEFT_TOP,
+                "Contour",
+                egui::FontId::proportional(9.0),
+                dim_color,
+            );
+            painter.text(
+                egui::pos2(rect.right() - 6.0, rect.bottom() - 6.0),
+                egui::Align2::RIGHT_BOTTOM,
+                format!("step {stepover:.2} mm"),
+                egui::FontId::proportional(8.0),
+                dim_color,
+            );
+        }
+    }
+}
+
+// ── Tab Placement Diagram ───────────────────────────────────────────────
+
+/// Draw a simplified top-down perimeter with tab markers at even spacing.
+pub(super) fn draw_tab_diagram(ui: &mut egui::Ui, tab_count: usize, tab_width: f64, tab_height: f64) {
+    if tab_count == 0 {
+        return;
+    }
+
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 100.0);
+    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+
+    // Background
+    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+
+    // Perimeter rectangle
+    let margin = 20.0;
+    let pr = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + margin, rect.top() + margin),
+        egui::pos2(rect.right() - margin, rect.bottom() - margin),
+    );
+    painter.rect_stroke(
+        pr,
+        2.0,
+        egui::Stroke::new(1.5, egui::Color32::from_rgb(80, 80, 95)),
+    );
+
+    let tab_color = egui::Color32::from_rgb(220, 160, 50);
+    let perimeter = 2.0 * (pr.width() + pr.height());
+
+    // Place tabs at even intervals around the perimeter
+    let tab_marker_len = (tab_width as f32 / 50.0 * perimeter * 0.1).clamp(4.0, 20.0);
+    for i in 0..tab_count {
+        let t = i as f32 / tab_count as f32;
+        let dist = t * perimeter;
+
+        // Walk along the rectangle perimeter
+        let (px, py, nx, ny) = if dist < pr.width() {
+            // Top edge (left to right)
+            (pr.left() + dist, pr.top(), 0.0, -1.0)
+        } else if dist < pr.width() + pr.height() {
+            // Right edge (top to bottom)
+            let d = dist - pr.width();
+            (pr.right(), pr.top() + d, 1.0, 0.0)
+        } else if dist < 2.0 * pr.width() + pr.height() {
+            // Bottom edge (right to left)
+            let d = dist - pr.width() - pr.height();
+            (pr.right() - d, pr.bottom(), 0.0, 1.0)
+        } else {
+            // Left edge (bottom to top)
+            let d = dist - 2.0 * pr.width() - pr.height();
+            (pr.left(), pr.bottom() - d, -1.0, 0.0)
+        };
+
+        // Draw tab marker (small line perpendicular to edge)
+        painter.line_segment(
+            [
+                egui::pos2(px, py),
+                egui::pos2(px + nx * tab_marker_len, py + ny * tab_marker_len),
+            ],
+            egui::Stroke::new(3.0, tab_color),
+        );
+        // Small dot at the base
+        painter.circle_filled(egui::pos2(px, py), 2.5, tab_color);
+    }
+
+    // Label
+    let dim_color = egui::Color32::from_rgb(140, 140, 155);
+    painter.text(
+        egui::pos2(rect.center().x, rect.bottom() - 4.0),
+        egui::Align2::CENTER_BOTTOM,
+        format!(
+            "{tab_count} tab{} \u{00D7} {tab_width:.1}mm \u{00D7} {tab_height:.1}mm",
+            if tab_count == 1 { "" } else { "s" }
+        ),
+        egui::FontId::proportional(9.0),
+        dim_color,
+    );
 }
 
 // ── 2D Height Diagram ───────────────────────────────────────────────────
