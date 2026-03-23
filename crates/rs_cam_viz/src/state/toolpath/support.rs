@@ -30,7 +30,78 @@ pub struct ToolpathStats {
     pub rapid_distance: f64,
 }
 
-/// Controls whether a height value is auto-computed or manually set.
+/// Named reference point for expressing heights relative to geometry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HeightReference {
+    StockTop,
+    StockBottom,
+    ModelTop,
+    ModelBottom,
+}
+
+impl HeightReference {
+    pub const ALL: &[HeightReference] = &[
+        HeightReference::StockTop,
+        HeightReference::StockBottom,
+        HeightReference::ModelTop,
+        HeightReference::ModelBottom,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            HeightReference::StockTop => "Stock Top",
+            HeightReference::StockBottom => "Stock Bottom",
+            HeightReference::ModelTop => "Model Top",
+            HeightReference::ModelBottom => "Model Bottom",
+        }
+    }
+
+    /// Resolve the reference Z value from context. Model refs fall back to stock.
+    pub fn resolve_z(self, ctx: &HeightContext) -> f64 {
+        match self {
+            HeightReference::StockTop => ctx.stock_top_z,
+            HeightReference::StockBottom => ctx.stock_bottom_z,
+            HeightReference::ModelTop => ctx.model_top_z.unwrap_or(ctx.stock_top_z),
+            HeightReference::ModelBottom => ctx.model_bottom_z.unwrap_or(ctx.stock_bottom_z),
+        }
+    }
+}
+
+/// An offset from a named reference point.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ReferenceOffset {
+    pub reference: HeightReference,
+    pub offset: f64,
+}
+
+/// Context needed to resolve heights — stock/model geometry and post config.
+#[derive(Debug, Clone, Copy)]
+pub struct HeightContext {
+    pub safe_z: f64,
+    pub op_depth: f64,
+    pub stock_top_z: f64,
+    pub stock_bottom_z: f64,
+    pub model_top_z: Option<f64>,
+    pub model_bottom_z: Option<f64>,
+}
+
+impl HeightContext {
+    /// Minimal context for tests / simple cases where only safe_z and op_depth matter.
+    /// Stock spans 0 → safe_z, no model.
+    pub fn simple(safe_z: f64, op_depth: f64) -> Self {
+        Self {
+            safe_z,
+            op_depth,
+            stock_top_z: 0.0,
+            stock_bottom_z: -op_depth,
+            model_top_z: None,
+            model_bottom_z: None,
+        }
+    }
+}
+
+/// Controls whether a height value is auto-computed, manually set, or relative to a reference.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "mode", content = "value", rename_all = "snake_case")]
 pub enum HeightMode {
@@ -38,13 +109,17 @@ pub enum HeightMode {
     Auto,
     /// User-specified absolute Z value.
     Manual(f64),
+    /// Offset from a named reference point (e.g. "5 mm from Stock Top").
+    FromReference(ReferenceOffset),
 }
 
 impl HeightMode {
-    pub fn value(&self, auto_value: f64) -> f64 {
+    /// Resolve to a concrete Z value given auto default and context.
+    fn resolve_value(&self, auto_value: f64, ctx: &HeightContext) -> f64 {
         match self {
             HeightMode::Auto => auto_value,
             HeightMode::Manual(value) => *value,
+            HeightMode::FromReference(r) => r.reference.resolve_z(ctx) + r.offset,
         }
     }
 
@@ -98,17 +173,15 @@ impl Default for FeedsAutoMode {
 }
 
 impl HeightsConfig {
-    /// Resolve all heights given the context values.
-    /// `safe_z`: from PostConfig (the baseline retract height)
-    /// `op_depth`: the operation's total depth/span (positive)
-    pub fn resolve(&self, safe_z: f64, op_depth: f64) -> ResolvedHeights {
-        let retract = self.retract_z.value(safe_z);
+    /// Resolve all heights given stock/model/post context.
+    pub fn resolve(&self, ctx: &HeightContext) -> ResolvedHeights {
+        let retract = self.retract_z.resolve_value(ctx.safe_z, ctx);
         ResolvedHeights {
-            clearance_z: self.clearance_z.value(retract + 10.0),
+            clearance_z: self.clearance_z.resolve_value(retract + 10.0, ctx),
             retract_z: retract,
-            feed_z: self.feed_z.value(retract - 2.0),
-            top_z: self.top_z.value(0.0),
-            bottom_z: self.bottom_z.value(-op_depth.abs()),
+            feed_z: self.feed_z.resolve_value(retract - 2.0, ctx),
+            top_z: self.top_z.resolve_value(0.0, ctx),
+            bottom_z: self.bottom_z.resolve_value(-ctx.op_depth.abs(), ctx),
         }
     }
 }
@@ -204,5 +277,149 @@ impl Default for DressupConfig {
             optimize_rapid_order: false,
             retract_strategy: RetractStrategy::Full,
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+
+    fn test_ctx() -> HeightContext {
+        HeightContext {
+            safe_z: 10.0,
+            op_depth: 5.0,
+            stock_top_z: 25.0,
+            stock_bottom_z: 0.0,
+            model_top_z: Some(20.0),
+            model_bottom_z: Some(2.0),
+        }
+    }
+
+    #[test]
+    fn auto_resolve_unchanged() {
+        let cfg = HeightsConfig::default();
+        let ctx = test_ctx();
+        let h = cfg.resolve(&ctx);
+        // retract = safe_z = 10
+        assert!((h.retract_z - 10.0).abs() < 1e-9);
+        // clearance = retract + 10 = 20
+        assert!((h.clearance_z - 20.0).abs() < 1e-9);
+        // feed = retract - 2 = 8
+        assert!((h.feed_z - 8.0).abs() < 1e-9);
+        // top = 0
+        assert!((h.top_z - 0.0).abs() < 1e-9);
+        // bottom = -5
+        assert!((h.bottom_z - (-5.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn manual_passthrough() {
+        let cfg = HeightsConfig {
+            clearance_z: HeightMode::Manual(50.0),
+            retract_z: HeightMode::Manual(30.0),
+            feed_z: HeightMode::Manual(28.0),
+            top_z: HeightMode::Manual(1.0),
+            bottom_z: HeightMode::Manual(-10.0),
+        };
+        let h = cfg.resolve(&test_ctx());
+        assert!((h.clearance_z - 50.0).abs() < 1e-9);
+        assert!((h.retract_z - 30.0).abs() < 1e-9);
+        assert!((h.feed_z - 28.0).abs() < 1e-9);
+        assert!((h.top_z - 1.0).abs() < 1e-9);
+        assert!((h.bottom_z - (-10.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn from_reference_stock_top() {
+        let cfg = HeightsConfig {
+            top_z: HeightMode::FromReference(ReferenceOffset {
+                reference: HeightReference::StockTop,
+                offset: -2.0,
+            }),
+            ..HeightsConfig::default()
+        };
+        let h = cfg.resolve(&test_ctx());
+        // stock_top = 25, offset = -2 => 23
+        assert!((h.top_z - 23.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn from_reference_stock_bottom() {
+        let cfg = HeightsConfig {
+            bottom_z: HeightMode::FromReference(ReferenceOffset {
+                reference: HeightReference::StockBottom,
+                offset: 1.0,
+            }),
+            ..HeightsConfig::default()
+        };
+        let h = cfg.resolve(&test_ctx());
+        // stock_bottom = 0, offset = 1 => 1
+        assert!((h.bottom_z - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn from_reference_model_top() {
+        let cfg = HeightsConfig {
+            top_z: HeightMode::FromReference(ReferenceOffset {
+                reference: HeightReference::ModelTop,
+                offset: -3.0,
+            }),
+            ..HeightsConfig::default()
+        };
+        let h = cfg.resolve(&test_ctx());
+        // model_top = 20, offset = -3 => 17
+        assert!((h.top_z - 17.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn model_ref_fallback_to_stock() {
+        let ctx = HeightContext {
+            model_top_z: None,
+            model_bottom_z: None,
+            ..test_ctx()
+        };
+        let cfg = HeightsConfig {
+            top_z: HeightMode::FromReference(ReferenceOffset {
+                reference: HeightReference::ModelTop,
+                offset: 0.0,
+            }),
+            bottom_z: HeightMode::FromReference(ReferenceOffset {
+                reference: HeightReference::ModelBottom,
+                offset: 0.0,
+            }),
+            ..HeightsConfig::default()
+        };
+        let h = cfg.resolve(&ctx);
+        // falls back to stock_top=25 and stock_bottom=0
+        assert!((h.top_z - 25.0).abs() < 1e-9);
+        assert!((h.bottom_z - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn serde_roundtrip_all_variants() {
+        let auto = HeightMode::Auto;
+        let manual = HeightMode::Manual(5.0);
+        let from_ref = HeightMode::FromReference(ReferenceOffset {
+            reference: HeightReference::StockTop,
+            offset: -2.5,
+        });
+
+        for mode in [auto, manual, from_ref] {
+            let json = serde_json::to_string(&mode).unwrap();
+            let restored: HeightMode = serde_json::from_str(&json).unwrap();
+            assert_eq!(mode, restored);
+        }
+    }
+
+    #[test]
+    fn backward_compat_old_json() {
+        // Old files produce these JSON forms
+        let auto: HeightMode = serde_json::from_str(r#"{"mode":"auto"}"#).unwrap();
+        assert!(auto.is_auto());
+
+        let manual: HeightMode =
+            serde_json::from_str(r#"{"mode":"manual","value":5.0}"#).unwrap();
+        assert_eq!(manual, HeightMode::Manual(5.0));
     }
 }

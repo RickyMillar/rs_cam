@@ -1159,8 +1159,6 @@ impl RsCamApp {
         };
         let isolate = self.controller.state().viewport.isolate_toolpath;
 
-        let safe_z = self.controller.state().job.post.safe_z;
-
         // Determine which setup is active for filtering toolpath display
         let active_setup_id = active_setup_ref.map(|s| s.id);
 
@@ -1199,9 +1197,8 @@ impl RsCamApp {
                         DressupEntryStyle::Ramp => toolpath_render::EntryStyle::Ramp,
                         DressupEntryStyle::Helix => toolpath_render::EntryStyle::Helix,
                     };
-                    let resolved = tp
-                        .heights
-                        .resolve(safe_z, tp.operation.default_depth_for_heights());
+                    let height_ctx = self.controller.state().job.height_context_for(tp);
+                    let resolved = tp.heights.resolve(&height_ctx);
                     let config = toolpath_render::EntryPreviewConfig {
                         entry_style,
                         ramp_angle_deg: tp.dressups.ramp_angle,
@@ -1225,9 +1222,8 @@ impl RsCamApp {
         if let Selection::Toolpath(tp_id) = self.controller.state().selection {
             let job = &self.controller.state().job;
             if let Some(tp) = job.all_toolpaths().find(|t| t.id == tp_id) {
-                let safe_z = job.post.safe_z;
-                let op_depth = tp.operation.default_depth_for_heights();
-                let heights = tp.heights.resolve(safe_z, op_depth);
+                let height_ctx = job.height_context_for(tp);
+                let heights = tp.heights.resolve(&height_ctx);
                 // Use the same stock bbox as the rest of the viewport (local or global)
                 let hp_stock_bbox = stock_bbox;
                 resources.height_planes_data = Some(
