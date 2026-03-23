@@ -72,11 +72,6 @@ pub fn batch_push_cutter_with_cancel(
     cutter: &dyn MillingCutter,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
-    #[cfg(feature = "parallel")]
-    {
-        let _ = (&mesh, &index, &cutter);
-    }
-
     for (i, fiber) in fibers.iter_mut().enumerate() {
         if i % 32 == 0 {
             check_cancel(cancel)?;
