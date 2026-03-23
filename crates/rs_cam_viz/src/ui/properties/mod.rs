@@ -1318,6 +1318,31 @@ fn draw_entry_preview_diagram(
     let feed_y = z_to_y(feed_z);
     let top_y = z_to_y(top_z);
     let dim_color = egui::Color32::from_rgb(100, 100, 115);
+    let scale_color = egui::Color32::from_rgb(70, 70, 85);
+
+    // Z-axis scale bar on the left edge
+    let scale_x = rect.left() + 3.0;
+    painter.line_segment(
+        [egui::pos2(scale_x, feed_y), egui::pos2(scale_x, top_y)],
+        egui::Stroke::new(1.0, scale_color),
+    );
+    // Ticks + values at feed_z and top_z
+    painter.line_segment(
+        [egui::pos2(scale_x, feed_y), egui::pos2(scale_x + 4.0, feed_y)],
+        egui::Stroke::new(1.0, scale_color),
+    );
+    painter.line_segment(
+        [egui::pos2(scale_x, top_y), egui::pos2(scale_x + 4.0, top_y)],
+        egui::Stroke::new(1.0, scale_color),
+    );
+    // Z drop distance label
+    painter.text(
+        egui::pos2(scale_x + 2.0, (feed_y + top_y) / 2.0),
+        egui::Align2::LEFT_CENTER,
+        format!("{z_drop:.1}"),
+        egui::FontId::proportional(8.0),
+        scale_color,
+    );
 
     // Dashed horizontal reference lines
     for &(z, label) in &[(feed_z, "Feed Z"), (top_z, "Top Z")] {
@@ -1325,7 +1350,7 @@ fn draw_entry_preview_diagram(
         // Draw dashed line
         let dash_len = 6.0;
         let gap_len = 4.0;
-        let mut x = rect.left() + 4.0;
+        let mut x = rect.left() + 12.0;
         while x < rect.right() - 50.0 {
             let end_x = (x + dash_len).min(rect.right() - 50.0);
             painter.line_segment(

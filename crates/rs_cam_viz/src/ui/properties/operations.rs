@@ -697,20 +697,21 @@ pub(super) fn draw_ramp_finish_params(ui: &mut egui::Ui, cfg: &mut RampFinishCon
 // ── Heights panel ────────────────────────────────────────────────────────
 
 /// F360-style height row: [offset value] [from Reference ▾]
-/// Auto mode auto-converts to FromReference with the appropriate default.
+/// Auto mode auto-converts to FromReference with sensible defaults.
 fn draw_height_row(
     ui: &mut egui::Ui,
     label: &str,
     mode: &mut HeightMode,
     default_ref: HeightReference,
+    default_offset: f64,
     ctx: &HeightContext,
     id_salt: &str,
 ) {
-    // Auto-promote to FromReference on first display
+    // Auto-promote to FromReference with the pre-computed sensible default
     if mode.is_auto() {
         *mode = HeightMode::FromReference(ReferenceOffset {
             reference: default_ref,
-            offset: 0.0,
+            offset: default_offset,
         });
     }
 
@@ -785,29 +786,32 @@ pub(super) fn draw_heights_params(
     heights: &mut HeightsConfig,
     ctx: &HeightContext,
 ) {
+    // Sensible default offsets (from the auto-resolve logic)
+    let safe_offset = ctx.safe_z - ctx.stock_top_z; // safe_z relative to stock top
+
     egui::Grid::new("heights_p")
         .num_columns(4)
         .spacing([4.0, 4.0])
         .show(ui, |ui| {
             draw_height_row(
                 ui, "Clearance:", &mut heights.clearance_z,
-                HeightReference::StockTop, ctx, "h_clear",
+                HeightReference::StockTop, safe_offset + 10.0, ctx, "h_clear",
             );
             draw_height_row(
                 ui, "Retract:", &mut heights.retract_z,
-                HeightReference::StockTop, ctx, "h_retract",
+                HeightReference::StockTop, safe_offset, ctx, "h_retract",
             );
             draw_height_row(
                 ui, "Feed:", &mut heights.feed_z,
-                HeightReference::StockTop, ctx, "h_feed",
+                HeightReference::StockTop, safe_offset - 2.0, ctx, "h_feed",
             );
             draw_height_row(
                 ui, "Top:", &mut heights.top_z,
-                HeightReference::StockTop, ctx, "h_top",
+                HeightReference::StockTop, 0.0, ctx, "h_top",
             );
             draw_height_row(
                 ui, "Bottom:", &mut heights.bottom_z,
-                HeightReference::StockBottom, ctx, "h_bottom",
+                HeightReference::StockTop, -ctx.op_depth.abs(), ctx, "h_bottom",
             );
         });
 }
@@ -1005,82 +1009,113 @@ pub(super) fn draw_stepover_diagram(ui: &mut egui::Ui, pattern: &StepoverPattern
 // ── Dogbone Diagram ─────────────────────────────────────────────────────
 
 /// Draw a corner showing the dogbone overcut geometry.
+/// Matches the actual dogbone algorithm from dressup.rs: the overcut goes
+/// along the opposite bisector of the forward vectors into the material.
 pub(super) fn draw_dogbone_diagram(ui: &mut egui::Ui, max_angle: f64) {
-    let desired_size = egui::vec2(ui.available_width().min(260.0), 80.0);
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 90.0);
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
     painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
 
     let cx = rect.center().x;
-    let cy = rect.center().y;
-    let path_color = egui::Color32::from_rgb(80, 80, 95);
+    let cy = rect.center().y + 5.0;
+    let path_color = egui::Color32::from_rgb(120, 120, 140);
     let overcut_color = egui::Color32::from_rgb(220, 160, 50);
     let tool_color = egui::Color32::from_rgb(160, 170, 190);
+    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+    let mat_color = egui::Color32::from_rgb(40, 40, 52);
 
-    // Two profile edges meeting at the configured angle
     let corner = egui::pos2(cx, cy);
-    let arm_len = 40.0;
-    let corner_angle_rad = (max_angle as f32).to_radians();
+    let arm_len = 35.0;
+    let tool_r = 8.0;
 
-    // Edge A: horizontal going left
-    let edge_a_end = egui::pos2(cx - arm_len, cy);
-    // Edge B: rotated by corner angle from edge A direction
-    let edge_b_angle = std::f32::consts::PI - corner_angle_rad; // interior angle
-    let edge_b_end = egui::pos2(
-        cx + arm_len * (std::f32::consts::PI + edge_b_angle).cos(),
-        cy + arm_len * (std::f32::consts::PI + edge_b_angle).sin(),
-    );
+    // The max_angle parameter is the threshold: corners sharper than
+    // (180° - max_angle) get dogbones. We show a corner AT max_angle.
+    // Edge A arrives from the left (forward dir u1 = right = 0°)
+    // Edge B departs at angle such that the turning angle = π - max_angle_rad
+    let max_angle_rad = (max_angle as f32).to_radians();
+    // Turning angle between forward vectors
+    let turn_angle = std::f32::consts::PI - max_angle_rad;
+    // Edge B forward direction: u1 rotated by (π - turn_angle) = max_angle_rad
+    // Since u1 points right (0°), u2 direction angle = -(π - turn_angle) to turn left
+    let u2_angle = -turn_angle; // negative = clockwise = inside corner going up-right
 
-    painter.line_segment(
-        [edge_a_end, corner],
-        egui::Stroke::new(2.0, path_color),
-    );
-    painter.line_segment(
-        [corner, edge_b_end],
-        egui::Stroke::new(2.0, path_color),
-    );
+    // Points: A → B is the incoming edge, B → C is the outgoing edge
+    let a = egui::pos2(cx - arm_len, cy);
+    let c = egui::pos2(cx + arm_len * u2_angle.cos(), cy + arm_len * u2_angle.sin());
 
-    // Material fill (triangle in the corner interior)
-    let fill_pts = vec![
-        corner,
-        egui::pos2(cx + arm_len * 0.7, cy - arm_len * 0.7),
-        egui::pos2(cx + arm_len * 0.7, cy),
-    ];
+    // Material: fill the inside of the corner (the region the tool can't reach)
+    // The inside is on the right side of the path (clockwise turn)
+    let mat_far = egui::pos2(cx + arm_len * 0.8, cy - arm_len * 0.5);
+    let mat_pts = vec![corner, egui::pos2(cx + arm_len, cy), mat_far, c];
     painter.add(egui::Shape::convex_polygon(
-        fill_pts,
-        egui::Color32::from_rgb(40, 40, 52),
+        mat_pts,
+        mat_color,
         egui::Stroke::NONE,
     ));
 
-    // Tool circle at corner
-    let tool_r = 10.0;
+    // Edges
+    painter.line_segment([a, corner], egui::Stroke::new(2.0, path_color));
+    painter.line_segment([corner, c], egui::Stroke::new(2.0, path_color));
+
+    // Direction arrows on edges
+    let arrow_color = egui::Color32::from_rgb(80, 140, 80);
+    let mid_a = egui::pos2((a.x + cx) / 2.0, cy);
+    painter.circle_filled(egui::pos2(mid_a.x + 4.0, mid_a.y), 2.0, arrow_color);
+    let mid_c = egui::pos2((cx + c.x) / 2.0, (cy + c.y) / 2.0);
+    painter.circle_filled(mid_c, 2.0, arrow_color);
+
+    // Tool circle at corner (where tool is when it reaches corner B)
     painter.circle_stroke(corner, tool_r, egui::Stroke::new(1.0, tool_color));
 
-    // Dogbone overcut: bisector of the corner angle, pointing into material
-    let bisect_angle = (std::f32::consts::PI + edge_b_angle) / 2.0;
-    let overcut_dist = tool_r;
-    let overcut_pt = egui::pos2(
-        cx + overcut_dist * bisect_angle.cos(),
-        cy + overcut_dist * bisect_angle.sin(),
-    );
+    // Compute dogbone overcut direction (from the actual algorithm):
+    // u1 = forward of edge A = (1, 0) (rightward)
+    // u2 = forward of edge B = (cos(u2_angle), sin(u2_angle))
+    // bisector of forwards = (-u1 + u2)
+    // dogbone dir = -(bisector), normalized
+    let u1x: f32 = 1.0;
+    let u1y: f32 = 0.0;
+    let u2x = u2_angle.cos();
+    let u2y = u2_angle.sin();
+    let bx = -u1x + u2x;
+    let by = -u1y + u2y;
+    let blen = (bx * bx + by * by).sqrt().max(0.001);
+    let dx = -(bx / blen);
+    let dy = -(by / blen);
 
-    // Dashed overcut line
+    let overcut_pt = egui::pos2(cx + dx * tool_r, cy + dy * tool_r);
+
+    // Overcut line and point
     painter.line_segment(
         [corner, overcut_pt],
         egui::Stroke::new(1.5, overcut_color),
     );
     painter.circle_filled(overcut_pt, 3.0, overcut_color);
 
-    // Tool at overcut position (ghost)
+    // Ghost tool at overcut position
     painter.circle_stroke(
         overcut_pt,
         tool_r,
         egui::Stroke::new(0.8, egui::Color32::from_rgba_premultiplied(220, 160, 50, 80)),
     );
 
+    // Corner angle arc
+    let arc_r = 16.0_f32;
+    let arc_start = 0.0_f32; // edge A forward direction
+    let arc_end = u2_angle; // edge B forward direction
+    let mut arc_pts = Vec::with_capacity(12);
+    for i in 0..=10 {
+        let t = i as f32 / 10.0;
+        let a_angle = arc_start + (arc_end - arc_start) * t;
+        arc_pts.push(egui::pos2(cx + arc_r * a_angle.cos(), cy + arc_r * a_angle.sin()));
+    }
+    painter.add(egui::Shape::line(
+        arc_pts,
+        egui::Stroke::new(0.8, dim_color),
+    ));
+
     // Labels
-    let dim_color = egui::Color32::from_rgb(140, 140, 155);
     painter.text(
         egui::pos2(rect.left() + 6.0, rect.top() + 6.0),
         egui::Align2::LEFT_TOP,
@@ -1088,26 +1123,10 @@ pub(super) fn draw_dogbone_diagram(ui: &mut egui::Ui, max_angle: f64) {
         egui::FontId::proportional(9.0),
         overcut_color,
     );
-
-    // Angle arc at the corner
-    let arc_r = 18.0_f32;
-    let arc_start = std::f32::consts::PI; // edge A direction (left)
-    let arc_end = std::f32::consts::PI + edge_b_angle;
-    let mut arc_pts = Vec::with_capacity(12);
-    for i in 0..=10 {
-        let t = i as f32 / 10.0;
-        let a = arc_start + (arc_end - arc_start) * t;
-        arc_pts.push(egui::pos2(cx + arc_r * a.cos(), cy + arc_r * a.sin()));
-    }
-    painter.add(egui::Shape::line(
-        arc_pts,
-        egui::Stroke::new(0.8, dim_color),
-    ));
-
     painter.text(
         egui::pos2(rect.right() - 6.0, rect.bottom() - 6.0),
         egui::Align2::RIGHT_BOTTOM,
-        format!("{max_angle:.0}\u{00B0}"),
+        format!("corners \u{2264} {max_angle:.0}\u{00B0}"),
         egui::FontId::proportional(8.0),
         dim_color,
     );
