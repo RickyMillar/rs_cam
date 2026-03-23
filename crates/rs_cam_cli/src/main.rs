@@ -1,4 +1,5 @@
 #![deny(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#![allow(clippy::print_stderr)] // CLI uses eprintln! for user-facing diagnostic output
 
 mod helpers;
 mod job;

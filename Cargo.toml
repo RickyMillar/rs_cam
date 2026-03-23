@@ -41,10 +41,19 @@ todo = "deny"
 unimplemented = "deny"
 indexing_slicing = "deny"
 
+# Production hygiene — no debug artifacts or raw IO in shipped code
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+
+# Error quality
+map_err_ignore = "warn"
+
 # Code quality
 needless_pass_by_value = "warn"
 large_enum_variant = "warn"
 result_large_err = "warn"
+redundant_clone = "warn"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
