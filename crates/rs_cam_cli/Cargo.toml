@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 description = "CLI for rs_cam 3-axis wood router CAM"
 
+[lints]
+workspace = true
+
 [dependencies]
 rs_cam_core = { path = "../rs_cam_core", features = ["step"] }
 clap = { workspace = true }

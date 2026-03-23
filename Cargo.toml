@@ -31,3 +31,19 @@ usvg = "0.47"
 dxf = "0.6"
 smallvec = { version = "1", features = ["union"] }
 criterion = { version = "0.5", features = ["html_reports"] }
+
+[workspace.lints.clippy]
+# Error handling strictness — prevent panic-prone patterns
+unwrap_used = "deny"
+expect_used = "warn"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+# Code quality
+needless_pass_by_value = "warn"
+large_enum_variant = "warn"
+result_large_err = "warn"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
