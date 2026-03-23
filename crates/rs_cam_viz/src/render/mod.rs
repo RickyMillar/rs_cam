@@ -1066,7 +1066,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 @fragment
 fn fs_opaque(in: VertexOutput) -> @location(0) vec4<f32> {
     let light = normalize(uniforms.light_dir);
-    let normal = normalize(in.normal);
+    let normal = normalize(in.world_normal);
     let ambient = in.vertex_color * 0.25;
     let n = select(normal, -normal, dot(normal, light) < 0.0);
     let ndotl = max(dot(n, light), 0.0);
