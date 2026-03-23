@@ -425,7 +425,7 @@ fn days_to_ymd(days_since_epoch: u64) -> (u64, u64, u64) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::state::job::{

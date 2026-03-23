@@ -1124,6 +1124,8 @@ fn annotate_spiral_finish_runtime_semantics(
     }
 }
 
+// SAFETY: run.move_start / move_end_exclusive are produced by cutting_runs, always within bounds
+#[allow(clippy::indexing_slicing)]
 fn annotate_radial_finish_semantics(
     op_scope: Option<&rs_cam_core::semantic_trace::ToolpathSemanticScope>,
     toolpath: &Toolpath,
@@ -1255,7 +1257,7 @@ fn annotate_project_curve_semantics(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 

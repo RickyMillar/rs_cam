@@ -242,6 +242,8 @@ fn draw_alignment_pins(
 
             // Shared pin diameter (physical dowels are one size)
             if !stock.alignment_pins.is_empty() {
+                // SAFETY: non-empty guard above
+                #[allow(clippy::indexing_slicing)]
                 let mut shared_diameter = stock.alignment_pins[0].diameter;
                 ui.horizontal(|ui| {
                     ui.label("Pin diameter:");
@@ -311,6 +313,8 @@ fn draw_alignment_pins(
 
             // Process deferred actions (borrow after mutable iteration is done)
             if let Some((idx, axis)) = mirror_idx.zip(stock.flip_axis) {
+                // SAFETY: idx from enumerate over alignment_pins
+                #[allow(clippy::indexing_slicing)]
                 let src = &stock.alignment_pins[idx];
                 let mirrored = mirror_pin(src, axis, stock.x, stock.y);
                 // Check if a pin already exists near the mirrored position
@@ -413,6 +417,8 @@ fn mirror_pin(pin: &AlignmentPin, axis: FlipAxis, stock_x: f64, stock_y: f64) ->
 }
 
 /// Place `count` pins evenly distributed in the stock margin (padding area).
+// SAFETY: corners indexed by seg % 4 and (seg+1) % 4, always 0..3 into a 4-element array
+#[allow(clippy::indexing_slicing)]
 fn auto_place_pins(stock: &mut StockConfig, count: usize) {
     // Place pins in the center of the padding margin so they hit excess
     // stock, not the model. Fall back to 10mm if padding is too small.

@@ -298,7 +298,10 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
     for (i, op) in job.operation.iter().enumerate() {
         info!(index = i, op_type = %op.op_type, "=== Operation ===");
 
-        let tool_def = &job.tools[&op.tool];
+        let tool_def = job
+            .tools
+            .get(&op.tool)
+            .context(format!("Tool '{}' not found in [tools] table", op.tool))?;
         let cutter = build_tool(tool_def)
             .context(format!("Building tool '{}' for operation {}", op.tool, i))?;
         let tool_radius = cutter.radius();

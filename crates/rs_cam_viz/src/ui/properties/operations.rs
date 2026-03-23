@@ -1315,6 +1315,8 @@ fn has_prior_rest_source(
         return false;
     };
 
+    // SAFETY: current_idx from position() within setup.toolpaths
+    #[allow(clippy::indexing_slicing)]
     setup.toolpaths[..current_idx].iter().any(|toolpath| {
         toolpath.enabled && toolpath.tool_id == prev_tool_id && toolpath.model_id == entry.model_id
     })

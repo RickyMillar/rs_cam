@@ -1209,6 +1209,8 @@ impl<B: ComputeBackend> AppController<B> {
     /// Build a TriDexelStock representing the remaining material after simulating
     /// all prior enabled toolpaths (those that appear before `tp_id`) in the same
     /// setup.  Returns `None` when there are no prior results to simulate.
+    // SAFETY: tp_index from position() within setup.toolpaths, slice always in bounds
+    #[allow(clippy::indexing_slicing)]
     fn build_prior_stock(
         &self,
         tp_id: ToolpathId,

@@ -16,6 +16,7 @@ pub const TOOLPATH_PALETTE: [[f32; 3]; 8] = [
 ];
 
 /// Get the palette color for a toolpath at the given index.
+#[allow(clippy::indexing_slicing)] // modulo indexing into constant-length palette
 pub fn palette_color(index: usize) -> [f32; 3] {
     TOOLPATH_PALETTE[index % TOOLPATH_PALETTE.len()]
 }
@@ -41,6 +42,7 @@ pub struct ToolpathGpuData {
 
 impl ToolpathGpuData {
     /// Compute how many cut and rapid vertices to draw for the first `n_moves` moves.
+    #[allow(clippy::indexing_slicing)] // n - 1 is safe: n > 0 and n <= len
     pub fn vertices_for_moves(&self, n_moves: usize) -> (u32, u32) {
         let n = n_moves.min(self.move_cut_counts.len());
         if n == 0 {
@@ -56,6 +58,7 @@ impl ToolpathGpuData {
     /// Very large toolpaths are downsampled to fit within GPU buffer limits.
     /// The toolpath data itself is unchanged — only the visual representation
     /// is simplified.
+    #[allow(clippy::indexing_slicing)] // loop index i bounded by tp.moves.len()
     pub fn from_toolpath(
         device: &wgpu::Device,
         limits: &GpuLimits,
@@ -310,6 +313,7 @@ const ENTRY_PREVIEW_COLOR: [f32; 3] = [0.2, 0.9, 0.9];
 /// - Lead-in arc: a quarter-circle arc leading into the first cutting direction
 ///
 /// Returns empty if entry_style is None or there are no cutting moves.
+#[allow(clippy::indexing_slicing)] // first_cut_idx validated by position() and bounds > 0
 pub fn entry_preview_vertices(tp: &Toolpath, config: &EntryPreviewConfig) -> Vec<LineVertex> {
     let color = ENTRY_PREVIEW_COLOR;
 
@@ -467,6 +471,7 @@ pub fn entry_preview_vertices(tp: &Toolpath, config: &EntryPreviewConfig) -> Vec
 /// Returns line vertices forming a small arrowhead at the first cutting move position,
 /// pointing in the direction of the first cut.
 /// `palette_color`: the toolpath's palette color.
+#[allow(clippy::indexing_slicing)] // first_cut_idx validated by position() and bounds > 0
 pub fn entry_marker_vertices(tp: &Toolpath, palette_color: [f32; 3]) -> Vec<LineVertex> {
     // Find the first non-Rapid move at index > 0
     let first_cut_idx = match tp

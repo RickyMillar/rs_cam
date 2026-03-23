@@ -1,3 +1,5 @@
+#![deny(clippy::indexing_slicing)]
+
 pub mod worker;
 
 use std::time::{Duration, Instant};

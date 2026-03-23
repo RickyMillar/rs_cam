@@ -433,6 +433,7 @@ impl SimulationState {
             .position(|b| current >= b.start_move && current <= b.end_move)
     }
 
+    #[allow(clippy::indexing_slicing)] // boundary_index from position() is always in bounds
     pub fn move_to_local_toolpath_move(
         &self,
         move_idx: usize,
@@ -624,6 +625,7 @@ impl SimulationState {
         })
     }
 
+    #[allow(clippy::indexing_slicing)] // child_index from parent's child list, bounded by trace.items
     pub fn runtime_hotspots(
         &mut self,
         job: &JobState,
@@ -688,6 +690,7 @@ impl SimulationState {
         hotspots
     }
 
+    #[allow(clippy::indexing_slicing)] // active_index from active_item_index() bounded by trace.items
     pub fn playback_semantic_item(&mut self, job: &JobState) -> Option<ActiveSemanticItem> {
         let (boundary_index, toolpath_id, local_move) = self.current_local_toolpath_move()?;
         self.sync_debug_state(job);
@@ -1162,6 +1165,7 @@ impl SimulationState {
         })
     }
 
+    #[allow(clippy::indexing_slicing)] // item_index from enumerate(), bounded by trace.items
     pub fn pick_semantic_item_with_ray(
         &mut self,
         job: &JobState,
@@ -1336,6 +1340,7 @@ impl SimulationDebugState {
 }
 
 impl SimulationSemanticIndex {
+    #[allow(clippy::indexing_slicing)] // item_index from enumerate(), bounded by trace.items
     fn build(trace: &ToolpathSemanticTrace) -> Self {
         let mut item_index_by_id = HashMap::with_capacity(trace.items.len());
         let mut child_indices_by_parent: HashMap<Option<u64>, Vec<usize>> = HashMap::new();
@@ -1375,6 +1380,7 @@ impl SimulationSemanticIndex {
         }
     }
 
+    #[allow(clippy::indexing_slicing)] // item indices from move_item_indices, bounded by trace.items
     fn active_item_index(&self, trace: &ToolpathSemanticTrace, local_move: usize) -> Option<usize> {
         self.move_item_indices
             .iter()
@@ -1398,6 +1404,7 @@ impl SimulationSemanticIndex {
             })
     }
 
+    #[allow(clippy::indexing_slicing)] // index from item_index_by_id, bounded by trace.items
     fn ancestry(
         &self,
         trace: &ToolpathSemanticTrace,
@@ -1451,6 +1458,7 @@ impl SimulationRuntimeProfile {
         }
     }
 
+    #[allow(clippy::indexing_slicing)] // bounds checked: move_end_exclusive <= cumulative.len()-1
     fn metrics_for_range(
         &self,
         move_start: usize,
@@ -1473,6 +1481,7 @@ impl SimulationRuntimeProfile {
     }
 }
 
+#[allow(clippy::indexing_slicing)] // move_index bounded by caller's loop over toolpath.moves
 fn estimate_move_runtime_seconds(
     toolpath: &Toolpath,
     move_index: usize,
@@ -1574,7 +1583,7 @@ fn issue_kind_rank(kind: SimulationIssueKind) -> u8 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::state::job::{JobState, ModelId, ToolId};

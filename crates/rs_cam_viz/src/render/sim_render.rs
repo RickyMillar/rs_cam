@@ -67,6 +67,7 @@ struct ColorFingerprint {
 }
 
 impl ColorFingerprint {
+    #[allow(clippy::indexing_slicing)] // stride loop bounded by colors.len()
     fn from_colors(colors: &[[f32; 3]]) -> Self {
         let len = colors.len();
         let first = colors.first().copied().unwrap_or([0.0; 3]);
@@ -128,6 +129,7 @@ pub fn deviation_colors(deviations: &[f32]) -> Vec<[f32; 3]> {
 
 /// Generate per-vertex colors for height-gradient mode.
 /// Maps Z values from min_z to max_z: blue (low) -> green (mid) -> red (high).
+#[allow(clippy::indexing_slicing)] // stride-3 loop bounded by num_verts = vertices.len()/3
 pub fn height_gradient_colors(vertices: &[f32]) -> Vec<[f32; 3]> {
     let num_verts = vertices.len() / 3;
     if num_verts == 0 {
@@ -175,6 +177,7 @@ static NEXT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 impl SimMeshGpuData {
     /// Upload a StockMesh to the GPU using its embedded wood-tone colors.
     /// Returns `None` if the buffer exceeds GPU device limits.
+    #[allow(clippy::indexing_slicing)] // stride-3 loop bounded by num_verts = vertices.len()/3
     pub fn from_heightmap_mesh(
         device: &wgpu::Device,
         limits: &GpuLimits,
@@ -255,6 +258,7 @@ impl SimMeshGpuData {
     }
 
     /// Build the full vertex array (positions + normals + colors) from a StockMesh.
+    #[allow(clippy::indexing_slicing)] // stride-3 loops bounded by vertex/index counts
     fn build_vertex_data(hm: &StockMesh, colors: &[[f32; 3]]) -> Vec<ColoredMeshVertex> {
         let num_verts = hm.vertices.len() / 3;
         let mut mesh_verts = Vec::with_capacity(num_verts);

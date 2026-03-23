@@ -1,3 +1,5 @@
+#![deny(clippy::indexing_slicing)]
+
 use std::sync::Arc;
 
 use crate::controller::AppController;
@@ -414,6 +416,8 @@ impl RsCamApp {
     }
 
     /// Compute per-vertex colors for the sim mesh based on current viz mode.
+    // SAFETY: color indices bounded by `num_verts * 3` guard above
+    #[allow(clippy::indexing_slicing)]
     fn compute_sim_colors(&self, mesh: &rs_cam_core::simulation::StockMesh) -> Vec<[f32; 3]> {
         let num_verts = mesh.vertices.len() / 3;
         match self.controller.state().simulation.stock_viz_mode {
@@ -454,6 +458,8 @@ impl RsCamApp {
     ///
     /// On forward playback this simulates the new moves since last frame.
     /// On backward scrub it resets from the nearest checkpoint heightmap.
+    // SAFETY: cp_idx is from enumerate over boundaries; vertex loop uses step_by(3) within len
+    #[allow(clippy::indexing_slicing)]
     fn update_live_sim(&mut self, frame: &mut eframe::Frame) {
         use rs_cam_core::dexel_mesh::dexel_stock_to_mesh;
         use rs_cam_core::dexel_stock::TriDexelStock;
@@ -627,6 +633,8 @@ impl RsCamApp {
 
     /// Transform a global-frame `StockMesh` to the active setup's local
     /// frame for the given simulation `move_idx`.  No-op for identity setups.
+    // SAFETY: step_by(3) loop with i+1, i+2 bounded by vertices.len() (always multiple of 3)
+    #[allow(clippy::indexing_slicing)]
     fn transform_mesh_to_local_frame(
         &self,
         mesh: &mut rs_cam_core::simulation::StockMesh,
@@ -1242,6 +1250,8 @@ impl RsCamApp {
     }
 
     /// Update tool model position during simulation playback.
+    // SAFETY: local_idx bounds-checked against moves.len() before indexing
+    #[allow(clippy::indexing_slicing)]
     fn update_sim_tool_position(&mut self, frame: &mut eframe::Frame) {
         use crate::render::sim_render::{ToolGeometry, ToolShape};
 
@@ -1746,6 +1756,8 @@ impl RsCamApp {
         }
     }
 
+    // SAFETY: edge indices are compile-time constants 0..7 into an 8-element projected array
+    #[allow(clippy::indexing_slicing)]
     fn draw_semantic_item_overlay(
         &self,
         ui: &mut egui::Ui,

@@ -459,6 +459,8 @@ where
     Ok(CollisionResult { report, positions })
 }
 
+// SAFETY: loop from 1..len, indexing [i] and [i-1] always in bounds
+#[allow(clippy::indexing_slicing)]
 pub(super) fn compute_stats(tp: &Toolpath) -> ToolpathStats {
     let mut cutting = 0.0;
     let mut rapid = 0.0;

@@ -412,6 +412,8 @@ fn op_feed_rate(op: &OperationConfig) -> f64 {
     }
 }
 
+// SAFETY: item_index and depths[] from semantic index built from trace.items
+#[allow(clippy::indexing_slicing)]
 fn draw_semantic_band(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
@@ -723,7 +725,8 @@ fn draw_semantic_drawer(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+// SAFETY: item_index from recursive traversal of trace.items children
+#[allow(clippy::too_many_arguments, clippy::indexing_slicing)]
 fn draw_semantic_drawer_item(
     ui: &mut egui::Ui,
     trace: &rs_cam_core::semantic_trace::ToolpathSemanticTrace,

@@ -362,7 +362,8 @@ pub fn draw(
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    // SAFETY: item_index from recursive traversal of trace.items children
+    #[allow(clippy::too_many_arguments, clippy::indexing_slicing)]
     fn draw_semantic_item_row(
         ui: &mut egui::Ui,
         trace: &rs_cam_core::semantic_trace::ToolpathSemanticTrace,

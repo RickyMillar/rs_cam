@@ -452,6 +452,8 @@ impl SemanticToolpathOp for DropCutterConfig {
                 if cols.is_empty() {
                     continue;
                 }
+                // SAFETY: cols verified non-empty above
+                #[allow(clippy::indexing_slicing)]
                 let start_pt = grid.get(row, cols[0]);
                 let row_scope = op_ctx.as_ref().map(|ctx| {
                     ctx.start_item(ToolpathSemanticKind::Row, format!("Row {}", row + 1))
@@ -582,14 +584,17 @@ impl SemanticToolpathOp for WaterlineConfig {
                         scope.set_param("contour_index", contour_idx + 1);
                         scope.set_param("z", z);
                     }
+                    // SAFETY: contour.len() >= 3 guaranteed by guard above
+                    #[allow(clippy::indexing_slicing)]
+                    let first = contour[0];
                     let mut contour_tp = Toolpath::new();
-                    contour_tp.rapid_to(P3::new(contour[0].x, contour[0].y, params.safe_z));
-                    contour_tp.feed_to(P3::new(contour[0].x, contour[0].y, z), params.plunge_rate);
+                    contour_tp.rapid_to(P3::new(first.x, first.y, params.safe_z));
+                    contour_tp.feed_to(P3::new(first.x, first.y, z), params.plunge_rate);
                     for pt in contour.iter().skip(1) {
                         contour_tp.feed_to(P3::new(pt.x, pt.y, z), params.feed_rate);
                     }
-                    contour_tp.feed_to(P3::new(contour[0].x, contour[0].y, z), params.feed_rate);
-                    contour_tp.rapid_to(P3::new(contour[0].x, contour[0].y, params.safe_z));
+                    contour_tp.feed_to(P3::new(first.x, first.y, z), params.feed_rate);
+                    contour_tp.rapid_to(P3::new(first.x, first.y, params.safe_z));
                     append_toolpath(&mut writer, contour_scope.as_ref(), contour_tp);
                 }
                 if let Some(scope) = level_scope.as_ref() {

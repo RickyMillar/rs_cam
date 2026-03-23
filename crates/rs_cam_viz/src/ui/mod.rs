@@ -1,3 +1,5 @@
+#![deny(clippy::indexing_slicing)]
+
 pub mod automation;
 pub mod menu_bar;
 pub mod preflight;

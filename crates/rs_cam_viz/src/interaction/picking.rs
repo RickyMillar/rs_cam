@@ -226,6 +226,8 @@ fn pick_alignment_pins(ctx: &PickContext<'_>, job: &JobState) -> Option<PickHit>
     best_hit
 }
 
+// SAFETY: j bounded by 0..moves.len() via step_by loop
+#[allow(clippy::indexing_slicing)]
 fn pick_toolpaths(
     ctx: &PickContext<'_>,
     job: &JobState,

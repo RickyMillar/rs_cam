@@ -1,7 +1,9 @@
+#![deny(clippy::indexing_slicing)]
+
 mod events;
 mod io;
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests;
 
 use std::time::Instant;

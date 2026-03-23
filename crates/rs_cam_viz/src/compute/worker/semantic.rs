@@ -11,6 +11,8 @@ pub(super) struct CutRun {
     pub z_max: f64,
 }
 
+// SAFETY: move_idx bounded by 0..toolpath.moves.len()
+#[allow(clippy::indexing_slicing)]
 pub(super) fn cutting_runs(toolpath: &Toolpath) -> Vec<CutRun> {
     let mut runs = Vec::new();
     let mut active_start = None;
@@ -42,6 +44,8 @@ pub(super) fn cutting_runs(toolpath: &Toolpath) -> Vec<CutRun> {
     runs
 }
 
+// SAFETY: bounds checked against toolpath.moves.len() at entry
+#[allow(clippy::indexing_slicing)]
 fn describe_run(
     toolpath: &Toolpath,
     move_start: usize,
@@ -114,6 +118,8 @@ pub(super) fn line_toolpath(
     tp
 }
 
+// SAFETY: points[0] access guarded by contour.is_empty() early return
+#[allow(clippy::indexing_slicing)]
 pub(super) fn contour_toolpath(
     contour: &[P2],
     cut_depth: f64,

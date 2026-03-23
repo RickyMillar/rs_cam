@@ -1,4 +1,4 @@
-#![deny(clippy::unwrap_used, clippy::panic)]
+#![deny(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 
 pub mod app;
 pub mod compute;

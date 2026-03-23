@@ -678,6 +678,8 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, _events: &mut 
     }
 }
 
+// SAFETY: selected_idx from position() within presets; i from enumerate over presets
+#[allow(clippy::indexing_slicing)]
 fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
     ui.heading("Machine Setup");
     ui.separator();

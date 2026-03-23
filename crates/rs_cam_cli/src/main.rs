@@ -1,4 +1,4 @@
-#![deny(clippy::unwrap_used, clippy::panic)]
+#![deny(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 
 mod helpers;
 mod job;
@@ -1077,6 +1077,8 @@ enum Commands {
     },
 }
 
+// SAFETY: `parts.len() < 2` guard above ensures indices 0 and 1 are in-bounds.
+#[allow(clippy::indexing_slicing)]
 fn parse_tool(spec: &str) -> Result<Box<dyn MillingCutter>> {
     let parts: Vec<&str> = spec.split(':').collect();
     if parts.len() < 2 {
@@ -2136,10 +2138,14 @@ fn main() -> Result<()> {
 
             // Extract half-angle from the tool spec string
             let tool_parts: Vec<&str> = tool.split(':').collect();
-            if tool_parts[0] != "vbit" || tool_parts.len() < 3 {
+            if tool_parts.first() != Some(&"vbit") || tool_parts.len() < 3 {
                 bail!("V-carve requires a V-bit tool (e.g., --tool vbit:6.35:90)");
             }
-            let included_angle_deg: f64 = tool_parts[2].parse().context("Invalid V-bit angle")?;
+            let included_angle_deg: f64 = tool_parts
+                .get(2)
+                .context("V-carve requires a V-bit tool (e.g., --tool vbit:6.35:90)")?
+                .parse()
+                .context("Invalid V-bit angle")?;
             let half_angle = (included_angle_deg / 2.0).to_radians();
 
             debug!(tool = %tool, diameter_mm = cutter.diameter(), half_angle_deg = half_angle.to_degrees(), "Tool");

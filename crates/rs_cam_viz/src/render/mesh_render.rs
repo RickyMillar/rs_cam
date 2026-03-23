@@ -60,6 +60,7 @@ impl MeshGpuData {
     /// smaller for typical meshes).
     ///
     /// Returns `None` if the buffer exceeds GPU device limits.
+    #[allow(clippy::indexing_slicing)] // vertex/triangle indices bounded by mesh invariants
     pub fn from_mesh(device: &wgpu::Device, limits: &GpuLimits, mesh: &TriangleMesh) -> Option<Self> {
         let num_verts = mesh.vertices.len();
 
@@ -129,7 +130,7 @@ impl MeshGpuData {
     /// smooth-normal path which uses ~3x less VRAM.
     ///
     /// Returns `None` if the buffer exceeds GPU device limits.
-    #[allow(dead_code)]
+    #[allow(dead_code, clippy::indexing_slicing)] // vertex/triangle indices bounded by mesh invariants
     pub fn from_mesh_flat(device: &wgpu::Device, limits: &GpuLimits, mesh: &TriangleMesh) -> Option<Self> {
         let mut vertices = Vec::with_capacity(mesh.triangles.len() * 3);
         let mut indices = Vec::with_capacity(mesh.triangles.len() * 3);
@@ -183,6 +184,7 @@ impl MeshGpuData {
 }
 
 /// Deterministic pastel color for a face group ID.
+#[allow(clippy::indexing_slicing)] // modulo indexing into constant-length palette
 fn face_group_color(id: FaceGroupId) -> [f32; 3] {
     // Simple hash-to-color: spread face IDs across hue space
     const PALETTE: &[[f32; 3]] = &[
@@ -209,6 +211,7 @@ fn face_group_color(id: FaceGroupId) -> [f32; 3] {
 pub type VertexTransform<'a> =
     Option<Box<dyn Fn(rs_cam_core::geo::P3) -> rs_cam_core::geo::P3 + 'a>>;
 
+#[allow(clippy::indexing_slicing)] // vertex/triangle indices bounded by mesh invariants
 pub fn enriched_mesh_gpu_data(
     device: &wgpu::Device,
     limits: &GpuLimits,

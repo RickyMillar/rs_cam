@@ -590,6 +590,8 @@ fn issue_kind_label(kind: SimulationIssueKind) -> &'static str {
 }
 
 /// Determine the move type and feed rate at the current move index.
+// SAFETY: local_idx bounds-checked against moves.len() before indexing
+#[allow(clippy::indexing_slicing)]
 fn current_move_info(sim: &SimulationState, job: &JobState) -> Option<(String, Option<f64>)> {
     let current = sim.playback.current_move;
     let mut cumulative = 0;
