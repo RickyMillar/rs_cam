@@ -1047,66 +1047,76 @@ fn draw_feeds_card(ui: &mut egui::Ui, entry: &ToolpathEntry) {
 
 // ── Engagement diagram ──────────────────────────────────────────────────
 
-/// Draw a top-down cross-section showing tool circle engaging material.
-fn draw_engagement_diagram(ui: &mut egui::Ui, result: &rs_cam_core::feeds::FeedsResult, tool_diameter: f64) {
-    let desired_size = egui::vec2(ui.available_width().min(260.0), 140.0);
+/// Draw a split-view engagement diagram: top-down WOC (left) + side DOC (right).
+fn draw_engagement_diagram(
+    ui: &mut egui::Ui,
+    result: &rs_cam_core::feeds::FeedsResult,
+    tool_diameter: f64,
+    tool_type: crate::state::job::ToolType,
+) {
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 150.0);
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    // Background
     painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
 
     let tool_r = tool_diameter / 2.0;
     let woc = result.radial_width_mm;
     let doc = result.axial_depth_mm;
+    let tool_color = egui::Color32::from_rgb(160, 170, 190);
+    let mat_color = egui::Color32::from_rgb(50, 50, 65);
+    let dim_color = egui::Color32::from_rgb(100, 160, 220);
+    let info_color = egui::Color32::from_rgb(140, 140, 155);
 
-    // Scale: fit tool diameter into ~40% of canvas width
-    let scale = (rect.width() * 0.2) / tool_r.max(0.01) as f32;
-
-    // Tool center position (offset left so WOC engagement is visible)
-    let cx = rect.center().x - 10.0;
-    let cy = rect.center().y;
-    let tr = tool_r as f32 * scale;
-
-    // Material block: right side, from where tool edge meets material
-    let mat_left = cx + tr - (woc as f32 * scale);
-    let mat_right = rect.right() - 4.0;
-    let mat_top = cy - tr - 10.0;
-    let mat_bottom = cy + tr + 10.0;
-    painter.rect_filled(
-        egui::Rect::from_min_max(
-            egui::pos2(mat_left, mat_top),
-            egui::pos2(mat_right, mat_bottom),
-        ),
-        0.0,
-        egui::Color32::from_rgb(50, 50, 65),
+    // Divider: split canvas at ~55%
+    let mid_x = rect.left() + rect.width() * 0.52;
+    painter.line_segment(
+        [egui::pos2(mid_x, rect.top() + 4.0), egui::pos2(mid_x, rect.bottom() - 4.0)],
+        egui::Stroke::new(0.5, egui::Color32::from_rgb(40, 40, 50)),
     );
 
-    // WOC engagement crescent (arc where tool overlaps material)
+    // ── LEFT: Top-down WOC view ────────────────────────────────────
+    let left_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + 4.0, rect.top() + 16.0),
+        egui::pos2(mid_x - 4.0, rect.bottom() - 16.0),
+    );
+    let scale_woc = (left_rect.width() * 0.35) / tool_r.max(0.01) as f32;
+    let cx = left_rect.center().x;
+    let cy = left_rect.center().y;
+    let tr = tool_r as f32 * scale_woc;
+
+    // Material block
+    let mat_left = cx + tr - (woc as f32 * scale_woc);
+    let mat_right = left_rect.right();
+    painter.rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(mat_left, cy - tr - 6.0),
+            egui::pos2(mat_right, cy + tr + 6.0),
+        ),
+        0.0,
+        mat_color,
+    );
+
+    // WOC crescent
     if woc > 0.0 && woc <= tool_diameter {
-        // Compute the angle where the tool circle intersects the material edge
         let engage_frac = (woc / tool_diameter).clamp(0.0, 1.0);
         let half_angle = (engage_frac * std::f32::consts::PI as f64).min(std::f64::consts::PI);
-
         let mut pts = Vec::with_capacity(34);
         let steps = 32;
         for i in 0..=steps {
             let t = i as f64 / steps as f64;
             let a = -half_angle + 2.0 * half_angle * t;
-            let px = cx + (tool_r * a.cos()) as f32 * scale;
-            let py = cy + (tool_r * a.sin()) as f32 * scale;
-            // Only include points inside material
+            let px = cx + (tool_r * a.cos()) as f32 * scale_woc;
+            let py = cy + (tool_r * a.sin()) as f32 * scale_woc;
             if px >= mat_left {
                 pts.push(egui::pos2(px, py));
             }
         }
         if pts.len() >= 2 {
-            // Close the shape by adding the material edge
             let first_y = pts.first().map(|p| p.y).unwrap_or(cy);
             let last_y = pts.last().map(|p| p.y).unwrap_or(cy);
             pts.push(egui::pos2(mat_left, last_y));
             pts.push(egui::pos2(mat_left, first_y));
-
             painter.add(egui::Shape::convex_polygon(
                 pts,
                 egui::Color32::from_rgba_premultiplied(60, 140, 200, 50),
@@ -1115,61 +1125,159 @@ fn draw_engagement_diagram(ui: &mut egui::Ui, result: &rs_cam_core::feeds::Feeds
         }
     }
 
-    // Tool circle outline
-    painter.circle_stroke(
-        egui::pos2(cx, cy),
-        tr,
-        egui::Stroke::new(1.5, egui::Color32::from_rgb(160, 170, 190)),
+    painter.circle_stroke(egui::pos2(cx, cy), tr, egui::Stroke::new(1.5, tool_color));
+    painter.circle_filled(egui::pos2(cx, cy), 1.5, tool_color);
+
+    // WOC label
+    painter.text(
+        egui::pos2(cx, cy + tr + 10.0),
+        egui::Align2::CENTER_TOP,
+        format!("WOC {woc:.2}"),
+        egui::FontId::proportional(8.0),
+        dim_color,
     );
 
-    // Tool center dot
-    painter.circle_filled(egui::pos2(cx, cy), 2.0, egui::Color32::from_rgb(160, 170, 190));
+    // "Top" label
+    painter.text(
+        egui::pos2(left_rect.center().x, rect.top() + 3.0),
+        egui::Align2::CENTER_TOP,
+        "Top",
+        egui::FontId::proportional(8.0),
+        info_color,
+    );
 
-    // WOC dimension line
-    let dim_y = mat_bottom + 8.0;
-    let woc_left_x = cx + tr - (woc as f32 * scale);
-    let woc_right_x = cx + tr;
-    if dim_y < rect.bottom() - 2.0 {
-        painter.line_segment(
-            [egui::pos2(woc_left_x, dim_y), egui::pos2(woc_right_x, dim_y)],
-            egui::Stroke::new(1.0, egui::Color32::from_rgb(100, 160, 220)),
-        );
-        painter.text(
-            egui::pos2((woc_left_x + woc_right_x) / 2.0, dim_y + 8.0),
-            egui::Align2::CENTER_TOP,
-            format!("WOC {woc:.2}"),
-            egui::FontId::proportional(9.0),
-            egui::Color32::from_rgb(100, 160, 220),
-        );
+    // ── RIGHT: Side DOC view ───────────────────────────────────────
+    let right_rect = egui::Rect::from_min_max(
+        egui::pos2(mid_x + 4.0, rect.top() + 16.0),
+        egui::pos2(rect.right() - 4.0, rect.bottom() - 16.0),
+    );
+
+    // Scale: fit max(doc, tool_diameter) into the right panel height
+    let max_z_extent = doc.max(tool_diameter).max(1.0);
+    let scale_doc = (right_rect.height() * 0.7) / max_z_extent as f32;
+    let scx = right_rect.center().x;
+
+    // Material surface at top of side view
+    let surface_y = right_rect.top() + right_rect.height() * 0.15;
+    let tool_hw = tool_r as f32 * scale_doc;
+    let doc_px = doc as f32 * scale_doc;
+
+    // Material block (below surface)
+    painter.rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(right_rect.left(), surface_y),
+            egui::pos2(right_rect.right(), right_rect.bottom()),
+        ),
+        0.0,
+        mat_color,
+    );
+
+    // Material surface line
+    painter.line_segment(
+        [
+            egui::pos2(right_rect.left(), surface_y),
+            egui::pos2(right_rect.right(), surface_y),
+        ],
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 80, 95)),
+    );
+
+    // DOC shaded region (where tool cuts)
+    painter.rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(scx - tool_hw, surface_y),
+            egui::pos2(scx + tool_hw, surface_y + doc_px),
+        ),
+        0.0,
+        egui::Color32::from_rgba_premultiplied(60, 140, 200, 40),
+    );
+
+    // Tool profile (simplified side view)
+    let tool_top = surface_y - tool_hw * 0.4; // shaft extends above surface
+    let tool_bottom = surface_y + doc_px;
+    use crate::state::job::ToolType;
+    match tool_type {
+        ToolType::BallNose => {
+            // Shaft rectangle above, semicircle at bottom
+            let ball_cy = tool_bottom - tool_hw;
+            painter.add(egui::Shape::line(
+                vec![
+                    egui::pos2(scx - tool_hw, ball_cy),
+                    egui::pos2(scx - tool_hw, tool_top),
+                    egui::pos2(scx + tool_hw, tool_top),
+                    egui::pos2(scx + tool_hw, ball_cy),
+                ],
+                egui::Stroke::new(1.5, tool_color),
+            ));
+            let mut arc_pts = vec![egui::pos2(scx + tool_hw, ball_cy)];
+            for i in 0..=16 {
+                let a = std::f32::consts::PI * (i as f32) / 16.0;
+                arc_pts.push(egui::pos2(
+                    scx + tool_hw * a.cos(),
+                    ball_cy + tool_hw * a.sin(),
+                ));
+            }
+            painter.add(egui::Shape::line(arc_pts, egui::Stroke::new(1.5, tool_color)));
+        }
+        _ => {
+            // EndMill / BullNose / VBit — simple rectangle
+            painter.add(egui::Shape::line(
+                vec![
+                    egui::pos2(scx - tool_hw, tool_bottom),
+                    egui::pos2(scx - tool_hw, tool_top),
+                    egui::pos2(scx + tool_hw, tool_top),
+                    egui::pos2(scx + tool_hw, tool_bottom),
+                    egui::pos2(scx - tool_hw, tool_bottom),
+                ],
+                egui::Stroke::new(1.5, tool_color),
+            ));
+        }
     }
 
-    // DOC + labels on the right
-    let info_x = rect.left() + 4.0;
-    let mut info_y = rect.top() + 10.0;
-    let info_color = egui::Color32::from_rgb(140, 140, 155);
-    let info_font = egui::FontId::proportional(9.0);
+    // DOC dimension line (right side)
+    let dim_x = scx + tool_hw + 8.0;
+    painter.line_segment(
+        [egui::pos2(dim_x, surface_y), egui::pos2(dim_x, surface_y + doc_px)],
+        egui::Stroke::new(1.0, dim_color),
+    );
+    // Ticks
+    painter.line_segment(
+        [egui::pos2(dim_x - 3.0, surface_y), egui::pos2(dim_x + 3.0, surface_y)],
+        egui::Stroke::new(1.0, dim_color),
+    );
+    painter.line_segment(
+        [
+            egui::pos2(dim_x - 3.0, surface_y + doc_px),
+            egui::pos2(dim_x + 3.0, surface_y + doc_px),
+        ],
+        egui::Stroke::new(1.0, dim_color),
+    );
+    painter.text(
+        egui::pos2(dim_x + 2.0, surface_y + doc_px / 2.0),
+        egui::Align2::LEFT_CENTER,
+        format!("{doc:.2}"),
+        egui::FontId::proportional(8.0),
+        dim_color,
+    );
 
+    // "Side" label
     painter.text(
-        egui::pos2(info_x, info_y),
-        egui::Align2::LEFT_TOP,
-        format!("DOC: {doc:.2} mm"),
-        info_font.clone(),
+        egui::pos2(right_rect.center().x, rect.top() + 3.0),
+        egui::Align2::CENTER_TOP,
+        "Side",
+        egui::FontId::proportional(8.0),
         info_color,
     );
-    info_y += 12.0;
+
+    // Stats at bottom
+    let stats_y = rect.bottom() - 4.0;
     painter.text(
-        egui::pos2(info_x, info_y),
-        egui::Align2::LEFT_TOP,
-        format!("Chip: {:.4} mm", result.chip_load_mm),
-        info_font.clone(),
-        info_color,
-    );
-    info_y += 12.0;
-    painter.text(
-        egui::pos2(info_x, info_y),
-        egui::Align2::LEFT_TOP,
-        format!("MRR: {:.0} mm\u{00B3}/min", result.mrr_mm3_min),
-        info_font,
+        egui::pos2(rect.left() + 4.0, stats_y),
+        egui::Align2::LEFT_BOTTOM,
+        format!(
+            "Chip {:.4}  MRR {:.0} mm\u{00B3}/min",
+            result.chip_load_mm, result.mrr_mm3_min
+        ),
+        egui::FontId::proportional(8.0),
         info_color,
     );
 }
@@ -1665,11 +1773,12 @@ fn draw_toolpath_panel(
         }
 
         ToolpathTab::Feeds => {
-            let tool_diameter = tool_configs
+            let tool_info = tool_configs
                 .iter()
                 .find(|(id, _)| *id == entry.tool_id)
-                .map(|(_, t)| t.diameter)
-                .unwrap_or(6.0);
+                .map(|(_, t)| (t.diameter, t.tool_type));
+            let (tool_diameter, tool_type) = tool_info
+                .unwrap_or((6.0, crate::state::job::ToolType::EndMill));
             if let Some(tool_cfg) = tool_configs
                 .iter()
                 .find(|(id, _)| *id == entry.tool_id)
@@ -1679,7 +1788,7 @@ fn draw_toolpath_panel(
             }
             if let Some(result) = &entry.feeds_result {
                 ui.add_space(6.0);
-                draw_engagement_diagram(ui, result, tool_diameter);
+                draw_engagement_diagram(ui, result, tool_diameter, tool_type);
             }
         }
 
@@ -1735,15 +1844,7 @@ fn draw_toolpath_panel(
                     .strong()
                     .color(egui::Color32::from_rgb(180, 180, 195)),
             );
-            draw_dressup_params(ui, entry);
-
-            // Entry style preview diagram
-            {
-                let fallback_ctx = HeightContext::simple(10.0, 5.0);
-                let ctx = height_ctx.unwrap_or(&fallback_ctx);
-                ui.add_space(6.0);
-                draw_entry_preview_diagram(ui, &entry.dressups, ctx, &entry.heights);
-            }
+            draw_dressup_params(ui, entry, height_ctx);
 
             ui.add_space(8.0);
             ui.collapsing("Debugging", |ui| {
@@ -1869,7 +1970,11 @@ fn tooltip_for(label: &str) -> Option<&'static str> {
 
 // ── Dressup configuration ────────────────────────────────────────────────
 
-fn draw_dressup_params(ui: &mut egui::Ui, entry: &mut ToolpathEntry) {
+fn draw_dressup_params(
+    ui: &mut egui::Ui,
+    entry: &mut ToolpathEntry,
+    height_ctx: Option<&HeightContext>,
+) {
     let cfg = &mut entry.dressups;
     ui.horizontal(|ui| {
         ui.label("Entry Style:");
@@ -1919,6 +2024,14 @@ fn draw_dressup_params(ui: &mut egui::Ui, entry: &mut ToolpathEntry) {
         }
         DressupEntryStyle::None => {}
     }
+    // Entry style preview — bundled right after the settings that control it
+    {
+        let fallback_ctx = HeightContext::simple(10.0, 5.0);
+        let ctx = height_ctx.unwrap_or(&fallback_ctx);
+        ui.add_space(4.0);
+        draw_entry_preview_diagram(ui, cfg, ctx, &entry.heights);
+    }
+
     ui.add_space(4.0);
     ui.checkbox(&mut cfg.dogbone, "Dogbone overcuts");
     if cfg.dogbone {
@@ -1935,6 +2048,7 @@ fn draw_dressup_params(ui: &mut egui::Ui, entry: &mut ToolpathEntry) {
                     45.0..=135.0,
                 );
             });
+        draw_dogbone_diagram(ui, cfg.dogbone_angle);
     }
     ui.checkbox(&mut cfg.lead_in_out, "Lead-in / lead-out");
     if cfg.lead_in_out {
@@ -1951,6 +2065,7 @@ fn draw_dressup_params(ui: &mut egui::Ui, entry: &mut ToolpathEntry) {
                     0.5..=20.0,
                 );
             });
+        draw_lead_in_out_diagram(ui, cfg.lead_radius);
     }
     ui.checkbox(&mut cfg.link_moves, "Link moves (keep tool down)");
     if cfg.link_moves {

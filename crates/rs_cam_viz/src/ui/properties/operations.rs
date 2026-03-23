@@ -1045,6 +1045,178 @@ pub(super) fn draw_stepover_diagram(ui: &mut egui::Ui, pattern: &StepoverPattern
     }
 }
 
+// ── Dogbone Diagram ─────────────────────────────────────────────────────
+
+/// Draw a corner showing the dogbone overcut geometry.
+pub(super) fn draw_dogbone_diagram(ui: &mut egui::Ui, max_angle: f64) {
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 80.0);
+    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+
+    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+
+    let cx = rect.center().x;
+    let cy = rect.center().y;
+    let path_color = egui::Color32::from_rgb(80, 80, 95);
+    let overcut_color = egui::Color32::from_rgb(220, 160, 50);
+    let tool_color = egui::Color32::from_rgb(160, 170, 190);
+
+    // Two profile edges meeting at 90° (an inside corner)
+    let corner = egui::pos2(cx, cy);
+    let arm_len = 40.0;
+
+    // Horizontal edge (left) and vertical edge (down)
+    let edge_a_end = egui::pos2(cx - arm_len, cy);
+    let edge_b_end = egui::pos2(cx, cy + arm_len);
+
+    painter.line_segment(
+        [edge_a_end, corner],
+        egui::Stroke::new(2.0, path_color),
+    );
+    painter.line_segment(
+        [corner, edge_b_end],
+        egui::Stroke::new(2.0, path_color),
+    );
+
+    // Material fill (upper-right quadrant from corner)
+    painter.rect_filled(
+        egui::Rect::from_min_max(corner, egui::pos2(cx + arm_len, cy - arm_len)),
+        0.0,
+        egui::Color32::from_rgb(40, 40, 52),
+    );
+
+    // Tool circle at corner
+    let tool_r = 10.0;
+    painter.circle_stroke(corner, tool_r, egui::Stroke::new(1.0, tool_color));
+
+    // Dogbone overcut: bisector direction into the corner (toward upper-right)
+    let bisect_angle = std::f32::consts::FRAC_PI_4; // 45° for a 90° corner
+    let overcut_dist = tool_r;
+    let overcut_pt = egui::pos2(
+        cx + overcut_dist * bisect_angle.cos(),
+        cy - overcut_dist * bisect_angle.sin(),
+    );
+
+    // Dashed overcut line
+    painter.line_segment(
+        [corner, overcut_pt],
+        egui::Stroke::new(1.5, overcut_color),
+    );
+    painter.circle_filled(overcut_pt, 3.0, overcut_color);
+
+    // Tool at overcut position (ghost)
+    painter.circle_stroke(
+        overcut_pt,
+        tool_r,
+        egui::Stroke::new(0.8, egui::Color32::from_rgba_premultiplied(220, 160, 50, 80)),
+    );
+
+    // Labels
+    let dim_color = egui::Color32::from_rgb(140, 140, 155);
+    painter.text(
+        egui::pos2(rect.left() + 6.0, rect.top() + 6.0),
+        egui::Align2::LEFT_TOP,
+        "Dogbone Overcut",
+        egui::FontId::proportional(9.0),
+        overcut_color,
+    );
+    painter.text(
+        egui::pos2(rect.right() - 6.0, rect.bottom() - 6.0),
+        egui::Align2::RIGHT_BOTTOM,
+        format!("max {max_angle:.0}\u{00B0}"),
+        egui::FontId::proportional(8.0),
+        dim_color,
+    );
+}
+
+// ── Lead-in / Lead-out Diagram ──────────────────────────────────────────
+
+/// Draw a top-down view showing lead-in and lead-out quarter-circle arcs.
+pub(super) fn draw_lead_in_out_diagram(ui: &mut egui::Ui, radius: f64) {
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 80.0);
+    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+
+    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+
+    let cy = rect.center().y;
+    let path_color = egui::Color32::from_rgb(80, 80, 95);
+    let lead_color = egui::Color32::from_rgb(50, 200, 230);
+    let dim_color = egui::Color32::from_rgb(140, 140, 155);
+
+    // Scale radius to fit
+    let r_px = (radius as f32 * 3.0).clamp(15.0, 35.0);
+
+    // Cut path: horizontal line across the middle
+    let cut_left = rect.left() + 30.0;
+    let cut_right = rect.right() - 30.0;
+    painter.line_segment(
+        [egui::pos2(cut_left, cy), egui::pos2(cut_right, cy)],
+        egui::Stroke::new(2.0, path_color),
+    );
+
+    // Lead-in arc (left side): quarter-circle approaching from below-left
+    let in_center = egui::pos2(cut_left, cy - r_px); // arc center above entry point
+    let mut in_pts = Vec::with_capacity(10);
+    for i in 0..=8 {
+        let t = i as f32 / 8.0;
+        let a = std::f32::consts::FRAC_PI_2 * (1.0 - t); // 90° → 0°
+        in_pts.push(egui::pos2(
+            in_center.x - r_px * a.cos(),
+            in_center.y + r_px * a.sin(),
+        ));
+    }
+    painter.add(egui::Shape::line(
+        in_pts,
+        egui::Stroke::new(2.0, lead_color),
+    ));
+
+    // Lead-out arc (right side): quarter-circle departing upward-right
+    let out_center = egui::pos2(cut_right, cy - r_px);
+    let mut out_pts = Vec::with_capacity(10);
+    for i in 0..=8 {
+        let t = i as f32 / 8.0;
+        let a = std::f32::consts::FRAC_PI_2 * t; // 0° → 90°
+        out_pts.push(egui::pos2(
+            out_center.x + r_px * a.cos(),
+            out_center.y + r_px * a.sin(),
+        ));
+    }
+    painter.add(egui::Shape::line(
+        out_pts,
+        egui::Stroke::new(2.0, lead_color),
+    ));
+
+    // Entry/exit markers
+    painter.circle_filled(egui::pos2(cut_left, cy), 3.0, lead_color);
+    painter.circle_filled(egui::pos2(cut_right, cy), 3.0, lead_color);
+
+    // Labels
+    painter.text(
+        egui::pos2(cut_left - 6.0, cy + r_px * 0.3),
+        egui::Align2::RIGHT_CENTER,
+        "In",
+        egui::FontId::proportional(9.0),
+        lead_color,
+    );
+    painter.text(
+        egui::pos2(cut_right + 6.0, cy - r_px * 0.3),
+        egui::Align2::LEFT_CENTER,
+        "Out",
+        egui::FontId::proportional(9.0),
+        lead_color,
+    );
+
+    // Radius annotation
+    painter.text(
+        egui::pos2(rect.center().x, rect.bottom() - 6.0),
+        egui::Align2::CENTER_BOTTOM,
+        format!("r = {radius:.1} mm"),
+        egui::FontId::proportional(8.0),
+        dim_color,
+    );
+}
+
 // ── Tab Placement Diagram ───────────────────────────────────────────────
 
 /// Draw a simplified top-down perimeter with tab markers at even spacing.
