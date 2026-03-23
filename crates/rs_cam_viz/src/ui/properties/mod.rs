@@ -1046,6 +1046,79 @@ fn draw_feeds_card(ui: &mut egui::Ui, entry: &ToolpathEntry) {
 }
 
 #[allow(clippy::too_many_arguments)]
+// ── Toolpath property tab system ─────────────────────────────────────────
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ToolpathTab {
+    Params,
+    Feeds,
+    Heights,
+    Mods,
+}
+
+impl ToolpathTab {
+    const ALL: &[ToolpathTab] = &[
+        ToolpathTab::Params,
+        ToolpathTab::Feeds,
+        ToolpathTab::Heights,
+        ToolpathTab::Mods,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            ToolpathTab::Params => "Params",
+            ToolpathTab::Feeds => "Feeds",
+            ToolpathTab::Heights => "Heights",
+            ToolpathTab::Mods => "Mods",
+        }
+    }
+}
+
+fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        for &tab in ToolpathTab::ALL {
+            let is_active = *active == tab;
+            let (bg, text_color) = if is_active {
+                (
+                    egui::Color32::from_rgb(55, 60, 80),
+                    egui::Color32::from_rgb(220, 225, 240),
+                )
+            } else {
+                (
+                    egui::Color32::TRANSPARENT,
+                    egui::Color32::from_rgb(140, 140, 155),
+                )
+            };
+            let button =
+                egui::Button::new(egui::RichText::new(tab.label()).color(text_color).strong())
+                    .fill(bg)
+                    .rounding(egui::Rounding {
+                        nw: 4.0,
+                        ne: 4.0,
+                        sw: 0.0,
+                        se: 0.0,
+                    })
+                    .min_size(egui::vec2(55.0, 24.0));
+            let response = ui.add(button);
+            if response.clicked() && !is_active {
+                *active = tab;
+            }
+            if is_active {
+                let rect = response.rect;
+                ui.painter().line_segment(
+                    [
+                        egui::pos2(rect.min.x + 2.0, rect.max.y),
+                        egui::pos2(rect.max.x - 2.0, rect.max.y),
+                    ],
+                    egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 160, 220)),
+                );
+            }
+            ui.add_space(2.0);
+        }
+    });
+}
+
 fn draw_toolpath_panel(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
@@ -1062,6 +1135,8 @@ fn draw_toolpath_panel(
 ) {
     ui.heading(&entry.name);
     ui.separator();
+
+    // ── Shared header (always visible above tabs) ───────────────────
 
     // Name
     ui.horizontal(|ui| {
@@ -1157,151 +1232,9 @@ fn draw_toolpath_panel(
         }
     }
 
-    ui.add_space(8.0);
-    ui.label(
-        egui::RichText::new("Cutting Parameters")
-            .strong()
-            .color(egui::Color32::from_rgb(180, 180, 195)),
-    );
-
-    // Operation-specific parameters
-    match &mut entry.operation {
-        OperationConfig::Face(cfg) => draw_face_params(ui, cfg),
-        OperationConfig::Pocket(cfg) => draw_pocket_params(ui, cfg),
-        OperationConfig::Profile(cfg) => draw_profile_params(ui, cfg),
-        OperationConfig::Adaptive(cfg) => draw_adaptive_params(ui, cfg),
-        OperationConfig::VCarve(cfg) => draw_vcarve_params(ui, cfg),
-        OperationConfig::Rest(cfg) => draw_rest_params(ui, cfg, tools),
-        OperationConfig::Inlay(cfg) => draw_inlay_params(ui, cfg),
-        OperationConfig::Zigzag(cfg) => draw_zigzag_params(ui, cfg),
-        OperationConfig::Trace(cfg) => draw_trace_params(ui, cfg),
-        OperationConfig::Drill(cfg) => draw_drill_params(ui, cfg),
-        OperationConfig::Chamfer(cfg) => draw_chamfer_params(ui, cfg),
-        OperationConfig::DropCutter(cfg) => draw_dropcutter_params(ui, cfg),
-        OperationConfig::Adaptive3d(cfg) => draw_adaptive3d_params(ui, cfg),
-        OperationConfig::Waterline(cfg) => draw_waterline_params(ui, cfg),
-        OperationConfig::Pencil(cfg) => draw_pencil_params(ui, cfg),
-        OperationConfig::Scallop(cfg) => draw_scallop_params(ui, cfg),
-        OperationConfig::SteepShallow(cfg) => draw_steep_shallow_params(ui, cfg),
-        OperationConfig::RampFinish(cfg) => draw_ramp_finish_params(ui, cfg),
-        OperationConfig::SpiralFinish(cfg) => draw_spiral_finish_params(ui, cfg),
-        OperationConfig::RadialFinish(cfg) => draw_radial_finish_params(ui, cfg),
-        OperationConfig::HorizontalFinish(cfg) => draw_horizontal_finish_params(ui, cfg),
-        OperationConfig::ProjectCurve(cfg) => draw_project_curve_params(ui, cfg),
-        OperationConfig::AlignmentPinDrill(cfg) => draw_alignment_pin_drill_params(ui, cfg),
-    }
-
-    // --- Feeds & Speeds calculation ---
-    if let Some(tool_cfg) = tool_configs
-        .iter()
-        .find(|(id, _)| *id == entry.tool_id)
-        .map(|(_, t)| t)
-    {
-        calculate_and_apply_feeds(ui, entry, tool_cfg, material, machine, workholding);
-    }
-
-    // Machining boundary
-    ui.add_space(8.0);
-    ui.collapsing("Machining Boundary", |ui| {
-        ui.checkbox(&mut entry.boundary_enabled, "Clip to stock boundary")
-            .on_hover_text("Restrict toolpath to within the stock material bounds");
-        if entry.boundary_enabled {
-            ui.horizontal(|ui| {
-                ui.label("Containment:");
-                egui::ComboBox::from_id_salt("boundary_contain")
-                    .selected_text(match entry.boundary_containment {
-                        BoundaryContainment::Center => "Center",
-                        BoundaryContainment::Inside => "Inside",
-                        BoundaryContainment::Outside => "Outside",
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut entry.boundary_containment,
-                            BoundaryContainment::Center,
-                            "Center",
-                        )
-                        .on_hover_text("Tool center stays inside boundary");
-                        ui.selectable_value(
-                            &mut entry.boundary_containment,
-                            BoundaryContainment::Inside,
-                            "Inside",
-                        )
-                        .on_hover_text(
-                            "Entire tool stays inside boundary (shrinks by tool radius)",
-                        );
-                        ui.selectable_value(
-                            &mut entry.boundary_containment,
-                            BoundaryContainment::Outside,
-                            "Outside",
-                        )
-                        .on_hover_text("Tool edge can extend outside boundary");
-                    });
-            });
-        }
-    });
-
+    // Generate button + status (always visible)
     ui.add_space(4.0);
-    ui.collapsing("Debugging", |ui| {
-        ui.checkbox(&mut entry.debug_options.enabled, "Capture debug trace")
-            .on_hover_text(
-                "Record semantic and performance trace data for the Simulation debugger. Re-generate to apply changes.",
-            );
-        if entry.debug_options.enabled {
-            ui.label(
-                egui::RichText::new("Re-generate this toolpath to refresh trace data.")
-                    .small()
-                    .color(egui::Color32::from_rgb(140, 170, 230)),
-            );
-        }
-    });
-
-    // Manual G-code
-    ui.add_space(4.0);
-    ui.collapsing("Manual G-code", |ui| {
-        ui.label(
-            egui::RichText::new("Raw G-code inserted before/after this operation in export")
-                .small()
-                .italics()
-                .color(egui::Color32::from_rgb(130, 130, 140)),
-        );
-        ui.label("Before:");
-        ui.text_edit_multiline(&mut entry.pre_gcode);
-        ui.label("After:");
-        ui.text_edit_multiline(&mut entry.post_gcode);
-    });
-
-    // Heights
-    ui.add_space(4.0);
-    ui.collapsing("Heights", |ui| {
-        let fallback_ctx = HeightContext::simple(10.0, 5.0);
-        let ctx = height_ctx.unwrap_or(&fallback_ctx);
-        draw_heights_params(ui, &mut entry.heights, ctx);
-        ui.add_space(6.0);
-        draw_height_diagram(ui, &mut entry.heights, ctx);
-    });
-
-    // Dressup modifications
-    ui.add_space(4.0);
-    ui.collapsing("Modifications", |ui| {
-        draw_dressup_params(ui, entry);
-    });
-
-    ui.add_space(12.0);
-
-    // Validation
     let validation_errors = validate_toolpath(entry, validation);
-    if !validation_errors.is_empty() {
-        ui.add_space(4.0);
-        for err in &validation_errors {
-            ui.label(
-                egui::RichText::new(err)
-                    .color(egui::Color32::from_rgb(220, 150, 60))
-                    .small(),
-            );
-        }
-    }
-
-    // Generate button + status
     let can_generate = !tools.is_empty() && validation_errors.is_empty();
     ui.horizontal(|ui| {
         if ui
@@ -1318,7 +1251,9 @@ fn draw_toolpath_panel(
                 ui.label("Computing...");
             }
             ComputeStatus::Done => {
-                ui.label(egui::RichText::new("Done").color(egui::Color32::from_rgb(100, 180, 100)));
+                ui.label(
+                    egui::RichText::new("Done").color(egui::Color32::from_rgb(100, 180, 100)),
+                );
             }
             ComputeStatus::Error(e) => {
                 ui.label(
@@ -1327,13 +1262,168 @@ fn draw_toolpath_panel(
                 );
             }
         }
+        if let Some(result) = &entry.result {
+            ui.label(
+                egui::RichText::new(format!("{} moves", result.stats.move_count))
+                    .small()
+                    .color(egui::Color32::from_rgb(120, 120, 130)),
+            );
+        }
     });
+    if !validation_errors.is_empty() {
+        for err in &validation_errors {
+            ui.label(
+                egui::RichText::new(err)
+                    .color(egui::Color32::from_rgb(220, 150, 60))
+                    .small(),
+            );
+        }
+    }
 
-    if let Some(result) = &entry.result {
-        ui.add_space(4.0);
-        ui.label(format!("Moves: {}", result.stats.move_count));
-        ui.label(format!("Cutting: {:.0} mm", result.stats.cutting_distance));
-        ui.label(format!("Rapid: {:.0} mm", result.stats.rapid_distance));
+    // ── Tab bar ─────────────────────────────────────────────────────
+
+    ui.add_space(8.0);
+    let tab_id = ui.id().with("tp_tab").with(entry.id.0);
+    let mut active_tab: ToolpathTab = ui
+        .memory(|mem| mem.data.get_temp(tab_id))
+        .unwrap_or(ToolpathTab::Params);
+    draw_toolpath_tabs(ui, &mut active_tab);
+    ui.memory_mut(|mem| mem.data.insert_temp(tab_id, active_tab));
+    ui.separator();
+
+    // ── Tab content ─────────────────────────────────────────────────
+
+    match active_tab {
+        ToolpathTab::Params => {
+            ui.label(
+                egui::RichText::new("Cutting Parameters")
+                    .strong()
+                    .color(egui::Color32::from_rgb(180, 180, 195)),
+            );
+            match &mut entry.operation {
+                OperationConfig::Face(cfg) => draw_face_params(ui, cfg),
+                OperationConfig::Pocket(cfg) => draw_pocket_params(ui, cfg),
+                OperationConfig::Profile(cfg) => draw_profile_params(ui, cfg),
+                OperationConfig::Adaptive(cfg) => draw_adaptive_params(ui, cfg),
+                OperationConfig::VCarve(cfg) => draw_vcarve_params(ui, cfg),
+                OperationConfig::Rest(cfg) => draw_rest_params(ui, cfg, tools),
+                OperationConfig::Inlay(cfg) => draw_inlay_params(ui, cfg),
+                OperationConfig::Zigzag(cfg) => draw_zigzag_params(ui, cfg),
+                OperationConfig::Trace(cfg) => draw_trace_params(ui, cfg),
+                OperationConfig::Drill(cfg) => draw_drill_params(ui, cfg),
+                OperationConfig::Chamfer(cfg) => draw_chamfer_params(ui, cfg),
+                OperationConfig::DropCutter(cfg) => draw_dropcutter_params(ui, cfg),
+                OperationConfig::Adaptive3d(cfg) => draw_adaptive3d_params(ui, cfg),
+                OperationConfig::Waterline(cfg) => draw_waterline_params(ui, cfg),
+                OperationConfig::Pencil(cfg) => draw_pencil_params(ui, cfg),
+                OperationConfig::Scallop(cfg) => draw_scallop_params(ui, cfg),
+                OperationConfig::SteepShallow(cfg) => draw_steep_shallow_params(ui, cfg),
+                OperationConfig::RampFinish(cfg) => draw_ramp_finish_params(ui, cfg),
+                OperationConfig::SpiralFinish(cfg) => draw_spiral_finish_params(ui, cfg),
+                OperationConfig::RadialFinish(cfg) => draw_radial_finish_params(ui, cfg),
+                OperationConfig::HorizontalFinish(cfg) => draw_horizontal_finish_params(ui, cfg),
+                OperationConfig::ProjectCurve(cfg) => draw_project_curve_params(ui, cfg),
+                OperationConfig::AlignmentPinDrill(cfg) => {
+                    draw_alignment_pin_drill_params(ui, cfg);
+                }
+            }
+        }
+
+        ToolpathTab::Feeds => {
+            if let Some(tool_cfg) = tool_configs
+                .iter()
+                .find(|(id, _)| *id == entry.tool_id)
+                .map(|(_, t)| t)
+            {
+                calculate_and_apply_feeds(ui, entry, tool_cfg, material, machine, workholding);
+            }
+        }
+
+        ToolpathTab::Heights => {
+            let fallback_ctx = HeightContext::simple(10.0, 5.0);
+            let ctx = height_ctx.unwrap_or(&fallback_ctx);
+            draw_heights_params(ui, &mut entry.heights, ctx);
+            ui.add_space(6.0);
+            draw_height_diagram(ui, &mut entry.heights, ctx);
+        }
+
+        ToolpathTab::Mods => {
+            // Machining boundary
+            ui.checkbox(&mut entry.boundary_enabled, "Clip to stock boundary")
+                .on_hover_text("Restrict toolpath to within the stock material bounds");
+            if entry.boundary_enabled {
+                ui.horizontal(|ui| {
+                    ui.label("Containment:");
+                    egui::ComboBox::from_id_salt("boundary_contain")
+                        .selected_text(match entry.boundary_containment {
+                            BoundaryContainment::Center => "Center",
+                            BoundaryContainment::Inside => "Inside",
+                            BoundaryContainment::Outside => "Outside",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut entry.boundary_containment,
+                                BoundaryContainment::Center,
+                                "Center",
+                            )
+                            .on_hover_text("Tool center stays inside boundary");
+                            ui.selectable_value(
+                                &mut entry.boundary_containment,
+                                BoundaryContainment::Inside,
+                                "Inside",
+                            )
+                            .on_hover_text(
+                                "Entire tool stays inside boundary (shrinks by tool radius)",
+                            );
+                            ui.selectable_value(
+                                &mut entry.boundary_containment,
+                                BoundaryContainment::Outside,
+                                "Outside",
+                            )
+                            .on_hover_text("Tool edge can extend outside boundary");
+                        });
+                });
+            }
+
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new("Modifications")
+                    .strong()
+                    .color(egui::Color32::from_rgb(180, 180, 195)),
+            );
+            draw_dressup_params(ui, entry);
+
+            ui.add_space(8.0);
+            ui.collapsing("Debugging", |ui| {
+                ui.checkbox(&mut entry.debug_options.enabled, "Capture debug trace")
+                    .on_hover_text(
+                        "Record semantic and performance trace data for the Simulation debugger. Re-generate to apply changes.",
+                    );
+                if entry.debug_options.enabled {
+                    ui.label(
+                        egui::RichText::new("Re-generate this toolpath to refresh trace data.")
+                            .small()
+                            .color(egui::Color32::from_rgb(140, 170, 230)),
+                    );
+                }
+            });
+
+            ui.add_space(4.0);
+            ui.collapsing("Manual G-code", |ui| {
+                ui.label(
+                    egui::RichText::new(
+                        "Raw G-code inserted before/after this operation in export",
+                    )
+                    .small()
+                    .italics()
+                    .color(egui::Color32::from_rgb(130, 130, 140)),
+                );
+                ui.label("Before:");
+                ui.text_edit_multiline(&mut entry.pre_gcode);
+                ui.label("After:");
+                ui.text_edit_multiline(&mut entry.post_gcode);
+            });
+        }
     }
 }
 
