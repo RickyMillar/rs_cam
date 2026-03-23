@@ -1174,6 +1174,206 @@ fn draw_engagement_diagram(ui: &mut egui::Ui, result: &rs_cam_core::feeds::Feeds
     );
 }
 
+// ── Entry style preview diagram ─────────────────────────────────────────
+
+/// Draw a 2D side-view of the entry style geometry (ramp or helix).
+fn draw_entry_preview_diagram(
+    ui: &mut egui::Ui,
+    dressups: &DressupConfig,
+    height_ctx: &HeightContext,
+    heights: &HeightsConfig,
+) {
+    let resolved = heights.resolve(height_ctx);
+    let feed_z = resolved.feed_z;
+    let top_z = resolved.top_z;
+    let z_drop = feed_z - top_z;
+    if z_drop <= 0.0 {
+        return;
+    }
+
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 140.0);
+    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+
+    // Background
+    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+
+    // Z range with margin
+    let z_min = top_z - z_drop * 0.15;
+    let z_max = feed_z + z_drop * 0.25;
+
+    let z_to_y = |z: f64| -> f32 {
+        let frac = (z - z_min) / (z_max - z_min);
+        rect.bottom() - (frac as f32) * rect.height()
+    };
+
+    let feed_y = z_to_y(feed_z);
+    let top_y = z_to_y(top_z);
+    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+
+    // Dashed horizontal reference lines
+    for &(z, label) in &[(feed_z, "Feed Z"), (top_z, "Top Z")] {
+        let y = z_to_y(z);
+        // Draw dashed line
+        let dash_len = 6.0;
+        let gap_len = 4.0;
+        let mut x = rect.left() + 4.0;
+        while x < rect.right() - 50.0 {
+            let end_x = (x + dash_len).min(rect.right() - 50.0);
+            painter.line_segment(
+                [egui::pos2(x, y), egui::pos2(end_x, y)],
+                egui::Stroke::new(0.5, dim_color),
+            );
+            x += dash_len + gap_len;
+        }
+        painter.text(
+            egui::pos2(rect.right() - 4.0, y),
+            egui::Align2::RIGHT_CENTER,
+            format!("{label} {z:.1}"),
+            egui::FontId::proportional(8.0),
+            dim_color,
+        );
+    }
+
+    let entry_color = egui::Color32::from_rgb(50, 230, 230);
+    let stroke = egui::Stroke::new(2.0, entry_color);
+    let cx = rect.center().x;
+
+    match dressups.entry_style {
+        DressupEntryStyle::Ramp => {
+            let angle_rad = (dressups.ramp_angle as f32).to_radians();
+            let ramp_horiz = z_drop as f32 / angle_rad.tan().max(0.01);
+
+            // Scale horizontal distance to fit canvas
+            let available_w = rect.width() * 0.6;
+            let h_scale = available_w / ramp_horiz.max(1.0);
+            let v_height = (top_y - feed_y).abs();
+            let h_pixels = ramp_horiz * h_scale.min(1.0);
+
+            let start_x = cx - h_pixels / 2.0;
+            let end_x = cx + h_pixels / 2.0;
+
+            // Ramp line
+            painter.add(egui::Shape::line(
+                vec![
+                    egui::pos2(start_x, feed_y),
+                    egui::pos2(end_x, top_y),
+                ],
+                stroke,
+            ));
+
+            // Angle arc annotation
+            let arc_r = 20.0_f32;
+            let mut arc_pts = Vec::with_capacity(12);
+            for i in 0..=10 {
+                let t = i as f32 / 10.0;
+                let a = -angle_rad * t;
+                arc_pts.push(egui::pos2(
+                    start_x + arc_r * a.cos(),
+                    feed_y - arc_r * a.sin(),
+                ));
+            }
+            painter.add(egui::Shape::line(
+                arc_pts,
+                egui::Stroke::new(1.0, entry_color),
+            ));
+            painter.text(
+                egui::pos2(start_x + arc_r + 4.0, feed_y - 8.0),
+                egui::Align2::LEFT_CENTER,
+                format!("{:.1}\u{00B0}", dressups.ramp_angle),
+                egui::FontId::proportional(9.0),
+                entry_color,
+            );
+
+            // Entry point marker
+            painter.circle_filled(egui::pos2(end_x, top_y), 3.0, entry_color);
+
+            // Label
+            painter.text(
+                egui::pos2(rect.left() + 6.0, rect.top() + 8.0),
+                egui::Align2::LEFT_TOP,
+                "Ramp Entry",
+                egui::FontId::proportional(10.0),
+                entry_color,
+            );
+
+            let _ = v_height;
+        }
+        DressupEntryStyle::Helix => {
+            let radius = dressups.helix_radius;
+            let pitch = dressups.helix_pitch;
+            let turns = z_drop / pitch.max(0.01);
+
+            // Side view of helix: sinusoidal wave descending
+            let total_angle = turns * std::f64::consts::TAU;
+            let steps = (turns * 32.0).min(200.0).max(32.0) as usize;
+
+            // Scale radius to fit canvas
+            let available_w = rect.width() * 0.5;
+            let r_pixels = (radius as f32 * available_w / (radius as f32 * 2.0).max(1.0))
+                .min(available_w / 2.0);
+
+            let mut pts = Vec::with_capacity(steps + 1);
+            for i in 0..=steps {
+                let t = i as f64 / steps as f64;
+                let angle = total_angle * t;
+                let z = feed_z - z_drop * t;
+                let x_off = (radius * angle.cos()) as f32 * (r_pixels / radius.max(0.01) as f32);
+                pts.push(egui::pos2(cx + x_off, z_to_y(z)));
+            }
+            painter.add(egui::Shape::line(pts, stroke));
+
+            // Entry point marker
+            painter.circle_filled(egui::pos2(cx, top_y), 3.0, entry_color);
+
+            // Radius annotation
+            painter.line_segment(
+                [egui::pos2(cx, z_to_y(feed_z)), egui::pos2(cx + r_pixels, z_to_y(feed_z))],
+                egui::Stroke::new(1.0, dim_color),
+            );
+            painter.text(
+                egui::pos2(cx + r_pixels / 2.0, z_to_y(feed_z) - 8.0),
+                egui::Align2::CENTER_BOTTOM,
+                format!("r={radius:.1}"),
+                egui::FontId::proportional(8.0),
+                dim_color,
+            );
+
+            // Label
+            painter.text(
+                egui::pos2(rect.left() + 6.0, rect.top() + 8.0),
+                egui::Align2::LEFT_TOP,
+                format!("Helix Entry ({turns:.1} turns)"),
+                egui::FontId::proportional(10.0),
+                entry_color,
+            );
+        }
+        DressupEntryStyle::None => {
+            // Vertical plunge arrow
+            painter.line_segment(
+                [egui::pos2(cx, feed_y), egui::pos2(cx, top_y)],
+                stroke,
+            );
+            // Arrowhead
+            painter.add(egui::Shape::line(
+                vec![
+                    egui::pos2(cx - 4.0, top_y - 8.0),
+                    egui::pos2(cx, top_y),
+                    egui::pos2(cx + 4.0, top_y - 8.0),
+                ],
+                stroke,
+            ));
+            painter.text(
+                egui::pos2(rect.left() + 6.0, rect.top() + 8.0),
+                egui::Align2::LEFT_TOP,
+                "Direct Plunge",
+                egui::FontId::proportional(10.0),
+                entry_color,
+            );
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 // ── Toolpath property tab system ─────────────────────────────────────────
 
@@ -1530,6 +1730,14 @@ fn draw_toolpath_panel(
                     .color(egui::Color32::from_rgb(180, 180, 195)),
             );
             draw_dressup_params(ui, entry);
+
+            // Entry style preview diagram
+            {
+                let fallback_ctx = HeightContext::simple(10.0, 5.0);
+                let ctx = height_ctx.unwrap_or(&fallback_ctx);
+                ui.add_space(6.0);
+                draw_entry_preview_diagram(ui, &entry.dressups, ctx, &entry.heights);
+            }
 
             ui.add_space(8.0);
             ui.collapsing("Debugging", |ui| {
