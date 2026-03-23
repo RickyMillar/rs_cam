@@ -406,9 +406,9 @@ impl RsCamApp {
                 #[allow(clippy::unwrap_used)]
                 let resources: &mut RenderResources =
                     renderer.callback_resources.get_mut().unwrap();
-                resources.sim_mesh_data = Some(SimMeshGpuData::from_heightmap_mesh_colored(
-                    &rs.device, mesh_ref, &colors,
-                ));
+                resources.sim_mesh_data = SimMeshGpuData::from_heightmap_mesh_colored(
+                    &rs.device, &resources.gpu_limits, mesh_ref, &colors,
+                );
             }
         }
     }
@@ -592,9 +592,9 @@ impl RsCamApp {
                 #[allow(clippy::unwrap_used)]
                 let resources: &mut RenderResources =
                     renderer.callback_resources.get_mut().unwrap();
-                resources.sim_mesh_data = Some(SimMeshGpuData::from_heightmap_mesh_colored(
-                    &rs.device, mesh_ref, &colors,
-                ));
+                resources.sim_mesh_data = SimMeshGpuData::from_heightmap_mesh_colored(
+                    &rs.device, &resources.gpu_limits, mesh_ref, &colors,
+                );
             }
         }
     }
@@ -806,13 +806,14 @@ impl RsCamApp {
                     None
                 };
                 resources.enriched_mesh_data =
-                    Some(crate::render::mesh_render::enriched_mesh_gpu_data(
+                    crate::render::mesh_render::enriched_mesh_gpu_data(
                         &render_state.device,
+                        &resources.gpu_limits,
                         enriched,
                         &selected_faces,
                         hovered_face,
                         &transform,
-                    ));
+                    );
             } else if let Some(mesh) = &model.mesh {
                 if use_local_frame {
                     // SAFETY: use_local_frame is true iff active_setup_ref.is_some().
@@ -820,12 +821,17 @@ impl RsCamApp {
                     let setup = active_setup_ref.unwrap();
                     let transformed =
                         transform_mesh(mesh, setup, &self.controller.state().job.stock);
-                    resources.mesh_data = Some(MeshGpuData::from_mesh(
+                    resources.mesh_data = MeshGpuData::from_mesh(
                         &render_state.device,
+                        &resources.gpu_limits,
                         &Arc::new(transformed),
-                    ));
+                    );
                 } else {
-                    resources.mesh_data = Some(MeshGpuData::from_mesh(&render_state.device, mesh));
+                    resources.mesh_data = MeshGpuData::from_mesh(
+                        &render_state.device,
+                        &resources.gpu_limits,
+                        mesh,
+                    );
                 }
             }
         }
@@ -1067,11 +1073,12 @@ impl RsCamApp {
         if self.controller.state().simulation.has_results() {
             if let Some(mesh) = &self.controller.state().simulation.playback.display_mesh {
                 let colors = self.compute_sim_colors(mesh);
-                resources.sim_mesh_data = Some(SimMeshGpuData::from_heightmap_mesh_colored(
+                resources.sim_mesh_data = SimMeshGpuData::from_heightmap_mesh_colored(
                     &render_state.device,
+                    &resources.gpu_limits,
                     mesh,
                     &colors,
-                ));
+                );
             }
         } else {
             resources.sim_mesh_data = None;
@@ -1083,8 +1090,17 @@ impl RsCamApp {
             use crate::render::LineVertex;
             let s = 1.0f32; // marker size in mm
             let color = [0.95, 0.15, 0.15];
+            let vertex_size = std::mem::size_of::<LineVertex>();
             let mut verts = Vec::new();
             for p in self.controller.collision_positions() {
+                // Cap marker count to stay within GPU buffer limits
+                if verts.len() * vertex_size >= resources.gpu_limits.max_buffer_size {
+                    tracing::warn!(
+                        markers = self.controller.collision_positions().len(),
+                        "Too many collision markers — truncating to fit GPU buffer"
+                    );
+                    break;
+                }
                 verts.push(LineVertex {
                     position: [p[0] - s, p[1], p[2]],
                     color,
@@ -1110,15 +1126,18 @@ impl RsCamApp {
                     color,
                 });
             }
-            use egui_wgpu::wgpu::util::DeviceExt;
-            resources.collision_vertex_buffer = Some(render_state.device.create_buffer_init(
-                &egui_wgpu::wgpu::util::BufferInitDescriptor {
-                    label: Some("collision_markers"),
-                    contents: bytemuck::cast_slice(&verts),
-                    usage: egui_wgpu::wgpu::BufferUsages::VERTEX,
-                },
-            ));
-            resources.collision_vertex_count = verts.len() as u32;
+            resources.collision_vertex_buffer = crate::render::gpu_safety::try_create_buffer(
+                &render_state.device,
+                &resources.gpu_limits,
+                "collision_markers",
+                bytemuck::cast_slice(&verts),
+                egui_wgpu::wgpu::BufferUsages::VERTEX,
+            );
+            resources.collision_vertex_count = if resources.collision_vertex_buffer.is_some() {
+                verts.len() as u32
+            } else {
+                0
+            };
         } else {
             resources.collision_vertex_buffer = None;
             resources.collision_vertex_count = 0;
@@ -1162,7 +1181,7 @@ impl RsCamApp {
                 let render_tp = result.toolpath.as_ref();
 
                 let mut gpu_data =
-                    ToolpathGpuData::from_toolpath(&render_state.device, render_tp, i, selected);
+                    ToolpathGpuData::from_toolpath(&render_state.device, &resources.gpu_limits, render_tp, i, selected);
 
                 // Generate entry path preview for selected toolpaths with a non-None entry style
                 if selected {
@@ -1187,7 +1206,7 @@ impl RsCamApp {
                     };
                     let preview_verts =
                         toolpath_render::entry_preview_vertices(&result.toolpath, &config);
-                    gpu_data.attach_entry_preview(&render_state.device, preview_verts);
+                    gpu_data.attach_entry_preview(&render_state.device, &resources.gpu_limits, preview_verts);
                 }
 
                 resources.toolpath_data.push(gpu_data);

@@ -2,6 +2,7 @@ use egui_wgpu::wgpu;
 use rs_cam_core::enriched_mesh::{EnrichedMesh, FaceGroupId};
 use rs_cam_core::mesh::TriangleMesh;
 
+use super::gpu_safety::{self, GpuLimits};
 use super::sim_render::ColoredMeshVertex;
 
 /// GPU vertex for mesh rendering.
@@ -57,9 +58,9 @@ impl MeshGpuData {
     /// then uses the mesh's native triangle indices directly. This reduces
     /// vertex count from `3 * num_triangles` to `num_vertices` (typically ~3x
     /// smaller for typical meshes).
-    pub fn from_mesh(device: &wgpu::Device, mesh: &TriangleMesh) -> Self {
-        use wgpu::util::DeviceExt;
-
+    ///
+    /// Returns `None` if the buffer exceeds GPU device limits.
+    pub fn from_mesh(device: &wgpu::Device, limits: &GpuLimits, mesh: &TriangleMesh) -> Option<Self> {
         let num_verts = mesh.vertices.len();
 
         // Accumulate area-weighted face normals per vertex.
@@ -98,23 +99,27 @@ impl MeshGpuData {
             .flat_map(|tri| tri.iter().copied())
             .collect();
 
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("mesh_vertices"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+        let vertex_buffer = gpu_safety::try_create_buffer(
+            device,
+            limits,
+            "mesh_vertices",
+            bytemuck::cast_slice(&vertices),
+            wgpu::BufferUsages::VERTEX,
+        )?;
 
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("mesh_indices"),
-            contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
+        let index_buffer = gpu_safety::try_create_buffer(
+            device,
+            limits,
+            "mesh_indices",
+            bytemuck::cast_slice(&indices),
+            wgpu::BufferUsages::INDEX,
+        )?;
 
-        Self {
+        Some(Self {
             vertex_buffer,
             index_buffer,
             index_count: indices.len() as u32,
-        }
+        })
     }
 
     /// Upload a TriangleMesh with flat shading (per-face normals).
@@ -122,10 +127,10 @@ impl MeshGpuData {
     /// Each triangle gets 3 dedicated vertices with the face normal, resulting
     /// in `3 * num_triangles` GPU vertices. Use `from_mesh` for the indexed
     /// smooth-normal path which uses ~3x less VRAM.
+    ///
+    /// Returns `None` if the buffer exceeds GPU device limits.
     #[allow(dead_code)]
-    pub fn from_mesh_flat(device: &wgpu::Device, mesh: &TriangleMesh) -> Self {
-        use wgpu::util::DeviceExt;
-
+    pub fn from_mesh_flat(device: &wgpu::Device, limits: &GpuLimits, mesh: &TriangleMesh) -> Option<Self> {
         let mut vertices = Vec::with_capacity(mesh.triangles.len() * 3);
         let mut indices = Vec::with_capacity(mesh.triangles.len() * 3);
 
@@ -153,23 +158,27 @@ impl MeshGpuData {
             indices.push(base + 2);
         }
 
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("mesh_vertices"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+        let vertex_buffer = gpu_safety::try_create_buffer(
+            device,
+            limits,
+            "mesh_vertices_flat",
+            bytemuck::cast_slice(&vertices),
+            wgpu::BufferUsages::VERTEX,
+        )?;
 
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("mesh_indices"),
-            contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
+        let index_buffer = gpu_safety::try_create_buffer(
+            device,
+            limits,
+            "mesh_indices_flat",
+            bytemuck::cast_slice(&indices),
+            wgpu::BufferUsages::INDEX,
+        )?;
 
-        Self {
+        Some(Self {
             vertex_buffer,
             index_buffer,
             index_count: indices.len() as u32,
-        }
+        })
     }
 }
 
@@ -202,13 +211,12 @@ pub type VertexTransform<'a> =
 
 pub fn enriched_mesh_gpu_data(
     device: &wgpu::Device,
+    limits: &GpuLimits,
     enriched: &EnrichedMesh,
     selected_faces: &[FaceGroupId],
     hovered_face: Option<FaceGroupId>,
     transform: &VertexTransform<'_>,
-) -> EnrichedMeshGpuData {
-    use wgpu::util::DeviceExt;
-
+) -> Option<EnrichedMeshGpuData> {
     let mesh = enriched.as_mesh();
     let highlight_color: [f32; 3] = [0.3, 0.5, 1.0]; // bright blue
     let hover_color: [f32; 3] = [0.4, 0.7, 0.85]; // soft cyan
@@ -244,23 +252,27 @@ pub fn enriched_mesh_gpu_data(
         indices.push(base + 2);
     }
 
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("enriched_mesh_vertices"),
-        contents: bytemuck::cast_slice(&vertices),
-        usage: wgpu::BufferUsages::VERTEX,
-    });
+    let vertex_buffer = gpu_safety::try_create_buffer(
+        device,
+        limits,
+        "enriched_mesh_vertices",
+        bytemuck::cast_slice(&vertices),
+        wgpu::BufferUsages::VERTEX,
+    )?;
 
-    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("enriched_mesh_indices"),
-        contents: bytemuck::cast_slice(&indices),
-        usage: wgpu::BufferUsages::INDEX,
-    });
+    let index_buffer = gpu_safety::try_create_buffer(
+        device,
+        limits,
+        "enriched_mesh_indices",
+        bytemuck::cast_slice(&indices),
+        wgpu::BufferUsages::INDEX,
+    )?;
 
-    EnrichedMeshGpuData {
+    Some(EnrichedMeshGpuData {
         vertex_buffer,
         index_buffer,
         index_count: indices.len() as u32,
-    }
+    })
 }
 
 /// GPU data for an enriched mesh with per-face coloring.

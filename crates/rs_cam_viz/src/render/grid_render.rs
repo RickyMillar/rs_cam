@@ -1,3 +1,4 @@
+use super::gpu_safety::{self, GpuLimits};
 use super::LineVertex;
 use egui_wgpu::wgpu;
 
@@ -9,11 +10,11 @@ pub struct GridGpuData {
 
 impl GridGpuData {
     /// Create a ground grid at Z=0 with axis indicators.
-    pub fn new(device: &wgpu::Device, extent: f32, spacing: f32) -> Self {
-        use wgpu::util::DeviceExt;
-
+    pub fn new(device: &wgpu::Device, limits: &GpuLimits, extent: f32, spacing: f32) -> Self {
         let mut vertices = Vec::new();
         let grid_color = [0.25, 0.25, 0.28];
+        // Clamp spacing to prevent vertex explosion with tiny values
+        let spacing = spacing.max(0.1);
         let half = extent / 2.0;
         let steps = (extent / spacing) as i32;
 
@@ -71,11 +72,30 @@ impl GridGpuData {
         });
 
         let vertex_count = vertices.len() as u32;
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("grid_vertices"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+        let vertex_buffer = gpu_safety::try_create_buffer(
+            device,
+            limits,
+            "grid_vertices",
+            bytemuck::cast_slice(&vertices),
+            wgpu::BufferUsages::VERTEX,
+        );
+        // If the grid buffer somehow exceeds limits, fall back to an empty grid
+        // by creating a minimal placeholder buffer.
+        let vertex_buffer = match vertex_buffer {
+            Some(buf) => buf,
+            None => {
+                use wgpu::util::DeviceExt;
+                let placeholder = [LineVertex {
+                    position: [0.0; 3],
+                    color: [0.0; 3],
+                }];
+                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("grid_vertices_placeholder"),
+                    contents: bytemuck::cast_slice(&placeholder),
+                    usage: wgpu::BufferUsages::VERTEX,
+                })
+            }
+        };
 
         Self {
             vertex_buffer,

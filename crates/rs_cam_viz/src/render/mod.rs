@@ -1,5 +1,6 @@
 pub mod camera;
 pub mod fixture_render;
+pub mod gpu_safety;
 pub mod grid_render;
 pub mod height_planes;
 pub mod mesh_render;
@@ -148,6 +149,8 @@ pub struct RenderResources {
     /// Line width configuration for future thick-line rendering.
     /// Currently stored but not consumed by the 1-pixel `LineList` pipeline.
     pub line_width_config: LineWidthConfig,
+    /// Cached GPU device limits for buffer size validation.
+    pub gpu_limits: gpu_safety::GpuLimits,
 }
 
 impl RenderResources {
@@ -531,7 +534,8 @@ impl RenderResources {
             ..Default::default()
         });
 
-        let grid_data = GridGpuData::new(device, 200.0, 10.0);
+        let gpu_limits = gpu_safety::GpuLimits::from_device(device);
+        let grid_data = GridGpuData::new(device, &gpu_limits, 200.0, 10.0);
 
         Self {
             mesh_pipeline,
@@ -564,6 +568,7 @@ impl RenderResources {
             collision_vertex_count: 0,
             origin_axes_data: None,
             line_width_config: LineWidthConfig::default(),
+            gpu_limits,
         }
     }
 

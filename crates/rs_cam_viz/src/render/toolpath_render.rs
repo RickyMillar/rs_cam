@@ -1,3 +1,4 @@
+use super::gpu_safety::{self, GpuLimits};
 use super::LineVertex;
 use egui_wgpu::wgpu;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
@@ -52,27 +53,28 @@ impl ToolpathGpuData {
     /// `index`: toolpath index for deterministic palette color.
     /// `selected`: if true, brighten the toolpath by +30%.
     ///
-    /// Very large toolpaths are downsampled to fit within GPU buffer limits
-    /// (256 MB). The toolpath data itself is unchanged — only the visual
-    /// representation is simplified.
+    /// Very large toolpaths are downsampled to fit within GPU buffer limits.
+    /// The toolpath data itself is unchanged — only the visual representation
+    /// is simplified.
     pub fn from_toolpath(
         device: &wgpu::Device,
+        limits: &GpuLimits,
         tp: &Toolpath,
         index: usize,
         selected: bool,
     ) -> Self {
         use wgpu::util::DeviceExt;
 
-        // GPU buffer limit: 256 MB is the common max. Leave headroom.
-        const MAX_BUFFER_BYTES: usize = 240 * 1024 * 1024;
-        const VERTEX_SIZE: usize = std::mem::size_of::<LineVertex>(); // 24 bytes
-        const MAX_VERTS: usize = MAX_BUFFER_BYTES / VERTEX_SIZE; // ~10M vertices
+        // Use actual device limit with 6% headroom instead of hardcoded value.
+        let max_buffer_bytes: usize = (limits.max_buffer_size as f64 * 0.94) as usize;
+        let vertex_size: usize = std::mem::size_of::<LineVertex>(); // 24 bytes
+        let max_verts: usize = max_buffer_bytes / vertex_size;
 
         // Estimate total vertices (2 per move for line-list).
         let total_moves = tp.moves.len().saturating_sub(1);
         // Downsample stride: show every Nth move if too many vertices.
-        let stride = if total_moves * 2 > MAX_VERTS {
-            (total_moves * 2 / MAX_VERTS) + 1
+        let stride = if total_moves * 2 > max_verts {
+            (total_moves * 2 / max_verts) + 1
         } else {
             1
         };
@@ -198,16 +200,44 @@ impl ToolpathGpuData {
         let cut_vertex_count = cut_verts.len() as u32;
         let rapid_vertex_count = rapid_verts.len() as u32;
 
-        let cut_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("toolpath_cut"),
-            contents: bytemuck::cast_slice(&cut_verts),
-            usage: wgpu::BufferUsages::VERTEX,
+        // Use guarded buffer creation; fall back to placeholder on overflow
+        // (shouldn't happen due to stride logic above, but defense-in-depth).
+        let cut_vertex_buffer = gpu_safety::try_create_buffer(
+            device,
+            limits,
+            "toolpath_cut",
+            bytemuck::cast_slice(&cut_verts),
+            wgpu::BufferUsages::VERTEX,
+        )
+        .unwrap_or_else(|| {
+            let placeholder = [LineVertex {
+                position: [0.0; 3],
+                color: [0.0; 3],
+            }];
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("toolpath_cut_placeholder"),
+                contents: bytemuck::cast_slice(&placeholder),
+                usage: wgpu::BufferUsages::VERTEX,
+            })
         });
 
-        let rapid_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("toolpath_rapid"),
-            contents: bytemuck::cast_slice(&rapid_verts),
-            usage: wgpu::BufferUsages::VERTEX,
+        let rapid_vertex_buffer = gpu_safety::try_create_buffer(
+            device,
+            limits,
+            "toolpath_rapid",
+            bytemuck::cast_slice(&rapid_verts),
+            wgpu::BufferUsages::VERTEX,
+        )
+        .unwrap_or_else(|| {
+            let placeholder = [LineVertex {
+                position: [0.0; 3],
+                color: [0.0; 3],
+            }];
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("toolpath_rapid_placeholder"),
+                contents: bytemuck::cast_slice(&placeholder),
+                usage: wgpu::BufferUsages::VERTEX,
+            })
         });
 
         Self {
@@ -224,19 +254,27 @@ impl ToolpathGpuData {
 
     /// Attach entry path preview geometry for a selected toolpath.
     /// Call after `from_toolpath` to add the entry indicator overlay.
-    pub fn attach_entry_preview(&mut self, device: &wgpu::Device, verts: Vec<LineVertex>) {
-        use wgpu::util::DeviceExt;
+    pub fn attach_entry_preview(
+        &mut self,
+        device: &wgpu::Device,
+        limits: &GpuLimits,
+        verts: Vec<LineVertex>,
+    ) {
         if verts.is_empty() {
             return;
         }
-        self.entry_preview_count = verts.len() as u32;
-        self.entry_preview_buffer = Some(device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("entry_preview"),
-                contents: bytemuck::cast_slice(&verts),
-                usage: wgpu::BufferUsages::VERTEX,
-            },
-        ));
+        self.entry_preview_buffer = gpu_safety::try_create_buffer(
+            device,
+            limits,
+            "entry_preview",
+            bytemuck::cast_slice(&verts),
+            wgpu::BufferUsages::VERTEX,
+        );
+        self.entry_preview_count = if self.entry_preview_buffer.is_some() {
+            verts.len() as u32
+        } else {
+            0
+        };
     }
 }
 

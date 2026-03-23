@@ -1,6 +1,7 @@
 use egui_wgpu::wgpu;
 use rs_cam_core::stock_mesh::StockMesh;
 
+use super::gpu_safety::{self, GpuLimits};
 use super::LineVertex;
 
 /// GPU vertex for per-vertex colored mesh rendering (simulation stock).
@@ -173,7 +174,12 @@ static NEXT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 
 impl SimMeshGpuData {
     /// Upload a StockMesh to the GPU using its embedded wood-tone colors.
-    pub fn from_heightmap_mesh(device: &wgpu::Device, hm: &StockMesh) -> Self {
+    /// Returns `None` if the buffer exceeds GPU device limits.
+    pub fn from_heightmap_mesh(
+        device: &wgpu::Device,
+        limits: &GpuLimits,
+        hm: &StockMesh,
+    ) -> Option<Self> {
         let num_verts = hm.vertices.len() / 3;
         let colors: Vec<[f32; 3]> = if hm.colors.len() >= num_verts * 3 {
             (0..num_verts)
@@ -182,40 +188,47 @@ impl SimMeshGpuData {
         } else {
             vec![[0.65, 0.45, 0.25]; num_verts]
         };
-        Self::from_heightmap_mesh_colored(device, hm, &colors)
+        Self::from_heightmap_mesh_colored(device, limits, hm, &colors)
     }
 
     /// Upload a StockMesh with per-vertex custom colors.
     /// `colors` is one `[r, g, b]` per vertex (from deviation_colors, height_gradient_colors, etc.).
+    /// Returns `None` if the buffer exceeds GPU device limits.
     pub fn from_heightmap_mesh_colored(
         device: &wgpu::Device,
+        limits: &GpuLimits,
         hm: &StockMesh,
         colors: &[[f32; 3]],
-    ) -> Self {
-        use wgpu::util::DeviceExt;
-
+    ) -> Option<Self> {
         let mesh_verts = Self::build_vertex_data(hm, colors);
         let fingerprint = ColorFingerprint::from_colors(colors);
 
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("sim_mesh_vertices"),
-            contents: bytemuck::cast_slice(&mesh_verts),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        });
+        let vertex_bytes = bytemuck::cast_slice::<_, u8>(&mesh_verts);
+        let index_bytes = bytemuck::cast_slice::<_, u8>(&hm.indices);
 
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("sim_mesh_indices"),
-            contents: bytemuck::cast_slice(&hm.indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
+        let vertex_buffer = gpu_safety::try_create_buffer(
+            device,
+            limits,
+            "sim_mesh_vertices",
+            vertex_bytes,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        )?;
 
-        Self {
+        let index_buffer = gpu_safety::try_create_buffer(
+            device,
+            limits,
+            "sim_mesh_indices",
+            index_bytes,
+            wgpu::BufferUsages::INDEX,
+        )?;
+
+        Some(Self {
             vertex_buffer,
             index_buffer,
             index_count: hm.indices.len() as u32,
             generation: NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             cached_color_fingerprint: fingerprint,
-        }
+        })
     }
 
     /// Re-upload colors only if they differ from the cached fingerprint.
