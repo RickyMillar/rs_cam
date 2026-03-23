@@ -1280,63 +1280,66 @@ fn compute_deviations(stock_vertices: &[f32], model_mesh: &rs_cam_core::mesh::Tr
     let num_verts = stock_vertices.len() / 3;
     let index = SpatialIndex::build_auto(model_mesh);
 
+    let compute_vertex_deviation = |i: usize| -> f32 {
+        let x = stock_vertices[i * 3] as f64;
+        let y = stock_vertices[i * 3 + 1] as f64;
+        let sim_z = stock_vertices[i * 3 + 2] as f64;
+        let Some((model_min_z, model_max_z)) = query_model_z_range(&index, model_mesh, x, y)
+        else {
+            return 0.0; // outside model footprint
+        };
+
+        // Use closest-surface heuristic: compare this vertex against whichever
+        // model surface (top or bottom) it's nearest to, with the correct sign
+        // convention so that material remaining is always positive.
+        let dist_to_top = (sim_z - model_max_z).abs();
+        let dist_to_bottom = (sim_z - model_min_z).abs();
+
+        if dist_to_top <= dist_to_bottom {
+            // Closer to top surface: positive = stock above model (material remaining)
+            (sim_z - model_max_z) as f32
+        } else {
+            // Closer to bottom surface: positive = stock below model (material remaining)
+            (model_min_z - sim_z) as f32
+        }
+    };
+
     // Process vertices in parallel for large meshes
     if num_verts > 5000 {
         use rayon::prelude::*;
         (0..num_verts)
             .into_par_iter()
-            .map(|i| {
-                let x = stock_vertices[i * 3] as f64;
-                let y = stock_vertices[i * 3 + 1] as f64;
-                let sim_z = stock_vertices[i * 3 + 2] as f64;
-                let model_z = query_model_z(&index, model_mesh, x, y);
-                match model_z {
-                    Some(mz) => (sim_z - mz) as f32,
-                    None => 0.0,
-                }
-            })
+            .map(compute_vertex_deviation)
             .collect()
     } else {
-        (0..num_verts)
-            .map(|i| {
-                let x = stock_vertices[i * 3] as f64;
-                let y = stock_vertices[i * 3 + 1] as f64;
-                let sim_z = stock_vertices[i * 3 + 2] as f64;
-                let model_z = query_model_z(&index, model_mesh, x, y);
-                match model_z {
-                    Some(mz) => (sim_z - mz) as f32,
-                    None => 0.0,
-                }
-            })
-            .collect()
+        (0..num_verts).map(compute_vertex_deviation).collect()
     }
 }
 
-/// Find the highest model Z at a given XY by querying nearby triangles via spatial index.
+/// Find the model Z range (min, max) at a given XY by querying nearby triangles.
 ///
+/// Returns `(bottom_z, top_z)` — the lowest and highest model surface at this point.
 /// Only considers triangles whose 2D footprint contains (x, y).
-/// Returns the highest Z among all matching triangles (handles overlapping geometry).
 #[allow(clippy::indexing_slicing)] // triangle indices bounded by mesh
-fn query_model_z(
+fn query_model_z_range(
     index: &rs_cam_core::mesh::SpatialIndex,
     mesh: &rs_cam_core::mesh::TriangleMesh,
     x: f64,
     y: f64,
-) -> Option<f64> {
+) -> Option<(f64, f64)> {
     let candidates = index.query(x, y, 0.0);
-    let mut best_z: Option<f64> = None;
+    let mut min_z: Option<f64> = None;
+    let mut max_z: Option<f64> = None;
     for tri_idx in candidates {
         let face = &mesh.faces[tri_idx];
         if face.contains_point_xy(x, y)
             && let Some(z) = face.z_at_xy(x, y)
         {
-            best_z = Some(match best_z {
-                Some(bz) => bz.max(z),
-                None => z,
-            });
+            min_z = Some(min_z.map_or(z, |mz: f64| mz.min(z)));
+            max_z = Some(max_z.map_or(z, |mz: f64| mz.max(z)));
         }
     }
-    best_z
+    min_z.zip(max_z)
 }
 
 #[cfg(test)]
