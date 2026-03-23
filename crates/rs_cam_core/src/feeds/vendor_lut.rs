@@ -214,6 +214,7 @@ impl VendorLut {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -291,7 +292,19 @@ mod tests {
             .expect("should find amana 6mm flat softwood adaptive");
         assert_eq!(obs.diameter_mm, 6.0);
         assert_eq!(obs.flute_count, 2);
-        assert!((obs.chipload_min_mm_tooth.unwrap() - 0.065).abs() < 0.001);
-        assert!((obs.chipload_max_mm_tooth.unwrap() - 0.11).abs() < 0.001);
+        assert!(
+            (obs.chipload_min_mm_tooth
+                .expect("observation should have min chipload")
+                - 0.065)
+                .abs()
+                < 0.001
+        );
+        assert!(
+            (obs.chipload_max_mm_tooth
+                .expect("observation should have max chipload")
+                - 0.11)
+                .abs()
+                < 0.001
+        );
     }
 }

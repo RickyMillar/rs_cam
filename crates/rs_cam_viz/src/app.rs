@@ -2239,12 +2239,14 @@ impl eframe::App for RsCamApp {
                                 crate::controller::Severity::Info => {
                                     (egui::Color32::from_rgb(40, 40, 50), egui::Color32::WHITE)
                                 }
-                                crate::controller::Severity::Warning => {
-                                    (egui::Color32::from_rgb(80, 60, 10), egui::Color32::from_rgb(255, 220, 100))
-                                }
-                                crate::controller::Severity::Error => {
-                                    (egui::Color32::from_rgb(80, 20, 20), egui::Color32::from_rgb(255, 120, 120))
-                                }
+                                crate::controller::Severity::Warning => (
+                                    egui::Color32::from_rgb(80, 60, 10),
+                                    egui::Color32::from_rgb(255, 220, 100),
+                                ),
+                                crate::controller::Severity::Error => (
+                                    egui::Color32::from_rgb(80, 20, 20),
+                                    egui::Color32::from_rgb(255, 120, 120),
+                                ),
                             };
                             egui::Frame::default()
                                 .fill(bg)

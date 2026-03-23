@@ -43,8 +43,9 @@ pub fn export_gcode(job: &JobState) -> Result<String, crate::error::VizError> {
         PostFormat::LinuxCnc => "linuxcnc",
         PostFormat::Mach3 => "mach3",
     };
-    let post = get_post_processor(post_name)
-        .ok_or_else(|| crate::error::VizError::Export(format!("Unknown post processor: {post_name}")))?;
+    let post = get_post_processor(post_name).ok_or_else(|| {
+        crate::error::VizError::Export(format!("Unknown post processor: {post_name}"))
+    })?;
 
     let phases: Vec<GcodePhase<'_>> = job
         .all_toolpaths()
@@ -79,8 +80,9 @@ pub fn export_combined_gcode(job: &JobState) -> Result<String, crate::error::Viz
         PostFormat::LinuxCnc => "linuxcnc",
         PostFormat::Mach3 => "mach3",
     };
-    let post = get_post_processor(post_name)
-        .ok_or_else(|| crate::error::VizError::Export(format!("Unknown post processor: {post_name}")))?;
+    let post = get_post_processor(post_name).ok_or_else(|| {
+        crate::error::VizError::Export(format!("Unknown post processor: {post_name}"))
+    })?;
 
     let setup_phases: Vec<GcodeSetupPhase<'_>> = job
         .setups
@@ -123,7 +125,10 @@ pub fn export_combined_gcode(job: &JobState) -> Result<String, crate::error::Viz
 }
 
 /// Export only the toolpaths from a single setup as G-code.
-pub fn export_setup_gcode(job: &JobState, setup_id: SetupId) -> Result<String, crate::error::VizError> {
+pub fn export_setup_gcode(
+    job: &JobState,
+    setup_id: SetupId,
+) -> Result<String, crate::error::VizError> {
     let setup = job
         .setups
         .iter()
@@ -135,8 +140,9 @@ pub fn export_setup_gcode(job: &JobState, setup_id: SetupId) -> Result<String, c
         PostFormat::LinuxCnc => "linuxcnc",
         PostFormat::Mach3 => "mach3",
     };
-    let post = get_post_processor(post_name)
-        .ok_or_else(|| crate::error::VizError::Export(format!("Unknown post processor: {post_name}")))?;
+    let post = get_post_processor(post_name).ok_or_else(|| {
+        crate::error::VizError::Export(format!("Unknown post processor: {post_name}"))
+    })?;
 
     let phases: Vec<GcodePhase<'_>> = setup
         .toolpaths

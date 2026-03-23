@@ -110,6 +110,7 @@ pub struct RenderResources {
     // 3D scene pipelines (render to offscreen with depth)
     mesh_pipeline: wgpu::RenderPipeline,
     sim_mesh_pipeline: wgpu::RenderPipeline,
+    height_plane_pipeline: wgpu::RenderPipeline,
     /// Opaque colored mesh pipeline — same vertex format as sim_mesh but no alpha blending.
     /// Used for STEP models with per-face colors that should render as solid objects.
     colored_opaque_pipeline: wgpu::RenderPipeline,
@@ -200,6 +201,13 @@ impl RenderResources {
             depth_compare: wgpu::CompareFunction::Less,
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
+        };
+        // Read-only depth for transparent overlays (height planes): depth-test
+        // against opaque geometry but don't write, so they don't block each other
+        // or the model behind them.
+        let depth_read_only = wgpu::DepthStencilState {
+            depth_write_enabled: false,
+            ..depth_stencil.clone()
         };
 
         let mesh_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -292,6 +300,41 @@ impl RenderResources {
             multiview: None,
             cache: None,
         });
+
+        // --- Height plane pipeline (transparent overlay, depth read-only) ---
+        // Identical to sim_mesh_pipeline but doesn't write depth, so height
+        // planes don't occlude the model or each other.
+        let height_plane_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("height_plane_pipeline"),
+                layout: Some(&sim_mesh_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &sim_mesh_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[ColoredMeshVertex::layout()],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &sim_mesh_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: target_format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(depth_read_only),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
 
         // --- Opaque colored mesh pipeline (STEP face colors, no alpha blending) ---
         // Uses fs_opaque which outputs alpha=1.0, decoupled from the shared
@@ -493,6 +536,7 @@ impl RenderResources {
         Self {
             mesh_pipeline,
             sim_mesh_pipeline,
+            height_plane_pipeline,
             colored_opaque_pipeline,
             line_pipeline,
             mesh_uniform_buffer,
@@ -736,16 +780,7 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 pass.draw(0..stock.vertex_count, 0..1);
             }
 
-            // Draw height plane overlays (semi-transparent quads at resolved height Z values)
-            if self.show_height_planes
-                && let Some(hp) = &resources.height_planes_data
-            {
-                pass.set_pipeline(&resources.sim_mesh_pipeline);
-                pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
-                pass.set_vertex_buffer(0, hp.vertex_buffer.slice(..));
-                pass.set_index_buffer(hp.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..hp.index_count, 0, 0..1);
-            }
+            // (Height planes drawn after opaque geometry — see below)
 
             // Draw origin axes at stock origin
             if self.show_origin_axes

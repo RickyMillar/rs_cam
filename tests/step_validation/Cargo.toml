@@ -10,3 +10,12 @@ truck-topology = "0.6"
 truck-meshalgo = "0.4"
 truck-geometry = "0.5"
 truck-polymesh = "0.6"
+truck-modeling = "0.6"
+
+[[bin]]
+name = "step_validation"
+path = "src/main.rs"
+
+[[bin]]
+name = "gen_fixtures"
+path = "src/gen_fixtures.rs"

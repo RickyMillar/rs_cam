@@ -51,6 +51,10 @@ impl ToolpathGpuData {
     /// Build GPU data from a Toolpath, coloring by palette index with Z-depth blend.
     /// `index`: toolpath index for deterministic palette color.
     /// `selected`: if true, brighten the toolpath by +30%.
+    ///
+    /// Very large toolpaths are downsampled to fit within GPU buffer limits
+    /// (256 MB). The toolpath data itself is unchanged — only the visual
+    /// representation is simplified.
     pub fn from_toolpath(
         device: &wgpu::Device,
         tp: &Toolpath,
@@ -58,6 +62,20 @@ impl ToolpathGpuData {
         selected: bool,
     ) -> Self {
         use wgpu::util::DeviceExt;
+
+        // GPU buffer limit: 256 MB is the common max. Leave headroom.
+        const MAX_BUFFER_BYTES: usize = 240 * 1024 * 1024;
+        const VERTEX_SIZE: usize = std::mem::size_of::<LineVertex>(); // 24 bytes
+        const MAX_VERTS: usize = MAX_BUFFER_BYTES / VERTEX_SIZE; // ~10M vertices
+
+        // Estimate total vertices (2 per move for line-list).
+        let total_moves = tp.moves.len().saturating_sub(1);
+        // Downsample stride: show every Nth move if too many vertices.
+        let stride = if total_moves * 2 > MAX_VERTS {
+            (total_moves * 2 / MAX_VERTS) + 1
+        } else {
+            1
+        };
 
         let base = palette_color(index);
 
@@ -109,34 +127,53 @@ impl ToolpathGpuData {
             c
         };
 
-        for i in 1..tp.moves.len() {
-            let from = tp.moves[i - 1].target;
-            let to = tp.moves[i].target;
-            let p0 = [from.x as f32, from.y as f32, from.z as f32];
-            let p1 = [to.x as f32, to.y as f32, to.z as f32];
+        if stride > 1 {
+            tracing::warn!(
+                moves = total_moves,
+                stride,
+                "Toolpath too large for GPU buffer — downsampling for display"
+            );
+        }
 
-            match tp.moves[i].move_type {
-                MoveType::Rapid => {
-                    rapid_verts.push(LineVertex {
-                        position: p0,
-                        color: rapid_color,
-                    });
-                    rapid_verts.push(LineVertex {
-                        position: p1,
-                        color: rapid_color,
-                    });
-                }
-                _ => {
-                    let c0 = z_color(from.z);
-                    let c1 = z_color(to.z);
-                    cut_verts.push(LineVertex {
-                        position: p0,
-                        color: c0,
-                    });
-                    cut_verts.push(LineVertex {
-                        position: p1,
-                        color: c1,
-                    });
+        for i in 1..tp.moves.len() {
+            // When downsampling, skip intermediate moves but always keep
+            // rapid moves (they define retract/approach structure) and
+            // the first/last moves.
+            let keep = stride == 1
+                || i % stride == 0
+                || i == 1
+                || i == tp.moves.len() - 1
+                || tp.moves[i].move_type == MoveType::Rapid;
+
+            if keep {
+                let from = tp.moves[i - 1].target;
+                let to = tp.moves[i].target;
+                let p0 = [from.x as f32, from.y as f32, from.z as f32];
+                let p1 = [to.x as f32, to.y as f32, to.z as f32];
+
+                match tp.moves[i].move_type {
+                    MoveType::Rapid => {
+                        rapid_verts.push(LineVertex {
+                            position: p0,
+                            color: rapid_color,
+                        });
+                        rapid_verts.push(LineVertex {
+                            position: p1,
+                            color: rapid_color,
+                        });
+                    }
+                    _ => {
+                        let c0 = z_color(from.z);
+                        let c1 = z_color(to.z);
+                        cut_verts.push(LineVertex {
+                            position: p0,
+                            color: c0,
+                        });
+                        cut_verts.push(LineVertex {
+                            position: p1,
+                            color: c1,
+                        });
+                    }
                 }
             }
 

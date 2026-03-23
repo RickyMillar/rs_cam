@@ -591,7 +591,10 @@ impl ProjectKeepOutSection {
     }
 }
 
-fn load_typed_project(path: &Path, project: ProjectFile) -> Result<LoadedProject, crate::error::VizError> {
+fn load_typed_project(
+    path: &Path,
+    project: ProjectFile,
+) -> Result<LoadedProject, crate::error::VizError> {
     let mut job = JobState::new();
     let mut warnings = Vec::new();
 
@@ -716,7 +719,10 @@ fn load_typed_project(path: &Path, project: ProjectFile) -> Result<LoadedProject
     Ok(LoadedProject { job, warnings })
 }
 
-fn load_legacy_project(path: &Path, legacy: LegacyProjectFile) -> Result<LoadedProject, crate::error::VizError> {
+fn load_legacy_project(
+    path: &Path,
+    legacy: LegacyProjectFile,
+) -> Result<LoadedProject, crate::error::VizError> {
     let mut job = JobState::new();
     let mut warnings = Vec::new();
 

@@ -43,7 +43,11 @@ pub fn list_presets() -> Vec<Preset> {
 }
 
 /// Save a preset to disk.
-pub fn save_preset(name: &str, operation_label: &str, toml_content: &str) -> Result<(), crate::error::VizError> {
+pub fn save_preset(
+    name: &str,
+    operation_label: &str,
+    toml_content: &str,
+) -> Result<(), crate::error::VizError> {
     let dir = presets_dir();
     let filename = sanitize_filename(name);
     let path = dir.join(format!("{}.toml", filename));
