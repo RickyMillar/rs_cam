@@ -487,7 +487,7 @@ fn spawn_toolpath_lane(
 
             if let Err(panic_payload) = caught {
                 let msg = panic_message(&panic_payload);
-                eprintln!("[toolpath worker] panic recovered: {msg}");
+                tracing::error!("rs_cam crashed due to internal error (toolpath worker): {msg}");
 
                 // Reset lane state so subsequent jobs can still run.
                 let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -506,7 +506,7 @@ fn spawn_toolpath_lane(
                 let _ = result_tx.send(ComputeMessage::Toolpath(ComputeResult {
                     toolpath_id,
                     result: Err(ComputeError::Message(format!(
-                        "Internal error (panic): {msg}"
+                        "Crashed due to internal error: {msg}"
                     ))),
                     debug_trace: None,
                     semantic_trace: None,
@@ -601,7 +601,7 @@ fn spawn_analysis_lane(
 
             if let Err(panic_payload) = caught {
                 let msg = panic_message(&panic_payload);
-                eprintln!("[analysis worker] panic recovered: {msg}");
+                tracing::error!("rs_cam crashed due to internal error (analysis worker): {msg}");
 
                 // Reset lane state so subsequent jobs can still run.
                 let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
