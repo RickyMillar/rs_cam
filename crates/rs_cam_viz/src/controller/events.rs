@@ -26,30 +26,30 @@ impl<B: ComputeBackend> AppController<B> {
             // --- Import / model events ---
             AppEvent::ImportStl(path) => {
                 if let Err(error) = self.import_stl_path(&path) {
-                    tracing::error!("STL import failed: {error}");
+                    self.push_error(&error);
                 }
             }
             AppEvent::ImportSvg(path) => {
                 if let Err(error) = self.import_svg_path(&path) {
-                    tracing::error!("SVG import failed: {error}");
+                    self.push_error(&error);
                 }
             }
             AppEvent::ImportDxf(path) => {
                 if let Err(error) = self.import_dxf_path(&path) {
-                    tracing::error!("DXF import failed: {error}");
+                    self.push_error(&error);
                 }
             }
             // ImportStep is handled at the app level (camera fitting + status)
             AppEvent::ImportStep(_) => {}
             AppEvent::RescaleModel(model_id, units) => {
                 if let Err(error) = self.rescale_model(model_id, units) {
-                    tracing::error!("Rescale failed: {error}");
+                    self.push_error(&error);
                 }
             }
             AppEvent::RemoveModel(model_id) => self.handle_remove_model(model_id),
             AppEvent::ReloadModel(model_id) => {
                 if let Err(error) = self.reload_model(model_id) {
-                    tracing::error!("Reload model failed: {error}");
+                    self.push_error(&error);
                 }
             }
 
@@ -1051,12 +1051,24 @@ impl<B: ComputeBackend> AppController<B> {
         // Derive polygons from selected BREP faces when no explicit polygons exist.
         // This enables all 2.5D operations (pocket, profile, adaptive, trace, etc.)
         // to work with STEP models by extracting face boundary loops as Polygon2.
+        // Also extract the face Z height to set the toolpath top_z correctly.
+        let mut face_top_z: Option<f64> = None;
         if polygons.is_none()
             && let (Some(face_ids), Some(enriched)) = (&face_selection, &enriched_mesh)
             && !face_ids.is_empty()
         {
             if let Some(poly) = enriched.faces_boundary_as_polygon(face_ids) {
                 polygons = Some(Arc::new(vec![poly]));
+                // Extract the Z height from the selected faces' bounding boxes.
+                // For horizontal planar faces, bbox.min.z ≈ bbox.max.z ≈ face Z.
+                let z = face_ids
+                    .iter()
+                    .filter_map(|fid| enriched.face_group(*fid))
+                    .map(|fg| fg.bbox.max.z)
+                    .fold(f64::NEG_INFINITY, f64::max);
+                if z.is_finite() {
+                    face_top_z = Some(z);
+                }
             } else {
                 tracing::warn!(
                     "Selected faces did not produce a boundary polygon (non-horizontal or non-planar)"
@@ -1141,7 +1153,18 @@ impl<B: ComputeBackend> AppController<B> {
         }
 
         let safe_z = self.state.job.post.safe_z;
-        let heights = heights_config.resolve(safe_z, operation.default_depth_for_heights());
+        let mut heights = heights_config.resolve(safe_z, operation.default_depth_for_heights());
+        // When face selection provides a Z height, use it as the top_z
+        // so the toolpath cuts at the face level, not at Z=0.
+        if let Some(fz) = face_top_z {
+            if heights_config.top_z.is_auto() {
+                heights.top_z = fz;
+                // Shift bottom_z relative to the face top
+                if heights_config.bottom_z.is_auto() {
+                    heights.bottom_z = fz - operation.default_depth_for_heights().abs();
+                }
+            }
+        }
         let stock_bbox = if let Some(transform_setup) = transform_setup.as_ref() {
             let (width, depth, height) = transform_setup.effective_stock(&stock_snapshot);
             Some(BoundingBox3 {

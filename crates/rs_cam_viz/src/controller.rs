@@ -4,10 +4,43 @@ mod io;
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests;
 
+use std::time::Instant;
+
 use crate::compute::{ComputeBackend, ComputeLane, LaneSnapshot, ThreadedComputeBackend};
+use crate::error::VizError;
 use crate::state::AppState;
 use crate::state::simulation::SimulationState;
 use crate::ui::AppEvent;
+
+/// Severity level for user-facing notifications.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Severity {
+    Info,
+    Warning,
+    Error,
+}
+
+/// A user-facing notification displayed as a toast overlay.
+pub struct Notification {
+    pub message: String,
+    pub severity: Severity,
+    pub created_at: Instant,
+}
+
+impl Notification {
+    /// Auto-dismiss duration based on severity.
+    pub fn ttl(&self) -> std::time::Duration {
+        match self.severity {
+            Severity::Info => std::time::Duration::from_secs(4),
+            Severity::Warning => std::time::Duration::from_secs(6),
+            Severity::Error => std::time::Duration::from_secs(8),
+        }
+    }
+
+    pub fn is_expired(&self) -> bool {
+        self.created_at.elapsed() >= self.ttl()
+    }
+}
 
 pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     pub state: AppState,
@@ -17,7 +50,8 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     collision_positions: Vec<[f32; 3]>,
     load_warnings: Vec<String>,
     show_load_warnings: bool,
-    status_message: Option<(String, std::time::Instant)>,
+    status_message: Option<(String, Instant)>,
+    notifications: Vec<Notification>,
 }
 
 impl AppController<ThreadedComputeBackend> {
@@ -43,6 +77,7 @@ impl<B: ComputeBackend> AppController<B> {
             load_warnings: Vec::new(),
             show_load_warnings: false,
             status_message: None,
+            notifications: Vec::new(),
         }
     }
 
@@ -114,6 +149,35 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub fn set_show_load_warnings(&mut self, show: bool) {
         self.show_load_warnings = show;
+    }
+
+    /// Push a notification from a VizError (logs via tracing AND shows toast).
+    pub fn push_error(&mut self, error: &VizError) {
+        tracing::error!("{error}");
+        self.notifications.push(Notification {
+            message: error.user_message(),
+            severity: Severity::Error,
+            created_at: Instant::now(),
+        });
+    }
+
+    /// Push a notification with a string message and severity.
+    pub fn push_notification(&mut self, message: String, severity: Severity) {
+        self.notifications.push(Notification {
+            message,
+            severity,
+            created_at: Instant::now(),
+        });
+    }
+
+    /// Get active (non-expired) notifications.
+    pub fn active_notifications(&self) -> impl Iterator<Item = &Notification> {
+        self.notifications.iter().filter(|n| !n.is_expired())
+    }
+
+    /// Remove expired notifications.
+    pub fn gc_notifications(&mut self) {
+        self.notifications.retain(|n| !n.is_expired());
     }
 
     /// Set a temporary status message (auto-expires after 5 seconds).

@@ -91,32 +91,28 @@ impl RsCamApp {
                 AppEvent::ImportStl(path) => match self.controller.import_stl_path(&path) {
                     Ok(Some(bbox)) => self.fit_camera_to_bbox(&bbox),
                     Ok(None) => {}
-                    Err(error) => tracing::error!("STL import failed: {error}"),
+                    Err(error) => self.controller.push_error(&error),
                 },
                 AppEvent::ImportSvg(path) => match self.controller.import_svg_path(&path) {
                     Ok(Some(bbox)) => self.fit_camera_to_bbox(&bbox),
                     Ok(None) => self.fit_camera_to_first_model(),
-                    Err(error) => tracing::error!("SVG import failed: {error}"),
+                    Err(error) => self.controller.push_error(&error),
                 },
                 AppEvent::ImportDxf(path) => match self.controller.import_dxf_path(&path) {
                     Ok(Some(bbox)) => self.fit_camera_to_bbox(&bbox),
                     Ok(None) => self.fit_camera_to_first_model(),
-                    Err(error) => tracing::error!("DXF import failed: {error}"),
+                    Err(error) => self.controller.push_error(&error),
                 },
                 AppEvent::ImportStep(path) => match self.controller.import_step_path(&path) {
                     Ok(Some(bbox)) => self.fit_camera_to_bbox(&bbox),
                     Ok(None) => {}
-                    Err(error) => {
-                        self.controller
-                            .set_status(format!("STEP import failed: {error}"));
-                        tracing::error!("STEP import failed: {error}");
-                    }
+                    Err(error) => self.controller.push_error(&error),
                 },
                 AppEvent::RescaleModel(model_id, new_units) => {
                     match self.controller.rescale_model(model_id, new_units) {
                         Ok(Some(bbox)) => self.fit_camera_to_bbox(&bbox),
                         Ok(None) => {}
-                        Err(error) => tracing::error!("Rescale failed: {error}"),
+                        Err(error) => self.controller.push_error(&error),
                     }
                 }
                 AppEvent::SetViewPreset(preset) => self.camera.set_preset(preset),
@@ -243,7 +239,10 @@ impl RsCamApp {
                                 .save_file()
                             {
                                 if let Err(error) = std::fs::write(&path, &gcode) {
-                                    tracing::error!("Failed to write G-code: {error}");
+                                    self.controller.push_notification(
+                                        format!("Failed to write G-code: {error}"),
+                                        crate::controller::Severity::Error,
+                                    );
                                 } else {
                                     tracing::info!(
                                         "Exported combined G-code to {}",
@@ -252,7 +251,7 @@ impl RsCamApp {
                                 }
                             }
                         }
-                        Err(error) => tracing::error!("Export failed: {error}"),
+                        Err(error) => self.controller.push_error(&error),
                     }
                 }
                 AppEvent::ExportSetupGcode(setup_id) => {
@@ -280,7 +279,10 @@ impl RsCamApp {
                                 .save_file()
                             {
                                 if let Err(error) = std::fs::write(&path, &gcode) {
-                                    tracing::error!("Failed to write G-code: {error}");
+                                    self.controller.push_notification(
+                                        format!("Failed to write G-code: {error}"),
+                                        crate::controller::Severity::Error,
+                                    );
                                 } else {
                                     tracing::info!(
                                         "Exported setup '{}' G-code to {}",
@@ -290,7 +292,7 @@ impl RsCamApp {
                                 }
                             }
                         }
-                        Err(error) => tracing::error!("Export failed: {error}"),
+                        Err(error) => self.controller.push_error(&error),
                     }
                 }
                 AppEvent::ExportSvgPreview => self.export_svg_preview(),
@@ -321,7 +323,7 @@ impl RsCamApp {
                             Ok(()) => {
                                 tracing::info!("Saved job to {}", path.display());
                             }
-                            Err(error) => tracing::error!("Save failed: {error}"),
+                            Err(error) => self.controller.push_error(&error),
                         }
                     }
                 }
@@ -334,7 +336,7 @@ impl RsCamApp {
                             Ok(()) => {
                                 tracing::info!("Loaded job from {}", path.display());
                             }
-                            Err(error) => tracing::error!("Load failed: {error}"),
+                            Err(error) => self.controller.push_error(&error),
                         }
                     }
                 }
@@ -2218,6 +2220,44 @@ impl eframe::App for RsCamApp {
                     }
                 });
             self.controller.set_show_load_warnings(show);
+        }
+
+        // Toast notifications (bottom-right corner)
+        {
+            self.controller.gc_notifications();
+            let notifications: Vec<_> = self
+                .controller
+                .active_notifications()
+                .map(|n| (n.message.clone(), n.severity))
+                .collect();
+            if !notifications.is_empty() {
+                egui::Area::new(egui::Id::new("toast_notifications"))
+                    .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-12.0, -12.0))
+                    .show(ctx, |ui| {
+                        for (message, severity) in &notifications {
+                            let (bg, text_color) = match severity {
+                                crate::controller::Severity::Info => {
+                                    (egui::Color32::from_rgb(40, 40, 50), egui::Color32::WHITE)
+                                }
+                                crate::controller::Severity::Warning => {
+                                    (egui::Color32::from_rgb(80, 60, 10), egui::Color32::from_rgb(255, 220, 100))
+                                }
+                                crate::controller::Severity::Error => {
+                                    (egui::Color32::from_rgb(80, 20, 20), egui::Color32::from_rgb(255, 120, 120))
+                                }
+                            };
+                            egui::Frame::default()
+                                .fill(bg)
+                                .inner_margin(egui::Margin::symmetric(12.0, 8.0))
+                                .rounding(6.0)
+                                .show(ui, |ui| {
+                                    ui.colored_label(text_color, message);
+                                });
+                            ui.add_space(4.0);
+                        }
+                    });
+                ctx.request_repaint_after(std::time::Duration::from_secs(1));
+            }
         }
 
         // Advance simulation playback
