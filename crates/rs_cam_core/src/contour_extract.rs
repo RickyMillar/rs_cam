@@ -340,6 +340,7 @@ fn chain_segments(segments: Vec<Segment>) -> Vec<Vec<P3>> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::fiber::{Fiber, Interval};

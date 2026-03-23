@@ -580,6 +580,7 @@ fn estimate_plunge_rate(material: &Material, hardness: f64) -> f64 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::machine::MachineProfile;

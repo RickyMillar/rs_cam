@@ -231,6 +231,7 @@ pub fn raster_toolpath_from_grid(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

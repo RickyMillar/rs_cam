@@ -1433,6 +1433,7 @@ impl Default for JobState {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use rs_cam_core::geo::P3;

@@ -555,6 +555,7 @@ fn sanitize_filename_component(input: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

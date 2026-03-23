@@ -1,3 +1,5 @@
+#![deny(clippy::unwrap_used, clippy::panic)]
+
 pub mod app;
 pub mod compute;
 pub mod controller;

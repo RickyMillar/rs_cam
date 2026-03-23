@@ -113,6 +113,7 @@ fn trace_ring(tp: &mut Toolpath, ring: &[P2], cut_z: f64, params: &TraceParams) 
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::toolpath::MoveType;
@@ -158,15 +159,13 @@ mod tests {
         assert!((tp.moves[0].target.y - 0.0).abs() < 1e-10);
 
         // Second move: plunge at plunge_rate
-        match tp.moves[1].move_type {
-            MoveType::Linear { feed_rate } => {
-                assert!(
-                    (feed_rate - 500.0).abs() < 1e-10,
-                    "Plunge should use plunge_rate"
-                );
-            }
-            _ => panic!("Second move should be linear plunge"),
-        }
+        let MoveType::Linear { feed_rate } = tp.moves[1].move_type else {
+            unreachable!("Second move should be linear plunge")
+        };
+        assert!(
+            (feed_rate - 500.0).abs() < 1e-10,
+            "Plunge should use plunge_rate"
+        );
         assert!((tp.moves[1].target.z - -2.0).abs() < 1e-10);
 
         // Feed moves should visit the square vertices at cut depth

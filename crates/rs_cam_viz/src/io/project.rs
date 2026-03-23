@@ -1356,6 +1356,7 @@ fn default_legacy_safe_z() -> f64 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use rs_cam_core::gcode::CoolantMode;

@@ -349,6 +349,7 @@ fn edge_push_single(fiber: &mut Fiber, p1: &P3, p2: &P3, cutter: &dyn MillingCut
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::tool::{BallEndmill, FlatEndmill};

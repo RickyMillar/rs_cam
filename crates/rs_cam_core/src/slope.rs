@@ -294,6 +294,7 @@ pub fn classify_steep_shallow(slope_map: &SlopeMap, threshold_deg: f64) -> Vec<b
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use std::f64::consts::FRAC_PI_4;
@@ -572,12 +573,13 @@ mod tests {
         let sm = SlopeMap::from_z_grid(&z, 10, 10, 0.0, 0.0, 2.0);
 
         // Interior point
-        let angle = sm.angle_at_world(10.0, 10.0);
-        assert!(angle.is_some(), "Interior point should return Some");
+        let angle = sm
+            .angle_at_world(10.0, 10.0)
+            .expect("interior point should return Some");
         assert!(
-            (angle.unwrap() - FRAC_PI_4).abs() < 0.05,
+            (angle - FRAC_PI_4).abs() < 0.05,
             "Should be ~45°, got {:.1}°",
-            angle.unwrap().to_degrees()
+            angle.to_degrees()
         );
 
         // Out of bounds

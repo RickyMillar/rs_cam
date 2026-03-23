@@ -154,6 +154,7 @@ fn trim_uncontacted(points: &[P3], fallback_z: f64) -> Vec<P3> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::mesh::SpatialIndex;

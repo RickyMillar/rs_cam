@@ -130,6 +130,7 @@ fn feed_rate_of(mt: &MoveType) -> Option<f64> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::toolpath::Move;

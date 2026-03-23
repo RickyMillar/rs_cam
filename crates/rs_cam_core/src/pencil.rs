@@ -755,6 +755,7 @@ pub fn pencil_toolpath_annotated(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::mesh::{SpatialIndex, make_test_hemisphere};

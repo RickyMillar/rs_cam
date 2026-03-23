@@ -100,6 +100,7 @@ fn material_to_lut(material: &Material) -> (MaterialFamily, HardnessKind, f64) {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::machine::MachineProfile;

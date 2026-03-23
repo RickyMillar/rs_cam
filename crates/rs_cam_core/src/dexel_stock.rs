@@ -129,26 +129,16 @@ impl TriDexelStock {
     /// Ensure the grid for `direction` exists, creating it lazily if needed.
     /// Returns a mutable reference to the appropriate grid.
     fn ensure_grid(&mut self, direction: StockCutDirection) -> &mut DexelGrid {
+        let bbox = self.stock_bbox;
+        let cell_size = self.z_grid.cell_size;
         match direction.grid_axis() {
             DexelAxis::Z => &mut self.z_grid,
-            DexelAxis::Y => {
-                if self.y_grid.is_none() {
-                    self.y_grid = Some(DexelGrid::y_grid_from_bounds(
-                        &self.stock_bbox,
-                        self.z_grid.cell_size,
-                    ));
-                }
-                self.y_grid.as_mut().unwrap()
-            }
-            DexelAxis::X => {
-                if self.x_grid.is_none() {
-                    self.x_grid = Some(DexelGrid::x_grid_from_bounds(
-                        &self.stock_bbox,
-                        self.z_grid.cell_size,
-                    ));
-                }
-                self.x_grid.as_mut().unwrap()
-            }
+            DexelAxis::Y => self
+                .y_grid
+                .get_or_insert_with(|| DexelGrid::y_grid_from_bounds(&bbox, cell_size)),
+            DexelAxis::X => self
+                .x_grid
+                .get_or_insert_with(|| DexelGrid::x_grid_from_bounds(&bbox, cell_size)),
         }
     }
 
@@ -948,6 +938,7 @@ fn build_move_semantic_lookup(
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::dexel::{ray_bottom, ray_top};

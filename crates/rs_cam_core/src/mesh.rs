@@ -600,6 +600,7 @@ pub fn make_test_flat(size: f64) -> TriangleMesh {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

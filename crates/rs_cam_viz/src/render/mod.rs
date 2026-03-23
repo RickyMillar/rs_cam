@@ -626,6 +626,8 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
         encoder: &mut wgpu::CommandEncoder,
         callback_resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
+        // SAFETY: RenderResources inserted in RsCamApp::new; always present.
+        #[allow(clippy::unwrap_used)]
         let resources: &mut RenderResources = callback_resources.get_mut().unwrap();
 
         // Ensure offscreen targets are the right size
@@ -671,7 +673,11 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
 
         // Render 3D scene to offscreen texture with depth buffer.
         // After ensure_offscreen and write_buffer, we only need immutable access.
+        // SAFETY: RenderResources inserted in RsCamApp::new; always present.
+        #[allow(clippy::unwrap_used)]
         let resources: &RenderResources = callback_resources.get().unwrap();
+        // SAFETY: ensure_offscreen was called above, so offscreen is always Some.
+        #[allow(clippy::unwrap_used)]
         let offscreen = resources.offscreen.as_ref().unwrap();
 
         {
@@ -856,6 +862,8 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
         render_pass: &mut wgpu::RenderPass<'static>,
         callback_resources: &egui_wgpu::CallbackResources,
     ) {
+        // SAFETY: RenderResources inserted in RsCamApp::new; always present.
+        #[allow(clippy::unwrap_used)]
         let resources: &RenderResources = callback_resources.get().unwrap();
 
         if let Some(offscreen) = &resources.offscreen {

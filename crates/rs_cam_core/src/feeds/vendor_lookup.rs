@@ -185,6 +185,7 @@ fn chipload_midpoint(obs: &VendorObservation) -> f64 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -312,7 +313,7 @@ mod tests {
             operation_family: LutOperationFamily::Adaptive,
             pass_role: LutPassRole::Roughing,
         };
-        let result = lookup_best(&lut, &query).unwrap();
+        let result = lookup_best(&lut, &query).expect("should find match for 6mm flat softwood");
         assert_eq!(result.rpm_nominal, Some(18000.0));
     }
 }

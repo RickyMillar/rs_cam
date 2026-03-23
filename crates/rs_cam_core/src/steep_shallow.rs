@@ -411,6 +411,7 @@ pub fn steep_shallow_toolpath(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::mesh::SpatialIndex;

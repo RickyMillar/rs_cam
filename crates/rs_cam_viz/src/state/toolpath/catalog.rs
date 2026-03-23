@@ -760,6 +760,7 @@ pub fn feed_optimization_unavailable_reason(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

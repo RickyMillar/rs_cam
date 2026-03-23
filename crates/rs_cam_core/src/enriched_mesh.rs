@@ -372,6 +372,7 @@ fn compute_2d_boundary(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -511,7 +512,9 @@ mod tests {
     #[test]
     fn test_face_group_retrieval() {
         let em = make_test_box();
-        let top = em.face_group(FaceGroupId(1)).unwrap();
+        let top = em
+            .face_group(FaceGroupId(1))
+            .expect("face group 1 should exist");
         assert_eq!(top.surface_type, SurfaceType::Plane);
         assert_eq!(top.triangle_range, 2..4);
 
@@ -547,7 +550,7 @@ mod tests {
         // Top face (horizontal, normal +Z) should produce a Polygon2
         let poly = em.face_boundary_as_polygon(FaceGroupId(1));
         assert!(poly.is_some(), "Horizontal face should produce polygon");
-        let poly = poly.unwrap();
+        let poly = poly.expect("asserted Some above");
         assert_eq!(poly.exterior.len(), 4);
         assert!(poly.holes.is_empty());
     }
@@ -604,7 +607,9 @@ mod tests {
     #[test]
     fn test_face_group_bbox() {
         let em = make_test_box();
-        let top = em.face_group(FaceGroupId(1)).unwrap();
+        let top = em
+            .face_group(FaceGroupId(1))
+            .expect("face group 1 should exist");
         // Top face at z=25, spanning 0..100 x 0..50
         assert!((top.bbox.min.z - 25.0).abs() < 1e-10);
         assert!((top.bbox.max.z - 25.0).abs() < 1e-10);

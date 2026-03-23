@@ -662,6 +662,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path) -> Result<JobResult> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

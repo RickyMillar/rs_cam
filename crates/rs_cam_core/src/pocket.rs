@@ -139,6 +139,7 @@ fn contours_to_toolpath(contours: &[Vec<P2>], params: &PocketParams) -> Toolpath
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::toolpath::MoveType;

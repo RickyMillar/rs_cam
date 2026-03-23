@@ -240,6 +240,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)] // Tests: unwrap is idiomatic for asserting success
 mod tests {
     use super::*;
     use crate::pocket::{PocketParams, pocket_toolpath};
@@ -507,7 +508,7 @@ mod tests {
             .filter(|m| matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10))
             .map(|m| (m.target.z * 1000.0).round() / 1000.0) // round to 3 decimals
             .collect();
-        cut_zs.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        cut_zs.sort_by(|a, b| b.total_cmp(a));
         cut_zs.dedup();
 
         assert_eq!(cut_zs.len(), 3, "Expected 3 depth levels, got {:?}", cut_zs);
@@ -545,7 +546,7 @@ mod tests {
             .filter(|m| matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10))
             .map(|m| (m.target.z * 100.0).round() / 100.0)
             .collect();
-        cut_zs.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        cut_zs.sort_by(|a, b| b.total_cmp(a));
         cut_zs.dedup();
 
         assert_eq!(cut_zs.len(), 3, "Expected 3 levels, got {:?}", cut_zs);
@@ -579,7 +580,7 @@ mod tests {
             .filter(|m| matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10))
             .map(|m| (m.target.z * 100.0).round() / 100.0)
             .collect();
-        cut_zs.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        cut_zs.sort_by(|a, b| b.total_cmp(a));
         cut_zs.dedup();
 
         assert_eq!(cut_zs.len(), 2, "Expected 2 levels, got {:?}", cut_zs);
@@ -634,7 +635,7 @@ mod tests {
             .filter(|m| matches!(m.move_type, MoveType::Linear { .. }))
             .map(|m| (m.target.z * 100.0).round() / 100.0)
             .collect();
-        cut_zs.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        cut_zs.sort_by(|a, b| b.total_cmp(a));
         cut_zs.dedup();
 
         // Should include -10.0 (the finish pass)

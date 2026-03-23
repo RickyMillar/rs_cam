@@ -121,6 +121,7 @@ impl Default for PipelineCache {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::mesh::make_test_flat;

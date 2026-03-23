@@ -1574,6 +1574,7 @@ fn issue_kind_rank(kind: SimulationIssueKind) -> u8 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::state::job::{JobState, ModelId, ToolId};

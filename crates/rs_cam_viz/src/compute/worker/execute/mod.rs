@@ -1255,6 +1255,7 @@ fn annotate_project_curve_semantics(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

@@ -159,6 +159,7 @@ pub fn export_setup_gcode(job: &JobState, setup_id: SetupId) -> Result<String, S
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::sync::Arc;
 

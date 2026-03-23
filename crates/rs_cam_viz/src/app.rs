@@ -389,6 +389,8 @@ impl RsCamApp {
             let colors = self.compute_sim_colors(&mesh);
             self.controller.state_mut().simulation.playback.display_mesh = Some(mesh);
             if let Some(rs) = frame.wgpu_render_state() {
+                // SAFETY: display_mesh was set to Some on the line above.
+                #[allow(clippy::unwrap_used)]
                 let mesh_ref = self
                     .controller
                     .state()
@@ -398,6 +400,8 @@ impl RsCamApp {
                     .as_ref()
                     .unwrap();
                 let mut renderer = rs.renderer.write();
+                // SAFETY: RenderResources inserted in RsCamApp::new; always present.
+                #[allow(clippy::unwrap_used)]
                 let resources: &mut RenderResources =
                     renderer.callback_resources.get_mut().unwrap();
                 resources.sim_mesh_data = Some(SimMeshGpuData::from_heightmap_mesh_colored(
@@ -571,6 +575,8 @@ impl RsCamApp {
             self.controller.state_mut().simulation.playback.display_mesh = Some(mesh);
 
             if let Some(rs) = frame.wgpu_render_state() {
+                // SAFETY: display_mesh was set to Some on the line above.
+                #[allow(clippy::unwrap_used)]
                 let mesh_ref = self
                     .controller
                     .state()
@@ -580,6 +586,8 @@ impl RsCamApp {
                     .as_ref()
                     .unwrap();
                 let mut renderer = rs.renderer.write();
+                // SAFETY: RenderResources inserted in RsCamApp::new; always present.
+                #[allow(clippy::unwrap_used)]
                 let resources: &mut RenderResources =
                     renderer.callback_resources.get_mut().unwrap();
                 resources.sim_mesh_data = Some(SimMeshGpuData::from_heightmap_mesh_colored(
@@ -743,6 +751,8 @@ impl RsCamApp {
         };
 
         let mut renderer = render_state.renderer.write();
+        // SAFETY: RenderResources inserted in RsCamApp::new; always present.
+        #[allow(clippy::unwrap_used)]
         let resources: &mut RenderResources = renderer.callback_resources.get_mut().unwrap();
 
         // Everything is always displayed in the active setup's local coordinate
@@ -785,6 +795,8 @@ impl RsCamApp {
                 let hovered_face = self.hovered_face_id();
                 let transform: crate::render::mesh_render::VertexTransform<'_> = if use_local_frame
                 {
+                    // SAFETY: use_local_frame is active_setup_ref.is_some()
+                    #[allow(clippy::unwrap_used)]
                     let setup = active_setup_ref.unwrap();
                     let stock = &self.controller.state().job.stock;
                     Some(Box::new(move |p| setup.transform_point(p, stock)))
@@ -801,6 +813,8 @@ impl RsCamApp {
                     ));
             } else if let Some(mesh) = &model.mesh {
                 if use_local_frame {
+                    // SAFETY: use_local_frame is true iff active_setup_ref.is_some().
+                    #[allow(clippy::unwrap_used)]
                     let setup = active_setup_ref.unwrap();
                     let transformed =
                         transform_mesh(mesh, setup, &self.controller.state().job.stock);
@@ -816,6 +830,8 @@ impl RsCamApp {
 
         // Upload stock wireframe + solid stock
         let stock_bbox = if use_local_frame {
+            // SAFETY: use_local_frame is true iff active_setup_ref.is_some().
+            #[allow(clippy::unwrap_used)]
             let setup = active_setup_ref.unwrap();
             let (w, d, h) = setup.effective_stock(&self.controller.state().job.stock);
             rs_cam_core::geo::BoundingBox3 {
@@ -1287,6 +1303,8 @@ impl RsCamApp {
                 taper_half_angle: tool.taper_half_angle as f32,
             };
             let mut renderer = rs.renderer.write();
+            // SAFETY: RenderResources inserted in RsCamApp::new; always present.
+            #[allow(clippy::unwrap_used)]
             let resources: &mut RenderResources = renderer.callback_resources.get_mut().unwrap();
             let assembly_info = crate::render::sim_render::ToolAssemblyInfo {
                 shank_radius: (tool.shank_diameter / 2.0) as f32,

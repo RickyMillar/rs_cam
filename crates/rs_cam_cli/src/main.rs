@@ -1,3 +1,5 @@
+#![deny(clippy::unwrap_used, clippy::panic)]
+
 mod helpers;
 mod job;
 

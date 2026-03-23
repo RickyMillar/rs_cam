@@ -278,6 +278,7 @@ fn circle_from_3_points(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

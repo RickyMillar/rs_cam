@@ -556,6 +556,7 @@ pub fn ramp_finish_toolpath_annotated(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::mesh::SpatialIndex;
@@ -718,10 +719,11 @@ mod tests {
             "Start Z should be ~10, got {:.2}",
             path[0].z
         );
+        let last_pt = path.last().expect("path should be non-empty");
         assert!(
-            (path.last().unwrap().z - 8.0).abs() < 0.1,
+            (last_pt.z - 8.0).abs() < 0.1,
             "End Z should be ~8, got {:.2}",
-            path.last().unwrap().z
+            last_pt.z
         );
     }
 

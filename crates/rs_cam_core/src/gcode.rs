@@ -631,6 +631,7 @@ pub fn get_post_processor(name: &str) -> Option<Box<dyn PostProcessor>> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::geo::P3;

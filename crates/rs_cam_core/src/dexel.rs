@@ -325,6 +325,7 @@ impl DexelGrid {
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::geo::P3;
@@ -501,7 +502,9 @@ mod tests {
         };
         let grid = DexelGrid::z_grid_from_bounds(&bbox, 0.5);
         let (u, v) = grid.cell_to_world(4, 6);
-        let (row, col) = grid.world_to_cell(u, v).unwrap();
+        let (row, col) = grid
+            .world_to_cell(u, v)
+            .expect("cell_to_world output should be inside the grid");
         assert_eq!(row, 4);
         assert_eq!(col, 6);
     }
@@ -646,7 +649,9 @@ mod tests {
         let grid = DexelGrid::x_grid_from_bounds(&bbox, 0.5);
         // u=Y, v=Z for X-grid
         let (u, v) = grid.cell_to_world(3, 7);
-        let (row, col) = grid.world_to_cell(u, v).unwrap();
+        let (row, col) = grid
+            .world_to_cell(u, v)
+            .expect("cell_to_world output should be inside the grid");
         assert_eq!(row, 3);
         assert_eq!(col, 7);
     }
@@ -660,7 +665,9 @@ mod tests {
         let grid = DexelGrid::y_grid_from_bounds(&bbox, 0.5);
         // u=X, v=Z for Y-grid
         let (u, v) = grid.cell_to_world(3, 7);
-        let (row, col) = grid.world_to_cell(u, v).unwrap();
+        let (row, col) = grid
+            .world_to_cell(u, v)
+            .expect("cell_to_world output should be inside the grid");
         assert_eq!(row, 3);
         assert_eq!(col, 7);
     }

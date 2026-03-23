@@ -87,6 +87,7 @@ pub fn chamfer_toolpath(polygon: &Polygon2, params: &ChamferParams) -> Toolpath 
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::toolpath::MoveType;

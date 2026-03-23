@@ -143,6 +143,7 @@ fn emit_rest_segment(tp: &mut Toolpath, points: &[P2], params: &RestParams) {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

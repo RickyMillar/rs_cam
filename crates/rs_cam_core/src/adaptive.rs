@@ -1620,6 +1620,7 @@ pub fn adaptive_toolpath_annotated_traced_with_cancel(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

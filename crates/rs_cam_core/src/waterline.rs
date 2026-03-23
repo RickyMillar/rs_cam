@@ -220,6 +220,9 @@ fn chain_contours(points: &[P3], max_gap: f64) -> Vec<Vec<P3>> {
 
         // Greedy nearest-neighbor chain
         loop {
+            // Safety: chain always has at least one element (pushed on the line above
+            // on first iteration, or extended via `chain.push` before looping back).
+            #[allow(clippy::unwrap_used, clippy::panic)]
             let last = chain.last().unwrap();
             let mut best_idx = None;
             let mut best_dist_sq = max_gap_sq;
@@ -249,6 +252,8 @@ fn chain_contours(points: &[P3], max_gap: f64) -> Vec<Vec<P3>> {
         // Only keep loops with enough points and that close back near the start
         if chain.len() >= 3 {
             let first = chain[0];
+            // Safety: chain.len() >= 3 guard above guarantees non-empty.
+            #[allow(clippy::unwrap_used, clippy::panic)]
             let last = chain.last().unwrap();
             let dx = first.x - last.x;
             let dy = first.y - last.y;
@@ -264,6 +269,7 @@ fn chain_contours(points: &[P3], max_gap: f64) -> Vec<Vec<P3>> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::mesh::{SpatialIndex, make_test_hemisphere};

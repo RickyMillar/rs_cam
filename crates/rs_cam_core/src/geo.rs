@@ -252,6 +252,7 @@ pub fn point_to_segment_distance(p: &P2, a: &P2, b: &P2) -> f64 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)] // Tests: unwrap is idiomatic for asserting success
 mod tests {
     use super::*;
 

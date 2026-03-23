@@ -55,6 +55,7 @@ pub fn linearize_arc(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)] // Tests: unwrap is idiomatic for asserting success
 mod tests {
     use super::*;
 

@@ -384,6 +384,7 @@ fn append_mesh(base: &mut StockMesh, other: &StockMesh) {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::dexel::ray_subtract_above;
@@ -525,10 +526,13 @@ mod tests {
             StockCutDirection::FromBottom,
         );
 
-        let (row, col) = stock.z_grid.world_to_cell(55.0, 55.0).unwrap();
+        let (row, col) = stock
+            .z_grid
+            .world_to_cell(55.0, 55.0)
+            .expect("center of 110x110 stock should be inside the grid");
         let ray = stock.z_grid.ray(row, col);
-        assert!((ray_top(ray).unwrap() - 7.0).abs() < 0.1);
-        assert!((ray_bottom(ray).unwrap() - 3.0).abs() < 0.1);
+        assert!((ray_top(ray).expect("ray should have material") - 7.0).abs() < 0.1);
+        assert!((ray_bottom(ray).expect("ray should have material") - 3.0).abs() < 0.1);
 
         let mesh = dexel_stock_to_mesh(&stock);
         let cols = stock.z_grid.cols;

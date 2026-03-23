@@ -106,6 +106,7 @@ fn contour_to_toolpath(contour: &[P2], params: &ProfileParams) -> Toolpath {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::toolpath::MoveType;
@@ -131,7 +132,7 @@ mod tests {
             contour.is_some(),
             "Outside profile should produce a contour"
         );
-        let pts = contour.unwrap();
+        let pts = contour.expect("asserted Some above");
         assert!(pts.len() >= 4, "Should have at least 4 vertices");
 
         // Outside offset should extend beyond the original boundary
@@ -147,7 +148,7 @@ mod tests {
         let contour = profile_contour(&sq, 3.175, ProfileSide::Inside);
 
         assert!(contour.is_some(), "Inside profile should produce a contour");
-        let pts = contour.unwrap();
+        let pts = contour.expect("asserted Some above");
 
         // Inside offset should be within the original boundary
         let x_min = pts.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
@@ -240,7 +241,7 @@ mod tests {
             .find(|m| {
                 matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - params.plunge_rate).abs() < 1e-10)
             })
-            .unwrap();
+            .expect("toolpath should contain a plunge move");
 
         let cutting_moves: Vec<_> = tp
             .moves
@@ -280,14 +281,14 @@ mod tests {
             .find(|m| {
                 matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10)
             })
-            .unwrap();
+            .expect("conventional toolpath should have a cutting move");
         let climb_first_cut = climb_tp
             .moves
             .iter()
             .find(|m| {
                 matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10)
             })
-            .unwrap();
+            .expect("climb toolpath should have a cutting move");
 
         let different = (conv_first_cut.target.x - climb_first_cut.target.x).abs() > 0.01
             || (conv_first_cut.target.y - climb_first_cut.target.y).abs() > 0.01;

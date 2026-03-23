@@ -282,6 +282,7 @@ fn is_point_over_flat_triangle(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::mesh::{SpatialIndex, make_test_flat};

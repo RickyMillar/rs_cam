@@ -188,6 +188,7 @@ fn move_distance(a: &P3, b: &P3) -> f64 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::tool::FlatEndmill;

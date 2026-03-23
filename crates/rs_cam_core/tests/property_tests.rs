@@ -3,6 +3,7 @@
 //! Since proptest and rand are not available as dev-dependencies, these tests
 //! use deterministic edge-case inputs that cover a range of shapes and sizes
 //! to verify geometric invariants hold.
+#![allow(clippy::unwrap_used, clippy::panic)]
 
 use rs_cam_core::geo::P2;
 use rs_cam_core::pocket::{PocketParams, pocket_toolpath};

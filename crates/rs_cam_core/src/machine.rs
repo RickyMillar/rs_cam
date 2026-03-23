@@ -174,7 +174,7 @@ impl MachineProfile {
             SpindleConfig::Variable { min_rpm, max_rpm } => rpm.clamp(*min_rpm, *max_rpm),
             SpindleConfig::Discrete { speeds } => *speeds
                 .iter()
-                .min_by(|&&a, &&b| (a - rpm).abs().partial_cmp(&(b - rpm).abs()).unwrap())
+                .min_by(|&&a, &&b| (a - rpm).abs().total_cmp(&(b - rpm).abs()))
                 .unwrap_or(&speeds[speeds.len() / 2]),
         }
     }
@@ -229,6 +229,7 @@ impl MachineProfile {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

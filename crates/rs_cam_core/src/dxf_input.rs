@@ -410,7 +410,7 @@ fn chain_line_segments(segments: &[(P2, P2)]) -> Vec<Vec<P2>> {
         let mut changed = true;
         while changed {
             changed = false;
-            let tail = *chain.last().unwrap();
+            let tail = chain[chain.len() - 1];
             let head = chain[0];
 
             for i in 0..n {
@@ -548,6 +548,7 @@ fn spline_to_points(spline: &dxf::entities::Spline, arc_step: f64) -> Vec<P2> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

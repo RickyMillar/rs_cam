@@ -199,6 +199,7 @@ pub fn optimize_rapid_order(toolpath: &Toolpath, safe_z: f64) -> Toolpath {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::toolpath::MoveType;

@@ -243,6 +243,7 @@ impl MillingCutter for BullNoseEndmill {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::geo::{P3, Triangle};

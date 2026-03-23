@@ -1321,6 +1321,7 @@ fn has_prior_rest_source(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;

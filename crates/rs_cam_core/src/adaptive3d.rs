@@ -2434,6 +2434,7 @@ pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::dexel::DexelSegment;
@@ -3082,7 +3083,7 @@ mod tests {
             }
             all_levels.push(z_bot);
         }
-        all_levels.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        all_levels.sort_by(|a, b| b.total_cmp(a));
         all_levels.dedup_by(|a, b| (*a - *b).abs() < 0.01);
 
         assert!(

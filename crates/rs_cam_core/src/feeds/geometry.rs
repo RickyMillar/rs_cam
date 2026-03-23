@@ -146,6 +146,7 @@ pub fn vbit_width_at_depth(included_angle: f64, tip_d: f64, ap: f64) -> Option<f
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -220,8 +221,8 @@ mod tests {
 
     #[test]
     fn test_vbit_width_increases_with_depth() {
-        let shallow = vbit_width_at_depth(60.0, 0.2, 0.2).unwrap();
-        let deep = vbit_width_at_depth(60.0, 0.2, 1.0).unwrap();
+        let shallow = vbit_width_at_depth(60.0, 0.2, 0.2).expect("valid V-bit params");
+        let deep = vbit_width_at_depth(60.0, 0.2, 1.0).expect("valid V-bit params");
         assert!(deep > shallow);
     }
 
@@ -235,7 +236,7 @@ mod tests {
     fn test_scallop_stepover_reference_value() {
         // 3mm ball radius, 0.1mm scallop target
         // stepover = 2 * sqrt(2*R*h - h^2) = 2 * sqrt(2*3*0.1 - 0.01) = 2 * sqrt(0.59) ≈ 1.536
-        let stepover = scallop_stepover(3.0, 0.1).unwrap();
+        let stepover = scallop_stepover(3.0, 0.1).expect("valid scallop params");
         assert!((stepover - 1.536).abs() < 0.01, "got {stepover}");
     }
 
