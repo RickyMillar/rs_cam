@@ -48,7 +48,7 @@ pub fn weave_contours(x_fibers: &[Fiber], y_fibers: &[Fiber], z: f64) -> Vec<Vec
     let segments = marching_squares(&grid, n_rows, n_cols, x_fibers, y_fibers, z);
 
     // Chain segments into closed loops
-    chain_segments(segments)
+    chain_segments(&segments)
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -276,59 +276,84 @@ fn find_interval_boundary_y(fiber: &Fiber, ya: f64, yb: f64) -> f64 {
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Chain segments into closed loops by matching endpoints.
-fn chain_segments(segments: Vec<Segment>) -> Vec<Vec<P3>> {
+///
+/// Uses a spatial hash map on quantized endpoints for O(1) neighbor lookup
+/// instead of O(n) linear scan per chain link.
+fn chain_segments(segments: &[Segment]) -> Vec<Vec<P3>> {
+    use std::collections::HashMap;
+
     if segments.is_empty() {
         return Vec::new();
     }
 
-    let eps = 1e-6; // matching epsilon
+    let eps = 1e-6;
+    let n = segments.len();
 
-    let mut remaining: Vec<Option<Segment>> = segments.into_iter().map(Some).collect();
+    // Quantize a coordinate to an integer grid at epsilon scale.
+    // Use 1e-5 grid (10× epsilon) so nearby points land in same or adjacent cells.
+    let quantize = |v: f64| -> i64 { (v * 1e5).round() as i64 };
+    type GridKey = (i64, i64);
+
+    // Build spatial index: map from quantized (x,y) → list of (segment_index, endpoint_id).
+    // endpoint_id: 0 = p1, 1 = p2.
+    let mut index: HashMap<GridKey, Vec<(usize, u8)>> = HashMap::with_capacity(n * 2);
+    for (i, seg) in segments.iter().enumerate() {
+        let k1 = (quantize(seg.p1.x), quantize(seg.p1.y));
+        let k2 = (quantize(seg.p2.x), quantize(seg.p2.y));
+        index.entry(k1).or_default().push((i, 0));
+        index.entry(k2).or_default().push((i, 1));
+    }
+
+    let mut used = vec![false; n];
     let mut loops = Vec::new();
 
-    loop {
-        // Find first unused segment
-        let start_idx = remaining.iter().position(|s| s.is_some());
-        let start_idx = match start_idx {
-            Some(i) => i,
-            None => break,
-        };
+    for start_idx in 0..n {
+        if used[start_idx] {
+            continue;
+        }
+        used[start_idx] = true;
+        let mut chain = vec![segments[start_idx].p1, segments[start_idx].p2];
 
-        // SAFETY: start_idx found via .position(|s| s.is_some()) above
-        #[allow(clippy::expect_used)]
-        let start_seg = remaining[start_idx].take().expect("checked Some");
-        let mut chain = vec![start_seg.p1, start_seg.p2];
-
-        let max_iterations = remaining.len() + 1;
+        let max_iterations = n + 1;
         for _ in 0..max_iterations {
             let tail = chain[chain.len() - 1];
 
-            // Check if we've closed the loop
+            // Check if we've closed the loop.
             let head = chain[0];
             let dx = tail.x - head.x;
             let dy = tail.y - head.y;
             if chain.len() >= 3 && dx * dx + dy * dy < eps * eps {
-                chain.pop(); // remove the duplicate closing point
+                chain.pop();
                 break;
             }
 
-            // Find a segment that connects to the tail
+            // Lookup neighbors in the spatial index (check 3×3 grid cells).
+            let qx = quantize(tail.x);
+            let qy = quantize(tail.y);
             let mut found = false;
-            for seg_opt in remaining.iter_mut() {
-                if let Some(seg) = seg_opt {
-                    let d1 = (seg.p1.x - tail.x).powi(2) + (seg.p1.y - tail.y).powi(2);
-                    let d2 = (seg.p2.x - tail.x).powi(2) + (seg.p2.y - tail.y).powi(2);
 
-                    if d1 < eps * eps {
-                        chain.push(seg.p2);
-                        *seg_opt = None;
-                        found = true;
-                        break;
-                    } else if d2 < eps * eps {
-                        chain.push(seg.p1);
-                        *seg_opt = None;
-                        found = true;
-                        break;
+            'search: for dx_cell in -1i64..=1 {
+                for dy_cell in -1i64..=1 {
+                    let key = (qx + dx_cell, qy + dy_cell);
+                    if let Some(entries) = index.get(&key) {
+                        for &(seg_idx, endpoint) in entries {
+                            if used[seg_idx] {
+                                continue;
+                            }
+                            let seg = &segments[seg_idx];
+                            let (match_pt, other_pt) = if endpoint == 0 {
+                                (seg.p1, seg.p2)
+                            } else {
+                                (seg.p2, seg.p1)
+                            };
+                            let d = (match_pt.x - tail.x).powi(2) + (match_pt.y - tail.y).powi(2);
+                            if d < eps * eps {
+                                chain.push(other_pt);
+                                used[seg_idx] = true;
+                                found = true;
+                                break 'search;
+                            }
+                        }
                     }
                 }
             }
@@ -456,7 +481,7 @@ mod tests {
             },
         ];
 
-        let loops = chain_segments(segments);
+        let loops = chain_segments(&segments);
         assert_eq!(loops.len(), 1, "Should form one closed loop");
         assert_eq!(loops[0].len(), 4, "Loop should have 4 points");
     }
@@ -501,7 +526,7 @@ mod tests {
             },
         ];
 
-        let loops = chain_segments(segments);
+        let loops = chain_segments(&segments);
         assert_eq!(loops.len(), 2, "Should form two separate loops");
     }
 }
