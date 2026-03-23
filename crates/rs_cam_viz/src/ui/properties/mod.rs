@@ -1822,10 +1822,66 @@ fn draw_toolpath_panel(
                 }
             }
 
-            // Stepover pattern diagram (for applicable operations)
+            // Pattern diagrams for all operation types
+            ui.add_space(6.0);
             if let Some(pattern) = StepoverPattern::from_operation(&entry.operation) {
-                ui.add_space(6.0);
                 draw_stepover_diagram(ui, &pattern);
+            } else {
+                match &entry.operation {
+                    OperationConfig::Profile(cfg) => {
+                        let side = match cfg.side {
+                            ProfileSide::Outside => "Outside",
+                            ProfileSide::Inside => "Inside",
+                        };
+                        draw_outline_diagram(ui, &format!("Profile ({side})"), Some(side));
+                    }
+                    OperationConfig::Chamfer(_) => {
+                        draw_outline_diagram(ui, "Chamfer (edge contour)", None);
+                    }
+                    OperationConfig::Trace(cfg) => {
+                        let comp = match cfg.compensation {
+                            TraceCompensation::None => None,
+                            TraceCompensation::Left => Some("Inside"),
+                            TraceCompensation::Right => Some("Outside"),
+                        };
+                        draw_outline_diagram(ui, "Trace", comp);
+                    }
+                    OperationConfig::ProjectCurve(_) => {
+                        draw_outline_diagram(ui, "Project Curve", None);
+                    }
+                    OperationConfig::Adaptive(cfg) => {
+                        draw_spiral_diagram(ui, cfg.stepover, true);
+                    }
+                    OperationConfig::Adaptive3d(cfg) => {
+                        draw_spiral_diagram(ui, cfg.stepover, true);
+                    }
+                    OperationConfig::SpiralFinish(cfg) => {
+                        let outward = cfg.direction == SpiralDirection::InsideOut;
+                        draw_spiral_diagram(ui, cfg.stepover, outward);
+                    }
+                    OperationConfig::RadialFinish(cfg) => {
+                        draw_radial_diagram(ui, cfg.angular_step);
+                    }
+                    OperationConfig::Drill(_) => {
+                        draw_point_set_diagram(ui, "Drill Points");
+                    }
+                    OperationConfig::AlignmentPinDrill(_) => {
+                        draw_point_set_diagram(ui, "Pin Drill Holes");
+                    }
+                    OperationConfig::Pencil(cfg) => {
+                        draw_pencil_diagram(ui, cfg.num_offset_passes, cfg.offset_stepover);
+                    }
+                    OperationConfig::SteepShallow(cfg) => {
+                        draw_steep_shallow_diagram(ui, cfg.threshold_angle);
+                    }
+                    OperationConfig::RampFinish(cfg) => {
+                        draw_ramp_finish_diagram(ui, cfg.max_stepdown);
+                    }
+                    OperationConfig::Inlay(cfg) => {
+                        draw_inlay_diagram(ui, cfg.pocket_depth, cfg.glue_gap, cfg.flat_depth);
+                    }
+                    _ => {}
+                }
             }
         }
 

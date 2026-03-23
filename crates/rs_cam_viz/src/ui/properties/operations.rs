@@ -845,6 +845,28 @@ impl StepoverPattern {
                 stepover: cfg.stepover,
                 angle: cfg.angle,
             }),
+            OperationConfig::VCarve(cfg) => Some(Self::Zigzag {
+                stepover: cfg.stepover,
+                angle: 0.0,
+            }),
+            OperationConfig::Rest(cfg) => Some(Self::Zigzag {
+                stepover: cfg.stepover,
+                angle: cfg.angle,
+            }),
+            OperationConfig::HorizontalFinish(cfg) => Some(Self::Zigzag {
+                stepover: cfg.stepover,
+                angle: 0.0,
+            }),
+            OperationConfig::DropCutter(cfg) => Some(Self::Zigzag {
+                stepover: cfg.stepover,
+                angle: 0.0,
+            }),
+            OperationConfig::Waterline(cfg) => Some(Self::Contour {
+                stepover: cfg.z_step,
+            }),
+            OperationConfig::Scallop(cfg) => Some(Self::Contour {
+                stepover: cfg.scallop_height * 5.0,
+            }),
             _ => None,
         }
     }
@@ -1295,6 +1317,513 @@ pub(super) fn draw_tab_diagram(ui: &mut egui::Ui, tab_count: usize, tab_width: f
             "{tab_count} tab{} \u{00D7} {tab_width:.1}mm \u{00D7} {tab_height:.1}mm",
             if tab_count == 1 { "" } else { "s" }
         ),
+        egui::FontId::proportional(9.0),
+        dim_color,
+    );
+}
+
+// ── Outline Path Diagram (Profile, Chamfer, Trace, ProjectCurve) ────────
+
+/// Draw a single perimeter outline with optional offset and direction arrows.
+pub(super) fn draw_outline_diagram(ui: &mut egui::Ui, label: &str, offset_side: Option<&str>) {
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 90.0);
+    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+
+    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+
+    let margin = 20.0;
+    let wp = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + margin, rect.top() + 16.0),
+        egui::pos2(rect.right() - margin, rect.bottom() - 16.0),
+    );
+
+    let path_color = egui::Color32::from_rgb(50, 200, 180);
+    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+
+    // Main path outline
+    painter.rect_stroke(wp, 2.0, egui::Stroke::new(2.0, path_color));
+
+    // Direction arrows (clockwise around the perimeter)
+    let arrow_r = 3.0;
+    let positions = [
+        (wp.center_top() + egui::vec2(15.0, 0.0), true),   // top, going right
+        (wp.right_center() + egui::vec2(0.0, 10.0), true),  // right, going down
+        (wp.center_bottom() + egui::vec2(-15.0, 0.0), true), // bottom, going left
+        (wp.left_center() + egui::vec2(0.0, -10.0), true),  // left, going up
+    ];
+    for (pos, _) in &positions {
+        painter.circle_filled(*pos, arrow_r, path_color);
+    }
+
+    // Offset indicator (if applicable)
+    if let Some(side) = offset_side {
+        let offset_dist = 6.0;
+        let offset_color = egui::Color32::from_rgba_premultiplied(50, 200, 180, 100);
+        let inset = if side == "Inside" { offset_dist } else { -offset_dist };
+        let offset_rect = egui::Rect::from_min_max(
+            egui::pos2(wp.left() + inset, wp.top() + inset),
+            egui::pos2(wp.right() - inset, wp.bottom() - inset),
+        );
+        painter.rect_stroke(offset_rect, 1.0, egui::Stroke::new(1.0, offset_color));
+    }
+
+    // Label
+    painter.text(
+        egui::pos2(rect.left() + 6.0, rect.top() + 4.0),
+        egui::Align2::LEFT_TOP,
+        label,
+        egui::FontId::proportional(9.0),
+        dim_color,
+    );
+}
+
+// ── Spiral Diagram (Adaptive, Adaptive3D, SpiralFinish) ─────────────────
+
+/// Draw an Archimedean spiral pattern.
+pub(super) fn draw_spiral_diagram(ui: &mut egui::Ui, stepover: f64, outward: bool) {
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 110.0);
+    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+
+    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+
+    let cx = rect.center().x;
+    let cy = rect.center().y;
+    let max_r = rect.width().min(rect.height()) * 0.4;
+    let path_color = egui::Color32::from_rgb(50, 200, 180);
+    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+
+    // Workpiece boundary
+    painter.rect_stroke(
+        egui::Rect::from_center_size(egui::pos2(cx, cy), egui::vec2(max_r * 2.1, max_r * 2.1)),
+        2.0,
+        egui::Stroke::new(0.5, egui::Color32::from_rgb(50, 50, 60)),
+    );
+
+    // Spiral: r = max_r * t, θ = turns * 2π * t
+    let turns = 4.0_f32;
+    let steps = (turns * 48.0) as usize;
+    let mut pts = Vec::with_capacity(steps + 1);
+
+    for i in 0..=steps {
+        let t = i as f32 / steps as f32;
+        let t_dir = if outward { t } else { 1.0 - t };
+        let r = max_r * t_dir;
+        let theta = turns * std::f32::consts::TAU * t;
+        pts.push(egui::pos2(cx + r * theta.cos(), cy + r * theta.sin()));
+    }
+    painter.add(egui::Shape::line(pts, egui::Stroke::new(1.2, path_color)));
+
+    // Center dot
+    painter.circle_filled(egui::pos2(cx, cy), 2.5, path_color);
+
+    // Labels
+    let dir_label = if outward { "Inside \u{2192} Out" } else { "Outside \u{2192} In" };
+    painter.text(
+        egui::pos2(rect.left() + 6.0, rect.top() + 4.0),
+        egui::Align2::LEFT_TOP,
+        format!("Spiral ({dir_label})"),
+        egui::FontId::proportional(9.0),
+        dim_color,
+    );
+    painter.text(
+        egui::pos2(rect.right() - 6.0, rect.bottom() - 4.0),
+        egui::Align2::RIGHT_BOTTOM,
+        format!("step {stepover:.2} mm"),
+        egui::FontId::proportional(8.0),
+        dim_color,
+    );
+}
+
+// ── Radial Spokes Diagram ───────────────────────────────────────────────
+
+/// Draw radial lines from center at angular_step intervals.
+pub(super) fn draw_radial_diagram(ui: &mut egui::Ui, angular_step: f64) {
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 110.0);
+    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+
+    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+
+    let cx = rect.center().x;
+    let cy = rect.center().y;
+    let max_r = rect.width().min(rect.height()) * 0.4;
+    let path_color = egui::Color32::from_rgb(50, 200, 180);
+    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+
+    let step_rad = (angular_step as f32).to_radians();
+    let num_spokes = (std::f32::consts::TAU / step_rad.max(0.01)).ceil() as usize;
+    let num_spokes = num_spokes.min(72); // cap for very small angular_step
+
+    for i in 0..num_spokes {
+        let angle = step_rad * i as f32;
+        let end = egui::pos2(cx + max_r * angle.cos(), cy + max_r * angle.sin());
+        painter.line_segment(
+            [egui::pos2(cx, cy), end],
+            egui::Stroke::new(1.0, path_color),
+        );
+        // Alternating direction dots
+        if i % 2 == 0 {
+            let mid_r = max_r * 0.6;
+            painter.circle_filled(
+                egui::pos2(cx + mid_r * angle.cos(), cy + mid_r * angle.sin()),
+                1.5,
+                path_color,
+            );
+        }
+    }
+
+    painter.circle_filled(egui::pos2(cx, cy), 2.5, path_color);
+
+    painter.text(
+        egui::pos2(rect.left() + 6.0, rect.top() + 4.0),
+        egui::Align2::LEFT_TOP,
+        format!("Radial ({angular_step:.0}\u{00B0} step)"),
+        egui::FontId::proportional(9.0),
+        dim_color,
+    );
+}
+
+// ── Point Set Diagram (Drill, AlignmentPinDrill) ────────────────────────
+
+/// Draw scattered drill points.
+pub(super) fn draw_point_set_diagram(ui: &mut egui::Ui, label: &str) {
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 70.0);
+    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+
+    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+
+    let path_color = egui::Color32::from_rgb(50, 200, 180);
+    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+
+    // Scattered drill points (representative pattern)
+    let positions = [
+        (0.25, 0.35), (0.45, 0.55), (0.7, 0.3), (0.55, 0.7),
+        (0.3, 0.65), (0.75, 0.6), (0.5, 0.4),
+    ];
+    for &(fx, fy) in &positions {
+        let x = rect.left() + 20.0 + fx as f32 * (rect.width() - 40.0);
+        let y = rect.top() + 14.0 + fy as f32 * (rect.height() - 28.0);
+        // Crosshair at each point
+        let s = 4.0;
+        painter.line_segment(
+            [egui::pos2(x - s, y), egui::pos2(x + s, y)],
+            egui::Stroke::new(1.0, path_color),
+        );
+        painter.line_segment(
+            [egui::pos2(x, y - s), egui::pos2(x, y + s)],
+            egui::Stroke::new(1.0, path_color),
+        );
+        painter.circle_filled(egui::pos2(x, y), 2.0, path_color);
+    }
+
+    painter.text(
+        egui::pos2(rect.left() + 6.0, rect.top() + 4.0),
+        egui::Align2::LEFT_TOP,
+        label,
+        egui::FontId::proportional(9.0),
+        dim_color,
+    );
+}
+
+// ── Pencil Diagram ──────────────────────────────────────────────────────
+
+/// Draw edge traces with parallel offset passes.
+pub(super) fn draw_pencil_diagram(ui: &mut egui::Ui, num_offsets: usize, offset_step: f64) {
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 90.0);
+    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+
+    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+
+    let path_color = egui::Color32::from_rgb(50, 200, 180);
+    let offset_color = egui::Color32::from_rgb(50, 160, 200);
+    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+    let cy = rect.center().y;
+
+    // Center crease line (wavy to represent edge detection)
+    let mut center_pts = Vec::with_capacity(30);
+    let x_start = rect.left() + 20.0;
+    let x_end = rect.right() - 20.0;
+    for i in 0..=24 {
+        let t = i as f32 / 24.0;
+        let x = x_start + t * (x_end - x_start);
+        let wave = (t * 3.0 * std::f32::consts::TAU).sin() * 8.0;
+        center_pts.push(egui::pos2(x, cy + wave));
+    }
+    painter.add(egui::Shape::line(
+        center_pts.clone(),
+        egui::Stroke::new(2.0, path_color),
+    ));
+
+    // Offset passes
+    let step_px = (offset_step as f32 * 2.0).clamp(4.0, 12.0);
+    for pass in 1..=num_offsets.min(3) {
+        let off = pass as f32 * step_px;
+        for sign in [-1.0_f32, 1.0] {
+            let offset_pts: Vec<_> = center_pts
+                .iter()
+                .map(|p| egui::pos2(p.x, p.y + sign * off))
+                .collect();
+            let alpha = (200 - pass * 40) as u8;
+            painter.add(egui::Shape::line(
+                offset_pts,
+                egui::Stroke::new(
+                    1.0,
+                    egui::Color32::from_rgba_premultiplied(
+                        offset_color.r(),
+                        offset_color.g(),
+                        offset_color.b(),
+                        alpha,
+                    ),
+                ),
+            ));
+        }
+    }
+
+    painter.text(
+        egui::pos2(rect.left() + 6.0, rect.top() + 4.0),
+        egui::Align2::LEFT_TOP,
+        format!("Pencil ({num_offsets} offset passes)"),
+        egui::FontId::proportional(9.0),
+        dim_color,
+    );
+}
+
+// ── Steep/Shallow Diagram ───────────────────────────────────────────────
+
+/// Draw a split-zone diagram showing steep (contour) vs shallow (raster) regions.
+pub(super) fn draw_steep_shallow_diagram(ui: &mut egui::Ui, threshold: f64) {
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 100.0);
+    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+
+    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+
+    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+    let steep_color = egui::Color32::from_rgb(80, 160, 220);
+    let shallow_color = egui::Color32::from_rgb(50, 200, 180);
+
+    let margin = 14.0;
+    let wp = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + margin, rect.top() + 16.0),
+        egui::pos2(rect.right() - margin, rect.bottom() - 8.0),
+    );
+
+    // Diagonal divider based on threshold angle
+    let frac = (threshold as f32 / 90.0).clamp(0.2, 0.8);
+    let div_x = wp.left() + frac * wp.width();
+
+    // Steep zone (left): contour rings
+    let steep_rect = egui::Rect::from_min_max(wp.min, egui::pos2(div_x, wp.max.y));
+    painter.rect_filled(steep_rect, 0.0, egui::Color32::from_rgba_premultiplied(80, 160, 220, 20));
+    for i in 1..=3 {
+        let inset = i as f32 * 6.0;
+        if steep_rect.width() > inset * 2.0 + 4.0 && steep_rect.height() > inset * 2.0 + 4.0 {
+            painter.rect_stroke(
+                egui::Rect::from_min_max(
+                    egui::pos2(steep_rect.left() + inset, steep_rect.top() + inset),
+                    egui::pos2(steep_rect.right() - inset, steep_rect.bottom() - inset),
+                ),
+                1.0,
+                egui::Stroke::new(0.8, steep_color),
+            );
+        }
+    }
+
+    // Shallow zone (right): raster lines
+    let shallow_rect = egui::Rect::from_min_max(egui::pos2(div_x, wp.min.y), wp.max);
+    painter.rect_filled(
+        shallow_rect,
+        0.0,
+        egui::Color32::from_rgba_premultiplied(50, 200, 180, 20),
+    );
+    let line_step = 7.0;
+    let mut y = shallow_rect.top() + line_step;
+    while y < shallow_rect.bottom() - 2.0 {
+        painter.line_segment(
+            [egui::pos2(shallow_rect.left() + 2.0, y), egui::pos2(shallow_rect.right() - 2.0, y)],
+            egui::Stroke::new(0.8, shallow_color),
+        );
+        y += line_step;
+    }
+
+    // Divider line
+    painter.line_segment(
+        [egui::pos2(div_x, wp.top()), egui::pos2(div_x, wp.bottom())],
+        egui::Stroke::new(1.5, dim_color),
+    );
+
+    // Labels
+    painter.text(
+        egui::pos2(steep_rect.center().x, wp.top() - 2.0),
+        egui::Align2::CENTER_BOTTOM,
+        "Steep",
+        egui::FontId::proportional(8.0),
+        steep_color,
+    );
+    painter.text(
+        egui::pos2(shallow_rect.center().x, wp.top() - 2.0),
+        egui::Align2::CENTER_BOTTOM,
+        "Shallow",
+        egui::FontId::proportional(8.0),
+        shallow_color,
+    );
+    painter.text(
+        egui::pos2(rect.center().x, rect.top() + 3.0),
+        egui::Align2::CENTER_TOP,
+        format!("Threshold {threshold:.0}\u{00B0}"),
+        egui::FontId::proportional(9.0),
+        dim_color,
+    );
+}
+
+// ── Inlay Cross-Section Diagram ─────────────────────────────────────────
+
+/// Draw a cross-section showing male/female inlay pocket mating.
+pub(super) fn draw_inlay_diagram(ui: &mut egui::Ui, pocket_depth: f64, glue_gap: f64, flat_depth: f64) {
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 100.0);
+    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+
+    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+
+    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+    let female_color = egui::Color32::from_rgb(80, 160, 220);
+    let male_color = egui::Color32::from_rgb(50, 200, 180);
+
+    let cx = rect.center().x;
+    let surface_y = rect.top() + rect.height() * 0.35;
+    let total_depth = pocket_depth.max(flat_depth).max(1.0);
+    let scale = (rect.height() * 0.45) / total_depth as f32;
+
+    let pocket_d = pocket_depth as f32 * scale;
+    let flat_d = flat_depth as f32 * scale;
+    let gap = (glue_gap as f32 * scale).max(2.0);
+    let half_w = 35.0;
+
+    // Female pocket (V-shaped cavity in material)
+    let mat_color = egui::Color32::from_rgb(50, 50, 65);
+    painter.rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(rect.left() + 10.0, surface_y),
+            egui::pos2(cx - 8.0, rect.bottom() - 8.0),
+        ),
+        0.0,
+        mat_color,
+    );
+    // V pocket outline
+    painter.add(egui::Shape::line(
+        vec![
+            egui::pos2(cx - 8.0 - half_w, surface_y),
+            egui::pos2(cx - 8.0, surface_y + pocket_d),
+            egui::pos2(cx - 8.0 + half_w, surface_y),
+        ],
+        egui::Stroke::new(1.5, female_color),
+    ));
+
+    // Male plug (inverted V with flat bottom)
+    painter.add(egui::Shape::line(
+        vec![
+            egui::pos2(cx + 8.0 - half_w, surface_y),
+            egui::pos2(cx + 8.0, surface_y + flat_d),
+            egui::pos2(cx + 8.0 + half_w, surface_y),
+        ],
+        egui::Stroke::new(1.5, male_color),
+    ));
+
+    // Glue gap annotation
+    if gap > 3.0 {
+        painter.text(
+            egui::pos2(cx, surface_y + pocket_d * 0.5),
+            egui::Align2::CENTER_CENTER,
+            format!("gap {glue_gap:.2}"),
+            egui::FontId::proportional(7.0),
+            dim_color,
+        );
+    }
+
+    // Labels
+    painter.text(
+        egui::pos2(cx - 8.0 - half_w * 0.5, surface_y - 4.0),
+        egui::Align2::CENTER_BOTTOM,
+        "Female",
+        egui::FontId::proportional(8.0),
+        female_color,
+    );
+    painter.text(
+        egui::pos2(cx + 8.0 + half_w * 0.5, surface_y - 4.0),
+        egui::Align2::CENTER_BOTTOM,
+        "Male",
+        egui::FontId::proportional(8.0),
+        male_color,
+    );
+    painter.text(
+        egui::pos2(rect.left() + 6.0, rect.top() + 4.0),
+        egui::Align2::LEFT_TOP,
+        "Inlay Cross-Section",
+        egui::FontId::proportional(9.0),
+        dim_color,
+    );
+}
+
+// ── Ramp Finish Diagram ─────────────────────────────────────────────────
+
+/// Side-view showing contour levels connected by helical ramps.
+pub(super) fn draw_ramp_finish_diagram(ui: &mut egui::Ui, max_stepdown: f64) {
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 90.0);
+    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+
+    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+
+    let path_color = egui::Color32::from_rgb(50, 200, 180);
+    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+
+    let num_levels = 4;
+    let x_start = rect.left() + 20.0;
+    let x_end = rect.right() - 20.0;
+    let y_top = rect.top() + 16.0;
+    let y_bottom = rect.bottom() - 12.0;
+    let level_step = (y_bottom - y_top) / (num_levels - 1) as f32;
+
+    // Contour levels (horizontal lines) connected by diagonal ramps
+    for i in 0..num_levels {
+        let y = y_top + i as f32 * level_step;
+        // Contour at this Z level
+        painter.line_segment(
+            [egui::pos2(x_start, y), egui::pos2(x_end, y)],
+            egui::Stroke::new(1.5, path_color),
+        );
+        // Ramp down to next level
+        if i < num_levels - 1 {
+            let next_y = y + level_step;
+            painter.line_segment(
+                [egui::pos2(x_end, y), egui::pos2(x_start, next_y)],
+                egui::Stroke::new(1.0, egui::Color32::from_rgba_premultiplied(50, 200, 180, 120)),
+            );
+        }
+    }
+
+    // Stepdown dimension
+    painter.line_segment(
+        [egui::pos2(x_end + 8.0, y_top), egui::pos2(x_end + 8.0, y_top + level_step)],
+        egui::Stroke::new(1.0, dim_color),
+    );
+    painter.text(
+        egui::pos2(x_end + 10.0, y_top + level_step / 2.0),
+        egui::Align2::LEFT_CENTER,
+        format!("{max_stepdown:.1}"),
+        egui::FontId::proportional(8.0),
+        dim_color,
+    );
+
+    painter.text(
+        egui::pos2(rect.left() + 6.0, rect.top() + 4.0),
+        egui::Align2::LEFT_TOP,
+        "Ramp Finish (side view)",
         egui::FontId::proportional(9.0),
         dim_color,
     );
