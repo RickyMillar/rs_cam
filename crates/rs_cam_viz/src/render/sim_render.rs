@@ -1,8 +1,8 @@
 use egui_wgpu::wgpu;
 use rs_cam_core::stock_mesh::StockMesh;
 
-use super::gpu_safety::{self, GpuLimits};
 use super::LineVertex;
+use super::gpu_safety::{self, GpuLimits};
 
 /// GPU vertex for per-vertex colored mesh rendering (simulation stock).
 #[repr(C)]

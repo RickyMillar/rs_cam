@@ -5,7 +5,6 @@
 //! being progressively carved.  Side-face grids (X, Y) produce additional
 //! surface meshes appended with index offsets.
 
-
 use crate::dexel::{DexelAxis, DexelGrid, ray_bottom, ray_top};
 use crate::dexel_stock::TriDexelStock;
 use crate::stock_mesh::StockMesh;

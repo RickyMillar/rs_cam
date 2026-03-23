@@ -38,9 +38,11 @@ pub fn try_create_buffer(
         );
         return None;
     }
-    Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(label),
-        contents,
-        usage,
-    }))
+    Some(
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            contents,
+            usage,
+        }),
+    )
 }

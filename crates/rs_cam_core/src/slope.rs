@@ -168,61 +168,122 @@ impl SlopeMap {
         cell_size: f64,
     ) -> Self {
         let total = rows * cols;
-        let mut normals = Vec::with_capacity(total);
-        let mut angles = Vec::with_capacity(total);
-        let mut curvatures = Vec::with_capacity(total);
+        let mut normals = vec![V3::new(0.0, 0.0, 1.0); total];
+        let mut angles = vec![0.0f64; total];
+        let mut curvatures = vec![0.0f64; total];
 
         let cs = cell_size;
-        let cs2 = cs * 2.0;
-        let cs_sq = cs * cs;
+        let inv_cs = 1.0 / cs;
+        let inv_cs2 = 1.0 / (cs * 2.0);
+        let inv_cs_sq = 1.0 / (cs * cs);
 
+        // Helper: compute normal, angle, curvature from derivatives and store.
+        #[inline(always)]
+        #[allow(clippy::indexing_slicing)] // SAFETY: idx bounded by caller loop ranges
+        #[allow(clippy::needless_pass_by_value)] // tuple of mut refs is the natural pattern
+        fn store_cell(
+            out: (&mut [V3], &mut [f64], &mut [f64]),
+            idx: usize,
+            dz_dx: f64,
+            dz_dy: f64,
+            d2z_dx2: f64,
+            d2z_dy2: f64,
+        ) {
+            let n = V3::new(-dz_dx, -dz_dy, 1.0).normalize();
+            out.0[idx] = n;
+            out.1[idx] = n.z.clamp(0.0, 1.0).acos();
+            out.2[idx] = (d2z_dx2 + d2z_dy2) * 0.5;
+        }
+
+        // ── Interior cells: no boundary checks, full central differences ──
+        for row in 1..rows.saturating_sub(1) {
+            let row_base = row * cols;
+            let row_above = (row - 1) * cols;
+            let row_below = (row + 1) * cols;
+            for col in 1..cols.saturating_sub(1) {
+                // SAFETY: row in 1..rows-1 and col in 1..cols-1 ensures all offsets are in bounds
+                #[allow(clippy::indexing_slicing)]
+                let (dz_dx, dz_dy, d2z_dx2, d2z_dy2) = {
+                    let zc = z_values[row_base + col];
+                    let zl = z_values[row_base + col - 1];
+                    let zr = z_values[row_base + col + 1];
+                    let zu = z_values[row_above + col];
+                    let zd = z_values[row_below + col];
+                    (
+                        (zr - zl) * inv_cs2,
+                        (zd - zu) * inv_cs2,
+                        (zr - 2.0 * zc + zl) * inv_cs_sq,
+                        (zd - 2.0 * zc + zu) * inv_cs_sq,
+                    )
+                };
+                store_cell(
+                    (&mut normals, &mut angles, &mut curvatures),
+                    row_base + col,
+                    dz_dx,
+                    dz_dy,
+                    d2z_dx2,
+                    d2z_dy2,
+                );
+            }
+        }
+
+        // ── Boundary cells: use forward/backward differences ──────────────
         for row in 0..rows {
             for col in 0..cols {
-                // First derivatives via central (interior) or forward/backward (boundary)
-                let dz_dx = if col == 0 {
-                    (z_values[row * cols + 1] - z_values[row * cols]) / cs
-                } else if col == cols - 1 {
-                    (z_values[row * cols + col] - z_values[row * cols + col - 1]) / cs
+                // Skip interior (already processed)
+                if row > 0 && row < rows - 1 && col > 0 && col < cols - 1 {
+                    continue;
+                }
+                #[allow(clippy::indexing_slicing)]
+                let dz_dx = if col == 0 && cols > 1 {
+                    (z_values[row * cols + 1] - z_values[row * cols]) * inv_cs
+                } else if col == cols - 1 && cols > 1 {
+                    (z_values[row * cols + col] - z_values[row * cols + col - 1]) * inv_cs
+                } else if cols > 1 {
+                    (z_values[row * cols + col + 1] - z_values[row * cols + col - 1]) * inv_cs2
                 } else {
-                    (z_values[row * cols + col + 1] - z_values[row * cols + col - 1]) / cs2
-                };
-
-                let dz_dy = if row == 0 {
-                    (z_values[cols + col] - z_values[col]) / cs
-                } else if row == rows - 1 {
-                    (z_values[row * cols + col] - z_values[(row - 1) * cols + col]) / cs
-                } else {
-                    (z_values[(row + 1) * cols + col] - z_values[(row - 1) * cols + col]) / cs2
-                };
-
-                // Normal = (-dz/dx, -dz/dy, 1).normalize()
-                let n = V3::new(-dz_dx, -dz_dy, 1.0).normalize();
-                let angle = n.z.clamp(0.0, 1.0).acos();
-
-                // Second derivatives for mean curvature
-                let d2z_dx2 = if col == 0 || col == cols - 1 {
                     0.0
+                };
+
+                #[allow(clippy::indexing_slicing)]
+                let dz_dy = if row == 0 && rows > 1 {
+                    (z_values[cols + col] - z_values[col]) * inv_cs
+                } else if row == rows - 1 && rows > 1 {
+                    (z_values[row * cols + col] - z_values[(row - 1) * cols + col]) * inv_cs
+                } else if rows > 1 {
+                    (z_values[(row + 1) * cols + col] - z_values[(row - 1) * cols + col]) * inv_cs2
                 } else {
-                    (z_values[row * cols + col + 1] - 2.0 * z_values[row * cols + col]
+                    0.0
+                };
+
+                let d2z_dx2 = if col > 0 && col < cols - 1 {
+                    #[allow(clippy::indexing_slicing)]
+                    let v = (z_values[row * cols + col + 1] - 2.0 * z_values[row * cols + col]
                         + z_values[row * cols + col - 1])
-                        / cs_sq
-                };
-
-                let d2z_dy2 = if row == 0 || row == rows - 1 {
-                    0.0
+                        * inv_cs_sq;
+                    v
                 } else {
-                    (z_values[(row + 1) * cols + col] - 2.0 * z_values[row * cols + col]
-                        + z_values[(row - 1) * cols + col])
-                        / cs_sq
+                    0.0
                 };
 
-                // Mean curvature (simplified for heightmap: kappa = (d2z/dx2 + d2z/dy2) / 2)
-                // Positive = convex (hill), negative = concave (valley)
-                let kappa = (d2z_dx2 + d2z_dy2) * 0.5;
+                let d2z_dy2 = if row > 0 && row < rows - 1 {
+                    #[allow(clippy::indexing_slicing)]
+                    let v = (z_values[(row + 1) * cols + col] - 2.0 * z_values[row * cols + col]
+                        + z_values[(row - 1) * cols + col])
+                        * inv_cs_sq;
+                    v
+                } else {
+                    0.0
+                };
 
-                normals.push(n);
-                angles.push(angle);
-                curvatures.push(kappa);
+                store_cell(
+                    (&mut normals, &mut angles, &mut curvatures),
+                    row * cols + col,
+                    dz_dx,
+                    dz_dy,
+                    d2z_dx2,
+                    d2z_dy2,
+                );
             }
         }
 

@@ -72,16 +72,15 @@ pub fn batch_push_cutter_with_cancel(
     cutter: &dyn MillingCutter,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
-    #[cfg(feature = "parallel")]
-    {
-        let _ = (&mesh, &index, &cutter);
-    }
+    use rayon::prelude::*;
 
-    for (i, fiber) in fibers.iter_mut().enumerate() {
-        if i % 32 == 0 {
-            check_cancel(cancel)?;
-        }
-        push_cutter_fiber(fiber, mesh, index, cutter);
+    // Process fibers in parallel chunks. Check cancel between chunks.
+    const CHUNK_SIZE: usize = 64;
+    for chunk in fibers.chunks_mut(CHUNK_SIZE) {
+        check_cancel(cancel)?;
+        chunk.par_iter_mut().for_each(|fiber| {
+            push_cutter_fiber(fiber, mesh, index, cutter);
+        });
     }
 
     Ok(())
