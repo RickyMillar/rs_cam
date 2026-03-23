@@ -69,7 +69,7 @@ All 16 clippy lints below are **deny** at workspace level (`Cargo.toml`). Clippy
 | `redundant_clone` | Don't `.clone()` what you already own |
 | `unsafe_code` | No `unsafe` in this codebase |
 
-**When you hit a lint:** prefer fixing the code. If the pattern is provably safe (e.g. indexing bounded by a loop, `.expect()` after a `.is_some()` check), use `#[allow(clippy::the_lint)]` with a `// SAFETY:` comment on the specific line or block — never file-level.
+**When you hit a lint:** run `/lint-fix` for approved fix patterns. Prefer fixing the code. If the pattern is provably safe (e.g. indexing bounded by a loop, `.expect()` after a `.is_some()` check), use `#[allow(clippy::the_lint)]` with a `// SAFETY:` comment on the specific line or block — never file-level.
 
 **Test code** is exempt: test modules carry `#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]`.
 
@@ -95,5 +95,6 @@ Project-level Claude Code customizations in `.claude/`:
 | `skills/verify/SKILL.md` | `/verify` | Run the CI quality gate locally |
 | `skills/dev/SKILL.md` | `/dev` | Build, test, run, and module quick reference |
 | `skills/sim-analysis/SKILL.md` | `/sim-analysis` | Simulation diagnostic interpretation guide |
+| `skills/lint-fix/SKILL.md` | `/lint-fix` | Fix clippy lint violations with approved patterns |
 | `agents/cam-navigator.md` | Agent | Codebase navigation: find operations, trace pipelines |
 | `agents/sim-diagnostics.md` | Agent | Simulation diagnostic analysis and interpretation |
