@@ -35,7 +35,9 @@ pub fn linearize_arc(
     }
 
     let arc_len = r * sweep;
+    const MAX_ARC_SAMPLES: usize = 100_000;
     let samples = (arc_len / max_seg_len).ceil().max(2.0) as usize;
+    let samples = samples.min(MAX_ARC_SAMPLES);
 
     let mut points = Vec::with_capacity(samples + 1);
     for s in 0..=samples {

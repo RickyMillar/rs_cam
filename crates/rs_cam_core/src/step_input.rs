@@ -32,6 +32,8 @@ pub enum StepImportError {
     ShellConversionFailed { shell_index: usize, message: String },
     #[error("Built mesh has no triangles")]
     EmptyResult,
+    #[error("STEP file too large ({size_mb} MB, limit {limit_mb} MB)")]
+    FileTooLarge { size_mb: u64, limit_mb: u64 },
 }
 
 /// Load a STEP file and produce an `EnrichedMesh`.
@@ -40,6 +42,14 @@ pub enum StepImportError {
 /// For wood routing, 0.1 mm is appropriate. Smaller values produce more triangles.
 #[allow(clippy::indexing_slicing)] // mesh vertex/face indices bounded by tessellation output
 pub fn load_step(path: &Path, tolerance: f64) -> Result<EnrichedMesh, StepImportError> {
+    const MAX_FILE_SIZE: u64 = 500 * 1024 * 1024; // 500 MB
+    let file_size = std::fs::metadata(path)?.len();
+    if file_size > MAX_FILE_SIZE {
+        return Err(StepImportError::FileTooLarge {
+            size_mb: file_size / (1024 * 1024),
+            limit_mb: MAX_FILE_SIZE / (1024 * 1024),
+        });
+    }
     let step_string = std::fs::read_to_string(path)?;
 
     let table = Table::from_step(&step_string).ok_or(StepImportError::ParseError)?;

@@ -574,8 +574,9 @@ impl RenderResources {
 
     /// Ensure offscreen render targets exist at the given size.
     fn ensure_offscreen(&mut self, device: &wgpu::Device, width: u32, height: u32) {
-        let width = width.max(1);
-        let height = height.max(1);
+        let max_tex = self.gpu_limits.max_texture_size;
+        let width = width.max(1).min(max_tex);
+        let height = height.max(1).min(max_tex);
 
         if let Some(existing) = &self.offscreen
             && existing.width == width

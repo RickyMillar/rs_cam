@@ -185,16 +185,43 @@ impl DexelGrid {
     /// Minimum allowed cell size to avoid division-by-zero and degenerate grids.
     const MIN_CELL_SIZE: f64 = 1e-6;
 
+    /// Maximum total cells per grid (~128 MB at ~8 bytes/ray).
+    /// Prevents OOM from pathologically small cell sizes on large stock.
+    const MAX_GRID_CELLS: usize = 16_000_000;
+
+    /// Adjust cell_size upward if `rows * cols` would exceed [`Self::MAX_GRID_CELLS`].
+    fn clamp_cell_size(mut cell_size: f64, extent_u: f64, extent_v: f64) -> f64 {
+        if cell_size < Self::MIN_CELL_SIZE {
+            cell_size = Self::MIN_CELL_SIZE;
+        }
+        let cols = (extent_u / cell_size).ceil() as usize + 1;
+        let rows = (extent_v / cell_size).ceil() as usize + 1;
+        if rows * cols > Self::MAX_GRID_CELLS {
+            // Increase cell_size so total cells fit within the cap.
+            let area = extent_u * extent_v;
+            let new_cs = (area / Self::MAX_GRID_CELLS as f64).sqrt();
+            tracing::warn!(
+                requested_cell_size = cell_size,
+                clamped_cell_size = new_cs,
+                "Dexel grid would exceed {}M cells — coarsening resolution",
+                Self::MAX_GRID_CELLS / 1_000_000
+            );
+            new_cs
+        } else {
+            cell_size
+        }
+    }
+
     /// Create a Z-grid from a bounding box.
     ///
     /// Every ray gets a single segment spanning `[z_min, z_max]`.
     /// `cell_size` is clamped to a minimum of 1e-6 if zero or negative.
     pub fn z_grid_from_bounds(bbox: &BoundingBox3, cell_size: f64) -> Self {
-        let cell_size = if cell_size > Self::MIN_CELL_SIZE {
-            cell_size
-        } else {
-            Self::MIN_CELL_SIZE
-        };
+        let cell_size = Self::clamp_cell_size(
+            cell_size,
+            bbox.max.x - bbox.min.x,
+            bbox.max.y - bbox.min.y,
+        );
         let cols = ((bbox.max.x - bbox.min.x) / cell_size).ceil() as usize + 1;
         let rows = ((bbox.max.y - bbox.min.y) / cell_size).ceil() as usize + 1;
         let seg = DexelSegment::new(bbox.min.z as f32, bbox.max.z as f32);
@@ -217,11 +244,11 @@ impl DexelGrid {
     /// Every ray gets a single segment spanning `[x_min, x_max]`.
     /// `cell_size` is clamped to a minimum of 1e-6 if zero or negative.
     pub fn x_grid_from_bounds(bbox: &BoundingBox3, cell_size: f64) -> Self {
-        let cell_size = if cell_size > Self::MIN_CELL_SIZE {
-            cell_size
-        } else {
-            Self::MIN_CELL_SIZE
-        };
+        let cell_size = Self::clamp_cell_size(
+            cell_size,
+            bbox.max.y - bbox.min.y,
+            bbox.max.z - bbox.min.z,
+        );
         let cols = ((bbox.max.y - bbox.min.y) / cell_size).ceil() as usize + 1;
         let rows = ((bbox.max.z - bbox.min.z) / cell_size).ceil() as usize + 1;
         let seg = DexelSegment::new(bbox.min.x as f32, bbox.max.x as f32);
@@ -244,11 +271,11 @@ impl DexelGrid {
     /// Every ray gets a single segment spanning `[y_min, y_max]`.
     /// `cell_size` is clamped to a minimum of 1e-6 if zero or negative.
     pub fn y_grid_from_bounds(bbox: &BoundingBox3, cell_size: f64) -> Self {
-        let cell_size = if cell_size > Self::MIN_CELL_SIZE {
-            cell_size
-        } else {
-            Self::MIN_CELL_SIZE
-        };
+        let cell_size = Self::clamp_cell_size(
+            cell_size,
+            bbox.max.x - bbox.min.x,
+            bbox.max.z - bbox.min.z,
+        );
         let cols = ((bbox.max.x - bbox.min.x) / cell_size).ceil() as usize + 1;
         let rows = ((bbox.max.z - bbox.min.z) / cell_size).ceil() as usize + 1;
         let seg = DexelSegment::new(bbox.min.y as f32, bbox.max.y as f32);

@@ -6,13 +6,16 @@ use wgpu::util::DeviceExt;
 /// Cached GPU device limits queried once at startup.
 pub struct GpuLimits {
     pub max_buffer_size: usize,
+    pub max_texture_size: u32,
 }
 
 impl GpuLimits {
     /// Query limits from the device. Call once at initialization.
     pub fn from_device(device: &wgpu::Device) -> Self {
+        let limits = device.limits();
         Self {
-            max_buffer_size: device.limits().max_buffer_size as usize,
+            max_buffer_size: limits.max_buffer_size as usize,
+            max_texture_size: limits.max_texture_dimension_2d,
         }
     }
 }
