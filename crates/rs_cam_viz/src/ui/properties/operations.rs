@@ -1683,8 +1683,10 @@ pub(super) fn draw_steep_shallow_diagram(ui: &mut egui::Ui, threshold: f64) {
 // ── Inlay Cross-Section Diagram ─────────────────────────────────────────
 
 /// Draw a cross-section showing male/female inlay pocket mating.
+/// Draw an assembly cross-section: female pocket in material with male plug
+/// hovering above, about to drop in (flipped). Shows how the V-angles match.
 pub(super) fn draw_inlay_diagram(ui: &mut egui::Ui, pocket_depth: f64, glue_gap: f64, flat_depth: f64) {
-    let desired_size = egui::vec2(ui.available_width().min(260.0), 100.0);
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 120.0);
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
@@ -1693,77 +1695,119 @@ pub(super) fn draw_inlay_diagram(ui: &mut egui::Ui, pocket_depth: f64, glue_gap:
     let dim_color = egui::Color32::from_rgb(100, 100, 115);
     let female_color = egui::Color32::from_rgb(80, 160, 220);
     let male_color = egui::Color32::from_rgb(50, 200, 180);
+    let mat_color = egui::Color32::from_rgb(50, 50, 65);
 
     let cx = rect.center().x;
-    let surface_y = rect.top() + rect.height() * 0.35;
     let total_depth = pocket_depth.max(flat_depth).max(1.0);
-    let scale = (rect.height() * 0.45) / total_depth as f32;
+    let scale = (rect.height() * 0.3) / total_depth as f32;
+    let half_w = 40.0;
 
+    // Surface line divides upper (air + plug) from lower (material + pocket)
+    let surface_y = rect.center().y + 4.0;
     let pocket_d = pocket_depth as f32 * scale;
     let flat_d = flat_depth as f32 * scale;
-    let gap = (glue_gap as f32 * scale).max(2.0);
-    let half_w = 35.0;
+    let gap_px = (glue_gap as f32 * scale).max(2.0);
 
-    // Female pocket (V-shaped cavity in material)
-    let mat_color = egui::Color32::from_rgb(50, 50, 65);
+    // Material block (below surface)
     painter.rect_filled(
         egui::Rect::from_min_max(
-            egui::pos2(rect.left() + 10.0, surface_y),
-            egui::pos2(cx - 8.0, rect.bottom() - 8.0),
+            egui::pos2(rect.left() + 8.0, surface_y),
+            egui::pos2(rect.right() - 8.0, rect.bottom() - 6.0),
         ),
         0.0,
         mat_color,
     );
-    // V pocket outline
-    painter.add(egui::Shape::line(
-        vec![
-            egui::pos2(cx - 8.0 - half_w, surface_y),
-            egui::pos2(cx - 8.0, surface_y + pocket_d),
-            egui::pos2(cx - 8.0 + half_w, surface_y),
-        ],
-        egui::Stroke::new(1.5, female_color),
-    ));
+    // Surface line
+    painter.line_segment(
+        [egui::pos2(rect.left() + 8.0, surface_y), egui::pos2(rect.right() - 8.0, surface_y)],
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(70, 70, 85)),
+    );
 
-    // Male plug (inverted V with flat bottom)
+    // Female pocket (V cavity cut into material)
+    let pocket_pts = vec![
+        egui::pos2(cx - half_w, surface_y),
+        egui::pos2(cx, surface_y + pocket_d),
+        egui::pos2(cx + half_w, surface_y),
+    ];
+    // Clear the pocket area
+    painter.add(egui::Shape::convex_polygon(
+        pocket_pts.clone(),
+        egui::Color32::from_rgb(20, 20, 26),
+        egui::Stroke::NONE,
+    ));
+    painter.add(egui::Shape::line(pocket_pts, egui::Stroke::new(1.5, female_color)));
+
+    // Male plug (flipped V, hovering above the pocket, about to drop in)
+    // The plug is the same V shape but inverted, with a flat bottom cut off
+    let plug_bottom = surface_y - gap_px; // hover just above the surface
+    let plug_top = plug_bottom - flat_d;
+    // V shape going up: wide at bottom, narrow at top (but with flat top)
+    let flat_hw = half_w * (1.0 - flat_d / pocket_d.max(0.1)).max(0.1);
+    let plug_pts = vec![
+        egui::pos2(cx - half_w, plug_bottom),
+        egui::pos2(cx - flat_hw, plug_top),
+        egui::pos2(cx + flat_hw, plug_top),
+        egui::pos2(cx + half_w, plug_bottom),
+    ];
+    // Fill the plug
+    painter.add(egui::Shape::convex_polygon(
+        plug_pts.clone(),
+        egui::Color32::from_rgba_premultiplied(50, 200, 180, 40),
+        egui::Stroke::NONE,
+    ));
     painter.add(egui::Shape::line(
-        vec![
-            egui::pos2(cx + 8.0 - half_w, surface_y),
-            egui::pos2(cx + 8.0, surface_y + flat_d),
-            egui::pos2(cx + 8.0 + half_w, surface_y),
-        ],
+        vec![plug_pts[0], plug_pts[1], plug_pts[2], plug_pts[3], plug_pts[0]],
         egui::Stroke::new(1.5, male_color),
     ));
 
+    // Drop arrow (shows the plug goes down into the pocket)
+    let arrow_x = cx + half_w + 12.0;
+    let arrow_top = plug_top;
+    let arrow_bottom = surface_y + 4.0;
+    painter.line_segment(
+        [egui::pos2(arrow_x, arrow_top), egui::pos2(arrow_x, arrow_bottom)],
+        egui::Stroke::new(1.0, dim_color),
+    );
+    painter.add(egui::Shape::line(
+        vec![
+            egui::pos2(arrow_x - 3.0, arrow_bottom - 6.0),
+            egui::pos2(arrow_x, arrow_bottom),
+            egui::pos2(arrow_x + 3.0, arrow_bottom - 6.0),
+        ],
+        egui::Stroke::new(1.0, dim_color),
+    ));
+
     // Glue gap annotation
-    if gap > 3.0 {
-        painter.text(
-            egui::pos2(cx, surface_y + pocket_d * 0.5),
-            egui::Align2::CENTER_CENTER,
-            format!("gap {glue_gap:.2}"),
-            egui::FontId::proportional(7.0),
-            dim_color,
-        );
-    }
+    painter.text(
+        egui::pos2(cx - half_w - 4.0, (plug_bottom + surface_y) / 2.0),
+        egui::Align2::RIGHT_CENTER,
+        format!("gap {glue_gap:.2}"),
+        egui::FontId::proportional(7.0),
+        dim_color,
+    );
+
+    // Depth annotations on right
+    let dim_x = rect.right() - 30.0;
+    painter.text(
+        egui::pos2(dim_x, surface_y + pocket_d * 0.5),
+        egui::Align2::LEFT_CENTER,
+        format!("{pocket_depth:.1} deep"),
+        egui::FontId::proportional(7.0),
+        female_color,
+    );
 
     // Labels
     painter.text(
-        egui::pos2(cx - 8.0 - half_w * 0.5, surface_y - 4.0),
+        egui::pos2(cx, plug_top - 4.0),
         egui::Align2::CENTER_BOTTOM,
-        "Female",
-        egui::FontId::proportional(8.0),
-        female_color,
-    );
-    painter.text(
-        egui::pos2(cx + 8.0 + half_w * 0.5, surface_y - 4.0),
-        egui::Align2::CENTER_BOTTOM,
-        "Male",
+        "Plug (flipped)",
         egui::FontId::proportional(8.0),
         male_color,
     );
     painter.text(
         egui::pos2(rect.left() + 6.0, rect.top() + 4.0),
         egui::Align2::LEFT_TOP,
-        "Inlay Cross-Section",
+        "Inlay Assembly",
         egui::FontId::proportional(9.0),
         dim_color,
     );
