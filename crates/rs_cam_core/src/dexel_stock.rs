@@ -4,7 +4,7 @@
 //! is always present; X and Y grids are created lazily when side-face cuts are
 //! needed (future work).
 
-use crate::arc_util::linearize_arc;
+use crate::arc_util::linearize_arc_into;
 use crate::dexel::{
     DexelAxis, DexelGrid, ray_bottom, ray_material_length, ray_subtract_above, ray_subtract_below,
     ray_top,
@@ -199,7 +199,6 @@ impl TriDexelStock {
         let _ = self.simulate_toolpath_with_cancel(toolpath, cutter, direction, &never_cancel);
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Simulate with cancellation support.
     pub fn simulate_toolpath_with_cancel(
         &mut self,
@@ -208,12 +207,25 @@ impl TriDexelStock {
         direction: StockCutDirection,
         cancel: &dyn CancelCheck,
     ) -> Result<(), Cancelled> {
+        let lut = RadialProfileLUT::from_cutter(cutter, 256);
+        self.simulate_toolpath_with_lut_cancel(toolpath, &lut, cutter.radius(), direction, cancel)
+    }
+
+    /// Simulate with a pre-built LUT (avoids rebuilding for repeated same-tool calls).
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    pub fn simulate_toolpath_with_lut_cancel(
+        &mut self,
+        toolpath: &Toolpath,
+        lut: &RadialProfileLUT,
+        radius: f64,
+        direction: StockCutDirection,
+        cancel: &dyn CancelCheck,
+    ) -> Result<(), Cancelled> {
         if toolpath.moves.is_empty() {
             return Ok(());
         }
 
-        let lut = RadialProfileLUT::from_cutter(cutter, 256);
-        let radius = cutter.radius();
+        let mut arc_buf = Vec::new();
 
         for i in 1..toolpath.moves.len() {
             check_cancel(cancel)?;
@@ -223,22 +235,22 @@ impl TriDexelStock {
             match toolpath.moves[i].move_type {
                 MoveType::Rapid => {}
                 MoveType::Linear { .. } => {
-                    self.stamp_linear_segment(&lut, radius, start, end, direction);
+                    self.stamp_linear_segment(lut, radius, start, end, direction);
                 }
                 MoveType::ArcCW { i, j, .. } => {
                     let cs = self.z_grid.cell_size;
-                    let points = linearize_arc(start, end, i, j, true, cs);
-                    for w in points.windows(2) {
+                    linearize_arc_into(&mut arc_buf, start, end, i, j, true, cs);
+                    for w in arc_buf.windows(2) {
                         check_cancel(cancel)?;
-                        self.stamp_linear_segment(&lut, radius, w[0], w[1], direction);
+                        self.stamp_linear_segment(lut, radius, w[0], w[1], direction);
                     }
                 }
                 MoveType::ArcCCW { i, j, .. } => {
                     let cs = self.z_grid.cell_size;
-                    let points = linearize_arc(start, end, i, j, false, cs);
-                    for w in points.windows(2) {
+                    linearize_arc_into(&mut arc_buf, start, end, i, j, false, cs);
+                    for w in arc_buf.windows(2) {
                         check_cancel(cancel)?;
-                        self.stamp_linear_segment(&lut, radius, w[0], w[1], direction);
+                        self.stamp_linear_segment(lut, radius, w[0], w[1], direction);
                     }
                 }
             }
@@ -246,7 +258,6 @@ impl TriDexelStock {
         Ok(())
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     #[allow(clippy::too_many_arguments)]
     pub fn simulate_toolpath_with_metrics_with_cancel(
         &mut self,
@@ -261,18 +272,49 @@ impl TriDexelStock {
         semantic_trace: Option<&ToolpathSemanticTrace>,
         cancel: &dyn CancelCheck,
     ) -> Result<Vec<SimulationCutSample>, Cancelled> {
+        let lut = RadialProfileLUT::from_cutter(cutter, 256);
+        self.simulate_toolpath_with_lut_metrics_cancel(
+            toolpath,
+            &lut,
+            cutter.radius(),
+            direction,
+            toolpath_id,
+            spindle_rpm,
+            flute_count,
+            rapid_feed_mm_min,
+            sample_step_mm,
+            semantic_trace,
+            cancel,
+        )
+    }
+
+    /// Simulate with metrics using a pre-built LUT.
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[allow(clippy::too_many_arguments)]
+    pub fn simulate_toolpath_with_lut_metrics_cancel(
+        &mut self,
+        toolpath: &Toolpath,
+        lut: &RadialProfileLUT,
+        radius: f64,
+        direction: StockCutDirection,
+        toolpath_id: usize,
+        spindle_rpm: u32,
+        flute_count: u32,
+        rapid_feed_mm_min: f64,
+        sample_step_mm: f64,
+        semantic_trace: Option<&ToolpathSemanticTrace>,
+        cancel: &dyn CancelCheck,
+    ) -> Result<Vec<SimulationCutSample>, Cancelled> {
         if toolpath.moves.len() < 2 {
             return Ok(Vec::new());
         }
-
-        let lut = RadialProfileLUT::from_cutter(cutter, 256);
-        let radius = cutter.radius();
         let sample_step_mm = sample_step_mm.max(1e-3);
         let semantic_lookup = build_move_semantic_lookup(toolpath.moves.len(), semantic_trace);
 
-        let mut samples = Vec::new();
+        let mut samples = Vec::with_capacity(toolpath.moves.len() * 2);
         let mut cumulative_time_s = 0.0;
         let mut next_sample_index = 0usize;
+        let mut arc_buf = Vec::new();
 
         for move_index in 1..toolpath.moves.len() {
             check_cancel(cancel)?;
@@ -302,7 +344,7 @@ impl TriDexelStock {
                 }
                 MoveType::Linear { feed_rate } => {
                     self.capture_cutting_segment(
-                        &lut,
+                        lut,
                         radius,
                         start,
                         end,
@@ -323,11 +365,11 @@ impl TriDexelStock {
                     )?;
                 }
                 MoveType::ArcCW { i, j, feed_rate } => {
-                    let points = linearize_arc(start, end, i, j, true, self.z_grid.cell_size);
-                    for window in points.windows(2) {
+                    linearize_arc_into(&mut arc_buf, start, end, i, j, true, self.z_grid.cell_size);
+                    for window in arc_buf.windows(2) {
                         check_cancel(cancel)?;
                         self.capture_cutting_segment(
-                            &lut,
+                            lut,
                             radius,
                             window[0],
                             window[1],
@@ -349,11 +391,19 @@ impl TriDexelStock {
                     }
                 }
                 MoveType::ArcCCW { i, j, feed_rate } => {
-                    let points = linearize_arc(start, end, i, j, false, self.z_grid.cell_size);
-                    for window in points.windows(2) {
+                    linearize_arc_into(
+                        &mut arc_buf,
+                        start,
+                        end,
+                        i,
+                        j,
+                        false,
+                        self.z_grid.cell_size,
+                    );
+                    for window in arc_buf.windows(2) {
                         check_cancel(cancel)?;
                         self.capture_cutting_segment(
-                            &lut,
+                            lut,
                             radius,
                             window[0],
                             window[1],
@@ -380,7 +430,6 @@ impl TriDexelStock {
         Ok(samples)
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Simulate only moves `start_move..end_move` (for incremental playback).
     pub fn simulate_toolpath_range(
         &mut self,
@@ -390,13 +439,34 @@ impl TriDexelStock {
         start_move: usize,
         end_move: usize,
     ) {
+        let lut = RadialProfileLUT::from_cutter(cutter, 256);
+        self.simulate_toolpath_range_with_lut(
+            toolpath,
+            &lut,
+            cutter.radius(),
+            direction,
+            start_move,
+            end_move,
+        );
+    }
+
+    /// Simulate a range of moves using a pre-built LUT.
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    pub fn simulate_toolpath_range_with_lut(
+        &mut self,
+        toolpath: &Toolpath,
+        lut: &RadialProfileLUT,
+        radius: f64,
+        direction: StockCutDirection,
+        start_move: usize,
+        end_move: usize,
+    ) {
         if toolpath.moves.len() < 2 {
             return;
         }
-        let lut = RadialProfileLUT::from_cutter(cutter, 256);
-        let radius = cutter.radius();
         let first = start_move.max(1);
         let last = end_move.min(toolpath.moves.len());
+        let mut arc_buf = Vec::new();
 
         for i in first..last {
             let start = toolpath.moves[i - 1].target;
@@ -405,20 +475,20 @@ impl TriDexelStock {
             match toolpath.moves[i].move_type {
                 MoveType::Rapid => {}
                 MoveType::Linear { .. } => {
-                    self.stamp_linear_segment(&lut, radius, start, end, direction);
+                    self.stamp_linear_segment(lut, radius, start, end, direction);
                 }
                 MoveType::ArcCW { i, j, .. } => {
                     let cs = self.z_grid.cell_size;
-                    let points = linearize_arc(start, end, i, j, true, cs);
-                    for w in points.windows(2) {
-                        self.stamp_linear_segment(&lut, radius, w[0], w[1], direction);
+                    linearize_arc_into(&mut arc_buf, start, end, i, j, true, cs);
+                    for w in arc_buf.windows(2) {
+                        self.stamp_linear_segment(lut, radius, w[0], w[1], direction);
                     }
                 }
                 MoveType::ArcCCW { i, j, .. } => {
                     let cs = self.z_grid.cell_size;
-                    let points = linearize_arc(start, end, i, j, false, cs);
-                    for w in points.windows(2) {
-                        self.stamp_linear_segment(&lut, radius, w[0], w[1], direction);
+                    linearize_arc_into(&mut arc_buf, start, end, i, j, false, cs);
+                    for w in arc_buf.windows(2) {
+                        self.stamp_linear_segment(lut, radius, w[0], w[1], direction);
                     }
                 }
             }
@@ -508,15 +578,16 @@ impl TriDexelStock {
         let (mu, mv, md) = direction.decompose(midpoint.x, midpoint.y, midpoint.z);
         let from_high = direction.cuts_from_high_side();
         let grid = self.ensure_grid(direction);
-        let (axial_doc_mm, radial_engagement) =
-            estimate_disk_cut_metrics(grid, lut, radius, mu, mv, md, from_high);
-        let pre_volume = window_material_volume_for_segment(grid, radius, su, sv, eu, ev);
-        stamp_segment_on_grid(grid, lut, radius, (su, sv, sd), (eu, ev, ed), from_high);
-        let post_volume = window_material_volume_for_segment(grid, radius, su, sv, eu, ev);
-        (
-            axial_doc_mm,
-            radial_engagement,
-            (pre_volume - post_volume).max(0.0),
+        stamp_segment_with_metrics(
+            grid,
+            lut,
+            radius,
+            (su, sv, sd),
+            (eu, ev, ed),
+            mu,
+            mv,
+            md,
+            from_high,
         )
     }
 
@@ -714,6 +785,136 @@ fn stamp_segment_on_grid(
     }
 }
 
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[allow(clippy::too_many_arguments)]
+/// Stamp a tool along a linear segment AND compute metrics in a single pass.
+///
+/// Fuses the work of `stamp_segment_on_grid`, `estimate_disk_cut_metrics`, and
+/// two calls to `window_material_volume_for_segment` into one row/col loop.
+///
+/// Returns `(axial_doc_mm, radial_engagement, volume_removed_mm3)`.
+fn stamp_segment_with_metrics(
+    grid: &mut DexelGrid,
+    lut: &RadialProfileLUT,
+    radius: f64,
+    start: (f64, f64, f64),
+    end: (f64, f64, f64),
+    mid_u: f64,
+    mid_v: f64,
+    mid_d: f64,
+    from_high: bool,
+) -> (f64, f64, f64) {
+    let (su, sv, sd) = start;
+    let (eu, ev, ed) = end;
+    let seg_du = eu - su;
+    let seg_dv = ev - sv;
+    let seg_dd = ed - sd;
+    let seg_len_sq = seg_du * seg_du + seg_dv * seg_dv;
+
+    // Degenerate segment — fall back to point stamp with no metrics.
+    if seg_len_sq < 1e-20 {
+        let d = sd.min(ed);
+        stamp_point_on_grid(grid, lut, radius, su, sv, d, from_high);
+        return (0.0, 0.0, 0.0);
+    }
+
+    let inv_seg_len_sq = 1.0 / seg_len_sq;
+    let cs = grid.cell_size;
+    let cell_area = cs * cs;
+    let radius_sq = lut.radius_sq();
+
+    // Bounding box of segment sweep + tool radius (superset of all footprints).
+    let u_min = su.min(eu) - radius;
+    let u_max = su.max(eu) + radius;
+    let v_min = sv.min(ev) - radius;
+    let v_max = sv.max(ev) + radius;
+
+    let col_lo = ((u_min - grid.origin_u) / cs).floor().max(0.0) as usize;
+    let col_hi = (((u_max - grid.origin_u) / cs).ceil() as usize).min(grid.cols.saturating_sub(1));
+    let row_lo = ((v_min - grid.origin_v) / cs).floor().max(0.0) as usize;
+    let row_hi = (((v_max - grid.origin_v) / cs).ceil() as usize).min(grid.rows.saturating_sub(1));
+
+    // Metrics accumulators.
+    let mut pre_volume = 0.0f64;
+    let mut post_volume = 0.0f64;
+    let mut engaged_area = 0.0f64;
+    let mut total_area = 0.0f64;
+    let mut max_penetration = 0.0f64;
+
+    for row in row_lo..=row_hi {
+        let cell_v = grid.origin_v + row as f64 * cs;
+        let pv = cell_v - sv;
+
+        for col in col_lo..=col_hi {
+            let cell_u = grid.origin_u + col as f64 * cs;
+            let pu = cell_u - su;
+
+            // Closest point on segment to this cell center.
+            let t = ((pu * seg_du + pv * seg_dv) * inv_seg_len_sq).clamp(0.0, 1.0);
+            let closest_u = t * seg_du;
+            let closest_v = t * seg_dv;
+            let du = pu - closest_u;
+            let dv = pv - closest_v;
+            let dist_sq = du * du + dv * dv;
+
+            // Only process cells within the tool radius (circular footprint).
+            if let Some(h) = lut.height_at_dist_sq(dist_sq) {
+                let ray = &mut grid.rays[row * grid.cols + col];
+
+                // 1. Pre-stamp volume (read before mutation).
+                pre_volume += ray_material_length(ray) as f64 * cell_area;
+
+                // 2. Engagement metrics: check if cell is within disk at midpoint.
+                let dm_u = cell_u - mid_u;
+                let dm_v = cell_v - mid_v;
+                let mid_dist_sq = dm_u * dm_u + dm_v * dm_v;
+                if mid_dist_sq <= radius_sq
+                    && let Some(mid_h) = lut.height_at_dist_sq(mid_dist_sq)
+                {
+                    total_area += cell_area;
+                    let tool_surface = mid_d + mid_h;
+                    let penetration = if from_high {
+                        ray_top(ray)
+                            .map(|top| (top as f64 - tool_surface).max(0.0))
+                            .unwrap_or(0.0)
+                    } else {
+                        ray_bottom(ray)
+                            .map(|bottom| (tool_surface - bottom as f64).max(0.0))
+                            .unwrap_or(0.0)
+                    };
+                    if penetration > 1e-6 {
+                        engaged_area += cell_area;
+                        max_penetration = max_penetration.max(penetration);
+                    }
+                }
+
+                // 3. Apply the stamp.
+                let depth = sd + t * seg_dd;
+                let surface = (depth + h) as f32;
+                if from_high {
+                    ray_subtract_above(ray, surface);
+                } else {
+                    ray_subtract_below(ray, surface);
+                }
+
+                // 4. Post-stamp volume (read after mutation).
+                post_volume += ray_material_length(ray) as f64 * cell_area;
+            }
+        }
+    }
+
+    let radial_engagement = if total_area <= 1e-9 {
+        0.0
+    } else {
+        (engaged_area / total_area).clamp(0.0, 1.0)
+    };
+    (
+        max_penetration.max(0.0),
+        radial_engagement,
+        (pre_volume - post_volume).max(0.0),
+    )
+}
+
 /// Bundled parameters for `sample_segment_runtime`.
 struct SegmentSampleParams {
     move_index: usize,
@@ -772,106 +973,6 @@ fn sample_segment_runtime(
         });
         *next_sample_index += 1;
     }
-}
-
-fn estimate_disk_cut_metrics(
-    grid: &DexelGrid,
-    lut: &RadialProfileLUT,
-    radius: f64,
-    center_u: f64,
-    center_v: f64,
-    tip_depth: f64,
-    from_high: bool,
-) -> (f64, f64) {
-    let cs = grid.cell_size;
-    let col_min = ((center_u - radius - grid.origin_u) / cs).floor() as isize;
-    let col_max = ((center_u + radius - grid.origin_u) / cs).ceil() as isize;
-    let row_min = ((center_v - radius - grid.origin_v) / cs).floor() as isize;
-    let row_max = ((center_v + radius - grid.origin_v) / cs).ceil() as isize;
-
-    let col_lo = col_min.max(0) as usize;
-    let col_hi = (col_max.max(col_min) as usize).min(grid.cols.saturating_sub(1));
-    let row_lo = row_min.max(0) as usize;
-    let row_hi = (row_max.max(row_min) as usize).min(grid.rows.saturating_sub(1));
-    if row_lo > row_hi || col_lo > col_hi {
-        return (0.0, 0.0);
-    }
-
-    let cell_area = cs * cs;
-    let mut engaged_area = 0.0f64;
-    let mut total_area = 0.0f64;
-    let mut max_penetration = 0.0f64;
-    let radius_sq = lut.radius_sq();
-
-    for row in row_lo..=row_hi {
-        let cell_v = grid.origin_v + row as f64 * cs;
-        let dv = cell_v - center_v;
-        let dv_sq = dv * dv;
-        if dv_sq > radius_sq {
-            continue;
-        }
-        for col in col_lo..=col_hi {
-            let cell_u = grid.origin_u + col as f64 * cs;
-            let du = cell_u - center_u;
-            let dist_sq = du * du + dv_sq;
-            if let Some(height) = lut.height_at_dist_sq(dist_sq) {
-                total_area += cell_area;
-                let tool_surface = tip_depth + height;
-                let ray = grid.ray(row, col);
-                let penetration = if from_high {
-                    ray_top(ray)
-                        .map(|top| (top as f64 - tool_surface).max(0.0))
-                        .unwrap_or(0.0)
-                } else {
-                    ray_bottom(ray)
-                        .map(|bottom| (tool_surface - bottom as f64).max(0.0))
-                        .unwrap_or(0.0)
-                };
-                if penetration > 1e-6 {
-                    engaged_area += cell_area;
-                    max_penetration = max_penetration.max(penetration);
-                }
-            }
-        }
-    }
-
-    let radial_engagement = if total_area <= 1e-9 {
-        0.0
-    } else {
-        (engaged_area / total_area).clamp(0.0, 1.0)
-    };
-    (max_penetration.max(0.0), radial_engagement)
-}
-
-fn window_material_volume_for_segment(
-    grid: &DexelGrid,
-    radius: f64,
-    start_u: f64,
-    start_v: f64,
-    end_u: f64,
-    end_v: f64,
-) -> f64 {
-    let cs = grid.cell_size;
-    let u_min = start_u.min(end_u) - radius;
-    let u_max = start_u.max(end_u) + radius;
-    let v_min = start_v.min(end_v) - radius;
-    let v_max = start_v.max(end_v) + radius;
-    let col_lo = ((u_min - grid.origin_u) / cs).floor().max(0.0) as usize;
-    let col_hi = (((u_max - grid.origin_u) / cs).ceil() as usize).min(grid.cols.saturating_sub(1));
-    let row_lo = ((v_min - grid.origin_v) / cs).floor().max(0.0) as usize;
-    let row_hi = (((v_max - grid.origin_v) / cs).ceil() as usize).min(grid.rows.saturating_sub(1));
-    if row_lo > row_hi || col_lo > col_hi {
-        return 0.0;
-    }
-
-    let cell_area = cs * cs;
-    let mut volume = 0.0;
-    for row in row_lo..=row_hi {
-        for col in col_lo..=col_hi {
-            volume += ray_material_length(grid.ray(row, col)) as f64 * cell_area;
-        }
-    }
-    volume
 }
 
 fn chipload_mm_per_tooth(feed_rate_mm_min: f64, spindle_rpm: u32, flute_count: u32) -> f64 {
@@ -1553,5 +1654,114 @@ mod tests {
         // clear_above_at on an empty ray should not panic.
         stock.clear_above_at(1, 1, 5.0);
         assert!(stock.z_grid.ray(1, 1).is_empty());
+    }
+
+    #[test]
+    fn test_fused_metrics_positive_values() {
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 50.0, 20.0, 0.0, 10.0, 0.5);
+        let flat = FlatEndmill::new(6.35, 25.0);
+        let never_cancel = || false;
+        let mut tp = crate::toolpath::Toolpath::new();
+        tp.rapid_to(P3::new(5.0, 10.0, 15.0));
+        tp.feed_to(P3::new(5.0, 10.0, -2.0), 500.0);
+        tp.feed_to(P3::new(40.0, 10.0, -2.0), 1000.0);
+
+        let samples = stock
+            .simulate_toolpath_with_metrics_with_cancel(
+                &tp,
+                &flat,
+                StockCutDirection::FromTop,
+                0,
+                18000,
+                2,
+                5000.0,
+                1.0,
+                None,
+                &never_cancel,
+            )
+            .unwrap();
+
+        let cutting: Vec<_> = samples.iter().filter(|s| s.is_cutting).collect();
+        assert!(!cutting.is_empty(), "should have cutting samples");
+        for s in &cutting {
+            assert!(s.axial_doc_mm >= 0.0, "axial_doc must be non-negative");
+            assert!(
+                s.radial_engagement >= 0.0,
+                "engagement must be non-negative"
+            );
+            assert!(
+                s.removed_volume_est_mm3 >= 0.0,
+                "volume must be non-negative"
+            );
+        }
+        // At least the first cutting move should have positive engagement.
+        let first_cut = cutting.iter().find(|s| s.removed_volume_est_mm3 > 0.0);
+        assert!(
+            first_cut.is_some(),
+            "should have at least one sample with material removal"
+        );
+    }
+
+    #[test]
+    fn test_fused_metrics_ball_endmill() {
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 30.0, 10.0, 0.0, 10.0, 0.5);
+        let ball = BallEndmill::new(6.0, 25.0);
+        let never_cancel = || false;
+        let mut tp = crate::toolpath::Toolpath::new();
+        tp.rapid_to(P3::new(3.0, 5.0, 15.0));
+        tp.feed_to(P3::new(3.0, 5.0, -2.0), 500.0);
+        tp.feed_to(P3::new(25.0, 5.0, -2.0), 1000.0);
+
+        let samples = stock
+            .simulate_toolpath_with_metrics_with_cancel(
+                &tp,
+                &ball,
+                StockCutDirection::FromTop,
+                0,
+                18000,
+                2,
+                5000.0,
+                1.0,
+                None,
+                &never_cancel,
+            )
+            .unwrap();
+
+        // Should have some cutting samples with positive metrics.
+        let has_material_removal = samples.iter().any(|s| s.removed_volume_est_mm3 > 0.0);
+        assert!(has_material_removal, "ball endmill should remove material");
+    }
+
+    #[test]
+    fn test_fused_metrics_degenerate_segment() {
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 10.0, 10.0, 0.0, 10.0, 1.0);
+        let flat = FlatEndmill::new(6.0, 25.0);
+        let never_cancel = || false;
+
+        // Toolpath with zero-length cutting move (same start and end).
+        let mut tp = crate::toolpath::Toolpath::new();
+        tp.rapid_to(P3::new(5.0, 5.0, 15.0));
+        tp.feed_to(P3::new(5.0, 5.0, -2.0), 500.0);
+        tp.feed_to(P3::new(5.0, 5.0, -2.0), 1000.0); // zero-length
+
+        // Should not panic.
+        let samples = stock
+            .simulate_toolpath_with_metrics_with_cancel(
+                &tp,
+                &flat,
+                StockCutDirection::FromTop,
+                0,
+                18000,
+                2,
+                5000.0,
+                1.0,
+                None,
+                &never_cancel,
+            )
+            .unwrap();
+
+        for s in &samples {
+            assert!(s.removed_volume_est_mm3 >= 0.0);
+        }
     }
 }

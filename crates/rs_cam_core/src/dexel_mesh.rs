@@ -5,7 +5,6 @@
 //! being progressively carved.  Side-face grids (X, Y) produce additional
 //! surface meshes appended with index offsets.
 
-
 use crate::dexel::{DexelAxis, DexelGrid, ray_bottom, ray_top};
 use crate::dexel_stock::TriDexelStock;
 use crate::stock_mesh::StockMesh;
@@ -62,10 +61,12 @@ pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: 
     // noise when opposing cuts nearly meet (e.g., 0mm stock-to-leave).
     const MIN_MATERIAL_THICKNESS: f32 = 0.05; // 50 microns
 
-    // Collect per-cell top/bottom Z and emptiness.
+    // Collect per-cell top/bottom Z, emptiness, AND color ranges in one pass.
     let mut top_z = Vec::with_capacity(cells);
     let mut bot_z = Vec::with_capacity(cells);
     let mut empty = Vec::with_capacity(cells);
+    let mut top_z_min = f32::INFINITY;
+    let mut bot_z_max = f32::NEG_INFINITY;
     for ray in &grid.rays {
         let top = ray_top(ray);
         let bot = ray_bottom(ray);
@@ -78,25 +79,19 @@ pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: 
             top_z.push(stock_top);
             bot_z.push(stock_bot);
         } else {
-            top_z.push(top.unwrap_or(stock_bot));
-            bot_z.push(bot.unwrap_or(stock_bot));
+            let tz = top.unwrap_or(stock_bot);
+            let bz = bot.unwrap_or(stock_bot);
+            top_z.push(tz);
+            bot_z.push(bz);
+            if tz < top_z_min {
+                top_z_min = tz;
+            }
+            if bz > bot_z_max {
+                bot_z_max = bz;
+            }
         }
     }
-
-    // Color normalization ranges (only from non-empty cells).
-    let top_z_min = top_z
-        .iter()
-        .zip(empty.iter())
-        .filter(|&(_, e)| !e)
-        .map(|(&z, _)| z)
-        .fold(f32::INFINITY, f32::min);
     let top_range = (stock_top - top_z_min).max(1e-6);
-    let bot_z_max = bot_z
-        .iter()
-        .zip(empty.iter())
-        .filter(|&(_, e)| !e)
-        .map(|(&z, _)| z)
-        .fold(f32::NEG_INFINITY, f32::max);
     let bot_range = (bot_z_max - stock_bot).max(1e-6);
 
     // ── Vertices: top layer [0..cells), bottom layer [cells..2*cells) ──
@@ -361,12 +356,7 @@ fn side_grid_to_mesh(grid: &DexelGrid, stock_top_depth: f64, stock_bottom_depth:
             let tr = tl + 1;
             let bl = ((row + 1) * cols + col) as u32;
             let br = bl + 1;
-            indices.push(tl);
-            indices.push(bl);
-            indices.push(tr);
-            indices.push(tr);
-            indices.push(bl);
-            indices.push(br);
+            indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
         }
     }
 

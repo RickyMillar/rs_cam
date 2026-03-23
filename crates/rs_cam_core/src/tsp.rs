@@ -33,9 +33,7 @@ fn split_into_segments(toolpath: &Toolpath) -> Vec<Segment> {
         match m.move_type {
             MoveType::Rapid => {
                 // Flush any accumulated cutting moves as a segment.
-                if let (Some(first), Some(last)) =
-                    (current_moves.first(), current_moves.last())
-                {
+                if let (Some(first), Some(last)) = (current_moves.first(), current_moves.last()) {
                     let start = first.target;
                     let end = last.target;
                     segments.push(Segment {

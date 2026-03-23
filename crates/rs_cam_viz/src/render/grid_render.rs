@@ -1,5 +1,5 @@
-use super::gpu_safety::{self, GpuLimits};
 use super::LineVertex;
+use super::gpu_safety::{self, GpuLimits};
 use egui_wgpu::wgpu;
 
 /// Ground grid + axis indicator GPU data.

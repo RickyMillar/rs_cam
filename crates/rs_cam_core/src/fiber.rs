@@ -113,6 +113,10 @@ impl Fiber {
     }
 
     /// Add an interval where the cutter is blocked. Merges overlapping intervals.
+    ///
+    /// Single-pass in-place: scans existing intervals once, merging overlaps
+    /// and inserting the result without allocating a new Vec.
+    #[allow(clippy::indexing_slicing)] // SAFETY: indices bounded by len checks
     pub fn add_interval(&mut self, new: Interval) {
         // Clamp to [0, 1]
         let clamped = Interval::new(new.lower.max(0.0), new.upper.min(1.0));
@@ -120,28 +124,39 @@ impl Fiber {
             return;
         }
 
-        // Insert maintaining sorted order, merge overlaps
-        let mut merged = Vec::with_capacity(self.intervals.len() + 1);
-        let mut current = clamped;
-        let mut inserted = false;
+        // Single scan: find the contiguous range [first_overlap, end_overlap)
+        // of existing intervals that overlap with `clamped`, and accumulate
+        // the merged result.  Early-exit once past any possible overlap.
+        let mut first_overlap = usize::MAX;
+        let mut end_overlap = 0usize;
+        let mut merged = clamped;
+        let mut insert_before = self.intervals.len(); // fallback: append
 
-        for existing in &self.intervals {
-            if current.overlaps(existing) {
-                current = current.merge(existing);
-            } else if !inserted && current.upper < existing.lower {
-                merged.push(current);
-                merged.push(*existing);
-                inserted = true;
-            } else {
-                merged.push(*existing);
+        for (i, iv) in self.intervals.iter().enumerate() {
+            if iv.overlaps(&clamped) {
+                if first_overlap == usize::MAX {
+                    first_overlap = i;
+                }
+                end_overlap = i + 1;
+                merged = merged.merge(iv);
+            } else if iv.lower > clamped.upper + 1e-10 {
+                if first_overlap == usize::MAX {
+                    insert_before = i;
+                }
+                break;
             }
         }
 
-        if !inserted {
-            merged.push(current);
+        if first_overlap < end_overlap {
+            // Replace [first_overlap..end_overlap) with the single merged interval.
+            self.intervals[first_overlap] = merged;
+            if end_overlap - first_overlap > 1 {
+                self.intervals.drain((first_overlap + 1)..end_overlap);
+            }
+        } else {
+            // No overlaps — insert at sorted position.
+            self.intervals.insert(insert_before, clamped);
         }
-
-        self.intervals = merged;
     }
 
     /// Get the current intervals (sorted, non-overlapping).
@@ -302,5 +317,58 @@ mod tests {
         assert_eq!(f.intervals().len(), 1);
         assert!((f.intervals()[0].lower - 0.1).abs() < 1e-10);
         assert!((f.intervals()[0].upper - 0.7).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_add_interval_many_sequential() {
+        // Insert 1000 non-overlapping intervals in reverse order.
+        let n = 1000usize;
+        let step = 1.0 / (n as f64 + 1.0);
+        let width = step * 0.5;
+        let mut f = Fiber::new_x(0.0, 0.0, 0.0, 100.0);
+        for i in (0..n).rev() {
+            let lo = (i as f64 + 0.5) * step;
+            f.add_interval(Interval::new(lo, lo + width));
+        }
+        assert_eq!(f.intervals().len(), n);
+        // Verify sorted order.
+        for w in f.intervals().windows(2) {
+            assert!(
+                w[0].upper < w[1].lower,
+                "intervals must be sorted and non-overlapping"
+            );
+        }
+    }
+
+    #[test]
+    fn test_add_interval_many_overlapping() {
+        // Intervals that progressively extend the same region.
+        let mut f = Fiber::new_x(0.0, 0.0, 0.0, 100.0);
+        for i in 0..200 {
+            let lo = 0.3 + 0.001 * (i as f64);
+            f.add_interval(Interval::new(lo, lo + 0.05));
+        }
+        // All should merge into a single interval.
+        assert_eq!(f.intervals().len(), 1);
+        assert!(f.intervals()[0].lower <= 0.3 + 1e-10);
+        assert!(f.intervals()[0].upper >= 0.3 + 0.001 * 199.0 + 0.05 - 1e-10);
+    }
+
+    #[test]
+    fn test_add_interval_bridge_multiple() {
+        // Create 5 isolated intervals, then bridge all with one big interval.
+        let mut f = Fiber::new_x(0.0, 0.0, 0.0, 100.0);
+        f.add_interval(Interval::new(0.1, 0.15));
+        f.add_interval(Interval::new(0.2, 0.25));
+        f.add_interval(Interval::new(0.3, 0.35));
+        f.add_interval(Interval::new(0.4, 0.45));
+        f.add_interval(Interval::new(0.5, 0.55));
+        assert_eq!(f.intervals().len(), 5);
+
+        // Bridge all five.
+        f.add_interval(Interval::new(0.12, 0.52));
+        assert_eq!(f.intervals().len(), 1);
+        assert!((f.intervals()[0].lower - 0.1).abs() < 1e-10);
+        assert!((f.intervals()[0].upper - 0.55).abs() < 1e-10);
     }
 }

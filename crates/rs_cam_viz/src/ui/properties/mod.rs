@@ -321,9 +321,9 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
 
             // B3a: set stale_since when parameters or heights change
             if let Some(entry) = state.job.find_toolpath_mut(id) {
-                let op_changed = op_before
-                    .as_ref()
-                    .is_some_and(|b| *b != serde_json::to_string(&entry.operation).unwrap_or_default());
+                let op_changed = op_before.as_ref().is_some_and(|b| {
+                    *b != serde_json::to_string(&entry.operation).unwrap_or_default()
+                });
                 let heights_changed = heights_before
                     .as_ref()
                     .is_some_and(|b| *b != format!("{:?}", entry.heights));

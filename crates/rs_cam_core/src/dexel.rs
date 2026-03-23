@@ -217,11 +217,8 @@ impl DexelGrid {
     /// Every ray gets a single segment spanning `[z_min, z_max]`.
     /// `cell_size` is clamped to a minimum of 1e-6 if zero or negative.
     pub fn z_grid_from_bounds(bbox: &BoundingBox3, cell_size: f64) -> Self {
-        let cell_size = Self::clamp_cell_size(
-            cell_size,
-            bbox.max.x - bbox.min.x,
-            bbox.max.y - bbox.min.y,
-        );
+        let cell_size =
+            Self::clamp_cell_size(cell_size, bbox.max.x - bbox.min.x, bbox.max.y - bbox.min.y);
         let cols = ((bbox.max.x - bbox.min.x) / cell_size).ceil() as usize + 1;
         let rows = ((bbox.max.y - bbox.min.y) / cell_size).ceil() as usize + 1;
         let seg = DexelSegment::new(bbox.min.z as f32, bbox.max.z as f32);
@@ -244,11 +241,8 @@ impl DexelGrid {
     /// Every ray gets a single segment spanning `[x_min, x_max]`.
     /// `cell_size` is clamped to a minimum of 1e-6 if zero or negative.
     pub fn x_grid_from_bounds(bbox: &BoundingBox3, cell_size: f64) -> Self {
-        let cell_size = Self::clamp_cell_size(
-            cell_size,
-            bbox.max.y - bbox.min.y,
-            bbox.max.z - bbox.min.z,
-        );
+        let cell_size =
+            Self::clamp_cell_size(cell_size, bbox.max.y - bbox.min.y, bbox.max.z - bbox.min.z);
         let cols = ((bbox.max.y - bbox.min.y) / cell_size).ceil() as usize + 1;
         let rows = ((bbox.max.z - bbox.min.z) / cell_size).ceil() as usize + 1;
         let seg = DexelSegment::new(bbox.min.x as f32, bbox.max.x as f32);
@@ -271,11 +265,8 @@ impl DexelGrid {
     /// Every ray gets a single segment spanning `[y_min, y_max]`.
     /// `cell_size` is clamped to a minimum of 1e-6 if zero or negative.
     pub fn y_grid_from_bounds(bbox: &BoundingBox3, cell_size: f64) -> Self {
-        let cell_size = Self::clamp_cell_size(
-            cell_size,
-            bbox.max.x - bbox.min.x,
-            bbox.max.z - bbox.min.z,
-        );
+        let cell_size =
+            Self::clamp_cell_size(cell_size, bbox.max.x - bbox.min.x, bbox.max.z - bbox.min.z);
         let cols = ((bbox.max.x - bbox.min.x) / cell_size).ceil() as usize + 1;
         let rows = ((bbox.max.z - bbox.min.z) / cell_size).ceil() as usize + 1;
         let seg = DexelSegment::new(bbox.min.y as f32, bbox.max.y as f32);

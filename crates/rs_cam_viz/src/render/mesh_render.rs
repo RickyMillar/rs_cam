@@ -61,7 +61,11 @@ impl MeshGpuData {
     ///
     /// Returns `None` if the buffer exceeds GPU device limits.
     #[allow(clippy::indexing_slicing)] // vertex/triangle indices bounded by mesh invariants
-    pub fn from_mesh(device: &wgpu::Device, limits: &GpuLimits, mesh: &TriangleMesh) -> Option<Self> {
+    pub fn from_mesh(
+        device: &wgpu::Device,
+        limits: &GpuLimits,
+        mesh: &TriangleMesh,
+    ) -> Option<Self> {
         let num_verts = mesh.vertices.len();
 
         // Accumulate area-weighted face normals per vertex.
@@ -131,7 +135,11 @@ impl MeshGpuData {
     ///
     /// Returns `None` if the buffer exceeds GPU device limits.
     #[allow(dead_code, clippy::indexing_slicing)] // vertex/triangle indices bounded by mesh invariants
-    pub fn from_mesh_flat(device: &wgpu::Device, limits: &GpuLimits, mesh: &TriangleMesh) -> Option<Self> {
+    pub fn from_mesh_flat(
+        device: &wgpu::Device,
+        limits: &GpuLimits,
+        mesh: &TriangleMesh,
+    ) -> Option<Self> {
         let mut vertices = Vec::with_capacity(mesh.triangles.len() * 3);
         let mut indices = Vec::with_capacity(mesh.triangles.len() * 3);
 
