@@ -1145,7 +1145,23 @@ impl<B: ComputeBackend> AppController<B> {
         }
 
         let safe_z = self.state.job.post.safe_z;
-        let mut heights = heights_config.resolve(safe_z, operation.default_depth_for_heights());
+        let stock_bb = self.state.job.stock.bbox();
+        let model_bb = self
+            .state
+            .job
+            .models
+            .iter()
+            .find(|m| m.id == model_id)
+            .and_then(|m| m.bbox());
+        let height_ctx = crate::state::toolpath::HeightContext {
+            safe_z,
+            op_depth: operation.default_depth_for_heights(),
+            stock_top_z: stock_bb.max.z,
+            stock_bottom_z: stock_bb.min.z,
+            model_top_z: model_bb.map(|b| b.max.z),
+            model_bottom_z: model_bb.map(|b| b.min.z),
+        };
+        let mut heights = heights_config.resolve(&height_ctx);
         // When face selection provides a Z height, use it as the top_z
         // so the toolpath cuts at the face level, not at Z=0.
         if let Some(fz) = face_top_z

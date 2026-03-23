@@ -1229,6 +1229,27 @@ impl JobState {
         self.all_toolpaths().find(|toolpath| toolpath.id == id)
     }
 
+    /// Build a [`HeightContext`] for resolving a toolpath's heights from current stock/model state.
+    pub fn height_context_for(
+        &self,
+        tp: &super::toolpath::ToolpathEntry,
+    ) -> super::toolpath::HeightContext {
+        let sb = self.stock.bbox();
+        let mb = self
+            .models
+            .iter()
+            .find(|m| m.id == tp.model_id)
+            .and_then(|m| m.bbox());
+        super::toolpath::HeightContext {
+            safe_z: self.post.safe_z,
+            op_depth: tp.operation.default_depth_for_heights(),
+            stock_top_z: sb.max.z,
+            stock_bottom_z: sb.min.z,
+            model_top_z: mb.map(|b| b.max.z),
+            model_bottom_z: mb.map(|b| b.min.z),
+        }
+    }
+
     /// Find a mutable toolpath by ID across all setups.
     pub fn find_toolpath_mut(
         &mut self,
