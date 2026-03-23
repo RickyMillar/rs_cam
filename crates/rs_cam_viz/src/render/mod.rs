@@ -294,6 +294,8 @@ impl RenderResources {
         });
 
         // --- Opaque colored mesh pipeline (STEP face colors, no alpha blending) ---
+        // Uses fs_opaque which outputs alpha=1.0, decoupled from the shared
+        // opacity uniform that height planes and sim stock use.
         let colored_opaque_pipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("colored_opaque_pipeline"),
@@ -306,7 +308,7 @@ impl RenderResources {
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &sim_mesh_shader,
-                    entry_point: Some("fs_main"),
+                    entry_point: Some("fs_opaque"),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: target_format,
                         blend: Some(wgpu::BlendState::REPLACE),
@@ -650,7 +652,7 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             let opacity = if self.show_sim_mesh {
                 self.sim_mesh_opacity
             } else {
-                0.10 // solid stock / height planes translucency
+                0.15 // solid stock / height planes translucency
             };
             let sim_uniforms = ColoredMeshUniforms {
                 view_proj: self.mesh_uniforms.view_proj,
@@ -1006,6 +1008,22 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let color = ambient + diffuse + specular;
     return vec4<f32>(color, uniforms.opacity);
+}
+
+@fragment
+fn fs_opaque(in: VertexOutput) -> @location(0) vec4<f32> {
+    let light = normalize(uniforms.light_dir);
+    let normal = normalize(in.normal);
+    let ambient = in.vertex_color * 0.25;
+    let n = select(normal, -normal, dot(normal, light) < 0.0);
+    let ndotl = max(dot(n, light), 0.0);
+    let diffuse = in.vertex_color * ndotl;
+    let view_dir = normalize(uniforms.camera_pos - in.world_pos);
+    let half_dir = normalize(light + view_dir);
+    let spec = pow(max(dot(n, half_dir), 0.0), 32.0);
+    let specular = vec3<f32>(0.2, 0.2, 0.2) * spec;
+    let color = ambient + diffuse + specular;
+    return vec4<f32>(color, 1.0);
 }
 "#;
 

@@ -2250,7 +2250,7 @@ impl eframe::App for RsCamApp {
                                 .fill(bg)
                                 .inner_margin(egui::Margin::symmetric(12.0, 8.0))
                                 .rounding(6.0)
-                                .show(ui, |ui| {
+                                .show(ui, |ui: &mut egui::Ui| {
                                     ui.colored_label(text_color, message);
                                 });
                             ui.add_space(4.0);
