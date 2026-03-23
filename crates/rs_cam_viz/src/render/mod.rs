@@ -839,6 +839,18 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 pass.draw_indexed(0..solid.index_count, 0, 0..1);
             }
 
+            // Draw height plane overlays AFTER opaque geometry so they
+            // alpha-blend over the model instead of blocking it via depth writes.
+            if self.show_height_planes
+                && let Some(hp) = &resources.height_planes_data
+            {
+                pass.set_pipeline(&resources.height_plane_pipeline);
+                pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
+                pass.set_vertex_buffer(0, hp.vertex_buffer.slice(..));
+                pass.set_index_buffer(hp.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..hp.index_count, 0, 0..1);
+            }
+
             // Draw collision markers
             if self.show_collisions
                 && resources.collision_vertex_count > 0

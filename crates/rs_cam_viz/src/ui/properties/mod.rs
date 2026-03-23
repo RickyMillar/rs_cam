@@ -293,11 +293,15 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .map(|m| m.enriched_mesh.is_some())
                 .unwrap_or(false);
 
-            // Snapshot operation for stale_since detection
+            // Snapshot operation and heights for stale_since detection
             let op_before = state
                 .job
                 .find_toolpath(id)
                 .map(|e| serde_json::to_string(&e.operation).unwrap_or_default());
+            let heights_before = state
+                .job
+                .find_toolpath(id)
+                .map(|e| format!("{:?}", e.heights));
 
             if let Some(entry) = state.job.find_toolpath_mut(id) {
                 draw_toolpath_panel(
@@ -315,14 +319,21 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 );
             }
 
-            // B3a: set stale_since when parameters change
-            if let Some(before) = op_before
-                && let Some(entry) = state.job.find_toolpath_mut(id)
-            {
-                let after = serde_json::to_string(&entry.operation).unwrap_or_default();
-                if before != after {
+            // B3a: set stale_since when parameters or heights change
+            if let Some(entry) = state.job.find_toolpath_mut(id) {
+                let op_changed = op_before
+                    .as_ref()
+                    .is_some_and(|b| *b != serde_json::to_string(&entry.operation).unwrap_or_default());
+                let heights_changed = heights_before
+                    .as_ref()
+                    .is_some_and(|b| *b != format!("{:?}", entry.heights));
+                if op_changed || heights_changed {
                     entry.stale_since = Some(std::time::Instant::now());
                     state.job.mark_edited();
+                }
+                if heights_changed {
+                    // Trigger GPU re-upload so height plane positions update
+                    events.push(AppEvent::StockChanged);
                 }
             }
         }
