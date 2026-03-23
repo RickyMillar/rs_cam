@@ -37,14 +37,14 @@ fn tool_number_for_export(tool: &ToolConfig) -> u32 {
 }
 
 /// Export all enabled toolpaths as a single G-code file.
-pub fn export_gcode(job: &JobState) -> Result<String, String> {
+pub fn export_gcode(job: &JobState) -> Result<String, crate::error::VizError> {
     let post_name = match job.post.format {
         PostFormat::Grbl => "grbl",
         PostFormat::LinuxCnc => "linuxcnc",
         PostFormat::Mach3 => "mach3",
     };
     let post = get_post_processor(post_name)
-        .ok_or_else(|| format!("Unknown post processor: {}", post_name))?;
+        .ok_or_else(|| crate::error::VizError::Export(format!("Unknown post processor: {post_name}")))?;
 
     let phases: Vec<GcodePhase<'_>> = job
         .all_toolpaths()
@@ -57,7 +57,9 @@ pub fn export_gcode(job: &JobState) -> Result<String, String> {
         .collect();
 
     if phases.is_empty() {
-        return Err("No computed toolpaths to export".to_string());
+        return Err(crate::error::VizError::Export(
+            "No computed toolpaths to export".to_string(),
+        ));
     }
 
     let mut gcode = emit_gcode_phased(&phases, post.as_ref());
@@ -71,14 +73,14 @@ pub fn export_gcode(job: &JobState) -> Result<String, String> {
 }
 
 /// Export all setups as a single G-code file with M0 pauses between setups.
-pub fn export_combined_gcode(job: &JobState) -> Result<String, String> {
+pub fn export_combined_gcode(job: &JobState) -> Result<String, crate::error::VizError> {
     let post_name = match job.post.format {
         PostFormat::Grbl => "grbl",
         PostFormat::LinuxCnc => "linuxcnc",
         PostFormat::Mach3 => "mach3",
     };
     let post = get_post_processor(post_name)
-        .ok_or_else(|| format!("Unknown post processor: {}", post_name))?;
+        .ok_or_else(|| crate::error::VizError::Export(format!("Unknown post processor: {post_name}")))?;
 
     let setup_phases: Vec<GcodeSetupPhase<'_>> = job
         .setups
@@ -106,7 +108,9 @@ pub fn export_combined_gcode(job: &JobState) -> Result<String, String> {
         .collect();
 
     if setup_phases.is_empty() {
-        return Err("No computed toolpaths to export".to_string());
+        return Err(crate::error::VizError::Export(
+            "No computed toolpaths to export".to_string(),
+        ));
     }
 
     let mut gcode = emit_gcode_multi_setup(&setup_phases, post.as_ref(), job.post.safe_z);
@@ -119,12 +123,12 @@ pub fn export_combined_gcode(job: &JobState) -> Result<String, String> {
 }
 
 /// Export only the toolpaths from a single setup as G-code.
-pub fn export_setup_gcode(job: &JobState, setup_id: SetupId) -> Result<String, String> {
+pub fn export_setup_gcode(job: &JobState, setup_id: SetupId) -> Result<String, crate::error::VizError> {
     let setup = job
         .setups
         .iter()
         .find(|setup| setup.id == setup_id)
-        .ok_or_else(|| format!("Setup {:?} not found", setup_id))?;
+        .ok_or_else(|| crate::error::VizError::Export(format!("Setup {setup_id:?} not found")))?;
 
     let post_name = match job.post.format {
         PostFormat::Grbl => "grbl",
@@ -132,7 +136,7 @@ pub fn export_setup_gcode(job: &JobState, setup_id: SetupId) -> Result<String, S
         PostFormat::Mach3 => "mach3",
     };
     let post = get_post_processor(post_name)
-        .ok_or_else(|| format!("Unknown post processor: {}", post_name))?;
+        .ok_or_else(|| crate::error::VizError::Export(format!("Unknown post processor: {post_name}")))?;
 
     let phases: Vec<GcodePhase<'_>> = setup
         .toolpaths
@@ -146,7 +150,10 @@ pub fn export_setup_gcode(job: &JobState, setup_id: SetupId) -> Result<String, S
         .collect();
 
     if phases.is_empty() {
-        return Err(format!("No computed toolpaths in setup '{}'", setup.name));
+        return Err(crate::error::VizError::Export(format!(
+            "No computed toolpaths in setup '{}'",
+            setup.name,
+        )));
     }
 
     let mut gcode = emit_gcode_phased(&phases, post.as_ref());

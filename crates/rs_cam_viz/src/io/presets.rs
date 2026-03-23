@@ -43,7 +43,7 @@ pub fn list_presets() -> Vec<Preset> {
 }
 
 /// Save a preset to disk.
-pub fn save_preset(name: &str, operation_label: &str, toml_content: &str) -> Result<(), String> {
+pub fn save_preset(name: &str, operation_label: &str, toml_content: &str) -> Result<(), crate::error::VizError> {
     let dir = presets_dir();
     let filename = sanitize_filename(name);
     let path = dir.join(format!("{}.toml", filename));
@@ -56,37 +56,40 @@ pub fn save_preset(name: &str, operation_label: &str, toml_content: &str) -> Res
     );
 
     std::fs::write(&path, file_content)
-        .map_err(|e| format!("Failed to save preset '{}': {}", name, e))
+        .map_err(|e| format!("Failed to save preset '{}': {}", name, e))?;
+    Ok(())
 }
 
 /// Load a preset from disk by name.
-pub fn load_preset(name: &str) -> Result<Preset, String> {
+pub fn load_preset(name: &str) -> Result<Preset, crate::error::VizError> {
     let dir = presets_dir();
     let filename = sanitize_filename(name);
     let path = dir.join(format!("{}.toml", filename));
 
     if !path.exists() {
-        return Err(format!("Preset '{}' not found", name));
+        return Err(format!("Preset '{}' not found", name).into());
     }
 
     load_preset_from_path(&path)
 }
 
 /// Delete a preset by name.
-pub fn delete_preset(name: &str) -> Result<(), String> {
+pub fn delete_preset(name: &str) -> Result<(), crate::error::VizError> {
     let dir = presets_dir();
     let filename = sanitize_filename(name);
     let path = dir.join(format!("{}.toml", filename));
 
     if !path.exists() {
-        return Err(format!("Preset '{}' not found", name));
+        return Err(format!("Preset '{}' not found", name).into());
     }
 
-    std::fs::remove_file(&path).map_err(|e| format!("Failed to delete preset '{}': {}", name, e))
+    std::fs::remove_file(&path)
+        .map_err(|e| format!("Failed to delete preset '{}': {}", name, e))?;
+    Ok(())
 }
 
 /// Parse a preset from a .toml file at the given path.
-fn load_preset_from_path(path: &Path) -> Result<Preset, String> {
+fn load_preset_from_path(path: &Path) -> Result<Preset, crate::error::VizError> {
     let raw = std::fs::read_to_string(path)
         .map_err(|e| format!("Failed to read '{}': {}", path.display(), e))?;
 

@@ -5,12 +5,12 @@ use rs_cam_core::dxf_input::load_dxf;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::svg_input::load_svg;
 
+use crate::error::VizError;
 use crate::state::job::{LoadedModel, ModelId, ModelKind, ModelUnits};
 
 /// Import an STL file with a given scale factor.
-pub fn import_stl(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, String> {
-    let mesh = TriangleMesh::from_stl_scaled(path, scale)
-        .map_err(|e| format!("Failed to load STL: {e}"))?;
+pub fn import_stl(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, VizError> {
+    let mesh = TriangleMesh::from_stl_scaled(path, scale)?;
 
     let name = path
         .file_name()
@@ -42,8 +42,8 @@ pub fn import_stl(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, S
 }
 
 /// Import an SVG file, returning a LoadedModel with polygons.
-pub fn import_svg(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
-    let polygons = load_svg(path, 0.1).map_err(|e| format!("Failed to load SVG: {e}"))?;
+pub fn import_svg(path: &Path, id: ModelId) -> Result<LoadedModel, VizError> {
+    let polygons = load_svg(path, 0.1)?;
 
     let name = path
         .file_name()
@@ -65,8 +65,8 @@ pub fn import_svg(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
 }
 
 /// Import a DXF file, returning a LoadedModel with polygons.
-pub fn import_dxf(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
-    let polygons = load_dxf(path, 5.0).map_err(|e| format!("Failed to load DXF: {e}"))?;
+pub fn import_dxf(path: &Path, id: ModelId) -> Result<LoadedModel, VizError> {
+    let polygons = load_dxf(path, 5.0)?;
 
     let name = path
         .file_name()
@@ -88,9 +88,8 @@ pub fn import_dxf(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
 }
 
 /// Import a STEP file, returning a LoadedModel with enriched mesh.
-pub fn import_step(path: &Path, id: ModelId) -> Result<LoadedModel, String> {
-    let enriched = rs_cam_core::step_input::load_step(path, 0.1)
-        .map_err(|e| format!("Failed to load STEP: {e}"))?;
+pub fn import_step(path: &Path, id: ModelId) -> Result<LoadedModel, VizError> {
+    let enriched = rs_cam_core::step_input::load_step(path, 0.1)?;
 
     let name = path
         .file_name()
@@ -118,7 +117,7 @@ pub fn import_model(
     id: ModelId,
     kind: ModelKind,
     units: ModelUnits,
-) -> Result<LoadedModel, String> {
+) -> Result<LoadedModel, VizError> {
     let mut model = match kind {
         ModelKind::Stl => import_stl(path, id, units.scale_factor())?,
         ModelKind::Svg => import_svg(path, id)?,

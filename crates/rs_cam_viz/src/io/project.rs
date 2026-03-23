@@ -378,7 +378,7 @@ struct LegacyToolpathSection {
     pub params: toml::Value,
 }
 
-pub fn save_project(job: &JobState, path: &Path) -> Result<(), String> {
+pub fn save_project(job: &JobState, path: &Path) -> Result<(), crate::error::VizError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("Create directory error: {e}"))?;
     }
@@ -419,16 +419,16 @@ pub fn save_project(job: &JobState, path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub fn load_project(path: &Path) -> Result<LoadedProject, String> {
+pub fn load_project(path: &Path) -> Result<LoadedProject, crate::error::VizError> {
     let content = std::fs::read_to_string(path).map_err(|e| format!("Read error: {e}"))?;
 
     match toml::from_str::<ProjectFile>(&content) {
         Ok(project) => load_typed_project(path, project),
         Err(current_err) => match toml::from_str::<LegacyProjectFile>(&content) {
             Ok(legacy) => load_legacy_project(path, legacy),
-            Err(legacy_err) => Err(format!(
+            Err(legacy_err) => Err(crate::error::VizError::ProjectLoad(format!(
                 "Parse error: {current_err}; legacy parse error: {legacy_err}"
-            )),
+            ))),
         },
     }
 }
@@ -591,7 +591,7 @@ impl ProjectKeepOutSection {
     }
 }
 
-fn load_typed_project(path: &Path, project: ProjectFile) -> Result<LoadedProject, String> {
+fn load_typed_project(path: &Path, project: ProjectFile) -> Result<LoadedProject, crate::error::VizError> {
     let mut job = JobState::new();
     let mut warnings = Vec::new();
 
@@ -716,7 +716,7 @@ fn load_typed_project(path: &Path, project: ProjectFile) -> Result<LoadedProject
     Ok(LoadedProject { job, warnings })
 }
 
-fn load_legacy_project(path: &Path, legacy: LegacyProjectFile) -> Result<LoadedProject, String> {
+fn load_legacy_project(path: &Path, legacy: LegacyProjectFile) -> Result<LoadedProject, crate::error::VizError> {
     let mut job = JobState::new();
     let mut warnings = Vec::new();
 
@@ -880,12 +880,13 @@ fn load_legacy_model(
     match import::import_model(&resolved_path, id, kind, units) {
         Ok(model) => model,
         Err(error) => {
+            let error_str = error.to_string();
             warnings.push(ProjectLoadWarning::ModelImportFailed {
                 name: name.clone(),
                 path: resolved_path.clone(),
-                error: error.clone(),
+                error: error_str.clone(),
             });
-            LoadedModel::placeholder(id, resolved_path, name, kind, units, error)
+            LoadedModel::placeholder(id, resolved_path, name, kind, units, error_str)
         }
     }
 }
@@ -944,12 +945,13 @@ fn load_model_section(
             loaded
         }
         Err(error) => {
+            let error_str = error.to_string();
             warnings.push(ProjectLoadWarning::ModelImportFailed {
                 name: name.clone(),
                 path: resolved_path.clone(),
-                error: error.clone(),
+                error: error_str.clone(),
             });
-            LoadedModel::placeholder(id, resolved_path, name, kind, units, error)
+            LoadedModel::placeholder(id, resolved_path, name, kind, units, error_str)
         }
     }
 }

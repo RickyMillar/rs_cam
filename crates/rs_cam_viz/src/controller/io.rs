@@ -3,6 +3,7 @@ use std::path::Path;
 use rs_cam_core::geo::BoundingBox3;
 
 use crate::compute::ComputeBackend;
+use crate::error::VizError;
 use crate::io::import;
 use crate::state::selection::Selection;
 use crate::state::simulation::SimulationState;
@@ -10,7 +11,7 @@ use crate::state::simulation::SimulationState;
 use super::AppController;
 
 impl<B: ComputeBackend> AppController<B> {
-    pub fn import_stl_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, String> {
+    pub fn import_stl_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
         let id = self.state.job.next_model_id();
         let model = import::import_stl(path, id, 1.0)?;
         let bbox = model.bbox();
@@ -26,7 +27,7 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(bbox)
     }
 
-    pub fn import_svg_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, String> {
+    pub fn import_svg_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
         let id = self.state.job.next_model_id();
         let model = import::import_svg(path, id)?;
         let bbox = model.bbox();
@@ -37,7 +38,7 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(bbox)
     }
 
-    pub fn import_dxf_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, String> {
+    pub fn import_dxf_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
         let id = self.state.job.next_model_id();
         let model = import::import_dxf(path, id)?;
         let bbox = model.bbox();
@@ -48,7 +49,7 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(bbox)
     }
 
-    pub fn import_step_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, String> {
+    pub fn import_step_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
         let id = self.state.job.next_model_id();
         let model = import::import_step(path, id)?;
         let bbox = model.bbox();
@@ -68,7 +69,7 @@ impl<B: ComputeBackend> AppController<B> {
         &mut self,
         model_id: crate::state::job::ModelId,
         new_units: crate::state::job::ModelUnits,
-    ) -> Result<Option<BoundingBox3>, String> {
+    ) -> Result<Option<BoundingBox3>, VizError> {
         let Some(model) = self
             .state
             .job
@@ -106,7 +107,7 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(bbox)
     }
 
-    pub fn reload_model(&mut self, model_id: crate::state::job::ModelId) -> Result<(), String> {
+    pub fn reload_model(&mut self, model_id: crate::state::job::ModelId) -> Result<(), VizError> {
         let Some(model) = self
             .state
             .job
@@ -114,7 +115,7 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .find(|model| model.id == model_id)
         else {
-            return Err(format!("Model {:?} not found", model_id));
+            return Err(VizError::Other(format!("Model {model_id:?} not found")));
         };
 
         let path = model.path.clone();
@@ -142,14 +143,14 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(())
     }
 
-    pub fn save_job_to_path(&mut self, path: &Path) -> Result<(), String> {
+    pub fn save_job_to_path(&mut self, path: &Path) -> Result<(), VizError> {
         crate::io::project::save_project(&self.state.job, path)?;
         self.state.job.file_path = Some(path.to_path_buf());
         self.state.job.dirty = false;
         Ok(())
     }
 
-    pub fn open_job_from_path(&mut self, path: &Path) -> Result<(), String> {
+    pub fn open_job_from_path(&mut self, path: &Path) -> Result<(), VizError> {
         let loaded = crate::io::project::load_project(path)?;
         let warning_messages: Vec<_> = loaded
             .warnings
@@ -170,11 +171,11 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(())
     }
 
-    pub fn export_gcode(&self) -> Result<String, String> {
+    pub fn export_gcode(&self) -> Result<String, VizError> {
         crate::io::export::export_gcode(&self.state.job)
     }
 
-    pub fn export_svg_preview(&self) -> Result<String, String> {
+    pub fn export_svg_preview(&self) -> Result<String, VizError> {
         use rs_cam_core::viz::toolpath_to_svg;
 
         let toolpaths: Vec<_> = self
@@ -186,9 +187,12 @@ impl<B: ComputeBackend> AppController<B> {
             .collect();
 
         if toolpaths.is_empty() {
-            return Err("No computed toolpaths for SVG export".to_string());
+            return Err(VizError::Export(
+                "No computed toolpaths for SVG export".to_string(),
+            ));
         }
 
+        #[allow(clippy::indexing_slicing)]
         Ok(toolpath_to_svg(toolpaths[0], 800.0, 600.0))
     }
 
