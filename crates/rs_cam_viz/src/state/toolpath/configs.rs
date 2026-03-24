@@ -436,6 +436,8 @@ pub struct Adaptive3dConfig {
     pub region_ordering: RegionOrdering,
     #[serde(default = "default_clearing_strategy")]
     pub clearing_strategy: ClearingStrategy,
+    #[serde(default)]
+    pub z_blend: bool,
 }
 
 impl Default for Adaptive3dConfig {
@@ -455,6 +457,7 @@ impl Default for Adaptive3dConfig {
             detect_flat_areas: false,
             region_ordering: RegionOrdering::Global,
             clearing_strategy: ClearingStrategy::ContourParallel,
+            z_blend: false,
         }
     }
 }

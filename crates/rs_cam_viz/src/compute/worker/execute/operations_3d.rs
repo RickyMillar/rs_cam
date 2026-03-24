@@ -110,8 +110,17 @@ fn run_adaptive3d_annotated(
                 rs_cam_core::adaptive3d::ClearingStrategy3d::Adaptive
             }
         },
-        z_blend: false,
+        z_blend: cfg.z_blend,
     };
+    tracing::info!(
+        stock_top_z = params.stock_top_z,
+        depth_per_pass = params.depth_per_pass,
+        stock_to_leave = params.stock_to_leave,
+        tool_radius = params.tool_radius,
+        stepover = params.stepover,
+        strategy = ?params.clearing_strategy,
+        "GUI adaptive3d params"
+    );
     rs_cam_core::adaptive3d::adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
         mesh,
         &index,

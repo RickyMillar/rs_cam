@@ -459,6 +459,9 @@ pub(super) fn draw_adaptive3d_params(ui: &mut egui::Ui, cfg: &mut Adaptive3dConf
                     );
                 });
             ui.end_row();
+            ui.label("Z Blend:");
+            ui.checkbox(&mut cfg.z_blend, "");
+            ui.end_row();
         });
 }
 
