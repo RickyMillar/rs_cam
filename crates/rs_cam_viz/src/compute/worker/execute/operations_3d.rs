@@ -79,7 +79,12 @@ fn run_adaptive3d_annotated(
         safe_z: effective_safe_z(req),
         tolerance: cfg.tolerance,
         min_cutting_radius: cfg.min_cutting_radius,
-        stock_top_z: cfg.stock_top_z,
+        // Clamp stock_top_z to actual stock height — never cut above stock.
+        stock_top_z: if let Some(ref bbox) = req.stock_bbox {
+            cfg.stock_top_z.min(bbox.max.z)
+        } else {
+            cfg.stock_top_z
+        },
         entry_style: entry,
         fine_stepdown: if cfg.fine_stepdown > 0.0 {
             Some(cfg.fine_stepdown)
