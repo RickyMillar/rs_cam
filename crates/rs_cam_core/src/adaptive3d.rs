@@ -1298,6 +1298,7 @@ fn clear_z_level_contour_parallel(
         material_remaining_at_level(material_stock, surface_hm, z_level, ctx.stock_to_leave)
     };
     if remaining < 0.005 {
+        debug!(z = z_level, remaining, "CP: skipping — no material remaining");
         return Ok(());
     }
 
@@ -1305,8 +1306,10 @@ fn clear_z_level_contour_parallel(
     let (material_grid, rows, cols, origin_x, origin_y, cell_size) =
         build_material_bool_grid(material_stock, surface_hm, z_level, ctx.stock_to_leave, region);
 
+    let mat_count = material_grid.iter().filter(|&&b| b).count();
     // Check if any material exists
-    if !material_grid.iter().any(|&b| b) {
+    if mat_count == 0 {
+        debug!(z = z_level, "CP: skipping — empty material grid");
         return Ok(());
     }
 
@@ -1326,6 +1329,10 @@ fn clear_z_level_contour_parallel(
 
     debug!(
         z = z_level,
+        remaining,
+        mat_count,
+        rows,
+        cols,
         max_dist_cells = max_dist,
         tool_radius_cells = tool_radius_cells,
         stepover_cells = stepover_cells,
@@ -1346,7 +1353,7 @@ fn clear_z_level_contour_parallel(
         let blend = if z_blend_enabled && offset_range > 1e-6 {
             ((threshold - tool_radius_cells) / offset_range).clamp(0.0, 1.0)
         } else {
-            1.0
+            0.0
         };
 
         // Threshold the EDT: cells with distance > threshold are "inside" the offset
@@ -1504,7 +1511,7 @@ fn clear_z_level_adaptive(
         let blend = if z_blend_enabled && offset_range > 1e-6 {
             ((threshold - tool_radius_cells) / offset_range).clamp(0.0, 1.0)
         } else {
-            1.0
+            0.0
         };
 
         // Variable mask: base threshold + per-cell curvature offset
