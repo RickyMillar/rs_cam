@@ -1365,9 +1365,20 @@ fn clear_z_level_contour_parallel(
                 path_3d.push(P3::new(p.x, p.y, z));
             }
 
-            // Emit rapid to first point + cut segment
+            // Emit entry (link or rapid) + cut segment
             if let Some(first) = path_3d.first() {
-                segments.push(Adaptive3dSegment::Rapid(*first));
+                // Stay-down link if close to previous position, rapid otherwise
+                let link_dist = ctx.tool_radius * 3.0;
+                let should_link = last_pos.map_or(false, |lp| {
+                    let dx = first.x - lp.x;
+                    let dy = first.y - lp.y;
+                    (dx * dx + dy * dy).sqrt() < link_dist
+                });
+                if should_link {
+                    segments.push(Adaptive3dSegment::Link(*first));
+                } else {
+                    segments.push(Adaptive3dSegment::Rapid(*first));
+                }
                 segments.push(Adaptive3dSegment::Cut(path_3d.clone()));
 
                 // Stamp dexel stock along the cutting path
