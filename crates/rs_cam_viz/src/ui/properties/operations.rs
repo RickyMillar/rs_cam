@@ -513,7 +513,7 @@ pub(super) fn draw_pencil_params(ui: &mut egui::Ui, cfg: &mut PencilConfig) {
             dv(
                 ui,
                 "Stock to Leave:",
-                &mut cfg.stock_to_leave_axial,
+                &mut cfg.stock_to_leave,
                 " mm",
                 0.05,
                 0.0..=10.0,
@@ -577,7 +577,7 @@ pub(super) fn draw_scallop_params(ui: &mut egui::Ui, cfg: &mut ScallopConfig) {
             dv(
                 ui,
                 "Stock to Leave:",
-                &mut cfg.stock_to_leave_axial,
+                &mut cfg.stock_to_leave,
                 " mm",
                 0.05,
                 0.0..=10.0,
@@ -624,7 +624,7 @@ pub(super) fn draw_steep_shallow_params(ui: &mut egui::Ui, cfg: &mut SteepShallo
             dv(
                 ui,
                 "Stock to Leave:",
-                &mut cfg.stock_to_leave_axial,
+                &mut cfg.stock_to_leave,
                 " mm",
                 0.05,
                 0.0..=10.0,
@@ -687,7 +687,7 @@ pub(super) fn draw_ramp_finish_params(ui: &mut egui::Ui, cfg: &mut RampFinishCon
             dv(
                 ui,
                 "Stock to Leave:",
-                &mut cfg.stock_to_leave_axial,
+                &mut cfg.stock_to_leave,
                 " mm",
                 0.05,
                 0.0..=10.0,
@@ -2406,7 +2406,7 @@ pub(super) fn draw_spiral_finish_params(ui: &mut egui::Ui, cfg: &mut SpiralFinis
             dv(
                 ui,
                 "Stock to Leave:",
-                &mut cfg.stock_to_leave_axial,
+                &mut cfg.stock_to_leave,
                 " mm",
                 0.05,
                 0.0..=10.0,
@@ -2439,7 +2439,7 @@ pub(super) fn draw_radial_finish_params(ui: &mut egui::Ui, cfg: &mut RadialFinis
             dv(
                 ui,
                 "Stock to Leave:",
-                &mut cfg.stock_to_leave_axial,
+                &mut cfg.stock_to_leave,
                 " mm",
                 0.05,
                 0.0..=10.0,
@@ -2470,7 +2470,7 @@ pub(super) fn draw_horizontal_finish_params(ui: &mut egui::Ui, cfg: &mut Horizon
             dv(
                 ui,
                 "Stock to Leave:",
-                &mut cfg.stock_to_leave_axial,
+                &mut cfg.stock_to_leave,
                 " mm",
                 0.05,
                 0.0..=10.0,
