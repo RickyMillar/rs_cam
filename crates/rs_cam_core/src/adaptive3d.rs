@@ -63,16 +63,27 @@ pub enum RegionOrdering {
 
 /// Clearing strategy for each Z level.
 ///
-/// `ContourParallel` extracts material boundaries and generates concentric
-/// offset toolpaths via EDT. `AgentSearch` is the legacy per-step direction
-/// search, retained for comparison but not recommended.
+/// Roughing strategy for 3D clearing.
+///
+/// `ContourParallel` — fast, predictable contour-offset pocketing via EDT.
+///   Fixed stepover, concentric contours from boundary inward. Best for
+///   bulk roughing where speed matters more than constant engagement.
+///
+/// `Adaptive` — true constant-engagement clearing with variable stepover.
+///   Arcs around corners to maintain the engagement setpoint. Slower but
+///   better tool life and surface quality. (TODO: not yet implemented —
+///   falls back to ContourParallel)
+///
+/// `AgentSearch` — legacy per-step direction search. Retained for testing.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ClearingStrategy3d {
-    /// Legacy engagement-tracking agent search.
+    /// Legacy per-step direction search (for testing).
     AgentSearch,
-    /// Contour-parallel offset clearing via EDT (default).
+    /// Fast contour-parallel offset clearing via EDT (default).
     #[default]
     ContourParallel,
+    /// True constant-engagement adaptive clearing (TODO).
+    Adaptive,
 }
 
 /// Entry strategy for 3D adaptive (replaces vertical plunge).
@@ -2441,30 +2452,34 @@ fn adaptive_3d_segments(
                             level_total: region_z_levels.len(),
                         },
                     ));
-                    if ctx.clearing_strategy == ClearingStrategy3d::ContourParallel {
-                        clear_z_level_contour_parallel(
-                            &ctx,
-                            &mut material_stock,
-                            &surface_hm,
-                            z_level,
-                            &mut segments,
-                            &mut last_pos,
-                            Some(region),
-                            cancel,
-                        )?;
-                        // No fallback — contour-parallel should handle everything.
-                        // Residual material is visible in diagnostics for debugging.
-                    } else {
-                        clear_z_level(
-                            &ctx,
-                            &mut material_stock,
-                            &surface_hm,
-                            z_level,
-                            &mut segments,
-                            &mut last_pos,
-                            Some(region),
-                            cancel,
-                        )?;
+                    match ctx.clearing_strategy {
+                        ClearingStrategy3d::ContourParallel
+                        | ClearingStrategy3d::Adaptive => {
+                            // TODO: Adaptive will use variable-offset EDT.
+                            // For now both use contour-parallel.
+                            clear_z_level_contour_parallel(
+                                &ctx,
+                                &mut material_stock,
+                                &surface_hm,
+                                z_level,
+                                &mut segments,
+                                &mut last_pos,
+                                Some(region),
+                                cancel,
+                            )?;
+                        }
+                        ClearingStrategy3d::AgentSearch => {
+                            clear_z_level(
+                                &ctx,
+                                &mut material_stock,
+                                &surface_hm,
+                                z_level,
+                                &mut segments,
+                                &mut last_pos,
+                                Some(region),
+                                cancel,
+                            )?;
+                        }
                     }
                 }
             }
@@ -2501,30 +2516,34 @@ fn adaptive_3d_segments(
                         level_total: z_levels.len(),
                     },
                 ));
-                if ctx.clearing_strategy == ClearingStrategy3d::ContourParallel {
-                    clear_z_level_contour_parallel(
-                        &ctx,
-                        &mut material_stock,
-                        &surface_hm,
-                        z_level,
-                        &mut segments,
-                        &mut last_pos,
-                        None,
-                        cancel,
-                    )?;
-                    // No fallback — contour-parallel should handle everything.
-                    // Residual material is visible in diagnostics for debugging.
-                } else {
-                    clear_z_level(
-                        &ctx,
-                        &mut material_stock,
-                        &surface_hm,
-                        z_level,
-                        &mut segments,
-                        &mut last_pos,
-                        None,
-                        cancel,
-                    )?;
+                match ctx.clearing_strategy {
+                    ClearingStrategy3d::ContourParallel
+                    | ClearingStrategy3d::Adaptive => {
+                        // TODO: Adaptive will use variable-offset EDT.
+                        // For now both use contour-parallel.
+                        clear_z_level_contour_parallel(
+                            &ctx,
+                            &mut material_stock,
+                            &surface_hm,
+                            z_level,
+                            &mut segments,
+                            &mut last_pos,
+                            None,
+                            cancel,
+                        )?;
+                    }
+                    ClearingStrategy3d::AgentSearch => {
+                        clear_z_level(
+                            &ctx,
+                            &mut material_stock,
+                            &surface_hm,
+                            z_level,
+                            &mut segments,
+                            &mut last_pos,
+                            None,
+                            cancel,
+                        )?;
+                    }
                 }
 
                 let is_last_level = level_idx == z_levels.len() - 1;
