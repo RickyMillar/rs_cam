@@ -169,7 +169,7 @@ where
     write_json(&dir.join("baseline.json"), &base_fp);
     write_json(&dir.join("baseline_stock.json"), &base_sfp);
     write_svg(&dir.join("baseline.svg"), &base_tp);
-    if let Some(svg) = &base_arts.stock_heightmap_svg {
+    if let Some(svg) = &base_arts.stock_iso_svg {
         std::fs::write(dir.join("baseline_stock.svg"), svg).unwrap();
     }
 
@@ -196,7 +196,7 @@ where
         write_json(&dir.join(format!("variant_{val_str}_diff.json")), &diff);
         write_json(&dir.join(format!("variant_{val_str}_stock.json")), &variant_sfp);
         write_svg(&dir.join(format!("variant_{val_str}.svg")), &variant_tp);
-        if let Some(svg) = &arts.stock_heightmap_svg {
+        if let Some(svg) = &arts.stock_iso_svg {
             std::fs::write(dir.join(format!("variant_{val_str}_stock.svg")), svg).unwrap();
         }
 
