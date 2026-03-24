@@ -93,23 +93,10 @@ pub(super) fn draw_profile_params(ui: &mut egui::Ui, cfg: &mut ProfileConfig) {
             ui.checkbox(&mut cfg.climb, "");
             ui.end_row();
             ui.label("Compensation:");
-            egui::ComboBox::from_id_salt("prof_comp")
-                .selected_text(match cfg.compensation {
-                    CompensationType::InComputer => "In Computer",
-                    CompensationType::InControl => "In Control (G41/G42)",
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut cfg.compensation,
-                        CompensationType::InComputer,
-                        "In Computer",
-                    );
-                    ui.selectable_value(
-                        &mut cfg.compensation,
-                        CompensationType::InControl,
-                        "In Control (G41/G42)",
-                    );
-                });
+            // Only "In Computer" is implemented. G41/G42 ("In Control") is not
+            // yet wired to the G-code emitter, so the option is hidden to avoid
+            // misleading users. Restore when controller compensation is implemented.
+            ui.label("In Computer");
             ui.end_row();
         });
     ui.add_space(8.0);

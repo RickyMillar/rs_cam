@@ -58,9 +58,9 @@ pub struct SteepShallowParams {
 impl Default for SteepShallowParams {
     fn default() -> Self {
         Self {
-            threshold_angle: 40.0,
-            overlap_distance: 4.0,
-            wall_clearance: 2.0,
+            threshold_angle: 45.0,
+            overlap_distance: 2.0,
+            wall_clearance: 1.0,
             steep_first: true,
             stepover: 1.0,
             z_step: 1.0,

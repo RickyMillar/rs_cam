@@ -111,7 +111,7 @@ impl Default for RampFinishParams {
     fn default() -> Self {
         Self {
             max_stepdown: 1.0,
-            slope_from: 0.0,
+            slope_from: 30.0,
             slope_to: 90.0,
             direction: CutDirection::Climb,
             order_bottom_up: false,
