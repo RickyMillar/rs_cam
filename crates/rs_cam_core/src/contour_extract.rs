@@ -672,8 +672,8 @@ pub fn distance_transform_2d(grid: &[bool], rows: usize, cols: usize) -> Vec<f64
     let mut dist = vec![0.0f64; total];
 
     // Initialize: source cells (true) = 0, others = big
-    for i in 0..total {
-        dist[i] = if *grid.get(i).unwrap_or(&false) { 0.0 } else { big };
+    for (d, g) in dist.iter_mut().zip(grid.iter()) {
+        *d = if *g { 0.0 } else { big };
     }
 
     // Horizontal pass
@@ -1015,13 +1015,13 @@ mod tests {
         f[5] = 0.0;
         edt_1d(&mut f);
         // After EDT, f[i] should be squared distance to index 5
-        for i in 0..n {
+        for (i, val) in f.iter().enumerate() {
             let expected = ((i as f64) - 5.0).powi(2);
             assert!(
-                (f[i] - expected).abs() < 1e-9,
+                (val - expected).abs() < 1e-9,
                 "edt_1d: f[{}] = {}, expected {}",
                 i,
-                f[i],
+                val,
                 expected
             );
         }
@@ -1096,17 +1096,18 @@ mod tests {
         }
 
         // Cell at (1,5) is 1 row above the rectangle — distance = 1.0
+        let idx_1_5 = cols + 5;
         assert!(
-            (dist[1 * cols + 5] - 1.0).abs() < 1e-9,
+            (dist[idx_1_5] - 1.0).abs() < 1e-9,
             "Cell one row above rect should have distance 1.0, got {}",
-            dist[1 * cols + 5]
+            dist[idx_1_5]
         );
 
         // Cell at (0,5) is 2 rows above — distance = 2.0
         assert!(
-            (dist[0 * cols + 5] - 2.0).abs() < 1e-9,
+            (dist[5] - 2.0).abs() < 1e-9,
             "Cell two rows above rect should have distance 2.0, got {}",
-            dist[0 * cols + 5]
+            dist[5]
         );
 
         // Cell at (0,0) should be sqrt((2-0)^2 + (2-0)^2) = sqrt(8) = 2*sqrt(2)
