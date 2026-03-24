@@ -1,5 +1,50 @@
 use super::*;
 
+/// Compute per-cell slope angle (degrees from horizontal) from a drop-cutter grid.
+///
+/// Uses finite differences of adjacent Z values to estimate the surface normal
+/// at each cell, then converts to an angle from horizontal (0° = flat, 90° = vertical).
+#[allow(clippy::indexing_slicing)] // bounded by grid dimensions
+fn compute_grid_slopes(grid: &rs_cam_core::dropcutter::DropCutterGrid) -> Vec<f64> {
+    let rows = grid.rows;
+    let cols = grid.cols;
+    let mut slopes = vec![0.0f64; rows * cols];
+
+    for row in 0..rows {
+        for col in 0..cols {
+            let z = grid.get(row, col).z;
+
+            // Finite difference: dz/dx and dz/dy from neighbors
+            let dz_dx = if col > 0 && col + 1 < cols {
+                (grid.get(row, col + 1).z - grid.get(row, col.saturating_sub(1)).z)
+                    / (2.0 * grid.x_step)
+            } else if col + 1 < cols {
+                (grid.get(row, col + 1).z - z) / grid.x_step
+            } else if col > 0 {
+                (z - grid.get(row, col - 1).z) / grid.x_step
+            } else {
+                0.0
+            };
+
+            let dz_dy = if row > 0 && row + 1 < rows {
+                (grid.get(row + 1, col).z - grid.get(row.saturating_sub(1), col).z)
+                    / (2.0 * grid.y_step)
+            } else if row + 1 < rows {
+                (grid.get(row + 1, col).z - z) / grid.y_step
+            } else if row > 0 {
+                (z - grid.get(row - 1, col).z) / grid.y_step
+            } else {
+                0.0
+            };
+
+            // Slope angle from horizontal: atan(sqrt(dz_dx^2 + dz_dy^2))
+            let gradient = (dz_dx * dz_dx + dz_dy * dz_dy).sqrt();
+            slopes[row * cols + col] = gradient.atan().to_degrees();
+        }
+    }
+    slopes
+}
+
 fn prepare_mesh_operation<'a>(
     req: &'a ComputeRequest,
     phase_tracker: Option<&ToolpathPhaseTracker>,
@@ -79,9 +124,9 @@ fn run_adaptive3d_annotated(
         safe_z: effective_safe_z(req),
         tolerance: cfg.tolerance,
         min_cutting_radius: cfg.min_cutting_radius,
-        // Clamp stock_top_z to actual stock height — never cut above stock.
+        // Use actual stock top Z when available; fall back to config value.
         stock_top_z: if let Some(ref bbox) = req.stock_bbox {
-            cfg.stock_top_z.min(bbox.max.z)
+            bbox.max.z
         } else {
             cfg.stock_top_z
         },
@@ -152,12 +197,14 @@ fn run_waterline(
         let _phase_scope = phase_tracker.map(|tracker| tracker.start_phase("Waterline slices"));
         let _waterline_scope =
             debug.map(|ctx| ctx.start_span("waterline_slices", "Waterline slices"));
+        // Z range comes from the Heights system (top_z / bottom_z)
+        // so waterline auto-tracks stock changes like all other operations.
         waterline_toolpath_with_cancel(
             mesh,
             &index,
             cutter.as_ref(),
-            cfg.start_z,
-            cfg.final_z,
+            req.heights.top_z,
+            req.heights.bottom_z,
             cfg.z_step,
             &params,
             &|| cancel.load(Ordering::SeqCst),
@@ -455,8 +502,19 @@ impl SemanticToolpathOp for DropCutterConfig {
             }
             scope.set_param("stepover", self.stepover);
             scope.set_param("min_z", self.min_z);
+            scope.set_param("slope_from", self.slope_from);
+            scope.set_param("slope_to", self.slope_to);
         }
         let op_ctx = op_scope.as_ref().map(|scope| scope.context());
+
+        // Pre-compute per-cell slope angle (degrees from horizontal) for slope filtering.
+        let slope_filter_active = self.slope_from > 0.01 || self.slope_to < 89.99;
+        let slope_angles: Vec<f64> = if slope_filter_active {
+            compute_grid_slopes(&grid)
+        } else {
+            Vec::new()
+        };
+
         let mut out = Toolpath::new();
         {
             let _phase_scope = ctx
@@ -466,6 +524,7 @@ impl SemanticToolpathOp for DropCutterConfig {
                 .debug_root
                 .map(|ctx| ctx.start_span("rasterize_grid", "Rasterize grid"));
             let mut writer = rs_cam_core::semantic_trace::ToolpathSemanticWriter::new(&mut out);
+            let safe_z = effective_safe_z(ctx.req);
             for row in 0..grid.rows {
                 let cols: Vec<usize> = if row % 2 == 0 {
                     (0..grid.cols).collect()
@@ -475,26 +534,61 @@ impl SemanticToolpathOp for DropCutterConfig {
                 if cols.is_empty() {
                     continue;
                 }
-                // SAFETY: cols verified non-empty above
-                #[allow(clippy::indexing_slicing)]
-                let start_pt = grid.get(row, cols[0]);
                 let row_scope = op_ctx.as_ref().map(|ctx| {
                     ctx.start_item(ToolpathSemanticKind::Row, format!("Row {}", row + 1))
                 });
                 if let Some(scope) = row_scope.as_ref() {
                     scope.set_param("row_index", row + 1);
                 }
+
+                // Build row toolpath, splitting at slope-filtered gaps
                 let mut row_tp = Toolpath::new();
-                row_tp.rapid_to(P3::new(start_pt.x, start_pt.y, effective_safe_z(ctx.req)));
-                row_tp.feed_to(start_pt.position(), self.plunge_rate);
-                for &col in cols.iter().skip(1) {
-                    row_tp.feed_to(grid.get(row, col).position(), self.feed_rate);
+                let mut in_cut = false;
+                for &col in &cols {
+                    // Slope filter: skip points outside [slope_from, slope_to]
+                    if slope_filter_active {
+                        let idx = row * grid.cols + col;
+                        if let Some(&angle) = slope_angles.get(idx) {
+                            if angle < self.slope_from || angle > self.slope_to {
+                                if in_cut {
+                                    // Retract at end of cutting segment
+                                    let prev = grid.get(row, col);
+                                    row_tp.rapid_to(P3::new(prev.x, prev.y, safe_z));
+                                    in_cut = false;
+                                }
+                                continue;
+                            }
+                        }
+                    }
+
+                    let pt = grid.get(row, col);
+                    if !in_cut {
+                        // Start new cutting segment
+                        row_tp.rapid_to(P3::new(pt.x, pt.y, safe_z));
+                        row_tp.feed_to(pt.position(), self.plunge_rate);
+                        in_cut = true;
+                    } else {
+                        row_tp.feed_to(pt.position(), self.feed_rate);
+                    }
                 }
-                // SAFETY: cols is non-empty (loop only entered when cols has elements)
-                #[allow(clippy::expect_used)]
-                let last_pt = grid.get(row, *cols.last().expect("row has points"));
-                row_tp.rapid_to(P3::new(last_pt.x, last_pt.y, effective_safe_z(ctx.req)));
-                append_toolpath(&mut writer, row_scope.as_ref(), row_tp);
+                if in_cut {
+                    // SAFETY: if in_cut, we have at least one point
+                    #[allow(clippy::expect_used)]
+                    let last_col = cols.iter().rev().find(|&&c| {
+                        if !slope_filter_active {
+                            return true;
+                        }
+                        let idx = row * grid.cols + c;
+                        slope_angles
+                            .get(idx)
+                            .map_or(true, |&a| a >= self.slope_from && a <= self.slope_to)
+                    }).expect("in_cut implies at least one valid col");
+                    let last_pt = grid.get(row, *last_col);
+                    row_tp.rapid_to(P3::new(last_pt.x, last_pt.y, safe_z));
+                }
+                if !row_tp.moves.is_empty() {
+                    append_toolpath(&mut writer, row_scope.as_ref(), row_tp);
+                }
             }
         }
         if let Some(scope) = op_scope.as_ref() {
@@ -558,8 +652,8 @@ impl SemanticToolpathOp for WaterlineConfig {
             if let Some(debug_span_id) = ctx.core_debug_span_id {
                 scope.set_debug_span_id(debug_span_id);
             }
-            scope.set_param("start_z", self.start_z);
-            scope.set_param("final_z", self.final_z);
+            scope.set_param("start_z", ctx.req.heights.top_z);
+            scope.set_param("final_z", ctx.req.heights.bottom_z);
             scope.set_param("z_step", self.z_step);
         }
         let op_ctx = op_scope.as_ref().map(|scope| scope.context());
@@ -572,9 +666,11 @@ impl SemanticToolpathOp for WaterlineConfig {
                 .debug_root
                 .map(|ctx| ctx.start_span("waterline_slices", "Waterline slices"));
             let mut writer = rs_cam_core::semantic_trace::ToolpathSemanticWriter::new(&mut out);
-            let mut z = self.start_z;
+            let wl_start_z = ctx.req.heights.top_z;
+            let wl_final_z = ctx.req.heights.bottom_z;
+            let mut z = wl_start_z;
             let mut level_idx = 0usize;
-            while z >= self.final_z - 1e-10 {
+            while z >= wl_final_z - 1e-10 {
                 let contours = rs_cam_core::waterline::waterline_contours_with_cancel(
                     mesh,
                     &index,
