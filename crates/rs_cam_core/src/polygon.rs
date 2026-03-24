@@ -366,7 +366,7 @@ fn polygon_bbox(pts: &[P2]) -> (f64, f64, f64, f64) {
 // --- helpers ---
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-fn shoelace_area(pts: &[P2]) -> f64 {
+pub fn shoelace_area(pts: &[P2]) -> f64 {
     let n = pts.len();
     if n < 3 {
         return 0.0;

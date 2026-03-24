@@ -36,7 +36,7 @@ use tracing::{debug, info};
 use rs_cam_core::{
     adaptive::{AdaptiveParams, adaptive_toolpath},
     adaptive3d::{
-        Adaptive3dParams, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
+        Adaptive3dParams, ClearingStrategy3d, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
         adaptive_3d_toolpath_annotated_traced_with_cancel,
     },
     debug_trace::ToolpathDebugRecorder,
@@ -194,6 +194,8 @@ pub struct OperationDef {
     pub detect_flat_areas: Option<bool>,
     pub max_stay_down_dist: Option<f64>,
     pub order_by: Option<String>,
+    /// Clearing strategy: "agent" (default) or "contour"/"contour_parallel".
+    pub strategy: Option<String>,
 }
 
 // ── Parsing ────────────────────────────────────────────────────────────
@@ -581,6 +583,11 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                     _ => RegionOrdering::Global,
                 };
 
+                let clearing_strategy = match op.strategy.as_deref().unwrap_or("agent") {
+                    "contour" | "contour_parallel" => ClearingStrategy3d::ContourParallel,
+                    _ => ClearingStrategy3d::AgentSearch,
+                };
+
                 let params = Adaptive3dParams {
                     tool_radius,
                     stepover,
@@ -598,6 +605,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                     max_stay_down_dist: op.max_stay_down_dist,
                     region_ordering: region_ord,
                     initial_stock: None,
+                    clearing_strategy,
                 };
 
                 if debug_trace {
@@ -637,6 +645,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                             "feed_rate": params.feed_rate,
                             "plunge_rate": params.plunge_rate,
                             "safe_z": params.safe_z,
+                            "clearing_strategy": format!("{:?}", params.clearing_strategy),
                         }
                     });
 

@@ -97,6 +97,7 @@ fn run_adaptive3d_annotated(
             }
         },
         initial_stock: req.prior_stock.clone(),
+        clearing_strategy: rs_cam_core::adaptive3d::ClearingStrategy3d::AgentSearch,
     };
     rs_cam_core::adaptive3d::adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
         mesh,
