@@ -127,7 +127,7 @@ These features exist in state, UI, or helper code, but are not yet end-to-end co
 | Vendor LUT integration | Fully wired: embedded Amana vendor observations are auto-loaded at startup via `LazyLock` and passed into the feeds calculator for all GUI operations |
 | BREP face selection scope | Face-derived boundaries work only for approximately-horizontal planar faces; non-planar and tilted faces produce no polygon (falls back to stock bounds). Surface classifier is heuristic (axis-aligned planes only). |
 | BREP hover highlighting | Rendering path supports hover colors, but hover face tracking is not yet wired (face under cursor is not detected on mouse move) |
-| Workholding rigidity UI | Feeds calculator supports it, but the GUI still hardcodes `Medium` |
+| ~~Workholding rigidity UI~~ | Fully wired: GUI ComboBox (Low/Medium/High) on stock panel, passed through to feeds calculator |
 
 ## CLI surface
 
