@@ -1342,18 +1342,21 @@ fn clear_z_level_contour_parallel(
                 continue;
             }
 
-            // Z-blended surface drape: outer passes are flat at z_level,
-            // inner passes progressively follow the terrain surface.
+            // Z-blended surface drape: outer passes cut near z_level (flat),
+            // inner passes progressively descend toward the terrain surface.
+            // This spreads Z movement across all passes instead of a sudden
+            // plunge on the innermost pass.
             let mut path_3d: Vec<P3> = Vec::with_capacity(loop_pts.len());
             for p in loop_pts {
                 let surf_z = surface_hm.surface_z_at_world(p.x, p.y);
-                let terrain_z = if surf_z == f64::NEG_INFINITY {
+                let target_z = if surf_z == f64::NEG_INFINITY {
                     z_level
                 } else {
-                    (surf_z + ctx.stock_to_leave).max(z_level)
+                    surf_z + ctx.stock_to_leave // actual terrain — may be below z_level
                 };
-                // Lerp between flat plane and terrain surface
-                let z = z_level + blend * (terrain_z - z_level);
+                // Lerp: blend=0 → z_level (flat), blend=1 → target_z (terrain)
+                // Clamp so we never cut below the next Z level's floor.
+                let z = (z_level + blend * (target_z - z_level)).max(target_z);
                 path_3d.push(P3::new(p.x, p.y, z));
             }
 
