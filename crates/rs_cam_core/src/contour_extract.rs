@@ -606,6 +606,102 @@ fn chain_segments_2d(segments: &[Segment2D]) -> Vec<Vec<P2>> {
     loops
 }
 
+// ---------------------------------------------------------------------------
+// Euclidean Distance Transform (Felzenszwalb & Huttenlocher 2004)
+// ---------------------------------------------------------------------------
+
+/// 1D parabola-envelope distance transform.
+///
+/// Input: `f[i] = 0.0` for source cells, `f[i] = very_large` for others.
+/// Output: `f[i] = squared_distance_to_nearest_source`.
+///
+/// Reference: Felzenszwalb & Huttenlocher, "Distance Transforms of Sampled
+/// Functions", Theory of Computing 2012.
+#[allow(clippy::indexing_slicing)] // SAFETY: all indices bounded by loop variables and n
+fn edt_1d(f: &mut [f64]) {
+    let n = f.len();
+    if n == 0 {
+        return;
+    }
+    let mut v = vec![0usize; n];
+    let mut z = vec![0.0f64; n + 1];
+    let mut k = 0usize;
+    z[0] = f64::NEG_INFINITY;
+    z[1] = f64::INFINITY;
+
+    for q in 1..n {
+        loop {
+            let vk = v[k];
+            let s = ((f[q] + (q * q) as f64) - (f[vk] + (vk * vk) as f64))
+                / (2.0 * (q as f64 - vk as f64));
+            if s > z[k] {
+                k += 1;
+                v[k] = q;
+                z[k] = s;
+                z[k + 1] = f64::INFINITY;
+                break;
+            }
+            if k == 0 {
+                v[0] = q;
+                z[1] = f64::INFINITY;
+                break;
+            }
+            k -= 1;
+        }
+    }
+
+    k = 0;
+    for q in 0..n {
+        while z[k + 1] < q as f64 {
+            k += 1;
+        }
+        let vk = v[k];
+        f[q] = (q as f64 - vk as f64).powi(2) + f[vk];
+    }
+}
+
+/// 2D Euclidean Distance Transform on a boolean grid.
+///
+/// Returns the Euclidean distance (in cell units) from each cell to the
+/// nearest `true` cell. Uses two-pass separable 1D EDT
+/// (Felzenszwalb & Huttenlocher 2004) — O(rows * cols) total.
+#[allow(clippy::indexing_slicing)] // SAFETY: all indices bounded by rows/cols loop variables
+pub fn distance_transform_2d(grid: &[bool], rows: usize, cols: usize) -> Vec<f64> {
+    let total = rows * cols;
+    let big = (rows * rows + cols * cols) as f64; // larger than any possible distance^2
+    let mut dist = vec![0.0f64; total];
+
+    // Initialize: source cells (true) = 0, others = big
+    for i in 0..total {
+        dist[i] = if *grid.get(i).unwrap_or(&false) { 0.0 } else { big };
+    }
+
+    // Horizontal pass
+    for r in 0..rows {
+        let start = r * cols;
+        edt_1d(&mut dist[start..start + cols]);
+    }
+
+    // Vertical pass (column by column with temp buffer)
+    let mut col_buf = vec![0.0f64; rows];
+    for c in 0..cols {
+        for r in 0..rows {
+            col_buf[r] = dist[r * cols + c];
+        }
+        edt_1d(&mut col_buf);
+        for r in 0..rows {
+            dist[r * cols + c] = col_buf[r];
+        }
+    }
+
+    // Convert squared distances to actual distances
+    for d in &mut dist {
+        *d = d.sqrt();
+    }
+
+    dist
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -903,6 +999,123 @@ mod tests {
         assert_ne!(
             len0, len1,
             "Outer and inner contours should have different point counts"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests for Euclidean Distance Transform
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_edt_1d_simple() {
+        // Source at center (index 5 of 11), all others large
+        let n = 11;
+        let big = (n * n) as f64;
+        let mut f = vec![big; n];
+        f[5] = 0.0;
+        edt_1d(&mut f);
+        // After EDT, f[i] should be squared distance to index 5
+        for i in 0..n {
+            let expected = ((i as f64) - 5.0).powi(2);
+            assert!(
+                (f[i] - expected).abs() < 1e-9,
+                "edt_1d: f[{}] = {}, expected {}",
+                i,
+                f[i],
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_distance_transform_single_point() {
+        // 11x11 grid, single true cell at (5,5)
+        let rows = 11;
+        let cols = 11;
+        let mut grid = vec![false; rows * cols];
+        grid[5 * cols + 5] = true;
+
+        let dist = distance_transform_2d(&grid, rows, cols);
+
+        // Distance at (5,5) should be 0
+        assert!(
+            dist[5 * cols + 5].abs() < 1e-9,
+            "Distance at source should be 0"
+        );
+
+        // Distance at (5,6) should be 1.0
+        assert!(
+            (dist[5 * cols + 6] - 1.0).abs() < 1e-9,
+            "Distance one cell away should be 1.0, got {}",
+            dist[5 * cols + 6]
+        );
+
+        // Distance at (6,6) should be sqrt(2)
+        let expected_diag = std::f64::consts::SQRT_2;
+        assert!(
+            (dist[6 * cols + 6] - expected_diag).abs() < 1e-9,
+            "Distance diagonally should be sqrt(2), got {}",
+            dist[6 * cols + 6]
+        );
+
+        // Distance at (0,0) should be sqrt(50) = 5*sqrt(2)
+        let expected_corner = (50.0f64).sqrt();
+        assert!(
+            (dist[0] - expected_corner).abs() < 1e-9,
+            "Distance at corner (0,0) should be {}, got {}",
+            expected_corner,
+            dist[0]
+        );
+    }
+
+    #[test]
+    fn test_distance_transform_rectangle() {
+        // 10x10 grid, 6x6 true rectangle at rows 2..8, cols 2..8
+        let rows = 10;
+        let cols = 10;
+        let mut grid = vec![false; rows * cols];
+        for r in 2..8 {
+            for c in 2..8 {
+                grid[r * cols + c] = true;
+            }
+        }
+
+        let dist = distance_transform_2d(&grid, rows, cols);
+
+        // All true cells should have distance 0
+        for r in 2..8 {
+            for c in 2..8 {
+                assert!(
+                    dist[r * cols + c].abs() < 1e-9,
+                    "True cell ({},{}) should have distance 0, got {}",
+                    r,
+                    c,
+                    dist[r * cols + c]
+                );
+            }
+        }
+
+        // Cell at (1,5) is 1 row above the rectangle — distance = 1.0
+        assert!(
+            (dist[1 * cols + 5] - 1.0).abs() < 1e-9,
+            "Cell one row above rect should have distance 1.0, got {}",
+            dist[1 * cols + 5]
+        );
+
+        // Cell at (0,5) is 2 rows above — distance = 2.0
+        assert!(
+            (dist[0 * cols + 5] - 2.0).abs() < 1e-9,
+            "Cell two rows above rect should have distance 2.0, got {}",
+            dist[0 * cols + 5]
+        );
+
+        // Cell at (0,0) should be sqrt((2-0)^2 + (2-0)^2) = sqrt(8) = 2*sqrt(2)
+        let expected = (8.0f64).sqrt();
+        assert!(
+            (dist[0] - expected).abs() < 1e-9,
+            "Corner cell should have distance {}, got {}",
+            expected,
+            dist[0]
         );
     }
 }
