@@ -424,12 +424,16 @@ fn extract_svg_summary(svg: &str) -> SvgSummary {
     }
 }
 
-/// Render a tri-dexel stock as an isometric SVG using painter's algorithm.
+/// Render a composite 6-view SVG of the stock: 4 isometric corners + top + bottom.
 ///
-/// Extracts the stock mesh via `dexel_stock_to_mesh`, projects each triangle
-/// from a fixed isometric camera (45-degree azimuth, 30-degree elevation),
-/// sorts back-to-front, and emits flat-shaded SVG polygons with simple
-/// directional lighting.
+/// Layout (3 columns x 2 rows):
+/// ```text
+///  ┌────────────┬────────────┬────────────┐
+///  │ Front-Left │    Top     │ Front-Right│
+///  ├────────────┼────────────┼────────────┤
+///  │ Back-Left  │   Bottom   │ Back-Right │
+///  └────────────┴────────────┴────────────┘
+/// ```
 #[allow(clippy::indexing_slicing)] // bounded by mesh indices
 fn stock_isometric_svg(
     stock: &crate::dexel_stock::TriDexelStock,
@@ -444,20 +448,14 @@ fn stock_isometric_svg(
         return String::from("<svg xmlns='http://www.w3.org/2000/svg'/>");
     }
 
-    // Isometric camera: 45° azimuth, 30° elevation
-    let az: f64 = std::f64::consts::FRAC_PI_4;       // 45 degrees
-    let el: f64 = std::f64::consts::FRAC_PI_6;        // 30 degrees
-    let cos_az = az.cos();
-    let sin_az = az.sin();
-    let cos_el = el.cos();
-    let sin_el = el.sin();
+    // 3x2 grid layout
+    let cols = 3.0;
+    let rows = 2.0;
+    let cell_w = width / cols;
+    let cell_h = height / rows;
+    let pad = 4.0;
 
-    // Light direction (from upper-right-front, normalized)
-    let light_x: f64 = 0.4;
-    let light_y: f64 = -0.3;
-    let light_z: f64 = 0.866;
-
-    // Find 3D bounding box for centering
+    // Pre-compute centroid once
     let vert_count = mesh.vertices.len() / 3;
     let mut cx = 0.0f64;
     let mut cy = 0.0f64;
@@ -472,10 +470,100 @@ fn stock_isometric_svg(
     cy /= n;
     cz /= n;
 
-    // Project 3D → 2D (isometric projection centered on mesh centroid)
-    // x_screen = (x-cx)*cos_az - (y-cy)*sin_az
-    // y_screen = -(x-cx)*sin_az*sin_el - (y-cy)*cos_az*sin_el + (z-cz)*cos_el
-    // depth    =  (x-cx)*sin_az*cos_el + (y-cy)*cos_az*cos_el + (z-cz)*sin_el
+    let pi = std::f64::consts::PI;
+    let deg30 = pi / 6.0;
+    let deg90 = pi / 2.0;
+
+    // 6 views: (azimuth, elevation, label, grid_col, grid_row)
+    let views: &[(f64, f64, &str, f64, f64)] = &[
+        (pi / 4.0,       deg30,  "Front-Left",  0.0, 0.0),  // 45° az
+        (0.0,            deg90,  "Top",          1.0, 0.0),  // straight down
+        (7.0 * pi / 4.0, deg30,  "Front-Right", 2.0, 0.0),  // 315° az
+        (3.0 * pi / 4.0, deg30,  "Back-Left",   0.0, 1.0),  // 135° az
+        (0.0,            -deg90, "Bottom",       1.0, 1.0),  // straight up
+        (5.0 * pi / 4.0, deg30,  "Back-Right",  2.0, 1.0),  // 225° az
+    ];
+
+    let mut svg = String::with_capacity(mesh.indices.len() / 3 * 120 * 6);
+    let _ = writeln!(
+        svg,
+        "<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}'>"
+    );
+    let _ = writeln!(
+        svg,
+        "<rect width='{width}' height='{height}' fill='#2a2a2a'/>"
+    );
+
+    for &(az, el, label, col, row) in views {
+        let vx = col * cell_w;
+        let vy = row * cell_h;
+        let vw = cell_w - pad;
+        let vh = cell_h - pad;
+
+        // Clip group to cell
+        let _ = writeln!(
+            svg,
+            "<g transform='translate({vx},{vy})'>"
+        );
+        let _ = writeln!(
+            svg,
+            "<rect x='0' y='0' width='{cw}' height='{ch}' fill='#222' rx='3'/>",
+            cw = cell_w, ch = cell_h,
+        );
+
+        render_view_into(
+            &mut svg, &mesh, vert_count, cx, cy, cz,
+            az, el, pad / 2.0, pad / 2.0, vw, vh,
+        );
+
+        // Label
+        let _ = writeln!(
+            svg,
+            "<text x='4' y='13' fill='#aaa' font-size='10' font-family='monospace'>{label}</text>"
+        );
+        let _ = writeln!(svg, "</g>");
+    }
+
+    // Overall legend at bottom
+    let bbox = &stock.stock_bbox;
+    let tri_count = mesh.indices.len() / 3;
+    let sx = bbox.max.x - bbox.min.x;
+    let sy = bbox.max.y - bbox.min.y;
+    let sz = bbox.max.z - bbox.min.z;
+    let ly = height - 3.0;
+    let _ = writeln!(
+        svg,
+        "<text x='5' y='{ly}' fill='#888' font-size='9' font-family='monospace'>Stock: {sx:.0}x{sy:.0}x{sz:.0} mm  |  {tri_count} triangles</text>",
+    );
+    let _ = writeln!(svg, "</svg>");
+    svg
+}
+
+/// Render one view of a stock mesh into an SVG string, offset to (ox, oy) with size (vw, vh).
+#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+fn render_view_into(
+    svg: &mut String,
+    mesh: &crate::stock_mesh::StockMesh,
+    vert_count: usize,
+    cx: f64, cy: f64, cz: f64,
+    azimuth: f64,
+    elevation: f64,
+    ox: f64, oy: f64,
+    vw: f64, vh: f64,
+) {
+    use std::fmt::Write;
+
+    let cos_az = azimuth.cos();
+    let sin_az = azimuth.sin();
+    let cos_el = elevation.cos();
+    let sin_el = elevation.sin();
+
+    // Light direction (rotates with camera so shading is consistent)
+    let light_x = sin_az * 0.4 + cos_az * 0.3;
+    let light_y = cos_az * 0.4 - sin_az * 0.3;
+    let light_z: f64 = 0.866;
+
+    // Project all vertices
     let mut projected: Vec<[f64; 2]> = Vec::with_capacity(vert_count);
     let mut depths: Vec<f64> = Vec::with_capacity(vert_count);
     let mut sx_min = f64::MAX;
@@ -501,13 +589,18 @@ fn stock_isometric_svg(
         if sy > sy_max { sy_max = sy; }
     }
 
-    // Scale to fit SVG viewport
-    let margin = 20.0;
+    let margin = 8.0;
     let data_w = (sx_max - sx_min).max(1e-6);
     let data_h = (sy_max - sy_min).max(1e-6);
-    let scale = ((width - 2.0 * margin) / data_w).min((height - 2.0 * margin) / data_h);
+    let scale = ((vw - 2.0 * margin) / data_w).min((vh - 2.0 * margin) / data_h);
 
-    // Build triangle list with average depth for sorting
+    // Center the projection in the viewport
+    let proj_w = data_w * scale;
+    let proj_h = data_h * scale;
+    let off_x = ox + margin + (vw - 2.0 * margin - proj_w) / 2.0;
+    let off_y = oy + margin + (vh - 2.0 * margin - proj_h) / 2.0;
+
+    // Build and sort triangles
     let tri_count = mesh.indices.len() / 3;
     let mut tris: Vec<(f64, usize)> = Vec::with_capacity(tri_count);
     for t in 0..tri_count {
@@ -520,35 +613,22 @@ fn stock_isometric_svg(
         let avg_depth = (depths[i0] + depths[i1] + depths[i2]) / 3.0;
         tris.push((avg_depth, t));
     }
-
-    // Sort back-to-front (painter's algorithm)
     tris.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
-    // Emit SVG
-    let mut svg = String::with_capacity(tri_count * 120);
-    let _ = writeln!(
-        svg,
-        "<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}'>"
-    );
-    let _ = writeln!(
-        svg,
-        "<rect width='{width}' height='{height}' fill='#2a2a2a'/>"
-    );
-
+    // Emit triangles
     for &(_, t) in &tris {
         let i0 = mesh.indices[t * 3] as usize;
         let i1 = mesh.indices[t * 3 + 1] as usize;
         let i2 = mesh.indices[t * 3 + 2] as usize;
 
-        // Project vertices to screen coords
-        let x0 = margin + (projected[i0][0] - sx_min) * scale;
-        let y0 = height - margin - (projected[i0][1] - sy_min) * scale;
-        let x1 = margin + (projected[i1][0] - sx_min) * scale;
-        let y1 = height - margin - (projected[i1][1] - sy_min) * scale;
-        let x2 = margin + (projected[i2][0] - sx_min) * scale;
-        let y2 = height - margin - (projected[i2][1] - sy_min) * scale;
+        let x0 = off_x + (projected[i0][0] - sx_min) * scale;
+        let y0 = off_y + proj_h - (projected[i0][1] - sy_min) * scale;
+        let x1 = off_x + (projected[i1][0] - sx_min) * scale;
+        let y1 = off_y + proj_h - (projected[i1][1] - sy_min) * scale;
+        let x2 = off_x + (projected[i2][0] - sx_min) * scale;
+        let y2 = off_y + proj_h - (projected[i2][1] - sy_min) * scale;
 
-        // Compute face normal for lighting (in 3D space)
+        // Face normal for lighting
         let ax = f64::from(mesh.vertices[i1 * 3]) - f64::from(mesh.vertices[i0 * 3]);
         let ay = f64::from(mesh.vertices[i1 * 3 + 1]) - f64::from(mesh.vertices[i0 * 3 + 1]);
         let az_v = f64::from(mesh.vertices[i1 * 3 + 2]) - f64::from(mesh.vertices[i0 * 3 + 2]);
@@ -560,47 +640,29 @@ fn stock_isometric_svg(
         let nz = ax * by - ay * bx;
         let nlen = (nx * nx + ny * ny + nz * nz).sqrt().max(1e-10);
 
-        // Dot product with light direction (clamped for ambient)
         let dot = ((nx / nlen) * light_x + (ny / nlen) * light_y + (nz / nlen) * light_z)
             .clamp(0.0, 1.0);
-        let shade = 0.3 + 0.7 * dot; // ambient 0.3 + diffuse 0.7
+        let shade = 0.3 + 0.7 * dot;
 
-        // Get vertex color from mesh (average of 3 vertices)
         let base_r = (f64::from(mesh.colors[i0 * 3])
             + f64::from(mesh.colors[i1 * 3])
-            + f64::from(mesh.colors[i2 * 3]))
-            / 3.0;
+            + f64::from(mesh.colors[i2 * 3])) / 3.0;
         let base_g = (f64::from(mesh.colors[i0 * 3 + 1])
             + f64::from(mesh.colors[i1 * 3 + 1])
-            + f64::from(mesh.colors[i2 * 3 + 1]))
-            / 3.0;
+            + f64::from(mesh.colors[i2 * 3 + 1])) / 3.0;
         let base_b = (f64::from(mesh.colors[i0 * 3 + 2])
             + f64::from(mesh.colors[i1 * 3 + 2])
-            + f64::from(mesh.colors[i2 * 3 + 2]))
-            / 3.0;
+            + f64::from(mesh.colors[i2 * 3 + 2])) / 3.0;
 
         let r = (base_r * shade * 255.0).clamp(0.0, 255.0) as u8;
         let g = (base_g * shade * 255.0).clamp(0.0, 255.0) as u8;
         let b = (base_b * shade * 255.0).clamp(0.0, 255.0) as u8;
 
-        let _ = writeln!(
+        let _ = write!(
             svg,
-            "<polygon points='{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}' fill='#{r:02x}{g:02x}{b:02x}' stroke='#{r:02x}{g:02x}{b:02x}' stroke-width='0.5'/>"
+            "<polygon points='{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}' fill='#{r:02x}{g:02x}{b:02x}' stroke='#{r:02x}{g:02x}{b:02x}' stroke-width='0.3'/>"
         );
     }
-
-    // Legend
-    let bbox = &stock.stock_bbox;
-    let _ = writeln!(
-        svg,
-        "<text x='5' y='15' fill='white' font-size='11' font-family='monospace'>Stock: {:.0}x{:.0}x{:.0} mm  ({} triangles)</text>",
-        bbox.max.x - bbox.min.x,
-        bbox.max.y - bbox.min.y,
-        bbox.max.z - bbox.min.z,
-        tri_count,
-    );
-    let _ = writeln!(svg, "</svg>");
-    svg
 }
 
 /// Numeric fingerprint of stock state after simulation.
