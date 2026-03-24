@@ -584,9 +584,11 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                     _ => RegionOrdering::Global,
                 };
 
-                let clearing_strategy = match op.strategy.as_deref().unwrap_or("agent") {
+                let clearing_strategy = match op.strategy.as_deref().unwrap_or("contour") {
                     "contour" | "contour_parallel" => ClearingStrategy3d::ContourParallel,
-                    _ => ClearingStrategy3d::AgentSearch,
+                    "adaptive" => ClearingStrategy3d::Adaptive,
+                    "agent" | "agent_search" => ClearingStrategy3d::AgentSearch,
+                    _ => ClearingStrategy3d::ContourParallel,
                 };
 
                 let params = Adaptive3dParams {
