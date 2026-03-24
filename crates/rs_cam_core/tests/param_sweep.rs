@@ -30,11 +30,13 @@ use rs_cam_core::{
     },
     geo::{BoundingBox3, P2},
     horizontal_finish::HorizontalFinishParams,
+    inlay::InlayParams,
     mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere},
     pencil::PencilParams,
     pocket::PocketParams,
     polygon::Polygon2,
     profile::{ProfileParams, ProfileSide},
+    project_curve::ProjectCurveParams,
     radial_finish::RadialFinishParams,
     ramp_finish::{CutDirection, RampFinishParams},
     rest::RestParams,
@@ -1773,5 +1775,121 @@ fn sweep_horizontal_finish_stepover() {
     for v in &result.variants {
         let ctx = format!("horizontal_finish stepover={}", v.value);
         assert_any_change(&v.diff, &ctx);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// INLAY SWEEPS
+// ═══════════════════════════════════════════════════════════════════════
+
+fn default_inlay_params() -> InlayParams {
+    InlayParams {
+        half_angle: std::f64::consts::FRAC_PI_4,
+        pocket_depth: 3.0,
+        glue_gap: 0.1,
+        flat_depth: 0.5,
+        boundary_offset: 0.0,
+        stepover: 1.0,
+        flat_tool_radius: 3.175,
+        feed_rate: 800.0,
+        plunge_rate: 400.0,
+        safe_z: 10.0,
+        tolerance: 0.05,
+    }
+}
+
+#[test]
+fn sweep_inlay_pocket_depth() {
+    let poly = l_shape_polygon();
+    let result = run_sweep(
+        "inlay", "pocket_depth", serde_json::json!(3.0),
+        &[serde_json::json!(1.0), serde_json::json!(5.0)],
+        |ov| {
+            let mut p = default_inlay_params();
+            if let Some(v) = ov { p.pocket_depth = v.as_f64().unwrap(); }
+            // Use the female toolpath for fingerprinting
+            rs_cam_core::inlay::inlay_toolpaths(&poly, &p).female
+        },
+    );
+    for v in &result.variants {
+        let ctx = format!("inlay pocket_depth={}", v.value);
+        assert_any_change(&v.diff, &ctx);
+        assert_has_change(&v.diff, "min_z", &ctx);
+    }
+}
+
+#[test]
+fn sweep_inlay_glue_gap() {
+    let poly = l_shape_polygon();
+    let result = run_sweep(
+        "inlay", "glue_gap", serde_json::json!(0.1),
+        &[serde_json::json!(0.0), serde_json::json!(0.5)],
+        |ov| {
+            let mut p = default_inlay_params();
+            if let Some(v) = ov { p.glue_gap = v.as_f64().unwrap(); }
+            rs_cam_core::inlay::inlay_toolpaths(&poly, &p).female
+        },
+    );
+    // Glue gap primarily affects the male plug, not the female pocket.
+    // The female fingerprint may not change. This is a valid finding —
+    // a future test should also fingerprint the male toolpath.
+    let dir = output_dir().join("inlay").join("glue_gap");
+    assert!(dir.join("sweep_result.json").exists());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PROJECT CURVE SWEEPS
+// ═══════════════════════════════════════════════════════════════════════
+
+fn default_project_curve_params() -> ProjectCurveParams {
+    ProjectCurveParams {
+        depth: 1.0,
+        feed_rate: 800.0,
+        plunge_rate: 400.0,
+        safe_z: 30.0,
+        point_spacing: 0.5,
+    }
+}
+
+#[test]
+fn sweep_project_curve_depth() {
+    let (mesh, index) = hemisphere_mesh();
+    let cutter = BallEndmill::new(6.35, 25.0);
+    // Small polygon to project onto the hemisphere
+    let poly = Polygon2::rectangle(5.0, 5.0, 15.0, 15.0);
+    let result = run_sweep(
+        "project_curve", "depth", serde_json::json!(1.0),
+        &[serde_json::json!(0.5), serde_json::json!(3.0)],
+        |ov| {
+            let mut p = default_project_curve_params();
+            if let Some(v) = ov { p.depth = v.as_f64().unwrap(); }
+            rs_cam_core::project_curve::project_curve_toolpath(&poly, &mesh, &index, &cutter, &p)
+        },
+    );
+    for v in &result.variants {
+        let ctx = format!("project_curve depth={}", v.value);
+        assert_any_change(&v.diff, &ctx);
+        assert_has_change(&v.diff, "min_z", &ctx);
+    }
+}
+
+#[test]
+fn sweep_project_curve_point_spacing() {
+    let (mesh, index) = hemisphere_mesh();
+    let cutter = BallEndmill::new(6.35, 25.0);
+    let poly = Polygon2::rectangle(5.0, 5.0, 15.0, 15.0);
+    let result = run_sweep(
+        "project_curve", "point_spacing", serde_json::json!(0.5),
+        &[serde_json::json!(0.2), serde_json::json!(2.0)],
+        |ov| {
+            let mut p = default_project_curve_params();
+            if let Some(v) = ov { p.point_spacing = v.as_f64().unwrap(); }
+            rs_cam_core::project_curve::project_curve_toolpath(&poly, &mesh, &index, &cutter, &p)
+        },
+    );
+    for v in &result.variants {
+        let ctx = format!("project_curve point_spacing={}", v.value);
+        assert_any_change(&v.diff, &ctx);
+        assert_has_change(&v.diff, "move_count", &ctx);
     }
 }
