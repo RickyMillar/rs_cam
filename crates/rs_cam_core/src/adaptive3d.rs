@@ -1315,9 +1315,23 @@ fn clear_z_level_contour_parallel(
         "Contour-parallel EDT: generating offset contours"
     );
 
+    // Compute total offset range for Z-blending.
+    // Outer contours (threshold near tool_radius_cells) stay near z_level (flat).
+    // Inner contours (threshold near max_dist) follow the terrain surface.
+    // This spreads Z movement across all passes instead of a sudden plunge
+    // on the innermost pass.
+    let offset_range = max_dist - tool_radius_cells;
+
     let mut threshold = tool_radius_cells;
     while threshold < max_dist {
         check_cancel(cancel)?;
+
+        // Blend factor: 0.0 at outermost contour, 1.0 at innermost
+        let blend = if offset_range > 1e-6 {
+            ((threshold - tool_radius_cells) / offset_range).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
 
         // Threshold the EDT: cells with distance > threshold are "inside" the offset
         let mask: Vec<bool> = edt.iter().map(|&d| d > threshold).collect();
@@ -1328,15 +1342,18 @@ fn clear_z_level_contour_parallel(
                 continue;
             }
 
-            // Surface drape: map 2D contour points to 3D
+            // Z-blended surface drape: outer passes are flat at z_level,
+            // inner passes progressively follow the terrain surface.
             let mut path_3d: Vec<P3> = Vec::with_capacity(loop_pts.len());
             for p in loop_pts {
                 let surf_z = surface_hm.surface_z_at_world(p.x, p.y);
-                let z = if surf_z == f64::NEG_INFINITY {
+                let terrain_z = if surf_z == f64::NEG_INFINITY {
                     z_level
                 } else {
                     (surf_z + ctx.stock_to_leave).max(z_level)
                 };
+                // Lerp between flat plane and terrain surface
+                let z = z_level + blend * (terrain_z - z_level);
                 path_3d.push(P3::new(p.x, p.y, z));
             }
 
