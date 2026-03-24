@@ -23,8 +23,6 @@ use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::pocket::pocket_contours;
-use crate::polygon::{Polygon2, detect_containment, offset_polygon};
 use crate::radial_profile::RadialProfileLUT;
 use crate::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
@@ -1153,17 +1151,21 @@ fn pre_stamp_thin_bands(
 
 // ── Contour-parallel clearing ─────────────────────────────────────────
 
-/// Extract closed polygons that represent material boundaries at a given
-/// Z level. Uses marching squares on a boolean grid derived from the
-/// tri-dexel stock, then nests holes inside exteriors via containment test.
+/// Build a padded boolean grid of material cells at a given Z level.
+///
+/// A cell is `true` if the stock has material above the effective floor
+/// (max of surface_z + stock_to_leave, z_level). The grid is padded with
+/// a 1-cell false border so marching squares and EDT detect edge boundaries.
+///
+/// Returns `(padded_grid, padded_rows, padded_cols, origin_x, origin_y, cell_size)`.
 #[allow(clippy::indexing_slicing)] // SAFETY: padded grid indices bounded by loop ranges
-fn extract_material_polygons(
+fn build_material_bool_grid(
     material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     z_level: f64,
     stock_to_leave: f64,
     region: Option<&MaterialRegion>,
-) -> Vec<Polygon2> {
+) -> (Vec<bool>, usize, usize, f64, f64, f64) {
     let grid = &material_stock.z_grid;
     let rows = grid.rows;
     let cols = grid.cols;
@@ -1196,64 +1198,71 @@ fn extract_material_polygons(
         }
     }
 
-    let contour_loops = marching_squares_bool_grid(
-        &padded_grid,
+    (
+        padded_grid,
         padded_rows,
         padded_cols,
         origin_u - cell_size,
         origin_v - cell_size,
         cell_size,
-    );
-
-    if contour_loops.is_empty() {
-        return Vec::new();
-    }
-
-    // Convert loops to Polygon2 and classify by winding.
-    // Positive signed area = CCW = exterior, negative = CW = hole.
-    let mut exteriors: Vec<Polygon2> = Vec::new();
-    let mut holes: Vec<Vec<P2>> = Vec::new();
-
-    for loop_pts in &contour_loops {
-        if loop_pts.len() < 3 {
-            continue;
-        }
-        let area = crate::polygon::shoelace_area(loop_pts);
-        if area > 0.0 {
-            // CCW exterior
-            exteriors.push(Polygon2::new(loop_pts.clone()));
-        } else if area < 0.0 {
-            // CW hole — store for nesting
-            holes.push(loop_pts.clone());
-        }
-    }
-
-    if exteriors.is_empty() {
-        return Vec::new();
-    }
-
-    // If there are holes, use detect_containment to nest them.
-    if holes.is_empty() {
-        return exteriors;
-    }
-
-    // Combine exteriors and holes into one vec for detect_containment.
-    // detect_containment expects all rings as individual Polygon2 values,
-    // it inspects signed area and nests CW rings inside their containing CCW ring.
-    let mut all: Vec<Polygon2> = exteriors;
-    for h in holes {
-        all.push(Polygon2::new(h));
-    }
-    detect_containment(all)
+    )
 }
 
-/// Clear a Z level using contour-parallel offset strategy.
+/// Stamp dexel stock along a 3D cutting path at `step_len` intervals.
+fn stamp_along_path(
+    material_stock: &mut TriDexelStock,
+    lut: &RadialProfileLUT,
+    tool_radius: f64,
+    path: &[P3],
+    step_len: f64,
+) {
+    let first = match path.first() {
+        Some(p) => *p,
+        None => return,
+    };
+    let mut travel = 0.0;
+    let mut prev = first;
+    for pt in path {
+        let dx = pt.x - prev.x;
+        let dy = pt.y - prev.y;
+        let seg_len = (dx * dx + dy * dy).sqrt();
+        travel += seg_len;
+        if travel >= step_len {
+            material_stock.stamp_tool_at(
+                lut,
+                tool_radius,
+                pt.x,
+                pt.y,
+                pt.z,
+                StockCutDirection::FromTop,
+            );
+            travel = 0.0;
+        }
+        prev = *pt;
+    }
+    // Stamp at the last point regardless.
+    material_stock.stamp_tool_at(
+        lut,
+        tool_radius,
+        prev.x,
+        prev.y,
+        prev.z,
+        StockCutDirection::FromTop,
+    );
+}
+
+/// Clear a Z level using EDT-based contour-parallel strategy.
 ///
-/// 1. Extract material boundary polygons at the given z_level.
-/// 2. For each polygon, apply tool-radius compensation, then generate
-///    concentric inward offsets via `pocket_contours`.
-/// 3. Surface-drape each 2D contour to 3D using the surface heightmap.
-/// 4. Stamp dexel stock along each cutting path.
+/// 1. Build a boolean material grid at the given z_level.
+/// 2. Compute a Euclidean Distance Transform on the inverted (air) grid,
+///    giving distance-to-nearest-air for each material cell.
+/// 3. Threshold the EDT at successive stepover intervals to produce
+///    concentric contour rings via marching squares.
+/// 4. Surface-drape each 2D contour to 3D using the surface heightmap.
+/// 5. Stamp dexel stock along each cutting path.
+///
+/// This replaces the polygon-offset approach which hung on fine tools
+/// due to iterative `offset_polygon` on high-vertex polygons.
 #[allow(clippy::too_many_arguments)]
 fn clear_z_level_contour_parallel(
     ctx: &ClearZLevelContext<'_>,
@@ -1275,51 +1284,53 @@ fn clear_z_level_contour_parallel(
         return Ok(());
     }
 
-    let polygons = extract_material_polygons(
-        material_stock,
-        surface_hm,
-        z_level,
-        ctx.stock_to_leave,
-        region,
-    );
+    // 1. Build boolean material grid (material = true)
+    let (material_grid, rows, cols, origin_x, origin_y, cell_size) =
+        build_material_bool_grid(material_stock, surface_hm, z_level, ctx.stock_to_leave, region);
 
-    if polygons.is_empty() {
+    // Check if any material exists
+    if !material_grid.iter().any(|&b| b) {
         return Ok(());
     }
 
+    // 2. Compute EDT on the INVERTED grid (air = true as source).
+    //    This gives distance to nearest air cell for each material cell.
+    //    Material cells near the boundary have small distance.
+    //    Interior material cells have large distance.
+    let air_grid: Vec<bool> = material_grid.iter().map(|&b| !b).collect();
+    let edt = crate::contour_extract::distance_transform_2d(&air_grid, rows, cols);
+
+    // 3. Find max distance (determines number of offset levels)
+    let max_dist = edt.iter().copied().fold(0.0f64, f64::max);
+
+    // 4. Generate contours at each stepover threshold
+    let tool_radius_cells = ctx.tool_radius / cell_size;
+    let stepover_cells = ctx.stepover / cell_size;
+
     debug!(
-        polygons = polygons.len(),
         z = z_level,
-        "Contour-parallel: extracted material polygons"
+        max_dist_cells = max_dist,
+        tool_radius_cells = tool_radius_cells,
+        stepover_cells = stepover_cells,
+        "Contour-parallel EDT: generating offset contours"
     );
 
-    for polygon in &polygons {
+    let mut threshold = tool_radius_cells;
+    while threshold < max_dist {
         check_cancel(cancel)?;
 
-        if polygon.exterior.len() < 3 {
-            continue;
-        }
+        // Threshold the EDT: cells with distance > threshold are "inside" the offset
+        let mask: Vec<bool> = edt.iter().map(|&d| d > threshold).collect();
+        let loops = marching_squares_bool_grid(&mask, rows, cols, origin_x, origin_y, cell_size);
 
-        // Tool radius compensation — offset inward so tool edge touches boundary.
-        let compensated = offset_polygon(polygon, ctx.tool_radius);
-        let comp = match compensated.first() {
-            Some(c) if c.exterior.len() >= 3 => c,
-            _ => continue,
-        };
-
-        // Generate concentric offset contours from outside in.
-        let contours = pocket_contours(comp, ctx.tool_radius, ctx.stepover);
-
-        for contour in &contours {
-            check_cancel(cancel)?;
-
-            if contour.len() < 2 {
+        for loop_pts in &loops {
+            if loop_pts.len() < 3 {
                 continue;
             }
 
-            // Surface drape: map 2D points to 3D.
-            let mut path_3d: Vec<P3> = Vec::with_capacity(contour.len());
-            for p in contour {
+            // Surface drape: map 2D contour points to 3D
+            let mut path_3d: Vec<P3> = Vec::with_capacity(loop_pts.len());
+            for p in loop_pts {
                 let surf_z = surface_hm.surface_z_at_world(p.x, p.y);
                 let z = if surf_z == f64::NEG_INFINITY {
                     z_level
@@ -1329,46 +1340,25 @@ fn clear_z_level_contour_parallel(
                 path_3d.push(P3::new(p.x, p.y, z));
             }
 
-            // Emit rapid to first point, then cut along the contour.
+            // Emit rapid to first point + cut segment
             if let Some(first) = path_3d.first() {
                 segments.push(Adaptive3dSegment::Rapid(*first));
                 segments.push(Adaptive3dSegment::Cut(path_3d.clone()));
 
-                // Stamp dexel stock along the path at step_len intervals.
-                let step_len = ctx.step_len;
-                let mut travel = 0.0;
-                let mut prev = *first;
-                for pt in &path_3d {
-                    let dx = pt.x - prev.x;
-                    let dy = pt.y - prev.y;
-                    let seg_len = (dx * dx + dy * dy).sqrt();
-                    travel += seg_len;
-                    if travel >= step_len {
-                        material_stock.stamp_tool_at(
-                            ctx.lut,
-                            ctx.tool_radius,
-                            pt.x,
-                            pt.y,
-                            pt.z,
-                            StockCutDirection::FromTop,
-                        );
-                        travel = 0.0;
-                    }
-                    prev = *pt;
-                }
-                // Stamp at the last point regardless.
-                material_stock.stamp_tool_at(
+                // Stamp dexel stock along the cutting path
+                stamp_along_path(
+                    material_stock,
                     ctx.lut,
                     ctx.tool_radius,
-                    prev.x,
-                    prev.y,
-                    prev.z,
-                    StockCutDirection::FromTop,
+                    &path_3d,
+                    ctx.step_len,
                 );
 
                 *last_pos = path_3d.last().copied();
             }
         }
+
+        threshold += stepover_cells;
     }
 
     Ok(())
@@ -4128,6 +4118,80 @@ mod tests {
         assert!(
             !trace.annotations.is_empty(),
             "adaptive 3D trace should carry generated annotations"
+        );
+    }
+
+    // ── Contour-parallel EDT tests ───────────────────────────────────
+
+    #[test]
+    fn test_contour_parallel_edt_flat_mesh() {
+        let (mesh, si) = make_flat_mesh();
+        let cutter = flat_cutter();
+        let params = Adaptive3dParams {
+            stock_top_z: 5.0,
+            depth_per_pass: 5.0,
+            stock_to_leave: 0.0,
+            tolerance: 0.5,
+            clearing_strategy: ClearingStrategy3d::ContourParallel,
+            ..default_params()
+        };
+
+        let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+        assert!(
+            tp.moves.len() > 5,
+            "Contour-parallel EDT on flat mesh should produce moves, got {}",
+            tp.moves.len()
+        );
+
+        // Check that there are actual cutting moves (Linear with non-rapid feed)
+        let cut_moves = tp
+            .moves
+            .iter()
+            .filter(|m| matches!(m.move_type, crate::toolpath::MoveType::Linear { .. }))
+            .count();
+        assert!(
+            cut_moves > 0,
+            "Contour-parallel EDT should produce cutting moves, got 0"
+        );
+    }
+
+    #[test]
+    fn test_contour_parallel_edt_hemisphere() {
+        let (mesh, si) = make_hemisphere_mesh();
+        let cutter = flat_cutter();
+        let params = Adaptive3dParams {
+            stock_top_z: 25.0,
+            depth_per_pass: 5.0,
+            stock_to_leave: 0.5,
+            tolerance: 0.5,
+            clearing_strategy: ClearingStrategy3d::ContourParallel,
+            ..default_params()
+        };
+
+        let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+        assert!(
+            tp.moves.len() > 10,
+            "Contour-parallel EDT on hemisphere should produce multi-level passes, got {} moves",
+            tp.moves.len()
+        );
+
+        // Z values should span multiple levels
+        let min_z = tp
+            .moves
+            .iter()
+            .filter(|m| matches!(m.move_type, crate::toolpath::MoveType::Linear { .. }))
+            .map(|m| m.target.z)
+            .fold(f64::INFINITY, f64::min);
+        let max_z = tp
+            .moves
+            .iter()
+            .filter(|m| matches!(m.move_type, crate::toolpath::MoveType::Linear { .. }))
+            .map(|m| m.target.z)
+            .fold(f64::NEG_INFINITY, f64::max);
+        assert!(
+            max_z - min_z > 3.0,
+            "Hemisphere contour-parallel should span multiple Z levels, range = {:.1}",
+            max_z - min_z
         );
     }
 }
