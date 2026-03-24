@@ -672,9 +672,9 @@ impl OperationConfig {
             OperationConfig::Adaptive3d(config) => {
                 DepthSemantics::DerivedStockTop(config.stock_top_z.abs())
             }
-            OperationConfig::Waterline(config) => {
-                DepthSemantics::DerivedStockTop((config.start_z - config.final_z).abs())
-            }
+            // Waterline Z range now comes from Heights (top_z / bottom_z),
+            // so depth semantics are handled by the heights system like other 3D ops.
+            OperationConfig::Waterline(_) => DepthSemantics::None,
             OperationConfig::Pencil(_) => DepthSemantics::None,
             OperationConfig::Scallop(_) => DepthSemantics::None,
             OperationConfig::SteepShallow(_) => DepthSemantics::None,

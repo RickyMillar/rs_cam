@@ -468,8 +468,6 @@ fn default_clearing_strategy() -> ClearingStrategy {
 pub struct WaterlineConfig {
     pub z_step: f64,
     pub sampling: f64,
-    pub start_z: f64,
-    pub final_z: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub continuous: bool,
@@ -480,8 +478,6 @@ impl Default for WaterlineConfig {
         Self {
             z_step: 1.0,
             sampling: 0.5,
-            start_z: 0.0,
-            final_z: -25.0,
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             continuous: false,

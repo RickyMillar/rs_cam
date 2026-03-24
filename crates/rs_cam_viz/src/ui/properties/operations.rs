@@ -330,6 +330,15 @@ pub(super) fn draw_dropcutter_params(ui: &mut egui::Ui, cfg: &mut DropCutterConf
             dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=50.0);
             draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate);
             dv(ui, "Min Z:", &mut cfg.min_z, " mm", 0.5, -500.0..=0.0);
+            dv(
+                ui,
+                "Slope From:",
+                &mut cfg.slope_from,
+                " deg",
+                1.0,
+                0.0..=90.0,
+            );
+            dv(ui, "Slope To:", &mut cfg.slope_to, " deg", 1.0, 0.0..=90.0);
         });
 }
 
@@ -459,8 +468,7 @@ pub(super) fn draw_waterline_params(ui: &mut egui::Ui, cfg: &mut WaterlineConfig
         .show(ui, |ui| {
             dv(ui, "Z Step:", &mut cfg.z_step, " mm", 0.1, 0.05..=20.0);
             dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
-            dv(ui, "Start Z:", &mut cfg.start_z, " mm", 0.5, -200.0..=200.0);
-            dv(ui, "Final Z:", &mut cfg.final_z, " mm", 0.5, -200.0..=200.0);
+            // Z range now comes from the Heights tab (top_z / bottom_z)
             draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate);
         });
 }
