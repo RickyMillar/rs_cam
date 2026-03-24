@@ -87,7 +87,7 @@ impl ScallopRuntimeEvent {
 impl Default for ScallopParams {
     fn default() -> Self {
         Self {
-            scallop_height: 0.01,
+            scallop_height: 0.1,
             tolerance: 0.05,
             direction: ScallopDirection::OutsideIn,
             continuous: false,
