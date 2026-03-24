@@ -15,7 +15,7 @@
 use crate::adaptive_shared::{
     angle_diff, average_angles, blend_corners, refine_angle_bracket, target_engagement_fraction,
 };
-use crate::contour_extract::marching_squares_bool_grid;
+use crate::contour_extract::{edt_curvature_field, marching_squares_bool_grid, smooth_grid};
 use crate::debug_trace::{HotspotRecord, ToolpathDebugBounds2, ToolpathDebugContext};
 use crate::dexel::{ray_subtract_above, ray_top};
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
@@ -82,7 +82,7 @@ pub enum ClearingStrategy3d {
     /// Fast contour-parallel offset clearing via EDT (default).
     #[default]
     ContourParallel,
-    /// True constant-engagement adaptive clearing (TODO).
+    /// Constant-engagement adaptive clearing via curvature-adjusted EDT offsets.
     Adaptive,
 }
 
@@ -1380,7 +1380,7 @@ fn clear_z_level_contour_parallel(
             if let Some(first) = path_3d.first() {
                 // Stay-down link if close to previous position, rapid otherwise
                 let link_dist = ctx.tool_radius * 3.0;
-                let should_link = last_pos.map_or(false, |lp| {
+                let should_link = last_pos.is_some_and(|lp| {
                     let dx = first.x - lp.x;
                     let dy = first.y - lp.y;
                     (dx * dx + dy * dy).sqrt() < link_dist
@@ -1406,6 +1406,157 @@ fn clear_z_level_contour_parallel(
         }
 
         threshold += stepover_cells;
+    }
+
+    Ok(())
+}
+
+/// Adaptive clearing: variable-offset EDT for constant tool engagement.
+///
+/// Same structure as `clear_z_level_contour_parallel` but uses a spatially-
+/// varying threshold based on EDT level-set curvature.  At convex boundary
+/// sections the stepover shrinks (preventing engagement spikes); at concave
+/// sections it grows (avoiding wasted light passes).
+#[allow(clippy::too_many_arguments)]
+fn clear_z_level_adaptive(
+    ctx: &ClearZLevelContext<'_>,
+    material_stock: &mut TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    z_level: f64,
+    segments: &mut Vec<Adaptive3dSegment>,
+    last_pos: &mut Option<P3>,
+    region: Option<&MaterialRegion>,
+    cancel: &dyn CancelCheck,
+) -> Result<(), Cancelled> {
+    // ── Material check ─────────────────────────────────────────────────
+    let remaining = if let Some(r) = region {
+        material_remaining_in_region(material_stock, surface_hm, z_level, ctx.stock_to_leave, r)
+    } else {
+        material_remaining_at_level(material_stock, surface_hm, z_level, ctx.stock_to_leave)
+    };
+    if remaining < 0.005 {
+        return Ok(());
+    }
+
+    // ── 1. Build boolean material grid ─────────────────────────────────
+    let (material_grid, rows, cols, origin_x, origin_y, cell_size) =
+        build_material_bool_grid(material_stock, surface_hm, z_level, ctx.stock_to_leave, region);
+
+    if !material_grid.iter().any(|&b| b) {
+        return Ok(());
+    }
+
+    // ── 2. EDT on inverted grid (distance to nearest air) ──────────────
+    let air_grid: Vec<bool> = material_grid.iter().map(|&b| !b).collect();
+    let edt = crate::contour_extract::distance_transform_2d(&air_grid, rows, cols);
+    let max_dist = edt.iter().copied().fold(0.0f64, f64::max);
+
+    // ── 3. Curvature field from EDT level sets ─────────────────────────
+    let mut curvature = edt_curvature_field(&edt, rows, cols);
+    // Smooth the curvature field to suppress finite-difference noise
+    // (especially near the medial axis where EDT gradient is discontinuous).
+    // Radius 5 = 11×11 kernel — wide enough to cover ~1 tool radius of
+    // averaging, which prevents the variable threshold from fragmenting contours.
+    smooth_grid(&mut curvature, rows, cols, 5);
+
+    // ── 4. Adaptive parameters ─────────────────────────────────────────
+    let tool_radius_cells = ctx.tool_radius / cell_size;
+    let alpha = ctx.target_frac * std::f64::consts::TAU;
+    let base_step = ctx.tool_radius * (1.0 - alpha.cos());
+    let base_step_cells = base_step / cell_size;
+
+    // Z-blend setup (identical to contour-parallel)
+    let offset_range = max_dist - tool_radius_cells;
+    let z_blend_enabled = ctx.z_blend;
+
+    debug!(
+        z = z_level,
+        max_dist_cells = max_dist,
+        tool_radius_cells = tool_radius_cells,
+        base_step_cells = base_step_cells,
+        "Adaptive EDT: generating curvature-adjusted contours"
+    );
+
+    // ── 5. Offset loop with variable threshold ─────────────────────────
+    let total = rows * cols;
+    let mut threshold_field = vec![0.0f64; total];
+    let mut base_threshold = tool_radius_cells;
+    let mut level: u32 = 0;
+
+    while base_threshold < max_dist {
+        check_cancel(cancel)?;
+        level += 1;
+
+        // Blend factor: 0.0 at outermost contour, 1.0 at innermost
+        let blend = if z_blend_enabled && offset_range > 1e-6 {
+            ((base_threshold - tool_radius_cells) / offset_range).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+
+        // Build per-cell variable threshold
+        // Clamp adjustment to [0.5, 2.5] — stepover ranges from 0.4× to 2× base.
+        let n = level as f64;
+        for (tf, &kappa) in threshold_field.iter_mut().zip(curvature.iter()) {
+            let denom = (1.0 + kappa * tool_radius_cells).clamp(0.5, 2.5);
+            let adjusted_step = base_step_cells / denom;
+            *tf = tool_radius_cells + n * adjusted_step;
+        }
+
+        // Threshold the EDT against the variable field
+        let mask: Vec<bool> = edt
+            .iter()
+            .zip(threshold_field.iter())
+            .map(|(&d, &t)| d > t)
+            .collect();
+        let loops = marching_squares_bool_grid(&mask, rows, cols, origin_x, origin_y, cell_size);
+
+        for loop_pts in &loops {
+            if loop_pts.len() < 3 {
+                continue;
+            }
+
+            // Z-blended surface drape (identical to contour-parallel)
+            let mut path_3d: Vec<P3> = Vec::with_capacity(loop_pts.len());
+            for p in loop_pts {
+                let surf_z = surface_hm.surface_z_at_world(p.x, p.y);
+                let target_z = if surf_z == f64::NEG_INFINITY {
+                    z_level
+                } else {
+                    surf_z + ctx.stock_to_leave
+                };
+                let z = (z_level + blend * (target_z - z_level)).max(target_z);
+                path_3d.push(P3::new(p.x, p.y, z));
+            }
+
+            // Entry (link or rapid) + cut segment
+            if let Some(first) = path_3d.first() {
+                let link_dist = ctx.tool_radius * 3.0;
+                let should_link = last_pos.is_some_and(|lp| {
+                    let dx = first.x - lp.x;
+                    let dy = first.y - lp.y;
+                    (dx * dx + dy * dy).sqrt() < link_dist
+                });
+                if should_link {
+                    segments.push(Adaptive3dSegment::Link(*first));
+                } else {
+                    segments.push(Adaptive3dSegment::Rapid(*first));
+                }
+                segments.push(Adaptive3dSegment::Cut(path_3d.clone()));
+
+                stamp_along_path(
+                    material_stock,
+                    ctx.lut,
+                    ctx.tool_radius,
+                    &path_3d,
+                    ctx.step_len,
+                );
+
+                *last_pos = path_3d.last().copied();
+            }
+        }
+
+        base_threshold += base_step_cells;
     }
 
     Ok(())
@@ -2453,11 +2604,20 @@ fn adaptive_3d_segments(
                         },
                     ));
                     match ctx.clearing_strategy {
-                        ClearingStrategy3d::ContourParallel
-                        | ClearingStrategy3d::Adaptive => {
-                            // TODO: Adaptive will use variable-offset EDT.
-                            // For now both use contour-parallel.
+                        ClearingStrategy3d::ContourParallel => {
                             clear_z_level_contour_parallel(
+                                &ctx,
+                                &mut material_stock,
+                                &surface_hm,
+                                z_level,
+                                &mut segments,
+                                &mut last_pos,
+                                Some(region),
+                                cancel,
+                            )?;
+                        }
+                        ClearingStrategy3d::Adaptive => {
+                            clear_z_level_adaptive(
                                 &ctx,
                                 &mut material_stock,
                                 &surface_hm,
@@ -2517,11 +2677,20 @@ fn adaptive_3d_segments(
                     },
                 ));
                 match ctx.clearing_strategy {
-                    ClearingStrategy3d::ContourParallel
-                    | ClearingStrategy3d::Adaptive => {
-                        // TODO: Adaptive will use variable-offset EDT.
-                        // For now both use contour-parallel.
+                    ClearingStrategy3d::ContourParallel => {
                         clear_z_level_contour_parallel(
+                            &ctx,
+                            &mut material_stock,
+                            &surface_hm,
+                            z_level,
+                            &mut segments,
+                            &mut last_pos,
+                            None,
+                            cancel,
+                        )?;
+                    }
+                    ClearingStrategy3d::Adaptive => {
+                        clear_z_level_adaptive(
                             &ctx,
                             &mut material_stock,
                             &surface_hm,

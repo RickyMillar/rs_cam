@@ -440,6 +440,25 @@ pub(super) fn draw_adaptive3d_params(ui: &mut egui::Ui, cfg: &mut Adaptive3dConf
                     );
                 });
             ui.end_row();
+            ui.label("Strategy:");
+            egui::ComboBox::from_id_salt("a3d_strat")
+                .selected_text(match cfg.clearing_strategy {
+                    ClearingStrategy::ContourParallel => "Contour Parallel",
+                    ClearingStrategy::Adaptive => "Adaptive",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut cfg.clearing_strategy,
+                        ClearingStrategy::ContourParallel,
+                        "Contour Parallel",
+                    );
+                    ui.selectable_value(
+                        &mut cfg.clearing_strategy,
+                        ClearingStrategy::Adaptive,
+                        "Adaptive",
+                    );
+                });
+            ui.end_row();
         });
 }
 

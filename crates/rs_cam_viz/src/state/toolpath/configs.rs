@@ -32,6 +32,13 @@ pub enum RegionOrdering {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum ClearingStrategy {
+    ContourParallel,
+    Adaptive,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ScallopDirection {
     OutsideIn,
     InsideOut,
@@ -427,6 +434,8 @@ pub struct Adaptive3dConfig {
     pub fine_stepdown: f64,
     pub detect_flat_areas: bool,
     pub region_ordering: RegionOrdering,
+    #[serde(default = "default_clearing_strategy")]
+    pub clearing_strategy: ClearingStrategy,
 }
 
 impl Default for Adaptive3dConfig {
@@ -445,8 +454,13 @@ impl Default for Adaptive3dConfig {
             fine_stepdown: 0.0,
             detect_flat_areas: false,
             region_ordering: RegionOrdering::Global,
+            clearing_strategy: ClearingStrategy::ContourParallel,
         }
     }
+}
+
+fn default_clearing_strategy() -> ClearingStrategy {
+    ClearingStrategy::ContourParallel
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

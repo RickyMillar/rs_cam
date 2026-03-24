@@ -102,7 +102,14 @@ fn run_adaptive3d_annotated(
             }
         },
         initial_stock: req.prior_stock.clone(),
-        clearing_strategy: rs_cam_core::adaptive3d::ClearingStrategy3d::ContourParallel,
+        clearing_strategy: match cfg.clearing_strategy {
+            crate::state::toolpath::ClearingStrategy::ContourParallel => {
+                rs_cam_core::adaptive3d::ClearingStrategy3d::ContourParallel
+            }
+            crate::state::toolpath::ClearingStrategy::Adaptive => {
+                rs_cam_core::adaptive3d::ClearingStrategy3d::Adaptive
+            }
+        },
         z_blend: false,
     };
     rs_cam_core::adaptive3d::adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
