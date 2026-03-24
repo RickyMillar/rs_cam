@@ -1453,17 +1453,34 @@ fn clear_z_level_adaptive(
 
     // ── 3. Curvature field from EDT level sets ─────────────────────────
     let mut curvature = edt_curvature_field(&edt, rows, cols);
-    // Smooth the curvature field to suppress finite-difference noise
-    // (especially near the medial axis where EDT gradient is discontinuous).
-    // Radius 5 = 11×11 kernel — wide enough to cover ~1 tool radius of
-    // averaging, which prevents the variable threshold from fragmenting contours.
-    smooth_grid(&mut curvature, rows, cols, 5);
-
-    // ── 4. Adaptive parameters ─────────────────────────────────────────
+    // Smooth to suppress finite-difference noise near the medial axis.
+    // Scale with tool radius so the kernel covers ~1 tool diameter.
     let tool_radius_cells = ctx.tool_radius / cell_size;
+    let smooth_r = (tool_radius_cells as usize).max(3);
+    smooth_grid(&mut curvature, rows, cols, smooth_r);
+
+    // ── 4. Precompute per-cell curvature offset ────────────────────────
+    // The offset is a CONSTANT shift per cell (does not scale with level N).
+    // This keeps contour topology stable across levels while adjusting
+    // local spacing based on curvature.
+    //   offset = base_step * (−κR / (1 + κR))  clamped for stability
+    //   Concave κ < 0: offset > 0 → contour recedes → wider pass
+    //   Convex  κ > 0: offset < 0 → contour advances → tighter pass
+    let total = rows * cols;
     let alpha = ctx.target_frac * std::f64::consts::TAU;
     let base_step = ctx.tool_radius * (1.0 - alpha.cos());
     let base_step_cells = base_step / cell_size;
+
+    let mut curvature_offset = vec![0.0f64; total];
+    for (off, &kappa) in curvature_offset.iter_mut().zip(curvature.iter()) {
+        let kr = kappa * tool_radius_cells;
+        let denom = (1.0 + kr).clamp(0.5, 2.0);
+        // offset = base_step * (1/denom - 1), clamped to ±0.5 * base_step
+        *off = (base_step_cells * (1.0 / denom - 1.0)).clamp(
+            -0.5 * base_step_cells,
+            0.5 * base_step_cells,
+        );
+    }
 
     // Z-blend setup (identical to contour-parallel)
     let offset_range = max_dist - tool_radius_cells;
@@ -1477,37 +1494,24 @@ fn clear_z_level_adaptive(
         "Adaptive EDT: generating curvature-adjusted contours"
     );
 
-    // ── 5. Offset loop with variable threshold ─────────────────────────
-    let total = rows * cols;
-    let mut threshold_field = vec![0.0f64; total];
-    let mut base_threshold = tool_radius_cells;
-    let mut level: u32 = 0;
+    // ── 5. Offset loop: fixed base progression + constant curvature shift
+    let mut threshold = tool_radius_cells;
 
-    while base_threshold < max_dist {
+    while threshold < max_dist {
         check_cancel(cancel)?;
-        level += 1;
 
         // Blend factor: 0.0 at outermost contour, 1.0 at innermost
         let blend = if z_blend_enabled && offset_range > 1e-6 {
-            ((base_threshold - tool_radius_cells) / offset_range).clamp(0.0, 1.0)
+            ((threshold - tool_radius_cells) / offset_range).clamp(0.0, 1.0)
         } else {
             1.0
         };
 
-        // Build per-cell variable threshold
-        // Clamp adjustment to [0.5, 2.5] — stepover ranges from 0.4× to 2× base.
-        let n = level as f64;
-        for (tf, &kappa) in threshold_field.iter_mut().zip(curvature.iter()) {
-            let denom = (1.0 + kappa * tool_radius_cells).clamp(0.5, 2.5);
-            let adjusted_step = base_step_cells / denom;
-            *tf = tool_radius_cells + n * adjusted_step;
-        }
-
-        // Threshold the EDT against the variable field
+        // Variable mask: base threshold + per-cell curvature offset
         let mask: Vec<bool> = edt
             .iter()
-            .zip(threshold_field.iter())
-            .map(|(&d, &t)| d > t)
+            .zip(curvature_offset.iter())
+            .map(|(&d, &off)| d > threshold + off)
             .collect();
         let loops = marching_squares_bool_grid(&mask, rows, cols, origin_x, origin_y, cell_size);
 
@@ -1556,7 +1560,7 @@ fn clear_z_level_adaptive(
             }
         }
 
-        base_threshold += base_step_cells;
+        threshold += base_step_cells;
     }
 
     Ok(())
