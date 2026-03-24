@@ -124,7 +124,7 @@ pub fn run_sweep(
             )?;
         }
 
-        let arts = SweepArtifacts::generate(var_tp, None);
+        let arts = SweepArtifacts::generate(var_tp);
 
         let json_val = parse_value_to_json(val_str);
         sweep_variants.push(SweepVariant {
@@ -334,10 +334,12 @@ fn simulate_and_export(
         stock.simulate_toolpath(&phase.toolpath, phase.cutter.as_ref(), StockCutDirection::FromTop);
     }
 
-    // Export heightmap SVG
-    let arts = SweepArtifacts::generate(tp, Some(&stock));
-    if let Some(svg) = &arts.stock_iso_svg {
-        let _ = std::fs::write(output_dir.join(format!("{prefix}_stock.svg")), svg);
+    // Export composite stock PNG
+    let w: u32 = 900;
+    let h: u32 = 600;
+    let pixels = rs_cam_core::fingerprint::render_stock_composite(&stock, w, h);
+    if let Some(img) = image::RgbaImage::from_raw(w, h, pixels) {
+        let _ = img.save(output_dir.join(format!("{prefix}_stock.png")));
     }
 
     Ok(StockFingerprint::from_stock(&stock))

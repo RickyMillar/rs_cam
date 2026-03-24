@@ -353,8 +353,6 @@ fn diff_f64_vec(
 pub struct SweepArtifacts {
     /// Top-down toolpath SVG (Z encoded as color).
     pub toolpath_svg: Option<String>,
-    /// Isometric 3D stock SVG rendered from the dexel mesh.
-    pub stock_iso_svg: Option<String>,
     /// Structural summary of the toolpath SVG for quick diff.
     pub svg_summary: Option<SvgSummary>,
 }
@@ -371,11 +369,8 @@ pub struct SvgSummary {
 }
 
 impl SweepArtifacts {
-    /// Generate artifacts for a toolpath. Pass stock for isometric stock render.
-    pub fn generate(
-        tp: &Toolpath,
-        stock: Option<&crate::dexel_stock::TriDexelStock>,
-    ) -> Self {
+    /// Generate artifacts for a toolpath.
+    pub fn generate(tp: &Toolpath) -> Self {
         let toolpath_svg = if tp.moves.is_empty() {
             None
         } else {
@@ -384,12 +379,267 @@ impl SweepArtifacts {
 
         let svg_summary = toolpath_svg.as_ref().map(|svg| extract_svg_summary(svg));
 
-        let stock_iso_svg = stock.map(|s| stock_isometric_svg(s, 800.0, 600.0));
-
         Self {
             toolpath_svg,
-            stock_iso_svg,
             svg_summary,
+        }
+    }
+}
+
+/// Render a composite 6-view PNG of the stock (4 iso corners + top + bottom).
+///
+/// Returns raw RGBA pixel buffer and dimensions. Use the `image` crate to encode
+/// to PNG/JPEG in test code.
+///
+/// Layout (3 columns x 2 rows):
+/// ```text
+///  ┌────────────┬────────────┬────────────┐
+///  │ Front-Left │    Top     │ Front-Right│
+///  ├────────────┼────────────┼────────────┤
+///  │ Back-Left  │   Bottom   │ Back-Right │
+///  └────────────┴────────────┴────────────┘
+/// ```
+#[allow(clippy::indexing_slicing)] // bounded by mesh indices
+pub fn render_stock_composite(
+    stock: &crate::dexel_stock::TriDexelStock,
+    width: u32,
+    height: u32,
+) -> Vec<u8> {
+    use crate::dexel_mesh::dexel_stock_to_mesh;
+
+    let mesh = dexel_stock_to_mesh(stock);
+    let w = width as usize;
+    let h = height as usize;
+    // RGBA buffer, dark gray background
+    let mut pixels = vec![0u8; w * h * 4];
+    for i in 0..w * h {
+        pixels[i * 4] = 42;     // R
+        pixels[i * 4 + 1] = 42; // G
+        pixels[i * 4 + 2] = 42; // B
+        pixels[i * 4 + 3] = 255; // A
+    }
+
+    if mesh.vertices.is_empty() || mesh.indices.is_empty() {
+        return pixels;
+    }
+
+    // Centroid
+    let vert_count = mesh.vertices.len() / 3;
+    let mut cx = 0.0f64;
+    let mut cy = 0.0f64;
+    let mut cz = 0.0f64;
+    for i in 0..vert_count {
+        cx += f64::from(mesh.vertices[i * 3]);
+        cy += f64::from(mesh.vertices[i * 3 + 1]);
+        cz += f64::from(mesh.vertices[i * 3 + 2]);
+    }
+    let n = vert_count.max(1) as f64;
+    cx /= n;
+    cy /= n;
+    cz /= n;
+
+    let pi = std::f64::consts::PI;
+    let deg30 = pi / 6.0;
+    let deg90 = pi / 2.0;
+
+    let cell_w = width / 3;
+    let cell_h = height / 2;
+
+    let views: &[(f64, f64, u32, u32)] = &[
+        (pi / 4.0,       deg30,  0, 0),        // Front-Left
+        (0.0,            deg90,  cell_w, 0),    // Top
+        (7.0 * pi / 4.0, deg30,  cell_w * 2, 0), // Front-Right
+        (3.0 * pi / 4.0, deg30,  0, cell_h),   // Back-Left
+        (0.0,            -deg90, cell_w, cell_h), // Bottom
+        (5.0 * pi / 4.0, deg30,  cell_w * 2, cell_h), // Back-Right
+    ];
+
+    for &(az, el, vx, vy) in views {
+        render_view_to_pixels(
+            &mut pixels, w, h,
+            &mesh, vert_count, cx, cy, cz,
+            az, el,
+            vx as usize, vy as usize, cell_w as usize, cell_h as usize,
+        );
+    }
+
+    pixels
+}
+
+/// Rasterize one view of the stock mesh into an RGBA pixel buffer.
+#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+fn render_view_to_pixels(
+    pixels: &mut [u8],
+    buf_w: usize,
+    _buf_h: usize,
+    mesh: &crate::stock_mesh::StockMesh,
+    vert_count: usize,
+    cx: f64, cy: f64, cz: f64,
+    azimuth: f64, elevation: f64,
+    vx: usize, vy: usize, vw: usize, vh: usize,
+) {
+    let cos_az = azimuth.cos();
+    let sin_az = azimuth.sin();
+    let cos_el = elevation.cos();
+    let sin_el = elevation.sin();
+
+    let light_x = sin_az * 0.4 + cos_az * 0.3;
+    let light_y = cos_az * 0.4 - sin_az * 0.3;
+    let light_z: f64 = 0.866;
+
+    // Project vertices
+    let mut projected: Vec<[f64; 2]> = Vec::with_capacity(vert_count);
+    let mut depths: Vec<f64> = Vec::with_capacity(vert_count);
+    let mut sx_min = f64::MAX;
+    let mut sx_max = f64::MIN;
+    let mut sy_min = f64::MAX;
+    let mut sy_max = f64::MIN;
+
+    for i in 0..vert_count {
+        let x = f64::from(mesh.vertices[i * 3]) - cx;
+        let y = f64::from(mesh.vertices[i * 3 + 1]) - cy;
+        let z = f64::from(mesh.vertices[i * 3 + 2]) - cz;
+
+        let sx = x * cos_az - y * sin_az;
+        let sy = -(x * sin_az * sin_el) - (y * cos_az * sin_el) + z * cos_el;
+        let depth = x * sin_az * cos_el + y * cos_az * cos_el + z * sin_el;
+
+        projected.push([sx, sy]);
+        depths.push(depth);
+
+        if sx < sx_min { sx_min = sx; }
+        if sx > sx_max { sx_max = sx; }
+        if sy < sy_min { sy_min = sy; }
+        if sy > sy_max { sy_max = sy; }
+    }
+
+    let margin = 4.0;
+    let data_w = (sx_max - sx_min).max(1e-6);
+    let data_h = (sy_max - sy_min).max(1e-6);
+    let fw = vw as f64;
+    let fh = vh as f64;
+    let scale = ((fw - 2.0 * margin) / data_w).min((fh - 2.0 * margin) / data_h);
+    let proj_w = data_w * scale;
+    let proj_h = data_h * scale;
+    let off_x = margin + (fw - 2.0 * margin - proj_w) / 2.0;
+    let off_y = margin + (fh - 2.0 * margin - proj_h) / 2.0;
+
+    // Sort triangles back-to-front
+    let tri_count = mesh.indices.len() / 3;
+    let mut tris: Vec<(f64, usize)> = Vec::with_capacity(tri_count);
+    for t in 0..tri_count {
+        let i0 = mesh.indices[t * 3] as usize;
+        let i1 = mesh.indices[t * 3 + 1] as usize;
+        let i2 = mesh.indices[t * 3 + 2] as usize;
+        if i0 >= vert_count || i1 >= vert_count || i2 >= vert_count {
+            continue;
+        }
+        tris.push(((depths[i0] + depths[i1] + depths[i2]) / 3.0, t));
+    }
+    tris.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Z-buffer per pixel in this viewport (f64::MIN = no triangle yet)
+    let mut zbuf = vec![f64::MIN; vw * vh];
+
+    for &(tri_depth, t) in &tris {
+        let i0 = mesh.indices[t * 3] as usize;
+        let i1 = mesh.indices[t * 3 + 1] as usize;
+        let i2 = mesh.indices[t * 3 + 2] as usize;
+
+        let px0 = off_x + (projected[i0][0] - sx_min) * scale;
+        let py0 = off_y + proj_h - (projected[i0][1] - sy_min) * scale;
+        let px1 = off_x + (projected[i1][0] - sx_min) * scale;
+        let py1 = off_y + proj_h - (projected[i1][1] - sy_min) * scale;
+        let px2 = off_x + (projected[i2][0] - sx_min) * scale;
+        let py2 = off_y + proj_h - (projected[i2][1] - sy_min) * scale;
+
+        // Compute shaded color once per triangle
+        let ax = f64::from(mesh.vertices[i1 * 3]) - f64::from(mesh.vertices[i0 * 3]);
+        let ay = f64::from(mesh.vertices[i1 * 3 + 1]) - f64::from(mesh.vertices[i0 * 3 + 1]);
+        let az_v = f64::from(mesh.vertices[i1 * 3 + 2]) - f64::from(mesh.vertices[i0 * 3 + 2]);
+        let bx = f64::from(mesh.vertices[i2 * 3]) - f64::from(mesh.vertices[i0 * 3]);
+        let by = f64::from(mesh.vertices[i2 * 3 + 1]) - f64::from(mesh.vertices[i0 * 3 + 1]);
+        let bz = f64::from(mesh.vertices[i2 * 3 + 2]) - f64::from(mesh.vertices[i0 * 3 + 2]);
+        let nx = ay * bz - az_v * by;
+        let ny = az_v * bx - ax * bz;
+        let nz = ax * by - ay * bx;
+        let nlen = (nx * nx + ny * ny + nz * nz).sqrt().max(1e-10);
+        let dot = ((nx / nlen) * light_x + (ny / nlen) * light_y + (nz / nlen) * light_z)
+            .clamp(0.0, 1.0);
+        let shade = 0.3 + 0.7 * dot;
+
+        let base_r = (f64::from(mesh.colors[i0 * 3]) + f64::from(mesh.colors[i1 * 3])
+            + f64::from(mesh.colors[i2 * 3])) / 3.0;
+        let base_g = (f64::from(mesh.colors[i0 * 3 + 1]) + f64::from(mesh.colors[i1 * 3 + 1])
+            + f64::from(mesh.colors[i2 * 3 + 1])) / 3.0;
+        let base_b = (f64::from(mesh.colors[i0 * 3 + 2]) + f64::from(mesh.colors[i1 * 3 + 2])
+            + f64::from(mesh.colors[i2 * 3 + 2])) / 3.0;
+
+        let cr = (base_r * shade * 255.0).clamp(0.0, 255.0) as u8;
+        let cg = (base_g * shade * 255.0).clamp(0.0, 255.0) as u8;
+        let cb = (base_b * shade * 255.0).clamp(0.0, 255.0) as u8;
+
+        // Rasterize triangle with scanline fill
+        rasterize_triangle(
+            pixels, &mut zbuf, buf_w,
+            vx, vy, vw, vh,
+            px0, py0, px1, py1, px2, py2,
+            tri_depth, cr, cg, cb,
+        );
+    }
+}
+
+/// Scanline rasterize a triangle into the pixel buffer with z-test.
+#[allow(clippy::too_many_arguments)]
+fn rasterize_triangle(
+    pixels: &mut [u8],
+    zbuf: &mut [f64],
+    buf_w: usize,
+    vx: usize, vy: usize, vw: usize, vh: usize,
+    x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2: f64,
+    depth: f64,
+    r: u8, g: u8, b: u8,
+) {
+    // Bounding box clipped to viewport
+    let min_x = x0.min(x1).min(x2).max(0.0) as usize;
+    let max_x = (x0.max(x1).max(x2) as usize).min(vw.saturating_sub(1));
+    let min_y = y0.min(y1).min(y2).max(0.0) as usize;
+    let max_y = (y0.max(y1).max(y2) as usize).min(vh.saturating_sub(1));
+
+    // Edge function constants
+    let dx01 = x1 - x0;
+    let dy01 = y1 - y0;
+    let dx12 = x2 - x1;
+    let dy12 = y2 - y1;
+    let dx20 = x0 - x2;
+    let dy20 = y0 - y2;
+
+    for py in min_y..=max_y {
+        for px in min_x..=max_x {
+            let fx = px as f64 + 0.5;
+            let fy = py as f64 + 0.5;
+
+            // Barycentric edge test
+            let e0 = (fx - x0) * dy01 - (fy - y0) * dx01;
+            let e1 = (fx - x1) * dy12 - (fy - y1) * dx12;
+            let e2 = (fx - x2) * dy20 - (fy - y2) * dx20;
+
+            if (e0 >= 0.0 && e1 >= 0.0 && e2 >= 0.0)
+                || (e0 <= 0.0 && e1 <= 0.0 && e2 <= 0.0)
+            {
+                // Z-test
+                let zi = py * vw + px;
+                if depth > zbuf[zi] {
+                    zbuf[zi] = depth;
+                    let pi = ((vy + py) * buf_w + (vx + px)) * 4;
+                    if pi + 3 < pixels.len() {
+                        pixels[pi] = r;
+                        pixels[pi + 1] = g;
+                        pixels[pi + 2] = b;
+                        pixels[pi + 3] = 255;
+                    }
+                }
+            }
         }
     }
 }
@@ -421,247 +671,6 @@ fn extract_svg_summary(svg: &str) -> SvgSummary {
         cutting_line_count: cutting_lines,
         rapid_line_count: rapid_lines,
         unique_colors: colors.into_iter().collect(),
-    }
-}
-
-/// Render a composite 6-view SVG of the stock: 4 isometric corners + top + bottom.
-///
-/// Layout (3 columns x 2 rows):
-/// ```text
-///  ┌────────────┬────────────┬────────────┐
-///  │ Front-Left │    Top     │ Front-Right│
-///  ├────────────┼────────────┼────────────┤
-///  │ Back-Left  │   Bottom   │ Back-Right │
-///  └────────────┴────────────┴────────────┘
-/// ```
-#[allow(clippy::indexing_slicing)] // bounded by mesh indices
-fn stock_isometric_svg(
-    stock: &crate::dexel_stock::TriDexelStock,
-    width: f64,
-    height: f64,
-) -> String {
-    use crate::dexel_mesh::dexel_stock_to_mesh;
-    use std::fmt::Write;
-
-    let mesh = dexel_stock_to_mesh(stock);
-    if mesh.vertices.is_empty() || mesh.indices.is_empty() {
-        return String::from("<svg xmlns='http://www.w3.org/2000/svg'/>");
-    }
-
-    // 3x2 grid layout
-    let cols = 3.0;
-    let rows = 2.0;
-    let cell_w = width / cols;
-    let cell_h = height / rows;
-    let pad = 4.0;
-
-    // Pre-compute centroid once
-    let vert_count = mesh.vertices.len() / 3;
-    let mut cx = 0.0f64;
-    let mut cy = 0.0f64;
-    let mut cz = 0.0f64;
-    for i in 0..vert_count {
-        cx += f64::from(mesh.vertices[i * 3]);
-        cy += f64::from(mesh.vertices[i * 3 + 1]);
-        cz += f64::from(mesh.vertices[i * 3 + 2]);
-    }
-    let n = vert_count.max(1) as f64;
-    cx /= n;
-    cy /= n;
-    cz /= n;
-
-    let pi = std::f64::consts::PI;
-    let deg30 = pi / 6.0;
-    let deg90 = pi / 2.0;
-
-    // 6 views: (azimuth, elevation, label, grid_col, grid_row)
-    let views: &[(f64, f64, &str, f64, f64)] = &[
-        (pi / 4.0,       deg30,  "Front-Left",  0.0, 0.0),  // 45° az
-        (0.0,            deg90,  "Top",          1.0, 0.0),  // straight down
-        (7.0 * pi / 4.0, deg30,  "Front-Right", 2.0, 0.0),  // 315° az
-        (3.0 * pi / 4.0, deg30,  "Back-Left",   0.0, 1.0),  // 135° az
-        (0.0,            -deg90, "Bottom",       1.0, 1.0),  // straight up
-        (5.0 * pi / 4.0, deg30,  "Back-Right",  2.0, 1.0),  // 225° az
-    ];
-
-    let mut svg = String::with_capacity(mesh.indices.len() / 3 * 120 * 6);
-    let _ = writeln!(
-        svg,
-        "<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}'>"
-    );
-    let _ = writeln!(
-        svg,
-        "<rect width='{width}' height='{height}' fill='#2a2a2a'/>"
-    );
-
-    for &(az, el, label, col, row) in views {
-        let vx = col * cell_w;
-        let vy = row * cell_h;
-        let vw = cell_w - pad;
-        let vh = cell_h - pad;
-
-        // Clip group to cell
-        let _ = writeln!(
-            svg,
-            "<g transform='translate({vx},{vy})'>"
-        );
-        let _ = writeln!(
-            svg,
-            "<rect x='0' y='0' width='{cw}' height='{ch}' fill='#222' rx='3'/>",
-            cw = cell_w, ch = cell_h,
-        );
-
-        render_view_into(
-            &mut svg, &mesh, vert_count, cx, cy, cz,
-            az, el, pad / 2.0, pad / 2.0, vw, vh,
-        );
-
-        // Label
-        let _ = writeln!(
-            svg,
-            "<text x='4' y='13' fill='#aaa' font-size='10' font-family='monospace'>{label}</text>"
-        );
-        let _ = writeln!(svg, "</g>");
-    }
-
-    // Overall legend at bottom
-    let bbox = &stock.stock_bbox;
-    let tri_count = mesh.indices.len() / 3;
-    let sx = bbox.max.x - bbox.min.x;
-    let sy = bbox.max.y - bbox.min.y;
-    let sz = bbox.max.z - bbox.min.z;
-    let ly = height - 3.0;
-    let _ = writeln!(
-        svg,
-        "<text x='5' y='{ly}' fill='#888' font-size='9' font-family='monospace'>Stock: {sx:.0}x{sy:.0}x{sz:.0} mm  |  {tri_count} triangles</text>",
-    );
-    let _ = writeln!(svg, "</svg>");
-    svg
-}
-
-/// Render one view of a stock mesh into an SVG string, offset to (ox, oy) with size (vw, vh).
-#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
-fn render_view_into(
-    svg: &mut String,
-    mesh: &crate::stock_mesh::StockMesh,
-    vert_count: usize,
-    cx: f64, cy: f64, cz: f64,
-    azimuth: f64,
-    elevation: f64,
-    ox: f64, oy: f64,
-    vw: f64, vh: f64,
-) {
-    use std::fmt::Write;
-
-    let cos_az = azimuth.cos();
-    let sin_az = azimuth.sin();
-    let cos_el = elevation.cos();
-    let sin_el = elevation.sin();
-
-    // Light direction (rotates with camera so shading is consistent)
-    let light_x = sin_az * 0.4 + cos_az * 0.3;
-    let light_y = cos_az * 0.4 - sin_az * 0.3;
-    let light_z: f64 = 0.866;
-
-    // Project all vertices
-    let mut projected: Vec<[f64; 2]> = Vec::with_capacity(vert_count);
-    let mut depths: Vec<f64> = Vec::with_capacity(vert_count);
-    let mut sx_min = f64::MAX;
-    let mut sx_max = f64::MIN;
-    let mut sy_min = f64::MAX;
-    let mut sy_max = f64::MIN;
-
-    for i in 0..vert_count {
-        let x = f64::from(mesh.vertices[i * 3]) - cx;
-        let y = f64::from(mesh.vertices[i * 3 + 1]) - cy;
-        let z = f64::from(mesh.vertices[i * 3 + 2]) - cz;
-
-        let sx = x * cos_az - y * sin_az;
-        let sy = -(x * sin_az * sin_el) - (y * cos_az * sin_el) + z * cos_el;
-        let depth = x * sin_az * cos_el + y * cos_az * cos_el + z * sin_el;
-
-        projected.push([sx, sy]);
-        depths.push(depth);
-
-        if sx < sx_min { sx_min = sx; }
-        if sx > sx_max { sx_max = sx; }
-        if sy < sy_min { sy_min = sy; }
-        if sy > sy_max { sy_max = sy; }
-    }
-
-    let margin = 8.0;
-    let data_w = (sx_max - sx_min).max(1e-6);
-    let data_h = (sy_max - sy_min).max(1e-6);
-    let scale = ((vw - 2.0 * margin) / data_w).min((vh - 2.0 * margin) / data_h);
-
-    // Center the projection in the viewport
-    let proj_w = data_w * scale;
-    let proj_h = data_h * scale;
-    let off_x = ox + margin + (vw - 2.0 * margin - proj_w) / 2.0;
-    let off_y = oy + margin + (vh - 2.0 * margin - proj_h) / 2.0;
-
-    // Build and sort triangles
-    let tri_count = mesh.indices.len() / 3;
-    let mut tris: Vec<(f64, usize)> = Vec::with_capacity(tri_count);
-    for t in 0..tri_count {
-        let i0 = mesh.indices[t * 3] as usize;
-        let i1 = mesh.indices[t * 3 + 1] as usize;
-        let i2 = mesh.indices[t * 3 + 2] as usize;
-        if i0 >= vert_count || i1 >= vert_count || i2 >= vert_count {
-            continue;
-        }
-        let avg_depth = (depths[i0] + depths[i1] + depths[i2]) / 3.0;
-        tris.push((avg_depth, t));
-    }
-    tris.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-
-    // Emit triangles
-    for &(_, t) in &tris {
-        let i0 = mesh.indices[t * 3] as usize;
-        let i1 = mesh.indices[t * 3 + 1] as usize;
-        let i2 = mesh.indices[t * 3 + 2] as usize;
-
-        let x0 = off_x + (projected[i0][0] - sx_min) * scale;
-        let y0 = off_y + proj_h - (projected[i0][1] - sy_min) * scale;
-        let x1 = off_x + (projected[i1][0] - sx_min) * scale;
-        let y1 = off_y + proj_h - (projected[i1][1] - sy_min) * scale;
-        let x2 = off_x + (projected[i2][0] - sx_min) * scale;
-        let y2 = off_y + proj_h - (projected[i2][1] - sy_min) * scale;
-
-        // Face normal for lighting
-        let ax = f64::from(mesh.vertices[i1 * 3]) - f64::from(mesh.vertices[i0 * 3]);
-        let ay = f64::from(mesh.vertices[i1 * 3 + 1]) - f64::from(mesh.vertices[i0 * 3 + 1]);
-        let az_v = f64::from(mesh.vertices[i1 * 3 + 2]) - f64::from(mesh.vertices[i0 * 3 + 2]);
-        let bx = f64::from(mesh.vertices[i2 * 3]) - f64::from(mesh.vertices[i0 * 3]);
-        let by = f64::from(mesh.vertices[i2 * 3 + 1]) - f64::from(mesh.vertices[i0 * 3 + 1]);
-        let bz = f64::from(mesh.vertices[i2 * 3 + 2]) - f64::from(mesh.vertices[i0 * 3 + 2]);
-        let nx = ay * bz - az_v * by;
-        let ny = az_v * bx - ax * bz;
-        let nz = ax * by - ay * bx;
-        let nlen = (nx * nx + ny * ny + nz * nz).sqrt().max(1e-10);
-
-        let dot = ((nx / nlen) * light_x + (ny / nlen) * light_y + (nz / nlen) * light_z)
-            .clamp(0.0, 1.0);
-        let shade = 0.3 + 0.7 * dot;
-
-        let base_r = (f64::from(mesh.colors[i0 * 3])
-            + f64::from(mesh.colors[i1 * 3])
-            + f64::from(mesh.colors[i2 * 3])) / 3.0;
-        let base_g = (f64::from(mesh.colors[i0 * 3 + 1])
-            + f64::from(mesh.colors[i1 * 3 + 1])
-            + f64::from(mesh.colors[i2 * 3 + 1])) / 3.0;
-        let base_b = (f64::from(mesh.colors[i0 * 3 + 2])
-            + f64::from(mesh.colors[i1 * 3 + 2])
-            + f64::from(mesh.colors[i2 * 3 + 2])) / 3.0;
-
-        let r = (base_r * shade * 255.0).clamp(0.0, 255.0) as u8;
-        let g = (base_g * shade * 255.0).clamp(0.0, 255.0) as u8;
-        let b = (base_b * shade * 255.0).clamp(0.0, 255.0) as u8;
-
-        let _ = write!(
-            svg,
-            "<polygon points='{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}' fill='#{r:02x}{g:02x}{b:02x}' stroke='#{r:02x}{g:02x}{b:02x}' stroke-width='0.3'/>"
-        );
     }
 }
 
@@ -985,10 +994,10 @@ mod tests {
     #[test]
     fn artifacts_from_toolpath() {
         let tp = make_test_toolpath();
-        let arts = SweepArtifacts::generate(&tp, None);
+        let arts = SweepArtifacts::generate(&tp);
 
         assert!(arts.toolpath_svg.is_some());
-        assert!(arts.stock_iso_svg.is_none()); // no stock provided
+        assert!(arts.svg_summary.is_some());
         assert!(arts.svg_summary.is_some());
 
         let summary = arts.svg_summary.unwrap();
@@ -998,7 +1007,7 @@ mod tests {
     #[test]
     fn artifacts_empty_toolpath() {
         let tp = Toolpath::new();
-        let arts = SweepArtifacts::generate(&tp, None);
+        let arts = SweepArtifacts::generate(&tp);
         assert!(arts.toolpath_svg.is_none());
         assert!(arts.svg_summary.is_none());
     }
@@ -1022,7 +1031,7 @@ mod tests {
     }
 
     #[test]
-    fn stock_isometric_svg_renders() {
+    fn stock_composite_png_renders() {
         use crate::dexel_stock::TriDexelStock;
         use crate::geo::BoundingBox3;
 
@@ -1031,15 +1040,17 @@ mod tests {
             max: P3::new(20.0, 20.0, 10.0),
         };
         let stock = TriDexelStock::from_bounds(&bbox, 2.0);
-        let svg = stock_isometric_svg(&stock, 400.0, 400.0);
+        let pixels = render_stock_composite(&stock, 300, 200);
 
-        assert!(svg.contains("<svg"));
-        assert!(svg.contains("<polygon"));
-        assert!(svg.contains("Stock:"));
+        // 300*200*4 = 240000 bytes RGBA
+        assert_eq!(pixels.len(), 300 * 200 * 4);
+        // Should have non-background pixels (not all gray)
+        let has_color = pixels.chunks(4).any(|p| p[0] != 42 || p[1] != 42 || p[2] != 42);
+        assert!(has_color, "Render produced only background pixels");
     }
 
     #[test]
-    fn stock_isometric_svg_with_cut() {
+    fn stock_composite_png_with_cut() {
         use crate::dexel_stock::{StockCutDirection, TriDexelStock};
         use crate::geo::BoundingBox3;
         use crate::tool::FlatEndmill;
@@ -1050,7 +1061,6 @@ mod tests {
         };
         let mut stock = TriDexelStock::from_bounds(&bbox, 1.0);
 
-        // Cut a pocket path through the stock
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(5.0, 5.0, 12.0));
         tp.feed_to(P3::new(5.0, 5.0, 5.0), 500.0);
@@ -1063,9 +1073,10 @@ mod tests {
         let cutter = FlatEndmill::new(6.35, 25.0);
         stock.simulate_toolpath(&tp, &cutter, StockCutDirection::FromTop);
 
-        let svg = stock_isometric_svg(&stock, 600.0, 500.0);
-        assert!(svg.contains("<polygon"));
-        // Should have more triangles than uncut stock (cut creates new geometry)
-        assert!(svg.len() > 1000);
+        let pixels = render_stock_composite(&stock, 600, 400);
+        assert_eq!(pixels.len(), 600 * 400 * 4);
+        // Cut areas should produce darker pixels (walnut color) alongside lighter uncut
+        let has_color = pixels.chunks(4).any(|p| p[0] != 42 || p[1] != 42 || p[2] != 42);
+        assert!(has_color);
     }
 }
