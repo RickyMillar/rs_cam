@@ -3,6 +3,7 @@
 
 mod helpers;
 mod job;
+mod sweep;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -1079,6 +1080,31 @@ enum Commands {
         /// Tool stickout length (mm)
         #[arg(long, default_value = "0.0")]
         stickout: f64,
+    },
+
+    /// Run a parameter sweep on a TOML job file
+    ///
+    /// Varies one parameter across multiple values, running the full job pipeline
+    /// for each, and produces JSON fingerprints, diffs, SVGs, and G-code.
+    Sweep {
+        /// Base TOML job file to sweep over
+        input: PathBuf,
+
+        /// Parameter name to vary (e.g. stepover, depth, feed_rate)
+        #[arg(long)]
+        param: String,
+
+        /// Comma-separated values to sweep (e.g. "0.5,1.0,2.0,4.0")
+        #[arg(long)]
+        values: String,
+
+        /// Output directory for sweep results
+        #[arg(long)]
+        output_dir: PathBuf,
+
+        /// Run simulation and produce stock heightmap SVGs
+        #[arg(long)]
+        simulate: bool,
     },
 }
 
@@ -3286,6 +3312,19 @@ fn main() -> Result<()> {
                 sim_resolution,
                 mesh.bbox.max.z,
             )?;
+        }
+
+        Commands::Sweep {
+            input,
+            param,
+            values,
+            output_dir,
+            simulate,
+        } => {
+            let job_path = input
+                .canonicalize()
+                .context(format!("Job file not found: {}", input.display()))?;
+            sweep::run_sweep(&job_path, &param, &values, &output_dir, simulate)?;
         }
     }
 
