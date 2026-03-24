@@ -8,7 +8,8 @@ pub use catalog::{
     OperationType, UiOperationFamily, UiProcessRole, feed_optimization_unavailable_reason,
 };
 pub use configs::{
-    Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig, CompensationType,
+    Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig, ClearingStrategy,
+    CompensationType,
     CutDirection, DrillConfig, DrillCycleType, DropCutterConfig, EntryStyle, FaceConfig,
     FaceDirection, HorizontalFinishConfig, InlayConfig, PencilConfig, PocketConfig, PocketPattern,
     ProfileConfig, ProfileSide, ProjectCurveConfig, RadialFinishConfig, RampFinishConfig,

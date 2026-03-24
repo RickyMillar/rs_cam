@@ -702,6 +702,102 @@ pub fn distance_transform_2d(grid: &[bool], rows: usize, cols: usize) -> Vec<f64
     dist
 }
 
+/// Compute the curvature of EDT level-set curves at each grid cell.
+///
+/// Uses the standard level-set curvature formula:
+///   κ = (d_xx·d_y² − 2·d_xy·d_x·d_y + d_yy·d_x²) / (d_x² + d_y²)^(3/2)
+///
+/// where d_x, d_y are first partial derivatives and d_xx, d_yy, d_xy are
+/// second partial derivatives of the distance field, computed via finite
+/// differences.
+///
+/// Returns curvature in cell⁻¹ units (positive = convex, negative = concave).
+/// Cells where the gradient magnitude is near zero (flat regions, medial axis)
+/// are set to κ = 0.
+#[allow(clippy::indexing_slicing)] // SAFETY: all indices bounded by row/col loop ranges
+pub fn edt_curvature_field(edt: &[f64], rows: usize, cols: usize) -> Vec<f64> {
+    let total = rows * cols;
+    let mut curvature = vec![0.0f64; total];
+
+    if rows < 3 || cols < 3 {
+        return curvature;
+    }
+
+    // Interior cells: central differences (rows 1..rows-1, cols 1..cols-1)
+    for r in 1..rows - 1 {
+        for c in 1..cols - 1 {
+            let idx = r * cols + c;
+            let zc = edt[idx];
+            let zl = edt[idx - 1];
+            let zr = edt[idx + 1];
+            let zu = edt[(r - 1) * cols + c];
+            let zd = edt[(r + 1) * cols + c];
+            let zul = edt[(r - 1) * cols + c - 1];
+            let zur = edt[(r - 1) * cols + c + 1];
+            let zdl = edt[(r + 1) * cols + c - 1];
+            let zdr = edt[(r + 1) * cols + c + 1];
+
+            // First derivatives (central differences, cell_size = 1)
+            let dx = (zr - zl) * 0.5;
+            let dy = (zd - zu) * 0.5;
+
+            // Second derivatives
+            let dxx = zr - 2.0 * zc + zl;
+            let dyy = zd - 2.0 * zc + zu;
+            let dxy = (zdr - zdl - zur + zul) * 0.25;
+
+            // Gradient magnitude squared
+            let grad_sq = dx * dx + dy * dy;
+            if grad_sq < 1e-12 {
+                // Near medial axis or flat region — curvature undefined
+                continue;
+            }
+
+            // Level-set curvature
+            let numer = dxx * dy * dy - 2.0 * dxy * dx * dy + dyy * dx * dx;
+            let denom = grad_sq * grad_sq.sqrt(); // (grad_sq)^(3/2)
+            curvature[idx] = numer / denom;
+        }
+    }
+
+    curvature
+}
+
+/// Box-blur smooth a 2D grid in place.
+///
+/// `radius` is the half-width of the kernel (e.g. radius=2 → 5×5 kernel).
+/// Boundary cells within `radius` of the edge are left unchanged.
+#[allow(clippy::indexing_slicing)] // SAFETY: all indices bounded by row/col loop ranges
+pub fn smooth_grid(grid: &mut [f64], rows: usize, cols: usize, radius: usize) {
+    if radius == 0 || rows <= 2 * radius || cols <= 2 * radius {
+        return;
+    }
+    let total = rows * cols;
+    let mut tmp = vec![0.0f64; total];
+    let side = 2 * radius + 1;
+    let inv_area = 1.0 / (side * side) as f64;
+
+    for r in radius..rows - radius {
+        for c in radius..cols - radius {
+            let mut sum = 0.0;
+            for dr in 0..side {
+                let row_off = (r + dr - radius) * cols;
+                for dc in 0..side {
+                    sum += grid[row_off + c + dc - radius];
+                }
+            }
+            tmp[r * cols + c] = sum * inv_area;
+        }
+    }
+
+    // Copy smoothed interior back; boundary retains original values
+    for r in radius..rows - radius {
+        let start = r * cols + radius;
+        let end = r * cols + cols - radius;
+        grid[start..end].copy_from_slice(&tmp[start..end]);
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
