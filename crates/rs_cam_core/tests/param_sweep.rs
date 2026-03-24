@@ -77,6 +77,24 @@ fn ensure_dir(path: &std::path::Path) {
 
 /// Run a full single-parameter sweep: baseline + N variants.
 /// Returns the sweep result and writes all artifacts to disk.
+/// Auto-simulate: derive stock from toolpath bbox, simulate with a default flat endmill,
+/// and write composite PNG alongside JSON/SVG artifacts.
+fn auto_sim_stock(tp: &Toolpath, dir: &std::path::Path, prefix: &str) {
+    if tp.moves.is_empty() {
+        return;
+    }
+    let (bmin, bmax) = tp.bounding_box();
+    let margin = 5.0;
+    let bbox = BoundingBox3 {
+        min: rs_cam_core::geo::P3::new(bmin[0] - margin, bmin[1] - margin, bmin[2] - margin),
+        max: rs_cam_core::geo::P3::new(bmax[0] + margin, bmax[1] + margin, bmax[2] + margin),
+    };
+    let cutter = FlatEndmill::new(6.35, 25.0);
+    let mut stock = TriDexelStock::from_bounds(&bbox, 0.5);
+    stock.simulate_toolpath(tp, &cutter, StockCutDirection::FromTop);
+    write_stock_png(&dir.join(format!("{prefix}_stock.png")), &stock);
+}
+
 fn run_sweep<F>(
     op_name: &str,
     param_name: &str,
@@ -93,13 +111,10 @@ where
     // Baseline
     let base_tp = generate(None);
     let base_fp = ToolpathFingerprint::from_toolpath(&base_tp);
-    let base_arts = SweepArtifacts::generate(&base_tp);
 
     write_json(&dir.join("baseline.json"), &base_fp);
     write_svg(&dir.join("baseline.svg"), &base_tp);
-    if let Some(svg) = &base_arts.toolpath_svg {
-        std::fs::write(dir.join("baseline_toolpath.svg"), svg).unwrap();
-    }
+    auto_sim_stock(&base_tp, &dir, "baseline");
 
     // Variants
     let mut sweep_variants = Vec::new();
@@ -119,6 +134,7 @@ where
         write_json(&dir.join(format!("variant_{val_str}.json")), &variant_fp);
         write_json(&dir.join(format!("variant_{val_str}_diff.json")), &diff);
         write_svg(&dir.join(format!("variant_{val_str}.svg")), &variant_tp);
+        auto_sim_stock(&variant_tp, &dir, &format!("variant_{val_str}"));
 
         sweep_variants.push(SweepVariant {
             value: val.clone(),
