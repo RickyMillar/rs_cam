@@ -2493,6 +2493,7 @@ fn main() -> Result<()> {
                 max_stay_down_dist,
                 region_ordering: region_ord,
                 initial_stock: None,
+                clearing_strategy: rs_cam_core::adaptive3d::ClearingStrategy3d::AgentSearch,
             };
 
             let start = std::time::Instant::now();

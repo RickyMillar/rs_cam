@@ -15,6 +15,7 @@
 use crate::adaptive_shared::{
     angle_diff, average_angles, blend_corners, refine_angle_bracket, target_engagement_fraction,
 };
+use crate::contour_extract::marching_squares_bool_grid;
 use crate::debug_trace::{HotspotRecord, ToolpathDebugBounds2, ToolpathDebugContext};
 use crate::dexel::{ray_subtract_above, ray_top};
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
@@ -22,6 +23,8 @@ use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::pocket::pocket_contours;
+use crate::polygon::{Polygon2, detect_containment, offset_polygon};
 use crate::radial_profile::RadialProfileLUT;
 use crate::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
@@ -58,6 +61,20 @@ pub enum RegionOrdering {
     Global,
     /// Detect connected pockets and clear each fully before moving to the next.
     ByArea,
+}
+
+/// Clearing strategy for each Z level.
+///
+/// `AgentSearch` uses adaptive engagement-tracking direction search (default).
+/// `ContourParallel` extracts material boundaries and generates concentric
+/// offset toolpaths, then falls back to agent search for residual material.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ClearingStrategy3d {
+    /// Engagement-tracking agent search (default, backward compat).
+    #[default]
+    AgentSearch,
+    /// Contour-parallel offset clearing with agent residual cleanup.
+    ContourParallel,
 }
 
 /// Entry strategy for 3D adaptive (replaces vertical plunge).
@@ -97,6 +114,8 @@ pub struct Adaptive3dParams {
     /// Pre-machined stock for two-sided machining.
     /// When Some, used as starting material instead of a fresh block at stock_top_z.
     pub initial_stock: Option<TriDexelStock>,
+    /// Clearing strategy per Z level (default: AgentSearch for backward compat).
+    pub clearing_strategy: ClearingStrategy3d,
 }
 
 // SurfaceHeightmap is now in crate::slope (shared across finishing strategies)
@@ -1062,6 +1081,7 @@ struct ClearZLevelContext<'a> {
     bbox_x_max: f64,
     bbox_y_min: f64,
     bbox_y_max: f64,
+    clearing_strategy: ClearingStrategy3d,
 }
 
 /// Pre-stamp thin material bands that appear at each Z level on steep walls.
@@ -1129,6 +1149,229 @@ fn pre_stamp_thin_bands(
     }
 
     stamped
+}
+
+// ── Contour-parallel clearing ─────────────────────────────────────────
+
+/// Extract closed polygons that represent material boundaries at a given
+/// Z level. Uses marching squares on a boolean grid derived from the
+/// tri-dexel stock, then nests holes inside exteriors via containment test.
+#[allow(clippy::indexing_slicing)] // SAFETY: padded grid indices bounded by loop ranges
+fn extract_material_polygons(
+    material_stock: &TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    z_level: f64,
+    stock_to_leave: f64,
+    region: Option<&MaterialRegion>,
+) -> Vec<Polygon2> {
+    let grid = &material_stock.z_grid;
+    let rows = grid.rows;
+    let cols = grid.cols;
+    let cell_size = grid.cell_size;
+    let origin_u = grid.origin_u;
+    let origin_v = grid.origin_v;
+
+    // Build padded boolean grid (1-cell false border so marching squares
+    // detects edge boundaries).
+    let padded_rows = rows + 2;
+    let padded_cols = cols + 2;
+    let mut padded_grid = vec![false; padded_rows * padded_cols];
+
+    for row in 0..rows {
+        for col in 0..cols {
+            // Skip cells outside the region if one is specified.
+            if let Some(r) = region
+                && (row < r.row_min || row > r.row_max || col < r.col_min || col > r.col_max)
+            {
+                continue;
+            }
+
+            let surf_z = surface_hm.surface_z_at(row, col);
+            let effective_floor = (surf_z + stock_to_leave).max(z_level);
+
+            if stock_has_material_above(material_stock, row, col, effective_floor + 0.01) {
+                // +1 offset for the border padding
+                padded_grid[(row + 1) * padded_cols + (col + 1)] = true;
+            }
+        }
+    }
+
+    let contour_loops = marching_squares_bool_grid(
+        &padded_grid,
+        padded_rows,
+        padded_cols,
+        origin_u - cell_size,
+        origin_v - cell_size,
+        cell_size,
+    );
+
+    if contour_loops.is_empty() {
+        return Vec::new();
+    }
+
+    // Convert loops to Polygon2 and classify by winding.
+    // Positive signed area = CCW = exterior, negative = CW = hole.
+    let mut exteriors: Vec<Polygon2> = Vec::new();
+    let mut holes: Vec<Vec<P2>> = Vec::new();
+
+    for loop_pts in &contour_loops {
+        if loop_pts.len() < 3 {
+            continue;
+        }
+        let area = crate::polygon::shoelace_area(loop_pts);
+        if area > 0.0 {
+            // CCW exterior
+            exteriors.push(Polygon2::new(loop_pts.clone()));
+        } else if area < 0.0 {
+            // CW hole — store for nesting
+            holes.push(loop_pts.clone());
+        }
+    }
+
+    if exteriors.is_empty() {
+        return Vec::new();
+    }
+
+    // If there are holes, use detect_containment to nest them.
+    if holes.is_empty() {
+        return exteriors;
+    }
+
+    // Combine exteriors and holes into one vec for detect_containment.
+    // detect_containment expects all rings as individual Polygon2 values,
+    // it inspects signed area and nests CW rings inside their containing CCW ring.
+    let mut all: Vec<Polygon2> = exteriors;
+    for h in holes {
+        all.push(Polygon2::new(h));
+    }
+    detect_containment(all)
+}
+
+/// Clear a Z level using contour-parallel offset strategy.
+///
+/// 1. Extract material boundary polygons at the given z_level.
+/// 2. For each polygon, apply tool-radius compensation, then generate
+///    concentric inward offsets via `pocket_contours`.
+/// 3. Surface-drape each 2D contour to 3D using the surface heightmap.
+/// 4. Stamp dexel stock along each cutting path.
+#[allow(clippy::too_many_arguments)]
+fn clear_z_level_contour_parallel(
+    ctx: &ClearZLevelContext<'_>,
+    material_stock: &mut TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    z_level: f64,
+    segments: &mut Vec<Adaptive3dSegment>,
+    last_pos: &mut Option<P3>,
+    region: Option<&MaterialRegion>,
+    cancel: &dyn CancelCheck,
+) -> Result<(), Cancelled> {
+    // Check material remaining — skip if negligible.
+    let remaining = if let Some(r) = region {
+        material_remaining_in_region(material_stock, surface_hm, z_level, ctx.stock_to_leave, r)
+    } else {
+        material_remaining_at_level(material_stock, surface_hm, z_level, ctx.stock_to_leave)
+    };
+    if remaining < 0.005 {
+        return Ok(());
+    }
+
+    let polygons = extract_material_polygons(
+        material_stock,
+        surface_hm,
+        z_level,
+        ctx.stock_to_leave,
+        region,
+    );
+
+    if polygons.is_empty() {
+        return Ok(());
+    }
+
+    debug!(
+        polygons = polygons.len(),
+        z = z_level,
+        "Contour-parallel: extracted material polygons"
+    );
+
+    for polygon in &polygons {
+        check_cancel(cancel)?;
+
+        if polygon.exterior.len() < 3 {
+            continue;
+        }
+
+        // Tool radius compensation — offset inward so tool edge touches boundary.
+        let compensated = offset_polygon(polygon, ctx.tool_radius);
+        let comp = match compensated.first() {
+            Some(c) if c.exterior.len() >= 3 => c,
+            _ => continue,
+        };
+
+        // Generate concentric offset contours from outside in.
+        let contours = pocket_contours(comp, ctx.tool_radius, ctx.stepover);
+
+        for contour in &contours {
+            check_cancel(cancel)?;
+
+            if contour.len() < 2 {
+                continue;
+            }
+
+            // Surface drape: map 2D points to 3D.
+            let mut path_3d: Vec<P3> = Vec::with_capacity(contour.len());
+            for p in contour {
+                let surf_z = surface_hm.surface_z_at_world(p.x, p.y);
+                let z = if surf_z == f64::NEG_INFINITY {
+                    z_level
+                } else {
+                    (surf_z + ctx.stock_to_leave).max(z_level)
+                };
+                path_3d.push(P3::new(p.x, p.y, z));
+            }
+
+            // Emit rapid to first point, then cut along the contour.
+            if let Some(first) = path_3d.first() {
+                segments.push(Adaptive3dSegment::Rapid(*first));
+                segments.push(Adaptive3dSegment::Cut(path_3d.clone()));
+
+                // Stamp dexel stock along the path at step_len intervals.
+                let step_len = ctx.step_len;
+                let mut travel = 0.0;
+                let mut prev = *first;
+                for pt in &path_3d {
+                    let dx = pt.x - prev.x;
+                    let dy = pt.y - prev.y;
+                    let seg_len = (dx * dx + dy * dy).sqrt();
+                    travel += seg_len;
+                    if travel >= step_len {
+                        material_stock.stamp_tool_at(
+                            ctx.lut,
+                            ctx.tool_radius,
+                            pt.x,
+                            pt.y,
+                            pt.z,
+                            StockCutDirection::FromTop,
+                        );
+                        travel = 0.0;
+                    }
+                    prev = *pt;
+                }
+                // Stamp at the last point regardless.
+                material_stock.stamp_tool_at(
+                    ctx.lut,
+                    ctx.tool_radius,
+                    prev.x,
+                    prev.y,
+                    prev.z,
+                    StockCutDirection::FromTop,
+                );
+
+                *last_pos = path_3d.last().copied();
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -2114,6 +2357,7 @@ fn adaptive_3d_segments(
         bbox_x_max,
         bbox_y_min,
         bbox_y_max,
+        clearing_strategy: params.clearing_strategy,
     };
 
     let mut segments = Vec::new();
@@ -2170,16 +2414,49 @@ fn adaptive_3d_segments(
                             level_total: region_z_levels.len(),
                         },
                     ));
-                    clear_z_level(
-                        &ctx,
-                        &mut material_stock,
-                        &surface_hm,
-                        z_level,
-                        &mut segments,
-                        &mut last_pos,
-                        Some(region),
-                        cancel,
-                    )?;
+                    if ctx.clearing_strategy == ClearingStrategy3d::ContourParallel {
+                        clear_z_level_contour_parallel(
+                            &ctx,
+                            &mut material_stock,
+                            &surface_hm,
+                            z_level,
+                            &mut segments,
+                            &mut last_pos,
+                            Some(region),
+                            cancel,
+                        )?;
+                        // Agent cleanup for residual material
+                        let residual = material_remaining_in_region(
+                            &material_stock,
+                            &surface_hm,
+                            z_level,
+                            ctx.stock_to_leave,
+                            region,
+                        );
+                        if residual > 0.02 {
+                            clear_z_level(
+                                &ctx,
+                                &mut material_stock,
+                                &surface_hm,
+                                z_level,
+                                &mut segments,
+                                &mut last_pos,
+                                Some(region),
+                                cancel,
+                            )?;
+                        }
+                    } else {
+                        clear_z_level(
+                            &ctx,
+                            &mut material_stock,
+                            &surface_hm,
+                            z_level,
+                            &mut segments,
+                            &mut last_pos,
+                            Some(region),
+                            cancel,
+                        )?;
+                    }
                 }
             }
 
@@ -2215,16 +2492,48 @@ fn adaptive_3d_segments(
                         level_total: z_levels.len(),
                     },
                 ));
-                clear_z_level(
-                    &ctx,
-                    &mut material_stock,
-                    &surface_hm,
-                    z_level,
-                    &mut segments,
-                    &mut last_pos,
-                    None,
-                    cancel,
-                )?;
+                if ctx.clearing_strategy == ClearingStrategy3d::ContourParallel {
+                    clear_z_level_contour_parallel(
+                        &ctx,
+                        &mut material_stock,
+                        &surface_hm,
+                        z_level,
+                        &mut segments,
+                        &mut last_pos,
+                        None,
+                        cancel,
+                    )?;
+                    // Agent cleanup for residual material
+                    let residual = material_remaining_at_level(
+                        &material_stock,
+                        &surface_hm,
+                        z_level,
+                        ctx.stock_to_leave,
+                    );
+                    if residual > 0.02 {
+                        clear_z_level(
+                            &ctx,
+                            &mut material_stock,
+                            &surface_hm,
+                            z_level,
+                            &mut segments,
+                            &mut last_pos,
+                            None,
+                            cancel,
+                        )?;
+                    }
+                } else {
+                    clear_z_level(
+                        &ctx,
+                        &mut material_stock,
+                        &surface_hm,
+                        z_level,
+                        &mut segments,
+                        &mut last_pos,
+                        None,
+                        cancel,
+                    )?;
+                }
 
                 let is_last_level = level_idx == z_levels.len() - 1;
                 if is_last_level {
@@ -2555,6 +2864,7 @@ mod tests {
             max_stay_down_dist: None,
             region_ordering: RegionOrdering::Global,
             initial_stock: None,
+            clearing_strategy: ClearingStrategy3d::AgentSearch,
         }
     }
 
