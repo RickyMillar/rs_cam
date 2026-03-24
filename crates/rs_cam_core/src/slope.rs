@@ -77,13 +77,30 @@ impl SurfaceHeightmap {
             cl.z.max(min_z)
         };
 
-        let mut z_values = Vec::with_capacity(total);
-        for i in 0..total {
-            if i % 64 == 0 {
-                check_cancel(cancel)?;
+        // Parallel drop-cutter: each cell is independent.
+        #[cfg(not(target_arch = "wasm32"))]
+        let z_values = {
+            use rayon::prelude::*;
+            let chunk_size = 256;
+            let results: Vec<f64> = (0..total)
+                .into_par_iter()
+                .map(|i| compute_z(i))
+                .collect();
+            // Check cancel after parallel work completes
+            check_cancel(cancel)?;
+            results
+        };
+        #[cfg(target_arch = "wasm32")]
+        let z_values = {
+            let mut vals = Vec::with_capacity(total);
+            for i in 0..total {
+                if i % 64 == 0 {
+                    check_cancel(cancel)?;
+                }
+                vals.push(compute_z(i));
             }
-            z_values.push(compute_z(i));
-        }
+            vals
+        };
 
         Ok(Self {
             z_values,
