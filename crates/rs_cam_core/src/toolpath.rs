@@ -131,6 +131,63 @@ impl Toolpath {
         }
         dist
     }
+
+    /// Sorted unique Z levels in the toolpath, deduplicated with given epsilon.
+    pub fn z_levels(&self, epsilon: f64) -> Vec<f64> {
+        let mut zs: Vec<f64> = self.moves.iter().map(|m| m.target.z).collect();
+        zs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        zs.dedup_by(|a, b| (*a - *b).abs() < epsilon);
+        zs
+    }
+
+    /// Sorted unique feed rates in the toolpath, deduplicated with given epsilon.
+    pub fn feed_rates(&self, epsilon: f64) -> Vec<f64> {
+        let mut rates: Vec<f64> = self
+            .moves
+            .iter()
+            .filter_map(|m| match m.move_type {
+                MoveType::Linear { feed_rate } => Some(feed_rate),
+                MoveType::ArcCW { feed_rate, .. } => Some(feed_rate),
+                MoveType::ArcCCW { feed_rate, .. } => Some(feed_rate),
+                MoveType::Rapid => None,
+            })
+            .collect();
+        rates.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        rates.dedup_by(|a, b| (*a - *b).abs() < epsilon);
+        rates
+    }
+
+    /// XYZ bounding box of all move targets: ([min_x, min_y, min_z], [max_x, max_y, max_z]).
+    /// Returns zeros for empty toolpaths.
+    pub fn bounding_box(&self) -> ([f64; 3], [f64; 3]) {
+        if self.moves.is_empty() {
+            return ([0.0; 3], [0.0; 3]);
+        }
+        let mut min = [f64::MAX; 3];
+        let mut max = [f64::MIN; 3];
+        for m in &self.moves {
+            let p = &m.target;
+            if p.x < min[0] {
+                min[0] = p.x;
+            }
+            if p.y < min[1] {
+                min[1] = p.y;
+            }
+            if p.z < min[2] {
+                min[2] = p.z;
+            }
+            if p.x > max[0] {
+                max[0] = p.x;
+            }
+            if p.y > max[1] {
+                max[1] = p.y;
+            }
+            if p.z > max[2] {
+                max[2] = p.z;
+            }
+        }
+        (min, max)
+    }
 }
 
 /// Simplify a 3D path using Douglas-Peucker with cross-product distance.
@@ -351,6 +408,56 @@ mod tests {
         ];
         let simplified = simplify_path_3d(&path, 0.01);
         assert_eq!(simplified.len(), 3, "Corner should be preserved");
+    }
+
+    #[test]
+    fn test_z_levels() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp.feed_to(P3::new(0.0, 0.0, -3.0), 500.0);
+        tp.feed_to(P3::new(10.0, 0.0, -3.0), 1000.0);
+        tp.feed_to(P3::new(10.0, 0.0, -6.0), 500.0);
+        tp.feed_to(P3::new(20.0, 0.0, -6.0), 1000.0);
+        tp.rapid_to(P3::new(20.0, 0.0, 10.0));
+
+        let levels = tp.z_levels(0.001);
+        assert_eq!(levels, vec![-6.0, -3.0, 10.0]);
+    }
+
+    #[test]
+    fn test_feed_rates() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp.feed_to(P3::new(0.0, 0.0, -3.0), 500.0);
+        tp.feed_to(P3::new(10.0, 0.0, -3.0), 1000.0);
+        tp.feed_to(P3::new(20.0, 0.0, -3.0), 1000.0);
+        tp.rapid_to(P3::new(20.0, 0.0, 10.0));
+
+        let rates = tp.feed_rates(0.1);
+        assert_eq!(rates, vec![500.0, 1000.0]);
+    }
+
+    #[test]
+    fn test_bounding_box() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(-5.0, 2.0, 10.0));
+        tp.feed_to(P3::new(15.0, -3.0, -8.0), 1000.0);
+
+        let (min, max) = tp.bounding_box();
+        assert!((min[0] - (-5.0)).abs() < 1e-10);
+        assert!((min[1] - (-3.0)).abs() < 1e-10);
+        assert!((min[2] - (-8.0)).abs() < 1e-10);
+        assert!((max[0] - 15.0).abs() < 1e-10);
+        assert!((max[1] - 2.0).abs() < 1e-10);
+        assert!((max[2] - 10.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_bounding_box_empty() {
+        let tp = Toolpath::new();
+        let (min, max) = tp.bounding_box();
+        assert_eq!(min, [0.0; 3]);
+        assert_eq!(max, [0.0; 3]);
     }
 
     #[test]

@@ -21,6 +21,7 @@ pub mod dxf_input;
 pub mod enriched_mesh;
 pub mod face;
 pub mod feedopt;
+pub mod fingerprint;
 pub mod feeds;
 pub mod fiber;
 pub mod gcode;
