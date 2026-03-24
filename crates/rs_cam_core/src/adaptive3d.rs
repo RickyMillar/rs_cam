@@ -67,13 +67,13 @@ pub enum RegionOrdering {
 ///
 /// `AgentSearch` uses adaptive engagement-tracking direction search (default).
 /// `ContourParallel` extracts material boundaries and generates concentric
-/// offset toolpaths, then falls back to agent search for residual material.
+/// offset toolpaths. No fallback — residual material is visible in diagnostics.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ClearingStrategy3d {
     /// Engagement-tracking agent search (default, backward compat).
     #[default]
     AgentSearch,
-    /// Contour-parallel offset clearing with agent residual cleanup.
+    /// Contour-parallel offset clearing (no agent fallback).
     ContourParallel,
 }
 
@@ -2425,26 +2425,8 @@ fn adaptive_3d_segments(
                             Some(region),
                             cancel,
                         )?;
-                        // Agent cleanup for residual material
-                        let residual = material_remaining_in_region(
-                            &material_stock,
-                            &surface_hm,
-                            z_level,
-                            ctx.stock_to_leave,
-                            region,
-                        );
-                        if residual > 0.02 {
-                            clear_z_level(
-                                &ctx,
-                                &mut material_stock,
-                                &surface_hm,
-                                z_level,
-                                &mut segments,
-                                &mut last_pos,
-                                Some(region),
-                                cancel,
-                            )?;
-                        }
+                        // No fallback — contour-parallel should handle everything.
+                        // Residual material is visible in diagnostics for debugging.
                     } else {
                         clear_z_level(
                             &ctx,
@@ -2503,25 +2485,8 @@ fn adaptive_3d_segments(
                         None,
                         cancel,
                     )?;
-                    // Agent cleanup for residual material
-                    let residual = material_remaining_at_level(
-                        &material_stock,
-                        &surface_hm,
-                        z_level,
-                        ctx.stock_to_leave,
-                    );
-                    if residual > 0.02 {
-                        clear_z_level(
-                            &ctx,
-                            &mut material_stock,
-                            &surface_hm,
-                            z_level,
-                            &mut segments,
-                            &mut last_pos,
-                            None,
-                            cancel,
-                        )?;
-                    }
+                    // No fallback — contour-parallel should handle everything.
+                    // Residual material is visible in diagnostics for debugging.
                 } else {
                     clear_z_level(
                         &ctx,

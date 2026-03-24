@@ -34,3 +34,4 @@ tolerance = 0.1
 entry_3d = "helix"
 order_by = "global"
 slot_clearing = true
+strategy = "contour"
