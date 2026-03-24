@@ -98,3 +98,27 @@ Project-level Claude Code customizations in `.claude/`:
 | `skills/lint-fix/SKILL.md` | `/lint-fix` | Fix clippy lint violations with approved patterns |
 | `agents/cam-navigator.md` | Agent | Codebase navigation: find operations, trace pipelines |
 | `agents/sim-diagnostics.md` | Agent | Simulation diagnostic analysis and interpretation |
+
+## Parallel agent teams
+
+Use `TeamCreate` to spin up agent teams for tasks that benefit from parallel work:
+
+- **Parameter sweeps**: 4 agents split by operation family (2D contour, 2D clearing, 3D raster, 3D contour) — see `toolpath_stress_test/agents/AGENT_INSTRUCTIONS.md`
+- **Defect investigation**: one agent per finding from `toolpath_stress_test/FINDINGS.md`, each in an isolated worktree
+- **Multi-crate refactors**: separate agents for core, CLI, and viz changes working on independent worktrees
+- **Test + fix cycles**: one agent runs tests / sweeps, another fixes issues as they're reported
+
+Teams share a task list for coordination. Use worktree isolation (`isolation: "worktree"`) when agents edit overlapping files. Agents go idle between turns — this is normal; send them messages to wake them.
+
+## Parameter sweep infrastructure
+
+Toolpath validation tooling lives in `crates/rs_cam_core/src/fingerprint.rs` and `crates/rs_cam_core/tests/param_sweep.rs`:
+
+| Command | What it does |
+|---------|-------------|
+| `cargo test --test param_sweep` | Run all 54 parameter sweeps across 22 operations |
+| `cargo test --test param_sweep sweep_pocket` | Run sweeps for one operation family |
+| `cargo run -p rs_cam_cli -- sweep job.toml --param X --values "..." --output-dir out/` | Full-pipeline sweep with dressups/depth stepping |
+| `python3 toolpath_stress_test/agents/analyze_sweep.py target/param_sweeps/` | Automated verdict analysis |
+
+Sweep output goes to `target/param_sweeps/{op}/{param}/` with JSON fingerprints, diffs, toolpath SVGs, and 6-view composite stock PNGs.
