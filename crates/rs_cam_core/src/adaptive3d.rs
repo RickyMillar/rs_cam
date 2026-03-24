@@ -114,6 +114,11 @@ pub struct Adaptive3dParams {
     pub initial_stock: Option<TriDexelStock>,
     /// Clearing strategy per Z level (default: AgentSearch for backward compat).
     pub clearing_strategy: ClearingStrategy3d,
+    /// Blend Z toward terrain surface across contour offsets.
+    /// When true, outer contours stay near z_level and inner contours
+    /// progressively descend toward the surface. Best for terrain/relief.
+    /// When false (default), all contours cut at z_level. Best for pockets.
+    pub z_blend: bool,
 }
 
 // SurfaceHeightmap is now in crate::slope (shared across finishing strategies)
@@ -1080,6 +1085,7 @@ struct ClearZLevelContext<'a> {
     bbox_y_min: f64,
     bbox_y_max: f64,
     clearing_strategy: ClearingStrategy3d,
+    z_blend: bool,
 }
 
 /// Pre-stamp thin material bands that appear at each Z level on steep walls.
@@ -1315,19 +1321,18 @@ fn clear_z_level_contour_parallel(
         "Contour-parallel EDT: generating offset contours"
     );
 
-    // Compute total offset range for Z-blending.
-    // Outer contours (threshold near tool_radius_cells) stay near z_level (flat).
-    // Inner contours (threshold near max_dist) follow the terrain surface.
-    // This spreads Z movement across all passes instead of a sudden plunge
-    // on the innermost pass.
+    // Z-blend: when enabled, outer contours stay flat at z_level and inner
+    // contours progressively descend toward the terrain surface.
     let offset_range = max_dist - tool_radius_cells;
+    let z_blend_enabled = ctx.z_blend;
 
     let mut threshold = tool_radius_cells;
     while threshold < max_dist {
         check_cancel(cancel)?;
 
         // Blend factor: 0.0 at outermost contour, 1.0 at innermost
-        let blend = if offset_range > 1e-6 {
+        // Only active when z_blend is enabled; otherwise all passes cut at z_level.
+        let blend = if z_blend_enabled && offset_range > 1e-6 {
             ((threshold - tool_radius_cells) / offset_range).clamp(0.0, 1.0)
         } else {
             1.0
@@ -2368,6 +2373,7 @@ fn adaptive_3d_segments(
         bbox_y_min,
         bbox_y_max,
         clearing_strategy: params.clearing_strategy,
+        z_blend: params.z_blend,
     };
 
     let mut segments = Vec::new();
@@ -2840,6 +2846,7 @@ mod tests {
             region_ordering: RegionOrdering::Global,
             initial_stock: None,
             clearing_strategy: ClearingStrategy3d::AgentSearch,
+            z_blend: false,
         }
     }
 

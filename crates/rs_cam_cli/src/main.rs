@@ -2494,6 +2494,7 @@ fn main() -> Result<()> {
                 region_ordering: region_ord,
                 initial_stock: None,
                 clearing_strategy: rs_cam_core::adaptive3d::ClearingStrategy3d::AgentSearch,
+                z_blend: false,
             };
 
             let start = std::time::Instant::now();
