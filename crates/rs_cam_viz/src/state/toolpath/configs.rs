@@ -400,7 +400,6 @@ pub struct DropCutterConfig {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub min_z: f64,
-    pub skip_air_cuts: bool,
     pub slope_from: f64,
     pub slope_to: f64,
 }
@@ -412,7 +411,6 @@ impl Default for DropCutterConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             min_z: -50.0,
-            skip_air_cuts: false,
             slope_from: 0.0,
             slope_to: 90.0,
         }
@@ -501,8 +499,7 @@ pub struct PencilConfig {
     pub sampling: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
-    pub stock_to_leave_radial: f64,
-    pub stock_to_leave_axial: f64,
+    pub stock_to_leave: f64,
 }
 
 impl Default for PencilConfig {
@@ -516,8 +513,7 @@ impl Default for PencilConfig {
             sampling: 0.5,
             feed_rate: 800.0,
             plunge_rate: 400.0,
-            stock_to_leave_radial: 0.0,
-            stock_to_leave_axial: 0.0,
+            stock_to_leave: 0.0,
         }
     }
 }
@@ -532,8 +528,7 @@ pub struct ScallopConfig {
     pub slope_to: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
-    pub stock_to_leave_radial: f64,
-    pub stock_to_leave_axial: f64,
+    pub stock_to_leave: f64,
 }
 
 impl Default for ScallopConfig {
@@ -547,8 +542,7 @@ impl Default for ScallopConfig {
             slope_to: 90.0,
             feed_rate: 1000.0,
             plunge_rate: 500.0,
-            stock_to_leave_radial: 0.0,
-            stock_to_leave_axial: 0.0,
+            stock_to_leave: 0.0,
         }
     }
 }
@@ -564,8 +558,7 @@ pub struct SteepShallowConfig {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub sampling: f64,
-    pub stock_to_leave_radial: f64,
-    pub stock_to_leave_axial: f64,
+    pub stock_to_leave: f64,
     pub tolerance: f64,
 }
 
@@ -581,8 +574,7 @@ impl Default for SteepShallowConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             sampling: 0.5,
-            stock_to_leave_radial: 0.0,
-            stock_to_leave_axial: 0.0,
+            stock_to_leave: 0.0,
             tolerance: 0.05,
         }
     }
@@ -598,8 +590,7 @@ pub struct RampFinishConfig {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub sampling: f64,
-    pub stock_to_leave_radial: f64,
-    pub stock_to_leave_axial: f64,
+    pub stock_to_leave: f64,
     pub tolerance: f64,
 }
 
@@ -614,8 +605,7 @@ impl Default for RampFinishConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             sampling: 0.5,
-            stock_to_leave_radial: 0.0,
-            stock_to_leave_axial: 0.0,
+            stock_to_leave: 0.0,
             tolerance: 0.05,
         }
     }
@@ -627,8 +617,7 @@ pub struct SpiralFinishConfig {
     pub direction: SpiralDirection,
     pub feed_rate: f64,
     pub plunge_rate: f64,
-    pub stock_to_leave_radial: f64,
-    pub stock_to_leave_axial: f64,
+    pub stock_to_leave: f64,
 }
 
 impl Default for SpiralFinishConfig {
@@ -638,8 +627,7 @@ impl Default for SpiralFinishConfig {
             direction: SpiralDirection::InsideOut,
             feed_rate: 1000.0,
             plunge_rate: 500.0,
-            stock_to_leave_radial: 0.0,
-            stock_to_leave_axial: 0.0,
+            stock_to_leave: 0.0,
         }
     }
 }
@@ -650,8 +638,7 @@ pub struct RadialFinishConfig {
     pub point_spacing: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
-    pub stock_to_leave_radial: f64,
-    pub stock_to_leave_axial: f64,
+    pub stock_to_leave: f64,
 }
 
 impl Default for RadialFinishConfig {
@@ -661,8 +648,7 @@ impl Default for RadialFinishConfig {
             point_spacing: 0.5,
             feed_rate: 1000.0,
             plunge_rate: 500.0,
-            stock_to_leave_radial: 0.0,
-            stock_to_leave_axial: 0.0,
+            stock_to_leave: 0.0,
         }
     }
 }
@@ -673,8 +659,7 @@ pub struct HorizontalFinishConfig {
     pub stepover: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
-    pub stock_to_leave_radial: f64,
-    pub stock_to_leave_axial: f64,
+    pub stock_to_leave: f64,
 }
 
 impl Default for HorizontalFinishConfig {
@@ -684,8 +669,7 @@ impl Default for HorizontalFinishConfig {
             stepover: 1.0,
             feed_rate: 1000.0,
             plunge_rate: 500.0,
-            stock_to_leave_radial: 0.0,
-            stock_to_leave_axial: 0.0,
+            stock_to_leave: 0.0,
         }
     }
 }

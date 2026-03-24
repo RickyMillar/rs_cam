@@ -183,7 +183,7 @@ fn run_pencil_annotated(
         feed_rate: cfg.feed_rate,
         plunge_rate: cfg.plunge_rate,
         safe_z: effective_safe_z(req),
-        stock_to_leave: cfg.stock_to_leave_axial,
+        stock_to_leave: cfg.stock_to_leave,
     };
     Ok(rs_cam_core::pencil::pencil_toolpath_structured_annotated(
         mesh,
@@ -223,7 +223,7 @@ pub(super) fn run_scallop_annotated(
         feed_rate: cfg.feed_rate,
         plunge_rate: cfg.plunge_rate,
         safe_z: effective_safe_z(req),
-        stock_to_leave: cfg.stock_to_leave_axial,
+        stock_to_leave: cfg.stock_to_leave,
     };
     Ok(rs_cam_core::scallop::scallop_toolpath_structured_annotated(
         mesh,
@@ -252,7 +252,7 @@ fn run_steep_shallow(
         plunge_rate: cfg.plunge_rate,
         safe_z: effective_safe_z(req),
         sampling: cfg.sampling,
-        stock_to_leave: cfg.stock_to_leave_axial,
+        stock_to_leave: cfg.stock_to_leave,
         tolerance: cfg.tolerance,
     };
     Ok(steep_shallow_toolpath(
@@ -290,7 +290,7 @@ fn run_ramp_finish_annotated(
         plunge_rate: cfg.plunge_rate,
         safe_z: effective_safe_z(req),
         sampling: cfg.sampling,
-        stock_to_leave: cfg.stock_to_leave_axial,
+        stock_to_leave: cfg.stock_to_leave,
         tolerance: cfg.tolerance,
     };
     Ok(
@@ -326,7 +326,7 @@ fn run_spiral_finish_annotated(
         feed_rate: cfg.feed_rate,
         plunge_rate: cfg.plunge_rate,
         safe_z: effective_safe_z(req),
-        stock_to_leave: cfg.stock_to_leave_axial,
+        stock_to_leave: cfg.stock_to_leave,
     };
     Ok(
         rs_cam_core::spiral_finish::spiral_finish_toolpath_structured_annotated(
@@ -352,7 +352,7 @@ fn run_radial_finish(
         feed_rate: cfg.feed_rate,
         plunge_rate: cfg.plunge_rate,
         safe_z: effective_safe_z(req),
-        stock_to_leave: cfg.stock_to_leave_axial,
+        stock_to_leave: cfg.stock_to_leave,
     };
     Ok(radial_finish_toolpath(
         mesh,
@@ -375,7 +375,7 @@ fn run_horizontal_finish(
         feed_rate: cfg.feed_rate,
         plunge_rate: cfg.plunge_rate,
         safe_z: effective_safe_z(req),
-        stock_to_leave: cfg.stock_to_leave_axial,
+        stock_to_leave: cfg.stock_to_leave,
     };
     Ok(horizontal_finish_toolpath(
         mesh,
