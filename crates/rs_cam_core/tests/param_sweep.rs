@@ -93,7 +93,7 @@ where
     // Baseline
     let base_tp = generate(None);
     let base_fp = ToolpathFingerprint::from_toolpath(&base_tp);
-    let base_arts = SweepArtifacts::generate(&base_tp, None);
+    let base_arts = SweepArtifacts::generate(&base_tp);
 
     write_json(&dir.join("baseline.json"), &base_fp);
     write_svg(&dir.join("baseline.svg"), &base_tp);
@@ -107,7 +107,7 @@ where
         let variant_tp = generate(Some(val));
         let variant_fp = ToolpathFingerprint::from_toolpath(&variant_tp);
         let diff = diff_fingerprints(&base_fp, &variant_fp);
-        let arts = SweepArtifacts::generate(&variant_tp, None);
+        let arts = SweepArtifacts::generate(&variant_tp);
 
         let val_str = match val {
             serde_json::Value::Number(n) => n.to_string(),
@@ -140,7 +140,16 @@ where
     result
 }
 
-/// Run a sweep with simulation: generates stock heightmap SVGs and StockFingerprints.
+/// Write a composite 6-view stock PNG (4 iso corners + top + bottom).
+fn write_stock_png(path: &std::path::Path, stock: &TriDexelStock) {
+    let w: u32 = 900;
+    let h: u32 = 600;
+    let pixels = rs_cam_core::fingerprint::render_stock_composite(stock, w, h);
+    let img = image::RgbaImage::from_raw(w, h, pixels).unwrap();
+    img.save(path).unwrap();
+}
+
+/// Run a sweep with simulation: generates stock PNGs and StockFingerprints.
 fn run_sweep_with_sim<F>(
     op_name: &str,
     param_name: &str,
@@ -164,14 +173,11 @@ where
     let mut base_stock = TriDexelStock::from_bounds(stock_bounds, cell_size);
     base_stock.simulate_toolpath(&base_tp, cutter, direction);
     let base_sfp = StockFingerprint::from_stock(&base_stock);
-    let base_arts = SweepArtifacts::generate(&base_tp, Some(&base_stock));
 
     write_json(&dir.join("baseline.json"), &base_fp);
     write_json(&dir.join("baseline_stock.json"), &base_sfp);
     write_svg(&dir.join("baseline.svg"), &base_tp);
-    if let Some(svg) = &base_arts.stock_iso_svg {
-        std::fs::write(dir.join("baseline_stock.svg"), svg).unwrap();
-    }
+    write_stock_png(&dir.join("baseline_stock.png"), &base_stock);
 
     // Variants with simulation
     let mut sweep_variants = Vec::new();
@@ -183,7 +189,6 @@ where
         let mut variant_stock = TriDexelStock::from_bounds(stock_bounds, cell_size);
         variant_stock.simulate_toolpath(&variant_tp, cutter, direction);
         let variant_sfp = StockFingerprint::from_stock(&variant_stock);
-        let arts = SweepArtifacts::generate(&variant_tp, Some(&variant_stock));
 
         let val_str = match val {
             serde_json::Value::Number(n) => n.to_string(),
@@ -196,10 +201,9 @@ where
         write_json(&dir.join(format!("variant_{val_str}_diff.json")), &diff);
         write_json(&dir.join(format!("variant_{val_str}_stock.json")), &variant_sfp);
         write_svg(&dir.join(format!("variant_{val_str}.svg")), &variant_tp);
-        if let Some(svg) = &arts.stock_iso_svg {
-            std::fs::write(dir.join(format!("variant_{val_str}_stock.svg")), svg).unwrap();
-        }
+        write_stock_png(&dir.join(format!("variant_{val_str}_stock.png")), &variant_stock);
 
+        let arts = SweepArtifacts::generate(&variant_tp);
         sweep_variants.push(SweepVariant {
             value: val.clone(),
             fingerprint: variant_fp,

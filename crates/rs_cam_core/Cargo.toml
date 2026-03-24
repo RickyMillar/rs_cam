@@ -35,6 +35,7 @@ workspace = true
 [dev-dependencies]
 approx = "0.5"
 criterion = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [[bench]]
 name = "perf_suite"
