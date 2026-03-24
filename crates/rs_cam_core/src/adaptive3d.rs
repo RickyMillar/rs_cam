@@ -63,15 +63,15 @@ pub enum RegionOrdering {
 
 /// Clearing strategy for each Z level.
 ///
-/// `AgentSearch` uses adaptive engagement-tracking direction search (default).
 /// `ContourParallel` extracts material boundaries and generates concentric
-/// offset toolpaths. No fallback — residual material is visible in diagnostics.
+/// offset toolpaths via EDT. `AgentSearch` is the legacy per-step direction
+/// search, retained for comparison but not recommended.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ClearingStrategy3d {
-    /// Engagement-tracking agent search (default, backward compat).
-    #[default]
+    /// Legacy engagement-tracking agent search.
     AgentSearch,
-    /// Contour-parallel offset clearing (no agent fallback).
+    /// Contour-parallel offset clearing via EDT (default).
+    #[default]
     ContourParallel,
 }
 
