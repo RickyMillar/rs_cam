@@ -177,6 +177,7 @@ pub struct OperationDef {
     pub tolerance: Option<f64>,
     pub slot_clearing: Option<bool>,
     pub min_cutting_radius: Option<f64>,
+    pub z_blend: Option<bool>,
 
     // Rest machining-specific
     pub prev_tool: Option<String>,
@@ -606,6 +607,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                     region_ordering: region_ord,
                     initial_stock: None,
                     clearing_strategy,
+                    z_blend: op.z_blend.unwrap_or(false),
                 };
 
                 if debug_trace {
