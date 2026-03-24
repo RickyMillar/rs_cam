@@ -353,11 +353,9 @@ fn diff_f64_vec(
 pub struct SweepArtifacts {
     /// Top-down toolpath SVG (Z encoded as color).
     pub toolpath_svg: Option<String>,
-    /// Top-down stock heightmap SVG after simulation (Z encoded as color).
-    pub stock_heightmap_svg: Option<String>,
-    /// Interactive 3D HTML viewer (toolpath + optional mesh/stock).
-    pub viewer_3d_html_path: Option<String>,
-    /// Structural summary of the SVG for quick diff without parsing XML.
+    /// Isometric 3D stock SVG rendered from the dexel mesh.
+    pub stock_iso_svg: Option<String>,
+    /// Structural summary of the toolpath SVG for quick diff.
     pub svg_summary: Option<SvgSummary>,
 }
 
@@ -373,7 +371,7 @@ pub struct SvgSummary {
 }
 
 impl SweepArtifacts {
-    /// Generate artifacts for a toolpath. Pass stock for simulation heightmap.
+    /// Generate artifacts for a toolpath. Pass stock for isometric stock render.
     pub fn generate(
         tp: &Toolpath,
         stock: Option<&crate::dexel_stock::TriDexelStock>,
@@ -386,12 +384,11 @@ impl SweepArtifacts {
 
         let svg_summary = toolpath_svg.as_ref().map(|svg| extract_svg_summary(svg));
 
-        let stock_heightmap_svg = stock.map(|s| stock_heightmap_to_svg(s, 800.0, 600.0));
+        let stock_iso_svg = stock.map(|s| stock_isometric_svg(s, 800.0, 600.0));
 
         Self {
             toolpath_svg,
-            stock_heightmap_svg,
-            viewer_3d_html_path: None,
+            stock_iso_svg,
             svg_summary,
         }
     }
@@ -427,90 +424,180 @@ fn extract_svg_summary(svg: &str) -> SvgSummary {
     }
 }
 
-/// Render a tri-dexel stock Z-grid as a top-down SVG heightmap.
+/// Render a tri-dexel stock as an isometric SVG using painter's algorithm.
 ///
-/// Each cell is colored by its top Z value: deeper = darker, higher = lighter.
-/// This lets agents visually inspect the stock surface after simulation to catch
-/// gouges, missed regions, or unexpected material removal patterns.
-fn stock_heightmap_to_svg(
+/// Extracts the stock mesh via `dexel_stock_to_mesh`, projects each triangle
+/// from a fixed isometric camera (45-degree azimuth, 30-degree elevation),
+/// sorts back-to-front, and emits flat-shaded SVG polygons with simple
+/// directional lighting.
+#[allow(clippy::indexing_slicing)] // bounded by mesh indices
+fn stock_isometric_svg(
     stock: &crate::dexel_stock::TriDexelStock,
     width: f64,
     height: f64,
 ) -> String {
+    use crate::dexel_mesh::dexel_stock_to_mesh;
     use std::fmt::Write;
 
-    let grid = &stock.z_grid;
-    let rows = grid.rows;
-    let cols = grid.cols;
-
-    if rows == 0 || cols == 0 {
+    let mesh = dexel_stock_to_mesh(stock);
+    if mesh.vertices.is_empty() || mesh.indices.is_empty() {
         return String::from("<svg xmlns='http://www.w3.org/2000/svg'/>");
     }
 
-    // Find Z range from ray tops
-    let mut z_min = f64::MAX;
-    let mut z_max = f64::MIN;
+    // Isometric camera: 45° azimuth, 30° elevation
+    let az: f64 = std::f64::consts::FRAC_PI_4;       // 45 degrees
+    let el: f64 = std::f64::consts::FRAC_PI_6;        // 30 degrees
+    let cos_az = az.cos();
+    let sin_az = az.sin();
+    let cos_el = el.cos();
+    let sin_el = el.sin();
 
-    for row in 0..rows {
-        for col in 0..cols {
-            if let Some(top) = grid.top_z_at(row, col) {
-                let top = f64::from(top);
-                if top < z_min {
-                    z_min = top;
-                }
-                if top > z_max {
-                    z_max = top;
-                }
-            }
+    // Light direction (from upper-right-front, normalized)
+    let light_x: f64 = 0.4;
+    let light_y: f64 = -0.3;
+    let light_z: f64 = 0.866;
+
+    // Find 3D bounding box for centering
+    let vert_count = mesh.vertices.len() / 3;
+    let mut cx = 0.0f64;
+    let mut cy = 0.0f64;
+    let mut cz = 0.0f64;
+    for i in 0..vert_count {
+        cx += f64::from(mesh.vertices[i * 3]);
+        cy += f64::from(mesh.vertices[i * 3 + 1]);
+        cz += f64::from(mesh.vertices[i * 3 + 2]);
+    }
+    let n = vert_count.max(1) as f64;
+    cx /= n;
+    cy /= n;
+    cz /= n;
+
+    // Project 3D → 2D (isometric projection centered on mesh centroid)
+    // x_screen = (x-cx)*cos_az - (y-cy)*sin_az
+    // y_screen = -(x-cx)*sin_az*sin_el - (y-cy)*cos_az*sin_el + (z-cz)*cos_el
+    // depth    =  (x-cx)*sin_az*cos_el + (y-cy)*cos_az*cos_el + (z-cz)*sin_el
+    let mut projected: Vec<[f64; 2]> = Vec::with_capacity(vert_count);
+    let mut depths: Vec<f64> = Vec::with_capacity(vert_count);
+    let mut sx_min = f64::MAX;
+    let mut sx_max = f64::MIN;
+    let mut sy_min = f64::MAX;
+    let mut sy_max = f64::MIN;
+
+    for i in 0..vert_count {
+        let x = f64::from(mesh.vertices[i * 3]) - cx;
+        let y = f64::from(mesh.vertices[i * 3 + 1]) - cy;
+        let z = f64::from(mesh.vertices[i * 3 + 2]) - cz;
+
+        let sx = x * cos_az - y * sin_az;
+        let sy = -(x * sin_az * sin_el) - (y * cos_az * sin_el) + z * cos_el;
+        let depth = x * sin_az * cos_el + y * cos_az * cos_el + z * sin_el;
+
+        projected.push([sx, sy]);
+        depths.push(depth);
+
+        if sx < sx_min { sx_min = sx; }
+        if sx > sx_max { sx_max = sx; }
+        if sy < sy_min { sy_min = sy; }
+        if sy > sy_max { sy_max = sy; }
+    }
+
+    // Scale to fit SVG viewport
+    let margin = 20.0;
+    let data_w = (sx_max - sx_min).max(1e-6);
+    let data_h = (sy_max - sy_min).max(1e-6);
+    let scale = ((width - 2.0 * margin) / data_w).min((height - 2.0 * margin) / data_h);
+
+    // Build triangle list with average depth for sorting
+    let tri_count = mesh.indices.len() / 3;
+    let mut tris: Vec<(f64, usize)> = Vec::with_capacity(tri_count);
+    for t in 0..tri_count {
+        let i0 = mesh.indices[t * 3] as usize;
+        let i1 = mesh.indices[t * 3 + 1] as usize;
+        let i2 = mesh.indices[t * 3 + 2] as usize;
+        if i0 >= vert_count || i1 >= vert_count || i2 >= vert_count {
+            continue;
         }
+        let avg_depth = (depths[i0] + depths[i1] + depths[i2]) / 3.0;
+        tris.push((avg_depth, t));
     }
 
-    if z_min > z_max {
-        return String::from("<svg xmlns='http://www.w3.org/2000/svg'/>");
-    }
+    // Sort back-to-front (painter's algorithm)
+    tris.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
-    let z_range = (z_max - z_min).max(1e-6);
-    let margin = 5.0;
-    let cell_w = (width - 2.0 * margin) / cols as f64;
-    let cell_h = (height - 2.0 * margin) / rows as f64;
-
-    let mut svg = String::with_capacity(rows * cols * 80);
+    // Emit SVG
+    let mut svg = String::with_capacity(tri_count * 120);
     let _ = writeln!(
         svg,
         "<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}'>"
     );
-    let _ = writeln!(svg, "<rect width='{width}' height='{height}' fill='#111'/>");
+    let _ = writeln!(
+        svg,
+        "<rect width='{width}' height='{height}' fill='#2a2a2a'/>"
+    );
 
-    for row in 0..rows {
-        for col in 0..cols {
-            let z_top = grid
-                .top_z_at(row, col)
-                .map(f64::from)
-                .unwrap_or(z_min);
-            let t = ((z_top - z_min) / z_range).clamp(0.0, 1.0);
+    for &(_, t) in &tris {
+        let i0 = mesh.indices[t * 3] as usize;
+        let i1 = mesh.indices[t * 3 + 1] as usize;
+        let i2 = mesh.indices[t * 3 + 2] as usize;
 
-            // Color: dark brown (cut deep) → light wood (stock top)
-            let r = (60.0 + t * 180.0) as u8;
-            let g = (30.0 + t * 160.0) as u8;
-            let b = (10.0 + t * 80.0) as u8;
+        // Project vertices to screen coords
+        let x0 = margin + (projected[i0][0] - sx_min) * scale;
+        let y0 = height - margin - (projected[i0][1] - sy_min) * scale;
+        let x1 = margin + (projected[i1][0] - sx_min) * scale;
+        let y1 = height - margin - (projected[i1][1] - sy_min) * scale;
+        let x2 = margin + (projected[i2][0] - sx_min) * scale;
+        let y2 = height - margin - (projected[i2][1] - sy_min) * scale;
 
-            let x = margin + col as f64 * cell_w;
-            let y = margin + (rows - 1 - row) as f64 * cell_h; // flip Y
+        // Compute face normal for lighting (in 3D space)
+        let ax = f64::from(mesh.vertices[i1 * 3]) - f64::from(mesh.vertices[i0 * 3]);
+        let ay = f64::from(mesh.vertices[i1 * 3 + 1]) - f64::from(mesh.vertices[i0 * 3 + 1]);
+        let az_v = f64::from(mesh.vertices[i1 * 3 + 2]) - f64::from(mesh.vertices[i0 * 3 + 2]);
+        let bx = f64::from(mesh.vertices[i2 * 3]) - f64::from(mesh.vertices[i0 * 3]);
+        let by = f64::from(mesh.vertices[i2 * 3 + 1]) - f64::from(mesh.vertices[i0 * 3 + 1]);
+        let bz = f64::from(mesh.vertices[i2 * 3 + 2]) - f64::from(mesh.vertices[i0 * 3 + 2]);
+        let nx = ay * bz - az_v * by;
+        let ny = az_v * bx - ax * bz;
+        let nz = ax * by - ay * bx;
+        let nlen = (nx * nx + ny * ny + nz * nz).sqrt().max(1e-10);
 
-            let _ = write!(
-                svg,
-                "<rect x='{x:.1}' y='{y:.1}' width='{cw:.1}' height='{ch:.1}' fill='#{r:02x}{g:02x}{b:02x}'/>",
-                cw = cell_w,
-                ch = cell_h,
-            );
-        }
+        // Dot product with light direction (clamped for ambient)
+        let dot = ((nx / nlen) * light_x + (ny / nlen) * light_y + (nz / nlen) * light_z)
+            .clamp(0.0, 1.0);
+        let shade = 0.3 + 0.7 * dot; // ambient 0.3 + diffuse 0.7
+
+        // Get vertex color from mesh (average of 3 vertices)
+        let base_r = (f64::from(mesh.colors[i0 * 3])
+            + f64::from(mesh.colors[i1 * 3])
+            + f64::from(mesh.colors[i2 * 3]))
+            / 3.0;
+        let base_g = (f64::from(mesh.colors[i0 * 3 + 1])
+            + f64::from(mesh.colors[i1 * 3 + 1])
+            + f64::from(mesh.colors[i2 * 3 + 1]))
+            / 3.0;
+        let base_b = (f64::from(mesh.colors[i0 * 3 + 2])
+            + f64::from(mesh.colors[i1 * 3 + 2])
+            + f64::from(mesh.colors[i2 * 3 + 2]))
+            / 3.0;
+
+        let r = (base_r * shade * 255.0).clamp(0.0, 255.0) as u8;
+        let g = (base_g * shade * 255.0).clamp(0.0, 255.0) as u8;
+        let b = (base_b * shade * 255.0).clamp(0.0, 255.0) as u8;
+
+        let _ = writeln!(
+            svg,
+            "<polygon points='{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}' fill='#{r:02x}{g:02x}{b:02x}' stroke='#{r:02x}{g:02x}{b:02x}' stroke-width='0.5'/>"
+        );
     }
 
     // Legend
+    let bbox = &stock.stock_bbox;
     let _ = writeln!(
         svg,
-        "<text x='5' y='{y}' fill='white' font-size='10' font-family='monospace'>Z: {z_min:.2} to {z_max:.2} mm ({rows}x{cols} grid)</text>",
-        y = height - 5.0,
+        "<text x='5' y='15' fill='white' font-size='11' font-family='monospace'>Stock: {:.0}x{:.0}x{:.0} mm  ({} triangles)</text>",
+        bbox.max.x - bbox.min.x,
+        bbox.max.y - bbox.min.y,
+        bbox.max.z - bbox.min.z,
+        tri_count,
     );
     let _ = writeln!(svg, "</svg>");
     svg
@@ -839,7 +926,7 @@ mod tests {
         let arts = SweepArtifacts::generate(&tp, None);
 
         assert!(arts.toolpath_svg.is_some());
-        assert!(arts.stock_heightmap_svg.is_none()); // no stock provided
+        assert!(arts.stock_iso_svg.is_none()); // no stock provided
         assert!(arts.svg_summary.is_some());
 
         let summary = arts.svg_summary.unwrap();
@@ -873,7 +960,7 @@ mod tests {
     }
 
     #[test]
-    fn stock_heightmap_svg_renders() {
+    fn stock_isometric_svg_renders() {
         use crate::dexel_stock::TriDexelStock;
         use crate::geo::BoundingBox3;
 
@@ -882,10 +969,41 @@ mod tests {
             max: P3::new(20.0, 20.0, 10.0),
         };
         let stock = TriDexelStock::from_bounds(&bbox, 2.0);
-        let svg = stock_heightmap_to_svg(&stock, 400.0, 400.0);
+        let svg = stock_isometric_svg(&stock, 400.0, 400.0);
 
         assert!(svg.contains("<svg"));
-        assert!(svg.contains("<rect"));
-        assert!(svg.contains("Z:"));
+        assert!(svg.contains("<polygon"));
+        assert!(svg.contains("Stock:"));
+    }
+
+    #[test]
+    fn stock_isometric_svg_with_cut() {
+        use crate::dexel_stock::{StockCutDirection, TriDexelStock};
+        use crate::geo::BoundingBox3;
+        use crate::tool::FlatEndmill;
+
+        let bbox = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(30.0, 30.0, 10.0),
+        };
+        let mut stock = TriDexelStock::from_bounds(&bbox, 1.0);
+
+        // Cut a pocket path through the stock
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(5.0, 5.0, 12.0));
+        tp.feed_to(P3::new(5.0, 5.0, 5.0), 500.0);
+        tp.feed_to(P3::new(25.0, 5.0, 5.0), 1000.0);
+        tp.feed_to(P3::new(25.0, 25.0, 5.0), 1000.0);
+        tp.feed_to(P3::new(5.0, 25.0, 5.0), 1000.0);
+        tp.feed_to(P3::new(5.0, 5.0, 5.0), 1000.0);
+        tp.rapid_to(P3::new(5.0, 5.0, 12.0));
+
+        let cutter = FlatEndmill::new(6.35, 25.0);
+        stock.simulate_toolpath(&tp, &cutter, StockCutDirection::FromTop);
+
+        let svg = stock_isometric_svg(&stock, 600.0, 500.0);
+        assert!(svg.contains("<polygon"));
+        // Should have more triangles than uncut stock (cut creates new geometry)
+        assert!(svg.len() > 1000);
     }
 }

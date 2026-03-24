@@ -336,7 +336,7 @@ fn simulate_and_export(
 
     // Export heightmap SVG
     let arts = SweepArtifacts::generate(tp, Some(&stock));
-    if let Some(svg) = &arts.stock_heightmap_svg {
+    if let Some(svg) = &arts.stock_iso_svg {
         let _ = std::fs::write(output_dir.join(format!("{prefix}_stock.svg")), svg);
     }
 
