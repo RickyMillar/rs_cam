@@ -116,11 +116,25 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
 
     match state.selection.clone() {
         Selection::None => {
-            ui.label(
-                egui::RichText::new("Select an item in the project tree")
-                    .italics()
-                    .color(egui::Color32::from_rgb(120, 120, 130)),
-            );
+            if state.job.models.is_empty() && state.job.setups.iter().all(|s| s.toolpaths.is_empty()) {
+                ui.label(
+                    egui::RichText::new("Getting started:")
+                        .strong()
+                        .color(egui::Color32::from_rgb(180, 180, 195)),
+                );
+                ui.add_space(4.0);
+                ui.label("1. Import a model (File > Import)");
+                ui.label("2. Configure stock dimensions");
+                ui.label("3. Add a cutting tool");
+                ui.label("4. Create a toolpath");
+                ui.label("5. Generate and export G-code");
+            } else {
+                ui.label(
+                    egui::RichText::new("Select an item in the project tree")
+                        .italics()
+                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                );
+            }
         }
         Selection::Stock => {
             // Capture snapshot for undo before editing
@@ -134,15 +148,9 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .any(|s| s.face_up != crate::state::job::FaceUp::Top);
             stock::draw(ui, &mut state.job.stock, has_flipped_setup, events);
             // If an edit just finished (DragValue released), push undo
-            if events.iter().any(|e| matches!(e, AppEvent::StockChanged))
+            if events.iter().any(|e| matches!(e, AppEvent::StockChanged | AppEvent::StockMaterialChanged))
                 && let Some(old) = state.history.stock_snapshot.take()
-                && (old.x != state.job.stock.x
-                    || old.y != state.job.stock.y
-                    || old.z != state.job.stock.z
-                    || old.origin_x != state.job.stock.origin_x
-                    || old.origin_y != state.job.stock.origin_y
-                    || old.origin_z != state.job.stock.origin_z
-                    || old.padding != state.job.stock.padding)
+                && old != state.job.stock
             {
                 state
                     .history
@@ -2124,11 +2132,24 @@ fn tooltip_for(label: &str) -> Option<&'static str> {
         "Peck Depth" => "Incremental depth per peck for chip evacuation.",
         "Dwell Time" => "Pause at bottom of drill hole (seconds).",
         "Retract Amt" => "Small retract distance for chip breaking between pecks.",
-        "Retract Z" => "R-plane height: rapid down to here, then feed into material.",
+        "Retract Z" => "R-plane height for this drill cycle: rapid down to here, then feed into material. Different from global Safe Z.",
         "Angular Step" => "Degrees between radial spokes. Smaller = more passes, finer finish.",
         "Point Spacing" => "Distance between sample points along curves. Smaller = smoother.",
         "Angle Threshold" => "Max slope angle (degrees) to consider a surface flat/horizontal.",
         "Stock to Leave" => "Finishing allowance kept on the surface for a later pass.",
+        "Slope From" => "Minimum surface slope (degrees) to machine. Faces shallower than this are skipped.",
+        "Pocket Depth" => "Depth of the inlay pocket measured from stock surface.",
+        "Flat Depth" => "Depth for flat-bottom clearing in the inlay pocket. 0 = V-only.",
+        "Boundary Offset" => "Offset from the design boundary for the inlay cut. Adjusts fit.",
+        "Flat Tool Radius" => "Radius of the flat endmill used to clear the pocket floor.",
+        "Spoilboard" => "How far the drill penetrates into the spoilboard below the stock.",
+        "Width" => "Width of holding tabs that keep the part attached to stock.",
+        "Height" => "Height of holding tabs from the floor of the cut.",
+        "Offset Stepover" => "Lateral step between offset cleanup passes around pencil traces.",
+        "Pitch" => "Vertical drop per revolution of the helical entry move.",
+        "Radius" => "Radius of the helical or arc entry/exit move.",
+        "Max Rate" => "Maximum allowable feed rate during optimized sections.",
+        "Ramp Rate" => "How quickly feed rate ramps up toward max (mm/min per mm of engagement).",
         _ => return None,
     })
 }

@@ -44,6 +44,8 @@ pub fn draw(
                 egui::RichText::new("Hardness Index:")
                     .small()
                     .color(egui::Color32::from_rgb(140, 140, 150)),
+            ).on_hover_text(
+                "Relative material hardness (0-1). Higher values reduce recommended feed rates and depths of cut."
             );
             ui.label(
                 egui::RichText::new(format!("{:.2}", stock.material.hardness_index()))
@@ -56,6 +58,8 @@ pub fn draw(
                 egui::RichText::new("Kc:")
                     .small()
                     .color(egui::Color32::from_rgb(140, 140, 150)),
+            ).on_hover_text(
+                "Specific cutting force (N/mm\u{00B2}). Used to calculate spindle load and recommended feed rates. Higher Kc = harder to cut."
             );
             ui.label(
                 egui::RichText::new(format!("{:.1} N/mm\u{00B2}", stock.material.kc_n_per_mm2()))

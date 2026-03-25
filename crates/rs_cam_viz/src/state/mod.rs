@@ -32,6 +32,8 @@ pub struct AppState {
     pub history: UndoHistory,
     /// Show pre-flight checklist modal before export.
     pub show_preflight: bool,
+    /// Show keyboard shortcuts reference window.
+    pub show_shortcuts: bool,
 }
 
 impl AppState {
@@ -44,6 +46,7 @@ impl AppState {
             simulation: SimulationState::new(),
             history: UndoHistory::new(),
             show_preflight: false,
+            show_shortcuts: false,
         }
     }
 }
