@@ -468,6 +468,9 @@ pub(super) fn draw_waterline_params(ui: &mut egui::Ui, cfg: &mut WaterlineConfig
         .show(ui, |ui| {
             dv(ui, "Z Step:", &mut cfg.z_step, " mm", 0.1, 0.05..=20.0);
             dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
+            ui.label("Continuous:");
+            ui.checkbox(&mut cfg.continuous, "");
+            ui.end_row();
             // Z range now comes from the Heights tab (top_z / bottom_z)
             draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate);
         });

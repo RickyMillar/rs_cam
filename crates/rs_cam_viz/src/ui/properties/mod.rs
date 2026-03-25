@@ -534,16 +534,21 @@ fn draw_model_properties(
             let mut custom_scale = current_units.scale_factor();
             ui.horizontal(|ui| {
                 ui.label("Custom scale:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut custom_scale)
-                            .speed(0.1)
-                            .range(0.001..=100000.0),
-                    )
-                    .changed()
-                {
-                    events.push(AppEvent::RescaleModel(id, ModelUnits::Custom(custom_scale)));
-                }
+                ui.push_id(("custom_scale", id), |ui| {
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut custom_scale)
+                                .speed(0.1)
+                                .range(0.001..=100000.0),
+                        )
+                        .changed()
+                    {
+                        events.push(AppEvent::RescaleModel(
+                            id,
+                            ModelUnits::Custom(custom_scale),
+                        ));
+                    }
+                });
             });
         }
     }
