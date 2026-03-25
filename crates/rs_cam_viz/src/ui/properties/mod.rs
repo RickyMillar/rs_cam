@@ -505,8 +505,8 @@ fn draw_model_properties(
                 });
         }
 
-        // Units / scale selector (all formats except STEP, which has fixed BREP geometry in mm)
-        if model.kind != ModelKind::Step {
+        // Units / scale selector (all formats including STEP)
+        {
             ui.add_space(8.0);
             ui.label(
                 egui::RichText::new("Units / Scale")
