@@ -58,7 +58,7 @@ fn workspace_tab(
 
     let (bg, text_color) = if is_active {
         (
-            egui::Color32::from_rgb(55, 60, 80),
+            egui::Color32::from_rgb(65, 72, 95),
             egui::Color32::from_rgb(220, 225, 240),
         )
     } else {
@@ -120,7 +120,7 @@ fn toolpath_badge(state: &AppState) -> Option<(String, egui::Color32)> {
         })
         .count();
     if pending > 0 {
-        Some((format!(" {pending}"), theme::WARNING))
+        Some((format!("{pending} pending"), theme::WARNING))
     } else {
         None
     }

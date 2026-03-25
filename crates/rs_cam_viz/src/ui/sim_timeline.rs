@@ -109,14 +109,19 @@ fn draw_transport_and_scrubber(
     events: &mut Vec<AppEvent>,
 ) {
     ui.horizontal(|ui| {
+        let btn_size = egui::vec2(30.0, 20.0);
         if ui
-            .button("|◄")
+            .add(egui::Button::new("|◄").min_size(btn_size))
             .on_hover_text("Jump to start (Home)")
             .clicked()
         {
             events.push(AppEvent::SimJumpToStart);
         }
-        if ui.button("◄").on_hover_text("Step back (Left)").clicked() {
+        if ui
+            .add(egui::Button::new("◄").min_size(btn_size))
+            .on_hover_text("Step back (Left)")
+            .clicked()
+        {
             events.push(AppEvent::SimStepBackward);
         }
         let play_label = if sim.playback.playing {
@@ -129,17 +134,25 @@ fn draw_transport_and_scrubber(
         } else {
             "Play (Space)"
         };
-        if ui.button(play_label).on_hover_text(play_tip).clicked() {
+        if ui
+            .add(egui::Button::new(play_label).min_size(btn_size))
+            .on_hover_text(play_tip)
+            .clicked()
+        {
             events.push(AppEvent::ToggleSimPlayback);
         }
         if ui
-            .button("►")
+            .add(egui::Button::new("►").min_size(btn_size))
             .on_hover_text("Step forward (Right)")
             .clicked()
         {
             events.push(AppEvent::SimStepForward);
         }
-        if ui.button("►|").on_hover_text("Jump to end (End)").clicked() {
+        if ui
+            .add(egui::Button::new("►|").min_size(btn_size))
+            .on_hover_text("Jump to end (End)")
+            .clicked()
+        {
             events.push(AppEvent::SimJumpToEnd);
         }
 

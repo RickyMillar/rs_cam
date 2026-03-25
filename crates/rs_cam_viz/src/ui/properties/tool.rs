@@ -51,16 +51,12 @@ pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
 
             // Flute count (critical for feeds calculation)
             ui.label("Flutes:");
-            let mut flutes_f = tool.flute_count as f64;
+            let mut flutes_i = tool.flute_count as i32;
             if ui
-                .add(
-                    egui::DragValue::new(&mut flutes_f)
-                        .range(1.0..=8.0)
-                        .speed(0.1),
-                )
+                .add(egui::DragValue::new(&mut flutes_i).range(1..=8))
                 .changed()
             {
-                tool.flute_count = (flutes_f as u32).clamp(1, 8);
+                tool.flute_count = flutes_i.max(1) as u32;
             }
             ui.end_row();
 
@@ -180,6 +176,14 @@ pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
                 ui.end_row();
             });
     });
+    if tool.holder_diameter < 0.01 {
+        ui.label(
+            egui::RichText::new("Holder not configured — collision check will be skipped")
+                .small()
+                .italics()
+                .color(egui::Color32::from_rgb(120, 120, 130)),
+        );
+    }
 }
 
 /// Draw a 2D cross-section preview of the tool profile.

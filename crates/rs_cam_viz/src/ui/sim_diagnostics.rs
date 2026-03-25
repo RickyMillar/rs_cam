@@ -125,7 +125,7 @@ pub fn draw(
 
     // --- Semantic Context ---
     egui::CollapsingHeader::new("Semantic Context")
-        .default_open(true)
+        .default_open(false)
         .show(ui, |ui| {
             if let Some(active) = active_semantic.as_ref() {
                 let color = semantic_kind_color(&active.item.kind);
@@ -534,7 +534,7 @@ pub fn draw(
             ui.horizontal(|ui| {
                 ui.label("Est. cycle time:");
                 ui.label(
-                    egui::RichText::new(format!("{}:{:02}", total_min, total_sec))
+                    egui::RichText::new(format!("{}:{:02} min", total_min, total_sec))
                         .strong()
                         .color(theme::INFO),
                 );

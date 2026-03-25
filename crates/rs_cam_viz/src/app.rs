@@ -2124,7 +2124,7 @@ impl RsCamApp {
     fn draw_toolpath_layout(&mut self, ctx: &egui::Context) {
         // Left panel: operation queue
         egui::SidePanel::left("toolpath_tree")
-            .default_width(230.0)
+            .default_width(240.0)
             .resizable(true)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -2221,7 +2221,7 @@ impl RsCamApp {
 
         // Left panel: operation list
         egui::SidePanel::left("sim_op_list")
-            .default_width(200.0)
+            .default_width(240.0)
             .resizable(true)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -2413,6 +2413,7 @@ impl eframe::App for RsCamApp {
                 egui::Area::new(egui::Id::new("toast_notifications"))
                     .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-12.0, -12.0))
                     .show(ctx, |ui| {
+                        ui.set_max_width(400.0);
                         for (message, severity) in &notifications {
                             let (bg, text_color) = match severity {
                                 crate::controller::Severity::Info => {
@@ -2430,7 +2431,7 @@ impl eframe::App for RsCamApp {
                             egui::Frame::default()
                                 .fill(bg)
                                 .inner_margin(egui::Margin::symmetric(12.0, 8.0))
-                                .rounding(6.0)
+                                .rounding(4.0)
                                 .show(ui, |ui: &mut egui::Ui| {
                                     ui.colored_label(text_color, message);
                                 });

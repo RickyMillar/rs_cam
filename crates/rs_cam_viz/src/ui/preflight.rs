@@ -136,7 +136,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             check_card(
                 ui,
                 CheckStatus::Pass,
-                "Cycle time",
+                "Est. cycle time (cutting only)",
                 &format!("{}:{:02}  ({} tool changes)", m, s, tool_changes),
                 "",
                 None,
@@ -227,7 +227,7 @@ fn check_card(
     still_open: &mut bool,
 ) {
     let (icon, color) = match status {
-        CheckStatus::Pass => ("\u{2705}", theme::SUCCESS),
+        CheckStatus::Pass => ("\u{2713}", theme::SUCCESS),
         CheckStatus::Fail => ("\u{274C}", theme::ERROR),
         CheckStatus::Warning => ("\u{26A0}\u{FE0F}", theme::WARNING),
     };
@@ -274,17 +274,20 @@ fn estimate_total_time(state: &AppState) -> f64 {
 }
 
 fn count_tool_changes(state: &AppState) -> usize {
-    let mut seen_tools = Vec::new();
+    let mut count = 0;
+    let mut last_tool = None;
     for tp in state.job.all_toolpaths() {
-        if tp.enabled && !seen_tools.contains(&tp.tool_id) {
-            seen_tools.push(tp.tool_id);
+        if !tp.enabled {
+            continue;
         }
+        if let Some(last) = last_tool
+            && tp.tool_id != last
+        {
+            count += 1;
+        }
+        last_tool = Some(tp.tool_id);
     }
-    if seen_tools.len() > 1 {
-        seen_tools.len() - 1
-    } else {
-        0
-    }
+    count
 }
 
 fn op_feed_rate(op: &OperationConfig) -> f64 {
