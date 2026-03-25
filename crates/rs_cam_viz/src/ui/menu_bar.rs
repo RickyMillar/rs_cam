@@ -67,13 +67,16 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                     ui.close_menu();
                     events.push(AppEvent::OpenJob);
                 }
-                if ui.add(egui::Button::new("Save Job  Ctrl+S")).clicked() {
+                if ui
+                    .add(egui::Button::new("Save Job").shortcut_text("Ctrl+S"))
+                    .clicked()
+                {
                     ui.close_menu();
                     events.push(AppEvent::SaveJob);
                 }
                 ui.separator();
                 if ui
-                    .add(egui::Button::new("Export G-code (all)...  Ctrl+Shift+E"))
+                    .add(egui::Button::new("Export G-code (all)...").shortcut_text("Ctrl+Shift+E"))
                     .clicked()
                 {
                     ui.close_menu();
@@ -108,14 +111,22 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
             });
 
             ui.menu_button("Edit", |ui| {
-                if ui.add(egui::Button::new("Undo  Ctrl+Z")).clicked() {
+                if ui
+                    .add(egui::Button::new("Undo").shortcut_text("Ctrl+Z"))
+                    .clicked()
+                {
                     ui.close_menu();
                     events.push(AppEvent::Undo);
                 }
-                if ui.add(egui::Button::new("Redo  Ctrl+Shift+Z")).clicked() {
+                if ui
+                    .add(egui::Button::new("Redo").shortcut_text("Ctrl+Shift+Z"))
+                    .clicked()
+                {
                     ui.close_menu();
                     events.push(AppEvent::Redo);
                 }
+                ui.separator();
+                ui.add_enabled(false, egui::Button::new("Delete Selected").shortcut_text("Del"));
             });
 
             ui.menu_button("Toolpath", |ui| {

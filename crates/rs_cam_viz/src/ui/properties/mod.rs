@@ -1731,10 +1731,14 @@ fn draw_toolpath_panel(
                 );
             }
             ComputeStatus::Error(e) => {
-                ui.label(
-                    egui::RichText::new(format!("Error: {e}"))
-                        .color(egui::Color32::from_rgb(220, 80, 80)),
-                );
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(format!("Error: {e}"))
+                            .color(egui::Color32::from_rgb(220, 80, 80)),
+                    )
+                    .wrap(),
+                )
+                .on_hover_text(e);
             }
         }
         if let Some(result) = &entry.result {

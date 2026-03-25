@@ -1008,6 +1008,10 @@ impl<B: ComputeBackend> AppController<B> {
             .find(|tool| tool.id == tool_id)
             .cloned()
         else {
+            self.push_notification(
+                "Cannot generate: no tool assigned to this toolpath".into(),
+                super::Severity::Warning,
+            );
             return;
         };
 

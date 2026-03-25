@@ -228,11 +228,18 @@ impl<B: ComputeBackend> AppController<B> {
             })
             .collect();
 
+        let count = stale_ids.len();
         for id in stale_ids {
             if let Some(toolpath) = self.state.job.find_toolpath_mut(id) {
                 toolpath.stale_since = None;
             }
             self.submit_toolpath_compute(id);
+        }
+        if count > 0 {
+            self.push_notification(
+                format!("Auto-regenerating {} toolpath(s)", count),
+                Severity::Info,
+            );
         }
     }
 }

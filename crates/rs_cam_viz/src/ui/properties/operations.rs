@@ -6,7 +6,7 @@ use super::dv;
 /// Draw the standard "Feed Rate" + "Plunge Rate" parameter pair used by
 /// most cutting operations.
 fn draw_feed_params(ui: &mut egui::Ui, feed_rate: &mut f64, plunge_rate: &mut f64) {
-    dv(ui, "Feed Rate:", feed_rate, " mm/min", 10.0, 1.0..=50000.0);
+    dv(ui, "Feed Rate:", feed_rate, " mm/min", 50.0, 1.0..=50000.0);
     dv(
         ui,
         "Plunge Rate:",
@@ -53,7 +53,7 @@ pub(super) fn draw_pocket_params(ui: &mut egui::Ui, cfg: &mut PocketConfig) {
             ui.label("Finishing Passes:");
             let mut fp = cfg.finishing_passes as i32;
             if ui
-                .add(egui::DragValue::new(&mut fp).range(0..=10))
+                .add(egui::DragValue::new(&mut fp).range(0..=10).speed(0.1))
                 .on_hover_text("Spring passes at final depth for dimensional accuracy")
                 .changed()
             {
@@ -131,7 +131,7 @@ pub(super) fn draw_profile_params(ui: &mut egui::Ui, cfg: &mut ProfileConfig) {
             ui.label("Finishing Passes:");
             let mut fp = cfg.finishing_passes as i32;
             if ui
-                .add(egui::DragValue::new(&mut fp).range(0..=10))
+                .add(egui::DragValue::new(&mut fp).range(0..=10).speed(0.1))
                 .on_hover_text("Spring passes at final depth for dimensional accuracy")
                 .changed()
             {
@@ -358,7 +358,7 @@ pub(super) fn draw_adaptive3d_params(ui: &mut egui::Ui, cfg: &mut Adaptive3dConf
             );
             dv(
                 ui,
-                "Stock to Leave:",
+                "Floor Stock:",
                 &mut cfg.stock_to_leave_axial,
                 " mm",
                 0.05,

@@ -164,7 +164,7 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &
                 if keepout_count > 0 {
                     chip(
                         ui,
-                        "KO",
+                        "Keep Out",
                         &keepout_count.to_string(),
                         egui::Color32::from_rgb(180, 100, 100),
                     );
@@ -200,7 +200,7 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &
             // Fresh-stock warning for non-first setups
             if state.job.setups.first().map(|s| s.id) != Some(setup.id) {
                 ui.label(
-                    egui::RichText::new("Toolpaths use fresh stock")
+                    egui::RichText::new("Starts from uncut stock (prior setups not reflected)")
                         .small()
                         .italics()
                         .color(theme::WARNING_MILD),
@@ -229,7 +229,7 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &
 fn chip(ui: &mut egui::Ui, key: &str, value: &str, color: egui::Color32) {
     let tooltip = match key {
         "Fix" => "Fixtures",
-        "KO" => "Keep-out zones",
+        "Keep Out" => "Keep-out zones",
         "Orient" => "Setup orientation",
         "XY" => "XY datum method",
         _ => key,

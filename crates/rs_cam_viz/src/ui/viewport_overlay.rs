@@ -15,7 +15,7 @@ pub fn draw(
     events: &mut Vec<AppEvent>,
 ) {
     // Top row: view presets + render mode + visibility + sim controls
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         // View presets
         for (label, preset) in [
             ("Top", ViewPreset::Top),
@@ -45,13 +45,13 @@ pub fn draw(
         ui.separator();
 
         // Visibility toggles
-        ui.checkbox(&mut viewport.show_cutting, "Cut")
+        ui.checkbox(&mut viewport.show_cutting, "Paths")
             .on_hover_text("Show cutting moves");
-        ui.checkbox(&mut viewport.show_rapids, "Rapid")
+        ui.checkbox(&mut viewport.show_rapids, "Rapids")
             .on_hover_text("Show rapid moves");
-        ui.checkbox(&mut viewport.show_collisions, "Col")
+        ui.checkbox(&mut viewport.show_collisions, "Collisions")
             .on_hover_text("Show collisions");
-        ui.checkbox(&mut viewport.show_fixtures, "Fix")
+        ui.checkbox(&mut viewport.show_fixtures, "Fixtures")
             .on_hover_text("Show fixtures");
 
         ui.separator();
@@ -79,15 +79,15 @@ pub fn draw(
         // Simulation controls — only shown outside Simulation workspace (sim has its own)
         if matches!(workspace, Workspace::Setup | Workspace::Toolpaths) {
             if sim_active {
-                if ui.small_button("Open Sim").clicked() {
+                if ui.small_button("Open Simulation").clicked() {
                     events.push(AppEvent::SwitchWorkspace(Workspace::Simulation));
                 }
                 if ui.small_button("Reset").clicked() {
                     events.push(AppEvent::ResetSimulation);
                 }
             } else {
-                let simulate = ui.small_button("Simulate");
-                automation::record(ui, "overlay_simulate", &simulate, "Simulate");
+                let simulate = ui.small_button("Run Simulation");
+                automation::record(ui, "overlay_simulate", &simulate, "Run Simulation");
                 if simulate.clicked() {
                     events.push(AppEvent::RunSimulation);
                 }

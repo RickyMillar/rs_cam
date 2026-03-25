@@ -237,7 +237,7 @@ pub fn draw(
             // Jump buttons + move info
             ui.horizontal(|ui| {
                 if ui
-                    .small_button("|<")
+                    .small_button("|◄")
                     .on_hover_text("Jump to op start")
                     .clicked()
                 {
@@ -257,7 +257,7 @@ pub fn draw(
                         .color(theme::TEXT_MUTED),
                 );
                 if ui
-                    .small_button(">|")
+                    .small_button("►|")
                     .on_hover_text("Jump to op end")
                     .clicked()
                 {
@@ -421,7 +421,7 @@ pub fn draw(
 
             if let (Some(move_start), Some(move_end)) = (item.move_start, item.move_end) {
                 if ui
-                    .small_button(">|")
+                    .small_button("►|")
                     .on_hover_text("Jump to semantic item end")
                     .clicked()
                 {
