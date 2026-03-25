@@ -135,8 +135,15 @@ pub fn import_dxf(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, V
 }
 
 /// Import a STEP file, returning a LoadedModel with enriched mesh.
-pub fn import_step(path: &Path, id: ModelId) -> Result<LoadedModel, VizError> {
-    let enriched = rs_cam_core::step_input::load_step(path, 0.1)?;
+///
+/// `scale` uniformly scales all tessellated vertices (1.0 = mm as-is).
+pub fn import_step(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, VizError> {
+    let mut enriched = rs_cam_core::step_input::load_step(path, 0.1)?;
+
+    // Apply uniform scale to tessellated geometry if not 1:1.
+    if (scale - 1.0).abs() > 1e-9 {
+        enriched.apply_uniform_scale(scale);
+    }
 
     let name = path
         .file_name()
@@ -170,7 +177,7 @@ pub fn import_model(
         ModelKind::Stl => import_stl(path, id, scale)?,
         ModelKind::Svg => import_svg(path, id, scale)?,
         ModelKind::Dxf => import_dxf(path, id, scale)?,
-        ModelKind::Step => import_step(path, id)?,
+        ModelKind::Step => import_step(path, id, scale)?,
     };
     model.units = units;
     Ok(model)

@@ -51,7 +51,7 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub fn import_step_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
         let id = self.state.job.next_model_id();
-        let model = import::import_step(path, id)?;
+        let model = import::import_step(path, id, 1.0)?;
         let bbox = model.bbox();
         if let Some(mesh) = &model.mesh
             && self.state.job.stock.auto_from_model

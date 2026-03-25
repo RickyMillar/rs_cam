@@ -168,6 +168,97 @@ impl EnrichedMesh {
             .collect()
     }
 
+    /// Uniformly scale all geometry (mesh vertices, face bboxes/loops, edge vertices).
+    ///
+    /// Rebuilds the inner `TriangleMesh` with scaled vertices and recomputes bounding boxes.
+    pub fn apply_uniform_scale(&mut self, scale: f64) {
+        // Scale the inner mesh
+        let scaled_verts: Vec<P3> = self
+            .mesh
+            .vertices
+            .iter()
+            .map(|v| P3::new(v.x * scale, v.y * scale, v.z * scale))
+            .collect();
+        let triangles = self.mesh.triangles.clone();
+        self.mesh = Arc::new(TriangleMesh::from_raw(scaled_verts, triangles));
+
+        // Scale face group bboxes and boundary loops
+        for fg in &mut self.face_groups {
+            fg.bbox = BoundingBox3::from_points([
+                P3::new(
+                    fg.bbox.min.x * scale,
+                    fg.bbox.min.y * scale,
+                    fg.bbox.min.z * scale,
+                ),
+                P3::new(
+                    fg.bbox.max.x * scale,
+                    fg.bbox.max.y * scale,
+                    fg.bbox.max.z * scale,
+                ),
+            ]);
+            for loop_pts in &mut fg.boundary_loops {
+                for p in loop_pts.iter_mut() {
+                    *p = P3::new(p.x * scale, p.y * scale, p.z * scale);
+                }
+            }
+            if let Some(loops_2d) = &mut fg.boundary_loops_2d {
+                for loop_pts in loops_2d.iter_mut() {
+                    for p in loop_pts.iter_mut() {
+                        *p = P2::new(p.x * scale, p.y * scale);
+                    }
+                }
+            }
+            // Scale surface params that have dimensional values
+            fg.surface_params = match fg.surface_params.clone() {
+                SurfaceParams::Plane { normal, d } => SurfaceParams::Plane {
+                    normal,
+                    d: d * scale,
+                },
+                SurfaceParams::Cylinder { axis_origin, axis_dir, radius } => {
+                    SurfaceParams::Cylinder {
+                        axis_origin: P3::new(
+                            axis_origin.x * scale,
+                            axis_origin.y * scale,
+                            axis_origin.z * scale,
+                        ),
+                        axis_dir,
+                        radius: radius * scale,
+                    }
+                }
+                SurfaceParams::Cone { apex, axis, half_angle } => SurfaceParams::Cone {
+                    apex: P3::new(apex.x * scale, apex.y * scale, apex.z * scale),
+                    axis,
+                    half_angle,
+                },
+                SurfaceParams::Sphere { center, radius } => SurfaceParams::Sphere {
+                    center: P3::new(center.x * scale, center.y * scale, center.z * scale),
+                    radius: radius * scale,
+                },
+                SurfaceParams::Torus { center, axis, major_radius, minor_radius } => {
+                    SurfaceParams::Torus {
+                        center: P3::new(center.x * scale, center.y * scale, center.z * scale),
+                        axis,
+                        major_radius: major_radius * scale,
+                        minor_radius: minor_radius * scale,
+                    }
+                }
+                other => other,
+            };
+        }
+
+        // Scale edge vertices
+        for edge in &mut self.edges {
+            for p in edge.vertices.iter_mut() {
+                *p = P3::new(p.x * scale, p.y * scale, p.z * scale);
+            }
+            if let Some(pts_2d) = &mut edge.vertices_2d {
+                for p in pts_2d.iter_mut() {
+                    *p = P2::new(p.x * scale, p.y * scale);
+                }
+            }
+        }
+    }
+
     /// Get edges shared between two specific faces.
     pub fn edges_between(&self, a: FaceGroupId, b: FaceGroupId) -> Vec<&BrepEdge> {
         self.edges
