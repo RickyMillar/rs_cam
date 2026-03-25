@@ -143,20 +143,7 @@ fn draw_transport_and_scrubber(
             events.push(AppEvent::SimJumpToEnd);
         }
 
-        ui.separator();
-
         if sim.total_moves() > 0 {
-            let mut pos = sim.playback.current_move as f32;
-            let slider = egui::Slider::new(&mut pos, 0.0..=sim.total_moves() as f32)
-                .show_value(false)
-                .step_by(1.0);
-            let available = (ui.available_width() - 160.0).max(80.0);
-            let slider_response = ui.add_sized(egui::vec2(available, 18.0), slider);
-            if slider_response.changed() {
-                sim.playback.current_move = pos as usize;
-                sim.playback.playing = false;
-            }
-
             ui.separator();
 
             let (elapsed_time, total_time) = estimate_times(sim, job);
@@ -222,12 +209,22 @@ fn draw_boundary_timeline(
 ) {
     if sim.total_moves() > 0 && !sim.boundaries().is_empty() {
         let total_width = ui.available_width();
-        let height = 12.0;
-        let (rect, response) =
-            ui.allocate_exact_size(egui::vec2(total_width, height), egui::Sense::click());
+        let height = 24.0;
+        let rounding = 3.0;
+        let (rect, response) = ui.allocate_exact_size(
+            egui::vec2(total_width, height),
+            egui::Sense::click_and_drag(),
+        );
 
         let painter = ui.painter_at(rect);
         let total_moves = sim.total_moves().max(1) as f32;
+
+        // Subtle border around the timeline bar
+        painter.rect_stroke(
+            rect,
+            rounding,
+            egui::Stroke::new(1.0, egui::Color32::from_rgb(55, 55, 65)),
+        );
 
         for (i, boundary) in sim.boundaries().iter().enumerate() {
             let op_moves = boundary.end_move.saturating_sub(boundary.start_move);
@@ -250,7 +247,7 @@ fn draw_boundary_timeline(
                 egui::pos2(x_start, rect.min.y),
                 egui::pos2(x_end, rect.max.y),
             );
-            painter.rect_filled(seg_rect, 1.0, dim_color);
+            painter.rect_filled(seg_rect, rounding, dim_color);
 
             let progress = if sim.playback.current_move >= boundary.end_move {
                 1.0
@@ -264,7 +261,7 @@ fn draw_boundary_timeline(
                 egui::pos2(x_start, rect.min.y),
                 egui::vec2(fill_width, height),
             );
-            painter.rect_filled(fill_rect, 1.0, color);
+            painter.rect_filled(fill_rect, rounding, color);
         }
 
         if let Some(ref report) = sim.checks.collision_report {
@@ -287,6 +284,7 @@ fn draw_boundary_timeline(
             );
         }
 
+        // Playhead line
         let pos_x = rect.min.x + (sim.playback.current_move as f32 / total_moves) * total_width;
         painter.line_segment(
             [
@@ -296,7 +294,23 @@ fn draw_boundary_timeline(
             egui::Stroke::new(2.0, egui::Color32::WHITE),
         );
 
-        if response.clicked()
+        // Playhead diamond handle at the top
+        let diamond_center = egui::pos2(pos_x, rect.min.y);
+        let diamond_size = 4.0;
+        let diamond_points = vec![
+            egui::pos2(diamond_center.x, diamond_center.y - diamond_size),
+            egui::pos2(diamond_center.x + diamond_size, diamond_center.y),
+            egui::pos2(diamond_center.x, diamond_center.y + diamond_size),
+            egui::pos2(diamond_center.x - diamond_size, diamond_center.y),
+        ];
+        painter.add(egui::Shape::convex_polygon(
+            diamond_points,
+            egui::Color32::WHITE,
+            egui::Stroke::NONE,
+        ));
+
+        // Click or drag to seek
+        if (response.dragged() || response.clicked())
             && let Some(pos) = response.interact_pointer_pos()
         {
             let frac = ((pos.x - rect.min.x) / total_width).clamp(0.0, 1.0);
@@ -315,7 +329,14 @@ fn draw_boundary_timeline(
 /// Row 3: Playback speed slider and preset buttons.
 fn draw_speed_controls(ui: &mut egui::Ui, sim: &mut SimulationState) {
     ui.horizontal(|ui| {
-        ui.label("Speed:");
+        ui.label(
+            egui::RichText::new("Speed:")
+                .small()
+                .color(egui::Color32::from_rgb(130, 130, 145)),
+        )
+        .on_hover_text(
+            "Keyboard: [ and ] to change speed, Space to play/pause, Left/Right to step, Home/End to jump.",
+        );
 
         for &(label, speed) in &[
             ("100", 100.0),
@@ -338,14 +359,8 @@ fn draw_speed_controls(ui: &mut egui::Ui, sim: &mut SimulationState) {
                 .range(10.0..=50000.0)
                 .speed(50.0)
                 .suffix(" mv/s"),
-        );
-
-        ui.separator();
-        ui.label(
-            egui::RichText::new("[ ] speed  ← → step  Home/End jump  Space play")
-                .small()
-                .color(egui::Color32::from_rgb(90, 90, 100)),
-        );
+        )
+        .on_hover_text("Playback speed in moves per second.\n[ and ] to decrease/increase.");
     });
 }
 

@@ -151,13 +151,49 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             let has_failures =
                 sim.checks.holder_collision_count > 0 || !sim.checks.rapid_collisions.is_empty();
 
+            if has_failures {
+                ui.add_space(4.0);
+                let error_color = egui::Color32::from_rgb(220, 80, 80);
+                egui::Frame::default()
+                    .fill(egui::Color32::from_rgb(60, 25, 25))
+                    .stroke(egui::Stroke::new(1.5, error_color))
+                    .inner_margin(8.0)
+                    .rounding(4.0)
+                    .show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new("\u{26A0} Exporting with unresolved collisions")
+                                .strong()
+                                .color(egui::Color32::from_rgb(220, 100, 80)),
+                        );
+                        ui.add_space(4.0);
+                        // Use egui memory for checkbox state
+                        let confirm_id = egui::Id::new("preflight_export_confirm");
+                        let mut confirmed =
+                            ui.data(|d| d.get_temp::<bool>(confirm_id).unwrap_or(false));
+                        ui.checkbox(&mut confirmed, "I understand the risks");
+                        ui.data_mut(|d| d.insert_temp(confirm_id, confirmed));
+                    });
+                ui.add_space(4.0);
+            }
+
             ui.horizontal(|ui| {
-                let export_label = if has_failures {
-                    "Export Anyway"
-                } else {
-                    "Export G-code"
-                };
-                if ui.button(export_label).clicked() {
+                if has_failures {
+                    let confirm_id = egui::Id::new("preflight_export_confirm");
+                    let confirmed =
+                        ui.data(|d| d.get_temp::<bool>(confirm_id).unwrap_or(false));
+                    let btn = egui::Button::new(
+                        egui::RichText::new("Export Anyway").strong(),
+                    )
+                    .fill(if confirmed {
+                        egui::Color32::from_rgb(180, 50, 40)
+                    } else {
+                        egui::Color32::from_rgb(80, 40, 40)
+                    });
+                    if ui.add_enabled(confirmed, btn).clicked() {
+                        events.push(AppEvent::ExportGcodeConfirmed);
+                        still_open = false;
+                    }
+                } else if ui.button("Export G-code").clicked() {
                     events.push(AppEvent::ExportGcodeConfirmed);
                     still_open = false;
                 }

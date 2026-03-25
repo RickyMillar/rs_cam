@@ -60,7 +60,7 @@ pub fn draw(
 
     // --- Stock Display ---
     egui::CollapsingHeader::new("Stock Display")
-        .default_open(false)
+        .default_open(true)
         .show(ui, |ui| {
             let prev_mode = sim.stock_viz_mode;
             ui.horizontal(|ui| {
@@ -78,7 +78,8 @@ pub fn draw(
                             &mut sim.stock_viz_mode,
                             StockVizMode::Deviation,
                             "Deviation",
-                        );
+                        )
+                        .on_hover_text("Color by surface deviation: blue = material remaining, green = on target, red = over-cut");
                         ui.selectable_value(
                             &mut sim.stock_viz_mode,
                             StockVizMode::ByHeight,

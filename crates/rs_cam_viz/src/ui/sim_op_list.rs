@@ -71,15 +71,33 @@ pub fn draw(
 
     // Staleness warning
     if sim.is_stale(job.edit_counter) {
-        ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("\u{26A0} Results may be stale")
-                    .color(theme::WARNING),
-            );
-        });
-        if ui.small_button("Re-run").clicked() {
-            events.push(AppEvent::RunSimulation);
-        }
+        egui::Frame::default()
+            .fill(egui::Color32::from_rgb(50, 42, 20))
+            .stroke(egui::Stroke::new(1.5, theme::WARNING))
+            .inner_margin(8.0)
+            .rounding(4.0)
+            .show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new("\u{26A0} Results may be stale")
+                        .strong()
+                        .color(theme::WARNING),
+                );
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new("Parameters changed since the last simulation run.")
+                        .small()
+                        .color(egui::Color32::from_rgb(180, 160, 100)),
+                );
+                ui.add_space(6.0);
+                let btn = egui::Button::new(
+                    egui::RichText::new("Re-run Simulation").strong(),
+                )
+                .min_size(egui::vec2(ui.available_width(), 28.0));
+                if ui.add(btn).clicked() {
+                    events.push(AppEvent::RunSimulation);
+                }
+            });
+        ui.add_space(4.0);
         ui.separator();
     }
 
