@@ -18,6 +18,9 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
         if modifiers.ctrl && modifiers.shift && i.key_pressed(egui::Key::E) {
             events.push(AppEvent::ExportGcode);
         }
+        if modifiers.ctrl && !modifiers.shift && i.key_pressed(egui::Key::O) {
+            events.push(AppEvent::OpenJob);
+        }
     });
 
     egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
@@ -60,7 +63,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                     }
                 }
                 ui.separator();
-                if ui.button("Open Job...").clicked() {
+                if ui.add(egui::Button::new("Open Job...  Ctrl+O")).clicked() {
                     ui.close_menu();
                     events.push(AppEvent::OpenJob);
                 }
@@ -186,6 +189,13 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                     events.push(AppEvent::SetViewPreset(
                         crate::render::camera::ViewPreset::Isometric,
                     ));
+                }
+            });
+
+            ui.menu_button("Help", |ui| {
+                if ui.button("Keyboard Shortcuts...").clicked() {
+                    ui.close_menu();
+                    events.push(AppEvent::ShowShortcuts);
                 }
             });
         });

@@ -373,6 +373,10 @@ impl RsCamApp {
                     }
                 }
 
+                AppEvent::ShowShortcuts => {
+                    self.controller.state_mut().show_shortcuts = true;
+                }
+
                 AppEvent::Quit => {
                     if self.controller.state().job.dirty {
                         self.show_quit_dialog = true;
@@ -1498,6 +1502,8 @@ impl RsCamApp {
 
         if let Some(hit) = hit {
             self.handle_pick_hit(hit);
+        } else {
+            self.controller.state_mut().selection = Selection::None;
         }
     }
 
@@ -2348,6 +2354,15 @@ impl eframe::App for RsCamApp {
             let (state, events) = self.controller.state_ref_and_events_mut();
             if !crate::ui::preflight::draw(ctx, state, events) {
                 self.controller.state_mut().show_preflight = false;
+            }
+        }
+
+        // Keyboard shortcuts reference window
+        if self.controller.state().show_shortcuts {
+            let mut show = true;
+            crate::ui::shortcuts_window::draw(ctx, &mut show);
+            if !show {
+                self.controller.state_mut().show_shortcuts = false;
             }
         }
 

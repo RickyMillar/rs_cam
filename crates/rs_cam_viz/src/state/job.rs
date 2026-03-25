@@ -363,7 +363,7 @@ impl Default for PostConfig {
 }
 
 /// Stock material configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StockConfig {
     pub x: f64,
     pub y: f64,
@@ -813,7 +813,7 @@ impl FlipAxis {
 }
 
 /// A physical alignment pin position for part registration between setups.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AlignmentPin {
     pub x: f64,
     pub y: f64,
