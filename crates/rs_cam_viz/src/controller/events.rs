@@ -235,6 +235,10 @@ impl<B: ComputeBackend> AppController<B> {
                 "Cannot remove tool {:?}: still referenced by one or more toolpaths",
                 tool_id
             );
+            self.push_notification(
+                "Cannot remove tool: still referenced by one or more toolpaths".into(),
+                super::Severity::Warning,
+            );
         } else {
             self.state.job.tools.retain(|tool| tool.id != tool_id);
             if self.state.selection == Selection::Tool(tool_id) {
@@ -421,6 +425,10 @@ impl<B: ComputeBackend> AppController<B> {
                 "Cannot remove model {:?}: still referenced by one or more toolpaths",
                 model_id
             );
+            self.push_notification(
+                "Cannot remove model: still referenced by one or more toolpaths".into(),
+                super::Severity::Warning,
+            );
         } else {
             self.state.job.models.retain(|model| model.id != model_id);
             let clear_selection = matches!(
@@ -450,14 +458,20 @@ impl<B: ComputeBackend> AppController<B> {
 
         let Some(tool_id) = self.state.job.tools.first().map(|tool| tool.id) else {
             tracing::warn!("Cannot add toolpath: no tools defined");
+            self.push_notification(
+                "Cannot add toolpath: no tools defined".into(),
+                super::Severity::Warning,
+            );
             return;
         };
         let operation = OperationConfig::new_default(op_type);
         if !operation.is_stock_based() && self.state.job.models.is_empty() {
-            tracing::warn!(
+            let msg = format!(
                 "Cannot add {} toolpath: import geometry first",
                 operation.label()
             );
+            tracing::warn!("{msg}");
+            self.push_notification(msg, super::Severity::Warning);
             return;
         }
         let id = self.state.job.next_toolpath_id();
@@ -795,6 +809,10 @@ impl<B: ComputeBackend> AppController<B> {
             |_setup_idx| false, // never stop early
         ) else {
             tracing::warn!("No computed toolpaths to simulate");
+            self.push_notification(
+                "No computed toolpaths to simulate".into(),
+                super::Severity::Warning,
+            );
             return;
         };
         self.submit_simulation_for_groups(groups, &all_toolpaths_flat, stock_bbox, Some(0));
@@ -809,6 +827,10 @@ impl<B: ComputeBackend> AppController<B> {
             .position(|s| s.toolpaths.iter().any(|tp| ids.contains(&tp.id)));
         let Some(target_setup_idx) = target_setup_idx else {
             tracing::warn!("No computed toolpaths to simulate");
+            self.push_notification(
+                "No computed toolpaths to simulate".into(),
+                super::Severity::Warning,
+            );
             return;
         };
 
@@ -862,6 +884,10 @@ impl<B: ComputeBackend> AppController<B> {
             });
         } else {
             tracing::warn!("No toolpath with STL mesh available for collision check");
+            self.push_notification(
+                "No toolpath with STL mesh available for collision check".into(),
+                super::Severity::Warning,
+            );
         }
     }
 
@@ -1431,6 +1457,10 @@ impl<B: ComputeBackend> AppController<B> {
                     Err(ComputeError::Cancelled) => {}
                     Err(ComputeError::Message(error)) => {
                         tracing::error!("Simulation failed: {error}");
+                        self.push_notification(
+                            format!("Simulation failed: {error}"),
+                            super::Severity::Error,
+                        );
                     }
                 },
                 ComputeMessage::Collision(result) => match result {
@@ -1438,12 +1468,17 @@ impl<B: ComputeBackend> AppController<B> {
                         let count = collision.report.collisions.len();
                         if count == 0 {
                             tracing::info!("No holder clearance issues detected");
-                        } else {
-                            tracing::warn!(
-                                "{} holder clearance issues, min safe stickout: {:.1} mm",
-                                count,
-                                collision.report.min_safe_stickout
+                            self.push_notification(
+                                "No holder clearance issues detected".into(),
+                                super::Severity::Info,
                             );
+                        } else {
+                            let msg = format!(
+                                "{} holder clearance issues, min safe stickout: {:.1} mm",
+                                count, collision.report.min_safe_stickout
+                            );
+                            tracing::warn!("{msg}");
+                            self.push_notification(msg, super::Severity::Warning);
                         }
                         // Wire results into simulation checks state
                         self.state.simulation.checks.holder_collision_count = count;
@@ -1459,6 +1494,10 @@ impl<B: ComputeBackend> AppController<B> {
                     Err(ComputeError::Cancelled) => {}
                     Err(ComputeError::Message(error)) => {
                         tracing::error!("Collision check failed: {error}");
+                        self.push_notification(
+                            format!("Collision check failed: {error}"),
+                            super::Severity::Error,
+                        );
                     }
                 },
             }

@@ -26,6 +26,8 @@ pub struct RsCamApp {
     auto_screenshot_frame: Option<u32>,
     /// Currently hovered BREP face (updated on mouse move in Toolpaths workspace).
     last_hover_face: Option<rs_cam_core::enriched_mesh::FaceGroupId>,
+    /// Flag: show the unsaved-changes confirmation dialog before quitting.
+    show_quit_dialog: bool,
 }
 
 impl RsCamApp {
@@ -82,6 +84,7 @@ impl RsCamApp {
             pending_checkpoint_load: false,
             auto_screenshot_frame,
             last_hover_face: None,
+            show_quit_dialog: false,
         }
     }
 
@@ -250,6 +253,13 @@ impl RsCamApp {
                                         "Exported combined G-code to {}",
                                         path.display()
                                     );
+                                    self.controller.push_notification(
+                                        format!(
+                                            "Exported combined G-code to {}",
+                                            path.display()
+                                        ),
+                                        crate::controller::Severity::Info,
+                                    );
                                 }
                             }
                         }
@@ -291,6 +301,14 @@ impl RsCamApp {
                                         setup_name,
                                         path.display()
                                     );
+                                    self.controller.push_notification(
+                                        format!(
+                                            "Exported setup '{}' G-code to {}",
+                                            setup_name,
+                                            path.display()
+                                        ),
+                                        crate::controller::Severity::Info,
+                                    );
                                 }
                             }
                         }
@@ -308,8 +326,16 @@ impl RsCamApp {
                     {
                         if let Err(error) = std::fs::write(&path, &html) {
                             tracing::error!("Failed to write setup sheet: {error}");
+                            self.controller.push_notification(
+                                format!("Failed to write setup sheet: {error}"),
+                                crate::controller::Severity::Error,
+                            );
                         } else {
                             tracing::info!("Exported setup sheet to {}", path.display());
+                            self.controller.push_notification(
+                                format!("Exported setup sheet to {}", path.display()),
+                                crate::controller::Severity::Info,
+                            );
                         }
                     }
                 }
@@ -324,6 +350,10 @@ impl RsCamApp {
                         match self.controller.save_job_to_path(&path) {
                             Ok(()) => {
                                 tracing::info!("Saved job to {}", path.display());
+                                self.controller.push_notification(
+                                    format!("Saved job to {}", path.display()),
+                                    crate::controller::Severity::Info,
+                                );
                             }
                             Err(error) => self.controller.push_error(&error),
                         }
@@ -343,7 +373,13 @@ impl RsCamApp {
                     }
                 }
 
-                AppEvent::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                AppEvent::Quit => {
+                    if self.controller.state().job.dirty {
+                        self.show_quit_dialog = true;
+                    } else {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                }
 
                 // Everything else delegated to controller
                 other => self.controller.handle_internal_event(other),
@@ -664,7 +700,7 @@ impl RsCamApp {
         }
     }
 
-    fn export_gcode_with_summary(&self) {
+    fn export_gcode_with_summary(&mut self) {
         match self.controller.export_gcode() {
             Ok(gcode) => {
                 let line_count = gcode.lines().count();
@@ -711,16 +747,30 @@ impl RsCamApp {
                 {
                     if let Err(e) = std::fs::write(&path, &gcode) {
                         tracing::error!("Failed to write G-code: {}", e);
+                        self.controller.push_notification(
+                            format!("Failed to write G-code: {e}"),
+                            crate::controller::Severity::Error,
+                        );
                     } else {
                         tracing::info!("Exported G-code to {}", path.display());
+                        self.controller.push_notification(
+                            format!("Exported G-code to {}", path.display()),
+                            crate::controller::Severity::Info,
+                        );
                     }
                 }
             }
-            Err(error) => tracing::error!("Export failed: {error}"),
+            Err(error) => {
+                tracing::error!("Export failed: {error}");
+                self.controller.push_notification(
+                    format!("Export failed: {error}"),
+                    crate::controller::Severity::Error,
+                );
+            }
         }
     }
 
-    fn export_svg_preview(&self) {
+    fn export_svg_preview(&mut self) {
         match self.controller.export_svg_preview() {
             Ok(svg) => {
                 if let Some(path) = rfd::FileDialog::new()
@@ -730,13 +780,71 @@ impl RsCamApp {
                 {
                     if let Err(error) = std::fs::write(&path, &svg) {
                         tracing::error!("Failed to write SVG: {error}");
+                        self.controller.push_notification(
+                            format!("Failed to write SVG: {error}"),
+                            crate::controller::Severity::Error,
+                        );
                     } else {
                         tracing::info!("Exported SVG preview to {}", path.display());
+                        self.controller.push_notification(
+                            format!("Exported SVG preview to {}", path.display()),
+                            crate::controller::Severity::Info,
+                        );
                     }
                 }
             }
-            Err(error) => tracing::warn!("{error}"),
+            Err(error) => {
+                tracing::warn!("{error}");
+                self.controller.push_notification(
+                    format!("{error}"),
+                    crate::controller::Severity::Warning,
+                );
+            }
         }
+    }
+
+    /// Render the unsaved-changes confirmation dialog when the user tries to quit.
+    fn show_unsaved_changes_dialog(&mut self, ctx: &egui::Context) {
+        if !self.show_quit_dialog {
+            return;
+        }
+        egui::Window::new("Unsaved Changes")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.label("You have unsaved changes. What would you like to do?");
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Save & Quit").clicked() {
+                        let path =
+                            self.controller.state().job.file_path.clone().or_else(|| {
+                                rfd::FileDialog::new()
+                                    .add_filter("TOML Job", &["toml"])
+                                    .set_file_name("job.toml")
+                                    .save_file()
+                            });
+                        if let Some(path) = path {
+                            match self.controller.save_job_to_path(&path) {
+                                Ok(()) => {
+                                    tracing::info!("Saved job to {}", path.display());
+                                    self.show_quit_dialog = false;
+                                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                                }
+                                Err(error) => self.controller.push_error(&error),
+                            }
+                        }
+                        // If user cancelled the file dialog, keep the dialog open
+                    }
+                    if ui.button("Discard & Quit").clicked() {
+                        self.show_quit_dialog = false;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.show_quit_dialog = false;
+                    }
+                });
+            });
     }
 
     /// Get selected BREP face IDs for rendering highlights.
@@ -2161,6 +2269,13 @@ impl RsCamApp {
 
 impl eframe::App for RsCamApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // Intercept OS close button when there are unsaved changes
+        let os_close_requested = ctx.input(|i| i.viewport().close_requested());
+        if os_close_requested && self.controller.state().job.dirty {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.show_quit_dialog = true;
+        }
+
         // Handle screenshot results from previous frame
         ctx.input(|i| {
             for event in &i.raw.events {
@@ -2229,6 +2344,9 @@ impl eframe::App for RsCamApp {
         }
 
         self.handle_events(ctx);
+
+        // Unsaved-changes confirmation dialog (shown on top of everything)
+        self.show_unsaved_changes_dialog(ctx);
 
         // Load checkpoint mesh for backward scrubbing
         if self.pending_checkpoint_load {
