@@ -42,13 +42,36 @@ pub fn import_stl(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, V
 }
 
 /// Import an SVG file, returning a LoadedModel with polygons.
-pub fn import_svg(path: &Path, id: ModelId) -> Result<LoadedModel, VizError> {
-    let polygons = load_svg(path, 0.1)?;
+///
+/// `scale` multiplies all point coordinates after loading (1.0 = no change).
+pub fn import_svg(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, VizError> {
+    let mut polygons = load_svg(path, 0.1)?;
+
+    if (scale - 1.0).abs() > 1e-9 {
+        for poly in &mut polygons {
+            for pt in &mut poly.exterior {
+                pt.x *= scale;
+                pt.y *= scale;
+            }
+            for hole in &mut poly.holes {
+                for pt in hole {
+                    pt.x *= scale;
+                    pt.y *= scale;
+                }
+            }
+        }
+    }
 
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown.svg".to_string());
+
+    let units = if (scale - 1.0).abs() < 1e-9 {
+        ModelUnits::Millimeters
+    } else {
+        ModelUnits::Custom(scale)
+    };
 
     Ok(LoadedModel {
         id,
@@ -58,20 +81,44 @@ pub fn import_svg(path: &Path, id: ModelId) -> Result<LoadedModel, VizError> {
         mesh: None,
         polygons: Some(Arc::new(polygons)),
         enriched_mesh: None,
-        units: ModelUnits::Millimeters,
+        units,
         winding_report: None,
         load_error: None,
     })
 }
 
 /// Import a DXF file, returning a LoadedModel with polygons.
-pub fn import_dxf(path: &Path, id: ModelId) -> Result<LoadedModel, VizError> {
-    let polygons = load_dxf(path, 5.0)?;
+///
+/// `scale` multiplies all point coordinates after loading (1.0 = no change).
+/// The `5.0` arc tolerance is for tessellation and is unrelated to scale.
+pub fn import_dxf(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, VizError> {
+    let mut polygons = load_dxf(path, 5.0)?;
+
+    if (scale - 1.0).abs() > 1e-9 {
+        for poly in &mut polygons {
+            for pt in &mut poly.exterior {
+                pt.x *= scale;
+                pt.y *= scale;
+            }
+            for hole in &mut poly.holes {
+                for pt in hole {
+                    pt.x *= scale;
+                    pt.y *= scale;
+                }
+            }
+        }
+    }
 
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown.dxf".to_string());
+
+    let units = if (scale - 1.0).abs() < 1e-9 {
+        ModelUnits::Millimeters
+    } else {
+        ModelUnits::Custom(scale)
+    };
 
     Ok(LoadedModel {
         id,
@@ -81,7 +128,7 @@ pub fn import_dxf(path: &Path, id: ModelId) -> Result<LoadedModel, VizError> {
         mesh: None,
         polygons: Some(Arc::new(polygons)),
         enriched_mesh: None,
-        units: ModelUnits::Millimeters,
+        units,
         winding_report: None,
         load_error: None,
     })
@@ -118,10 +165,11 @@ pub fn import_model(
     kind: ModelKind,
     units: ModelUnits,
 ) -> Result<LoadedModel, VizError> {
+    let scale = units.scale_factor();
     let mut model = match kind {
-        ModelKind::Stl => import_stl(path, id, units.scale_factor())?,
-        ModelKind::Svg => import_svg(path, id)?,
-        ModelKind::Dxf => import_dxf(path, id)?,
+        ModelKind::Stl => import_stl(path, id, scale)?,
+        ModelKind::Svg => import_svg(path, id, scale)?,
+        ModelKind::Dxf => import_dxf(path, id, scale)?,
         ModelKind::Step => import_step(path, id)?,
     };
     model.units = units;

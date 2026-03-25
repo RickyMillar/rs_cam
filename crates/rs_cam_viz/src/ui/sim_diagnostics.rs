@@ -5,6 +5,7 @@ use super::sim_debug::{
 use crate::state::job::JobState;
 use crate::state::simulation::{SimulationIssueKind, SimulationState, StockVizMode};
 use crate::state::toolpath::OperationConfig;
+use crate::ui::theme;
 
 /// Right panel in simulation workspace: current state, warnings, and summary stats.
 pub fn draw(
@@ -43,13 +44,13 @@ pub fn draw(
                         issue.label
                     ))
                     .small()
-                    .color(egui::Color32::from_rgb(220, 190, 120)),
+                    .color(theme::WARNING_TEXT),
                 );
                 if let Some(toolpath_id) = issue.toolpath_id {
                     ui.label(
                         egui::RichText::new(format!("TP {}", toolpath_id.0 + 1))
                             .small()
-                            .color(egui::Color32::from_rgb(150, 150, 165)),
+                            .color(theme::TEXT_MUTED),
                     );
                 }
             }
@@ -113,7 +114,7 @@ pub fn draw(
                     ui.label(
                         egui::RichText::new("(re-run to apply)")
                             .small()
-                            .color(egui::Color32::from_rgb(180, 160, 80)),
+                            .color(theme::WARNING),
                     );
                 }
             });
@@ -138,7 +139,7 @@ pub fn draw(
                         ui.label(
                             egui::RichText::new("Pinned")
                                 .small()
-                                .color(egui::Color32::from_rgb(255, 210, 120)),
+                                .color(theme::WARNING_TEXT),
                         );
                     }
                     if ui.small_button("Start").clicked()
@@ -161,7 +162,7 @@ pub fn draw(
                 ui.label(
                     egui::RichText::new(semantic_kind_label(&active.item.kind))
                         .small()
-                        .color(egui::Color32::from_rgb(140, 140, 155)),
+                        .color(theme::TEXT_MUTED),
                 );
                 if let (Some(move_start), Some(move_end)) =
                     (active.item.move_start, active.item.move_end)
@@ -199,7 +200,7 @@ pub fn draw(
                                 ui.label(
                                     egui::RichText::new(key)
                                         .small()
-                                        .color(egui::Color32::from_rgb(140, 140, 155)),
+                                        .color(theme::TEXT_MUTED),
                                 );
                                 ui.label(egui::RichText::new(format_json_value(value)).small());
                                 ui.end_row();
@@ -211,7 +212,7 @@ pub fn draw(
                     egui::RichText::new("No semantic item at the current move")
                         .small()
                         .italics()
-                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                        .color(theme::TEXT_DIM),
                 );
             }
         });
@@ -240,7 +241,7 @@ pub fn draw(
                                 / 1000.0
                         ))
                         .small()
-                        .color(egui::Color32::from_rgb(140, 190, 230)),
+                        .color(theme::INFO),
                     );
                 }
                 ui.label(format!("Hotspots: {}", trace.hotspots.len()));
@@ -254,13 +255,13 @@ pub fn draw(
                             span.elapsed_us as f64 / 1000.0
                         ))
                         .small()
-                        .color(egui::Color32::from_rgb(140, 190, 230)),
+                        .color(theme::INFO),
                     );
                     if let Some(summary) = debug_span_math_summary(&span.kind) {
                         ui.label(
                             egui::RichText::new(summary)
                                 .small()
-                                .color(egui::Color32::from_rgb(130, 130, 145)),
+                                .color(theme::TEXT_MUTED),
                         );
                     }
                 }
@@ -268,7 +269,7 @@ pub fn draw(
                     ui.label(
                         egui::RichText::new(format!("Annotation: {}", annotation.label))
                             .small()
-                            .color(egui::Color32::from_rgb(255, 210, 120)),
+                            .color(theme::WARNING_TEXT),
                     );
                 }
             } else {
@@ -276,7 +277,7 @@ pub fn draw(
                     egui::RichText::new("No performance trace available")
                         .small()
                         .italics()
-                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                        .color(theme::TEXT_DIM),
                 );
             }
         });
@@ -322,7 +323,7 @@ pub fn draw(
                             active_sample.sample.chipload_mm_per_tooth
                         ))
                         .small()
-                        .color(egui::Color32::from_rgb(120, 210, 150)),
+                        .color(theme::SUCCESS),
                     );
                 }
                 let hotspot_count = sim.cut_hotspots(toolpath_id, 5).len();
@@ -341,7 +342,7 @@ pub fn draw(
                             item_summary.average_mrr_mm3_s
                         ))
                         .small()
-                        .color(egui::Color32::from_rgb(120, 210, 150)),
+                        .color(theme::SUCCESS),
                     );
                 }
             } else if cut_trace.is_none() {
@@ -349,14 +350,14 @@ pub fn draw(
                     egui::RichText::new("Enable Capture Metrics and re-run simulation")
                         .small()
                         .italics()
-                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                        .color(theme::TEXT_DIM),
                 );
             } else {
                 ui.label(
                     egui::RichText::new("No cutting metrics for the current toolpath")
                         .small()
                         .italics()
-                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                        .color(theme::TEXT_DIM),
                 );
             }
         });
@@ -383,7 +384,7 @@ pub fn draw(
                 ui.label(
                     egui::RichText::new("No tool position")
                         .italics()
-                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                        .color(theme::TEXT_DIM),
                 );
             }
 
@@ -411,7 +412,7 @@ pub fn draw(
                     ui.label(egui::RichText::new(format!("({})", mt)).small().color(
                         match mt.as_str() {
                             "Rapid" => egui::Color32::from_rgb(200, 200, 80),
-                            "Linear" => egui::Color32::from_rgb(100, 180, 100),
+                            "Linear" => theme::SUCCESS,
                             "Arc CW" | "Arc CCW" => egui::Color32::from_rgb(100, 140, 200),
                             _ => egui::Color32::from_rgb(150, 150, 150),
                         },
@@ -443,7 +444,7 @@ pub fn draw(
             if sim.checks.holder_collision_count == 0 && sim.checks.min_safe_stickout.is_some() {
                 ui.label(
                     egui::RichText::new("\u{2705} Holder clearance: Clear")
-                        .color(egui::Color32::from_rgb(100, 180, 100)),
+                        .color(theme::SUCCESS),
                 );
             } else if sim.checks.holder_collision_count > 0 {
                 ui.label(
@@ -451,19 +452,19 @@ pub fn draw(
                         "\u{274C} Holder clearance: {} issues",
                         sim.checks.holder_collision_count
                     ))
-                    .color(egui::Color32::from_rgb(220, 80, 80)),
+                    .color(theme::ERROR),
                 );
                 if let Some(stickout) = sim.checks.min_safe_stickout {
                     ui.label(
                         egui::RichText::new(format!("   Min safe stickout: {:.1} mm", stickout))
                             .small()
-                            .color(egui::Color32::from_rgb(180, 140, 80)),
+                            .color(theme::WARNING),
                     );
                 }
             } else {
                 ui.label(
                     egui::RichText::new("\u{26A0} Holder clearance: Not checked")
-                        .color(egui::Color32::from_rgb(220, 180, 60)),
+                        .color(theme::WARNING),
                 );
             }
 
@@ -471,7 +472,7 @@ pub fn draw(
             if sim.checks.rapid_collisions.is_empty() {
                 ui.label(
                     egui::RichText::new("\u{2705} Rapid collisions: None")
-                        .color(egui::Color32::from_rgb(100, 180, 100)),
+                        .color(theme::SUCCESS),
                 );
             } else {
                 ui.label(
@@ -479,7 +480,7 @@ pub fn draw(
                         "\u{274C} Rapid collisions: {}",
                         sim.checks.rapid_collisions.len()
                     ))
-                    .color(egui::Color32::from_rgb(220, 80, 80)),
+                    .color(theme::ERROR),
                 );
             }
 
@@ -487,7 +488,7 @@ pub fn draw(
             if sim.is_stale(job.edit_counter) {
                 ui.label(
                     egui::RichText::new("\u{26A0} Results stale (params changed)")
-                        .color(egui::Color32::from_rgb(220, 180, 60)),
+                        .color(theme::WARNING),
                 );
             }
 
@@ -534,7 +535,7 @@ pub fn draw(
                 ui.label(
                     egui::RichText::new(format!("{}:{:02}", total_min, total_sec))
                         .strong()
-                        .color(egui::Color32::from_rgb(100, 180, 220)),
+                        .color(theme::INFO),
                 );
             });
 

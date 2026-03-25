@@ -8,6 +8,7 @@ use crate::state::job::SetupId;
 use crate::state::selection::Selection;
 use crate::state::simulation::SimulationState;
 use crate::state::toolpath::{ComputeStatus, OperationType, ToolpathId};
+use crate::ui::theme;
 
 /// Left panel for the Toolpath workspace: operation queue with status chips.
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
@@ -36,7 +37,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 ui.label(
                     egui::RichText::new(&setup.name)
                         .strong()
-                        .color(egui::Color32::from_rgb(160, 170, 200)),
+                        .color(theme::TEXT_HEADING),
                 );
                 // Count ready/total
                 let ready = setup
@@ -48,7 +49,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 ui.label(
                     egui::RichText::new(format!("{ready}/{total}"))
                         .small()
-                        .color(egui::Color32::from_rgb(120, 120, 135)),
+                        .color(theme::TEXT_DIM),
                 );
 
                 // Per-setup + Add menu
@@ -64,7 +65,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 ui.label(
                     egui::RichText::new("No toolpaths")
                         .italics()
-                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                        .color(theme::TEXT_DIM),
                 );
             }
 
@@ -162,7 +163,7 @@ fn draw_toolpath_card(
     let inner_response = ui.dnd_drag_source(drag_id, tp_id, |ui| {
         egui::Frame::default()
             .fill(if selected {
-                egui::Color32::from_rgb(38, 42, 55)
+                theme::CARD_FILL_SELECTED
             } else {
                 egui::Color32::TRANSPARENT
             })
@@ -180,16 +181,10 @@ fn draw_toolpath_card(
 
                         // Status chip
                         let (status_text, status_color) = match &tp.status {
-                            ComputeStatus::Pending => {
-                                ("PEND", egui::Color32::from_rgb(120, 120, 130))
-                            }
-                            ComputeStatus::Computing => {
-                                ("GEN", egui::Color32::from_rgb(200, 180, 80))
-                            }
-                            ComputeStatus::Done => ("OK", egui::Color32::from_rgb(80, 180, 80)),
-                            ComputeStatus::Error(_) => {
-                                ("ERR", egui::Color32::from_rgb(220, 80, 80))
-                            }
+                            ComputeStatus::Pending => ("PEND", theme::TEXT_DIM),
+                            ComputeStatus::Computing => ("GEN", theme::WARNING),
+                            ComputeStatus::Done => ("OK", theme::SUCCESS_BRIGHT),
+                            ComputeStatus::Error(_) => ("ERR", theme::ERROR),
                         };
                         ui.label(
                             egui::RichText::new(status_text)
@@ -204,7 +199,7 @@ fn draw_toolpath_card(
 
                         // Name
                         let text_color = if dim {
-                            egui::Color32::from_rgb(100, 100, 110)
+                            theme::TEXT_FAINT
                         } else {
                             egui::Color32::from_rgb(190, 190, 200)
                         };
@@ -226,7 +221,7 @@ fn draw_toolpath_card(
                         ui.label(
                             egui::RichText::new(tool.summary())
                                 .small()
-                                .color(egui::Color32::from_rgb(130, 130, 145)),
+                                .color(theme::TEXT_MUTED),
                         );
                     }
 
@@ -310,7 +305,7 @@ fn draw_toolpath_card(
         // Draw a thin line at the bottom to indicate drop position
         painter.line_segment(
             [rect.left_bottom(), rect.right_bottom()],
-            egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 160, 220)),
+            egui::Stroke::new(2.0, theme::ACCENT),
         );
     }
 }
@@ -407,15 +402,15 @@ fn draw_rest_badge(
             });
 
             if dep_stale {
-                ("dep", egui::Color32::from_rgb(200, 180, 60)) // yellow: stale
+                ("dep", theme::WARNING) // yellow: stale
             } else {
-                ("dep", egui::Color32::from_rgb(80, 160, 80)) // green: resolved
+                ("dep", theme::SUCCESS_BRIGHT) // green: resolved
             }
         } else {
-            ("no dep", egui::Color32::from_rgb(200, 80, 80)) // red: missing
+            ("no dep", theme::ERROR_MILD) // red: missing
         }
     } else {
-        ("no dep", egui::Color32::from_rgb(200, 80, 80)) // red: not configured
+        ("no dep", theme::ERROR_MILD) // red: not configured
     };
 
     ui.label(

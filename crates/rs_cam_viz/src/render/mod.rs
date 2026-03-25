@@ -133,8 +133,8 @@ pub struct RenderResources {
     target_format: wgpu::TextureFormat,
 
     // Scene data
-    pub mesh_data: Option<MeshGpuData>,
-    pub enriched_mesh_data: Option<mesh_render::EnrichedMeshGpuData>,
+    pub mesh_data_list: Vec<MeshGpuData>,
+    pub enriched_mesh_data_list: Vec<mesh_render::EnrichedMeshGpuData>,
     pub grid_data: GridGpuData,
     pub stock_data: Option<StockGpuData>,
     pub solid_stock_data: Option<stock_render::SolidStockGpuData>,
@@ -554,8 +554,8 @@ impl RenderResources {
             blit_sampler,
             offscreen: None,
             target_format,
-            mesh_data: None,
-            enriched_mesh_data: None,
+            mesh_data_list: Vec::new(),
+            enriched_mesh_data_list: Vec::new(),
             grid_data,
             stock_data: None,
             solid_stock_data: None,
@@ -697,7 +697,7 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
         let needs_colored_uniforms = self.show_sim_mesh
             || self.show_solid_stock
             || self.show_height_planes
-            || resources.enriched_mesh_data.is_some();
+            || !resources.enriched_mesh_data_list.is_empty();
         if needs_colored_uniforms {
             let opacity = if self.show_sim_mesh {
                 self.sim_mesh_opacity
@@ -808,7 +808,7 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 pass.draw(0..fixture.vertex_count, 0..1);
             }
 
-            // Draw mesh (sim mesh replaces raw STL when simulation is active)
+            // Draw meshes (sim mesh replaces raw models when simulation is active)
             if self.show_sim_mesh {
                 if let Some(sim) = &resources.sim_mesh_data {
                     pass.set_pipeline(&resources.sim_mesh_pipeline);
@@ -817,21 +817,31 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                     pass.set_index_buffer(sim.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                     pass.draw_indexed(0..sim.index_count, 0, 0..1);
                 }
-            } else if let Some(enriched) = &resources.enriched_mesh_data {
-                // STEP model with per-face coloring — opaque colored pipeline
-                pass.set_pipeline(&resources.colored_opaque_pipeline);
-                pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
-                pass.set_vertex_buffer(0, enriched.vertex_buffer.slice(..));
-                pass.set_index_buffer(enriched.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..enriched.index_count, 0, 0..1);
-            } else if self.has_mesh
-                && let Some(mesh) = &resources.mesh_data
-            {
-                pass.set_pipeline(&resources.mesh_pipeline);
-                pass.set_bind_group(0, &resources.mesh_bind_group, &[]);
-                pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+            } else {
+                // Draw all enriched (STEP) models
+                for enriched in &resources.enriched_mesh_data_list {
+                    pass.set_pipeline(&resources.colored_opaque_pipeline);
+                    pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
+                    pass.set_vertex_buffer(0, enriched.vertex_buffer.slice(..));
+                    pass.set_index_buffer(
+                        enriched.index_buffer.slice(..),
+                        wgpu::IndexFormat::Uint32,
+                    );
+                    pass.draw_indexed(0..enriched.index_count, 0, 0..1);
+                }
+                // Draw all plain (STL) models
+                if self.has_mesh {
+                    for mesh in &resources.mesh_data_list {
+                        pass.set_pipeline(&resources.mesh_pipeline);
+                        pass.set_bind_group(0, &resources.mesh_bind_group, &[]);
+                        pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                        pass.set_index_buffer(
+                            mesh.index_buffer.slice(..),
+                            wgpu::IndexFormat::Uint32,
+                        );
+                        pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                    }
+                }
             }
 
             // Draw solid stock (semi-transparent, after mesh so model renders first)

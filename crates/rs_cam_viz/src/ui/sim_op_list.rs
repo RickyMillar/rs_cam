@@ -4,6 +4,7 @@ use crate::render::toolpath_render::palette_color;
 use crate::state::job::{JobState, SetupId};
 use crate::state::simulation::SimulationState;
 use crate::state::toolpath::ToolpathId;
+use crate::ui::theme;
 
 /// Left panel in simulation workspace: operation list with checkboxes, progress bars, and jump buttons.
 pub fn draw(
@@ -22,7 +23,7 @@ pub fn draw(
             .any(|tp| tp.enabled && tp.result.is_some());
 
         egui::Frame::default()
-            .fill(egui::Color32::from_rgb(36, 36, 44))
+            .fill(theme::CARD_FILL)
             .inner_margin(12.0)
             .rounding(4.0)
             .show(ui, |ui| {
@@ -30,7 +31,7 @@ pub fn draw(
                     ui.label(
                         egui::RichText::new("Ready to simulate")
                             .strong()
-                            .color(egui::Color32::from_rgb(180, 180, 195)),
+                            .color(theme::TEXT_HEADING),
                     );
                     ui.add_space(4.0);
                     ui.label(
@@ -38,7 +39,7 @@ pub fn draw(
                             "Run simulation to verify toolpaths, check collisions, and review stock removal.",
                         )
                         .small()
-                        .color(egui::Color32::from_rgb(140, 140, 155)),
+                        .color(theme::TEXT_MUTED),
                     );
                     ui.add_space(8.0);
                     if ui.button("Run Simulation").clicked() {
@@ -47,7 +48,7 @@ pub fn draw(
                 } else {
                     ui.label(
                         egui::RichText::new("No toolpaths computed")
-                            .color(egui::Color32::from_rgb(180, 140, 80)),
+                            .color(theme::WARNING),
                     );
                     ui.add_space(4.0);
                     ui.label(
@@ -55,7 +56,7 @@ pub fn draw(
                             "Switch to Toolpaths workspace to add and generate operations first.",
                         )
                         .small()
-                        .color(egui::Color32::from_rgb(140, 140, 155)),
+                        .color(theme::TEXT_MUTED),
                     );
                     ui.add_space(8.0);
                     if ui.button("Go to Toolpaths").clicked() {
@@ -73,7 +74,7 @@ pub fn draw(
         ui.horizontal(|ui| {
             ui.label(
                 egui::RichText::new("\u{26A0} Results may be stale")
-                    .color(egui::Color32::from_rgb(220, 180, 60)),
+                    .color(theme::WARNING),
             );
         });
         if ui.small_button("Re-run").clicked() {
@@ -114,7 +115,7 @@ pub fn draw(
             ui.label(
                 egui::RichText::new(&sb.setup_name)
                     .strong()
-                    .color(egui::Color32::from_rgb(180, 180, 200)),
+                    .color(theme::TEXT_HEADING),
             );
             ui.add_space(2.0);
         }
@@ -129,7 +130,7 @@ pub fn draw(
         // Frame current operation with accent border
         let frame = if is_current {
             egui::Frame::default()
-                .fill(egui::Color32::from_rgb(38, 42, 55))
+                .fill(theme::CARD_FILL_SELECTED)
                 .stroke(egui::Stroke::new(1.0, color))
                 .inner_margin(4.0)
                 .rounding(3.0)
@@ -172,7 +173,7 @@ pub fn draw(
                 ui.label(
                     egui::RichText::new(&boundary.tool_name)
                         .small()
-                        .color(egui::Color32::from_rgb(140, 140, 150)),
+                        .color(theme::TEXT_MUTED),
                 );
 
                 // Estimated time from job toolpaths
@@ -235,7 +236,7 @@ pub fn draw(
                 ui.label(
                     egui::RichText::new(move_info)
                         .small()
-                        .color(egui::Color32::from_rgb(140, 140, 150)),
+                        .color(theme::TEXT_MUTED),
                 );
                 if ui
                     .small_button(">|")
@@ -341,7 +342,7 @@ pub fn draw(
                 egui::RichText::new("No move-linked semantics")
                     .small()
                     .italics()
-                    .color(egui::Color32::from_rgb(120, 120, 130)),
+                    .color(theme::TEXT_DIM),
             );
             return;
         }
@@ -411,7 +412,7 @@ pub fn draw(
                 ui.label(
                     egui::RichText::new(format!("{move_start}-{move_end}"))
                         .small()
-                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                        .color(theme::TEXT_DIM),
                 );
             }
         });

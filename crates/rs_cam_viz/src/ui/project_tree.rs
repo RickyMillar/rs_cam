@@ -6,6 +6,7 @@ use crate::state::job::ToolType;
 use crate::state::selection::Selection;
 use crate::state::simulation::SimulationState;
 use crate::state::toolpath::{ComputeStatus, OperationType};
+use crate::ui::theme;
 
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     ui.heading("Project");
@@ -14,7 +15,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     ui.label(
         egui::RichText::new(format!("Job: {}", state.job.name))
             .strong()
-            .color(egui::Color32::from_rgb(200, 200, 210)),
+            .color(theme::TEXT_STRONG),
     );
 
     ui.add_space(4.0);
@@ -63,7 +64,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             ui.label(
                 egui::RichText::new("No models imported")
                     .italics()
-                    .color(egui::Color32::from_rgb(120, 120, 130)),
+                    .color(theme::TEXT_DIM),
             );
         }
         for model in &state.job.models {
@@ -97,7 +98,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             ui.label(
                 egui::RichText::new("No tools defined")
                     .italics()
-                    .color(egui::Color32::from_rgb(120, 120, 130)),
+                    .color(theme::TEXT_DIM),
             );
         }
         for tool in &state.job.tools {
@@ -150,7 +151,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     setup_selected,
                     egui::RichText::new(&setup.name)
                         .strong()
-                        .color(egui::Color32::from_rgb(160, 170, 200)),
+                        .color(theme::TEXT_HEADING),
                 );
                 if resp.clicked() {
                     events.push(AppEvent::Select(Selection::Setup(setup.id)));
@@ -178,15 +179,15 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     egui::RichText::new("Workholding")
                         .small()
                         .strong()
-                        .color(egui::Color32::from_rgb(160, 160, 175)),
+                        .color(theme::TEXT_MUTED),
                 );
                 for fixture in &setup.fixtures {
                     let selected = state.selection == Selection::Fixture(setup.id, fixture.id);
                     let dim = !fixture.enabled;
                     let color = if dim {
-                        egui::Color32::from_rgb(100, 100, 110)
+                        theme::TEXT_FAINT
                     } else {
-                        egui::Color32::from_rgb(220, 180, 60)
+                        theme::WARNING
                     };
                     let label = format!("  {} [{}]", fixture.name, fixture.kind.label());
                     let resp =
@@ -205,9 +206,9 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     let selected = state.selection == Selection::KeepOut(setup.id, keep_out.id);
                     let dim = !keep_out.enabled;
                     let color = if dim {
-                        egui::Color32::from_rgb(100, 100, 110)
+                        theme::TEXT_FAINT
                     } else {
-                        egui::Color32::from_rgb(220, 80, 80)
+                        theme::ERROR
                     };
                     let label = format!("  {} (keep-out)", keep_out.name);
                     let resp =
@@ -229,7 +230,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 ui.label(
                     egui::RichText::new("No toolpaths")
                         .italics()
-                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                        .color(theme::TEXT_DIM),
                 );
             }
             for tp in &setup.toolpaths {
@@ -238,10 +239,10 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 let selected = state.selection == Selection::Toolpath(tp.id);
 
                 let (status_icon, status_color) = match &tp.status {
-                    ComputeStatus::Pending => ("\u{25CB}", egui::Color32::from_rgb(120, 120, 130)),
-                    ComputeStatus::Computing => ("\u{25CF}", egui::Color32::from_rgb(200, 180, 80)),
-                    ComputeStatus::Done => ("\u{25CF}", egui::Color32::from_rgb(80, 180, 80)),
-                    ComputeStatus::Error(_) => ("\u{25CF}", egui::Color32::from_rgb(220, 80, 80)),
+                    ComputeStatus::Pending => ("\u{25CB}", theme::TEXT_DIM),
+                    ComputeStatus::Computing => ("\u{25CF}", theme::WARNING),
+                    ComputeStatus::Done => ("\u{25CF}", theme::SUCCESS_BRIGHT),
+                    ComputeStatus::Error(_) => ("\u{25CF}", theme::ERROR),
                 };
 
                 let pc = palette_color(i);
@@ -264,7 +265,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     );
 
                     let text_color = if dim {
-                        egui::Color32::from_rgb(100, 100, 110)
+                        theme::TEXT_FAINT
                     } else if selected {
                         egui::Color32::from_rgb(220, 220, 230)
                     } else {

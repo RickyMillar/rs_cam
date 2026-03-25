@@ -11,6 +11,7 @@ pub mod sim_diagnostics;
 pub mod sim_op_list;
 pub mod sim_timeline;
 pub mod status_bar;
+pub mod theme;
 pub mod toolpath_panel;
 pub mod viewport_overlay;
 pub mod workspace_bar;

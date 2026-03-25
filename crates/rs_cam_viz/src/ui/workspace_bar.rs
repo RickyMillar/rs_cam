@@ -1,6 +1,7 @@
 use super::AppEvent;
 use crate::state::AppState;
 use crate::state::Workspace;
+use crate::ui::theme;
 
 /// Draw the workspace switcher bar. Sits below the menu bar, always visible.
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
@@ -39,7 +40,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             ui.label(
                 egui::RichText::new(hint)
                     .small()
-                    .color(egui::Color32::from_rgb(100, 100, 115)),
+                    .color(theme::TEXT_FAINT),
             );
         });
     });
@@ -63,7 +64,7 @@ fn workspace_tab(
     } else {
         (
             egui::Color32::TRANSPARENT,
-            egui::Color32::from_rgb(140, 140, 155),
+            theme::TEXT_MUTED,
         )
     };
 
@@ -91,7 +92,7 @@ fn workspace_tab(
                 egui::pos2(rect.min.x + 2.0, rect.max.y),
                 egui::pos2(rect.max.x - 2.0, rect.max.y),
             ],
-            egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 160, 220)),
+            egui::Stroke::new(2.0, theme::ACCENT),
         );
     }
 
@@ -119,7 +120,7 @@ fn toolpath_badge(state: &AppState) -> Option<(String, egui::Color32)> {
         })
         .count();
     if pending > 0 {
-        Some((format!(" {pending}"), egui::Color32::from_rgb(220, 180, 60)))
+        Some((format!(" {pending}"), theme::WARNING))
     } else {
         None
     }
@@ -134,19 +135,19 @@ fn simulation_badge(state: &AppState) -> Option<(String, egui::Color32)> {
     }
 
     if sim.is_stale(state.job.edit_counter) {
-        return Some((" stale".to_string(), egui::Color32::from_rgb(220, 180, 60)));
+        return Some((" stale".to_string(), theme::WARNING));
     }
 
     let collision_count = sim.checks.holder_collision_count + sim.checks.rapid_collisions.len();
     if collision_count > 0 {
         return Some((
             format!(" {collision_count}!"),
-            egui::Color32::from_rgb(220, 80, 80),
+            theme::ERROR,
         ));
     }
 
     Some((
         " \u{2713}".to_string(),
-        egui::Color32::from_rgb(100, 180, 100),
+        theme::SUCCESS,
     ))
 }

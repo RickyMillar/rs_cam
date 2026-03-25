@@ -2,6 +2,7 @@ use super::AppEvent;
 use crate::state::AppState;
 use crate::state::job::{FaceUp, Setup, XYDatum};
 use crate::state::selection::Selection;
+use crate::ui::theme;
 
 /// Left panel for the Setup workspace: setup list with summary cards.
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
@@ -15,21 +16,17 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     } else {
         (stock.x, stock.y, stock.z)
     };
-    egui::Frame::default()
-        .fill(egui::Color32::from_rgb(36, 36, 44))
-        .inner_margin(6.0)
-        .rounding(4.0)
-        .show(ui, |ui| {
+    theme::card_frame(false).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new("Stock")
                         .strong()
-                        .color(egui::Color32::from_rgb(160, 170, 190)),
+                        .color(theme::TEXT_HEADING),
                 );
                 ui.label(
                     egui::RichText::new(format!("{:.0} x {:.0} x {:.0} mm", eff_w, eff_d, eff_h))
                         .small()
-                        .color(egui::Color32::from_rgb(140, 140, 150)),
+                        .color(theme::TEXT_MUTED),
                 );
             });
             let selected = state.selection == Selection::Stock;
@@ -67,7 +64,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 ui.label(
                     egui::RichText::new("No models imported")
                         .italics()
-                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                        .color(theme::TEXT_DIM),
                 );
             }
             for model in &state.job.models {
@@ -93,7 +90,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &mut Vec<AppEvent>) {
     let is_selected = state.selection == Selection::Setup(setup.id);
     let base_border = if is_selected {
-        egui::Color32::from_rgb(100, 160, 220)
+        theme::ACCENT
     } else {
         egui::Color32::from_rgb(55, 55, 65)
     };
@@ -109,14 +106,14 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &
                 ui.label(
                     egui::RichText::new(&setup.name)
                         .strong()
-                        .color(egui::Color32::from_rgb(200, 205, 220)),
+                        .color(theme::TEXT_STRONG),
                 );
 
                 if setup.face_up != FaceUp::Top {
                     ui.label(
                         egui::RichText::new(format!("[{}]", setup.face_up.label()))
                             .small()
-                            .color(egui::Color32::from_rgb(220, 180, 60)),
+                            .color(theme::WARNING),
                     );
                 }
             });
@@ -185,7 +182,7 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &
                         egui::RichText::new("No workholding")
                             .small()
                             .italics()
-                            .color(egui::Color32::from_rgb(120, 120, 130)),
+                            .color(theme::TEXT_DIM),
                     );
                 }
             });
@@ -196,7 +193,7 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &
                     egui::RichText::new(setup.face_up.flip_instruction())
                         .small()
                         .italics()
-                        .color(egui::Color32::from_rgb(200, 170, 60)),
+                        .color(theme::WARNING_MILD),
                 );
             }
 
@@ -206,7 +203,7 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &
                     egui::RichText::new("Toolpaths use fresh stock")
                         .small()
                         .italics()
-                        .color(egui::Color32::from_rgb(200, 160, 60)),
+                        .color(theme::WARNING_MILD),
                 );
             }
         })

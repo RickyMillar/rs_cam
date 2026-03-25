@@ -903,20 +903,14 @@ impl RsCamApp {
         };
         let use_local_frame = active_setup_ref.is_some();
 
-        // Upload mesh data for the first model with geometry
-        resources.enriched_mesh_data = None;
-        if let Some(model) = self
-            .controller
-            .state()
-            .job
-            .models
-            .iter()
-            .find(|model| model.mesh.is_some())
-        {
+        // Upload mesh data for all models with geometry
+        resources.enriched_mesh_data_list.clear();
+        resources.mesh_data_list.clear();
+        let selected_faces = self.selected_face_ids();
+        let hovered_face = self.hovered_face_id();
+        for model in &self.controller.state().job.models {
             // If model has enriched mesh (STEP), use face-colored rendering
             if let Some(enriched) = &model.enriched_mesh {
-                let selected_faces = self.selected_face_ids();
-                let hovered_face = self.hovered_face_id();
                 let transform: crate::render::mesh_render::VertexTransform<'_> = if use_local_frame
                 {
                     // SAFETY: use_local_frame is active_setup_ref.is_some()
@@ -927,29 +921,33 @@ impl RsCamApp {
                 } else {
                     None
                 };
-                resources.enriched_mesh_data = crate::render::mesh_render::enriched_mesh_gpu_data(
+                if let Some(gpu) = crate::render::mesh_render::enriched_mesh_gpu_data(
                     &render_state.device,
                     &resources.gpu_limits,
                     enriched,
                     &selected_faces,
                     hovered_face,
                     &transform,
-                );
+                ) {
+                    resources.enriched_mesh_data_list.push(gpu);
+                }
             } else if let Some(mesh) = &model.mesh {
-                if use_local_frame {
+                let gpu = if use_local_frame {
                     // SAFETY: use_local_frame is true iff active_setup_ref.is_some().
                     #[allow(clippy::unwrap_used)]
                     let setup = active_setup_ref.unwrap();
                     let transformed =
                         transform_mesh(mesh, setup, &self.controller.state().job.stock);
-                    resources.mesh_data = MeshGpuData::from_mesh(
+                    MeshGpuData::from_mesh(
                         &render_state.device,
                         &resources.gpu_limits,
                         &Arc::new(transformed),
-                    );
+                    )
                 } else {
-                    resources.mesh_data =
-                        MeshGpuData::from_mesh(&render_state.device, &resources.gpu_limits, mesh);
+                    MeshGpuData::from_mesh(&render_state.device, &resources.gpu_limits, mesh)
+                };
+                if let Some(gpu) = gpu {
+                    resources.mesh_data_list.push(gpu);
                 }
             }
         }
