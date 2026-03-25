@@ -2166,18 +2166,28 @@ impl RsCamApp {
                 {
                     let (simulation, viewport, _) =
                         self.controller.simulation_viewport_and_events_mut();
+                    ui.label(
+                        egui::RichText::new("View:")
+                            .small()
+                            .color(egui::Color32::from_rgb(130, 130, 145)),
+                    );
                     ui.checkbox(&mut viewport.show_cutting, "Paths");
                     ui.checkbox(&mut viewport.show_stock, "Stock");
                     ui.checkbox(&mut viewport.show_fixtures, "Fixtures");
                     ui.checkbox(&mut viewport.show_collisions, "Collisions");
                     ui.separator();
+                    ui.label(
+                        egui::RichText::new("Analysis:")
+                            .small()
+                            .color(egui::Color32::from_rgb(130, 130, 145)),
+                    );
                     let debug_changed = ui
                         .checkbox(&mut simulation.debug.enabled, "Debug")
                         .changed();
                     if debug_changed && simulation.debug.enabled {
                         simulation.debug.drawer_open = true;
                     }
-                    ui.checkbox(&mut simulation.metric_options.enabled, "Capture Metrics")
+                    ui.checkbox(&mut simulation.metric_options.enabled, "Metrics")
                         .on_hover_text("Capture simulation-time cutting metrics on the next run.");
                     if simulation.debug.enabled {
                         ui.checkbox(&mut simulation.debug.highlight_active_item, "Highlight");
