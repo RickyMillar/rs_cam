@@ -29,7 +29,7 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub fn import_svg_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
         let id = self.state.job.next_model_id();
-        let model = import::import_svg(path, id)?;
+        let model = import::import_svg(path, id, 1.0)?;
         let bbox = model.bbox();
         self.state.selection = Selection::Model(model.id);
         self.state.job.models.push(model);
@@ -40,7 +40,7 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub fn import_dxf_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
         let id = self.state.job.next_model_id();
-        let model = import::import_dxf(path, id)?;
+        let model = import::import_dxf(path, id, 1.0)?;
         let bbox = model.bbox();
         self.state.selection = Selection::Model(model.id);
         self.state.job.models.push(model);
@@ -79,13 +79,13 @@ impl<B: ComputeBackend> AppController<B> {
         else {
             return Ok(None);
         };
-        if model.kind != crate::state::job::ModelKind::Stl {
+        if model.kind == crate::state::job::ModelKind::Step {
             return Ok(None);
         }
         let path = model.path.clone();
-        let mut new_model = import::import_stl(&path, model_id, new_units.scale_factor())?;
-        new_model.units = new_units;
-        let bbox = new_model.mesh.as_ref().map(|mesh| mesh.bbox);
+        let kind = model.kind;
+        let new_model = import::import_model(&path, model_id, kind, new_units)?;
+        let bbox = new_model.bbox();
         if let Some(model) = self
             .state
             .job
@@ -94,6 +94,7 @@ impl<B: ComputeBackend> AppController<B> {
             .find(|model| model.id == model_id)
         {
             model.mesh = new_model.mesh;
+            model.polygons = new_model.polygons;
             model.units = new_model.units;
             model.winding_report = new_model.winding_report;
             if self.state.job.stock.auto_from_model

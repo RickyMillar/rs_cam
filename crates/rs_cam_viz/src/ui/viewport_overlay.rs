@@ -4,6 +4,7 @@ use crate::render::camera::ViewPreset;
 use crate::state::Workspace;
 use crate::state::viewport::{RenderMode, ViewportState};
 use crate::ui::automation;
+use crate::ui::theme;
 
 pub fn draw(
     ui: &mut egui::Ui,
@@ -66,7 +67,7 @@ pub fn draw(
                 })
                 .collect::<Vec<_>>()
                 .join(" | ");
-            ui.label(egui::RichText::new(label).color(egui::Color32::from_rgb(200, 180, 80)));
+            ui.label(egui::RichText::new(label).color(theme::WARNING));
             let cancel = ui.small_button("Cancel All");
             automation::record(ui, "overlay_cancel_all", &cancel, "Cancel All");
             if cancel.clicked() {

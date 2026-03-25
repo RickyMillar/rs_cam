@@ -1,6 +1,7 @@
 use crate::compute::{ComputeLane, LaneSnapshot, LaneState};
 use crate::state::AppState;
 use crate::ui::automation;
+use crate::ui::theme;
 
 pub fn draw(
     ui: &mut egui::Ui,
@@ -54,10 +55,10 @@ pub fn draw(
             };
             let response = ui
                 .label(egui::RichText::new(&label).color(match lane.state {
-                    LaneState::Idle => egui::Color32::from_rgb(140, 140, 150),
-                    LaneState::Queued => egui::Color32::from_rgb(150, 170, 210),
-                    LaneState::Running => egui::Color32::from_rgb(210, 190, 90),
-                    LaneState::Cancelling => egui::Color32::from_rgb(220, 120, 90),
+                    LaneState::Idle => theme::LANE_IDLE,
+                    LaneState::Queued => theme::LANE_QUEUED,
+                    LaneState::Running => theme::LANE_RUNNING,
+                    LaneState::Cancelling => theme::LANE_CANCELLING,
                 }))
                 .on_hover_text(tooltip);
             automation::record(
@@ -73,7 +74,7 @@ pub fn draw(
 
         if state.simulation.has_results() {
             ui.separator();
-            ui.label(egui::RichText::new("SIM").color(egui::Color32::from_rgb(100, 180, 100)))
+            ui.label(egui::RichText::new("SIM").color(theme::SUCCESS))
                 .on_hover_text("Simulation results available");
         }
 
@@ -81,7 +82,7 @@ pub fn draw(
             ui.separator();
             ui.label(
                 egui::RichText::new(format!("{} collisions", collision_count))
-                    .color(egui::Color32::from_rgb(220, 80, 80)),
+                    .color(theme::ERROR),
             );
         }
 

@@ -1,6 +1,7 @@
 use super::AppEvent;
 use crate::state::AppState;
 use crate::state::toolpath::OperationConfig;
+use crate::ui::theme;
 
 /// Draw the pre-flight checklist modal. Returns true if still open.
 pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -> bool {
@@ -190,9 +191,9 @@ fn check_card(
     still_open: &mut bool,
 ) {
     let (icon, color) = match status {
-        CheckStatus::Pass => ("\u{2705}", egui::Color32::from_rgb(100, 200, 100)),
-        CheckStatus::Fail => ("\u{274C}", egui::Color32::from_rgb(220, 80, 80)),
-        CheckStatus::Warning => ("\u{26A0}\u{FE0F}", egui::Color32::from_rgb(220, 180, 60)),
+        CheckStatus::Pass => ("\u{2705}", theme::SUCCESS),
+        CheckStatus::Fail => ("\u{274C}", theme::ERROR),
+        CheckStatus::Warning => ("\u{26A0}\u{FE0F}", theme::WARNING),
     };
 
     ui.horizontal(|ui| {
