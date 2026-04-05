@@ -1122,6 +1122,7 @@ fn default_trace_params() -> TraceParams {
         plunge_rate: 400.0,
         safe_z: 10.0,
         compensation: TraceCompensation::None,
+        top_z: 0.0,
     }
 }
 

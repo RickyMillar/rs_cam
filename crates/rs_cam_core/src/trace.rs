@@ -37,6 +37,8 @@ pub struct TraceParams {
     pub safe_z: f64,
     /// Cutter compensation mode.
     pub compensation: TraceCompensation,
+    /// Starting Z (top of material). Depth stepping goes from top_z down.
+    pub top_z: f64,
 }
 
 /// Generate a toolpath that traces polygon contours at the specified depth.
@@ -70,7 +72,7 @@ pub fn trace_toolpath(polygon: &Polygon2, params: &TraceParams) -> Toolpath {
         }
     };
 
-    let depth = DepthStepping::new(0.0, -params.depth, params.depth_per_pass);
+    let depth = DepthStepping::new(params.top_z, params.top_z - params.depth, params.depth_per_pass);
 
     depth_stepped_toolpath(&depth, params.safe_z, |z| {
         let mut tp = Toolpath::new();
@@ -134,6 +136,7 @@ mod tests {
             plunge_rate: 500.0,
             safe_z: 10.0,
             compensation: TraceCompensation::None,
+            top_z: 0.0,
         }
     }
 
