@@ -36,10 +36,7 @@ pub fn run_sweep(
     }
 
     // Parse sweep values (comma-separated)
-    let values: Vec<String> = values_str
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .collect();
+    let values: Vec<String> = values_str.split(',').map(|s| s.trim().to_owned()).collect();
     if values.is_empty() {
         bail!("No sweep values provided");
     }
@@ -55,7 +52,7 @@ pub fn run_sweep(
 
     // Get baseline value of the parameter being swept
     let base_value = get_op_field(&base_job.operation[0], param_name)
-        .unwrap_or_else(|| serde_json::Value::String("default".to_string()));
+        .unwrap_or_else(|| serde_json::Value::String("default".to_owned()));
 
     // Write baseline artifacts
     write_json(&output_dir.join("baseline.json"), &base_fp)?;
@@ -147,7 +144,7 @@ pub fn run_sweep(
     // Write sweep summary
     let sweep_result = ParameterSweepResult {
         operation: base_job.operation[0].op_type.clone(),
-        parameter_name: param_name.to_string(),
+        parameter_name: param_name.to_owned(),
         base_value,
         base_fingerprint: base_fp,
         variants: sweep_variants,

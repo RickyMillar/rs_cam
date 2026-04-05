@@ -303,14 +303,13 @@ pub fn entry_preview_vertices(tp: &Toolpath, config: &EntryPreviewConfig) -> Vec
     let color = ENTRY_PREVIEW_COLOR;
 
     // Find the first non-Rapid move position (the first plunge/cut point)
-    let first_cut_idx = match tp
+    let Some(first_cut_idx) = tp
         .moves
         .iter()
         .enumerate()
         .position(|(i, m)| i > 0 && !matches!(m.move_type, MoveType::Rapid))
-    {
-        Some(idx) => idx,
-        None => return Vec::new(),
+    else {
+        return Vec::new();
     };
 
     let entry_pos = tp.moves[first_cut_idx].target;
@@ -459,14 +458,13 @@ pub fn entry_preview_vertices(tp: &Toolpath, config: &EntryPreviewConfig) -> Vec
 #[allow(clippy::indexing_slicing)] // first_cut_idx validated by position() and bounds > 0
 pub fn entry_marker_vertices(tp: &Toolpath, palette_color: [f32; 3]) -> Vec<LineVertex> {
     // Find the first non-Rapid move at index > 0
-    let first_cut_idx = match tp
+    let Some(first_cut_idx) = tp
         .moves
         .iter()
         .enumerate()
         .position(|(i, m)| i > 0 && !matches!(m.move_type, MoveType::Rapid))
-    {
-        Some(idx) => idx,
-        None => return Vec::new(),
+    else {
+        return Vec::new();
     };
 
     let approach = tp.moves[first_cut_idx - 1].target;

@@ -78,7 +78,7 @@ pub trait PostProcessor {
         format!("G73 X{x:.4} Y{y:.4} Z{z:.4} R{r:.4} Q{peck:.4} F{feed:.1}\n")
     }
     fn drill_cancel(&self) -> String {
-        "G80\n".to_string()
+        "G80\n".to_owned()
     }
 }
 

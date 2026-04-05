@@ -64,7 +64,15 @@ use rs_cam_core::zigzag::{ZigzagParams, zigzag_toolpath};
 
 use super::{ComputeBackend, ComputeError, ComputeLane, ComputeMessage, LaneSnapshot, LaneState};
 use crate::state::job::{ToolConfig, ToolType};
-use crate::state::toolpath::*;
+use crate::state::toolpath::{
+    Adaptive3dConfig, Adaptive3dEntryStyle, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig,
+    DressupConfig, DressupEntryStyle, DrillConfig, DrillCycleType, DropCutterConfig, FaceConfig,
+    FaceDirection, HorizontalFinishConfig, InlayConfig, OperationConfig, PencilConfig,
+    PocketConfig, PocketPattern, ProfileConfig, ProjectCurveConfig, RadialFinishConfig,
+    RampFinishConfig, RestConfig, ScallopConfig, SpiralFinishConfig, SteepShallowConfig,
+    StockSource, ToolpathId, ToolpathResult, ToolpathStats, TraceConfig, VCarveConfig,
+    WaterlineConfig, ZigzagConfig,
+};
 
 pub struct ComputeRequest {
     pub toolpath_id: ToolpathId,
@@ -445,7 +453,7 @@ fn analysis_job_label(request: &AnalysisRequest) -> String {
             let count: usize = request.groups.iter().map(|g| g.toolpaths.len()).sum();
             format!("Simulation ({count} toolpaths)")
         }
-        AnalysisRequest::Collision(_) => "Collision check".to_string(),
+        AnalysisRequest::Collision(_) => "Collision check".to_owned(),
     }
 }
 
@@ -601,7 +609,7 @@ fn spawn_analysis_lane(
                     AnalysisRequest::Simulation(request) => {
                         let set_phase = |phase: &str| {
                             let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
-                            inner.current_phase = Some(phase.to_string());
+                            inner.current_phase = Some(phase.to_owned());
                         };
                         let result =
                             execute::run_simulation_with_phase(&request, &lane.cancel, set_phase);
@@ -615,7 +623,7 @@ fn spawn_analysis_lane(
                     AnalysisRequest::Collision(request) => {
                         let set_phase = |phase: &str| {
                             let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
-                            inner.current_phase = Some(phase.to_string());
+                            inner.current_phase = Some(phase.to_owned());
                         };
                         let result = helpers::run_collision_check_with_phase(
                             &request,
@@ -670,10 +678,10 @@ fn spawn_analysis_lane(
 /// Extract a human-readable message from a panic payload.
 fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
     if let Some(s) = payload.downcast_ref::<&str>() {
-        (*s).to_string()
+        (*s).to_owned()
     } else if let Some(s) = payload.downcast_ref::<String>() {
         s.clone()
     } else {
-        "unknown panic".to_string()
+        "unknown panic".to_owned()
     }
 }

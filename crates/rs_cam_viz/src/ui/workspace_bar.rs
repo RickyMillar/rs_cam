@@ -128,7 +128,7 @@ fn simulation_badge(state: &AppState) -> Option<(String, egui::Color32)> {
     }
 
     if sim.is_stale(state.job.edit_counter) {
-        return Some((" stale".to_string(), theme::WARNING));
+        return Some((" stale".to_owned(), theme::WARNING));
     }
 
     let collision_count = sim.checks.holder_collision_count + sim.checks.rapid_collisions.len();
@@ -136,5 +136,5 @@ fn simulation_badge(state: &AppState) -> Option<(String, egui::Color32)> {
         return Some((format!(" {collision_count}!"), theme::ERROR));
     }
 
-    Some((" \u{2713}".to_string(), theme::SUCCESS))
+    Some((" \u{2713}".to_owned(), theme::SUCCESS))
 }

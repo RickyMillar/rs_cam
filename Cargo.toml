@@ -54,6 +54,12 @@ needless_pass_by_value = "deny"
 large_enum_variant = "deny"
 result_large_err = "deny"
 redundant_clone = "deny"
+wildcard_imports = "deny"
+clone_on_ref_ptr = "deny"
+implicit_clone = "deny"
+str_to_string = "deny"
+semicolon_if_nothing_returned = "deny"
+manual_let_else = "deny"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

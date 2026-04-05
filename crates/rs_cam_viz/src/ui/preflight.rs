@@ -82,9 +82,9 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 CheckStatus::Fail
             };
             let rapid_detail = if !sim.has_results() {
-                "Run simulation first".to_string()
+                "Run simulation first".to_owned()
             } else if sim.checks.rapid_collisions.is_empty() {
-                "None detected".to_string()
+                "None detected".to_owned()
             } else {
                 format!("{} detected", sim.checks.rapid_collisions.len())
             };
@@ -112,9 +112,9 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             let holder_detail = if sim.checks.holder_collision_count > 0 {
                 format!("{} issues", sim.checks.holder_collision_count)
             } else if sim.checks.min_safe_stickout.is_some() {
-                "Clear".to_string()
+                "Clear".to_owned()
             } else {
-                "Not checked".to_string()
+                "Not checked".to_owned()
             };
             check_card(
                 ui,

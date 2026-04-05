@@ -103,7 +103,7 @@ pub fn semantic_kind_color(
 
 pub fn format_json_value(value: &serde_json::Value) -> String {
     match value {
-        serde_json::Value::Null => "null".to_string(),
+        serde_json::Value::Null => "null".to_owned(),
         serde_json::Value::Bool(v) => v.to_string(),
         serde_json::Value::Number(v) => v.to_string(),
         serde_json::Value::String(v) => v.clone(),

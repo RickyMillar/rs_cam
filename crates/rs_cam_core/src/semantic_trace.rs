@@ -643,9 +643,9 @@ fn sanitize_filename_component(input: &str) -> String {
     }
     let output = output.trim_matches('_');
     if output.is_empty() {
-        "toolpath_trace".to_string()
+        "toolpath_trace".to_owned()
     } else {
-        output.to_string()
+        output.to_owned()
     }
 }
 
@@ -654,7 +654,8 @@ fn sanitize_filename_component(input: &str) -> String {
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    clippy::str_to_string
 )]
 mod tests {
     use super::*;

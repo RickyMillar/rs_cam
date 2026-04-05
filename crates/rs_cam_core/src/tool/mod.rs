@@ -121,9 +121,8 @@ pub trait MillingCutter: Send + Sync {
         }
 
         // Compute CC.z on the triangle plane
-        let cc_z = match tri.z_at_xy(cc_x, cc_y) {
-            Some(z) => z,
-            None => return false,
+        let Some(cc_z) = tri.z_at_xy(cc_x, cc_y) else {
+            return false;
         };
 
         // Compute the radiusvector Z component

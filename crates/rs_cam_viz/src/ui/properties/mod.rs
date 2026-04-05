@@ -4,12 +4,27 @@ pub mod setup;
 pub mod stock;
 pub mod tool;
 
-use operations::*;
+use operations::{
+    StepoverPattern, draw_adaptive_params, draw_adaptive3d_params, draw_alignment_pin_drill_params,
+    draw_chamfer_params, draw_dogbone_diagram, draw_drill_params, draw_dropcutter_params,
+    draw_face_params, draw_height_diagram, draw_heights_params, draw_horizontal_finish_params,
+    draw_inlay_diagram, draw_inlay_params, draw_lead_in_out_diagram, draw_outline_diagram,
+    draw_pencil_diagram, draw_pencil_params, draw_pocket_params, draw_point_set_diagram,
+    draw_profile_params, draw_project_curve_params, draw_radial_diagram, draw_radial_finish_params,
+    draw_ramp_finish_diagram, draw_ramp_finish_params, draw_rest_params, draw_scallop_params,
+    draw_spiral_diagram, draw_spiral_finish_params, draw_steep_shallow_diagram,
+    draw_steep_shallow_params, draw_stepover_diagram, draw_trace_params, draw_vcarve_params,
+    draw_waterline_params, draw_zigzag_params,
+};
 pub use operations::{ToolpathValidationContext, validate_toolpath};
 
 use crate::state::AppState;
 use crate::state::selection::Selection;
-use crate::state::toolpath::*;
+use crate::state::toolpath::{
+    BoundaryContainment, ComputeStatus, DressupConfig, DressupEntryStyle, HeightContext,
+    HeightsConfig, OperationConfig, ProfileSide, RetractStrategy, SpiralDirection, StockSource,
+    ToolpathEntry, TraceCompensation,
+};
 use crate::ui::AppEvent;
 use crate::ui::automation;
 

@@ -1,4 +1,7 @@
-use crate::state::toolpath::*;
+use crate::state::toolpath::{
+    Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy, DropCutterConfig, PencilConfig,
+    RegionOrdering, ScallopConfig, ScallopDirection, SteepShallowConfig, WaterlineConfig,
+};
 
 use super::super::dv;
 use super::draw_feed_params;

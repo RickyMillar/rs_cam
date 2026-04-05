@@ -17,6 +17,7 @@ mod tests;
     clippy::panic,
     clippy::indexing_slicing,
     clippy::collapsible_if,
+    clippy::clone_on_ref_ptr,
     clippy::field_reassign_with_default,
     dead_code
 )]

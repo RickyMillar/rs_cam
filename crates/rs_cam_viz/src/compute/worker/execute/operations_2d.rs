@@ -1,4 +1,17 @@
-use super::*;
+use super::{
+    AdaptiveConfig, AdaptiveLevelSlice, AdaptiveParams, AlignmentPinDrillConfig, AtomicBool,
+    ChamferConfig, ChamferParams, ComputeError, ComputeRequest, DrillConfig, DrillCycle,
+    DrillCycleType, DrillParams, FaceConfig, FaceDirection, InlayConfig, InlayParams,
+    OperationExecutionContext, Ordering, PocketConfig, PocketParams, PocketPattern, Polygon2,
+    ProfileConfig, ProfileParams, RestConfig, RestParams, SemanticToolpathOp, ToolType, Toolpath,
+    ToolpathSemanticKind, TraceConfig, TraceParams, VCarveConfig, VCarveParams, ZigzagConfig,
+    ZigzagParams, annotate_adaptive_runtime_semantics, annotate_operation_scope, append_toolpath,
+    apply_tabs, bind_scope_to_offset_run, bind_scope_to_run, chamfer_toolpath, contour_toolpath,
+    cutting_runs, depth_stepped_toolpath, drill_toolpath, effective_safe_z, even_tabs,
+    inlay_toolpaths, line_toolpath, make_depth, make_depth_with_finishing, pocket_toolpath,
+    profile_toolpath, require_polygons, rest_machining_toolpath, semantic_child_context,
+    trace_toolpath, vcarve_toolpath, zigzag_toolpath,
+};
 use crate::compute::OperationError;
 
 #[allow(dead_code)]
@@ -328,7 +341,7 @@ fn run_drill(req: &ComputeRequest, cfg: &DrillConfig) -> Result<Toolpath, Operat
     }
     if holes.is_empty() {
         return Err(OperationError::MissingGeometry(
-            "No hole positions found (import SVG with circles)".to_string(),
+            "No hole positions found (import SVG with circles)".to_owned(),
         ));
     }
     let cycle = cfg.cycle.to_core(cfg);
@@ -378,7 +391,7 @@ impl SemanticToolpathOp for FaceConfig {
     ) -> Result<Toolpath, ComputeError> {
         let bbox = ctx.req.stock_bbox.ok_or_else(|| {
             ComputeError::from(OperationError::MissingGeometry(
-                "No stock defined for face operation".to_string(),
+                "No stock defined for face operation".to_owned(),
             ))
         })?;
         let rect = Polygon2::rectangle(
@@ -748,9 +761,9 @@ impl SemanticToolpathOp for VCarveConfig {
                         ToolpathSemanticKind::Centerline
                     };
                     let label = match kind {
-                        ToolpathSemanticKind::Centerline => "Centerline".to_string(),
-                        ToolpathSemanticKind::FinishPass => "Finish pass".to_string(),
-                        _ => "Contour".to_string(),
+                        ToolpathSemanticKind::Centerline => "Centerline".to_owned(),
+                        ToolpathSemanticKind::FinishPass => "Finish pass".to_owned(),
+                        _ => "Contour".to_owned(),
                     };
                     let scope = curve_ctx.start_item(kind, label);
                     scope.set_param("source_curve_index", poly_idx + 1);
@@ -1039,7 +1052,7 @@ impl SemanticToolpathOp for DrillConfig {
         }
         if holes.is_empty() {
             return Err(OperationError::MissingGeometry(
-                "No hole positions found (import SVG with circles)".to_string(),
+                "No hole positions found (import SVG with circles)".to_owned(),
             )
             .into());
         }
@@ -1137,7 +1150,7 @@ impl SemanticToolpathOp for AlignmentPinDrillConfig {
     ) -> Result<Toolpath, ComputeError> {
         if self.holes.is_empty() {
             return Err(OperationError::MissingGeometry(
-                "No alignment pin positions defined".to_string(),
+                "No alignment pin positions defined".to_owned(),
             )
             .into());
         }

@@ -26,9 +26,8 @@ pub fn presets_dir() -> PathBuf {
 /// List all available presets (reads .toml files from presets dir).
 pub fn list_presets() -> Vec<Preset> {
     let dir = presets_dir();
-    let entries = match std::fs::read_dir(&dir) {
-        Ok(entries) => entries,
-        Err(_) => return Vec::new(),
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
     };
 
     let mut presets = Vec::new();
@@ -145,7 +144,7 @@ fn extract_multiline_field(text: &str, key: &str) -> Option<String> {
     let content = content.strip_prefix('\n').unwrap_or(content);
     let content = content.strip_suffix('\n').unwrap_or(content);
 
-    Some(content.to_string())
+    Some(content.to_owned())
 }
 
 /// Sanitize a preset name into a safe filename (lowercase, spaces to hyphens).
@@ -211,9 +210,9 @@ mod tests {
         let text = "name = \"Hardwood Roughing\"\noperation = \"Pocket\"\n";
         assert_eq!(
             extract_field(text, "name"),
-            Some("Hardwood Roughing".to_string())
+            Some("Hardwood Roughing".to_owned())
         );
-        assert_eq!(extract_field(text, "operation"), Some("Pocket".to_string()));
+        assert_eq!(extract_field(text, "operation"), Some("Pocket".to_owned()));
         assert_eq!(extract_field(text, "missing"), None);
     }
 
@@ -221,7 +220,7 @@ mod tests {
     fn test_extract_multiline_field() {
         let text = "name = \"test\"\ncontent = \"\"\"\nstepover = 2.0\ndepth = 3.0\n\"\"\"\n";
         let content = extract_multiline_field(text, "content");
-        assert_eq!(content, Some("stepover = 2.0\ndepth = 3.0".to_string()));
+        assert_eq!(content, Some("stepover = 2.0\ndepth = 3.0".to_owned()));
     }
 
     #[test]
@@ -276,6 +275,6 @@ mod tests {
     fn test_extract_field_with_escaped_quotes() {
         let text = "name = \"preset with \\\"quotes\\\"\"\n";
         let name = extract_field(text, "name");
-        assert_eq!(name, Some("preset with \"quotes\"".to_string()));
+        assert_eq!(name, Some("preset with \"quotes\"".to_owned()));
     }
 }

@@ -257,7 +257,7 @@ pub fn check_collisions_interpolated_with_cancel(
                         move_idx,
                         position: *tip,
                         penetration_depth: penetration,
-                        segment: seg_name.to_string(),
+                        segment: seg_name.to_owned(),
                     });
 
                     max_extra_stickout_needed = max_extra_stickout_needed.max(penetration);

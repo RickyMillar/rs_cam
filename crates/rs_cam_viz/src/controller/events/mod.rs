@@ -54,11 +54,11 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::RenameSetup(setup_id, name) => self.handle_rename_setup(setup_id, name),
             AppEvent::AddFixture(setup_id) => self.handle_add_fixture(setup_id),
             AppEvent::RemoveFixture(setup_id, fixture_id) => {
-                self.handle_remove_fixture(setup_id, fixture_id)
+                self.handle_remove_fixture(setup_id, fixture_id);
             }
             AppEvent::AddKeepOut(setup_id) => self.handle_add_keep_out(setup_id),
             AppEvent::RemoveKeepOut(setup_id, keep_out_id) => {
-                self.handle_remove_keep_out(setup_id, keep_out_id)
+                self.handle_remove_keep_out(setup_id, keep_out_id);
             }
             AppEvent::FixtureChanged => {
                 self.pending_upload = true;
@@ -71,10 +71,10 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::MoveToolpathUp(tp_id) => self.handle_move_toolpath_up(tp_id),
             AppEvent::MoveToolpathDown(tp_id) => self.handle_move_toolpath_down(tp_id),
             AppEvent::ReorderToolpath(tp_id, target_idx) => {
-                self.handle_reorder_toolpath(tp_id, target_idx)
+                self.handle_reorder_toolpath(tp_id, target_idx);
             }
             AppEvent::MoveToolpathToSetup(tp_id, setup_id, idx) => {
-                self.handle_move_toolpath_to_setup(tp_id, setup_id, idx)
+                self.handle_move_toolpath_to_setup(tp_id, setup_id, idx);
             }
             AppEvent::ToggleToolpathEnabled(tp_id) => {
                 if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
@@ -92,7 +92,7 @@ impl<B: ComputeBackend> AppController<B> {
             }
             AppEvent::ToggleIsolateToolpath => self.handle_toggle_isolate_toolpath(),
             AppEvent::InspectToolpathInSimulation(tp_id) => {
-                self.handle_inspect_toolpath_in_simulation(tp_id)
+                self.handle_inspect_toolpath_in_simulation(tp_id);
             }
 
             // --- Simulation events ---

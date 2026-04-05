@@ -1,9 +1,11 @@
 //! Maps rs_cam_core types to vendor LUT query types.
 
 use super::vendor_lookup::LookupQuery;
-use super::vendor_lut::*;
+use super::vendor_lut::{
+    HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily,
+};
 use super::{FeedsInput, OperationFamily, PassRole, ToolGeometryHint};
-use crate::material::*;
+use crate::material::{Material, PlasticFamily, PlywoodGrade, SheetGoodKind};
 
 /// Convert a FeedsInput to a LookupQuery for vendor LUT lookup.
 pub fn to_lookup_query(input: &FeedsInput) -> LookupQuery {
@@ -104,6 +106,7 @@ fn material_to_lut(material: &Material) -> (MaterialFamily, HardnessKind, f64) {
 mod tests {
     use super::*;
     use crate::machine::MachineProfile;
+    use crate::material::WoodSpecies;
 
     fn make_input<'a>(
         geom: ToolGeometryHint,

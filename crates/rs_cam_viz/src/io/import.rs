@@ -15,7 +15,7 @@ pub fn import_stl(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, V
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown.stl".to_string());
+        .unwrap_or_else(|| "unknown.stl".to_owned());
 
     let units = if (scale - 1.0).abs() < 1e-9 {
         ModelUnits::Millimeters
@@ -65,7 +65,7 @@ pub fn import_svg(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, V
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown.svg".to_string());
+        .unwrap_or_else(|| "unknown.svg".to_owned());
 
     let units = if (scale - 1.0).abs() < 1e-9 {
         ModelUnits::Millimeters
@@ -112,7 +112,7 @@ pub fn import_dxf(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, V
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown.dxf".to_string());
+        .unwrap_or_else(|| "unknown.dxf".to_owned());
 
     let units = if (scale - 1.0).abs() < 1e-9 {
         ModelUnits::Millimeters
@@ -148,7 +148,7 @@ pub fn import_step(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, 
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown.step".to_string());
+        .unwrap_or_else(|| "unknown.step".to_owned());
 
     let mesh_arc = enriched.mesh_arc();
     Ok(LoadedModel {

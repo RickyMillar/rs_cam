@@ -2,7 +2,13 @@
 //!
 //! Run with: cargo bench -p rs_cam_core
 //! Results saved to target/criterion/
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::str_to_string,
+    clippy::semicolon_if_nothing_returned
+)]
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use std::path::Path;

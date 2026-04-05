@@ -25,7 +25,7 @@ fn find_tool(tools: &[ToolConfig], id: ToolId) -> Option<&ToolConfig> {
 /// Format a duration in seconds as "Xm Ys".
 fn format_time(seconds: f64) -> String {
     if seconds < 0.0 || !seconds.is_finite() {
-        return "N/A".to_string();
+        return "N/A".to_owned();
     }
     let total_secs = seconds.round() as u64;
     let mins = total_secs / 60;
@@ -328,11 +328,11 @@ tr:nth-child(even) {{ background: #24242e; }}
         let feed = feed_rate_of(&tp.operation);
         let depth_str = match depth_of(&tp.operation) {
             Some(d) => format!("{:.2} mm", d),
-            None => "-".to_string(),
+            None => "-".to_owned(),
         };
         let time_str = estimate_time(tp)
             .map(format_time)
-            .unwrap_or_else(|| "-".to_string());
+            .unwrap_or_else(|| "-".to_owned());
         let enabled_marker = if tp.enabled { "" } else { " (disabled)" };
 
         let _ = writeln!(
@@ -377,9 +377,8 @@ tr:nth-child(even) {{ background: #24242e; }}
             if !tp.enabled {
                 continue;
             }
-            let result = match &tp.result {
-                Some(r) => r,
-                None => continue,
+            let Some(result) = &tp.result else {
+                continue;
             };
 
             let _ = write!(
@@ -439,7 +438,7 @@ mod tests {
 
     fn make_test_job() -> JobState {
         let mut job = JobState::new();
-        job.name = "Test Job".to_string();
+        job.name = "Test Job".to_owned();
 
         // Add a tool.
         let tool_id = job.next_tool_id();
@@ -451,7 +450,7 @@ mod tests {
         let mut toolpath = ToolpathEntry::from_init(
             crate::state::toolpath::ToolpathEntryInit::from_loaded_state(
                 tp_id,
-                "Pocket 1".to_string(),
+                "Pocket 1".to_owned(),
                 tool_id,
                 crate::state::job::ModelId(0),
                 OperationConfig::Pocket(PocketConfig {
@@ -483,23 +482,23 @@ mod tests {
 
         {
             let top_setup = &mut job.setups[0];
-            top_setup.name = "Top Side".to_string();
+            top_setup.name = "Top Side".to_owned();
             top_setup.datum.xy_method = XYDatum::AlignmentPins;
-            top_setup.datum.notes = "Probe on the pin pair".to_string();
+            top_setup.datum.notes = "Probe on the pin pair".to_owned();
             job.stock
                 .alignment_pins
                 .push(AlignmentPin::new(10.0, 20.0, 6.0));
 
             let mut fixture = Fixture::new_default(FixtureId(0));
-            fixture.name = "Toe Clamp".to_string();
+            fixture.name = "Toe Clamp".to_owned();
             top_setup.fixtures.push(fixture);
 
             let mut keep_out = KeepOutZone::new_default(KeepOutId(0));
-            keep_out.name = "Vice Travel".to_string();
+            keep_out.name = "Vice Travel".to_owned();
             top_setup.keep_out_zones.push(keep_out);
         }
 
-        let mut bottom_setup = Setup::new(second_setup_id, "Bottom Side".to_string());
+        let mut bottom_setup = Setup::new(second_setup_id, "Bottom Side".to_owned());
         bottom_setup.face_up = FaceUp::Bottom;
         bottom_setup.z_rotation = ZRotation::Deg90;
         bottom_setup.datum.xy_method = XYDatum::AlignmentPins;

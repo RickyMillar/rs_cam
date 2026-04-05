@@ -1,9 +1,38 @@
 mod operations_2d;
 mod operations_3d;
 
-use super::helpers::*;
-use super::semantic::*;
-use super::*;
+use super::helpers::{
+    apply_dressups, build_cutter, build_simulation_cut_artifact, build_trace_artifact,
+    compute_stats, debug_artifact_dir, effective_safe_z, make_depth, make_depth_with_finishing,
+    require_mesh, require_polygons, simulation_metric_artifact_dir,
+};
+use super::semantic::{
+    CutRun, append_toolpath, bind_scope_to_run, contour_toolpath, cutting_runs, line_toolpath,
+};
+use super::{
+    Adaptive3dConfig, Adaptive3dEntryStyle, Adaptive3dParams, AdaptiveConfig, AdaptiveParams,
+    AlignmentPinDrillConfig, Arc, AtomicBool, ChamferConfig, ChamferParams, ComputeError,
+    ComputeRequest, DrillConfig, DrillCycle, DrillCycleType, DrillParams, DropCutterConfig,
+    EntryStyle3d, FaceConfig, FaceDirection, HorizontalFinishConfig, HorizontalFinishParams,
+    InlayConfig, InlayParams, MillingCutter, OperationConfig, Ordering, PencilConfig, PencilParams,
+    PocketConfig, PocketParams, PocketPattern, Polygon2, ProfileConfig, ProfileParams,
+    ProjectCurveConfig, ProjectCurveParams, RadialFinishConfig, RadialFinishParams,
+    RampFinishConfig, RampFinishParams, RestConfig, RestParams, ScallopConfig, ScallopParams,
+    SimBoundary, SimCheckpointMesh, SimulationRequest, SimulationResult, SpatialIndex,
+    SpiralFinishConfig, SpiralFinishParams, SteepShallowConfig, SteepShallowParams, ToolDefinition,
+    ToolType, Toolpath, ToolpathPhaseTracker, ToolpathResult, TraceConfig, TraceParams,
+    TriDexelStock, TriangleMesh, VCarveConfig, VCarveParams, WaterlineConfig, WaterlineParams,
+    ZigzagConfig, ZigzagParams, apply_tabs, batch_drop_cutter_with_cancel, chamfer_toolpath,
+    depth_stepped_toolpath, dexel_stock_to_mesh, drill_toolpath, even_tabs,
+    horizontal_finish_toolpath, inlay_toolpaths, pocket_toolpath, profile_toolpath,
+    project_curve_toolpath, radial_finish_toolpath, raster_toolpath_from_grid,
+    rest_machining_toolpath, steep_shallow_toolpath, trace_toolpath, vcarve_toolpath,
+    waterline_toolpath_with_cancel, zigzag_toolpath,
+};
+#[cfg(test)]
+use super::{BoundingBox3, DressupConfig, MoveType, StockSource, ToolConfig, ToolpathId};
+#[cfg(test)]
+use crate::state::toolpath::{BoundaryContainment, HeightContext, HeightsConfig};
 use rs_cam_core::geo::P3;
 use rs_cam_core::radial_profile::RadialProfileLUT;
 use rs_cam_core::semantic_trace::ToolpathSemanticKind;
@@ -1381,7 +1410,7 @@ mod tests {
         let tool = ToolConfig::new_default(crate::state::job::ToolId(1), tool_type);
         ComputeRequest {
             toolpath_id: ToolpathId(1),
-            toolpath_name: "Test".to_string(),
+            toolpath_name: "Test".to_owned(),
             polygons: Some(Arc::new(vec![Polygon2::rectangle(
                 -20.0, -20.0, 20.0, 20.0,
             )])),
@@ -1681,10 +1710,10 @@ mod tests {
 
     #[test]
     fn scallop_rejects_non_ballnose_tool() {
-        let cfg = match OperationConfig::new_default(crate::state::toolpath::OperationType::Scallop)
-        {
-            OperationConfig::Scallop(cfg) => cfg,
-            _ => unreachable!(),
+        let OperationConfig::Scallop(cfg) =
+            OperationConfig::new_default(crate::state::toolpath::OperationType::Scallop)
+        else {
+            unreachable!();
         };
         let mut req =
             test_request_with_polygon(OperationConfig::Scallop(cfg.clone()), ToolType::EndMill);

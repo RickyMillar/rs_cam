@@ -90,7 +90,7 @@ impl MachineProfile {
     /// Conservative generic wood router defaults.
     pub fn generic_wood_router() -> Self {
         MachineProfile {
-            name: "Generic Wood Router".to_string(),
+            name: "Generic Wood Router".to_owned(),
             spindle: SpindleConfig::Variable {
                 min_rpm: 8000.0,
                 max_rpm: 24000.0,
@@ -115,7 +115,7 @@ impl MachineProfile {
     /// Shapeoko with 1.5kW VFD spindle (ER11 collet).
     pub fn shapeoko_vfd() -> Self {
         MachineProfile {
-            name: "Shapeoko (1.5kW VFD)".to_string(),
+            name: "Shapeoko (1.5kW VFD)".to_owned(),
             spindle: SpindleConfig::Variable {
                 min_rpm: 6000.0,
                 max_rpm: 24000.0,
@@ -139,7 +139,7 @@ impl MachineProfile {
     /// Shapeoko with Makita RT0701C router (discrete speed dial).
     pub fn shapeoko_makita() -> Self {
         MachineProfile {
-            name: "Shapeoko (Makita RT0701C)".to_string(),
+            name: "Shapeoko (Makita RT0701C)".to_owned(),
             spindle: SpindleConfig::Discrete {
                 speeds: vec![10000.0, 12000.0, 17000.0, 22000.0, 27000.0, 30000.0],
             },
@@ -215,11 +215,11 @@ impl MachineProfile {
     /// Serialization key for TOML project files.
     pub fn to_key(&self) -> String {
         if self.name.contains("VFD") {
-            "shapeoko_vfd".to_string()
+            "shapeoko_vfd".to_owned()
         } else if self.name.contains("Makita") {
-            "shapeoko_makita".to_string()
+            "shapeoko_makita".to_owned()
         } else {
-            "generic".to_string()
+            "generic".to_owned()
         }
     }
 

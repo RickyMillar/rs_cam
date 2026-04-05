@@ -86,7 +86,7 @@ fn step_model(id: ModelId) -> LoadedModel {
     LoadedModel {
         id,
         path: fixtures_dir().join("occt-cube.step"),
-        name: "occt-cube.step".to_string(),
+        name: "occt-cube.step".to_owned(),
         kind: ModelKind::Step,
         mesh: Some(mesh_arc),
         polygons: None,
@@ -101,7 +101,7 @@ fn stl_model(id: ModelId) -> LoadedModel {
     LoadedModel {
         id,
         path: PathBuf::from("test.stl"),
-        name: "test.stl".to_string(),
+        name: "test.stl".to_owned(),
         kind: ModelKind::Stl,
         mesh: Some(Arc::new(rs_cam_core::mesh::make_test_flat(40.0))),
         polygons: None,
@@ -162,7 +162,7 @@ fn add_pocket(controller: &mut AppController<ScriptedBackend>) -> ToolpathId {
     let tp_id = controller.state.job.next_toolpath_id();
     let entry = ToolpathEntry::for_operation(
         tp_id,
-        "Pocket".to_string(),
+        "Pocket".to_owned(),
         ToolId(1),
         ModelId(1),
         OperationType::Pocket,
@@ -464,7 +464,7 @@ fn w5_project_round_trip_preserves_step_face_selection() {
     let face_id = find_horizontal_face(&enriched);
     let mut entry = ToolpathEntry::for_operation(
         ToolpathId(1),
-        "Pocket".to_string(),
+        "Pocket".to_owned(),
         ToolId(1),
         ModelId(1),
         OperationType::Pocket,
