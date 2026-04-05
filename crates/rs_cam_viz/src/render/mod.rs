@@ -107,6 +107,12 @@ struct OffscreenTargets {
     height: u32,
 }
 
+/// GPU data for polygon/DXF/SVG line rendering.
+pub struct PolygonGpuData {
+    pub vertex_buffer: wgpu::Buffer,
+    pub vertex_count: u32,
+}
+
 /// All GPU resources for the 3D viewport, stored in egui_wgpu::CallbackResources.
 pub struct RenderResources {
     // 3D scene pipelines (render to offscreen with depth)
@@ -144,6 +150,7 @@ pub struct RenderResources {
     pub sim_mesh_data: Option<SimMeshGpuData>,
     pub height_planes_data: Option<HeightPlanesGpuData>,
     pub tool_model_data: Option<ToolModelGpuData>,
+    pub polygon_data: Vec<PolygonGpuData>,
     pub collision_vertex_buffer: Option<wgpu::Buffer>,
     pub collision_vertex_count: u32,
     pub origin_axes_data: Option<grid_render::OriginAxesGpuData>,
@@ -561,6 +568,7 @@ impl RenderResources {
             stock_data: None,
             solid_stock_data: None,
             fixture_data: None,
+            polygon_data: Vec::new(),
             toolpath_data: Vec::new(),
             sim_mesh_data: None,
             height_planes_data: None,
@@ -650,6 +658,7 @@ pub struct ViewportCallback {
     pub show_grid: bool,
     pub show_stock: bool,
     pub show_fixtures: bool,
+    pub show_polygons: bool,
     pub show_solid_stock: bool,
     pub show_height_planes: bool,
     pub show_sim_mesh: bool,
@@ -866,6 +875,16 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 pass.set_vertex_buffer(0, hp.vertex_buffer.slice(..));
                 pass.set_index_buffer(hp.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..hp.index_count, 0, 0..1);
+            }
+
+            // Draw polygon/DXF/SVG lines
+            if self.show_polygons {
+                pass.set_pipeline(&resources.line_pipeline);
+                pass.set_bind_group(0, &resources.line_bind_group, &[]);
+                for poly_gpu in &resources.polygon_data {
+                    pass.set_vertex_buffer(0, poly_gpu.vertex_buffer.slice(..));
+                    pass.draw(0..poly_gpu.vertex_count, 0..1);
+                }
             }
 
             // Draw collision markers

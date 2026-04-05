@@ -279,6 +279,8 @@ impl RsCamApp {
             show_fixtures: state.viewport.show_fixtures
                 && (state.workspace != Workspace::Simulation
                     || !state.job.stock.alignment_pins.is_empty()),
+            show_polygons: state.viewport.show_polygons
+                && state.job.models.iter().any(|m| m.polygons.is_some()),
             show_solid_stock: state.viewport.show_stock && state.workspace == Workspace::Setup,
             show_height_planes: state.workspace == Workspace::Toolpaths
                 && matches!(state.selection, Selection::Toolpath(_)),

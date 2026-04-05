@@ -49,6 +49,11 @@ pub const STOCK_SOLID_FACE: [f32; 3] = [0.65, 0.50, 0.30];
 /// Collision point marker.
 pub const COLLISION_POINT: [f32; 3] = [1.0, 0.0, 0.0];
 
+// ── Polygon / 2D geometry ───────────────────────────────────────────────
+
+/// DXF/SVG polygon outline.
+pub const POLYGON_OUTLINE: [f32; 3] = [0.9, 0.75, 0.2];
+
 // ── Grid & axes ─────────────────────────────────────────────────────────
 
 pub const GRID_BASE: [f32; 3] = [0.25, 0.25, 0.28];
