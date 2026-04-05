@@ -216,7 +216,21 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             {
                 let pin_count = state.job.stock.alignment_pins.len();
                 let has_flip_axis = state.job.stock.flip_axis.is_some();
-                setup::draw(ui, setup_id, setup_state, pin_count, has_flip_axis, events);
+                let all_models: Vec<_> = state
+                    .job
+                    .models
+                    .iter()
+                    .map(|m| (m.id, m.name.clone()))
+                    .collect();
+                setup::draw(
+                    ui,
+                    setup_id,
+                    setup_state,
+                    pin_count,
+                    has_flip_axis,
+                    &all_models,
+                    events,
+                );
             }
         }
         Selection::Fixture(setup_id, fixture_id) => {
@@ -299,12 +313,26 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .iter()
                 .map(|t| (t.id, t.summary(), t.diameter))
                 .collect();
-            let models: Vec<_> = state
+            // Filter models by setup's model_ids (empty = all).
+            let setup_for_tp = state
                 .job
-                .models
+                .setups
                 .iter()
-                .map(|m| (m.id, m.name.clone()))
-                .collect();
+                .find(|s| s.toolpaths.iter().any(|t| t.id == id));
+            let models: Vec<_> = if let Some(setup) = setup_for_tp {
+                setup
+                    .available_models(&state.job.models)
+                    .into_iter()
+                    .map(|m| (m.id, m.name.clone()))
+                    .collect()
+            } else {
+                state
+                    .job
+                    .models
+                    .iter()
+                    .map(|m| (m.id, m.name.clone()))
+                    .collect()
+            };
             // Snapshot tool configs for feeds calculation
             let tool_configs: Vec<_> = state.job.tools.iter().map(|t| (t.id, t.clone())).collect();
             let validation = ToolpathValidationContext::from_job(&state.job);
@@ -1855,7 +1883,9 @@ fn draw_toolpath_panel(
                 OperationConfig::SpiralFinish(cfg) => draw_spiral_finish_params(ui, cfg),
                 OperationConfig::RadialFinish(cfg) => draw_radial_finish_params(ui, cfg),
                 OperationConfig::HorizontalFinish(cfg) => draw_horizontal_finish_params(ui, cfg),
-                OperationConfig::ProjectCurve(cfg) => draw_project_curve_params(ui, cfg),
+                OperationConfig::ProjectCurve(cfg) => {
+                    draw_project_curve_params(ui, cfg, models);
+                }
                 OperationConfig::AlignmentPinDrill(cfg) => {
                     draw_alignment_pin_drill_params(ui, cfg);
                 }

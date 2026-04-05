@@ -113,6 +113,19 @@ impl<B: ComputeBackend> AppController<B> {
         let enriched_mesh = model.and_then(|model| model.enriched_mesh.clone());
         let face_selection = face_selection_for_toolpath;
 
+        // ProjectCurve: use a separate model's mesh for the 3D surface when configured.
+        if let OperationConfig::ProjectCurve(ref cfg) = operation
+            && let Some(surface_id) = cfg.surface_model_id
+        {
+            mesh = self
+                .state
+                .job
+                .models
+                .iter()
+                .find(|m| m.id == surface_id)
+                .and_then(|m| m.mesh.clone());
+        }
+
         // Derive polygons from selected BREP faces when no explicit polygons exist.
         // This enables all 2.5D operations (pocket, profile, adaptive, trace, etc.)
         // to work with STEP models by extracting face boundary loops as Polygon2.
@@ -218,7 +231,18 @@ impl<B: ComputeBackend> AppController<B> {
         }
 
         let safe_z = self.state.job.post.safe_z;
-        let stock_bb = self.state.job.stock.bbox();
+
+        // Compute setup-local stock bbox FIRST so heights resolve in the correct frame.
+        let stock_bbox = if let Some(transform_setup) = transform_setup.as_ref() {
+            let (width, depth, height) = transform_setup.effective_stock(&stock_snapshot);
+            BoundingBox3 {
+                min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
+                max: rs_cam_core::geo::P3::new(width, depth, height),
+            }
+        } else {
+            self.state.job.stock.bbox()
+        };
+
         let model_bb = self
             .state
             .job
@@ -226,13 +250,39 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .find(|m| m.id == model_id)
             .and_then(|m| m.bbox());
+        // Transform model bbox into setup-local frame when a setup exists.
+        let (model_top_z, model_bottom_z) = match (model_bb, transform_setup.as_ref()) {
+            (Some(bb), Some(setup)) => {
+                let mut min_z = f64::INFINITY;
+                let mut max_z = f64::NEG_INFINITY;
+                for &x in &[bb.min.x, bb.max.x] {
+                    for &y in &[bb.min.y, bb.max.y] {
+                        for &z in &[bb.min.z, bb.max.z] {
+                            let local = setup.transform_point(
+                                rs_cam_core::geo::P3::new(x, y, z),
+                                &stock_snapshot,
+                            );
+                            if local.z < min_z {
+                                min_z = local.z;
+                            }
+                            if local.z > max_z {
+                                max_z = local.z;
+                            }
+                        }
+                    }
+                }
+                (Some(max_z), Some(min_z))
+            }
+            (Some(bb), None) => (Some(bb.max.z), Some(bb.min.z)),
+            _ => (None, None),
+        };
         let height_ctx = crate::state::toolpath::HeightContext {
             safe_z,
             op_depth: operation.default_depth_for_heights(),
-            stock_top_z: stock_bb.max.z,
-            stock_bottom_z: stock_bb.min.z,
-            model_top_z: model_bb.map(|b| b.max.z),
-            model_bottom_z: model_bb.map(|b| b.min.z),
+            stock_top_z: stock_bbox.max.z,
+            stock_bottom_z: stock_bbox.min.z,
+            model_top_z,
+            model_bottom_z,
         };
         let mut heights = heights_config.resolve(&height_ctx);
         // When face selection provides a Z height, use it as the top_z
@@ -246,15 +296,6 @@ impl<B: ComputeBackend> AppController<B> {
                 heights.bottom_z = fz - operation.default_depth_for_heights().abs();
             }
         }
-        let stock_bbox = if let Some(transform_setup) = transform_setup.as_ref() {
-            let (width, depth, height) = transform_setup.effective_stock(&stock_snapshot);
-            Some(BoundingBox3 {
-                min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
-                max: rs_cam_core::geo::P3::new(width, depth, height),
-            })
-        } else {
-            Some(self.state.job.stock.bbox())
-        };
 
         // TODO: build_prior_stock for FromRemainingStock requires tri-dexel
         // simulation of prior toolpaths — not yet implemented.
@@ -274,7 +315,7 @@ impl<B: ComputeBackend> AppController<B> {
             tool,
             safe_z,
             prev_tool_radius,
-            stock_bbox,
+            stock_bbox: Some(stock_bbox),
             boundary_enabled,
             boundary_containment,
             keep_out_footprints,
@@ -315,6 +356,24 @@ impl<B: ComputeBackend> AppController<B> {
                 }
                 ComputeMessage::Simulation(result) => match result {
                     Ok(simulation) => {
+                        // Warn user if resolution was silently coarsened
+                        if simulation.resolution_clamped {
+                            self.push_notification(
+                                "Sim resolution was coarsened to fit grid limits — \
+                                 consider reducing stock size or increasing resolution"
+                                    .to_owned(),
+                                crate::controller::Severity::Warning,
+                            );
+                        }
+                        // Warn if mesh is empty (would render as blank)
+                        if simulation.mesh.indices.is_empty() {
+                            self.push_notification(
+                                "Simulation produced an empty mesh — \
+                                 try increasing resolution or check stock dimensions"
+                                    .to_owned(),
+                                crate::controller::Severity::Warning,
+                            );
+                        }
                         // Build boundaries
                         let boundaries: Vec<_> = simulation
                             .boundaries

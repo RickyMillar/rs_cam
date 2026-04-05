@@ -189,6 +189,24 @@ impl DexelGrid {
     /// Prevents OOM from pathologically small cell sizes on large stock.
     const MAX_GRID_CELLS: usize = 16_000_000;
 
+    /// Check whether the given cell size would exceed the grid cap for the given extents.
+    /// Returns `Some(coarsened_size)` if clamping would occur, `None` if it fits.
+    pub fn would_exceed_grid(cell_size: f64, extent_u: f64, extent_v: f64) -> Option<f64> {
+        let cs = if cell_size < Self::MIN_CELL_SIZE {
+            Self::MIN_CELL_SIZE
+        } else {
+            cell_size
+        };
+        let cols = (extent_u / cs).ceil() as usize + 1;
+        let rows = (extent_v / cs).ceil() as usize + 1;
+        if rows * cols > Self::MAX_GRID_CELLS {
+            let area = extent_u * extent_v;
+            Some((area / Self::MAX_GRID_CELLS as f64).sqrt())
+        } else {
+            None
+        }
+    }
+
     /// Adjust cell_size upward if `rows * cols` would exceed [`Self::MAX_GRID_CELLS`].
     fn clamp_cell_size(mut cell_size: f64, extent_u: f64, extent_v: f64) -> f64 {
         if cell_size < Self::MIN_CELL_SIZE {

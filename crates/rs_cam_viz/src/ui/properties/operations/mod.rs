@@ -1716,8 +1716,20 @@ fn validate_geometry_selection(
     let has_mesh = model.has_mesh;
 
     if entry.operation.needs_both() {
-        if !has_polygons || !has_mesh {
-            errs.push("Selected model must provide both 2D geometry and a 3D mesh".into());
+        // ProjectCurve can use a separate surface model for the 3D mesh.
+        let effective_has_mesh =
+            if let crate::state::toolpath::OperationConfig::ProjectCurve(ref cfg) = entry.operation
+                && let Some(surface_id) = cfg.surface_model_id
+            {
+                ctx.models
+                    .iter()
+                    .find(|m| m.id == surface_id)
+                    .is_some_and(|m| m.has_mesh)
+            } else {
+                has_mesh
+            };
+        if !has_polygons || !effective_has_mesh {
+            errs.push("Selected model must provide both 2D geometry and a 3D mesh (use Surface selector for separate mesh)".into());
         }
     } else if entry.operation.is_3d() {
         if !has_mesh {

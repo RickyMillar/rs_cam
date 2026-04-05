@@ -655,6 +655,10 @@ pub struct ProjectCurveConfig {
     pub point_spacing: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
+    /// Optional separate model for the 3D surface. When `None`, both curves
+    /// and surface come from the toolpath's main `model_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface_model_id: Option<crate::state::job::ModelId>,
 }
 
 impl Default for ProjectCurveConfig {
@@ -664,6 +668,7 @@ impl Default for ProjectCurveConfig {
             point_spacing: 0.5,
             feed_rate: 800.0,
             plunge_rate: 400.0,
+            surface_model_id: None,
         }
     }
 }

@@ -177,6 +177,7 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
             rapid_collision_move_indices: Vec::new(),
             cut_trace: None,
             cut_trace_path: None,
+            resolution_clamped: false,
         })));
 
     controller.drain_compute_results();
@@ -460,6 +461,7 @@ fn simulation_results_capture_setup_boundaries() {
                 rapid_collision_move_indices: Vec::new(),
                 cut_trace: None,
                 cut_trace_path: None,
+                resolution_clamped: false,
             },
         )));
 
@@ -633,6 +635,7 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
             rapid_collision_move_indices: Vec::new(),
             cut_trace: None,
             cut_trace_path: None,
+            resolution_clamped: false,
         })));
 
     controller.drain_compute_results();

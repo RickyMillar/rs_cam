@@ -118,6 +118,20 @@ pub fn draw(
                     );
                 }
             });
+            // Warn when the current resolution would exceed the dexel grid cap.
+            if !sim.auto_resolution {
+                let sx = job.stock.x;
+                let sy = job.stock.y;
+                if rs_cam_core::dexel::DexelGrid::would_exceed_grid(sim.resolution, sx, sy)
+                    .is_some()
+                {
+                    ui.label(
+                        egui::RichText::new("Grid too large — resolution will be coarsened")
+                            .small()
+                            .color(theme::WARNING),
+                    );
+                }
+            }
         });
 
     ui.add_space(4.0);
