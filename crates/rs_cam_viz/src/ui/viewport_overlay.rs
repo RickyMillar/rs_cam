@@ -53,6 +53,8 @@ pub fn draw(
             .on_hover_text("Show collisions");
         ui.checkbox(&mut viewport.show_fixtures, "Fixtures")
             .on_hover_text("Show fixtures");
+        ui.checkbox(&mut viewport.show_polygons, "Curves")
+            .on_hover_text("Show DXF/SVG polygon outlines");
 
         ui.separator();
 

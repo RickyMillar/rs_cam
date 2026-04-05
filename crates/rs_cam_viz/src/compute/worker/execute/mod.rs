@@ -1509,7 +1509,8 @@ mod tests {
         // coincides with a roughing level. Instead, verify that there are
         // no tab-height moves between roughing passes (moves with z > final_z
         // that aren't at a legitimate roughing level or safe_z).
-        let depth = make_depth_with_finishing(cfg.depth, cfg.depth_per_pass, cfg.finishing_passes);
+        let depth =
+            make_depth_with_finishing(cfg.depth, cfg.depth_per_pass, cfg.finishing_passes, 0.0);
         let roughing_levels = depth.all_levels();
         for m in &tp.moves {
             if let MoveType::Linear { .. } = m.move_type {

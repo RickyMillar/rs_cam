@@ -187,6 +187,115 @@ impl RsCamApp {
             }
         }
 
+        // Upload polygon/DXF/SVG line data
+        {
+            use crate::render::{LineVertex, PolygonGpuData};
+            use egui_wgpu::wgpu::util::DeviceExt;
+            resources.polygon_data.clear();
+            let color = crate::render::colors::POLYGON_OUTLINE;
+            // Slightly above stock top to avoid z-fighting with mesh.
+            let poly_z = if use_local_frame {
+                // SAFETY: use_local_frame iff active_setup_ref.is_some()
+                #[allow(clippy::unwrap_used)]
+                let setup = active_setup_ref.unwrap();
+                let (_, _, h) = setup.effective_stock(&self.controller.state().job.stock);
+                h as f32 + 0.05
+            } else {
+                (self.controller.state().job.stock.origin_z + self.controller.state().job.stock.z)
+                    as f32
+                    + 0.05
+            };
+            // Convert a 2D ring to line-list vertices, closing the loop.
+            let ring_to_lines =
+                |ring: &[rs_cam_core::geo::P2], verts: &mut Vec<LineVertex>| {
+                    if ring.len() < 2 {
+                        return;
+                    }
+                    // Consecutive edges: a→b for windows, plus closing edge last→first.
+                    for pair in ring.windows(2) {
+                        // SAFETY: windows(2) guarantees exactly 2 elements per slice.
+                        #[allow(clippy::indexing_slicing)]
+                        let (a, b) = (&pair[0], &pair[1]);
+                        let (ax, ay, bx, by) = if use_local_frame {
+                            // SAFETY: use_local_frame iff active_setup_ref.is_some()
+                            #[allow(clippy::unwrap_used)]
+                            let setup = active_setup_ref.unwrap();
+                            let stock = &self.controller.state().job.stock;
+                            let pa = setup.transform_point(
+                                rs_cam_core::geo::P3::new(a.x, a.y, 0.0),
+                                stock,
+                            );
+                            let pb = setup.transform_point(
+                                rs_cam_core::geo::P3::new(b.x, b.y, 0.0),
+                                stock,
+                            );
+                            (pa.x, pa.y, pb.x, pb.y)
+                        } else {
+                            (a.x, a.y, b.x, b.y)
+                        };
+                        verts.push(LineVertex {
+                            position: [ax as f32, ay as f32, poly_z],
+                            color,
+                        });
+                        verts.push(LineVertex {
+                            position: [bx as f32, by as f32, poly_z],
+                            color,
+                        });
+                    }
+                    // Close the ring: last → first
+                    if let (Some(last), Some(first)) = (ring.last(), ring.first()) {
+                        let (ax, ay, bx, by) = if use_local_frame {
+                            #[allow(clippy::unwrap_used)]
+                            let setup = active_setup_ref.unwrap();
+                            let stock = &self.controller.state().job.stock;
+                            let pa = setup.transform_point(
+                                rs_cam_core::geo::P3::new(last.x, last.y, 0.0),
+                                stock,
+                            );
+                            let pb = setup.transform_point(
+                                rs_cam_core::geo::P3::new(first.x, first.y, 0.0),
+                                stock,
+                            );
+                            (pa.x, pa.y, pb.x, pb.y)
+                        } else {
+                            (last.x, last.y, first.x, first.y)
+                        };
+                        verts.push(LineVertex {
+                            position: [ax as f32, ay as f32, poly_z],
+                            color,
+                        });
+                        verts.push(LineVertex {
+                            position: [bx as f32, by as f32, poly_z],
+                            color,
+                        });
+                    }
+                };
+            for model in &self.controller.state().job.models {
+                if let Some(polys) = &model.polygons {
+                    let mut verts = Vec::new();
+                    for poly in polys.iter() {
+                        ring_to_lines(&poly.exterior, &mut verts);
+                        for hole in &poly.holes {
+                            ring_to_lines(hole, &mut verts);
+                        }
+                    }
+                    if !verts.is_empty() {
+                        let buffer = render_state.device.create_buffer_init(
+                            &egui_wgpu::wgpu::util::BufferInitDescriptor {
+                                label: Some("polygon_lines"),
+                                contents: bytemuck::cast_slice(&verts),
+                                usage: egui_wgpu::wgpu::BufferUsages::VERTEX,
+                            },
+                        );
+                        resources.polygon_data.push(PolygonGpuData {
+                            vertex_buffer: buffer,
+                            vertex_count: verts.len() as u32,
+                        });
+                    }
+                }
+            }
+        }
+
         // Upload stock wireframe + solid stock
         let stock_bbox = if use_local_frame {
             // SAFETY: use_local_frame is true iff active_setup_ref.is_some().

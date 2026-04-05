@@ -211,6 +211,7 @@ impl RsCamApp {
                     ui.checkbox(&mut viewport.show_cutting, "Paths");
                     ui.checkbox(&mut viewport.show_stock, "Stock");
                     ui.checkbox(&mut viewport.show_fixtures, "Fixtures");
+                    ui.checkbox(&mut viewport.show_polygons, "Curves");
                     ui.checkbox(&mut viewport.show_collisions, "Collisions");
                     ui.separator();
                     ui.label(
