@@ -531,8 +531,8 @@ impl ProjectSetupSection {
         Self {
             id: Some(setup.id),
             name: setup.name.clone(),
-            face_up: setup.face_up.to_key().to_string(),
-            z_rotation: setup.z_rotation.to_key().to_string(),
+            face_up: setup.face_up.to_key().to_owned(),
+            z_rotation: setup.z_rotation.to_key().to_owned(),
             xy_datum: setup.datum.xy_method.to_key(),
             z_datum: setup.datum.z_method.to_key(),
             datum_notes: setup.datum.notes.clone(),
@@ -562,10 +562,10 @@ impl ProjectFixtureSection {
             id: Some(fixture.id),
             name: fixture.name.clone(),
             kind: match fixture.kind {
-                FixtureKind::Clamp => "clamp".to_string(),
-                FixtureKind::Vise => "vise".to_string(),
-                FixtureKind::VacuumPod => "vacuum_pod".to_string(),
-                FixtureKind::Custom => "custom".to_string(),
+                FixtureKind::Clamp => "clamp".to_owned(),
+                FixtureKind::Vise => "vise".to_owned(),
+                FixtureKind::VacuumPod => "vacuum_pod".to_owned(),
+                FixtureKind::Custom => "custom".to_owned(),
             },
             enabled: fixture.enabled,
             origin_x: fixture.origin_x,
@@ -881,7 +881,7 @@ fn load_legacy_model(
             name,
             kind,
             units,
-            "Referenced model file not found".to_string(),
+            "Referenced model file not found".to_owned(),
         );
     }
 
@@ -927,7 +927,7 @@ fn load_model_section(
             name,
             kind,
             units,
-            "Model path missing from project file".to_string(),
+            "Model path missing from project file".to_owned(),
         );
     }
 
@@ -943,7 +943,7 @@ fn load_model_section(
             name,
             kind,
             units,
-            "Referenced model file not found".to_string(),
+            "Referenced model file not found".to_owned(),
         );
     }
 
@@ -1191,10 +1191,10 @@ fn default_model_name(path: &Path, kind: ModelKind) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().to_string())
         .unwrap_or_else(|| match kind {
-            ModelKind::Stl => "model.stl".to_string(),
-            ModelKind::Svg => "model.svg".to_string(),
-            ModelKind::Dxf => "model.dxf".to_string(),
-            ModelKind::Step => "model.step".to_string(),
+            ModelKind::Stl => "model.stl".to_owned(),
+            ModelKind::Svg => "model.svg".to_owned(),
+            ModelKind::Dxf => "model.dxf".to_owned(),
+            ModelKind::Step => "model.step".to_owned(),
         })
 }
 
@@ -1202,7 +1202,7 @@ fn default_toolpath_name(saved_name: &str, operation: &OperationConfig, id: Tool
     if saved_name.is_empty() {
         format!("{} {}", operation.label(), id.0 + 1)
     } else {
-        saved_name.to_string()
+        saved_name.to_owned()
     }
 }
 
@@ -1250,15 +1250,15 @@ fn default_project_format_version() -> u32 {
 }
 
 fn default_setup_name() -> String {
-    "Setup 1".to_string()
+    "Setup 1".to_owned()
 }
 
 fn default_setup_face_up() -> String {
-    "top".to_string()
+    "top".to_owned()
 }
 
 fn default_setup_z_rotation() -> String {
-    "0".to_string()
+    "0".to_owned()
 }
 
 fn default_pin_diameter() -> f64 {
@@ -1266,11 +1266,11 @@ fn default_pin_diameter() -> f64 {
 }
 
 fn default_fixture_name() -> String {
-    "Fixture".to_string()
+    "Fixture".to_owned()
 }
 
 fn default_fixture_kind() -> String {
-    "clamp".to_string()
+    "clamp".to_owned()
 }
 
 fn default_fixture_size_x() -> f64 {
@@ -1290,7 +1290,7 @@ fn default_fixture_clearance() -> f64 {
 }
 
 fn default_keep_out_name() -> String {
-    "Keep-Out".to_string()
+    "Keep-Out".to_owned()
 }
 
 fn default_keep_out_size() -> f64 {
@@ -1298,11 +1298,11 @@ fn default_keep_out_size() -> f64 {
 }
 
 fn default_job_name() -> String {
-    "Untitled".to_string()
+    "Untitled".to_owned()
 }
 
 fn default_tool_name() -> String {
-    "Tool".to_string()
+    "Tool".to_owned()
 }
 
 fn default_tool_type() -> ToolType {
@@ -1411,9 +1411,9 @@ mod tests {
 
     fn sample_tool() -> ToolConfig {
         let mut tool = ToolConfig::new_default(ToolId(7), ToolType::BallNose);
-        tool.name = "Finisher".to_string();
-        tool.vendor = "Vendor".to_string();
-        tool.product_id = "SKU-42".to_string();
+        tool.name = "Finisher".to_owned();
+        tool.vendor = "Vendor".to_owned();
+        tool.product_id = "SKU-42".to_owned();
         tool
     }
 
@@ -1431,14 +1431,14 @@ mod tests {
         .unwrap();
 
         let mut job = JobState::new();
-        job.name = "Round Trip 2D".to_string();
+        job.name = "Round Trip 2D".to_owned();
         job.file_path = Some(project_path.clone());
         job.tools.push(sample_tool());
         job.models.push(model);
 
         let mut toolpath = ToolpathEntry::for_operation(
             ToolpathId(5),
-            "Pocket A".to_string(),
+            "Pocket A".to_owned(),
             job.tools[0].id,
             job.models[0].id,
             OperationType::Pocket,
@@ -1453,8 +1453,8 @@ mod tests {
         toolpath.boundary_enabled = true;
         toolpath.boundary_containment = BoundaryContainment::Inside;
         toolpath.coolant = CoolantMode::Mist;
-        toolpath.pre_gcode = "M7".to_string();
-        toolpath.post_gcode = "M9".to_string();
+        toolpath.pre_gcode = "M7".to_owned();
+        toolpath.post_gcode = "M9".to_owned();
         toolpath.auto_regen = false;
         toolpath.feeds_auto.feed_rate = false;
         toolpath.debug_options.enabled = true;
@@ -1504,13 +1504,13 @@ mod tests {
         .unwrap();
 
         let mut job = JobState::new();
-        job.name = "Round Trip 3D".to_string();
+        job.name = "Round Trip 3D".to_owned();
         job.tools.push(sample_tool());
         job.models.push(model);
 
         let init = ToolpathEntryInit::from_loaded_state(
             ToolpathId(12),
-            "Roughing".to_string(),
+            "Roughing".to_owned(),
             job.tools[0].id,
             job.models[0].id,
             OperationConfig::Adaptive3d(Adaptive3dConfig {
@@ -1556,7 +1556,7 @@ mod tests {
         .unwrap();
 
         let mut job = JobState::new();
-        job.name = "Multi Setup".to_string();
+        job.name = "Multi Setup".to_owned();
         job.file_path = Some(project_path.clone());
         job.tools.push(sample_tool());
         job.models.push(model);
@@ -1568,33 +1568,33 @@ mod tests {
 
         {
             let top_setup = &mut job.setups[0];
-            top_setup.name = "Top Side".to_string();
+            top_setup.name = "Top Side".to_owned();
             top_setup.datum.xy_method = XYDatum::AlignmentPins;
             top_setup.datum.z_method = ZDatum::MachineTable;
-            top_setup.datum.notes = "Probe pins first".to_string();
+            top_setup.datum.notes = "Probe pins first".to_owned();
             // Pins are stock-level now.
             job.stock
                 .alignment_pins
                 .push(AlignmentPin::new(10.0, 20.0, 6.0));
 
             let mut fixture = Fixture::new_default(fixture_id);
-            fixture.name = "Toe Clamp".to_string();
+            fixture.name = "Toe Clamp".to_owned();
             fixture.origin_x = 12.0;
             fixture.origin_y = 8.0;
             top_setup.fixtures.push(fixture);
 
             let mut keep_out = KeepOutZone::new_default(keep_out_id);
-            keep_out.name = "Clamp Swing".to_string();
+            keep_out.name = "Clamp Swing".to_owned();
             keep_out.origin_x = 14.0;
             keep_out.origin_y = 18.0;
             top_setup.keep_out_zones.push(keep_out);
         }
 
-        let mut bottom_setup = Setup::new(second_setup_id, "Bottom Side".to_string());
+        let mut bottom_setup = Setup::new(second_setup_id, "Bottom Side".to_owned());
         bottom_setup.face_up = FaceUp::Bottom;
         bottom_setup.z_rotation = ZRotation::Deg90;
         bottom_setup.datum.xy_method = XYDatum::AlignmentPins;
-        bottom_setup.datum.notes = "Locate from dowel pins".to_string();
+        bottom_setup.datum.notes = "Locate from dowel pins".to_owned();
         job.stock
             .alignment_pins
             .push(AlignmentPin::new(15.0, 25.0, 6.0));
@@ -1604,7 +1604,7 @@ mod tests {
             default_setup_id,
             ToolpathEntry::for_operation(
                 ToolpathId(5),
-                "Top Pocket".to_string(),
+                "Top Pocket".to_owned(),
                 job.tools[0].id,
                 job.models[0].id,
                 OperationType::Pocket,
@@ -1614,7 +1614,7 @@ mod tests {
             second_setup_id,
             ToolpathEntry::for_operation(
                 ToolpathId(6),
-                "Bottom Profile".to_string(),
+                "Bottom Profile".to_owned(),
                 job.tools[0].id,
                 job.models[0].id,
                 OperationType::Profile,
@@ -1724,7 +1724,7 @@ input = "{}"
         );
         job.push_toolpath(ToolpathEntry::for_operation(
             ToolpathId(1),
-            "Pocket".to_string(),
+            "Pocket".to_owned(),
             job.tools[0].id,
             job.models[0].id,
             OperationType::Pocket,

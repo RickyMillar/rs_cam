@@ -79,15 +79,15 @@ fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_
         total_moves: 12,
         boundaries: vec![crate::state::simulation::ToolpathBoundary {
             id: ToolpathId(1),
-            name: "Adaptive 3D".to_string(),
-            tool_name: "Tool".to_string(),
+            name: "Adaptive 3D".to_owned(),
+            tool_name: "Tool".to_owned(),
             start_move: 4,
             end_move: 12,
             direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
         }],
         setup_boundaries: vec![crate::state::simulation::SetupBoundary {
             setup_id: crate::state::job::SetupId(1),
-            setup_name: "Setup 1".to_string(),
+            setup_name: "Setup 1".to_owned(),
             start_move: 0,
         }],
         checkpoints: Vec::new(),
@@ -165,8 +165,8 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
             deviations: None,
             boundaries: vec![crate::compute::worker::SimBoundary {
                 id: ToolpathId(1),
-                name: "Adaptive 3D".to_string(),
-                tool_name: "Tool".to_string(),
+                name: "Adaptive 3D".to_owned(),
+                tool_name: "Tool".to_owned(),
                 start_move: 2,
                 end_move: 8,
                 direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
@@ -208,7 +208,7 @@ fn sample_controller() -> AppController<ScriptedBackend> {
     controller.state.job.models.push(LoadedModel {
         id: ModelId(1),
         path: std::path::PathBuf::from("flat.stl"),
-        name: "Flat".to_string(),
+        name: "Flat".to_owned(),
         kind: ModelKind::Stl,
         mesh: Some(Arc::new(mesh)),
         polygons: None,
@@ -221,7 +221,7 @@ fn sample_controller() -> AppController<ScriptedBackend> {
     let mut entry = ToolpathEntry::from_init(
         crate::state::toolpath::ToolpathEntryInit::from_loaded_state(
             ToolpathId(1),
-            "Adaptive 3D".to_string(),
+            "Adaptive 3D".to_owned(),
             ToolId(1),
             ModelId(1),
             OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
@@ -297,15 +297,15 @@ fn ui_harness_records_lane_status_overlay_and_stock_to_leave() {
         lane: ComputeLane::Toolpath,
         state: LaneState::Running,
         queue_depth: 1,
-        current_job: Some("Adaptive 3D".to_string()),
-        current_phase: Some("Pass 12".to_string()),
+        current_job: Some("Adaptive 3D".to_owned()),
+        current_phase: Some("Pass 12".to_owned()),
         started_at: Some(std::time::Instant::now()),
     };
     controller.compute.analysis_lane = LaneSnapshot {
         lane: ComputeLane::Analysis,
         state: LaneState::Queued,
         queue_depth: 1,
-        current_job: Some("Simulation".to_string()),
+        current_job: Some("Simulation".to_owned()),
         current_phase: None,
         started_at: None,
     };
@@ -358,7 +358,7 @@ fn fixture_projects_load_2d_and_3d_models() {
 #[test]
 fn controller_save_open_and_export_smoke() {
     let mut controller = sample_controller();
-    controller.state.job.name = "Smoke".to_string();
+    controller.state.job.name = "Smoke".to_owned();
     controller
         .state
         .job
@@ -410,13 +410,13 @@ fn simulation_results_capture_setup_boundaries() {
         .state
         .job
         .setups
-        .push(Setup::new(second_setup_id, "Bottom Side".to_string()));
+        .push(Setup::new(second_setup_id, "Bottom Side".to_owned()));
     controller.state.job.push_toolpath_to_setup(
         second_setup_id,
         ToolpathEntry::from_init(
             crate::state::toolpath::ToolpathEntryInit::from_loaded_state(
                 ToolpathId(2),
-                "Profile".to_string(),
+                "Profile".to_owned(),
                 ToolId(1),
                 ModelId(1),
                 OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
@@ -439,16 +439,16 @@ fn simulation_results_capture_setup_boundaries() {
                 boundaries: vec![
                     crate::compute::worker::SimBoundary {
                         id: ToolpathId(1),
-                        name: "Adaptive 3D".to_string(),
-                        tool_name: "End Mill".to_string(),
+                        name: "Adaptive 3D".to_owned(),
+                        tool_name: "End Mill".to_owned(),
                         start_move: 0,
                         end_move: 10,
                         direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
                     },
                     crate::compute::worker::SimBoundary {
                         id: ToolpathId(2),
-                        name: "Profile".to_string(),
-                        tool_name: "End Mill".to_string(),
+                        name: "Profile".to_owned(),
+                        tool_name: "End Mill".to_owned(),
                         start_move: 10,
                         end_move: 20,
                         direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
@@ -612,7 +612,7 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
         boundaries.push(crate::compute::worker::SimBoundary {
             id: ToolpathId(1),
             name: format!("Op {}", i + 1),
-            tool_name: "EndMill".to_string(),
+            tool_name: "EndMill".to_owned(),
             start_move: i * 10,
             end_move: (i + 1) * 10,
             direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
@@ -926,9 +926,8 @@ fn add_toolpath_and_remove_toolpath_lifecycle() {
     );
 
     // Find the newly added toolpath ID (it should be the selected one)
-    let new_tp_id = match controller.state.selection {
-        Selection::Toolpath(id) => id,
-        _ => panic!("Selection should be the new toolpath"),
+    let Selection::Toolpath(new_tp_id) = controller.state.selection else {
+        panic!("Selection should be the new toolpath");
     };
 
     // Remove it
@@ -1029,7 +1028,7 @@ fn rename_setup_updates_name() {
 
     controller.handle_internal_event(crate::ui::AppEvent::RenameSetup(
         setup_id,
-        "My Custom Setup".to_string(),
+        "My Custom Setup".to_owned(),
     ));
 
     assert_eq!(
@@ -1118,9 +1117,8 @@ fn delete_unselected_toolpath_preserves_selection() {
     controller.handle_internal_event(crate::ui::AppEvent::AddToolpath(
         crate::state::toolpath::OperationType::Pocket,
     ));
-    let new_tp_id = match controller.state.selection {
-        Selection::Toolpath(id) => id,
-        _ => panic!("Selection should be new toolpath"),
+    let Selection::Toolpath(new_tp_id) = controller.state.selection else {
+        panic!("Selection should be new toolpath");
     };
 
     // Select back to the original toolpath

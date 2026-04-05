@@ -3,7 +3,10 @@
 //! Filters observations by must-match criteria, scores remaining candidates,
 //! and returns the best match with chipload midpoint.
 
-use super::vendor_lut::*;
+use super::vendor_lut::{
+    HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily, VendorLut,
+    VendorObservation,
+};
 
 /// Query parameters for LUT lookup.
 pub struct LookupQuery {
@@ -187,7 +190,12 @@ fn chipload_midpoint(obs: &VendorObservation) -> f64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::str_to_string
+)]
 mod tests {
     use super::*;
 

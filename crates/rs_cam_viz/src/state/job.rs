@@ -260,11 +260,11 @@ pub struct ToolConfig {
 impl ToolConfig {
     pub fn new_default(id: ToolId, tool_type: ToolType) -> Self {
         let (name, diameter) = match tool_type {
-            ToolType::EndMill => ("End Mill".to_string(), 6.35),
-            ToolType::BallNose => ("Ball Nose".to_string(), 6.35),
-            ToolType::BullNose => ("Bull Nose".to_string(), 12.7),
-            ToolType::VBit => ("V-Bit".to_string(), 12.7),
-            ToolType::TaperedBallNose => ("Tapered Ball Nose".to_string(), 3.175),
+            ToolType::EndMill => ("End Mill".to_owned(), 6.35),
+            ToolType::BallNose => ("Ball Nose".to_owned(), 6.35),
+            ToolType::BullNose => ("Bull Nose".to_owned(), 12.7),
+            ToolType::VBit => ("V-Bit".to_owned(), 12.7),
+            ToolType::TaperedBallNose => ("Tapered Ball Nose".to_owned(), 3.175),
         };
         Self {
             id,
@@ -1134,7 +1134,7 @@ pub struct JobState {
 impl JobState {
     pub fn new() -> Self {
         Self {
-            name: "Untitled".to_string(),
+            name: "Untitled".to_owned(),
             file_path: None,
             dirty: false,
             models: Vec::new(),
@@ -1479,7 +1479,7 @@ mod tests {
                     let setup = Setup {
                         face_up: face,
                         z_rotation: rot,
-                        ..Setup::new(SetupId(0), "Test".to_string())
+                        ..Setup::new(SetupId(0), "Test".to_owned())
                     };
 
                     let transformed = setup.transform_point(point, &stock);
@@ -1529,7 +1529,7 @@ mod tests {
                 let setup = Setup {
                     face_up: face,
                     z_rotation: rot,
-                    ..Setup::new(SetupId(0), "Test".to_string())
+                    ..Setup::new(SetupId(0), "Test".to_owned())
                 };
 
                 for &point in &test_points {
@@ -1558,7 +1558,7 @@ mod tests {
         let setup = Setup {
             face_up: FaceUp::Bottom,
             z_rotation: ZRotation::Deg0,
-            ..Setup::new(SetupId(0), "Test".to_string())
+            ..Setup::new(SetupId(0), "Test".to_owned())
         };
 
         // A point at the top of the stock (z = stock.z) should map to z = 0
@@ -1586,7 +1586,7 @@ mod tests {
     #[test]
     fn identity_setup_is_passthrough() {
         let stock = stock_at_origin();
-        let setup = Setup::new(SetupId(0), "Test".to_string());
+        let setup = Setup::new(SetupId(0), "Test".to_owned());
 
         let point = P3::new(30.0, 20.0, 10.0);
         let transformed = setup.transform_point(point, &stock);
@@ -1608,7 +1608,7 @@ mod tests {
         let setup = Setup {
             face_up: FaceUp::Top,
             z_rotation: ZRotation::Deg90,
-            ..Setup::new(SetupId(0), "Test".to_string())
+            ..Setup::new(SetupId(0), "Test".to_owned())
         };
 
         // The origin (0,0,z) should map to (D, 0, z) under 90 deg rotation
@@ -1641,7 +1641,7 @@ mod tests {
         let setup = Setup {
             face_up: FaceUp::Front,
             z_rotation: ZRotation::Deg0,
-            ..Setup::new(SetupId(0), "Test".to_string())
+            ..Setup::new(SetupId(0), "Test".to_owned())
         };
 
         // Front: new = (x, H-z, y) where H = stock.z
@@ -1675,7 +1675,7 @@ mod tests {
                 let setup = Setup {
                     face_up: face,
                     z_rotation: rot,
-                    ..Setup::new(SetupId(0), "Test".to_string())
+                    ..Setup::new(SetupId(0), "Test".to_owned())
                 };
 
                 // A point in the interior of the stock

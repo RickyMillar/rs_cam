@@ -52,7 +52,7 @@ pub fn export_gcode(job: &JobState) -> Result<String, crate::error::VizError> {
 
     if phases.is_empty() {
         return Err(crate::error::VizError::Export(
-            "No computed toolpaths to export".to_string(),
+            "No computed toolpaths to export".to_owned(),
         ));
     }
 
@@ -97,7 +97,7 @@ pub fn export_combined_gcode(job: &JobState) -> Result<String, crate::error::Viz
 
     if setup_phases.is_empty() {
         return Err(crate::error::VizError::Export(
-            "No computed toolpaths to export".to_string(),
+            "No computed toolpaths to export".to_owned(),
         ));
     }
 
@@ -191,7 +191,7 @@ mod tests {
 
         let mut tp1 = ToolpathEntry::for_operation(
             ToolpathId(0),
-            "Pocket".to_string(),
+            "Pocket".to_owned(),
             ToolId(0),
             ModelId(0),
             OperationType::Pocket,
@@ -201,7 +201,7 @@ mod tests {
 
         let mut tp2 = ToolpathEntry::for_operation(
             ToolpathId(1),
-            "Profile".to_string(),
+            "Profile".to_owned(),
             ToolId(1),
             ModelId(0),
             OperationType::Profile,

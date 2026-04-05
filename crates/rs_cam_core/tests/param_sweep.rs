@@ -15,6 +15,7 @@
     clippy::print_stdout,
     clippy::print_stderr,
     clippy::too_many_arguments,
+    clippy::str_to_string,
     unused_variables
 )]
 

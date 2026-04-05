@@ -335,7 +335,7 @@ impl<B: ComputeBackend> AppController<B> {
                 };
                 let entry = ToolpathEntry::from_init(ToolpathEntryInit::new(
                     id,
-                    "Pin Drill".to_string(),
+                    "Pin Drill".to_owned(),
                     tool_id,
                     model_id,
                     OperationConfig::AlignmentPinDrill(cfg),

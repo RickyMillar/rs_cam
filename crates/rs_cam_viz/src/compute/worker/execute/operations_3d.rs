@@ -1,4 +1,21 @@
-use super::*;
+use super::{
+    Adaptive3dConfig, Adaptive3dEntryStyle, Adaptive3dParams, AtomicBool, ComputeError,
+    ComputeRequest, DropCutterConfig, EntryStyle3d, HorizontalFinishConfig, HorizontalFinishParams,
+    OperationExecutionContext, Ordering, P3, PencilConfig, PencilParams, ProjectCurveConfig,
+    ProjectCurveParams, ProjectCurveSlice, RadialFinishConfig, RadialFinishParams,
+    RampFinishConfig, RampFinishParams, ScallopConfig, ScallopParams, SemanticToolpathOp,
+    SpatialIndex, SpiralFinishConfig, SpiralFinishParams, SteepShallowConfig, SteepShallowParams,
+    ToolDefinition, ToolType, Toolpath, ToolpathPhaseTracker, ToolpathSemanticKind, TriangleMesh,
+    WaterlineConfig, WaterlineParams, annotate_adaptive3d_runtime_semantics,
+    annotate_horizontal_finish_semantics, annotate_operation_scope,
+    annotate_pencil_runtime_semantics, annotate_project_curve_semantics,
+    annotate_radial_finish_semantics, annotate_ramp_finish_runtime_semantics,
+    annotate_scallop_runtime_semantics, annotate_spiral_finish_runtime_semantics, append_toolpath,
+    batch_drop_cutter_with_cancel, bind_scope_to_run, build_cutter, cutting_runs, effective_safe_z,
+    horizontal_finish_toolpath, project_curve_toolpath, radial_finish_toolpath,
+    raster_toolpath_from_grid, require_mesh, require_polygons, steep_shallow_toolpath,
+    waterline_toolpath_with_cancel,
+};
 use crate::compute::OperationError;
 
 /// Compute per-cell slope angle (degrees from horizontal) from a drop-cutter grid.

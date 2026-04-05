@@ -89,20 +89,17 @@ pub fn load_step(path: &Path, tolerance: f64) -> Result<EnrichedMesh, StepImport
                 faces: vec![cshell.faces[face_idx].clone()],
             };
 
-            let face_poly = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let Ok(face_poly) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 single_face_shell
                     .robust_triangulation(tolerance)
                     .to_polygon()
-            })) {
-                Ok(p) => p,
-                Err(_) => {
-                    warn!(
-                        shell = shell_idx,
-                        face = face_idx,
-                        "Face tessellation panicked, skipping"
-                    );
-                    continue;
-                }
+            })) else {
+                warn!(
+                    shell = shell_idx,
+                    face = face_idx,
+                    "Face tessellation panicked, skipping"
+                );
+                continue;
             };
 
             let positions = face_poly.positions();
@@ -283,9 +280,8 @@ fn extract_boundary_loops(vertices: &[P3], triangles: &[[u32; 3]]) -> Vec<Vec<P3
             })
             .map(|&(a, b)| if a < b { (a, b) } else { (b, a) });
 
-        let key = match key {
-            Some(k) => k,
-            None => continue,
+        let Some(key) = key else {
+            continue;
         };
 
         if visited_edges.contains(&key) {

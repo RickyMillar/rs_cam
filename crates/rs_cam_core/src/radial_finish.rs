@@ -139,15 +139,13 @@ fn compute_max_radius(bbox: &BoundingBox3, cx: f64, cy: f64) -> f64 {
 fn trim_uncontacted(points: &[P3], fallback_z: f64) -> Vec<P3> {
     let is_contacted = |p: &P3| (p.z - fallback_z).abs() > 0.001;
 
-    let start = match points.iter().position(&is_contacted) {
-        Some(i) => i,
-        None => return Vec::new(),
+    let Some(start) = points.iter().position(&is_contacted) else {
+        return Vec::new();
     };
 
     // Safe: we know at least one point is contacted, so rposition will find it.
-    let end = match points.iter().rposition(is_contacted) {
-        Some(i) => i,
-        None => return Vec::new(),
+    let Some(end) = points.iter().rposition(is_contacted) else {
+        return Vec::new();
     };
 
     // SAFETY: start and end are valid indices from position/rposition

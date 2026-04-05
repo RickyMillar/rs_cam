@@ -289,7 +289,7 @@ impl RsCamApp {
             pb.tool_position = Some([pos.x, pos.y, pos.z]);
             if let Some(tool) = &tool_info {
                 pb.tool_radius = tool.diameter / 2.0;
-                pb.tool_type_label = tool.tool_type.label().to_string();
+                pb.tool_type_label = tool.tool_type.label().to_owned();
             }
         }
 

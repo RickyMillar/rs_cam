@@ -1051,7 +1051,7 @@ impl SimulationState {
                 kind: SimulationIssueKind::RapidCollision,
                 toolpath_id,
                 move_index,
-                label: "Rapid collision".to_string(),
+                label: "Rapid collision".to_owned(),
                 semantic_item_id: None,
                 debug_span_id: None,
                 hotspot_index: None,
@@ -1606,7 +1606,7 @@ mod tests {
         let toolpath_id = ToolpathId(1);
         let mut entry = ToolpathEntry::for_operation(
             toolpath_id,
-            "Adaptive".to_string(),
+            "Adaptive".to_owned(),
             ToolId(1),
             ModelId(1),
             OperationType::Adaptive,
@@ -1721,15 +1721,15 @@ mod tests {
             total_moves: 9,
             boundaries: vec![ToolpathBoundary {
                 id: ToolpathId(1),
-                name: "Adaptive".to_string(),
-                tool_name: "6mm End Mill".to_string(),
+                name: "Adaptive".to_owned(),
+                tool_name: "6mm End Mill".to_owned(),
                 start_move: 0,
                 end_move: 8,
                 direction: StockCutDirection::FromTop,
             }],
             setup_boundaries: vec![SetupBoundary {
                 setup_id: SetupId(1),
-                setup_name: "Setup 1".to_string(),
+                setup_name: "Setup 1".to_owned(),
                 start_move: 0,
             }],
             checkpoints: Vec::new(),

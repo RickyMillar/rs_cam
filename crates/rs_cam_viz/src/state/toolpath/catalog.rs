@@ -2,7 +2,13 @@ use serde::{Deserialize, Serialize};
 
 use rs_cam_core::feeds::{OperationFamily as FeedsOperationFamily, PassRole};
 
-use super::configs::*;
+use super::configs::{
+    Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig, DrillConfig,
+    DropCutterConfig, FaceConfig, HorizontalFinishConfig, InlayConfig, PencilConfig, PocketConfig,
+    ProfileConfig, ProjectCurveConfig, RadialFinishConfig, RampFinishConfig, RestConfig,
+    ScallopConfig, SpiralFinishConfig, SteepShallowConfig, TraceConfig, VCarveConfig,
+    WaterlineConfig, ZigzagConfig,
+};
 use super::support::StockSource;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

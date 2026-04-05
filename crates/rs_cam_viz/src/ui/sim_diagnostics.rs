@@ -601,15 +601,15 @@ fn current_move_info(sim: &SimulationState, job: &JobState) -> Option<(String, O
                 if local_idx < result.toolpath.moves.len() {
                     let mv = &result.toolpath.moves[local_idx];
                     return Some(match mv.move_type {
-                        rs_cam_core::toolpath::MoveType::Rapid => ("Rapid".to_string(), None),
+                        rs_cam_core::toolpath::MoveType::Rapid => ("Rapid".to_owned(), None),
                         rs_cam_core::toolpath::MoveType::Linear { feed_rate } => {
-                            ("Linear".to_string(), Some(feed_rate))
+                            ("Linear".to_owned(), Some(feed_rate))
                         }
                         rs_cam_core::toolpath::MoveType::ArcCW { feed_rate, .. } => {
-                            ("Arc CW".to_string(), Some(feed_rate))
+                            ("Arc CW".to_owned(), Some(feed_rate))
                         }
                         rs_cam_core::toolpath::MoveType::ArcCCW { feed_rate, .. } => {
-                            ("Arc CCW".to_string(), Some(feed_rate))
+                            ("Arc CCW".to_owned(), Some(feed_rate))
                         }
                     });
                 }

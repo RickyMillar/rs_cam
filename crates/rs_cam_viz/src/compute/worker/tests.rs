@@ -1,5 +1,6 @@
 use super::*;
 use crate::compute::{ComputeBackend, ComputeLane, ComputeMessage, LaneState};
+use crate::state::toolpath::{BoundaryContainment, HeightContext, HeightsConfig, OperationType};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{make_test_flat, make_test_hemisphere};
 use rs_cam_core::toolpath::Toolpath;
@@ -12,7 +13,7 @@ fn sample_request(operation: OperationConfig, stock_source: StockSource) -> Comp
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     ComputeRequest {
         toolpath_id: ToolpathId(1),
-        toolpath_name: "Sample".to_string(),
+        toolpath_name: "Sample".to_owned(),
         polygons: None,
         mesh: None,
         enriched_mesh: None,
@@ -57,9 +58,8 @@ fn feed_optimization_rejects_remaining_stock() {
         StockSource::FromRemainingStock,
     );
 
-    let error = match helpers::feed_optimization_stock(&request) {
-        Ok(_) => panic!("remaining-stock feed optimization should be rejected"),
-        Err(error) => error,
+    let Err(error) = helpers::feed_optimization_stock(&request) else {
+        panic!("remaining-stock feed optimization should be rejected");
     };
     assert_eq!(
         error,
@@ -74,9 +74,8 @@ fn feed_optimization_rejects_mesh_derived_operations() {
         StockSource::Fresh,
     );
 
-    let error = match helpers::feed_optimization_stock(&request) {
-        Ok(_) => panic!("mesh-derived feed optimization should be rejected"),
-        Err(error) => error,
+    let Err(error) = helpers::feed_optimization_stock(&request) else {
+        panic!("mesh-derived feed optimization should be rejected");
     };
     assert_eq!(
         error,
@@ -117,9 +116,10 @@ fn quick_pocket_request(id: usize) -> ComputeRequest {
 fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
     let mesh = make_test_flat(120.0);
-    let mut cfg = match OperationConfig::new_default(OperationType::DropCutter) {
-        OperationConfig::DropCutter(cfg) => cfg,
-        _ => unreachable!("default op kind mismatch"),
+    let OperationConfig::DropCutter(mut cfg) =
+        OperationConfig::new_default(OperationType::DropCutter)
+    else {
+        unreachable!("default op kind mismatch");
     };
     cfg.stepover = 0.25;
     cfg.min_z = -5.0;
@@ -152,9 +152,10 @@ fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
 fn waterline_request(id: usize) -> ComputeRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     let mesh = make_test_flat(60.0);
-    let mut cfg = match OperationConfig::new_default(OperationType::Waterline) {
-        OperationConfig::Waterline(cfg) => cfg,
-        _ => unreachable!("default op kind mismatch"),
+    let OperationConfig::Waterline(mut cfg) =
+        OperationConfig::new_default(OperationType::Waterline)
+    else {
+        unreachable!("default op kind mismatch");
     };
     cfg.z_step = 1.0;
     cfg.sampling = 1.0;
@@ -187,9 +188,10 @@ fn waterline_request(id: usize) -> ComputeRequest {
 fn adaptive3d_request(id: usize) -> ComputeRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     let mesh = make_test_flat(60.0);
-    let mut cfg = match OperationConfig::new_default(OperationType::Adaptive3d) {
-        OperationConfig::Adaptive3d(cfg) => cfg,
-        _ => unreachable!("default op kind mismatch"),
+    let OperationConfig::Adaptive3d(mut cfg) =
+        OperationConfig::new_default(OperationType::Adaptive3d)
+    else {
+        unreachable!("default op kind mismatch");
     };
     cfg.depth_per_pass = 2.0;
     cfg.stock_top_z = 6.0;
@@ -231,9 +233,9 @@ fn adaptive_request(id: usize) -> ComputeRequest {
 fn profile_request(id: usize) -> ComputeRequest {
     let mut request = quick_pocket_request(id);
     request.toolpath_name = format!("Profile {id}");
-    let mut cfg = match OperationConfig::new_default(OperationType::Profile) {
-        OperationConfig::Profile(cfg) => cfg,
-        _ => unreachable!("default op kind mismatch"),
+    let OperationConfig::Profile(mut cfg) = OperationConfig::new_default(OperationType::Profile)
+    else {
+        unreachable!("default op kind mismatch");
     };
     cfg.finishing_passes = 1;
     cfg.tab_count = 2;
@@ -243,9 +245,8 @@ fn profile_request(id: usize) -> ComputeRequest {
 
 fn drill_request(id: usize) -> ComputeRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
-    let mut cfg = match OperationConfig::new_default(OperationType::Drill) {
-        OperationConfig::Drill(cfg) => cfg,
-        _ => unreachable!("default op kind mismatch"),
+    let OperationConfig::Drill(mut cfg) = OperationConfig::new_default(OperationType::Drill) else {
+        unreachable!("default op kind mismatch");
     };
     cfg.cycle = crate::state::toolpath::DrillCycleType::Peck;
     ComputeRequest {
@@ -350,9 +351,9 @@ fn pencil_request(id: usize) -> ComputeRequest {
 
 fn scallop_request(id: usize) -> ComputeRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
-    let mut cfg = match OperationConfig::new_default(OperationType::Scallop) {
-        OperationConfig::Scallop(cfg) => cfg,
-        _ => unreachable!("default op kind mismatch"),
+    let OperationConfig::Scallop(mut cfg) = OperationConfig::new_default(OperationType::Scallop)
+    else {
+        unreachable!("default op kind mismatch");
     };
     cfg.continuous = true;
     cfg.scallop_height = 0.2;
@@ -385,9 +386,10 @@ fn scallop_request(id: usize) -> ComputeRequest {
 
 fn ramp_finish_request(id: usize) -> ComputeRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
-    let mut cfg = match OperationConfig::new_default(OperationType::RampFinish) {
-        OperationConfig::RampFinish(cfg) => cfg,
-        _ => unreachable!("default op kind mismatch"),
+    let OperationConfig::RampFinish(mut cfg) =
+        OperationConfig::new_default(OperationType::RampFinish)
+    else {
+        unreachable!("default op kind mismatch");
     };
     cfg.max_stepdown = 2.0;
     cfg.sampling = 2.0;
@@ -420,9 +422,10 @@ fn ramp_finish_request(id: usize) -> ComputeRequest {
 
 fn spiral_finish_request(id: usize) -> ComputeRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
-    let mut cfg = match OperationConfig::new_default(OperationType::SpiralFinish) {
-        OperationConfig::SpiralFinish(cfg) => cfg,
-        _ => unreachable!("default op kind mismatch"),
+    let OperationConfig::SpiralFinish(mut cfg) =
+        OperationConfig::new_default(OperationType::SpiralFinish)
+    else {
+        unreachable!("default op kind mismatch");
     };
     cfg.stepover = 2.0;
     ComputeRequest {
@@ -453,9 +456,10 @@ fn spiral_finish_request(id: usize) -> ComputeRequest {
 
 fn radial_finish_request(id: usize) -> ComputeRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
-    let mut cfg = match OperationConfig::new_default(OperationType::RadialFinish) {
-        OperationConfig::RadialFinish(cfg) => cfg,
-        _ => unreachable!("default op kind mismatch"),
+    let OperationConfig::RadialFinish(mut cfg) =
+        OperationConfig::new_default(OperationType::RadialFinish)
+    else {
+        unreachable!("default op kind mismatch");
     };
     cfg.angular_step = 30.0;
     cfg.point_spacing = 2.0;
@@ -487,9 +491,10 @@ fn radial_finish_request(id: usize) -> ComputeRequest {
 
 fn horizontal_finish_request(id: usize) -> ComputeRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
-    let mut cfg = match OperationConfig::new_default(OperationType::HorizontalFinish) {
-        OperationConfig::HorizontalFinish(cfg) => cfg,
-        _ => unreachable!("default op kind mismatch"),
+    let OperationConfig::HorizontalFinish(mut cfg) =
+        OperationConfig::new_default(OperationType::HorizontalFinish)
+    else {
+        unreachable!("default op kind mismatch");
     };
     cfg.stepover = 3.0;
     ComputeRequest {
@@ -520,9 +525,10 @@ fn horizontal_finish_request(id: usize) -> ComputeRequest {
 
 fn project_curve_request(id: usize) -> ComputeRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
-    let mut cfg = match OperationConfig::new_default(OperationType::ProjectCurve) {
-        OperationConfig::ProjectCurve(cfg) => cfg,
-        _ => unreachable!("default op kind mismatch"),
+    let OperationConfig::ProjectCurve(mut cfg) =
+        OperationConfig::new_default(OperationType::ProjectCurve)
+    else {
+        unreachable!("default op kind mismatch");
     };
     cfg.depth = 0.75;
     cfg.point_spacing = 1.0;
@@ -595,7 +601,7 @@ fn long_simulation_request() -> SimulationRequest {
         groups: vec![SetupSimGroup {
             toolpaths: vec![SetupSimToolpath {
                 id: ToolpathId(99),
-                name: "Long Sim".to_string(),
+                name: "Long Sim".to_owned(),
                 toolpath: Arc::new(toolpath),
                 tool,
                 semantic_trace: None,
@@ -627,7 +633,7 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
         groups: vec![SetupSimGroup {
             toolpaths: vec![SetupSimToolpath {
                 id: ToolpathId(1),
-                name: "Metrics".to_string(),
+                name: "Metrics".to_owned(),
                 toolpath: Arc::new(toolpath),
                 tool,
                 semantic_trace: None,
@@ -784,7 +790,7 @@ fn debug_trace_records_arc_fit_and_feed_optimization_phases() {
         StockSource::Fresh,
     );
     request.toolpath_id = ToolpathId(77);
-    request.toolpath_name = "Dressup phases".to_string();
+    request.toolpath_name = "Dressup phases".to_owned();
     request.polygons = Some(Arc::new(vec![Polygon2::rectangle(
         -20.0, -20.0, 20.0, 20.0,
     )]));
@@ -1630,7 +1636,7 @@ fn multi_setup_top_bottom_simulation() {
             SetupSimGroup {
                 toolpaths: vec![SetupSimToolpath {
                     id: ToolpathId(1),
-                    name: "Top Cut".to_string(),
+                    name: "Top Cut".to_owned(),
                     toolpath: Arc::new(top_tp),
                     tool: tool.clone(),
                     semantic_trace: None,
@@ -1640,7 +1646,7 @@ fn multi_setup_top_bottom_simulation() {
             SetupSimGroup {
                 toolpaths: vec![SetupSimToolpath {
                     id: ToolpathId(2),
-                    name: "Bottom Cut".to_string(),
+                    name: "Bottom Cut".to_owned(),
                     toolpath: Arc::new(bottom_tp),
                     tool,
                     semantic_trace: None,
@@ -1663,9 +1669,8 @@ fn multi_setup_top_bottom_simulation() {
     let result = wait_for(&mut backend, Duration::from_secs(10), |msg| {
         matches!(msg, ComputeMessage::Simulation(Ok(_)))
     });
-    let result = match result.unwrap() {
-        ComputeMessage::Simulation(Ok(r)) => r,
-        _ => panic!("expected simulation result"),
+    let ComputeMessage::Simulation(Ok(result)) = result.unwrap() else {
+        panic!("expected simulation result");
     };
 
     // Should have 2 boundaries (one per toolpath)
@@ -1756,7 +1761,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
             SetupSimGroup {
                 toolpaths: vec![SetupSimToolpath {
                     id: ToolpathId(1),
-                    name: "Top".to_string(),
+                    name: "Top".to_owned(),
                     toolpath: Arc::new(tp1),
                     tool: tool.clone(),
                     semantic_trace: None,
@@ -1766,7 +1771,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
             SetupSimGroup {
                 toolpaths: vec![SetupSimToolpath {
                     id: ToolpathId(2),
-                    name: "Bottom".to_string(),
+                    name: "Bottom".to_owned(),
                     toolpath: Arc::new(tp2),
                     tool,
                     semantic_trace: None,
@@ -1789,9 +1794,8 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
     let result = wait_for(&mut backend, Duration::from_secs(10), |msg| {
         matches!(msg, ComputeMessage::Simulation(Ok(_)))
     });
-    let result = match result.unwrap() {
-        ComputeMessage::Simulation(Ok(r)) => r,
-        _ => panic!("expected simulation result"),
+    let ComputeMessage::Simulation(Ok(result)) = result.unwrap() else {
+        panic!("expected simulation result");
     };
 
     // Checkpoint 0 is after top setup, checkpoint 1 is after bottom setup
@@ -1835,9 +1839,8 @@ fn simulation_metrics_capture_emits_cut_trace_and_artifact() {
         matches!(msg, ComputeMessage::Simulation(Ok(_)))
     })
     .expect("simulation result");
-    let result = match result {
-        ComputeMessage::Simulation(Ok(result)) => result,
-        _ => panic!("expected successful simulation"),
+    let ComputeMessage::Simulation(Ok(result)) = result else {
+        panic!("expected successful simulation");
     };
 
     let trace = result.cut_trace.as_ref().expect("cut trace");
@@ -1866,9 +1869,8 @@ fn simulation_metrics_capture_emits_semantic_cut_summaries() {
         matches!(msg, ComputeMessage::Simulation(Ok(_)))
     })
     .expect("simulation result");
-    let result = match result {
-        ComputeMessage::Simulation(Ok(result)) => result,
-        _ => panic!("expected successful simulation"),
+    let ComputeMessage::Simulation(Ok(result)) = result else {
+        panic!("expected successful simulation");
     };
 
     let trace = result.cut_trace.as_ref().expect("cut trace");

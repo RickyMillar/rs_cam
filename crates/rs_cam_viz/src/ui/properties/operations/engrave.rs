@@ -1,4 +1,4 @@
-use crate::state::toolpath::*;
+use crate::state::toolpath::{ChamferConfig, TraceCompensation, TraceConfig};
 
 use super::super::dv;
 use super::draw_feed_params;

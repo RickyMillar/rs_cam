@@ -63,7 +63,7 @@ pub fn draw(
                 .map(|lane| {
                     lane.current_job
                         .clone()
-                        .unwrap_or_else(|| "Working".to_string())
+                        .unwrap_or_else(|| "Working".to_owned())
                 })
                 .collect::<Vec<_>>()
                 .join(" | ");

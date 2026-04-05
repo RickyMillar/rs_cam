@@ -560,9 +560,9 @@ fn sanitize_filename_component(input: &str) -> String {
     }
     let output = output.trim_matches('_');
     if output.is_empty() {
-        "toolpath_debug".to_string()
+        "toolpath_debug".to_owned()
     } else {
-        output.to_string()
+        output.to_owned()
     }
 }
 

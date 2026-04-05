@@ -28,12 +28,12 @@ use rs_cam_core::tool::{
 fn parse_tool_spec(spec: &str) -> Result<Box<dyn MillingCutter>, String> {
     let parts: Vec<&str> = spec.split(':').collect();
     if parts.len() < 2 {
-        return Err("Tool spec must be type:diameter[:params] (e.g., ball:6.35)".to_string());
+        return Err("Tool spec must be type:diameter[:params] (e.g., ball:6.35)".to_owned());
     }
 
     let diameter: f64 = parts[1]
         .parse()
-        .map_err(|_| "Invalid tool diameter".to_string())?;
+        .map_err(|_| "Invalid tool diameter".to_owned())?;
     let cutting_length = diameter * 4.0;
 
     match parts[0] {
@@ -44,7 +44,7 @@ fn parse_tool_spec(spec: &str) -> Result<Box<dyn MillingCutter>, String> {
                 .get(2)
                 .ok_or("Bull nose needs corner radius: bullnose:10:2")?
                 .parse()
-                .map_err(|_| "Invalid corner radius".to_string())?;
+                .map_err(|_| "Invalid corner radius".to_owned())?;
             Ok(Box::new(BullNoseEndmill::new(
                 diameter,
                 corner_radius,
@@ -56,7 +56,7 @@ fn parse_tool_spec(spec: &str) -> Result<Box<dyn MillingCutter>, String> {
                 .get(2)
                 .ok_or("V-bit needs included angle: vbit:10:90")?
                 .parse()
-                .map_err(|_| "Invalid included angle".to_string())?;
+                .map_err(|_| "Invalid included angle".to_owned())?;
             Ok(Box::new(VBitEndmill::new(diameter, angle, cutting_length)))
         }
         "tapered_ball" => {
@@ -64,12 +64,12 @@ fn parse_tool_spec(spec: &str) -> Result<Box<dyn MillingCutter>, String> {
                 .get(2)
                 .ok_or("Tapered ball needs taper angle: tapered_ball:6:10:12")?
                 .parse()
-                .map_err(|_| "Invalid taper half-angle".to_string())?;
+                .map_err(|_| "Invalid taper half-angle".to_owned())?;
             let shaft_diameter: f64 = parts
                 .get(3)
                 .ok_or("Tapered ball needs shaft diameter: tapered_ball:6:10:12")?
                 .parse()
-                .map_err(|_| "Invalid shaft diameter".to_string())?;
+                .map_err(|_| "Invalid shaft diameter".to_owned())?;
             Ok(Box::new(TaperedBallEndmill::new(
                 diameter,
                 taper_angle,

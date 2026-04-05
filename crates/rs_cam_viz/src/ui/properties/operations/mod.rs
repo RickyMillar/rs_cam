@@ -23,7 +23,10 @@ pub(super) use surface_3d::{
 };
 
 use crate::state::job::{JobState, ToolType};
-use crate::state::toolpath::*;
+use crate::state::toolpath::{
+    HeightContext, HeightMode, HeightReference, HeightsConfig, OperationConfig, PocketPattern,
+    ReferenceOffset, ToolpathEntry, ToolpathId,
+};
 
 use super::dv;
 
@@ -1170,14 +1173,17 @@ pub(super) fn draw_inlay_diagram(
         egui::Color32::from_rgba_premultiplied(50, 200, 180, 40),
         egui::Stroke::NONE,
     ));
+    // SAFETY: plug_pts always has exactly 4 elements, constructed on the lines above.
+    #[allow(clippy::indexing_slicing)]
+    let plug_outline = vec![
+        plug_pts[0],
+        plug_pts[1],
+        plug_pts[2],
+        plug_pts[3],
+        plug_pts[0],
+    ];
     painter.add(egui::Shape::line(
-        vec![
-            plug_pts[0],
-            plug_pts[1],
-            plug_pts[2],
-            plug_pts[3],
-            plug_pts[0],
-        ],
+        plug_outline,
         egui::Stroke::new(1.5, male_color),
     ));
 
@@ -1450,10 +1456,8 @@ pub(super) fn draw_height_diagram(
         let line_y = z_to_y(line.z);
         if let Some(py) = pointer_y {
             let dist = (py - line_y).abs();
-            if dist < hit_threshold {
-                if nearest_line.map_or(true, |(_, d)| dist < d) {
-                    nearest_line = Some((line.index, dist));
-                }
+            if dist < hit_threshold && nearest_line.is_none_or(|(_, d)| dist < d) {
+                nearest_line = Some((line.index, dist));
             }
         }
     }
@@ -1463,7 +1467,7 @@ pub(super) fn draw_height_diagram(
 
     for line in &lines {
         let y = z_to_y(line.z);
-        let is_hovered = nearest_line.map_or(false, |(idx, _)| idx == line.index);
+        let is_hovered = nearest_line.is_some_and(|(idx, _)| idx == line.index);
 
         // Line
         let stroke_width = if is_hovered { 2.5 } else { 1.5 };
@@ -1490,38 +1494,38 @@ pub(super) fn draw_height_diagram(
     let drag_id = ui.id().with("height_drag_idx");
     let dragging_idx: Option<usize> = ui.memory(|mem| mem.data.get_temp(drag_id));
 
-    if response.drag_started() {
-        if let Some((idx, _)) = nearest_line {
-            ui.memory_mut(|mem| mem.data.insert_temp(drag_id, idx));
-        }
+    if response.drag_started()
+        && let Some((idx, _)) = nearest_line
+    {
+        ui.memory_mut(|mem| mem.data.insert_temp(drag_id, idx));
     }
 
-    if response.dragged() {
-        if let Some(idx) = ui.memory(|mem| mem.data.get_temp::<usize>(drag_id)) {
-            let dy = response.drag_delta().y;
-            // Convert screen delta to Z delta (screen Y is inverted relative to Z)
-            let z_per_pixel = (z_max - z_min) / rect.height() as f64;
-            let dz = -(dy as f64) * z_per_pixel;
+    if response.dragged()
+        && let Some(idx) = ui.memory(|mem| mem.data.get_temp::<usize>(drag_id))
+    {
+        let dy = response.drag_delta().y;
+        // Convert screen delta to Z delta (screen Y is inverted relative to Z)
+        let z_per_pixel = (z_max - z_min) / rect.height() as f64;
+        let dz = -(dy as f64) * z_per_pixel;
 
-            let field = match idx {
-                0 => &mut heights.clearance_z,
-                1 => &mut heights.retract_z,
-                2 => &mut heights.feed_z,
-                3 => &mut heights.top_z,
-                // SAFETY: idx is always 0..5 from DiagramLine definitions above
-                _ => &mut heights.bottom_z,
-            };
+        let field = match idx {
+            0 => &mut heights.clearance_z,
+            1 => &mut heights.retract_z,
+            2 => &mut heights.feed_z,
+            3 => &mut heights.top_z,
+            // SAFETY: idx is always 0..5 from DiagramLine definitions above
+            _ => &mut heights.bottom_z,
+        };
 
-            // Get current resolved value and apply delta
-            let current_z = match idx {
-                0 => resolved.clearance_z,
-                1 => resolved.retract_z,
-                2 => resolved.feed_z,
-                3 => resolved.top_z,
-                _ => resolved.bottom_z,
-            };
-            *field = HeightMode::Manual(current_z + dz);
-        }
+        // Get current resolved value and apply delta
+        let current_z = match idx {
+            0 => resolved.clearance_z,
+            1 => resolved.retract_z,
+            2 => resolved.feed_z,
+            3 => resolved.top_z,
+            _ => resolved.bottom_z,
+        };
+        *field = HeightMode::Manual(current_z + dz);
     }
 
     if response.drag_stopped() {
@@ -1766,12 +1770,13 @@ mod tests {
     use crate::state::job::{
         JobState, LoadedModel, ModelId, ModelKind, ModelUnits, ToolConfig, ToolId,
     };
+    use crate::state::toolpath::OperationType;
 
     fn polygon_model(id: ModelId) -> LoadedModel {
         LoadedModel {
             id,
             path: PathBuf::from("demo.svg"),
-            name: "2D".to_string(),
+            name: "2D".to_owned(),
             kind: ModelKind::Svg,
             mesh: None,
             polygons: Some(Arc::new(vec![Polygon2::rectangle(
@@ -1788,7 +1793,7 @@ mod tests {
         LoadedModel {
             id,
             path: PathBuf::from("demo.stl"),
-            name: "3D".to_string(),
+            name: "3D".to_owned(),
             kind: ModelKind::Stl,
             mesh: Some(Arc::new(make_test_flat(20.0))),
             polygons: None,
@@ -1814,7 +1819,7 @@ mod tests {
 
         let entry = ToolpathEntry::for_operation(
             ToolpathId(3),
-            "Pocket".to_string(),
+            "Pocket".to_owned(),
             ToolId(1),
             ModelId(2),
             OperationType::Pocket,
@@ -1838,7 +1843,7 @@ mod tests {
 
         let mut rest = ToolpathEntry::for_operation(
             ToolpathId(6),
-            "Rest".to_string(),
+            "Rest".to_owned(),
             ToolId(2),
             ModelId(4),
             OperationType::Rest,
@@ -1870,14 +1875,14 @@ mod tests {
 
         let roughing = ToolpathEntry::for_operation(
             ToolpathId(5),
-            "Pocket".to_string(),
+            "Pocket".to_owned(),
             ToolId(1),
             ModelId(4),
             OperationType::Pocket,
         );
         let mut rest = ToolpathEntry::for_operation(
             ToolpathId(6),
-            "Rest".to_string(),
+            "Rest".to_owned(),
             ToolId(2),
             ModelId(4),
             OperationType::Rest,

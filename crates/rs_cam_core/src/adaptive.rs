@@ -387,9 +387,8 @@ impl MaterialGrid {
     /// Compute gradient of the boundary distance field using central differences.
     /// Returns (gx, gy) pointing away from the nearest boundary (toward interior).
     pub fn boundary_gradient(&self, distances: &[f64], x: f64, y: f64) -> (f64, f64) {
-        let (row, col) = match self.world_to_cell(x, y) {
-            Some(rc) => rc,
-            None => return (0.0, 0.0),
+        let Some((row, col)) = self.world_to_cell(x, y) else {
+            return (0.0, 0.0);
         };
         let get = |r: usize, c: usize| -> f64 {
             if r < self.rows && c < self.cols {
@@ -1206,22 +1205,19 @@ fn adaptive_segments_with_debug(
         let entry_scope = pass_ctx
             .as_ref()
             .map(|ctx| ctx.start_span("entry_search", format!("Entry {pass_count}")));
-        let entry = match find_entry_point(
+        let Some(entry) = find_entry_point(
             &grid,
             &machinable_mask,
             machinable,
             tool_radius,
             last_pos,
             &pass_endpoints,
-        ) {
-            Some(p) => p,
-            None => {
-                if let Some(scope) = pass_scope.as_ref() {
-                    scope.set_exit_reason("no entry");
-                    scope.set_counter("pass_index", pass_count as f64);
-                }
-                break;
+        ) else {
+            if let Some(scope) = pass_scope.as_ref() {
+                scope.set_exit_reason("no entry");
+                scope.set_counter("pass_index", pass_count as f64);
             }
+            break;
         };
         if let Some(scope) = entry_scope.as_ref() {
             scope.set_xy_bbox(ToolpathDebugBounds2 {
@@ -1291,7 +1287,7 @@ fn adaptive_segments_with_debug(
             };
 
             // Search for next direction
-            let search_result = match search_direction_with_metrics(
+            let Some(search_result) = search_direction_with_metrics(
                 &grid,
                 &machinable_mask,
                 cx,
@@ -1301,9 +1297,8 @@ fn adaptive_segments_with_debug(
                 target_frac,
                 smoothed_angle,
                 &boundary_distances,
-            ) {
-                Some(result) => result,
-                None => break,
+            ) else {
+                break;
             };
             search_evaluations += search_result.evaluations;
             let angle = search_result.angle;
@@ -1411,7 +1406,7 @@ fn adaptive_segments_with_debug(
             step_count: path_len,
             idle_count,
             search_evaluations: search_evaluations as usize,
-            exit_reason: exit_reason.to_string(),
+            exit_reason: exit_reason.to_owned(),
         }));
     }
 

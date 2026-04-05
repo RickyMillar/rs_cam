@@ -27,13 +27,10 @@ pub fn fit_arcs(toolpath: &Toolpath, tolerance: f64) -> Toolpath {
         let m = &moves[i];
 
         // Only try to fit arcs on linear moves
-        let feed_rate = match m.move_type {
-            MoveType::Linear { feed_rate } => feed_rate,
-            _ => {
-                result.moves.push(m.clone());
-                i += 1;
-                continue;
-            }
+        let MoveType::Linear { feed_rate } = m.move_type else {
+            result.moves.push(m.clone());
+            i += 1;
+            continue;
         };
 
         // Try to extend an arc starting from the previous point through this point

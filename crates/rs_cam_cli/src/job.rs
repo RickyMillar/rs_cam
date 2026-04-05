@@ -269,7 +269,10 @@ pub fn parse_job_file(path: &Path) -> Result<JobFile> {
 const DEFAULT_CUTTING_LENGTH_FACTOR: f64 = 4.0;
 
 fn build_tool(def: &ToolDef) -> Result<rs_cam_core::tool::ToolDefinition> {
-    use rs_cam_core::tool::*;
+    use rs_cam_core::tool::{
+        BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill,
+        ToolDefinition, VBitEndmill,
+    };
     let d = def.diameter;
     let cl = d * DEFAULT_CUTTING_LENGTH_FACTOR;
     let cutter: Box<dyn MillingCutter> = match def.tool_type {

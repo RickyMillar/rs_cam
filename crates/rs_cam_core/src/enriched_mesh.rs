@@ -372,7 +372,7 @@ pub fn build_enriched_mesh(
     edges: Vec<BrepEdge>,
 ) -> Result<EnrichedMesh, String> {
     if face_data.is_empty() {
-        return Err("No faces to build enriched mesh from".to_string());
+        return Err("No faces to build enriched mesh from".to_owned());
     }
 
     let mut all_vertices: Vec<P3> = Vec::new();

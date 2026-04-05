@@ -124,7 +124,7 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &
 
                 // Orientation chip
                 let orient = if setup.z_rotation == crate::state::job::ZRotation::Deg0 {
-                    setup.face_up.label().to_string()
+                    setup.face_up.label().to_owned()
                 } else {
                     format!("{} +{}", setup.face_up.label(), setup.z_rotation.label())
                 };

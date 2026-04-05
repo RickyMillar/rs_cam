@@ -1,4 +1,12 @@
-use super::*;
+use super::{
+    AtomicBool, BallEndmill, BullNoseEndmill, CollisionRequest, CollisionResult, ComputeError,
+    ComputeRequest, DepthDistribution, DepthStepping, DressupEntryStyle, FeedOptParams,
+    FlatEndmill, LinkMoveParams, MillingCutter, MoveType, Ordering, Polygon2, SimulationRequest,
+    SpatialIndex, TaperedBallEndmill, ToolConfig, ToolDefinition, ToolType, Toolpath,
+    ToolpathStats, TriangleMesh, VBitEndmill, apply_dogbones, apply_entry, apply_lead_in_out,
+    apply_link_moves, check_collisions_interpolated_with_cancel, filter_air_cuts, fit_arcs,
+    optimize_feed_rates,
+};
 use crate::compute::OperationError;
 use serde_json::json;
 use std::path::PathBuf;
@@ -43,7 +51,7 @@ pub(super) fn effective_safe_z(req: &ComputeRequest) -> f64 {
 pub(super) fn require_polygons(req: &ComputeRequest) -> Result<&[Polygon2], OperationError> {
     req.polygons.as_ref().map(|p| p.as_slice()).ok_or_else(|| {
         OperationError::MissingGeometry(
-            "No 2D geometry (import SVG/DXF or select STEP faces)".to_string(),
+            "No 2D geometry (import SVG/DXF or select STEP faces)".to_owned(),
         )
     })
 }

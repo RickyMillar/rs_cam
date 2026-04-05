@@ -1022,7 +1022,7 @@ impl Adaptive3dRuntimeEvent {
                 level_index,
                 level_total,
             } => format!("Adaptive Z {:.1} ({level_index}/{level_total})", z_level),
-            Self::WaterlineCleanup => "Waterline cleanup".to_string(),
+            Self::WaterlineCleanup => "Waterline cleanup".to_owned(),
             Self::PassEntry {
                 pass_index,
                 entry_x,
@@ -1735,7 +1735,7 @@ fn clear_z_level(
         let entry_scope = pass_ctx
             .as_ref()
             .map(|debug_ctx| debug_ctx.start_span("entry_search", format!("Entry {pass_count}")));
-        let (entry_xy, entry_z) = match find_entry_3d(
+        let Some((entry_xy, entry_z)) = find_entry_3d(
             material_stock,
             surface_hm,
             ctx.mesh,
@@ -1747,14 +1747,11 @@ fn clear_z_level(
             &pass_endpoints,
             tool_radius,
             scan_bbox,
-        ) {
-            Some(e) => e,
-            None => {
-                if let Some(scope) = pass_scope.as_ref() {
-                    scope.set_exit_reason("no entry");
-                }
-                break;
+        ) else {
+            if let Some(scope) = pass_scope.as_ref() {
+                scope.set_exit_reason("no entry");
             }
+            break;
         };
         if let Some(scope) = entry_scope.as_ref() {
             scope.set_xy_bbox(ToolpathDebugBounds2 {
@@ -1920,7 +1917,7 @@ fn clear_z_level(
                 prev_angle
             };
 
-            let search_result = match search_direction_3d_with_metrics(
+            let Some(search_result) = search_direction_3d_with_metrics(
                 material_stock,
                 surface_hm,
                 cx,
@@ -1935,9 +1932,8 @@ fn clear_z_level(
                 dir_x_max,
                 dir_y_min,
                 dir_y_max,
-            ) {
-                Some(r) => r,
-                None => break,
+            ) else {
+                break;
             };
             search_evaluations += search_result.evaluations;
             let angle = search_result.angle;
@@ -2090,7 +2086,7 @@ fn clear_z_level(
                 Adaptive3dRuntimeEvent::PassSummary {
                     pass_index: pass_count,
                     step_count: pass_steps,
-                    exit_reason: exit_reason.to_string(),
+                    exit_reason: exit_reason.to_owned(),
                     yield_ratio,
                     short: true,
                 },
@@ -2102,7 +2098,7 @@ fn clear_z_level(
                 Adaptive3dRuntimeEvent::PassSummary {
                     pass_index: pass_count,
                     step_count: pass_steps,
-                    exit_reason: exit_reason.to_string(),
+                    exit_reason: exit_reason.to_owned(),
                     yield_ratio,
                     short: false,
                 },

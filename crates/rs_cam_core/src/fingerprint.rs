@@ -324,13 +324,13 @@ fn diff_usize(
             Some(0.0)
         };
         changed.push(FieldChange {
-            field: name.to_string(),
+            field: name.to_owned(),
             before: serde_json::Value::from(a as u64),
             after: serde_json::Value::from(b as u64),
             delta_percent: delta_pct,
         });
     } else {
-        unchanged.push(name.to_string());
+        unchanged.push(name.to_owned());
     }
 }
 
@@ -353,13 +353,13 @@ fn diff_f64(
     // Changed if absolute delta > 0.001 AND relative delta > 0.1%
     if abs_delta > 0.001 && rel_delta > 0.001 {
         changed.push(FieldChange {
-            field: name.to_string(),
+            field: name.to_owned(),
             before: serde_json::json!(a),
             after: serde_json::json!(b),
             delta_percent: Some(rel_delta * 100.0),
         });
     } else {
-        unchanged.push(name.to_string());
+        unchanged.push(name.to_owned());
     }
 }
 
@@ -375,13 +375,13 @@ fn diff_f64_vec(
 
     if !same {
         changed.push(FieldChange {
-            field: name.to_string(),
+            field: name.to_owned(),
             before: serde_json::json!(a),
             after: serde_json::json!(b),
             delta_percent: None,
         });
     } else {
-        unchanged.push(name.to_string());
+        unchanged.push(name.to_owned());
     }
 }
 
@@ -743,7 +743,7 @@ fn extract_svg_summary(svg: &str) -> SvgSummary {
             if let Some(end) = line.get(color_start..).and_then(|s| s.find('\''))
                 && let Some(color) = line.get(color_start..color_start + end)
             {
-                colors.insert(color.to_string());
+                colors.insert(color.to_owned());
             }
         }
     }
@@ -872,7 +872,8 @@ pub struct SweepVariant {
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    clippy::str_to_string
 )]
 mod tests {
     use super::*;

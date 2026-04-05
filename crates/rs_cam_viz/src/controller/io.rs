@@ -189,7 +189,7 @@ impl<B: ComputeBackend> AppController<B> {
 
         if toolpaths.is_empty() {
             return Err(VizError::Export(
-                "No computed toolpaths for SVG export".to_string(),
+                "No computed toolpaths for SVG export".to_owned(),
             ));
         }
 

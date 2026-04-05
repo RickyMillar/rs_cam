@@ -141,7 +141,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 format!("Setup: {}", setup.name)
             }
         } else {
-            "Toolpaths".to_string()
+            "Toolpaths".to_owned()
         };
 
         ui.collapsing(&header, |ui| {

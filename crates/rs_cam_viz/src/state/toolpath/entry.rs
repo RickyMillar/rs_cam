@@ -247,7 +247,7 @@ mod tests {
     fn new_toolpath_uses_operation_defaults() {
         let entry = ToolpathEntry::for_operation(
             ToolpathId(1),
-            "Pocket".to_string(),
+            "Pocket".to_owned(),
             ToolId(1),
             ModelId(1),
             OperationType::Pocket,
@@ -260,7 +260,7 @@ mod tests {
     fn duplicate_preserves_editable_state_but_not_runtime() {
         let mut source = ToolpathEntry::for_operation(
             ToolpathId(1),
-            "Adaptive 3D".to_string(),
+            "Adaptive 3D".to_owned(),
             ToolId(1),
             ModelId(2),
             OperationType::Adaptive3d,
@@ -276,7 +276,7 @@ mod tests {
             debug_trace_path: None,
         });
 
-        let duplicate = source.duplicate_as(ToolpathId(9), "Adaptive 3D Copy".to_string());
+        let duplicate = source.duplicate_as(ToolpathId(9), "Adaptive 3D Copy".to_owned());
         assert_eq!(duplicate.id, ToolpathId(9));
         assert!(!duplicate.enabled);
         assert_eq!(duplicate.stock_source, StockSource::FromRemainingStock);
@@ -292,7 +292,7 @@ mod tests {
     fn loaded_init_can_override_auto_regen_and_runtime_reset() {
         let mut init = ToolpathEntryInit::from_loaded_state(
             ToolpathId(4),
-            "Loaded".to_string(),
+            "Loaded".to_owned(),
             ToolId(2),
             ModelId(3),
             OperationConfig::new_default(OperationType::DropCutter),
@@ -301,7 +301,7 @@ mod tests {
         let mut entry = ToolpathEntry::from_init(init);
         assert!(entry.auto_regen);
 
-        entry.status = ComputeStatus::Error("x".to_string());
+        entry.status = ComputeStatus::Error("x".to_owned());
         entry.result = Some(ToolpathResult {
             toolpath: Arc::new(Toolpath::new()),
             stats: ToolpathStats::default(),

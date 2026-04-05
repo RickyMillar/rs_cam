@@ -246,9 +246,8 @@ fn pick_toolpaths(
         {
             continue;
         }
-        let result = match &tp.result {
-            Some(r) => r,
-            None => continue,
+        let Some(result) = &tp.result else {
+            continue;
         };
 
         let moves = &result.toolpath.moves;

@@ -260,10 +260,10 @@ impl Material {
     /// Display label for UI.
     pub fn label(&self) -> String {
         match self {
-            Material::SolidWood { species } => species.label().to_string(),
-            Material::Plywood { grade } => grade.label().to_string(),
-            Material::SheetGood { kind } => kind.label().to_string(),
-            Material::Plastic { family } => family.label().to_string(),
+            Material::SolidWood { species } => species.label().to_owned(),
+            Material::Plywood { grade } => grade.label().to_owned(),
+            Material::SheetGood { kind } => kind.label().to_owned(),
+            Material::Plastic { family } => family.label().to_owned(),
             Material::Foam { density } => format!("Foam ({})", density.label()),
             Material::Custom { name, .. } => name.clone(),
         }
@@ -433,19 +433,19 @@ impl Material {
                 WoodSpecies::Jarrah => "jarrah",
                 WoodSpecies::Ipe => "ipe",
             }
-            .to_string(),
+            .to_owned(),
             Material::Plywood { grade } => match grade {
                 PlywoodGrade::Softwood => "plywood_softwood",
                 PlywoodGrade::BalticBirch => "baltic_birch",
                 PlywoodGrade::HardwoodFaced => "plywood_hardwood",
             }
-            .to_string(),
+            .to_owned(),
             Material::SheetGood { kind } => match kind {
                 SheetGoodKind::Mdf => "mdf",
                 SheetGoodKind::Hdf => "hdf",
                 SheetGoodKind::Particleboard => "particleboard",
             }
-            .to_string(),
+            .to_owned(),
             Material::Plastic { family } => match family {
                 PlasticFamily::Generic => "plastic",
                 PlasticFamily::Acrylic => "acrylic",
@@ -453,13 +453,13 @@ impl Material {
                 PlasticFamily::Delrin => "delrin",
                 PlasticFamily::Polycarbonate => "polycarbonate",
             }
-            .to_string(),
+            .to_owned(),
             Material::Foam { density } => match density {
                 FoamDensity::Low => "foam_low",
                 FoamDensity::Medium => "foam_medium",
                 FoamDensity::High => "foam_high",
             }
-            .to_string(),
+            .to_owned(),
             Material::Custom { name, .. } => format!("custom:{name}"),
         }
     }

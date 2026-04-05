@@ -839,7 +839,7 @@ pub fn simulation_3d_html(
             let _ = write!(annotations_js, "[{idx},\"{escaped}\"],");
         }
         // Trim trailing comma
-        annotations_js = annotations_js.trim_end_matches(',').to_string();
+        annotations_js = annotations_js.trim_end_matches(',').to_owned();
     }
 
     // Build Three.js LatheGeometry profile points for the tool model

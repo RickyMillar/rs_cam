@@ -1,4 +1,4 @@
-use crate::state::toolpath::*;
+use crate::state::toolpath::{AlignmentPinDrillConfig, DrillConfig, DrillCycleType};
 
 use super::super::dv;
 

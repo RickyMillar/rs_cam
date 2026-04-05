@@ -5,7 +5,7 @@ use rs_cam_core::geo::BoundingBox3;
 
 use crate::compute::{ComputeBackend, ComputeError, ComputeMessage, ComputeRequest};
 use crate::state::simulation::{SimulationResults, SimulationRunMeta};
-use crate::state::toolpath::{ComputeStatus, OperationConfig, StockSource, ToolpathId};
+use crate::state::toolpath::{ComputeStatus, OperationConfig, ToolpathId};
 
 use super::super::AppController;
 
@@ -139,7 +139,7 @@ impl<B: ComputeBackend> AppController<B> {
                     "Selected faces did not produce a boundary polygon (non-horizontal or non-planar)"
                 );
                 self.status_message = Some((
-                    "Face selection ignored: selected faces are not horizontal planes".to_string(),
+                    "Face selection ignored: selected faces are not horizontal planes".to_owned(),
                     std::time::Instant::now(),
                 ));
             }
@@ -171,14 +171,14 @@ impl<B: ComputeBackend> AppController<B> {
         if is_3d && mesh.is_none() {
             if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
                 toolpath.status =
-                    ComputeStatus::Error("No 3D mesh (import STL or STEP)".to_string());
+                    ComputeStatus::Error("No 3D mesh (import STL or STEP)".to_owned());
             }
             return;
         }
         if !is_3d && !operation.is_stock_based() && polygons.is_none() {
             if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
                 toolpath.status = ComputeStatus::Error(
-                    "No 2D geometry (import SVG/DXF or select STEP faces)".to_string(),
+                    "No 2D geometry (import SVG/DXF or select STEP faces)".to_owned(),
                 );
             }
             return;

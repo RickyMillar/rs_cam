@@ -233,7 +233,7 @@ impl SimulationCutTrace {
                     position: sample.position,
                     radial_engagement: sample.radial_engagement,
                     semantic_item_id: sample.semantic_item_id,
-                    label: "Air cut".to_string(),
+                    label: "Air cut".to_owned(),
                 });
             } else if sample.is_cutting && sample.radial_engagement < 0.10 {
                 issues.push(SimulationCutIssue {
@@ -245,7 +245,7 @@ impl SimulationCutTrace {
                     position: sample.position,
                     radial_engagement: sample.radial_engagement,
                     semantic_item_id: sample.semantic_item_id,
-                    label: "Low engagement".to_string(),
+                    label: "Low engagement".to_owned(),
                 });
             }
         }
@@ -570,9 +570,9 @@ fn sanitize_filename_component(input: &str) -> String {
     }
     let output = output.trim_matches('_');
     if output.is_empty() {
-        "simulation_cut_trace".to_string()
+        "simulation_cut_trace".to_owned()
     } else {
-        output.to_string()
+        output.to_owned()
     }
 }
 

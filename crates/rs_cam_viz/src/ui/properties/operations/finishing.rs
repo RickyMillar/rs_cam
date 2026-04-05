@@ -1,4 +1,7 @@
-use crate::state::toolpath::*;
+use crate::state::toolpath::{
+    CutDirection, HorizontalFinishConfig, RadialFinishConfig, RampFinishConfig, SpiralDirection,
+    SpiralFinishConfig,
+};
 
 use super::super::dv;
 use super::draw_feed_params;

@@ -1,4 +1,7 @@
-use crate::state::toolpath::*;
+use crate::state::toolpath::{
+    AdaptiveConfig, FaceConfig, FaceDirection, InlayConfig, PocketConfig, PocketPattern,
+    ProfileConfig, ProfileSide, RestConfig, VCarveConfig, ZigzagConfig,
+};
 
 use super::super::dv;
 use super::draw_feed_params;
