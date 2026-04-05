@@ -174,14 +174,20 @@ impl Default for FeedsAutoMode {
 
 impl HeightsConfig {
     /// Resolve all heights given stock/model/post context.
+    ///
+    /// Auto defaults anchor to the stock geometry:
+    /// - `top_z` defaults to `stock_top_z`
+    /// - `bottom_z` defaults to `stock_top_z - op_depth`
     pub fn resolve(&self, ctx: &HeightContext) -> ResolvedHeights {
         let retract = self.retract_z.resolve_value(ctx.safe_z, ctx);
         ResolvedHeights {
             clearance_z: self.clearance_z.resolve_value(retract + 10.0, ctx),
             retract_z: retract,
             feed_z: self.feed_z.resolve_value(retract - 2.0, ctx),
-            top_z: self.top_z.resolve_value(0.0, ctx),
-            bottom_z: self.bottom_z.resolve_value(-ctx.op_depth.abs(), ctx),
+            top_z: self.top_z.resolve_value(ctx.stock_top_z, ctx),
+            bottom_z: self
+                .bottom_z
+                .resolve_value(ctx.stock_top_z - ctx.op_depth.abs(), ctx),
         }
     }
 }
@@ -330,10 +336,10 @@ mod tests {
         assert!((h.clearance_z - 20.0).abs() < 1e-9);
         // feed = retract - 2 = 8
         assert!((h.feed_z - 8.0).abs() < 1e-9);
-        // top = 0
-        assert!((h.top_z - 0.0).abs() < 1e-9);
-        // bottom = -5
-        assert!((h.bottom_z - (-5.0)).abs() < 1e-9);
+        // top = stock_top_z = 25
+        assert!((h.top_z - 25.0).abs() < 1e-9);
+        // bottom = stock_top_z - op_depth = 25 - 5 = 20
+        assert!((h.bottom_z - 20.0).abs() < 1e-9);
     }
 
     #[test]

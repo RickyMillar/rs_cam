@@ -255,6 +255,9 @@ pub struct ProjectSetupSection {
     pub keep_out_zones: Vec<ProjectKeepOutSection>,
     #[serde(default)]
     pub toolpaths: Vec<ProjectToolpathSection>,
+    /// Model IDs relevant to this setup. Empty = all models available.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub model_ids: Vec<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -552,6 +555,7 @@ impl ProjectSetupSection {
                 .iter()
                 .map(ProjectToolpathSection::from_runtime)
                 .collect(),
+            model_ids: setup.model_ids.iter().map(|id| id.0).collect(),
         }
     }
 }
@@ -1008,6 +1012,7 @@ fn restore_project_setup(
             restore_project_keep_out(keep_out, id)
         })
         .collect();
+    setup.model_ids = section.model_ids.into_iter().map(ModelId).collect();
     (setup, section.toolpaths)
 }
 

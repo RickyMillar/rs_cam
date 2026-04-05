@@ -965,6 +965,8 @@ pub struct Setup {
     pub fixtures: Vec<Fixture>,
     pub keep_out_zones: Vec<KeepOutZone>,
     pub toolpaths: Vec<super::toolpath::ToolpathEntry>,
+    /// Models relevant to this setup. Empty means all models are available.
+    pub model_ids: Vec<ModelId>,
 }
 
 impl Setup {
@@ -978,6 +980,19 @@ impl Setup {
             fixtures: Vec::new(),
             keep_out_zones: Vec::new(),
             toolpaths: Vec::new(),
+            model_ids: Vec::new(),
+        }
+    }
+
+    /// Models available in this setup. Returns all models if `model_ids` is empty.
+    pub fn available_models<'a>(&self, all_models: &'a [LoadedModel]) -> Vec<&'a LoadedModel> {
+        if self.model_ids.is_empty() {
+            all_models.iter().collect()
+        } else {
+            all_models
+                .iter()
+                .filter(|m| self.model_ids.contains(&m.id))
+                .collect()
         }
     }
 
@@ -1212,23 +1227,67 @@ impl JobState {
     }
 
     /// Build a [`HeightContext`] for resolving a toolpath's heights from current stock/model state.
+    ///
+    /// When the toolpath belongs to a setup with non-default orientation (FaceUp/ZRotation),
+    /// heights are computed in the setup's local coordinate frame so that "Stock Top" and
+    /// "Stock Bottom" references correspond to the physical top/bottom of the flipped stock.
     pub fn height_context_for(
         &self,
         tp: &super::toolpath::ToolpathEntry,
     ) -> super::toolpath::HeightContext {
-        let sb = self.stock.bbox();
+        // Find the setup that owns this toolpath (if any) for orientation transforms.
+        let setup = self
+            .setups
+            .iter()
+            .find(|s| s.toolpaths.iter().any(|t| t.id == tp.id));
+
+        let (stock_top_z, stock_bottom_z) = if let Some(setup) = setup {
+            let (_w, _d, h) = setup.effective_stock(&self.stock);
+            (h, 0.0)
+        } else {
+            let sb = self.stock.bbox();
+            (sb.max.z, sb.min.z)
+        };
+
         let mb = self
             .models
             .iter()
             .find(|m| m.id == tp.model_id)
             .and_then(|m| m.bbox());
+
+        // Transform model bbox into setup-local frame when a setup exists.
+        let (model_top_z, model_bottom_z) = match (mb, setup) {
+            (Some(bb), Some(setup)) => {
+                use rs_cam_core::geo::P3;
+                let mut min_z = f64::INFINITY;
+                let mut max_z = f64::NEG_INFINITY;
+                // Enumerate all 8 bbox corners and find Z range in local frame.
+                for &x in &[bb.min.x, bb.max.x] {
+                    for &y in &[bb.min.y, bb.max.y] {
+                        for &z in &[bb.min.z, bb.max.z] {
+                            let local = setup.transform_point(P3::new(x, y, z), &self.stock);
+                            if local.z < min_z {
+                                min_z = local.z;
+                            }
+                            if local.z > max_z {
+                                max_z = local.z;
+                            }
+                        }
+                    }
+                }
+                (Some(max_z), Some(min_z))
+            }
+            (Some(bb), None) => (Some(bb.max.z), Some(bb.min.z)),
+            _ => (None, None),
+        };
+
         super::toolpath::HeightContext {
             safe_z: self.post.safe_z,
             op_depth: tp.operation.default_depth_for_heights(),
-            stock_top_z: sb.max.z,
-            stock_bottom_z: sb.min.z,
-            model_top_z: mb.map(|b| b.max.z),
-            model_bottom_z: mb.map(|b| b.min.z),
+            stock_top_z,
+            stock_bottom_z,
+            model_top_z,
+            model_bottom_z,
         }
     }
 

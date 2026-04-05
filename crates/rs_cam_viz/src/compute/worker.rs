@@ -166,6 +166,8 @@ pub struct SimulationResult {
     pub rapid_collision_move_indices: Vec<usize>,
     pub cut_trace: Option<Arc<rs_cam_core::simulation_cut::SimulationCutTrace>>,
     pub cut_trace_path: Option<PathBuf>,
+    /// True when the requested resolution was coarsened to fit within grid limits.
+    pub resolution_clamped: bool,
 }
 
 pub struct CollisionRequest {

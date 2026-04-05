@@ -1,5 +1,6 @@
 use crate::state::job::{
-    Corner, FaceUp, Fixture, FixtureKind, KeepOutZone, Setup, SetupId, XYDatum, ZDatum, ZRotation,
+    Corner, FaceUp, Fixture, FixtureKind, KeepOutZone, ModelId, Setup, SetupId, XYDatum, ZDatum,
+    ZRotation,
 };
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
@@ -8,13 +9,15 @@ use crate::ui::AppEvent;
 ///
 /// `pin_count` is the number of alignment pins on the stock (pins are now
 /// stock-level, not per-setup). `has_flip_axis` indicates whether a flip axis
-/// is configured on the stock.
+/// is configured on the stock. `all_models` lists every loaded model for the
+/// model-scoping checkboxes.
 pub fn draw(
     ui: &mut egui::Ui,
     setup_id: SetupId,
     setup: &mut Setup,
     pin_count: usize,
     has_flip_axis: bool,
+    all_models: &[(ModelId, String)],
     events: &mut Vec<AppEvent>,
 ) {
     ui.heading("Setup Properties");
@@ -222,8 +225,58 @@ pub fn draw(
         );
     }
 
+    // ── Models ──────────────────────────────────────────────────────
     ui.add_space(8.0);
+    ui.label(
+        egui::RichText::new("Models")
+            .strong()
+            .color(egui::Color32::from_rgb(180, 180, 195)),
+    );
+    if all_models.is_empty() {
+        ui.label(
+            egui::RichText::new("No models loaded")
+                .italics()
+                .color(egui::Color32::from_rgb(120, 120, 130)),
+        );
+    } else {
+        if setup.model_ids.is_empty() {
+            ui.label(
+                egui::RichText::new("All models (unconstrained)")
+                    .small()
+                    .color(egui::Color32::from_rgb(140, 180, 140)),
+            );
+        }
+        for &(model_id, ref model_name) in all_models {
+            let mut checked = setup.model_ids.is_empty() || setup.model_ids.contains(&model_id);
+            if ui.checkbox(&mut checked, model_name.as_str()).changed() {
+                if checked {
+                    // When toggling on: if currently "all", start explicit list with this one.
+                    if setup.model_ids.is_empty() {
+                        // Switching from "all" to explicit — add all then the logic below removes.
+                        // Actually: add just this model. But that would remove others.
+                        // Better: leave empty (all) until user unchecks one.
+                        // On check: if explicit list exists, add to it.
+                        setup.model_ids.push(model_id);
+                    } else if !setup.model_ids.contains(&model_id) {
+                        setup.model_ids.push(model_id);
+                    }
+                    // If all models are now checked, revert to empty (= all).
+                    if setup.model_ids.len() == all_models.len() {
+                        setup.model_ids.clear();
+                    }
+                } else {
+                    // When toggling off: if currently "all", materialise the full list first.
+                    if setup.model_ids.is_empty() {
+                        setup.model_ids = all_models.iter().map(|(id, _)| *id).collect();
+                    }
+                    setup.model_ids.retain(|id| *id != model_id);
+                }
+            }
+        }
+    }
 
+    // ── Fixtures ──────────────────────────────────────────────────
+    ui.add_space(8.0);
     ui.label(
         egui::RichText::new("Fixtures")
             .strong()

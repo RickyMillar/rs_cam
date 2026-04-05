@@ -127,6 +127,12 @@ where
     F: FnMut(&str),
 {
     set_phase("Initialize stock");
+    // Detect whether the grid will be coarsened beyond the requested resolution.
+    let resolution_clamped = {
+        let sx = req.stock_bbox.max.x - req.stock_bbox.min.x;
+        let sy = req.stock_bbox.max.y - req.stock_bbox.min.y;
+        rs_cam_core::dexel::DexelGrid::would_exceed_grid(req.resolution, sx, sy).is_some()
+    };
     let mut stock = TriDexelStock::from_bounds(&req.stock_bbox, req.resolution);
     let sample_step_mm = req.resolution.max(0.25);
 
@@ -275,6 +281,7 @@ where
         rapid_collision_move_indices,
         cut_trace,
         cut_trace_path,
+        resolution_clamped,
     })
 }
 
