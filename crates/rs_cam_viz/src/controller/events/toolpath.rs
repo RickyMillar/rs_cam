@@ -1,7 +1,7 @@
 use crate::compute::ComputeBackend;
+use crate::state::Workspace;
 use crate::state::selection::Selection;
 use crate::state::toolpath::{OperationConfig, ToolpathEntry, ToolpathId};
-use crate::state::Workspace;
 use crate::ui::AppEvent;
 
 use super::super::AppController;

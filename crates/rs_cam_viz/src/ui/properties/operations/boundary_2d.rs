@@ -171,10 +171,7 @@ pub(in crate::ui::properties) fn draw_profile_params(ui: &mut egui::Ui, cfg: &mu
         });
 }
 
-pub(in crate::ui::properties) fn draw_adaptive_params(
-    ui: &mut egui::Ui,
-    cfg: &mut AdaptiveConfig,
-) {
+pub(in crate::ui::properties) fn draw_adaptive_params(ui: &mut egui::Ui, cfg: &mut AdaptiveConfig) {
     egui::Grid::new("adapt_p")
         .num_columns(2)
         .spacing([8.0, 4.0])

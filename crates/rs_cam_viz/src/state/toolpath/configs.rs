@@ -20,7 +20,7 @@ pub enum PocketPattern {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum EntryStyle {
+pub enum Adaptive3dEntryStyle {
     Plunge,
     Helix,
     Ramp,
@@ -47,6 +47,19 @@ pub enum DrillCycleType {
     Dwell,
     Peck,
     ChipBreak,
+}
+
+impl DrillCycleType {
+    /// Convert to core `DrillCycle` using parameters from the config struct.
+    pub fn to_core(self, cfg: &DrillConfig) -> rs_cam_core::drill::DrillCycle {
+        use rs_cam_core::drill::DrillCycle;
+        match self {
+            Self::Simple => DrillCycle::Simple,
+            Self::Dwell => DrillCycle::Dwell(cfg.dwell_time),
+            Self::Peck => DrillCycle::Peck(cfg.peck_depth),
+            Self::ChipBreak => DrillCycle::ChipBreak(cfg.peck_depth, cfg.retract_amount),
+        }
+    }
 }
 
 /// Whether tool compensation is computed in CAM or on the controller.
@@ -394,7 +407,7 @@ pub struct Adaptive3dConfig {
     pub tolerance: f64,
     pub min_cutting_radius: f64,
     pub stock_top_z: f64,
-    pub entry_style: EntryStyle,
+    pub entry_style: Adaptive3dEntryStyle,
     pub fine_stepdown: f64,
     pub detect_flat_areas: bool,
     pub region_ordering: RegionOrdering,
@@ -416,7 +429,7 @@ impl Default for Adaptive3dConfig {
             tolerance: 0.1,
             min_cutting_radius: 0.0,
             stock_top_z: 30.0,
-            entry_style: EntryStyle::Plunge,
+            entry_style: Adaptive3dEntryStyle::Plunge,
             fine_stepdown: 0.0,
             detect_flat_areas: false,
             region_ordering: RegionOrdering::Global,

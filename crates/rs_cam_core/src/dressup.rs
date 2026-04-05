@@ -26,11 +26,12 @@ pub enum EntryStyle {
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[allow(clippy::needless_pass_by_value)] // owned for API consistency across dressup pipeline
 /// Replace straight plunges in a toolpath with ramped or helical entries.
 ///
 /// A "plunge" is detected as a feed move that goes from safe_z (or higher)
 /// down to cutting depth with no XY movement.
-pub fn apply_entry(toolpath: &Toolpath, style: EntryStyle, plunge_rate: f64) -> Toolpath {
+pub fn apply_entry(toolpath: Toolpath, style: EntryStyle, plunge_rate: f64) -> Toolpath {
     let mut result = Toolpath::new();
 
     let mut i = 0;
@@ -225,9 +226,9 @@ pub struct Tab {
 ///
 /// Tab positions are interpolated along cutting segments, so tabs appear
 /// at the correct location even when move endpoints are sparse.
-pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath {
+pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath {
     if tabs.is_empty() {
-        return toolpath.clone();
+        return toolpath;
     }
 
     // Collect cutting move indices at cut_depth
@@ -242,7 +243,7 @@ pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath
         .collect();
 
     if cutting_indices.len() < 2 {
-        return toolpath.clone();
+        return toolpath;
     }
 
     // Compute cumulative distance at each cutting move endpoint
@@ -260,7 +261,7 @@ pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath
 
     let total_dist = *cum_dist.last().unwrap_or(&0.0);
     if total_dist < 1e-6 {
-        return toolpath.clone();
+        return toolpath;
     }
 
     // Build sorted tab boundary events as absolute distances
@@ -410,13 +411,14 @@ pub fn apply_tabs(toolpath: &Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath
 /// Insert arc lead-in and lead-out moves at the start/end of cutting passes.
 ///
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[allow(clippy::needless_pass_by_value)] // owned for API consistency across dressup pipeline
 /// A "cutting pass" is a sequence of feed moves at the same Z bounded by
 /// rapids or plunges. The lead-in is a quarter-circle arc that approaches
 /// the first cut point tangentially (avoiding a witness mark from a direct
 /// plunge). The lead-out is a matching arc departing the last cut point.
 ///
 /// `radius` is the arc radius in mm (typically 1-3mm or ~half the tool radius).
-pub fn apply_lead_in_out(toolpath: &Toolpath, radius: f64) -> Toolpath {
+pub fn apply_lead_in_out(toolpath: Toolpath, radius: f64) -> Toolpath {
     let mut result = Toolpath::new();
     let moves = &toolpath.moves;
     if moves.is_empty() {
@@ -548,13 +550,13 @@ pub fn apply_lead_in_out(toolpath: &Toolpath, radius: f64) -> Toolpath {
 /// creating a clearance notch at each inside corner.
 ///
 /// Only operates on consecutive linear feed moves at the same Z.
-pub fn apply_dogbones(toolpath: &Toolpath, tool_radius: f64, max_angle_deg: f64) -> Toolpath {
+pub fn apply_dogbones(toolpath: Toolpath, tool_radius: f64, max_angle_deg: f64) -> Toolpath {
     let max_angle_rad = max_angle_deg.to_radians();
     let mut result = Toolpath::new();
 
     let moves = &toolpath.moves;
     if moves.len() < 3 {
-        return toolpath.clone();
+        return toolpath;
     }
 
     result.moves.push(moves[0].clone());
@@ -663,10 +665,10 @@ pub struct LinkMoveParams {
 /// - Never links the first entry (tool hasn't cut yet)
 /// - Only links when cut Z before and after are within 0.1mm (same depth level)
 /// - max_link_distance caps risk
-pub fn apply_link_moves(toolpath: &Toolpath, params: &LinkMoveParams) -> Toolpath {
+pub fn apply_link_moves(toolpath: Toolpath, params: &LinkMoveParams) -> Toolpath {
     let moves = &toolpath.moves;
     if moves.len() < 4 {
-        return toolpath.clone();
+        return toolpath;
     }
 
     let mut result = Toolpath::new();
@@ -780,7 +782,7 @@ fn is_in_air(stock: &TriDexelStock, x: f64, y: f64, z: f64, tolerance: f64) -> b
 ///
 /// `tool_radius` is currently reserved for future per-cell radius checks.
 pub fn filter_air_cuts(
-    toolpath: &Toolpath,
+    toolpath: Toolpath,
     prior_stock: &TriDexelStock,
     _tool_radius: f64,
     safe_z: f64,
@@ -788,7 +790,7 @@ pub fn filter_air_cuts(
 ) -> Toolpath {
     let moves = &toolpath.moves;
     if moves.is_empty() {
-        return toolpath.clone();
+        return toolpath;
     }
 
     // Phase 1: classify each move as "in air" or not.
@@ -894,7 +896,8 @@ pub fn filter_air_cuts(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    clippy::redundant_clone
 )]
 mod tests {
     use super::*;
@@ -918,7 +921,7 @@ mod tests {
     #[test]
     fn test_ramp_entry_replaces_plunge() {
         let tp = simple_plunge_toolpath();
-        let result = apply_entry(&tp, EntryStyle::Ramp { max_angle_deg: 3.0 }, 500.0);
+        let result = apply_entry(tp.clone(), EntryStyle::Ramp { max_angle_deg: 3.0 }, 500.0);
 
         // Should not have a straight plunge (large Z drop with no XY movement)
         for i in 1..result.moves.len() {
@@ -944,7 +947,7 @@ mod tests {
     #[test]
     fn test_ramp_entry_reaches_target_z() {
         let tp = simple_plunge_toolpath();
-        let result = apply_entry(&tp, EntryStyle::Ramp { max_angle_deg: 5.0 }, 500.0);
+        let result = apply_entry(tp.clone(), EntryStyle::Ramp { max_angle_deg: 5.0 }, 500.0);
 
         // Should still reach the cutting depth
         let has_cut_depth = result
@@ -957,7 +960,7 @@ mod tests {
     #[test]
     fn test_ramp_preserves_cutting_moves() {
         let tp = simple_plunge_toolpath();
-        let result = apply_entry(&tp, EntryStyle::Ramp { max_angle_deg: 3.0 }, 500.0);
+        let result = apply_entry(tp.clone(), EntryStyle::Ramp { max_angle_deg: 3.0 }, 500.0);
 
         // The cutting moves at -3.0 should still be present
         let cut_moves: Vec<_> = result
@@ -976,7 +979,7 @@ mod tests {
     fn test_helix_entry_replaces_plunge() {
         let tp = simple_plunge_toolpath();
         let result = apply_entry(
-            &tp,
+            tp.clone(),
             EntryStyle::Helix {
                 radius: 2.0,
                 pitch: 1.0,
@@ -997,7 +1000,7 @@ mod tests {
     fn test_helix_entry_reaches_target_z() {
         let tp = simple_plunge_toolpath();
         let result = apply_entry(
-            &tp,
+            tp.clone(),
             EntryStyle::Helix {
                 radius: 2.0,
                 pitch: 1.0,
@@ -1013,7 +1016,7 @@ mod tests {
     fn test_helix_moves_are_circular() {
         let tp = simple_plunge_toolpath();
         let result = apply_entry(
-            &tp,
+            tp.clone(),
             EntryStyle::Helix {
                 radius: 3.0,
                 pitch: 1.0,
@@ -1065,7 +1068,7 @@ mod tests {
     fn test_tabs_lift_at_positions() {
         let tp = profile_toolpath_for_tabs();
         let tabs = even_tabs(4, 5.0, 3.0);
-        let result = apply_tabs(&tp, &tabs, -5.0);
+        let result = apply_tabs(tp.clone(), &tabs, -5.0);
 
         // Some moves should be at tab height (-5 + 3 = -2)
         let tab_moves: Vec<_> = result
@@ -1083,7 +1086,7 @@ mod tests {
     fn test_tabs_preserve_non_tab_moves() {
         let tp = profile_toolpath_for_tabs();
         let tabs = even_tabs(2, 3.0, 2.0);
-        let result = apply_tabs(&tp, &tabs, -5.0);
+        let result = apply_tabs(tp.clone(), &tabs, -5.0);
 
         // Should still have moves at cut_depth
         let cut_moves: Vec<_> = result
@@ -1100,7 +1103,7 @@ mod tests {
     #[test]
     fn test_no_tabs_returns_unchanged() {
         let tp = profile_toolpath_for_tabs();
-        let result = apply_tabs(&tp, &[], -5.0);
+        let result = apply_tabs(tp.clone(), &[], -5.0);
         assert_eq!(result.moves.len(), tp.moves.len());
     }
 
@@ -1123,7 +1126,7 @@ mod tests {
     fn test_tabs_have_sharp_transitions() {
         let tp = profile_toolpath_for_tabs();
         let tabs = even_tabs(2, 10.0, 3.0);
-        let result = apply_tabs(&tp, &tabs, -5.0);
+        let result = apply_tabs(tp.clone(), &tabs, -5.0);
 
         // Find vertical step-up feed moves (same XY, Z increases sharply)
         let mut found_step_up = false;
@@ -1155,7 +1158,7 @@ mod tests {
     #[test]
     fn test_lead_in_adds_arc_moves() {
         let tp = simple_plunge_toolpath();
-        let result = apply_lead_in_out(&tp, 2.0);
+        let result = apply_lead_in_out(tp.clone(), 2.0);
 
         // Should have more moves than original (arc segments added)
         assert!(
@@ -1169,7 +1172,7 @@ mod tests {
     #[test]
     fn test_lead_in_reaches_cut_point() {
         let tp = simple_plunge_toolpath();
-        let result = apply_lead_in_out(&tp, 2.0);
+        let result = apply_lead_in_out(tp.clone(), 2.0);
 
         // The cut moves at x=50, y=10, z=-3 should still be reachable
         let has_first_cut = result.moves.iter().any(|m| {
@@ -1186,7 +1189,7 @@ mod tests {
     #[test]
     fn test_lead_in_preserves_rapids() {
         let tp = simple_plunge_toolpath();
-        let result = apply_lead_in_out(&tp, 2.0);
+        let result = apply_lead_in_out(tp.clone(), 2.0);
 
         // Should still have a rapid move
         let has_rapid = result.moves.iter().any(|m| m.move_type == MoveType::Rapid);
@@ -1211,7 +1214,7 @@ mod tests {
     #[test]
     fn test_dogbone_adds_overcuts() {
         let tp = square_profile_toolpath();
-        let result = apply_dogbones(&tp, 3.0, 170.0);
+        let result = apply_dogbones(tp.clone(), 3.0, 170.0);
 
         // Should have more moves than original (overcut + return at each corner)
         assert!(
@@ -1226,7 +1229,7 @@ mod tests {
     fn test_dogbone_overcut_distance() {
         let tp = square_profile_toolpath();
         let tool_radius = 3.0;
-        let result = apply_dogbones(&tp, tool_radius, 170.0);
+        let result = apply_dogbones(tp.clone(), tool_radius, 170.0);
 
         // Find overcut moves (moves that go away from the path)
         // At corner (50, 0): the overcut should be ~tool_radius from the corner
@@ -1265,7 +1268,7 @@ mod tests {
         tp.feed_to(P3::new(100.0, 0.0, -3.0), 1000.0);
         tp.rapid_to(P3::new(100.0, 0.0, 10.0));
 
-        let result = apply_dogbones(&tp, 3.0, 170.0);
+        let result = apply_dogbones(tp.clone(), 3.0, 170.0);
         assert_eq!(
             result.moves.len(),
             tp.moves.len(),
@@ -1284,7 +1287,7 @@ mod tests {
         tp.feed_to(P3::new(100.0, 5.0, -3.0), 1000.0);
         tp.rapid_to(P3::new(100.0, 5.0, 10.0));
 
-        let result = apply_dogbones(&tp, 3.0, 100.0); // threshold 100°
+        let result = apply_dogbones(tp.clone(), 3.0, 100.0); // threshold 100°
         assert_eq!(
             result.moves.len(),
             tp.moves.len(),
@@ -1296,7 +1299,7 @@ mod tests {
     fn test_tabs_add_transition_moves() {
         let tp = profile_toolpath_for_tabs();
         let tabs = even_tabs(4, 5.0, 3.0);
-        let result = apply_tabs(&tp, &tabs, -5.0);
+        let result = apply_tabs(tp.clone(), &tabs, -5.0);
 
         // Tab dressup adds step-up/step-down moves at tab edges
         assert!(
@@ -1342,7 +1345,7 @@ mod tests {
         // 2mm gap between passes — should be linked
         let tp = two_pass_toolpath(2.0);
         let params = default_link_params();
-        let result = apply_link_moves(&tp, &params);
+        let result = apply_link_moves(tp.clone(), &params);
 
         // Should have fewer moves (retract+rapid+plunge replaced with feed)
         assert!(
@@ -1366,7 +1369,7 @@ mod tests {
         // 25mm gap — exceeds max_link_distance of 18mm
         let tp = two_pass_toolpath(25.0);
         let params = default_link_params();
-        let result = apply_link_moves(&tp, &params);
+        let result = apply_link_moves(tp.clone(), &params);
 
         // Should be unchanged (gap too large)
         assert_eq!(
@@ -1387,7 +1390,7 @@ mod tests {
         tp.rapid_to(P3::new(20.0, 0.0, 10.0));
 
         let params = default_link_params();
-        let result = apply_link_moves(&tp, &params);
+        let result = apply_link_moves(tp.clone(), &params);
 
         // First entry should not be linked — all moves preserved
         assert_eq!(
@@ -1414,7 +1417,7 @@ mod tests {
         tp.rapid_to(P3::new(40.0, 0.0, 10.0));
 
         let params = default_link_params();
-        let result = apply_link_moves(&tp, &params);
+        let result = apply_link_moves(tp.clone(), &params);
 
         // Different Z levels — should not be linked
         assert_eq!(
@@ -1428,7 +1431,7 @@ mod tests {
     fn test_link_reduces_rapid_distance() {
         let tp = two_pass_toolpath(5.0);
         let params = default_link_params();
-        let result = apply_link_moves(&tp, &params);
+        let result = apply_link_moves(tp.clone(), &params);
 
         let orig_rapid = tp.total_rapid_distance();
         let linked_rapid = result.total_rapid_distance();
@@ -1484,7 +1487,7 @@ mod tests {
         tp.rapid_to(P3::new(90.0, 50.0, 10.0)); // retract
 
         let stock = half_cleared_stock();
-        let result = filter_air_cuts(&tp, &stock, 3.0, 10.0, 0.1);
+        let result = filter_air_cuts(tp.clone(), &stock, 3.0, 10.0, 0.1);
 
         // The moves at x=60 and x=90 should have been removed (both endpoints in air).
         // Specifically, the move from x=60 to x=90 is fully in air (source and target).
@@ -1529,7 +1532,7 @@ mod tests {
         tp.rapid_to(P3::new(30.0, 50.0, 10.0));
 
         let stock = half_cleared_stock();
-        let result = filter_air_cuts(&tp, &stock, 3.0, 10.0, 0.1);
+        let result = filter_air_cuts(tp.clone(), &stock, 3.0, 10.0, 0.1);
 
         // All cutting moves are in the left half (x < 50) where material exists
         // at top_z=5.0 and tool is at z=2.0 (below stock top). No air cuts.
@@ -1548,7 +1551,7 @@ mod tests {
         tp.rapid_to(P3::new(0.0, 0.0, 10.0));
         tp.feed_to(P3::new(0.0, 0.0, 0.0), 100.0);
         let style = EntryStyle::Ramp { max_angle_deg: 0.0 };
-        let result = apply_entry(&tp, style, 50.0);
+        let result = apply_entry(tp.clone(), style, 50.0);
         // Should not contain NaN or infinity
         for m in &result.moves {
             assert!(m.target.x.is_finite(), "NaN in ramp with 0° angle");
@@ -1565,7 +1568,7 @@ mod tests {
         let style = EntryStyle::Ramp {
             max_angle_deg: 90.0,
         };
-        let result = apply_entry(&tp, style, 50.0);
+        let result = apply_entry(tp.clone(), style, 50.0);
         for m in &result.moves {
             assert!(m.target.x.is_finite(), "NaN in ramp with 90° angle");
             assert!(m.target.z.is_finite(), "NaN in ramp with 90° angle");
@@ -1581,7 +1584,7 @@ mod tests {
             radius: 0.0,
             pitch: 2.0,
         };
-        let result = apply_entry(&tp, style, 50.0);
+        let result = apply_entry(tp.clone(), style, 50.0);
         for m in &result.moves {
             assert!(m.target.x.is_finite(), "NaN in helix with 0 radius");
             assert!(m.target.z.is_finite(), "NaN in helix with 0 radius");
@@ -1597,7 +1600,7 @@ mod tests {
             radius: -1.0,
             pitch: 2.0,
         };
-        let result = apply_entry(&tp, style, 50.0);
+        let result = apply_entry(tp.clone(), style, 50.0);
         for m in &result.moves {
             assert!(m.target.x.is_finite(), "NaN in helix with negative radius");
         }
@@ -1613,7 +1616,7 @@ mod tests {
         tp.rapid_to(P3::new(30.0, 50.0, 10.0));
 
         let stock = half_cleared_stock();
-        let result = filter_air_cuts(&tp, &stock, 3.0, 10.0, 0.1);
+        let result = filter_air_cuts(tp.clone(), &stock, 3.0, 10.0, 0.1);
 
         // The move from x=70 to x=30 has source in air but target in material.
         // Conservative rule: it should be preserved because the target has material.

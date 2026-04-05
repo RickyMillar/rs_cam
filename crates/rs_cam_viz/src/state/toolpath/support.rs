@@ -222,6 +222,24 @@ pub enum DressupEntryStyle {
     Helix,
 }
 
+impl DressupEntryStyle {
+    /// Convert to core `EntryStyle` using parameters from the dressup config.
+    /// Returns `None` for `DressupEntryStyle::None` (no entry transformation).
+    pub fn to_core(self, cfg: &DressupConfig) -> Option<rs_cam_core::dressup::EntryStyle> {
+        use rs_cam_core::dressup::EntryStyle;
+        match self {
+            Self::None => None,
+            Self::Ramp => Some(EntryStyle::Ramp {
+                max_angle_deg: cfg.ramp_angle,
+            }),
+            Self::Helix => Some(EntryStyle::Helix {
+                radius: cfg.helix_radius,
+                pitch: cfg.helix_pitch,
+            }),
+        }
+    }
+}
+
 /// How the tool retracts between cutting passes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

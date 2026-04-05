@@ -49,6 +49,21 @@ Six-domain audit covering type design, error handling, API surface, module organ
 - `operations.rs` (2948 lines) split into 7 per-family files under `operations/`
 - `events.rs` (1721 lines) split into 6 handler-group files under `events/`
 
+**Concurrency & lifecycle:**
+- Worker threads now have graceful shutdown via `AtomicBool` shutdown flag + `Drop` impl that joins threads
+- Simplified `cancel` from redundant `Arc<AtomicBool>` to `AtomicBool` (already inside `Arc<LaneQueue>`)
+- Result channel bounded to 64 entries (`sync_channel`) to cap memory under heavy load
+
+**Enum conversion ownership:**
+- `DrillCycleType::to_core()` method owns the conversion from viz unit enum → core associated-data enum
+- `DressupEntryStyle::to_core()` method owns conversion from viz config → core `EntryStyle`
+- Renamed viz `EntryStyle` to `Adaptive3dEntryStyle` to disambiguate from `DressupEntryStyle`
+- Extracted adaptive3d entry defaults to named constants (`ADAPTIVE3D_HELIX_RADIUS_FACTOR`, etc.)
+
+**Performance:**
+- Dressup pipeline takes ownership (`Toolpath` instead of `&Toolpath`) — eliminates clone-on-early-return in `apply_tabs`, `apply_dogbones`, `apply_link_moves`
+- Adaptive3d path segments moved instead of cloned — reordered stamp-then-push to avoid `path_3d.clone()`
+
 ### Architecture & reuse audit
 
 Follow-up codebase-wide audit focused on ownership clarity, coupling, and extension friction. Addressed 9 findings across 6 work streams.

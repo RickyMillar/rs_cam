@@ -1884,7 +1884,7 @@ fn main() -> Result<()> {
                     safe_z_threshold: safe_z,
                 };
                 let before_rapid = toolpath.total_rapid_distance();
-                toolpath = apply_link_moves(&toolpath, &link_params);
+                toolpath = apply_link_moves(toolpath, &link_params);
                 info!(
                     before_rapid_mm = format!("{:.1}", before_rapid),
                     after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
@@ -1997,13 +1997,13 @@ fn main() -> Result<()> {
             // Apply entry dressup
             if let Some(entry_style) = helpers::parse_entry_style(&entry)? {
                 debug!("Applying {} entry...", entry);
-                toolpath = apply_entry(&toolpath, entry_style, plunge_rate);
+                toolpath = apply_entry(toolpath, entry_style, plunge_rate);
             }
 
             // Apply dogbone dressup
             if dogbone {
                 debug!("Applying dogbone overcuts...");
-                toolpath = apply_dogbones(&toolpath, tool_radius, 170.0);
+                toolpath = apply_dogbones(toolpath, tool_radius, 170.0);
             }
 
             let elapsed = start.elapsed();
@@ -2090,7 +2090,7 @@ fn main() -> Result<()> {
             // Apply entry dressup
             if let Some(entry_style) = helpers::parse_entry_style(&entry)? {
                 debug!("Applying {} entry...", entry);
-                toolpath = apply_entry(&toolpath, entry_style, plunge_rate);
+                toolpath = apply_entry(toolpath, entry_style, plunge_rate);
             }
 
             // Apply tabs (on final depth pass only)
@@ -2102,13 +2102,13 @@ fn main() -> Result<()> {
                     "Adding tabs"
                 );
                 let tab_list = even_tabs(tabs, tab_width, tab_height);
-                toolpath = apply_tabs(&toolpath, &tab_list, -depth);
+                toolpath = apply_tabs(toolpath, &tab_list, -depth);
             }
 
             // Apply dogbone dressup
             if dogbone {
                 debug!("Applying dogbone overcuts...");
-                toolpath = apply_dogbones(&toolpath, tool_radius, 170.0);
+                toolpath = apply_dogbones(toolpath, tool_radius, 170.0);
             }
 
             let elapsed = start.elapsed();
@@ -2383,7 +2383,7 @@ fn main() -> Result<()> {
                     safe_z_threshold: safe_z,
                 };
                 let before_rapid = toolpath.total_rapid_distance();
-                toolpath = apply_link_moves(&toolpath, &link_params);
+                toolpath = apply_link_moves(toolpath, &link_params);
                 info!(
                     before_rapid_mm = format!("{:.1}", before_rapid),
                     after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
@@ -2671,7 +2671,7 @@ fn main() -> Result<()> {
                     safe_z_threshold: safe_z,
                 };
                 let before_rapid = toolpath.total_rapid_distance();
-                toolpath = apply_link_moves(&toolpath, &link_params);
+                toolpath = apply_link_moves(toolpath, &link_params);
                 info!(
                     before_rapid_mm = format!("{:.1}", before_rapid),
                     after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
@@ -2781,7 +2781,7 @@ fn main() -> Result<()> {
                     safe_z_threshold: safe_z,
                 };
                 let before_rapid = toolpath.total_rapid_distance();
-                toolpath = apply_link_moves(&toolpath, &link_params);
+                toolpath = apply_link_moves(toolpath, &link_params);
                 info!(
                     before_rapid_mm = format!("{:.1}", before_rapid),
                     after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
@@ -2878,7 +2878,7 @@ fn main() -> Result<()> {
                     safe_z_threshold: safe_z,
                 };
                 let before_rapid = toolpath.total_rapid_distance();
-                toolpath = apply_link_moves(&toolpath, &link_params);
+                toolpath = apply_link_moves(toolpath, &link_params);
                 info!(
                     before_rapid_mm = format!("{:.1}", before_rapid),
                     after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
@@ -3034,7 +3034,7 @@ fn main() -> Result<()> {
                     safe_z_threshold: safe_z,
                 };
                 let before_rapid = toolpath.total_rapid_distance();
-                toolpath = apply_link_moves(&toolpath, &link_params);
+                toolpath = apply_link_moves(toolpath, &link_params);
                 info!(
                     before_rapid_mm = format!("{:.1}", before_rapid),
                     after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
@@ -3132,7 +3132,7 @@ fn main() -> Result<()> {
                     safe_z_threshold: safe_z,
                 };
                 let before_rapid = toolpath.total_rapid_distance();
-                toolpath = apply_link_moves(&toolpath, &link_params);
+                toolpath = apply_link_moves(toolpath, &link_params);
                 info!(
                     before_rapid_mm = format!("{:.1}", before_rapid),
                     after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),

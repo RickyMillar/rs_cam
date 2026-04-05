@@ -99,14 +99,18 @@ fn run_adaptive3d_annotated(
 > {
     let (mesh, index, cutter) =
         prepare_mesh_operation(req, phase_tracker, debug).map_err(ComputeError::from)?;
+    const ADAPTIVE3D_HELIX_RADIUS_FACTOR: f64 = 0.3;
+    const ADAPTIVE3D_HELIX_PITCH_MM: f64 = 2.0;
+    const ADAPTIVE3D_RAMP_ANGLE_DEG: f64 = 10.0;
+
     let entry = match cfg.entry_style {
-        EntryStyle::Plunge => EntryStyle3d::Plunge,
-        EntryStyle::Helix => EntryStyle3d::Helix {
-            radius: req.tool.diameter * 0.3,
-            pitch: 2.0,
+        Adaptive3dEntryStyle::Plunge => EntryStyle3d::Plunge,
+        Adaptive3dEntryStyle::Helix => EntryStyle3d::Helix {
+            radius: req.tool.diameter * ADAPTIVE3D_HELIX_RADIUS_FACTOR,
+            pitch: ADAPTIVE3D_HELIX_PITCH_MM,
         },
-        EntryStyle::Ramp => EntryStyle3d::Ramp {
-            max_angle_deg: 10.0,
+        Adaptive3dEntryStyle::Ramp => EntryStyle3d::Ramp {
+            max_angle_deg: ADAPTIVE3D_RAMP_ANGLE_DEG,
         },
     };
     let params = Adaptive3dParams {

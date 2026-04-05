@@ -1,7 +1,5 @@
 use crate::compute::ComputeBackend;
-use crate::state::job::{
-    AlignmentPin, FaceUp, Fixture, FlipAxis, KeepOutZone, Setup, ToolConfig,
-};
+use crate::state::job::{AlignmentPin, FaceUp, Fixture, FlipAxis, KeepOutZone, Setup, ToolConfig};
 use crate::state::selection::Selection;
 
 use super::super::AppController;
@@ -144,7 +142,11 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    pub(crate) fn handle_rename_setup(&mut self, setup_id: crate::state::job::SetupId, name: String) {
+    pub(crate) fn handle_rename_setup(
+        &mut self,
+        setup_id: crate::state::job::SetupId,
+        name: String,
+    ) {
         if let Some(setup) = self
             .state
             .job
