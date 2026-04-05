@@ -4,7 +4,6 @@ use super::sim_debug::{
 };
 use crate::state::job::JobState;
 use crate::state::simulation::{SimulationIssueKind, SimulationState, StockVizMode};
-use crate::state::toolpath::OperationConfig;
 use crate::ui::theme;
 
 /// Right panel in simulation workspace: current state, warnings, and summary stats.
@@ -198,11 +197,7 @@ pub fn draw(
                                 if idx >= 6 {
                                     break;
                                 }
-                                ui.label(
-                                    egui::RichText::new(key)
-                                        .small()
-                                        .color(theme::TEXT_MUTED),
-                                );
+                                ui.label(egui::RichText::new(key).small().color(theme::TEXT_MUTED));
                                 ui.label(egui::RichText::new(format_json_value(value)).small());
                                 ui.end_row();
                             }
@@ -444,8 +439,7 @@ pub fn draw(
             // Holder clearance (first path only)
             if sim.checks.holder_collision_count == 0 && sim.checks.min_safe_stickout.is_some() {
                 ui.label(
-                    egui::RichText::new("\u{2705} Holder clearance: Clear")
-                        .color(theme::SUCCESS),
+                    egui::RichText::new("\u{2705} Holder clearance: Clear").color(theme::SUCCESS),
                 );
             } else if sim.checks.holder_collision_count > 0 {
                 ui.label(
@@ -472,8 +466,7 @@ pub fn draw(
             // Rapid collisions
             if sim.checks.rapid_collisions.is_empty() {
                 ui.label(
-                    egui::RichText::new("\u{2705} Rapid collisions: None")
-                        .color(theme::SUCCESS),
+                    egui::RichText::new("\u{2705} Rapid collisions: None").color(theme::SUCCESS),
                 );
             } else {
                 ui.label(
@@ -558,7 +551,7 @@ pub fn draw(
                             if let Some(tp) = job.find_toolpath(boundary.id)
                                 && let Some(result) = &tp.result
                             {
-                                let feed = op_feed_rate(&tp.operation);
+                                let feed = tp.operation.feed_rate();
                                 let time_min = result.stats.cutting_distance / feed;
                                 let m = time_min.floor() as u32;
                                 let s = ((time_min - m as f64) * 60.0) as u32;
@@ -639,38 +632,10 @@ fn aggregate_stats(sim: &SimulationState, job: &JobState) -> (f64, f64, f64) {
         {
             total_cutting += result.stats.cutting_distance;
             total_rapid += result.stats.rapid_distance;
-            let feed = op_feed_rate(&tp.operation);
+            let feed = tp.operation.feed_rate();
             total_time_min += result.stats.cutting_distance / feed;
         }
     }
 
     (total_cutting, total_rapid, total_time_min)
-}
-
-fn op_feed_rate(op: &OperationConfig) -> f64 {
-    match op {
-        OperationConfig::Face(c) => c.feed_rate,
-        OperationConfig::Pocket(c) => c.feed_rate,
-        OperationConfig::Profile(c) => c.feed_rate,
-        OperationConfig::Adaptive(c) => c.feed_rate,
-        OperationConfig::DropCutter(c) => c.feed_rate,
-        OperationConfig::Trace(c) => c.feed_rate,
-        OperationConfig::Drill(c) => c.feed_rate,
-        OperationConfig::Chamfer(c) => c.feed_rate,
-        OperationConfig::Zigzag(c) => c.feed_rate,
-        OperationConfig::VCarve(c) => c.feed_rate,
-        OperationConfig::Rest(c) => c.feed_rate,
-        OperationConfig::Inlay(c) => c.feed_rate,
-        OperationConfig::Adaptive3d(c) => c.feed_rate,
-        OperationConfig::Waterline(c) => c.feed_rate,
-        OperationConfig::Pencil(c) => c.feed_rate,
-        OperationConfig::Scallop(c) => c.feed_rate,
-        OperationConfig::SteepShallow(c) => c.feed_rate,
-        OperationConfig::RampFinish(c) => c.feed_rate,
-        OperationConfig::SpiralFinish(c) => c.feed_rate,
-        OperationConfig::RadialFinish(c) => c.feed_rate,
-        OperationConfig::HorizontalFinish(c) => c.feed_rate,
-        OperationConfig::ProjectCurve(c) => c.feed_rate,
-        OperationConfig::AlignmentPinDrill(c) => c.feed_rate,
-    }
 }

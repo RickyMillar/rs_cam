@@ -59,6 +59,12 @@ impl MillingCutter for VBitEndmill {
     fn length(&self) -> f64 {
         self.cutting_length
     }
+    fn geometry_hint(&self) -> crate::feeds::ToolGeometryHint {
+        crate::feeds::ToolGeometryHint::VBit {
+            included_angle: self.included_angle_deg,
+            tip_diameter: 0.0, // pointed V-bit; flat-tip support is a follow-up
+        }
+    }
 
     fn height_at_radius(&self, r: f64) -> Option<f64> {
         let big_r = self.radius();

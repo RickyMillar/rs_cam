@@ -205,11 +205,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 for keep_out in &setup.keep_out_zones {
                     let selected = state.selection == Selection::KeepOut(setup.id, keep_out.id);
                     let dim = !keep_out.enabled;
-                    let color = if dim {
-                        theme::TEXT_FAINT
-                    } else {
-                        theme::ERROR
-                    };
+                    let color = if dim { theme::TEXT_FAINT } else { theme::ERROR };
                     let label = format!("  {} (keep-out)", keep_out.name);
                     let resp =
                         ui.selectable_label(selected, egui::RichText::new(&label).color(color));

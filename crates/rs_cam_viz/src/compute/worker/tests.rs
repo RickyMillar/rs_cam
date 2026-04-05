@@ -156,8 +156,6 @@ fn waterline_request(id: usize) -> ComputeRequest {
         OperationConfig::Waterline(cfg) => cfg,
         _ => unreachable!("default op kind mismatch"),
     };
-    cfg.start_z = 0.0;
-    cfg.final_z = -2.0;
     cfg.z_step = 1.0;
     cfg.sampling = 1.0;
     ComputeRequest {

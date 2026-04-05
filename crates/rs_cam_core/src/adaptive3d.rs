@@ -1298,13 +1298,21 @@ fn clear_z_level_contour_parallel(
         material_remaining_at_level(material_stock, surface_hm, z_level, ctx.stock_to_leave)
     };
     if remaining < 0.005 {
-        debug!(z = z_level, remaining, "CP: skipping — no material remaining");
+        debug!(
+            z = z_level,
+            remaining, "CP: skipping — no material remaining"
+        );
         return Ok(());
     }
 
     // 1. Build boolean material grid (material = true)
-    let (material_grid, rows, cols, origin_x, origin_y, cell_size) =
-        build_material_bool_grid(material_stock, surface_hm, z_level, ctx.stock_to_leave, region);
+    let (material_grid, rows, cols, origin_x, origin_y, cell_size) = build_material_bool_grid(
+        material_stock,
+        surface_hm,
+        z_level,
+        ctx.stock_to_leave,
+        region,
+    );
 
     let mat_count = material_grid.iter().filter(|&&b| b).count();
     // Check if any material exists
@@ -1446,8 +1454,13 @@ fn clear_z_level_adaptive(
     }
 
     // ── 1. Build boolean material grid ─────────────────────────────────
-    let (material_grid, rows, cols, origin_x, origin_y, cell_size) =
-        build_material_bool_grid(material_stock, surface_hm, z_level, ctx.stock_to_leave, region);
+    let (material_grid, rows, cols, origin_x, origin_y, cell_size) = build_material_bool_grid(
+        material_stock,
+        surface_hm,
+        z_level,
+        ctx.stock_to_leave,
+        region,
+    );
 
     if !material_grid.iter().any(|&b| b) {
         return Ok(());
@@ -1483,10 +1496,8 @@ fn clear_z_level_adaptive(
         let kr = kappa * tool_radius_cells;
         let denom = (1.0 + kr).clamp(0.5, 2.0);
         // offset = base_step * (1/denom - 1), clamped to ±0.5 * base_step
-        *off = (base_step_cells * (1.0 / denom - 1.0)).clamp(
-            -0.5 * base_step_cells,
-            0.5 * base_step_cells,
-        );
+        *off = (base_step_cells * (1.0 / denom - 1.0))
+            .clamp(-0.5 * base_step_cells, 0.5 * base_step_cells);
     }
 
     // Z-blend setup (identical to contour-parallel)

@@ -1,7 +1,8 @@
 use super::*;
+use crate::compute::OperationError;
 
 #[allow(dead_code)]
-fn run_pocket(req: &ComputeRequest, cfg: &PocketConfig) -> Result<Toolpath, String> {
+fn run_pocket(req: &ComputeRequest, cfg: &PocketConfig) -> Result<Toolpath, OperationError> {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
     let depth = make_depth_with_finishing(cfg.depth, cfg.depth_per_pass, cfg.finishing_passes);
@@ -38,13 +39,10 @@ fn run_pocket(req: &ComputeRequest, cfg: &PocketConfig) -> Result<Toolpath, Stri
     Ok(out)
 }
 
-pub(super) fn run_profile(req: &ComputeRequest, cfg: &ProfileConfig) -> Result<Toolpath, String> {
+pub(super) fn run_profile(req: &ComputeRequest, cfg: &ProfileConfig) -> Result<Toolpath, OperationError> {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
-    let side = match cfg.side {
-        crate::state::toolpath::ProfileSide::Outside => rs_cam_core::profile::ProfileSide::Outside,
-        crate::state::toolpath::ProfileSide::Inside => rs_cam_core::profile::ProfileSide::Inside,
-    };
+    let side = cfg.side;
     let depth = make_depth_with_finishing(cfg.depth, cfg.depth_per_pass, cfg.finishing_passes);
     let safe_z = effective_safe_z(req);
     let levels = depth.all_levels();
@@ -155,11 +153,15 @@ fn run_adaptive_annotated(
     Ok((out, level_slices, annotations))
 }
 
-fn run_vcarve(req: &ComputeRequest, cfg: &VCarveConfig) -> Result<Toolpath, String> {
+fn run_vcarve(req: &ComputeRequest, cfg: &VCarveConfig) -> Result<Toolpath, OperationError> {
     let polys = require_polygons(req)?;
     let ha = match req.tool.tool_type {
         ToolType::VBit => (req.tool.included_angle / 2.0).to_radians(),
-        _ => return Err("VCarve requires V-Bit tool".into()),
+        _ => {
+            return Err(OperationError::InvalidTool(
+                "VCarve requires V-Bit tool".into(),
+            ))
+        }
     };
     let mut out = Toolpath::new();
     for p in polys {
@@ -180,10 +182,12 @@ fn run_vcarve(req: &ComputeRequest, cfg: &VCarveConfig) -> Result<Toolpath, Stri
     Ok(out)
 }
 
-fn run_rest(req: &ComputeRequest, cfg: &RestConfig) -> Result<Toolpath, String> {
+fn run_rest(req: &ComputeRequest, cfg: &RestConfig) -> Result<Toolpath, OperationError> {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
-    let ptr = req.prev_tool_radius.ok_or("Previous tool not set")?;
+    let ptr = req
+        .prev_tool_radius
+        .ok_or_else(|| OperationError::Other("Previous tool not set".into()))?;
     let depth = make_depth(cfg.depth, cfg.depth_per_pass);
     let mut out = Toolpath::new();
     for p in polys {
@@ -207,11 +211,15 @@ fn run_rest(req: &ComputeRequest, cfg: &RestConfig) -> Result<Toolpath, String> 
     Ok(out)
 }
 
-pub(super) fn run_inlay(req: &ComputeRequest, cfg: &InlayConfig) -> Result<Toolpath, String> {
+pub(super) fn run_inlay(req: &ComputeRequest, cfg: &InlayConfig) -> Result<Toolpath, OperationError> {
     let polys = require_polygons(req)?;
     let ha = match req.tool.tool_type {
         ToolType::VBit => (req.tool.included_angle / 2.0).to_radians(),
-        _ => return Err("Inlay requires V-Bit tool".into()),
+        _ => {
+            return Err(OperationError::InvalidTool(
+                "Inlay requires V-Bit tool".into(),
+            ))
+        }
     };
     let safe_z = effective_safe_z(req);
     let mut female_out = Toolpath::new();
@@ -246,7 +254,7 @@ pub(super) fn run_inlay(req: &ComputeRequest, cfg: &InlayConfig) -> Result<Toolp
     Ok(out)
 }
 
-pub(super) fn run_zigzag(req: &ComputeRequest, cfg: &ZigzagConfig) -> Result<Toolpath, String> {
+pub(super) fn run_zigzag(req: &ComputeRequest, cfg: &ZigzagConfig) -> Result<Toolpath, OperationError> {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
     let depth = make_depth(cfg.depth, cfg.depth_per_pass);
@@ -271,7 +279,7 @@ pub(super) fn run_zigzag(req: &ComputeRequest, cfg: &ZigzagConfig) -> Result<Too
     Ok(out)
 }
 
-fn run_trace(req: &ComputeRequest, cfg: &TraceConfig) -> Result<Toolpath, String> {
+fn run_trace(req: &ComputeRequest, cfg: &TraceConfig) -> Result<Toolpath, OperationError> {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
     let depth = make_depth(cfg.depth, cfg.depth_per_pass);
@@ -285,11 +293,7 @@ fn run_trace(req: &ComputeRequest, cfg: &TraceConfig) -> Result<Toolpath, String
                 feed_rate: cfg.feed_rate,
                 plunge_rate: cfg.plunge_rate,
                 safe_z: effective_safe_z(req),
-                compensation: match cfg.compensation {
-                    self::TraceCompensation::None => CoreTraceComp::None,
-                    self::TraceCompensation::Left => CoreTraceComp::Left,
-                    self::TraceCompensation::Right => CoreTraceComp::Right,
-                },
+                compensation: cfg.compensation,
             };
             trace_toolpath(p, &params)
         });
@@ -299,7 +303,7 @@ fn run_trace(req: &ComputeRequest, cfg: &TraceConfig) -> Result<Toolpath, String
 }
 
 #[allow(dead_code)]
-fn run_drill(req: &ComputeRequest, cfg: &DrillConfig) -> Result<Toolpath, String> {
+fn run_drill(req: &ComputeRequest, cfg: &DrillConfig) -> Result<Toolpath, OperationError> {
     let polys = require_polygons(req)?;
     let mut holes = Vec::new();
     for p in polys {
@@ -314,7 +318,9 @@ fn run_drill(req: &ComputeRequest, cfg: &DrillConfig) -> Result<Toolpath, String
         holes.push([sx / n, sy / n]);
     }
     if holes.is_empty() {
-        return Err("No hole positions found (import SVG with circles)".to_string());
+        return Err(OperationError::MissingGeometry(
+            "No hole positions found (import SVG with circles)".to_string(),
+        ));
     }
     let cycle = match cfg.cycle {
         self::DrillCycleType::Simple => DrillCycle::Simple,
@@ -334,11 +340,15 @@ fn run_drill(req: &ComputeRequest, cfg: &DrillConfig) -> Result<Toolpath, String
     Ok(drill_toolpath(&holes, &params))
 }
 
-fn run_chamfer(req: &ComputeRequest, cfg: &ChamferConfig) -> Result<Toolpath, String> {
+fn run_chamfer(req: &ComputeRequest, cfg: &ChamferConfig) -> Result<Toolpath, OperationError> {
     let polys = require_polygons(req)?;
     let ha = match req.tool.tool_type {
         ToolType::VBit => (req.tool.included_angle / 2.0).to_radians(),
-        _ => return Err("Chamfer requires V-Bit tool".into()),
+        _ => {
+            return Err(OperationError::InvalidTool(
+                "Chamfer requires V-Bit tool".into(),
+            ))
+        }
     };
     let mut out = Toolpath::new();
     for p in polys {
@@ -365,7 +375,9 @@ impl SemanticToolpathOp for FaceConfig {
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
         let bbox = ctx.req.stock_bbox.ok_or_else(|| {
-            ComputeError::Message("No stock defined for face operation".to_string())
+            ComputeError::from(OperationError::MissingGeometry(
+                "No stock defined for face operation".to_string(),
+            ))
         })?;
         let rect = Polygon2::rectangle(
             bbox.min.x - self.stock_offset,
@@ -463,7 +475,7 @@ impl SemanticToolpathOp for PocketConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
-        let polys = require_polygons(ctx.req).map_err(ComputeError::Message)?;
+        let polys = require_polygons(ctx.req).map_err(ComputeError::from)?;
         let op_scope = ctx
             .semantic_root
             .map(|root| root.start_item(ToolpathSemanticKind::Operation, "Pocket"));
@@ -611,8 +623,8 @@ impl SemanticToolpathOp for ProfileConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
-        let polys = require_polygons(ctx.req).map_err(ComputeError::Message)?;
-        let tp = run_profile(ctx.req, self).map_err(ComputeError::Message)?;
+        let polys = require_polygons(ctx.req).map_err(ComputeError::from)?;
+        let tp = run_profile(ctx.req, self).map_err(ComputeError::from)?;
         let op_scope =
             annotate_operation_scope(ctx.semantic_root, ctx.core_debug_span_id, "Profile", &tp);
         if let Some(scope) = op_scope.as_ref() {
@@ -706,8 +718,8 @@ impl SemanticToolpathOp for VCarveConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
-        let polys = require_polygons(ctx.req).map_err(ComputeError::Message)?;
-        let tp = run_vcarve(ctx.req, self).map_err(ComputeError::Message)?;
+        let polys = require_polygons(ctx.req).map_err(ComputeError::from)?;
+        let tp = run_vcarve(ctx.req, self).map_err(ComputeError::from)?;
         let op_scope =
             annotate_operation_scope(ctx.semantic_root, ctx.core_debug_span_id, "VCarve", &tp);
         if let Some(scope) = op_scope.as_ref() {
@@ -758,8 +770,8 @@ impl SemanticToolpathOp for RestConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
-        let polys = require_polygons(ctx.req).map_err(ComputeError::Message)?;
-        let tp = run_rest(ctx.req, self).map_err(ComputeError::Message)?;
+        let polys = require_polygons(ctx.req).map_err(ComputeError::from)?;
+        let tp = run_rest(ctx.req, self).map_err(ComputeError::from)?;
         let op_scope = annotate_operation_scope(
             ctx.semantic_root,
             ctx.core_debug_span_id,
@@ -836,8 +848,8 @@ impl SemanticToolpathOp for InlayConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
-        let polys = require_polygons(ctx.req).map_err(ComputeError::Message)?;
-        let tp = run_inlay(ctx.req, self).map_err(ComputeError::Message)?;
+        let polys = require_polygons(ctx.req).map_err(ComputeError::from)?;
+        let tp = run_inlay(ctx.req, self).map_err(ComputeError::from)?;
         let op_scope =
             annotate_operation_scope(ctx.semantic_root, ctx.core_debug_span_id, "Inlay", &tp);
         if let Some(scope) = op_scope.as_ref() {
@@ -848,7 +860,12 @@ impl SemanticToolpathOp for InlayConfig {
         if let Some(op_ctx) = semantic_child_context(op_scope.as_ref()) {
             let ha = match ctx.req.tool.tool_type {
                 ToolType::VBit => (ctx.req.tool.included_angle / 2.0).to_radians(),
-                _ => return Err(ComputeError::Message("Inlay requires V-Bit tool".into())),
+                _ => {
+                    return Err(OperationError::InvalidTool(
+                        "Inlay requires V-Bit tool".into(),
+                    )
+                    .into())
+                }
             };
             let actual_runs = cutting_runs(&tp);
             let mut run_cursor = 0usize;
@@ -902,8 +919,8 @@ impl SemanticToolpathOp for ZigzagConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
-        let polys = require_polygons(ctx.req).map_err(ComputeError::Message)?;
-        let tp = run_zigzag(ctx.req, self).map_err(ComputeError::Message)?;
+        let polys = require_polygons(ctx.req).map_err(ComputeError::from)?;
+        let tp = run_zigzag(ctx.req, self).map_err(ComputeError::from)?;
         let op_scope =
             annotate_operation_scope(ctx.semantic_root, ctx.core_debug_span_id, "Zigzag", &tp);
         if let Some(scope) = op_scope.as_ref() {
@@ -958,8 +975,8 @@ impl SemanticToolpathOp for TraceConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
-        let polys = require_polygons(ctx.req).map_err(ComputeError::Message)?;
-        let tp = run_trace(ctx.req, self).map_err(ComputeError::Message)?;
+        let polys = require_polygons(ctx.req).map_err(ComputeError::from)?;
+        let tp = run_trace(ctx.req, self).map_err(ComputeError::from)?;
         let op_scope =
             annotate_operation_scope(ctx.semantic_root, ctx.core_debug_span_id, "Trace", &tp);
         if let Some(scope) = op_scope.as_ref() {
@@ -1006,7 +1023,7 @@ impl SemanticToolpathOp for DrillConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
-        let polys = require_polygons(ctx.req).map_err(ComputeError::Message)?;
+        let polys = require_polygons(ctx.req).map_err(ComputeError::from)?;
         let mut holes = Vec::new();
         for p in polys {
             if p.exterior.is_empty() {
@@ -1020,9 +1037,10 @@ impl SemanticToolpathOp for DrillConfig {
             holes.push([sx / n, sy / n]);
         }
         if holes.is_empty() {
-            return Err(ComputeError::Message(
+            return Err(OperationError::MissingGeometry(
                 "No hole positions found (import SVG with circles)".to_string(),
-            ));
+            )
+            .into());
         }
         let cycle = match self.cycle {
             self::DrillCycleType::Simple => DrillCycle::Simple,
@@ -1093,8 +1111,8 @@ impl SemanticToolpathOp for ChamferConfig {
         &self,
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
-        let polys = require_polygons(ctx.req).map_err(ComputeError::Message)?;
-        let tp = run_chamfer(ctx.req, self).map_err(ComputeError::Message)?;
+        let polys = require_polygons(ctx.req).map_err(ComputeError::from)?;
+        let tp = run_chamfer(ctx.req, self).map_err(ComputeError::from)?;
         let op_scope =
             annotate_operation_scope(ctx.semantic_root, ctx.core_debug_span_id, "Chamfer", &tp);
         if let Some(scope) = op_scope.as_ref() {
@@ -1124,9 +1142,10 @@ impl SemanticToolpathOp for AlignmentPinDrillConfig {
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
         if self.holes.is_empty() {
-            return Err(ComputeError::Message(
+            return Err(OperationError::MissingGeometry(
                 "No alignment pin positions defined".to_string(),
-            ));
+            )
+            .into());
         }
         let stock_z = ctx
             .req

@@ -14,26 +14,26 @@ Results from physical inspection of 105 parameter-variant toolpaths across 22 op
 
 ## Medium Severity
 
-### 2. Adaptive slot_clearing=true produces fewer moves than false
-**Severity**: MEDIUM
+### 2. ~~Adaptive slot_clearing=true produces fewer moves than false~~ RESOLVED — expected behavior
+**Severity**: ~~MEDIUM~~ NOT A BUG
 **Operation**: Adaptive 2D
-**Evidence**: slot_clearing=true gives 98 moves / 258mm rapid. slot_clearing=false gives 151 moves / 207mm rapid. This is backwards — slot clearing should ADD a center slot pass, not suppress offset passes.
-**Root cause**: The slot clearing pass may be replacing inner contour passes rather than supplementing them.
-**Action**: Review adaptive slot clearing logic. The center slot should be in addition to offset passes, not instead of them.
+**Evidence**: slot_clearing=true gives 98 moves / 258mm rapid. slot_clearing=false gives 151 moves / 207mm rapid.
+**Root cause**: Not a bug. The slot clearing phase (lines 1141-1182 of `adaptive.rs`) pre-clears cells via `grid.clear_circle()` along 3 zigzag seed lines. This lets the adaptive spiral loop converge faster (material_fraction drops below 0.01 sooner), resulting in fewer total passes. The boundary cleanup pass always runs unconditionally regardless of the flag. The higher rapid distance comes from retract moves between the seed lines themselves.
+**Resolution**: Working as designed. Fewer moves with slot_clearing=true is the expected efficiency gain from pre-seeding.
 
-### 3. Adaptive min_cutting_radius emits zero arc moves
-**Severity**: MEDIUM
+### 3. ~~Adaptive min_cutting_radius emits zero arc moves~~ FIXED
+**Severity**: ~~MEDIUM~~ FIXED
 **Operation**: Adaptive 2D
-**Evidence**: min_cutting_radius=3.0 produces 233 moves (vs 134 baseline) but arc_cw_count=0 and arc_ccw_count=0. All corner smoothing is linearized into hundreds of tiny G1 segments.
-**Impact**: CNC controller must buffer/process 80% more segments. Corner surface finish will show faceting.
-**Root cause**: The contour smoother linearizes arcs before emitting toolpath moves.
-**Action**: Emit G2/G3 arcs for min_cutting_radius corners. The arc fitting dressup could be applied, but the base operation should emit arcs natively.
+**Evidence**: min_cutting_radius=3.0 produced 233 moves but arc_cw_count=0 and arc_ccw_count=0.
+**Root cause**: `blend_corners()` in `adaptive_shared.rs` computed correct arc geometry (center, radius, sweep) but immediately sampled it into linearized P2 points. The emitter only called `feed_to()` (G1).
+**Fix**: Added `BlendedMove` enum and `blend_corners_to_moves()` that preserves arc descriptors. The 2D adaptive emitter now dispatches `BlendedMove::Arc` to `arc_cw_to()`/`arc_ccw_to()` (G2/G3). The 3D emitter keeps linearization since Z varies per point. 3 new tests validate arc emission, center-on-radius geometry, and straight-line passthrough.
 
-### 4. Adaptive3D z_blend=true: more Z levels but less total work
-**Severity**: MEDIUM
+### 4. ~~Adaptive3D z_blend=true: more Z levels but less total work~~ RESOLVED — expected behavior
+**Severity**: ~~MEDIUM~~ NOT A BUG
 **Operation**: Adaptive 3D
-**Evidence**: z_blend=true produces +58% more z_levels (341 vs 216) but -19% moves (655 vs 806) and -25% cutting distance (1749mm vs 2321mm). More levels with less work suggests possible incomplete coverage at some levels.
-**Action**: Visual inspection of z_blend stock heightmap. Verify no uncut regions remain between blend levels.
+**Evidence**: z_blend=true produces +58% more z_levels (341 vs 216) but -19% moves (655 vs 806) and -25% cutting distance (1749mm vs 2321mm).
+**Root cause**: Not a coverage gap. The fingerprint's `z_levels` metric counts distinct Z values in output moves (deduped at 0.001). With z_blend, each contour ring cuts at a different blended Z (outer rings at z_level, inner rings descending toward terrain), producing many more distinct Z heights in the output — this is the intended behavior. The -25% cutting distance is an efficiency gain: blended passes follow the terrain surface more closely, so less redundant flat cutting at each Z level. Z level generation itself (lines 2435-2528) is unaffected by z_blend.
+**Resolution**: Working as designed. The +58% z_levels reflects more distinct Z heights per ring (expected blending), not extra clearing passes.
 
 ## Low Severity
 

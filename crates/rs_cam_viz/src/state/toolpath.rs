@@ -4,16 +4,16 @@ mod entry;
 mod support;
 
 pub use catalog::{
-    DepthSemantics, GeometryRequirement, OperationConfig, OperationFamily, OperationSpec,
-    OperationType, UiOperationFamily, UiProcessRole, feed_optimization_unavailable_reason,
+    DepthSemantics, GeometryRequirement, OperationConfig, OperationFamily, OperationParams,
+    OperationSpec, OperationType, UiOperationFamily, UiProcessRole,
+    feed_optimization_unavailable_reason,
 };
 pub use configs::{
     Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig, ClearingStrategy,
-    CompensationType,
-    CutDirection, DrillConfig, DrillCycleType, DropCutterConfig, EntryStyle, FaceConfig,
-    FaceDirection, HorizontalFinishConfig, InlayConfig, PencilConfig, PocketConfig, PocketPattern,
-    ProfileConfig, ProfileSide, ProjectCurveConfig, RadialFinishConfig, RampFinishConfig,
-    RegionOrdering, RestConfig, ScallopConfig, ScallopDirection, SpiralDirection,
+    CompensationType, CutDirection, DrillConfig, DrillCycleType, DropCutterConfig, EntryStyle,
+    FaceConfig, FaceDirection, HorizontalFinishConfig, InlayConfig, PencilConfig, PocketConfig,
+    PocketPattern, ProfileConfig, ProfileSide, ProjectCurveConfig, RadialFinishConfig,
+    RampFinishConfig, RegionOrdering, RestConfig, ScallopConfig, ScallopDirection, SpiralDirection,
     SpiralFinishConfig, SteepShallowConfig, TraceCompensation, TraceConfig, VCarveConfig,
     WaterlineConfig, ZigzagConfig,
 };

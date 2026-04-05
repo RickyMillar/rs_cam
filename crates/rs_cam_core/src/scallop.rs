@@ -28,7 +28,8 @@ use crate::toolpath::Toolpath;
 use tracing::info;
 
 /// Direction for scallop contouring.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ScallopDirection {
     /// Start from boundary, work inward (default).
     #[default]

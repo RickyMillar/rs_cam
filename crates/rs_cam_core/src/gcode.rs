@@ -623,12 +623,44 @@ pub fn replace_rapids_with_feed(gcode: &str, high_feedrate: f64) -> String {
     output
 }
 
-/// Get a post-processor by name.
+/// Post-processor format selector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PostFormat {
+    Grbl,
+    LinuxCnc,
+    Mach3,
+}
+
+impl PostFormat {
+    /// All available post-processor formats.
+    pub const ALL: &[PostFormat] = &[PostFormat::Grbl, PostFormat::LinuxCnc, PostFormat::Mach3];
+
+    /// Human-readable display label for UI.
+    pub fn label(self) -> &'static str {
+        match self {
+            PostFormat::Grbl => "GRBL",
+            PostFormat::LinuxCnc => "LinuxCNC",
+            PostFormat::Mach3 => "Mach3",
+        }
+    }
+
+    /// Create the corresponding post-processor instance.
+    pub fn post_processor(self) -> Box<dyn PostProcessor> {
+        match self {
+            PostFormat::Grbl => Box::new(GrblPost),
+            PostFormat::LinuxCnc => Box::new(LinuxCncPost),
+            PostFormat::Mach3 => Box::new(Mach3Post),
+        }
+    }
+}
+
+/// Get a post-processor by name (CLI backward compatibility).
 pub fn get_post_processor(name: &str) -> Option<Box<dyn PostProcessor>> {
     match name.to_lowercase().as_str() {
-        "grbl" => Some(Box::new(GrblPost)),
-        "linuxcnc" => Some(Box::new(LinuxCncPost)),
-        "mach3" => Some(Box::new(Mach3Post)),
+        "grbl" => Some(PostFormat::Grbl.post_processor()),
+        "linuxcnc" => Some(PostFormat::LinuxCnc.post_processor()),
+        "mach3" => Some(PostFormat::Mach3.post_processor()),
         _ => None,
     }
 }

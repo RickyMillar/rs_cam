@@ -30,6 +30,7 @@
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::fmt;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
@@ -49,9 +50,36 @@ use rs_cam_core::{
     profile::{ProfileParams, ProfileSide, profile_toolpath},
     rest::{RestParams, rest_machining_toolpath},
     semantic_trace::{ToolpathSemanticRecorder, ToolpathTraceArtifact, enrich_traces},
+    tool::MillingCutter,
     toolpath::{Toolpath, raster_toolpath_from_grid},
     zigzag::{ZigzagParams, zigzag_toolpath},
 };
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CliToolType {
+    #[serde(alias = "endmill")]
+    Flat,
+    #[serde(alias = "ballnose")]
+    Ball,
+    #[serde(rename = "bullnose")]
+    BullNose,
+    #[serde(rename = "vbit")]
+    VBit,
+    TaperedBall,
+}
+
+impl fmt::Display for CliToolType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Flat => write!(f, "flat"),
+            Self::Ball => write!(f, "ball"),
+            Self::BullNose => write!(f, "bullnose"),
+            Self::VBit => write!(f, "vbit"),
+            Self::TaperedBall => write!(f, "tapered_ball"),
+        }
+    }
+}
 
 // ── TOML types ─────────────────────────────────────────────────────────
 
@@ -110,7 +138,7 @@ fn default_sim_resolution() -> f64 {
 #[derive(Deserialize)]
 pub struct ToolDef {
     #[serde(rename = "type")]
-    pub tool_type: String,
+    pub tool_type: CliToolType,
     pub number: Option<u32>,
     pub diameter: f64,
     /// Number of cutting flutes (default: 2). Used for chipload calculation in diagnostics.
@@ -123,16 +151,13 @@ pub struct ToolDef {
     pub taper_angle: Option<f64>,
     /// Shaft diameter for tapered ball
     pub shaft_diameter: Option<f64>,
-    /// Shank diameter above the cutting flutes (mm). Used for collision detection.
-    #[allow(dead_code)]
+    /// Shank diameter above the cutting flutes (mm).
     pub shank_diameter: Option<f64>,
-    /// Shank length above the cutting flutes (mm). Used for collision detection.
-    #[allow(dead_code)]
+    /// Shank length above the cutting flutes (mm).
     pub shank_length: Option<f64>,
-    /// Holder diameter (mm). Used for collision detection.
-    #[allow(dead_code)]
+    /// Holder diameter (mm).
     pub holder_diameter: Option<f64>,
-    /// Holder length (mm). Used for collision detection.
+    /// Holder length (mm).
     #[allow(dead_code)]
     pub holder_length: Option<f64>,
 }
@@ -240,39 +265,46 @@ pub fn parse_job_file(path: &Path) -> Result<JobFile> {
 
 // ── Tool construction ──────────────────────────────────────────────────
 
-fn build_tool(def: &ToolDef) -> Result<Box<dyn rs_cam_core::tool::MillingCutter>> {
+/// Default cutting length when not specified in the job file.
+const DEFAULT_CUTTING_LENGTH_FACTOR: f64 = 4.0;
+
+fn build_tool(def: &ToolDef) -> Result<rs_cam_core::tool::ToolDefinition> {
     use rs_cam_core::tool::*;
     let d = def.diameter;
-    let cl = d * 4.0;
-    match def.tool_type.as_str() {
-        "flat" | "endmill" => Ok(Box::new(FlatEndmill::new(d, cl))),
-        "ball" | "ballnose" => Ok(Box::new(BallEndmill::new(d, cl))),
-        "bullnose" => {
+    let cl = d * DEFAULT_CUTTING_LENGTH_FACTOR;
+    let cutter: Box<dyn MillingCutter> = match def.tool_type {
+        CliToolType::Flat => Box::new(FlatEndmill::new(d, cl)),
+        CliToolType::Ball => Box::new(BallEndmill::new(d, cl)),
+        CliToolType::BullNose => {
             let cr = def
                 .corner_radius
                 .context("Bull nose tool requires 'corner_radius'")?;
-            Ok(Box::new(BullNoseEndmill::new(d, cr, cl)))
+            Box::new(BullNoseEndmill::new(d, cr, cl))
         }
-        "vbit" => {
+        CliToolType::VBit => {
             let angle = def
                 .included_angle
                 .context("V-bit tool requires 'included_angle'")?;
-            Ok(Box::new(VBitEndmill::new(d, angle, cl)))
+            Box::new(VBitEndmill::new(d, angle, cl))
         }
-        "tapered_ball" => {
+        CliToolType::TaperedBall => {
             let taper = def
                 .taper_angle
                 .context("Tapered ball requires 'taper_angle'")?;
             let shaft = def
                 .shaft_diameter
                 .context("Tapered ball requires 'shaft_diameter'")?;
-            Ok(Box::new(TaperedBallEndmill::new(d, taper, shaft, cl)))
+            Box::new(TaperedBallEndmill::new(d, taper, shaft, cl))
         }
-        _ => bail!(
-            "Unknown tool type '{}'. Supported: flat, ball, bullnose, vbit, tapered_ball",
-            def.tool_type
-        ),
-    }
+    };
+    Ok(ToolDefinition::new(
+        cutter,
+        def.shank_diameter.unwrap_or(d),
+        def.shank_length.unwrap_or(0.0),
+        def.holder_diameter.unwrap_or(d * 2.0),
+        def.shank_length.unwrap_or(0.0) + cl + 20.0, // default stickout
+        def.flute_count.unwrap_or(2),
+    ))
 }
 
 // ── Operation execution ────────────────────────────────────────────────
@@ -280,7 +312,7 @@ fn build_tool(def: &ToolDef) -> Result<Box<dyn rs_cam_core::tool::MillingCutter>
 /// Result of a single operation within a job.
 pub struct OpResult {
     pub toolpath: Toolpath,
-    pub cutter: Box<dyn rs_cam_core::tool::MillingCutter>,
+    pub cutter: rs_cam_core::tool::ToolDefinition,
     pub label: String,
     pub spindle_speed: u32,
     pub tool_number: Option<u32>,
@@ -623,7 +655,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                     let (tp, _annotations) = adaptive_3d_toolpath_annotated_traced_with_cancel(
                         &mesh,
                         &si,
-                        cutter.as_ref(),
+                        &cutter,
                         &params,
                         &never_cancel,
                         Some(&debug_root),
@@ -666,7 +698,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
 
                     tp
                 } else {
-                    adaptive_3d_toolpath(&mesh, &si, cutter.as_ref(), &params)
+                    adaptive_3d_toolpath(&mesh, &si, &cutter, &params)
                 }
             }
 
@@ -697,7 +729,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                 );
 
                 let angle = op.angle.unwrap_or(0.0);
-                let grid = batch_drop_cutter(&mesh, &si, cutter.as_ref(), stepover, angle, min_z);
+                let grid = batch_drop_cutter(&mesh, &si, &cutter, stepover, angle, min_z);
                 raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z)
             }
 
@@ -753,7 +785,7 @@ mod tests {
         // what the job executor would use (cutter.radius(), not diameter/2.0
         // from the TOML definition, which could differ for composite tools).
         let flat_def = ToolDef {
-            tool_type: "flat".into(),
+            tool_type: CliToolType::Flat,
             number: None,
             diameter: 6.0,
             flute_count: None,
@@ -770,7 +802,7 @@ mod tests {
         assert!((cutter.radius() - 3.0).abs() < 1e-10);
 
         let ball_def = ToolDef {
-            tool_type: "ball".into(),
+            tool_type: CliToolType::Ball,
             number: None,
             diameter: 10.0,
             flute_count: None,
@@ -790,7 +822,7 @@ mod tests {
         // returns shaft_diameter / 2.0, which is correct for the effective
         // cutting envelope.
         let tapered_def = ToolDef {
-            tool_type: "tapered_ball".into(),
+            tool_type: CliToolType::TaperedBall,
             number: None,
             diameter: 6.0,
             flute_count: None,

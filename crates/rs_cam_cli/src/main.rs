@@ -38,11 +38,70 @@ use rs_cam_core::{
     zigzag::{ZigzagParams, zigzag_toolpath},
 };
 use std::path::{Path, PathBuf};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Default holder length (mm) used for collision checks when the holder
 /// geometry is not explicitly specified.
 const DEFAULT_HOLDER_LENGTH_MM: f64 = 40.0;
+
+#[allow(clippy::too_many_arguments)]
+fn run_collision_check(
+    toolpath: &rs_cam_core::toolpath::Toolpath,
+    cutter: &dyn rs_cam_core::tool::MillingCutter,
+    mesh: &rs_cam_core::mesh::TriangleMesh,
+    index: &rs_cam_core::mesh::SpatialIndex,
+    holder_diameter: f64,
+    shank_diameter: f64,
+    shank_length: f64,
+    stickout: f64,
+) {
+    if holder_diameter <= 0.0 {
+        return;
+    }
+    let assembly = rs_cam_core::collision::ToolAssembly {
+        cutter_radius: cutter.radius(),
+        cutter_length: if stickout > 0.0 {
+            stickout - shank_length
+        } else {
+            cutter.length()
+        },
+        shank_diameter: if shank_diameter > 0.0 {
+            shank_diameter
+        } else {
+            cutter.diameter()
+        },
+        shank_length,
+        holder_diameter,
+        holder_length: DEFAULT_HOLDER_LENGTH_MM,
+    };
+    let report = rs_cam_core::collision::check_collisions_interpolated(
+        toolpath, &assembly, mesh, index, 2.0,
+    );
+    if report.is_clear() {
+        info!("Collision check: CLEAR");
+    } else {
+        eprintln!(
+            "WARNING: {} holder/shank collisions detected!",
+            report.collisions.len()
+        );
+        eprintln!(
+            "  Min safe stickout: {:.1}mm (current: {:.1}mm)",
+            report.min_safe_stickout,
+            assembly.stickout()
+        );
+        for c in report.collisions.iter().take(5) {
+            eprintln!(
+                "  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
+                c.move_idx,
+                c.segment,
+                c.position.x,
+                c.position.y,
+                c.position.z,
+                c.penetration_depth
+            );
+        }
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "rs_cam", about = "3-axis wood router CAM toolpath generator")]
@@ -1628,7 +1687,7 @@ fn main() -> Result<()> {
                     for phase in &job_result.phases {
                         stock.simulate_toolpath(
                             &phase.toolpath,
-                            phase.cutter.as_ref(),
+                            &phase.cutter,
                             StockCutDirection::FromTop,
                         );
                     }
@@ -1648,7 +1707,13 @@ fn main() -> Result<()> {
                         };
                         let ext = p.extension()?.to_str()?.to_lowercase();
                         if ext == "stl" {
-                            rs_cam_core::mesh::TriangleMesh::from_stl_scaled(&p, 1.0).ok()
+                            match rs_cam_core::mesh::TriangleMesh::from_stl_scaled(&p, 1.0) {
+                                Ok(m) => Some(m),
+                                Err(e) => {
+                                    warn!("Failed to load overlay mesh {}: {e}", p.display());
+                                    None
+                                }
+                            }
                         } else {
                             None
                         }
@@ -1660,7 +1725,7 @@ fn main() -> Result<()> {
                         .iter()
                         .map(|p| SimPhase {
                             toolpath: &p.toolpath,
-                            cutter: p.cutter.as_ref(),
+                            cutter: &p.cutter,
                             label: p.label.clone(),
                         })
                         .collect();
@@ -1716,7 +1781,7 @@ fn main() -> Result<()> {
                     let rapid_feed = 3000.0_f64; // typical rapid rate for diagnostics
                     match diag_stock.simulate_toolpath_with_metrics_with_cancel(
                         &phase.toolpath,
-                        phase.cutter.as_ref(),
+                        &phase.cutter,
                         StockCutDirection::FromTop,
                         idx,
                         phase.spindle_speed,
@@ -1827,52 +1892,16 @@ fn main() -> Result<()> {
                 );
             }
 
-            if holder_diameter > 0.0 {
-                let cutter_ref = cutter.as_ref();
-                let assembly = rs_cam_core::collision::ToolAssembly {
-                    cutter_radius: cutter_ref.radius(),
-                    cutter_length: if stickout > 0.0 {
-                        stickout - shank_length
-                    } else {
-                        cutter_ref.length()
-                    },
-                    shank_diameter: if shank_diameter > 0.0 {
-                        shank_diameter
-                    } else {
-                        cutter_ref.diameter()
-                    },
-                    shank_length,
-                    holder_diameter,
-                    holder_length: DEFAULT_HOLDER_LENGTH_MM,
-                };
-                let report = rs_cam_core::collision::check_collisions_interpolated(
-                    &toolpath, &assembly, &mesh, &index, 2.0,
-                );
-                if report.is_clear() {
-                    info!("Collision check: CLEAR");
-                } else {
-                    eprintln!(
-                        "WARNING: {} holder/shank collisions detected!",
-                        report.collisions.len()
-                    );
-                    eprintln!(
-                        "  Min safe stickout: {:.1}mm (current: {:.1}mm)",
-                        report.min_safe_stickout,
-                        assembly.stickout()
-                    );
-                    for c in report.collisions.iter().take(5) {
-                        eprintln!(
-                            "  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
-                            c.move_idx,
-                            c.segment,
-                            c.position.x,
-                            c.position.y,
-                            c.position.z,
-                            c.penetration_depth
-                        );
-                    }
-                }
-            }
+            run_collision_check(
+                &toolpath,
+                cutter.as_ref(),
+                &mesh,
+                &index,
+                holder_diameter,
+                shank_diameter,
+                shank_length,
+                stickout,
+            );
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
@@ -2658,52 +2687,16 @@ fn main() -> Result<()> {
                 "Generated toolpath"
             );
 
-            if holder_diameter > 0.0 {
-                let cutter_ref = cutter.as_ref();
-                let assembly = rs_cam_core::collision::ToolAssembly {
-                    cutter_radius: cutter_ref.radius(),
-                    cutter_length: if stickout > 0.0 {
-                        stickout - shank_length
-                    } else {
-                        cutter_ref.length()
-                    },
-                    shank_diameter: if shank_diameter > 0.0 {
-                        shank_diameter
-                    } else {
-                        cutter_ref.diameter()
-                    },
-                    shank_length,
-                    holder_diameter,
-                    holder_length: DEFAULT_HOLDER_LENGTH_MM,
-                };
-                let report = rs_cam_core::collision::check_collisions_interpolated(
-                    &toolpath, &assembly, &mesh, &index, 2.0,
-                );
-                if report.is_clear() {
-                    info!("Collision check: CLEAR");
-                } else {
-                    eprintln!(
-                        "WARNING: {} holder/shank collisions detected!",
-                        report.collisions.len()
-                    );
-                    eprintln!(
-                        "  Min safe stickout: {:.1}mm (current: {:.1}mm)",
-                        report.min_safe_stickout,
-                        assembly.stickout()
-                    );
-                    for c in report.collisions.iter().take(5) {
-                        eprintln!(
-                            "  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
-                            c.move_idx,
-                            c.segment,
-                            c.position.x,
-                            c.position.y,
-                            c.position.z,
-                            c.penetration_depth
-                        );
-                    }
-                }
-            }
+            run_collision_check(
+                &toolpath,
+                cutter.as_ref(),
+                &mesh,
+                &index,
+                holder_diameter,
+                shank_diameter,
+                shank_length,
+                stickout,
+            );
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
 
@@ -2796,52 +2789,16 @@ fn main() -> Result<()> {
                 );
             }
 
-            if holder_diameter > 0.0 {
-                let cutter_ref = cutter.as_ref();
-                let assembly = rs_cam_core::collision::ToolAssembly {
-                    cutter_radius: cutter_ref.radius(),
-                    cutter_length: if stickout > 0.0 {
-                        stickout - shank_length
-                    } else {
-                        cutter_ref.length()
-                    },
-                    shank_diameter: if shank_diameter > 0.0 {
-                        shank_diameter
-                    } else {
-                        cutter_ref.diameter()
-                    },
-                    shank_length,
-                    holder_diameter,
-                    holder_length: DEFAULT_HOLDER_LENGTH_MM,
-                };
-                let report = rs_cam_core::collision::check_collisions_interpolated(
-                    &toolpath, &assembly, &mesh, &index, 2.0,
-                );
-                if report.is_clear() {
-                    info!("Collision check: CLEAR");
-                } else {
-                    eprintln!(
-                        "WARNING: {} holder/shank collisions detected!",
-                        report.collisions.len()
-                    );
-                    eprintln!(
-                        "  Min safe stickout: {:.1}mm (current: {:.1}mm)",
-                        report.min_safe_stickout,
-                        assembly.stickout()
-                    );
-                    for c in report.collisions.iter().take(5) {
-                        eprintln!(
-                            "  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
-                            c.move_idx,
-                            c.segment,
-                            c.position.x,
-                            c.position.y,
-                            c.position.z,
-                            c.penetration_depth
-                        );
-                    }
-                }
-            }
+            run_collision_check(
+                &toolpath,
+                cutter.as_ref(),
+                &mesh,
+                &index,
+                holder_diameter,
+                shank_diameter,
+                shank_length,
+                stickout,
+            );
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
             write_3d_view(
@@ -2929,52 +2886,16 @@ fn main() -> Result<()> {
                 );
             }
 
-            if holder_diameter > 0.0 {
-                let cutter_ref = cutter.as_ref();
-                let assembly = rs_cam_core::collision::ToolAssembly {
-                    cutter_radius: cutter_ref.radius(),
-                    cutter_length: if stickout > 0.0 {
-                        stickout - shank_length
-                    } else {
-                        cutter_ref.length()
-                    },
-                    shank_diameter: if shank_diameter > 0.0 {
-                        shank_diameter
-                    } else {
-                        cutter_ref.diameter()
-                    },
-                    shank_length,
-                    holder_diameter,
-                    holder_length: DEFAULT_HOLDER_LENGTH_MM,
-                };
-                let report = rs_cam_core::collision::check_collisions_interpolated(
-                    &toolpath, &assembly, &mesh, &index, 2.0,
-                );
-                if report.is_clear() {
-                    info!("Collision check: CLEAR");
-                } else {
-                    eprintln!(
-                        "WARNING: {} holder/shank collisions detected!",
-                        report.collisions.len()
-                    );
-                    eprintln!(
-                        "  Min safe stickout: {:.1}mm (current: {:.1}mm)",
-                        report.min_safe_stickout,
-                        assembly.stickout()
-                    );
-                    for c in report.collisions.iter().take(5) {
-                        eprintln!(
-                            "  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
-                            c.move_idx,
-                            c.segment,
-                            c.position.x,
-                            c.position.y,
-                            c.position.z,
-                            c.penetration_depth
-                        );
-                    }
-                }
-            }
+            run_collision_check(
+                &toolpath,
+                cutter.as_ref(),
+                &mesh,
+                &index,
+                holder_diameter,
+                shank_diameter,
+                shank_length,
+                stickout,
+            );
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
             write_3d_view(
@@ -3121,52 +3042,16 @@ fn main() -> Result<()> {
                 );
             }
 
-            if holder_diameter > 0.0 {
-                let cutter_ref = cutter.as_ref();
-                let assembly = rs_cam_core::collision::ToolAssembly {
-                    cutter_radius: cutter_ref.radius(),
-                    cutter_length: if stickout > 0.0 {
-                        stickout - shank_length
-                    } else {
-                        cutter_ref.length()
-                    },
-                    shank_diameter: if shank_diameter > 0.0 {
-                        shank_diameter
-                    } else {
-                        cutter_ref.diameter()
-                    },
-                    shank_length,
-                    holder_diameter,
-                    holder_length: DEFAULT_HOLDER_LENGTH_MM,
-                };
-                let report = rs_cam_core::collision::check_collisions_interpolated(
-                    &toolpath, &assembly, &mesh, &index, 2.0,
-                );
-                if report.is_clear() {
-                    info!("Collision check: CLEAR");
-                } else {
-                    eprintln!(
-                        "WARNING: {} holder/shank collisions detected!",
-                        report.collisions.len()
-                    );
-                    eprintln!(
-                        "  Min safe stickout: {:.1}mm (current: {:.1}mm)",
-                        report.min_safe_stickout,
-                        assembly.stickout()
-                    );
-                    for c in report.collisions.iter().take(5) {
-                        eprintln!(
-                            "  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
-                            c.move_idx,
-                            c.segment,
-                            c.position.x,
-                            c.position.y,
-                            c.position.z,
-                            c.penetration_depth
-                        );
-                    }
-                }
-            }
+            run_collision_check(
+                &toolpath,
+                cutter.as_ref(),
+                &mesh,
+                &index,
+                holder_diameter,
+                shank_diameter,
+                shank_length,
+                stickout,
+            );
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
             write_3d_view(
@@ -3255,52 +3140,16 @@ fn main() -> Result<()> {
                 );
             }
 
-            if holder_diameter > 0.0 {
-                let cutter_ref = cutter.as_ref();
-                let assembly = rs_cam_core::collision::ToolAssembly {
-                    cutter_radius: cutter_ref.radius(),
-                    cutter_length: if stickout > 0.0 {
-                        stickout - shank_length
-                    } else {
-                        cutter_ref.length()
-                    },
-                    shank_diameter: if shank_diameter > 0.0 {
-                        shank_diameter
-                    } else {
-                        cutter_ref.diameter()
-                    },
-                    shank_length,
-                    holder_diameter,
-                    holder_length: DEFAULT_HOLDER_LENGTH_MM,
-                };
-                let report = rs_cam_core::collision::check_collisions_interpolated(
-                    &toolpath, &assembly, &mesh, &index, 2.0,
-                );
-                if report.is_clear() {
-                    info!("Collision check: CLEAR");
-                } else {
-                    eprintln!(
-                        "WARNING: {} holder/shank collisions detected!",
-                        report.collisions.len()
-                    );
-                    eprintln!(
-                        "  Min safe stickout: {:.1}mm (current: {:.1}mm)",
-                        report.min_safe_stickout,
-                        assembly.stickout()
-                    );
-                    for c in report.collisions.iter().take(5) {
-                        eprintln!(
-                            "  Move {}: {} at ({:.1}, {:.1}, {:.1}), penetration {:.2}mm",
-                            c.move_idx,
-                            c.segment,
-                            c.position.x,
-                            c.position.y,
-                            c.position.z,
-                            c.penetration_depth
-                        );
-                    }
-                }
-            }
+            run_collision_check(
+                &toolpath,
+                cutter.as_ref(),
+                &mesh,
+                &index,
+                holder_diameter,
+                shank_diameter,
+                shank_length,
+                stickout,
+            );
 
             emit_and_write(&toolpath, &post, spindle_speed, &output, &svg)?;
             write_3d_view(

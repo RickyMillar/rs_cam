@@ -30,6 +30,9 @@ impl MillingCutter for BallEndmill {
     fn length(&self) -> f64 {
         self.cutting_length
     }
+    fn geometry_hint(&self) -> crate::feeds::ToolGeometryHint {
+        crate::feeds::ToolGeometryHint::Ball
+    }
 
     fn height_at_radius(&self, r: f64) -> Option<f64> {
         let big_r = self.radius();

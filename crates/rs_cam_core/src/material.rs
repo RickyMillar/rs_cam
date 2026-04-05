@@ -231,6 +231,32 @@ impl Material {
         }
     }
 
+    /// Recommended base cutting surface speed in m/min.
+    /// Used to derive initial RPM from tool diameter.
+    pub fn base_cutting_speed_m_min(&self) -> f64 {
+        match self {
+            Material::SolidWood { .. } => 200.0,
+            Material::Plywood { .. } => 180.0,
+            Material::SheetGood { .. } => 170.0,
+            Material::Plastic { .. } => 250.0,
+            Material::Foam { .. } => 300.0,
+            Material::Custom { .. } => 200.0,
+        }
+    }
+
+    /// Base plunge feed rate estimate in mm/min.
+    /// Material-dependent; divided by hardness for wood-like materials.
+    pub fn plunge_rate_base(&self) -> f64 {
+        let h = self.hardness_index();
+        match self {
+            Material::SolidWood { .. } => 1000.0 / h,
+            Material::Plywood { .. } | Material::SheetGood { .. } => 900.0 / h,
+            Material::Plastic { .. } => 1500.0,
+            Material::Foam { .. } => 2000.0,
+            Material::Custom { .. } => 800.0 / h,
+        }
+    }
+
     /// Display label for UI.
     pub fn label(&self) -> String {
         match self {

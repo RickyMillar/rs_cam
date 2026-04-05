@@ -135,7 +135,7 @@ mod tests {
 
         // Second call with different params clears and refills.
         linearize_arc_into(&mut buf, start, end, -5.0, 0.0, true, 1.0);
-        assert!(buf.len() > 0);
+        assert!(!buf.is_empty());
         // Buffer capacity should be >= first_len (reused allocation).
         assert!(buf.capacity() >= first_len);
     }

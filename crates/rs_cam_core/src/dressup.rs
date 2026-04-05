@@ -115,6 +115,12 @@ pub(crate) fn emit_ramp(
     max_angle_deg: f64,
     feed_rate: f64,
 ) {
+    if max_angle_deg <= 0.0 || max_angle_deg >= 90.0 {
+        // Invalid angle — fall back to straight plunge
+        tp.feed_to(*end, feed_rate);
+        return;
+    }
+
     // Only ramp the last portion of the descent (max 5mm above target).
     // Rapid down to clearance first, then ramp the rest.
     let clearance = ENTRY_CLEARANCE;
@@ -163,7 +169,7 @@ pub(crate) fn emit_helix(
     }
 
     let dz = (helix_start_z.min(start.z) - end.z).abs();
-    if dz < 0.01 || pitch < 0.01 {
+    if dz < 0.01 || pitch < 0.01 || radius <= 0.0 {
         tp.feed_to(*end, feed_rate);
         return;
     }
@@ -1534,6 +1540,67 @@ mod tests {
             result.moves.len(),
             tp.moves.len()
         );
+    }
+
+    #[test]
+    fn ramp_entry_zero_angle_falls_back() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp.feed_to(P3::new(0.0, 0.0, 0.0), 100.0);
+        let style = EntryStyle::Ramp { max_angle_deg: 0.0 };
+        let result = apply_entry(&tp, style, 50.0);
+        // Should not contain NaN or infinity
+        for m in &result.moves {
+            assert!(m.target.x.is_finite(), "NaN in ramp with 0° angle");
+            assert!(m.target.y.is_finite(), "NaN in ramp with 0° angle");
+            assert!(m.target.z.is_finite(), "NaN in ramp with 0° angle");
+        }
+    }
+
+    #[test]
+    fn ramp_entry_90deg_angle_falls_back() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp.feed_to(P3::new(0.0, 0.0, 0.0), 100.0);
+        let style = EntryStyle::Ramp {
+            max_angle_deg: 90.0,
+        };
+        let result = apply_entry(&tp, style, 50.0);
+        for m in &result.moves {
+            assert!(m.target.x.is_finite(), "NaN in ramp with 90° angle");
+            assert!(m.target.z.is_finite(), "NaN in ramp with 90° angle");
+        }
+    }
+
+    #[test]
+    fn helix_entry_zero_radius_falls_back() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp.feed_to(P3::new(0.0, 0.0, 0.0), 100.0);
+        let style = EntryStyle::Helix {
+            radius: 0.0,
+            pitch: 2.0,
+        };
+        let result = apply_entry(&tp, style, 50.0);
+        for m in &result.moves {
+            assert!(m.target.x.is_finite(), "NaN in helix with 0 radius");
+            assert!(m.target.z.is_finite(), "NaN in helix with 0 radius");
+        }
+    }
+
+    #[test]
+    fn helix_entry_negative_radius_falls_back() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp.feed_to(P3::new(0.0, 0.0, 0.0), 100.0);
+        let style = EntryStyle::Helix {
+            radius: -1.0,
+            pitch: 2.0,
+        };
+        let result = apply_entry(&tp, style, 50.0);
+        for m in &result.moves {
+            assert!(m.target.x.is_finite(), "NaN in helix with negative radius");
+        }
     }
 
     #[test]

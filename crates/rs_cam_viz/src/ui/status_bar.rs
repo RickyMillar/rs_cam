@@ -81,8 +81,7 @@ pub fn draw(
         if collision_count > 0 {
             ui.separator();
             ui.label(
-                egui::RichText::new(format!("{} collisions", collision_count))
-                    .color(theme::ERROR),
+                egui::RichText::new(format!("{} collisions", collision_count)).color(theme::ERROR),
             );
         }
 

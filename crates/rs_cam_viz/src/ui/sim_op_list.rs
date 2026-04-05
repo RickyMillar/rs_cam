@@ -89,10 +89,8 @@ pub fn draw(
                         .color(egui::Color32::from_rgb(180, 160, 100)),
                 );
                 ui.add_space(6.0);
-                let btn = egui::Button::new(
-                    egui::RichText::new("Re-run Simulation").strong(),
-                )
-                .min_size(egui::vec2(ui.available_width(), 28.0));
+                let btn = egui::Button::new(egui::RichText::new("Re-run Simulation").strong())
+                    .min_size(egui::vec2(ui.available_width(), 28.0));
                 if ui.add(btn).clicked() {
                     events.push(AppEvent::RunSimulation);
                 }

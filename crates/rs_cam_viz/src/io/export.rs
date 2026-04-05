@@ -1,9 +1,9 @@
 use rs_cam_core::gcode::{
-    GcodePhase, GcodeSetupPhase, emit_gcode_multi_setup, emit_gcode_phased, get_post_processor,
+    GcodePhase, GcodeSetupPhase, emit_gcode_multi_setup, emit_gcode_phased,
     replace_rapids_with_feed,
 };
 
-use crate::state::job::{JobState, PostFormat, SetupId, ToolConfig};
+use crate::state::job::{JobState, SetupId, ToolConfig};
 use crate::state::toolpath::{ToolpathEntry, ToolpathResult};
 
 fn gcode_phase_for_toolpath<'a>(
@@ -38,14 +38,7 @@ fn tool_number_for_export(tool: &ToolConfig) -> u32 {
 
 /// Export all enabled toolpaths as a single G-code file.
 pub fn export_gcode(job: &JobState) -> Result<String, crate::error::VizError> {
-    let post_name = match job.post.format {
-        PostFormat::Grbl => "grbl",
-        PostFormat::LinuxCnc => "linuxcnc",
-        PostFormat::Mach3 => "mach3",
-    };
-    let post = get_post_processor(post_name).ok_or_else(|| {
-        crate::error::VizError::Export(format!("Unknown post processor: {post_name}"))
-    })?;
+    let post = job.post.format.post_processor();
 
     let phases: Vec<GcodePhase<'_>> = job
         .all_toolpaths()
@@ -75,14 +68,7 @@ pub fn export_gcode(job: &JobState) -> Result<String, crate::error::VizError> {
 
 /// Export all setups as a single G-code file with M0 pauses between setups.
 pub fn export_combined_gcode(job: &JobState) -> Result<String, crate::error::VizError> {
-    let post_name = match job.post.format {
-        PostFormat::Grbl => "grbl",
-        PostFormat::LinuxCnc => "linuxcnc",
-        PostFormat::Mach3 => "mach3",
-    };
-    let post = get_post_processor(post_name).ok_or_else(|| {
-        crate::error::VizError::Export(format!("Unknown post processor: {post_name}"))
-    })?;
+    let post = job.post.format.post_processor();
 
     let setup_phases: Vec<GcodeSetupPhase<'_>> = job
         .setups
@@ -135,14 +121,7 @@ pub fn export_setup_gcode(
         .find(|setup| setup.id == setup_id)
         .ok_or_else(|| crate::error::VizError::Export(format!("Setup {setup_id:?} not found")))?;
 
-    let post_name = match job.post.format {
-        PostFormat::Grbl => "grbl",
-        PostFormat::LinuxCnc => "linuxcnc",
-        PostFormat::Mach3 => "mach3",
-    };
-    let post = get_post_processor(post_name).ok_or_else(|| {
-        crate::error::VizError::Export(format!("Unknown post processor: {post_name}"))
-    })?;
+    let post = job.post.format.post_processor();
 
     let phases: Vec<GcodePhase<'_>> = setup
         .toolpaths

@@ -3,23 +3,8 @@ use super::gpu_safety::{self, GpuLimits};
 use egui_wgpu::wgpu;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 
-/// 8-color deterministic palette for per-toolpath coloring.
-pub const TOOLPATH_PALETTE: [[f32; 3]; 8] = [
-    [0.2, 0.5, 0.95],   // blue
-    [0.2, 0.8, 0.3],    // green
-    [0.95, 0.6, 0.15],  // orange
-    [0.7, 0.3, 0.9],    // purple
-    [0.9, 0.85, 0.2],   // yellow
-    [0.2, 0.85, 0.85],  // cyan
-    [0.95, 0.25, 0.25], // red
-    [0.5, 0.9, 0.2],    // lime
-];
-
-/// Get the palette color for a toolpath at the given index.
-#[allow(clippy::indexing_slicing)] // modulo indexing into constant-length palette
-pub fn palette_color(index: usize) -> [f32; 3] {
-    TOOLPATH_PALETTE[index % TOOLPATH_PALETTE.len()]
-}
+// Re-export palette from centralized colors module for backward compatibility.
+pub use super::colors::{TOOLPATH_PALETTE, palette_color};
 
 /// Toolpath line data uploaded to GPU.
 /// Vertices are in move-sequence order so partial drawing works for simulation scrubbing.

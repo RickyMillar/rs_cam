@@ -1,4 +1,5 @@
 use super::*;
+use crate::compute::OperationError;
 
 /// Compute per-cell slope angle (degrees from horizontal) from a drop-cutter grid.
 ///
@@ -49,7 +50,7 @@ fn prepare_mesh_operation<'a>(
     req: &'a ComputeRequest,
     phase_tracker: Option<&ToolpathPhaseTracker>,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
-) -> Result<(&'a TriangleMesh, SpatialIndex, Box<dyn MillingCutter>), String> {
+) -> Result<(&'a TriangleMesh, SpatialIndex, ToolDefinition), OperationError> {
     let _phase_scope = phase_tracker.map(|tracker| tracker.start_phase("Prepare input"));
     let _prepare_scope = debug.map(|ctx| ctx.start_span("prepare_input", "Prepare input"));
     let (mesh, index) = require_mesh(req)?;
@@ -66,19 +67,13 @@ fn run_dropcutter(
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
 ) -> Result<Toolpath, ComputeError> {
     let (mesh, index, cutter) =
-        prepare_mesh_operation(req, phase_tracker, debug).map_err(ComputeError::Message)?;
+        prepare_mesh_operation(req, phase_tracker, debug).map_err(ComputeError::from)?;
     let grid = {
         let _phase_scope = phase_tracker.map(|tracker| tracker.start_phase("Drop-cutter grid"));
         let _grid_scope = debug.map(|ctx| ctx.start_span("dropcutter_grid", "Drop-cutter grid"));
-        batch_drop_cutter_with_cancel(
-            mesh,
-            &index,
-            cutter.as_ref(),
-            cfg.stepover,
-            0.0,
-            cfg.min_z,
-            &|| cancel.load(Ordering::SeqCst),
-        )
+        batch_drop_cutter_with_cancel(mesh, &index, &cutter, cfg.stepover, 0.0, cfg.min_z, &|| {
+            cancel.load(Ordering::SeqCst)
+        })
         .map_err(|_e| ComputeError::Cancelled)?
     };
     let toolpath = {
@@ -103,7 +98,7 @@ fn run_adaptive3d_annotated(
     ComputeError,
 > {
     let (mesh, index, cutter) =
-        prepare_mesh_operation(req, phase_tracker, debug).map_err(ComputeError::Message)?;
+        prepare_mesh_operation(req, phase_tracker, debug).map_err(ComputeError::from)?;
     let entry = match cfg.entry_style {
         EntryStyle::Plunge => EntryStyle3d::Plunge,
         EntryStyle::Helix => EntryStyle3d::Helix {
@@ -169,7 +164,7 @@ fn run_adaptive3d_annotated(
     rs_cam_core::adaptive3d::adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
         mesh,
         &index,
-        cutter.as_ref(),
+        &cutter,
         &params,
         &|| cancel.load(Ordering::SeqCst),
         debug,
@@ -186,7 +181,7 @@ fn run_waterline(
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
 ) -> Result<Toolpath, ComputeError> {
     let (mesh, index, cutter) =
-        prepare_mesh_operation(req, phase_tracker, debug).map_err(ComputeError::Message)?;
+        prepare_mesh_operation(req, phase_tracker, debug).map_err(ComputeError::from)?;
     let params = WaterlineParams {
         sampling: cfg.sampling,
         feed_rate: cfg.feed_rate,
@@ -202,7 +197,7 @@ fn run_waterline(
         waterline_toolpath_with_cancel(
             mesh,
             &index,
-            cutter.as_ref(),
+            &cutter,
             req.heights.top_z,
             req.heights.bottom_z,
             cfg.z_step,
@@ -218,7 +213,7 @@ fn run_pencil_annotated(
     cfg: &PencilConfig,
     phase_tracker: Option<&ToolpathPhaseTracker>,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
-) -> Result<(Toolpath, Vec<rs_cam_core::pencil::PencilRuntimeAnnotation>), String> {
+) -> Result<(Toolpath, Vec<rs_cam_core::pencil::PencilRuntimeAnnotation>), OperationError> {
     let (mesh, index, cutter) = prepare_mesh_operation(req, phase_tracker, debug)?;
     let params = PencilParams {
         bitangency_angle: cfg.bitangency_angle,
@@ -233,11 +228,7 @@ fn run_pencil_annotated(
         stock_to_leave: cfg.stock_to_leave,
     };
     Ok(rs_cam_core::pencil::pencil_toolpath_structured_annotated(
-        mesh,
-        &index,
-        cutter.as_ref(),
-        &params,
-        debug,
+        mesh, &index, &cutter, &params, debug,
     ))
 }
 
@@ -251,19 +242,18 @@ pub(super) fn run_scallop_annotated(
         Toolpath,
         Vec<rs_cam_core::scallop::ScallopRuntimeAnnotation>,
     ),
-    String,
+    OperationError,
 > {
     if req.tool.tool_type != ToolType::BallNose {
-        return Err("Scallop operation requires a Ball Nose endmill".into());
+        return Err(OperationError::InvalidTool(
+            "Scallop operation requires a Ball Nose endmill".into(),
+        ));
     }
     let (mesh, index, cutter) = prepare_mesh_operation(req, phase_tracker, debug)?;
     let params = ScallopParams {
         scallop_height: cfg.scallop_height,
         tolerance: cfg.tolerance,
-        direction: match cfg.direction {
-            self::ScallopDirection::OutsideIn => CoreScalDir::OutsideIn,
-            self::ScallopDirection::InsideOut => CoreScalDir::InsideOut,
-        },
+        direction: cfg.direction,
         continuous: cfg.continuous,
         slope_from: cfg.slope_from,
         slope_to: cfg.slope_to,
@@ -273,11 +263,7 @@ pub(super) fn run_scallop_annotated(
         stock_to_leave: cfg.stock_to_leave,
     };
     Ok(rs_cam_core::scallop::scallop_toolpath_structured_annotated(
-        mesh,
-        &index,
-        cutter.as_ref(),
-        &params,
-        debug,
+        mesh, &index, &cutter, &params, debug,
     ))
 }
 
@@ -286,7 +272,7 @@ fn run_steep_shallow(
     cfg: &SteepShallowConfig,
     phase_tracker: Option<&ToolpathPhaseTracker>,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
-) -> Result<Toolpath, String> {
+) -> Result<Toolpath, OperationError> {
     let (mesh, index, cutter) = prepare_mesh_operation(req, phase_tracker, debug)?;
     let params = SteepShallowParams {
         threshold_angle: cfg.threshold_angle,
@@ -302,12 +288,7 @@ fn run_steep_shallow(
         stock_to_leave: cfg.stock_to_leave,
         tolerance: cfg.tolerance,
     };
-    Ok(steep_shallow_toolpath(
-        mesh,
-        &index,
-        cutter.as_ref(),
-        &params,
-    ))
+    Ok(steep_shallow_toolpath(mesh, &index, &cutter, &params))
 }
 
 fn run_ramp_finish_annotated(
@@ -320,18 +301,14 @@ fn run_ramp_finish_annotated(
         Toolpath,
         Vec<rs_cam_core::ramp_finish::RampFinishRuntimeAnnotation>,
     ),
-    String,
+    OperationError,
 > {
     let (mesh, index, cutter) = prepare_mesh_operation(req, phase_tracker, debug)?;
     let params = RampFinishParams {
         max_stepdown: cfg.max_stepdown,
         slope_from: cfg.slope_from,
         slope_to: cfg.slope_to,
-        direction: match cfg.direction {
-            self::CutDirection::Climb => CoreCutDir::Climb,
-            self::CutDirection::Conventional => CoreCutDir::Conventional,
-            self::CutDirection::BothWays => CoreCutDir::BothWays,
-        },
+        direction: cfg.direction,
         order_bottom_up: cfg.order_bottom_up,
         feed_rate: cfg.feed_rate,
         plunge_rate: cfg.plunge_rate,
@@ -342,11 +319,7 @@ fn run_ramp_finish_annotated(
     };
     Ok(
         rs_cam_core::ramp_finish::ramp_finish_toolpath_structured_annotated(
-            mesh,
-            &index,
-            cutter.as_ref(),
-            &params,
-            debug,
+            mesh, &index, &cutter, &params, debug,
         ),
     )
 }
@@ -361,15 +334,12 @@ fn run_spiral_finish_annotated(
         Toolpath,
         Vec<rs_cam_core::spiral_finish::SpiralFinishRuntimeAnnotation>,
     ),
-    String,
+    OperationError,
 > {
     let (mesh, index, cutter) = prepare_mesh_operation(req, phase_tracker, debug)?;
     let params = SpiralFinishParams {
         stepover: cfg.stepover,
-        direction: match cfg.direction {
-            self::SpiralDirection::InsideOut => CoreSpiralDir::InsideOut,
-            self::SpiralDirection::OutsideIn => CoreSpiralDir::OutsideIn,
-        },
+        direction: cfg.direction,
         feed_rate: cfg.feed_rate,
         plunge_rate: cfg.plunge_rate,
         safe_z: effective_safe_z(req),
@@ -377,11 +347,7 @@ fn run_spiral_finish_annotated(
     };
     Ok(
         rs_cam_core::spiral_finish::spiral_finish_toolpath_structured_annotated(
-            mesh,
-            &index,
-            cutter.as_ref(),
-            &params,
-            debug,
+            mesh, &index, &cutter, &params, debug,
         ),
     )
 }
@@ -391,7 +357,7 @@ fn run_radial_finish(
     cfg: &RadialFinishConfig,
     phase_tracker: Option<&ToolpathPhaseTracker>,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
-) -> Result<Toolpath, String> {
+) -> Result<Toolpath, OperationError> {
     let (mesh, index, cutter) = prepare_mesh_operation(req, phase_tracker, debug)?;
     let params = RadialFinishParams {
         angular_step: cfg.angular_step,
@@ -401,12 +367,7 @@ fn run_radial_finish(
         safe_z: effective_safe_z(req),
         stock_to_leave: cfg.stock_to_leave,
     };
-    Ok(radial_finish_toolpath(
-        mesh,
-        &index,
-        cutter.as_ref(),
-        &params,
-    ))
+    Ok(radial_finish_toolpath(mesh, &index, &cutter, &params))
 }
 
 fn run_horizontal_finish(
@@ -414,7 +375,7 @@ fn run_horizontal_finish(
     cfg: &HorizontalFinishConfig,
     phase_tracker: Option<&ToolpathPhaseTracker>,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
-) -> Result<Toolpath, String> {
+) -> Result<Toolpath, OperationError> {
     let (mesh, index, cutter) = prepare_mesh_operation(req, phase_tracker, debug)?;
     let params = HorizontalFinishParams {
         angle_threshold: cfg.angle_threshold,
@@ -424,12 +385,7 @@ fn run_horizontal_finish(
         safe_z: effective_safe_z(req),
         stock_to_leave: cfg.stock_to_leave,
     };
-    Ok(horizontal_finish_toolpath(
-        mesh,
-        &index,
-        cutter.as_ref(),
-        &params,
-    ))
+    Ok(horizontal_finish_toolpath(mesh, &index, &cutter, &params))
 }
 
 fn run_project_curve_annotated(
@@ -437,7 +393,7 @@ fn run_project_curve_annotated(
     cfg: &ProjectCurveConfig,
     phase_tracker: Option<&ToolpathPhaseTracker>,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
-) -> Result<(Toolpath, Vec<ProjectCurveSlice>), String> {
+) -> Result<(Toolpath, Vec<ProjectCurveSlice>), OperationError> {
     let polys = require_polygons(req)?;
     let (mesh, index, cutter) = prepare_mesh_operation(req, phase_tracker, debug)?;
     let params = ProjectCurveParams {
@@ -451,7 +407,7 @@ fn run_project_curve_annotated(
     let mut slices = Vec::new();
     for (source_curve_index, p) in polys.iter().enumerate() {
         let move_start = out.moves.len();
-        let tp = project_curve_toolpath(p, mesh, &index, cutter.as_ref(), &params);
+        let tp = project_curve_toolpath(p, mesh, &index, &cutter, &params);
         out.moves.extend(tp.moves);
         let move_end_exclusive = out.moves.len();
         if move_end_exclusive > move_start {
@@ -474,7 +430,7 @@ impl SemanticToolpathOp for DropCutterConfig {
     ) -> Result<Toolpath, ComputeError> {
         let (mesh, index, cutter) =
             prepare_mesh_operation(ctx.req, ctx.phase_tracker, ctx.debug_root)
-                .map_err(ComputeError::Message)?;
+                .map_err(ComputeError::from)?;
         let grid = {
             let _phase_scope = ctx
                 .phase_tracker
@@ -485,7 +441,7 @@ impl SemanticToolpathOp for DropCutterConfig {
             batch_drop_cutter_with_cancel(
                 mesh,
                 &index,
-                cutter.as_ref(),
+                &cutter,
                 self.stepover,
                 0.0,
                 self.min_z,
@@ -546,6 +502,7 @@ impl SemanticToolpathOp for DropCutterConfig {
                 let mut in_cut = false;
                 for &col in &cols {
                     // Slope filter: skip points outside [slope_from, slope_to]
+                    #[allow(clippy::collapsible_if)]
                     if slope_filter_active {
                         let idx = row * grid.cols + col;
                         if let Some(&angle) = slope_angles.get(idx) {
@@ -574,15 +531,19 @@ impl SemanticToolpathOp for DropCutterConfig {
                 if in_cut {
                     // SAFETY: if in_cut, we have at least one point
                     #[allow(clippy::expect_used)]
-                    let last_col = cols.iter().rev().find(|&&c| {
-                        if !slope_filter_active {
-                            return true;
-                        }
-                        let idx = row * grid.cols + c;
-                        slope_angles
-                            .get(idx)
-                            .map_or(true, |&a| a >= self.slope_from && a <= self.slope_to)
-                    }).expect("in_cut implies at least one valid col");
+                    let last_col = cols
+                        .iter()
+                        .rev()
+                        .find(|&&c| {
+                            if !slope_filter_active {
+                                return true;
+                            }
+                            let idx = row * grid.cols + c;
+                            slope_angles
+                                .get(idx)
+                                .is_none_or(|&a| a >= self.slope_from && a <= self.slope_to)
+                        })
+                        .expect("in_cut implies at least one valid col");
                     let last_pt = grid.get(row, *last_col);
                     row_tp.rapid_to(P3::new(last_pt.x, last_pt.y, safe_z));
                 }
@@ -638,7 +599,7 @@ impl SemanticToolpathOp for WaterlineConfig {
     ) -> Result<Toolpath, ComputeError> {
         let (mesh, index, cutter) =
             prepare_mesh_operation(ctx.req, ctx.phase_tracker, ctx.debug_root)
-                .map_err(ComputeError::Message)?;
+                .map_err(ComputeError::from)?;
         let params = WaterlineParams {
             sampling: self.sampling,
             feed_rate: self.feed_rate,
@@ -674,7 +635,7 @@ impl SemanticToolpathOp for WaterlineConfig {
                 let contours = rs_cam_core::waterline::waterline_contours_with_cancel(
                     mesh,
                     &index,
-                    cutter.as_ref(),
+                    &cutter,
                     z,
                     self.sampling,
                     &|| ctx.cancel.load(Ordering::SeqCst),
@@ -739,7 +700,7 @@ impl SemanticToolpathOp for PencilConfig {
     ) -> Result<Toolpath, ComputeError> {
         let (tp, annotations) =
             run_pencil_annotated(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
-                .map_err(ComputeError::Message)?;
+                .map_err(ComputeError::from)?;
         let op_scope =
             annotate_operation_scope(ctx.semantic_root, ctx.core_debug_span_id, "Pencil", &tp);
         if let Some(scope) = op_scope.as_ref() {
@@ -759,7 +720,7 @@ impl SemanticToolpathOp for ScallopConfig {
     ) -> Result<Toolpath, ComputeError> {
         let (tp, annotations) =
             run_scallop_annotated(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
-                .map_err(ComputeError::Message)?;
+                .map_err(ComputeError::from)?;
         let op_scope =
             annotate_operation_scope(ctx.semantic_root, ctx.core_debug_span_id, "Scallop", &tp);
         if let Some(scope) = op_scope.as_ref() {
@@ -784,7 +745,7 @@ impl SemanticToolpathOp for SteepShallowConfig {
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
         let tp = run_steep_shallow(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
-            .map_err(ComputeError::Message)?;
+            .map_err(ComputeError::from)?;
         let op_scope = annotate_operation_scope(
             ctx.semantic_root,
             ctx.core_debug_span_id,
@@ -834,7 +795,7 @@ impl SemanticToolpathOp for RampFinishConfig {
     ) -> Result<Toolpath, ComputeError> {
         let (tp, annotations) =
             run_ramp_finish_annotated(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
-                .map_err(ComputeError::Message)?;
+                .map_err(ComputeError::from)?;
         let op_scope = annotate_operation_scope(
             ctx.semantic_root,
             ctx.core_debug_span_id,
@@ -857,7 +818,7 @@ impl SemanticToolpathOp for SpiralFinishConfig {
     ) -> Result<Toolpath, ComputeError> {
         let (tp, annotations) =
             run_spiral_finish_annotated(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
-                .map_err(ComputeError::Message)?;
+                .map_err(ComputeError::from)?;
         let op_scope = annotate_operation_scope(
             ctx.semantic_root,
             ctx.core_debug_span_id,
@@ -884,7 +845,7 @@ impl SemanticToolpathOp for RadialFinishConfig {
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
         let tp = run_radial_finish(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
-            .map_err(ComputeError::Message)?;
+            .map_err(ComputeError::from)?;
         let op_scope = annotate_operation_scope(
             ctx.semantic_root,
             ctx.core_debug_span_id,
@@ -910,7 +871,7 @@ impl SemanticToolpathOp for HorizontalFinishConfig {
         ctx: &OperationExecutionContext<'_>,
     ) -> Result<Toolpath, ComputeError> {
         let tp = run_horizontal_finish(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
-            .map_err(ComputeError::Message)?;
+            .map_err(ComputeError::from)?;
         let op_scope = annotate_operation_scope(
             ctx.semantic_root,
             ctx.core_debug_span_id,
@@ -933,7 +894,7 @@ impl SemanticToolpathOp for ProjectCurveConfig {
     ) -> Result<Toolpath, ComputeError> {
         let (tp, slices) =
             run_project_curve_annotated(ctx.req, self, ctx.phase_tracker, ctx.debug_root)
-                .map_err(ComputeError::Message)?;
+                .map_err(ComputeError::from)?;
         let op_scope = annotate_operation_scope(
             ctx.semantic_root,
             ctx.core_debug_span_id,

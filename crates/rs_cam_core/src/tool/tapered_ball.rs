@@ -98,6 +98,12 @@ impl MillingCutter for TaperedBallEndmill {
     fn diameter(&self) -> f64 {
         self.shaft_diameter // effective cutting diameter at widest point
     }
+    fn geometry_hint(&self) -> crate::feeds::ToolGeometryHint {
+        crate::feeds::ToolGeometryHint::TaperedBall {
+            tip_radius: self.ball_radius(),
+            taper_angle_deg: self.taper_half_angle_deg,
+        }
+    }
     fn length(&self) -> f64 {
         self.cutting_length
     }

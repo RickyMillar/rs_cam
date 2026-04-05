@@ -144,12 +144,48 @@ pub fn diff_fingerprints(a: &ToolpathFingerprint, b: &ToolpathFingerprint) -> Fi
     let mut unchanged = Vec::new();
 
     // Integer fields
-    diff_usize("move_count", a.move_count, b.move_count, &mut changed, &mut unchanged);
-    diff_usize("rapid_count", a.rapid_count, b.rapid_count, &mut changed, &mut unchanged);
-    diff_usize("linear_count", a.linear_count, b.linear_count, &mut changed, &mut unchanged);
-    diff_usize("arc_cw_count", a.arc_cw_count, b.arc_cw_count, &mut changed, &mut unchanged);
-    diff_usize("arc_ccw_count", a.arc_ccw_count, b.arc_ccw_count, &mut changed, &mut unchanged);
-    diff_usize("z_level_count", a.z_level_count, b.z_level_count, &mut changed, &mut unchanged);
+    diff_usize(
+        "move_count",
+        a.move_count,
+        b.move_count,
+        &mut changed,
+        &mut unchanged,
+    );
+    diff_usize(
+        "rapid_count",
+        a.rapid_count,
+        b.rapid_count,
+        &mut changed,
+        &mut unchanged,
+    );
+    diff_usize(
+        "linear_count",
+        a.linear_count,
+        b.linear_count,
+        &mut changed,
+        &mut unchanged,
+    );
+    diff_usize(
+        "arc_cw_count",
+        a.arc_cw_count,
+        b.arc_cw_count,
+        &mut changed,
+        &mut unchanged,
+    );
+    diff_usize(
+        "arc_ccw_count",
+        a.arc_ccw_count,
+        b.arc_ccw_count,
+        &mut changed,
+        &mut unchanged,
+    );
+    diff_usize(
+        "z_level_count",
+        a.z_level_count,
+        b.z_level_count,
+        &mut changed,
+        &mut unchanged,
+    );
     diff_usize(
         "feed_rate_count",
         a.feed_rate_count,
@@ -249,7 +285,14 @@ pub fn diff_fingerprints(a: &ToolpathFingerprint, b: &ToolpathFingerprint) -> Fi
     );
 
     // Array fields (z_levels, feed_rates)
-    diff_f64_vec("z_levels", &a.z_levels, &b.z_levels, 0.001, &mut changed, &mut unchanged);
+    diff_f64_vec(
+        "z_levels",
+        &a.z_levels,
+        &b.z_levels,
+        0.001,
+        &mut changed,
+        &mut unchanged,
+    );
     diff_f64_vec(
         "feed_rates",
         &a.feed_rates,
@@ -328,10 +371,7 @@ fn diff_f64_vec(
     changed: &mut Vec<FieldChange>,
     unchanged: &mut Vec<String>,
 ) {
-    let same = a.len() == b.len()
-        && a.iter()
-            .zip(b.iter())
-            .all(|(x, y)| (x - y).abs() < epsilon);
+    let same = a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| (x - y).abs() < epsilon);
 
     if !same {
         changed.push(FieldChange {
@@ -413,7 +453,7 @@ pub fn render_stock_composite(
     // RGBA buffer, dark gray background
     let mut pixels = vec![0u8; w * h * 4];
     for i in 0..w * h {
-        pixels[i * 4] = 42;     // R
+        pixels[i * 4] = 42; // R
         pixels[i * 4 + 1] = 42; // G
         pixels[i * 4 + 2] = 42; // B
         pixels[i * 4 + 3] = 255; // A
@@ -446,20 +486,30 @@ pub fn render_stock_composite(
     let cell_h = height / 2;
 
     let views: &[(f64, f64, u32, u32)] = &[
-        (pi / 4.0,       deg30,  0, 0),        // Front-Left
-        (0.0,            deg90,  cell_w, 0),    // Top
-        (7.0 * pi / 4.0, deg30,  cell_w * 2, 0), // Front-Right
-        (3.0 * pi / 4.0, deg30,  0, cell_h),   // Back-Left
-        (0.0,            -deg90, cell_w, cell_h), // Bottom
-        (5.0 * pi / 4.0, deg30,  cell_w * 2, cell_h), // Back-Right
+        (pi / 4.0, deg30, 0, 0),                     // Front-Left
+        (0.0, deg90, cell_w, 0),                     // Top
+        (7.0 * pi / 4.0, deg30, cell_w * 2, 0),      // Front-Right
+        (3.0 * pi / 4.0, deg30, 0, cell_h),          // Back-Left
+        (0.0, -deg90, cell_w, cell_h),               // Bottom
+        (5.0 * pi / 4.0, deg30, cell_w * 2, cell_h), // Back-Right
     ];
 
     for &(az, el, vx, vy) in views {
         render_view_to_pixels(
-            &mut pixels, w, h,
-            &mesh, vert_count, cx, cy, cz,
-            az, el,
-            vx as usize, vy as usize, cell_w as usize, cell_h as usize,
+            &mut pixels,
+            w,
+            h,
+            &mesh,
+            vert_count,
+            cx,
+            cy,
+            cz,
+            az,
+            el,
+            vx as usize,
+            vy as usize,
+            cell_w as usize,
+            cell_h as usize,
         );
     }
 
@@ -474,9 +524,15 @@ fn render_view_to_pixels(
     _buf_h: usize,
     mesh: &crate::stock_mesh::StockMesh,
     vert_count: usize,
-    cx: f64, cy: f64, cz: f64,
-    azimuth: f64, elevation: f64,
-    vx: usize, vy: usize, vw: usize, vh: usize,
+    cx: f64,
+    cy: f64,
+    cz: f64,
+    azimuth: f64,
+    elevation: f64,
+    vx: usize,
+    vy: usize,
+    vw: usize,
+    vh: usize,
 ) {
     let cos_az = azimuth.cos();
     let sin_az = azimuth.sin();
@@ -507,10 +563,18 @@ fn render_view_to_pixels(
         projected.push([sx, sy]);
         depths.push(depth);
 
-        if sx < sx_min { sx_min = sx; }
-        if sx > sx_max { sx_max = sx; }
-        if sy < sy_min { sy_min = sy; }
-        if sy > sy_max { sy_max = sy; }
+        if sx < sx_min {
+            sx_min = sx;
+        }
+        if sx > sx_max {
+            sx_max = sx;
+        }
+        if sy < sy_min {
+            sy_min = sy;
+        }
+        if sy > sy_max {
+            sy_max = sy;
+        }
     }
 
     let margin = 4.0;
@@ -564,16 +628,22 @@ fn render_view_to_pixels(
         let ny = az_v * bx - ax * bz;
         let nz = ax * by - ay * bx;
         let nlen = (nx * nx + ny * ny + nz * nz).sqrt().max(1e-10);
-        let dot = ((nx / nlen) * light_x + (ny / nlen) * light_y + (nz / nlen) * light_z)
-            .clamp(0.0, 1.0);
+        let dot =
+            ((nx / nlen) * light_x + (ny / nlen) * light_y + (nz / nlen) * light_z).clamp(0.0, 1.0);
         let shade = 0.3 + 0.7 * dot;
 
-        let base_r = (f64::from(mesh.colors[i0 * 3]) + f64::from(mesh.colors[i1 * 3])
-            + f64::from(mesh.colors[i2 * 3])) / 3.0;
-        let base_g = (f64::from(mesh.colors[i0 * 3 + 1]) + f64::from(mesh.colors[i1 * 3 + 1])
-            + f64::from(mesh.colors[i2 * 3 + 1])) / 3.0;
-        let base_b = (f64::from(mesh.colors[i0 * 3 + 2]) + f64::from(mesh.colors[i1 * 3 + 2])
-            + f64::from(mesh.colors[i2 * 3 + 2])) / 3.0;
+        let base_r = (f64::from(mesh.colors[i0 * 3])
+            + f64::from(mesh.colors[i1 * 3])
+            + f64::from(mesh.colors[i2 * 3]))
+            / 3.0;
+        let base_g = (f64::from(mesh.colors[i0 * 3 + 1])
+            + f64::from(mesh.colors[i1 * 3 + 1])
+            + f64::from(mesh.colors[i2 * 3 + 1]))
+            / 3.0;
+        let base_b = (f64::from(mesh.colors[i0 * 3 + 2])
+            + f64::from(mesh.colors[i1 * 3 + 2])
+            + f64::from(mesh.colors[i2 * 3 + 2]))
+            / 3.0;
 
         let cr = (base_r * shade * 255.0).clamp(0.0, 255.0) as u8;
         let cg = (base_g * shade * 255.0).clamp(0.0, 255.0) as u8;
@@ -581,10 +651,8 @@ fn render_view_to_pixels(
 
         // Rasterize triangle with scanline fill
         rasterize_triangle(
-            pixels, &mut zbuf, buf_w,
-            vx, vy, vw, vh,
-            px0, py0, px1, py1, px2, py2,
-            tri_depth, cr, cg, cb,
+            pixels, &mut zbuf, buf_w, vx, vy, vw, vh, px0, py0, px1, py1, px2, py2, tri_depth, cr,
+            cg, cb,
         );
     }
 }
@@ -595,10 +663,20 @@ fn rasterize_triangle(
     pixels: &mut [u8],
     zbuf: &mut [f64],
     buf_w: usize,
-    vx: usize, vy: usize, vw: usize, vh: usize,
-    x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2: f64,
+    vx: usize,
+    vy: usize,
+    vw: usize,
+    vh: usize,
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
+    x2: f64,
+    y2: f64,
     depth: f64,
-    r: u8, g: u8, b: u8,
+    r: u8,
+    g: u8,
+    b: u8,
 ) {
     // Bounding box clipped to viewport
     let min_x = x0.min(x1).min(x2).max(0.0) as usize;
@@ -624,19 +702,22 @@ fn rasterize_triangle(
             let e1 = (fx - x1) * dy12 - (fy - y1) * dx12;
             let e2 = (fx - x2) * dy20 - (fy - y2) * dx20;
 
-            if (e0 >= 0.0 && e1 >= 0.0 && e2 >= 0.0)
-                || (e0 <= 0.0 && e1 <= 0.0 && e2 <= 0.0)
-            {
-                // Z-test
-                let zi = py * vw + px;
-                if depth > zbuf[zi] {
-                    zbuf[zi] = depth;
-                    let pi = ((vy + py) * buf_w + (vx + px)) * 4;
-                    if pi + 3 < pixels.len() {
-                        pixels[pi] = r;
-                        pixels[pi + 1] = g;
-                        pixels[pi + 2] = b;
-                        pixels[pi + 3] = 255;
+            if (e0 >= 0.0 && e1 >= 0.0 && e2 >= 0.0) || (e0 <= 0.0 && e1 <= 0.0 && e2 <= 0.0) {
+                // SAFETY: zi is bounded by min_y..=max_y × vw + min_x..=max_x,
+                // which are clamped to the viewport dimensions that size zbuf.
+                // pi is bounds-checked explicitly before writing.
+                #[allow(clippy::indexing_slicing)]
+                {
+                    let zi = py * vw + px;
+                    if depth > zbuf[zi] {
+                        zbuf[zi] = depth;
+                        let pi = ((vy + py) * buf_w + (vx + px)) * 4;
+                        if pi + 3 < pixels.len() {
+                            pixels[pi] = r;
+                            pixels[pi + 1] = g;
+                            pixels[pi + 2] = b;
+                            pixels[pi + 3] = 255;
+                        }
                     }
                 }
             }
@@ -909,7 +990,9 @@ mod tests {
         assert!(diff.has_changes());
 
         // Should detect move_count change (6 → 7)
-        let mc = diff.field_change("move_count").expect("move_count should change");
+        let mc = diff
+            .field_change("move_count")
+            .expect("move_count should change");
         assert_eq!(mc.before, serde_json::json!(6u64));
         assert_eq!(mc.after, serde_json::json!(7u64));
 
@@ -1045,7 +1128,9 @@ mod tests {
         // 300*200*4 = 240000 bytes RGBA
         assert_eq!(pixels.len(), 300 * 200 * 4);
         // Should have non-background pixels (not all gray)
-        let has_color = pixels.chunks(4).any(|p| p[0] != 42 || p[1] != 42 || p[2] != 42);
+        let has_color = pixels
+            .chunks(4)
+            .any(|p| p[0] != 42 || p[1] != 42 || p[2] != 42);
         assert!(has_color, "Render produced only background pixels");
     }
 
@@ -1076,7 +1161,9 @@ mod tests {
         let pixels = render_stock_composite(&stock, 600, 400);
         assert_eq!(pixels.len(), 600 * 400 * 4);
         // Cut areas should produce darker pixels (walnut color) alongside lighter uncut
-        let has_color = pixels.chunks(4).any(|p| p[0] != 42 || p[1] != 42 || p[2] != 42);
+        let has_color = pixels
+            .chunks(4)
+            .any(|p| p[0] != 42 || p[1] != 42 || p[2] != 42);
         assert!(has_color);
     }
 }

@@ -1,6 +1,5 @@
 use super::AppEvent;
 use crate::state::AppState;
-use crate::state::toolpath::OperationConfig;
 use crate::ui::theme;
 
 /// Draw the pre-flight checklist modal. Returns true if still open.
@@ -179,16 +178,13 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             ui.horizontal(|ui| {
                 if has_failures {
                     let confirm_id = egui::Id::new("preflight_export_confirm");
-                    let confirmed =
-                        ui.data(|d| d.get_temp::<bool>(confirm_id).unwrap_or(false));
-                    let btn = egui::Button::new(
-                        egui::RichText::new("Export Anyway").strong(),
-                    )
-                    .fill(if confirmed {
-                        egui::Color32::from_rgb(180, 50, 40)
-                    } else {
-                        egui::Color32::from_rgb(80, 40, 40)
-                    });
+                    let confirmed = ui.data(|d| d.get_temp::<bool>(confirm_id).unwrap_or(false));
+                    let btn = egui::Button::new(egui::RichText::new("Export Anyway").strong())
+                        .fill(if confirmed {
+                            egui::Color32::from_rgb(180, 50, 40)
+                        } else {
+                            egui::Color32::from_rgb(80, 40, 40)
+                        });
                     if ui.add_enabled(confirmed, btn).clicked() {
                         events.push(AppEvent::ExportGcodeConfirmed);
                         still_open = false;
@@ -266,7 +262,7 @@ fn estimate_total_time(state: &AppState) -> f64 {
         if tp.enabled
             && let Some(result) = &tp.result
         {
-            let feed = op_feed_rate(&tp.operation);
+            let feed = tp.operation.feed_rate();
             total_secs += (result.stats.cutting_distance / feed) * 60.0;
         }
     }
@@ -288,32 +284,4 @@ fn count_tool_changes(state: &AppState) -> usize {
         last_tool = Some(tp.tool_id);
     }
     count
-}
-
-fn op_feed_rate(op: &OperationConfig) -> f64 {
-    match op {
-        OperationConfig::Face(c) => c.feed_rate,
-        OperationConfig::Pocket(c) => c.feed_rate,
-        OperationConfig::Profile(c) => c.feed_rate,
-        OperationConfig::Adaptive(c) => c.feed_rate,
-        OperationConfig::DropCutter(c) => c.feed_rate,
-        OperationConfig::Trace(c) => c.feed_rate,
-        OperationConfig::Drill(c) => c.feed_rate,
-        OperationConfig::Chamfer(c) => c.feed_rate,
-        OperationConfig::Zigzag(c) => c.feed_rate,
-        OperationConfig::VCarve(c) => c.feed_rate,
-        OperationConfig::Rest(c) => c.feed_rate,
-        OperationConfig::Inlay(c) => c.feed_rate,
-        OperationConfig::Adaptive3d(c) => c.feed_rate,
-        OperationConfig::Waterline(c) => c.feed_rate,
-        OperationConfig::Pencil(c) => c.feed_rate,
-        OperationConfig::Scallop(c) => c.feed_rate,
-        OperationConfig::SteepShallow(c) => c.feed_rate,
-        OperationConfig::RampFinish(c) => c.feed_rate,
-        OperationConfig::SpiralFinish(c) => c.feed_rate,
-        OperationConfig::RadialFinish(c) => c.feed_rate,
-        OperationConfig::HorizontalFinish(c) => c.feed_rate,
-        OperationConfig::ProjectCurve(c) => c.feed_rate,
-        OperationConfig::AlignmentPinDrill(c) => c.feed_rate,
-    }
 }

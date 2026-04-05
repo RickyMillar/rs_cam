@@ -32,26 +32,27 @@ impl HeightPlanesGpuData {
     ) -> Self {
         use wgpu::util::DeviceExt;
 
+        use super::colors;
         let planes = [
             HeightPlane {
                 z: clearance_z as f32,
-                color: [0.3, 0.5, 0.9],
+                color: colors::HEIGHT_CLEARANCE,
             },
             HeightPlane {
                 z: retract_z as f32,
-                color: [0.3, 0.8, 0.8],
+                color: colors::HEIGHT_RETRACT,
             },
             HeightPlane {
                 z: feed_z as f32,
-                color: [0.3, 0.8, 0.3],
+                color: colors::HEIGHT_FEED,
             },
             HeightPlane {
                 z: top_z as f32,
-                color: [0.9, 0.8, 0.2],
+                color: colors::HEIGHT_TOP,
             },
             HeightPlane {
                 z: bottom_z as f32,
-                color: [0.9, 0.3, 0.2],
+                color: colors::HEIGHT_BOTTOM,
             },
         ];
 

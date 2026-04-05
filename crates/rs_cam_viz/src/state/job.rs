@@ -152,7 +152,7 @@ impl LoadedModel {
 }
 
 /// Tool type matching the five cutter types in rs_cam_core.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolType {
     EndMill,
@@ -204,24 +204,24 @@ impl ToolMaterial {
 /// Cut direction (affects chip evacuation and surface quality).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CutDirection {
+pub enum BitCutDirection {
     UpCut,
     DownCut,
     Compression,
 }
 
-impl CutDirection {
-    pub const ALL: &[CutDirection] = &[
-        CutDirection::UpCut,
-        CutDirection::DownCut,
-        CutDirection::Compression,
+impl BitCutDirection {
+    pub const ALL: &[BitCutDirection] = &[
+        BitCutDirection::UpCut,
+        BitCutDirection::DownCut,
+        BitCutDirection::Compression,
     ];
 
     pub fn label(&self) -> &'static str {
         match self {
-            CutDirection::UpCut => "Up Cut",
-            CutDirection::DownCut => "Down Cut",
-            CutDirection::Compression => "Compression",
+            BitCutDirection::UpCut => "Up Cut",
+            BitCutDirection::DownCut => "Down Cut",
+            BitCutDirection::Compression => "Compression",
         }
     }
 }
@@ -251,7 +251,7 @@ pub struct ToolConfig {
     // Cutting parameters (for feeds calculation)
     pub flute_count: u32,
     pub tool_material: ToolMaterial,
-    pub cut_direction: CutDirection,
+    pub cut_direction: BitCutDirection,
     // Optional vendor info
     pub vendor: String,
     pub product_id: String,
@@ -283,7 +283,7 @@ impl ToolConfig {
             stickout: 45.0,
             flute_count: 2,
             tool_material: ToolMaterial::Carbide,
-            cut_direction: CutDirection::UpCut,
+            cut_direction: BitCutDirection::UpCut,
             vendor: String::new(),
             product_id: String::new(),
         }
@@ -318,26 +318,8 @@ impl ToolConfig {
     }
 }
 
-/// Post-processor format.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PostFormat {
-    Grbl,
-    LinuxCnc,
-    Mach3,
-}
-
-impl PostFormat {
-    pub const ALL: &[PostFormat] = &[PostFormat::Grbl, PostFormat::LinuxCnc, PostFormat::Mach3];
-
-    pub fn label(&self) -> &'static str {
-        match self {
-            PostFormat::Grbl => "GRBL",
-            PostFormat::LinuxCnc => "LinuxCNC",
-            PostFormat::Mach3 => "Mach3",
-        }
-    }
-}
+// Re-export PostFormat from core (single source of truth).
+pub use rs_cam_core::gcode::PostFormat;
 
 /// Post-processor configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -434,7 +416,7 @@ impl StockConfig {
 }
 
 /// Which face of the stock is oriented upward in this setup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum FaceUp {
     #[default]
     Top,
@@ -554,7 +536,7 @@ impl FaceUp {
 }
 
 /// Rotation of the stock about the vertical (Z) axis.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ZRotation {
     #[default]
     Deg0,
@@ -644,7 +626,7 @@ impl ZRotation {
 }
 
 /// Which corner of the stock to probe for XY datum.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Corner {
     FrontLeft,
     FrontRight,
@@ -1709,5 +1691,84 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn all_constants_are_exhaustive() {
+        // ToolType: 5 variants
+        assert_eq!(
+            ToolType::ALL.len(),
+            5,
+            "ToolType::ALL out of sync with enum"
+        );
+        // PostFormat: 3 variants
+        assert_eq!(
+            PostFormat::ALL.len(),
+            3,
+            "PostFormat::ALL out of sync with enum"
+        );
+        // ToolMaterial: 2 variants
+        assert_eq!(
+            ToolMaterial::ALL.len(),
+            2,
+            "ToolMaterial::ALL out of sync with enum"
+        );
+        // BitCutDirection: 3 variants
+        assert_eq!(
+            BitCutDirection::ALL.len(),
+            3,
+            "BitCutDirection::ALL out of sync with enum"
+        );
+        // FaceUp: 6 variants
+        assert_eq!(FaceUp::ALL.len(), 6, "FaceUp::ALL out of sync with enum");
+        // ZRotation: 4 variants
+        assert_eq!(
+            ZRotation::ALL.len(),
+            4,
+            "ZRotation::ALL out of sync with enum"
+        );
+        // Corner: 4 variants
+        assert_eq!(Corner::ALL.len(), 4, "Corner::ALL out of sync with enum");
+        // FixtureKind: 4 variants
+        assert_eq!(
+            FixtureKind::ALL.len(),
+            4,
+            "FixtureKind::ALL out of sync with enum"
+        );
+    }
+
+    #[test]
+    fn all_constants_have_no_duplicates() {
+        use std::collections::HashSet;
+        let tool_types: HashSet<_> = ToolType::ALL.iter().collect();
+        assert_eq!(
+            tool_types.len(),
+            ToolType::ALL.len(),
+            "ToolType::ALL has duplicates"
+        );
+        let post_formats: HashSet<_> = PostFormat::ALL.iter().collect();
+        assert_eq!(
+            post_formats.len(),
+            PostFormat::ALL.len(),
+            "PostFormat::ALL has duplicates"
+        );
+        let face_ups: HashSet<_> = FaceUp::ALL.iter().collect();
+        assert_eq!(
+            face_ups.len(),
+            FaceUp::ALL.len(),
+            "FaceUp::ALL has duplicates"
+        );
+        let z_rots: HashSet<_> = ZRotation::ALL.iter().collect();
+        assert_eq!(
+            z_rots.len(),
+            ZRotation::ALL.len(),
+            "ZRotation::ALL has duplicates"
+        );
+        let corners: HashSet<_> = Corner::ALL.iter().collect();
+        assert_eq!(
+            corners.len(),
+            Corner::ALL.len(),
+            "Corner::ALL has duplicates"
+        );
     }
 }

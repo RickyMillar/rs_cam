@@ -1,4 +1,5 @@
 pub mod camera;
+pub mod colors;
 pub mod fixture_render;
 pub mod gpu_safety;
 pub mod grid_render;

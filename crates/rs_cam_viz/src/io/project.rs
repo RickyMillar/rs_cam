@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::io::import;
 use crate::state::job::{
-    AlignmentPin, CutDirection as ToolCutDirection, FaceUp, Fixture, FixtureId, FixtureKind,
+    AlignmentPin, BitCutDirection as ToolCutDirection, FaceUp, Fixture, FixtureId, FixtureKind,
     JobState, KeepOutId, KeepOutZone, LoadedModel, ModelId, ModelKind, ModelUnits, PostConfig,
     PostFormat, Setup, SetupId, StockConfig, ToolConfig, ToolId, ToolMaterial, ToolType, XYDatum,
     ZDatum, ZRotation,
@@ -143,11 +143,11 @@ pub struct ProjectToolSection {
     pub diameter: f64,
     #[serde(default = "default_cutting_length")]
     pub cutting_length: f64,
-    #[serde(default)]
+    #[serde(default = "default_corner_radius")]
     pub corner_radius: f64,
     #[serde(default = "default_included_angle")]
     pub included_angle: f64,
-    #[serde(default)]
+    #[serde(default = "default_taper_half_angle")]
     pub taper_half_angle: f64,
     #[serde(default = "default_shaft_diameter")]
     pub shaft_diameter: f64,
@@ -350,11 +350,11 @@ struct LegacyToolSection {
     pub diameter: f64,
     #[serde(default = "default_cutting_length")]
     pub cutting_length: f64,
-    #[serde(default)]
+    #[serde(default = "default_corner_radius")]
     pub corner_radius: f64,
     #[serde(default = "default_included_angle")]
     pub included_angle: f64,
-    #[serde(default)]
+    #[serde(default = "default_taper_half_angle")]
     pub taper_half_angle: f64,
     #[serde(default = "default_shaft_diameter")]
     pub shaft_diameter: f64,
@@ -437,8 +437,8 @@ impl ProjectToolSection {
     fn from_runtime(tool: &ToolConfig) -> Self {
         Self {
             id: Some(tool.id),
-            name: tool.name.clone(),
             tool_number: Some(tool.tool_number),
+            name: tool.name.clone(),
             tool_type: tool.tool_type,
             diameter: tool.diameter,
             cutting_length: tool.cutting_length,
@@ -459,25 +459,27 @@ impl ProjectToolSection {
     }
 
     fn into_runtime(self, id: ToolId) -> ToolConfig {
-        let mut tool = ToolConfig::new_default(id, self.tool_type);
-        tool.name = self.name;
-        tool.tool_number = self.tool_number.unwrap_or(id.0 as u32 + 1);
-        tool.diameter = self.diameter;
-        tool.cutting_length = self.cutting_length;
-        tool.corner_radius = self.corner_radius;
-        tool.included_angle = self.included_angle;
-        tool.taper_half_angle = self.taper_half_angle;
-        tool.shaft_diameter = self.shaft_diameter;
-        tool.holder_diameter = self.holder_diameter;
-        tool.shank_diameter = self.shank_diameter;
-        tool.shank_length = self.shank_length;
-        tool.stickout = self.stickout;
-        tool.flute_count = self.flute_count;
-        tool.tool_material = self.tool_material;
-        tool.cut_direction = self.cut_direction;
-        tool.vendor = self.vendor;
-        tool.product_id = self.product_id;
-        tool
+        ToolConfig {
+            id,
+            name: self.name,
+            tool_number: self.tool_number.unwrap_or(id.0 as u32 + 1),
+            tool_type: self.tool_type,
+            diameter: self.diameter,
+            cutting_length: self.cutting_length,
+            corner_radius: self.corner_radius,
+            included_angle: self.included_angle,
+            taper_half_angle: self.taper_half_angle,
+            shaft_diameter: self.shaft_diameter,
+            holder_diameter: self.holder_diameter,
+            shank_diameter: self.shank_diameter,
+            shank_length: self.shank_length,
+            stickout: self.stickout,
+            flute_count: self.flute_count,
+            tool_material: self.tool_material,
+            cut_direction: self.cut_direction,
+            vendor: self.vendor,
+            product_id: self.product_id,
+        }
     }
 }
 
@@ -1317,6 +1319,14 @@ fn default_cutting_length() -> f64 {
 
 fn default_included_angle() -> f64 {
     90.0
+}
+
+fn default_corner_radius() -> f64 {
+    2.0
+}
+
+fn default_taper_half_angle() -> f64 {
+    15.0
 }
 
 fn default_shaft_diameter() -> f64 {

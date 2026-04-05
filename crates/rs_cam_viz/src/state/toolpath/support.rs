@@ -31,7 +31,7 @@ pub struct ToolpathStats {
 }
 
 /// Named reference point for expressing heights relative to geometry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HeightReference {
     StockTop,
@@ -281,7 +281,12 @@ impl Default for DressupConfig {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
 
@@ -418,8 +423,23 @@ mod tests {
         let auto: HeightMode = serde_json::from_str(r#"{"mode":"auto"}"#).unwrap();
         assert!(auto.is_auto());
 
-        let manual: HeightMode =
-            serde_json::from_str(r#"{"mode":"manual","value":5.0}"#).unwrap();
+        let manual: HeightMode = serde_json::from_str(r#"{"mode":"manual","value":5.0}"#).unwrap();
         assert_eq!(manual, HeightMode::Manual(5.0));
+    }
+
+    #[test]
+    fn height_reference_all_exhaustive() {
+        assert_eq!(
+            HeightReference::ALL.len(),
+            4,
+            "HeightReference::ALL out of sync with enum"
+        );
+        use std::collections::HashSet;
+        let refs: HashSet<_> = HeightReference::ALL.iter().collect();
+        assert_eq!(
+            refs.len(),
+            HeightReference::ALL.len(),
+            "HeightReference::ALL has duplicates"
+        );
     }
 }

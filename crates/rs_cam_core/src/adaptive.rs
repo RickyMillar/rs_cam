@@ -14,8 +14,10 @@
 //!
 //! Reference: research/02_algorithms.md §5
 
+use crate::adaptive_shared::BlendedMove;
 pub(crate) use crate::adaptive_shared::{
-    angle_diff, average_angles, blend_corners, refine_angle_bracket, target_engagement_fraction,
+    angle_diff, average_angles, blend_corners_to_moves, refine_angle_bracket,
+    target_engagement_fraction,
 };
 use crate::debug_trace::{HotspotRecord, ToolpathDebugBounds2, ToolpathDebugContext};
 use crate::dexel_stock::TriDexelStock;
@@ -1149,7 +1151,8 @@ fn adaptive_segments_with_debug(
         // This opens pockets in all regions without doing the adaptive's job.
         let narrow_span = if w >= h { h } else { w };
         let slot_spacing = (narrow_span / 3.0).max(tool_radius * 4.0);
-        let slot_lines = crate::zigzag::zigzag_lines(polygon, tool_radius, slot_spacing, slot_angle);
+        let slot_lines =
+            crate::zigzag::zigzag_lines(polygon, tool_radius, slot_spacing, slot_angle);
 
         for (line_idx, line) in slot_lines.iter().enumerate() {
             check_cancel(cancel)?;
@@ -1549,16 +1552,45 @@ fn segments_to_toolpath(
             }
             AdaptiveSegment::Cut(path) => {
                 let simplified = simplify_path(path, params.tolerance);
-                let final_path = if params.min_cutting_radius > 0.0 {
-                    blend_corners(&simplified, params.min_cutting_radius)
+                if params.min_cutting_radius > 0.0 {
+                    let moves = blend_corners_to_moves(&simplified, params.min_cutting_radius);
+                    for m in moves.iter().skip(1) {
+                        match m {
+                            BlendedMove::Linear(p) => {
+                                tp.feed_to(
+                                    crate::geo::P3::new(p.x, p.y, params.cut_depth),
+                                    params.feed_rate,
+                                );
+                            }
+                            BlendedMove::Arc {
+                                end,
+                                center,
+                                clockwise,
+                            } => {
+                                // SAFETY: Cut always follows Plunge/Link, so tp.moves
+                                // is non-empty; unwrap_or is a defensive fallback.
+                                let prev =
+                                    tp.moves.last().map(|mv| mv.target).unwrap_or(
+                                        crate::geo::P3::new(end.x, end.y, params.cut_depth),
+                                    );
+                                let i = center.x - prev.x;
+                                let j = center.y - prev.y;
+                                let target = crate::geo::P3::new(end.x, end.y, params.cut_depth);
+                                if *clockwise {
+                                    tp.arc_cw_to(target, i, j, params.feed_rate);
+                                } else {
+                                    tp.arc_ccw_to(target, i, j, params.feed_rate);
+                                }
+                            }
+                        }
+                    }
                 } else {
-                    simplified
-                };
-                for p in final_path.iter().skip(1) {
-                    tp.feed_to(
-                        crate::geo::P3::new(p.x, p.y, params.cut_depth),
-                        params.feed_rate,
-                    );
+                    for p in simplified.iter().skip(1) {
+                        tp.feed_to(
+                            crate::geo::P3::new(p.x, p.y, params.cut_depth),
+                            params.feed_rate,
+                        );
+                    }
                 }
             }
         }
@@ -1652,6 +1684,7 @@ pub fn adaptive_toolpath_annotated_traced_with_cancel(
 )]
 mod tests {
     use super::*;
+    use crate::adaptive_shared::blend_corners;
 
     fn square_polygon(size: f64) -> Polygon2 {
         let h = size / 2.0;
@@ -2148,6 +2181,65 @@ mod tests {
             3,
             "Too-large radius should not blend short segments"
         );
+    }
+
+    // ── Blend corners to moves (arc emission) tests ───────────────────
+
+    #[test]
+    fn test_blend_corners_to_moves_emits_arc() {
+        use crate::adaptive_shared::BlendedMove;
+        // L-shape: 90° turn
+        let path = vec![P2::new(0.0, 0.0), P2::new(10.0, 0.0), P2::new(10.0, 10.0)];
+        let moves = blend_corners_to_moves(&path, 2.0);
+
+        // Should contain at least one Arc move
+        let arc_count = moves
+            .iter()
+            .filter(|m| matches!(m, BlendedMove::Arc { .. }))
+            .count();
+        assert!(
+            arc_count > 0,
+            "90° corner should produce at least one Arc move, got {arc_count}"
+        );
+
+        // First move should be Linear(start), last should be Linear(end)
+        assert!(matches!(&moves[0], BlendedMove::Linear(p) if p.x.abs() < 1e-10));
+        assert!(
+            matches!(moves.last().unwrap(), BlendedMove::Linear(p) if (p.y - 10.0).abs() < 1e-10)
+        );
+    }
+
+    #[test]
+    fn test_blend_corners_to_moves_arc_center_on_radius() {
+        use crate::adaptive_shared::BlendedMove;
+        let path = vec![P2::new(0.0, 0.0), P2::new(10.0, 0.0), P2::new(10.0, 10.0)];
+        let min_r = 2.0;
+        let moves = blend_corners_to_moves(&path, min_r);
+
+        for (i, m) in moves.iter().enumerate() {
+            if let BlendedMove::Arc { end, center, .. } = m {
+                // Arc endpoint should be at min_radius from center
+                let dx = end.x - center.x;
+                let dy = end.y - center.y;
+                let dist = (dx * dx + dy * dy).sqrt();
+                assert!(
+                    (dist - min_r).abs() < 0.01,
+                    "Arc move {i}: endpoint should be {min_r} from center, got {dist:.4}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_blend_corners_to_moves_straight_no_arc() {
+        use crate::adaptive_shared::BlendedMove;
+        let path = vec![P2::new(0.0, 0.0), P2::new(5.0, 0.0), P2::new(10.0, 0.0)];
+        let moves = blend_corners_to_moves(&path, 2.0);
+        let arc_count = moves
+            .iter()
+            .filter(|m| matches!(m, BlendedMove::Arc { .. }))
+            .count();
+        assert_eq!(arc_count, 0, "Straight line should produce no arcs");
     }
 
     // ── Slot clearing tests ────────────────────────────────────────────

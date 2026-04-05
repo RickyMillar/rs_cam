@@ -606,6 +606,12 @@ impl<B: ComputeBackend> AppController<B> {
     // ── Simulation helpers ───────────────────────────────────────────────
 
     fn handle_reset_simulation(&mut self) {
+        self.invalidate_simulation();
+    }
+
+    /// Clear all cached simulation state — used after undo/redo of stock,
+    /// tool, or machine changes that invalidate the sim mesh.
+    fn invalidate_simulation(&mut self) {
         self.compute.cancel_lane(ComputeLane::Analysis);
         let sim = &mut self.state.simulation;
         sim.results = None;
@@ -1289,7 +1295,7 @@ impl<B: ComputeBackend> AppController<B> {
             let tool = self.state.job.tools.iter().find(|t| t.id == tp.tool_id);
             if let Some(tool) = tool {
                 let cutter = crate::compute::worker::helpers::build_cutter(tool);
-                stock.simulate_toolpath(&result.toolpath, cutter.as_ref(), direction);
+                stock.simulate_toolpath(&result.toolpath, &cutter, direction);
             }
         }
 
@@ -1514,7 +1520,7 @@ impl<B: ComputeBackend> AppController<B> {
             match action {
                 UndoAction::StockChange { old, .. } => {
                     self.state.job.stock = old;
-                    self.pending_upload = true;
+                    self.invalidate_simulation();
                 }
                 UndoAction::PostChange { old, .. } => {
                     self.state.job.post = old;
@@ -1529,6 +1535,7 @@ impl<B: ComputeBackend> AppController<B> {
                     {
                         *tool = old;
                     }
+                    self.invalidate_simulation();
                 }
                 UndoAction::ToolpathParamChange {
                     tp_id,
@@ -1541,10 +1548,12 @@ impl<B: ComputeBackend> AppController<B> {
                         toolpath.operation = old_op;
                         toolpath.dressups = old_dressups;
                         toolpath.face_selection = old_face_selection;
+                        toolpath.stale_since = Some(std::time::Instant::now());
                     }
                 }
                 UndoAction::MachineChange { old, .. } => {
                     self.state.job.machine = old;
+                    self.invalidate_simulation();
                 }
             }
         }
@@ -1555,7 +1564,7 @@ impl<B: ComputeBackend> AppController<B> {
             match action {
                 UndoAction::StockChange { new, .. } => {
                     self.state.job.stock = new;
-                    self.pending_upload = true;
+                    self.invalidate_simulation();
                 }
                 UndoAction::PostChange { new, .. } => {
                     self.state.job.post = new;
@@ -1570,6 +1579,7 @@ impl<B: ComputeBackend> AppController<B> {
                     {
                         *tool = new;
                     }
+                    self.invalidate_simulation();
                 }
                 UndoAction::ToolpathParamChange {
                     tp_id,
@@ -1582,10 +1592,12 @@ impl<B: ComputeBackend> AppController<B> {
                         toolpath.operation = new_op;
                         toolpath.dressups = new_dressups;
                         toolpath.face_selection = new_face_selection;
+                        toolpath.stale_since = Some(std::time::Instant::now());
                     }
                 }
                 UndoAction::MachineChange { new, .. } => {
                     self.state.job.machine = new;
+                    self.invalidate_simulation();
                 }
             }
         }

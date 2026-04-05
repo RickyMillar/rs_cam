@@ -81,11 +81,7 @@ impl SurfaceHeightmap {
         #[cfg(not(target_arch = "wasm32"))]
         let z_values = {
             use rayon::prelude::*;
-            let chunk_size = 256;
-            let results: Vec<f64> = (0..total)
-                .into_par_iter()
-                .map(|i| compute_z(i))
-                .collect();
+            let results: Vec<f64> = (0..total).into_par_iter().map(compute_z).collect();
             // Check cancel after parallel work completes
             check_cancel(cancel)?;
             results
