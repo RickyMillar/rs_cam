@@ -37,11 +37,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 Workspace::Toolpaths => "Operations, tools, generation",
                 Workspace::Simulation => "Verify, animate, export",
             };
-            ui.label(
-                egui::RichText::new(hint)
-                    .small()
-                    .color(theme::TEXT_FAINT),
-            );
+            ui.label(egui::RichText::new(hint).small().color(theme::TEXT_FAINT));
         });
     });
 }
@@ -62,10 +58,7 @@ fn workspace_tab(
             egui::Color32::from_rgb(220, 225, 240),
         )
     } else {
-        (
-            egui::Color32::TRANSPARENT,
-            theme::TEXT_MUTED,
-        )
+        (egui::Color32::TRANSPARENT, theme::TEXT_MUTED)
     };
 
     let button = egui::Button::new(egui::RichText::new(label).color(text_color).strong())
@@ -140,14 +133,8 @@ fn simulation_badge(state: &AppState) -> Option<(String, egui::Color32)> {
 
     let collision_count = sim.checks.holder_collision_count + sim.checks.rapid_collisions.len();
     if collision_count > 0 {
-        return Some((
-            format!(" {collision_count}!"),
-            theme::ERROR,
-        ));
+        return Some((format!(" {collision_count}!"), theme::ERROR));
     }
 
-    Some((
-        " \u{2713}".to_string(),
-        theme::SUCCESS,
-    ))
+    Some((" \u{2713}".to_string(), theme::SUCCESS))
 }

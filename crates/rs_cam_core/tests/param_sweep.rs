@@ -13,7 +13,9 @@
     clippy::panic,
     clippy::indexing_slicing,
     clippy::print_stdout,
-    clippy::print_stderr
+    clippy::print_stderr,
+    clippy::too_many_arguments,
+    unused_variables
 )]
 
 use rs_cam_core::{
@@ -55,8 +57,7 @@ use std::path::PathBuf;
 // ── Output helpers ──────────────────────────────────────────────────────
 
 fn output_dir() -> PathBuf {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/param_sweeps");
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/param_sweeps");
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -215,9 +216,15 @@ where
 
         write_json(&dir.join(format!("variant_{val_str}.json")), &variant_fp);
         write_json(&dir.join(format!("variant_{val_str}_diff.json")), &diff);
-        write_json(&dir.join(format!("variant_{val_str}_stock.json")), &variant_sfp);
+        write_json(
+            &dir.join(format!("variant_{val_str}_stock.json")),
+            &variant_sfp,
+        );
         write_svg(&dir.join(format!("variant_{val_str}.svg")), &variant_tp);
-        write_stock_png(&dir.join(format!("variant_{val_str}_stock.png")), &variant_stock);
+        write_stock_png(
+            &dir.join(format!("variant_{val_str}_stock.png")),
+            &variant_stock,
+        );
 
         let arts = SweepArtifacts::generate(&variant_tp);
         sweep_variants.push(SweepVariant {
@@ -333,7 +340,10 @@ fn assert_has_change(diff: &FingerprintDiff, field: &str, context: &str) {
     assert!(
         diff.field_change(field).is_some(),
         "{context}: expected '{field}' to change but it didn't.\nChanged: {:?}",
-        diff.changed_fields.iter().map(|c| &c.field).collect::<Vec<_>>()
+        diff.changed_fields
+            .iter()
+            .map(|c| &c.field)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -365,7 +375,11 @@ fn sweep_pocket_stepover() {
         "pocket",
         "stepover",
         serde_json::json!(2.0),
-        &[serde_json::json!(0.5), serde_json::json!(1.0), serde_json::json!(4.0)],
+        &[
+            serde_json::json!(0.5),
+            serde_json::json!(1.0),
+            serde_json::json!(4.0),
+        ],
         &stock_bounds_2d(),
         0.5,
         &cutter,
@@ -399,7 +413,11 @@ fn sweep_pocket_feed_rate() {
         "pocket",
         "feed_rate",
         serde_json::json!(1000.0),
-        &[serde_json::json!(500.0), serde_json::json!(2000.0), serde_json::json!(5000.0)],
+        &[
+            serde_json::json!(500.0),
+            serde_json::json!(2000.0),
+            serde_json::json!(5000.0),
+        ],
         |override_val| {
             let mut p = default_pocket_params();
             if let Some(v) = override_val {
@@ -427,7 +445,11 @@ fn sweep_pocket_cut_depth() {
         "pocket",
         "cut_depth",
         serde_json::json!(-3.0),
-        &[serde_json::json!(-1.0), serde_json::json!(-6.0), serde_json::json!(-10.0)],
+        &[
+            serde_json::json!(-1.0),
+            serde_json::json!(-6.0),
+            serde_json::json!(-10.0),
+        ],
         |override_val| {
             let mut p = default_pocket_params();
             if let Some(v) = override_val {
@@ -480,7 +502,11 @@ fn sweep_pocket_safe_z() {
         "pocket",
         "safe_z",
         serde_json::json!(10.0),
-        &[serde_json::json!(5.0), serde_json::json!(20.0), serde_json::json!(50.0)],
+        &[
+            serde_json::json!(5.0),
+            serde_json::json!(20.0),
+            serde_json::json!(50.0),
+        ],
         |override_val| {
             let mut p = default_pocket_params();
             if let Some(v) = override_val {
@@ -725,15 +751,17 @@ fn sweep_dropcutter_stepover() {
         "dropcutter",
         "stepover",
         serde_json::json!(2.0),
-        &[serde_json::json!(0.5), serde_json::json!(1.0), serde_json::json!(4.0)],
+        &[
+            serde_json::json!(0.5),
+            serde_json::json!(1.0),
+            serde_json::json!(4.0),
+        ],
         &stock_bounds_3d(),
         0.5,
         &cutter,
         StockCutDirection::FromTop,
         |override_val| {
-            let so = override_val
-                .and_then(|v| v.as_f64())
-                .unwrap_or(2.0);
+            let so = override_val.and_then(|v| v.as_f64()).unwrap_or(2.0);
             generate_dropcutter(&mesh, &index, &cutter, so, 1000.0, 500.0, 30.0, -5.0)
         },
     );
@@ -758,9 +786,7 @@ fn sweep_dropcutter_feed_rate() {
         serde_json::json!(1000.0),
         &[serde_json::json!(500.0), serde_json::json!(2000.0)],
         |override_val| {
-            let fr = override_val
-                .and_then(|v| v.as_f64())
-                .unwrap_or(1000.0);
+            let fr = override_val.and_then(|v| v.as_f64()).unwrap_or(1000.0);
             generate_dropcutter(&mesh, &index, &cutter, 2.0, fr, 500.0, 30.0, -5.0)
         },
     );
@@ -784,9 +810,7 @@ fn sweep_dropcutter_min_z() {
         serde_json::json!(-5.0),
         &[serde_json::json!(-1.0), serde_json::json!(-20.0)],
         |override_val| {
-            let mz = override_val
-                .and_then(|v| v.as_f64())
-                .unwrap_or(-5.0);
+            let mz = override_val.and_then(|v| v.as_f64()).unwrap_or(-5.0);
             generate_dropcutter(&mesh, &index, &cutter, 2.0, 1000.0, 500.0, 30.0, mz)
         },
     );
@@ -811,11 +835,13 @@ fn sweep_waterline_z_step() {
         "waterline",
         "z_step",
         serde_json::json!(2.0),
-        &[serde_json::json!(0.5), serde_json::json!(1.0), serde_json::json!(5.0)],
+        &[
+            serde_json::json!(0.5),
+            serde_json::json!(1.0),
+            serde_json::json!(5.0),
+        ],
         |override_val| {
-            let zs = override_val
-                .and_then(|v| v.as_f64())
-                .unwrap_or(2.0);
+            let zs = override_val.and_then(|v| v.as_f64()).unwrap_or(2.0);
             let p = default_waterline_params();
             waterline_toolpath(&mesh, &index, &cutter, 18.0, 0.0, zs, &p)
         },
@@ -894,9 +920,7 @@ fn sweep_waterline_z_range() {
         serde_json::json!(0.0),
         &[serde_json::json!(5.0), serde_json::json!(10.0)],
         |override_val| {
-            let fz = override_val
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0);
+            let fz = override_val.and_then(|v| v.as_f64()).unwrap_or(0.0);
             let p = default_waterline_params();
             waterline_toolpath(&mesh, &index, &cutter, 18.0, fz, 2.0, &p)
         },
@@ -932,11 +956,15 @@ fn default_face_params() -> FaceParams {
 fn sweep_face_stepover() {
     let bounds = stock_bounds_2d();
     let result = run_sweep(
-        "face", "stepover", serde_json::json!(5.0),
+        "face",
+        "stepover",
+        serde_json::json!(5.0),
         &[serde_json::json!(2.0), serde_json::json!(10.0)],
         |ov| {
             let mut p = default_face_params();
-            if let Some(v) = ov { p.stepover = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.stepover = v.as_f64().unwrap();
+            }
             rs_cam_core::face::face_toolpath(&bounds, &p)
         },
     );
@@ -951,13 +979,17 @@ fn sweep_face_stepover() {
 fn sweep_face_direction() {
     let bounds = stock_bounds_2d();
     let result = run_sweep(
-        "face", "direction", serde_json::json!("zigzag"),
+        "face",
+        "direction",
+        serde_json::json!("zigzag"),
         &[serde_json::json!("one_way")],
         |ov| {
             let mut p = default_face_params();
             // Use depth > 0 so multiple passes make direction visible
             p.depth = 3.0;
-            if ov.is_some() { p.direction = FaceDirection::OneWay; }
+            if ov.is_some() {
+                p.direction = FaceDirection::OneWay;
+            }
             rs_cam_core::face::face_toolpath(&bounds, &p)
         },
     );
@@ -974,11 +1006,15 @@ fn sweep_face_direction() {
 fn sweep_face_depth() {
     let bounds = stock_bounds_2d();
     let result = run_sweep(
-        "face", "depth", serde_json::json!(0.0),
+        "face",
+        "depth",
+        serde_json::json!(0.0),
         &[serde_json::json!(3.0), serde_json::json!(6.0)],
         |ov| {
             let mut p = default_face_params();
-            if let Some(v) = ov { p.depth = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.depth = v.as_f64().unwrap();
+            }
             rs_cam_core::face::face_toolpath(&bounds, &p)
         },
     );
@@ -993,11 +1029,15 @@ fn sweep_face_depth() {
 fn sweep_face_stock_offset() {
     let bounds = stock_bounds_2d();
     let result = run_sweep(
-        "face", "stock_offset", serde_json::json!(5.0),
+        "face",
+        "stock_offset",
+        serde_json::json!(5.0),
         &[serde_json::json!(0.0), serde_json::json!(20.0)],
         |ov| {
             let mut p = default_face_params();
-            if let Some(v) = ov { p.stock_offset = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.stock_offset = v.as_f64().unwrap();
+            }
             rs_cam_core::face::face_toolpath(&bounds, &p)
         },
     );
@@ -1027,11 +1067,15 @@ fn default_zigzag_params() -> ZigzagParams {
 fn sweep_zigzag_angle() {
     let poly = rect_polygon();
     let result = run_sweep(
-        "zigzag", "angle", serde_json::json!(0.0),
+        "zigzag",
+        "angle",
+        serde_json::json!(0.0),
         &[serde_json::json!(45.0), serde_json::json!(90.0)],
         |ov| {
             let mut p = default_zigzag_params();
-            if let Some(v) = ov { p.angle = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.angle = v.as_f64().unwrap();
+            }
             rs_cam_core::zigzag::zigzag_toolpath(&poly, &p)
         },
     );
@@ -1045,11 +1089,15 @@ fn sweep_zigzag_angle() {
 fn sweep_zigzag_stepover() {
     let poly = rect_polygon();
     let result = run_sweep(
-        "zigzag", "stepover", serde_json::json!(2.0),
+        "zigzag",
+        "stepover",
+        serde_json::json!(2.0),
         &[serde_json::json!(0.5), serde_json::json!(4.0)],
         |ov| {
             let mut p = default_zigzag_params();
-            if let Some(v) = ov { p.stepover = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.stepover = v.as_f64().unwrap();
+            }
             rs_cam_core::zigzag::zigzag_toolpath(&poly, &p)
         },
     );
@@ -1080,7 +1128,9 @@ fn default_trace_params() -> TraceParams {
 fn sweep_trace_compensation() {
     let poly = rect_polygon();
     let result = run_sweep(
-        "trace", "compensation", serde_json::json!("none"),
+        "trace",
+        "compensation",
+        serde_json::json!("none"),
         &[serde_json::json!("left"), serde_json::json!("right")],
         |ov| {
             let mut p = default_trace_params();
@@ -1112,11 +1162,15 @@ fn sweep_trace_compensation() {
 fn sweep_trace_depth() {
     let poly = rect_polygon();
     let result = run_sweep(
-        "trace", "depth", serde_json::json!(1.0),
+        "trace",
+        "depth",
+        serde_json::json!(1.0),
         &[serde_json::json!(0.5), serde_json::json!(3.0)],
         |ov| {
             let mut p = default_trace_params();
-            if let Some(v) = ov { p.depth = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.depth = v.as_f64().unwrap();
+            }
             rs_cam_core::trace::trace_toolpath(&poly, &p)
         },
     );
@@ -1149,7 +1203,9 @@ fn default_drill_params() -> DrillParams {
 fn sweep_drill_cycle() {
     let holes = drill_holes();
     let result = run_sweep(
-        "drill", "cycle", serde_json::json!("peck"),
+        "drill",
+        "cycle",
+        serde_json::json!("peck"),
         &[serde_json::json!("simple"), serde_json::json!("dwell")],
         |ov| {
             let mut p = default_drill_params();
@@ -1175,11 +1231,15 @@ fn sweep_drill_cycle() {
 fn sweep_drill_depth() {
     let holes = drill_holes();
     let result = run_sweep(
-        "drill", "depth", serde_json::json!(10.0),
+        "drill",
+        "depth",
+        serde_json::json!(10.0),
         &[serde_json::json!(5.0), serde_json::json!(20.0)],
         |ov| {
             let mut p = default_drill_params();
-            if let Some(v) = ov { p.depth = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.depth = v.as_f64().unwrap();
+            }
             rs_cam_core::drill::drill_toolpath(&holes, &p)
         },
     );
@@ -1210,11 +1270,15 @@ fn default_chamfer_params() -> ChamferParams {
 fn sweep_chamfer_width() {
     let poly = rect_polygon();
     let result = run_sweep(
-        "chamfer", "chamfer_width", serde_json::json!(1.0),
+        "chamfer",
+        "chamfer_width",
+        serde_json::json!(1.0),
         &[serde_json::json!(0.5), serde_json::json!(2.0)],
         |ov| {
             let mut p = default_chamfer_params();
-            if let Some(v) = ov { p.chamfer_width = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.chamfer_width = v.as_f64().unwrap();
+            }
             rs_cam_core::chamfer::chamfer_toolpath(&poly, &p)
         },
     );
@@ -1246,11 +1310,15 @@ fn default_vcarve_params() -> VCarveParams {
 fn sweep_vcarve_max_depth() {
     let poly = l_shape_polygon();
     let result = run_sweep(
-        "vcarve", "max_depth", serde_json::json!(5.0),
+        "vcarve",
+        "max_depth",
+        serde_json::json!(5.0),
         &[serde_json::json!(2.0), serde_json::json!(10.0)],
         |ov| {
             let mut p = default_vcarve_params();
-            if let Some(v) = ov { p.max_depth = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.max_depth = v.as_f64().unwrap();
+            }
             rs_cam_core::vcarve::vcarve_toolpath(&poly, &p)
         },
     );
@@ -1264,11 +1332,15 @@ fn sweep_vcarve_max_depth() {
 fn sweep_vcarve_stepover() {
     let poly = l_shape_polygon();
     let result = run_sweep(
-        "vcarve", "stepover", serde_json::json!(0.5),
+        "vcarve",
+        "stepover",
+        serde_json::json!(0.5),
         &[serde_json::json!(0.2), serde_json::json!(1.0)],
         |ov| {
             let mut p = default_vcarve_params();
-            if let Some(v) = ov { p.stepover = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.stepover = v.as_f64().unwrap();
+            }
             rs_cam_core::vcarve::vcarve_toolpath(&poly, &p)
         },
     );
@@ -1300,11 +1372,15 @@ fn default_rest_params() -> RestParams {
 fn sweep_rest_angle() {
     let poly = l_shape_polygon();
     let result = run_sweep(
-        "rest", "angle", serde_json::json!(0.0),
+        "rest",
+        "angle",
+        serde_json::json!(0.0),
         &[serde_json::json!(45.0), serde_json::json!(90.0)],
         |ov| {
             let mut p = default_rest_params();
-            if let Some(v) = ov { p.angle = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.angle = v.as_f64().unwrap();
+            }
             rs_cam_core::rest::rest_machining_toolpath(&poly, &p)
         },
     );
@@ -1318,11 +1394,15 @@ fn sweep_rest_angle() {
 fn sweep_rest_prev_tool_radius() {
     let poly = l_shape_polygon();
     let result = run_sweep(
-        "rest", "prev_tool_radius", serde_json::json!(6.35),
+        "rest",
+        "prev_tool_radius",
+        serde_json::json!(6.35),
         &[serde_json::json!(3.175), serde_json::json!(12.7)],
         |ov| {
             let mut p = default_rest_params();
-            if let Some(v) = ov { p.prev_tool_radius = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.prev_tool_radius = v.as_f64().unwrap();
+            }
             rs_cam_core::rest::rest_machining_toolpath(&poly, &p)
         },
     );
@@ -1364,11 +1444,15 @@ fn sweep_adaptive3d_stepover() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = FlatEndmill::new(6.35, 25.0);
     let result = run_sweep(
-        "adaptive3d", "stepover", serde_json::json!(2.0),
+        "adaptive3d",
+        "stepover",
+        serde_json::json!(2.0),
         &[serde_json::json!(1.0), serde_json::json!(3.0)],
         |ov| {
             let mut p = default_adaptive3d_params();
-            if let Some(v) = ov { p.stepover = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.stepover = v.as_f64().unwrap();
+            }
             rs_cam_core::adaptive3d::adaptive_3d_toolpath(&mesh, &index, &cutter, &p)
         },
     );
@@ -1384,11 +1468,15 @@ fn sweep_adaptive3d_depth_per_pass() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = FlatEndmill::new(6.35, 25.0);
     let result = run_sweep(
-        "adaptive3d", "depth_per_pass", serde_json::json!(3.0),
+        "adaptive3d",
+        "depth_per_pass",
+        serde_json::json!(3.0),
         &[serde_json::json!(1.0), serde_json::json!(6.0)],
         |ov| {
             let mut p = default_adaptive3d_params();
-            if let Some(v) = ov { p.depth_per_pass = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.depth_per_pass = v.as_f64().unwrap();
+            }
             rs_cam_core::adaptive3d::adaptive_3d_toolpath(&mesh, &index, &cutter, &p)
         },
     );
@@ -1404,11 +1492,15 @@ fn sweep_adaptive3d_clearing_strategy() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = FlatEndmill::new(6.35, 25.0);
     let result = run_sweep(
-        "adaptive3d", "clearing_strategy", serde_json::json!("contour_parallel"),
+        "adaptive3d",
+        "clearing_strategy",
+        serde_json::json!("contour_parallel"),
         &[serde_json::json!("adaptive")],
         |ov| {
             let mut p = default_adaptive3d_params();
-            if ov.is_some() { p.clearing_strategy = ClearingStrategy3d::Adaptive; }
+            if ov.is_some() {
+                p.clearing_strategy = ClearingStrategy3d::Adaptive;
+            }
             rs_cam_core::adaptive3d::adaptive_3d_toolpath(&mesh, &index, &cutter, &p)
         },
     );
@@ -1423,11 +1515,15 @@ fn sweep_adaptive3d_z_blend() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = FlatEndmill::new(6.35, 25.0);
     let result = run_sweep(
-        "adaptive3d", "z_blend", serde_json::json!(false),
+        "adaptive3d",
+        "z_blend",
+        serde_json::json!(false),
         &[serde_json::json!(true)],
         |ov| {
             let mut p = default_adaptive3d_params();
-            if let Some(v) = ov { p.z_blend = v.as_bool().unwrap(); }
+            if let Some(v) = ov {
+                p.z_blend = v.as_bool().unwrap();
+            }
             rs_cam_core::adaptive3d::adaptive_3d_toolpath(&mesh, &index, &cutter, &p)
         },
     );
@@ -1461,11 +1557,15 @@ fn sweep_pencil_bitangency_angle() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
     let result = run_sweep(
-        "pencil", "bitangency_angle", serde_json::json!(160.0),
+        "pencil",
+        "bitangency_angle",
+        serde_json::json!(160.0),
         &[serde_json::json!(120.0), serde_json::json!(175.0)],
         |ov| {
             let mut p = default_pencil_params();
-            if let Some(v) = ov { p.bitangency_angle = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.bitangency_angle = v.as_f64().unwrap();
+            }
             rs_cam_core::pencil::pencil_toolpath(&mesh, &index, &cutter, &p)
         },
     );
@@ -1481,11 +1581,15 @@ fn sweep_pencil_num_offset_passes() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
     let result = run_sweep(
-        "pencil", "num_offset_passes", serde_json::json!(1.0),
+        "pencil",
+        "num_offset_passes",
+        serde_json::json!(1.0),
         &[serde_json::json!(0.0), serde_json::json!(3.0)],
         |ov| {
             let mut p = default_pencil_params();
-            if let Some(v) = ov { p.num_offset_passes = v.as_f64().unwrap() as usize; }
+            if let Some(v) = ov {
+                p.num_offset_passes = v.as_f64().unwrap() as usize;
+            }
             rs_cam_core::pencil::pencil_toolpath(&mesh, &index, &cutter, &p)
         },
     );
@@ -1518,11 +1622,15 @@ fn sweep_scallop_height() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
     let result = run_sweep(
-        "scallop", "scallop_height", serde_json::json!(0.1),
+        "scallop",
+        "scallop_height",
+        serde_json::json!(0.1),
         &[serde_json::json!(0.05), serde_json::json!(0.5)],
         |ov| {
             let mut p = default_scallop_params();
-            if let Some(v) = ov { p.scallop_height = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.scallop_height = v.as_f64().unwrap();
+            }
             rs_cam_core::scallop::scallop_toolpath(&mesh, &index, &cutter, &p)
         },
     );
@@ -1538,11 +1646,15 @@ fn sweep_scallop_direction() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
     let result = run_sweep(
-        "scallop", "direction", serde_json::json!("outside_in"),
+        "scallop",
+        "direction",
+        serde_json::json!("outside_in"),
         &[serde_json::json!("inside_out")],
         |ov| {
             let mut p = default_scallop_params();
-            if ov.is_some() { p.direction = ScallopDirection::InsideOut; }
+            if ov.is_some() {
+                p.direction = ScallopDirection::InsideOut;
+            }
             rs_cam_core::scallop::scallop_toolpath(&mesh, &index, &cutter, &p)
         },
     );
@@ -1578,11 +1690,15 @@ fn sweep_steep_shallow_threshold() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
     let result = run_sweep(
-        "steep_shallow", "threshold_angle", serde_json::json!(45.0),
+        "steep_shallow",
+        "threshold_angle",
+        serde_json::json!(45.0),
         &[serde_json::json!(30.0), serde_json::json!(60.0)],
         |ov| {
             let mut p = default_steep_shallow_params();
-            if let Some(v) = ov { p.threshold_angle = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.threshold_angle = v.as_f64().unwrap();
+            }
             rs_cam_core::steep_shallow::steep_shallow_toolpath(&mesh, &index, &cutter, &p)
         },
     );
@@ -1617,11 +1733,15 @@ fn sweep_ramp_finish_max_stepdown() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
     let result = run_sweep(
-        "ramp_finish", "max_stepdown", serde_json::json!(0.5),
+        "ramp_finish",
+        "max_stepdown",
+        serde_json::json!(0.5),
         &[serde_json::json!(0.2), serde_json::json!(1.0)],
         |ov| {
             let mut p = default_ramp_finish_params();
-            if let Some(v) = ov { p.max_stepdown = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.max_stepdown = v.as_f64().unwrap();
+            }
             rs_cam_core::ramp_finish::ramp_finish_toolpath(&mesh, &index, &cutter, &p)
         },
     );
@@ -1636,8 +1756,13 @@ fn sweep_ramp_finish_direction() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
     let result = run_sweep(
-        "ramp_finish", "direction", serde_json::json!("climb"),
-        &[serde_json::json!("conventional"), serde_json::json!("both_ways")],
+        "ramp_finish",
+        "direction",
+        serde_json::json!("climb"),
+        &[
+            serde_json::json!("conventional"),
+            serde_json::json!("both_ways"),
+        ],
         |ov| {
             let mut p = default_ramp_finish_params();
             if let Some(v) = ov {
@@ -1676,11 +1801,15 @@ fn sweep_spiral_finish_stepover() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
     let result = run_sweep(
-        "spiral_finish", "stepover", serde_json::json!(1.0),
+        "spiral_finish",
+        "stepover",
+        serde_json::json!(1.0),
         &[serde_json::json!(0.5), serde_json::json!(2.0)],
         |ov| {
             let mut p = default_spiral_finish_params();
-            if let Some(v) = ov { p.stepover = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.stepover = v.as_f64().unwrap();
+            }
             rs_cam_core::spiral_finish::spiral_finish_toolpath(&mesh, &index, &cutter, &p)
         },
     );
@@ -1696,11 +1825,15 @@ fn sweep_spiral_finish_direction() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
     let result = run_sweep(
-        "spiral_finish", "direction", serde_json::json!("inside_out"),
+        "spiral_finish",
+        "direction",
+        serde_json::json!("inside_out"),
         &[serde_json::json!("outside_in")],
         |ov| {
             let mut p = default_spiral_finish_params();
-            if ov.is_some() { p.direction = SpiralDirection::OutsideIn; }
+            if ov.is_some() {
+                p.direction = SpiralDirection::OutsideIn;
+            }
             rs_cam_core::spiral_finish::spiral_finish_toolpath(&mesh, &index, &cutter, &p)
         },
     );
@@ -1730,11 +1863,15 @@ fn sweep_radial_finish_angular_step() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
     let result = run_sweep(
-        "radial_finish", "angular_step", serde_json::json!(5.0),
+        "radial_finish",
+        "angular_step",
+        serde_json::json!(5.0),
         &[serde_json::json!(2.0), serde_json::json!(15.0)],
         |ov| {
             let mut p = default_radial_finish_params();
-            if let Some(v) = ov { p.angular_step = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.angular_step = v.as_f64().unwrap();
+            }
             rs_cam_core::radial_finish::radial_finish_toolpath(&mesh, &index, &cutter, &p)
         },
     );
@@ -1765,11 +1902,15 @@ fn sweep_horizontal_finish_angle_threshold() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
     let result = run_sweep(
-        "horizontal_finish", "angle_threshold", serde_json::json!(5.0),
+        "horizontal_finish",
+        "angle_threshold",
+        serde_json::json!(5.0),
         &[serde_json::json!(1.0), serde_json::json!(15.0)],
         |ov| {
             let mut p = default_horizontal_finish_params();
-            if let Some(v) = ov { p.angle_threshold = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.angle_threshold = v.as_f64().unwrap();
+            }
             rs_cam_core::horizontal_finish::horizontal_finish_toolpath(&mesh, &index, &cutter, &p)
         },
     );
@@ -1784,11 +1925,15 @@ fn sweep_horizontal_finish_stepover() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
     let result = run_sweep(
-        "horizontal_finish", "stepover", serde_json::json!(1.0),
+        "horizontal_finish",
+        "stepover",
+        serde_json::json!(1.0),
         &[serde_json::json!(0.5), serde_json::json!(3.0)],
         |ov| {
             let mut p = default_horizontal_finish_params();
-            if let Some(v) = ov { p.stepover = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.stepover = v.as_f64().unwrap();
+            }
             rs_cam_core::horizontal_finish::horizontal_finish_toolpath(&mesh, &index, &cutter, &p)
         },
     );
@@ -1822,11 +1967,15 @@ fn default_inlay_params() -> InlayParams {
 fn sweep_inlay_pocket_depth() {
     let poly = l_shape_polygon();
     let result = run_sweep(
-        "inlay", "pocket_depth", serde_json::json!(3.0),
+        "inlay",
+        "pocket_depth",
+        serde_json::json!(3.0),
         &[serde_json::json!(1.0), serde_json::json!(5.0)],
         |ov| {
             let mut p = default_inlay_params();
-            if let Some(v) = ov { p.pocket_depth = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.pocket_depth = v.as_f64().unwrap();
+            }
             // Use the female toolpath for fingerprinting
             rs_cam_core::inlay::inlay_toolpaths(&poly, &p).female
         },
@@ -1842,11 +1991,15 @@ fn sweep_inlay_pocket_depth() {
 fn sweep_inlay_glue_gap() {
     let poly = l_shape_polygon();
     let result = run_sweep(
-        "inlay", "glue_gap", serde_json::json!(0.1),
+        "inlay",
+        "glue_gap",
+        serde_json::json!(0.1),
         &[serde_json::json!(0.0), serde_json::json!(0.5)],
         |ov| {
             let mut p = default_inlay_params();
-            if let Some(v) = ov { p.glue_gap = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.glue_gap = v.as_f64().unwrap();
+            }
             rs_cam_core::inlay::inlay_toolpaths(&poly, &p).female
         },
     );
@@ -1878,11 +2031,15 @@ fn sweep_project_curve_depth() {
     // Small polygon to project onto the hemisphere
     let poly = Polygon2::rectangle(5.0, 5.0, 15.0, 15.0);
     let result = run_sweep(
-        "project_curve", "depth", serde_json::json!(1.0),
+        "project_curve",
+        "depth",
+        serde_json::json!(1.0),
         &[serde_json::json!(0.5), serde_json::json!(3.0)],
         |ov| {
             let mut p = default_project_curve_params();
-            if let Some(v) = ov { p.depth = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.depth = v.as_f64().unwrap();
+            }
             rs_cam_core::project_curve::project_curve_toolpath(&poly, &mesh, &index, &cutter, &p)
         },
     );
@@ -1899,11 +2056,15 @@ fn sweep_project_curve_point_spacing() {
     let cutter = BallEndmill::new(6.35, 25.0);
     let poly = Polygon2::rectangle(5.0, 5.0, 15.0, 15.0);
     let result = run_sweep(
-        "project_curve", "point_spacing", serde_json::json!(0.5),
+        "project_curve",
+        "point_spacing",
+        serde_json::json!(0.5),
         &[serde_json::json!(0.2), serde_json::json!(2.0)],
         |ov| {
             let mut p = default_project_curve_params();
-            if let Some(v) = ov { p.point_spacing = v.as_f64().unwrap(); }
+            if let Some(v) = ov {
+                p.point_spacing = v.as_f64().unwrap();
+            }
             rs_cam_core::project_curve::project_curve_toolpath(&poly, &mesh, &index, &cutter, &p)
         },
     );

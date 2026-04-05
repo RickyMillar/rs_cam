@@ -1,4 +1,4 @@
-use crate::state::job::{CutDirection, ToolConfig, ToolMaterial, ToolType};
+use crate::state::job::{BitCutDirection, ToolConfig, ToolMaterial, ToolType};
 
 pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     ui.heading(&tool.name);
@@ -76,7 +76,7 @@ pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
             egui::ComboBox::from_id_salt("cut_direction")
                 .selected_text(tool.cut_direction.label())
                 .show_ui(ui, |ui| {
-                    for &cd in CutDirection::ALL {
+                    for &cd in BitCutDirection::ALL {
                         ui.selectable_value(&mut tool.cut_direction, cd, cd.label());
                     }
                 });
@@ -186,9 +186,14 @@ pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     }
 }
 
-/// Draw a 2D cross-section preview of the tool profile.
+/// Draw a 2D cross-section preview of the full tool assembly.
+///
+/// Uses `profile_points()` from the `MillingCutter` trait so the preview
+/// automatically matches the actual cutting geometry for any tool type.
 fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
-    let desired_size = egui::vec2(ui.available_width().min(240.0), 140.0);
+    use rs_cam_core::tool::MillingCutter;
+
+    let desired_size = egui::vec2(ui.available_width().min(240.0), 180.0);
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
 
     let painter = ui.painter_at(rect);
@@ -196,141 +201,97 @@ fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
 
     let cx = rect.center().x;
     let bottom = rect.bottom() - 10.0;
+    let draw_h = desired_size.y - 20.0; // vertical pixels available
 
-    // Cast all tool params to f32 for drawing
-    let r = tool.diameter as f32 / 2.0;
-    let cl = tool.cutting_length as f32;
-    let cr = tool.corner_radius as f32;
-    let inc_angle = tool.included_angle as f32;
-    let taper_ha = tool.taper_half_angle as f32;
-    let shaft_d = tool.shaft_diameter as f32;
+    let tool_def = crate::compute::worker::helpers::build_cutter(tool);
+    let cutter_r = tool_def.radius() as f32;
+    let cutting_len = tool_def.length() as f32;
+    let shank_r = (tool_def.shank_diameter / 2.0) as f32;
+    let shank_len = tool_def.shank_length as f32;
+    let holder_r = (tool_def.holder_diameter / 2.0) as f32;
+    let holder_len = tool_def.holder_length() as f32;
 
-    // Scale: fit the tool diameter into ~60% of the preview width
-    let scale = (desired_size.x * 0.3) / r.max(0.1);
-    let stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(160, 170, 190));
+    // Total height to display; clamp so preview isn't squished
+    let total_h = (cutting_len + shank_len + holder_len).max(cutting_len * 1.2);
+    let max_r = cutter_r.max(shank_r).max(holder_r).max(0.1);
 
-    match tool.tool_type {
-        ToolType::EndMill => {
-            let hw = r * scale;
-            let h = cl.min(r * 4.0) * scale;
-            let left = cx - hw;
-            let right = cx + hw;
-            let top = bottom - h;
-            painter.add(egui::Shape::line(
-                vec![
-                    egui::pos2(left, bottom),
-                    egui::pos2(right, bottom),
-                    egui::pos2(right, top),
-                    egui::pos2(left, top),
-                    egui::pos2(left, bottom),
-                ],
-                stroke,
-            ));
+    // Scale: fit both width and height with padding
+    let scale_x = (desired_size.x * 0.4) / max_r;
+    let scale_y = draw_h / total_h.max(0.1);
+    let scale = scale_x.min(scale_y);
+
+    let cutter_stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(160, 170, 190));
+    let shank_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(120, 125, 135));
+    let holder_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(90, 92, 100));
+
+    // --- Cutter cross-section from profile_points ---
+    let profile = tool_def.profile_points(32);
+    let n = profile.len();
+
+    // Right side: trace profile from tip (bottom) upward, then vertical to cutting_length
+    let mut right_pts: Vec<egui::Pos2> = Vec::with_capacity(n + 2);
+    for &(r, h) in &profile {
+        right_pts.push(egui::pos2(
+            cx + (r as f32) * scale,
+            bottom - (h as f32) * scale,
+        ));
+    }
+    // Extend vertically from the last profile point to cutting_length
+    if let Some(&last) = right_pts.last() {
+        let top_y = bottom - cutting_len * scale;
+        if last.y > top_y + 0.5 {
+            right_pts.push(egui::pos2(cx + cutter_r * scale, top_y));
         }
-        ToolType::BallNose => {
-            let hw = r * scale;
-            let ball_h = r * scale;
-            let shaft_h = (cl - r).max(0.0).min(r * 3.0) * scale;
-            let ball_cy = bottom - ball_h;
-            let top = ball_cy - shaft_h;
+    }
 
-            let mut pts = vec![
-                egui::pos2(cx - hw, ball_cy),
-                egui::pos2(cx - hw, top),
-                egui::pos2(cx + hw, top),
-                egui::pos2(cx + hw, ball_cy),
-            ];
-            for i in 0..=32 {
-                let a = std::f32::consts::PI * (i as f32) / 32.0;
-                pts.push(egui::pos2(cx + hw * a.cos(), ball_cy + ball_h * a.sin()));
-            }
-            painter.add(egui::Shape::line(pts, stroke));
-        }
-        ToolType::BullNose => {
-            let hw = r * scale;
-            let crs = cr.min(r) * scale;
-            let flat_hw = hw - crs;
-            let shaft_h = (cl - cr).max(0.0).min(r * 3.0) * scale;
-            let arc_cy = bottom - crs;
-            let top = arc_cy - shaft_h;
+    // Build closed outline: right side down (reversed) → left side up
+    let mut outline: Vec<egui::Pos2> = Vec::with_capacity(n * 2 + 4);
+    // Right side (top to tip)
+    for pt in right_pts.iter().rev() {
+        outline.push(*pt);
+    }
+    // Left side (tip to top) — mirror X
+    for pt in &right_pts {
+        outline.push(egui::pos2(2.0 * cx - pt.x, pt.y));
+    }
+    // Close
+    if let Some(&first) = outline.first() {
+        outline.push(first);
+    }
+    painter.add(egui::Shape::line(outline, cutter_stroke));
 
-            let mut pts = vec![
-                egui::pos2(cx - hw, arc_cy),
-                egui::pos2(cx - hw, top),
-                egui::pos2(cx + hw, top),
-                egui::pos2(cx + hw, arc_cy),
-            ];
-            // Right corner arc
-            for i in 0..=16 {
-                let a = std::f32::consts::FRAC_PI_2 * (i as f32) / 16.0;
-                pts.push(egui::pos2(
-                    cx + flat_hw + crs * a.cos(),
-                    arc_cy + crs * a.sin(),
-                ));
-            }
-            // Flat bottom (already at bottom after right arc ends at (cx+flat_hw, bottom))
-            pts.push(egui::pos2(cx - flat_hw, bottom));
-            // Left corner arc
-            for i in 0..=16 {
-                let a =
-                    std::f32::consts::FRAC_PI_2 + std::f32::consts::FRAC_PI_2 * (i as f32) / 16.0;
-                pts.push(egui::pos2(
-                    cx - flat_hw + crs * a.cos(),
-                    arc_cy + crs * a.sin(),
-                ));
-            }
-            painter.add(egui::Shape::line(pts, stroke));
-        }
-        ToolType::VBit => {
-            let hw = r * scale;
-            let half_a = (inc_angle / 2.0).to_radians();
-            let cone_h = (r / half_a.tan()) * scale;
-            let shaft_h = (cl * scale - cone_h).max(0.0).min(hw * 2.0);
-            let cone_top = bottom - cone_h;
-            let top = cone_top - shaft_h;
+    // --- Shank rectangle ---
+    let cutter_top_y = bottom - cutting_len * scale;
+    if shank_len > 0.01 && shank_r > 0.01 {
+        let shank_top_y = cutter_top_y - shank_len * scale;
+        let sr = shank_r * scale;
+        painter.add(egui::Shape::line(
+            vec![
+                egui::pos2(cx - sr, cutter_top_y),
+                egui::pos2(cx + sr, cutter_top_y),
+                egui::pos2(cx + sr, shank_top_y),
+                egui::pos2(cx - sr, shank_top_y),
+                egui::pos2(cx - sr, cutter_top_y),
+            ],
+            shank_stroke,
+        ));
+    }
 
-            painter.add(egui::Shape::line(
-                vec![
-                    egui::pos2(cx - hw, cone_top),
-                    egui::pos2(cx - hw, top),
-                    egui::pos2(cx + hw, top),
-                    egui::pos2(cx + hw, cone_top),
-                    egui::pos2(cx, bottom),
-                    egui::pos2(cx - hw, cone_top),
-                ],
-                stroke,
-            ));
-        }
-        ToolType::TaperedBallNose => {
-            let ball_r = r * scale;
-            let shaft_hw = (shaft_d / 2.0) * scale;
-            let alpha = taper_ha.to_radians();
-            let ball_cy = bottom - ball_r;
-
-            let r_contact = ball_r * alpha.cos();
-            let h_contact = ball_r * (1.0 - alpha.sin());
-            let total_h = cl.min(r * 8.0) * scale;
-            let top = ball_cy - total_h + ball_r;
-
-            let mut pts = Vec::new();
-            // Left shaft down to junction
-            pts.push(egui::pos2(cx - shaft_hw, top));
-            pts.push(egui::pos2(cx - r_contact, ball_cy - h_contact));
-            // Ball arc
-            let start_a = std::f32::consts::FRAC_PI_2 + alpha;
-            let end_a = std::f32::consts::FRAC_PI_2 * 3.0 - alpha;
-            for i in 0..=32 {
-                let a = start_a + (end_a - start_a) * (i as f32) / 32.0;
-                pts.push(egui::pos2(
-                    cx - ball_r * a.cos(),
-                    ball_cy + ball_r * a.sin(),
-                ));
-            }
-            // Right junction up to shaft
-            pts.push(egui::pos2(cx + shaft_hw, top));
-            pts.push(egui::pos2(cx - shaft_hw, top));
-            painter.add(egui::Shape::line(pts, stroke));
-        }
+    // --- Holder rectangle ---
+    let shank_top_y = cutter_top_y - shank_len * scale;
+    if holder_len > 0.01 && holder_r > 0.01 {
+        let holder_top_y = shank_top_y - holder_len * scale;
+        let hr = holder_r * scale;
+        painter.add(egui::Shape::line(
+            vec![
+                egui::pos2(cx - hr, shank_top_y),
+                egui::pos2(cx + hr, shank_top_y),
+                egui::pos2(cx + hr, holder_top_y),
+                egui::pos2(cx - hr, holder_top_y),
+                egui::pos2(cx - hr, shank_top_y),
+            ],
+            holder_stroke,
+        ));
     }
 
     // Center line

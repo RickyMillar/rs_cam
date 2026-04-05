@@ -15,8 +15,10 @@ pub fn presets_dir() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."));
     let dir = base.join(".rs_cam").join("presets");
-    if !dir.exists() {
-        let _ = std::fs::create_dir_all(&dir);
+    if !dir.exists()
+        && let Err(e) = std::fs::create_dir_all(&dir)
+    {
+        tracing::warn!("Failed to create presets directory {}: {e}", dir.display());
     }
     dir
 }

@@ -55,7 +55,7 @@ pub struct OperationSpec {
 }
 
 /// Operation type for creating new toolpaths.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OperationType {
     Face,
@@ -108,6 +108,7 @@ impl OperationType {
         OperationType::RadialFinish,
         OperationType::HorizontalFinish,
         OperationType::ProjectCurve,
+        OperationType::AlignmentPinDrill,
     ];
 
     pub const ALL_2D: &[OperationType] = &[
@@ -378,6 +379,31 @@ impl OperationType {
     }
 }
 
+/// Common parameter accessors for all operation configs.
+///
+/// Implemented by each config struct to eliminate per-variant match arms.
+/// Optional fields (stepover, depth_per_pass) return None by default.
+pub trait OperationParams {
+    fn feed_rate(&self) -> f64;
+    fn set_feed_rate(&mut self, value: f64);
+
+    /// Returns the plunge rate. Drill operations return feed_rate since they're purely vertical.
+    fn plunge_rate(&self) -> f64;
+    fn set_plunge_rate(&mut self, value: f64);
+
+    fn stepover(&self) -> Option<f64> {
+        None
+    }
+    fn set_stepover(&mut self, _value: f64) {}
+
+    fn depth_per_pass(&self) -> Option<f64> {
+        None
+    }
+    fn set_depth_per_pass(&mut self, _value: f64) {}
+
+    fn depth_semantics(&self) -> DepthSemantics;
+}
+
 /// Operation-specific configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "params", rename_all = "snake_case")]
@@ -478,215 +504,98 @@ impl OperationConfig {
         self.geometry_requirement() == GeometryRequirement::Both
     }
 
-    pub fn feed_rate(&self) -> f64 {
+    pub fn as_params(&self) -> &dyn OperationParams {
         match self {
-            OperationConfig::Face(config) => config.feed_rate,
-            OperationConfig::Pocket(config) => config.feed_rate,
-            OperationConfig::Profile(config) => config.feed_rate,
-            OperationConfig::Adaptive(config) => config.feed_rate,
-            OperationConfig::VCarve(config) => config.feed_rate,
-            OperationConfig::Rest(config) => config.feed_rate,
-            OperationConfig::Inlay(config) => config.feed_rate,
-            OperationConfig::Zigzag(config) => config.feed_rate,
-            OperationConfig::Trace(config) => config.feed_rate,
-            OperationConfig::Drill(config) => config.feed_rate,
-            OperationConfig::Chamfer(config) => config.feed_rate,
-            OperationConfig::DropCutter(config) => config.feed_rate,
-            OperationConfig::Adaptive3d(config) => config.feed_rate,
-            OperationConfig::Waterline(config) => config.feed_rate,
-            OperationConfig::Pencil(config) => config.feed_rate,
-            OperationConfig::Scallop(config) => config.feed_rate,
-            OperationConfig::SteepShallow(config) => config.feed_rate,
-            OperationConfig::RampFinish(config) => config.feed_rate,
-            OperationConfig::SpiralFinish(config) => config.feed_rate,
-            OperationConfig::RadialFinish(config) => config.feed_rate,
-            OperationConfig::HorizontalFinish(config) => config.feed_rate,
-            OperationConfig::ProjectCurve(config) => config.feed_rate,
-            OperationConfig::AlignmentPinDrill(config) => config.feed_rate,
+            OperationConfig::Face(c) => c,
+            OperationConfig::Pocket(c) => c,
+            OperationConfig::Profile(c) => c,
+            OperationConfig::Adaptive(c) => c,
+            OperationConfig::VCarve(c) => c,
+            OperationConfig::Rest(c) => c,
+            OperationConfig::Inlay(c) => c,
+            OperationConfig::Zigzag(c) => c,
+            OperationConfig::Trace(c) => c,
+            OperationConfig::Drill(c) => c,
+            OperationConfig::Chamfer(c) => c,
+            OperationConfig::DropCutter(c) => c,
+            OperationConfig::Adaptive3d(c) => c,
+            OperationConfig::Waterline(c) => c,
+            OperationConfig::Pencil(c) => c,
+            OperationConfig::Scallop(c) => c,
+            OperationConfig::SteepShallow(c) => c,
+            OperationConfig::RampFinish(c) => c,
+            OperationConfig::SpiralFinish(c) => c,
+            OperationConfig::RadialFinish(c) => c,
+            OperationConfig::HorizontalFinish(c) => c,
+            OperationConfig::ProjectCurve(c) => c,
+            OperationConfig::AlignmentPinDrill(c) => c,
         }
+    }
+
+    pub fn as_params_mut(&mut self) -> &mut dyn OperationParams {
+        match self {
+            OperationConfig::Face(c) => c,
+            OperationConfig::Pocket(c) => c,
+            OperationConfig::Profile(c) => c,
+            OperationConfig::Adaptive(c) => c,
+            OperationConfig::VCarve(c) => c,
+            OperationConfig::Rest(c) => c,
+            OperationConfig::Inlay(c) => c,
+            OperationConfig::Zigzag(c) => c,
+            OperationConfig::Trace(c) => c,
+            OperationConfig::Drill(c) => c,
+            OperationConfig::Chamfer(c) => c,
+            OperationConfig::DropCutter(c) => c,
+            OperationConfig::Adaptive3d(c) => c,
+            OperationConfig::Waterline(c) => c,
+            OperationConfig::Pencil(c) => c,
+            OperationConfig::Scallop(c) => c,
+            OperationConfig::SteepShallow(c) => c,
+            OperationConfig::RampFinish(c) => c,
+            OperationConfig::SpiralFinish(c) => c,
+            OperationConfig::RadialFinish(c) => c,
+            OperationConfig::HorizontalFinish(c) => c,
+            OperationConfig::ProjectCurve(c) => c,
+            OperationConfig::AlignmentPinDrill(c) => c,
+        }
+    }
+
+    pub fn feed_rate(&self) -> f64 {
+        self.as_params().feed_rate()
     }
 
     pub fn set_feed_rate(&mut self, value: f64) {
-        match self {
-            OperationConfig::Face(config) => config.feed_rate = value,
-            OperationConfig::Pocket(config) => config.feed_rate = value,
-            OperationConfig::Profile(config) => config.feed_rate = value,
-            OperationConfig::Adaptive(config) => config.feed_rate = value,
-            OperationConfig::VCarve(config) => config.feed_rate = value,
-            OperationConfig::Rest(config) => config.feed_rate = value,
-            OperationConfig::Inlay(config) => config.feed_rate = value,
-            OperationConfig::Zigzag(config) => config.feed_rate = value,
-            OperationConfig::Trace(config) => config.feed_rate = value,
-            OperationConfig::Drill(config) => config.feed_rate = value,
-            OperationConfig::Chamfer(config) => config.feed_rate = value,
-            OperationConfig::DropCutter(config) => config.feed_rate = value,
-            OperationConfig::Adaptive3d(config) => config.feed_rate = value,
-            OperationConfig::Waterline(config) => config.feed_rate = value,
-            OperationConfig::Pencil(config) => config.feed_rate = value,
-            OperationConfig::Scallop(config) => config.feed_rate = value,
-            OperationConfig::SteepShallow(config) => config.feed_rate = value,
-            OperationConfig::RampFinish(config) => config.feed_rate = value,
-            OperationConfig::SpiralFinish(config) => config.feed_rate = value,
-            OperationConfig::RadialFinish(config) => config.feed_rate = value,
-            OperationConfig::HorizontalFinish(config) => config.feed_rate = value,
-            OperationConfig::ProjectCurve(config) => config.feed_rate = value,
-            OperationConfig::AlignmentPinDrill(config) => config.feed_rate = value,
-        }
+        self.as_params_mut().set_feed_rate(value);
     }
 
+    /// Returns the plunge rate.
+    /// Drill ops are purely vertical — feed_rate IS the plunge rate.
     pub fn plunge_rate(&self) -> f64 {
-        match self {
-            OperationConfig::Face(config) => config.plunge_rate,
-            OperationConfig::Pocket(config) => config.plunge_rate,
-            OperationConfig::Profile(config) => config.plunge_rate,
-            OperationConfig::Adaptive(config) => config.plunge_rate,
-            OperationConfig::VCarve(config) => config.plunge_rate,
-            OperationConfig::Rest(config) => config.plunge_rate,
-            OperationConfig::Inlay(config) => config.plunge_rate,
-            OperationConfig::Zigzag(config) => config.plunge_rate,
-            OperationConfig::Trace(config) => config.plunge_rate,
-            OperationConfig::Drill(config) => config.feed_rate,
-            OperationConfig::Chamfer(config) => config.plunge_rate,
-            OperationConfig::DropCutter(config) => config.plunge_rate,
-            OperationConfig::Adaptive3d(config) => config.plunge_rate,
-            OperationConfig::Waterline(config) => config.plunge_rate,
-            OperationConfig::Pencil(config) => config.plunge_rate,
-            OperationConfig::Scallop(config) => config.plunge_rate,
-            OperationConfig::SteepShallow(config) => config.plunge_rate,
-            OperationConfig::RampFinish(config) => config.plunge_rate,
-            OperationConfig::SpiralFinish(config) => config.plunge_rate,
-            OperationConfig::RadialFinish(config) => config.plunge_rate,
-            OperationConfig::HorizontalFinish(config) => config.plunge_rate,
-            OperationConfig::ProjectCurve(config) => config.plunge_rate,
-            OperationConfig::AlignmentPinDrill(config) => config.feed_rate,
-        }
+        self.as_params().plunge_rate()
     }
 
     pub fn set_plunge_rate(&mut self, value: f64) {
-        match self {
-            OperationConfig::Face(config) => config.plunge_rate = value,
-            OperationConfig::Pocket(config) => config.plunge_rate = value,
-            OperationConfig::Profile(config) => config.plunge_rate = value,
-            OperationConfig::Adaptive(config) => config.plunge_rate = value,
-            OperationConfig::VCarve(config) => config.plunge_rate = value,
-            OperationConfig::Rest(config) => config.plunge_rate = value,
-            OperationConfig::Inlay(config) => config.plunge_rate = value,
-            OperationConfig::Zigzag(config) => config.plunge_rate = value,
-            OperationConfig::Trace(config) => config.plunge_rate = value,
-            OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_) => {}
-            OperationConfig::Chamfer(config) => config.plunge_rate = value,
-            OperationConfig::DropCutter(config) => config.plunge_rate = value,
-            OperationConfig::Adaptive3d(config) => config.plunge_rate = value,
-            OperationConfig::Waterline(config) => config.plunge_rate = value,
-            OperationConfig::Pencil(config) => config.plunge_rate = value,
-            OperationConfig::Scallop(config) => config.plunge_rate = value,
-            OperationConfig::SteepShallow(config) => config.plunge_rate = value,
-            OperationConfig::RampFinish(config) => config.plunge_rate = value,
-            OperationConfig::SpiralFinish(config) => config.plunge_rate = value,
-            OperationConfig::RadialFinish(config) => config.plunge_rate = value,
-            OperationConfig::HorizontalFinish(config) => config.plunge_rate = value,
-            OperationConfig::ProjectCurve(config) => config.plunge_rate = value,
-        }
+        self.as_params_mut().set_plunge_rate(value);
     }
 
     pub fn stepover(&self) -> Option<f64> {
-        match self {
-            OperationConfig::Face(config) => Some(config.stepover),
-            OperationConfig::Pocket(config) => Some(config.stepover),
-            OperationConfig::Adaptive(config) => Some(config.stepover),
-            OperationConfig::VCarve(config) => Some(config.stepover),
-            OperationConfig::Rest(config) => Some(config.stepover),
-            OperationConfig::Inlay(config) => Some(config.stepover),
-            OperationConfig::Zigzag(config) => Some(config.stepover),
-            OperationConfig::DropCutter(config) => Some(config.stepover),
-            OperationConfig::Adaptive3d(config) => Some(config.stepover),
-            OperationConfig::SteepShallow(config) => Some(config.stepover),
-            OperationConfig::SpiralFinish(config) => Some(config.stepover),
-            OperationConfig::HorizontalFinish(config) => Some(config.stepover),
-            _ => None,
-        }
+        self.as_params().stepover()
     }
 
     pub fn set_stepover(&mut self, value: f64) {
-        match self {
-            OperationConfig::Face(config) => config.stepover = value,
-            OperationConfig::Pocket(config) => config.stepover = value,
-            OperationConfig::Adaptive(config) => config.stepover = value,
-            OperationConfig::VCarve(config) => config.stepover = value,
-            OperationConfig::Rest(config) => config.stepover = value,
-            OperationConfig::Inlay(config) => config.stepover = value,
-            OperationConfig::Zigzag(config) => config.stepover = value,
-            OperationConfig::DropCutter(config) => config.stepover = value,
-            OperationConfig::Adaptive3d(config) => config.stepover = value,
-            OperationConfig::SteepShallow(config) => config.stepover = value,
-            OperationConfig::SpiralFinish(config) => config.stepover = value,
-            OperationConfig::HorizontalFinish(config) => config.stepover = value,
-            _ => {}
-        }
+        self.as_params_mut().set_stepover(value);
     }
 
     pub fn depth_per_pass(&self) -> Option<f64> {
-        match self {
-            OperationConfig::Face(config) => Some(config.depth_per_pass),
-            OperationConfig::Pocket(config) => Some(config.depth_per_pass),
-            OperationConfig::Profile(config) => Some(config.depth_per_pass),
-            OperationConfig::Adaptive(config) => Some(config.depth_per_pass),
-            OperationConfig::Rest(config) => Some(config.depth_per_pass),
-            OperationConfig::Zigzag(config) => Some(config.depth_per_pass),
-            OperationConfig::Trace(config) => Some(config.depth_per_pass),
-            OperationConfig::Adaptive3d(config) => Some(config.depth_per_pass),
-            _ => None,
-        }
+        self.as_params().depth_per_pass()
     }
 
     pub fn set_depth_per_pass(&mut self, value: f64) {
-        match self {
-            OperationConfig::Face(config) => config.depth_per_pass = value,
-            OperationConfig::Pocket(config) => config.depth_per_pass = value,
-            OperationConfig::Profile(config) => config.depth_per_pass = value,
-            OperationConfig::Adaptive(config) => config.depth_per_pass = value,
-            OperationConfig::Rest(config) => config.depth_per_pass = value,
-            OperationConfig::Zigzag(config) => config.depth_per_pass = value,
-            OperationConfig::Trace(config) => config.depth_per_pass = value,
-            OperationConfig::Adaptive3d(config) => config.depth_per_pass = value,
-            _ => {}
-        }
+        self.as_params_mut().set_depth_per_pass(value);
     }
 
     pub fn depth_semantics(&self) -> DepthSemantics {
-        match self {
-            OperationConfig::Face(config) => DepthSemantics::Explicit(config.depth),
-            OperationConfig::Pocket(config) => DepthSemantics::Explicit(config.depth),
-            OperationConfig::Profile(config) => DepthSemantics::Explicit(config.depth),
-            OperationConfig::Adaptive(config) => DepthSemantics::Explicit(config.depth),
-            OperationConfig::VCarve(config) => DepthSemantics::Explicit(config.max_depth),
-            OperationConfig::Rest(config) => DepthSemantics::Explicit(config.depth),
-            OperationConfig::Inlay(config) => DepthSemantics::Explicit(config.pocket_depth),
-            OperationConfig::Zigzag(config) => DepthSemantics::Explicit(config.depth),
-            OperationConfig::Trace(config) => DepthSemantics::Explicit(config.depth),
-            OperationConfig::Drill(config) => DepthSemantics::Explicit(config.depth),
-            OperationConfig::Chamfer(config) => DepthSemantics::Explicit(config.chamfer_width),
-            OperationConfig::DropCutter(config) => {
-                DepthSemantics::DerivedStockTop(config.min_z.abs())
-            }
-            OperationConfig::Adaptive3d(config) => {
-                DepthSemantics::DerivedStockTop(config.stock_top_z.abs())
-            }
-            // Waterline Z range now comes from Heights (top_z / bottom_z),
-            // so depth semantics are handled by the heights system like other 3D ops.
-            OperationConfig::Waterline(_) => DepthSemantics::None,
-            OperationConfig::Pencil(_) => DepthSemantics::None,
-            OperationConfig::Scallop(_) => DepthSemantics::None,
-            OperationConfig::SteepShallow(_) => DepthSemantics::None,
-            OperationConfig::RampFinish(_) => DepthSemantics::None,
-            OperationConfig::SpiralFinish(_) => DepthSemantics::None,
-            OperationConfig::RadialFinish(_) => DepthSemantics::None,
-            OperationConfig::HorizontalFinish(_) => DepthSemantics::None,
-            OperationConfig::ProjectCurve(config) => DepthSemantics::Explicit(config.depth),
-            OperationConfig::AlignmentPinDrill(config) => {
-                DepthSemantics::Explicit(config.spoilboard_penetration)
-            }
-        }
+        self.as_params().depth_semantics()
     }
 
     pub fn default_depth_for_heights(&self) -> f64 {
@@ -766,7 +675,7 @@ mod tests {
 
     #[test]
     fn operation_catalog_is_exhaustive_and_consistent() {
-        assert_eq!(OperationType::ALL.len(), 22);
+        assert_eq!(OperationType::ALL.len(), 23);
         for &op_type in OperationType::ALL {
             let config = OperationConfig::new_default(op_type);
             assert_eq!(config.op_type(), op_type);
@@ -776,14 +685,22 @@ mod tests {
 
     #[test]
     fn operation_partitions_cover_all_variants_once() {
-        let mut all = OperationType::ALL.to_vec();
-        all.sort_by_key(|op| *op as usize);
-
-        let mut partition = OperationType::ALL_2D.to_vec();
-        partition.extend_from_slice(OperationType::ALL_3D);
-        partition.sort_by_key(|op| *op as usize);
-
-        assert_eq!(partition, all);
+        use std::collections::HashSet;
+        let all: HashSet<_> = OperationType::ALL.iter().collect();
+        let twod: HashSet<_> = OperationType::ALL_2D.iter().collect();
+        let threed: HashSet<_> = OperationType::ALL_3D.iter().collect();
+        // 2D and 3D must not overlap
+        assert!(twod.is_disjoint(&threed), "ALL_2D and ALL_3D overlap");
+        // Both must be subsets of ALL
+        assert!(twod.is_subset(&all), "ALL_2D contains items not in ALL");
+        assert!(threed.is_subset(&all), "ALL_3D contains items not in ALL");
+        // System-only ops (not in user menus) are the difference
+        let menu_ops: HashSet<_> = twod.union(&threed).collect();
+        let system_only = all.len() - menu_ops.len();
+        assert!(
+            system_only > 0,
+            "Expected at least AlignmentPinDrill as system-only"
+        );
     }
 
     #[test]

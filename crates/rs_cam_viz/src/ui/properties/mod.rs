@@ -14,8 +14,8 @@ use crate::ui::AppEvent;
 use crate::ui::automation;
 
 /// Global embedded vendor LUT, loaded once on first access.
-static VENDOR_LUT: std::sync::LazyLock<rs_cam_core::feeds::vendor_lut::VendorLut> =
-    std::sync::LazyLock::new(rs_cam_core::feeds::vendor_lut::VendorLut::embedded);
+static VENDOR_LUT: std::sync::LazyLock<rs_cam_core::feeds::VendorLut> =
+    std::sync::LazyLock::new(rs_cam_core::feeds::VendorLut::embedded);
 
 /// Flush tool undo snapshot if the user navigated away from a tool.
 fn flush_tool_snapshot(state: &mut AppState) {
@@ -116,7 +116,9 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
 
     match state.selection.clone() {
         Selection::None => {
-            if state.job.models.is_empty() && state.job.setups.iter().all(|s| s.toolpaths.is_empty()) {
+            if state.job.models.is_empty()
+                && state.job.setups.iter().all(|s| s.toolpaths.is_empty())
+            {
                 ui.label(
                     egui::RichText::new("Getting started:")
                         .strong()
@@ -148,7 +150,9 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .any(|s| s.face_up != crate::state::job::FaceUp::Top);
             stock::draw(ui, &mut state.job.stock, has_flipped_setup, events);
             // If an edit just finished (DragValue released), push undo
-            if events.iter().any(|e| matches!(e, AppEvent::StockChanged | AppEvent::StockMaterialChanged))
+            if events
+                .iter()
+                .any(|e| matches!(e, AppEvent::StockChanged | AppEvent::StockMaterialChanged))
                 && let Some(old) = state.history.stock_snapshot.take()
                 && old != state.job.stock
             {
@@ -361,7 +365,7 @@ fn draw_model_properties(
     state: &mut AppState,
     events: &mut Vec<AppEvent>,
 ) {
-    use crate::state::job::{ModelKind, ModelUnits};
+    use crate::state::job::ModelUnits;
 
     let Some(model) = state.job.models.iter().find(|m| m.id == id) else {
         return;
@@ -551,10 +555,7 @@ fn draw_model_properties(
                         )
                         .changed()
                     {
-                        events.push(AppEvent::RescaleModel(
-                            id,
-                            ModelUnits::Custom(custom_scale),
-                        ));
+                        events.push(AppEvent::RescaleModel(id, ModelUnits::Custom(custom_scale)));
                     }
                 });
             });
@@ -844,27 +845,11 @@ fn operation_to_feeds_family(
     op.feeds_style()
 }
 
-/// Map ToolType + ToolConfig to ToolGeometryHint for the feeds calculator.
+/// Derive ToolGeometryHint from the tool's own geometry_hint() method.
 fn tool_geometry_hint(
     tool: &crate::state::job::ToolConfig,
 ) -> rs_cam_core::feeds::ToolGeometryHint {
-    use crate::state::job::ToolType;
-    use rs_cam_core::feeds::ToolGeometryHint;
-    match tool.tool_type {
-        ToolType::EndMill => ToolGeometryHint::Flat,
-        ToolType::BallNose => ToolGeometryHint::Ball,
-        ToolType::BullNose => ToolGeometryHint::Bull {
-            corner_radius: tool.corner_radius,
-        },
-        ToolType::VBit => ToolGeometryHint::VBit {
-            included_angle: tool.included_angle,
-            tip_diameter: 0.2,
-        },
-        ToolType::TaperedBallNose => ToolGeometryHint::TaperedBall {
-            tip_radius: tool.diameter / 2.0,
-            taper_angle_deg: tool.taper_half_angle,
-        },
-    }
+    crate::compute::worker::helpers::build_cutter(tool).to_geometry_hint()
 }
 
 /// Extract operation-specific parameter hints for the feeds calculator.
@@ -1084,7 +1069,10 @@ fn draw_engagement_diagram(
     // Divider: split canvas at ~55%
     let mid_x = rect.left() + rect.width() * 0.52;
     painter.line_segment(
-        [egui::pos2(mid_x, rect.top() + 4.0), egui::pos2(mid_x, rect.bottom() - 4.0)],
+        [
+            egui::pos2(mid_x, rect.top() + 4.0),
+            egui::pos2(mid_x, rect.bottom() - 4.0),
+        ],
         egui::Stroke::new(0.5, egui::Color32::from_rgb(40, 40, 50)),
     );
 
@@ -1229,7 +1217,10 @@ fn draw_engagement_diagram(
                     ball_cy + tool_hw * a.sin(),
                 ));
             }
-            painter.add(egui::Shape::line(arc_pts, egui::Stroke::new(1.5, tool_color)));
+            painter.add(egui::Shape::line(
+                arc_pts,
+                egui::Stroke::new(1.5, tool_color),
+            ));
         }
         _ => {
             // EndMill / BullNose / VBit — simple rectangle
@@ -1249,12 +1240,18 @@ fn draw_engagement_diagram(
     // DOC dimension line (right side)
     let dim_x = scx + tool_hw + 8.0;
     painter.line_segment(
-        [egui::pos2(dim_x, surface_y), egui::pos2(dim_x, surface_y + doc_px)],
+        [
+            egui::pos2(dim_x, surface_y),
+            egui::pos2(dim_x, surface_y + doc_px),
+        ],
         egui::Stroke::new(1.0, dim_color),
     );
     // Ticks
     painter.line_segment(
-        [egui::pos2(dim_x - 3.0, surface_y), egui::pos2(dim_x + 3.0, surface_y)],
+        [
+            egui::pos2(dim_x - 3.0, surface_y),
+            egui::pos2(dim_x + 3.0, surface_y),
+        ],
         egui::Stroke::new(1.0, dim_color),
     );
     painter.line_segment(
@@ -1341,7 +1338,10 @@ fn draw_entry_preview_diagram(
     );
     // Ticks + values at feed_z and top_z
     painter.line_segment(
-        [egui::pos2(scale_x, feed_y), egui::pos2(scale_x + 4.0, feed_y)],
+        [
+            egui::pos2(scale_x, feed_y),
+            egui::pos2(scale_x + 4.0, feed_y),
+        ],
         egui::Stroke::new(1.0, scale_color),
     );
     painter.line_segment(
@@ -1401,10 +1401,7 @@ fn draw_entry_preview_diagram(
 
             // Ramp line
             painter.add(egui::Shape::line(
-                vec![
-                    egui::pos2(start_x, feed_y),
-                    egui::pos2(end_x, top_y),
-                ],
+                vec![egui::pos2(start_x, feed_y), egui::pos2(end_x, top_y)],
                 stroke,
             ));
 
@@ -1452,7 +1449,7 @@ fn draw_entry_preview_diagram(
 
             // Side view of helix: sinusoidal wave descending
             let total_angle = turns * std::f64::consts::TAU;
-            let steps = (turns * 32.0).min(200.0).max(32.0) as usize;
+            let steps = (turns * 32.0).clamp(32.0, 200.0) as usize;
 
             // Scale radius to fit canvas
             let available_w = rect.width() * 0.5;
@@ -1474,7 +1471,10 @@ fn draw_entry_preview_diagram(
 
             // Radius annotation
             painter.line_segment(
-                [egui::pos2(cx, z_to_y(feed_z)), egui::pos2(cx + r_pixels, z_to_y(feed_z))],
+                [
+                    egui::pos2(cx, z_to_y(feed_z)),
+                    egui::pos2(cx + r_pixels, z_to_y(feed_z)),
+                ],
                 egui::Stroke::new(1.0, dim_color),
             );
             painter.text(
@@ -1496,10 +1496,7 @@ fn draw_entry_preview_diagram(
         }
         DressupEntryStyle::None => {
             // Vertical plunge arrow
-            painter.line_segment(
-                [egui::pos2(cx, feed_y), egui::pos2(cx, top_y)],
-                stroke,
-            );
+            painter.line_segment([egui::pos2(cx, feed_y), egui::pos2(cx, top_y)], stroke);
             // Arrowhead
             painter.add(egui::Shape::line(
                 vec![
@@ -1522,7 +1519,6 @@ fn draw_entry_preview_diagram(
 
 #[allow(clippy::too_many_arguments)]
 // ── Toolpath property tab system ─────────────────────────────────────────
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ToolpathTab {
     Params,
@@ -1594,6 +1590,7 @@ fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab) {
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_toolpath_panel(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
@@ -1726,9 +1723,7 @@ fn draw_toolpath_panel(
                 ui.label("Computing...");
             }
             ComputeStatus::Done => {
-                ui.label(
-                    egui::RichText::new("Done").color(egui::Color32::from_rgb(100, 180, 100)),
-                );
+                ui.label(egui::RichText::new("Done").color(egui::Color32::from_rgb(100, 180, 100)));
             }
             ComputeStatus::Error(e) => {
                 ui.add(
@@ -1776,34 +1771,46 @@ fn draw_toolpath_panel(
         ToolpathTab::Params => {
             // Auto-feeds toggles — show which parameters are auto-calculated
             let auto = &mut entry.feeds_auto;
-            let has_any_auto = auto.feed_rate || auto.plunge_rate || auto.stepover || auto.depth_per_pass;
-            let auto_label = if has_any_auto { "Auto Feeds (on)" } else { "Auto Feeds (off)" };
+            let has_any_auto =
+                auto.feed_rate || auto.plunge_rate || auto.stepover || auto.depth_per_pass;
+            let auto_label = if has_any_auto {
+                "Auto Feeds (on)"
+            } else {
+                "Auto Feeds (off)"
+            };
             let auto_color = if has_any_auto {
                 egui::Color32::from_rgb(100, 180, 100)
             } else {
                 egui::Color32::from_rgb(140, 140, 155)
             };
-            ui.collapsing(egui::RichText::new(auto_label).small().color(auto_color), |ui| {
-                ui.label(
-                    egui::RichText::new("When on, values are computed from tool/material/machine")
+            ui.collapsing(
+                egui::RichText::new(auto_label).small().color(auto_color),
+                |ui| {
+                    ui.label(
+                        egui::RichText::new(
+                            "When on, values are computed from tool/material/machine",
+                        )
                         .small()
                         .italics()
                         .color(egui::Color32::from_rgb(110, 110, 120)),
-                );
-                ui.horizontal(|ui| {
-                    ui.checkbox(&mut auto.feed_rate, "Feed");
-                    ui.checkbox(&mut auto.plunge_rate, "Plunge");
-                    ui.checkbox(&mut auto.stepover, "Stepover");
-                    ui.checkbox(&mut auto.depth_per_pass, "DOC");
-                });
-                if has_any_auto {
-                    ui.label(
-                        egui::RichText::new("Auto values shown in Feeds tab; manual edits below are overridden")
+                    );
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut auto.feed_rate, "Feed");
+                        ui.checkbox(&mut auto.plunge_rate, "Plunge");
+                        ui.checkbox(&mut auto.stepover, "Stepover");
+                        ui.checkbox(&mut auto.depth_per_pass, "DOC");
+                    });
+                    if has_any_auto {
+                        ui.label(
+                            egui::RichText::new(
+                                "Auto values shown in Feeds tab; manual edits below are overridden",
+                            )
                             .small()
                             .color(egui::Color32::from_rgb(220, 170, 60)),
-                    );
-                }
-            });
+                        );
+                    }
+                },
+            );
 
             ui.add_space(4.0);
             ui.label(
@@ -1907,8 +1914,8 @@ fn draw_toolpath_panel(
                 .iter()
                 .find(|(id, _)| *id == entry.tool_id)
                 .map(|(_, t)| (t.diameter, t.tool_type));
-            let (tool_diameter, tool_type) = tool_info
-                .unwrap_or((6.0, crate::state::job::ToolType::EndMill));
+            let (tool_diameter, tool_type) =
+                tool_info.unwrap_or((6.0, crate::state::job::ToolType::EndMill));
             if let Some(tool_cfg) = tool_configs
                 .iter()
                 .find(|(id, _)| *id == entry.tool_id)
@@ -2136,12 +2143,16 @@ fn tooltip_for(label: &str) -> Option<&'static str> {
         "Peck Depth" => "Incremental depth per peck for chip evacuation.",
         "Dwell Time" => "Pause at bottom of drill hole (seconds).",
         "Retract Amt" => "Small retract distance for chip breaking between pecks.",
-        "Retract Z" => "R-plane height for this drill cycle: rapid down to here, then feed into material. Different from global Safe Z.",
+        "Retract Z" => {
+            "R-plane height for this drill cycle: rapid down to here, then feed into material. Different from global Safe Z."
+        }
         "Angular Step" => "Degrees between radial spokes. Smaller = more passes, finer finish.",
         "Point Spacing" => "Distance between sample points along curves. Smaller = smoother.",
         "Angle Threshold" => "Max slope angle (degrees) to consider a surface flat/horizontal.",
         "Stock to Leave" => "Finishing allowance kept on the surface for a later pass.",
-        "Slope From" => "Minimum surface slope (degrees) to machine. Faces shallower than this are skipped.",
+        "Slope From" => {
+            "Minimum surface slope (degrees) to machine. Faces shallower than this are skipped."
+        }
         "Pocket Depth" => "Depth of the inlay pocket measured from stock surface.",
         "Flat Depth" => "Depth for flat-bottom clearing in the inlay pocket. 0 = V-only.",
         "Boundary Offset" => "Offset from the design boundary for the inlay cut. Adjusts fit.",

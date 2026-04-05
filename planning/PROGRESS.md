@@ -7,7 +7,7 @@
 ### Shipped surface
 
 - 3-crate Rust workspace: core library, CLI, and desktop GUI
-- 22 GUI-exposed operations
+- 23 GUI-exposed operations
 - 14 direct CLI commands plus TOML job execution
 - STL, SVG, DXF, and STEP import with BREP face selection
 - 5 cutter families
@@ -19,6 +19,79 @@
 - deterministic renderless `rs_cam_viz` regression harness in CI
 - controller-first GUI architecture with canonical operation metadata and split compute/controller modules
 - shared adaptive support module used by both 2D and 3D adaptive search/control code
+
+## Recent work (2026-04-05)
+
+### Deep architecture audit
+
+Six-domain audit covering type design, error handling, API surface, module organization, state mutation, and concurrency. Implemented high-priority fixes across all domains.
+
+**Undo correctness (HIGH):**
+- Simulation state (`results`, `playback`, `checks`) now invalidated on undo/redo of stock, tool, and machine changes — previously showed stale mesh after undo
+- Toolpath `stale_since` now set on undo/redo of operation parameter changes — previously left old computed result displayed
+- Extracted `invalidate_simulation()` helper method replacing duplicated 5-line pattern
+
+**Parameter bounds checks (HIGH):**
+- `emit_ramp()` guards against `max_angle_deg <= 0` or `>= 90` (prevents NaN from `tan()`)
+- `emit_helix()` guards against `radius <= 0` (prevents degenerate spiral)
+- `spiral_finish_toolpath_structured_annotated()` guards against `stepover <= 0` (prevents division by zero)
+- 5 new edge-case tests for boundary parameter values
+
+**Error handling:**
+- `OperationError` enum (`MissingGeometry`, `InvalidTool`, `Cancelled`, `Other`) replaces `Result<T, String>` throughout 20+ operation functions in `operations_2d.rs` and `operations_3d.rs`
+- Swallowed errors now logged: CLI mesh overlay import, presets directory creation
+
+**API surface cleanup:**
+- Deleted dead `pipeline` module (239 lines, zero external callers)
+- Renamed viz `CutDirection` (UpCut/DownCut/Compression) to `BitCutDirection` to resolve naming collision with core `ramp_finish::CutDirection` (Climb/Conventional/BothWays)
+
+**Module organization:**
+- `operations.rs` (2948 lines) split into 7 per-family files under `operations/`
+- `events.rs` (1721 lines) split into 6 handler-group files under `events/`
+
+### Architecture & reuse audit
+
+Follow-up codebase-wide audit focused on ownership clarity, coupling, and extension friction. Addressed 9 findings across 6 work streams.
+
+**Silent-break footguns fixed:**
+- `OperationType::AlignmentPinDrill` was missing from `ALL` array — silently excluded from iteration. Fixed and added exhaustiveness tests for all 10 enums with manually-maintained `ALL` constants (`OperationType`, `ToolType`, `PostFormat`, `ToolMaterial`, `CutDirection`, `FaceUp`, `ZRotation`, `Corner`, `FixtureKind`, `HeightReference`)
+
+**Enum deduplication (core ↔ viz):**
+- 6 operation parameter enums (`ProfileSide`, `FaceDirection`, `TraceCompensation`, `ScallopDirection`, `CutDirection`, `SpiralDirection`) were identically defined in both `rs_cam_core` and `rs_cam_viz` with trivial conversion code. Added `Serialize`/`Deserialize` derives to core, deleted viz duplicates, removed conversion matches from `operations_2d.rs`/`operations_3d.rs`
+
+**PostFormat ownership:**
+- `PostFormat` enum moved from viz to `rs_cam_core::gcode` with `post_processor()` method. Export functions now call `format.post_processor()` directly instead of string-matching through `get_post_processor()`. Eliminates 3 identical format→string→processor match blocks in `export.rs`
+
+**CLI consolidation:**
+- Extracted `run_collision_check()` helper replacing 6 identical 45-line collision-check blocks in CLI `main.rs` (~240 lines removed)
+- `CliToolType` enum replaces stringly-typed tool parsing in TOML job files — compile-time exhaustive matching with `serde(alias)` for backward compatibility
+- `VendorLut` re-exported from `feeds` module — viz no longer reaches into internal `feeds::vendor_lut::VendorLut` path
+
+### Logic consolidation audit
+
+Full-codebase audit across 5 domains (operations, rendering, feeds/speeds, core/viz boundary, serialization) to reduce scattered logic and improve extensibility. Findings and implementation documented in `planning/CONSOLIDATION_AUDIT.md`.
+
+**Operation extensibility:**
+- `OperationParams` trait eliminates ~200 match arms from `catalog.rs` — common accessors (feed_rate, plunge_rate, stepover, depth_per_pass, depth_semantics) now dispatch through `as_params()`/`as_params_mut()` instead of 10 separate 23-arm match blocks
+- Deleted 3 duplicate `op_feed_rate()` functions from `preflight.rs`, `sim_timeline.rs`, `sim_diagnostics.rs`
+
+**Rendering consolidation:**
+- Centralized 40+ hardcoded color literals into `render/colors.rs` module (toolpath palette, tool assembly, height planes, grid axes, stock, deviation)
+- `MoveType::is_cutting()` and `MoveType::feed_rate()` helpers for toolpath move classification
+
+**HTML/Three.js scaffold:**
+- Extracted 7 shared helper functions from `viz.rs` (`html_head`, `html_importmap`, `html_scene_setup`, `html_toolpath_objects`, `html_grid_axes`, `html_tail`, `serialize_toolpath_lines`)
+
+**Feeds/speeds ownership:**
+- `Material::base_cutting_speed_m_min()` and `Material::plunge_rate_base()` replace hardcoded match blocks in `feeds/mod.rs`
+- 12+ magic numbers replaced with named constants (`SLOTTING_THRESHOLD`, `LD_SEVERE_THRESHOLD`, `FLUTE_GUARD_FACTOR`, etc.)
+
+**CLI/viz unification:**
+- CLI `build_tool()` now returns `ToolDefinition` instead of `Box<dyn MillingCutter>`, matching the viz crate pattern
+- `OpResult.cutter` upgraded to `ToolDefinition`, giving CLI access to assembly info and `to_assembly()` for collision detection
+
+**Project file simplification:**
+- `ProjectToolSection::into_runtime()` now constructs `ToolConfig` directly instead of creating a default and overwriting all fields — compiler enforces completeness
 
 ## Current priorities
 

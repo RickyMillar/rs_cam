@@ -19,6 +19,7 @@ pub mod geometry;
 pub mod vendor_lookup;
 pub mod vendor_lut;
 pub mod vendor_normalize;
+pub use vendor_lut::VendorLut;
 
 use crate::machine::MachineProfile;
 use crate::material::Material;
@@ -147,18 +148,11 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let d = input.tool_diameter;
 
     // --- Step 1: RPM ---
-    let base_cutting_speed = match material {
-        Material::SolidWood { .. } => 200.0,
-        Material::Plywood { .. } => 180.0,
-        Material::SheetGood { .. } => 170.0,
-        Material::Plastic { .. } => 250.0,
-        Material::Foam { .. } => 300.0,
-        Material::Custom { .. } => 200.0,
-    };
+    const FALLBACK_RPM: f64 = 18000.0;
     let ideal_rpm = if d > 0.0 {
-        (base_cutting_speed * 1000.0) / (std::f64::consts::PI * d)
+        (material.base_cutting_speed_m_min() * 1000.0) / (std::f64::consts::PI * d)
     } else {
-        18000.0
+        FALLBACK_RPM
     };
     let mut rpm = machine.clamp_rpm(ideal_rpm);
 
@@ -219,8 +213,9 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     }
 
     // --- Step 4: Flute guard ---
+    const FLUTE_GUARD_FACTOR: f64 = 0.8;
     let flute_guard = if input.flute_length > 0.0 {
-        input.flute_length * 0.8
+        input.flute_length * FLUTE_GUARD_FACTOR
     } else {
         d * 2.0
     };
@@ -233,14 +228,18 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     }
 
     // Ensure minimum engagement
-    ap = ap.max(0.05);
-    ae = ae.max(0.02);
+    const MIN_AP_MM: f64 = 0.05;
+    const MIN_AE_MM: f64 = 0.02;
+    ap = ap.max(MIN_AP_MM);
+    ae = ae.max(MIN_AE_MM);
     // Cap ae to tool diameter
     ae = ae.min(d);
 
     // --- Step 4b: Slotting detection ---
-    if ae > d * 0.85 {
-        let slotting_cap = d * 0.25;
+    const SLOTTING_THRESHOLD: f64 = 0.85;
+    const SLOTTING_DOC_CAP: f64 = 0.25;
+    if ae > d * SLOTTING_THRESHOLD {
+        let slotting_cap = d * SLOTTING_DOC_CAP;
         if ap > slotting_cap {
             warnings.push(FeedsWarning::SlottingDetected {
                 doc_reduced_to: slotting_cap,
@@ -280,20 +279,28 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let mut raw_feed = rpm * chip_load * input.flute_count as f64 * chip_thinning * depth_tier;
 
     // --- Step 5b: Setup derates ---
+    // L/D ratio derating — long tools deflect more
+    const LD_SEVERE_THRESHOLD: f64 = 6.0;
+    const LD_MODERATE_THRESHOLD: f64 = 4.0;
+    const LD_SEVERE_FACTOR: f64 = 0.75;
+    const LD_MODERATE_FACTOR: f64 = 0.88;
     if let Some(overhang) = input.setup.tool_overhang_mm {
         let ld_ratio = overhang / d;
-        if ld_ratio > 6.0 {
-            raw_feed *= 0.75;
-        } else if ld_ratio > 4.0 {
-            raw_feed *= 0.88;
+        if ld_ratio > LD_SEVERE_THRESHOLD {
+            raw_feed *= LD_SEVERE_FACTOR;
+        } else if ld_ratio > LD_MODERATE_THRESHOLD {
+            raw_feed *= LD_MODERATE_FACTOR;
         }
     }
+    // Workholding rigidity adjustment
+    const WORKHOLDING_LOW_FACTOR: f64 = 0.85;
+    const WORKHOLDING_HIGH_FACTOR: f64 = 1.03;
     match input.setup.workholding_rigidity {
         WorkholdingRigidity::Low => {
-            raw_feed *= 0.85;
+            raw_feed *= WORKHOLDING_LOW_FACTOR;
         }
         WorkholdingRigidity::High => {
-            raw_feed *= 1.03;
+            raw_feed *= WORKHOLDING_HIGH_FACTOR;
         }
         WorkholdingRigidity::Medium => {}
     }
@@ -326,7 +333,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     }
 
     // --- Step 8: Plunge rate ---
-    let plunge = estimate_plunge_rate(material, hardness);
+    let plunge = material.plunge_rate_base();
 
     // Ramp feed: capped at 1.5× plunge rate (reference calcs.rs convention)
     let ramp_feed = (feed * 0.5).max(plunge).min(plunge * 1.5);
@@ -566,16 +573,6 @@ fn effective_diameter(geom: ToolGeometryHint, nominal_d: f64, ap: f64) -> f64 {
             tip_radius,
             taper_angle_deg,
         } => geometry::tapered_ball_effective_diameter(nominal_d, tip_radius, taper_angle_deg, ap),
-    }
-}
-
-fn estimate_plunge_rate(material: &Material, hardness: f64) -> f64 {
-    match material {
-        Material::SolidWood { .. } => 1000.0 / hardness,
-        Material::Plywood { .. } | Material::SheetGood { .. } => 900.0 / hardness,
-        Material::Plastic { .. } => 1500.0,
-        Material::Foam { .. } => 2000.0,
-        Material::Custom { .. } => 800.0 / hardness,
     }
 }
 

@@ -5,7 +5,6 @@ use super::sim_debug::{
 use crate::render::toolpath_render::palette_color;
 use crate::state::job::JobState;
 use crate::state::simulation::{ActiveSemanticItem, SimulationDebugTab, SimulationState};
-use crate::state::toolpath::OperationConfig;
 use egui_plot::{Bar, BarChart, Legend, Line, Plot, PlotPoints};
 
 /// Bottom panel in simulation workspace: transport controls, timeline scrubber, speed control.
@@ -386,7 +385,7 @@ fn estimate_times(sim: &SimulationState, job: &JobState) -> (f64, f64) {
         if let Some(tp) = job.find_toolpath(boundary.id)
             && let Some(result) = &tp.result
         {
-            let feed = op_feed_rate(&tp.operation);
+            let feed = tp.operation.feed_rate();
             let op_time = (result.stats.cutting_distance / feed) * 60.0;
             total_secs += op_time;
 
@@ -410,34 +409,6 @@ fn format_time(secs: f64) -> String {
     let m = (secs / 60.0).floor() as u32;
     let s = (secs % 60.0) as u32;
     format!("{}:{:02}", m, s)
-}
-
-fn op_feed_rate(op: &OperationConfig) -> f64 {
-    match op {
-        OperationConfig::Face(c) => c.feed_rate,
-        OperationConfig::Pocket(c) => c.feed_rate,
-        OperationConfig::Profile(c) => c.feed_rate,
-        OperationConfig::Adaptive(c) => c.feed_rate,
-        OperationConfig::DropCutter(c) => c.feed_rate,
-        OperationConfig::Trace(c) => c.feed_rate,
-        OperationConfig::Drill(c) => c.feed_rate,
-        OperationConfig::Chamfer(c) => c.feed_rate,
-        OperationConfig::Zigzag(c) => c.feed_rate,
-        OperationConfig::VCarve(c) => c.feed_rate,
-        OperationConfig::Rest(c) => c.feed_rate,
-        OperationConfig::Inlay(c) => c.feed_rate,
-        OperationConfig::Adaptive3d(c) => c.feed_rate,
-        OperationConfig::Waterline(c) => c.feed_rate,
-        OperationConfig::Pencil(c) => c.feed_rate,
-        OperationConfig::Scallop(c) => c.feed_rate,
-        OperationConfig::SteepShallow(c) => c.feed_rate,
-        OperationConfig::RampFinish(c) => c.feed_rate,
-        OperationConfig::SpiralFinish(c) => c.feed_rate,
-        OperationConfig::RadialFinish(c) => c.feed_rate,
-        OperationConfig::HorizontalFinish(c) => c.feed_rate,
-        OperationConfig::ProjectCurve(c) => c.feed_rate,
-        OperationConfig::AlignmentPinDrill(c) => c.feed_rate,
-    }
 }
 
 // SAFETY: item_index and depths[] from semantic index built from trace.items

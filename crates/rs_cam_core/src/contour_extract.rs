@@ -393,22 +393,22 @@ struct Segment2D {
 /// Each case maps to 0, 1, or 2 segments expressed as pairs of edge indices.
 /// Saddle cases (5, 10) emit two segments each.
 const MS_CASES: [&[(u8, u8)]; 16] = [
-    &[],                  // 0:  0000
-    &[(0, 1)],            // 1:  0001 — left-bottom
-    &[(1, 2)],            // 2:  0010 — bottom-right
-    &[(0, 2)],            // 3:  0011 — left-right
-    &[(2, 3)],            // 4:  0100 — right-top
-    &[(0, 3), (1, 2)],    // 5:  0101 — saddle: left-top + bottom-right
-    &[(1, 3)],            // 6:  0110 — bottom-top
-    &[(0, 3)],            // 7:  0111 — left-top
-    &[(3, 0)],            // 8:  1000 — top-left
-    &[(1, 3)],            // 9:  1001 — top-bottom (equivalent: bottom-top)
-    &[(0, 1), (2, 3)],    // 10: 1010 — saddle: left-bottom + right-top
-    &[(2, 3)],            // 11: 1011 — right-top (== top-right)
-    &[(2, 0)],            // 12: 1100 — right-left
-    &[(1, 2)],            // 13: 1101 — bottom-right (== right-bottom)
-    &[(0, 1)],            // 14: 1110 — left-bottom (== bottom-left)
-    &[],                  // 15: 1111
+    &[],               // 0:  0000
+    &[(0, 1)],         // 1:  0001 — left-bottom
+    &[(1, 2)],         // 2:  0010 — bottom-right
+    &[(0, 2)],         // 3:  0011 — left-right
+    &[(2, 3)],         // 4:  0100 — right-top
+    &[(0, 3), (1, 2)], // 5:  0101 — saddle: left-top + bottom-right
+    &[(1, 3)],         // 6:  0110 — bottom-top
+    &[(0, 3)],         // 7:  0111 — left-top
+    &[(3, 0)],         // 8:  1000 — top-left
+    &[(1, 3)],         // 9:  1001 — top-bottom (equivalent: bottom-top)
+    &[(0, 1), (2, 3)], // 10: 1010 — saddle: left-bottom + right-top
+    &[(2, 3)],         // 11: 1011 — right-top (== top-right)
+    &[(2, 0)],         // 12: 1100 — right-left
+    &[(1, 2)],         // 13: 1101 — bottom-right (== right-bottom)
+    &[(0, 1)],         // 14: 1110 — left-bottom (== bottom-left)
+    &[],               // 15: 1111
 ];
 
 /// Extract 2D contour loops from a boolean grid using marching squares.
@@ -491,10 +491,16 @@ fn ms_bool_segments(
             let cf = c as f64;
 
             let edge_pts = [
-                P2::new(origin_x + cf * cell_size, origin_y + (rf + 0.5) * cell_size),             // 0: left
-                P2::new(origin_x + (cf + 0.5) * cell_size, origin_y + (rf + 1.0) * cell_size),     // 1: bottom
-                P2::new(origin_x + (cf + 1.0) * cell_size, origin_y + (rf + 0.5) * cell_size),     // 2: right
-                P2::new(origin_x + (cf + 0.5) * cell_size, origin_y + rf * cell_size),             // 3: top
+                P2::new(origin_x + cf * cell_size, origin_y + (rf + 0.5) * cell_size), // 0: left
+                P2::new(
+                    origin_x + (cf + 0.5) * cell_size,
+                    origin_y + (rf + 1.0) * cell_size,
+                ), // 1: bottom
+                P2::new(
+                    origin_x + (cf + 1.0) * cell_size,
+                    origin_y + (rf + 0.5) * cell_size,
+                ), // 2: right
+                P2::new(origin_x + (cf + 0.5) * cell_size, origin_y + rf * cell_size), // 3: top
             ];
 
             for &(a, b) in edges {
@@ -580,8 +586,7 @@ fn chain_segments_2d(segments: &[Segment2D]) -> Vec<Vec<P2>> {
                             } else {
                                 (seg.p2, seg.p1)
                             };
-                            let d = (match_pt.x - tail.x).powi(2)
-                                + (match_pt.y - tail.y).powi(2);
+                            let d = (match_pt.x - tail.x).powi(2) + (match_pt.y - tail.y).powi(2);
                             if d < eps * eps {
                                 chain.push(other_pt);
                                 used[seg_idx] = true;
@@ -966,7 +971,10 @@ mod tests {
         // All false (air) → no contours
         let grid = vec![false; 4 * 4];
         let contours = marching_squares_bool_grid(&grid, 4, 4, 0.0, 0.0, 1.0);
-        assert!(contours.is_empty(), "All-air grid should produce no contours");
+        assert!(
+            contours.is_empty(),
+            "All-air grid should produce no contours"
+        );
     }
 
     #[test]

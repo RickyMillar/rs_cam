@@ -3,6 +3,7 @@
 //! Takes a base TOML job file, varies one parameter across specified values,
 //! runs each variant through the full job pipeline (dressups, depth stepping,
 //! simulation, G-code), and produces structured JSON output for agent analysis.
+#![allow(clippy::print_stdout, clippy::indexing_slicing)]
 
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
@@ -35,7 +36,10 @@ pub fn run_sweep(
     }
 
     // Parse sweep values (comma-separated)
-    let values: Vec<String> = values_str.split(',').map(|s| s.trim().to_string()).collect();
+    let values: Vec<String> = values_str
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .collect();
     if values.is_empty() {
         bail!("No sweep values provided");
     }
@@ -65,9 +69,7 @@ pub fn run_sweep(
 
     // Simulate baseline if requested
     let base_stock_fp = if simulate {
-        let sfp = simulate_and_export(
-            &base_result, &base_job, job_dir, output_dir, "baseline",
-        )?;
+        let sfp = simulate_and_export(&base_result, &base_job, job_dir, output_dir, "baseline")?;
         Some(sfp)
     } else {
         None
@@ -81,7 +83,11 @@ pub fn run_sweep(
     let mut sweep_variants = Vec::new();
 
     for val_str in &values {
-        info!(param = param_name, value = val_str.as_str(), "Running variant...");
+        info!(
+            param = param_name,
+            value = val_str.as_str(),
+            "Running variant..."
+        );
 
         // Patch the job file with the new parameter value
         let patched_job = patch_job_param(&base_job, param_name, val_str)?;
@@ -96,7 +102,10 @@ pub fn run_sweep(
 
         // Write variant artifacts
         let safe_val = sanitize_filename(val_str);
-        write_json(&output_dir.join(format!("variant_{safe_val}.json")), &var_fp)?;
+        write_json(
+            &output_dir.join(format!("variant_{safe_val}.json")),
+            &var_fp,
+        )?;
         write_json(
             &output_dir.join(format!("variant_{safe_val}_diff.json")),
             &diff,
@@ -271,7 +280,13 @@ fn parse_value_to_json(s: &str) -> serde_json::Value {
 
 fn sanitize_filename(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -331,7 +346,7 @@ fn simulate_and_export(
 
     // Simulate each phase
     for phase in &result.phases {
-        stock.simulate_toolpath(&phase.toolpath, phase.cutter.as_ref(), StockCutDirection::FromTop);
+        stock.simulate_toolpath(&phase.toolpath, &phase.cutter, StockCutDirection::FromTop);
     }
 
     // Export composite stock PNG
@@ -497,7 +512,7 @@ impl From<&job::JobFile> for SerializableJobFile {
                     (
                         k.clone(),
                         SerializableToolDef {
-                            tool_type: v.tool_type.clone(),
+                            tool_type: v.tool_type.to_string(),
                             number: v.number,
                             diameter: v.diameter,
                             flute_count: v.flute_count,

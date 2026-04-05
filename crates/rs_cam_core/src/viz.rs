@@ -16,6 +16,271 @@ use crate::tool::MillingCutter;
 use crate::toolpath::{MoveType, Toolpath};
 use std::fmt::Write;
 
+// ── Shared helpers for HTML 3D generators ───────────────────────────────
+
+/// Compute the Z range of cutting moves in a toolpath.
+fn toolpath_cutting_z_range(toolpath: &Toolpath) -> (f64, f64, f64) {
+    let mut z_min = f64::INFINITY;
+    let mut z_max = f64::NEG_INFINITY;
+    for m in &toolpath.moves {
+        if m.move_type.is_cutting() {
+            z_min = z_min.min(m.target.z);
+            z_max = z_max.max(m.target.z);
+        }
+    }
+    let z_range = (z_max - z_min).max(1e-6);
+    (z_min, z_max, z_range)
+}
+
+/// Serialized toolpath line data for Three.js rendering.
+struct ToolpathLineData {
+    cut_verts: String,
+    cut_colors: String,
+    rapid_verts: String,
+    z_min: f64,
+    z_max: f64,
+}
+
+/// Z-based color for toolpath cutting moves (blue at low Z, cyan at high Z).
+fn z_color(z: f64, z_min: f64, z_range: f64) -> (f32, f32, f32) {
+    let t = ((z - z_min) / z_range).clamp(0.0, 1.0) as f32;
+    (0.1 + t * 0.1, 0.3 + t * 0.6, 0.9 + t * 0.1)
+}
+
+/// Serialize a toolpath's cutting and rapid moves into line segment vertex strings.
+#[allow(clippy::indexing_slicing)] // i starts at 1, so i-1 is always valid
+fn serialize_toolpath_lines(toolpath: &Toolpath) -> ToolpathLineData {
+    let (z_min, z_max, z_range) = toolpath_cutting_z_range(toolpath);
+
+    let mut cut_verts = String::new();
+    let mut cut_colors = String::new();
+    let mut rapid_verts = String::new();
+
+    for i in 1..toolpath.moves.len() {
+        let from = &toolpath.moves[i - 1].target;
+        let to = &toolpath.moves[i].target;
+
+        match toolpath.moves[i].move_type {
+            MoveType::Rapid => {
+                let _ = write!(
+                    rapid_verts,
+                    "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                    from.x, from.y, from.z, to.x, to.y, to.z
+                );
+            }
+            MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
+                let _ = write!(
+                    cut_verts,
+                    "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
+                    from.x, from.y, from.z, to.x, to.y, to.z
+                );
+                for z in [from.z, to.z] {
+                    let (r, g, b) = z_color(z, z_min, z_range);
+                    let _ = write!(cut_colors, "{:.3},{:.3},{:.3},", r, g, b);
+                }
+            }
+        }
+    }
+
+    ToolpathLineData {
+        cut_verts,
+        cut_colors,
+        rapid_verts,
+        z_min,
+        z_max,
+    }
+}
+
+/// Emit the shared HTML head with CSS styling for 3D viewers.
+/// `extra_css` is appended after the base styles (e.g., animation controls).
+fn html_head(out: &mut String, title: &str, extra_css: &str) {
+    let _ = write!(
+        out,
+        r##"<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>{title}</title>
+<style>
+  body {{ margin: 0; overflow: hidden; background: #1a1a2e; }}
+  #info {{
+    position: absolute; top: 10px; left: 10px; color: #ccc;
+    font: 13px monospace; background: rgba(0,0,0,0.6); padding: 8px 12px;
+    border-radius: 4px; pointer-events: none;
+  }}
+  #legend {{
+    position: absolute; bottom: 10px; left: 10px; color: #aaa;
+    font: 12px monospace; background: rgba(0,0,0,0.6); padding: 8px 12px;
+    border-radius: 4px;
+  }}{extra_css}
+</style>
+</head><body>
+"##,
+    );
+}
+
+/// Emit the Three.js importmap + module header.
+fn html_importmap(out: &mut String) {
+    let _ = write!(
+        out,
+        r##"
+<script type="importmap">
+{{
+  "imports": {{
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }}
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import {{ OrbitControls }} from 'three/addons/controls/OrbitControls.js';
+"##,
+    );
+}
+
+/// Camera offset multipliers for each viewer type.
+struct CameraOffsets {
+    x: f64,
+    y: f64,
+    z: f64,
+}
+
+/// Emit scene, camera, renderer, controls, and lighting setup.
+fn html_scene_setup(
+    out: &mut String,
+    cx: f64,
+    cy: f64,
+    cz: f64,
+    cam_dist: f64,
+    cam: &CameraOffsets,
+) {
+    let _ = write!(
+        out,
+        r##"
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100000);
+camera.position.set({cx:.3} + {cd:.3} * {cam_x}, {cy:.3} - {cd:.3} * {cam_y}, {cz:.3} + {cd:.3} * {cam_z});
+
+const renderer = new THREE.WebGLRenderer({{ antialias: true }});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set({cx:.3}, {cy:.3}, {cz:.3});
+controls.enableDamping = true;
+
+scene.add(new THREE.AmbientLight(0x555555));
+const dir1 = new THREE.DirectionalLight(0xffffff, 0.8);
+dir1.position.set(1, 1, 2);
+scene.add(dir1);
+const dir2 = new THREE.DirectionalLight(0x4488aa, 0.4);
+dir2.position.set(-1, -0.5, 0.5);
+scene.add(dir2);
+"##,
+        cx = cx,
+        cy = cy,
+        cz = cz,
+        cd = cam_dist,
+        cam_x = cam.x,
+        cam_y = cam.y,
+        cam_z = cam.z,
+    );
+}
+
+/// Emit Three.js objects for cutting and rapid toolpath lines.
+fn html_toolpath_objects(
+    out: &mut String,
+    cut_verts: &str,
+    cut_colors: &str,
+    rapid_verts: &str,
+    rapid_opacity: f64,
+) {
+    let _ = write!(
+        out,
+        r##"
+// --- Cutting toolpath ---
+const cutVerts = new Float32Array([{cut_verts_data}]);
+const cutColors = new Float32Array([{cut_colors_data}]);
+if (cutVerts.length > 0) {{
+  const cutGeo = new THREE.BufferGeometry();
+  cutGeo.setAttribute('position', new THREE.BufferAttribute(cutVerts, 3));
+  cutGeo.setAttribute('color', new THREE.BufferAttribute(cutColors, 3));
+  const cutMat = new THREE.LineBasicMaterial({{ vertexColors: true, linewidth: 1, transparent: true, opacity: {rapid_opacity} }});
+  scene.add(new THREE.LineSegments(cutGeo, cutMat));
+}}
+
+// --- Rapid toolpath ---
+const rapidVerts = new Float32Array([{rapid_verts_data}]);
+if (rapidVerts.length > 0) {{
+  const rapidGeo = new THREE.BufferGeometry();
+  rapidGeo.setAttribute('position', new THREE.BufferAttribute(rapidVerts, 3));
+  const rapidMat = new THREE.LineBasicMaterial({{ color: 0xff4444, linewidth: 1, transparent: true, opacity: {rapid_opacity} }});
+  scene.add(new THREE.LineSegments(rapidGeo, rapidMat));
+}}
+"##,
+        cut_verts_data = cut_verts,
+        cut_colors_data = cut_colors,
+        rapid_verts_data = rapid_verts,
+        rapid_opacity = rapid_opacity,
+    );
+}
+
+/// Emit grid helper and axes for the 3D scene.
+#[allow(clippy::too_many_arguments)]
+fn html_grid_axes(
+    out: &mut String,
+    grid_size: f64,
+    cx: f64,
+    cy: f64,
+    grid_z: f64,
+    axes_x: f64,
+    axes_y: f64,
+    axes_z: f64,
+) {
+    let _ = write!(
+        out,
+        r##"
+// --- Grid helper ---
+const gridSize = {grid_size:.0};
+const grid = new THREE.GridHelper(gridSize, 20, 0x333355, 0x222244);
+grid.rotation.x = Math.PI / 2;
+grid.position.set({cx:.3}, {cy:.3}, {grid_z:.3});
+scene.add(grid);
+
+// --- Axes ---
+const axes = new THREE.AxesHelper(gridSize * 0.3);
+axes.position.set({axes_x:.3}, {axes_y:.3}, {axes_z:.3});
+scene.add(axes);
+"##,
+    );
+}
+
+/// Emit the resize handler, animate loop, and closing tags.
+fn html_tail(out: &mut String) {
+    let _ = write!(
+        out,
+        r##"
+window.addEventListener('resize', () => {{
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}});
+
+function animate() {{
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}}
+animate();
+</script>
+</body></html>"##,
+    );
+}
+
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Generate an SVG showing the toolpath from a top-down (XY) view.
 /// Z is encoded as color: deeper = darker blue, higher = lighter/warmer.
@@ -100,7 +365,6 @@ pub fn toolpath_to_svg(toolpath: &Toolpath, width: f64, height: f64) -> String {
     svg
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Generate a self-contained HTML file with an interactive 3D viewer.
 ///
 /// Shows the mesh surface + toolpath lines using three.js (loaded from CDN).
@@ -108,93 +372,29 @@ pub fn toolpath_to_svg(toolpath: &Toolpath, width: f64, height: f64) -> String {
 pub fn toolpath_to_3d_html(mesh: &TriangleMesh, toolpath: &Toolpath) -> String {
     let mut html = String::with_capacity(1024 * 1024);
 
-    // Compute mesh center for camera target
     let center = mesh.bbox.center();
     let extent = (mesh.bbox.max.x - mesh.bbox.min.x)
         .max(mesh.bbox.max.y - mesh.bbox.min.y)
         .max(mesh.bbox.max.z - mesh.bbox.min.z);
     let cam_dist = extent * 1.5;
 
-    // Serialize mesh vertices as flat f32 array [x0,y0,z0, x1,y1,z1, ...]
+    // Serialize mesh
     let mut mesh_verts = String::new();
     for v in &mesh.vertices {
         let _ = write!(mesh_verts, "{:.4},{:.4},{:.4},", v.x, v.y, v.z);
     }
-
-    // Serialize mesh triangle indices
     let mut mesh_indices = String::new();
     for tri in &mesh.triangles {
         let _ = write!(mesh_indices, "{},{},{},", tri[0], tri[1], tri[2]);
     }
 
-    // Serialize cutting path vertices + colors, and rapid path vertices separately
-    let mut cut_verts = String::new();
-    let mut cut_colors = String::new();
-    let mut rapid_verts = String::new();
+    let tp_data = serialize_toolpath_lines(toolpath);
 
-    // Compute Z range for coloring
-    let mut z_min = f64::INFINITY;
-    let mut z_max = f64::NEG_INFINITY;
-    for m in &toolpath.moves {
-        if let MoveType::Linear { .. } = m.move_type {
-            z_min = z_min.min(m.target.z);
-            z_max = z_max.max(m.target.z);
-        }
-    }
-    let z_range = (z_max - z_min).max(1e-6);
-
-    for i in 1..toolpath.moves.len() {
-        let from = &toolpath.moves[i - 1].target;
-        let to = &toolpath.moves[i].target;
-
-        match toolpath.moves[i].move_type {
-            MoveType::Rapid => {
-                let _ = write!(
-                    rapid_verts,
-                    "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                    from.x, from.y, from.z, to.x, to.y, to.z
-                );
-            }
-            MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
-                let _ = write!(
-                    cut_verts,
-                    "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
-                    from.x, from.y, from.z, to.x, to.y, to.z
-                );
-                // Color both endpoints by their Z
-                for z in [from.z, to.z] {
-                    let t = ((z - z_min) / z_range).clamp(0.0, 1.0) as f32;
-                    // Low Z = blue (0.1, 0.3, 0.9), high Z = cyan (0.2, 0.9, 1.0)
-                    let r = 0.1 + t * 0.1;
-                    let g = 0.3 + t * 0.6;
-                    let b = 0.9 + t * 0.1;
-                    let _ = write!(cut_colors, "{:.3},{:.3},{:.3},", r, g, b);
-                }
-            }
-        }
-    }
-
+    // HTML structure
+    html_head(&mut html, "rs_cam 3D Toolpath Viewer", "");
     let _ = write!(
         html,
-        r##"<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8">
-<title>rs_cam 3D Toolpath Viewer</title>
-<style>
-  body {{ margin: 0; overflow: hidden; background: #1a1a2e; }}
-  #info {{
-    position: absolute; top: 10px; left: 10px; color: #ccc;
-    font: 13px monospace; background: rgba(0,0,0,0.6); padding: 8px 12px;
-    border-radius: 4px; pointer-events: none;
-  }}
-  #legend {{
-    position: absolute; bottom: 10px; left: 10px; color: #aaa;
-    font: 12px monospace; background: rgba(0,0,0,0.6); padding: 8px 12px;
-    border-radius: 4px;
-  }}
-</style>
-</head><body>
-<div id="info">
+        r##"<div id="info">
   Mesh: {mesh_verts} verts, {mesh_tris} tris<br>
   Toolpath: {tp_moves} moves, {tp_cut:.0}mm cutting, {tp_rapid:.0}mm rapid<br>
   Z range: {z_min:.2} to {z_max:.2} mm
@@ -205,44 +405,34 @@ pub fn toolpath_to_3d_html(mesh: &TriangleMesh, toolpath: &Toolpath) -> String {
   <span style="color:#88aa88">&#9632;</span> Mesh &nbsp;
   Mouse: orbit | Scroll: zoom | Right-click: pan
 </div>
+"##,
+        mesh_verts = mesh.vertices.len(),
+        mesh_tris = mesh.faces.len(),
+        tp_moves = toolpath.moves.len(),
+        tp_cut = toolpath.total_cutting_distance(),
+        tp_rapid = toolpath.total_rapid_distance(),
+        z_min = tp_data.z_min,
+        z_max = tp_data.z_max,
+    );
 
-<script type="importmap">
-{{
-  "imports": {{
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
-  }}
-}}
-</script>
+    html_importmap(&mut html);
+    html_scene_setup(
+        &mut html,
+        center.x,
+        center.y,
+        center.z,
+        cam_dist,
+        &CameraOffsets {
+            x: 0.5,
+            y: 0.8,
+            z: 1.0,
+        },
+    );
 
-<script type="module">
-import * as THREE from 'three';
-import {{ OrbitControls }} from 'three/addons/controls/OrbitControls.js';
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1a1a2e);
-
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100000);
-camera.position.set({cx:.3} + {cd:.3} * 0.5, {cy:.3} - {cd:.3} * 0.8, {cz:.3} + {cd:.3} * 1.0);
-
-const renderer = new THREE.WebGLRenderer({{ antialias: true }});
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
-document.body.appendChild(renderer.domElement);
-
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set({cx:.3}, {cy:.3}, {cz:.3});
-controls.enableDamping = true;
-
-// Lighting
-scene.add(new THREE.AmbientLight(0x555555));
-const dir1 = new THREE.DirectionalLight(0xffffff, 0.8);
-dir1.position.set(1, 1, 2);
-scene.add(dir1);
-const dir2 = new THREE.DirectionalLight(0x4488aa, 0.4);
-dir2.position.set(-1, -0.5, 0.5);
-scene.add(dir2);
-
+    // Mesh object
+    let _ = write!(
+        html,
+        r##"
 // --- Mesh ---
 const meshVerts = new Float32Array([{mesh_verts_data}]);
 const meshIdx = new Uint32Array([{mesh_idx_data}]);
@@ -252,91 +442,38 @@ meshGeo.setIndex(new THREE.BufferAttribute(meshIdx, 1));
 meshGeo.computeVertexNormals();
 
 const meshMat = new THREE.MeshPhongMaterial({{
-  color: 0x88aa88,
-  transparent: true,
-  opacity: 0.6,
-  side: THREE.DoubleSide,
-  depthWrite: true,
+  color: 0x88aa88, transparent: true, opacity: 0.6,
+  side: THREE.DoubleSide, depthWrite: true,
 }});
 scene.add(new THREE.Mesh(meshGeo, meshMat));
 
-// Wireframe overlay
 const wireMat = new THREE.MeshBasicMaterial({{
-  color: 0x445544,
-  wireframe: true,
-  transparent: true,
-  opacity: 0.15,
+  color: 0x445544, wireframe: true, transparent: true, opacity: 0.15,
 }});
 scene.add(new THREE.Mesh(meshGeo, wireMat));
-
-// --- Cutting toolpath ---
-const cutVerts = new Float32Array([{cut_verts_data}]);
-const cutColors = new Float32Array([{cut_colors_data}]);
-if (cutVerts.length > 0) {{
-  const cutGeo = new THREE.BufferGeometry();
-  cutGeo.setAttribute('position', new THREE.BufferAttribute(cutVerts, 3));
-  cutGeo.setAttribute('color', new THREE.BufferAttribute(cutColors, 3));
-  const cutMat = new THREE.LineBasicMaterial({{ vertexColors: true, linewidth: 1 }});
-  scene.add(new THREE.LineSegments(cutGeo, cutMat));
-}}
-
-// --- Rapid toolpath ---
-const rapidVerts = new Float32Array([{rapid_verts_data}]);
-if (rapidVerts.length > 0) {{
-  const rapidGeo = new THREE.BufferGeometry();
-  rapidGeo.setAttribute('position', new THREE.BufferAttribute(rapidVerts, 3));
-  const rapidMat = new THREE.LineBasicMaterial({{ color: 0xff4444, linewidth: 1, transparent: true, opacity: 0.5 }});
-  scene.add(new THREE.LineSegments(rapidGeo, rapidMat));
-}}
-
-// --- Grid helper ---
-const gridSize = {grid_size:.0};
-const grid = new THREE.GridHelper(gridSize, 20, 0x333355, 0x222244);
-grid.rotation.x = Math.PI / 2;
-grid.position.set({cx:.3}, {cy:.3}, {grid_z:.3});
-scene.add(grid);
-
-// --- Axes ---
-const axes = new THREE.AxesHelper(gridSize * 0.3);
-axes.position.set({bbox_min_x:.3}, {bbox_min_y:.3}, {bbox_min_z:.3});
-scene.add(axes);
-
-window.addEventListener('resize', () => {{
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-}});
-
-function animate() {{
-  requestAnimationFrame(animate);
-  controls.update();
-  renderer.render(scene, camera);
-}}
-animate();
-</script>
-</body></html>"##,
-        mesh_verts = mesh.vertices.len(),
-        mesh_tris = mesh.faces.len(),
-        tp_moves = toolpath.moves.len(),
-        tp_cut = toolpath.total_cutting_distance(),
-        tp_rapid = toolpath.total_rapid_distance(),
-        z_min = z_min,
-        z_max = z_max,
-        cx = center.x,
-        cy = center.y,
-        cz = center.z,
-        cd = cam_dist,
+"##,
         mesh_verts_data = mesh_verts.trim_end_matches(','),
         mesh_idx_data = mesh_indices.trim_end_matches(','),
-        cut_verts_data = cut_verts.trim_end_matches(','),
-        cut_colors_data = cut_colors.trim_end_matches(','),
-        rapid_verts_data = rapid_verts.trim_end_matches(','),
-        grid_size = extent * 1.2,
-        grid_z = mesh.bbox.min.z - 0.1,
-        bbox_min_x = mesh.bbox.min.x,
-        bbox_min_y = mesh.bbox.min.y,
-        bbox_min_z = mesh.bbox.min.z,
     );
+
+    html_toolpath_objects(
+        &mut html,
+        tp_data.cut_verts.trim_end_matches(','),
+        tp_data.cut_colors.trim_end_matches(','),
+        tp_data.rapid_verts.trim_end_matches(','),
+        0.5,
+    );
+    html_grid_axes(
+        &mut html,
+        extent * 1.2,
+        center.x,
+        center.y,
+        mesh.bbox.min.z - 0.1,
+        mesh.bbox.min.x,
+        mesh.bbox.min.y,
+        mesh.bbox.min.z,
+    );
+    html_tail(&mut html);
 
     html
 }
@@ -349,13 +486,11 @@ animate();
 pub fn toolpath_standalone_3d_html(toolpath: &Toolpath, stock_bounds: Option<[f64; 6]>) -> String {
     let mut html = String::with_capacity(512 * 1024);
 
-    // Compute toolpath bounds
     let mut tp_bbox = BoundingBox3::empty();
     for m in &toolpath.moves {
         tp_bbox.expand_to(m.target);
     }
 
-    // Stock bounds: [x_min, y_min, z_min, x_max, y_max, z_max] or auto from toolpath
     let (sx_min, sy_min, sz_min, sx_max, sy_max, sz_max) = match stock_bounds {
         Some(b) => (b[0], b[1], b[2], b[3], b[4], b[5]),
         None => {
@@ -371,29 +506,21 @@ pub fn toolpath_standalone_3d_html(toolpath: &Toolpath, stock_bounds: Option<[f6
         }
     };
 
-    let center_x = (sx_min + sx_max) / 2.0;
-    let center_y = (sy_min + sy_max) / 2.0;
-    let center_z = (sz_min + sz_max) / 2.0;
+    let cx = (sx_min + sx_max) / 2.0;
+    let cy = (sy_min + sy_max) / 2.0;
+    let cz = (sz_min + sz_max) / 2.0;
     let extent = (sx_max - sx_min)
         .max(sy_max - sy_min)
         .max((sz_max - sz_min).abs());
     let cam_dist = extent * 1.8;
 
-    // Serialize toolpath data
+    // Standalone has plunge classification — can't use shared serialize_toolpath_lines
+    let (z_min, z_max, z_range) = toolpath_cutting_z_range(toolpath);
+
     let mut cut_verts = String::new();
     let mut cut_colors = String::new();
     let mut rapid_verts = String::new();
     let mut plunge_verts = String::new();
-
-    let mut z_min = f64::INFINITY;
-    let mut z_max = f64::NEG_INFINITY;
-    for m in &toolpath.moves {
-        if let MoveType::Linear { .. } = m.move_type {
-            z_min = z_min.min(m.target.z);
-            z_max = z_max.max(m.target.z);
-        }
-    }
-    let z_range = (z_max - z_min).max(1e-6);
 
     for i in 1..toolpath.moves.len() {
         let from = &toolpath.moves[i - 1].target;
@@ -413,8 +540,8 @@ pub fn toolpath_standalone_3d_html(toolpath: &Toolpath, stock_bounds: Option<[f6
                 let vdy = to.y - from.y;
                 let dxy = (vdx * vdx + vdy * vdy).sqrt();
 
-                // Classify as plunge (mostly vertical) vs cutting (mostly horizontal)
                 if dz > 0.1 && dxy < 0.1 {
+                    // Plunge move (mostly vertical)
                     let _ = write!(
                         plunge_verts,
                         "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},",
@@ -427,6 +554,7 @@ pub fn toolpath_standalone_3d_html(toolpath: &Toolpath, stock_bounds: Option<[f6
                         from.x, from.y, from.z, to.x, to.y, to.z
                     );
                     for z in [from.z, to.z] {
+                        // Slightly warmer palette for standalone view
                         let t = ((z - z_min) / z_range).clamp(0.0, 1.0) as f32;
                         let r = 0.1 + t * 0.15;
                         let g = 0.3 + t * 0.6;
@@ -438,27 +566,11 @@ pub fn toolpath_standalone_3d_html(toolpath: &Toolpath, stock_bounds: Option<[f6
         }
     }
 
+    // HTML structure using shared scaffold
+    html_head(&mut html, "rs_cam Toolpath Viewer", "");
     let _ = write!(
         html,
-        r##"<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8">
-<title>rs_cam Toolpath Viewer</title>
-<style>
-  body {{ margin: 0; overflow: hidden; background: #1a1a2e; }}
-  #info {{
-    position: absolute; top: 10px; left: 10px; color: #ccc;
-    font: 13px monospace; background: rgba(0,0,0,0.6); padding: 8px 12px;
-    border-radius: 4px; pointer-events: none;
-  }}
-  #legend {{
-    position: absolute; bottom: 10px; left: 10px; color: #aaa;
-    font: 12px monospace; background: rgba(0,0,0,0.6); padding: 8px 12px;
-    border-radius: 4px;
-  }}
-</style>
-</head><body>
-<div id="info">
+        r##"<div id="info">
   Toolpath: {tp_moves} moves, {tp_cut:.0}mm cutting, {tp_rapid:.0}mm rapid<br>
   Z range: {z_min:.2} to {z_max:.2} mm<br>
   Stock: {sw:.1} x {sh:.1} x {sd:.1} mm
@@ -470,124 +582,7 @@ pub fn toolpath_standalone_3d_html(toolpath: &Toolpath, stock_bounds: Option<[f6
   <span style="color:#556655">&#9632;</span> Stock &nbsp;
   Mouse: orbit | Scroll: zoom | Right-click: pan
 </div>
-
-<script type="importmap">
-{{
-  "imports": {{
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
-  }}
-}}
-</script>
-
-<script type="module">
-import * as THREE from 'three';
-import {{ OrbitControls }} from 'three/addons/controls/OrbitControls.js';
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1a1a2e);
-
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100000);
-camera.position.set({cx:.3} + {cd:.3} * 0.3, {cy:.3} - {cd:.3} * 0.6, {cz:.3} + {cd:.3} * 1.2);
-
-const renderer = new THREE.WebGLRenderer({{ antialias: true }});
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
-document.body.appendChild(renderer.domElement);
-
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set({cx:.3}, {cy:.3}, {cz:.3});
-controls.enableDamping = true;
-
-scene.add(new THREE.AmbientLight(0x555555));
-const dir1 = new THREE.DirectionalLight(0xffffff, 0.8);
-dir1.position.set(1, 1, 2);
-scene.add(dir1);
-
-// --- Stock wireframe box ---
-const stockGeo = new THREE.BoxGeometry(
-  {sx_max:.3} - {sx_min:.3},
-  {sy_max:.3} - {sy_min:.3},
-  {sz_max:.3} - {sz_min:.3}
-);
-const stockEdges = new THREE.EdgesGeometry(stockGeo);
-const stockLine = new THREE.LineSegments(stockEdges,
-  new THREE.LineBasicMaterial({{ color: 0x556655, transparent: true, opacity: 0.6 }}));
-stockLine.position.set(
-  ({sx_min:.3} + {sx_max:.3}) / 2,
-  ({sy_min:.3} + {sy_max:.3}) / 2,
-  ({sz_min:.3} + {sz_max:.3}) / 2
-);
-scene.add(stockLine);
-
-// Semi-transparent stock top face
-const topGeo = new THREE.PlaneGeometry({sx_max:.3} - {sx_min:.3}, {sy_max:.3} - {sy_min:.3});
-const topMat = new THREE.MeshBasicMaterial({{
-  color: 0x556655, transparent: true, opacity: 0.15, side: THREE.DoubleSide
-}});
-const topMesh = new THREE.Mesh(topGeo, topMat);
-topMesh.position.set(
-  ({sx_min:.3} + {sx_max:.3}) / 2,
-  ({sy_min:.3} + {sy_max:.3}) / 2,
-  {sz_max:.3}
-);
-scene.add(topMesh);
-
-// --- Cutting toolpath ---
-const cutVerts = new Float32Array([{cut_verts_data}]);
-const cutColors = new Float32Array([{cut_colors_data}]);
-if (cutVerts.length > 0) {{
-  const cutGeo = new THREE.BufferGeometry();
-  cutGeo.setAttribute('position', new THREE.BufferAttribute(cutVerts, 3));
-  cutGeo.setAttribute('color', new THREE.BufferAttribute(cutColors, 3));
-  const cutMat = new THREE.LineBasicMaterial({{ vertexColors: true, linewidth: 1 }});
-  scene.add(new THREE.LineSegments(cutGeo, cutMat));
-}}
-
-// --- Plunge moves ---
-const plungeVerts = new Float32Array([{plunge_verts_data}]);
-if (plungeVerts.length > 0) {{
-  const plungeGeo = new THREE.BufferGeometry();
-  plungeGeo.setAttribute('position', new THREE.BufferAttribute(plungeVerts, 3));
-  const plungeMat = new THREE.LineBasicMaterial({{ color: 0xffaa22, linewidth: 1, transparent: true, opacity: 0.7 }});
-  scene.add(new THREE.LineSegments(plungeGeo, plungeMat));
-}}
-
-// --- Rapid toolpath ---
-const rapidVerts = new Float32Array([{rapid_verts_data}]);
-if (rapidVerts.length > 0) {{
-  const rapidGeo = new THREE.BufferGeometry();
-  rapidGeo.setAttribute('position', new THREE.BufferAttribute(rapidVerts, 3));
-  const rapidMat = new THREE.LineBasicMaterial({{ color: 0xff4444, linewidth: 1, transparent: true, opacity: 0.3 }});
-  scene.add(new THREE.LineSegments(rapidGeo, rapidMat));
-}}
-
-// --- Grid ---
-const gridSize = {grid_size:.0};
-const grid = new THREE.GridHelper(gridSize, 20, 0x333355, 0x222244);
-grid.rotation.x = Math.PI / 2;
-grid.position.set({cx:.3}, {cy:.3}, {sz_min:.3} - 0.1);
-scene.add(grid);
-
-// --- Axes ---
-const axes = new THREE.AxesHelper(gridSize * 0.3);
-axes.position.set({sx_min:.3}, {sy_min:.3}, {sz_min:.3});
-scene.add(axes);
-
-window.addEventListener('resize', () => {{
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-}});
-
-function animate() {{
-  requestAnimationFrame(animate);
-  controls.update();
-  renderer.render(scene, camera);
-}}
-animate();
-</script>
-</body></html>"##,
+"##,
         tp_moves = toolpath.moves.len(),
         tp_cut = toolpath.total_cutting_distance(),
         tp_rapid = toolpath.total_rapid_distance(),
@@ -596,22 +591,91 @@ animate();
         sw = sx_max - sx_min,
         sh = sy_max - sy_min,
         sd = (sz_max - sz_min).abs(),
-        cx = center_x,
-        cy = center_y,
-        cz = center_z,
-        cd = cam_dist,
+    );
+
+    html_importmap(&mut html);
+    html_scene_setup(
+        &mut html,
+        cx,
+        cy,
+        cz,
+        cam_dist,
+        &CameraOffsets {
+            x: 0.3,
+            y: 0.6,
+            z: 1.2,
+        },
+    );
+
+    // Stock wireframe box (standalone-specific)
+    let _ = write!(
+        html,
+        r##"
+// --- Stock wireframe box ---
+const stockGeo = new THREE.BoxGeometry(
+  {sx_max:.3} - {sx_min:.3}, {sy_max:.3} - {sy_min:.3}, {sz_max:.3} - {sz_min:.3}
+);
+const stockEdges = new THREE.EdgesGeometry(stockGeo);
+const stockLine = new THREE.LineSegments(stockEdges,
+  new THREE.LineBasicMaterial({{ color: 0x556655, transparent: true, opacity: 0.6 }}));
+stockLine.position.set(
+  ({sx_min:.3} + {sx_max:.3}) / 2, ({sy_min:.3} + {sy_max:.3}) / 2, ({sz_min:.3} + {sz_max:.3}) / 2
+);
+scene.add(stockLine);
+
+const topGeo = new THREE.PlaneGeometry({sx_max:.3} - {sx_min:.3}, {sy_max:.3} - {sy_min:.3});
+const topMat = new THREE.MeshBasicMaterial({{
+  color: 0x556655, transparent: true, opacity: 0.15, side: THREE.DoubleSide
+}});
+const topMesh = new THREE.Mesh(topGeo, topMat);
+topMesh.position.set(
+  ({sx_min:.3} + {sx_max:.3}) / 2, ({sy_min:.3} + {sy_max:.3}) / 2, {sz_max:.3}
+);
+scene.add(topMesh);
+"##,
         sx_min = sx_min,
         sy_min = sy_min,
         sz_min = sz_min,
         sx_max = sx_max,
         sy_max = sy_max,
         sz_max = sz_max,
-        cut_verts_data = cut_verts.trim_end_matches(','),
-        cut_colors_data = cut_colors.trim_end_matches(','),
-        plunge_verts_data = plunge_verts.trim_end_matches(','),
-        rapid_verts_data = rapid_verts.trim_end_matches(','),
-        grid_size = extent * 1.2,
     );
+
+    html_toolpath_objects(
+        &mut html,
+        cut_verts.trim_end_matches(','),
+        cut_colors.trim_end_matches(','),
+        rapid_verts.trim_end_matches(','),
+        0.3,
+    );
+
+    // Plunge lines (standalone-specific)
+    let _ = write!(
+        html,
+        r##"
+// --- Plunge moves ---
+const plungeVerts = new Float32Array([{plunge_verts_data}]);
+if (plungeVerts.length > 0) {{
+  const plungeGeo = new THREE.BufferGeometry();
+  plungeGeo.setAttribute('position', new THREE.BufferAttribute(plungeVerts, 3));
+  const plungeMat = new THREE.LineBasicMaterial({{ color: 0xffaa22, linewidth: 1, transparent: true, opacity: 0.7 }});
+  scene.add(new THREE.LineSegments(plungeGeo, plungeMat));
+}}
+"##,
+        plunge_verts_data = plunge_verts.trim_end_matches(','),
+    );
+
+    html_grid_axes(
+        &mut html,
+        extent * 1.2,
+        cx,
+        cy,
+        sz_min - 0.1,
+        sx_min,
+        sy_min,
+        sz_min,
+    );
+    html_tail(&mut html);
 
     html
 }

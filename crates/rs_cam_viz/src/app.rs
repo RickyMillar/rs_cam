@@ -254,10 +254,7 @@ impl RsCamApp {
                                         path.display()
                                     );
                                     self.controller.push_notification(
-                                        format!(
-                                            "Exported combined G-code to {}",
-                                            path.display()
-                                        ),
+                                        format!("Exported combined G-code to {}", path.display()),
                                         crate::controller::Severity::Info,
                                     );
                                 }
@@ -598,7 +595,7 @@ impl RsCamApp {
                         let cutter = crate::compute::worker::helpers::build_cutter(tool);
                         stock.simulate_toolpath_range(
                             toolpath,
-                            cutter.as_ref(),
+                            &cutter,
                             *direction,
                             local_start,
                             local_end,
@@ -799,10 +796,8 @@ impl RsCamApp {
             }
             Err(error) => {
                 tracing::warn!("{error}");
-                self.controller.push_notification(
-                    format!("{error}"),
-                    crate::controller::Severity::Warning,
-                );
+                self.controller
+                    .push_notification(format!("{error}"), crate::controller::Severity::Warning);
             }
         }
     }
@@ -821,13 +816,12 @@ impl RsCamApp {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     if ui.button("Save & Quit").clicked() {
-                        let path =
-                            self.controller.state().job.file_path.clone().or_else(|| {
-                                rfd::FileDialog::new()
-                                    .add_filter("TOML Job", &["toml"])
-                                    .set_file_name("job.toml")
-                                    .save_file()
-                            });
+                        let path = self.controller.state().job.file_path.clone().or_else(|| {
+                            rfd::FileDialog::new()
+                                .add_filter("TOML Job", &["toml"])
+                                .set_file_name("job.toml")
+                                .save_file()
+                        });
                         if let Some(path) = path {
                             match self.controller.save_job_to_path(&path) {
                                 Ok(()) => {
@@ -1370,7 +1364,7 @@ impl RsCamApp {
     // SAFETY: local_idx bounds-checked against moves.len() before indexing
     #[allow(clippy::indexing_slicing)]
     fn update_sim_tool_position(&mut self, frame: &mut eframe::Frame) {
-        use crate::render::sim_render::{ToolGeometry, ToolShape};
+        use crate::render::sim_render::ToolGeometry;
 
         if !self.controller.state().simulation.has_results()
             || self.controller.state().simulation.total_moves() == 0
@@ -1435,31 +1429,14 @@ impl RsCamApp {
         if let Some(tool) = tool_info
             && let Some(rs) = frame.wgpu_render_state()
         {
-            let shape = match tool.tool_type {
-                crate::state::job::ToolType::EndMill => ToolShape::FlatEnd,
-                crate::state::job::ToolType::BallNose => ToolShape::BallNose,
-                crate::state::job::ToolType::BullNose => ToolShape::BullNose,
-                crate::state::job::ToolType::VBit => ToolShape::VBit,
-                crate::state::job::ToolType::TaperedBallNose => ToolShape::TaperedBallNose,
-            };
-            let geom = ToolGeometry {
-                radius: (tool.diameter / 2.0) as f32,
-                cutting_length: tool.cutting_length as f32,
-                shape,
-                corner_radius: tool.corner_radius as f32,
-                included_angle: tool.included_angle as f32,
-                taper_half_angle: tool.taper_half_angle as f32,
-            };
+            let geom = ToolGeometry::from_tool_config(&tool);
+            let tool_def = crate::compute::worker::helpers::build_cutter(&tool);
+            let assembly_info =
+                crate::render::sim_render::ToolAssemblyInfo::from_tool_definition(&tool_def);
             let mut renderer = rs.renderer.write();
             // SAFETY: RenderResources inserted in RsCamApp::new; always present.
             #[allow(clippy::unwrap_used)]
             let resources: &mut RenderResources = renderer.callback_resources.get_mut().unwrap();
-            let assembly_info = crate::render::sim_render::ToolAssemblyInfo {
-                shank_radius: (tool.shank_diameter / 2.0) as f32,
-                shank_length: tool.shank_length as f32,
-                holder_radius: (tool.holder_diameter / 2.0) as f32,
-                stickout: tool.stickout as f32,
-            };
             resources.tool_model_data = Some(ToolModelGpuData::from_tool_assembly(
                 &rs.device,
                 &geom,

@@ -20,7 +20,8 @@ use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
 /// Whether the spiral cuts from center outward or rim inward.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SpiralDirection {
     /// Start at the center and spiral outward to the rim.
     InsideOut,
@@ -105,6 +106,10 @@ pub fn spiral_finish_toolpath_structured_annotated(
     params: &SpiralFinishParams,
     debug: Option<&ToolpathDebugContext>,
 ) -> (Toolpath, Vec<SpiralFinishRuntimeAnnotation>) {
+    if params.stepover <= 0.0 {
+        return (Toolpath::new(), Vec::new());
+    }
+
     let bbox = &mesh.bbox;
     let cx = (bbox.min.x + bbox.max.x) * 0.5;
     let cy = (bbox.min.y + bbox.max.y) * 0.5;
@@ -466,6 +471,26 @@ mod tests {
             "stock_to_leave=1 should lower Z by ~1mm: z0={:.3}, z1={:.3}",
             z0,
             z1,
+        );
+    }
+
+    #[test]
+    fn zero_stepover_returns_empty() {
+        let (mesh, si) = make_flat_mesh();
+        let cutter = ball_cutter();
+        let params = SpiralFinishParams {
+            stepover: 0.0,
+            direction: SpiralDirection::InsideOut,
+            feed_rate: 1000.0,
+            plunge_rate: 500.0,
+            safe_z: 30.0,
+            stock_to_leave: 0.0,
+        };
+        let tp = spiral_finish_toolpath(&mesh, &si, &cutter, &params);
+        assert!(
+            tp.moves.is_empty(),
+            "Zero stepover should return empty toolpath, got {} moves",
+            tp.moves.len(),
         );
     }
 

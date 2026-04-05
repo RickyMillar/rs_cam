@@ -359,6 +359,45 @@ pub struct ToolAssemblyInfo {
     pub stickout: f32,
 }
 
+impl ToolGeometry {
+    /// Build from a `ToolConfig`, deriving all fields.
+    ///
+    /// Note: `radius` is set from `tool.diameter` (the UI/project diameter), not from
+    /// `MillingCutter::diameter()`. For tapered ball endmills these differ — the trait
+    /// returns shaft_diameter while the UI stores ball_diameter. The wireframe tip arc
+    /// needs ball_diameter.
+    pub fn from_tool_config(tool: &crate::state::job::ToolConfig) -> Self {
+        use crate::state::job::ToolType;
+        let shape = match tool.tool_type {
+            ToolType::EndMill => ToolShape::FlatEnd,
+            ToolType::BallNose => ToolShape::BallNose,
+            ToolType::BullNose => ToolShape::BullNose,
+            ToolType::VBit => ToolShape::VBit,
+            ToolType::TaperedBallNose => ToolShape::TaperedBallNose,
+        };
+        Self {
+            radius: (tool.diameter / 2.0) as f32,
+            cutting_length: tool.cutting_length as f32,
+            shape,
+            corner_radius: tool.corner_radius as f32,
+            included_angle: tool.included_angle as f32,
+            taper_half_angle: tool.taper_half_angle as f32,
+        }
+    }
+}
+
+impl ToolAssemblyInfo {
+    /// Build from a `ToolDefinition`.
+    pub fn from_tool_definition(td: &rs_cam_core::tool::ToolDefinition) -> Self {
+        Self {
+            shank_radius: (td.shank_diameter / 2.0) as f32,
+            shank_length: td.shank_length as f32,
+            holder_radius: (td.holder_diameter / 2.0) as f32,
+            stickout: td.stickout as f32,
+        }
+    }
+}
+
 impl ToolModelGpuData {
     /// Generate tool wireframe lines at the given position (cutter only, no shank/holder).
     pub fn from_tool_geometry(
@@ -389,9 +428,9 @@ impl ToolModelGpuData {
     ) -> Self {
         use wgpu::util::DeviceExt;
 
-        let cutter_color = [0.8, 0.8, 0.3]; // yellow-ish for cutter
-        let shank_color = [0.6, 0.6, 0.5]; // lighter gray for shank
-        let holder_color = [0.4, 0.4, 0.35]; // darker gray for holder
+        let cutter_color = super::colors::TOOL_CUTTER;
+        let shank_color = super::colors::TOOL_SHANK;
+        let holder_color = super::colors::TOOL_HOLDER;
         let segments: usize = 24;
         let mut verts = Vec::new();
 
@@ -698,7 +737,10 @@ impl ToolWireCtx {
         }
     }
 
-    /// Tapered ball nose: hemisphere at tip + tapered cone to cutting diameter.
+    /// Tapered ball nose: partial ball arc at tip + tapered cone to cutting length.
+    ///
+    /// The ball and cone meet tangentially at `r_contact = ball_r * cos(alpha)`,
+    /// `h_contact = ball_r * (1 - sin(alpha))`, which is below the ball equator.
     fn draw_tapered_ball_nose(
         &self,
         verts: &mut Vec<LineVertex>,
@@ -707,22 +749,80 @@ impl ToolWireCtx {
         taper_half_angle_deg: f32,
         cutting_length: f32,
     ) {
-        let taper_angle = taper_half_angle_deg.to_radians();
-        let tip_r = r;
-        let ball_center_z = tip_z + tip_r;
+        let alpha = taper_half_angle_deg.to_radians();
+        let ball_r = r;
+        let ball_center_z = tip_z + ball_r;
 
-        self.push_hemisphere_arcs(verts, ball_center_z, tip_r);
-        self.push_circle(verts, ball_center_z, tip_r);
+        // Tangent junction between ball and cone
+        let r_contact = ball_r * alpha.cos();
+        let h_contact = ball_r * (1.0 - alpha.sin());
+        let junction_z = tip_z + h_contact;
 
-        let taper_height = cutting_length - tip_r;
-        let top_r = if taper_height > 0.0 {
-            tip_r + taper_height * taper_angle.tan()
+        // Ball arc spans from -arc_angle to +arc_angle around the tip
+        let arc_angle = std::f32::consts::FRAC_PI_2 - alpha;
+        self.push_ball_arcs(verts, ball_center_z, ball_r, arc_angle);
+        self.push_circle(verts, junction_z, r_contact);
+
+        // Cone from junction to top of cutting length
+        let cone_height = cutting_length - h_contact;
+        let top_r = if cone_height > 0.0 {
+            r_contact + cone_height * alpha.tan()
         } else {
-            tip_r
+            r_contact
         };
         let top_z = tip_z + cutting_length;
 
         self.push_circle(verts, top_z, top_r);
-        self.push_verticals(verts, tip_r, ball_center_z, top_r, top_z);
+        self.push_verticals(verts, r_contact, junction_z, top_r, top_z);
+    }
+
+    /// Draw arcs in XZ and YZ planes spanning symmetrically from -max_angle to
+    /// +max_angle around the bottom pole of a sphere centered at `center_z`.
+    fn push_ball_arcs(
+        &self,
+        verts: &mut Vec<LineVertex>,
+        center_z: f32,
+        radius: f32,
+        max_angle: f32,
+    ) {
+        let span = 2.0 * max_angle;
+        for i in 0..self.segments {
+            let a0 = -max_angle + span * (i as f32) / (self.segments as f32);
+            let a1 = -max_angle + span * ((i + 1) as f32) / (self.segments as f32);
+            // XZ arc
+            verts.push(LineVertex {
+                position: [
+                    self.cx + radius * a0.sin(),
+                    self.cy,
+                    center_z - radius * a0.cos(),
+                ],
+                color: self.color,
+            });
+            verts.push(LineVertex {
+                position: [
+                    self.cx + radius * a1.sin(),
+                    self.cy,
+                    center_z - radius * a1.cos(),
+                ],
+                color: self.color,
+            });
+            // YZ arc
+            verts.push(LineVertex {
+                position: [
+                    self.cx,
+                    self.cy + radius * a0.sin(),
+                    center_z - radius * a0.cos(),
+                ],
+                color: self.color,
+            });
+            verts.push(LineVertex {
+                position: [
+                    self.cx,
+                    self.cy + radius * a1.sin(),
+                    center_z - radius * a1.cos(),
+                ],
+                color: self.color,
+            });
+        }
     }
 }

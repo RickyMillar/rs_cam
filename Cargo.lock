@@ -3704,6 +3704,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "image",
  "rs_cam_core",
  "serde",
  "serde_json",
@@ -3721,6 +3722,7 @@ dependencies = [
  "criterion",
  "dxf",
  "geo",
+ "image",
  "nalgebra",
  "rayon",
  "serde",

@@ -19,6 +19,23 @@ pub enum MoveType {
     ArcCCW { i: f64, j: f64, feed_rate: f64 },
 }
 
+impl MoveType {
+    /// True for any cutting move (Linear, ArcCW, ArcCCW). False for Rapid.
+    pub fn is_cutting(self) -> bool {
+        !matches!(self, MoveType::Rapid)
+    }
+
+    /// Feed rate in mm/min, or None for rapids.
+    pub fn feed_rate(self) -> Option<f64> {
+        match self {
+            MoveType::Linear { feed_rate } => Some(feed_rate),
+            MoveType::ArcCW { feed_rate, .. } => Some(feed_rate),
+            MoveType::ArcCCW { feed_rate, .. } => Some(feed_rate),
+            MoveType::Rapid => None,
+        }
+    }
+}
+
 /// A single toolpath move to a target position.
 #[derive(Debug, Clone)]
 pub struct Move {
@@ -232,7 +249,12 @@ pub fn simplify_path_3d(points: &[P3], tolerance: f64) -> Vec<P3> {
         let mut max_dist = 0.0;
         let mut max_idx = start;
 
-        for (i, p) in points.iter().enumerate().skip(start + 1).take(end - start - 1) {
+        for (i, p) in points
+            .iter()
+            .enumerate()
+            .skip(start + 1)
+            .take(end - start - 1)
+        {
             let vx = p.x - first.x;
             let vy = p.y - first.y;
             let vz = p.z - first.z;

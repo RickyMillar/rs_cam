@@ -26,7 +26,8 @@ use crate::waterline::waterline_contours;
 use tracing::info;
 
 /// Cutting direction for ramp finishing.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CutDirection {
     /// Climb milling (tool moves with feed direction).
     #[default]

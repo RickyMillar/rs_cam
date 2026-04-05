@@ -30,6 +30,9 @@ impl MillingCutter for FlatEndmill {
     fn length(&self) -> f64 {
         self.cutting_length
     }
+    fn geometry_hint(&self) -> crate::feeds::ToolGeometryHint {
+        crate::feeds::ToolGeometryHint::Flat
+    }
 
     fn height_at_radius(&self, r: f64) -> Option<f64> {
         if r <= self.radius() + 1e-10 {

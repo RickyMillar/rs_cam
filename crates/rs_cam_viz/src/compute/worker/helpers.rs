@@ -1,11 +1,12 @@
 use super::*;
+use crate::compute::OperationError;
 use serde_json::json;
 use std::path::PathBuf;
 
 use rs_cam_core::dexel_stock::TriDexelStock;
 
-pub fn build_cutter(tool: &ToolConfig) -> Box<dyn MillingCutter> {
-    match tool.tool_type {
+pub fn build_cutter(tool: &ToolConfig) -> ToolDefinition {
+    let cutter: Box<dyn MillingCutter> = match tool.tool_type {
         ToolType::EndMill => Box::new(FlatEndmill::new(tool.diameter, tool.cutting_length)),
         ToolType::BallNose => Box::new(BallEndmill::new(tool.diameter, tool.cutting_length)),
         ToolType::BullNose => Box::new(BullNoseEndmill::new(
@@ -24,22 +25,39 @@ pub fn build_cutter(tool: &ToolConfig) -> Box<dyn MillingCutter> {
             tool.shaft_diameter,
             tool.cutting_length,
         )),
-    }
+    };
+    ToolDefinition::new(
+        cutter,
+        tool.shank_diameter,
+        tool.shank_length,
+        tool.holder_diameter,
+        tool.stickout,
+        tool.flute_count,
+    )
 }
 
 pub(super) fn effective_safe_z(req: &ComputeRequest) -> f64 {
     req.heights.retract_z
 }
 
-pub(super) fn require_polygons(req: &ComputeRequest) -> Result<&[Polygon2], String> {
+pub(super) fn require_polygons(req: &ComputeRequest) -> Result<&[Polygon2], OperationError> {
     req.polygons
         .as_ref()
         .map(|p| p.as_slice())
-        .ok_or_else(|| "No 2D geometry (import SVG/DXF or select STEP faces)".to_string())
+        .ok_or_else(|| {
+            OperationError::MissingGeometry(
+                "No 2D geometry (import SVG/DXF or select STEP faces)".to_string(),
+            )
+        })
 }
 
-pub(super) fn require_mesh(req: &ComputeRequest) -> Result<(&TriangleMesh, SpatialIndex), String> {
-    let mesh = req.mesh.as_ref().ok_or("No mesh (import STL or STEP)")?;
+pub(super) fn require_mesh(
+    req: &ComputeRequest,
+) -> Result<(&TriangleMesh, SpatialIndex), OperationError> {
+    let mesh = req
+        .mesh
+        .as_ref()
+        .ok_or_else(|| OperationError::MissingGeometry("No mesh (import STL or STEP)".into()))?;
     let index = SpatialIndex::build_auto(mesh);
     Ok((mesh, index))
 }
@@ -314,7 +332,7 @@ pub(super) fn apply_dressups(
                     ramp_rate,
                     air_cut_threshold: 0.05,
                 };
-                tp = optimize_feed_rates(&tp, cutter.as_ref(), &mut stock, &params);
+                tp = optimize_feed_rates(&tp, &cutter, &mut stock, &params);
             }
             Err(reason) => {
                 tracing::warn!(
@@ -426,14 +444,7 @@ where
 {
     set_phase("Build collision index");
     let index = SpatialIndex::build_auto(&req.mesh);
-    let assembly = ToolAssembly {
-        cutter_radius: req.tool.diameter / 2.0,
-        cutter_length: req.tool.cutting_length,
-        shank_diameter: req.tool.shank_diameter,
-        shank_length: req.tool.shank_length,
-        holder_diameter: req.tool.holder_diameter,
-        holder_length: req.tool.stickout - req.tool.cutting_length - req.tool.shank_length,
-    };
+    let assembly = build_cutter(&req.tool).to_assembly();
     set_phase("Check collisions");
     let report = check_collisions_interpolated_with_cancel(
         &req.toolpath,

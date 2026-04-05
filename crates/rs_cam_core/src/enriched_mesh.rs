@@ -214,18 +214,24 @@ impl EnrichedMesh {
                     normal,
                     d: d * scale,
                 },
-                SurfaceParams::Cylinder { axis_origin, axis_dir, radius } => {
-                    SurfaceParams::Cylinder {
-                        axis_origin: P3::new(
-                            axis_origin.x * scale,
-                            axis_origin.y * scale,
-                            axis_origin.z * scale,
-                        ),
-                        axis_dir,
-                        radius: radius * scale,
-                    }
-                }
-                SurfaceParams::Cone { apex, axis, half_angle } => SurfaceParams::Cone {
+                SurfaceParams::Cylinder {
+                    axis_origin,
+                    axis_dir,
+                    radius,
+                } => SurfaceParams::Cylinder {
+                    axis_origin: P3::new(
+                        axis_origin.x * scale,
+                        axis_origin.y * scale,
+                        axis_origin.z * scale,
+                    ),
+                    axis_dir,
+                    radius: radius * scale,
+                },
+                SurfaceParams::Cone {
+                    apex,
+                    axis,
+                    half_angle,
+                } => SurfaceParams::Cone {
                     apex: P3::new(apex.x * scale, apex.y * scale, apex.z * scale),
                     axis,
                     half_angle,
@@ -234,14 +240,17 @@ impl EnrichedMesh {
                     center: P3::new(center.x * scale, center.y * scale, center.z * scale),
                     radius: radius * scale,
                 },
-                SurfaceParams::Torus { center, axis, major_radius, minor_radius } => {
-                    SurfaceParams::Torus {
-                        center: P3::new(center.x * scale, center.y * scale, center.z * scale),
-                        axis,
-                        major_radius: major_radius * scale,
-                        minor_radius: minor_radius * scale,
-                    }
-                }
+                SurfaceParams::Torus {
+                    center,
+                    axis,
+                    major_radius,
+                    minor_radius,
+                } => SurfaceParams::Torus {
+                    center: P3::new(center.x * scale, center.y * scale, center.z * scale),
+                    axis,
+                    major_radius: major_radius * scale,
+                    minor_radius: minor_radius * scale,
+                },
                 other => other,
             };
         }

@@ -40,8 +40,13 @@ pub fn draw(ui: &mut egui::Ui, post: &mut PostConfig) {
         });
 
     ui.add_space(8.0);
-    ui.checkbox(&mut post.high_feedrate_mode, "Safe Rapids (G0 → G1 at feed speed)")
-        .on_hover_text("Replace rapids (G0) with G1 at high feedrate for machines with unpredictable rapid motion");
+    ui.checkbox(
+        &mut post.high_feedrate_mode,
+        "Safe Rapids (G0 → G1 at feed speed)",
+    )
+    .on_hover_text(
+        "Replace rapids (G0) with G1 at high feedrate for machines with unpredictable rapid motion",
+    );
     if post.high_feedrate_mode {
         egui::Grid::new("high_feed_p")
             .num_columns(2)

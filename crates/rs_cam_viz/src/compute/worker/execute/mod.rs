@@ -117,7 +117,7 @@ where
             set_phase(&format!("Simulate {tp_name}"));
             let start_move = total_moves;
             let cutter = build_cutter(tool_config);
-            let lut = RadialProfileLUT::from_cutter(cutter.as_ref(), 256);
+            let lut = RadialProfileLUT::from_cutter(&cutter, 256);
             let radius = cutter.radius();
             if req.metric_options.enabled {
                 let mut samples = stock
@@ -1279,7 +1279,10 @@ fn annotate_project_curve_semantics(
 /// Uses a spatial index on the model mesh for O(1) amortized triangle lookup per vertex.
 /// Vertices with no model triangle beneath them get deviation 0.0 (outside model footprint).
 #[allow(clippy::indexing_slicing)] // stride-3 vertex access bounded by len check
-fn compute_deviations(stock_vertices: &[f32], model_mesh: &rs_cam_core::mesh::TriangleMesh) -> Vec<f32> {
+fn compute_deviations(
+    stock_vertices: &[f32],
+    model_mesh: &rs_cam_core::mesh::TriangleMesh,
+) -> Vec<f32> {
     use rs_cam_core::mesh::SpatialIndex;
 
     let num_verts = stock_vertices.len() / 3;
@@ -1295,8 +1298,7 @@ fn compute_deviations(stock_vertices: &[f32], model_mesh: &rs_cam_core::mesh::Tr
         let x = stock_vertices[i * 3] as f64;
         let y = stock_vertices[i * 3 + 1] as f64;
         let sim_z = stock_vertices[i * 3 + 2] as f64;
-        let Some((model_min_z, model_max_z)) = query_model_z_range(&index, model_mesh, x, y)
-        else {
+        let Some((model_min_z, model_max_z)) = query_model_z_range(&index, model_mesh, x, y) else {
             return 0.0; // outside model footprint
         };
 
@@ -1690,7 +1692,7 @@ mod tests {
         let result = run_scallop_annotated(&req, &cfg, None, None);
         assert!(result.is_err());
         assert!(
-            result.unwrap_err().contains("Ball Nose"),
+            result.unwrap_err().to_string().contains("Ball Nose"),
             "Error should mention Ball Nose requirement"
         );
     }

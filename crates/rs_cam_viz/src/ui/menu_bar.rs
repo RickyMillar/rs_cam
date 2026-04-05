@@ -126,7 +126,10 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                     events.push(AppEvent::Redo);
                 }
                 ui.separator();
-                ui.add_enabled(false, egui::Button::new("Delete Selected").shortcut_text("Del"));
+                ui.add_enabled(
+                    false,
+                    egui::Button::new("Delete Selected").shortcut_text("Del"),
+                );
             });
 
             ui.menu_button("Toolpath", |ui| {

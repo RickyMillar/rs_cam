@@ -24,7 +24,7 @@ use rs_cam_core::adaptive3d::{Adaptive3dParams, EntryStyle3d};
 use rs_cam_core::arcfit::fit_arcs;
 use rs_cam_core::chamfer::{ChamferParams, chamfer_toolpath};
 use rs_cam_core::collision::{
-    CollisionReport, RapidCollision, ToolAssembly, check_collisions_interpolated_with_cancel,
+    CollisionReport, RapidCollision, check_collisions_interpolated_with_cancel,
 };
 use rs_cam_core::depth::{DepthDistribution, DepthStepping, depth_stepped_toolpath};
 use rs_cam_core::dexel_mesh::dexel_stock_to_mesh;
@@ -46,17 +46,18 @@ use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::profile::{ProfileParams, profile_toolpath};
 use rs_cam_core::project_curve::{ProjectCurveParams, project_curve_toolpath};
 use rs_cam_core::radial_finish::{RadialFinishParams, radial_finish_toolpath};
-use rs_cam_core::ramp_finish::{CutDirection as CoreCutDir, RampFinishParams};
+use rs_cam_core::ramp_finish::RampFinishParams;
 use rs_cam_core::rest::{RestParams, rest_machining_toolpath};
-use rs_cam_core::scallop::{ScallopDirection as CoreScalDir, ScallopParams};
-use rs_cam_core::spiral_finish::{SpiralDirection as CoreSpiralDir, SpiralFinishParams};
+use rs_cam_core::scallop::ScallopParams;
+use rs_cam_core::spiral_finish::SpiralFinishParams;
 use rs_cam_core::steep_shallow::{SteepShallowParams, steep_shallow_toolpath};
 use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::tool::{
-    BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill,
+    BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, ToolDefinition,
+    VBitEndmill,
 };
 use rs_cam_core::toolpath::{MoveType, Toolpath, raster_toolpath_from_grid};
-use rs_cam_core::trace::{TraceCompensation as CoreTraceComp, TraceParams, trace_toolpath};
+use rs_cam_core::trace::{TraceParams, trace_toolpath};
 use rs_cam_core::vcarve::{VCarveParams, vcarve_toolpath};
 use rs_cam_core::waterline::{WaterlineParams, waterline_toolpath_with_cancel};
 use rs_cam_core::zigzag::{ZigzagParams, zigzag_toolpath};

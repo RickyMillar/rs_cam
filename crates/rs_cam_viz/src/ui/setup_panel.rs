@@ -17,26 +17,26 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         (stock.x, stock.y, stock.z)
     };
     theme::card_frame(false).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("Stock")
-                        .strong()
-                        .color(theme::TEXT_HEADING),
-                );
-                ui.label(
-                    egui::RichText::new(format!("{:.0} x {:.0} x {:.0} mm", eff_w, eff_d, eff_h))
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                );
-            });
-            let selected = state.selection == Selection::Stock;
-            if ui
-                .selectable_label(selected, "Edit stock dimensions")
-                .clicked()
-            {
-                events.push(AppEvent::Select(Selection::Stock));
-            }
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("Stock")
+                    .strong()
+                    .color(theme::TEXT_HEADING),
+            );
+            ui.label(
+                egui::RichText::new(format!("{:.0} x {:.0} x {:.0} mm", eff_w, eff_d, eff_h))
+                    .small()
+                    .color(theme::TEXT_MUTED),
+            );
         });
+        let selected = state.selection == Selection::Stock;
+        if ui
+            .selectable_label(selected, "Edit stock dimensions")
+            .clicked()
+        {
+            events.push(AppEvent::Select(Selection::Stock));
+        }
+    });
 
     ui.add_space(6.0);
 

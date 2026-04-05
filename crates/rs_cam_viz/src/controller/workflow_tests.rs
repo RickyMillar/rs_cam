@@ -16,7 +16,9 @@ use crate::state::job::{
     LoadedModel, ModelId, ModelKind, ModelUnits, ToolConfig, ToolId, ToolType,
 };
 use crate::state::selection::Selection;
-use crate::state::toolpath::{HeightMode, HeightsConfig, OperationType, ToolpathEntry, ToolpathId};
+use crate::state::toolpath::{
+    HeightContext, HeightMode, HeightsConfig, OperationType, ToolpathEntry, ToolpathId,
+};
 use crate::ui::AppEvent;
 
 // ── Test backend (mirrors tests.rs) ─────────────────────────────────────
@@ -277,7 +279,7 @@ fn w3_face_z_propagates_to_height_resolution() {
     // Resolve heights with auto defaults
     let heights_config = HeightsConfig::default();
     let op_depth = 3.0;
-    let mut heights = heights_config.resolve(10.0, op_depth);
+    let mut heights = heights_config.resolve(&HeightContext::simple(10.0, op_depth));
 
     // Without face Z, top_z defaults to 0.0
     assert!(
@@ -515,7 +517,7 @@ fn w5_project_round_trip_preserves_step_face_selection() {
 #[test]
 fn w6_auto_height_defaults() {
     let config = HeightsConfig::default();
-    let h = config.resolve(10.0, 5.0);
+    let h = config.resolve(&HeightContext::simple(10.0, 5.0));
 
     assert!(
         (h.clearance_z - 20.0).abs() < 1e-9,
@@ -554,13 +556,13 @@ fn w6_auto_height_defaults() {
 fn w6_face_top_z_overrides_auto() {
     let config = HeightsConfig::default();
     let op_depth = 5.0;
-    let mut h = config.resolve(10.0, op_depth);
+    let mut h = config.resolve(&HeightContext::simple(10.0, op_depth));
 
     let face_z = 15.0;
     if config.top_z.is_auto() {
         h.top_z = face_z;
         if config.bottom_z.is_auto() {
-            h.bottom_z = face_z - op_depth.abs();
+            h.bottom_z = face_z - op_depth;
         }
     }
 
@@ -574,7 +576,7 @@ fn w6_manual_heights_override_face_z() {
     config.top_z = HeightMode::Manual(3.0);
 
     let op_depth = 5.0;
-    let mut h = config.resolve(10.0, op_depth);
+    let mut h = config.resolve(&HeightContext::simple(10.0, op_depth));
 
     let face_z = 15.0;
     // Same logic as events.rs — only override when auto
@@ -592,7 +594,7 @@ fn w6_manual_heights_override_face_z() {
 #[test]
 fn w6_height_ordering_with_various_depths() {
     for &(safe_z, op_depth) in &[(5.0, 2.0), (20.0, 10.0), (0.5, 0.1), (100.0, 50.0)] {
-        let h = HeightsConfig::default().resolve(safe_z, op_depth);
+        let h = HeightsConfig::default().resolve(&HeightContext::simple(safe_z, op_depth));
         assert!(
             h.clearance_z > h.retract_z && h.retract_z > h.feed_z && h.top_z > h.bottom_z,
             "Height ordering violated for safe_z={safe_z}, op_depth={op_depth}: \

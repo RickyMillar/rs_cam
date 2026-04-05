@@ -1,18 +1,21 @@
 use crate::state::job::ToolId;
 use serde::{Deserialize, Serialize};
 
+use super::catalog::{DepthSemantics, OperationParams};
+
+// Re-export operation parameter enums from core (single source of truth).
+pub use rs_cam_core::face::FaceDirection;
+pub use rs_cam_core::profile::ProfileSide;
+pub use rs_cam_core::ramp_finish::CutDirection;
+pub use rs_cam_core::scallop::ScallopDirection;
+pub use rs_cam_core::spiral_finish::SpiralDirection;
+pub use rs_cam_core::trace::TraceCompensation;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PocketPattern {
     Contour,
     Zigzag,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ProfileSide {
-    Outside,
-    Inside,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,36 +42,6 @@ pub enum ClearingStrategy {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ScallopDirection {
-    OutsideIn,
-    InsideOut,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CutDirection {
-    Climb,
-    Conventional,
-    BothWays,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FaceDirection {
-    OneWay,
-    Zigzag,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TraceCompensation {
-    None,
-    Left,
-    Right,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum DrillCycleType {
     Simple,
     Dwell,
@@ -82,13 +55,6 @@ pub enum DrillCycleType {
 pub enum CompensationType {
     InComputer,
     InControl,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SpiralDirection {
-    InsideOut,
-    OutsideIn,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -686,5 +652,541 @@ impl Default for ProjectCurveConfig {
             feed_rate: 800.0,
             plunge_rate: 400.0,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// OperationParams trait implementations
+// ---------------------------------------------------------------------------
+
+impl OperationParams for FaceConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn stepover(&self) -> Option<f64> {
+        Some(self.stepover)
+    }
+    fn set_stepover(&mut self, value: f64) {
+        self.stepover = value;
+    }
+    fn depth_per_pass(&self) -> Option<f64> {
+        Some(self.depth_per_pass)
+    }
+    fn set_depth_per_pass(&mut self, value: f64) {
+        self.depth_per_pass = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::Explicit(self.depth)
+    }
+}
+
+impl OperationParams for PocketConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn stepover(&self) -> Option<f64> {
+        Some(self.stepover)
+    }
+    fn set_stepover(&mut self, value: f64) {
+        self.stepover = value;
+    }
+    fn depth_per_pass(&self) -> Option<f64> {
+        Some(self.depth_per_pass)
+    }
+    fn set_depth_per_pass(&mut self, value: f64) {
+        self.depth_per_pass = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::Explicit(self.depth)
+    }
+}
+
+impl OperationParams for ProfileConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn depth_per_pass(&self) -> Option<f64> {
+        Some(self.depth_per_pass)
+    }
+    fn set_depth_per_pass(&mut self, value: f64) {
+        self.depth_per_pass = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::Explicit(self.depth)
+    }
+}
+
+impl OperationParams for AdaptiveConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn stepover(&self) -> Option<f64> {
+        Some(self.stepover)
+    }
+    fn set_stepover(&mut self, value: f64) {
+        self.stepover = value;
+    }
+    fn depth_per_pass(&self) -> Option<f64> {
+        Some(self.depth_per_pass)
+    }
+    fn set_depth_per_pass(&mut self, value: f64) {
+        self.depth_per_pass = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::Explicit(self.depth)
+    }
+}
+
+impl OperationParams for VCarveConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn stepover(&self) -> Option<f64> {
+        Some(self.stepover)
+    }
+    fn set_stepover(&mut self, value: f64) {
+        self.stepover = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::Explicit(self.max_depth)
+    }
+}
+
+impl OperationParams for RestConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn stepover(&self) -> Option<f64> {
+        Some(self.stepover)
+    }
+    fn set_stepover(&mut self, value: f64) {
+        self.stepover = value;
+    }
+    fn depth_per_pass(&self) -> Option<f64> {
+        Some(self.depth_per_pass)
+    }
+    fn set_depth_per_pass(&mut self, value: f64) {
+        self.depth_per_pass = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::Explicit(self.depth)
+    }
+}
+
+impl OperationParams for InlayConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn stepover(&self) -> Option<f64> {
+        Some(self.stepover)
+    }
+    fn set_stepover(&mut self, value: f64) {
+        self.stepover = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::Explicit(self.pocket_depth)
+    }
+}
+
+impl OperationParams for ZigzagConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn stepover(&self) -> Option<f64> {
+        Some(self.stepover)
+    }
+    fn set_stepover(&mut self, value: f64) {
+        self.stepover = value;
+    }
+    fn depth_per_pass(&self) -> Option<f64> {
+        Some(self.depth_per_pass)
+    }
+    fn set_depth_per_pass(&mut self, value: f64) {
+        self.depth_per_pass = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::Explicit(self.depth)
+    }
+}
+
+impl OperationParams for TraceConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn depth_per_pass(&self) -> Option<f64> {
+        Some(self.depth_per_pass)
+    }
+    fn set_depth_per_pass(&mut self, value: f64) {
+        self.depth_per_pass = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::Explicit(self.depth)
+    }
+}
+
+impl OperationParams for DrillConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    /// Drill ops are purely vertical — feed_rate IS the plunge rate.
+    fn plunge_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_plunge_rate(&mut self, _value: f64) {}
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::Explicit(self.depth)
+    }
+}
+
+impl OperationParams for AlignmentPinDrillConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    /// Drill ops are purely vertical — feed_rate IS the plunge rate.
+    fn plunge_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_plunge_rate(&mut self, _value: f64) {}
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::Explicit(self.spoilboard_penetration)
+    }
+}
+
+impl OperationParams for ChamferConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::Explicit(self.chamfer_width)
+    }
+}
+
+impl OperationParams for DropCutterConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn stepover(&self) -> Option<f64> {
+        Some(self.stepover)
+    }
+    fn set_stepover(&mut self, value: f64) {
+        self.stepover = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::DerivedStockTop(self.min_z.abs())
+    }
+}
+
+impl OperationParams for Adaptive3dConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn stepover(&self) -> Option<f64> {
+        Some(self.stepover)
+    }
+    fn set_stepover(&mut self, value: f64) {
+        self.stepover = value;
+    }
+    fn depth_per_pass(&self) -> Option<f64> {
+        Some(self.depth_per_pass)
+    }
+    fn set_depth_per_pass(&mut self, value: f64) {
+        self.depth_per_pass = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::DerivedStockTop(self.stock_top_z.abs())
+    }
+}
+
+impl OperationParams for WaterlineConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::None
+    }
+}
+
+impl OperationParams for PencilConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::None
+    }
+}
+
+impl OperationParams for ScallopConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::None
+    }
+}
+
+impl OperationParams for SteepShallowConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn stepover(&self) -> Option<f64> {
+        Some(self.stepover)
+    }
+    fn set_stepover(&mut self, value: f64) {
+        self.stepover = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::None
+    }
+}
+
+impl OperationParams for RampFinishConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::None
+    }
+}
+
+impl OperationParams for SpiralFinishConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn stepover(&self) -> Option<f64> {
+        Some(self.stepover)
+    }
+    fn set_stepover(&mut self, value: f64) {
+        self.stepover = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::None
+    }
+}
+
+impl OperationParams for RadialFinishConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::None
+    }
+}
+
+impl OperationParams for HorizontalFinishConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn stepover(&self) -> Option<f64> {
+        Some(self.stepover)
+    }
+    fn set_stepover(&mut self, value: f64) {
+        self.stepover = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::None
+    }
+}
+
+impl OperationParams for ProjectCurveConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::Explicit(self.depth)
     }
 }
