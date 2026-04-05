@@ -533,12 +533,13 @@ impl RsCamApp {
         if self.controller.state().simulation.has_results() {
             if let Some(mesh) = &self.controller.state().simulation.playback.display_mesh {
                 let colors = self.compute_sim_colors(mesh);
-                resources.sim_mesh_data = SimMeshGpuData::from_heightmap_mesh_colored(
+                let new_data = SimMeshGpuData::from_heightmap_mesh_colored(
                     &render_state.device,
                     &resources.gpu_limits,
                     mesh,
                     &colors,
                 );
+                resources.sim_mesh_data = new_data;
             }
         } else {
             resources.sim_mesh_data = None;
