@@ -314,21 +314,21 @@ pub(super) fn run_zigzag(
 fn run_trace(req: &ComputeRequest, cfg: &TraceConfig) -> Result<Toolpath, OperationError> {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
-    let depth = make_depth(cfg.depth, cfg.depth_per_pass, req.heights.top_z);
     let mut out = Toolpath::new();
     for p in polys {
-        let tp = depth_stepped_toolpath(&depth, effective_safe_z(req), |z| {
-            let params = TraceParams {
-                tool_radius: tr,
-                depth: z.abs(),
-                depth_per_pass: cfg.depth_per_pass,
-                feed_rate: cfg.feed_rate,
-                plunge_rate: cfg.plunge_rate,
-                safe_z: effective_safe_z(req),
-                compensation: cfg.compensation,
-            };
-            trace_toolpath(p, &params)
-        });
+        // trace_toolpath handles its own depth stepping internally,
+        // so we pass the absolute top_z and depth directly.
+        let params = TraceParams {
+            tool_radius: tr,
+            depth: cfg.depth,
+            depth_per_pass: cfg.depth_per_pass,
+            feed_rate: cfg.feed_rate,
+            plunge_rate: cfg.plunge_rate,
+            safe_z: effective_safe_z(req),
+            compensation: cfg.compensation,
+            top_z: req.heights.top_z,
+        };
+        let tp = trace_toolpath(p, &params);
         out.moves.extend(tp.moves);
     }
     Ok(out)
