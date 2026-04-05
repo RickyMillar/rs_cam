@@ -702,11 +702,14 @@ fn stamp_point_on_grid(
             let du = cell_u - cu;
             let dist_sq = du * du + dv_sq;
             if let Some(h) = lut.height_at_dist_sq(dist_sq) {
-                let surface = (tip_depth + h) as f32;
                 let ray = &mut grid.rays[row * grid.cols + col];
                 if from_high {
+                    // Tool enters from +Z: cutter surface is above the tip.
+                    let surface = (tip_depth + h) as f32;
                     ray_subtract_above(ray, surface);
                 } else {
+                    // Tool enters from -Z: cutter surface is below the tip.
+                    let surface = (tip_depth - h) as f32;
                     ray_subtract_below(ray, surface);
                 }
             }
@@ -773,11 +776,12 @@ fn stamp_segment_on_grid(
 
             if let Some(h) = lut.height_at_dist_sq(dist_sq) {
                 let depth = sd + t * seg_dd;
-                let surface = (depth + h) as f32;
                 let ray = &mut grid.rays[row * grid.cols + col];
                 if from_high {
+                    let surface = (depth + h) as f32;
                     ray_subtract_above(ray, surface);
                 } else {
+                    let surface = (depth - h) as f32;
                     ray_subtract_below(ray, surface);
                 }
             }
@@ -872,7 +876,11 @@ fn stamp_segment_with_metrics(
                     && let Some(mid_h) = lut.height_at_dist_sq(mid_dist_sq)
                 {
                     total_area += cell_area;
-                    let tool_surface = mid_d + mid_h;
+                    let tool_surface = if from_high {
+                        mid_d + mid_h
+                    } else {
+                        mid_d - mid_h
+                    };
                     let penetration = if from_high {
                         ray_top(ray)
                             .map(|top| (top as f64 - tool_surface).max(0.0))
@@ -890,10 +898,11 @@ fn stamp_segment_with_metrics(
 
                 // 3. Apply the stamp.
                 let depth = sd + t * seg_dd;
-                let surface = (depth + h) as f32;
                 if from_high {
+                    let surface = (depth + h) as f32;
                     ray_subtract_above(ray, surface);
                 } else {
+                    let surface = (depth - h) as f32;
                     ray_subtract_below(ray, surface);
                 }
 
