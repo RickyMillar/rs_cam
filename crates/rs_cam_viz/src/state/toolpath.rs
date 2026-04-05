@@ -9,13 +9,13 @@ pub use catalog::{
     feed_optimization_unavailable_reason,
 };
 pub use configs::{
-    Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig, ClearingStrategy,
-    CompensationType, CutDirection, DrillConfig, DrillCycleType, DropCutterConfig, EntryStyle,
-    FaceConfig, FaceDirection, HorizontalFinishConfig, InlayConfig, PencilConfig, PocketConfig,
-    PocketPattern, ProfileConfig, ProfileSide, ProjectCurveConfig, RadialFinishConfig,
-    RampFinishConfig, RegionOrdering, RestConfig, ScallopConfig, ScallopDirection, SpiralDirection,
-    SpiralFinishConfig, SteepShallowConfig, TraceCompensation, TraceConfig, VCarveConfig,
-    WaterlineConfig, ZigzagConfig,
+    Adaptive3dConfig, Adaptive3dEntryStyle, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig,
+    ClearingStrategy, CompensationType, CutDirection, DrillConfig, DrillCycleType,
+    DropCutterConfig, FaceConfig, FaceDirection, HorizontalFinishConfig, InlayConfig, PencilConfig,
+    PocketConfig, PocketPattern, ProfileConfig, ProfileSide, ProjectCurveConfig,
+    RadialFinishConfig, RampFinishConfig, RegionOrdering, RestConfig, ScallopConfig,
+    ScallopDirection, SpiralDirection, SpiralFinishConfig, SteepShallowConfig, TraceCompensation,
+    TraceConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
 };
 pub use entry::{ToolpathEntry, ToolpathEntryInit, ToolpathResult};
 pub use support::{

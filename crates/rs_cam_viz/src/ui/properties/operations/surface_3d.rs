@@ -87,14 +87,18 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
             ui.label("Entry Style:");
             egui::ComboBox::from_id_salt("a3d_entry")
                 .selected_text(match cfg.entry_style {
-                    EntryStyle::Plunge => "Plunge",
-                    EntryStyle::Helix => "Helix",
-                    EntryStyle::Ramp => "Ramp",
+                    Adaptive3dEntryStyle::Plunge => "Plunge",
+                    Adaptive3dEntryStyle::Helix => "Helix",
+                    Adaptive3dEntryStyle::Ramp => "Ramp",
                 })
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut cfg.entry_style, EntryStyle::Plunge, "Plunge");
-                    ui.selectable_value(&mut cfg.entry_style, EntryStyle::Helix, "Helix");
-                    ui.selectable_value(&mut cfg.entry_style, EntryStyle::Ramp, "Ramp");
+                    ui.selectable_value(
+                        &mut cfg.entry_style,
+                        Adaptive3dEntryStyle::Plunge,
+                        "Plunge",
+                    );
+                    ui.selectable_value(&mut cfg.entry_style, Adaptive3dEntryStyle::Helix, "Helix");
+                    ui.selectable_value(&mut cfg.entry_style, Adaptive3dEntryStyle::Ramp, "Ramp");
                 });
             ui.end_row();
             dv(
@@ -222,10 +226,7 @@ pub(in crate::ui::properties) fn draw_pencil_params(ui: &mut egui::Ui, cfg: &mut
         });
 }
 
-pub(in crate::ui::properties) fn draw_scallop_params(
-    ui: &mut egui::Ui,
-    cfg: &mut ScallopConfig,
-) {
+pub(in crate::ui::properties) fn draw_scallop_params(ui: &mut egui::Ui, cfg: &mut ScallopConfig) {
     egui::Grid::new("sc_p")
         .num_columns(2)
         .spacing([8.0, 4.0])

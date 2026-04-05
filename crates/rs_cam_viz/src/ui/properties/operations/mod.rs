@@ -87,11 +87,7 @@ fn draw_height_row(
             .selected_text(ref_label(ref_offset.reference, ref_offset.offset))
             .show_ui(ui, |ui| {
                 for &href in HeightReference::ALL {
-                    ui.selectable_value(
-                        &mut ref_offset.reference,
-                        href,
-                        href.label(),
-                    );
+                    ui.selectable_value(&mut ref_offset.reference, href, href.label());
                 }
             });
 
@@ -141,24 +137,49 @@ pub(super) fn draw_heights_params(
         .spacing([4.0, 4.0])
         .show(ui, |ui| {
             draw_height_row(
-                ui, "Clearance:", &mut heights.clearance_z,
-                HeightReference::StockTop, safe_offset + 10.0, ctx, "h_clear",
+                ui,
+                "Clearance:",
+                &mut heights.clearance_z,
+                HeightReference::StockTop,
+                safe_offset + 10.0,
+                ctx,
+                "h_clear",
             );
             draw_height_row(
-                ui, "Retract:", &mut heights.retract_z,
-                HeightReference::StockTop, safe_offset, ctx, "h_retract",
+                ui,
+                "Retract:",
+                &mut heights.retract_z,
+                HeightReference::StockTop,
+                safe_offset,
+                ctx,
+                "h_retract",
             );
             draw_height_row(
-                ui, "Feed:", &mut heights.feed_z,
-                HeightReference::StockTop, safe_offset - 2.0, ctx, "h_feed",
+                ui,
+                "Feed:",
+                &mut heights.feed_z,
+                HeightReference::StockTop,
+                safe_offset - 2.0,
+                ctx,
+                "h_feed",
             );
             draw_height_row(
-                ui, "Top:", &mut heights.top_z,
-                HeightReference::StockTop, 0.0, ctx, "h_top",
+                ui,
+                "Top:",
+                &mut heights.top_z,
+                HeightReference::StockTop,
+                0.0,
+                ctx,
+                "h_top",
             );
             draw_height_row(
-                ui, "Bottom:", &mut heights.bottom_z,
-                HeightReference::StockTop, -ctx.op_depth.abs(), ctx, "h_bottom",
+                ui,
+                "Bottom:",
+                &mut heights.bottom_z,
+                HeightReference::StockTop,
+                -ctx.op_depth.abs(),
+                ctx,
+                "h_bottom",
             );
         });
 }
@@ -252,7 +273,9 @@ pub(super) fn draw_stepover_diagram(ui: &mut egui::Ui, pattern: &StepoverPattern
 
             // Determine how many lines fit
             let perp_span = wp.width() * sin_a.abs() + wp.height() * cos_a.abs();
-            let step_px = (*stepover as f32 / perp_span.max(1.0) * perp_span).max(6.0).min(perp_span / 2.0);
+            let step_px = (*stepover as f32 / perp_span.max(1.0) * perp_span)
+                .max(6.0)
+                .min(perp_span / 2.0);
             let num_lines = (perp_span / step_px).ceil() as usize;
             let num_lines = num_lines.min(20);
 
@@ -279,8 +302,14 @@ pub(super) fn draw_stepover_diagram(ui: &mut egui::Ui, pattern: &StepoverPattern
                 let y1 = ly + half_diag * sin_a;
 
                 // Clip to workpiece (simple rect clip)
-                let p0 = egui::pos2(x0.clamp(wp.left(), wp.right()), y0.clamp(wp.top(), wp.bottom()));
-                let p1 = egui::pos2(x1.clamp(wp.left(), wp.right()), y1.clamp(wp.top(), wp.bottom()));
+                let p0 = egui::pos2(
+                    x0.clamp(wp.left(), wp.right()),
+                    y0.clamp(wp.top(), wp.bottom()),
+                );
+                let p1 = egui::pos2(
+                    x1.clamp(wp.left(), wp.right()),
+                    y1.clamp(wp.top(), wp.bottom()),
+                );
 
                 if (p0.x - p1.x).abs() > 1.0 || (p0.y - p1.y).abs() > 1.0 {
                     painter.line_segment([p0, p1], path_stroke);
@@ -456,17 +485,17 @@ pub(super) fn draw_dogbone_diagram(ui: &mut egui::Ui, max_angle: f64) {
     let overcut_pt = egui::pos2(cx + dx * tool_r, cy + dy * tool_r);
 
     // Overcut line and point
-    painter.line_segment(
-        [corner, overcut_pt],
-        egui::Stroke::new(1.5, overcut_color),
-    );
+    painter.line_segment([corner, overcut_pt], egui::Stroke::new(1.5, overcut_color));
     painter.circle_filled(overcut_pt, 3.0, overcut_color);
 
     // Ghost tool at overcut position
     painter.circle_stroke(
         overcut_pt,
         tool_r,
-        egui::Stroke::new(0.8, egui::Color32::from_rgba_premultiplied(220, 160, 50, 80)),
+        egui::Stroke::new(
+            0.8,
+            egui::Color32::from_rgba_premultiplied(220, 160, 50, 80),
+        ),
     );
 
     // Corner angle arc
@@ -477,7 +506,10 @@ pub(super) fn draw_dogbone_diagram(ui: &mut egui::Ui, max_angle: f64) {
     for i in 0..=10 {
         let t = i as f32 / 10.0;
         let a_angle = arc_start + (arc_end - arc_start) * t;
-        arc_pts.push(egui::pos2(cx + arc_r * a_angle.cos(), cy + arc_r * a_angle.sin()));
+        arc_pts.push(egui::pos2(
+            cx + arc_r * a_angle.cos(),
+            cy + arc_r * a_angle.sin(),
+        ));
     }
     painter.add(egui::Shape::line(
         arc_pts,
@@ -592,7 +624,12 @@ pub(super) fn draw_lead_in_out_diagram(ui: &mut egui::Ui, radius: f64) {
 // ── Tab Placement Diagram ───────────────────────────────────────────────
 
 /// Draw a simplified top-down perimeter with tab markers at even spacing.
-pub(super) fn draw_tab_diagram(ui: &mut egui::Ui, tab_count: usize, tab_width: f64, tab_height: f64) {
+pub(super) fn draw_tab_diagram(
+    ui: &mut egui::Ui,
+    tab_count: usize,
+    tab_width: f64,
+    tab_height: f64,
+) {
     if tab_count == 0 {
         return;
     }
@@ -694,10 +731,10 @@ pub(super) fn draw_outline_diagram(ui: &mut egui::Ui, label: &str, offset_side: 
     // Direction arrows (clockwise around the perimeter)
     let arrow_r = 3.0;
     let positions = [
-        (wp.center_top() + egui::vec2(15.0, 0.0), true),   // top, going right
-        (wp.right_center() + egui::vec2(0.0, 10.0), true),  // right, going down
+        (wp.center_top() + egui::vec2(15.0, 0.0), true), // top, going right
+        (wp.right_center() + egui::vec2(0.0, 10.0), true), // right, going down
         (wp.center_bottom() + egui::vec2(-15.0, 0.0), true), // bottom, going left
-        (wp.left_center() + egui::vec2(0.0, -10.0), true),  // left, going up
+        (wp.left_center() + egui::vec2(0.0, -10.0), true), // left, going up
     ];
     for (pos, _) in &positions {
         painter.circle_filled(*pos, arrow_r, path_color);
@@ -707,7 +744,11 @@ pub(super) fn draw_outline_diagram(ui: &mut egui::Ui, label: &str, offset_side: 
     if let Some(side) = offset_side {
         let offset_dist = 6.0;
         let offset_color = egui::Color32::from_rgba_premultiplied(50, 200, 180, 100);
-        let inset = if side == "Inside" { offset_dist } else { -offset_dist };
+        let inset = if side == "Inside" {
+            offset_dist
+        } else {
+            -offset_dist
+        };
         let offset_rect = egui::Rect::from_min_max(
             egui::pos2(wp.left() + inset, wp.top() + inset),
             egui::pos2(wp.right() - inset, wp.bottom() - inset),
@@ -766,7 +807,11 @@ pub(super) fn draw_spiral_diagram(ui: &mut egui::Ui, stepover: f64, outward: boo
     painter.circle_filled(egui::pos2(cx, cy), 2.5, path_color);
 
     // Labels
-    let dir_label = if outward { "Inside \u{2192} Out" } else { "Outside \u{2192} In" };
+    let dir_label = if outward {
+        "Inside \u{2192} Out"
+    } else {
+        "Outside \u{2192} In"
+    };
     painter.text(
         egui::pos2(rect.left() + 6.0, rect.top() + 4.0),
         egui::Align2::LEFT_TOP,
@@ -847,8 +892,13 @@ pub(super) fn draw_point_set_diagram(ui: &mut egui::Ui, label: &str) {
 
     // Scattered drill points (representative pattern)
     let positions = [
-        (0.25, 0.35), (0.45, 0.55), (0.7, 0.3), (0.55, 0.7),
-        (0.3, 0.65), (0.75, 0.6), (0.5, 0.4),
+        (0.25, 0.35),
+        (0.45, 0.55),
+        (0.7, 0.3),
+        (0.55, 0.7),
+        (0.3, 0.65),
+        (0.75, 0.6),
+        (0.5, 0.4),
     ];
     for &(fx, fy) in &positions {
         let x = rect.left() + 20.0 + fx as f32 * (rect.width() - 40.0);
@@ -965,7 +1015,11 @@ pub(super) fn draw_steep_shallow_diagram(ui: &mut egui::Ui, threshold: f64) {
 
     // Steep zone (left): contour rings
     let steep_rect = egui::Rect::from_min_max(wp.min, egui::pos2(div_x, wp.max.y));
-    painter.rect_filled(steep_rect, 0.0, egui::Color32::from_rgba_premultiplied(80, 160, 220, 20));
+    painter.rect_filled(
+        steep_rect,
+        0.0,
+        egui::Color32::from_rgba_premultiplied(80, 160, 220, 20),
+    );
     for i in 1..=3 {
         let inset = i as f32 * 6.0;
         if steep_rect.width() > inset * 2.0 + 4.0 && steep_rect.height() > inset * 2.0 + 4.0 {
@@ -991,7 +1045,10 @@ pub(super) fn draw_steep_shallow_diagram(ui: &mut egui::Ui, threshold: f64) {
     let mut y = shallow_rect.top() + line_step;
     while y < shallow_rect.bottom() - 2.0 {
         painter.line_segment(
-            [egui::pos2(shallow_rect.left() + 2.0, y), egui::pos2(shallow_rect.right() - 2.0, y)],
+            [
+                egui::pos2(shallow_rect.left() + 2.0, y),
+                egui::pos2(shallow_rect.right() - 2.0, y),
+            ],
             egui::Stroke::new(0.8, shallow_color),
         );
         y += line_step;
@@ -1032,7 +1089,12 @@ pub(super) fn draw_steep_shallow_diagram(ui: &mut egui::Ui, threshold: f64) {
 /// Draw a cross-section showing male/female inlay pocket mating.
 /// Draw an assembly cross-section: female pocket in material with male plug
 /// hovering above, about to drop in (flipped). Shows how the V-angles match.
-pub(super) fn draw_inlay_diagram(ui: &mut egui::Ui, pocket_depth: f64, glue_gap: f64, flat_depth: f64) {
+pub(super) fn draw_inlay_diagram(
+    ui: &mut egui::Ui,
+    pocket_depth: f64,
+    glue_gap: f64,
+    flat_depth: f64,
+) {
     let desired_size = egui::vec2(ui.available_width().min(260.0), 120.0);
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
@@ -1066,7 +1128,10 @@ pub(super) fn draw_inlay_diagram(ui: &mut egui::Ui, pocket_depth: f64, glue_gap:
     );
     // Surface line
     painter.line_segment(
-        [egui::pos2(rect.left() + 8.0, surface_y), egui::pos2(rect.right() - 8.0, surface_y)],
+        [
+            egui::pos2(rect.left() + 8.0, surface_y),
+            egui::pos2(rect.right() - 8.0, surface_y),
+        ],
         egui::Stroke::new(1.0, egui::Color32::from_rgb(70, 70, 85)),
     );
 
@@ -1082,7 +1147,10 @@ pub(super) fn draw_inlay_diagram(ui: &mut egui::Ui, pocket_depth: f64, glue_gap:
         egui::Color32::from_rgb(20, 20, 26),
         egui::Stroke::NONE,
     ));
-    painter.add(egui::Shape::line(pocket_pts, egui::Stroke::new(1.5, female_color)));
+    painter.add(egui::Shape::line(
+        pocket_pts,
+        egui::Stroke::new(1.5, female_color),
+    ));
 
     // Male plug (flipped V, hovering above the pocket, about to drop in)
     // The plug is the same V shape but inverted, with a flat bottom cut off
@@ -1103,7 +1171,13 @@ pub(super) fn draw_inlay_diagram(ui: &mut egui::Ui, pocket_depth: f64, glue_gap:
         egui::Stroke::NONE,
     ));
     painter.add(egui::Shape::line(
-        vec![plug_pts[0], plug_pts[1], plug_pts[2], plug_pts[3], plug_pts[0]],
+        vec![
+            plug_pts[0],
+            plug_pts[1],
+            plug_pts[2],
+            plug_pts[3],
+            plug_pts[0],
+        ],
         egui::Stroke::new(1.5, male_color),
     ));
 
@@ -1112,7 +1186,10 @@ pub(super) fn draw_inlay_diagram(ui: &mut egui::Ui, pocket_depth: f64, glue_gap:
     let arrow_top = plug_top;
     let arrow_bottom = surface_y + 4.0;
     painter.line_segment(
-        [egui::pos2(arrow_x, arrow_top), egui::pos2(arrow_x, arrow_bottom)],
+        [
+            egui::pos2(arrow_x, arrow_top),
+            egui::pos2(arrow_x, arrow_bottom),
+        ],
         egui::Stroke::new(1.0, dim_color),
     );
     painter.add(egui::Shape::line(
@@ -1193,14 +1270,20 @@ pub(super) fn draw_ramp_finish_diagram(ui: &mut egui::Ui, max_stepdown: f64) {
             let next_y = y + level_step;
             painter.line_segment(
                 [egui::pos2(x_end, y), egui::pos2(x_start, next_y)],
-                egui::Stroke::new(1.0, egui::Color32::from_rgba_premultiplied(50, 200, 180, 120)),
+                egui::Stroke::new(
+                    1.0,
+                    egui::Color32::from_rgba_premultiplied(50, 200, 180, 120),
+                ),
             );
         }
     }
 
     // Stepdown dimension
     painter.line_segment(
-        [egui::pos2(x_end + 8.0, y_top), egui::pos2(x_end + 8.0, y_top + level_step)],
+        [
+            egui::pos2(x_end + 8.0, y_top),
+            egui::pos2(x_end + 8.0, y_top + level_step),
+        ],
         egui::Stroke::new(1.0, dim_color),
     );
     painter.text(
@@ -1283,11 +1366,7 @@ pub(super) fn draw_height_diagram(
         ctx.stock_top_z,
         ctx.stock_bottom_z,
     ];
-    let z_min_raw = all_z_values
-        .iter()
-        .copied()
-        .reduce(f64::min)
-        .unwrap_or(0.0);
+    let z_min_raw = all_z_values.iter().copied().reduce(f64::min).unwrap_or(0.0);
     let z_max_raw = all_z_values
         .iter()
         .copied()
@@ -1389,7 +1468,10 @@ pub(super) fn draw_height_diagram(
         // Line
         let stroke_width = if is_hovered { 2.5 } else { 1.5 };
         painter.line_segment(
-            [egui::pos2(rect.left() + 2.0, y), egui::pos2(rect.right() - 44.0, y)],
+            [
+                egui::pos2(rect.left() + 2.0, y),
+                egui::pos2(rect.right() - 44.0, y),
+            ],
             egui::Stroke::new(stroke_width, line.color),
         );
 

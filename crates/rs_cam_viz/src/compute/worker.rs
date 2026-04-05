@@ -30,8 +30,8 @@ use rs_cam_core::depth::{DepthDistribution, DepthStepping, depth_stepped_toolpat
 use rs_cam_core::dexel_mesh::dexel_stock_to_mesh;
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dressup::{
-    EntryStyle as CoreEntryStyle, LinkMoveParams, apply_dogbones, apply_entry, apply_lead_in_out,
-    apply_link_moves, apply_tabs, even_tabs, filter_air_cuts,
+    LinkMoveParams, apply_dogbones, apply_entry, apply_lead_in_out, apply_link_moves, apply_tabs,
+    even_tabs, filter_air_cuts,
 };
 use rs_cam_core::drill::{DrillCycle, DrillParams, drill_toolpath};
 use rs_cam_core::dropcutter::batch_drop_cutter_with_cancel;
@@ -203,7 +203,8 @@ struct LaneQueue<Request> {
     lane: ComputeLane,
     inner: Mutex<LaneInner<Request>>,
     wake: Condvar,
-    cancel: Arc<AtomicBool>,
+    cancel: AtomicBool,
+    shutdown: AtomicBool,
 }
 
 impl<Request> LaneQueue<Request> {
@@ -212,7 +213,8 @@ impl<Request> LaneQueue<Request> {
             lane,
             inner: Mutex::new(LaneInner::new()),
             wake: Condvar::new(),
-            cancel: Arc::new(AtomicBool::new(false)),
+            cancel: AtomicBool::new(false),
+            shutdown: AtomicBool::new(false),
         })
     }
 
@@ -292,21 +294,40 @@ pub struct ThreadedComputeBackend {
     toolpath_lane: Arc<LaneQueue<ComputeRequest>>,
     analysis_lane: Arc<LaneQueue<AnalysisRequest>>,
     result_rx: mpsc::Receiver<ComputeMessage>,
+    toolpath_handle: Option<std::thread::JoinHandle<()>>,
+    analysis_handle: Option<std::thread::JoinHandle<()>>,
 }
 
 impl ThreadedComputeBackend {
     pub fn new() -> Self {
         let toolpath_lane = LaneQueue::new(ComputeLane::Toolpath);
         let analysis_lane = LaneQueue::new(ComputeLane::Analysis);
-        let (result_tx, result_rx) = mpsc::channel::<ComputeMessage>();
+        let (result_tx, result_rx) = mpsc::sync_channel::<ComputeMessage>(64);
 
-        spawn_toolpath_lane(Arc::clone(&toolpath_lane), result_tx.clone());
-        spawn_analysis_lane(Arc::clone(&analysis_lane), result_tx);
+        let toolpath_handle = spawn_toolpath_lane(Arc::clone(&toolpath_lane), result_tx.clone());
+        let analysis_handle = spawn_analysis_lane(Arc::clone(&analysis_lane), result_tx);
 
         Self {
             toolpath_lane,
             analysis_lane,
             result_rx,
+            toolpath_handle: Some(toolpath_handle),
+            analysis_handle: Some(analysis_handle),
+        }
+    }
+}
+
+impl Drop for ThreadedComputeBackend {
+    fn drop(&mut self) {
+        self.toolpath_lane.shutdown.store(true, Ordering::SeqCst);
+        self.analysis_lane.shutdown.store(true, Ordering::SeqCst);
+        self.toolpath_lane.wake.notify_all();
+        self.analysis_lane.wake.notify_all();
+        if let Some(h) = self.toolpath_handle.take() {
+            let _ = h.join();
+        }
+        if let Some(h) = self.analysis_handle.take() {
+            let _ = h.join();
         }
     }
 }
@@ -430,19 +451,25 @@ fn analysis_job_label(request: &AnalysisRequest) -> String {
 
 fn spawn_toolpath_lane(
     lane: Arc<LaneQueue<ComputeRequest>>,
-    result_tx: mpsc::Sender<ComputeMessage>,
-) {
+    result_tx: mpsc::SyncSender<ComputeMessage>,
+) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         loop {
             let request = {
                 let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
                 while inner.queue.is_empty() {
+                    if lane.shutdown.load(Ordering::SeqCst) {
+                        return;
+                    }
                     inner.state = LaneState::Idle;
                     inner.current_job = None;
                     inner.current_phase = None;
                     inner.started_at = None;
                     inner.active_toolpath_id = None;
                     inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
+                }
+                if lane.shutdown.load(Ordering::SeqCst) {
+                    return;
                 }
                 // SAFETY: loop condition guarantees queue is non-empty
                 #[allow(clippy::expect_used)]
@@ -456,6 +483,10 @@ fn spawn_toolpath_lane(
                 request
             };
 
+            if lane.shutdown.load(Ordering::SeqCst) {
+                return;
+            }
+
             // Wrap the compute + result-send body in catch_unwind so a panic
             // in any operation does not kill the worker thread or poison mutexes
             // permanently.  On panic we log the error, reset the lane to Idle,
@@ -464,7 +495,7 @@ fn spawn_toolpath_lane(
             let caught = std::panic::catch_unwind(AssertUnwindSafe(|| {
                 let phase_tracker = ToolpathPhaseTracker::new(Arc::clone(&lane));
                 let mut outcome =
-                    execute::run_compute_with_phase(&request, lane.cancel.as_ref(), &phase_tracker);
+                    execute::run_compute_with_phase(&request, &lane.cancel, &phase_tracker);
                 if lane.cancel.load(Ordering::SeqCst) && outcome.result.is_ok() {
                     outcome.result = Err(ComputeError::Cancelled);
                 }
@@ -522,24 +553,30 @@ fn spawn_toolpath_lane(
                 }));
             }
         }
-    });
+    })
 }
 
 fn spawn_analysis_lane(
     lane: Arc<LaneQueue<AnalysisRequest>>,
-    result_tx: mpsc::Sender<ComputeMessage>,
-) {
+    result_tx: mpsc::SyncSender<ComputeMessage>,
+) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         loop {
             let request = {
                 let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
                 while inner.queue.is_empty() {
+                    if lane.shutdown.load(Ordering::SeqCst) {
+                        return;
+                    }
                     inner.state = LaneState::Idle;
                     inner.current_job = None;
                     inner.current_phase = None;
                     inner.started_at = None;
                     inner.active_toolpath_id = None;
                     inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
+                }
+                if lane.shutdown.load(Ordering::SeqCst) {
+                    return;
                 }
                 // SAFETY: loop condition guarantees queue is non-empty
                 #[allow(clippy::expect_used)]
@@ -552,6 +589,10 @@ fn spawn_analysis_lane(
                 request
             };
 
+            if lane.shutdown.load(Ordering::SeqCst) {
+                return;
+            }
+
             // Wrap the analysis body in catch_unwind so a panic in simulation
             // or collision checking does not kill the worker thread.  On panic
             // we log the error, reset lane state to Idle, and continue.
@@ -562,11 +603,8 @@ fn spawn_analysis_lane(
                             let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
                             inner.current_phase = Some(phase.to_string());
                         };
-                        let result = execute::run_simulation_with_phase(
-                            &request,
-                            lane.cancel.as_ref(),
-                            set_phase,
-                        );
+                        let result =
+                            execute::run_simulation_with_phase(&request, &lane.cancel, set_phase);
                         let result = if lane.cancel.load(Ordering::SeqCst) && result.is_ok() {
                             Err(ComputeError::Cancelled)
                         } else {
@@ -581,7 +619,7 @@ fn spawn_analysis_lane(
                         };
                         let result = helpers::run_collision_check_with_phase(
                             &request,
-                            lane.cancel.as_ref(),
+                            &lane.cancel,
                             set_phase,
                         );
                         let result = if lane.cancel.load(Ordering::SeqCst) && result.is_ok() {
@@ -626,7 +664,7 @@ fn spawn_analysis_lane(
                 }
             }
         }
-    });
+    })
 }
 
 /// Extract a human-readable message from a panic payload.

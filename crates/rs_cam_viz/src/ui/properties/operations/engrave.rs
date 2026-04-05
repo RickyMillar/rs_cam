@@ -39,10 +39,7 @@ pub(in crate::ui::properties) fn draw_trace_params(ui: &mut egui::Ui, cfg: &mut 
         });
 }
 
-pub(in crate::ui::properties) fn draw_chamfer_params(
-    ui: &mut egui::Ui,
-    cfg: &mut ChamferConfig,
-) {
+pub(in crate::ui::properties) fn draw_chamfer_params(ui: &mut egui::Ui, cfg: &mut ChamferConfig) {
     ui.label(
         egui::RichText::new("Requires V-Bit tool")
             .italics()

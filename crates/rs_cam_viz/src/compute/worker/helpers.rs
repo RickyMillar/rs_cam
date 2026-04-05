@@ -41,14 +41,11 @@ pub(super) fn effective_safe_z(req: &ComputeRequest) -> f64 {
 }
 
 pub(super) fn require_polygons(req: &ComputeRequest) -> Result<&[Polygon2], OperationError> {
-    req.polygons
-        .as_ref()
-        .map(|p| p.as_slice())
-        .ok_or_else(|| {
-            OperationError::MissingGeometry(
-                "No 2D geometry (import SVG/DXF or select STEP faces)".to_string(),
-            )
-        })
+    req.polygons.as_ref().map(|p| p.as_slice()).ok_or_else(|| {
+        OperationError::MissingGeometry(
+            "No 2D geometry (import SVG/DXF or select STEP faces)".to_string(),
+        )
+    })
 }
 
 pub(super) fn require_mesh(
@@ -76,12 +73,12 @@ struct DressupTraceInfo<'a> {
 /// `set_params` configures operation-specific parameters on the semantic scope.
 /// `transform` receives the current toolpath and returns the transformed toolpath.
 fn apply_dressup_with_tracing(
-    tp: &Toolpath,
+    tp: Toolpath,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
     semantic: Option<&rs_cam_core::semantic_trace::ToolpathSemanticContext>,
     info: DressupTraceInfo<'_>,
     set_params: impl FnOnce(&rs_cam_core::semantic_trace::ToolpathSemanticScope),
-    transform: impl FnOnce(&Toolpath) -> Toolpath,
+    transform: impl FnOnce(Toolpath) -> Toolpath,
 ) -> Toolpath {
     let debug_scope = debug.map(|ctx| ctx.start_span(info.debug_key, info.debug_label));
     let debug_span_id = debug_scope.as_ref().map(|scope| scope.id());
@@ -131,73 +128,41 @@ pub(super) fn apply_dressups(
     let tool = &req.tool;
     let safe_z = effective_safe_z(req);
 
-    match cfg.entry_style {
-        DressupEntryStyle::Ramp => {
-            let ramp_angle = cfg.ramp_angle;
-            let tool_radius = tool.diameter / 2.0;
-            tp = apply_dressup_with_tracing(
-                &tp,
-                debug,
-                semantic,
-                DressupTraceInfo {
-                    debug_key: "entry_style",
-                    debug_label: "Ramp entry",
-                    kind: ToolpathSemanticKind::Entry,
-                    semantic_label: "Ramp entry",
-                },
-                |scope| {
+    if let Some(core_entry) = cfg.entry_style.to_core(cfg) {
+        let tool_radius = tool.diameter / 2.0;
+        let ramp_angle = cfg.ramp_angle;
+        let helix_radius = cfg.helix_radius;
+        let helix_pitch = cfg.helix_pitch;
+        let is_ramp = matches!(cfg.entry_style, DressupEntryStyle::Ramp);
+        let label = if is_ramp { "Ramp entry" } else { "Helix entry" };
+        tp = apply_dressup_with_tracing(
+            tp,
+            debug,
+            semantic,
+            DressupTraceInfo {
+                debug_key: "entry_style",
+                debug_label: label,
+                kind: ToolpathSemanticKind::Entry,
+                semantic_label: label,
+            },
+            |scope| {
+                if is_ramp {
                     scope.set_param("kind", "ramp");
                     scope.set_param("max_angle_deg", ramp_angle);
-                },
-                |tp| {
-                    apply_entry(
-                        tp,
-                        CoreEntryStyle::Ramp {
-                            max_angle_deg: ramp_angle,
-                        },
-                        tool_radius,
-                    )
-                },
-            );
-        }
-        DressupEntryStyle::Helix => {
-            let helix_radius = cfg.helix_radius;
-            let helix_pitch = cfg.helix_pitch;
-            let tool_radius = tool.diameter / 2.0;
-            tp = apply_dressup_with_tracing(
-                &tp,
-                debug,
-                semantic,
-                DressupTraceInfo {
-                    debug_key: "entry_style",
-                    debug_label: "Helix entry",
-                    kind: ToolpathSemanticKind::Entry,
-                    semantic_label: "Helix entry",
-                },
-                |scope| {
+                } else {
                     scope.set_param("kind", "helix");
                     scope.set_param("radius", helix_radius);
                     scope.set_param("pitch", helix_pitch);
-                },
-                |tp| {
-                    apply_entry(
-                        tp,
-                        CoreEntryStyle::Helix {
-                            radius: helix_radius,
-                            pitch: helix_pitch,
-                        },
-                        tool_radius,
-                    )
-                },
-            );
-        }
-        DressupEntryStyle::None => {}
+                }
+            },
+            |tp| apply_entry(tp, core_entry, tool_radius),
+        );
     }
     if cfg.dogbone {
         let tool_radius = tool.diameter / 2.0;
         let angle = cfg.dogbone_angle;
         tp = apply_dressup_with_tracing(
-            &tp,
+            tp,
             debug,
             semantic,
             DressupTraceInfo {
@@ -215,7 +180,7 @@ pub(super) fn apply_dressups(
     if cfg.lead_in_out {
         let radius = cfg.lead_radius;
         tp = apply_dressup_with_tracing(
-            &tp,
+            tp,
             debug,
             semantic,
             DressupTraceInfo {
@@ -235,7 +200,7 @@ pub(super) fn apply_dressups(
         let link_feed = cfg.link_feed_rate;
         let sz = safe_z;
         tp = apply_dressup_with_tracing(
-            &tp,
+            tp,
             debug,
             semantic,
             DressupTraceInfo {
@@ -263,7 +228,7 @@ pub(super) fn apply_dressups(
     if cfg.arc_fitting {
         let tolerance = cfg.arc_tolerance;
         tp = apply_dressup_with_tracing(
-            &tp,
+            tp,
             debug,
             semantic,
             DressupTraceInfo {
@@ -275,14 +240,14 @@ pub(super) fn apply_dressups(
             |scope| {
                 scope.set_param("tolerance", tolerance);
             },
-            |tp| fit_arcs(tp, tolerance),
+            |tp| fit_arcs(&tp, tolerance),
         );
     }
     if let Some(ref prior_stock) = req.prior_stock {
         let tool_radius = tool.diameter / 2.0;
         let sz = safe_z;
         tp = apply_dressup_with_tracing(
-            &tp,
+            tp,
             debug,
             semantic,
             DressupTraceInfo {
@@ -353,7 +318,7 @@ pub(super) fn apply_dressups(
     if cfg.optimize_rapid_order {
         let sz = safe_z;
         tp = apply_dressup_with_tracing(
-            &tp,
+            tp,
             debug,
             semantic,
             DressupTraceInfo {
@@ -365,7 +330,7 @@ pub(super) fn apply_dressups(
             |scope| {
                 scope.set_param("safe_z", sz);
             },
-            |tp| rs_cam_core::tsp::optimize_rapid_order(tp, sz),
+            |tp| rs_cam_core::tsp::optimize_rapid_order(&tp, sz),
         );
     }
     tp

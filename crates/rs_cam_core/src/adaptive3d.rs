@@ -1405,9 +1405,7 @@ fn clear_z_level_contour_parallel(
                 } else {
                     segments.push(Adaptive3dSegment::Rapid(*first));
                 }
-                segments.push(Adaptive3dSegment::Cut(path_3d.clone()));
-
-                // Stamp dexel stock along the cutting path
+                // Stamp dexel stock along the cutting path before moving path_3d
                 stamp_along_path(
                     material_stock,
                     ctx.lut,
@@ -1417,6 +1415,7 @@ fn clear_z_level_contour_parallel(
                 );
 
                 *last_pos = path_3d.last().copied();
+                segments.push(Adaptive3dSegment::Cut(path_3d));
             }
         }
 
@@ -1564,8 +1563,6 @@ fn clear_z_level_adaptive(
                 } else {
                     segments.push(Adaptive3dSegment::Rapid(*first));
                 }
-                segments.push(Adaptive3dSegment::Cut(path_3d.clone()));
-
                 stamp_along_path(
                     material_stock,
                     ctx.lut,
@@ -1575,6 +1572,7 @@ fn clear_z_level_adaptive(
                 );
 
                 *last_pos = path_3d.last().copied();
+                segments.push(Adaptive3dSegment::Cut(path_3d));
             }
         }
 

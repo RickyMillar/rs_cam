@@ -416,10 +416,10 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                 if let Some(entry) = &op.entry
                     && let Some(style) = crate::helpers::parse_entry_style(entry)?
                 {
-                    tp = apply_entry(&tp, style, plunge_rate);
+                    tp = apply_entry(tp, style, plunge_rate);
                 }
                 if op.dogbone.unwrap_or(false) {
-                    tp = apply_dogbones(&tp, tool_radius, 170.0);
+                    tp = apply_dogbones(tp, tool_radius, 170.0);
                 }
                 tp
             }
@@ -460,7 +460,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                 if let Some(entry) = &op.entry
                     && let Some(style) = crate::helpers::parse_entry_style(entry)?
                 {
-                    tp = apply_entry(&tp, style, plunge_rate);
+                    tp = apply_entry(tp, style, plunge_rate);
                 }
 
                 // Tabs
@@ -469,10 +469,10 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                     let tw = op.tab_width.unwrap_or(5.0);
                     let th = op.tab_height.unwrap_or(2.0);
                     let tab_list = even_tabs(num_tabs, tw, th);
-                    tp = apply_tabs(&tp, &tab_list, -depth);
+                    tp = apply_tabs(tp, &tab_list, -depth);
                 }
                 if op.dogbone.unwrap_or(false) {
-                    tp = apply_dogbones(&tp, tool_radius, 170.0);
+                    tp = apply_dogbones(tp, tool_radius, 170.0);
                 }
                 tp
             }

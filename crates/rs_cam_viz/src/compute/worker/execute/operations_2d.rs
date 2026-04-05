@@ -39,7 +39,10 @@ fn run_pocket(req: &ComputeRequest, cfg: &PocketConfig) -> Result<Toolpath, Oper
     Ok(out)
 }
 
-pub(super) fn run_profile(req: &ComputeRequest, cfg: &ProfileConfig) -> Result<Toolpath, OperationError> {
+pub(super) fn run_profile(
+    req: &ComputeRequest,
+    cfg: &ProfileConfig,
+) -> Result<Toolpath, OperationError> {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
     let side = cfg.side;
@@ -75,7 +78,7 @@ pub(super) fn run_profile(req: &ComputeRequest, cfg: &ProfileConfig) -> Result<T
             let is_final = (z - final_z).abs() < 1e-9;
             if cfg.tab_count > 0 && is_final {
                 let tabbed = apply_tabs(
-                    &pass_tp,
+                    pass_tp,
                     &even_tabs(cfg.tab_count, cfg.tab_width, cfg.tab_height),
                     z,
                 );
@@ -160,7 +163,7 @@ fn run_vcarve(req: &ComputeRequest, cfg: &VCarveConfig) -> Result<Toolpath, Oper
         _ => {
             return Err(OperationError::InvalidTool(
                 "VCarve requires V-Bit tool".into(),
-            ))
+            ));
         }
     };
     let mut out = Toolpath::new();
@@ -211,14 +214,17 @@ fn run_rest(req: &ComputeRequest, cfg: &RestConfig) -> Result<Toolpath, Operatio
     Ok(out)
 }
 
-pub(super) fn run_inlay(req: &ComputeRequest, cfg: &InlayConfig) -> Result<Toolpath, OperationError> {
+pub(super) fn run_inlay(
+    req: &ComputeRequest,
+    cfg: &InlayConfig,
+) -> Result<Toolpath, OperationError> {
     let polys = require_polygons(req)?;
     let ha = match req.tool.tool_type {
         ToolType::VBit => (req.tool.included_angle / 2.0).to_radians(),
         _ => {
             return Err(OperationError::InvalidTool(
                 "Inlay requires V-Bit tool".into(),
-            ))
+            ));
         }
     };
     let safe_z = effective_safe_z(req);
@@ -254,7 +260,10 @@ pub(super) fn run_inlay(req: &ComputeRequest, cfg: &InlayConfig) -> Result<Toolp
     Ok(out)
 }
 
-pub(super) fn run_zigzag(req: &ComputeRequest, cfg: &ZigzagConfig) -> Result<Toolpath, OperationError> {
+pub(super) fn run_zigzag(
+    req: &ComputeRequest,
+    cfg: &ZigzagConfig,
+) -> Result<Toolpath, OperationError> {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
     let depth = make_depth(cfg.depth, cfg.depth_per_pass);
@@ -322,14 +331,7 @@ fn run_drill(req: &ComputeRequest, cfg: &DrillConfig) -> Result<Toolpath, Operat
             "No hole positions found (import SVG with circles)".to_string(),
         ));
     }
-    let cycle = match cfg.cycle {
-        self::DrillCycleType::Simple => DrillCycle::Simple,
-        self::DrillCycleType::Dwell => DrillCycle::Dwell(cfg.dwell_time),
-        self::DrillCycleType::Peck => DrillCycle::Peck(cfg.peck_depth),
-        self::DrillCycleType::ChipBreak => {
-            DrillCycle::ChipBreak(cfg.peck_depth, cfg.retract_amount)
-        }
-    };
+    let cycle = cfg.cycle.to_core(cfg);
     let params = DrillParams {
         depth: cfg.depth,
         cycle,
@@ -347,7 +349,7 @@ fn run_chamfer(req: &ComputeRequest, cfg: &ChamferConfig) -> Result<Toolpath, Op
         _ => {
             return Err(OperationError::InvalidTool(
                 "Chamfer requires V-Bit tool".into(),
-            ))
+            ));
         }
     };
     let mut out = Toolpath::new();
@@ -861,10 +863,9 @@ impl SemanticToolpathOp for InlayConfig {
             let ha = match ctx.req.tool.tool_type {
                 ToolType::VBit => (ctx.req.tool.included_angle / 2.0).to_radians(),
                 _ => {
-                    return Err(OperationError::InvalidTool(
-                        "Inlay requires V-Bit tool".into(),
-                    )
-                    .into())
+                    return Err(
+                        OperationError::InvalidTool("Inlay requires V-Bit tool".into()).into(),
+                    );
                 }
             };
             let actual_runs = cutting_runs(&tp);
@@ -1042,14 +1043,7 @@ impl SemanticToolpathOp for DrillConfig {
             )
             .into());
         }
-        let cycle = match self.cycle {
-            self::DrillCycleType::Simple => DrillCycle::Simple,
-            self::DrillCycleType::Dwell => DrillCycle::Dwell(self.dwell_time),
-            self::DrillCycleType::Peck => DrillCycle::Peck(self.peck_depth),
-            self::DrillCycleType::ChipBreak => {
-                DrillCycle::ChipBreak(self.peck_depth, self.retract_amount)
-            }
-        };
+        let cycle = self.cycle.to_core(self);
         let params = DrillParams {
             depth: self.depth,
             cycle,
