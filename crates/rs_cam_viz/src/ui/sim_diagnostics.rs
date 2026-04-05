@@ -118,17 +118,33 @@ pub fn draw(
                     );
                 }
             });
-            // Warn when the current resolution would exceed the dexel grid cap.
-            if !sim.auto_resolution {
+            // Warn when the current resolution would exceed the dexel grid cap
+            // or when the resulting mesh would be too large for the GPU.
+            {
                 let sx = job.stock.x;
                 let sy = job.stock.y;
-                if rs_cam_core::dexel::DexelGrid::would_exceed_grid(sim.resolution, sx, sy)
-                    .is_some()
+                let res = sim.resolution;
+                if !sim.auto_resolution
+                    && rs_cam_core::dexel::DexelGrid::would_exceed_grid(res, sx, sy).is_some()
                 {
                     ui.label(
                         egui::RichText::new("Grid too large — resolution will be coarsened")
                             .small()
                             .color(theme::WARNING),
+                    );
+                }
+                // Estimate mesh size: 2 * rows * cols vertices at ~28 bytes each.
+                let cols = (sx / res).ceil() as u64 + 1;
+                let rows = (sy / res).ceil() as u64 + 1;
+                let estimated_bytes = 2 * rows * cols * 28;
+                // Most GPUs limit buffers to 256MB.
+                if estimated_bytes > 256 * 1024 * 1024 {
+                    ui.label(
+                        egui::RichText::new(
+                            "Mesh too large for GPU — viewport will be blank at this resolution",
+                        )
+                        .small()
+                        .color(theme::WARNING),
                     );
                 }
             }
