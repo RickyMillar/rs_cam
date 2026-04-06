@@ -180,17 +180,28 @@ impl HeightsConfig {
     /// - `bottom_z` = stock bottom
     /// - `retract_z` = stock top + safe_z offset
     /// - `clearance_z` = retract + 10mm
-    /// - `feed_z` = retract − 2mm
+    /// - `feed_z` = stock top + 2mm (always above stock)
     pub fn resolve(&self, ctx: &HeightContext) -> ResolvedHeights {
         // Retract defaults to stock_top + safe_z (safe_z is treated as an offset
         // above stock, not an absolute world coordinate).
         let retract = self
             .retract_z
             .resolve_value(ctx.stock_top_z + ctx.safe_z, ctx);
+        // Feed defaults to stock_top + 2mm, but always between top_z and retract_z.
+        // When safe_z is small, feed settles at the midpoint.
+        let top = ctx.stock_top_z;
+        let feed_ideal = top + 2.0;
+        let feed_default = if feed_ideal < retract {
+            feed_ideal
+        } else {
+            // Not enough room — place feed halfway between top and retract.
+            (top + retract) / 2.0
+        };
+        let feed = self.feed_z.resolve_value(feed_default, ctx);
         ResolvedHeights {
             clearance_z: self.clearance_z.resolve_value(retract + 10.0, ctx),
             retract_z: retract,
-            feed_z: self.feed_z.resolve_value(retract - 2.0, ctx),
+            feed_z: feed,
             top_z: self.top_z.resolve_value(ctx.stock_top_z, ctx),
             bottom_z: self.bottom_z.resolve_value(ctx.stock_bottom_z, ctx),
         }
@@ -339,8 +350,8 @@ mod tests {
         assert!((h.retract_z - 35.0).abs() < 1e-9);
         // clearance = retract + 10 = 45
         assert!((h.clearance_z - 45.0).abs() < 1e-9);
-        // feed = retract - 2 = 33
-        assert!((h.feed_z - 33.0).abs() < 1e-9);
+        // feed = stock_top + 2 = 27
+        assert!((h.feed_z - 27.0).abs() < 1e-9);
         // top = stock_top_z = 25
         assert!((h.top_z - 25.0).abs() < 1e-9);
         // bottom = stock_bottom_z = 0

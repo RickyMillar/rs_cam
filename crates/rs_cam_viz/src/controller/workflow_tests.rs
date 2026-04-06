@@ -533,10 +533,10 @@ fn w6_auto_height_defaults() {
         "clearance_z should be 25.0, got {}",
         h.clearance_z
     );
-    // feed = retract - 2 = 13
+    // feed = stock_top + 2 = 7
     assert!(
-        (h.feed_z - 13.0).abs() < 1e-9,
-        "feed_z should be 13.0, got {}",
+        (h.feed_z - 7.0).abs() < 1e-9,
+        "feed_z should be 7.0, got {}",
         h.feed_z
     );
     // top = stock_top = 5
