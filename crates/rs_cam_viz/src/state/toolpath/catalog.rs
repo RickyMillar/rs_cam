@@ -611,6 +611,47 @@ impl OperationConfig {
         }
     }
 
+    /// Pre-compute the Z levels for depth stepping, anchored at `top_z`.
+    ///
+    /// Returns an empty `Vec` for operations that don't use standard depth
+    /// stepping (3D ops, VCarve, Chamfer, Inlay, Drill).
+    pub fn cutting_levels(&self, top_z: f64) -> Vec<f64> {
+        use rs_cam_core::depth::DepthStepping;
+        match self {
+            Self::Pocket(cfg) => DepthStepping {
+                start_z: top_z,
+                final_z: top_z - cfg.depth.abs(),
+                max_step_down: cfg.depth_per_pass,
+                distribution: rs_cam_core::depth::DepthDistribution::Even,
+                finish_allowance: 0.0,
+                finishing_passes: cfg.finishing_passes,
+            }
+            .all_levels(),
+            Self::Profile(cfg) => DepthStepping {
+                start_z: top_z,
+                final_z: top_z - cfg.depth.abs(),
+                max_step_down: cfg.depth_per_pass,
+                distribution: rs_cam_core::depth::DepthDistribution::Even,
+                finish_allowance: 0.0,
+                finishing_passes: cfg.finishing_passes,
+            }
+            .all_levels(),
+            Self::Adaptive(cfg) => DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels(),
+            Self::Zigzag(cfg) => DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels(),
+            Self::Rest(cfg) => DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels(),
+            Self::Trace(cfg) => DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels(),
+            Self::Face(cfg) => {
+                if cfg.depth <= 0.0 {
+                    vec![top_z]
+                } else {
+                    DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels()
+                }
+            }
+            // 3D ops, VCarve, Chamfer, Inlay, Drill, AlignmentPinDrill — no standard depth stepping
+            _ => vec![],
+        }
+    }
+
     pub fn new_default(op_type: OperationType) -> Self {
         match op_type {
             OperationType::Face => OperationConfig::Face(FaceConfig::default()),

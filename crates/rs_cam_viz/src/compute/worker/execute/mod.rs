@@ -3,7 +3,7 @@ mod operations_3d;
 
 use super::helpers::{
     apply_dressups, build_cutter, build_simulation_cut_artifact, build_trace_artifact,
-    compute_stats, debug_artifact_dir, effective_safe_z, make_depth, make_depth_with_finishing,
+    compute_stats, debug_artifact_dir, effective_safe_z,
     require_mesh, require_polygons, simulation_metric_artifact_dir,
 };
 use super::semantic::{
@@ -23,10 +23,10 @@ use super::{
     ToolType, Toolpath, ToolpathPhaseTracker, ToolpathResult, TraceConfig, TraceParams,
     TriDexelStock, TriangleMesh, VCarveConfig, VCarveParams, WaterlineConfig, WaterlineParams,
     ZigzagConfig, ZigzagParams, apply_tabs, batch_drop_cutter_with_cancel, chamfer_toolpath,
-    depth_stepped_toolpath, dexel_stock_to_mesh, drill_toolpath, even_tabs,
+    dexel_stock_to_mesh, drill_toolpath, even_tabs,
     horizontal_finish_toolpath, inlay_toolpaths, pocket_toolpath, profile_toolpath,
     project_curve_toolpath, radial_finish_toolpath, raster_toolpath_from_grid,
-    rest_machining_toolpath, steep_shallow_toolpath, trace_toolpath, vcarve_toolpath,
+    rest_machining_toolpath, steep_shallow_toolpath, vcarve_toolpath,
     waterline_toolpath_with_cancel, zigzag_toolpath,
 };
 #[cfg(test)]
@@ -1415,6 +1415,8 @@ mod tests {
         tool_type: ToolType,
     ) -> ComputeRequest {
         let tool = ToolConfig::new_default(crate::state::job::ToolId(1), tool_type);
+        let heights = HeightsConfig::default().resolve(&HeightContext::simple(10.0, 6.0));
+        let cutting_levels = operation.cutting_levels(heights.top_z);
         ComputeRequest {
             toolpath_id: ToolpathId(1),
             toolpath_name: "Test".to_owned(),
@@ -1437,7 +1439,8 @@ mod tests {
             boundary_enabled: false,
             boundary_containment: BoundaryContainment::Center,
             keep_out_footprints: Vec::new(),
-            heights: HeightsConfig::default().resolve(&HeightContext::simple(10.0, 6.0)),
+            heights,
+            cutting_levels,
             debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
             prior_stock: None,
         }
@@ -1509,8 +1512,14 @@ mod tests {
         // coincides with a roughing level. Instead, verify that there are
         // no tab-height moves between roughing passes (moves with z > final_z
         // that aren't at a legitimate roughing level or safe_z).
-        let depth =
-            make_depth_with_finishing(cfg.depth, cfg.depth_per_pass, cfg.finishing_passes, 0.0);
+        let depth = rs_cam_core::depth::DepthStepping {
+            start_z: 0.0,
+            final_z: -cfg.depth.abs(),
+            max_step_down: cfg.depth_per_pass,
+            distribution: rs_cam_core::depth::DepthDistribution::Even,
+            finish_allowance: 0.0,
+            finishing_passes: cfg.finishing_passes,
+        };
         let roughing_levels = depth.all_levels();
         for m in &tp.moves {
             if let MoveType::Linear { .. } = m.move_type {

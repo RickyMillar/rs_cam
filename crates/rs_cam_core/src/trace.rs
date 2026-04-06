@@ -41,19 +41,12 @@ pub struct TraceParams {
     pub top_z: f64,
 }
 
-/// Generate a toolpath that traces polygon contours at the specified depth.
+/// Trace polygon contours at a single Z level.
 ///
-/// For each contour (exterior + holes), the tool follows the exact path
-/// with optional cutter compensation offset. Multi-pass depth stepping
-/// is handled automatically when `depth > depth_per_pass`.
-///
-/// Processing order: exterior ring first, then each hole.
-pub fn trace_toolpath(polygon: &Polygon2, params: &TraceParams) -> Toolpath {
-    // Apply cutter compensation by offsetting the polygon.
-    // cavalier_contours convention for CCW exterior:
-    //   positive distance = inward, negative distance = outward
-    // Left compensation (tool left of travel on CCW path) = outward = negative offset
-    // Right compensation (tool right of travel on CCW path) = inward = positive offset
+/// Applies cutter compensation, then traces each ring (exterior + holes)
+/// at the given `z`. This is the building block for depth-stepped tracing;
+/// callers handle multi-pass iteration.
+pub fn trace_polygon_at_z(polygon: &Polygon2, z: f64, params: &TraceParams) -> Toolpath {
     let working_polygons: Vec<Polygon2> = match params.compensation {
         TraceCompensation::None => vec![polygon.clone()],
         TraceCompensation::Left => {
@@ -72,17 +65,25 @@ pub fn trace_toolpath(polygon: &Polygon2, params: &TraceParams) -> Toolpath {
         }
     };
 
+    let mut tp = Toolpath::new();
+    for poly in &working_polygons {
+        trace_ring(&mut tp, &poly.exterior, z, params);
+        for hole in &poly.holes {
+            trace_ring(&mut tp, hole, z, params);
+        }
+    }
+    tp
+}
+
+/// Generate a toolpath that traces polygon contours with depth stepping.
+///
+/// Convenience wrapper around [`trace_polygon_at_z`] that handles multi-pass
+/// depth stepping automatically when `depth > depth_per_pass`.
+pub fn trace_toolpath(polygon: &Polygon2, params: &TraceParams) -> Toolpath {
     let depth = DepthStepping::new(params.top_z, params.top_z - params.depth, params.depth_per_pass);
 
     depth_stepped_toolpath(&depth, params.safe_z, |z| {
-        let mut tp = Toolpath::new();
-        for poly in &working_polygons {
-            trace_ring(&mut tp, &poly.exterior, z, params);
-            for hole in &poly.holes {
-                trace_ring(&mut tp, hole, z, params);
-            }
-        }
-        tp
+        trace_polygon_at_z(polygon, z, params)
     })
 }
 

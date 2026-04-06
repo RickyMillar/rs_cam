@@ -216,6 +216,17 @@ where
     tp
 }
 
+/// Generate a toolpath by applying a 2D operation at each pre-computed Z level.
+///
+/// Like [`depth_stepped_toolpath`] but takes a pre-computed slice of Z values
+/// instead of a [`DepthStepping`] configuration. Handles retract-between-levels.
+pub fn toolpath_at_levels<F>(levels: &[f64], safe_z: f64, operation: F) -> Toolpath
+where
+    F: Fn(f64) -> Toolpath,
+{
+    combine_level_toolpaths(levels, safe_z, &operation)
+}
+
 fn combine_level_toolpaths<F>(levels: &[f64], safe_z: f64, operation: &F) -> Toolpath
 where
     F: Fn(f64) -> Toolpath,

@@ -7,10 +7,10 @@ use super::{
     ToolpathSemanticKind, TraceConfig, TraceParams, VCarveConfig, VCarveParams, ZigzagConfig,
     ZigzagParams, annotate_adaptive_runtime_semantics, annotate_operation_scope, append_toolpath,
     apply_tabs, bind_scope_to_offset_run, bind_scope_to_run, chamfer_toolpath, contour_toolpath,
-    cutting_runs, depth_stepped_toolpath, drill_toolpath, effective_safe_z, even_tabs,
-    inlay_toolpaths, line_toolpath, make_depth, make_depth_with_finishing, pocket_toolpath,
+    cutting_runs, drill_toolpath, effective_safe_z, even_tabs,
+    inlay_toolpaths, line_toolpath, pocket_toolpath,
     profile_toolpath, require_polygons, rest_machining_toolpath, semantic_child_context,
-    trace_toolpath, vcarve_toolpath, zigzag_toolpath,
+    vcarve_toolpath, zigzag_toolpath,
 };
 use crate::compute::OperationError;
 
@@ -18,39 +18,36 @@ use crate::compute::OperationError;
 fn run_pocket(req: &ComputeRequest, cfg: &PocketConfig) -> Result<Toolpath, OperationError> {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
-    let depth = make_depth_with_finishing(
-        cfg.depth,
-        cfg.depth_per_pass,
-        cfg.finishing_passes,
-        req.heights.top_z,
-    );
+    let safe_z = effective_safe_z(req);
     let mut out = Toolpath::new();
     for p in polys {
-        let tp = depth_stepped_toolpath(&depth, effective_safe_z(req), |z| match cfg.pattern {
-            PocketPattern::Contour => pocket_toolpath(
-                p,
-                &PocketParams {
-                    tool_radius: tr,
-                    stepover: cfg.stepover,
-                    cut_depth: z,
-                    feed_rate: cfg.feed_rate,
-                    plunge_rate: cfg.plunge_rate,
-                    safe_z: effective_safe_z(req),
-                    climb: cfg.climb,
-                },
-            ),
-            PocketPattern::Zigzag => zigzag_toolpath(
-                p,
-                &ZigzagParams {
-                    tool_radius: tr,
-                    stepover: cfg.stepover,
-                    cut_depth: z,
-                    feed_rate: cfg.feed_rate,
-                    plunge_rate: cfg.plunge_rate,
-                    safe_z: effective_safe_z(req),
-                    angle: cfg.angle,
-                },
-            ),
+        let tp = rs_cam_core::depth::toolpath_at_levels(&req.cutting_levels, safe_z, |z| {
+            match cfg.pattern {
+                PocketPattern::Contour => pocket_toolpath(
+                    p,
+                    &PocketParams {
+                        tool_radius: tr,
+                        stepover: cfg.stepover,
+                        cut_depth: z,
+                        feed_rate: cfg.feed_rate,
+                        plunge_rate: cfg.plunge_rate,
+                        safe_z,
+                        climb: cfg.climb,
+                    },
+                ),
+                PocketPattern::Zigzag => zigzag_toolpath(
+                    p,
+                    &ZigzagParams {
+                        tool_radius: tr,
+                        stepover: cfg.stepover,
+                        cut_depth: z,
+                        feed_rate: cfg.feed_rate,
+                        plunge_rate: cfg.plunge_rate,
+                        safe_z,
+                        angle: cfg.angle,
+                    },
+                ),
+            }
         });
         out.moves.extend(tp.moves);
     }
@@ -64,14 +61,8 @@ pub(super) fn run_profile(
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
     let side = cfg.side;
-    let depth = make_depth_with_finishing(
-        cfg.depth,
-        cfg.depth_per_pass,
-        cfg.finishing_passes,
-        req.heights.top_z,
-    );
     let safe_z = effective_safe_z(req);
-    let levels = depth.all_levels();
+    let levels = &req.cutting_levels;
     let final_z = levels.last().copied().unwrap_or(req.heights.top_z - cfg.depth.abs());
     let mut out = Toolpath::new();
     for p in polys {
@@ -129,12 +120,11 @@ fn run_adaptive_annotated(
 > {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
-    let depth = make_depth(cfg.depth, cfg.depth_per_pass, req.heights.top_z);
     let mut out = Toolpath::new();
     let mut level_slices = Vec::new();
     let mut annotations = Vec::new();
     for (polygon_idx, p) in polys.iter().enumerate() {
-        for (level_idx, z) in depth.all_levels().into_iter().enumerate() {
+        for (level_idx, &z) in req.cutting_levels.iter().enumerate() {
             let (tp, level_annotations) =
                 rs_cam_core::adaptive::adaptive_toolpath_structured_annotated_traced_with_cancel(
                     p,
@@ -214,10 +204,10 @@ fn run_rest(req: &ComputeRequest, cfg: &RestConfig) -> Result<Toolpath, Operatio
     let ptr = req
         .prev_tool_radius
         .ok_or_else(|| OperationError::Other("Previous tool not set".into()))?;
-    let depth = make_depth(cfg.depth, cfg.depth_per_pass, req.heights.top_z);
+    let safe_z = effective_safe_z(req);
     let mut out = Toolpath::new();
     for p in polys {
-        let tp = depth_stepped_toolpath(&depth, effective_safe_z(req), |z| {
+        let tp = rs_cam_core::depth::toolpath_at_levels(&req.cutting_levels, safe_z, |z| {
             rest_machining_toolpath(
                 p,
                 &RestParams {
@@ -227,7 +217,7 @@ fn run_rest(req: &ComputeRequest, cfg: &RestConfig) -> Result<Toolpath, Operatio
                     stepover: cfg.stepover,
                     feed_rate: cfg.feed_rate,
                     plunge_rate: cfg.plunge_rate,
-                    safe_z: effective_safe_z(req),
+                    safe_z,
                     angle: cfg.angle,
                 },
             )
@@ -289,10 +279,10 @@ pub(super) fn run_zigzag(
 ) -> Result<Toolpath, OperationError> {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
-    let depth = make_depth(cfg.depth, cfg.depth_per_pass, req.heights.top_z);
+    let safe_z = effective_safe_z(req);
     let mut out = Toolpath::new();
     for p in polys {
-        let tp = depth_stepped_toolpath(&depth, effective_safe_z(req), |z| {
+        let tp = rs_cam_core::depth::toolpath_at_levels(&req.cutting_levels, safe_z, |z| {
             zigzag_toolpath(
                 p,
                 &ZigzagParams {
@@ -301,7 +291,7 @@ pub(super) fn run_zigzag(
                     cut_depth: z,
                     feed_rate: cfg.feed_rate,
                     plunge_rate: cfg.plunge_rate,
-                    safe_z: effective_safe_z(req),
+                    safe_z,
                     angle: cfg.angle,
                 },
             )
@@ -314,21 +304,22 @@ pub(super) fn run_zigzag(
 fn run_trace(req: &ComputeRequest, cfg: &TraceConfig) -> Result<Toolpath, OperationError> {
     let polys = require_polygons(req)?;
     let tr = req.tool.diameter / 2.0;
+    let safe_z = effective_safe_z(req);
     let mut out = Toolpath::new();
     for p in polys {
-        // trace_toolpath handles its own depth stepping internally,
-        // so we pass the absolute top_z and depth directly.
         let params = TraceParams {
             tool_radius: tr,
             depth: cfg.depth,
             depth_per_pass: cfg.depth_per_pass,
             feed_rate: cfg.feed_rate,
             plunge_rate: cfg.plunge_rate,
-            safe_z: effective_safe_z(req),
+            safe_z,
             compensation: cfg.compensation,
             top_z: req.heights.top_z,
         };
-        let tp = trace_toolpath(p, &params);
+        let tp = rs_cam_core::depth::toolpath_at_levels(&req.cutting_levels, safe_z, |z| {
+            rs_cam_core::trace::trace_polygon_at_z(p, z, &params)
+        });
         out.moves.extend(tp.moves);
     }
     Ok(out)
@@ -410,11 +401,7 @@ impl SemanticToolpathOp for FaceConfig {
             bbox.max.x + self.stock_offset,
             bbox.max.y + self.stock_offset,
         );
-        let levels = if self.depth <= 0.0 {
-            vec![ctx.req.heights.top_z]
-        } else {
-            make_depth(self.depth, self.depth_per_pass, ctx.req.heights.top_z).all_levels()
-        };
+        let levels = &ctx.req.cutting_levels;
 
         let op_scope = ctx
             .semantic_root
@@ -432,7 +419,7 @@ impl SemanticToolpathOp for FaceConfig {
         let mut out = Toolpath::new();
         {
             let mut writer = rs_cam_core::semantic_trace::ToolpathSemanticWriter::new(&mut out);
-            for (level_idx, z) in levels.into_iter().enumerate() {
+            for (level_idx, &z) in levels.iter().enumerate() {
                 let level_scope = op_ctx.as_ref().map(|root| {
                     root.start_item(
                         ToolpathSemanticKind::DepthLevel,
@@ -513,13 +500,7 @@ impl SemanticToolpathOp for PocketConfig {
             scope.set_param("stepover", self.stepover);
         }
         let op_ctx = op_scope.as_ref().map(|scope| scope.context());
-        let depth = make_depth_with_finishing(
-            self.depth,
-            self.depth_per_pass,
-            self.finishing_passes,
-            ctx.req.heights.top_z,
-        );
-        let levels = depth.all_levels();
+        let levels = &ctx.req.cutting_levels;
         let reverse = self.climb;
         let mut out = Toolpath::new();
         {
@@ -664,13 +645,7 @@ impl SemanticToolpathOp for ProfileConfig {
         }
         if let Some(op_ctx) = semantic_child_context(op_scope.as_ref()) {
             let mut run_iter = cutting_runs(&tp).into_iter();
-            let levels = make_depth_with_finishing(
-                self.depth,
-                self.depth_per_pass,
-                self.finishing_passes,
-                ctx.req.heights.top_z,
-            )
-                    .all_levels();
+            let levels = &ctx.req.cutting_levels;
             let total_levels = levels.len();
             for (poly_idx, _) in polys.iter().enumerate() {
                 let poly_scope = if polys.len() > 1 {
@@ -822,7 +797,6 @@ impl SemanticToolpathOp for RestConfig {
         if let Some(op_ctx) = semantic_child_context(op_scope.as_ref()) {
             let tr = ctx.req.tool.diameter / 2.0;
             let ptr = ctx.req.prev_tool_radius.unwrap_or_default();
-            let depth = make_depth(self.depth, self.depth_per_pass, ctx.req.heights.top_z);
             let actual_runs = cutting_runs(&tp);
             let mut run_cursor = 0usize;
             for (poly_idx, polygon) in polys.iter().enumerate() {
@@ -832,7 +806,7 @@ impl SemanticToolpathOp for RestConfig {
                 );
                 region_scope.set_param("region_index", poly_idx + 1);
                 let region_ctx = region_scope.context();
-                for (level_idx, z) in depth.all_levels().into_iter().enumerate() {
+                for (level_idx, &z) in ctx.req.cutting_levels.iter().enumerate() {
                     let level_scope = region_ctx.start_item(
                         ToolpathSemanticKind::DepthLevel,
                         format!("Level {}", level_idx + 1),
@@ -963,14 +937,13 @@ impl SemanticToolpathOp for ZigzagConfig {
         if let Some(op_ctx) = semantic_child_context(op_scope.as_ref()) {
             let runs = cutting_runs(&tp);
             let mut run_cursor = 0usize;
-            let depth = make_depth(self.depth, self.depth_per_pass, ctx.req.heights.top_z);
             for (poly_idx, polygon) in polys.iter().enumerate() {
                 let region_scope = op_ctx.start_item(
                     ToolpathSemanticKind::Region,
                     format!("Region {}", poly_idx + 1),
                 );
                 let region_ctx = region_scope.context();
-                for (level_idx, z) in depth.all_levels().into_iter().enumerate() {
+                for (level_idx, &z) in ctx.req.cutting_levels.iter().enumerate() {
                     let level_scope = region_ctx.start_item(
                         ToolpathSemanticKind::DepthLevel,
                         format!("Level {}", level_idx + 1),
@@ -1018,8 +991,7 @@ impl SemanticToolpathOp for TraceConfig {
         if let Some(op_ctx) = semantic_child_context(op_scope.as_ref()) {
             let runs = cutting_runs(&tp);
             let mut run_iter = runs.iter();
-            let levels =
-                make_depth(self.depth, self.depth_per_pass, ctx.req.heights.top_z).all_levels();
+            let levels = &ctx.req.cutting_levels;
             for (poly_idx, _) in polys.iter().enumerate() {
                 let curve_scope = op_ctx.start_item(
                     ToolpathSemanticKind::Curve,

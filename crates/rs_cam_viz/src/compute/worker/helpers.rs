@@ -1,6 +1,6 @@
 use super::{
     AtomicBool, BallEndmill, BullNoseEndmill, CollisionRequest, CollisionResult, ComputeError,
-    ComputeRequest, DepthDistribution, DepthStepping, DressupEntryStyle, FeedOptParams,
+    ComputeRequest, DressupEntryStyle, FeedOptParams,
     FlatEndmill, LinkMoveParams, MillingCutter, MoveType, Ordering, Polygon2, SimulationRequest,
     SpatialIndex, TaperedBallEndmill, ToolConfig, ToolDefinition, ToolType, Toolpath,
     ToolpathStats, TriangleMesh, VBitEndmill, apply_dogbones, apply_entry, apply_lead_in_out,
@@ -358,30 +358,6 @@ pub(super) fn feed_optimization_stock(req: &ComputeRequest) -> Result<TriDexelSt
         .ok_or("Feed optimization requires known stock bounds.")?;
     let cell_size = (req.tool.diameter / 4.0).clamp(0.25, 2.0);
     Ok(TriDexelStock::from_bounds(bbox, cell_size))
-}
-
-pub(super) fn make_depth(depth: f64, per_pass: f64, top_z: f64) -> DepthStepping {
-    make_depth_ext(depth, per_pass, 0, top_z)
-}
-
-pub(super) fn make_depth_with_finishing(
-    depth: f64,
-    per_pass: f64,
-    finishing_passes: usize,
-    top_z: f64,
-) -> DepthStepping {
-    make_depth_ext(depth, per_pass, finishing_passes, top_z)
-}
-
-fn make_depth_ext(depth: f64, per_pass: f64, finishing_passes: usize, top_z: f64) -> DepthStepping {
-    DepthStepping {
-        start_z: top_z,
-        final_z: top_z - depth.abs(),
-        max_step_down: per_pass,
-        distribution: DepthDistribution::Even,
-        finish_allowance: 0.0,
-        finishing_passes,
-    }
 }
 
 #[allow(dead_code)]
