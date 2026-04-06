@@ -12,12 +12,24 @@ pub struct ViewportState {
     pub show_collisions: bool,
     /// When set, only this toolpath is visible (isolation mode, toggle with I).
     pub isolate_toolpath: Option<ToolpathId>,
+    /// Color mode for toolpath lines.
+    pub toolpath_color_mode: ToolpathColorMode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderMode {
     Shaded,
     Wireframe,
+}
+
+/// How toolpath cutting moves are colored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ToolpathColorMode {
+    /// Standard palette color with Z-depth blend (per toolpath).
+    #[default]
+    Normal,
+    /// Color by feed rate: green = nominal, yellow = reduced, red = heavily loaded.
+    Engagement,
 }
 
 impl ViewportState {
@@ -32,6 +44,7 @@ impl ViewportState {
             show_rapids: true,
             show_collisions: true,
             isolate_toolpath: None,
+            toolpath_color_mode: ToolpathColorMode::Normal,
         }
     }
 }
