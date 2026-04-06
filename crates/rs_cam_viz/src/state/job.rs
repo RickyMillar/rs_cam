@@ -171,6 +171,11 @@ impl ToolType {
         ToolType::TaperedBallNose,
     ];
 
+    /// Whether this tool type has a ball-shaped tip (suitable for scallop, etc.).
+    pub fn has_ball_tip(&self) -> bool {
+        matches!(self, ToolType::BallNose | ToolType::TaperedBallNose)
+    }
+
     pub fn label(&self) -> &'static str {
         match self {
             ToolType::EndMill => "End Mill",

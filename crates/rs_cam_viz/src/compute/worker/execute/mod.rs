@@ -1778,15 +1778,16 @@ mod tests {
         );
     }
 
-    // --- Task C14: Scallop requires BallNose tool ---
+    // --- Task C14: Scallop requires ball-tipped tool ---
 
     #[test]
-    fn scallop_rejects_non_ballnose_tool() {
+    fn scallop_rejects_non_ball_tip_tool() {
         let OperationConfig::Scallop(cfg) =
             OperationConfig::new_default(crate::state::toolpath::OperationType::Scallop)
         else {
             unreachable!();
         };
+        // EndMill should be rejected (no ball tip)
         let mut req =
             test_request_with_polygon(OperationConfig::Scallop(cfg.clone()), ToolType::EndMill);
         req.mesh = Some(Arc::new(rs_cam_core::mesh::make_test_flat(40.0)));

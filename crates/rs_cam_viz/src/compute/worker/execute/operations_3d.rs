@@ -265,9 +265,9 @@ pub(super) fn run_scallop_annotated(
     ),
     OperationError,
 > {
-    if req.tool.tool_type != ToolType::BallNose {
+    if !req.tool.tool_type.has_ball_tip() {
         return Err(OperationError::InvalidTool(
-            "Scallop operation requires a Ball Nose endmill".into(),
+            "Scallop operation requires a Ball Nose or Tapered Ball Nose tool".into(),
         ));
     }
     let (mesh, index, cutter) = prepare_mesh_operation(req, phase_tracker, debug)?;
