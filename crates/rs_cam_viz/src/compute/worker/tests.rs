@@ -1716,39 +1716,34 @@ fn multi_setup_top_bottom_simulation() {
     // Should have playback data for both toolpaths
     assert_eq!(result.playback_data.len(), 2);
 
-    // Verify per-setup stock state:
-    // checkpoint[0] = top-setup local stock: cut at Z=15 from 0→20
-    let top_stock = &result.checkpoints[0].stock;
-    let (r, c) = top_stock.z_grid.world_to_cell(25.0, 25.0).unwrap();
-    let ray = top_stock.z_grid.ray(r, c);
-    assert_eq!(ray.len(), 1, "top setup cut area should have one segment");
-    assert!(
-        ray[0].enter.abs() < 0.01,
-        "top setup material starts at Z=0"
-    );
+    // Checkpoints store GLOBAL-frame stocks (for playback).
+    // checkpoint[0] = after top-setup: global stock with top cut at Z=15
+    let after_top = &result.checkpoints[0].stock;
+    let (r, c) = after_top.z_grid.world_to_cell(25.0, 25.0).unwrap();
+    let ray = after_top.z_grid.ray(r, c);
+    assert_eq!(ray.len(), 1, "after top cut: one segment");
+    assert!(ray[0].enter.abs() < 0.01, "material starts at Z=0");
     assert!(
         (ray[0].exit - 15.0).abs() < 1.0,
-        "top setup material ends near Z=15, got {}",
+        "top cut ends near Z=15, got {}",
         ray[0].exit
     );
 
-    // checkpoint[1] = bottom-setup local stock: cut at Z=15 from 0→20 (local frame)
-    // In local frame, this means material from 0 to 15 remains.
-    let bottom_stock = &result.checkpoints[1].stock;
-    let (r, c) = bottom_stock.z_grid.world_to_cell(25.0, 25.0).unwrap();
-    let ray = bottom_stock.z_grid.ray(r, c);
-    assert_eq!(
-        ray.len(),
-        1,
-        "bottom setup cut area should have one segment"
-    );
+    // checkpoint[1] = after both setups: global stock with top + bottom cuts
+    // Top cut at Z=15 (from top), bottom cut at Z=5 (from bottom).
+    // Remaining material: Z=5 to Z=15.
+    let after_both = &result.checkpoints[1].stock;
+    let (r, c) = after_both.z_grid.world_to_cell(25.0, 25.0).unwrap();
+    let ray = after_both.z_grid.ray(r, c);
+    assert_eq!(ray.len(), 1, "after both cuts: one segment");
     assert!(
-        ray[0].enter.abs() < 0.01,
-        "bottom setup material starts at Z=0 (local)"
+        (ray[0].enter - 5.0).abs() < 1.0,
+        "bottom cut leaves material starting near Z=5, got {}",
+        ray[0].enter
     );
     assert!(
         (ray[0].exit - 15.0).abs() < 1.0,
-        "bottom setup material ends near Z=15 (local), got {}",
+        "top cut leaves material ending near Z=15, got {}",
         ray[0].exit
     );
 
@@ -1834,32 +1829,30 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
         panic!("expected simulation result");
     };
 
-    // Checkpoint 0 is the top-setup stock, checkpoint 1 is bottom-setup stock (per-setup now)
+    // Checkpoints store GLOBAL-frame stocks for playback.
     assert_eq!(result.checkpoints.len(), 2);
 
-    // Checkpoint 0: top-setup local stock with cut at Z=7
+    // Checkpoint 0: global stock after top-setup cut at Z=7
     let cp0 = &result.checkpoints[0].stock;
     let (r, c) = cp0.z_grid.world_to_cell(15.0, 15.0).unwrap();
     let ray = cp0.z_grid.ray(r, c);
     assert_eq!(ray.len(), 1);
-    assert!(
-        ray[0].enter.abs() < 0.01,
-        "top-setup checkpoint material starts at Z=0"
-    );
+    assert!(ray[0].enter.abs() < 0.01, "material starts at Z=0");
     assert!(
         (ray[0].exit - 7.0).abs() < 1.0,
-        "top-setup checkpoint material ends near Z=7, got {}",
+        "top cut ends near Z=7, got {}",
         ray[0].exit
     );
 
-    // Checkpoint 1: bottom-setup local stock with cut at Z=7
+    // Checkpoint 1: global stock after both cuts (top at Z=7, bottom at Z=3)
     let cp1 = &result.checkpoints[1].stock;
     let (r, c) = cp1.z_grid.world_to_cell(15.0, 15.0).unwrap();
     let ray = cp1.z_grid.ray(r, c);
     assert_eq!(ray.len(), 1);
     assert!(
-        ray[0].enter.abs() < 0.01,
-        "bottom-setup checkpoint material starts at Z=0 (local)"
+        ray[0].enter > 2.0,
+        "after both cuts, material bottom raised above Z=2, got {}",
+        ray[0].enter
     );
 
     // Boundary directions are correct

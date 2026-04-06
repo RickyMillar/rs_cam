@@ -79,24 +79,44 @@ impl RsCamApp {
             return;
         }
 
-        // If moving backward, reset to fresh stock and re-simulate from start.
-        // Per-setup simulation stores local-frame stocks in checkpoints, but
-        // playback_data uses global-frame toolpaths. Always reset to a fresh
-        // global stock to avoid frame mismatches.
+        // If moving backward, reset from nearest checkpoint.
+        // Checkpoints store global-frame stocks (stamped in parallel with per-setup
+        // simulation), so they're compatible with the global-frame playback toolpaths.
         if target_move < live_move {
-            let bbox = self
-                .controller
-                .state()
-                .simulation
-                .results
-                .as_ref()
-                .map(|r| r.stock_bbox)
-                .unwrap_or_else(|| self.controller.state().job.stock.bbox());
-            let res = self.controller.state().simulation.resolution;
-            let fresh = TriDexelStock::from_bounds(&bbox, res);
-            let pb = &mut self.controller.state_mut().simulation.playback;
-            pb.live_stock = Some(fresh);
-            pb.live_sim_move = 0;
+            let boundaries = self.controller.state().simulation.boundaries();
+            let mut best_cp: Option<usize> = None;
+            for (i, b) in boundaries.iter().enumerate() {
+                if b.end_move <= target_move {
+                    best_cp = Some(i);
+                }
+            }
+
+            if let Some(cp_idx) = best_cp {
+                if let Some(cp) = self.controller.state().simulation.checkpoints().get(cp_idx)
+                    && let Some(stock) = &cp.stock
+                {
+                    let stock_clone = stock.clone();
+                    let cp_end = boundaries[cp_idx].end_move;
+                    let pb = &mut self.controller.state_mut().simulation.playback;
+                    pb.live_stock = Some(stock_clone);
+                    pb.live_sim_move = cp_end;
+                }
+            } else {
+                // Before any checkpoint — reset to fresh stock (global frame)
+                let bbox = self
+                    .controller
+                    .state()
+                    .simulation
+                    .results
+                    .as_ref()
+                    .map(|r| r.stock_bbox)
+                    .unwrap_or_else(|| self.controller.state().job.stock.bbox());
+                let res = self.controller.state().simulation.resolution;
+                let fresh = TriDexelStock::from_bounds(&bbox, res);
+                let pb = &mut self.controller.state_mut().simulation.playback;
+                pb.live_stock = Some(fresh);
+                pb.live_sim_move = 0;
+            }
         }
 
         // Now simulate forward from live_sim_move to target_move

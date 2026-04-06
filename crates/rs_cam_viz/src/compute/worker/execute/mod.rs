@@ -142,6 +142,9 @@ where
     let mut cut_samples = Vec::new();
     // Composited mesh from all per-setup simulations.
     let mut composite_mesh = rs_cam_core::stock_mesh::StockMesh::empty();
+    // Parallel global stock for playback checkpoints.
+    // Kept in sync with playback_data (global-frame toolpaths + direction).
+    let mut global_stock = TriDexelStock::from_bounds(&req.stock_bbox, req.resolution);
 
     for group in &req.groups {
         // Per-setup stock: always simulated from the top (Z-axis).
@@ -199,23 +202,36 @@ where
                 direction: playback_direction,
             });
 
-            // Checkpoint: extract mesh from the per-setup stock, transform to global.
-            let local_mesh = dexel_stock_to_mesh(&group_stock);
-            let checkpoint_mesh =
-                transform_stock_mesh_to_global(&local_mesh, &group.local_to_global);
-            checkpoints.push(SimCheckpointMesh {
-                boundary_index,
-                mesh: checkpoint_mesh,
-                stock: group_stock.checkpoint(),
-            });
-
             // Playback data: transform toolpath to global frame for playback.
             let global_tp = if let Some(info) = &group.local_to_global {
                 Arc::new(info.transform_toolpath(toolpath))
             } else {
                 Arc::clone(toolpath)
             };
-            playback_data.push((global_tp, tool_config.clone(), playback_direction));
+            playback_data.push((global_tp.clone(), tool_config.clone(), playback_direction));
+
+            // Stamp the global stock in parallel for checkpoint/playback support.
+            // This uses the same global-frame toolpath + direction as playback.
+            {
+                let playback_lut = RadialProfileLUT::from_cutter(&cutter, 256);
+                let _ = global_stock.simulate_toolpath_with_lut_cancel(
+                    &global_tp,
+                    &playback_lut,
+                    radius,
+                    playback_direction,
+                    &|| cancel.load(Ordering::SeqCst),
+                );
+            }
+
+            // Checkpoint: composited mesh for display + global stock for playback resume.
+            let local_mesh = dexel_stock_to_mesh(&group_stock);
+            let checkpoint_mesh =
+                transform_stock_mesh_to_global(&local_mesh, &group.local_to_global);
+            checkpoints.push(SimCheckpointMesh {
+                boundary_index,
+                mesh: checkpoint_mesh,
+                stock: global_stock.checkpoint(),
+            });
 
             boundary_index += 1;
         }
