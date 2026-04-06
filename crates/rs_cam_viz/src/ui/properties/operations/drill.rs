@@ -3,11 +3,6 @@ use crate::state::toolpath::{AlignmentPinDrillConfig, DrillConfig, DrillCycleTyp
 use super::super::dv;
 
 pub(in crate::ui::properties) fn draw_drill_params(ui: &mut egui::Ui, cfg: &mut DrillConfig) {
-    ui.label(
-        egui::RichText::new("Hole positions from SVG circles")
-            .italics()
-            .color(egui::Color32::from_rgb(150, 150, 130)),
-    );
     egui::Grid::new("drill_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -78,11 +73,6 @@ pub(in crate::ui::properties) fn draw_alignment_pin_drill_params(
     ui: &mut egui::Ui,
     cfg: &mut AlignmentPinDrillConfig,
 ) {
-    ui.label(
-        egui::RichText::new("Drills alignment pin holes through stock into spoilboard")
-            .italics()
-            .color(egui::Color32::from_rgb(140, 180, 140)),
-    );
     ui.label(format!("{} hole(s)", cfg.holes.len()));
     egui::Grid::new("pin_drill_p")
         .num_columns(2)

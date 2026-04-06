@@ -1959,11 +1959,14 @@ fn draw_toolpath_panel(
             }
 
             ui.add_space(4.0);
+            // Operation description from spec (consistent across all operations)
+            let spec = entry.operation.op_type().spec();
             ui.label(
-                egui::RichText::new("Cutting Parameters")
-                    .strong()
-                    .color(egui::Color32::from_rgb(180, 180, 195)),
+                egui::RichText::new(spec.description)
+                    .italics()
+                    .color(egui::Color32::from_rgb(150, 150, 130)),
             );
+            ui.add_space(2.0);
             match &mut entry.operation {
                 OperationConfig::Face(cfg) => draw_face_params(ui, cfg),
                 OperationConfig::Pocket(cfg) => draw_pocket_params(ui, cfg),
@@ -2397,6 +2400,12 @@ fn tooltip_for(label: &str) -> Option<&'static str> {
         "Radius" => "Radius of the helical or arc entry/exit move.",
         "Max Rate" => "Maximum allowable feed rate during optimized sections.",
         "Ramp Rate" => "How quickly feed rate ramps up toward max (mm/min per mm of engagement).",
+        "Slope To" => "Maximum surface slope (degrees) to machine. Steeper faces are skipped.",
+        "Finishing Passes" => "Spring passes at final depth for dimensional accuracy.",
+        "Offset Passes" => "Number of parallel offset passes around pencil traces.",
+        "Count" => "Number of holding tabs placed around the profile perimeter.",
+        "Continuous" => "Connect passes into a single continuous toolpath without retract.",
+        "Direction" => "Cutting direction for this operation.",
         _ => return None,
     })
 }

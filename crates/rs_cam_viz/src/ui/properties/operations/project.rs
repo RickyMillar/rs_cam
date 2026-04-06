@@ -9,12 +9,6 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
     cfg: &mut ProjectCurveConfig,
     models: &[(ModelId, String)],
 ) {
-    ui.label(
-        egui::RichText::new("Projects 2D curves onto 3D mesh")
-            .italics()
-            .color(egui::Color32::from_rgb(150, 150, 130)),
-    );
-
     // Surface model selector — lets the user pick a different model for the 3D surface.
     ui.horizontal(|ui| {
         ui.label("Surface:");

@@ -1504,7 +1504,7 @@ fn resubmitting_active_toolpath_cancels_and_replaces_it() {
     assert_eq!(snapshot.queue_depth, 1);
     assert_eq!(
         snapshot.current_job.as_deref(),
-        Some("DropCutter 3 (3D Finish)")
+        Some("DropCutter 3 (3D Raster Finish)")
     );
     assert_eq!(snapshot.state, LaneState::Cancelling);
 
