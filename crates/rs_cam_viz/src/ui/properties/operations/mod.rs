@@ -24,8 +24,8 @@ pub(super) use surface_3d::{
 
 use crate::state::job::{JobState, ToolType};
 use crate::state::toolpath::{
-    HeightContext, HeightMode, HeightReference, HeightsConfig, OperationConfig, PocketPattern,
-    ReferenceOffset, ToolpathEntry, ToolpathId,
+    ComputeStatus, HeightContext, HeightMode, HeightReference, HeightsConfig, OperationConfig,
+    PocketPattern, ReferenceOffset, ToolpathEntry, ToolpathId, UiProcessRole,
 };
 
 use super::dv;
@@ -1574,6 +1574,7 @@ struct ValidationTool {
     id: crate::state::job::ToolId,
     tool_type: ToolType,
     diameter: f64,
+    cutting_length: f64,
 }
 
 struct ValidationModel {
@@ -1604,6 +1605,7 @@ impl ToolpathValidationContext {
                     id: tool.id,
                     tool_type: tool.tool_type,
                     diameter: tool.diameter,
+                    cutting_length: tool.cutting_length,
                 })
                 .collect(),
             models: job
@@ -1774,6 +1776,162 @@ fn has_prior_rest_source(
     setup.toolpaths[..current_idx].iter().any(|toolpath| {
         toolpath.enabled && toolpath.tool_id == prev_tool_id && toolpath.model_id == entry.model_id
     })
+}
+
+// ── Contextual warnings (non-blocking) ──────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WarningSeverity {
+    Info,
+    Warning,
+    Error,
+}
+
+impl WarningSeverity {
+    pub fn color(self) -> egui::Color32 {
+        match self {
+            WarningSeverity::Info => egui::Color32::from_rgb(100, 180, 220),
+            WarningSeverity::Warning => egui::Color32::from_rgb(220, 180, 60),
+            WarningSeverity::Error => egui::Color32::from_rgb(220, 100, 80),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OperationWarning {
+    pub severity: WarningSeverity,
+    pub message: String,
+}
+
+/// Collect non-blocking contextual warnings about the current configuration.
+/// These do NOT prevent generation — they advise the user of suboptimal choices.
+pub fn collect_warnings(
+    entry: &ToolpathEntry,
+    ctx: &ToolpathValidationContext,
+    height_ctx: Option<&HeightContext>,
+) -> Vec<OperationWarning> {
+    let mut warnings: Vec<OperationWarning> = Vec::new();
+
+    let Some(tool) = ctx.tools.iter().find(|t| t.id == entry.tool_id) else {
+        return warnings;
+    };
+
+    let feed = entry.operation.feed_rate();
+    let plunge = entry.operation.plunge_rate();
+
+    // -- Tool-operation compatibility --
+
+    // Ball nose on 2D clearing operations (suboptimal)
+    if matches!(tool.tool_type, ToolType::BallNose | ToolType::TaperedBallNose)
+        && matches!(
+            entry.operation,
+            OperationConfig::Pocket(_) | OperationConfig::Face(_) | OperationConfig::Zigzag(_)
+        )
+    {
+        warnings.push(OperationWarning {
+            severity: WarningSeverity::Warning,
+            message: "Ball nose tools leave scallops on flat surfaces. Consider a flat end mill for clearing operations.".into(),
+        });
+    }
+
+    // End mill on scallop/pencil (ball tip strongly preferred)
+    if matches!(tool.tool_type, ToolType::EndMill)
+        && matches!(
+            entry.operation,
+            OperationConfig::Scallop(_) | OperationConfig::Pencil(_)
+        )
+    {
+        warnings.push(OperationWarning {
+            severity: WarningSeverity::Error,
+            message: "Scallop and Pencil operations require a ball nose tool for correct surface contact.".into(),
+        });
+    }
+
+    // -- Stepover checks --
+    if let Some(stepover) = entry.operation.stepover() {
+        let spec = entry.operation.op_type().spec();
+        // Stepover > 50% on finishing ops
+        if spec.ui_process_role == UiProcessRole::Finish && stepover > tool.diameter * 0.5 && tool.diameter > 0.0 {
+            warnings.push(OperationWarning {
+                severity: WarningSeverity::Warning,
+                message: format!(
+                    "Stepover ({:.2} mm) is >{:.0}% of tool diameter. Finish quality may suffer.",
+                    stepover,
+                    (stepover / tool.diameter) * 100.0,
+                ),
+            });
+        }
+    }
+
+    // -- Depth checks --
+    if let Some(dpp) = entry.operation.depth_per_pass()
+        && tool.cutting_length > 0.0
+        && dpp > tool.cutting_length
+    {
+        warnings.push(OperationWarning {
+            severity: WarningSeverity::Error,
+            message: format!(
+                "Depth per pass ({:.1} mm) exceeds cutting length ({:.1} mm). Tool shank will contact material.",
+                dpp, tool.cutting_length,
+            ),
+        });
+    }
+
+    // -- Feed rate checks --
+    if plunge > feed && feed > 0.0 {
+        warnings.push(OperationWarning {
+            severity: WarningSeverity::Warning,
+            message: format!(
+                "Plunge rate ({:.0}) exceeds feed rate ({:.0}). This is unusual \u{2014} plunge is typically 30\u{2013}50% of feed.",
+                plunge, feed,
+            ),
+        });
+    }
+
+    // -- Auto-regen notice --
+    if !entry.auto_regen && matches!(entry.status, ComputeStatus::Pending) {
+        warnings.push(OperationWarning {
+            severity: WarningSeverity::Info,
+            message: "This operation requires manual generation. Press G or click Generate.".into(),
+        });
+    }
+
+    // -- Heights cross-validation --
+    if let Some(hctx) = height_ctx {
+        let h = entry.heights.resolve(hctx);
+        if h.bottom_z > h.top_z {
+            warnings.push(OperationWarning {
+                severity: WarningSeverity::Error,
+                message: format!(
+                    "Bottom Z ({:.1}) is above Top Z ({:.1}). No material will be cut.",
+                    h.bottom_z, h.top_z,
+                ),
+            });
+        }
+        if h.feed_z < h.top_z {
+            warnings.push(OperationWarning {
+                severity: WarningSeverity::Warning,
+                message: format!(
+                    "Feed Z ({:.1}) is below Top Z ({:.1}). Tool will plunge into material at feed rate, not cutting rate.",
+                    h.feed_z, h.top_z,
+                ),
+            });
+        }
+        if h.retract_z < h.feed_z {
+            warnings.push(OperationWarning {
+                severity: WarningSeverity::Warning,
+                message: "Retract Z is below Feed Z. Retract moves won\u{2019}t clear the approach height.".into(),
+            });
+        }
+        if h.clearance_z < h.retract_z {
+            warnings.push(OperationWarning {
+                severity: WarningSeverity::Warning,
+                message: "Clearance Z is below Retract Z. Rapid moves between operations may collide.".into(),
+            });
+        }
+    }
+
+    warnings
 }
 
 #[cfg(test)]

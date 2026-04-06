@@ -16,7 +16,7 @@ use operations::{
     draw_steep_shallow_params, draw_stepover_diagram, draw_trace_params, draw_vcarve_params,
     draw_waterline_params, draw_zigzag_params,
 };
-pub use operations::{ToolpathValidationContext, validate_toolpath};
+pub use operations::{ToolpathValidationContext, collect_warnings, validate_toolpath};
 
 use crate::state::AppState;
 use crate::state::selection::Selection;
@@ -1588,7 +1588,63 @@ impl ToolpathTab {
     }
 }
 
-fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab) {
+/// Per-tab badge state for the tab bar.
+struct TabBadges {
+    feeds_badge: Option<egui::Color32>,
+    heights_badge: Option<egui::Color32>,
+    mods_badge: Option<egui::Color32>,
+}
+
+impl TabBadges {
+    fn for_tab(&self, tab: ToolpathTab) -> Option<egui::Color32> {
+        match tab {
+            ToolpathTab::Feeds => self.feeds_badge,
+            ToolpathTab::Heights => self.heights_badge,
+            ToolpathTab::Mods => self.mods_badge,
+            ToolpathTab::Params => None,
+        }
+    }
+}
+
+fn compute_tab_badges(entry: &ToolpathEntry, warnings: &[operations::OperationWarning], height_ctx: Option<&HeightContext>) -> TabBadges {
+    // Heights: badge if any height warning exists
+    let heights_badge = if let Some(hctx) = height_ctx {
+        let h = entry.heights.resolve(hctx);
+        if h.bottom_z > h.top_z || h.clearance_z < h.retract_z {
+            Some(egui::Color32::from_rgb(220, 100, 80)) // red
+        } else if h.feed_z < h.top_z || h.retract_z < h.feed_z {
+            Some(egui::Color32::from_rgb(220, 180, 60)) // yellow
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Feeds: badge if any feed warning from core
+    let feeds_badge = entry.feeds_result.as_ref().and_then(|r| {
+        if r.warnings.is_empty() {
+            None
+        } else if r.power_limited {
+            Some(egui::Color32::from_rgb(220, 180, 60))
+        } else {
+            Some(egui::Color32::from_rgb(100, 180, 220))
+        }
+    });
+
+    // Mods: badge if warnings mention tool-operation issues (from collect_warnings)
+    let mods_badge = if warnings.iter().any(|w| w.severity == operations::WarningSeverity::Error) {
+        Some(egui::Color32::from_rgb(220, 100, 80))
+    } else if warnings.iter().any(|w| w.severity == operations::WarningSeverity::Warning) {
+        Some(egui::Color32::from_rgb(220, 180, 60))
+    } else {
+        None
+    };
+
+    TabBadges { feeds_badge, heights_badge, mods_badge }
+}
+
+fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab, badges: &TabBadges) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         for &tab in ToolpathTab::ALL {
@@ -1604,16 +1660,40 @@ fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab) {
                     egui::Color32::from_rgb(140, 140, 155),
                 )
             };
-            let button =
-                egui::Button::new(egui::RichText::new(tab.label()).color(text_color).strong())
-                    .fill(bg)
-                    .rounding(egui::Rounding {
-                        nw: 4.0,
-                        ne: 4.0,
-                        sw: 0.0,
-                        se: 0.0,
-                    })
-                    .min_size(egui::vec2(55.0, 24.0));
+            let label = if let Some(badge_color) = badges.for_tab(tab) {
+                // Prepend a colored dot
+                let mut job = egui::text::LayoutJob::default();
+                job.append(
+                    "\u{25CF} ",
+                    0.0,
+                    egui::TextFormat {
+                        color: badge_color,
+                        font_id: egui::FontId::proportional(8.0),
+                        ..Default::default()
+                    },
+                );
+                job.append(
+                    tab.label(),
+                    0.0,
+                    egui::TextFormat {
+                        color: text_color,
+                        font_id: egui::FontId::proportional(13.0),
+                        ..Default::default()
+                    },
+                );
+                egui::WidgetText::LayoutJob(job)
+            } else {
+                egui::RichText::new(tab.label()).color(text_color).strong().into()
+            };
+            let button = egui::Button::new(label)
+                .fill(bg)
+                .rounding(egui::Rounding {
+                    nw: 4.0,
+                    ne: 4.0,
+                    sw: 0.0,
+                    se: 0.0,
+                })
+                .min_size(egui::vec2(55.0, 24.0));
             let response = ui.add(button);
             if response.clicked() && !is_active {
                 *active = tab;
@@ -1797,6 +1877,14 @@ fn draw_toolpath_panel(
         }
     }
 
+    // Contextual warnings (non-blocking)
+    let warnings = collect_warnings(entry, validation, height_ctx);
+    if !warnings.is_empty() {
+        for w in &warnings {
+            ui.label(egui::RichText::new(&w.message).small().color(w.severity.color()));
+        }
+    }
+
     // ── Tab bar ─────────────────────────────────────────────────────
 
     ui.add_space(8.0);
@@ -1804,7 +1892,8 @@ fn draw_toolpath_panel(
     let mut active_tab: ToolpathTab = ui
         .memory(|mem| mem.data.get_temp(tab_id))
         .unwrap_or(ToolpathTab::Params);
-    draw_toolpath_tabs(ui, &mut active_tab);
+    let tab_badges = compute_tab_badges(entry, &warnings, height_ctx);
+    draw_toolpath_tabs(ui, &mut active_tab, &tab_badges);
     ui.memory_mut(|mem| mem.data.insert_temp(tab_id, active_tab));
     ui.separator();
 
@@ -1854,6 +1943,20 @@ fn draw_toolpath_panel(
                     }
                 },
             );
+
+            // Compact auto-feed summary (when auto-feeds are active)
+            if has_any_auto
+                && let Some(result) = &entry.feeds_result
+            {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Auto: {:.0} mm/min feed, {:.0} RPM",
+                        result.feed_rate_mm_min, result.rpm,
+                    ))
+                    .small()
+                    .color(egui::Color32::from_rgb(100, 170, 140)),
+                );
+            }
 
             ui.add_space(4.0);
             ui.label(
@@ -1969,55 +2072,46 @@ fn draw_toolpath_panel(
                 calculate_and_apply_feeds(ui, entry, tool_cfg, material, machine, workholding);
             }
             if let Some(result) = &entry.feeds_result {
-                ui.add_space(6.0);
-                draw_engagement_diagram(ui, result, tool_diameter, tool_type);
-
-                // Math breakdown — show how the calculator arrived at these values
-                ui.add_space(6.0);
+                // Formula breakdown — always visible, the key teaching tool
+                ui.add_space(4.0);
                 let flute_count = tool_configs
                     .iter()
                     .find(|(id, _)| *id == entry.tool_id)
                     .map(|(_, t)| t.flute_count)
                     .unwrap_or(2);
-                ui.collapsing(
-                    egui::RichText::new("How these were calculated")
-                        .small()
-                        .color(egui::Color32::from_rgb(120, 120, 135)),
-                    |ui| {
-                        let hint = egui::Color32::from_rgb(130, 130, 145);
-                        let val = egui::Color32::from_rgb(170, 170, 185);
-                        let font = egui::FontId::proportional(9.5);
+                let val = egui::Color32::from_rgb(170, 170, 185);
+                let font = egui::FontId::proportional(9.5);
 
-                        ui.label(egui::RichText::new(format!(
-                            "Feed = RPM \u{00D7} flutes \u{00D7} chipload = {:.0} \u{00D7} {} \u{00D7} {:.4} = {:.0} mm/min",
-                            result.rpm, flute_count, result.chip_load_mm, result.feed_rate_mm_min
-                        )).font(font.clone()).color(val));
+                ui.label(egui::RichText::new(format!(
+                    "Feed = RPM \u{00D7} flutes \u{00D7} chipload = {:.0} \u{00D7} {} \u{00D7} {:.4} = {:.0} mm/min",
+                    result.rpm, flute_count, result.chip_load_mm, result.feed_rate_mm_min
+                )).font(font.clone()).color(val));
 
-                        ui.label(egui::RichText::new(format!(
-                            "MRR = DOC \u{00D7} WOC \u{00D7} Feed = {:.2} \u{00D7} {:.2} \u{00D7} {:.0} = {:.0} mm\u{00B3}/min",
-                            result.axial_depth_mm, result.radial_width_mm, result.feed_rate_mm_min, result.mrr_mm3_min
-                        )).font(font.clone()).color(val));
+                ui.label(egui::RichText::new(format!(
+                    "MRR = DOC \u{00D7} WOC \u{00D7} Feed = {:.2} \u{00D7} {:.2} \u{00D7} {:.0} = {:.0} mm\u{00B3}/min",
+                    result.axial_depth_mm, result.radial_width_mm, result.feed_rate_mm_min, result.mrr_mm3_min
+                )).font(font.clone()).color(val));
 
-                        ui.label(egui::RichText::new(format!(
-                            "Power = MRR \u{00D7} Kc / 60e6 = {:.2} kW (of {:.2} kW available)",
-                            result.power_kw, result.available_power_kw
-                        )).font(font.clone()).color(val));
+                ui.label(egui::RichText::new(format!(
+                    "Power = MRR \u{00D7} Kc / 60e6 = {:.2} kW (of {:.2} kW available)",
+                    result.power_kw, result.available_power_kw
+                )).font(font.clone()).color(val));
 
-                        if result.power_limited {
-                            ui.label(egui::RichText::new(
-                                "Feed was reduced to stay within spindle power"
-                            ).font(font.clone()).color(egui::Color32::from_rgb(220, 170, 60)));
-                        }
+                if result.power_limited {
+                    ui.label(egui::RichText::new(
+                        "Feed was reduced to stay within spindle power"
+                    ).font(font.clone()).color(egui::Color32::from_rgb(220, 170, 60)));
+                }
 
-                        ui.label(egui::RichText::new(format!(
-                            "Plunge = {:.0} mm/min ({:.0}% of feed)",
-                            result.plunge_rate_mm_min,
-                            result.plunge_rate_mm_min / result.feed_rate_mm_min.max(1.0) * 100.0
-                        )).font(font).color(val));
+                ui.label(egui::RichText::new(format!(
+                    "Plunge = {:.0} mm/min ({:.0}% of feed)",
+                    result.plunge_rate_mm_min,
+                    result.plunge_rate_mm_min / result.feed_rate_mm_min.max(1.0) * 100.0
+                )).font(font).color(val));
 
-                        let _ = hint;
-                    },
-                );
+                // Engagement diagram
+                ui.add_space(6.0);
+                draw_engagement_diagram(ui, result, tool_diameter, tool_type);
             }
         }
 
