@@ -24,6 +24,8 @@ pub struct RsCamApp {
     last_hover_face: Option<rs_cam_core::enriched_mesh::FaceGroupId>,
     /// Flag: show the unsaved-changes confirmation dialog before quitting.
     show_quit_dialog: bool,
+    /// Track toolpath color mode changes to trigger re-upload.
+    last_tp_color_mode: crate::state::viewport::ToolpathColorMode,
 }
 
 impl RsCamApp {
@@ -81,6 +83,7 @@ impl RsCamApp {
             auto_screenshot_frame,
             last_hover_face: None,
             show_quit_dialog: false,
+            last_tp_color_mode: crate::state::viewport::ToolpathColorMode::Normal,
         }
     }
 
@@ -343,6 +346,13 @@ impl eframe::App for RsCamApp {
         crate::ui::automation::begin_frame(ctx);
 
         self.controller.drain_compute_results();
+
+        // Re-upload toolpath GPU data when color mode changes
+        let current_tp_mode = self.controller.state().viewport.toolpath_color_mode;
+        if current_tp_mode != self.last_tp_color_mode {
+            self.last_tp_color_mode = current_tp_mode;
+            self.controller.set_pending_upload();
+        }
 
         if self.controller.take_pending_upload() {
             self.upload_gpu_data(frame);

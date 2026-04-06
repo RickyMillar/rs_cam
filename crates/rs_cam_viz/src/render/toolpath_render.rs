@@ -264,6 +264,129 @@ impl ToolpathGpuData {
             0
         };
     }
+
+    /// Build GPU data colored by feed rate engagement.
+    /// Green = nominal feed (light cut), yellow = reduced feed (moderate), red = heavily loaded.
+    /// `nominal_feed` is the base feed rate for the operation.
+    #[allow(clippy::indexing_slicing)]
+    pub fn from_toolpath_engagement(
+        device: &wgpu::Device,
+        limits: &GpuLimits,
+        tp: &Toolpath,
+        nominal_feed: f64,
+    ) -> Self {
+        use wgpu::util::DeviceExt;
+
+        let max_buffer_bytes: usize = (limits.max_buffer_size as f64 * 0.94) as usize;
+        let vertex_size: usize = std::mem::size_of::<LineVertex>();
+        let max_verts: usize = max_buffer_bytes / vertex_size;
+        let total_moves = tp.moves.len().saturating_sub(1);
+        let stride = if total_moves * 2 > max_verts {
+            (total_moves * 2 / max_verts) + 1
+        } else {
+            1
+        };
+
+        let nominal = nominal_feed.max(1.0);
+
+        // Engagement color: feed_rate/nominal → color
+        // ratio = 1.0 (nominal) → green, 0.5 → yellow, 0.0 → red
+        let engagement_color = |feed: f64| -> [f32; 3] {
+            let ratio = (feed / nominal).clamp(0.0, 1.5) as f32;
+            if ratio >= 1.0 {
+                // At or above nominal: green (light engagement / air cut)
+                [0.2, 0.8, 0.3]
+            } else if ratio >= 0.5 {
+                // 50-100% of nominal: green → yellow
+                let t = (ratio - 0.5) * 2.0; // 0..1
+                [0.2 + (1.0 - t) * 0.7, 0.8 - (1.0 - t) * 0.1, 0.3 - (1.0 - t) * 0.2]
+            } else {
+                // Below 50%: yellow → red (heavy engagement)
+                let t = ratio * 2.0; // 0..1
+                [0.9 - (1.0 - t) * 0.1, 0.7 * t, 0.1 * t]
+            }
+        };
+
+        let rapid_color: [f32; 3] = [0.15, 0.15, 0.2];
+        let mut cut_verts = Vec::new();
+        let mut rapid_verts = Vec::new();
+        let mut move_cut_counts = Vec::new();
+        let mut move_rapid_counts = Vec::new();
+
+        for i in 1..tp.moves.len() {
+            let keep = stride == 1
+                || i % stride == 0
+                || i == 1
+                || i == tp.moves.len() - 1
+                || tp.moves[i].move_type == MoveType::Rapid;
+
+            if keep {
+                let from = tp.moves[i - 1].target;
+                let to = tp.moves[i].target;
+                let p0 = [from.x as f32, from.y as f32, from.z as f32];
+                let p1 = [to.x as f32, to.y as f32, to.z as f32];
+
+                match tp.moves[i].move_type {
+                    MoveType::Rapid => {
+                        rapid_verts.push(LineVertex { position: p0, color: rapid_color });
+                        rapid_verts.push(LineVertex { position: p1, color: rapid_color });
+                    }
+                    _ => {
+                        let feed = tp.moves[i].move_type.feed_rate().unwrap_or(nominal);
+                        let c = engagement_color(feed);
+                        cut_verts.push(LineVertex { position: p0, color: c });
+                        cut_verts.push(LineVertex { position: p1, color: c });
+                    }
+                }
+            }
+
+            move_cut_counts.push(cut_verts.len() as u32);
+            move_rapid_counts.push(rapid_verts.len() as u32);
+        }
+
+        if cut_verts.is_empty() {
+            cut_verts.push(LineVertex { position: [0.0; 3], color: [0.0; 3] });
+        }
+        if rapid_verts.is_empty() {
+            rapid_verts.push(LineVertex { position: [0.0; 3], color: [0.0; 3] });
+        }
+
+        let cut_vertex_count = cut_verts.len() as u32;
+        let rapid_vertex_count = rapid_verts.len() as u32;
+
+        let cut_vertex_buffer = gpu_safety::try_create_buffer(
+            device, limits, "tp_engagement_cut",
+            bytemuck::cast_slice(&cut_verts), wgpu::BufferUsages::VERTEX,
+        ).unwrap_or_else(|| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("tp_engagement_cut_placeholder"),
+                contents: bytemuck::cast_slice(&[LineVertex { position: [0.0; 3], color: [0.0; 3] }]),
+                usage: wgpu::BufferUsages::VERTEX,
+            })
+        });
+
+        let rapid_vertex_buffer = gpu_safety::try_create_buffer(
+            device, limits, "tp_engagement_rapid",
+            bytemuck::cast_slice(&rapid_verts), wgpu::BufferUsages::VERTEX,
+        ).unwrap_or_else(|| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("tp_engagement_rapid_placeholder"),
+                contents: bytemuck::cast_slice(&[LineVertex { position: [0.0; 3], color: [0.0; 3] }]),
+                usage: wgpu::BufferUsages::VERTEX,
+            })
+        });
+
+        Self {
+            cut_vertex_buffer,
+            cut_vertex_count,
+            rapid_vertex_buffer,
+            rapid_vertex_count,
+            move_cut_counts,
+            move_rapid_counts,
+            entry_preview_buffer: None,
+            entry_preview_count: 0,
+        }
+    }
 }
 
 /// Entry/exit style configuration passed from the toolpath dressup settings.

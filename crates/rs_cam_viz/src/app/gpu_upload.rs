@@ -539,22 +539,46 @@ impl RsCamApp {
             resources.tool_model_data = None;
         }
 
-        // Upload collision markers as red crosses
+        // Upload collision markers with density-based heatmap coloring.
+        // Nearby collisions cluster to brighter red; isolated ones are dimmer yellow.
         if !self.controller.collision_positions().is_empty() {
             use crate::render::LineVertex;
+            let positions = self.controller.collision_positions();
             let s = 1.0f32; // marker size in mm
-            let color = [0.95, 0.15, 0.15];
+            let cluster_radius = 5.0_f32; // mm radius for density estimation
+
+            // Precompute density for each collision point
+            let densities: Vec<usize> = positions
+                .iter()
+                .map(|p| {
+                    positions
+                        .iter()
+                        .filter(|q| {
+                            let dx = p[0] - q[0];
+                            let dy = p[1] - q[1];
+                            let dz = p[2] - q[2];
+                            dx * dx + dy * dy + dz * dz < cluster_radius * cluster_radius
+                        })
+                        .count()
+                })
+                .collect();
+            let max_density = densities.iter().copied().max().unwrap_or(1).max(1);
+
             let vertex_size = std::mem::size_of::<LineVertex>();
             let mut verts = Vec::new();
-            for p in self.controller.collision_positions() {
-                // Cap marker count to stay within GPU buffer limits
+            for (i, p) in positions.iter().enumerate() {
                 if verts.len() * vertex_size >= resources.gpu_limits.max_buffer_size {
                     tracing::warn!(
-                        markers = self.controller.collision_positions().len(),
+                        markers = positions.len(),
                         "Too many collision markers — truncating to fit GPU buffer"
                     );
                     break;
                 }
+                // SAFETY: densities has same length as positions
+                #[allow(clippy::indexing_slicing)]
+                let t = densities[i] as f32 / max_density as f32;
+                // Yellow (isolated) → Red (clustered)
+                let color = [0.95, 0.8 * (1.0 - t) + 0.1, 0.1 * (1.0 - t)];
                 verts.push(LineVertex {
                     position: [p[0] - s, p[1], p[2]],
                     color,
@@ -632,13 +656,23 @@ impl RsCamApp {
                 // local frame — use directly, no transform needed.
                 let render_tp = result.toolpath.as_ref();
 
-                let mut gpu_data = ToolpathGpuData::from_toolpath(
-                    &render_state.device,
-                    &resources.gpu_limits,
-                    render_tp,
-                    i,
-                    selected,
-                );
+                let color_mode = self.controller.state().viewport.toolpath_color_mode;
+                let mut gpu_data = if matches!(color_mode, crate::state::viewport::ToolpathColorMode::Engagement) {
+                    ToolpathGpuData::from_toolpath_engagement(
+                        &render_state.device,
+                        &resources.gpu_limits,
+                        render_tp,
+                        tp.operation.feed_rate(),
+                    )
+                } else {
+                    ToolpathGpuData::from_toolpath(
+                        &render_state.device,
+                        &resources.gpu_limits,
+                        render_tp,
+                        i,
+                        selected,
+                    )
+                };
 
                 // Generate entry path preview for selected toolpaths with a non-None entry style
                 if selected {

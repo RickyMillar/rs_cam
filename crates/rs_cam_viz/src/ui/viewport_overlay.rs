@@ -2,7 +2,7 @@ use super::AppEvent;
 use crate::compute::LaneSnapshot;
 use crate::render::camera::ViewPreset;
 use crate::state::Workspace;
-use crate::state::viewport::{RenderMode, ViewportState};
+use crate::state::viewport::{RenderMode, ToolpathColorMode, ViewportState};
 use crate::ui::automation;
 use crate::ui::theme;
 
@@ -55,6 +55,19 @@ pub fn draw(
             .on_hover_text("Show fixtures");
         ui.checkbox(&mut viewport.show_polygons, "Curves")
             .on_hover_text("Show DXF/SVG polygon outlines");
+
+        // Toolpath color mode
+        let engagement_on = viewport.toolpath_color_mode == ToolpathColorMode::Engagement;
+        let mut engagement_checked = engagement_on;
+        ui.checkbox(&mut engagement_checked, "Engagement")
+            .on_hover_text("Color toolpath lines by feed rate: green = light cut, yellow = moderate, red = heavy engagement");
+        if engagement_checked != engagement_on {
+            viewport.toolpath_color_mode = if engagement_checked {
+                ToolpathColorMode::Engagement
+            } else {
+                ToolpathColorMode::Normal
+            };
+        }
 
         ui.separator();
 
