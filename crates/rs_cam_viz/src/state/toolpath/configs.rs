@@ -1042,6 +1042,12 @@ impl OperationParams for WaterlineConfig {
     fn set_plunge_rate(&mut self, value: f64) {
         self.plunge_rate = value;
     }
+    fn depth_per_pass(&self) -> Option<f64> {
+        Some(self.z_step)
+    }
+    fn set_depth_per_pass(&mut self, value: f64) {
+        self.z_step = value;
+    }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
     }
@@ -1102,6 +1108,12 @@ impl OperationParams for SteepShallowConfig {
     fn set_stepover(&mut self, value: f64) {
         self.stepover = value;
     }
+    fn depth_per_pass(&self) -> Option<f64> {
+        Some(self.z_step)
+    }
+    fn set_depth_per_pass(&mut self, value: f64) {
+        self.z_step = value;
+    }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
     }
@@ -1119,6 +1131,12 @@ impl OperationParams for RampFinishConfig {
     }
     fn set_plunge_rate(&mut self, value: f64) {
         self.plunge_rate = value;
+    }
+    fn depth_per_pass(&self) -> Option<f64> {
+        Some(self.max_stepdown)
+    }
+    fn set_depth_per_pass(&mut self, value: f64) {
+        self.max_stepdown = value;
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None

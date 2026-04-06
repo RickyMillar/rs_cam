@@ -485,10 +485,8 @@ impl<B: ComputeBackend> AppController<B> {
                             self.state.simulation.playback.current_move = move_index;
                             self.state.simulation.playback.playing = false;
                         } else {
-                            // Start playback from the beginning so the user sees
-                            // the tool progressively cutting the uncut block.
                             self.state.simulation.playback.current_move = 0;
-                            self.state.simulation.playback.playing = true;
+                            self.state.simulation.playback.playing = false;
                         }
 
                         // Store fresh tri-dexel stock for playback (global frame)

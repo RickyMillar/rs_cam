@@ -133,20 +133,7 @@ pub fn draw(
                             .color(theme::WARNING),
                     );
                 }
-                // Estimate mesh size: 2 * rows * cols vertices at ~28 bytes each.
-                let cols = (sx / res).ceil() as u64 + 1;
-                let rows = (sy / res).ceil() as u64 + 1;
-                let estimated_bytes = 2 * rows * cols * 28;
-                // Most GPUs limit buffers to 256MB.
-                if estimated_bytes > 256 * 1024 * 1024 {
-                    ui.label(
-                        egui::RichText::new(
-                            "Mesh too large for GPU — viewport will be blank at this resolution",
-                        )
-                        .small()
-                        .color(theme::WARNING),
-                    );
-                }
+                // (Large meshes are now auto-chunked for GPU upload — no blank-screen warning needed.)
             }
         });
 
