@@ -134,7 +134,7 @@ fn run_adaptive3d_annotated(
         tool_radius: req.tool.diameter / 2.0,
         stepover: cfg.stepover,
         depth_per_pass: cfg.depth_per_pass,
-        stock_to_leave: cfg.stock_to_leave_axial,
+        stock_to_leave: cfg.stock_to_leave_axial.max(cfg.stock_to_leave_radial),
         feed_rate: cfg.feed_rate,
         plunge_rate: cfg.plunge_rate,
         safe_z: effective_safe_z(req),
