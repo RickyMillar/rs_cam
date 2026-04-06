@@ -39,15 +39,21 @@ impl ColoredMeshVertex {
     }
 }
 
-/// Simulation result mesh uploaded to GPU.
+/// One GPU buffer pair for a chunk of the simulation mesh.
+pub struct SimMeshChunk {
+    pub vertex_buffer: wgpu::Buffer,
+    pub index_buffer: wgpu::Buffer,
+    pub index_count: u32,
+}
+
+/// Simulation result mesh uploaded to GPU, possibly split across multiple
+/// buffer chunks when the mesh exceeds the device's max buffer size.
 ///
 /// Includes a generation counter so callers can avoid redundant re-uploads.
 /// Bump `generation` whenever the mesh geometry or colors change; callers
 /// compare against their last-seen generation to skip work.
 pub struct SimMeshGpuData {
-    pub vertex_buffer: wgpu::Buffer,
-    pub index_buffer: wgpu::Buffer,
-    pub index_count: u32,
+    pub chunks: Vec<SimMeshChunk>,
     /// Monotonically increasing counter bumped on every geometry or color update.
     /// Callers cache the last-seen value and skip re-upload when it matches.
     pub generation: u64,
@@ -196,42 +202,150 @@ impl SimMeshGpuData {
 
     /// Upload a StockMesh with per-vertex custom colors.
     /// `colors` is one `[r, g, b]` per vertex (from deviation_colors, height_gradient_colors, etc.).
-    /// Returns `None` if the buffer exceeds GPU device limits.
+    ///
+    /// When the mesh exceeds the GPU's max buffer size, it is automatically
+    /// split into multiple chunks so it still renders (just with more draw calls).
+    /// Returns `None` only if the mesh is empty.
     pub fn from_heightmap_mesh_colored(
         device: &wgpu::Device,
         limits: &GpuLimits,
         hm: &StockMesh,
         colors: &[[f32; 3]],
     ) -> Option<Self> {
+        if hm.indices.is_empty() {
+            return None;
+        }
+
         let mesh_verts = Self::build_vertex_data(hm, colors);
         let fingerprint = ColorFingerprint::from_colors(colors);
 
         let vertex_bytes = bytemuck::cast_slice::<_, u8>(&mesh_verts);
         let index_bytes = bytemuck::cast_slice::<_, u8>(&hm.indices);
 
-        let vertex_buffer = gpu_safety::try_create_buffer(
-            device,
-            limits,
-            "sim_mesh_vertices",
-            vertex_bytes,
-            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        )?;
+        // Try single-buffer fast path first.
+        if vertex_bytes.len() <= limits.max_buffer_size
+            && index_bytes.len() <= limits.max_buffer_size
+        {
+            if let (Some(vb), Some(ib)) = (
+                gpu_safety::try_create_buffer(
+                    device,
+                    limits,
+                    "sim_mesh_vertices",
+                    vertex_bytes,
+                    wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                ),
+                gpu_safety::try_create_buffer(
+                    device,
+                    limits,
+                    "sim_mesh_indices",
+                    index_bytes,
+                    wgpu::BufferUsages::INDEX,
+                ),
+            ) {
+                return Some(Self {
+                    chunks: vec![SimMeshChunk {
+                        vertex_buffer: vb,
+                        index_buffer: ib,
+                        index_count: hm.indices.len() as u32,
+                    }],
+                    generation: NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                    cached_color_fingerprint: fingerprint,
+                });
+            }
+        }
 
-        let index_buffer = gpu_safety::try_create_buffer(
-            device,
-            limits,
-            "sim_mesh_indices",
-            index_bytes,
-            wgpu::BufferUsages::INDEX,
-        )?;
+        // Slow path: split the mesh into triangle-aligned chunks that each fit
+        // in a single GPU buffer.
+        tracing::info!(
+            total_verts = mesh_verts.len(),
+            total_indices = hm.indices.len(),
+            max_buffer_mb = limits.max_buffer_size / (1024 * 1024),
+            "Sim mesh exceeds single buffer — splitting into chunks"
+        );
+
+        let chunks = Self::upload_chunked(device, limits, &mesh_verts, &hm.indices);
+        if chunks.is_empty() {
+            return None;
+        }
 
         Some(Self {
-            vertex_buffer,
-            index_buffer,
-            index_count: hm.indices.len() as u32,
+            chunks,
             generation: NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             cached_color_fingerprint: fingerprint,
         })
+    }
+
+    /// Split a mesh into GPU-buffer-sized chunks. Each chunk gets its own
+    /// vertex and index buffer with re-based indices starting from 0.
+    #[allow(clippy::indexing_slicing)] // triangle stride-3 access bounded by loop
+    fn upload_chunked(
+        device: &wgpu::Device,
+        limits: &GpuLimits,
+        all_verts: &[ColoredMeshVertex],
+        all_indices: &[u32],
+    ) -> Vec<SimMeshChunk> {
+        use wgpu::util::DeviceExt;
+
+        let vert_size = std::mem::size_of::<ColoredMeshVertex>();
+        let idx_size = std::mem::size_of::<u32>();
+        // Leave 5% headroom below the buffer limit.
+        let usable = (limits.max_buffer_size as f64 * 0.95) as usize;
+        // Max triangles per chunk limited by both vertex and index buffer sizes.
+        let max_verts_per_chunk = usable / vert_size;
+        let max_indices_per_chunk = (usable / idx_size) / 3 * 3; // triangle-aligned
+        let max_tris = (max_verts_per_chunk / 3).min(max_indices_per_chunk / 3);
+
+        let num_tris = all_indices.len() / 3;
+        let mut chunks = Vec::new();
+        let mut tri_offset = 0;
+
+        while tri_offset < num_tris {
+            let chunk_tris = max_tris.min(num_tris - tri_offset);
+            let chunk_idx_start = tri_offset * 3;
+            let chunk_idx_end = chunk_idx_start + chunk_tris * 3;
+            let chunk_indices = &all_indices[chunk_idx_start..chunk_idx_end];
+
+            // Collect unique vertex indices and build a remapping table.
+            let mut seen = std::collections::HashMap::new();
+            let mut local_verts: Vec<ColoredMeshVertex> = Vec::new();
+            let mut local_indices: Vec<u32> = Vec::with_capacity(chunk_indices.len());
+
+            for &idx in chunk_indices {
+                let local_idx = *seen.entry(idx).or_insert_with(|| {
+                    let li = local_verts.len() as u32;
+                    if let Some(v) = all_verts.get(idx as usize) {
+                        local_verts.push(*v);
+                    }
+                    li
+                });
+                local_indices.push(local_idx);
+            }
+
+            let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("sim_mesh_chunk_vertices"),
+                contents: bytemuck::cast_slice(&local_verts),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
+            let ib = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("sim_mesh_chunk_indices"),
+                contents: bytemuck::cast_slice(&local_indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+
+            chunks.push(SimMeshChunk {
+                vertex_buffer: vb,
+                index_buffer: ib,
+                index_count: local_indices.len() as u32,
+            });
+
+            tri_offset += chunk_tris;
+        }
+
+        tracing::info!(
+            chunk_count = chunks.len(),
+            "Sim mesh chunked for GPU upload"
+        );
+        chunks
     }
 
     /// Re-upload colors only if they differ from the cached fingerprint.
@@ -239,6 +353,9 @@ impl SimMeshGpuData {
     /// When only the viz mode changes (not the geometry), this avoids rebuilding
     /// the full vertex buffer from scratch when the colors haven't actually changed.
     /// Returns `true` if the buffer was updated, `false` if skipped.
+    ///
+    /// Note: for multi-chunk meshes, this only works for single-chunk data (the
+    /// common case). Multi-chunk meshes require a full rebuild via `from_heightmap_mesh_colored`.
     pub fn update_colors_if_changed(
         &mut self,
         queue: &wgpu::Queue,
@@ -250,11 +367,22 @@ impl SimMeshGpuData {
             return false;
         }
 
-        let mesh_verts = Self::build_vertex_data(hm, colors);
-        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&mesh_verts));
-        self.cached_color_fingerprint = new_fingerprint;
-        self.generation = NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        true
+        // Fast path: single chunk — write directly.
+        if self.chunks.len() == 1 {
+            let mesh_verts = Self::build_vertex_data(hm, colors);
+            queue.write_buffer(
+                &self.chunks[0].vertex_buffer,
+                0,
+                bytemuck::cast_slice(&mesh_verts),
+            );
+            self.cached_color_fingerprint = new_fingerprint;
+            self.generation = NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            return true;
+        }
+
+        // Multi-chunk: can't do incremental update, signal that a full rebuild is needed.
+        // Callers should detect the generation change and call from_heightmap_mesh_colored.
+        false
     }
 
     /// Build the full vertex array (positions + normals + colors) from a StockMesh.

@@ -823,9 +823,14 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 if let Some(sim) = &resources.sim_mesh_data {
                     pass.set_pipeline(&resources.sim_mesh_pipeline);
                     pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
-                    pass.set_vertex_buffer(0, sim.vertex_buffer.slice(..));
-                    pass.set_index_buffer(sim.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..sim.index_count, 0, 0..1);
+                    for chunk in &sim.chunks {
+                        pass.set_vertex_buffer(0, chunk.vertex_buffer.slice(..));
+                        pass.set_index_buffer(
+                            chunk.index_buffer.slice(..),
+                            wgpu::IndexFormat::Uint32,
+                        );
+                        pass.draw_indexed(0..chunk.index_count, 0, 0..1);
+                    }
                 }
             } else {
                 // Draw all enriched (STEP) models
