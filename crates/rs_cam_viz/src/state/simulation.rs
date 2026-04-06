@@ -334,7 +334,7 @@ impl SimulationState {
             },
             debug: SimulationDebugState {
                 enabled: false,
-                drawer_open: true,
+                drawer_open: false,
                 active_tab: SimulationDebugTab::Semantic,
                 expanded_toolpaths: HashSet::new(),
                 focused_hotspot: None,
