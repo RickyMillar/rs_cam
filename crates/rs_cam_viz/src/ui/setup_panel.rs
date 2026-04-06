@@ -40,6 +40,11 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
     ui.add_space(6.0);
 
+    // Project summary card
+    draw_project_summary(ui, state);
+
+    ui.add_space(6.0);
+
     // Setup cards
     for setup in &state.job.setups {
         draw_setup_card(ui, setup, state, events);
@@ -240,6 +245,72 @@ fn chip(ui: &mut egui::Ui, key: &str, value: &str, color: egui::Color32) {
             .color(color),
     )
     .on_hover_text(tooltip);
+}
+
+/// Compact project summary: ops, tools, estimated time, readiness.
+fn draw_project_summary(ui: &mut egui::Ui, state: &AppState) {
+    let enabled_ops = state.job.all_toolpaths().filter(|tp| tp.enabled).count();
+    if enabled_ops == 0 {
+        return;
+    }
+
+    let computed = state
+        .job
+        .all_toolpaths()
+        .filter(|tp| tp.enabled && tp.result.is_some())
+        .count();
+    let tool_count = state.job.tools.len();
+
+    // Estimated cycle time from computed toolpaths
+    let mut total_time_min = 0.0_f64;
+    for tp in state.job.all_toolpaths() {
+        if !tp.enabled {
+            continue;
+        }
+        if let Some(ref result) = tp.result {
+            let feed = tp.operation.feed_rate();
+            if feed > 0.0 {
+                total_time_min += result.stats.cutting_distance / feed;
+            }
+        }
+    }
+
+    let time_str = if total_time_min >= 1.0 {
+        format!("{:.0} min", total_time_min)
+    } else {
+        format!("{:.0} s", total_time_min * 60.0)
+    };
+
+    egui::Frame::default()
+        .fill(egui::Color32::from_rgb(34, 36, 44))
+        .inner_margin(6.0)
+        .rounding(4.0)
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(format!("{computed}/{enabled_ops} ops"))
+                        .small()
+                        .strong()
+                        .color(if computed == enabled_ops {
+                            theme::SUCCESS
+                        } else {
+                            theme::WARNING
+                        }),
+                );
+                ui.label(
+                    egui::RichText::new(format!("\u{00B7} {tool_count} tool(s)"))
+                        .small()
+                        .color(theme::TEXT_DIM),
+                );
+                if computed > 0 {
+                    ui.label(
+                        egui::RichText::new(format!("\u{00B7} ~{time_str}"))
+                            .small()
+                            .color(theme::TEXT_DIM),
+                    );
+                }
+            });
+        });
 }
 
 /// Determine the active setup from the current selection.
