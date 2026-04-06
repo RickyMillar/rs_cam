@@ -119,7 +119,7 @@ impl<B: ComputeBackend> AppController<B> {
         let mut all_toolpaths_flat = Vec::new();
 
         for (i, setup) in self.state.job.setups.iter().enumerate() {
-            let direction = face_up_to_direction(setup.face_up);
+            // Toolpaths stay in setup-local frame — no transform needed.
             let toolpaths: Vec<_> = setup
                 .toolpaths
                 .iter()
@@ -133,19 +133,10 @@ impl<B: ComputeBackend> AppController<B> {
                         .iter()
                         .find(|t| t.id == tp.tool_id)?
                         .clone();
-                    let transformed = if setup.needs_transform() {
-                        Arc::new(transform_toolpath_to_stock_frame(
-                            &result.toolpath,
-                            setup,
-                            stock,
-                        ))
-                    } else {
-                        Arc::clone(&result.toolpath)
-                    };
                     Some(SetupSimToolpath {
                         id: tp.id,
                         name: tp.name.clone(),
-                        toolpath: transformed,
+                        toolpath: Arc::clone(&result.toolpath),
                         tool,
                         semantic_trace: tp.semantic_trace.clone(),
                     })
@@ -154,9 +145,30 @@ impl<B: ComputeBackend> AppController<B> {
 
             if !toolpaths.is_empty() {
                 all_toolpaths_flat.extend(toolpaths.clone());
+
+                // Build the per-setup local stock bbox.
+                let (eff_w, eff_d, eff_h) = setup.effective_stock(stock);
+                let local_stock_bbox = BoundingBox3 {
+                    min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
+                    max: rs_cam_core::geo::P3::new(eff_w, eff_d, eff_h),
+                };
+
+                let local_to_global = if setup.needs_transform() {
+                    Some(crate::compute::SetupTransformInfo {
+                        face_up: setup.face_up,
+                        z_rotation: setup.z_rotation,
+                        stock_x: stock.x,
+                        stock_y: stock.y,
+                        stock_z: stock.z,
+                    })
+                } else {
+                    None
+                };
+
                 groups.push(SetupSimGroup {
                     toolpaths,
-                    direction,
+                    local_stock_bbox,
+                    local_to_global,
                 });
             }
 
@@ -290,103 +302,6 @@ impl<B: ComputeBackend> AppController<B> {
             );
         }
     }
-}
-
-/// Derive the stock cut direction from a setup's face-up orientation.
-fn face_up_to_direction(face_up: FaceUp) -> StockCutDirection {
-    match face_up {
-        FaceUp::Top => StockCutDirection::FromTop,
-        FaceUp::Bottom => StockCutDirection::FromBottom,
-        FaceUp::Front => StockCutDirection::FromFront,
-        FaceUp::Back => StockCutDirection::FromBack,
-        FaceUp::Left => StockCutDirection::FromLeft,
-        FaceUp::Right => StockCutDirection::FromRight,
-    }
-}
-
-/// Transform a toolpath from a setup's local coordinate frame to the global
-/// stock-relative frame (origin at 0,0,0, axes aligned with physical stock).
-///
-/// For arc moves (CW/CCW), the offset vector (i,j) is transformed by the
-/// linear part of the affine transform, and arc direction is flipped when the
-/// XY component of the transform is a reflection.
-fn transform_toolpath_to_stock_frame(
-    toolpath: &rs_cam_core::toolpath::Toolpath,
-    setup: &Setup,
-    stock: &crate::state::job::StockConfig,
-) -> rs_cam_core::toolpath::Toolpath {
-    use rs_cam_core::geo::P3;
-    use rs_cam_core::toolpath::{Move, MoveType, Toolpath};
-
-    let (eff_w, eff_d, _) = setup.face_up.effective_stock(stock.x, stock.y, stock.z);
-
-    // Point transform: undo ZRotation, then undo FaceUp (local → global stock-relative)
-    let xform = |p: P3| -> P3 {
-        let unrotated = setup.z_rotation.inverse_transform_point(p, eff_w, eff_d);
-        setup
-            .face_up
-            .inverse_transform_point(unrotated, stock.x, stock.y, stock.z)
-    };
-
-    // Direction transform for arc offsets (i,j,0): linear part only (no translation).
-    let o_g = xform(P3::new(0.0, 0.0, 0.0));
-    let dir_xform = |di: f64, dj: f64| -> (f64, f64) {
-        let p_g = xform(P3::new(di, dj, 0.0));
-        (p_g.x - o_g.x, p_g.y - o_g.y)
-    };
-
-    // Determine if XY transform is a reflection (negative determinant → flip arc direction).
-    let ex_g = xform(P3::new(1.0, 0.0, 0.0));
-    let ey_g = xform(P3::new(0.0, 1.0, 0.0));
-    let det = (ex_g.x - o_g.x) * (ey_g.y - o_g.y) - (ex_g.y - o_g.y) * (ey_g.x - o_g.x);
-    let flip_arcs = det < 0.0;
-
-    let new_moves: Vec<Move> = toolpath
-        .moves
-        .iter()
-        .map(|m| {
-            let target = xform(m.target);
-            let move_type = match m.move_type {
-                MoveType::Rapid => MoveType::Rapid,
-                MoveType::Linear { feed_rate } => MoveType::Linear { feed_rate },
-                MoveType::ArcCW { i, j, feed_rate } => {
-                    let (ni, nj) = dir_xform(i, j);
-                    if flip_arcs {
-                        MoveType::ArcCCW {
-                            i: ni,
-                            j: nj,
-                            feed_rate,
-                        }
-                    } else {
-                        MoveType::ArcCW {
-                            i: ni,
-                            j: nj,
-                            feed_rate,
-                        }
-                    }
-                }
-                MoveType::ArcCCW { i, j, feed_rate } => {
-                    let (ni, nj) = dir_xform(i, j);
-                    if flip_arcs {
-                        MoveType::ArcCW {
-                            i: ni,
-                            j: nj,
-                            feed_rate,
-                        }
-                    } else {
-                        MoveType::ArcCCW {
-                            i: ni,
-                            j: nj,
-                            feed_rate,
-                        }
-                    }
-                }
-            };
-            Move { target, move_type }
-        })
-        .collect();
-
-    Toolpath { moves: new_moves }
 }
 
 /// Targets ~5 cells across the smallest tool radius so curved profiles

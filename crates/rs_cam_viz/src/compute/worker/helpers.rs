@@ -520,7 +520,7 @@ pub(super) fn build_simulation_cut_artifact(
         },
         "toolpaths": req.groups.iter().map(|group| {
             json!({
-                "direction": format!("{:?}", group.direction),
+                "direction": "FromTop",
                 "toolpaths": group.toolpaths.iter().map(|toolpath| {
                     json!({
                         "toolpath_id": toolpath.id.0,
