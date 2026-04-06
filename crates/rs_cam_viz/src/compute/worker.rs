@@ -26,7 +26,6 @@ use rs_cam_core::chamfer::{ChamferParams, chamfer_toolpath};
 use rs_cam_core::collision::{
     CollisionReport, RapidCollision, check_collisions_interpolated_with_cancel,
 };
-use rs_cam_core::depth::{DepthDistribution, DepthStepping, depth_stepped_toolpath};
 use rs_cam_core::dexel_mesh::dexel_stock_to_mesh;
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dressup::{
@@ -57,7 +56,7 @@ use rs_cam_core::tool::{
     VBitEndmill,
 };
 use rs_cam_core::toolpath::{MoveType, Toolpath, raster_toolpath_from_grid};
-use rs_cam_core::trace::{TraceParams, trace_toolpath};
+use rs_cam_core::trace::TraceParams;
 use rs_cam_core::vcarve::{VCarveParams, vcarve_toolpath};
 use rs_cam_core::waterline::{WaterlineParams, waterline_toolpath_with_cancel};
 use rs_cam_core::zigzag::{ZigzagParams, zigzag_toolpath};
@@ -94,6 +93,9 @@ pub struct ComputeRequest {
     /// Fixture and keep-out footprints to subtract from the machining boundary.
     pub keep_out_footprints: Vec<Polygon2>,
     pub heights: crate::state::toolpath::ResolvedHeights,
+    /// Pre-computed Z levels for depth stepping (top→bottom).
+    /// Empty for operations that don't use standard depth stepping (3D ops, etc.).
+    pub cutting_levels: Vec<f64>,
     /// Pre-simulated remaining stock from prior toolpaths in the same setup.
     pub prior_stock: Option<TriDexelStock>,
 }

@@ -11,6 +11,8 @@ use crate::state::job::{ToolId, ToolType};
 
 fn sample_request(operation: OperationConfig, stock_source: StockSource) -> ComputeRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let heights = HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0));
+    let cutting_levels = operation.cutting_levels(heights.top_z);
     ComputeRequest {
         toolpath_id: ToolpathId(1),
         toolpath_name: "Sample".to_owned(),
@@ -31,7 +33,8 @@ fn sample_request(operation: OperationConfig, stock_source: StockSource) -> Comp
         boundary_enabled: false,
         boundary_containment: BoundaryContainment::Center,
         keep_out_footprints: Vec::new(),
-        heights: HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0)),
+        heights,
+        cutting_levels,
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
     }
@@ -85,6 +88,9 @@ fn feed_optimization_rejects_mesh_derived_operations() {
 
 fn quick_pocket_request(id: usize) -> ComputeRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let operation = OperationConfig::new_default(OperationType::Pocket);
+    let heights = HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0));
+    let cutting_levels = operation.cutting_levels(heights.top_z);
     ComputeRequest {
         toolpath_id: ToolpathId(id),
         toolpath_name: format!("Pocket {id}"),
@@ -94,7 +100,7 @@ fn quick_pocket_request(id: usize) -> ComputeRequest {
         mesh: None,
         enriched_mesh: None,
         face_selection: None,
-        operation: OperationConfig::new_default(OperationType::Pocket),
+        operation,
         dressups: DressupConfig::default(),
         stock_source: StockSource::Fresh,
         tool,
@@ -107,7 +113,8 @@ fn quick_pocket_request(id: usize) -> ComputeRequest {
         boundary_enabled: false,
         boundary_containment: BoundaryContainment::Center,
         keep_out_footprints: Vec::new(),
-        heights: HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0)),
+        heights,
+        cutting_levels,
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
     }
@@ -144,6 +151,7 @@ fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
         boundary_containment: BoundaryContainment::Center,
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0)),
+        cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
     }
@@ -180,6 +188,7 @@ fn waterline_request(id: usize) -> ComputeRequest {
         boundary_containment: BoundaryContainment::Center,
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0)),
+        cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
     }
@@ -218,6 +227,7 @@ fn adaptive3d_request(id: usize) -> ComputeRequest {
         boundary_containment: BoundaryContainment::Center,
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0)),
+        cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
     }
@@ -227,6 +237,7 @@ fn adaptive_request(id: usize) -> ComputeRequest {
     let mut request = quick_pocket_request(id);
     request.toolpath_name = format!("Adaptive {id}");
     request.operation = OperationConfig::new_default(OperationType::Adaptive);
+    request.cutting_levels = request.operation.cutting_levels(request.heights.top_z);
     request
 }
 
@@ -240,6 +251,7 @@ fn profile_request(id: usize) -> ComputeRequest {
     cfg.finishing_passes = 1;
     cfg.tab_count = 2;
     request.operation = OperationConfig::Profile(cfg);
+    request.cutting_levels = request.operation.cutting_levels(request.heights.top_z);
     request
 }
 
@@ -273,6 +285,7 @@ fn drill_request(id: usize) -> ComputeRequest {
         boundary_containment: BoundaryContainment::Center,
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0)),
+        cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
     }
@@ -302,6 +315,7 @@ fn steep_shallow_request(id: usize) -> ComputeRequest {
         boundary_containment: BoundaryContainment::Center,
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0)),
+        cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
     }
@@ -344,6 +358,7 @@ fn pencil_request(id: usize) -> ComputeRequest {
         boundary_containment: BoundaryContainment::Center,
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0)),
+        cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
     }
@@ -379,6 +394,7 @@ fn scallop_request(id: usize) -> ComputeRequest {
         boundary_containment: BoundaryContainment::Center,
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(&HeightContext::simple(20.0, 5.0)),
+        cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
     }
@@ -415,6 +431,7 @@ fn ramp_finish_request(id: usize) -> ComputeRequest {
         boundary_containment: BoundaryContainment::Center,
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(&HeightContext::simple(20.0, 5.0)),
+        cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
     }
@@ -449,6 +466,7 @@ fn spiral_finish_request(id: usize) -> ComputeRequest {
         boundary_containment: BoundaryContainment::Center,
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(&HeightContext::simple(20.0, 5.0)),
+        cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
     }
@@ -484,6 +502,7 @@ fn radial_finish_request(id: usize) -> ComputeRequest {
         boundary_containment: BoundaryContainment::Center,
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(&HeightContext::simple(15.0, 5.0)),
+        cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
     }
@@ -518,6 +537,7 @@ fn horizontal_finish_request(id: usize) -> ComputeRequest {
         boundary_containment: BoundaryContainment::Center,
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(&HeightContext::simple(15.0, 5.0)),
+        cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
     }
@@ -556,6 +576,7 @@ fn project_curve_request(id: usize) -> ComputeRequest {
         boundary_containment: BoundaryContainment::Center,
         keep_out_footprints: Vec::new(),
         heights: HeightsConfig::default().resolve(&HeightContext::simple(15.0, 5.0)),
+        cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
     }

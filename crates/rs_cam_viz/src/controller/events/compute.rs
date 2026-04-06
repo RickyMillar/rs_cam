@@ -301,6 +301,8 @@ impl<B: ComputeBackend> AppController<B> {
         // simulation of prior toolpaths — not yet implemented.
         let prior_stock: Option<TriDexelStock> = None;
 
+        let cutting_levels = operation.cutting_levels(heights.top_z);
+
         self.compute.submit_toolpath(ComputeRequest {
             toolpath_id: tp_id,
             toolpath_name,
@@ -320,6 +322,7 @@ impl<B: ComputeBackend> AppController<B> {
             boundary_containment,
             keep_out_footprints,
             heights,
+            cutting_levels,
             prior_stock,
         });
     }
