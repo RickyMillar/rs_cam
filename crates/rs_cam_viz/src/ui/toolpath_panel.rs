@@ -186,22 +186,28 @@ fn draw_toolpath_card(
                     mem.data.insert_temp(hold_id, ui.input(|i| i.time));
                 });
             }
-            if frame_resp.drag_stopped() || !frame_resp.dragged() {
-                // If released before threshold → treat as click
-                if frame_resp.clicked() || frame_resp.drag_stopped() {
-                    let held_long = ui.memory(|mem| {
-                        mem.data.get_temp::<f64>(hold_id).is_some_and(|start| {
-                            ui.input(|i| i.time) - start >= hold_threshold_secs
-                        })
-                    });
-                    if !held_long && (frame_resp.clicked() || frame_resp.drag_stopped()) {
-                        events.push(AppEvent::Select(Selection::Toolpath(tp_id)));
-                    }
+
+            // Plain click (no drag) → select the toolpath.
+            if frame_resp.clicked() {
+                events.push(AppEvent::Select(Selection::Toolpath(tp_id)));
+                ui.memory_mut(|mem| mem.data.remove::<f64>(hold_id));
+            }
+
+            // Drag released → clean up. If it was a short drag (below hold
+            // threshold) also treat as a click-select.
+            if frame_resp.drag_stopped() {
+                let held_long = ui.memory(|mem| {
+                    mem.data
+                        .get_temp::<f64>(hold_id)
+                        .is_some_and(|start| ui.input(|i| i.time) - start >= hold_threshold_secs)
+                });
+                if !held_long {
+                    events.push(AppEvent::Select(Selection::Toolpath(tp_id)));
                 }
                 ui.memory_mut(|mem| mem.data.remove::<f64>(hold_id));
             }
 
-            // After hold threshold, activate DnD payload
+            // While dragging: after hold threshold, activate DnD payload.
             if frame_resp.dragged() {
                 let held_long = ui.memory(|mem| {
                     mem.data
@@ -210,7 +216,6 @@ fn draw_toolpath_card(
                 });
                 if held_long {
                     egui::DragAndDrop::set_payload(ui.ctx(), tp_id);
-                    // Visual feedback: dim the card being dragged
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
                 }
             }
