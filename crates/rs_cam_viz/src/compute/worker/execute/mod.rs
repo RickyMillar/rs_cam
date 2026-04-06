@@ -1551,7 +1551,10 @@ mod tests {
             test_request_with_polygon(OperationConfig::Profile(cfg.clone()), ToolType::EndMill);
         let tp = run_profile(&req, &cfg).unwrap();
 
-        let final_z = -cfg.depth;
+        // With new height defaults: top_z = stock_top, bottom_z = stock_bottom.
+        // HeightContext::simple(10.0, 6.0) → stock_top=6, stock_bottom=0.
+        // Cutting levels: 4.0, 2.0, 0.0 (from top=6 down by depth=6, step=2).
+        let final_z = *req.cutting_levels.last().unwrap_or(&0.0);
         let tab_z = final_z + cfg.tab_height;
 
         // Tab height moves should exist (tabs applied to final pass)
@@ -1572,15 +1575,7 @@ mod tests {
         // coincides with a roughing level. Instead, verify that there are
         // no tab-height moves between roughing passes (moves with z > final_z
         // that aren't at a legitimate roughing level or safe_z).
-        let depth = rs_cam_core::depth::DepthStepping {
-            start_z: 0.0,
-            final_z: -cfg.depth.abs(),
-            max_step_down: cfg.depth_per_pass,
-            distribution: rs_cam_core::depth::DepthDistribution::Even,
-            finish_allowance: 0.0,
-            finishing_passes: cfg.finishing_passes,
-        };
-        let roughing_levels = depth.all_levels();
+        let roughing_levels = &req.cutting_levels;
         for m in &tp.moves {
             if let MoveType::Linear { .. } = m.move_type {
                 let z = m.target.z;

@@ -87,14 +87,14 @@ pub struct HeightContext {
 }
 
 impl HeightContext {
-    /// Minimal context for tests / simple cases where only safe_z and op_depth matter.
-    /// Stock spans 0 → safe_z, no model.
+    /// Minimal context for tests / simple cases.
+    /// Stock spans 0 → `stock_height`, safe_z is treated as offset above stock top.
     pub fn simple(safe_z: f64, op_depth: f64) -> Self {
         Self {
             safe_z,
             op_depth,
-            stock_top_z: 0.0,
-            stock_bottom_z: -op_depth,
+            stock_top_z: op_depth,
+            stock_bottom_z: 0.0,
             model_top_z: None,
             model_bottom_z: None,
         }
@@ -175,19 +175,24 @@ impl Default for FeedsAutoMode {
 impl HeightsConfig {
     /// Resolve all heights given stock/model/post context.
     ///
-    /// Auto defaults anchor to the stock geometry:
-    /// - `top_z` defaults to `stock_top_z`
-    /// - `bottom_z` defaults to `stock_top_z - op_depth`
+    /// Auto defaults anchor to stock geometry with positive offsets above stock top:
+    /// - `top_z` = stock top
+    /// - `bottom_z` = stock bottom
+    /// - `retract_z` = stock top + safe_z offset
+    /// - `clearance_z` = retract + 10mm
+    /// - `feed_z` = retract − 2mm
     pub fn resolve(&self, ctx: &HeightContext) -> ResolvedHeights {
-        let retract = self.retract_z.resolve_value(ctx.safe_z, ctx);
+        // Retract defaults to stock_top + safe_z (safe_z is treated as an offset
+        // above stock, not an absolute world coordinate).
+        let retract = self
+            .retract_z
+            .resolve_value(ctx.stock_top_z + ctx.safe_z, ctx);
         ResolvedHeights {
             clearance_z: self.clearance_z.resolve_value(retract + 10.0, ctx),
             retract_z: retract,
             feed_z: self.feed_z.resolve_value(retract - 2.0, ctx),
             top_z: self.top_z.resolve_value(ctx.stock_top_z, ctx),
-            bottom_z: self
-                .bottom_z
-                .resolve_value(ctx.stock_top_z - ctx.op_depth.abs(), ctx),
+            bottom_z: self.bottom_z.resolve_value(ctx.stock_bottom_z, ctx),
         }
     }
 }
@@ -330,16 +335,16 @@ mod tests {
         let cfg = HeightsConfig::default();
         let ctx = test_ctx();
         let h = cfg.resolve(&ctx);
-        // retract = safe_z = 10
-        assert!((h.retract_z - 10.0).abs() < 1e-9);
-        // clearance = retract + 10 = 20
-        assert!((h.clearance_z - 20.0).abs() < 1e-9);
-        // feed = retract - 2 = 8
-        assert!((h.feed_z - 8.0).abs() < 1e-9);
+        // retract = stock_top + safe_z = 25 + 10 = 35
+        assert!((h.retract_z - 35.0).abs() < 1e-9);
+        // clearance = retract + 10 = 45
+        assert!((h.clearance_z - 45.0).abs() < 1e-9);
+        // feed = retract - 2 = 33
+        assert!((h.feed_z - 33.0).abs() < 1e-9);
         // top = stock_top_z = 25
         assert!((h.top_z - 25.0).abs() < 1e-9);
-        // bottom = stock_top_z - op_depth = 25 - 5 = 20
-        assert!((h.bottom_z - 20.0).abs() < 1e-9);
+        // bottom = stock_bottom_z = 0
+        assert!((h.bottom_z - 0.0).abs() < 1e-9);
     }
 
     #[test]
