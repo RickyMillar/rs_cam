@@ -48,6 +48,7 @@ pub(super) fn draw_feed_params(ui: &mut egui::Ui, feed_rate: &mut f64, plunge_ra
 
 /// F360-style height row: [offset value] [from Reference ▾]
 /// Auto mode auto-converts to FromReference with sensible defaults.
+#[allow(clippy::too_many_arguments)]
 fn draw_height_row(
     ui: &mut egui::Ui,
     label: &str,

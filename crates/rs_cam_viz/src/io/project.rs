@@ -12,8 +12,9 @@ use crate::state::job::{
     ZDatum, ZRotation,
 };
 use crate::state::toolpath::{
-    BoundaryContainment, DressupConfig, FeedsAutoMode, HeightsConfig, OperationConfig,
-    OperationType, StockSource, ToolpathEntry, ToolpathEntryInit, ToolpathId,
+    BoundaryConfig, BoundaryContainment, BoundarySource, DressupConfig, FeedsAutoMode,
+    HeightsConfig, OperationConfig, OperationType, StockSource, ToolpathEntry, ToolpathEntryInit,
+    ToolpathId,
 };
 use rs_cam_core::gcode::CoolantMode;
 
@@ -209,10 +210,17 @@ pub struct ProjectToolpathSection {
     pub dressups: DressupConfig,
     #[serde(default)]
     pub heights: HeightsConfig,
+    /// New-format boundary config (preferred).
     #[serde(default)]
-    pub boundary_enabled: bool,
-    #[serde(default)]
-    pub boundary_containment: BoundaryContainment,
+    pub boundary: BoundaryConfig,
+    /// When true, inherit boundary from stock default.
+    #[serde(default = "default_true")]
+    pub boundary_inherit: bool,
+    // Legacy fields — read for backward compat, never written.
+    #[serde(default, skip_serializing)]
+    boundary_enabled: bool,
+    #[serde(default, skip_serializing)]
+    boundary_containment: BoundaryContainment,
     #[serde(default)]
     pub coolant: CoolantMode,
     #[serde(default)]
@@ -512,8 +520,10 @@ impl ProjectToolpathSection {
             model_id: Some(toolpath.model_id),
             dressups: toolpath.dressups.clone(),
             heights: toolpath.heights.clone(),
-            boundary_enabled: toolpath.boundary_enabled,
-            boundary_containment: toolpath.boundary_containment,
+            boundary: toolpath.boundary.clone(),
+            boundary_inherit: toolpath.boundary_inherit,
+            boundary_enabled: false,
+            boundary_containment: BoundaryContainment::Center,
             coolant: toolpath.coolant,
             pre_gcode: toolpath.pre_gcode.clone(),
             post_gcode: toolpath.post_gcode.clone(),
@@ -1080,8 +1090,20 @@ fn restore_project_toolpath(
     init.locked = section.locked;
     init.dressups = section.dressups;
     init.heights = section.heights;
-    init.boundary_enabled = section.boundary_enabled;
-    init.boundary_containment = section.boundary_containment;
+    // Migrate from legacy fields if the new boundary config is at defaults
+    // but old fields carry non-default values.
+    if section.boundary_enabled && !section.boundary.enabled {
+        init.boundary = BoundaryConfig {
+            enabled: true,
+            source: BoundarySource::Stock,
+            containment: section.boundary_containment,
+            offset: 0.0,
+        };
+        init.boundary_inherit = false;
+    } else {
+        init.boundary = section.boundary;
+        init.boundary_inherit = section.boundary_inherit;
+    }
     init.coolant = section.coolant;
     init.pre_gcode = section.pre_gcode;
     init.post_gcode = section.post_gcode;
@@ -1455,8 +1477,13 @@ mod tests {
         toolpath.dressups.entry_style = DressupEntryStyle::Ramp;
         toolpath.dressups.feed_optimization = true;
         toolpath.heights.bottom_z = HeightMode::Manual(-4.2);
-        toolpath.boundary_enabled = true;
-        toolpath.boundary_containment = BoundaryContainment::Inside;
+        toolpath.boundary = BoundaryConfig {
+            enabled: true,
+            source: BoundarySource::Stock,
+            containment: BoundaryContainment::Inside,
+            offset: 0.0,
+        };
+        toolpath.boundary_inherit = false;
         toolpath.coolant = CoolantMode::Mist;
         toolpath.pre_gcode = "M7".to_owned();
         toolpath.post_gcode = "M9".to_owned();

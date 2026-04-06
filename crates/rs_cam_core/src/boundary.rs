@@ -1,10 +1,12 @@
 //! Machining boundary and tool containment.
 //!
-//! Provides boundary offset for tool containment modes (center, inside, outside)
-//! and toolpath clipping to keep moves within a boundary polygon.
+//! Provides boundary offset for tool containment modes (center, inside, outside),
+//! toolpath clipping to keep moves within a boundary polygon, and model
+//! silhouette extraction for automatic machining boundaries.
 
 use crate::geo::{P2, P3};
-use crate::polygon::{Polygon2, offset_polygon};
+use crate::mesh::TriangleMesh;
+use crate::polygon::{Polygon2, detect_containment, offset_polygon};
 use crate::toolpath::{MoveType, Toolpath};
 
 /// How the tool relates to the machining boundary.
@@ -127,6 +129,278 @@ fn feed_rate_of(mt: &MoveType) -> Option<f64> {
         MoveType::ArcCW { feed_rate, .. } => Some(*feed_rate),
         MoveType::ArcCCW { feed_rate, .. } => Some(*feed_rate),
     }
+}
+
+/// Default silhouette grid resolution in mm.
+const SILHOUETTE_CELL_SIZE: f64 = 0.5;
+
+/// Compute the 2D silhouette (XY projection) of a 3D mesh.
+///
+/// Projects all mesh triangles onto the XY plane, rasterizes them onto a
+/// boolean grid, then extracts the outline via marching squares.  Returns
+/// one or more `Polygon2` with correct winding (outer boundaries CCW,
+/// holes CW via `detect_containment`).
+///
+/// `cell_size` controls grid resolution in mm (smaller = more detail, slower).
+/// Pass `None` for the default (0.5 mm).
+#[allow(clippy::indexing_slicing)] // bounded by grid dimensions computed from mesh bbox
+pub fn model_silhouette(mesh: &TriangleMesh, cell_size: Option<f64>) -> Vec<Polygon2> {
+    let cell = cell_size.unwrap_or(SILHOUETTE_CELL_SIZE);
+    let bbox = &mesh.bbox;
+
+    // Grid dimensions — add 1-cell margin so contours don't touch edges.
+    let x_min = bbox.min.x - cell;
+    let y_min = bbox.min.y - cell;
+    let x_max = bbox.max.x + cell;
+    let y_max = bbox.max.y + cell;
+
+    let nx = ((x_max - x_min) / cell).ceil() as usize + 1;
+    let ny = ((y_max - y_min) / cell).ceil() as usize + 1;
+
+    // Flat boolean grid (row-major: grid[row * nx + col]).
+    let mut grid = vec![false; ny * nx];
+
+    // Rasterize each triangle's XY projection via scanline fill.
+    for face in &mesh.faces {
+        rasterize_triangle_xy(&face.v, &mut grid, nx, ny, x_min, y_min, cell);
+    }
+
+    // Extract contour loops via marching squares.
+    let loops = marching_squares_grid(&grid, nx, ny, x_min, y_min, cell);
+
+    // Convert to Polygon2, fix winding, and nest inner contours as holes.
+    let polygons: Vec<Polygon2> = loops
+        .into_iter()
+        .map(|pts| {
+            let mut p = Polygon2::new(pts);
+            p.ensure_winding();
+            p
+        })
+        .collect();
+    detect_containment(polygons)
+}
+
+/// Rasterize one triangle's XY projection onto the boolean grid (scanline).
+#[allow(clippy::indexing_slicing)]
+fn rasterize_triangle_xy(
+    v: &[P3; 3],
+    grid: &mut [bool],
+    nx: usize,
+    ny: usize,
+    x_min: f64,
+    y_min: f64,
+    cell: f64,
+) {
+    // Project to 2D grid coordinates (floating point).
+    let gx = [
+        (v[0].x - x_min) / cell,
+        (v[1].x - x_min) / cell,
+        (v[2].x - x_min) / cell,
+    ];
+    let gy = [
+        (v[0].y - y_min) / cell,
+        (v[1].y - y_min) / cell,
+        (v[2].y - y_min) / cell,
+    ];
+
+    // Bounding rows for the triangle.
+    let row_lo = (gy[0].min(gy[1]).min(gy[2]).floor() as usize).min(ny.saturating_sub(1));
+    let row_hi = (gy[0].max(gy[1]).max(gy[2]).ceil() as usize).min(ny.saturating_sub(1));
+
+    for row in row_lo..=row_hi {
+        let y = row as f64 + 0.5; // cell centre
+
+        // Find X-intersections of the scanline with each triangle edge.
+        let mut xs = Vec::with_capacity(2);
+        for edge in &[[0, 1], [1, 2], [2, 0]] {
+            let y0 = gy[edge[0]];
+            let y1 = gy[edge[1]];
+            if (y0 <= y && y1 > y) || (y1 <= y && y0 > y) {
+                let t = (y - y0) / (y1 - y0);
+                xs.push(gx[edge[0]] + t * (gx[edge[1]] - gx[edge[0]]));
+            }
+        }
+
+        if xs.len() < 2 {
+            // Degenerate (scanline touches vertex) — fill the vertex cell.
+            if let Some(&x_val) = xs.first() {
+                let col = (x_val as usize).min(nx.saturating_sub(1));
+                grid[row * nx + col] = true;
+            }
+            continue;
+        }
+
+        // Sort and fill between the two X intersections.
+        let (xl, xr) = if xs[0] < xs[1] {
+            (xs[0], xs[1])
+        } else {
+            (xs[1], xs[0])
+        };
+        let col_lo = (xl.floor() as usize).min(nx.saturating_sub(1));
+        let col_hi = (xr.ceil() as usize).min(nx.saturating_sub(1));
+        for col in col_lo..=col_hi {
+            grid[row * nx + col] = true;
+        }
+    }
+}
+
+/// Marching squares on a boolean grid, producing closed contour loops
+/// in world XY coordinates.
+///
+/// Edge keys are canonicalized so adjacent cells sharing an edge use the
+/// same key, enabling correct segment chaining.
+///
+/// Canonical edge keys `(row, col, orientation)`:
+/// - Horizontal edge (0): midpoint of the edge between nodes (row,col) and (row,col+1)
+/// - Vertical edge (1): midpoint of the edge between nodes (row,col) and (row+1,col)
+#[allow(clippy::indexing_slicing)]
+fn marching_squares_grid(
+    grid: &[bool],
+    nx: usize,
+    ny: usize,
+    x_min: f64,
+    y_min: f64,
+    cell: f64,
+) -> Vec<Vec<P2>> {
+    if nx < 2 || ny < 2 {
+        return Vec::new();
+    }
+
+    // Canonical edge key: (row, col, orientation).
+    //   orientation 0 = horizontal (between (row,col) and (row,col+1))
+    //   orientation 1 = vertical   (between (row,col) and (row+1,col))
+    type EdgeKey = (usize, usize, u8);
+    use std::collections::HashMap;
+
+    let val = |row: usize, col: usize| -> bool { grid[row * nx + col] };
+
+    let mut segments: Vec<(EdgeKey, EdgeKey)> = Vec::new();
+
+    let rows = ny - 1;
+    let cols = nx - 1;
+
+    for row in 0..rows {
+        for col in 0..cols {
+            // Corners: bottom-left, bottom-right, top-right, top-left
+            let bl = val(row, col) as u8;
+            let br = val(row, col + 1) as u8;
+            let tr = val(row + 1, col + 1) as u8;
+            let tl = val(row + 1, col) as u8;
+            let case = bl | (br << 1) | (tr << 2) | (tl << 3);
+
+            // Canonical edge keys for this cell (row, col):
+            let bottom: EdgeKey = (row, col, 0); // h-edge at row, between col and col+1
+            let right: EdgeKey = (row, col + 1, 1); // v-edge at col+1, between row and row+1
+            let top: EdgeKey = (row + 1, col, 0); // h-edge at row+1, between col and col+1
+            let left: EdgeKey = (row, col, 1); // v-edge at col, between row and row+1
+
+            match case {
+                0 | 15 => {}
+                1 | 14 => segments.push((bottom, left)),
+                2 | 13 => segments.push((right, bottom)),
+                3 | 12 => segments.push((right, left)),
+                4 | 11 => segments.push((top, right)),
+                6 | 9 => segments.push((top, bottom)),
+                7 | 8 => segments.push((top, left)),
+                5 => {
+                    segments.push((bottom, left));
+                    segments.push((top, right));
+                }
+                10 => {
+                    segments.push((right, bottom));
+                    segments.push((top, left));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Build adjacency map.
+    let mut adj: HashMap<EdgeKey, Vec<EdgeKey>> = HashMap::new();
+    for (a, b) in &segments {
+        adj.entry(*a).or_default().push(*b);
+        adj.entry(*b).or_default().push(*a);
+    }
+
+    let mut used_edges: HashMap<EdgeKey, Vec<bool>> = HashMap::new();
+    for (k, v) in &adj {
+        used_edges.insert(*k, vec![false; v.len()]);
+    }
+
+    // Convert canonical edge key to world coordinate (midpoint of edge).
+    let edge_pos = |key: &EdgeKey| -> P2 {
+        let (row, col, orient) = *key;
+        match orient {
+            0 => {
+                // Horizontal edge at row, between col and col+1
+                P2::new(x_min + (col as f64 + 0.5) * cell, y_min + row as f64 * cell)
+            }
+            _ => {
+                // Vertical edge at col, between row and row+1
+                P2::new(x_min + col as f64 * cell, y_min + (row as f64 + 0.5) * cell)
+            }
+        }
+    };
+
+    let mut loops: Vec<Vec<P2>> = Vec::new();
+
+    for start_key in adj.keys().copied().collect::<Vec<_>>() {
+        let Some(flags) = used_edges.get(&start_key) else {
+            continue;
+        };
+        let Some(start_idx) = flags.iter().position(|&u| !u) else {
+            continue;
+        };
+
+        let mut contour = vec![edge_pos(&start_key)];
+        let mut cur = start_key;
+        let mut cur_idx = start_idx;
+
+        loop {
+            if let Some(flags) = used_edges.get_mut(&cur)
+                && let Some(f) = flags.get_mut(cur_idx)
+            {
+                *f = true;
+            }
+
+            let Some(neighbors) = adj.get(&cur) else {
+                break;
+            };
+            let Some(&next) = neighbors.get(cur_idx) else {
+                break;
+            };
+
+            // Mark reverse direction used.
+            if let Some(neighbors) = adj.get(&next)
+                && let Some(idx) = neighbors.iter().position(|k| *k == cur)
+                && let Some(flags) = used_edges.get_mut(&next)
+                && let Some(f) = flags.get_mut(idx)
+            {
+                *f = true;
+            }
+
+            if next == start_key {
+                break; // closed loop
+            }
+
+            contour.push(edge_pos(&next));
+
+            let Some(flags) = used_edges.get(&next) else {
+                break;
+            };
+            let Some(next_idx) = flags.iter().position(|&u| !u) else {
+                break;
+            };
+            cur = next;
+            cur_idx = next_idx;
+        }
+
+        if contour.len() >= 3 {
+            loops.push(contour);
+        }
+    }
+
+    loops
 }
 
 #[cfg(test)]
@@ -427,5 +701,69 @@ mod tests {
         let result = subtract_keepouts(&boundary, &[]);
         assert_eq!(result.holes.len(), 0);
         assert!(result.contains_point(&P2::new(50.0, 50.0)));
+    }
+
+    // --- model_silhouette tests ---
+
+    #[test]
+    fn silhouette_flat_square() {
+        // A 40×40 flat quad at Z=0 centred at origin should produce a
+        // silhouette polygon covering roughly that area.
+        let mesh = crate::mesh::make_test_flat(40.0);
+        let polys = model_silhouette(&mesh, Some(1.0));
+
+        assert!(!polys.is_empty(), "Silhouette should produce polygons");
+        let total_area: f64 = polys.iter().map(|p| p.area()).sum();
+        // Expect roughly 40×40 = 1600, with some rasterization error.
+        assert!(
+            total_area > 1200.0 && total_area < 2000.0,
+            "Silhouette area {} should be near 1600",
+            total_area
+        );
+
+        // Centre of mesh should be inside the silhouette.
+        assert!(
+            polys.iter().any(|p| p.contains_point(&P2::new(0.0, 0.0))),
+            "Centre should be inside silhouette"
+        );
+        // Well outside the mesh should not be inside.
+        assert!(
+            !polys.iter().any(|p| p.contains_point(&P2::new(50.0, 50.0))),
+            "Point outside mesh should be outside silhouette"
+        );
+    }
+
+    #[test]
+    fn silhouette_hemisphere() {
+        // A hemisphere of radius 10 should have silhouette area ≈ π·10² ≈ 314.
+        let mesh = crate::mesh::make_test_hemisphere(10.0, 8);
+        let polys = model_silhouette(&mesh, Some(0.5));
+
+        assert!(!polys.is_empty(), "Hemisphere should produce silhouette");
+        let total_area: f64 = polys.iter().map(|p| p.area()).sum();
+        assert!(
+            total_area > 200.0 && total_area < 450.0,
+            "Hemisphere silhouette area {} should be near π·100 ≈ 314",
+            total_area
+        );
+
+        // Centre should be inside.
+        assert!(polys.iter().any(|p| p.contains_point(&P2::new(0.0, 0.0))));
+    }
+
+    #[test]
+    fn silhouette_winding_correct() {
+        // Verify that silhouette output has correct winding
+        // (exteriors CCW = positive signed area after detect_containment).
+        let mesh = crate::mesh::make_test_flat(40.0);
+        let polys = model_silhouette(&mesh, Some(1.0));
+        assert!(!polys.is_empty());
+
+        for p in &polys {
+            assert!(
+                p.has_correct_winding(),
+                "Polygon should have correct winding"
+            );
+        }
     }
 }

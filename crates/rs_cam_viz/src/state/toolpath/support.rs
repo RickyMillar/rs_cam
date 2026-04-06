@@ -235,6 +235,61 @@ pub enum BoundaryContainment {
     Outside,
 }
 
+/// How a machining boundary is derived.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum BoundarySource {
+    /// Stock bounding rectangle (current default).
+    #[default]
+    Stock,
+    /// 2D silhouette of the 3D model projected along the tool axis (Z-down).
+    ModelSilhouette,
+    /// Imported 2D geometry (DXF/SVG closed chains) — indices into the
+    /// toolpath's polygon list.
+    Geometry { polygon_indices: Vec<usize> },
+    /// Selected STEP/CAD faces projected to XY.
+    FaceSelection,
+}
+
+impl BoundarySource {
+    pub const ALL_SIMPLE: &[BoundarySource] =
+        &[BoundarySource::Stock, BoundarySource::ModelSilhouette];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            BoundarySource::Stock => "Stock",
+            BoundarySource::ModelSilhouette => "Model Silhouette",
+            BoundarySource::Geometry { .. } => "Imported Geometry",
+            BoundarySource::FaceSelection => "Face Selection",
+        }
+    }
+}
+
+/// Full machining boundary configuration.
+///
+/// Can live on `StockConfig` (global default) or on individual `ToolpathEntry`
+/// (per-toolpath override).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BoundaryConfig {
+    pub enabled: bool,
+    pub source: BoundarySource,
+    pub containment: BoundaryContainment,
+    /// Additional offset in mm (positive = expand, negative = shrink).
+    /// Applied after source resolution, before tool-radius containment.
+    pub offset: f64,
+}
+
+impl Default for BoundaryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            source: BoundarySource::Stock,
+            containment: BoundaryContainment::Center,
+            offset: 0.0,
+        }
+    }
+}
+
 /// Entry style for plunge replacement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

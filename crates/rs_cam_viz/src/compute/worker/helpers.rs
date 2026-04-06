@@ -473,8 +473,9 @@ pub(super) fn build_trace_artifact(
             "bottom_z": req.heights.bottom_z,
         },
         "stock_bbox": stock_bbox,
-        "boundary_enabled": req.boundary_enabled,
-        "boundary_containment": format!("{:?}", req.boundary_containment),
+        "boundary_enabled": req.boundary.enabled,
+        "boundary_source": req.boundary.source.label(),
+        "boundary_containment": format!("{:?}", req.boundary.containment),
         "keep_out_count": req.keep_out_footprints.len(),
         "debug_options": &req.debug_options,
     });

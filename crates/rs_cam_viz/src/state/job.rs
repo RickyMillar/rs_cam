@@ -370,6 +370,9 @@ pub struct StockConfig {
     /// Workholding rigidity for feeds calculation.
     #[serde(default = "default_workholding_rigidity")]
     pub workholding_rigidity: rs_cam_core::feeds::WorkholdingRigidity,
+    /// Default machining boundary inherited by new toolpaths.
+    #[serde(default)]
+    pub default_boundary: super::toolpath::BoundaryConfig,
 }
 
 fn default_workholding_rigidity() -> rs_cam_core::feeds::WorkholdingRigidity {
@@ -391,6 +394,7 @@ impl Default for StockConfig {
             alignment_pins: Vec::new(),
             flip_axis: None,
             workholding_rigidity: rs_cam_core::feeds::WorkholdingRigidity::Medium,
+            default_boundary: super::toolpath::BoundaryConfig::default(),
         }
     }
 }
