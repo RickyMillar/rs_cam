@@ -111,7 +111,7 @@ fn extract_polygons_flat(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<
                     } else if !lwp.is_closed() && pts.len() >= 2 {
                         // Open polylines imported as unclosed paths
                         // (usable for Trace, Project Curve, and engraving operations)
-                        polygons.push(Polygon2::new(pts));
+                        polygons.push(Polygon2::open_path(pts));
                     }
                 }
             }
@@ -124,7 +124,7 @@ fn extract_polygons_flat(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<
                         poly.ensure_winding();
                         polygons.push(poly);
                     } else if !poly_ent.is_closed() && pts.len() >= 2 {
-                        polygons.push(Polygon2::new(pts));
+                        polygons.push(Polygon2::open_path(pts));
                     }
                 }
             }

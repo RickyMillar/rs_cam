@@ -314,7 +314,11 @@ impl EnrichedMesh {
             .cloned()
             .collect();
 
-        Some(Polygon2 { exterior, holes })
+        Some(Polygon2 {
+            exterior,
+            holes,
+            closed: true,
+        })
     }
 
     /// Project multiple coplanar face boundary loops into a union `Polygon2`.
