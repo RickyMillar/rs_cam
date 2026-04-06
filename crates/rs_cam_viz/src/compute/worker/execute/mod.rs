@@ -133,7 +133,6 @@ where
         let sy = req.stock_bbox.max.y - req.stock_bbox.min.y;
         rs_cam_core::dexel::DexelGrid::would_exceed_grid(req.resolution, sx, sy).is_some()
     };
-    let mut stock = TriDexelStock::from_bounds(&req.stock_bbox, req.resolution);
     let sample_step_mm = req.resolution.max(0.25);
 
     let mut total_moves = 0;
@@ -142,8 +141,21 @@ where
     let mut checkpoints = Vec::new();
     let mut playback_data = Vec::new();
     let mut cut_samples = Vec::new();
+    // Composited mesh from all per-setup simulations.
+    let mut composite_mesh = rs_cam_core::stock_mesh::StockMesh::empty();
 
     for group in &req.groups {
+        // Per-setup stock: always simulated from the top (Z-axis).
+        let mut group_stock =
+            TriDexelStock::from_bounds(&group.local_stock_bbox, req.resolution);
+        let direction = rs_cam_core::dexel_stock::StockCutDirection::FromTop;
+
+        // Direction for playback (global-frame re-simulation).
+        let playback_direction = group
+            .local_to_global
+            .as_ref()
+            .map_or(rs_cam_core::dexel_stock::StockCutDirection::FromTop, |info| info.cut_direction());
+
         for sim_toolpath in &group.toolpaths {
             let tp_id = sim_toolpath.id;
             let tp_name = &sim_toolpath.name;
@@ -155,12 +167,12 @@ where
             let lut = RadialProfileLUT::from_cutter(&cutter, 256);
             let radius = cutter.radius();
             if req.metric_options.enabled {
-                let mut samples = stock
+                let mut samples = group_stock
                     .simulate_toolpath_with_lut_metrics_cancel(
                         toolpath,
                         &lut,
                         radius,
-                        group.direction,
+                        direction,
                         tp_id.0,
                         req.spindle_rpm,
                         tool_config.flute_count,
@@ -172,12 +184,12 @@ where
                     .map_err(|_e| ComputeError::Cancelled)?;
                 cut_samples.append(&mut samples);
             } else {
-                stock
+                group_stock
                     .simulate_toolpath_with_lut_cancel(
                         toolpath,
                         &lut,
                         radius,
-                        group.direction,
+                        direction,
                         &|| cancel.load(Ordering::SeqCst),
                     )
                     .map_err(|_e| ComputeError::Cancelled)?;
@@ -190,18 +202,38 @@ where
                 tool_name: tool_config.summary(),
                 start_move,
                 end_move: total_moves,
-                direction: group.direction,
+                direction: playback_direction,
             });
 
+            // Checkpoint: extract mesh from the per-setup stock, transform to global.
+            let local_mesh = dexel_stock_to_mesh(&group_stock);
+            let checkpoint_mesh = transform_stock_mesh_to_global(&local_mesh, &group.local_to_global);
             checkpoints.push(SimCheckpointMesh {
                 boundary_index,
-                mesh: dexel_stock_to_mesh(&stock),
-                stock: stock.checkpoint(),
+                mesh: checkpoint_mesh,
+                stock: group_stock.checkpoint(),
             });
 
-            playback_data.push((Arc::clone(toolpath), tool_config.clone(), group.direction));
+            // Playback data: transform toolpath to global frame for playback.
+            let global_tp = if let Some(info) = &group.local_to_global {
+                Arc::new(info.transform_toolpath(toolpath))
+            } else {
+                Arc::clone(toolpath)
+            };
+            playback_data.push((global_tp, tool_config.clone(), playback_direction));
 
             boundary_index += 1;
+        }
+
+        // After all toolpaths in this group, extract mesh and composite.
+        let group_mesh = dexel_stock_to_mesh(&group_stock);
+        if let Some(info) = &group.local_to_global {
+            composite_mesh.append_transformed(&group_mesh, |x, y, z| {
+                let p = info.local_to_global(P3::new(f64::from(x), f64::from(y), f64::from(z)));
+                (p.x as f32, p.y as f32, p.z as f32)
+            });
+        } else {
+            composite_mesh.append_transformed(&group_mesh, |x, y, z| (x, y, z));
         }
     }
 
@@ -260,7 +292,7 @@ where
     };
 
     set_phase("Build simulation mesh");
-    let mesh = dexel_stock_to_mesh(&stock);
+    let mesh = composite_mesh;
 
     // Compute per-vertex deviation (sim_z - model_z) if a reference model is available.
     let deviations = if let Some(model_mesh) = &req.model_mesh {
@@ -1312,6 +1344,23 @@ fn annotate_project_curve_semantics(
 
 /// Compute per-vertex deviation: `sim_z - model_z` for each vertex in the stock mesh.
 ///
+/// Transform a `StockMesh` from setup-local to global coordinates.
+/// When `transform` is `None` the mesh is returned as-is (identity setup).
+fn transform_stock_mesh_to_global(
+    mesh: &rs_cam_core::stock_mesh::StockMesh,
+    transform: &Option<super::SetupTransformInfo>,
+) -> rs_cam_core::stock_mesh::StockMesh {
+    let Some(info) = transform else {
+        return mesh.clone();
+    };
+    let mut out = rs_cam_core::stock_mesh::StockMesh::empty();
+    out.append_transformed(mesh, |x, y, z| {
+        let p = info.local_to_global(P3::new(f64::from(x), f64::from(y), f64::from(z)));
+        (p.x as f32, p.y as f32, p.z as f32)
+    });
+    out
+}
+
 /// Uses a spatial index on the model mesh for O(1) amortized triangle lookup per vertex.
 /// Vertices with no model triangle beneath them get deviation 0.0 (outside model footprint).
 #[allow(clippy::indexing_slicing)] // stride-3 vertex access bounded by len check
