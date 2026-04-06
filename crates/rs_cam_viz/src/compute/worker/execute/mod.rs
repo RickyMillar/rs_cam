@@ -3,8 +3,8 @@ mod operations_3d;
 
 use super::helpers::{
     apply_dressups, build_cutter, build_simulation_cut_artifact, build_trace_artifact,
-    compute_stats, debug_artifact_dir, effective_safe_z,
-    require_mesh, require_polygons, simulation_metric_artifact_dir,
+    compute_stats, debug_artifact_dir, effective_safe_z, require_mesh, require_polygons,
+    simulation_metric_artifact_dir,
 };
 use super::semantic::{
     CutRun, append_toolpath, bind_scope_to_run, contour_toolpath, cutting_runs, line_toolpath,
@@ -23,10 +23,9 @@ use super::{
     ToolType, Toolpath, ToolpathPhaseTracker, ToolpathResult, TraceConfig, TraceParams,
     TriDexelStock, TriangleMesh, VCarveConfig, VCarveParams, WaterlineConfig, WaterlineParams,
     ZigzagConfig, ZigzagParams, apply_tabs, batch_drop_cutter_with_cancel, chamfer_toolpath,
-    dexel_stock_to_mesh, drill_toolpath, even_tabs,
-    horizontal_finish_toolpath, inlay_toolpaths, pocket_toolpath, profile_toolpath,
-    project_curve_toolpath, radial_finish_toolpath, raster_toolpath_from_grid,
-    rest_machining_toolpath, steep_shallow_toolpath, vcarve_toolpath,
+    dexel_stock_to_mesh, drill_toolpath, even_tabs, horizontal_finish_toolpath, inlay_toolpaths,
+    pocket_toolpath, profile_toolpath, project_curve_toolpath, radial_finish_toolpath,
+    raster_toolpath_from_grid, rest_machining_toolpath, steep_shallow_toolpath, vcarve_toolpath,
     waterline_toolpath_with_cancel, zigzag_toolpath,
 };
 #[cfg(test)]
@@ -146,15 +145,14 @@ where
 
     for group in &req.groups {
         // Per-setup stock: always simulated from the top (Z-axis).
-        let mut group_stock =
-            TriDexelStock::from_bounds(&group.local_stock_bbox, req.resolution);
+        let mut group_stock = TriDexelStock::from_bounds(&group.local_stock_bbox, req.resolution);
         let direction = rs_cam_core::dexel_stock::StockCutDirection::FromTop;
 
         // Direction for playback (global-frame re-simulation).
-        let playback_direction = group
-            .local_to_global
-            .as_ref()
-            .map_or(rs_cam_core::dexel_stock::StockCutDirection::FromTop, |info| info.cut_direction());
+        let playback_direction = group.local_to_global.as_ref().map_or(
+            rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+            |info| info.cut_direction(),
+        );
 
         for sim_toolpath in &group.toolpaths {
             let tp_id = sim_toolpath.id;
@@ -185,13 +183,9 @@ where
                 cut_samples.append(&mut samples);
             } else {
                 group_stock
-                    .simulate_toolpath_with_lut_cancel(
-                        toolpath,
-                        &lut,
-                        radius,
-                        direction,
-                        &|| cancel.load(Ordering::SeqCst),
-                    )
+                    .simulate_toolpath_with_lut_cancel(toolpath, &lut, radius, direction, &|| {
+                        cancel.load(Ordering::SeqCst)
+                    })
                     .map_err(|_e| ComputeError::Cancelled)?;
             }
             total_moves += toolpath.moves.len();
@@ -207,7 +201,8 @@ where
 
             // Checkpoint: extract mesh from the per-setup stock, transform to global.
             let local_mesh = dexel_stock_to_mesh(&group_stock);
-            let checkpoint_mesh = transform_stock_mesh_to_global(&local_mesh, &group.local_to_global);
+            let checkpoint_mesh =
+                transform_stock_mesh_to_global(&local_mesh, &group.local_to_global);
             checkpoints.push(SimCheckpointMesh {
                 boundary_index,
                 mesh: checkpoint_mesh,

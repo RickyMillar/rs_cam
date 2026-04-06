@@ -80,7 +80,11 @@ pub fn trace_polygon_at_z(polygon: &Polygon2, z: f64, params: &TraceParams) -> T
 /// Convenience wrapper around [`trace_polygon_at_z`] that handles multi-pass
 /// depth stepping automatically when `depth > depth_per_pass`.
 pub fn trace_toolpath(polygon: &Polygon2, params: &TraceParams) -> Toolpath {
-    let depth = DepthStepping::new(params.top_z, params.top_z - params.depth, params.depth_per_pass);
+    let depth = DepthStepping::new(
+        params.top_z,
+        params.top_z - params.depth,
+        params.depth_per_pass,
+    );
 
     depth_stepped_toolpath(&depth, params.safe_z, |z| {
         trace_polygon_at_z(polygon, z, params)

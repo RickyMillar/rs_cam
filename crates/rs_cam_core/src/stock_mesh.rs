@@ -39,7 +39,11 @@ impl StockMesh {
         while i + 2 < other.vertices.len() {
             // SAFETY: loop guard ensures i+2 is in bounds
             #[allow(clippy::indexing_slicing)]
-            let (x, y, z) = (other.vertices[i], other.vertices[i + 1], other.vertices[i + 2]);
+            let (x, y, z) = (
+                other.vertices[i],
+                other.vertices[i + 1],
+                other.vertices[i + 2],
+            );
             let (tx, ty, tz) = transform(x, y, z);
             self.vertices.push(tx);
             self.vertices.push(ty);

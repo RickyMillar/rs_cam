@@ -636,15 +636,24 @@ impl OperationConfig {
                 finishing_passes: cfg.finishing_passes,
             }
             .all_levels(),
-            Self::Adaptive(cfg) => DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels(),
-            Self::Zigzag(cfg) => DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels(),
-            Self::Rest(cfg) => DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels(),
-            Self::Trace(cfg) => DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels(),
+            Self::Adaptive(cfg) => {
+                DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels()
+            }
+            Self::Zigzag(cfg) => {
+                DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels()
+            }
+            Self::Rest(cfg) => {
+                DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels()
+            }
+            Self::Trace(cfg) => {
+                DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels()
+            }
             Self::Face(cfg) => {
                 if cfg.depth <= 0.0 {
                     vec![top_z]
                 } else {
-                    DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels()
+                    DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass)
+                        .all_levels()
                 }
             }
             // 3D ops, VCarve, Chamfer, Inlay, Drill, AlignmentPinDrill — no standard depth stepping
