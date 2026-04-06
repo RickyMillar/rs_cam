@@ -159,11 +159,6 @@ fn draw_toolpath_card(
 
     let tp_id = tp.id;
 
-    // Hold-to-drag: after 400ms of sustained press, start DnD.
-    // Before that threshold, click selects the toolpath.
-    let hold_id = egui::Id::new("tp_hold_start").with(tp.id.0);
-    let hold_threshold_secs = 0.4;
-
     let inner_response = egui::Frame::default()
         .fill(if selected {
             theme::CARD_FILL_SELECTED
@@ -174,54 +169,46 @@ fn draw_toolpath_card(
         .inner_margin(4.0)
         .rounding(3.0)
         .show(ui, |ui| {
-            let frame_resp = ui.interact(
+            // Click anywhere on the card to select.
+            let card_resp = ui.interact(
                 ui.max_rect(),
-                egui::Id::new("tp_card_sense").with(tp.id.0),
-                egui::Sense::click_and_drag(),
+                egui::Id::new("tp_card_click").with(tp.id.0),
+                egui::Sense::click(),
             );
-
-            // Track hold duration for drag activation
-            if frame_resp.drag_started() {
-                ui.memory_mut(|mem| {
-                    mem.data.insert_temp(hold_id, ui.input(|i| i.time));
-                });
-            }
-
-            // Plain click (no drag) → select the toolpath.
-            if frame_resp.clicked() {
+            if card_resp.clicked() {
                 events.push(AppEvent::Select(Selection::Toolpath(tp_id)));
-                ui.memory_mut(|mem| mem.data.remove::<f64>(hold_id));
             }
 
-            // Drag released → clean up. If it was a short drag (below hold
-            // threshold) also treat as a click-select.
-            if frame_resp.drag_stopped() {
-                let held_long = ui.memory(|mem| {
-                    mem.data
-                        .get_temp::<f64>(hold_id)
-                        .is_some_and(|start| ui.input(|i| i.time) - start >= hold_threshold_secs)
-                });
-                if !held_long {
-                    events.push(AppEvent::Select(Selection::Toolpath(tp_id)));
+            // Row 1: drag grip + swatch + status + name
+            ui.horizontal(|ui| {
+                // Drag grip handle — drag this to reorder.
+                let grip_id = egui::Id::new("tp_grip").with(tp.id.0);
+                let (grip_rect, grip_resp) =
+                    ui.allocate_exact_size(egui::vec2(10.0, 14.0), egui::Sense::drag());
+                // Draw grip dots (⠿)
+                let grip_color = if grip_resp.dragged() {
+                    theme::ACCENT
+                } else if grip_resp.hovered() {
+                    theme::TEXT_MUTED
+                } else {
+                    theme::TEXT_FAINT
+                };
+                ui.painter().text(
+                    grip_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "\u{2807}",
+                    egui::FontId::proportional(12.0),
+                    grip_color,
+                );
+                if grip_resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
                 }
-                ui.memory_mut(|mem| mem.data.remove::<f64>(hold_id));
-            }
-
-            // While dragging: after hold threshold, activate DnD payload.
-            if frame_resp.dragged() {
-                let held_long = ui.memory(|mem| {
-                    mem.data
-                        .get_temp::<f64>(hold_id)
-                        .is_some_and(|start| ui.input(|i| i.time) - start >= hold_threshold_secs)
-                });
-                if held_long {
+                if grip_resp.dragged() {
                     egui::DragAndDrop::set_payload(ui.ctx(), tp_id);
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
                 }
-            }
+                let _ = grip_id; // used for identification
 
-            // Row 1: swatch + status + name
-            ui.horizontal(|ui| {
                 // Color swatch
                 let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 14.0), egui::Sense::hover());
                 ui.painter().rect_filled(rect, 2.0, swatch_color);
@@ -292,7 +279,7 @@ fn draw_toolpath_card(
             });
 
             // Context menu
-            frame_resp.context_menu(|ui| {
+            card_resp.context_menu(|ui| {
                 if ui.button("Generate").clicked() {
                     events.push(AppEvent::GenerateToolpath(tp_id));
                     ui.close_menu();
