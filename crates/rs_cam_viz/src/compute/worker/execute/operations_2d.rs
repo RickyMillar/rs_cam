@@ -7,10 +7,9 @@ use super::{
     ToolpathSemanticKind, TraceConfig, TraceParams, VCarveConfig, VCarveParams, ZigzagConfig,
     ZigzagParams, annotate_adaptive_runtime_semantics, annotate_operation_scope, append_toolpath,
     apply_tabs, bind_scope_to_offset_run, bind_scope_to_run, chamfer_toolpath, contour_toolpath,
-    cutting_runs, drill_toolpath, effective_safe_z, even_tabs,
-    inlay_toolpaths, line_toolpath, pocket_toolpath,
-    profile_toolpath, require_polygons, rest_machining_toolpath, semantic_child_context,
-    vcarve_toolpath, zigzag_toolpath,
+    cutting_runs, drill_toolpath, effective_safe_z, even_tabs, inlay_toolpaths, line_toolpath,
+    pocket_toolpath, profile_toolpath, require_polygons, rest_machining_toolpath,
+    semantic_child_context, vcarve_toolpath, zigzag_toolpath,
 };
 use crate::compute::OperationError;
 
@@ -21,33 +20,33 @@ fn run_pocket(req: &ComputeRequest, cfg: &PocketConfig) -> Result<Toolpath, Oper
     let safe_z = effective_safe_z(req);
     let mut out = Toolpath::new();
     for p in polys {
-        let tp = rs_cam_core::depth::toolpath_at_levels(&req.cutting_levels, safe_z, |z| {
-            match cfg.pattern {
-                PocketPattern::Contour => pocket_toolpath(
-                    p,
-                    &PocketParams {
-                        tool_radius: tr,
-                        stepover: cfg.stepover,
-                        cut_depth: z,
-                        feed_rate: cfg.feed_rate,
-                        plunge_rate: cfg.plunge_rate,
-                        safe_z,
-                        climb: cfg.climb,
-                    },
-                ),
-                PocketPattern::Zigzag => zigzag_toolpath(
-                    p,
-                    &ZigzagParams {
-                        tool_radius: tr,
-                        stepover: cfg.stepover,
-                        cut_depth: z,
-                        feed_rate: cfg.feed_rate,
-                        plunge_rate: cfg.plunge_rate,
-                        safe_z,
-                        angle: cfg.angle,
-                    },
-                ),
-            }
+        let tp = rs_cam_core::depth::toolpath_at_levels(&req.cutting_levels, safe_z, |z| match cfg
+            .pattern
+        {
+            PocketPattern::Contour => pocket_toolpath(
+                p,
+                &PocketParams {
+                    tool_radius: tr,
+                    stepover: cfg.stepover,
+                    cut_depth: z,
+                    feed_rate: cfg.feed_rate,
+                    plunge_rate: cfg.plunge_rate,
+                    safe_z,
+                    climb: cfg.climb,
+                },
+            ),
+            PocketPattern::Zigzag => zigzag_toolpath(
+                p,
+                &ZigzagParams {
+                    tool_radius: tr,
+                    stepover: cfg.stepover,
+                    cut_depth: z,
+                    feed_rate: cfg.feed_rate,
+                    plunge_rate: cfg.plunge_rate,
+                    safe_z,
+                    angle: cfg.angle,
+                },
+            ),
         });
         out.moves.extend(tp.moves);
     }
@@ -63,7 +62,10 @@ pub(super) fn run_profile(
     let side = cfg.side;
     let safe_z = effective_safe_z(req);
     let levels = &req.cutting_levels;
-    let final_z = levels.last().copied().unwrap_or(req.heights.top_z - cfg.depth.abs());
+    let final_z = levels
+        .last()
+        .copied()
+        .unwrap_or(req.heights.top_z - cfg.depth.abs());
     let mut out = Toolpath::new();
     for p in polys {
         let make_pass = |z: f64| {

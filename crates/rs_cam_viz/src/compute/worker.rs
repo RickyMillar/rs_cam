@@ -203,17 +203,33 @@ impl SetupTransformInfo {
                     MoveType::ArcCW { i, j, feed_rate } => {
                         let (ni, nj) = dir_xform(i, j);
                         if flip_arcs {
-                            MoveType::ArcCCW { i: ni, j: nj, feed_rate }
+                            MoveType::ArcCCW {
+                                i: ni,
+                                j: nj,
+                                feed_rate,
+                            }
                         } else {
-                            MoveType::ArcCW { i: ni, j: nj, feed_rate }
+                            MoveType::ArcCW {
+                                i: ni,
+                                j: nj,
+                                feed_rate,
+                            }
                         }
                     }
                     MoveType::ArcCCW { i, j, feed_rate } => {
                         let (ni, nj) = dir_xform(i, j);
                         if flip_arcs {
-                            MoveType::ArcCW { i: ni, j: nj, feed_rate }
+                            MoveType::ArcCW {
+                                i: ni,
+                                j: nj,
+                                feed_rate,
+                            }
                         } else {
-                            MoveType::ArcCCW { i: ni, j: nj, feed_rate }
+                            MoveType::ArcCCW {
+                                i: ni,
+                                j: nj,
+                                feed_rate,
+                            }
                         }
                     }
                 };

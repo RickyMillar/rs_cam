@@ -206,70 +206,63 @@ impl RsCamApp {
                     + 0.05
             };
             // Convert a 2D ring to line-list vertices, closing the loop.
-            let ring_to_lines =
-                |ring: &[rs_cam_core::geo::P2], verts: &mut Vec<LineVertex>| {
-                    if ring.len() < 2 {
-                        return;
-                    }
-                    // Consecutive edges: a→b for windows, plus closing edge last→first.
-                    for pair in ring.windows(2) {
-                        // SAFETY: windows(2) guarantees exactly 2 elements per slice.
-                        #[allow(clippy::indexing_slicing)]
-                        let (a, b) = (&pair[0], &pair[1]);
-                        let (ax, ay, bx, by) = if use_local_frame {
-                            // SAFETY: use_local_frame iff active_setup_ref.is_some()
-                            #[allow(clippy::unwrap_used)]
-                            let setup = active_setup_ref.unwrap();
-                            let stock = &self.controller.state().job.stock;
-                            let pa = setup.transform_point(
-                                rs_cam_core::geo::P3::new(a.x, a.y, 0.0),
-                                stock,
-                            );
-                            let pb = setup.transform_point(
-                                rs_cam_core::geo::P3::new(b.x, b.y, 0.0),
-                                stock,
-                            );
-                            (pa.x, pa.y, pb.x, pb.y)
-                        } else {
-                            (a.x, a.y, b.x, b.y)
-                        };
-                        verts.push(LineVertex {
-                            position: [ax as f32, ay as f32, poly_z],
-                            color,
-                        });
-                        verts.push(LineVertex {
-                            position: [bx as f32, by as f32, poly_z],
-                            color,
-                        });
-                    }
-                    // Close the ring: last → first
-                    if let (Some(last), Some(first)) = (ring.last(), ring.first()) {
-                        let (ax, ay, bx, by) = if use_local_frame {
-                            #[allow(clippy::unwrap_used)]
-                            let setup = active_setup_ref.unwrap();
-                            let stock = &self.controller.state().job.stock;
-                            let pa = setup.transform_point(
-                                rs_cam_core::geo::P3::new(last.x, last.y, 0.0),
-                                stock,
-                            );
-                            let pb = setup.transform_point(
-                                rs_cam_core::geo::P3::new(first.x, first.y, 0.0),
-                                stock,
-                            );
-                            (pa.x, pa.y, pb.x, pb.y)
-                        } else {
-                            (last.x, last.y, first.x, first.y)
-                        };
-                        verts.push(LineVertex {
-                            position: [ax as f32, ay as f32, poly_z],
-                            color,
-                        });
-                        verts.push(LineVertex {
-                            position: [bx as f32, by as f32, poly_z],
-                            color,
-                        });
-                    }
-                };
+            let ring_to_lines = |ring: &[rs_cam_core::geo::P2], verts: &mut Vec<LineVertex>| {
+                if ring.len() < 2 {
+                    return;
+                }
+                // Consecutive edges: a→b for windows, plus closing edge last→first.
+                for pair in ring.windows(2) {
+                    // SAFETY: windows(2) guarantees exactly 2 elements per slice.
+                    #[allow(clippy::indexing_slicing)]
+                    let (a, b) = (&pair[0], &pair[1]);
+                    let (ax, ay, bx, by) = if use_local_frame {
+                        // SAFETY: use_local_frame iff active_setup_ref.is_some()
+                        #[allow(clippy::unwrap_used)]
+                        let setup = active_setup_ref.unwrap();
+                        let stock = &self.controller.state().job.stock;
+                        let pa =
+                            setup.transform_point(rs_cam_core::geo::P3::new(a.x, a.y, 0.0), stock);
+                        let pb =
+                            setup.transform_point(rs_cam_core::geo::P3::new(b.x, b.y, 0.0), stock);
+                        (pa.x, pa.y, pb.x, pb.y)
+                    } else {
+                        (a.x, a.y, b.x, b.y)
+                    };
+                    verts.push(LineVertex {
+                        position: [ax as f32, ay as f32, poly_z],
+                        color,
+                    });
+                    verts.push(LineVertex {
+                        position: [bx as f32, by as f32, poly_z],
+                        color,
+                    });
+                }
+                // Close the ring: last → first
+                if let (Some(last), Some(first)) = (ring.last(), ring.first()) {
+                    let (ax, ay, bx, by) = if use_local_frame {
+                        #[allow(clippy::unwrap_used)]
+                        let setup = active_setup_ref.unwrap();
+                        let stock = &self.controller.state().job.stock;
+                        let pa = setup
+                            .transform_point(rs_cam_core::geo::P3::new(last.x, last.y, 0.0), stock);
+                        let pb = setup.transform_point(
+                            rs_cam_core::geo::P3::new(first.x, first.y, 0.0),
+                            stock,
+                        );
+                        (pa.x, pa.y, pb.x, pb.y)
+                    } else {
+                        (last.x, last.y, first.x, first.y)
+                    };
+                    verts.push(LineVertex {
+                        position: [ax as f32, ay as f32, poly_z],
+                        color,
+                    });
+                    verts.push(LineVertex {
+                        position: [bx as f32, by as f32, poly_z],
+                        color,
+                    });
+                }
+            };
             for model in &self.controller.state().job.models {
                 if let Some(polys) = &model.polygons {
                     let mut verts = Vec::new();

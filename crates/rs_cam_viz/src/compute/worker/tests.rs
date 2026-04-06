@@ -1722,7 +1722,10 @@ fn multi_setup_top_bottom_simulation() {
     let (r, c) = top_stock.z_grid.world_to_cell(25.0, 25.0).unwrap();
     let ray = top_stock.z_grid.ray(r, c);
     assert_eq!(ray.len(), 1, "top setup cut area should have one segment");
-    assert!(ray[0].enter.abs() < 0.01, "top setup material starts at Z=0");
+    assert!(
+        ray[0].enter.abs() < 0.01,
+        "top setup material starts at Z=0"
+    );
     assert!(
         (ray[0].exit - 15.0).abs() < 1.0,
         "top setup material ends near Z=15, got {}",
@@ -1734,8 +1737,15 @@ fn multi_setup_top_bottom_simulation() {
     let bottom_stock = &result.checkpoints[1].stock;
     let (r, c) = bottom_stock.z_grid.world_to_cell(25.0, 25.0).unwrap();
     let ray = bottom_stock.z_grid.ray(r, c);
-    assert_eq!(ray.len(), 1, "bottom setup cut area should have one segment");
-    assert!(ray[0].enter.abs() < 0.01, "bottom setup material starts at Z=0 (local)");
+    assert_eq!(
+        ray.len(),
+        1,
+        "bottom setup cut area should have one segment"
+    );
+    assert!(
+        ray[0].enter.abs() < 0.01,
+        "bottom setup material starts at Z=0 (local)"
+    );
     assert!(
         (ray[0].exit - 15.0).abs() < 1.0,
         "bottom setup material ends near Z=15 (local), got {}",
@@ -1743,7 +1753,10 @@ fn multi_setup_top_bottom_simulation() {
     );
 
     // Final composited mesh should have non-zero vertex data
-    assert!(!result.mesh.vertices.is_empty(), "composited mesh should not be empty");
+    assert!(
+        !result.mesh.vertices.is_empty(),
+        "composited mesh should not be empty"
+    );
 }
 
 /// Verify backward scrub across setup boundaries uses checkpoints correctly.
