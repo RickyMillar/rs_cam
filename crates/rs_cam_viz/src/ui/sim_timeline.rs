@@ -108,7 +108,7 @@ fn draw_transport_and_scrubber(
     events: &mut Vec<AppEvent>,
 ) {
     ui.horizontal(|ui| {
-        let btn_size = egui::vec2(30.0, 20.0);
+        let btn_size = egui::vec2(32.0, 24.0);
         if ui
             .add(egui::Button::new("|◄").min_size(btn_size))
             .on_hover_text("Jump to start (Home)")
@@ -221,8 +221,8 @@ fn draw_boundary_timeline(
 ) {
     if sim.total_moves() > 0 && !sim.boundaries().is_empty() {
         let total_width = ui.available_width();
-        let height = 24.0;
-        let rounding = 3.0;
+        let height = 32.0;
+        let rounding = 6.0;
         let (rect, response) = ui.allocate_exact_size(
             egui::vec2(total_width, height),
             egui::Sense::click_and_drag(),

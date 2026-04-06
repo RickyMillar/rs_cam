@@ -16,6 +16,54 @@ pub fn draw(
     ui.heading("Diagnostics");
     ui.separator();
 
+    // ── Summary card (go/no-go at a glance) ─────────────────
+    if sim.results.is_some() {
+        let op_count = sim.boundaries().len();
+        let (total_cutting, _total_rapid, total_time_min) = aggregate_stats(sim, job);
+        let collision_count = sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
+
+        let time_str = if total_time_min >= 1.0 {
+            format!("{:.0} min", total_time_min)
+        } else {
+            format!("{:.0} s", total_time_min * 60.0)
+        };
+
+        egui::Frame::default()
+            .fill(egui::Color32::from_rgb(36, 38, 48))
+            .inner_margin(6.0)
+            .rounding(4.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!("{op_count} ops"))
+                            .strong()
+                            .color(theme::TEXT_STRONG),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("\u{00B7} {time_str}"))
+                            .color(theme::TEXT_MUTED),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("\u{00B7} {:.1} m cut", total_cutting / 1000.0))
+                            .color(theme::TEXT_MUTED),
+                    );
+                    if collision_count > 0 {
+                        ui.label(
+                            egui::RichText::new(format!("\u{00B7} {collision_count} collisions"))
+                                .strong()
+                                .color(theme::ERROR),
+                        );
+                    } else {
+                        ui.label(
+                            egui::RichText::new("\u{00B7} no collisions")
+                                .color(theme::SUCCESS),
+                        );
+                    }
+                });
+            });
+        ui.add_space(4.0);
+    }
+
     let active_semantic = sim.active_semantic_item(job);
     let linked_span = sim.active_debug_span(job);
     let current_boundary_id = sim.current_boundary().map(|boundary| boundary.id);
@@ -88,6 +136,15 @@ pub fn draw(
             });
             if sim.stock_viz_mode != prev_mode {
                 events.push(AppEvent::SimVizModeChanged);
+            }
+            if matches!(sim.stock_viz_mode, StockVizMode::Deviation)
+                && sim.playback.display_deviations.is_none()
+            {
+                ui.label(
+                    egui::RichText::new("No deviation data \u{2014} re-run simulation to compute")
+                        .small()
+                        .color(theme::WARNING),
+                );
             }
 
             ui.horizontal(|ui| {
@@ -514,9 +571,9 @@ pub fn draw(
 
     ui.add_space(4.0);
 
-    // --- Summary Stats ---
+    // --- Summary Stats (detailed breakdown; key info in summary card above) ---
     egui::CollapsingHeader::new("Summary Stats")
-        .default_open(true)
+        .default_open(false)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Total moves:");
