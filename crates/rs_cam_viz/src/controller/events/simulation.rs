@@ -1,13 +1,11 @@
 use std::sync::Arc;
 
-use rs_cam_core::dexel_stock::StockCutDirection;
 use rs_cam_core::geo::BoundingBox3;
 
 use crate::compute::{
     CollisionRequest, ComputeBackend, ComputeLane, SetupSimGroup, SetupSimToolpath,
     SimulationRequest,
 };
-use crate::state::job::{FaceUp, Setup};
 use crate::state::toolpath::ToolpathEntry;
 use crate::state::toolpath::ToolpathId;
 
