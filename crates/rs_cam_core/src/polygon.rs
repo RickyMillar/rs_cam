@@ -11,25 +11,42 @@ use cavalier_contours::polyline::{PlineCreation, PlineSource, PlineSourceMut, Po
 /// - `exterior`: outer boundary vertices in CCW order (positive area)
 /// - `holes`: inner boundary vertices in CW order (negative area)
 ///
-/// Vertices are not duplicated (last implicitly connects back to first).
+/// Vertices are not duplicated (last implicitly connects back to first for closed polygons).
 #[derive(Debug, Clone)]
 pub struct Polygon2 {
     pub exterior: Vec<P2>,
     pub holes: Vec<Vec<P2>>,
+    /// If true (default), the last vertex connects back to the first.
+    /// Open paths (e.g. rivers, contour lines) set this to false.
+    pub closed: bool,
 }
 
 impl Polygon2 {
-    /// Create a polygon from exterior vertices (CCW winding assumed).
+    /// Create a closed polygon from exterior vertices (CCW winding assumed).
     pub fn new(exterior: Vec<P2>) -> Self {
         Self {
             exterior,
             holes: Vec::new(),
+            closed: true,
+        }
+    }
+
+    /// Create an open path (not closed — no edge from last to first vertex).
+    pub fn open_path(exterior: Vec<P2>) -> Self {
+        Self {
+            exterior,
+            holes: Vec::new(),
+            closed: false,
         }
     }
 
     /// Create a polygon with holes.
     pub fn with_holes(exterior: Vec<P2>, holes: Vec<Vec<P2>>) -> Self {
-        Self { exterior, holes }
+        Self {
+            exterior,
+            holes,
+            closed: true,
+        }
     }
 
     /// Create a rectangle from bounds.
@@ -86,7 +103,11 @@ impl Polygon2 {
     pub fn from_geo_polygon(poly: &geo::Polygon<f64>) -> Self {
         let exterior = ring_from_geo(poly.exterior());
         let holes: Vec<Vec<P2>> = poly.interiors().iter().map(ring_from_geo).collect();
-        Self { exterior, holes }
+        Self {
+            exterior,
+            holes,
+            closed: true,
+        }
     }
 
     /// Convert exterior to a cavalier_contours closed Polyline (no arcs).
