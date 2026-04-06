@@ -152,11 +152,6 @@ pub(in crate::ui::properties) fn draw_horizontal_finish_params(
     ui: &mut egui::Ui,
     cfg: &mut HorizontalFinishConfig,
 ) {
-    ui.label(
-        egui::RichText::new("Machines only flat areas")
-            .italics()
-            .color(egui::Color32::from_rgb(150, 150, 130)),
-    );
     egui::Grid::new("horiz_p")
         .num_columns(2)
         .spacing([8.0, 4.0])

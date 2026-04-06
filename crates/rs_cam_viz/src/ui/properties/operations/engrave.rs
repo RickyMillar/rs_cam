@@ -4,11 +4,6 @@ use super::super::dv;
 use super::draw_feed_params;
 
 pub(in crate::ui::properties) fn draw_trace_params(ui: &mut egui::Ui, cfg: &mut TraceConfig) {
-    ui.label(
-        egui::RichText::new("Follows path exactly")
-            .italics()
-            .color(egui::Color32::from_rgb(150, 150, 130)),
-    );
     egui::Grid::new("trace_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -40,11 +35,6 @@ pub(in crate::ui::properties) fn draw_trace_params(ui: &mut egui::Ui, cfg: &mut 
 }
 
 pub(in crate::ui::properties) fn draw_chamfer_params(ui: &mut egui::Ui, cfg: &mut ChamferConfig) {
-    ui.label(
-        egui::RichText::new("Requires V-Bit tool")
-            .italics()
-            .color(egui::Color32::from_rgb(150, 140, 110)),
-    );
     egui::Grid::new("chamfer_p")
         .num_columns(2)
         .spacing([8.0, 4.0])

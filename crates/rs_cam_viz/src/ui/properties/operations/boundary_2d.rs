@@ -8,11 +8,6 @@ use super::draw_feed_params;
 use super::draw_tab_diagram;
 
 pub(in crate::ui::properties) fn draw_face_params(ui: &mut egui::Ui, cfg: &mut FaceConfig) {
-    ui.label(
-        egui::RichText::new("Levels stock top surface")
-            .italics()
-            .color(egui::Color32::from_rgb(150, 150, 130)),
-    );
     egui::Grid::new("face_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -213,11 +208,6 @@ pub(in crate::ui::properties) fn draw_adaptive_params(ui: &mut egui::Ui, cfg: &m
 }
 
 pub(in crate::ui::properties) fn draw_vcarve_params(ui: &mut egui::Ui, cfg: &mut VCarveConfig) {
-    ui.label(
-        egui::RichText::new("Requires V-Bit tool")
-            .italics()
-            .color(egui::Color32::from_rgb(150, 140, 110)),
-    );
     egui::Grid::new("vcarve_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -278,11 +268,6 @@ pub(in crate::ui::properties) fn draw_rest_params(
 }
 
 pub(in crate::ui::properties) fn draw_inlay_params(ui: &mut egui::Ui, cfg: &mut InlayConfig) {
-    ui.label(
-        egui::RichText::new("Requires V-Bit tool")
-            .italics()
-            .color(egui::Color32::from_rgb(150, 140, 110)),
-    );
     egui::Grid::new("inlay_p")
         .num_columns(2)
         .spacing([8.0, 4.0])

@@ -270,7 +270,7 @@ impl OperationType {
                 feeds_pass_role: PassRole::Finish,
             },
             OperationType::DropCutter => OperationSpec {
-                label: "3D Finish",
+                label: "3D Raster Finish",
                 description: "Parallel raster passes following the surface",
                 family: OperationFamily::ThreeD,
                 geometry: GeometryRequirement::Mesh,
@@ -281,7 +281,7 @@ impl OperationType {
                 feeds_pass_role: PassRole::Finish,
             },
             OperationType::Adaptive3d => OperationSpec {
-                label: "3D Rough",
+                label: "3D Adaptive Rough",
                 description: "Load-limiting rough mill on a 3D surface",
                 family: OperationFamily::ThreeD,
                 geometry: GeometryRequirement::Mesh,
