@@ -225,8 +225,7 @@ impl SimMeshGpuData {
         // Try single-buffer fast path first.
         if vertex_bytes.len() <= limits.max_buffer_size
             && index_bytes.len() <= limits.max_buffer_size
-        {
-            if let (Some(vb), Some(ib)) = (
+            && let (Some(vb), Some(ib)) = (
                 gpu_safety::try_create_buffer(
                     device,
                     limits,
@@ -241,17 +240,17 @@ impl SimMeshGpuData {
                     index_bytes,
                     wgpu::BufferUsages::INDEX,
                 ),
-            ) {
-                return Some(Self {
-                    chunks: vec![SimMeshChunk {
-                        vertex_buffer: vb,
-                        index_buffer: ib,
-                        index_count: hm.indices.len() as u32,
-                    }],
-                    generation: NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-                    cached_color_fingerprint: fingerprint,
-                });
-            }
+            )
+        {
+            return Some(Self {
+                chunks: vec![SimMeshChunk {
+                    vertex_buffer: vb,
+                    index_buffer: ib,
+                    index_count: hm.indices.len() as u32,
+                }],
+                generation: NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                cached_color_fingerprint: fingerprint,
+            });
         }
 
         // Slow path: split the mesh into triangle-aligned chunks that each fit
@@ -368,6 +367,8 @@ impl SimMeshGpuData {
         }
 
         // Fast path: single chunk — write directly.
+        // SAFETY: length checked on the line above.
+        #[allow(clippy::indexing_slicing)]
         if self.chunks.len() == 1 {
             let mesh_verts = Self::build_vertex_data(hm, colors);
             queue.write_buffer(

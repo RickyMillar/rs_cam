@@ -31,7 +31,7 @@ use super::{
 #[cfg(test)]
 use super::{BoundingBox3, DressupConfig, MoveType, StockSource, ToolConfig, ToolpathId};
 #[cfg(test)]
-use crate::state::toolpath::{BoundaryContainment, HeightContext, HeightsConfig};
+use crate::state::toolpath::{BoundaryConfig, HeightContext, HeightsConfig};
 use rs_cam_core::geo::P3;
 use rs_cam_core::radial_profile::RadialProfileLUT;
 use rs_cam_core::semantic_trace::ToolpathSemanticKind;
@@ -208,7 +208,11 @@ where
             } else {
                 Arc::clone(toolpath)
             };
-            playback_data.push((global_tp.clone(), tool_config.clone(), playback_direction));
+            playback_data.push((
+                Arc::clone(&global_tp),
+                tool_config.clone(),
+                playback_direction,
+            ));
 
             // Stamp the global stock in parallel for checkpoint/playback support.
             // This uses the same global-frame toolpath + direction as playback.
@@ -423,7 +427,7 @@ fn run_compute_with_phase_tracker(
             tp = apply_dressups(tp, req, dressup_ctx.as_ref(), semantic_root.as_ref());
         }
 
-        if req.boundary_enabled
+        if req.boundary.enabled
             && let Some(bbox) = &req.stock_bbox
         {
             let _phase_scope = phase_tracker.map(|tracker| tracker.start_phase("Clip to boundary"));
@@ -434,26 +438,31 @@ fn run_compute_with_phase_tracker(
             use rs_cam_core::boundary::{
                 ToolContainment, clip_toolpath_to_boundary, effective_boundary, subtract_keepouts,
             };
-            // Use face-derived boundary when face_selection is set, otherwise stock bbox.
-            let mut stock_poly = if let (Some(face_ids), Some(enriched)) =
-                (&req.face_selection, &req.enriched_mesh)
-            {
-                enriched
-                    .faces_boundary_as_polygon(face_ids)
-                    .unwrap_or_else(|| {
-                        rs_cam_core::polygon::Polygon2::rectangle(
-                            bbox.min.x, bbox.min.y, bbox.max.x, bbox.max.y,
-                        )
-                    })
-            } else {
-                rs_cam_core::polygon::Polygon2::rectangle(
-                    bbox.min.x, bbox.min.y, bbox.max.x, bbox.max.y,
-                )
-            };
+
+            // Resolve boundary polygon from source.
+            let mut stock_poly = resolve_boundary_source(
+                &req.boundary.source,
+                bbox,
+                req.mesh.as_deref(),
+                req.polygons.as_ref().map(|p| p.as_slice()),
+                req.enriched_mesh.as_deref(),
+                req.face_selection.as_deref(),
+            );
+
+            // Apply user offset (expand/shrink before tool-radius containment).
+            if req.boundary.offset.abs() > 1e-6 {
+                // negative distance = outward expansion in offset_polygon
+                let offset_polys =
+                    rs_cam_core::polygon::offset_polygon(&stock_poly, -req.boundary.offset);
+                if let Some(first) = offset_polys.into_iter().next() {
+                    stock_poly = first;
+                }
+            }
+
             if !req.keep_out_footprints.is_empty() {
                 stock_poly = subtract_keepouts(&stock_poly, &req.keep_out_footprints);
             }
-            let containment = match req.boundary_containment {
+            let containment = match req.boundary.containment {
                 crate::state::toolpath::BoundaryContainment::Center => ToolContainment::Center,
                 crate::state::toolpath::BoundaryContainment::Inside => ToolContainment::Inside,
                 crate::state::toolpath::BoundaryContainment::Outside => ToolContainment::Outside,
@@ -469,12 +478,13 @@ fn run_compute_with_phase_tracker(
                     }
                     scope.set_param(
                         "containment",
-                        match req.boundary_containment {
+                        match req.boundary.containment {
                             crate::state::toolpath::BoundaryContainment::Center => "center",
                             crate::state::toolpath::BoundaryContainment::Inside => "inside",
                             crate::state::toolpath::BoundaryContainment::Outside => "outside",
                         },
                     );
+                    scope.set_param("source", req.boundary.source.label());
                     scope.set_param("keep_out_count", req.keep_out_footprints.len());
                     if !tp.moves.is_empty() {
                         scope.bind_to_toolpath(&tp, 0, tp.moves.len());
@@ -1457,6 +1467,52 @@ fn query_model_z_range(
     min_z.zip(max_z)
 }
 
+/// Resolve a `BoundarySource` to a concrete `Polygon2`.
+fn resolve_boundary_source(
+    source: &crate::state::toolpath::BoundarySource,
+    bbox: &rs_cam_core::geo::BoundingBox3,
+    mesh: Option<&rs_cam_core::mesh::TriangleMesh>,
+    polygons: Option<&[rs_cam_core::polygon::Polygon2]>,
+    enriched_mesh: Option<&rs_cam_core::enriched_mesh::EnrichedMesh>,
+    face_selection: Option<&[rs_cam_core::enriched_mesh::FaceGroupId]>,
+) -> rs_cam_core::polygon::Polygon2 {
+    use crate::state::toolpath::BoundarySource;
+    let stock_rect = || {
+        rs_cam_core::polygon::Polygon2::rectangle(bbox.min.x, bbox.min.y, bbox.max.x, bbox.max.y)
+    };
+    match source {
+        BoundarySource::Stock => stock_rect(),
+        BoundarySource::ModelSilhouette => {
+            if let Some(m) = mesh {
+                let silhouettes = rs_cam_core::boundary::model_silhouette(m, None);
+                silhouettes.into_iter().next().unwrap_or_else(stock_rect)
+            } else {
+                stock_rect()
+            }
+        }
+        BoundarySource::Geometry { polygon_indices } => {
+            if let Some(polys) = polygons {
+                // Merge selected imported polygons. For now use the first valid one.
+                for &idx in polygon_indices {
+                    if let Some(p) = polys.get(idx) {
+                        return p.clone();
+                    }
+                }
+            }
+            stock_rect()
+        }
+        BoundarySource::FaceSelection => {
+            if let (Some(face_ids), Some(enriched)) = (face_selection, enriched_mesh) {
+                enriched
+                    .faces_boundary_as_polygon(face_ids)
+                    .unwrap_or_else(stock_rect)
+            } else {
+                stock_rect()
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
@@ -1496,8 +1552,7 @@ mod tests {
                 min: P3::new(-25.0, -25.0, -10.0),
                 max: P3::new(25.0, 25.0, 10.0),
             }),
-            boundary_enabled: false,
-            boundary_containment: BoundaryContainment::Center,
+            boundary: BoundaryConfig::default(),
             keep_out_footprints: Vec::new(),
             heights,
             cutting_levels,

@@ -21,9 +21,9 @@ pub use operations::{ToolpathValidationContext, validate_toolpath};
 use crate::state::AppState;
 use crate::state::selection::Selection;
 use crate::state::toolpath::{
-    BoundaryContainment, ComputeStatus, DressupConfig, DressupEntryStyle, HeightContext,
-    HeightsConfig, OperationConfig, ProfileSide, RetractStrategy, SpiralDirection, StockSource,
-    ToolpathEntry, TraceCompensation,
+    BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig, DressupEntryStyle,
+    HeightContext, HeightsConfig, OperationConfig, ProfileSide, RetractStrategy, SpiralDirection,
+    StockSource, ToolpathEntry, TraceCompensation,
 };
 use crate::ui::AppEvent;
 use crate::ui::automation;
@@ -2030,41 +2030,116 @@ fn draw_toolpath_panel(
         }
 
         ToolpathTab::Mods => {
-            // Machining boundary
-            ui.checkbox(&mut entry.boundary_enabled, "Clip to stock boundary")
-                .on_hover_text("Restrict toolpath to within the stock material bounds");
-            if entry.boundary_enabled {
-                ui.horizontal(|ui| {
-                    ui.label("Containment:");
-                    egui::ComboBox::from_id_salt("boundary_contain")
-                        .selected_text(match entry.boundary_containment {
-                            BoundaryContainment::Center => "Center",
-                            BoundaryContainment::Inside => "Inside",
-                            BoundaryContainment::Outside => "Outside",
-                        })
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut entry.boundary_containment,
-                                BoundaryContainment::Center,
-                                "Center",
-                            )
-                            .on_hover_text("Tool center stays inside boundary");
-                            ui.selectable_value(
-                                &mut entry.boundary_containment,
-                                BoundaryContainment::Inside,
-                                "Inside",
-                            )
-                            .on_hover_text(
-                                "Entire tool stays inside boundary (shrinks by tool radius)",
-                            );
-                            ui.selectable_value(
-                                &mut entry.boundary_containment,
-                                BoundaryContainment::Outside,
-                                "Outside",
-                            )
-                            .on_hover_text("Tool edge can extend outside boundary");
-                        });
-                });
+            // --- Machining Boundary ---
+            ui.separator();
+            ui.label("Machining Boundary");
+            ui.checkbox(&mut entry.boundary.enabled, "Enable boundary")
+                .on_hover_text(
+                    "Restrict toolpath to a boundary polygon. \
+                     Moves outside the boundary are converted to rapids at safe Z.",
+                );
+            if entry.boundary.enabled {
+                ui.checkbox(&mut entry.boundary_inherit, "Inherit from stock")
+                    .on_hover_text(
+                        "Use the stock-level default boundary. Uncheck to \
+                         configure a custom boundary for this toolpath.",
+                    );
+                if !entry.boundary_inherit {
+                    // Source selector
+                    ui.horizontal(|ui| {
+                        ui.label("Source:");
+                        egui::ComboBox::from_id_salt("boundary_source")
+                            .selected_text(entry.boundary.source.label())
+                            .show_ui(ui, |ui| {
+                                if ui
+                                    .selectable_label(
+                                        matches!(entry.boundary.source, BoundarySource::Stock),
+                                        "Stock",
+                                    )
+                                    .on_hover_text("Use the stock bounding rectangle")
+                                    .clicked()
+                                {
+                                    entry.boundary.source = BoundarySource::Stock;
+                                }
+                                if ui
+                                    .selectable_label(
+                                        matches!(
+                                            entry.boundary.source,
+                                            BoundarySource::ModelSilhouette
+                                        ),
+                                        "Model Silhouette",
+                                    )
+                                    .on_hover_text(
+                                        "XY projection of the 3D model. Only machines \
+                                         where the model actually is.",
+                                    )
+                                    .clicked()
+                                {
+                                    entry.boundary.source = BoundarySource::ModelSilhouette;
+                                }
+                                if ui
+                                    .selectable_label(
+                                        matches!(
+                                            entry.boundary.source,
+                                            BoundarySource::FaceSelection
+                                        ),
+                                        "Face Selection",
+                                    )
+                                    .on_hover_text("Boundary derived from selected STEP faces")
+                                    .clicked()
+                                {
+                                    entry.boundary.source = BoundarySource::FaceSelection;
+                                }
+                            });
+                    });
+
+                    // Containment mode
+                    ui.horizontal(|ui| {
+                        ui.label("Containment:");
+                        egui::ComboBox::from_id_salt("boundary_contain")
+                            .selected_text(match entry.boundary.containment {
+                                BoundaryContainment::Center => "Center",
+                                BoundaryContainment::Inside => "Inside",
+                                BoundaryContainment::Outside => "Outside",
+                            })
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut entry.boundary.containment,
+                                    BoundaryContainment::Center,
+                                    "Center",
+                                )
+                                .on_hover_text("Tool center stays inside boundary");
+                                ui.selectable_value(
+                                    &mut entry.boundary.containment,
+                                    BoundaryContainment::Inside,
+                                    "Inside",
+                                )
+                                .on_hover_text(
+                                    "Entire tool stays inside boundary (shrinks by tool radius)",
+                                );
+                                ui.selectable_value(
+                                    &mut entry.boundary.containment,
+                                    BoundaryContainment::Outside,
+                                    "Outside",
+                                )
+                                .on_hover_text("Tool edge can extend outside boundary");
+                            });
+                    });
+
+                    // Offset
+                    ui.horizontal(|ui| {
+                        ui.label("Offset:");
+                        ui.add(
+                            egui::DragValue::new(&mut entry.boundary.offset)
+                                .speed(0.1)
+                                .suffix(" mm"),
+                        )
+                        .on_hover_text(
+                            "Expand (positive) or shrink (negative) the boundary. \
+                             Applied before tool-radius containment.",
+                        );
+                    });
+                }
             }
 
             ui.add_space(8.0);

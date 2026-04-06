@@ -5,7 +5,7 @@ use super::{
     ProjectCurveParams, ProjectCurveSlice, RadialFinishConfig, RadialFinishParams,
     RampFinishConfig, RampFinishParams, ScallopConfig, ScallopParams, SemanticToolpathOp,
     SpatialIndex, SpiralFinishConfig, SpiralFinishParams, SteepShallowConfig, SteepShallowParams,
-    ToolDefinition, ToolType, Toolpath, ToolpathPhaseTracker, ToolpathSemanticKind, TriangleMesh,
+    ToolDefinition, Toolpath, ToolpathPhaseTracker, ToolpathSemanticKind, TriangleMesh,
     WaterlineConfig, WaterlineParams, annotate_adaptive3d_runtime_semantics,
     annotate_horizontal_finish_semantics, annotate_operation_scope,
     annotate_pencil_runtime_semantics, annotate_project_curve_semantics,

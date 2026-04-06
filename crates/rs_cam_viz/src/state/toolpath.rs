@@ -19,7 +19,7 @@ pub use configs::{
 };
 pub use entry::{ToolpathEntry, ToolpathEntryInit, ToolpathResult};
 pub use support::{
-    BoundaryContainment, ComputeStatus, DressupConfig, DressupEntryStyle, FeedsAutoMode,
-    HeightContext, HeightMode, HeightReference, HeightsConfig, ReferenceOffset, ResolvedHeights,
-    RetractStrategy, StockSource, ToolpathId, ToolpathStats,
+    BoundaryConfig, BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig,
+    DressupEntryStyle, FeedsAutoMode, HeightContext, HeightMode, HeightReference, HeightsConfig,
+    ReferenceOffset, ResolvedHeights, RetractStrategy, StockSource, ToolpathId, ToolpathStats,
 };
