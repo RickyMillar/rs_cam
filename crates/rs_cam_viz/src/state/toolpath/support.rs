@@ -375,6 +375,37 @@ impl Default for DressupConfig {
     }
 }
 
+impl DressupConfig {
+    /// Smart defaults based on operation process role.
+    /// Roughing: link moves + arc fitting + rapid reorder (time savers, safe).
+    /// Finishing: ramp entry + lead-in/out + arc fitting + rapid reorder (quality).
+    /// SemiFinish: ramp entry + arc fitting + rapid reorder.
+    pub fn for_role(role: super::UiProcessRole) -> Self {
+        let base = Self::default();
+        match role {
+            super::UiProcessRole::Roughing => Self {
+                arc_fitting: true,
+                link_moves: true,
+                optimize_rapid_order: true,
+                ..base
+            },
+            super::UiProcessRole::SemiFinish => Self {
+                entry_style: DressupEntryStyle::Ramp,
+                arc_fitting: true,
+                optimize_rapid_order: true,
+                ..base
+            },
+            super::UiProcessRole::Finish => Self {
+                entry_style: DressupEntryStyle::Ramp,
+                lead_in_out: true,
+                arc_fitting: true,
+                optimize_rapid_order: true,
+                ..base
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,

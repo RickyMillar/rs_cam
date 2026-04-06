@@ -23,7 +23,7 @@ use crate::state::selection::Selection;
 use crate::state::toolpath::{
     BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig, DressupEntryStyle,
     HeightContext, HeightsConfig, OperationConfig, ProfileSide, RetractStrategy, SpiralDirection,
-    StockSource, ToolpathEntry, TraceCompensation,
+    StockSource, ToolpathEntry, TraceCompensation, UiProcessRole,
 };
 use crate::ui::AppEvent;
 use crate::ui::automation;
@@ -1583,7 +1583,7 @@ impl ToolpathTab {
             ToolpathTab::Params => "Params",
             ToolpathTab::Feeds => "Feeds",
             ToolpathTab::Heights => "Heights",
-            ToolpathTab::Mods => "Mods",
+            ToolpathTab::Mods => "Dressups",
         }
     }
 }
@@ -2124,9 +2124,48 @@ fn draw_toolpath_panel(
         }
 
         ToolpathTab::Mods => {
+            // Active dressup summary + reset button
+            let (active, total) = dressup_active_count(&entry.dressups);
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(format!("{active}/{total} dressups active"))
+                        .small()
+                        .color(if active > 0 {
+                            egui::Color32::from_rgb(100, 170, 140)
+                        } else {
+                            egui::Color32::from_rgb(140, 140, 155)
+                        }),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let role = entry.operation.op_type().spec().ui_process_role;
+                    if ui.small_button("Reset to recommended")
+                        .on_hover_text(format!(
+                            "Apply recommended dressups for {} operations",
+                            match role {
+                                UiProcessRole::Roughing => "roughing",
+                                UiProcessRole::SemiFinish => "semi-finish",
+                                UiProcessRole::Finish => "finishing",
+                            }
+                        ))
+                        .clicked()
+                    {
+                        entry.dressups = DressupConfig::for_role(role);
+                    }
+                });
+            });
+
+            // Dressup sections (grouped: Entry & Exit, Path Quality, Optimization, Safety)
+            draw_dressup_params(ui, entry, height_ctx);
+
+            ui.add_space(8.0);
+
             // --- Machining Boundary ---
-            ui.separator();
-            ui.label("Machining Boundary");
+            ui.label(
+                egui::RichText::new("Machining Boundary")
+                    .small()
+                    .strong()
+                    .color(egui::Color32::from_rgb(150, 155, 170)),
+            );
             ui.checkbox(&mut entry.boundary.enabled, "Enable boundary")
                 .on_hover_text(
                     "Restrict toolpath to a boundary polygon. \
@@ -2235,14 +2274,6 @@ fn draw_toolpath_panel(
                     });
                 }
             }
-
-            ui.add_space(8.0);
-            ui.label(
-                egui::RichText::new("Modifications")
-                    .strong()
-                    .color(egui::Color32::from_rgb(180, 180, 195)),
-            );
-            draw_dressup_params(ui, entry, height_ctx);
 
             ui.add_space(8.0);
             ui.collapsing("Debugging", |ui| {
@@ -2372,12 +2403,32 @@ fn tooltip_for(label: &str) -> Option<&'static str> {
 
 // ── Dressup configuration ────────────────────────────────────────────────
 
+/// Count how many dressup features are currently active.
+fn dressup_active_count(cfg: &DressupConfig) -> (usize, usize) {
+    let total = 8;
+    let mut active = 0;
+    if !matches!(cfg.entry_style, DressupEntryStyle::None) { active += 1; }
+    if cfg.lead_in_out { active += 1; }
+    if cfg.dogbone { active += 1; }
+    if cfg.arc_fitting { active += 1; }
+    if cfg.link_moves { active += 1; }
+    if cfg.feed_optimization { active += 1; }
+    if cfg.optimize_rapid_order { active += 1; }
+    if matches!(cfg.retract_strategy, RetractStrategy::Minimum) { active += 1; }
+    (active, total)
+}
+
 fn draw_dressup_params(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
     height_ctx: Option<&HeightContext>,
 ) {
     let cfg = &mut entry.dressups;
+    let section_color = egui::Color32::from_rgb(150, 155, 170);
+
+    // ── Entry & Exit ──────────────────────────────────────────
+    ui.label(egui::RichText::new("Entry & Exit").small().strong().color(section_color));
+
     ui.horizontal(|ui| {
         ui.label("Entry Style:");
         egui::ComboBox::from_id_salt("dressup_entry")
@@ -2387,46 +2438,28 @@ fn draw_dressup_params(
                 DressupEntryStyle::Helix => "Helix",
             })
             .show_ui(ui, |ui| {
-                ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::None, "None");
-                ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::Ramp, "Ramp");
-                ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::Helix, "Helix");
+                ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::None, "None")
+                    .on_hover_text("Plunge straight down. Fast but can burn in hard materials.");
+                ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::Ramp, "Ramp")
+                    .on_hover_text("Angled descent into material. Prevents plunge burns. Recommended for most operations.");
+                ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::Helix, "Helix")
+                    .on_hover_text("Spiral descent. Best for deep pockets and hard materials. Spreads heat and load evenly.");
             });
     });
     match cfg.entry_style {
         DressupEntryStyle::Ramp => {
-            egui::Grid::new("ramp_p")
-                .num_columns(2)
-                .spacing([8.0, 4.0])
-                .show(ui, |ui| {
-                    dv(
-                        ui,
-                        "  Max Angle:",
-                        &mut cfg.ramp_angle,
-                        " deg",
-                        0.5,
-                        0.5..=15.0,
-                    );
-                });
+            egui::Grid::new("ramp_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+                dv(ui, "  Max Angle:", &mut cfg.ramp_angle, " deg", 0.5, 0.5..=15.0);
+            });
         }
         DressupEntryStyle::Helix => {
-            egui::Grid::new("helix_p")
-                .num_columns(2)
-                .spacing([8.0, 4.0])
-                .show(ui, |ui| {
-                    dv(
-                        ui,
-                        "  Radius:",
-                        &mut cfg.helix_radius,
-                        " mm",
-                        0.1,
-                        0.5..=20.0,
-                    );
-                    dv(ui, "  Pitch:", &mut cfg.helix_pitch, " mm", 0.1, 0.2..=10.0);
-                });
+            egui::Grid::new("helix_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+                dv(ui, "  Radius:", &mut cfg.helix_radius, " mm", 0.1, 0.5..=20.0);
+                dv(ui, "  Pitch:", &mut cfg.helix_pitch, " mm", 0.1, 0.2..=10.0);
+            });
         }
         DressupEntryStyle::None => {}
     }
-    // Entry style preview — bundled right after the settings that control it
     {
         let fallback_ctx = HeightContext::simple(10.0, 5.0);
         let ctx = height_ctx.unwrap_or(&fallback_ctx);
@@ -2434,129 +2467,81 @@ fn draw_dressup_params(
         draw_entry_preview_diagram(ui, cfg, ctx, &entry.heights);
     }
 
-    ui.add_space(4.0);
-    ui.checkbox(&mut cfg.dogbone, "Dogbone overcuts");
-    if cfg.dogbone {
-        egui::Grid::new("dog_p")
-            .num_columns(2)
-            .spacing([8.0, 4.0])
-            .show(ui, |ui| {
-                dv(
-                    ui,
-                    "  Max Angle:",
-                    &mut cfg.dogbone_angle,
-                    " deg",
-                    1.0,
-                    45.0..=135.0,
-                );
-            });
-        draw_dogbone_diagram(ui, cfg.dogbone_angle);
-    }
-    ui.checkbox(&mut cfg.lead_in_out, "Lead-in / lead-out");
+    ui.checkbox(&mut cfg.lead_in_out, "Lead-in / lead-out")
+        .on_hover_text("Add smooth arc transitions at cut start and end. Prevents tool marks at entry/exit points. Best for finishing and profile cuts.");
     if cfg.lead_in_out {
-        egui::Grid::new("lead_p")
-            .num_columns(2)
-            .spacing([8.0, 4.0])
-            .show(ui, |ui| {
-                dv(
-                    ui,
-                    "  Radius:",
-                    &mut cfg.lead_radius,
-                    " mm",
-                    0.1,
-                    0.5..=20.0,
-                );
-            });
+        egui::Grid::new("lead_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+            dv(ui, "  Radius:", &mut cfg.lead_radius, " mm", 0.1, 0.5..=20.0);
+        });
         draw_lead_in_out_diagram(ui, cfg.lead_radius);
     }
-    ui.checkbox(&mut cfg.link_moves, "Link moves (keep tool down)");
-    if cfg.link_moves {
-        egui::Grid::new("link_p")
-            .num_columns(2)
-            .spacing([8.0, 4.0])
-            .show(ui, |ui| {
-                dv(
-                    ui,
-                    "  Max Distance:",
-                    &mut cfg.link_max_distance,
-                    " mm",
-                    0.5,
-                    1.0..=50.0,
-                );
-                dv(
-                    ui,
-                    "  Feed Rate:",
-                    &mut cfg.link_feed_rate,
-                    " mm/min",
-                    10.0,
-                    50.0..=5000.0,
-                );
-            });
-    }
-    ui.checkbox(&mut cfg.arc_fitting, "Arc fitting (G2/G3)");
+
+    ui.add_space(6.0);
+
+    // ── Path Quality ──────────────────────────────────────────
+    ui.label(egui::RichText::new("Path Quality").small().strong().color(section_color));
+
+    ui.checkbox(&mut cfg.arc_fitting, "Arc fitting (G2/G3)")
+        .on_hover_text("Convert sequences of linear segments into smooth G2/G3 arcs. Reduces file size, improves surface finish, and produces smoother machine motion. Safe for all operations.");
     if cfg.arc_fitting {
-        egui::Grid::new("arc_p")
-            .num_columns(2)
-            .spacing([8.0, 4.0])
-            .show(ui, |ui| {
-                dv(
-                    ui,
-                    "  Tolerance:",
-                    &mut cfg.arc_tolerance,
-                    " mm",
-                    0.01,
-                    0.01..=0.5,
-                );
-            });
+        egui::Grid::new("arc_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+            dv(ui, "  Tolerance:", &mut cfg.arc_tolerance, " mm", 0.01, 0.01..=0.5);
+        });
     }
+
+    ui.checkbox(&mut cfg.dogbone, "Dogbone overcuts")
+        .on_hover_text("Add circular overcuts at inside corners so parts fit together. Essential for joints, inlays, and press-fit assemblies. Not needed for open pockets or 3D surfaces.");
+    if cfg.dogbone {
+        egui::Grid::new("dog_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+            dv(ui, "  Max Angle:", &mut cfg.dogbone_angle, " deg", 1.0, 45.0..=135.0);
+        });
+        draw_dogbone_diagram(ui, cfg.dogbone_angle);
+    }
+
+    ui.add_space(6.0);
+
+    // ── Optimization ──────────────────────────────────────────
+    ui.label(egui::RichText::new("Optimization").small().strong().color(section_color));
+
+    ui.checkbox(&mut cfg.link_moves, "Link moves (keep tool down)")
+        .on_hover_text("Replace short retract-rapid-plunge sequences with slow linear feeds. Major time saver for operations with many small regions. Keeps the tool in the material instead of retracting.");
+    if cfg.link_moves {
+        egui::Grid::new("link_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+            dv(ui, "  Max Distance:", &mut cfg.link_max_distance, " mm", 0.5, 1.0..=50.0);
+            dv(ui, "  Feed Rate:", &mut cfg.link_feed_rate, " mm/min", 10.0, 50.0..=5000.0);
+        });
+    }
+
     let feed_opt_reason = crate::state::toolpath::feed_optimization_unavailable_reason(
         &entry.operation,
         entry.stock_source,
     );
     if let Some(reason) = feed_opt_reason {
         cfg.feed_optimization = false;
-        ui.add_enabled(
-            false,
-            egui::Checkbox::new(&mut cfg.feed_optimization, "Feed rate optimization"),
-        )
-        .on_hover_text(reason);
+        ui.add_enabled(false, egui::Checkbox::new(&mut cfg.feed_optimization, "Feed rate optimization"))
+            .on_hover_text(reason);
         ui.label(
-            egui::RichText::new(reason)
-                .small()
-                .italics()
-                .color(egui::Color32::from_rgb(150, 150, 130)),
+            egui::RichText::new(reason).small().italics().color(egui::Color32::from_rgb(150, 150, 130)),
         );
     } else {
-        ui.checkbox(&mut cfg.feed_optimization, "Feed rate optimization");
+        ui.checkbox(&mut cfg.feed_optimization, "Feed rate optimization")
+            .on_hover_text("Dynamically adjust feed rate based on stock engagement. Higher feed in light cuts, lower in heavy cuts. Only available for fresh-stock 2D operations.");
     }
     if cfg.feed_optimization && feed_opt_reason.is_none() {
-        egui::Grid::new("fopt_p")
-            .num_columns(2)
-            .spacing([8.0, 4.0])
-            .show(ui, |ui| {
-                dv(
-                    ui,
-                    "  Max Rate:",
-                    &mut cfg.feed_max_rate,
-                    " mm/min",
-                    50.0,
-                    500.0..=20000.0,
-                );
-                dv(
-                    ui,
-                    "  Ramp Rate:",
-                    &mut cfg.feed_ramp_rate,
-                    " mm/min/mm",
-                    10.0,
-                    10.0..=2000.0,
-                );
-            });
+        egui::Grid::new("fopt_p").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+            dv(ui, "  Max Rate:", &mut cfg.feed_max_rate, " mm/min", 50.0, 500.0..=20000.0);
+            dv(ui, "  Ramp Rate:", &mut cfg.feed_ramp_rate, " mm/min/mm", 10.0, 10.0..=2000.0);
+        });
     }
+
     ui.checkbox(&mut cfg.optimize_rapid_order, "Optimize rapid travel order")
-        .on_hover_text(
-            "Reorder toolpath segments to minimize rapid travel distance (TSP optimization)",
-        );
-    ui.add_space(4.0);
+        .on_hover_text("Reorder disconnected toolpath segments to minimize total rapid travel distance (TSP heuristic). Pure optimization with no machining risk.");
+
+    ui.add_space(6.0);
+
+    // ── Safety ────────────────────────────────────────────────
+    ui.label(egui::RichText::new("Safety").small().strong().color(section_color));
+
     ui.horizontal(|ui| {
         ui.label("Retract Strategy:");
         egui::ComboBox::from_id_salt("retract_strat")
@@ -2566,13 +2551,9 @@ fn draw_dressup_params(
             })
             .show_ui(ui, |ui| {
                 ui.selectable_value(&mut cfg.retract_strategy, RetractStrategy::Full, "Full")
-                    .on_hover_text("Always retract to retract height (safest)");
-                ui.selectable_value(
-                    &mut cfg.retract_strategy,
-                    RetractStrategy::Minimum,
-                    "Minimum",
-                )
-                .on_hover_text("Retract just above nearby path (faster, less safe)");
+                    .on_hover_text("Always retract to retract height between cuts. Safest option \u{2014} use when unsure.");
+                ui.selectable_value(&mut cfg.retract_strategy, RetractStrategy::Minimum, "Minimum")
+                    .on_hover_text("Retract just above nearby path. Faster cycle time but risk of collision if geometry is complex.");
             });
     });
 }
