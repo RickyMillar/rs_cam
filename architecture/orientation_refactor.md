@@ -281,3 +281,18 @@ pub struct SetupOrientation {
 | Depth construction sites | 12 | 1 (controller) |
 | Frame conversions per toolpath | 2 (local→global→sim) | 0 (stays local) |
 | Lines of direction-branching code | ~150 | ~20 (decompose only) |
+
+## Implementation Status
+
+### Completed
+- **Phase 1**: `trace_polygon_at_z` extracted as single-level function. `run_trace` uses `depth_stepped_toolpath` externally like other 2D ops.
+- **Phase 2**: `cutting_levels: Vec<f64>` added to `ComputeRequest`, computed via `OperationConfig::cutting_levels(top_z)`. All 2D ops consume pre-computed levels. `make_depth`/`make_depth_with_finishing` helpers removed. `toolpath_at_levels` added to `depth.rs`.
+- **Phase 3**: Per-setup simulation implemented. `SetupSimGroup` carries `local_stock_bbox` + `SetupTransformInfo`. `build_simulation_groups` passes toolpaths untransformed. `run_simulation_with_phase` creates per-group stocks, always stamps FromTop, transforms mesh vertices to global, composites via `StockMesh::append_transformed`. `face_up_to_direction()` and `transform_toolpath_to_stock_frame()` removed from controller.
+
+### Partially implemented
+- **StockCutDirection from stamping**: `from_high` branching remains in dexel_stock.rs stamping functions (kept for playback compatibility). Simulation always uses FromTop, but the code path still exists for playback re-simulation.
+- **Playback**: Uses global-frame toolpaths + direction for backward scrub. Backward scrub always resets to fresh stock (no checkpoint optimization for multi-setup jobs) to avoid frame mismatches.
+
+### Not yet started
+- **Phase 4**: SetupOrientation matrix (future multi-axis extension)
+- **Checkpoint optimization**: Per-setup checkpoints are stored but only used for mesh display, not for playback resume (frame mismatch). Future work: store global-frame checkpoint stocks or implement per-setup playback.
