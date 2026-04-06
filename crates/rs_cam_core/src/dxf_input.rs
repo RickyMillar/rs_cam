@@ -102,25 +102,29 @@ fn extract_polygons_flat(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<
     for entity in drawing.entities() {
         match &entity.specific {
             dxf::entities::EntityType::LwPolyline(lwp) => {
-                if lwp.is_closed() && lwp.vertices.len() >= 3 {
+                if lwp.vertices.len() >= 2 {
                     let pts = lwpolyline_to_points(lwp, arc_step_rad);
-                    if pts.len() >= 3 {
+                    if lwp.is_closed() && pts.len() >= 3 {
                         let mut poly = Polygon2::new(pts);
                         poly.ensure_winding();
                         polygons.push(poly);
+                    } else if !lwp.is_closed() && pts.len() >= 2 {
+                        // Open polylines imported as unclosed paths
+                        // (usable for Trace, Project Curve, and engraving operations)
+                        polygons.push(Polygon2::new(pts));
                     }
                 }
             }
             dxf::entities::EntityType::Polyline(poly_ent) => {
-                if poly_ent.is_closed() {
-                    let verts: Vec<_> = poly_ent.vertices().collect();
-                    if verts.len() >= 3 {
-                        let pts = polyline_to_points(&verts, arc_step_rad);
-                        if pts.len() >= 3 {
-                            let mut poly = Polygon2::new(pts);
-                            poly.ensure_winding();
-                            polygons.push(poly);
-                        }
+                let verts: Vec<_> = poly_ent.vertices().collect();
+                if verts.len() >= 2 {
+                    let pts = polyline_to_points(&verts, arc_step_rad);
+                    if poly_ent.is_closed() && pts.len() >= 3 {
+                        let mut poly = Polygon2::new(pts);
+                        poly.ensure_winding();
+                        polygons.push(poly);
+                    } else if !poly_ent.is_closed() && pts.len() >= 2 {
+                        polygons.push(Polygon2::new(pts));
                     }
                 }
             }
@@ -610,13 +614,14 @@ mod tests {
     }
 
     #[test]
-    fn test_lwpolyline_open_ignored() {
+    fn test_lwpolyline_open_imported() {
         let drawing = make_lwpolyline_drawing(
             vec![(0.0, 0.0, 0.0), (100.0, 0.0, 0.0), (100.0, 50.0, 0.0)],
             false,
         );
         let polys = extract_polygons(&drawing, 5.0);
-        assert!(polys.is_empty(), "Open polyline should be ignored");
+        assert_eq!(polys.len(), 1, "Open polyline should be imported as unclosed path");
+        assert_eq!(polys[0].exterior.len(), 3);
     }
 
     #[test]
