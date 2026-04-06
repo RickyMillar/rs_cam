@@ -2165,21 +2165,8 @@ fn draw_toolpath_panel(
                 }
             });
 
-            ui.add_space(4.0);
-            ui.collapsing("Manual G-code", |ui| {
-                ui.label(
-                    egui::RichText::new(
-                        "Raw G-code inserted before/after this operation in export",
-                    )
-                    .small()
-                    .italics()
-                    .color(egui::Color32::from_rgb(130, 130, 140)),
-                );
-                ui.label("Before:");
-                ui.text_edit_multiline(&mut entry.pre_gcode);
-                ui.label("After:");
-                ui.text_edit_multiline(&mut entry.post_gcode);
-            });
+            // Manual G-code fields (pre_gcode, post_gcode) kept in state
+            // for future export wiring — UI removed until export is implemented.
         }
     }
 }

@@ -539,6 +539,37 @@ fn configure_theme(ctx: &egui::Context) {
     let mut style = (*ctx.style()).clone();
     style.spacing.item_spacing = egui::vec2(6.0, 4.0);
     ctx.set_style(style);
+
+    configure_fonts(ctx);
+}
+
+/// Add symbol fallback fonts so Unicode glyphs (▶, ⠿, ✓, ⚠, etc.) render correctly.
+fn configure_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    // NotoSansSymbols covers geometric shapes (▶●○), arrows (→), math (≤), checkmarks (✓)
+    fonts.font_data.insert(
+        "noto_symbols".to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+            "../assets/fonts/NotoSansSymbols-Regular.ttf"
+        ))),
+    );
+
+    // NotoSansSymbols2 covers braille (⠿), dingbats (✗✅❌), and extended symbols
+    fonts.font_data.insert(
+        "noto_symbols2".to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+            "../assets/fonts/NotoSansSymbols2-Regular.ttf"
+        ))),
+    );
+
+    // Append as fallbacks (after egui's default fonts) for proportional text
+    if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+        family.push("noto_symbols".to_owned());
+        family.push("noto_symbols2".to_owned());
+    }
+
+    ctx.set_fonts(fonts);
 }
 
 /// Push line-segment vertices approximating a circle in the XY plane at height `cz`.
