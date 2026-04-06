@@ -10,7 +10,14 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
         let current = state.workspace;
 
-        workspace_tab(ui, "Setup", Workspace::Setup, current, None, events);
+        workspace_tab(
+            ui,
+            "Setup",
+            Workspace::Setup,
+            current,
+            readiness_badge(state),
+            events,
+        );
         workspace_tab(
             ui,
             "Toolpaths",
@@ -137,4 +144,35 @@ fn simulation_badge(state: &AppState) -> Option<(String, egui::Color32)> {
     }
 
     Some((" \u{2713}".to_owned(), theme::SUCCESS))
+}
+
+/// Badge for the Setup tab: aggregate export readiness.
+/// Shows issues that would prevent a clean export.
+fn readiness_badge(state: &AppState) -> Option<(String, egui::Color32)> {
+    let sim = &state.simulation;
+
+    // Count uncomputed enabled operations
+    let uncomputed = state
+        .job
+        .all_toolpaths()
+        .filter(|tp| tp.enabled && tp.result.is_none())
+        .count();
+
+    // Check collisions
+    let collisions = sim.checks.holder_collision_count + sim.checks.rapid_collisions.len();
+
+    // Check simulation staleness
+    let stale = sim.has_results() && sim.is_stale(state.job.edit_counter);
+
+    if collisions > 0 {
+        Some((format!("{collisions} collision(s)"), theme::ERROR))
+    } else if uncomputed > 0 {
+        Some((format!("{uncomputed} uncomputed"), theme::WARNING))
+    } else if stale {
+        Some(("sim stale".to_owned(), theme::WARNING))
+    } else if !sim.has_results() && state.job.all_toolpaths().any(|tp| tp.enabled) {
+        Some(("not simulated".to_owned(), theme::TEXT_DIM))
+    } else {
+        None
+    }
 }
