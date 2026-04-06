@@ -157,150 +157,183 @@ fn draw_toolpath_card(
         egui::Color32::from_rgb(48, 48, 58)
     };
 
-    let drag_id = egui::Id::new("tp_drag").with(tp.id.0);
     let tp_id = tp.id;
 
-    let inner_response = ui.dnd_drag_source(drag_id, tp_id, |ui| {
-        egui::Frame::default()
-            .fill(if selected {
-                theme::CARD_FILL_SELECTED
-            } else {
-                egui::Color32::TRANSPARENT
-            })
-            .stroke(egui::Stroke::new(1.0, border_color))
-            .inner_margin(4.0)
-            .rounding(3.0)
-            .show(ui, |ui| {
-                // Row 1: swatch + status + name
-                let response = ui
-                    .horizontal(|ui| {
-                        // Color swatch
-                        let (rect, _) =
-                            ui.allocate_exact_size(egui::vec2(6.0, 14.0), egui::Sense::hover());
-                        ui.painter().rect_filled(rect, 2.0, swatch_color);
+    // Hold-to-drag: after 400ms of sustained press, start DnD.
+    // Before that threshold, click selects the toolpath.
+    let hold_id = egui::Id::new("tp_hold_start").with(tp.id.0);
+    let hold_threshold_secs = 0.4;
 
-                        // Status chip
-                        let (status_text, status_color) = match &tp.status {
-                            ComputeStatus::Pending => ("PEND", theme::TEXT_DIM),
-                            ComputeStatus::Computing => ("GEN", theme::WARNING),
-                            ComputeStatus::Done => ("OK", theme::SUCCESS_BRIGHT),
-                            ComputeStatus::Error(_) => ("ERR", theme::ERROR),
-                        };
-                        ui.label(
-                            egui::RichText::new(status_text)
-                                .small()
-                                .strong()
-                                .color(status_color),
-                        );
-                        draw_trace_badge(
-                            ui,
-                            SimulationState::trace_availability_for_toolpath(&state.job, tp_id),
-                        );
+    let inner_response = egui::Frame::default()
+        .fill(if selected {
+            theme::CARD_FILL_SELECTED
+        } else {
+            egui::Color32::TRANSPARENT
+        })
+        .stroke(egui::Stroke::new(1.0, border_color))
+        .inner_margin(4.0)
+        .rounding(3.0)
+        .show(ui, |ui| {
+            let frame_resp = ui.interact(
+                ui.max_rect(),
+                egui::Id::new("tp_card_sense").with(tp.id.0),
+                egui::Sense::click_and_drag(),
+            );
 
-                        // Name
-                        let text_color = if dim {
-                            theme::TEXT_FAINT
-                        } else {
-                            egui::Color32::from_rgb(190, 190, 200)
-                        };
-                        let resp = ui.selectable_label(
-                            selected,
-                            egui::RichText::new(&tp.name).color(text_color),
-                        );
-                        if resp.clicked() {
-                            events.push(AppEvent::Select(Selection::Toolpath(tp_id)));
-                        }
-                        resp
-                    })
-                    .inner;
-
-                // Row 2: tool info + quick actions
-                ui.horizontal(|ui| {
-                    // Tool name
-                    if let Some(tool) = state.job.tools.iter().find(|t| t.id == tp.tool_id) {
-                        ui.label(
-                            egui::RichText::new(tool.summary())
-                                .small()
-                                .color(theme::TEXT_MUTED),
-                        );
-                    }
-
-                    // Rest dependency badge
-                    if let crate::state::toolpath::OperationConfig::Rest(ref rest_cfg) =
-                        tp.operation
-                    {
-                        draw_rest_badge(ui, rest_cfg, state, tp_id);
-                    }
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if tp.result.is_some()
-                            && ui
-                                .small_button("Sim")
-                                .on_hover_text("Inspect in Simulation")
-                                .clicked()
-                        {
-                            events.push(AppEvent::InspectToolpathInSimulation(tp_id));
-                        }
-
-                        // Quick generate button
-                        if matches!(tp.status, ComputeStatus::Pending)
-                            && ui
-                                .small_button("\u{25B6}")
-                                .on_hover_text("Generate")
-                                .clicked()
-                        {
-                            events.push(AppEvent::GenerateToolpath(tp_id));
-                        }
-                    });
+            // Track hold duration for drag activation
+            if frame_resp.drag_started() {
+                ui.memory_mut(|mem| {
+                    mem.data.insert_temp(hold_id, ui.input(|i| i.time));
                 });
+            }
+            if frame_resp.drag_stopped() || !frame_resp.dragged() {
+                // If released before threshold → treat as click
+                if frame_resp.clicked() || frame_resp.drag_stopped() {
+                    let held_long = ui.memory(|mem| {
+                        mem.data.get_temp::<f64>(hold_id).is_some_and(|start| {
+                            ui.input(|i| i.time) - start >= hold_threshold_secs
+                        })
+                    });
+                    if !held_long && (frame_resp.clicked() || frame_resp.drag_stopped()) {
+                        events.push(AppEvent::Select(Selection::Toolpath(tp_id)));
+                    }
+                }
+                ui.memory_mut(|mem| mem.data.remove::<f64>(hold_id));
+            }
 
-                // Context menu
-                response.context_menu(|ui| {
-                    if ui.button("Generate").clicked() {
-                        events.push(AppEvent::GenerateToolpath(tp_id));
-                        ui.close_menu();
-                    }
-                    if tp.result.is_some() && ui.button("Inspect in Simulation").clicked() {
+            // After hold threshold, activate DnD payload
+            if frame_resp.dragged() {
+                let held_long = ui.memory(|mem| {
+                    mem.data
+                        .get_temp::<f64>(hold_id)
+                        .is_some_and(|start| ui.input(|i| i.time) - start >= hold_threshold_secs)
+                });
+                if held_long {
+                    egui::DragAndDrop::set_payload(ui.ctx(), tp_id);
+                    // Visual feedback: dim the card being dragged
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                }
+            }
+
+            // Row 1: swatch + status + name
+            ui.horizontal(|ui| {
+                // Color swatch
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 14.0), egui::Sense::hover());
+                ui.painter().rect_filled(rect, 2.0, swatch_color);
+
+                // Status chip
+                let (status_text, status_color) = match &tp.status {
+                    ComputeStatus::Pending => ("PEND", theme::TEXT_DIM),
+                    ComputeStatus::Computing => ("GEN", theme::WARNING),
+                    ComputeStatus::Done => ("OK", theme::SUCCESS_BRIGHT),
+                    ComputeStatus::Error(_) => ("ERR", theme::ERROR),
+                };
+                ui.label(
+                    egui::RichText::new(status_text)
+                        .small()
+                        .strong()
+                        .color(status_color),
+                );
+                draw_trace_badge(
+                    ui,
+                    SimulationState::trace_availability_for_toolpath(&state.job, tp_id),
+                );
+
+                // Name
+                let text_color = if dim {
+                    theme::TEXT_FAINT
+                } else {
+                    egui::Color32::from_rgb(190, 190, 200)
+                };
+                ui.label(egui::RichText::new(&tp.name).color(text_color));
+            });
+
+            // Row 2: tool info + quick actions
+            ui.horizontal(|ui| {
+                // Tool name
+                if let Some(tool) = state.job.tools.iter().find(|t| t.id == tp.tool_id) {
+                    ui.label(
+                        egui::RichText::new(tool.summary())
+                            .small()
+                            .color(theme::TEXT_MUTED),
+                    );
+                }
+
+                // Rest dependency badge
+                if let crate::state::toolpath::OperationConfig::Rest(ref rest_cfg) = tp.operation {
+                    draw_rest_badge(ui, rest_cfg, state, tp_id);
+                }
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if tp.result.is_some()
+                        && ui
+                            .small_button("Sim")
+                            .on_hover_text("Inspect in Simulation")
+                            .clicked()
+                    {
                         events.push(AppEvent::InspectToolpathInSimulation(tp_id));
-                        ui.close_menu();
                     }
-                    let vis_label = if tp.visible { "Hide" } else { "Show" };
-                    if ui.button(vis_label).clicked() {
-                        events.push(AppEvent::ToggleToolpathVisibility(tp_id));
-                        ui.close_menu();
-                    }
-                    let en_label = if tp.enabled { "Disable" } else { "Enable" };
-                    if ui.button(en_label).clicked() {
-                        events.push(AppEvent::ToggleToolpathEnabled(tp_id));
-                        ui.close_menu();
-                    }
-                    if ui.button("Duplicate").clicked() {
-                        events.push(AppEvent::DuplicateToolpath(tp_id));
-                        ui.close_menu();
-                    }
-                    ui.separator();
-                    if ui.button("Move Up").clicked() {
-                        events.push(AppEvent::MoveToolpathUp(tp_id));
-                        ui.close_menu();
-                    }
-                    if ui.button("Move Down").clicked() {
-                        events.push(AppEvent::MoveToolpathDown(tp_id));
-                        ui.close_menu();
-                    }
-                    ui.separator();
-                    if ui.button("Delete").clicked() {
-                        events.push(AppEvent::RemoveToolpath(tp_id));
-                        ui.close_menu();
+
+                    // Quick generate button
+                    if matches!(tp.status, ComputeStatus::Pending)
+                        && ui
+                            .small_button("\u{25B6}")
+                            .on_hover_text("Generate")
+                            .clicked()
+                    {
+                        events.push(AppEvent::GenerateToolpath(tp_id));
                     }
                 });
             });
-    });
+
+            // Context menu
+            frame_resp.context_menu(|ui| {
+                if ui.button("Generate").clicked() {
+                    events.push(AppEvent::GenerateToolpath(tp_id));
+                    ui.close_menu();
+                }
+                if tp.result.is_some() && ui.button("Inspect in Simulation").clicked() {
+                    events.push(AppEvent::InspectToolpathInSimulation(tp_id));
+                    ui.close_menu();
+                }
+                let vis_label = if tp.visible { "Hide" } else { "Show" };
+                if ui.button(vis_label).clicked() {
+                    events.push(AppEvent::ToggleToolpathVisibility(tp_id));
+                    ui.close_menu();
+                }
+                let en_label = if tp.enabled { "Disable" } else { "Enable" };
+                if ui.button(en_label).clicked() {
+                    events.push(AppEvent::ToggleToolpathEnabled(tp_id));
+                    ui.close_menu();
+                }
+                if ui.button("Duplicate").clicked() {
+                    events.push(AppEvent::DuplicateToolpath(tp_id));
+                    ui.close_menu();
+                }
+                ui.separator();
+                if ui.button("Move Up").clicked() {
+                    events.push(AppEvent::MoveToolpathUp(tp_id));
+                    ui.close_menu();
+                }
+                if ui.button("Move Down").clicked() {
+                    events.push(AppEvent::MoveToolpathDown(tp_id));
+                    ui.close_menu();
+                }
+                ui.separator();
+                if ui.button("Delete").clicked() {
+                    events.push(AppEvent::RemoveToolpath(tp_id));
+                    ui.close_menu();
+                }
+            });
+        });
+
+    let inner_response = inner_response.response;
 
     // If this card is being hovered while something is dragged, show insertion indicator
     if egui::DragAndDrop::has_payload_of_type::<ToolpathId>(ui.ctx())
-        && inner_response.response.contains_pointer()
+        && inner_response.contains_pointer()
     {
-        let rect = inner_response.response.rect;
+        let rect = inner_response.rect;
         let painter = ui.painter();
         // Draw a thin line at the bottom to indicate drop position
         painter.line_segment(
