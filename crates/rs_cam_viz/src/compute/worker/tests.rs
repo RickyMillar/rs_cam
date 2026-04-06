@@ -618,6 +618,10 @@ fn long_simulation_request() -> SimulationRequest {
         toolpath.feed_to(P3::new(x, y, -1.0), 600.0);
     }
 
+    let stock_bbox = BoundingBox3 {
+        min: P3::new(0.0, 0.0, -2.0),
+        max: P3::new(100.0, 100.0, 10.0),
+    };
     SimulationRequest {
         groups: vec![SetupSimGroup {
             toolpaths: vec![SetupSimToolpath {
@@ -627,12 +631,10 @@ fn long_simulation_request() -> SimulationRequest {
                 tool,
                 semantic_trace: None,
             }],
-            direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+            local_stock_bbox: stock_bbox,
+            local_to_global: None,
         }],
-        stock_bbox: BoundingBox3 {
-            min: P3::new(0.0, 0.0, -2.0),
-            max: P3::new(100.0, 100.0, 10.0),
-        },
+        stock_bbox,
         stock_top_z: 10.0,
         resolution: 0.5,
         metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions::default(),
@@ -650,6 +652,10 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
     toolpath.feed_to(P3::new(12.0, 2.0, 4.0), 400.0);
     toolpath.rapid_to(P3::new(12.0, 2.0, 8.0));
 
+    let stock_bbox = BoundingBox3 {
+        min: P3::new(0.0, 0.0, 0.0),
+        max: P3::new(20.0, 20.0, 10.0),
+    };
     SimulationRequest {
         groups: vec![SetupSimGroup {
             toolpaths: vec![SetupSimToolpath {
@@ -659,12 +665,10 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
                 tool,
                 semantic_trace: None,
             }],
-            direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+            local_stock_bbox: stock_bbox,
+            local_to_global: None,
         }],
-        stock_bbox: BoundingBox3 {
-            min: P3::new(0.0, 0.0, 0.0),
-            max: P3::new(20.0, 20.0, 10.0),
-        },
+        stock_bbox,
         stock_top_z: 10.0,
         resolution: 0.5,
         metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions { enabled },
@@ -1638,18 +1642,14 @@ fn multi_setup_top_bottom_simulation() {
         top_tp.feed_to(P3::new(x, 25.0, 15.0), 600.0);
     }
 
-    // --- Bottom setup: toolpath in *global stock frame* (pre-transformed) ---
-    // In the bottom setup's local frame, the stock is flipped.
-    // For Bottom: inverse_transform maps local (x,y,z) → global (x, D-y, H-z).
-    // A cut at local Z = stock_h - 5 (5mm from bottom surface) means
-    // global Z = H - (H - 5) = 5.0.
-    // After pre-transform, the toolpath points are in global frame.
+    // --- Bottom setup: toolpath in LOCAL frame ---
+    // In FaceUp::Bottom local frame, the stock is 50x50x20 (same dims).
+    // A cut at local Z=15 means 5mm from the local top (= physical bottom).
     let mut bottom_tp = Toolpath::new();
-    bottom_tp.rapid_to(P3::new(25.0, 25.0, -5.0));
-    // Cut at global Z=5 (5mm above stock bottom), direction FromBottom
+    bottom_tp.rapid_to(P3::new(25.0, 25.0, 25.0));
     for i in 0..20 {
         let x = 20.0 + (i as f64) * 0.5;
-        bottom_tp.feed_to(P3::new(x, 25.0, 5.0), 600.0);
+        bottom_tp.feed_to(P3::new(x, 25.0, 15.0), 600.0);
     }
 
     let request = SimulationRequest {
@@ -1662,7 +1662,8 @@ fn multi_setup_top_bottom_simulation() {
                     tool: tool.clone(),
                     semantic_trace: None,
                 }],
-                direction: StockCutDirection::FromTop,
+                local_stock_bbox: stock_bbox,
+                local_to_global: None,
             },
             SetupSimGroup {
                 toolpaths: vec![SetupSimToolpath {
@@ -1672,7 +1673,14 @@ fn multi_setup_top_bottom_simulation() {
                     tool,
                     semantic_trace: None,
                 }],
-                direction: StockCutDirection::FromBottom,
+                local_stock_bbox: stock_bbox,
+                local_to_global: Some(crate::compute::SetupTransformInfo {
+                    face_up: crate::state::job::FaceUp::Bottom,
+                    z_rotation: crate::state::job::ZRotation::Deg0,
+                    stock_x: 50.0,
+                    stock_y: 50.0,
+                    stock_z: 20.0,
+                }),
             },
         ],
         stock_bbox,
@@ -1702,55 +1710,40 @@ fn multi_setup_top_bottom_simulation() {
         StockCutDirection::FromBottom
     );
 
-    // Should have 2 checkpoints
+    // Should have 2 checkpoints (one per setup)
     assert_eq!(result.checkpoints.len(), 2);
 
     // Should have playback data for both toolpaths
     assert_eq!(result.playback_data.len(), 2);
 
-    // Verify the stock state after both setups:
-    // At the cut location (x=25, y=25), top was cut to Z=15 and bottom to Z=5.
-    // The remaining material should be from Z=5 to Z=15.
-    let final_stock = &result.checkpoints[1].stock;
-    let (r, c) = final_stock.z_grid.world_to_cell(25.0, 25.0).unwrap();
-    let ray = final_stock.z_grid.ray(r, c);
-    assert!(!ray.is_empty(), "ray should have material");
-
-    // Ray should have one segment from ~5.0 to ~15.0
-    assert_eq!(ray.len(), 1, "should be a single segment");
-    let seg = ray[0];
-    assert!(
-        (seg.enter - 5.0).abs() < 1.0,
-        "bottom cut should leave material starting near Z=5, got {}",
-        seg.enter
-    );
-    assert!(
-        (seg.exit - 15.0).abs() < 1.0,
-        "top cut should leave material ending near Z=15, got {}",
-        seg.exit
-    );
-
-    // Verify checkpoint 0 (after top cut only): material should be from Z=0 to Z=15
-    let after_top = &result.checkpoints[0].stock;
-    let (r, c) = after_top.z_grid.world_to_cell(25.0, 25.0).unwrap();
-    let ray = after_top.z_grid.ray(r, c);
-    assert_eq!(ray.len(), 1);
-    assert!(
-        ray[0].enter.abs() < 0.01,
-        "after top only, material starts at Z=0"
-    );
+    // Verify per-setup stock state:
+    // checkpoint[0] = top-setup local stock: cut at Z=15 from 0→20
+    let top_stock = &result.checkpoints[0].stock;
+    let (r, c) = top_stock.z_grid.world_to_cell(25.0, 25.0).unwrap();
+    let ray = top_stock.z_grid.ray(r, c);
+    assert_eq!(ray.len(), 1, "top setup cut area should have one segment");
+    assert!(ray[0].enter.abs() < 0.01, "top setup material starts at Z=0");
     assert!(
         (ray[0].exit - 15.0).abs() < 1.0,
-        "after top only, material ends near Z=15, got {}",
+        "top setup material ends near Z=15, got {}",
         ray[0].exit
     );
 
-    // Verify an uncut location: far from the cut path
-    let (r, c) = final_stock.z_grid.world_to_cell(5.0, 5.0).unwrap();
-    let ray = final_stock.z_grid.ray(r, c);
-    assert_eq!(ray.len(), 1, "uncut area should be one full segment");
-    assert!(ray[0].enter.abs() < 0.01);
-    assert!((ray[0].exit - 20.0).abs() < 0.01);
+    // checkpoint[1] = bottom-setup local stock: cut at Z=15 from 0→20 (local frame)
+    // In local frame, this means material from 0 to 15 remains.
+    let bottom_stock = &result.checkpoints[1].stock;
+    let (r, c) = bottom_stock.z_grid.world_to_cell(25.0, 25.0).unwrap();
+    let ray = bottom_stock.z_grid.ray(r, c);
+    assert_eq!(ray.len(), 1, "bottom setup cut area should have one segment");
+    assert!(ray[0].enter.abs() < 0.01, "bottom setup material starts at Z=0 (local)");
+    assert!(
+        (ray[0].exit - 15.0).abs() < 1.0,
+        "bottom setup material ends near Z=15 (local), got {}",
+        ray[0].exit
+    );
+
+    // Final composited mesh should have non-zero vertex data
+    assert!(!result.mesh.vertices.is_empty(), "composited mesh should not be empty");
 }
 
 /// Verify backward scrub across setup boundaries uses checkpoints correctly.
@@ -1764,17 +1757,18 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
         max: P3::new(30.0, 30.0, 10.0),
     };
 
-    // Two toolpaths in two setup groups
+    // Two toolpaths in two setup groups (both in local frame)
     let mut tp1 = Toolpath::new();
     tp1.rapid_to(P3::new(15.0, 15.0, 15.0));
     for i in 0..50 {
         tp1.feed_to(P3::new(10.0 + i as f64 * 0.2, 15.0, 7.0), 600.0);
     }
 
+    // Bottom setup: local-frame toolpath (cut 3mm from local top = physical bottom)
     let mut tp2 = Toolpath::new();
-    tp2.rapid_to(P3::new(15.0, 15.0, -5.0));
+    tp2.rapid_to(P3::new(15.0, 15.0, 15.0));
     for i in 0..50 {
-        tp2.feed_to(P3::new(10.0 + i as f64 * 0.2, 15.0, 3.0), 600.0);
+        tp2.feed_to(P3::new(10.0 + i as f64 * 0.2, 15.0, 7.0), 600.0);
     }
 
     let request = SimulationRequest {
@@ -1787,7 +1781,8 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                     tool: tool.clone(),
                     semantic_trace: None,
                 }],
-                direction: StockCutDirection::FromTop,
+                local_stock_bbox: stock_bbox,
+                local_to_global: None,
             },
             SetupSimGroup {
                 toolpaths: vec![SetupSimToolpath {
@@ -1797,7 +1792,14 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                     tool,
                     semantic_trace: None,
                 }],
-                direction: StockCutDirection::FromBottom,
+                local_stock_bbox: stock_bbox,
+                local_to_global: Some(crate::compute::SetupTransformInfo {
+                    face_up: crate::state::job::FaceUp::Bottom,
+                    z_rotation: crate::state::job::ZRotation::Deg0,
+                    stock_x: 30.0,
+                    stock_y: 30.0,
+                    stock_z: 10.0,
+                }),
             },
         ],
         stock_bbox,
@@ -1819,28 +1821,32 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
         panic!("expected simulation result");
     };
 
-    // Checkpoint 0 is after top setup, checkpoint 1 is after bottom setup
+    // Checkpoint 0 is the top-setup stock, checkpoint 1 is bottom-setup stock (per-setup now)
     assert_eq!(result.checkpoints.len(), 2);
 
-    // Checkpoint 0 stock should NOT have bottom cuts applied
+    // Checkpoint 0: top-setup local stock with cut at Z=7
     let cp0 = &result.checkpoints[0].stock;
     let (r, c) = cp0.z_grid.world_to_cell(15.0, 15.0).unwrap();
     let ray = cp0.z_grid.ray(r, c);
     assert_eq!(ray.len(), 1);
-    // Bottom of ray should be at Z=0 (no bottom cut yet)
     assert!(
         ray[0].enter.abs() < 0.01,
-        "checkpoint 0 bottom should be Z=0"
+        "top-setup checkpoint material starts at Z=0"
+    );
+    assert!(
+        (ray[0].exit - 7.0).abs() < 1.0,
+        "top-setup checkpoint material ends near Z=7, got {}",
+        ray[0].exit
     );
 
-    // Checkpoint 1 should have both cuts
+    // Checkpoint 1: bottom-setup local stock with cut at Z=7
     let cp1 = &result.checkpoints[1].stock;
     let (r, c) = cp1.z_grid.world_to_cell(15.0, 15.0).unwrap();
     let ray = cp1.z_grid.ray(r, c);
     assert_eq!(ray.len(), 1);
     assert!(
-        ray[0].enter > 2.0,
-        "checkpoint 1 should have bottom material removed"
+        ray[0].enter.abs() < 0.01,
+        "bottom-setup checkpoint material starts at Z=0 (local)"
     );
 
     // Boundary directions are correct
