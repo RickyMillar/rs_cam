@@ -281,10 +281,11 @@ fn w3_face_z_propagates_to_height_resolution() {
     let op_depth = 3.0;
     let mut heights = heights_config.resolve(&HeightContext::simple(10.0, op_depth));
 
-    // Without face Z, top_z defaults to 0.0
+    // Without face Z, top_z defaults to stock_top_z (= op_depth in simple context)
     assert!(
-        (heights.top_z - 0.0).abs() < 1e-9,
-        "Auto top_z should be 0.0, got {}",
+        (heights.top_z - op_depth).abs() < 1e-9,
+        "Auto top_z should be stock_top_z ({}), got {}",
+        op_depth,
         heights.top_z
     );
 
@@ -519,29 +520,35 @@ fn w6_auto_height_defaults() {
     let config = HeightsConfig::default();
     let h = config.resolve(&HeightContext::simple(10.0, 5.0));
 
+    // HeightContext::simple(10.0, 5.0) → stock 0→5, safe_z=10
+    // retract = stock_top + safe_z = 5 + 10 = 15
     assert!(
-        (h.clearance_z - 20.0).abs() < 1e-9,
-        "clearance_z should be 20.0, got {}",
-        h.clearance_z
-    );
-    assert!(
-        (h.retract_z - 10.0).abs() < 1e-9,
-        "retract_z should be 10.0, got {}",
+        (h.retract_z - 15.0).abs() < 1e-9,
+        "retract_z should be 15.0, got {}",
         h.retract_z
     );
+    // clearance = retract + 10 = 25
     assert!(
-        (h.feed_z - 8.0).abs() < 1e-9,
-        "feed_z should be 8.0, got {}",
+        (h.clearance_z - 25.0).abs() < 1e-9,
+        "clearance_z should be 25.0, got {}",
+        h.clearance_z
+    );
+    // feed = retract - 2 = 13
+    assert!(
+        (h.feed_z - 13.0).abs() < 1e-9,
+        "feed_z should be 13.0, got {}",
         h.feed_z
     );
+    // top = stock_top = 5
     assert!(
-        (h.top_z - 0.0).abs() < 1e-9,
-        "top_z should be 0.0, got {}",
+        (h.top_z - 5.0).abs() < 1e-9,
+        "top_z should be 5.0, got {}",
         h.top_z
     );
+    // bottom = stock_bottom = 0
     assert!(
-        (h.bottom_z - (-5.0)).abs() < 1e-9,
-        "bottom_z should be -5.0, got {}",
+        (h.bottom_z - 0.0).abs() < 1e-9,
+        "bottom_z should be 0.0, got {}",
         h.bottom_z
     );
 
