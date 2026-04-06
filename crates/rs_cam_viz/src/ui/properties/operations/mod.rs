@@ -1447,7 +1447,7 @@ pub(super) fn draw_height_diagram(
 
     // Height lines + labels
     let label_x = rect.right() - 42.0;
-    let hit_threshold = 6.0_f32;
+    let hit_threshold = 12.0_f32;
 
     // Check pointer proximity for hover cursor
     let pointer_y = response.hover_pos().map(|p| p.y);
