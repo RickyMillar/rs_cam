@@ -51,6 +51,7 @@ pub(super) fn draw_feed_params(ui: &mut egui::Ui, feed_rate: &mut f64, plunge_ra
 fn draw_height_row(
     ui: &mut egui::Ui,
     label: &str,
+    tooltip: &str,
     mode: &mut HeightMode,
     default_ref: HeightReference,
     default_offset: f64,
@@ -75,7 +76,7 @@ fn draw_height_row(
         });
     }
 
-    ui.label(label);
+    ui.label(label).on_hover_text(tooltip);
 
     if let HeightMode::FromReference(ref_offset) = mode {
         ui.add(
@@ -142,6 +143,7 @@ pub(super) fn draw_heights_params(
             draw_height_row(
                 ui,
                 "Clearance:",
+                "Highest safe height. Rapid moves between separate operations travel at this Z.",
                 &mut heights.clearance_z,
                 HeightReference::StockTop,
                 safe_offset + 10.0,
@@ -151,6 +153,7 @@ pub(super) fn draw_heights_params(
             draw_height_row(
                 ui,
                 "Retract:",
+                "Rapid travel height within an operation. Tool retracts here between cutting passes.",
                 &mut heights.retract_z,
                 HeightReference::StockTop,
                 safe_offset,
@@ -160,15 +163,17 @@ pub(super) fn draw_heights_params(
             draw_height_row(
                 ui,
                 "Feed:",
+                "Approach height. Tool switches from rapid to feed rate here before plunging into material.",
                 &mut heights.feed_z,
                 HeightReference::StockTop,
-                safe_offset - 2.0,
+                2.0,
                 ctx,
                 "h_feed",
             );
             draw_height_row(
                 ui,
                 "Top:",
+                "Top of material. Cutting starts at this Z. Usually the stock top surface.",
                 &mut heights.top_z,
                 HeightReference::StockTop,
                 0.0,
@@ -178,6 +183,7 @@ pub(super) fn draw_heights_params(
             draw_height_row(
                 ui,
                 "Bottom:",
+                "Deepest cut depth. The tool will not cut below this Z.",
                 &mut heights.bottom_z,
                 HeightReference::StockTop,
                 -ctx.op_depth.abs(),
