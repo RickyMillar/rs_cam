@@ -11,9 +11,18 @@ use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
+/// Direction from which the curve is projected onto the mesh.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectDirection {
+    /// Project from above (Z-down). Tool contacts the top surface.
+    FromAbove,
+    /// Project from below (Z-up). Tool contacts the bottom surface.
+    FromBelow,
+}
+
 /// Parameters for the project-curve-on-surface operation.
 pub struct ProjectCurveParams {
-    /// Cut depth below the mesh surface (positive = into material).
+    /// Cut depth below (or above) the mesh surface (positive = into material).
     pub depth: f64,
     /// Feed rate for lateral moves (mm/min).
     pub feed_rate: f64,
@@ -23,6 +32,8 @@ pub struct ProjectCurveParams {
     pub safe_z: f64,
     /// Resample spacing along polygon edges (mm). Smaller = smoother projection.
     pub point_spacing: f64,
+    /// Which side of the mesh to project onto.
+    pub direction: ProjectDirection,
 }
 
 impl Default for ProjectCurveParams {
@@ -33,6 +44,7 @@ impl Default for ProjectCurveParams {
             plunge_rate: 300.0,
             safe_z: 10.0,
             point_spacing: 0.5,
+            direction: ProjectDirection::FromAbove,
         }
     }
 }
@@ -137,12 +149,39 @@ fn close_ring(ring: &[P2]) -> Vec<P2> {
 /// Each ring of the polygon (exterior and each hole) is treated as a separate
 /// chain. Points that fall outside the mesh footprint (no triangle contact) are
 /// skipped, splitting the chain into sub-segments.
+///
+/// When `direction` is `FromBelow`, the mesh is Z-flipped so the drop cutter
+/// finds the bottom surface contact, then the result is flipped back.
 pub fn project_curve_toolpath(
     polygon: &Polygon2,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &ProjectCurveParams,
+) -> Toolpath {
+    match params.direction {
+        ProjectDirection::FromAbove => {
+            project_curve_inner(polygon, mesh, index, cutter, params, false)
+        }
+        ProjectDirection::FromBelow => {
+            // Flip the mesh Z so the bottom surface becomes the top.
+            let flipped = mesh.z_flipped();
+            let flipped_index = SpatialIndex::build_auto(&flipped);
+            project_curve_inner(polygon, &flipped, &flipped_index, cutter, params, true)
+        }
+    }
+}
+
+/// Inner projection loop. When `z_flip` is true, the mesh was Z-flipped before
+/// calling, so the output Z coordinates are negated back to world space and
+/// depth goes upward (into the bottom surface).
+fn project_curve_inner(
+    polygon: &Polygon2,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &ProjectCurveParams,
+    z_flip: bool,
 ) -> Toolpath {
     let mut tp = Toolpath::new();
 
@@ -168,7 +207,12 @@ pub fn project_curve_toolpath(
         for pt in &resampled {
             let cl = point_drop_cutter(pt.x, pt.y, mesh, index, cutter);
             if cl.contacted {
-                let z = cl.z - params.depth;
+                let z = if z_flip {
+                    // Flip Z back to world space and go depth INTO the bottom surface (upward).
+                    -cl.z + params.depth
+                } else {
+                    cl.z - params.depth
+                };
                 current_chain.push(P3::new(pt.x, pt.y, z));
             } else {
                 // Gap over air — flush any accumulated chain

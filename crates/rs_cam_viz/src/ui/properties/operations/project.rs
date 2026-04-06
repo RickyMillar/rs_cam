@@ -1,5 +1,5 @@
 use crate::state::job::ModelId;
-use crate::state::toolpath::ProjectCurveConfig;
+use crate::state::toolpath::{ProjectCurveConfig, ProjectCurveDirection};
 
 use super::super::dv;
 use super::draw_feed_params;
@@ -46,6 +46,27 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
                         cfg.surface_model_id = Some(*id);
                     }
                 }
+            });
+    });
+
+    // Projection direction
+    ui.horizontal(|ui| {
+        ui.label("Direction:");
+        egui::ComboBox::from_id_salt("proj_direction")
+            .selected_text(cfg.direction.label())
+            .show_ui(ui, |ui| {
+                ui.selectable_value(
+                    &mut cfg.direction,
+                    ProjectCurveDirection::FromAbove,
+                    "From Above",
+                )
+                .on_hover_text("Project from above (Z-down). Engraves the top surface.");
+                ui.selectable_value(
+                    &mut cfg.direction,
+                    ProjectCurveDirection::FromBelow,
+                    "From Below",
+                )
+                .on_hover_text("Project from below (Z-up). Engraves the bottom surface.");
             });
     });
 

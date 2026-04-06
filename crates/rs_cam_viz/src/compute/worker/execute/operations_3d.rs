@@ -417,12 +417,21 @@ fn run_project_curve_annotated(
 ) -> Result<(Toolpath, Vec<ProjectCurveSlice>), OperationError> {
     let polys = require_polygons(req)?;
     let (mesh, index, cutter) = prepare_mesh_operation(req, phase_tracker, debug)?;
+    let direction = match cfg.direction {
+        crate::state::toolpath::ProjectCurveDirection::FromAbove => {
+            rs_cam_core::project_curve::ProjectDirection::FromAbove
+        }
+        crate::state::toolpath::ProjectCurveDirection::FromBelow => {
+            rs_cam_core::project_curve::ProjectDirection::FromBelow
+        }
+    };
     let params = ProjectCurveParams {
         depth: cfg.depth,
         point_spacing: cfg.point_spacing,
         feed_rate: cfg.feed_rate,
         plunge_rate: cfg.plunge_rate,
         safe_z: effective_safe_z(req),
+        direction,
     };
     let mut out = Toolpath::new();
     let mut slices = Vec::new();

@@ -376,6 +376,43 @@ impl TriangleMesh {
         flip_count
     }
 
+    /// Create a copy of this mesh with all Z coordinates negated.
+    ///
+    /// Used by project-curve-from-below: flipping Z makes the bottom surface
+    /// become the top surface so the standard drop-cutter can find it.
+    /// Triangle winding is reversed to keep normals consistent.
+    #[allow(clippy::indexing_slicing)] // bounded by triangle indices from source mesh
+    pub fn z_flipped(&self) -> Self {
+        let vertices: Vec<P3> = self
+            .vertices
+            .iter()
+            .map(|v| P3::new(v.x, v.y, -v.z))
+            .collect();
+        // Reverse winding (swap v1 and v2) so normals point outward after Z-flip.
+        let triangles: Vec<[u32; 3]> = self
+            .triangles
+            .iter()
+            .map(|tri| [tri[0], tri[2], tri[1]])
+            .collect();
+        let faces: Vec<Triangle> = triangles
+            .iter()
+            .map(|tri| {
+                Triangle::new(
+                    vertices[tri[0] as usize],
+                    vertices[tri[1] as usize],
+                    vertices[tri[2] as usize],
+                )
+            })
+            .collect();
+        let bbox = BoundingBox3::from_points(vertices.iter().copied());
+        Self {
+            vertices,
+            triangles,
+            faces,
+            bbox,
+        }
+    }
+
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Build from raw vertices and triangle indices (for testing).
     pub fn from_raw(vertices: Vec<P3>, triangles: Vec<[u32; 3]>) -> Self {

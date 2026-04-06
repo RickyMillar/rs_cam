@@ -52,6 +52,25 @@ impl CLPoint {
         }
     }
 
+    /// Initialize for a raise-cutter test (finds minimum Z contact from below).
+    pub fn new_from_below(x: f64, y: f64) -> Self {
+        Self {
+            x,
+            y,
+            z: f64::INFINITY,
+            contacted: false,
+        }
+    }
+
+    /// Update Z to the minimum contact point (for raise-cutter / from-below).
+    #[inline]
+    pub fn update_z_min(&mut self, z: f64) {
+        if z < self.z {
+            self.z = z;
+            self.contacted = true;
+        }
+    }
+
     pub fn position(&self) -> P3 {
         P3::new(self.x, self.y, self.z)
     }
