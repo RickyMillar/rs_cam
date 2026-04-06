@@ -53,7 +53,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 );
 
                 // Per-setup + Add menu
-                add_toolpath_menu(ui, setup_id, events);
+                add_toolpath_menu(ui, setup_id, state, events);
             });
             ui.separator();
         }
@@ -106,7 +106,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     // Single-setup: show "+ Add" below toolpath list
     if !multi_setup && let Some(setup) = state.job.setups.first() {
         ui.add_space(4.0);
-        add_toolpath_menu(ui, setup.id, events);
+        add_toolpath_menu(ui, setup.id, state, events);
     }
 
     // Tool library (compact, collapsed by default)
@@ -226,6 +226,18 @@ fn draw_toolpath_card(
                         .strong()
                         .color(status_color),
                 );
+                // Manual-gen indicator for 3D ops
+                if !tp.auto_regen {
+                    ui.label(
+                        egui::RichText::new("MAN")
+                            .small()
+                            .color(theme::TEXT_FAINT),
+                    )
+                    .on_hover_text(
+                        "Manual generation \u{2014} press G to generate this operation. 3D operations are not auto-regenerated on parameter change.",
+                    );
+                }
+
                 draw_trace_badge(
                     ui,
                     SimulationState::trace_availability_for_toolpath(&state.job, tp_id),
@@ -277,6 +289,37 @@ fn draw_toolpath_card(
                     }
                 });
             });
+
+            // Row 3: stats (only when computed)
+            if let Some(ref result) = tp.result {
+                let stats = &result.stats;
+                let feed = tp.operation.feed_rate();
+                let cut_time_min = if feed > 0.0 {
+                    stats.cutting_distance / feed
+                } else {
+                    0.0
+                };
+                let total_dist_m = (stats.cutting_distance + stats.rapid_distance) / 1000.0;
+
+                let stats_text = if cut_time_min >= 1.0 {
+                    format!(
+                        "{} moves \u{00B7} {:.0} min \u{00B7} {:.1} m",
+                        stats.move_count, cut_time_min, total_dist_m,
+                    )
+                } else {
+                    format!(
+                        "{} moves \u{00B7} {:.0} s \u{00B7} {:.1} m",
+                        stats.move_count,
+                        cut_time_min * 60.0,
+                        total_dist_m,
+                    )
+                };
+                ui.label(
+                    egui::RichText::new(stats_text)
+                        .small()
+                        .color(theme::TEXT_DIM),
+                );
+            }
 
             // Context menu
             card_resp.context_menu(|ui| {
@@ -359,26 +402,60 @@ fn compute_drop_index(
 
 /// Menu button for adding a toolpath to a specific setup.
 /// Emits Select(Setup(id)) first, then AddToolpath, so the handler targets the right setup.
-fn add_toolpath_menu(ui: &mut egui::Ui, setup_id: SetupId, events: &mut Vec<AppEvent>) {
+fn add_toolpath_menu(ui: &mut egui::Ui, setup_id: SetupId, state: &AppState, events: &mut Vec<AppEvent>) {
+    let has_mesh = state.job.models.iter().any(|m| m.mesh.is_some());
+    let has_polygons = state.job.models.iter().any(|m| m.polygons.is_some());
+
     ui.menu_button("+ Add", |ui| {
         ui.label(egui::RichText::new("2.5D (from SVG)").strong());
         for &op in OperationType::ALL_2D {
-            if ui.button(op.label()).clicked() {
-                events.push(AppEvent::Select(Selection::Setup(setup_id)));
-                events.push(AppEvent::AddToolpath(op));
-                ui.close_menu();
-            }
+            add_op_menu_item(ui, op, setup_id, has_mesh, has_polygons, events);
         }
         ui.separator();
         ui.label(egui::RichText::new("3D (from STL)").strong());
         for &op in OperationType::ALL_3D {
-            if ui.button(op.label()).clicked() {
-                events.push(AppEvent::Select(Selection::Setup(setup_id)));
-                events.push(AppEvent::AddToolpath(op));
-                ui.close_menu();
-            }
+            add_op_menu_item(ui, op, setup_id, has_mesh, has_polygons, events);
         }
     });
+}
+
+fn add_op_menu_item(
+    ui: &mut egui::Ui,
+    op: OperationType,
+    setup_id: SetupId,
+    has_mesh: bool,
+    has_polygons: bool,
+    events: &mut Vec<AppEvent>,
+) {
+    use crate::state::toolpath::GeometryRequirement;
+
+    let spec = op.spec();
+    let available = match spec.geometry {
+        GeometryRequirement::Stock => true,
+        GeometryRequirement::Polygons => has_polygons,
+        GeometryRequirement::Mesh => has_mesh,
+        GeometryRequirement::Both => has_polygons && has_mesh,
+    };
+
+    if available {
+        if ui.button(spec.label)
+            .on_hover_text(spec.description)
+            .clicked()
+        {
+            events.push(AppEvent::Select(Selection::Setup(setup_id)));
+            events.push(AppEvent::AddToolpath(op));
+            ui.close_menu();
+        }
+    } else {
+        let reason = match spec.geometry {
+            GeometryRequirement::Polygons => "Requires 2D geometry (SVG/DXF)",
+            GeometryRequirement::Mesh => "Requires 3D mesh (STL/STEP)",
+            GeometryRequirement::Both => "Requires both 2D curves and 3D mesh",
+            GeometryRequirement::Stock => "",
+        };
+        ui.add_enabled(false, egui::Button::new(spec.label))
+            .on_disabled_hover_text(format!("{}\n{}", spec.description, reason));
+    }
 }
 
 /// Show a rest dependency badge for Rest operations.
