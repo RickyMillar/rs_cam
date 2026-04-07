@@ -13,6 +13,7 @@ use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 
 use rmcp::ServiceExt;
+use rmcp::handler::server::router::Router;
 use rs_cam_core::session::ProjectSession;
 use server::CamServer;
 
@@ -44,9 +45,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let cam_server = CamServer::new(Arc::new(Mutex::new(session)));
+    let mut router = Router::new(cam_server);
+    router.tool_router = CamServer::into_tool_router();
 
     tracing::info!("Starting MCP server on stdio");
-    let service = cam_server
+    let service = router
         .serve(rmcp::transport::stdio())
         .await
         .map_err(|e| format!("MCP serve error: {e}"))?;

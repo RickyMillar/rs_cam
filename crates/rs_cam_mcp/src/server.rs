@@ -5,11 +5,11 @@ use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 
 use rmcp::handler::server::tool::ToolRouter;
-use rmcp::handler::server::wrapper::{Json, Parameters};
+use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::ServerInfo;
 use rmcp::schemars;
 use rmcp::{ServerHandler, tool, tool_router};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use rs_cam_core::session::{ProjectSession, SimulationOptions};
 
@@ -39,26 +39,12 @@ pub struct ExportParam {
     pub path: String,
 }
 
-// ── Output structs ────────────────────────────────────────────────────
-
-#[derive(Serialize, schemars::JsonSchema)]
-pub struct TextOutput {
-    pub message: String,
+fn text(msg: impl Into<String>) -> String {
+    msg.into()
 }
 
-#[derive(Serialize, schemars::JsonSchema)]
-pub struct JsonOutput {
-    pub data: serde_json::Value,
-}
-
-fn text(msg: impl Into<String>) -> Json<TextOutput> {
-    Json(TextOutput {
-        message: msg.into(),
-    })
-}
-
-fn json(data: serde_json::Value) -> Json<JsonOutput> {
-    Json(JsonOutput { data })
+fn json_str(data: serde_json::Value) -> String {
+    serde_json::to_string_pretty(&data).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}" ))
 }
 
 // ── Server ────────────────────────────────────────────────────────────
@@ -79,6 +65,10 @@ impl CamServer {
             tool_router,
         }
     }
+
+    pub fn into_tool_router() -> ToolRouter<Self> {
+        Self::tool_router()
+    }
 }
 
 #[tool_router]
@@ -90,7 +80,7 @@ impl CamServer {
     async fn load_project(
         &self,
         Parameters(LoadProjectParam { path }): Parameters<LoadProjectParam>,
-    ) -> Json<TextOutput> {
+    ) -> String {
         match ProjectSession::load(Path::new(&path)) {
             Ok(session) => {
                 let name = session.name().to_owned();
@@ -109,13 +99,13 @@ impl CamServer {
         name = "project_summary",
         description = "Get project summary: name, stock dimensions, setup count, toolpath count, tools"
     )]
-    async fn project_summary(&self) -> Json<JsonOutput> {
+    async fn project_summary(&self) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
-            return json(serde_json::json!({"error": "No project loaded. Call load_project first."}));
+            return json_str(serde_json::json!({"error": "No project loaded. Call load_project first."}));
         };
         let bbox = session.stock_bbox();
-        json(serde_json::json!({
+        json_str(serde_json::json!({
             "name": session.name(),
             "stock": {
                 "width": bbox.max.x - bbox.min.x,
@@ -132,24 +122,24 @@ impl CamServer {
         name = "list_toolpaths",
         description = "List all toolpaths with name, operation type, enabled status, and tool"
     )]
-    async fn list_toolpaths(&self) -> Json<JsonOutput> {
+    async fn list_toolpaths(&self) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
-            return json(serde_json::json!({"error": "No project loaded"}));
+            return json_str(serde_json::json!({"error": "No project loaded"}));
         };
-        json(serde_json::to_value(session.list_toolpaths()).unwrap_or_default())
+        json_str(serde_json::to_value(session.list_toolpaths()).unwrap_or_default())
     }
 
     #[tool(
         name = "list_tools",
         description = "List all tools with type and dimensions"
     )]
-    async fn list_tools(&self) -> Json<JsonOutput> {
+    async fn list_tools(&self) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
-            return json(serde_json::json!({"error": "No project loaded"}));
+            return json_str(serde_json::json!({"error": "No project loaded"}));
         };
-        json(serde_json::to_value(session.list_tools()).unwrap_or_default())
+        json_str(serde_json::to_value(session.list_tools()).unwrap_or_default())
     }
 
     #[tool(
@@ -159,13 +149,13 @@ impl CamServer {
     async fn get_toolpath_params(
         &self,
         Parameters(IndexParam { index }): Parameters<IndexParam>,
-    ) -> Json<JsonOutput> {
+    ) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
-            return json(serde_json::json!({"error": "No project loaded"}));
+            return json_str(serde_json::json!({"error": "No project loaded"}));
         };
         match session.get_toolpath_config(index) {
-            Some(tc) => json(serde_json::json!({
+            Some(tc) => json_str(serde_json::json!({
                 "id": tc.id,
                 "name": tc.name,
                 "enabled": tc.enabled,
@@ -173,7 +163,7 @@ impl CamServer {
                 "tool_id": tc.tool_id,
                 "model_id": tc.model_id,
             })),
-            None => json(serde_json::json!({"error": format!("Toolpath index {index} not found")})),
+            None => json_str(serde_json::json!({"error": format!("Toolpath index {index} not found")})),
         }
     }
 
@@ -184,7 +174,7 @@ impl CamServer {
     async fn generate_toolpath(
         &self,
         Parameters(IndexParam { index }): Parameters<IndexParam>,
-    ) -> Json<JsonOutput> {
+    ) -> String {
         let session = Arc::clone(&self.session);
         let result = tokio::task::spawn_blocking(move || {
             let cancel = std::sync::atomic::AtomicBool::new(false);
@@ -206,9 +196,9 @@ impl CamServer {
         .await;
 
         match result {
-            Ok(Ok(v)) => json(v),
-            Ok(Err(e)) => json(serde_json::json!({"error": e})),
-            Err(e) => json(serde_json::json!({"error": format!("Task failed: {e}")})),
+            Ok(Ok(v)) => json_str(v),
+            Ok(Err(e)) => json_str(serde_json::json!({"error": e})),
+            Err(e) => json_str(serde_json::json!({"error": format!("Task failed: {e}")})),
         }
     }
 
@@ -216,7 +206,7 @@ impl CamServer {
         name = "generate_all",
         description = "Generate all enabled toolpaths. Returns count of newly generated toolpaths."
     )]
-    async fn generate_all(&self) -> Json<TextOutput> {
+    async fn generate_all(&self) -> String {
         let session = Arc::clone(&self.session);
         let result = tokio::task::spawn_blocking(move || {
             let cancel = std::sync::atomic::AtomicBool::new(false);
@@ -249,7 +239,7 @@ impl CamServer {
     async fn run_simulation(
         &self,
         Parameters(SimulationParam { resolution }): Parameters<SimulationParam>,
-    ) -> Json<JsonOutput> {
+    ) -> String {
         let session = Arc::clone(&self.session);
         let res = resolution.unwrap_or(0.5);
         let result = tokio::task::spawn_blocking(move || {
@@ -279,9 +269,9 @@ impl CamServer {
         .await;
 
         match result {
-            Ok(Ok(v)) => json(v),
-            Ok(Err(e)) => json(serde_json::json!({"error": e})),
-            Err(e) => json(serde_json::json!({"error": format!("Task failed: {e}")})),
+            Ok(Ok(v)) => json_str(v),
+            Ok(Err(e)) => json_str(serde_json::json!({"error": e})),
+            Err(e) => json_str(serde_json::json!({"error": format!("Task failed: {e}")})),
         }
     }
 
@@ -289,12 +279,12 @@ impl CamServer {
         name = "get_diagnostics",
         description = "Get project diagnostics: per-toolpath stats, collision counts, air cutting %, verdict"
     )]
-    async fn get_diagnostics(&self) -> Json<JsonOutput> {
+    async fn get_diagnostics(&self) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
-            return json(serde_json::json!({"error": "No project loaded"}));
+            return json_str(serde_json::json!({"error": "No project loaded"}));
         };
-        json(serde_json::to_value(session.diagnostics()).unwrap_or_default())
+        json_str(serde_json::to_value(session.diagnostics()).unwrap_or_default())
     }
 
     #[tool(
@@ -304,7 +294,7 @@ impl CamServer {
     async fn export_gcode(
         &self,
         Parameters(ExportParam { path }): Parameters<ExportParam>,
-    ) -> Json<TextOutput> {
+    ) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
             return text("No project loaded");
@@ -321,6 +311,9 @@ impl ServerHandler for CamServer {
         let mut info = ServerInfo::default();
         info.server_info.name = "rs-cam".into();
         info.server_info.version = "0.1.0".into();
+        info.capabilities.tools = Some(rmcp::model::ToolsCapability {
+            list_changed: None,
+        });
         info
     }
 }
