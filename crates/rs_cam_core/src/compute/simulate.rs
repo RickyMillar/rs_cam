@@ -590,4 +590,141 @@ mod tests {
         let result = run_simulation(&req, &cancel);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn per_setup_multi_stock_simulation() {
+        use crate::compute::transform::SetupTransformInfo;
+
+        let make_tool = || {
+            ToolDefinition::new(
+                Box::new(crate::tool::FlatEndmill::new(6.0, 25.0)),
+                6.0,
+                20.0,
+                25.0,
+                45.0,
+                2,
+            )
+        };
+
+        // Stock: 50x50x20 at origin
+        let stock_bbox = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(50.0, 50.0, 20.0),
+        };
+
+        // Setup 1: Top (identity) — cut a groove at Z=15 (5mm depth from top)
+        let mut top_tp = Toolpath::new();
+        top_tp.rapid_to(P3::new(25.0, 25.0, 25.0));
+        for i in 0..20 {
+            let x = 20.0 + (i as f64) * 0.5;
+            top_tp.feed_to(P3::new(x, 25.0, 15.0), 600.0);
+        }
+
+        // Setup 2: Bottom (flipped) — cut at local Z=15 (= 5mm from bottom)
+        // In local frame the stock is still 50x50x20.
+        let mut bottom_tp = Toolpath::new();
+        bottom_tp.rapid_to(P3::new(25.0, 25.0, 25.0));
+        for i in 0..20 {
+            let x = 20.0 + (i as f64) * 0.5;
+            bottom_tp.feed_to(P3::new(x, 25.0, 15.0), 600.0);
+        }
+
+        let top_group = SimGroupEntry {
+            toolpaths: vec![SimToolpathEntry {
+                id: 1,
+                name: "Top Cut".into(),
+                toolpath: Arc::new(top_tp),
+                tool: make_tool(),
+                flute_count: 2,
+                tool_summary: "6mm Flat".into(),
+                semantic_trace: None,
+            }],
+            direction: StockCutDirection::FromTop,
+            local_stock_bbox: Some(stock_bbox),
+            local_to_global: None, // identity setup
+        };
+
+        let bottom_group = SimGroupEntry {
+            toolpaths: vec![SimToolpathEntry {
+                id: 2,
+                name: "Bottom Cut".into(),
+                toolpath: Arc::new(bottom_tp),
+                tool: make_tool(),
+                flute_count: 2,
+                tool_summary: "6mm Flat".into(),
+                semantic_trace: None,
+            }],
+            direction: StockCutDirection::FromBottom,
+            local_stock_bbox: Some(BoundingBox3 {
+                min: P3::new(0.0, 0.0, 0.0),
+                max: P3::new(50.0, 50.0, 20.0), // effective_stock for Bottom
+            }),
+            local_to_global: Some(SetupTransformInfo {
+                face_up: crate::compute::transform::FaceUp::Bottom,
+                z_rotation: crate::compute::transform::ZRotation::Deg0,
+                stock_x: 50.0,
+                stock_y: 50.0,
+                stock_z: 20.0,
+            }),
+        };
+
+        let req = SimulationRequest {
+            groups: vec![top_group, bottom_group],
+            stock_bbox,
+            stock_top_z: 20.0,
+            resolution: 0.5,
+            metric_options: SimulationMetricOptions::default(),
+            spindle_rpm: 18_000,
+            rapid_feed_mm_min: 5_000.0,
+            model_mesh: None,
+        };
+
+        let cancel = AtomicBool::new(false);
+        let result = run_simulation(&req, &cancel).unwrap();
+
+        // Should have 2 boundaries (one per toolpath)
+        assert_eq!(result.boundaries.len(), 2);
+
+        // Should have 2 checkpoints
+        assert_eq!(result.checkpoints.len(), 2);
+
+        // The composite mesh should be non-empty
+        assert!(
+            !result.mesh.vertices.is_empty(),
+            "composited mesh should not be empty"
+        );
+
+        // After both cuts: material should remain in the middle
+        // Top cut removes above Z≈15, bottom cut (in global frame) removes below Z≈5
+        // Expected remaining: Z=5 to Z=15
+        let cp1 = &result.checkpoints[1].stock;
+        let cell = cp1.z_grid.world_to_cell(25.0, 25.0);
+        assert!(cell.is_some(), "center cell should exist in global stock");
+        let (r, c) = cell.unwrap();
+        let ray = cp1.z_grid.ray(r, c);
+        assert_eq!(
+            ray.len(),
+            1,
+            "after top+bottom cuts: one segment remaining, got {}",
+            ray.len()
+        );
+        assert!(
+            (ray[0].enter - 5.0).abs() < 2.0,
+            "bottom of remaining material near Z=5, got {}",
+            ray[0].enter
+        );
+        assert!(
+            (ray[0].exit - 15.0).abs() < 2.0,
+            "top of remaining material near Z=15, got {}",
+            ray[0].exit
+        );
+
+        // Render composite PNG for visual verification
+        let pixels =
+            crate::fingerprint::render_stock_composite(&result.checkpoints[1].stock, 600, 400);
+        assert!(
+            pixels.len() == 600 * 400 * 4,
+            "composite PNG has expected pixel count"
+        );
+    }
 }
