@@ -649,12 +649,38 @@ impl Default for HorizontalFinishConfig {
     }
 }
 
+/// Which side of the mesh to project the curve onto.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectCurveDirection {
+    /// Project from above — tool contacts the top surface.
+    #[default]
+    FromAbove,
+    /// Project from below — tool contacts the bottom surface.
+    FromBelow,
+}
+
+impl ProjectCurveDirection {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::FromAbove => "From Above",
+            Self::FromBelow => "From Below",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectCurveConfig {
     pub depth: f64,
     pub point_spacing: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
+    /// Optional separate surface model for projection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface_model_id: Option<super::stock_config::ModelId>,
+    /// Project from above (Z-down, default) or below (Z-up).
+    #[serde(default)]
+    pub direction: ProjectCurveDirection,
 }
 
 impl Default for ProjectCurveConfig {
@@ -664,6 +690,8 @@ impl Default for ProjectCurveConfig {
             point_spacing: 0.5,
             feed_rate: 800.0,
             plunge_rate: 400.0,
+            surface_model_id: None,
+            direction: ProjectCurveDirection::FromAbove,
         }
     }
 }

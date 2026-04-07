@@ -5,7 +5,7 @@ pub use rs_cam_core::compute::operation_configs::{
     ClearingStrategy, CompensationType, CutDirection, DrillConfig, DrillCycleType,
     DropCutterConfig, FaceConfig, FaceDirection, HorizontalFinishConfig, InlayConfig, PencilConfig,
     PocketConfig, PocketPattern, ProfileConfig, ProfileSide, ProjectCurveConfig,
-    RadialFinishConfig, RampFinishConfig, RegionOrdering, RestConfig, ScallopConfig,
-    ScallopDirection, SpiralDirection, SpiralFinishConfig, SteepShallowConfig, TraceCompensation,
-    TraceConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
+    ProjectCurveDirection, RadialFinishConfig, RampFinishConfig, RegionOrdering, RestConfig,
+    ScallopConfig, ScallopDirection, SpiralDirection, SpiralFinishConfig, SteepShallowConfig,
+    TraceCompensation, TraceConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
 };

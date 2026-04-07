@@ -33,6 +33,10 @@ impl ToolType {
             ToolType::TaperedBallNose => "Tapered Ball Nose",
         }
     }
+
+    pub fn has_ball_tip(&self) -> bool {
+        matches!(self, ToolType::BallNose | ToolType::TaperedBallNose)
+    }
 }
 
 /// Tool material (affects chip load and wear).

@@ -24,7 +24,7 @@ use rs_cam_core::adaptive3d::{Adaptive3dParams, EntryStyle3d};
 use rs_cam_core::arcfit::fit_arcs;
 use rs_cam_core::chamfer::{ChamferParams, chamfer_toolpath};
 use rs_cam_core::collision::{CollisionReport, RapidCollision};
-use rs_cam_core::depth::{DepthDistribution, DepthStepping, depth_stepped_toolpath};
+use rs_cam_core::depth::{DepthDistribution, DepthStepping};
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dressup::{
     LinkMoveParams, apply_dogbones, apply_entry, apply_lead_in_out, apply_link_moves, apply_tabs,
@@ -54,7 +54,7 @@ use rs_cam_core::tool::{
     VBitEndmill,
 };
 use rs_cam_core::toolpath::{MoveType, Toolpath, raster_toolpath_from_grid};
-use rs_cam_core::trace::{TraceParams, trace_toolpath};
+use rs_cam_core::trace::TraceParams;
 use rs_cam_core::vcarve::{VCarveParams, vcarve_toolpath};
 use rs_cam_core::waterline::{WaterlineParams, waterline_toolpath_with_cancel};
 use rs_cam_core::zigzag::{ZigzagParams, zigzag_toolpath};
@@ -86,11 +86,13 @@ pub struct ComputeRequest {
     pub safe_z: f64,
     pub prev_tool_radius: Option<f64>,
     pub stock_bbox: Option<BoundingBox3>,
-    pub boundary_enabled: bool,
-    pub boundary_containment: crate::state::toolpath::BoundaryContainment,
+    pub boundary: crate::state::toolpath::BoundaryConfig,
     /// Fixture and keep-out footprints to subtract from the machining boundary.
     pub keep_out_footprints: Vec<Polygon2>,
     pub heights: crate::state::toolpath::ResolvedHeights,
+    /// Pre-computed Z levels for depth stepping (top->bottom).
+    /// Empty for operations that don't use standard depth stepping (3D ops, etc.).
+    pub cutting_levels: Vec<f64>,
     /// Pre-simulated remaining stock from prior toolpaths in the same setup.
     pub prior_stock: Option<TriDexelStock>,
 }
@@ -163,6 +165,8 @@ pub struct SimulationResult {
     pub rapid_collision_move_indices: Vec<usize>,
     pub cut_trace: Option<Arc<rs_cam_core::simulation_cut::SimulationCutTrace>>,
     pub cut_trace_path: Option<PathBuf>,
+    /// True when the requested resolution was coarsened to fit within grid limits.
+    pub resolution_clamped: bool,
 }
 
 pub struct CollisionRequest {

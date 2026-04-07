@@ -3,8 +3,8 @@ mod operations_3d;
 
 use super::helpers::{
     apply_dressups, build_cutter, build_simulation_cut_artifact, build_trace_artifact,
-    compute_stats, debug_artifact_dir, effective_safe_z, make_depth, make_depth_with_finishing,
-    require_mesh, require_polygons, simulation_metric_artifact_dir,
+    compute_stats, debug_artifact_dir, effective_safe_z, require_mesh, require_polygons,
+    simulation_metric_artifact_dir,
 };
 use super::semantic::{
     CutRun, append_toolpath, bind_scope_to_run, contour_toolpath, cutting_runs, line_toolpath,
@@ -22,16 +22,16 @@ use super::{
     SteepShallowConfig, SteepShallowParams, ToolDefinition, ToolType, Toolpath,
     ToolpathPhaseTracker, ToolpathResult, TraceConfig, TraceParams, TriangleMesh, VCarveConfig,
     VCarveParams, WaterlineConfig, WaterlineParams, ZigzagConfig, ZigzagParams, apply_tabs,
-    batch_drop_cutter_with_cancel, chamfer_toolpath, depth_stepped_toolpath, drill_toolpath,
-    even_tabs, horizontal_finish_toolpath, inlay_toolpaths, pocket_toolpath, profile_toolpath,
+    batch_drop_cutter_with_cancel, chamfer_toolpath, drill_toolpath, even_tabs,
+    horizontal_finish_toolpath, inlay_toolpaths, pocket_toolpath, profile_toolpath,
     project_curve_toolpath, radial_finish_toolpath, raster_toolpath_from_grid,
-    rest_machining_toolpath, steep_shallow_toolpath, trace_toolpath, vcarve_toolpath,
+    rest_machining_toolpath, steep_shallow_toolpath, vcarve_toolpath,
     waterline_toolpath_with_cancel, zigzag_toolpath,
 };
 #[cfg(test)]
 use super::{BoundingBox3, DressupConfig, MoveType, StockSource, ToolConfig, ToolpathId};
 #[cfg(test)]
-use crate::state::toolpath::{BoundaryContainment, HeightContext, HeightsConfig};
+use crate::state::toolpath::{HeightContext, HeightsConfig};
 use rs_cam_core::geo::P3;
 use rs_cam_core::semantic_trace::ToolpathSemanticKind;
 
@@ -78,33 +78,31 @@ trait SemanticToolpathOp {
     ) -> Result<Toolpath, ComputeError>;
 }
 
-impl OperationConfig {
-    fn semantic_op(&self) -> &dyn SemanticToolpathOp {
-        match self {
-            OperationConfig::Face(cfg) => cfg,
-            OperationConfig::Pocket(cfg) => cfg,
-            OperationConfig::Profile(cfg) => cfg,
-            OperationConfig::Adaptive(cfg) => cfg,
-            OperationConfig::VCarve(cfg) => cfg,
-            OperationConfig::Rest(cfg) => cfg,
-            OperationConfig::Inlay(cfg) => cfg,
-            OperationConfig::Zigzag(cfg) => cfg,
-            OperationConfig::Trace(cfg) => cfg,
-            OperationConfig::Drill(cfg) => cfg,
-            OperationConfig::Chamfer(cfg) => cfg,
-            OperationConfig::DropCutter(cfg) => cfg,
-            OperationConfig::Adaptive3d(cfg) => cfg,
-            OperationConfig::Waterline(cfg) => cfg,
-            OperationConfig::Pencil(cfg) => cfg,
-            OperationConfig::Scallop(cfg) => cfg,
-            OperationConfig::SteepShallow(cfg) => cfg,
-            OperationConfig::RampFinish(cfg) => cfg,
-            OperationConfig::SpiralFinish(cfg) => cfg,
-            OperationConfig::RadialFinish(cfg) => cfg,
-            OperationConfig::HorizontalFinish(cfg) => cfg,
-            OperationConfig::ProjectCurve(cfg) => cfg,
-            OperationConfig::AlignmentPinDrill(cfg) => cfg,
-        }
+fn semantic_op(op: &OperationConfig) -> &dyn SemanticToolpathOp {
+    match op {
+        OperationConfig::Face(cfg) => cfg,
+        OperationConfig::Pocket(cfg) => cfg,
+        OperationConfig::Profile(cfg) => cfg,
+        OperationConfig::Adaptive(cfg) => cfg,
+        OperationConfig::VCarve(cfg) => cfg,
+        OperationConfig::Rest(cfg) => cfg,
+        OperationConfig::Inlay(cfg) => cfg,
+        OperationConfig::Zigzag(cfg) => cfg,
+        OperationConfig::Trace(cfg) => cfg,
+        OperationConfig::Drill(cfg) => cfg,
+        OperationConfig::Chamfer(cfg) => cfg,
+        OperationConfig::DropCutter(cfg) => cfg,
+        OperationConfig::Adaptive3d(cfg) => cfg,
+        OperationConfig::Waterline(cfg) => cfg,
+        OperationConfig::Pencil(cfg) => cfg,
+        OperationConfig::Scallop(cfg) => cfg,
+        OperationConfig::SteepShallow(cfg) => cfg,
+        OperationConfig::RampFinish(cfg) => cfg,
+        OperationConfig::SpiralFinish(cfg) => cfg,
+        OperationConfig::RadialFinish(cfg) => cfg,
+        OperationConfig::HorizontalFinish(cfg) => cfg,
+        OperationConfig::ProjectCurve(cfg) => cfg,
+        OperationConfig::AlignmentPinDrill(cfg) => cfg,
     }
 }
 
@@ -125,6 +123,13 @@ where
     F: FnMut(&str),
 {
     use rs_cam_core::compute::simulate as core_sim;
+
+    // Detect whether the grid will be coarsened beyond the requested resolution.
+    let resolution_clamped = {
+        let sx = req.stock_bbox.max.x - req.stock_bbox.min.x;
+        let sy = req.stock_bbox.max.y - req.stock_bbox.min.y;
+        rs_cam_core::dexel::DexelGrid::would_exceed_grid(req.resolution, sx, sy).is_some()
+    };
 
     // Build the core request by converting viz types to core types.
     set_phase("Initialize stock");
@@ -235,6 +240,7 @@ where
         rapid_collision_move_indices: core_result.rapid_collision_move_indices,
         cut_trace,
         cut_trace_path,
+        resolution_clamped,
     })
 }
 
@@ -312,9 +318,7 @@ fn run_compute_with_phase_tracker(
                 debug_root: core_ctx.as_ref(),
                 semantic_root: semantic_root.as_ref(),
             };
-            let tp = req
-                .operation
-                .semantic_op()
+            let tp = semantic_op(&req.operation)
                 .generate_with_tracing(&exec_ctx)?;
             if let Some(scope) = core_scope.as_ref()
                 && !tp.moves.is_empty()
@@ -333,7 +337,7 @@ fn run_compute_with_phase_tracker(
             tp = apply_dressups(tp, req, dressup_ctx.as_ref(), semantic_root.as_ref());
         }
 
-        if req.boundary_enabled
+        if req.boundary.enabled
             && let Some(bbox) = &req.stock_bbox
         {
             let _phase_scope = phase_tracker.map(|tracker| tracker.start_phase("Clip to boundary"));
@@ -363,7 +367,7 @@ fn run_compute_with_phase_tracker(
             if !req.keep_out_footprints.is_empty() {
                 stock_poly = subtract_keepouts(&stock_poly, &req.keep_out_footprints);
             }
-            let containment = match req.boundary_containment {
+            let containment = match req.boundary.containment {
                 crate::state::toolpath::BoundaryContainment::Center => ToolContainment::Center,
                 crate::state::toolpath::BoundaryContainment::Inside => ToolContainment::Inside,
                 crate::state::toolpath::BoundaryContainment::Outside => ToolContainment::Outside,
@@ -379,7 +383,7 @@ fn run_compute_with_phase_tracker(
                     }
                     scope.set_param(
                         "containment",
-                        match req.boundary_containment {
+                        match req.boundary.containment {
                             crate::state::toolpath::BoundaryContainment::Center => "center",
                             crate::state::toolpath::BoundaryContainment::Inside => "inside",
                             crate::state::toolpath::BoundaryContainment::Outside => "outside",
@@ -1272,7 +1276,7 @@ mod tests {
     fn semantic_dispatch_covers_all_operation_types() {
         for &op_type in crate::state::toolpath::OperationType::ALL {
             let config = OperationConfig::new_default(op_type);
-            let _ = config.semantic_op();
+            let _ = semantic_op(&config);
         }
     }
 
@@ -1281,6 +1285,8 @@ mod tests {
         tool_type: ToolType,
     ) -> ComputeRequest {
         let tool = ToolConfig::new_default(crate::state::job::ToolId(1), tool_type);
+        let heights = HeightsConfig::default().resolve(&HeightContext::simple(10.0, 6.0));
+        let cutting_levels = operation.cutting_levels(heights.top_z);
         ComputeRequest {
             toolpath_id: ToolpathId(1),
             toolpath_name: "Test".to_owned(),
@@ -1300,10 +1306,10 @@ mod tests {
                 min: P3::new(-25.0, -25.0, -10.0),
                 max: P3::new(25.0, 25.0, 10.0),
             }),
-            boundary_enabled: false,
-            boundary_containment: BoundaryContainment::Center,
+            boundary: crate::state::toolpath::BoundaryConfig::default(),
             keep_out_footprints: Vec::new(),
-            heights: HeightsConfig::default().resolve(&HeightContext::simple(10.0, 6.0)),
+            heights,
+            cutting_levels,
             debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
             prior_stock: None,
         }
@@ -1375,8 +1381,15 @@ mod tests {
         // coincides with a roughing level. Instead, verify that there are
         // no tab-height moves between roughing passes (moves with z > final_z
         // that aren't at a legitimate roughing level or safe_z).
-        let depth = make_depth_with_finishing(cfg.depth, cfg.depth_per_pass, cfg.finishing_passes);
-        let roughing_levels = depth.all_levels();
+        let depth_stepping = rs_cam_core::depth::DepthStepping {
+            start_z: 0.0,
+            final_z: -cfg.depth.abs(),
+            max_step_down: cfg.depth_per_pass,
+            distribution: rs_cam_core::depth::DepthDistribution::Even,
+            finish_allowance: 0.0,
+            finishing_passes: cfg.finishing_passes,
+        };
+        let roughing_levels = depth_stepping.all_levels();
         for m in &tp.moves {
             if let MoveType::Linear { .. } = m.move_type {
                 let z = m.target.z;

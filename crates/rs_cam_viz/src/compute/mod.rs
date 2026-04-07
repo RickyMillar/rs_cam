@@ -6,8 +6,7 @@ use std::time::{Duration, Instant};
 
 pub use worker::{
     CollisionRequest, CollisionResult, ComputeRequest, ComputeResult, SetupSimGroup,
-    SetupSimToolpath, SetupTransformInfo, SimulationRequest, SimulationResult,
-    ThreadedComputeBackend,
+    SetupSimToolpath, SimulationRequest, SimulationResult, ThreadedComputeBackend,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
