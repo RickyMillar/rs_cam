@@ -318,8 +318,7 @@ fn run_compute_with_phase_tracker(
                 debug_root: core_ctx.as_ref(),
                 semantic_root: semantic_root.as_ref(),
             };
-            let tp = semantic_op(&req.operation)
-                .generate_with_tracing(&exec_ctx)?;
+            let tp = semantic_op(&req.operation).generate_with_tracing(&exec_ctx)?;
             if let Some(scope) = core_scope.as_ref()
                 && !tp.moves.is_empty()
             {

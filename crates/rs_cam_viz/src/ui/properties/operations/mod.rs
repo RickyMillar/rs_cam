@@ -1822,12 +1822,13 @@ pub fn collect_warnings(
     // -- Tool-operation compatibility --
 
     // Ball nose on 2D clearing operations (suboptimal)
-    if matches!(tool.tool_type, ToolType::BallNose | ToolType::TaperedBallNose)
-        && matches!(
-            entry.operation,
-            OperationConfig::Pocket(_) | OperationConfig::Face(_) | OperationConfig::Zigzag(_)
-        )
-    {
+    if matches!(
+        tool.tool_type,
+        ToolType::BallNose | ToolType::TaperedBallNose
+    ) && matches!(
+        entry.operation,
+        OperationConfig::Pocket(_) | OperationConfig::Face(_) | OperationConfig::Zigzag(_)
+    ) {
         warnings.push(OperationWarning {
             severity: WarningSeverity::Warning,
             message: "Ball nose tools leave scallops on flat surfaces. Consider a flat end mill for clearing operations.".into(),
@@ -1851,7 +1852,10 @@ pub fn collect_warnings(
     if let Some(stepover) = entry.operation.stepover() {
         let spec = entry.operation.op_type().spec();
         // Stepover > 50% on finishing ops
-        if spec.ui_process_role == UiProcessRole::Finish && stepover > tool.diameter * 0.5 && tool.diameter > 0.0 {
+        if spec.ui_process_role == UiProcessRole::Finish
+            && stepover > tool.diameter * 0.5
+            && tool.diameter > 0.0
+        {
             warnings.push(OperationWarning {
                 severity: WarningSeverity::Warning,
                 message: format!(
@@ -1926,7 +1930,9 @@ pub fn collect_warnings(
         if h.clearance_z < h.retract_z {
             warnings.push(OperationWarning {
                 severity: WarningSeverity::Warning,
-                message: "Clearance Z is below Retract Z. Rapid moves between operations may collide.".into(),
+                message:
+                    "Clearance Z is below Retract Z. Rapid moves between operations may collide."
+                        .into(),
             });
         }
     }

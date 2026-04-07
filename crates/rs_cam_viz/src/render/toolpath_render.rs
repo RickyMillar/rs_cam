@@ -299,7 +299,11 @@ impl ToolpathGpuData {
             } else if ratio >= 0.5 {
                 // 50-100% of nominal: green → yellow
                 let t = (ratio - 0.5) * 2.0; // 0..1
-                [0.2 + (1.0 - t) * 0.7, 0.8 - (1.0 - t) * 0.1, 0.3 - (1.0 - t) * 0.2]
+                [
+                    0.2 + (1.0 - t) * 0.7,
+                    0.8 - (1.0 - t) * 0.1,
+                    0.3 - (1.0 - t) * 0.2,
+                ]
             } else {
                 // Below 50%: yellow → red (heavy engagement)
                 let t = ratio * 2.0; // 0..1
@@ -328,14 +332,26 @@ impl ToolpathGpuData {
 
                 match tp.moves[i].move_type {
                     MoveType::Rapid => {
-                        rapid_verts.push(LineVertex { position: p0, color: rapid_color });
-                        rapid_verts.push(LineVertex { position: p1, color: rapid_color });
+                        rapid_verts.push(LineVertex {
+                            position: p0,
+                            color: rapid_color,
+                        });
+                        rapid_verts.push(LineVertex {
+                            position: p1,
+                            color: rapid_color,
+                        });
                     }
                     _ => {
                         let feed = tp.moves[i].move_type.feed_rate().unwrap_or(nominal);
                         let c = engagement_color(feed);
-                        cut_verts.push(LineVertex { position: p0, color: c });
-                        cut_verts.push(LineVertex { position: p1, color: c });
+                        cut_verts.push(LineVertex {
+                            position: p0,
+                            color: c,
+                        });
+                        cut_verts.push(LineVertex {
+                            position: p1,
+                            color: c,
+                        });
                     }
                 }
             }
@@ -345,33 +361,53 @@ impl ToolpathGpuData {
         }
 
         if cut_verts.is_empty() {
-            cut_verts.push(LineVertex { position: [0.0; 3], color: [0.0; 3] });
+            cut_verts.push(LineVertex {
+                position: [0.0; 3],
+                color: [0.0; 3],
+            });
         }
         if rapid_verts.is_empty() {
-            rapid_verts.push(LineVertex { position: [0.0; 3], color: [0.0; 3] });
+            rapid_verts.push(LineVertex {
+                position: [0.0; 3],
+                color: [0.0; 3],
+            });
         }
 
         let cut_vertex_count = cut_verts.len() as u32;
         let rapid_vertex_count = rapid_verts.len() as u32;
 
         let cut_vertex_buffer = gpu_safety::try_create_buffer(
-            device, limits, "tp_engagement_cut",
-            bytemuck::cast_slice(&cut_verts), wgpu::BufferUsages::VERTEX,
-        ).unwrap_or_else(|| {
+            device,
+            limits,
+            "tp_engagement_cut",
+            bytemuck::cast_slice(&cut_verts),
+            wgpu::BufferUsages::VERTEX,
+        )
+        .unwrap_or_else(|| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("tp_engagement_cut_placeholder"),
-                contents: bytemuck::cast_slice(&[LineVertex { position: [0.0; 3], color: [0.0; 3] }]),
+                contents: bytemuck::cast_slice(&[LineVertex {
+                    position: [0.0; 3],
+                    color: [0.0; 3],
+                }]),
                 usage: wgpu::BufferUsages::VERTEX,
             })
         });
 
         let rapid_vertex_buffer = gpu_safety::try_create_buffer(
-            device, limits, "tp_engagement_rapid",
-            bytemuck::cast_slice(&rapid_verts), wgpu::BufferUsages::VERTEX,
-        ).unwrap_or_else(|| {
+            device,
+            limits,
+            "tp_engagement_rapid",
+            bytemuck::cast_slice(&rapid_verts),
+            wgpu::BufferUsages::VERTEX,
+        )
+        .unwrap_or_else(|| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("tp_engagement_rapid_placeholder"),
-                contents: bytemuck::cast_slice(&[LineVertex { position: [0.0; 3], color: [0.0; 3] }]),
+                contents: bytemuck::cast_slice(&[LineVertex {
+                    position: [0.0; 3],
+                    color: [0.0; 3],
+                }]),
                 usage: wgpu::BufferUsages::VERTEX,
             })
         });

@@ -44,8 +44,11 @@ pub fn draw(
                             .color(theme::TEXT_MUTED),
                     );
                     ui.label(
-                        egui::RichText::new(format!("\u{00B7} {:.1} m cut", total_cutting / 1000.0))
-                            .color(theme::TEXT_MUTED),
+                        egui::RichText::new(format!(
+                            "\u{00B7} {:.1} m cut",
+                            total_cutting / 1000.0
+                        ))
+                        .color(theme::TEXT_MUTED),
                     );
                     if collision_count > 0 {
                         ui.label(
@@ -55,8 +58,7 @@ pub fn draw(
                         );
                     } else {
                         ui.label(
-                            egui::RichText::new("\u{00B7} no collisions")
-                                .color(theme::SUCCESS),
+                            egui::RichText::new("\u{00B7} no collisions").color(theme::SUCCESS),
                         );
                     }
                 });
