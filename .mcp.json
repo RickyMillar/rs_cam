@@ -1,11 +1,3 @@
 {
-  "mcpServers": {
-    "rs-cam": {
-      "command": "cargo",
-      "args": ["run", "-p", "rs_cam_mcp", "--release", "--quiet", "--"],
-      "env": {
-        "RUST_LOG": "info"
-      }
-    }
-  }
+  "mcpServers": {}
 }
