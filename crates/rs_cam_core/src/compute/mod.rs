@@ -1,14 +1,16 @@
-//! Compute configuration and execution helpers for CAM operations.
+//! Compute configuration, execution helpers, simulation, and collision checking.
 //!
-//! This module contains the shared config types (Phase 1) and execution
-//! helpers (Phase 2) extracted from `rs_cam_viz` so they can be used by
-//! both the GUI and CLI without duplication.
+//! This module contains the shared config types (Phase 1), execution helpers
+//! (Phase 2), and simulation/collision logic (Phase 3) extracted from
+//! `rs_cam_viz` so they can be used by both the GUI and CLI.
 
 pub mod catalog;
+pub mod collision_check;
 pub mod config;
 pub mod cutter;
 pub mod operation_configs;
 pub mod semantic_helpers;
+pub mod simulate;
 pub mod stats;
 pub mod stock_config;
 pub mod tool_config;

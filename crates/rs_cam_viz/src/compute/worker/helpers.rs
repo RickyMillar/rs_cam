@@ -1,10 +1,10 @@
 use super::{
     AtomicBool, BallEndmill, BullNoseEndmill, CollisionRequest, CollisionResult, ComputeError,
-    ComputeRequest, DressupEntryStyle, FeedOptParams, FlatEndmill, LinkMoveParams, MillingCutter,
-    MoveType, Ordering, Polygon2, SimulationRequest, SpatialIndex, TaperedBallEndmill, ToolConfig,
-    ToolDefinition, ToolType, Toolpath, ToolpathStats, TriangleMesh, VBitEndmill, apply_dogbones,
-    apply_entry, apply_lead_in_out, apply_link_moves, check_collisions_interpolated_with_cancel,
-    filter_air_cuts, fit_arcs, optimize_feed_rates,
+    ComputeRequest, DepthDistribution, DepthStepping, DressupEntryStyle, FeedOptParams,
+    FlatEndmill, LinkMoveParams, MillingCutter, MoveType, Polygon2, SimulationRequest,
+    SpatialIndex, TaperedBallEndmill, ToolConfig, ToolDefinition, ToolType, Toolpath,
+    ToolpathStats, TriangleMesh, VBitEndmill, apply_dogbones, apply_entry, apply_lead_in_out,
+    apply_link_moves, filter_air_cuts, fit_arcs, optimize_feed_rates,
 };
 use crate::compute::OperationError;
 use serde_json::json;
@@ -359,6 +359,45 @@ pub(super) fn feed_optimization_stock(req: &ComputeRequest) -> Result<TriDexelSt
     Ok(TriDexelStock::from_bounds(bbox, cell_size))
 }
 
+pub(super) fn make_depth(depth: f64, per_pass: f64) -> DepthStepping {
+    make_depth_ext(depth, per_pass, 0, 0.0)
+}
+
+pub(super) fn make_depth_with_finishing(
+    depth: f64,
+    per_pass: f64,
+    finishing_passes: usize,
+) -> DepthStepping {
+    make_depth_ext(depth, per_pass, finishing_passes, 0.0)
+}
+
+fn make_depth_ext(depth: f64, per_pass: f64, finishing_passes: usize, top_z: f64) -> DepthStepping {
+    DepthStepping {
+        start_z: top_z,
+        final_z: top_z - depth.abs(),
+        max_step_down: per_pass,
+        distribution: DepthDistribution::Even,
+        finish_allowance: 0.0,
+        finishing_passes,
+    }
+}
+
+#[allow(dead_code)]
+fn make_depth_from_heights(
+    heights: &crate::state::toolpath::ResolvedHeights,
+    per_pass: f64,
+    finishing_passes: usize,
+) -> DepthStepping {
+    DepthStepping {
+        start_z: heights.top_z,
+        final_z: heights.bottom_z,
+        max_step_down: per_pass,
+        distribution: DepthDistribution::Even,
+        finish_allowance: 0.0,
+        finishing_passes,
+    }
+}
+
 #[allow(dead_code)]
 pub(super) fn run_collision_check(
     req: &CollisionRequest,
@@ -375,32 +414,22 @@ pub(super) fn run_collision_check_with_phase<F>(
 where
     F: FnMut(&str),
 {
+    use rs_cam_core::compute::collision_check as core_cc;
+
     set_phase("Build collision index");
-    let index = SpatialIndex::build_auto(&req.mesh);
-    let assembly = build_cutter(&req.tool).to_assembly();
+    let core_req = core_cc::CollisionCheckRequest {
+        toolpath: (*req.toolpath).clone(),
+        tool: build_cutter(&req.tool),
+        mesh: (*req.mesh).clone(),
+    };
     set_phase("Check collisions");
-    let report = check_collisions_interpolated_with_cancel(
-        &req.toolpath,
-        &assembly,
-        &req.mesh,
-        &index,
-        1.0,
-        &|| cancel.load(Ordering::SeqCst),
-    )
-    .map_err(|_e| ComputeError::Cancelled)?;
+    let core_result =
+        core_cc::run_collision_check(&core_req, cancel).map_err(|_e| ComputeError::Cancelled)?;
     set_phase("Collect collision markers");
-    let positions: Vec<[f32; 3]> = report
-        .collisions
-        .iter()
-        .map(|collision| {
-            [
-                collision.position.x as f32,
-                collision.position.y as f32,
-                collision.position.z as f32,
-            ]
-        })
-        .collect();
-    Ok(CollisionResult { report, positions })
+    Ok(CollisionResult {
+        report: core_result.collision_report,
+        positions: core_result.collision_positions,
+    })
 }
 
 // SAFETY: loop from 1..len, indexing [i] and [i-1] always in bounds
@@ -473,9 +502,8 @@ pub(super) fn build_trace_artifact(
             "bottom_z": req.heights.bottom_z,
         },
         "stock_bbox": stock_bbox,
-        "boundary_enabled": req.boundary.enabled,
-        "boundary_source": req.boundary.source.label(),
-        "boundary_containment": format!("{:?}", req.boundary.containment),
+        "boundary_enabled": req.boundary_enabled,
+        "boundary_containment": format!("{:?}", req.boundary_containment),
         "keep_out_count": req.keep_out_footprints.len(),
         "debug_options": &req.debug_options,
     });
@@ -520,7 +548,7 @@ pub(super) fn build_simulation_cut_artifact(
         },
         "toolpaths": req.groups.iter().map(|group| {
             json!({
-                "direction": "FromTop",
+                "direction": format!("{:?}", group.direction),
                 "toolpaths": group.toolpaths.iter().map(|toolpath| {
                     json!({
                         "toolpath_id": toolpath.id.0,
