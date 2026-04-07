@@ -520,35 +520,35 @@ fn w6_auto_height_defaults() {
     let config = HeightsConfig::default();
     let h = config.resolve(&HeightContext::simple(10.0, 5.0));
 
-    // HeightContext::simple(10.0, 5.0) → stock 0→5, safe_z=10
-    // retract = stock_top + safe_z = 5 + 10 = 15
+    // HeightContext::simple(10.0, 5.0) → stock_top=0, stock_bottom=-5, safe_z=10
+    // retract = safe_z (auto) = 10
     assert!(
-        (h.retract_z - 15.0).abs() < 1e-9,
-        "retract_z should be 15.0, got {}",
+        (h.retract_z - 10.0).abs() < 1e-9,
+        "retract_z should be 10.0, got {}",
         h.retract_z
     );
-    // clearance = retract + 10 = 25
+    // clearance = retract + 10 = 20
     assert!(
-        (h.clearance_z - 25.0).abs() < 1e-9,
-        "clearance_z should be 25.0, got {}",
+        (h.clearance_z - 20.0).abs() < 1e-9,
+        "clearance_z should be 20.0, got {}",
         h.clearance_z
     );
-    // feed = stock_top + 2 = 7
+    // feed = retract - 2 = 8
     assert!(
-        (h.feed_z - 7.0).abs() < 1e-9,
-        "feed_z should be 7.0, got {}",
+        (h.feed_z - 8.0).abs() < 1e-9,
+        "feed_z should be 8.0, got {}",
         h.feed_z
     );
-    // top = stock_top = 5
+    // top = 0 (auto)
     assert!(
-        (h.top_z - 5.0).abs() < 1e-9,
-        "top_z should be 5.0, got {}",
+        (h.top_z - 0.0).abs() < 1e-9,
+        "top_z should be 0.0, got {}",
         h.top_z
     );
-    // bottom = stock_bottom = 0
+    // bottom = -op_depth = -5
     assert!(
-        (h.bottom_z - 0.0).abs() < 1e-9,
-        "bottom_z should be 0.0, got {}",
+        (h.bottom_z - (-5.0)).abs() < 1e-9,
+        "bottom_z should be -5.0, got {}",
         h.bottom_z
     );
 
