@@ -17,46 +17,6 @@ use crate::stock_mesh::StockMesh;
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
 
-/// Transform a toolpath from setup-local frame to global stock frame.
-///
-/// For non-identity directions (e.g. `FromBottom`), the toolpath's depth
-/// axis is inverted: `depth_global = stock_extent - depth_local`.  The
-/// grid-plane coordinates (u, v) stay the same because the grid covers
-/// the same XY/XZ/YZ range regardless of approach side.
-fn transform_toolpath_for_direction(
-    toolpath: &Toolpath,
-    direction: StockCutDirection,
-    stock_bbox: &BoundingBox3,
-) -> Toolpath {
-    if direction.cuts_from_high_side() {
-        // FromTop / FromBack / FromRight — no inversion needed, local = global.
-        return toolpath.clone();
-    }
-    let extent = direction.depth_extent(stock_bbox);
-    let mut tp = Toolpath::new();
-    tp.moves = toolpath
-        .moves
-        .iter()
-        .map(|m| {
-            let mut moved = m.clone();
-            // Invert the depth axis of the target position.
-            match direction {
-                StockCutDirection::FromBottom | StockCutDirection::FromTop => {
-                    moved.target.z = extent - m.target.z;
-                }
-                StockCutDirection::FromFront | StockCutDirection::FromBack => {
-                    moved.target.y = extent - m.target.y;
-                }
-                StockCutDirection::FromLeft | StockCutDirection::FromRight => {
-                    moved.target.x = extent - m.target.x;
-                }
-            }
-            moved
-        })
-        .collect();
-    tp
-}
-
 /// A single toolpath prepared for simulation.
 pub struct SimToolpathEntry {
     /// Opaque identifier echoed back in boundaries.
@@ -184,18 +144,10 @@ pub fn run_simulation(
             let radius = entry.tool.radius();
             let start_move = total_moves;
 
-            // Transform toolpath from setup-local frame to global stock frame.
-            // For FromTop this is a no-op clone; for FromBottom it inverts Z.
-            let sim_tp = transform_toolpath_for_direction(
-                &entry.toolpath,
-                group.direction,
-                &request.stock_bbox,
-            );
-
             if request.metric_options.enabled {
                 let mut samples = stock
                     .simulate_toolpath_with_lut_metrics_cancel(
-                        &sim_tp,
+                        &entry.toolpath,
                         &lut,
                         radius,
                         group.direction,
@@ -212,7 +164,7 @@ pub fn run_simulation(
             } else {
                 stock
                     .simulate_toolpath_with_lut_cancel(
-                        &sim_tp,
+                        &entry.toolpath,
                         &lut,
                         radius,
                         group.direction,
@@ -454,5 +406,90 @@ mod tests {
         let cancel = AtomicBool::new(true);
         let result = run_simulation(&req, &cancel);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn top_then_bottom_cut_leaves_middle() {
+        use crate::dexel_stock::StockCutDirection;
+        use crate::tool::FlatEndmill;
+
+        let stock_bbox = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(50.0, 50.0, 20.0),
+        };
+
+        // Top cut at Z=15 removes material above Z≈15
+        let mut top_tp = Toolpath::new();
+        top_tp.rapid_to(P3::new(25.0, 25.0, 25.0));
+        for i in 0..20 {
+            let x = 20.0 + (i as f64) * 0.5;
+            top_tp.feed_to(P3::new(x, 25.0, 15.0), 600.0);
+        }
+
+        // Bottom cut at global Z=5 removes material below Z≈5
+        let mut bottom_tp = Toolpath::new();
+        bottom_tp.rapid_to(P3::new(25.0, 25.0, 25.0));
+        for i in 0..20 {
+            let x = 20.0 + (i as f64) * 0.5;
+            bottom_tp.feed_to(P3::new(x, 25.0, 5.0), 600.0);
+        }
+
+        let make_tool = || crate::tool::ToolDefinition::new(
+            Box::new(FlatEndmill::new(6.35, 25.0)),
+            6.35, 20.0, 25.0, 45.0, 2,
+        );
+
+        let req = SimulationRequest {
+            groups: vec![
+                SimGroupEntry {
+                    toolpaths: vec![SimToolpathEntry {
+                        id: 1,
+                        name: "Top".into(),
+                        toolpath: Arc::new(top_tp),
+                        tool: make_tool(),
+                        flute_count: 2,
+                        tool_summary: "test".into(),
+                        semantic_trace: None,
+                    }],
+                    direction: StockCutDirection::FromTop,
+                },
+                SimGroupEntry {
+                    toolpaths: vec![SimToolpathEntry {
+                        id: 2,
+                        name: "Bottom".into(),
+                        toolpath: Arc::new(bottom_tp),
+                        tool: make_tool(),
+                        flute_count: 2,
+                        tool_summary: "test".into(),
+                        semantic_trace: None,
+                    }],
+                    direction: StockCutDirection::FromBottom,
+                },
+            ],
+            stock_bbox,
+            stock_top_z: 20.0,
+            resolution: 0.5,
+            metric_options: crate::simulation_cut::SimulationMetricOptions { enabled: false },
+            spindle_rpm: 18_000,
+            rapid_feed_mm_min: 5_000.0,
+            model_mesh: None,
+        };
+
+        let cancel = AtomicBool::new(false);
+        let result = run_simulation(&req, &cancel).unwrap();
+
+        // After top cut: stock = Z 0→15
+        let cp0 = &result.checkpoints[0].stock;
+        let (r, c) = cp0.z_grid.world_to_cell(25.0, 25.0).unwrap();
+        let ray0 = cp0.z_grid.ray(r, c);
+        assert_eq!(ray0.len(), 1, "after top cut: one segment");
+
+        // After both: stock = Z 5→15
+        let cp1 = &result.checkpoints[1].stock;
+        let (r, c) = cp1.z_grid.world_to_cell(25.0, 25.0).unwrap();
+        let ray1 = cp1.z_grid.ray(r, c);
+        assert_eq!(ray1.len(), 1, "after both cuts: one segment");
+        assert!((ray1[0].enter - 5.0).abs() < 1.0, "bottom at ~5, got {}", ray1[0].enter);
+        assert!((ray1[0].exit - 15.0).abs() < 1.0, "top at ~15, got {}", ray1[0].exit);
     }
 }

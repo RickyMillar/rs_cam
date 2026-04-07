@@ -108,19 +108,21 @@ impl<B: ComputeBackend> AppController<B> {
         mut stop_after_setup: impl FnMut(usize) -> bool,
     ) -> Option<(Vec<SetupSimGroup>, Vec<SetupSimToolpath>, BoundingBox3)> {
         let stock = &self.state.job.stock;
-        // Toolpaths are generated in setup-local frame (0,0,0 origin) —
-        // the setup transform translates meshes by -stock.origin before
-        // generating. Use the same zero-origin bbox for simulation.
-        let stock_bbox = BoundingBox3 {
-            min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
-            max: rs_cam_core::geo::P3::new(stock.x, stock.y, stock.z),
-        };
+        // Toolpaths are inverse-transformed to world frame below, so the
+        // stock bbox must also be in world frame (includes origin offsets).
+        let stock_bbox = stock.bbox();
 
         let mut groups: Vec<SetupSimGroup> = Vec::new();
         let mut all_toolpaths_flat = Vec::new();
 
         for (i, setup) in self.state.job.setups.iter().enumerate() {
-            // Toolpaths stay in setup-local frame — no transform needed.
+            // Transform toolpaths from setup-local frame to global stock frame.
+            // The setup owns the orientation (FaceUp, ZRotation). Toolpaths are
+            // generated in setup-local coords; the inverse transform maps them
+            // back to the global stock frame so the simulation can always treat
+            // cuts as FromTop. This keeps the simulation axis-agnostic — a thin
+            // layer for future 4/5 axis support.
+            let needs_transform = setup.needs_transform();
             let toolpaths: Vec<_> = setup
                 .toolpaths
                 .iter()
@@ -134,10 +136,20 @@ impl<B: ComputeBackend> AppController<B> {
                         .iter()
                         .find(|t| t.id == tp.tool_id)?
                         .clone();
+                    // Inverse-transform toolpath to global stock frame.
+                    let global_tp = if needs_transform {
+                        Arc::new(crate::state::job::inverse_transform_toolpath(
+                            &result.toolpath,
+                            setup,
+                            stock,
+                        ))
+                    } else {
+                        Arc::clone(&result.toolpath)
+                    };
                     Some(SetupSimToolpath {
                         id: tp.id,
                         name: tp.name.clone(),
-                        toolpath: Arc::clone(&result.toolpath),
+                        toolpath: global_tp,
                         tool,
                         semantic_trace: tp.semantic_trace.clone(),
                     })
@@ -147,6 +159,7 @@ impl<B: ComputeBackend> AppController<B> {
             if !toolpaths.is_empty() {
                 all_toolpaths_flat.extend(toolpaths.clone());
 
+                // Direction for playback display — derived from FaceUp.
                 let direction = match setup.face_up {
                     crate::state::job::FaceUp::Bottom => {
                         rs_cam_core::dexel_stock::StockCutDirection::FromBottom
