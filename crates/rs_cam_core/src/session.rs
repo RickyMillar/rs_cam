@@ -23,9 +23,7 @@ use crate::compute::catalog::OperationConfig;
 use crate::compute::collision_check::{
     CollisionCheckError, CollisionCheckRequest, CollisionCheckResult, run_collision_check,
 };
-use crate::compute::config::{
-    DressupConfig, HeightContext, HeightsConfig, ToolpathStats,
-};
+use crate::compute::config::{DressupConfig, HeightContext, HeightsConfig, ToolpathStats};
 use crate::compute::cutter::build_cutter;
 use crate::compute::simulate::{
     SimGroupEntry, SimToolpathEntry, SimulationError, SimulationRequest, SimulationResult,
@@ -822,7 +820,7 @@ impl ProjectSession {
             &tool_def,
             &tool,
             &heights,
-            &[],  // no pre-computed cutting levels; DepthStepping used internally
+            &[], // no pre-computed cutting levels; DepthStepping used internally
             &effective_stock_bbox,
             None, // no prev_tool_radius for session path
             Some(&core_ctx),

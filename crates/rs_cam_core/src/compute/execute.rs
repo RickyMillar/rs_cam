@@ -91,36 +91,34 @@ pub fn execute_operation(
             let levels = effective_levels(cutting_levels, heights, cfg.depth_per_pass);
             let mut combined = Toolpath::new();
             for poly in polys {
-                let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| {
-                    match cfg.pattern {
-                        crate::compute::operation_configs::PocketPattern::Contour => {
-                            crate::pocket::pocket_toolpath(
-                                poly,
-                                &crate::pocket::PocketParams {
-                                    tool_radius,
-                                    stepover: cfg.stepover,
-                                    cut_depth: z,
-                                    feed_rate,
-                                    plunge_rate,
-                                    safe_z,
-                                    climb: cfg.climb,
-                                },
-                            )
-                        }
-                        crate::compute::operation_configs::PocketPattern::Zigzag => {
-                            crate::zigzag::zigzag_toolpath(
-                                poly,
-                                &crate::zigzag::ZigzagParams {
-                                    tool_radius,
-                                    stepover: cfg.stepover,
-                                    cut_depth: z,
-                                    feed_rate,
-                                    plunge_rate,
-                                    safe_z,
-                                    angle: cfg.angle,
-                                },
-                            )
-                        }
+                let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| match cfg.pattern {
+                    crate::compute::operation_configs::PocketPattern::Contour => {
+                        crate::pocket::pocket_toolpath(
+                            poly,
+                            &crate::pocket::PocketParams {
+                                tool_radius,
+                                stepover: cfg.stepover,
+                                cut_depth: z,
+                                feed_rate,
+                                plunge_rate,
+                                safe_z,
+                                climb: cfg.climb,
+                            },
+                        )
+                    }
+                    crate::compute::operation_configs::PocketPattern::Zigzag => {
+                        crate::zigzag::zigzag_toolpath(
+                            poly,
+                            &crate::zigzag::ZigzagParams {
+                                tool_radius,
+                                stepover: cfg.stepover,
+                                cut_depth: z,
+                                feed_rate,
+                                plunge_rate,
+                                safe_z,
+                                angle: cfg.angle,
+                            },
+                        )
                     }
                 });
                 combined.moves.extend(tp.moves);
@@ -157,7 +155,11 @@ pub fn execute_operation(
                     if cfg.tab_count > 0 && is_final {
                         let tabbed = crate::dressup::apply_tabs(
                             pass_tp,
-                            &crate::dressup::even_tabs(cfg.tab_count, cfg.tab_width, cfg.tab_height),
+                            &crate::dressup::even_tabs(
+                                cfg.tab_count,
+                                cfg.tab_width,
+                                cfg.tab_height,
+                            ),
                             z,
                         );
                         combined.moves.extend(tabbed.moves);
@@ -437,7 +439,10 @@ pub fn execute_operation(
             )
             .map_err(|_e| OperationError::Cancelled)?;
             Ok(crate::toolpath::raster_toolpath_from_grid(
-                &grid, feed_rate, plunge_rate, safe_z,
+                &grid,
+                feed_rate,
+                plunge_rate,
+                safe_z,
             ))
         }
         OperationConfig::Adaptive3d(cfg) => {
@@ -544,9 +549,8 @@ pub fn execute_operation(
         }
         OperationConfig::Pencil(cfg) => {
             let m = require_mesh(mesh)?;
-            let idx = index.ok_or_else(|| {
-                OperationError::Other("Pencil requires a spatial index".into())
-            })?;
+            let idx = index
+                .ok_or_else(|| OperationError::Other("Pencil requires a spatial index".into()))?;
             let params = crate::pencil::PencilParams {
                 bitangency_angle: cfg.bitangency_angle,
                 min_cut_length: cfg.min_cut_length,
@@ -563,9 +567,8 @@ pub fn execute_operation(
         }
         OperationConfig::Scallop(cfg) => {
             let m = require_mesh(mesh)?;
-            let idx = index.ok_or_else(|| {
-                OperationError::Other("Scallop requires a spatial index".into())
-            })?;
+            let idx = index
+                .ok_or_else(|| OperationError::Other("Scallop requires a spatial index".into()))?;
             let params = crate::scallop::ScallopParams {
                 scallop_height: cfg.scallop_height,
                 tolerance: cfg.tolerance,
