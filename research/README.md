@@ -17,20 +17,15 @@ For public-facing attribution, algorithm lineage, and bundled-source credits, se
 | [07_blue_sky.md](07_blue_sky.md) | Future-facing ideas: GPU, WASM, caching, monitoring, and higher-end CAM workflows |
 | [08_ux_terminology.md](08_ux_terminology.md) | Mapping between algorithm terms and user-facing CAM terminology |
 
-## Raw research
-
-These files are intentionally more verbose and closer to source extraction:
-
-| File | Contents |
-|------|----------|
-| [raw_algorithms.md](raw_algorithms.md) | Detailed algorithm research, pseudocode, and citations |
-| [raw_open_source.md](raw_open_source.md) | Extended open-source CAM project analysis |
-| [raw_rust_ecosystem.md](raw_rust_ecosystem.md) | Full Rust crate evaluation notes |
-| [raw_opencamlib_math.md](raw_opencamlib_math.md) | OpenCAMLib-specific math extraction and code-structure notes |
-
 ## Archive
 
-Legacy scratch notes and raw source captures that no longer belong at the repo root live in `research/archive/`.
+Legacy scratch notes, raw source captures, and verbose research extractions live in `research/archive/`:
+
+- `raw_algorithms.md` — Detailed algorithm research, pseudocode, and citations
+- `raw_open_source.md` — Extended open-source CAM project analysis
+- `raw_rust_ecosystem.md` — Full Rust crate evaluation notes
+- `raw_opencamlib_math.md` — OpenCAMLib-specific math extraction and code-structure notes
+- `ramp_docs.md`, `references.md`, `scallop_reference.md`, `steep_shallow_docs.md` — Legacy scratch notes
 
 ## Working assumptions preserved here
 
