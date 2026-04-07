@@ -506,28 +506,6 @@ pub fn transform_mesh(
     rs_cam_core::mesh::TriangleMesh::from_raw(new_verts, mesh.triangles.clone())
 }
 
-/// Inverse-transform a toolpath from setup-local frame back to world frame.
-///
-/// Each move's target position is mapped through `setup.inverse_transform_point`,
-/// which undoes ZRotation → FaceUp → adds stock origin, returning world coords.
-pub fn inverse_transform_toolpath(
-    toolpath: &rs_cam_core::toolpath::Toolpath,
-    setup: &Setup,
-    stock: &StockConfig,
-) -> rs_cam_core::toolpath::Toolpath {
-    let mut tp = rs_cam_core::toolpath::Toolpath::new();
-    tp.moves = toolpath
-        .moves
-        .iter()
-        .map(|m| {
-            let mut moved = m.clone();
-            moved.target = setup.inverse_transform_point(m.target, stock);
-            moved
-        })
-        .collect();
-    tp
-}
-
 /// Transform a StockMesh's vertices from global frame to a setup's local frame.
 /// Modifies the mesh in place — vertices are stored as flat [x, y, z, ...] f32.
 #[allow(clippy::indexing_slicing)] // stride-3 loop bounded by mesh.vertices.len()

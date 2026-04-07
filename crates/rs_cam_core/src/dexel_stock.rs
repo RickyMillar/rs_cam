@@ -66,28 +66,6 @@ impl StockCutDirection {
             DexelAxis::X => (y, z, x), // X-grid: u=Y, v=Z, depth=X
         }
     }
-
-    /// Return the stock extent along this direction's depth axis.
-    pub fn depth_extent(self, bbox: &BoundingBox3) -> f64 {
-        match self.grid_axis() {
-            DexelAxis::Z => bbox.max.z - bbox.min.z,
-            DexelAxis::Y => bbox.max.y - bbox.min.y,
-            DexelAxis::X => bbox.max.x - bbox.min.x,
-        }
-    }
-
-    /// Return the stock's minimum depth along this direction's axis.
-    ///
-    /// For low-side cuts (FromBottom, FromFront, FromLeft), the tool
-    /// approaches from the minimum side. The tool at the *maximum*
-    /// side means it's retracted — depth should be clamped here.
-    pub fn depth_min(self, bbox: &BoundingBox3) -> f64 {
-        match self.grid_axis() {
-            DexelAxis::Z => bbox.min.z,
-            DexelAxis::Y => bbox.min.y,
-            DexelAxis::X => bbox.min.x,
-        }
-    }
 }
 
 // ── TriDexelStock ───────────────────────────────────────────────────────
@@ -201,24 +179,11 @@ impl TriDexelStock {
         end: P3,
         direction: StockCutDirection,
     ) {
-        let (su, sv, sd) = direction.decompose(start.x, start.y, start.z);
-        let (eu, ev, ed) = direction.decompose(end.x, end.y, end.z);
+        let s = direction.decompose(start.x, start.y, start.z);
+        let e = direction.decompose(end.x, end.y, end.z);
         let from_high = direction.cuts_from_high_side();
-        // For low-side cuts (FromBottom etc.), cap the effective surface at
-        // the stock top so that plunge/retract moves above the stock don't
-        // wipe entire ray segments via ray_subtract_below.
-        let surface_cap = if from_high {
-            None
-        } else {
-            let top = match direction.grid_axis() {
-                DexelAxis::Z => self.stock_bbox.max.z,
-                DexelAxis::Y => self.stock_bbox.max.y,
-                DexelAxis::X => self.stock_bbox.max.x,
-            };
-            Some(top as f32)
-        };
         let grid = self.ensure_grid(direction);
-        stamp_segment_on_grid(grid, lut, radius, (su, sv, sd), (eu, ev, ed), from_high, surface_cap);
+        stamp_segment_on_grid(grid, lut, radius, s, e, from_high);
     }
 
     // ── Toolpath simulation ─────────────────────────────────────────────
@@ -612,16 +577,6 @@ impl TriDexelStock {
         let (eu, ev, ed) = direction.decompose(seg_end.x, seg_end.y, seg_end.z);
         let (mu, mv, md) = direction.decompose(midpoint.x, midpoint.y, midpoint.z);
         let from_high = direction.cuts_from_high_side();
-        let surface_cap = if from_high {
-            None
-        } else {
-            let top = match direction.grid_axis() {
-                DexelAxis::Z => self.stock_bbox.max.z,
-                DexelAxis::Y => self.stock_bbox.max.y,
-                DexelAxis::X => self.stock_bbox.max.x,
-            };
-            Some(top as f32)
-        };
         let grid = self.ensure_grid(direction);
         stamp_segment_with_metrics(
             grid,
@@ -633,7 +588,6 @@ impl TriDexelStock {
             mv,
             md,
             from_high,
-            surface_cap,
         )
     }
 
@@ -776,9 +730,6 @@ fn stamp_segment_on_grid(
     start: (f64, f64, f64),
     end: (f64, f64, f64),
     from_high: bool,
-    // For low-side cuts: the stock top along the depth axis.
-    // ray_subtract_below is skipped when surface >= this value.
-    surface_cap: Option<f32>,
 ) {
     let (su, sv, sd) = start;
     let (eu, ev, ed) = end;
@@ -831,12 +782,6 @@ fn stamp_segment_on_grid(
                     ray_subtract_above(ray, surface);
                 } else {
                     let surface = (depth - h) as f32;
-                    // Guard: skip when the surface is at/above the stock top.
-                    // This happens during plunge/retract moves above the stock
-                    // on low-side cuts — the tool isn't cutting there.
-                    if surface_cap.is_some_and(|cap| surface >= cap) {
-                        continue;
-                    }
                     ray_subtract_below(ray, surface);
                 }
             }
@@ -862,7 +807,6 @@ fn stamp_segment_with_metrics(
     mid_v: f64,
     mid_d: f64,
     from_high: bool,
-    surface_cap: Option<f32>,
 ) -> (f64, f64, f64) {
     let (su, sv, sd) = start;
     let (eu, ev, ed) = end;
@@ -954,21 +898,13 @@ fn stamp_segment_with_metrics(
 
                 // 3. Apply the stamp.
                 let depth = sd + t * seg_dd;
-                let did_cut = if from_high {
+                if from_high {
                     let surface = (depth + h) as f32;
                     ray_subtract_above(ray, surface);
-                    true
                 } else {
                     let surface = (depth - h) as f32;
-                    // Guard: skip when surface is at/above stock top.
-                    if surface_cap.is_some_and(|cap| surface >= cap) {
-                        false
-                    } else {
-                        ray_subtract_below(ray, surface);
-                        true
-                    }
-                };
-                let _ = did_cut; // used by post_volume below
+                    ray_subtract_below(ray, surface);
+                }
 
                 // 4. Post-stamp volume (read after mutation).
                 post_volume += ray_material_length(ray) as f64 * cell_area;
