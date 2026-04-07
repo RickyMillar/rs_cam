@@ -1626,14 +1626,16 @@ fn multi_setup_top_bottom_simulation() {
         top_tp.feed_to(P3::new(x, 25.0, 15.0), 600.0);
     }
 
-    // --- Bottom setup: toolpath in LOCAL frame ---
-    // In FaceUp::Bottom local frame, the stock is 50x50x20 (same dims).
-    // A cut at local Z=15 means 5mm from the local top (= physical bottom).
+    // --- Bottom setup: toolpath in GLOBAL frame ---
+    // The setup owns the orientation; toolpaths are pre-transformed to
+    // global stock coords before reaching the simulation.
+    // FaceUp::Bottom inverse transform: (x, D-y, H-z) on a 50x50x20 stock.
+    // Local (25, 25, 15) → global (25, 50-25, 20-15) = (25, 25, 5).
     let mut bottom_tp = Toolpath::new();
     bottom_tp.rapid_to(P3::new(25.0, 25.0, 25.0));
     for i in 0..20 {
         let x = 20.0 + (i as f64) * 0.5;
-        bottom_tp.feed_to(P3::new(x, 25.0, 15.0), 600.0);
+        bottom_tp.feed_to(P3::new(x, 25.0, 5.0), 600.0);
     }
 
     let request = SimulationRequest {
@@ -1741,18 +1743,20 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
         max: P3::new(30.0, 30.0, 10.0),
     };
 
-    // Two toolpaths in two setup groups (both in local frame)
+    // Two toolpaths in two setup groups (both in GLOBAL frame).
+    // Setups own orientation; toolpaths are pre-transformed before sim.
     let mut tp1 = Toolpath::new();
     tp1.rapid_to(P3::new(15.0, 15.0, 15.0));
     for i in 0..50 {
         tp1.feed_to(P3::new(10.0 + i as f64 * 0.2, 15.0, 7.0), 600.0);
     }
 
-    // Bottom setup: local-frame toolpath (cut 3mm from local top = physical bottom)
+    // Bottom setup: global-frame toolpath.
+    // FaceUp::Bottom inverse on 30x30x10: local (x, 15, 7) → global (x, 30-15, 10-7) = (x, 15, 3)
     let mut tp2 = Toolpath::new();
     tp2.rapid_to(P3::new(15.0, 15.0, 15.0));
     for i in 0..50 {
-        tp2.feed_to(P3::new(10.0 + i as f64 * 0.2, 15.0, 7.0), 600.0);
+        tp2.feed_to(P3::new(10.0 + i as f64 * 0.2, 15.0, 3.0), 600.0);
     }
 
     let request = SimulationRequest {
