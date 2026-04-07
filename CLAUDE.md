@@ -21,6 +21,7 @@ It has three product layers:
 
 - product overview: `README.md`
 - capability surface: `FEATURE_CATALOG.md`
+- AI analysis reference: `AI_MACHINIST_ANALYSIS_REFERENCE.md`
 - attribution and source lineage: `CREDITS.md`
 - design docs: `architecture/`
 - research notes: `research/`
