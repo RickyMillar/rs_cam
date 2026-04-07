@@ -8,6 +8,7 @@ pub mod catalog;
 pub mod collision_check;
 pub mod config;
 pub mod cutter;
+pub mod execute;
 pub mod operation_configs;
 pub mod semantic_helpers;
 pub mod simulate;
