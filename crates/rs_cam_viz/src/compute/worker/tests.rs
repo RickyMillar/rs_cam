@@ -617,7 +617,8 @@ fn long_simulation_request() -> SimulationRequest {
                 tool,
                 semantic_trace: None,
             }],
-            direction: StockCutDirection::FromTop,
+            local_stock_bbox: stock_bbox,
+            local_to_global: None,
         }],
         stock_bbox,
         stock_top_z: 10.0,
@@ -650,7 +651,8 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
                 tool,
                 semantic_trace: None,
             }],
-            direction: StockCutDirection::FromTop,
+            local_stock_bbox: stock_bbox,
+            local_to_global: None,
         }],
         stock_bbox,
         stock_top_z: 10.0,
@@ -1626,16 +1628,16 @@ fn multi_setup_top_bottom_simulation() {
         top_tp.feed_to(P3::new(x, 25.0, 15.0), 600.0);
     }
 
-    // --- Bottom setup: toolpath in GLOBAL frame ---
-    // The setup owns the orientation; toolpaths are pre-transformed to
-    // global stock coords before reaching the simulation.
-    // FaceUp::Bottom inverse transform: (x, D-y, H-z) on a 50x50x20 stock.
-    // Local (25, 25, 15) → global (25, 50-25, 20-15) = (25, 25, 5).
+    // --- Bottom setup: toolpath in SETUP-LOCAL frame ---
+    // In the restored architecture, the bottom setup's toolpaths are in
+    // setup-local coordinates (always cutting from Z-axis top down).
+    // SetupTransformInfo handles the local-to-global transform.
+    // Local (25, 25, 15) cuts 5mm from top in the flipped frame.
     let mut bottom_tp = Toolpath::new();
     bottom_tp.rapid_to(P3::new(25.0, 25.0, 25.0));
     for i in 0..20 {
         let x = 20.0 + (i as f64) * 0.5;
-        bottom_tp.feed_to(P3::new(x, 25.0, 5.0), 600.0);
+        bottom_tp.feed_to(P3::new(x, 25.0, 15.0), 600.0);
     }
 
     let request = SimulationRequest {
@@ -1648,7 +1650,8 @@ fn multi_setup_top_bottom_simulation() {
                     tool: tool.clone(),
                     semantic_trace: None,
                 }],
-                direction: StockCutDirection::FromTop,
+                local_stock_bbox: stock_bbox,
+                local_to_global: None,
             },
             SetupSimGroup {
                 toolpaths: vec![SetupSimToolpath {
@@ -1658,7 +1661,14 @@ fn multi_setup_top_bottom_simulation() {
                     tool,
                     semantic_trace: None,
                 }],
-                direction: StockCutDirection::FromBottom,
+                local_stock_bbox: stock_bbox,
+                local_to_global: Some(SetupTransformInfo {
+                    face_up: crate::state::job::FaceUp::Bottom,
+                    z_rotation: crate::state::job::ZRotation::Deg0,
+                    stock_x: 50.0,
+                    stock_y: 50.0,
+                    stock_z: 20.0,
+                }),
             },
         ],
         stock_bbox,
@@ -1743,20 +1753,19 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
         max: P3::new(30.0, 30.0, 10.0),
     };
 
-    // Two toolpaths in two setup groups (both in GLOBAL frame).
-    // Setups own orientation; toolpaths are pre-transformed before sim.
+    // Two toolpaths in two setup groups (setup-local frame).
     let mut tp1 = Toolpath::new();
     tp1.rapid_to(P3::new(15.0, 15.0, 15.0));
     for i in 0..50 {
         tp1.feed_to(P3::new(10.0 + i as f64 * 0.2, 15.0, 7.0), 600.0);
     }
 
-    // Bottom setup: global-frame toolpath.
-    // FaceUp::Bottom inverse on 30x30x10: local (x, 15, 7) → global (x, 30-15, 10-7) = (x, 15, 3)
+    // Bottom setup: toolpath in setup-local frame (always top-down).
+    // Cuts at local Z=7 (3mm from top of 10mm stock).
     let mut tp2 = Toolpath::new();
     tp2.rapid_to(P3::new(15.0, 15.0, 15.0));
     for i in 0..50 {
-        tp2.feed_to(P3::new(10.0 + i as f64 * 0.2, 15.0, 3.0), 600.0);
+        tp2.feed_to(P3::new(10.0 + i as f64 * 0.2, 15.0, 7.0), 600.0);
     }
 
     let request = SimulationRequest {
@@ -1769,7 +1778,8 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                     tool: tool.clone(),
                     semantic_trace: None,
                 }],
-                direction: StockCutDirection::FromTop,
+                local_stock_bbox: stock_bbox,
+                local_to_global: None,
             },
             SetupSimGroup {
                 toolpaths: vec![SetupSimToolpath {
@@ -1779,7 +1789,14 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                     tool,
                     semantic_trace: None,
                 }],
-                direction: StockCutDirection::FromBottom,
+                local_stock_bbox: stock_bbox,
+                local_to_global: Some(SetupTransformInfo {
+                    face_up: crate::state::job::FaceUp::Bottom,
+                    z_rotation: crate::state::job::ZRotation::Deg0,
+                    stock_x: 30.0,
+                    stock_y: 30.0,
+                    stock_z: 10.0,
+                }),
             },
         ],
         stock_bbox,

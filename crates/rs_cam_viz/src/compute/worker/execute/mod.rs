@@ -5,10 +5,6 @@ use super::helpers::{
     apply_dressups, build_simulation_cut_artifact, build_trace_artifact, debug_artifact_dir,
     effective_safe_z, require_mesh, require_polygons, simulation_metric_artifact_dir,
 };
-use rs_cam_core::compute::{
-    CutRun, append_toolpath, bind_scope_to_run, build_cutter, compute_stats, contour_toolpath,
-    cutting_runs, line_toolpath,
-};
 use super::{
     Adaptive3dConfig, Adaptive3dEntryStyle, Adaptive3dParams, AdaptiveConfig, AdaptiveParams,
     AlignmentPinDrillConfig, Arc, AtomicBool, ChamferConfig, ChamferParams, ComputeError,
@@ -32,6 +28,10 @@ use super::{
 use super::{BoundingBox3, DressupConfig, MoveType, StockSource, ToolConfig, ToolpathId};
 #[cfg(test)]
 use crate::state::toolpath::{HeightContext, HeightsConfig};
+use rs_cam_core::compute::{
+    CutRun, append_toolpath, bind_scope_to_run, build_cutter, compute_stats, contour_toolpath,
+    cutting_runs, line_toolpath,
+};
 use rs_cam_core::geo::P3;
 use rs_cam_core::semantic_trace::ToolpathSemanticKind;
 
@@ -122,96 +122,175 @@ pub(super) fn run_simulation_with_phase<F>(
 where
     F: FnMut(&str),
 {
-    use rs_cam_core::compute::simulate as core_sim;
+    use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
+    use rs_cam_core::radial_profile::RadialProfileLUT;
+    use rs_cam_core::tool::MillingCutter;
 
+    set_phase("Initialize stock");
     // Detect whether the grid will be coarsened beyond the requested resolution.
     let resolution_clamped = {
         let sx = req.stock_bbox.max.x - req.stock_bbox.min.x;
         let sy = req.stock_bbox.max.y - req.stock_bbox.min.y;
         rs_cam_core::dexel::DexelGrid::would_exceed_grid(req.resolution, sx, sy).is_some()
     };
+    let sample_step_mm = req.resolution.max(0.25);
 
-    // Build the core request by converting viz types to core types.
-    set_phase("Initialize stock");
-    let core_groups: Vec<core_sim::SimGroupEntry> = req
-        .groups
-        .iter()
-        .map(|group| {
-            let toolpaths = group
-                .toolpaths
-                .iter()
-                .map(|sim_tp| core_sim::SimToolpathEntry {
-                    id: sim_tp.id.0,
-                    name: sim_tp.name.clone(),
-                    toolpath: Arc::clone(&sim_tp.toolpath),
-                    tool: build_cutter(&sim_tp.tool),
-                    flute_count: sim_tp.tool.flute_count,
-                    tool_summary: sim_tp.tool.summary(),
-                    semantic_trace: sim_tp.semantic_trace.clone(),
-                })
-                .collect();
-            core_sim::SimGroupEntry {
-                toolpaths,
-                direction: group.direction,
-            }
-        })
-        .collect();
-
-    let core_req = core_sim::SimulationRequest {
-        groups: core_groups,
-        stock_bbox: req.stock_bbox,
-        stock_top_z: req.stock_top_z,
-        resolution: req.resolution,
-        metric_options: req.metric_options,
-        spindle_rpm: req.spindle_rpm,
-        rapid_feed_mm_min: req.rapid_feed_mm_min,
-        model_mesh: req.model_mesh.clone(),
-    };
-
-    set_phase("Simulate toolpaths");
-    let core_result =
-        core_sim::run_simulation(&core_req, cancel).map_err(|_e| ComputeError::Cancelled)?;
-
-    // Convert core result back to viz types, adding GUI-specific data.
-    // Reconstruct playback_data from the original request (needs ToolConfig).
+    let mut total_moves = 0;
+    let mut boundary_index = 0;
+    let mut boundaries = Vec::new();
+    let mut checkpoints = Vec::new();
     let mut playback_data = Vec::new();
+    let mut cut_samples = Vec::new();
+    // Composited mesh from all per-setup simulations.
+    let mut composite_mesh = rs_cam_core::stock_mesh::StockMesh::empty();
+    // Parallel global stock for playback checkpoints.
+    // Kept in sync with playback_data (global-frame toolpaths + direction).
+    let mut global_stock = TriDexelStock::from_bounds(&req.stock_bbox, req.resolution);
+
     for group in &req.groups {
-        for sim_tp in &group.toolpaths {
+        // Per-setup stock: always simulated from the top (Z-axis).
+        let mut group_stock = TriDexelStock::from_bounds(&group.local_stock_bbox, req.resolution);
+        let direction = StockCutDirection::FromTop;
+
+        // Direction for playback (global-frame re-simulation).
+        let playback_direction = group
+            .local_to_global
+            .as_ref()
+            .map_or(StockCutDirection::FromTop, |info| info.cut_direction());
+
+        for sim_toolpath in &group.toolpaths {
+            let tp_id = sim_toolpath.id;
+            let tp_name = &sim_toolpath.name;
+            let toolpath = &sim_toolpath.toolpath;
+            let tool_config = &sim_toolpath.tool;
+            set_phase(&format!("Simulate {tp_name}"));
+            let start_move = total_moves;
+            let cutter = build_cutter(tool_config);
+            let lut = RadialProfileLUT::from_cutter(&cutter, 256);
+            let radius = cutter.radius();
+            if req.metric_options.enabled {
+                let mut samples = group_stock
+                    .simulate_toolpath_with_lut_metrics_cancel(
+                        toolpath,
+                        &lut,
+                        radius,
+                        direction,
+                        tp_id.0,
+                        req.spindle_rpm,
+                        tool_config.flute_count,
+                        req.rapid_feed_mm_min,
+                        sample_step_mm,
+                        sim_toolpath.semantic_trace.as_deref(),
+                        &|| cancel.load(Ordering::SeqCst),
+                    )
+                    .map_err(|_e| ComputeError::Cancelled)?;
+                cut_samples.append(&mut samples);
+            } else {
+                group_stock
+                    .simulate_toolpath_with_lut_cancel(toolpath, &lut, radius, direction, &|| {
+                        cancel.load(Ordering::SeqCst)
+                    })
+                    .map_err(|_e| ComputeError::Cancelled)?;
+            }
+            total_moves += toolpath.moves.len();
+
+            boundaries.push(SimBoundary {
+                id: tp_id,
+                name: tp_name.clone(),
+                tool_name: tool_config.summary(),
+                start_move,
+                end_move: total_moves,
+                direction: playback_direction,
+            });
+
+            // Playback data: transform toolpath to global frame for playback.
+            let global_tp = if let Some(info) = &group.local_to_global {
+                Arc::new(info.transform_toolpath(toolpath))
+            } else {
+                Arc::clone(toolpath)
+            };
             playback_data.push((
-                Arc::clone(&sim_tp.toolpath),
-                sim_tp.tool.clone(),
-                group.direction,
+                Arc::clone(&global_tp),
+                tool_config.clone(),
+                playback_direction,
             ));
+
+            // Stamp the global stock in parallel for checkpoint/playback support.
+            // This uses the same global-frame toolpath + direction as playback.
+            {
+                let playback_lut = RadialProfileLUT::from_cutter(&cutter, 256);
+                let _ = global_stock.simulate_toolpath_with_lut_cancel(
+                    &global_tp,
+                    &playback_lut,
+                    radius,
+                    playback_direction,
+                    &|| cancel.load(Ordering::SeqCst),
+                );
+            }
+
+            // Checkpoint: composited mesh for display + global stock for playback resume.
+            let local_mesh = rs_cam_core::dexel_mesh::dexel_stock_to_mesh(&group_stock);
+            let checkpoint_mesh =
+                transform_stock_mesh_to_global(&local_mesh, &group.local_to_global);
+            checkpoints.push(SimCheckpointMesh {
+                boundary_index,
+                mesh: checkpoint_mesh,
+                stock: global_stock.checkpoint(),
+            });
+
+            boundary_index += 1;
+        }
+
+        // After all toolpaths in this group, extract mesh and composite.
+        let group_mesh = rs_cam_core::dexel_mesh::dexel_stock_to_mesh(&group_stock);
+        if let Some(info) = &group.local_to_global {
+            composite_mesh.append_transformed(&group_mesh, |x, y, z| {
+                let p = info.local_to_global(P3::new(f64::from(x), f64::from(y), f64::from(z)));
+                (p.x as f32, p.y as f32, p.z as f32)
+            });
+        } else {
+            composite_mesh.append_transformed(&group_mesh, |x, y, z| (x, y, z));
         }
     }
 
-    // Map core boundaries back to viz boundaries (restore ToolpathId).
-    let boundaries: Vec<SimBoundary> = core_result
-        .boundaries
-        .into_iter()
-        .map(|b| SimBoundary {
-            id: super::ToolpathId(b.id),
-            name: b.name,
-            tool_name: b.tool_name,
-            start_move: b.start_move,
-            end_move: b.end_move,
-            direction: b.direction,
-        })
-        .collect();
+    // Check for rapid-through-stock collisions on each toolpath
+    set_phase("Scan rapid collisions");
+    let mut rapid_collisions = Vec::new();
+    let mut rapid_collision_move_indices = Vec::new();
+    {
+        use rs_cam_core::collision::check_rapid_collisions;
+        let mut cumulative_offset = 0;
+        for group in &req.groups {
+            for sim_toolpath in &group.toolpaths {
+                let rapids = check_rapid_collisions(&sim_toolpath.toolpath, &req.stock_bbox);
+                for rc in &rapids {
+                    rapid_collision_move_indices.push(cumulative_offset + rc.move_index);
+                }
+                rapid_collisions.extend(rapids);
+                cumulative_offset += sim_toolpath.toolpath.moves.len();
+            }
+        }
+    }
 
-    let checkpoints: Vec<SimCheckpointMesh> = core_result
-        .checkpoints
-        .into_iter()
-        .map(|cp| SimCheckpointMesh {
-            boundary_index: cp.boundary_index,
-            mesh: cp.mesh,
-            stock: cp.stock,
-        })
-        .collect();
-
-    // Write cut trace artifact if metrics were enabled.
-    let (cut_trace, cut_trace_path) = if let Some(trace) = core_result.cut_trace {
-        let artifact = build_simulation_cut_artifact(req, (*trace).clone());
+    let (cut_trace, cut_trace_path) = if req.metric_options.enabled {
+        let semantic_traces: Vec<_> = req
+            .groups
+            .iter()
+            .flat_map(|group| {
+                group.toolpaths.iter().filter_map(|toolpath| {
+                    toolpath
+                        .semantic_trace
+                        .as_deref()
+                        .map(|trace| (toolpath.id.0, trace))
+                })
+            })
+            .collect();
+        let trace = rs_cam_core::simulation_cut::SimulationCutTrace::from_samples_with_semantics(
+            sample_step_mm,
+            cut_samples,
+            semantic_traces,
+        );
+        let artifact = build_simulation_cut_artifact(req, trace.clone());
         let path = match rs_cam_core::simulation_cut::write_simulation_cut_artifact(
             &simulation_metric_artifact_dir(),
             "simulation_metrics",
@@ -223,21 +302,31 @@ where
                 None
             }
         };
-        (Some(trace), path)
+        (Some(Arc::new(trace)), path)
     } else {
         (None, None)
     };
 
-    set_phase("Complete");
+    set_phase("Build simulation mesh");
+    let mesh = composite_mesh;
+
+    // Compute per-vertex deviation (sim_z - model_z) if a reference model is available.
+    let deviations = if let Some(model_mesh) = &req.model_mesh {
+        set_phase("Compute deviations");
+        Some(compute_deviations(&mesh.vertices, model_mesh))
+    } else {
+        None
+    };
+
     Ok(SimulationResult {
-        mesh: core_result.mesh,
-        total_moves: core_result.total_moves,
-        deviations: core_result.deviations,
+        mesh,
+        total_moves,
+        deviations,
         boundaries,
         checkpoints,
         playback_data,
-        rapid_collisions: core_result.rapid_collisions,
-        rapid_collision_move_indices: core_result.rapid_collision_move_indices,
+        rapid_collisions,
+        rapid_collision_move_indices,
         cut_trace,
         cut_trace_path,
         resolution_clamped,
@@ -1264,6 +1353,103 @@ fn annotate_project_curve_semantics(
         child.set_param("point_spacing", point_spacing);
         child.bind_to_toolpath(toolpath, slice.move_start, slice.move_end_exclusive);
     }
+}
+
+fn transform_stock_mesh_to_global(
+    mesh: &rs_cam_core::stock_mesh::StockMesh,
+    transform: &Option<super::SetupTransformInfo>,
+) -> rs_cam_core::stock_mesh::StockMesh {
+    let Some(info) = transform else {
+        return mesh.clone();
+    };
+    let mut out = rs_cam_core::stock_mesh::StockMesh::empty();
+    out.append_transformed(mesh, |x, y, z| {
+        let p = info.local_to_global(P3::new(f64::from(x), f64::from(y), f64::from(z)));
+        (p.x as f32, p.y as f32, p.z as f32)
+    });
+    out
+}
+
+/// Uses a spatial index on the model mesh for O(1) amortized triangle lookup per vertex.
+/// Vertices with no model triangle beneath them get deviation 0.0 (outside model footprint).
+#[allow(clippy::indexing_slicing)] // stride-3 vertex access bounded by len check
+fn compute_deviations(
+    stock_vertices: &[f32],
+    model_mesh: &rs_cam_core::mesh::TriangleMesh,
+) -> Vec<f32> {
+    use rs_cam_core::mesh::SpatialIndex;
+
+    let num_verts = stock_vertices.len() / 3;
+    let index = SpatialIndex::build_auto(model_mesh);
+
+    // Compute model thickness to set a relevance threshold. Vertices further
+    // than this from any model surface have no meaningful deviation (e.g. the
+    // flat bottom of a stock beneath a single-surface terrain model).
+    let model_thickness = model_mesh.bbox.max.z - model_mesh.bbox.min.z;
+    let relevance_threshold = (model_thickness * 0.5).max(2.0); // mm
+
+    let compute_vertex_deviation = |i: usize| -> f32 {
+        let x = stock_vertices[i * 3] as f64;
+        let y = stock_vertices[i * 3 + 1] as f64;
+        let sim_z = stock_vertices[i * 3 + 2] as f64;
+        let Some((model_min_z, model_max_z)) = query_model_z_range(&index, model_mesh, x, y) else {
+            return 0.0; // outside model footprint
+        };
+
+        let dist_to_top = (sim_z - model_max_z).abs();
+        let dist_to_bottom = (sim_z - model_min_z).abs();
+        let nearest_dist = dist_to_top.min(dist_to_bottom);
+
+        // If the vertex is far from any model surface, it's not a surface
+        // the model defines (e.g. stock bottom under a terrain with no base
+        // geometry). Return 0 to show neutral color instead of false overcut.
+        if nearest_dist > relevance_threshold {
+            return 0.0;
+        }
+
+        if dist_to_top <= dist_to_bottom {
+            (sim_z - model_max_z) as f32
+        } else {
+            (sim_z - model_min_z) as f32
+        }
+    };
+
+    // Process vertices in parallel for large meshes
+    if num_verts > 5000 {
+        use rayon::prelude::*;
+        return (0..num_verts)
+            .into_par_iter()
+            .map(compute_vertex_deviation)
+            .collect();
+    }
+
+    (0..num_verts).map(compute_vertex_deviation).collect()
+}
+
+/// Find the model Z range (min, max) at a given XY by querying nearby triangles.
+///
+/// Returns `(bottom_z, top_z)` -- the lowest and highest model surface at this point.
+/// Only considers triangles whose 2D footprint contains (x, y).
+#[allow(clippy::indexing_slicing)] // triangle indices bounded by mesh
+fn query_model_z_range(
+    index: &rs_cam_core::mesh::SpatialIndex,
+    mesh: &rs_cam_core::mesh::TriangleMesh,
+    x: f64,
+    y: f64,
+) -> Option<(f64, f64)> {
+    let candidates = index.query(x, y, 0.0);
+    let mut min_z: Option<f64> = None;
+    let mut max_z: Option<f64> = None;
+    for tri_idx in candidates {
+        let face = &mesh.faces[tri_idx];
+        if face.contains_point_xy(x, y)
+            && let Some(z) = face.z_at_xy(x, y)
+        {
+            min_z = Some(min_z.map_or(z, |mz: f64| mz.min(z)));
+            max_z = Some(max_z.map_or(z, |mz: f64| mz.max(z)));
+        }
+    }
+    min_z.zip(max_z)
 }
 
 #[cfg(test)]

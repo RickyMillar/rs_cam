@@ -1,7 +1,7 @@
 use super::{
-    AtomicBool, CollisionRequest, CollisionResult, ComputeError, ComputeRequest,
-    DepthDistribution, DepthStepping, DressupEntryStyle, FeedOptParams, LinkMoveParams, MoveType,
-    Polygon2, SimulationRequest, SpatialIndex, Toolpath, TriangleMesh, apply_dogbones, apply_entry,
+    AtomicBool, CollisionRequest, CollisionResult, ComputeError, ComputeRequest, DepthDistribution,
+    DepthStepping, DressupEntryStyle, FeedOptParams, LinkMoveParams, MoveType, Polygon2,
+    SimulationRequest, SpatialIndex, Toolpath, TriangleMesh, apply_dogbones, apply_entry,
     apply_lead_in_out, apply_link_moves, filter_air_cuts, fit_arcs, optimize_feed_rates,
 };
 use crate::compute::OperationError;
@@ -499,7 +499,10 @@ pub(super) fn build_simulation_cut_artifact(
         },
         "toolpaths": req.groups.iter().map(|group| {
             json!({
-                "direction": format!("{:?}", group.direction),
+                "direction": group.local_to_global.as_ref().map_or(
+                    "FromTop".to_owned(),
+                    |info| format!("{:?}", info.cut_direction()),
+                ),
                 "toolpaths": group.toolpaths.iter().map(|toolpath| {
                     json!({
                         "toolpath_id": toolpath.id.0,
