@@ -8,6 +8,7 @@ pub mod arcfit;
 pub mod boundary;
 pub mod chamfer;
 pub mod collision;
+pub mod compute;
 pub mod contour_extract;
 pub mod debug_trace;
 pub mod depth;

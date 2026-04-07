@@ -5,77 +5,18 @@ use rs_cam_core::enriched_mesh::EnrichedMesh;
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::polygon::Polygon2;
-use serde::{Deserialize, Serialize};
+// Serialize/Deserialize not directly needed in this file any more
+// (GUI-local types like Corner don't derive Serialize)
 
-/// Unique identifier for a loaded model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ModelId(pub usize);
-
-/// Unique identifier for a tool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ToolId(pub usize);
-
-/// Unique identifier for a setup (workholding / orientation context).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SetupId(pub usize);
-
-/// Unique identifier for a fixture within a setup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct FixtureId(pub usize);
-
-/// Unique identifier for a keep-out zone within a setup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct KeepOutId(pub usize);
-
-/// What kind of geometry was loaded.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ModelKind {
-    Stl,
-    Svg,
-    Dxf,
-    Step,
-}
-
-/// Assumed units of the imported STL (determines scale factor to mm).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "scale", rename_all = "snake_case")]
-pub enum ModelUnits {
-    Millimeters,
-    Inches,
-    Meters,
-    Centimeters,
-    Custom(f64),
-}
-
-impl ModelUnits {
-    pub const PRESETS: &[(ModelUnits, &'static str)] = &[
-        (ModelUnits::Millimeters, "mm (1:1)"),
-        (ModelUnits::Inches, "inches (x25.4)"),
-        (ModelUnits::Centimeters, "cm (x10)"),
-        (ModelUnits::Meters, "m (x1000)"),
-    ];
-
-    pub fn scale_factor(&self) -> f64 {
-        match self {
-            ModelUnits::Millimeters => 1.0,
-            ModelUnits::Inches => 25.4,
-            ModelUnits::Meters => 1000.0,
-            ModelUnits::Centimeters => 10.0,
-            ModelUnits::Custom(s) => *s,
-        }
-    }
-
-    pub fn label(&self) -> String {
-        match self {
-            ModelUnits::Millimeters => "mm".into(),
-            ModelUnits::Inches => "inches".into(),
-            ModelUnits::Meters => "m".into(),
-            ModelUnits::Centimeters => "cm".into(),
-            ModelUnits::Custom(s) => format!("x{s:.3}"),
-        }
-    }
-}
+// ── Re-exports from rs_cam_core::compute (Phase 1 service layer extraction) ──
+pub use rs_cam_core::compute::stock_config::{
+    AlignmentPin, FixtureId, FlipAxis, KeepOutId, ModelId, ModelKind, ModelUnits, PostConfig,
+    PostFormat, SetupId, StockConfig,
+};
+pub use rs_cam_core::compute::tool_config::{
+    BitCutDirection, ToolConfig, ToolId, ToolMaterial, ToolType,
+};
+pub use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 
 /// A loaded geometry model.
 pub struct LoadedModel {
@@ -151,488 +92,11 @@ impl LoadedModel {
     }
 }
 
-/// Tool type matching the five cutter types in rs_cam_core.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ToolType {
-    EndMill,
-    BallNose,
-    BullNose,
-    VBit,
-    TaperedBallNose,
-}
+// ToolConfig, ToolType, ToolMaterial, BitCutDirection, PostConfig, PostFormat,
+// StockConfig, AlignmentPin, FlipAxis, ModelId, ToolId, SetupId, FixtureId,
+// KeepOutId, ModelKind, ModelUnits are now re-exported from core above.
 
-impl ToolType {
-    pub const ALL: &[ToolType] = &[
-        ToolType::EndMill,
-        ToolType::BallNose,
-        ToolType::BullNose,
-        ToolType::VBit,
-        ToolType::TaperedBallNose,
-    ];
-
-    /// Whether this tool type has a ball-shaped tip (suitable for scallop, etc.).
-    pub fn has_ball_tip(&self) -> bool {
-        matches!(self, ToolType::BallNose | ToolType::TaperedBallNose)
-    }
-
-    pub fn label(&self) -> &'static str {
-        match self {
-            ToolType::EndMill => "End Mill",
-            ToolType::BallNose => "Ball Nose",
-            ToolType::BullNose => "Bull Nose",
-            ToolType::VBit => "V-Bit",
-            ToolType::TaperedBallNose => "Tapered Ball Nose",
-        }
-    }
-}
-
-/// Tool material (affects chip load and wear).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ToolMaterial {
-    Carbide,
-    Hss,
-}
-
-impl ToolMaterial {
-    pub const ALL: &[ToolMaterial] = &[ToolMaterial::Carbide, ToolMaterial::Hss];
-
-    pub fn label(&self) -> &'static str {
-        match self {
-            ToolMaterial::Carbide => "Carbide",
-            ToolMaterial::Hss => "HSS",
-        }
-    }
-}
-
-/// Cut direction (affects chip evacuation and surface quality).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BitCutDirection {
-    UpCut,
-    DownCut,
-    Compression,
-}
-
-impl BitCutDirection {
-    pub const ALL: &[BitCutDirection] = &[
-        BitCutDirection::UpCut,
-        BitCutDirection::DownCut,
-        BitCutDirection::Compression,
-    ];
-
-    pub fn label(&self) -> &'static str {
-        match self {
-            BitCutDirection::UpCut => "Up Cut",
-            BitCutDirection::DownCut => "Down Cut",
-            BitCutDirection::Compression => "Compression",
-        }
-    }
-}
-
-/// Complete tool configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolConfig {
-    pub id: ToolId,
-    pub name: String,
-    /// G-code tool number used for M6 output.
-    pub tool_number: u32,
-    pub tool_type: ToolType,
-    pub diameter: f64,
-    pub cutting_length: f64,
-    // Bull Nose
-    pub corner_radius: f64,
-    // V-Bit (included angle in degrees)
-    pub included_angle: f64,
-    // Tapered Ball Nose (half-angle in degrees)
-    pub taper_half_angle: f64,
-    pub shaft_diameter: f64,
-    // Holder / collision detection
-    pub holder_diameter: f64,
-    pub shank_diameter: f64,
-    pub shank_length: f64,
-    pub stickout: f64,
-    // Cutting parameters (for feeds calculation)
-    pub flute_count: u32,
-    pub tool_material: ToolMaterial,
-    pub cut_direction: BitCutDirection,
-    // Optional vendor info
-    pub vendor: String,
-    pub product_id: String,
-}
-
-impl ToolConfig {
-    pub fn new_default(id: ToolId, tool_type: ToolType) -> Self {
-        let (name, diameter) = match tool_type {
-            ToolType::EndMill => ("End Mill".to_owned(), 6.35),
-            ToolType::BallNose => ("Ball Nose".to_owned(), 6.35),
-            ToolType::BullNose => ("Bull Nose".to_owned(), 12.7),
-            ToolType::VBit => ("V-Bit".to_owned(), 12.7),
-            ToolType::TaperedBallNose => ("Tapered Ball Nose".to_owned(), 3.175),
-        };
-        Self {
-            id,
-            name,
-            tool_number: id.0 as u32 + 1,
-            tool_type,
-            diameter,
-            cutting_length: 25.0,
-            corner_radius: 2.0,
-            included_angle: 90.0,
-            taper_half_angle: 15.0,
-            shaft_diameter: 6.35,
-            holder_diameter: 25.0,
-            shank_diameter: 6.35,
-            shank_length: 20.0,
-            stickout: 45.0,
-            flute_count: 2,
-            tool_material: ToolMaterial::Carbide,
-            cut_direction: BitCutDirection::UpCut,
-            vendor: String::new(),
-            product_id: String::new(),
-        }
-    }
-
-    /// Short description for the project tree.
-    pub fn summary(&self) -> String {
-        match self.tool_type {
-            ToolType::EndMill | ToolType::BallNose => {
-                format!("{:.2}mm {}", self.diameter, self.tool_type.label())
-            }
-            ToolType::BullNose => {
-                format!(
-                    "{:.2}mm {} (r={:.1})",
-                    self.diameter,
-                    self.tool_type.label(),
-                    self.corner_radius
-                )
-            }
-            ToolType::VBit => {
-                format!("{:.0}deg {}", self.included_angle, self.tool_type.label())
-            }
-            ToolType::TaperedBallNose => {
-                format!(
-                    "{:.2}mm {} ({:.0}deg)",
-                    self.diameter,
-                    self.tool_type.label(),
-                    self.taper_half_angle
-                )
-            }
-        }
-    }
-}
-
-// Re-export PostFormat from core (single source of truth).
-pub use rs_cam_core::gcode::PostFormat;
-
-/// Post-processor configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PostConfig {
-    pub format: PostFormat,
-    pub spindle_speed: u32,
-    pub safe_z: f64,
-    /// Convert G0 rapids to G1 at high feedrate (for machines with unpredictable rapid behavior).
-    pub high_feedrate_mode: bool,
-    pub high_feedrate: f64,
-}
-
-impl Default for PostConfig {
-    fn default() -> Self {
-        Self {
-            format: PostFormat::Grbl,
-            spindle_speed: 18000,
-            safe_z: 10.0,
-            high_feedrate_mode: false,
-            high_feedrate: 5000.0,
-        }
-    }
-}
-
-/// Stock material configuration.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct StockConfig {
-    pub x: f64,
-    pub y: f64,
-    pub z: f64,
-    pub origin_x: f64,
-    pub origin_y: f64,
-    pub origin_z: f64,
-    pub auto_from_model: bool,
-    pub padding: f64,
-    pub material: rs_cam_core::material::Material,
-    /// Alignment pins for multi-setup registration (stock-level, persists across flips).
-    #[serde(default)]
-    pub alignment_pins: Vec<AlignmentPin>,
-    /// Flip axis for multi-setup work — constrains pin symmetry.
-    #[serde(default)]
-    pub flip_axis: Option<FlipAxis>,
-    /// Workholding rigidity for feeds calculation.
-    #[serde(default = "default_workholding_rigidity")]
-    pub workholding_rigidity: rs_cam_core::feeds::WorkholdingRigidity,
-    /// Default machining boundary inherited by new toolpaths.
-    #[serde(default)]
-    pub default_boundary: super::toolpath::BoundaryConfig,
-}
-
-fn default_workholding_rigidity() -> rs_cam_core::feeds::WorkholdingRigidity {
-    rs_cam_core::feeds::WorkholdingRigidity::Medium
-}
-
-impl Default for StockConfig {
-    fn default() -> Self {
-        Self {
-            x: 100.0,
-            y: 100.0,
-            z: 25.0,
-            origin_x: 0.0,
-            origin_y: 0.0,
-            origin_z: 0.0,
-            auto_from_model: true,
-            padding: 5.0,
-            material: rs_cam_core::material::Material::default(),
-            alignment_pins: Vec::new(),
-            flip_axis: None,
-            workholding_rigidity: rs_cam_core::feeds::WorkholdingRigidity::Medium,
-            default_boundary: super::toolpath::BoundaryConfig::default(),
-        }
-    }
-}
-
-impl StockConfig {
-    /// Update stock dimensions from model bounding box.
-    pub fn update_from_bbox(&mut self, bbox: &BoundingBox3) {
-        self.x = bbox.max.x - bbox.min.x + 2.0 * self.padding;
-        self.y = bbox.max.y - bbox.min.y + 2.0 * self.padding;
-        self.z = bbox.max.z - bbox.min.z + self.padding;
-        self.origin_x = bbox.min.x - self.padding;
-        self.origin_y = bbox.min.y - self.padding;
-        self.origin_z = bbox.min.z;
-    }
-
-    /// Get the bounding box of the stock.
-    pub fn bbox(&self) -> BoundingBox3 {
-        use rs_cam_core::geo::P3;
-        BoundingBox3 {
-            min: P3::new(self.origin_x, self.origin_y, self.origin_z),
-            max: P3::new(
-                self.origin_x + self.x,
-                self.origin_y + self.y,
-                self.origin_z + self.z,
-            ),
-        }
-    }
-}
-
-/// Which face of the stock is oriented upward in this setup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum FaceUp {
-    #[default]
-    Top,
-    Bottom,
-    Front,
-    Back,
-    Left,
-    Right,
-}
-
-impl FaceUp {
-    pub const ALL: &[FaceUp] = &[
-        FaceUp::Top,
-        FaceUp::Bottom,
-        FaceUp::Front,
-        FaceUp::Back,
-        FaceUp::Left,
-        FaceUp::Right,
-    ];
-
-    pub fn label(&self) -> &'static str {
-        match self {
-            FaceUp::Top => "Top",
-            FaceUp::Bottom => "Bottom",
-            FaceUp::Front => "Front",
-            FaceUp::Back => "Back",
-            FaceUp::Left => "Left",
-            FaceUp::Right => "Right",
-        }
-    }
-
-    /// Operator instruction for achieving this orientation from default (Top).
-    pub fn flip_instruction(&self) -> &'static str {
-        match self {
-            FaceUp::Top => "No flip needed",
-            FaceUp::Bottom => "Flip 180 deg on X axis",
-            FaceUp::Front => "Rotate 90 deg forward on X axis",
-            FaceUp::Back => "Rotate 90 deg backward on X axis",
-            FaceUp::Left => "Rotate 90 deg left on Y axis",
-            FaceUp::Right => "Rotate 90 deg right on Y axis",
-        }
-    }
-
-    pub fn to_key(&self) -> &'static str {
-        match self {
-            FaceUp::Top => "top",
-            FaceUp::Bottom => "bottom",
-            FaceUp::Front => "front",
-            FaceUp::Back => "back",
-            FaceUp::Left => "left",
-            FaceUp::Right => "right",
-        }
-    }
-
-    pub fn from_key(s: &str) -> Self {
-        match s {
-            "bottom" => FaceUp::Bottom,
-            "front" => FaceUp::Front,
-            "back" => FaceUp::Back,
-            "left" => FaceUp::Left,
-            "right" => FaceUp::Right,
-            _ => FaceUp::Top,
-        }
-    }
-
-    /// Transform a point from world coords to this orientation's local frame.
-    pub fn transform_point(
-        &self,
-        p: rs_cam_core::geo::P3,
-        stock_w: f64,
-        stock_d: f64,
-        stock_h: f64,
-    ) -> rs_cam_core::geo::P3 {
-        use rs_cam_core::geo::P3;
-        match self {
-            FaceUp::Top => p,
-            FaceUp::Bottom => P3::new(p.x, stock_d - p.y, stock_h - p.z),
-            FaceUp::Front => P3::new(p.x, stock_h - p.z, p.y),
-            FaceUp::Back => P3::new(p.x, p.z, stock_d - p.y),
-            FaceUp::Left => P3::new(stock_h - p.z, p.y, p.x),
-            FaceUp::Right => P3::new(p.z, p.y, stock_w - p.x),
-        }
-    }
-
-    /// Inverse transform: from this orientation's local frame back to world coords.
-    pub fn inverse_transform_point(
-        &self,
-        p: rs_cam_core::geo::P3,
-        stock_w: f64,
-        stock_d: f64,
-        stock_h: f64,
-    ) -> rs_cam_core::geo::P3 {
-        use rs_cam_core::geo::P3;
-        match self {
-            FaceUp::Top => p,
-            // Bottom: (x, D-y, H-z) is self-inverse
-            FaceUp::Bottom => P3::new(p.x, stock_d - p.y, stock_h - p.z),
-            // Front forward: (x, H-z, y) → inverse: (x, z, H-y)
-            FaceUp::Front => P3::new(p.x, p.z, stock_h - p.y),
-            // Back forward: (x, z, D-y) → inverse: (x, D-z, y)
-            FaceUp::Back => P3::new(p.x, stock_d - p.z, p.y),
-            // Left forward: (H-z, y, x) → inverse: (z, y, H-x)
-            FaceUp::Left => P3::new(p.z, p.y, stock_h - p.x),
-            // Right forward: (z, y, W-x) → inverse: (W-z, y, x)
-            FaceUp::Right => P3::new(stock_w - p.z, p.y, p.x),
-        }
-    }
-
-    /// Effective stock dimensions (W', D', H') after this face-up transform.
-    pub fn effective_stock(&self, w: f64, d: f64, h: f64) -> (f64, f64, f64) {
-        match self {
-            FaceUp::Top | FaceUp::Bottom => (w, d, h),
-            FaceUp::Front | FaceUp::Back => (w, h, d),
-            FaceUp::Left | FaceUp::Right => (h, d, w),
-        }
-    }
-}
-
-/// Rotation of the stock about the vertical (Z) axis.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum ZRotation {
-    #[default]
-    Deg0,
-    Deg90,
-    Deg180,
-    Deg270,
-}
-
-impl ZRotation {
-    pub const ALL: &[ZRotation] = &[
-        ZRotation::Deg0,
-        ZRotation::Deg90,
-        ZRotation::Deg180,
-        ZRotation::Deg270,
-    ];
-
-    pub fn label(&self) -> &'static str {
-        match self {
-            ZRotation::Deg0 => "0 deg",
-            ZRotation::Deg90 => "90 deg",
-            ZRotation::Deg180 => "180 deg",
-            ZRotation::Deg270 => "270 deg",
-        }
-    }
-
-    pub fn to_key(&self) -> &'static str {
-        match self {
-            ZRotation::Deg0 => "0",
-            ZRotation::Deg90 => "90",
-            ZRotation::Deg180 => "180",
-            ZRotation::Deg270 => "270",
-        }
-    }
-
-    pub fn from_key(s: &str) -> Self {
-        match s {
-            "90" => ZRotation::Deg90,
-            "180" => ZRotation::Deg180,
-            "270" => ZRotation::Deg270,
-            _ => ZRotation::Deg0,
-        }
-    }
-
-    /// Transform a point's XY coords by Z rotation in the setup frame.
-    pub fn transform_point(
-        &self,
-        p: rs_cam_core::geo::P3,
-        eff_w: f64,
-        eff_d: f64,
-    ) -> rs_cam_core::geo::P3 {
-        use rs_cam_core::geo::P3;
-        match self {
-            ZRotation::Deg0 => p,
-            ZRotation::Deg90 => P3::new(eff_d - p.y, p.x, p.z),
-            ZRotation::Deg180 => P3::new(eff_w - p.x, eff_d - p.y, p.z),
-            ZRotation::Deg270 => P3::new(p.y, eff_w - p.x, p.z),
-        }
-    }
-
-    /// Inverse transform: from rotated frame back to the pre-rotation frame.
-    pub fn inverse_transform_point(
-        &self,
-        p: rs_cam_core::geo::P3,
-        eff_w: f64,
-        eff_d: f64,
-    ) -> rs_cam_core::geo::P3 {
-        use rs_cam_core::geo::P3;
-        match self {
-            ZRotation::Deg0 => p,
-            // Forward 90: (D-y, x, z) → inverse is 270: (y, D'-x, z)
-            // where D' is the rotated D = original W
-            ZRotation::Deg90 => P3::new(p.y, eff_d - p.x, p.z),
-            // 180 is self-inverse: (W-x, D-y, z)
-            ZRotation::Deg180 => P3::new(eff_w - p.x, eff_d - p.y, p.z),
-            // Forward 270: (y, W-x, z) → inverse: (W-p.y, p.x, z)
-            ZRotation::Deg270 => P3::new(eff_w - p.y, p.x, p.z),
-        }
-    }
-
-    /// Effective stock dims after Z rotation (swaps W and D for 90/270).
-    pub fn effective_stock(&self, w: f64, d: f64, h: f64) -> (f64, f64, f64) {
-        match self {
-            ZRotation::Deg0 | ZRotation::Deg180 => (w, d, h),
-            ZRotation::Deg90 | ZRotation::Deg270 => (d, w, h),
-        }
-    }
-}
+// FaceUp and ZRotation are now re-exported from core::compute::transform above.
 
 /// Which corner of the stock to probe for XY datum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -782,40 +246,7 @@ pub struct DatumConfig {
     pub notes: String,
 }
 
-/// Which axis the stock flips about when changing setups.
-///
-/// Determines the symmetry constraint for alignment pin placement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum FlipAxis {
-    /// Flip left↔right (mirror about the X centerline, Y stays).
-    Horizontal,
-    /// Flip front↔back (mirror about the Y centerline, X stays).
-    Vertical,
-}
-
-impl FlipAxis {
-    pub fn label(&self) -> &'static str {
-        match self {
-            FlipAxis::Horizontal => "Horizontal",
-            FlipAxis::Vertical => "Vertical",
-        }
-    }
-}
-
-/// A physical alignment pin position for part registration between setups.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AlignmentPin {
-    pub x: f64,
-    pub y: f64,
-    pub diameter: f64,
-}
-
-impl AlignmentPin {
-    pub fn new(x: f64, y: f64, diameter: f64) -> Self {
-        Self { x, y, diameter }
-    }
-}
+// FlipAxis and AlignmentPin are now re-exported from core::compute::stock_config above.
 
 /// Kind of workholding fixture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -974,8 +405,6 @@ pub struct Setup {
     pub fixtures: Vec<Fixture>,
     pub keep_out_zones: Vec<KeepOutZone>,
     pub toolpaths: Vec<super::toolpath::ToolpathEntry>,
-    /// Models relevant to this setup. Empty means all models are available.
-    pub model_ids: Vec<ModelId>,
 }
 
 impl Setup {
@@ -989,19 +418,6 @@ impl Setup {
             fixtures: Vec::new(),
             keep_out_zones: Vec::new(),
             toolpaths: Vec::new(),
-            model_ids: Vec::new(),
-        }
-    }
-
-    /// Models available in this setup. Returns all models if `model_ids` is empty.
-    pub fn available_models<'a>(&self, all_models: &'a [LoadedModel]) -> Vec<&'a LoadedModel> {
-        if self.model_ids.is_empty() {
-            all_models.iter().collect()
-        } else {
-            all_models
-                .iter()
-                .filter(|m| self.model_ids.contains(&m.id))
-                .collect()
         }
     }
 
@@ -1236,67 +652,23 @@ impl JobState {
     }
 
     /// Build a [`HeightContext`] for resolving a toolpath's heights from current stock/model state.
-    ///
-    /// When the toolpath belongs to a setup with non-default orientation (FaceUp/ZRotation),
-    /// heights are computed in the setup's local coordinate frame so that "Stock Top" and
-    /// "Stock Bottom" references correspond to the physical top/bottom of the flipped stock.
     pub fn height_context_for(
         &self,
         tp: &super::toolpath::ToolpathEntry,
     ) -> super::toolpath::HeightContext {
-        // Find the setup that owns this toolpath (if any) for orientation transforms.
-        let setup = self
-            .setups
-            .iter()
-            .find(|s| s.toolpaths.iter().any(|t| t.id == tp.id));
-
-        let (stock_top_z, stock_bottom_z) = if let Some(setup) = setup {
-            let (_w, _d, h) = setup.effective_stock(&self.stock);
-            (h, 0.0)
-        } else {
-            let sb = self.stock.bbox();
-            (sb.max.z, sb.min.z)
-        };
-
+        let sb = self.stock.bbox();
         let mb = self
             .models
             .iter()
             .find(|m| m.id == tp.model_id)
             .and_then(|m| m.bbox());
-
-        // Transform model bbox into setup-local frame when a setup exists.
-        let (model_top_z, model_bottom_z) = match (mb, setup) {
-            (Some(bb), Some(setup)) => {
-                use rs_cam_core::geo::P3;
-                let mut min_z = f64::INFINITY;
-                let mut max_z = f64::NEG_INFINITY;
-                // Enumerate all 8 bbox corners and find Z range in local frame.
-                for &x in &[bb.min.x, bb.max.x] {
-                    for &y in &[bb.min.y, bb.max.y] {
-                        for &z in &[bb.min.z, bb.max.z] {
-                            let local = setup.transform_point(P3::new(x, y, z), &self.stock);
-                            if local.z < min_z {
-                                min_z = local.z;
-                            }
-                            if local.z > max_z {
-                                max_z = local.z;
-                            }
-                        }
-                    }
-                }
-                (Some(max_z), Some(min_z))
-            }
-            (Some(bb), None) => (Some(bb.max.z), Some(bb.min.z)),
-            _ => (None, None),
-        };
-
         super::toolpath::HeightContext {
             safe_z: self.post.safe_z,
             op_depth: tp.operation.default_depth_for_heights(),
-            stock_top_z,
-            stock_bottom_z,
-            model_top_z,
-            model_bottom_z,
+            stock_top_z: sb.max.z,
+            stock_bottom_z: sb.min.z,
+            model_top_z: mb.map(|b| b.max.z),
+            model_bottom_z: mb.map(|b| b.min.z),
         }
     }
 

@@ -79,33 +79,31 @@ trait SemanticToolpathOp {
     ) -> Result<Toolpath, ComputeError>;
 }
 
-impl OperationConfig {
-    fn semantic_op(&self) -> &dyn SemanticToolpathOp {
-        match self {
-            OperationConfig::Face(cfg) => cfg,
-            OperationConfig::Pocket(cfg) => cfg,
-            OperationConfig::Profile(cfg) => cfg,
-            OperationConfig::Adaptive(cfg) => cfg,
-            OperationConfig::VCarve(cfg) => cfg,
-            OperationConfig::Rest(cfg) => cfg,
-            OperationConfig::Inlay(cfg) => cfg,
-            OperationConfig::Zigzag(cfg) => cfg,
-            OperationConfig::Trace(cfg) => cfg,
-            OperationConfig::Drill(cfg) => cfg,
-            OperationConfig::Chamfer(cfg) => cfg,
-            OperationConfig::DropCutter(cfg) => cfg,
-            OperationConfig::Adaptive3d(cfg) => cfg,
-            OperationConfig::Waterline(cfg) => cfg,
-            OperationConfig::Pencil(cfg) => cfg,
-            OperationConfig::Scallop(cfg) => cfg,
-            OperationConfig::SteepShallow(cfg) => cfg,
-            OperationConfig::RampFinish(cfg) => cfg,
-            OperationConfig::SpiralFinish(cfg) => cfg,
-            OperationConfig::RadialFinish(cfg) => cfg,
-            OperationConfig::HorizontalFinish(cfg) => cfg,
-            OperationConfig::ProjectCurve(cfg) => cfg,
-            OperationConfig::AlignmentPinDrill(cfg) => cfg,
-        }
+fn semantic_op(config: &OperationConfig) -> &dyn SemanticToolpathOp {
+    match config {
+        OperationConfig::Face(cfg) => cfg,
+        OperationConfig::Pocket(cfg) => cfg,
+        OperationConfig::Profile(cfg) => cfg,
+        OperationConfig::Adaptive(cfg) => cfg,
+        OperationConfig::VCarve(cfg) => cfg,
+        OperationConfig::Rest(cfg) => cfg,
+        OperationConfig::Inlay(cfg) => cfg,
+        OperationConfig::Zigzag(cfg) => cfg,
+        OperationConfig::Trace(cfg) => cfg,
+        OperationConfig::Drill(cfg) => cfg,
+        OperationConfig::Chamfer(cfg) => cfg,
+        OperationConfig::DropCutter(cfg) => cfg,
+        OperationConfig::Adaptive3d(cfg) => cfg,
+        OperationConfig::Waterline(cfg) => cfg,
+        OperationConfig::Pencil(cfg) => cfg,
+        OperationConfig::Scallop(cfg) => cfg,
+        OperationConfig::SteepShallow(cfg) => cfg,
+        OperationConfig::RampFinish(cfg) => cfg,
+        OperationConfig::SpiralFinish(cfg) => cfg,
+        OperationConfig::RadialFinish(cfg) => cfg,
+        OperationConfig::HorizontalFinish(cfg) => cfg,
+        OperationConfig::ProjectCurve(cfg) => cfg,
+        OperationConfig::AlignmentPinDrill(cfg) => cfg,
     }
 }
 
@@ -406,10 +404,7 @@ fn run_compute_with_phase_tracker(
                 debug_root: core_ctx.as_ref(),
                 semantic_root: semantic_root.as_ref(),
             };
-            let tp = req
-                .operation
-                .semantic_op()
-                .generate_with_tracing(&exec_ctx)?;
+            let tp = semantic_op(&req.operation).generate_with_tracing(&exec_ctx)?;
             if let Some(scope) = core_scope.as_ref()
                 && !tp.moves.is_empty()
             {
@@ -1522,7 +1517,7 @@ mod tests {
     fn semantic_dispatch_covers_all_operation_types() {
         for &op_type in crate::state::toolpath::OperationType::ALL {
             let config = OperationConfig::new_default(op_type);
-            let _ = config.semantic_op();
+            let _ = semantic_op(&config);
         }
     }
 
