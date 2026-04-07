@@ -3,7 +3,6 @@
 
 mod helpers;
 mod job;
-#[allow(dead_code)] // Serde structs parse more fields than are actively used
 mod project;
 mod sweep;
 

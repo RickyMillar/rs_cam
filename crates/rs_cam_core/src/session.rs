@@ -726,6 +726,21 @@ impl ProjectSession {
         self.setups.len()
     }
 
+    /// Access all setups (for setup filtering, etc.).
+    pub fn list_setups(&self) -> &[SetupData] {
+        &self.setups
+    }
+
+    /// Get a toolpath config by index.
+    pub fn get_toolpath_config(&self, index: usize) -> Option<&ToolpathConfig> {
+        self.toolpath_configs.get(index)
+    }
+
+    /// Post-processor configuration.
+    pub fn post_config(&self) -> &ProjectPostConfig {
+        &self.post
+    }
+
     // ── Compute ────────────────────────────────────────────────────
 
     /// Generate a single toolpath by index.
