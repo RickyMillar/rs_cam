@@ -17,6 +17,46 @@ use crate::stock_mesh::StockMesh;
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
 
+/// Transform a toolpath from setup-local frame to global stock frame.
+///
+/// For non-identity directions (e.g. `FromBottom`), the toolpath's depth
+/// axis is inverted: `depth_global = stock_extent - depth_local`.  The
+/// grid-plane coordinates (u, v) stay the same because the grid covers
+/// the same XY/XZ/YZ range regardless of approach side.
+fn transform_toolpath_for_direction(
+    toolpath: &Toolpath,
+    direction: StockCutDirection,
+    stock_bbox: &BoundingBox3,
+) -> Toolpath {
+    if direction.cuts_from_high_side() {
+        // FromTop / FromBack / FromRight — no inversion needed, local = global.
+        return toolpath.clone();
+    }
+    let extent = direction.depth_extent(stock_bbox);
+    let mut tp = Toolpath::new();
+    tp.moves = toolpath
+        .moves
+        .iter()
+        .map(|m| {
+            let mut moved = m.clone();
+            // Invert the depth axis of the target position.
+            match direction {
+                StockCutDirection::FromBottom | StockCutDirection::FromTop => {
+                    moved.target.z = extent - m.target.z;
+                }
+                StockCutDirection::FromFront | StockCutDirection::FromBack => {
+                    moved.target.y = extent - m.target.y;
+                }
+                StockCutDirection::FromLeft | StockCutDirection::FromRight => {
+                    moved.target.x = extent - m.target.x;
+                }
+            }
+            moved
+        })
+        .collect();
+    tp
+}
+
 /// A single toolpath prepared for simulation.
 pub struct SimToolpathEntry {
     /// Opaque identifier echoed back in boundaries.
@@ -144,10 +184,18 @@ pub fn run_simulation(
             let radius = entry.tool.radius();
             let start_move = total_moves;
 
+            // Transform toolpath from setup-local frame to global stock frame.
+            // For FromTop this is a no-op clone; for FromBottom it inverts Z.
+            let sim_tp = transform_toolpath_for_direction(
+                &entry.toolpath,
+                group.direction,
+                &request.stock_bbox,
+            );
+
             if request.metric_options.enabled {
                 let mut samples = stock
                     .simulate_toolpath_with_lut_metrics_cancel(
-                        &entry.toolpath,
+                        &sim_tp,
                         &lut,
                         radius,
                         group.direction,
@@ -164,7 +212,7 @@ pub fn run_simulation(
             } else {
                 stock
                     .simulate_toolpath_with_lut_cancel(
-                        &entry.toolpath,
+                        &sim_tp,
                         &lut,
                         radius,
                         group.direction,

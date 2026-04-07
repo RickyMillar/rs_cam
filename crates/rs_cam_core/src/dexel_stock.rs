@@ -66,6 +66,15 @@ impl StockCutDirection {
             DexelAxis::X => (y, z, x), // X-grid: u=Y, v=Z, depth=X
         }
     }
+
+    /// Return the stock extent along this direction's depth axis.
+    pub fn depth_extent(self, bbox: &BoundingBox3) -> f64 {
+        match self.grid_axis() {
+            DexelAxis::Z => bbox.max.z - bbox.min.z,
+            DexelAxis::Y => bbox.max.y - bbox.min.y,
+            DexelAxis::X => bbox.max.x - bbox.min.x,
+        }
+    }
 }
 
 // ── TriDexelStock ───────────────────────────────────────────────────────
