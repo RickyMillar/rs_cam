@@ -48,7 +48,7 @@ pub use stock_config::{
     PostFormat, SetupId, StockConfig,
 };
 
-pub use transform::{FaceUp, ZRotation};
+pub use transform::{FaceUp, SetupTransformInfo, ZRotation};
 
 // ── Phase 2: Execution helper re-exports ──
 

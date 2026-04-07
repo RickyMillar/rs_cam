@@ -183,3 +183,114 @@ impl ZRotation {
         }
     }
 }
+
+// ── SetupTransformInfo ────────────────────────────────────────────────
+
+use crate::dexel_stock::StockCutDirection;
+use crate::toolpath::{Move, MoveType, Toolpath};
+
+/// Information needed to transform a setup's local coordinates to the global
+/// stock frame (inverse of the setup transform).
+#[derive(Clone)]
+pub struct SetupTransformInfo {
+    pub face_up: FaceUp,
+    pub z_rotation: ZRotation,
+    pub stock_x: f64,
+    pub stock_y: f64,
+    pub stock_z: f64,
+}
+
+impl SetupTransformInfo {
+    /// Transform a point from setup-local coordinates to global stock coordinates.
+    pub fn local_to_global(&self, p: P3) -> P3 {
+        let (eff_w, eff_d, _) =
+            self.face_up
+                .effective_stock(self.stock_x, self.stock_y, self.stock_z);
+        let unrotated = self.z_rotation.inverse_transform_point(p, eff_w, eff_d);
+        self.face_up
+            .inverse_transform_point(unrotated, self.stock_x, self.stock_y, self.stock_z)
+    }
+
+    /// Derive the stock cut direction for this setup (used by playback).
+    pub fn cut_direction(&self) -> StockCutDirection {
+        match self.face_up {
+            FaceUp::Top => StockCutDirection::FromTop,
+            FaceUp::Bottom => StockCutDirection::FromBottom,
+            FaceUp::Front => StockCutDirection::FromFront,
+            FaceUp::Back => StockCutDirection::FromBack,
+            FaceUp::Left => StockCutDirection::FromLeft,
+            FaceUp::Right => StockCutDirection::FromRight,
+        }
+    }
+
+    /// Whether this setup requires a transform (non-identity orientation).
+    pub fn needs_transform(&self) -> bool {
+        self.face_up != FaceUp::Top || self.z_rotation != ZRotation::Deg0
+    }
+
+    /// Transform a toolpath from setup-local to global stock frame.
+    /// Used for playback data (which needs global-frame toolpaths).
+    pub fn transform_toolpath(&self, toolpath: &Toolpath) -> Toolpath {
+        let xform = |p: P3| -> P3 { self.local_to_global(p) };
+
+        // Direction transform for arc offsets (linear part only).
+        let o_g = xform(P3::new(0.0, 0.0, 0.0));
+        let dir_xform = |di: f64, dj: f64| -> (f64, f64) {
+            let p_g = xform(P3::new(di, dj, 0.0));
+            (p_g.x - o_g.x, p_g.y - o_g.y)
+        };
+
+        // Detect reflection (negative determinant -> flip arc direction).
+        let ex_g = xform(P3::new(1.0, 0.0, 0.0));
+        let ey_g = xform(P3::new(0.0, 1.0, 0.0));
+        let det = (ex_g.x - o_g.x) * (ey_g.y - o_g.y) - (ex_g.y - o_g.y) * (ey_g.x - o_g.x);
+        let flip_arcs = det < 0.0;
+
+        let new_moves: Vec<Move> = toolpath
+            .moves
+            .iter()
+            .map(|m| {
+                let target = xform(m.target);
+                let move_type = match m.move_type {
+                    MoveType::Rapid => MoveType::Rapid,
+                    MoveType::Linear { feed_rate } => MoveType::Linear { feed_rate },
+                    MoveType::ArcCW { i, j, feed_rate } => {
+                        let (ni, nj) = dir_xform(i, j);
+                        if flip_arcs {
+                            MoveType::ArcCCW {
+                                i: ni,
+                                j: nj,
+                                feed_rate,
+                            }
+                        } else {
+                            MoveType::ArcCW {
+                                i: ni,
+                                j: nj,
+                                feed_rate,
+                            }
+                        }
+                    }
+                    MoveType::ArcCCW { i, j, feed_rate } => {
+                        let (ni, nj) = dir_xform(i, j);
+                        if flip_arcs {
+                            MoveType::ArcCW {
+                                i: ni,
+                                j: nj,
+                                feed_rate,
+                            }
+                        } else {
+                            MoveType::ArcCCW {
+                                i: ni,
+                                j: nj,
+                                feed_rate,
+                            }
+                        }
+                    }
+                };
+                Move { target, move_type }
+            })
+            .collect();
+
+        Toolpath { moves: new_moves }
+    }
+}
