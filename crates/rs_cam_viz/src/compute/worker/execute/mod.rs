@@ -2,12 +2,12 @@ mod operations_2d;
 mod operations_3d;
 
 use super::helpers::{
-    apply_dressups, build_cutter, build_simulation_cut_artifact, build_trace_artifact,
-    compute_stats, debug_artifact_dir, effective_safe_z, require_mesh, require_polygons,
-    simulation_metric_artifact_dir,
+    apply_dressups, build_simulation_cut_artifact, build_trace_artifact, debug_artifact_dir,
+    effective_safe_z, require_mesh, require_polygons, simulation_metric_artifact_dir,
 };
-use super::semantic::{
-    CutRun, append_toolpath, bind_scope_to_run, contour_toolpath, cutting_runs, line_toolpath,
+use rs_cam_core::compute::{
+    CutRun, append_toolpath, bind_scope_to_run, build_cutter, compute_stats, contour_toolpath,
+    cutting_runs, line_toolpath,
 };
 use super::{
     Adaptive3dConfig, Adaptive3dEntryStyle, Adaptive3dParams, AdaptiveConfig, AdaptiveParams,

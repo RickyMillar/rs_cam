@@ -1,6 +1,5 @@
 mod execute;
 pub mod helpers;
-mod semantic;
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -49,10 +48,7 @@ use rs_cam_core::scallop::ScallopParams;
 use rs_cam_core::spiral_finish::SpiralFinishParams;
 use rs_cam_core::steep_shallow::{SteepShallowParams, steep_shallow_toolpath};
 use rs_cam_core::stock_mesh::StockMesh;
-use rs_cam_core::tool::{
-    BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, ToolDefinition,
-    VBitEndmill,
-};
+use rs_cam_core::tool::ToolDefinition;
 use rs_cam_core::toolpath::{MoveType, Toolpath, raster_toolpath_from_grid};
 use rs_cam_core::trace::TraceParams;
 use rs_cam_core::vcarve::{VCarveParams, vcarve_toolpath};
@@ -67,7 +63,7 @@ use crate::state::toolpath::{
     FaceDirection, HorizontalFinishConfig, InlayConfig, OperationConfig, PencilConfig,
     PocketConfig, PocketPattern, ProfileConfig, ProjectCurveConfig, RadialFinishConfig,
     RampFinishConfig, RestConfig, ScallopConfig, SpiralFinishConfig, SteepShallowConfig,
-    StockSource, ToolpathId, ToolpathResult, ToolpathStats, TraceConfig, VCarveConfig,
+    StockSource, ToolpathId, ToolpathResult, TraceConfig, VCarveConfig,
     WaterlineConfig, ZigzagConfig,
 };
 

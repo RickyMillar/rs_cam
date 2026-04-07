@@ -1,10 +1,8 @@
 use super::{
-    AtomicBool, BallEndmill, BullNoseEndmill, CollisionRequest, CollisionResult, ComputeError,
-    ComputeRequest, DepthDistribution, DepthStepping, DressupEntryStyle, FeedOptParams,
-    FlatEndmill, LinkMoveParams, MillingCutter, MoveType, Polygon2, SimulationRequest,
-    SpatialIndex, TaperedBallEndmill, ToolConfig, ToolDefinition, ToolType, Toolpath,
-    ToolpathStats, TriangleMesh, VBitEndmill, apply_dogbones, apply_entry, apply_lead_in_out,
-    apply_link_moves, filter_air_cuts, fit_arcs, optimize_feed_rates,
+    AtomicBool, CollisionRequest, CollisionResult, ComputeError, ComputeRequest,
+    DepthDistribution, DepthStepping, DressupEntryStyle, FeedOptParams, LinkMoveParams, MoveType,
+    Polygon2, SimulationRequest, SpatialIndex, Toolpath, TriangleMesh, apply_dogbones, apply_entry,
+    apply_lead_in_out, apply_link_moves, filter_air_cuts, fit_arcs, optimize_feed_rates,
 };
 use crate::compute::OperationError;
 use serde_json::json;
@@ -12,36 +10,8 @@ use std::path::PathBuf;
 
 use rs_cam_core::dexel_stock::TriDexelStock;
 
-pub fn build_cutter(tool: &ToolConfig) -> ToolDefinition {
-    let cutter: Box<dyn MillingCutter> = match tool.tool_type {
-        ToolType::EndMill => Box::new(FlatEndmill::new(tool.diameter, tool.cutting_length)),
-        ToolType::BallNose => Box::new(BallEndmill::new(tool.diameter, tool.cutting_length)),
-        ToolType::BullNose => Box::new(BullNoseEndmill::new(
-            tool.diameter,
-            tool.corner_radius,
-            tool.cutting_length,
-        )),
-        ToolType::VBit => Box::new(VBitEndmill::new(
-            tool.diameter,
-            tool.included_angle,
-            tool.cutting_length,
-        )),
-        ToolType::TaperedBallNose => Box::new(TaperedBallEndmill::new(
-            tool.diameter,
-            tool.taper_half_angle,
-            tool.shaft_diameter,
-            tool.cutting_length,
-        )),
-    };
-    ToolDefinition::new(
-        cutter,
-        tool.shank_diameter,
-        tool.shank_length,
-        tool.holder_diameter,
-        tool.stickout,
-        tool.flute_count,
-    )
-}
+// Re-export from core so existing callers (`simulation.rs`, `properties/`) keep working.
+pub use rs_cam_core::compute::build_cutter;
 
 pub(super) fn effective_safe_z(req: &ComputeRequest) -> f64 {
     req.heights.retract_z
@@ -433,28 +403,6 @@ where
         report: core_result.collision_report,
         positions: core_result.collision_positions,
     })
-}
-
-// SAFETY: loop from 1..len, indexing [i] and [i-1] always in bounds
-#[allow(clippy::indexing_slicing)]
-pub(super) fn compute_stats(tp: &Toolpath) -> ToolpathStats {
-    let mut cutting = 0.0;
-    let mut rapid = 0.0;
-    for i in 1..tp.moves.len() {
-        let from = tp.moves[i - 1].target;
-        let to = tp.moves[i].target;
-        let distance =
-            ((to.x - from.x).powi(2) + (to.y - from.y).powi(2) + (to.z - from.z).powi(2)).sqrt();
-        match tp.moves[i].move_type {
-            MoveType::Rapid => rapid += distance,
-            _ => cutting += distance,
-        }
-    }
-    ToolpathStats {
-        move_count: tp.moves.len(),
-        cutting_distance: cutting,
-        rapid_distance: rapid,
-    }
 }
 
 // SAFETY: CARGO_MANIFEST_DIR always has two parent directories in a workspace layout
