@@ -108,10 +108,9 @@ impl<B: ComputeBackend> AppController<B> {
         mut stop_after_setup: impl FnMut(usize) -> bool,
     ) -> Option<(Vec<SetupSimGroup>, Vec<SetupSimToolpath>, BoundingBox3)> {
         let stock = &self.state.job.stock;
-        let stock_bbox = BoundingBox3 {
-            min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
-            max: rs_cam_core::geo::P3::new(stock.x, stock.y, stock.z),
-        };
+        // Use the full stock bbox (includes origin offsets) so simulation
+        // coordinates match the frame toolpaths were generated in.
+        let stock_bbox = stock.bbox();
 
         let mut groups: Vec<SetupSimGroup> = Vec::new();
         let mut all_toolpaths_flat = Vec::new();
