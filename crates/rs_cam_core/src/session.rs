@@ -24,7 +24,7 @@ use crate::compute::collision_check::{
     CollisionCheckError, CollisionCheckRequest, CollisionCheckResult, run_collision_check,
 };
 use crate::compute::config::{
-    DressupConfig, DressupEntryStyle, HeightContext, HeightsConfig, ResolvedHeights, ToolpathStats,
+    DressupConfig, HeightContext, HeightsConfig, ToolpathStats,
 };
 use crate::compute::cutter::build_cutter;
 use crate::compute::simulate::{
@@ -813,8 +813,8 @@ impl ProjectSession {
         let core_scope = debug_root.start_span("core_generate", tc.operation.label());
         let core_ctx = core_scope.context();
 
-        // Execute the operation
-        let tp_result = execute_operation(
+        // Execute the operation via the shared compute::execute module
+        let tp_result = crate::compute::execute::execute_operation(
             &tc.operation,
             mesh.as_deref(),
             spatial_index.as_ref(),
@@ -822,7 +822,9 @@ impl ProjectSession {
             &tool_def,
             &tool,
             &heights,
+            &[],  // no pre-computed cutting levels; DepthStepping used internally
             &effective_stock_bbox,
+            None, // no prev_tool_radius for session path
             Some(&core_ctx),
             cancel,
         );
@@ -835,7 +837,12 @@ impl ProjectSession {
                 drop(core_scope);
 
                 // Apply dressups
-                toolpath = apply_dressups(toolpath, &tc.dressups, tool.diameter, heights.retract_z);
+                toolpath = crate::compute::execute::apply_dressups(
+                    toolpath,
+                    &tc.dressups,
+                    tool.diameter,
+                    heights.retract_z,
+                );
 
                 let stats = ToolpathStats {
                     move_count: toolpath.moves.len(),
@@ -864,7 +871,7 @@ impl ProjectSession {
                 drop(core_scope);
                 let _ = debug_recorder.finish();
                 let _ = semantic_recorder.finish();
-                Err(SessionError::OperationFailed(e))
+                Err(SessionError::OperationFailed(e.to_string()))
             }
         }
     }
@@ -1321,486 +1328,6 @@ fn load_model_geometry(
                     detail: "STEP support not enabled (compile with --features step)".to_owned(),
                 })
             }
-        }
-    }
-}
-
-/// Apply dressup pipeline to a toolpath.
-fn apply_dressups(
-    mut tp: Toolpath,
-    cfg: &DressupConfig,
-    tool_diameter: f64,
-    safe_z: f64,
-) -> Toolpath {
-    use crate::dressup::{
-        EntryStyle, LinkMoveParams, apply_dogbones, apply_entry, apply_lead_in_out,
-        apply_link_moves,
-    };
-
-    let tool_radius = tool_diameter / 2.0;
-
-    // Determine plunge rate from toolpath
-    let plunge_rate = tp
-        .moves
-        .iter()
-        .find_map(|m| match m.move_type {
-            crate::toolpath::MoveType::Linear { feed_rate } => Some(feed_rate * 0.5),
-            _ => None,
-        })
-        .unwrap_or(500.0);
-
-    // 1. Entry style
-    match cfg.entry_style {
-        DressupEntryStyle::Ramp => {
-            tp = apply_entry(
-                tp,
-                EntryStyle::Ramp {
-                    max_angle_deg: cfg.ramp_angle,
-                },
-                plunge_rate,
-            );
-        }
-        DressupEntryStyle::Helix => {
-            tp = apply_entry(
-                tp,
-                EntryStyle::Helix {
-                    radius: cfg.helix_radius,
-                    pitch: cfg.helix_pitch,
-                },
-                plunge_rate,
-            );
-        }
-        DressupEntryStyle::None => {}
-    }
-
-    // 2. Dogbones
-    if cfg.dogbone {
-        tp = apply_dogbones(tp, tool_radius, cfg.dogbone_angle);
-    }
-
-    // 3. Lead in/out
-    if cfg.lead_in_out {
-        tp = apply_lead_in_out(tp, cfg.lead_radius);
-    }
-
-    // 4. Link moves
-    if cfg.link_moves {
-        tp = apply_link_moves(
-            tp,
-            &LinkMoveParams {
-                max_link_distance: cfg.link_max_distance,
-                link_feed_rate: cfg.link_feed_rate,
-                safe_z_threshold: safe_z * 0.9,
-            },
-        );
-    }
-
-    // 5. Arc fitting
-    if cfg.arc_fitting {
-        tp = crate::arcfit::fit_arcs(&tp, cfg.arc_tolerance);
-    }
-
-    // 6. Rapid order optimization
-    if cfg.optimize_rapid_order {
-        tp = crate::tsp::optimize_rapid_order(&tp, safe_z);
-    }
-
-    tp
-}
-
-/// Execute a single operation, producing a raw toolpath.
-///
-/// Dispatches to the correct core algorithm based on the `OperationConfig`
-/// variant. Each branch builds the operation-specific params struct with
-/// feed rate, safe_z, depth, etc. baked in, matching the core API signatures.
-///
-/// Operations not yet wired through the session return a descriptive error.
-/// They will be connected in Phase 5 (CLI rewire).
-#[allow(clippy::too_many_arguments)]
-fn execute_operation(
-    op: &OperationConfig,
-    mesh: Option<&TriangleMesh>,
-    index: Option<&crate::mesh::SpatialIndex>,
-    polygons: Option<&[Polygon2]>,
-    tool_def: &crate::tool::ToolDefinition,
-    _tool_cfg: &ToolConfig,
-    heights: &ResolvedHeights,
-    stock_bbox: &BoundingBox3,
-    debug_ctx: Option<&crate::debug_trace::ToolpathDebugContext>,
-    cancel: &AtomicBool,
-) -> Result<Toolpath, String> {
-    use crate::tool::MillingCutter;
-
-    let tool_radius = tool_def.radius();
-    let safe_z = heights.retract_z;
-    let feed_rate = op.feed_rate();
-    let plunge_rate = op.plunge_rate();
-
-    match op {
-        OperationConfig::Face(cfg) => {
-            let params = crate::face::FaceParams {
-                tool_radius,
-                stepover: cfg.stepover,
-                depth: cfg.depth,
-                depth_per_pass: cfg.depth_per_pass,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-                stock_offset: cfg.stock_offset,
-                direction: cfg.direction,
-            };
-            Ok(crate::face::face_toolpath(stock_bbox, &params))
-        }
-        OperationConfig::Pocket(cfg) => {
-            let polys = polygons.ok_or("Pocket requires 2D geometry")?;
-            let stepping = crate::depth::DepthStepping::new(
-                heights.top_z,
-                heights.top_z - heights.depth(),
-                cfg.depth_per_pass,
-            );
-            let mut combined = Toolpath::new();
-            for poly in polys {
-                let tp = crate::depth::depth_stepped_toolpath(&stepping, safe_z, |z| {
-                    crate::pocket::pocket_toolpath(
-                        poly,
-                        &crate::pocket::PocketParams {
-                            tool_radius,
-                            stepover: cfg.stepover,
-                            cut_depth: z,
-                            feed_rate,
-                            plunge_rate,
-                            safe_z,
-                            climb: cfg.climb,
-                        },
-                    )
-                });
-                combined.moves.extend(tp.moves);
-            }
-            Ok(combined)
-        }
-        OperationConfig::Profile(cfg) => {
-            let polys = polygons.ok_or("Profile requires 2D geometry")?;
-            let stepping = crate::depth::DepthStepping::new(
-                heights.top_z,
-                heights.top_z - heights.depth(),
-                cfg.depth_per_pass,
-            );
-            let mut combined = Toolpath::new();
-            for poly in polys {
-                let tp = crate::depth::depth_stepped_toolpath(&stepping, safe_z, |z| {
-                    crate::profile::profile_toolpath(
-                        poly,
-                        &crate::profile::ProfileParams {
-                            tool_radius,
-                            side: cfg.side,
-                            cut_depth: z,
-                            feed_rate,
-                            plunge_rate,
-                            safe_z,
-                            climb: cfg.climb,
-                        },
-                    )
-                });
-                combined.moves.extend(tp.moves);
-            }
-            Ok(combined)
-        }
-        OperationConfig::Adaptive(cfg) => {
-            let polys = polygons.ok_or("Adaptive requires 2D geometry")?;
-            let stepping = crate::depth::DepthStepping::new(
-                heights.top_z,
-                heights.top_z - heights.depth(),
-                cfg.depth_per_pass,
-            );
-            let mut combined = Toolpath::new();
-            for poly in polys {
-                let tp = crate::depth::depth_stepped_toolpath(&stepping, safe_z, |z| {
-                    crate::adaptive::adaptive_toolpath(
-                        poly,
-                        &crate::adaptive::AdaptiveParams {
-                            tool_radius,
-                            stepover: cfg.stepover,
-                            cut_depth: z,
-                            feed_rate,
-                            plunge_rate,
-                            safe_z,
-                            tolerance: cfg.tolerance,
-                            slot_clearing: cfg.slot_clearing,
-                            min_cutting_radius: cfg.min_cutting_radius,
-                            initial_stock: None,
-                        },
-                    )
-                });
-                combined.moves.extend(tp.moves);
-            }
-            Ok(combined)
-        }
-        OperationConfig::Zigzag(cfg) => {
-            let polys = polygons.ok_or("Zigzag requires 2D geometry")?;
-            let stepping = crate::depth::DepthStepping::new(
-                heights.top_z,
-                heights.top_z - heights.depth(),
-                cfg.depth_per_pass,
-            );
-            let mut combined = Toolpath::new();
-            for poly in polys {
-                let tp = crate::depth::depth_stepped_toolpath(&stepping, safe_z, |z| {
-                    crate::zigzag::zigzag_toolpath(
-                        poly,
-                        &crate::zigzag::ZigzagParams {
-                            tool_radius,
-                            stepover: cfg.stepover,
-                            cut_depth: z,
-                            feed_rate,
-                            plunge_rate,
-                            safe_z,
-                            angle: cfg.angle,
-                        },
-                    )
-                });
-                combined.moves.extend(tp.moves);
-            }
-            Ok(combined)
-        }
-        OperationConfig::Trace(cfg) => {
-            let polys = polygons.ok_or("Trace requires 2D geometry")?;
-            let mut combined = Toolpath::new();
-            for poly in polys {
-                let tp = crate::trace::trace_toolpath(
-                    poly,
-                    &crate::trace::TraceParams {
-                        tool_radius,
-                        depth: heights.depth(),
-                        depth_per_pass: cfg.depth_per_pass,
-                        feed_rate,
-                        plunge_rate,
-                        safe_z,
-                        compensation: cfg.compensation,
-                        top_z: heights.top_z,
-                    },
-                );
-                combined.moves.extend(tp.moves);
-            }
-            Ok(combined)
-        }
-        OperationConfig::DropCutter(cfg) => {
-            let m = mesh.ok_or("DropCutter requires a 3D mesh")?;
-            let idx = index.ok_or("DropCutter requires a spatial index")?;
-            let grid = crate::dropcutter::batch_drop_cutter_with_cancel(
-                m,
-                idx,
-                tool_def,
-                cfg.stepover,
-                0.0, // direction_deg
-                cfg.min_z,
-                &(|| cancel.load(std::sync::atomic::Ordering::SeqCst)),
-            )
-            .map_err(|e| format!("DropCutter cancelled: {e}"))?;
-            Ok(crate::toolpath::raster_toolpath_from_grid(
-                &grid,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-            ))
-        }
-        OperationConfig::Adaptive3d(cfg) => {
-            let m = mesh.ok_or("Adaptive3D requires a 3D mesh")?;
-            let idx = index.ok_or("Adaptive3D requires a spatial index")?;
-            let params = crate::adaptive3d::Adaptive3dParams {
-                tool_radius,
-                stepover: cfg.stepover,
-                depth_per_pass: cfg.depth_per_pass,
-                stock_to_leave: cfg.stock_to_leave_radial,
-                feed_rate,
-                plunge_rate,
-                tolerance: cfg.tolerance,
-                min_cutting_radius: 0.0,
-                stock_top_z: stock_bbox.max.z,
-                entry_style: crate::adaptive3d::EntryStyle3d::Ramp { max_angle_deg: 3.0 },
-                fine_stepdown: None,
-                detect_flat_areas: false,
-                max_stay_down_dist: None,
-                region_ordering: crate::adaptive3d::RegionOrdering::Global,
-                initial_stock: None,
-                safe_z,
-                clearing_strategy: crate::adaptive3d::ClearingStrategy3d::ContourParallel,
-                z_blend: false,
-            };
-            let (tp, _annotations) =
-                crate::adaptive3d::adaptive_3d_toolpath_annotated_traced_with_cancel(
-                    m,
-                    idx,
-                    tool_def,
-                    &params,
-                    &(|| cancel.load(std::sync::atomic::Ordering::SeqCst)),
-                    debug_ctx,
-                )
-                .map_err(|e| format!("Adaptive3D cancelled: {e}"))?;
-            Ok(tp)
-        }
-        OperationConfig::Waterline(cfg) => {
-            let m = mesh.ok_or("Waterline requires a 3D mesh")?;
-            let idx = index.ok_or("Waterline requires a spatial index")?;
-            let params = crate::waterline::WaterlineParams {
-                sampling: cfg.sampling,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-            };
-            let tp = crate::waterline::waterline_toolpath_with_cancel(
-                m,
-                idx,
-                tool_def,
-                m.bbox.max.z,
-                m.bbox.min.z,
-                cfg.z_step,
-                &params,
-                &(|| cancel.load(std::sync::atomic::Ordering::SeqCst)),
-            )
-            .map_err(|e| format!("Waterline cancelled: {e}"))?;
-            Ok(tp)
-        }
-        OperationConfig::Pencil(cfg) => {
-            let m = mesh.ok_or("Pencil requires a 3D mesh")?;
-            let idx = index.ok_or("Pencil requires a spatial index")?;
-            let params = crate::pencil::PencilParams {
-                bitangency_angle: cfg.bitangency_angle,
-                min_cut_length: cfg.min_cut_length,
-                hookup_distance: cfg.hookup_distance,
-                num_offset_passes: cfg.num_offset_passes,
-                offset_stepover: cfg.offset_stepover,
-                sampling: cfg.sampling,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-                stock_to_leave: cfg.stock_to_leave,
-            };
-            Ok(crate::pencil::pencil_toolpath(m, idx, tool_def, &params))
-        }
-        OperationConfig::Scallop(cfg) => {
-            let m = mesh.ok_or("Scallop requires a 3D mesh")?;
-            let idx = index.ok_or("Scallop requires a spatial index")?;
-            let params = crate::scallop::ScallopParams {
-                scallop_height: cfg.scallop_height,
-                tolerance: cfg.tolerance,
-                direction: cfg.direction,
-                continuous: cfg.continuous,
-                slope_from: cfg.slope_from,
-                slope_to: cfg.slope_to,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-                stock_to_leave: cfg.stock_to_leave,
-            };
-            Ok(crate::scallop::scallop_toolpath(m, idx, tool_def, &params))
-        }
-        OperationConfig::SteepShallow(cfg) => {
-            let m = mesh.ok_or("SteepShallow requires a 3D mesh")?;
-            let idx = index.ok_or("SteepShallow requires a spatial index")?;
-            let params = crate::steep_shallow::SteepShallowParams {
-                threshold_angle: cfg.threshold_angle,
-                overlap_distance: cfg.overlap_distance,
-                wall_clearance: cfg.wall_clearance,
-                steep_first: cfg.steep_first,
-                stepover: cfg.stepover,
-                z_step: cfg.z_step,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-                sampling: cfg.sampling,
-                stock_to_leave: cfg.stock_to_leave,
-                tolerance: cfg.tolerance,
-            };
-            Ok(crate::steep_shallow::steep_shallow_toolpath(
-                m, idx, tool_def, &params,
-            ))
-        }
-        OperationConfig::RampFinish(cfg) => {
-            let m = mesh.ok_or("RampFinish requires a 3D mesh")?;
-            let idx = index.ok_or("RampFinish requires a spatial index")?;
-            let params = crate::ramp_finish::RampFinishParams {
-                max_stepdown: cfg.max_stepdown,
-                slope_from: cfg.slope_from,
-                slope_to: cfg.slope_to,
-                direction: cfg.direction,
-                order_bottom_up: cfg.order_bottom_up,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-                sampling: cfg.sampling,
-                stock_to_leave: cfg.stock_to_leave,
-                tolerance: cfg.tolerance,
-            };
-            Ok(crate::ramp_finish::ramp_finish_toolpath(
-                m, idx, tool_def, &params,
-            ))
-        }
-        OperationConfig::SpiralFinish(cfg) => {
-            let m = mesh.ok_or("SpiralFinish requires a 3D mesh")?;
-            let idx = index.ok_or("SpiralFinish requires a spatial index")?;
-            let params = crate::spiral_finish::SpiralFinishParams {
-                stepover: cfg.stepover,
-                direction: cfg.direction,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-                stock_to_leave: cfg.stock_to_leave,
-            };
-            Ok(crate::spiral_finish::spiral_finish_toolpath(
-                m, idx, tool_def, &params,
-            ))
-        }
-        OperationConfig::RadialFinish(cfg) => {
-            let m = mesh.ok_or("RadialFinish requires a 3D mesh")?;
-            let idx = index.ok_or("RadialFinish requires a spatial index")?;
-            let params = crate::radial_finish::RadialFinishParams {
-                angular_step: cfg.angular_step,
-                point_spacing: cfg.point_spacing,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-                stock_to_leave: cfg.stock_to_leave,
-            };
-            Ok(crate::radial_finish::radial_finish_toolpath(
-                m, idx, tool_def, &params,
-            ))
-        }
-        OperationConfig::HorizontalFinish(cfg) => {
-            let m = mesh.ok_or("HorizontalFinish requires a 3D mesh")?;
-            let idx = index.ok_or("HorizontalFinish requires a spatial index")?;
-            let params = crate::horizontal_finish::HorizontalFinishParams {
-                angle_threshold: cfg.angle_threshold,
-                stepover: cfg.stepover,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-                stock_to_leave: cfg.stock_to_leave,
-            };
-            Ok(crate::horizontal_finish::horizontal_finish_toolpath(
-                m, idx, tool_def, &params,
-            ))
-        }
-        // Operations requiring special handling — wired in Phase 5
-        OperationConfig::VCarve(_) => {
-            Err("V-Carve not yet wired through ProjectSession (Phase 5)".to_owned())
-        }
-        OperationConfig::Rest(_) => {
-            Err("Rest not yet wired through ProjectSession (Phase 5)".to_owned())
-        }
-        OperationConfig::Inlay(_) => {
-            Err("Inlay not yet wired through ProjectSession (Phase 5)".to_owned())
-        }
-        OperationConfig::Drill(_) => {
-            Err("Drill not yet wired through ProjectSession (Phase 5)".to_owned())
-        }
-        OperationConfig::Chamfer(_) => {
-            Err("Chamfer not yet wired through ProjectSession (Phase 5)".to_owned())
-        }
-        OperationConfig::ProjectCurve(_) => {
-            Err("ProjectCurve not yet wired through ProjectSession (Phase 5)".to_owned())
-        }
-        OperationConfig::AlignmentPinDrill(_) => {
-            Err("AlignmentPinDrill not yet wired through ProjectSession (Phase 5)".to_owned())
         }
     }
 }
