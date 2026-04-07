@@ -3,6 +3,8 @@
 
 mod helpers;
 mod job;
+#[allow(dead_code)] // Serde structs parse more fields than are actively used
+mod project;
 mod sweep;
 
 use anyhow::{Context, Result, bail};
@@ -1164,6 +1166,37 @@ enum Commands {
         /// Run simulation and produce stock heightmap SVGs
         #[arg(long)]
         simulate: bool,
+    },
+
+    /// Analyze a GUI project file with full diagnostics
+    ///
+    /// Loads the GUI project TOML format (format_version=3), executes all
+    /// enabled toolpaths through the core algorithms with full debug and
+    /// semantic tracing, runs tri-dexel simulation with cut metrics, checks
+    /// collisions, and writes structured JSON diagnostics.
+    Project {
+        /// Path to the project .toml file (GUI format, format_version=3)
+        input: PathBuf,
+
+        /// Output directory for diagnostic artifacts
+        #[arg(long, default_value = "diagnostics")]
+        output_dir: PathBuf,
+
+        /// Run only this setup (by name or ID)
+        #[arg(long)]
+        setup: Option<String>,
+
+        /// Skip these toolpath IDs (comma-separated)
+        #[arg(long)]
+        skip: Option<String>,
+
+        /// Simulation resolution in mm
+        #[arg(long, default_value = "0.5")]
+        resolution: f64,
+
+        /// Print human-readable summary to stderr
+        #[arg(long)]
+        summary: bool,
     },
 }
 
@@ -3174,6 +3207,31 @@ fn main() -> Result<()> {
                 .canonicalize()
                 .context(format!("Job file not found: {}", input.display()))?;
             sweep::run_sweep(&job_path, &param, &values, &output_dir, simulate)?;
+        }
+
+        Commands::Project {
+            input,
+            output_dir,
+            setup,
+            skip,
+            resolution,
+            summary,
+        } => {
+            let skip_ids: Vec<usize> = skip
+                .as_deref()
+                .unwrap_or("")
+                .split(',')
+                .filter(|s| !s.is_empty())
+                .filter_map(|s| s.trim().parse().ok())
+                .collect();
+            project::run_project_command(
+                &input,
+                &output_dir,
+                setup.as_deref(),
+                &skip_ids,
+                resolution,
+                summary,
+            )?;
         }
     }
 
