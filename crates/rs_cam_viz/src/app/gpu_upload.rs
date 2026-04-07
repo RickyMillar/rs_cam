@@ -218,10 +218,8 @@ impl RsCamApp {
                             #[allow(clippy::unwrap_used)]
                             let setup = active_setup_ref.unwrap();
                             let stock = &self.controller.state().job.stock;
-                            let tp = setup.transform_point(
-                                rs_cam_core::geo::P3::new(p.x, p.y, 0.0),
-                                stock,
-                            );
+                            let tp = setup
+                                .transform_point(rs_cam_core::geo::P3::new(p.x, p.y, 0.0), stock);
                             (tp.x, tp.y)
                         } else {
                             (p.x, p.y)
@@ -244,9 +242,7 @@ impl RsCamApp {
                         });
                     }
                     // Close the ring: last → first (only for closed polygons)
-                    if close
-                        && let (Some(last), Some(first)) = (ring.last(), ring.first())
-                    {
+                    if close && let (Some(last), Some(first)) = (ring.last(), ring.first()) {
                         let (ax, ay) = transform_pt(last);
                         let (bx, by) = transform_pt(first);
                         verts.push(LineVertex {
@@ -653,7 +649,10 @@ impl RsCamApp {
                 let render_tp = result.toolpath.as_ref();
 
                 let color_mode = self.controller.state().viewport.toolpath_color_mode;
-                let mut gpu_data = if matches!(color_mode, crate::state::viewport::ToolpathColorMode::Engagement) {
+                let mut gpu_data = if matches!(
+                    color_mode,
+                    crate::state::viewport::ToolpathColorMode::Engagement
+                ) {
                     ToolpathGpuData::from_toolpath_engagement(
                         &render_state.device,
                         &resources.gpu_limits,

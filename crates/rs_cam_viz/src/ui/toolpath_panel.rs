@@ -402,7 +402,12 @@ fn compute_drop_index(
 
 /// Menu button for adding a toolpath to a specific setup.
 /// Emits Select(Setup(id)) first, then AddToolpath, so the handler targets the right setup.
-fn add_toolpath_menu(ui: &mut egui::Ui, setup_id: SetupId, state: &AppState, events: &mut Vec<AppEvent>) {
+fn add_toolpath_menu(
+    ui: &mut egui::Ui,
+    setup_id: SetupId,
+    state: &AppState,
+    events: &mut Vec<AppEvent>,
+) {
     let has_mesh = state.job.models.iter().any(|m| m.mesh.is_some());
     let has_polygons = state.job.models.iter().any(|m| m.polygons.is_some());
 
@@ -438,7 +443,8 @@ fn add_op_menu_item(
     };
 
     if available {
-        if ui.button(spec.label)
+        if ui
+            .button(spec.label)
             .on_hover_text(spec.description)
             .clicked()
         {

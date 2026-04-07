@@ -620,7 +620,11 @@ mod tests {
             false,
         );
         let polys = extract_polygons(&drawing, 5.0);
-        assert_eq!(polys.len(), 1, "Open polyline should be imported as unclosed path");
+        assert_eq!(
+            polys.len(),
+            1,
+            "Open polyline should be imported as unclosed path"
+        );
         assert_eq!(polys[0].exterior.len(), 3);
     }
 
