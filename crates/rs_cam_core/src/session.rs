@@ -404,6 +404,7 @@ pub struct ToolpathComputeResult {
 }
 
 /// Summary of a toolpath for listing.
+#[derive(serde::Serialize)]
 pub struct ToolpathSummary {
     pub index: usize,
     pub id: usize,
@@ -414,6 +415,7 @@ pub struct ToolpathSummary {
 }
 
 /// Summary of a tool for listing.
+#[derive(serde::Serialize)]
 pub struct ToolSummary {
     pub id: ToolId,
     pub name: String,
