@@ -108,9 +108,13 @@ impl<B: ComputeBackend> AppController<B> {
         mut stop_after_setup: impl FnMut(usize) -> bool,
     ) -> Option<(Vec<SetupSimGroup>, Vec<SetupSimToolpath>, BoundingBox3)> {
         let stock = &self.state.job.stock;
-        // Use the full stock bbox (includes origin offsets) so simulation
-        // coordinates match the frame toolpaths were generated in.
-        let stock_bbox = stock.bbox();
+        // Toolpaths are generated in setup-local frame (0,0,0 origin) —
+        // the setup transform translates meshes by -stock.origin before
+        // generating. Use the same zero-origin bbox for simulation.
+        let stock_bbox = BoundingBox3 {
+            min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
+            max: rs_cam_core::geo::P3::new(stock.x, stock.y, stock.z),
+        };
 
         let mut groups: Vec<SetupSimGroup> = Vec::new();
         let mut all_toolpaths_flat = Vec::new();
@@ -262,13 +266,31 @@ impl<B: ComputeBackend> AppController<B> {
                 .iter()
                 .find(|tool| tool.id == toolpath.tool_id)?
                 .clone();
-            let mesh = self
+            let raw_mesh = self
                 .state
                 .job
                 .models
                 .iter()
                 .find(|model| model.id == toolpath.model_id)
                 .and_then(|model| model.mesh.clone())?;
+
+            // Transform mesh to setup-local frame to match toolpath coordinates.
+            let setup = self
+                .state
+                .job
+                .setups
+                .iter()
+                .find(|s| s.toolpaths.iter().any(|tp| tp.id == toolpath.id));
+            let mesh = if let Some(setup) = setup {
+                Arc::new(crate::state::job::transform_mesh(
+                    &raw_mesh,
+                    setup,
+                    &self.state.job.stock,
+                ))
+            } else {
+                raw_mesh
+            };
+
             Some((Arc::clone(&result.toolpath), tool, mesh))
         });
 
