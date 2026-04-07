@@ -46,6 +46,7 @@ pub mod rest;
 pub mod scallop;
 pub mod scallop_math;
 pub mod semantic_trace;
+pub mod session;
 pub mod simulation;
 pub mod simulation_cut;
 pub mod slope;
