@@ -31,7 +31,7 @@ use crate::compute::simulate::{
 };
 use crate::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use crate::compute::transform::FaceUp;
+use crate::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
 use crate::debug_trace::{ToolpathDebugRecorder, ToolpathDebugTrace};
 use crate::dexel_stock::StockCutDirection;
 use crate::geo::{BoundingBox3, P3};
@@ -962,9 +962,35 @@ impl ProjectSession {
             }
 
             if !entries.is_empty() {
+                // Compute per-setup local stock bbox and transform info.
+                let z_rotation = ZRotation::Deg0;
+                let (eff_w, eff_d, eff_h) = {
+                    let (w, d, h) =
+                        setup.face_up.effective_stock(self.stock.x, self.stock.y, self.stock.z);
+                    z_rotation.effective_stock(w, d, h)
+                };
+                let local_stock_bbox = Some(BoundingBox3 {
+                    min: P3::new(0.0, 0.0, 0.0),
+                    max: P3::new(eff_w, eff_d, eff_h),
+                });
+                let local_to_global =
+                    if setup.face_up != FaceUp::Top || z_rotation != ZRotation::Deg0 {
+                        Some(SetupTransformInfo {
+                            face_up: setup.face_up,
+                            z_rotation,
+                            stock_x: self.stock.x,
+                            stock_y: self.stock.y,
+                            stock_z: self.stock.z,
+                        })
+                    } else {
+                        None
+                    };
+
                 groups.push(SimGroupEntry {
                     toolpaths: entries,
                     direction,
+                    local_stock_bbox,
+                    local_to_global,
                 });
             }
         }
