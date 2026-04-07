@@ -26,17 +26,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let args: Vec<String> = std::env::args().collect();
-    let project_path = args.get(1).ok_or("Usage: rs_cam_mcp <project.toml>")?;
 
-    tracing::info!(path = %project_path, "Loading project");
-    let session = ProjectSession::load(Path::new(project_path))
-        .map_err(|e| format!("Failed to load project: {e}"))?;
-    tracing::info!(
-        name = %session.name(),
-        toolpaths = session.toolpath_count(),
-        setups = session.setup_count(),
-        "Project loaded"
-    );
+    let session = if let Some(project_path) = args.get(1) {
+        tracing::info!(path = %project_path, "Loading project");
+        let s = ProjectSession::load(Path::new(project_path))
+            .map_err(|e| format!("Failed to load project: {e}"))?;
+        tracing::info!(
+            name = %s.name(),
+            toolpaths = s.toolpath_count(),
+            setups = s.setup_count(),
+            "Project loaded"
+        );
+        Some(s)
+    } else {
+        tracing::info!("No project file specified — use load_project tool to load one");
+        None
+    };
 
     let cam_server = CamServer::new(Arc::new(Mutex::new(session)));
 
