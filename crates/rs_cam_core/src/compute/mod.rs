@@ -25,9 +25,9 @@ pub use catalog::{
 };
 
 pub use config::{
-    BoundaryContainment, ComputeStatus, DressupConfig, DressupEntryStyle, FeedsAutoMode,
-    HeightContext, HeightMode, HeightReference, HeightsConfig, ReferenceOffset, ResolvedHeights,
-    RetractStrategy, StockSource, ToolpathId, ToolpathStats,
+    BoundaryConfig, BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig,
+    DressupEntryStyle, FeedsAutoMode, HeightContext, HeightMode, HeightReference, HeightsConfig,
+    ReferenceOffset, ResolvedHeights, RetractStrategy, StockSource, ToolpathId, ToolpathStats,
 };
 
 pub use operation_configs::{
@@ -35,9 +35,9 @@ pub use operation_configs::{
     ClearingStrategy, CompensationType, CutDirection, DrillConfig, DrillCycleType,
     DropCutterConfig, FaceConfig, FaceDirection, HorizontalFinishConfig, InlayConfig, PencilConfig,
     PocketConfig, PocketPattern, ProfileConfig, ProfileSide, ProjectCurveConfig,
-    RadialFinishConfig, RampFinishConfig, RegionOrdering, RestConfig, ScallopConfig,
-    ScallopDirection, SpiralDirection, SpiralFinishConfig, SteepShallowConfig, TraceCompensation,
-    TraceConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
+    ProjectCurveDirection, RadialFinishConfig, RampFinishConfig, RegionOrdering, RestConfig,
+    ScallopConfig, ScallopDirection, SpiralDirection, SpiralFinishConfig, SteepShallowConfig,
+    TraceCompensation, TraceConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
 };
 
 pub use tool_config::{BitCutDirection, ToolConfig, ToolId, ToolMaterial, ToolType};

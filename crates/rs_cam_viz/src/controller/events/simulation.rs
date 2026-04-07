@@ -144,29 +144,16 @@ impl<B: ComputeBackend> AppController<B> {
             if !toolpaths.is_empty() {
                 all_toolpaths_flat.extend(toolpaths.clone());
 
-                // Build the per-setup local stock bbox.
-                let (eff_w, eff_d, eff_h) = setup.effective_stock(stock);
-                let local_stock_bbox = BoundingBox3 {
-                    min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
-                    max: rs_cam_core::geo::P3::new(eff_w, eff_d, eff_h),
-                };
-
-                let local_to_global = if setup.needs_transform() {
-                    Some(crate::compute::SetupTransformInfo {
-                        face_up: setup.face_up,
-                        z_rotation: setup.z_rotation,
-                        stock_x: stock.x,
-                        stock_y: stock.y,
-                        stock_z: stock.z,
-                    })
-                } else {
-                    None
+                let direction = match setup.face_up {
+                    crate::state::job::FaceUp::Bottom => {
+                        rs_cam_core::dexel_stock::StockCutDirection::FromBottom
+                    }
+                    _ => rs_cam_core::dexel_stock::StockCutDirection::FromTop,
                 };
 
                 groups.push(SetupSimGroup {
                     toolpaths,
-                    local_stock_bbox,
-                    local_to_global,
+                    direction,
                 });
             }
 

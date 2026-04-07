@@ -51,6 +51,7 @@ pub enum DepthSemantics {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationSpec {
     pub label: &'static str,
+    pub description: &'static str,
     pub family: OperationFamily,
     pub geometry: GeometryRequirement,
     pub default_auto_regen: bool,
@@ -149,6 +150,7 @@ impl OperationType {
         match self {
             OperationType::Face => OperationSpec {
                 label: "Face",
+                description: "Level the stock top surface",
                 family: OperationFamily::TwoPointFiveD,
                 geometry: GeometryRequirement::Stock,
                 default_auto_regen: true,
@@ -159,6 +161,7 @@ impl OperationType {
             },
             OperationType::Pocket => OperationSpec {
                 label: "Pocket",
+                description: "Clear material inside a closed region",
                 family: OperationFamily::TwoPointFiveD,
                 geometry: GeometryRequirement::Polygons,
                 default_auto_regen: true,
@@ -169,6 +172,7 @@ impl OperationType {
             },
             OperationType::Profile => OperationSpec {
                 label: "Profile",
+                description: "Cut along the outside or inside of a boundary",
                 family: OperationFamily::TwoPointFiveD,
                 geometry: GeometryRequirement::Polygons,
                 default_auto_regen: true,
@@ -179,6 +183,7 @@ impl OperationType {
             },
             OperationType::Adaptive => OperationSpec {
                 label: "Adaptive",
+                description: "Constant-engagement rough clearing",
                 family: OperationFamily::TwoPointFiveD,
                 geometry: GeometryRequirement::Polygons,
                 default_auto_regen: true,
@@ -189,6 +194,7 @@ impl OperationType {
             },
             OperationType::VCarve => OperationSpec {
                 label: "VCarve",
+                description: "V-bit engraving with variable depth",
                 family: OperationFamily::TwoPointFiveD,
                 geometry: GeometryRequirement::Polygons,
                 default_auto_regen: true,
@@ -199,6 +205,7 @@ impl OperationType {
             },
             OperationType::Rest => OperationSpec {
                 label: "Rest Machining",
+                description: "Clean up areas a larger tool couldn\u{2019}t reach",
                 family: OperationFamily::TwoPointFiveD,
                 geometry: GeometryRequirement::Polygons,
                 default_auto_regen: true,
@@ -209,6 +216,7 @@ impl OperationType {
             },
             OperationType::Inlay => OperationSpec {
                 label: "Inlay",
+                description: "V-bit pocket and plug for inlay work",
                 family: OperationFamily::TwoPointFiveD,
                 geometry: GeometryRequirement::Polygons,
                 default_auto_regen: true,
@@ -219,6 +227,7 @@ impl OperationType {
             },
             OperationType::Zigzag => OperationSpec {
                 label: "Zigzag",
+                description: "Back-and-forth raster clearing at an angle",
                 family: OperationFamily::TwoPointFiveD,
                 geometry: GeometryRequirement::Polygons,
                 default_auto_regen: true,
@@ -229,6 +238,7 @@ impl OperationType {
             },
             OperationType::Trace => OperationSpec {
                 label: "Trace",
+                description: "Follow a path exactly for engraving or scoring",
                 family: OperationFamily::TwoPointFiveD,
                 geometry: GeometryRequirement::Polygons,
                 default_auto_regen: true,
@@ -239,6 +249,7 @@ impl OperationType {
             },
             OperationType::Drill => OperationSpec {
                 label: "Drill",
+                description: "Drill holes from SVG circle positions",
                 family: OperationFamily::TwoPointFiveD,
                 geometry: GeometryRequirement::Polygons,
                 default_auto_regen: true,
@@ -249,6 +260,7 @@ impl OperationType {
             },
             OperationType::Chamfer => OperationSpec {
                 label: "Chamfer",
+                description: "Bevel edges with a V-bit",
                 family: OperationFamily::TwoPointFiveD,
                 geometry: GeometryRequirement::Polygons,
                 default_auto_regen: true,
@@ -259,6 +271,7 @@ impl OperationType {
             },
             OperationType::DropCutter => OperationSpec {
                 label: "3D Finish",
+                description: "Parallel raster passes following the surface",
                 family: OperationFamily::ThreeD,
                 geometry: GeometryRequirement::Mesh,
                 default_auto_regen: false,
@@ -269,6 +282,7 @@ impl OperationType {
             },
             OperationType::Adaptive3d => OperationSpec {
                 label: "3D Rough",
+                description: "Load-limiting rough mill on a 3D surface",
                 family: OperationFamily::ThreeD,
                 geometry: GeometryRequirement::Mesh,
                 default_auto_regen: false,
@@ -279,6 +293,7 @@ impl OperationType {
             },
             OperationType::Waterline => OperationSpec {
                 label: "Waterline",
+                description: "Horizontal contours at constant Z levels",
                 family: OperationFamily::ThreeD,
                 geometry: GeometryRequirement::Mesh,
                 default_auto_regen: false,
@@ -289,6 +304,7 @@ impl OperationType {
             },
             OperationType::Pencil => OperationSpec {
                 label: "Pencil Finish",
+                description: "Trace concave edges and creases on the surface",
                 family: OperationFamily::ThreeD,
                 geometry: GeometryRequirement::Mesh,
                 default_auto_regen: false,
@@ -299,6 +315,7 @@ impl OperationType {
             },
             OperationType::Scallop => OperationSpec {
                 label: "Scallop Finish",
+                description: "Variable stepover for constant scallop height",
                 family: OperationFamily::ThreeD,
                 geometry: GeometryRequirement::Mesh,
                 default_auto_regen: false,
@@ -309,6 +326,7 @@ impl OperationType {
             },
             OperationType::SteepShallow => OperationSpec {
                 label: "Steep/Shallow",
+                description: "Waterline on steep areas, raster on shallow",
                 family: OperationFamily::ThreeD,
                 geometry: GeometryRequirement::Mesh,
                 default_auto_regen: false,
@@ -319,6 +337,7 @@ impl OperationType {
             },
             OperationType::RampFinish => OperationSpec {
                 label: "Ramp Finish",
+                description: "Continuous Z descent along contours, no retract",
                 family: OperationFamily::ThreeD,
                 geometry: GeometryRequirement::Mesh,
                 default_auto_regen: false,
@@ -329,6 +348,7 @@ impl OperationType {
             },
             OperationType::SpiralFinish => OperationSpec {
                 label: "Spiral Finish",
+                description: "Archimedean spiral passes over the surface",
                 family: OperationFamily::ThreeD,
                 geometry: GeometryRequirement::Mesh,
                 default_auto_regen: false,
@@ -339,6 +359,7 @@ impl OperationType {
             },
             OperationType::RadialFinish => OperationSpec {
                 label: "Radial Finish",
+                description: "Spoke-pattern passes radiating from center",
                 family: OperationFamily::ThreeD,
                 geometry: GeometryRequirement::Mesh,
                 default_auto_regen: false,
@@ -349,6 +370,7 @@ impl OperationType {
             },
             OperationType::HorizontalFinish => OperationSpec {
                 label: "Horizontal Finish",
+                description: "Finish only flat areas of the surface",
                 family: OperationFamily::ThreeD,
                 geometry: GeometryRequirement::Mesh,
                 default_auto_regen: false,
@@ -359,6 +381,7 @@ impl OperationType {
             },
             OperationType::ProjectCurve => OperationSpec {
                 label: "Project Curve",
+                description: "Project 2D curves onto a 3D mesh surface",
                 family: OperationFamily::ThreeD,
                 geometry: GeometryRequirement::Both,
                 default_auto_regen: false,
@@ -369,6 +392,7 @@ impl OperationType {
             },
             OperationType::AlignmentPinDrill => OperationSpec {
                 label: "Pin Drill",
+                description: "Drill alignment pin holes through stock",
                 family: OperationFamily::TwoPointFiveD,
                 geometry: GeometryRequirement::Stock,
                 default_auto_regen: true,
@@ -648,6 +672,56 @@ impl OperationConfig {
             OperationType::AlignmentPinDrill => {
                 OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default())
             }
+        }
+    }
+
+    /// Pre-compute Z levels for depth stepping (top -> bottom).
+    ///
+    /// Returns an empty `Vec` for operations that don't use standard depth
+    /// stepping (3D ops, VCarve, Chamfer, Inlay, Drill).
+    pub fn cutting_levels(&self, top_z: f64) -> Vec<f64> {
+        use crate::depth::{DepthDistribution, DepthStepping};
+        match self {
+            Self::Pocket(cfg) => DepthStepping {
+                start_z: top_z,
+                final_z: top_z - cfg.depth.abs(),
+                max_step_down: cfg.depth_per_pass,
+                distribution: DepthDistribution::Even,
+                finish_allowance: 0.0,
+                finishing_passes: cfg.finishing_passes,
+            }
+            .all_levels(),
+            Self::Profile(cfg) => DepthStepping {
+                start_z: top_z,
+                final_z: top_z - cfg.depth.abs(),
+                max_step_down: cfg.depth_per_pass,
+                distribution: DepthDistribution::Even,
+                finish_allowance: 0.0,
+                finishing_passes: cfg.finishing_passes,
+            }
+            .all_levels(),
+            Self::Adaptive(cfg) => {
+                DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels()
+            }
+            Self::Zigzag(cfg) => {
+                DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels()
+            }
+            Self::Rest(cfg) => {
+                DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels()
+            }
+            Self::Trace(cfg) => {
+                DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels()
+            }
+            Self::Face(cfg) => {
+                if cfg.depth <= 0.0 {
+                    vec![top_z]
+                } else {
+                    DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass)
+                        .all_levels()
+                }
+            }
+            // 3D ops, VCarve, Chamfer, Inlay, Drill, AlignmentPinDrill — no standard depth stepping
+            _ => vec![],
         }
     }
 }

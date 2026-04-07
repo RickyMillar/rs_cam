@@ -359,10 +359,12 @@ pub(super) fn feed_optimization_stock(req: &ComputeRequest) -> Result<TriDexelSt
     Ok(TriDexelStock::from_bounds(bbox, cell_size))
 }
 
+#[allow(dead_code)]
 pub(super) fn make_depth(depth: f64, per_pass: f64) -> DepthStepping {
     make_depth_ext(depth, per_pass, 0, 0.0)
 }
 
+#[allow(dead_code)]
 pub(super) fn make_depth_with_finishing(
     depth: f64,
     per_pass: f64,
@@ -371,6 +373,7 @@ pub(super) fn make_depth_with_finishing(
     make_depth_ext(depth, per_pass, finishing_passes, 0.0)
 }
 
+#[allow(dead_code)]
 fn make_depth_ext(depth: f64, per_pass: f64, finishing_passes: usize, top_z: f64) -> DepthStepping {
     DepthStepping {
         start_z: top_z,
@@ -502,8 +505,8 @@ pub(super) fn build_trace_artifact(
             "bottom_z": req.heights.bottom_z,
         },
         "stock_bbox": stock_bbox,
-        "boundary_enabled": req.boundary_enabled,
-        "boundary_containment": format!("{:?}", req.boundary_containment),
+        "boundary_enabled": req.boundary.enabled,
+        "boundary_containment": format!("{:?}", req.boundary.containment),
         "keep_out_count": req.keep_out_footprints.len(),
         "debug_options": &req.debug_options,
     });

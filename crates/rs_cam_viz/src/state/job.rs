@@ -405,6 +405,8 @@ pub struct Setup {
     pub fixtures: Vec<Fixture>,
     pub keep_out_zones: Vec<KeepOutZone>,
     pub toolpaths: Vec<super::toolpath::ToolpathEntry>,
+    /// Models relevant to this setup. Empty means all models are available.
+    pub model_ids: Vec<ModelId>,
 }
 
 impl Setup {
@@ -418,6 +420,19 @@ impl Setup {
             fixtures: Vec::new(),
             keep_out_zones: Vec::new(),
             toolpaths: Vec::new(),
+            model_ids: Vec::new(),
+        }
+    }
+
+    /// Models available in this setup. Returns all models if `model_ids` is empty.
+    pub fn available_models<'a>(&self, all_models: &'a [LoadedModel]) -> Vec<&'a LoadedModel> {
+        if self.model_ids.is_empty() {
+            all_models.iter().collect()
+        } else {
+            all_models
+                .iter()
+                .filter(|m| self.model_ids.contains(&m.id))
+                .collect()
         }
     }
 
