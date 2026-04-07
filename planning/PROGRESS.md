@@ -19,6 +19,25 @@
 - deterministic renderless `rs_cam_viz` regression harness in CI
 - controller-first GUI architecture with canonical operation metadata and split compute/controller modules
 - shared adaptive support module used by both 2D and 3D adaptive search/control code
+- unified service layer: `ProjectSession` API in core, shared `execute_operation()` dispatch for all 23 ops
+
+## Recent work (2026-04-07)
+
+### Service layer extraction (Phases 1–6)
+
+Unified compute engine across GUI, CLI, and future MCP server. One `ProjectSession` in `rs_cam_core` owns project state + compute; one `execute_operation()` dispatches all 23 operations.
+
+**Phase 1–3** (prior session): Moved config types, execution helpers, simulation, and collision checking from `rs_cam_viz` to `rs_cam_core/src/compute/`.
+
+**Phase 4** (prior session): Created `ProjectSession` API in `rs_cam_core/src/session.rs` — load project TOML, generate toolpaths, run simulation, check collisions, export G-code and diagnostics.
+
+**Phase 5** (this session): Rewired CLI `project.rs` from ~2750 lines of duplicate execution code to ~340 lines delegating to `ProjectSession`. CLI now shares the same compute path as the GUI.
+
+**Phase 6** (this session): Created `rs_cam_core/src/compute/execute.rs` with public `execute_operation()` supporting all 23 operations including cutting_levels, pocket patterns, profile tabs, and 7 operations previously missing from core (VCarve, Rest, Inlay, Drill, Chamfer, ProjectCurve, AlignmentPinDrill). Rewired `session.rs` to use this shared dispatch (deleted ~485 lines). Deleted duplicate `build_cutter`, `compute_stats`, and `semantic.rs` from viz (deleted ~218 lines).
+
+**Test fixes**: Fixed 3 pre-existing test failures — stale operation label (`"3D Raster Finish"` → `"3D Finish"`), wrong operation type in UI widget test (Adaptive3d → Scallop for "Stock to Leave" widget), incorrect height resolution expectations in `w6_auto_height_defaults`.
+
+**Known remaining**: 2 pre-existing simulation pipeline failures (`multi_setup_top_bottom_simulation`, `multi_setup_backward_scrub_uses_checkpoints`) — the bottom-up tri-dexel cut produces empty stock. These predate the service layer work.
 
 ## Recent work (2026-04-05)
 
@@ -110,6 +129,8 @@ Full-codebase audit across 5 domains (operations, rendering, feeds/speeds, core/
 
 ## Current priorities
 
+- **Service layer Phase 7+8** — MCP server in viz (real-time AI agent access to running GUI session) + Claude Code integration. Design doc: `planning/SERVICE_LAYER_EXTRACTION.md`
+- **Fix 2 remaining simulation test failures** — `multi_setup_top_bottom_simulation` and `multi_setup_backward_scrub_uses_checkpoints` fail because bottom-up tri-dexel cuts produce empty stock
 - **Stock-level alignment pins** — moving pins from per-setup to the stock definition so they persist across flips. Design doc: `planning/ALIGNMENT_PINS_DESIGN.md`
 - **Tri-dexel simulation** — Phases 1–6 complete (core types, stamping, mesh extraction, viz wiring, multi-setup carry-forward, side-face grids). Design doc: `architecture/TRI_DEXEL_SIMULATION.md`, implementation plan: `planning/VOXEL_SIM_DESIGN.md`
 - keep public docs aligned with the actual code surface

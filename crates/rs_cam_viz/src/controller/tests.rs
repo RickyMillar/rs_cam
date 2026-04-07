@@ -222,10 +222,10 @@ fn sample_controller() -> AppController<ScriptedBackend> {
     let mut entry = ToolpathEntry::from_init(
         crate::state::toolpath::ToolpathEntryInit::from_loaded_state(
             ToolpathId(1),
-            "Adaptive 3D".to_owned(),
+            "Scallop".to_owned(),
             ToolId(1),
             ModelId(1),
-            OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
+            OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
         ),
     );
     entry.result = Some(ToolpathResult {
