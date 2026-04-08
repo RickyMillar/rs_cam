@@ -95,12 +95,6 @@ pub fn bind_scope_to_run(scope: &ToolpathSemanticScope, toolpath: &Toolpath, run
     scope.bind_to_toolpath(toolpath, run.move_start, run.move_end_exclusive);
 }
 
-/// Bind a semantic scope to the full toolpath.
-#[allow(dead_code)]
-pub fn bind_scope_to_full_toolpath(scope: &ToolpathSemanticScope, toolpath: &Toolpath) {
-    scope.bind_to_toolpath(toolpath, 0, toolpath.moves.len());
-}
-
 /// Append a toolpath to a semantic writer, optionally under a parent scope.
 pub fn append_toolpath(
     writer: &mut ToolpathSemanticWriter<'_>,

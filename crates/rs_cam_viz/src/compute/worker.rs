@@ -23,7 +23,6 @@ use rs_cam_core::adaptive3d::{Adaptive3dParams, EntryStyle3d};
 use rs_cam_core::arcfit::fit_arcs;
 use rs_cam_core::chamfer::{ChamferParams, chamfer_toolpath};
 use rs_cam_core::collision::{CollisionReport, RapidCollision};
-use rs_cam_core::depth::{DepthDistribution, DepthStepping};
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dressup::{
     LinkMoveParams, apply_dogbones, apply_entry, apply_lead_in_out, apply_link_moves, apply_tabs,
@@ -37,7 +36,6 @@ use rs_cam_core::horizontal_finish::{HorizontalFinishParams, horizontal_finish_t
 use rs_cam_core::inlay::{InlayParams, inlay_toolpaths};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::pencil::PencilParams;
-use rs_cam_core::pocket::{PocketParams, pocket_toolpath};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::profile::{ProfileParams, profile_toolpath};
 use rs_cam_core::project_curve::{ProjectCurveParams, project_curve_toolpath};
@@ -49,10 +47,10 @@ use rs_cam_core::spiral_finish::SpiralFinishParams;
 use rs_cam_core::steep_shallow::{SteepShallowParams, steep_shallow_toolpath};
 use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::tool::ToolDefinition;
-use rs_cam_core::toolpath::{MoveType, Toolpath, raster_toolpath_from_grid};
+use rs_cam_core::toolpath::{MoveType, Toolpath};
 use rs_cam_core::trace::TraceParams;
 use rs_cam_core::vcarve::{VCarveParams, vcarve_toolpath};
-use rs_cam_core::waterline::{WaterlineParams, waterline_toolpath_with_cancel};
+use rs_cam_core::waterline::WaterlineParams;
 use rs_cam_core::zigzag::{ZigzagParams, zigzag_toolpath};
 
 use super::{ComputeBackend, ComputeError, ComputeLane, ComputeMessage, LaneSnapshot, LaneState};

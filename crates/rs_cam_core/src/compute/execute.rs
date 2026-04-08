@@ -44,6 +44,12 @@ impl std::fmt::Display for OperationError {
 
 impl std::error::Error for OperationError {}
 
+impl From<String> for OperationError {
+    fn from(s: String) -> Self {
+        Self::Other(s)
+    }
+}
+
 // ── Public API ────────────────────────────────────────────────────────
 
 /// Execute a single operation, producing a raw toolpath.

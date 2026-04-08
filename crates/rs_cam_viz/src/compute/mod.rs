@@ -78,37 +78,7 @@ impl From<String> for ComputeError {
     }
 }
 
-/// Typed error for toolpath operation failures.
-#[derive(Debug, Clone)]
-pub enum OperationError {
-    /// Required geometry (mesh, polygons) is missing or invalid.
-    MissingGeometry(String),
-    /// Tool type doesn't match operation requirements.
-    InvalidTool(String),
-    /// Operation was cancelled.
-    Cancelled,
-    /// Other operation failure.
-    Other(String),
-}
-
-impl std::fmt::Display for OperationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::MissingGeometry(msg) => write!(f, "Missing geometry: {msg}"),
-            Self::InvalidTool(msg) => write!(f, "Invalid tool: {msg}"),
-            Self::Cancelled => f.write_str("Cancelled"),
-            Self::Other(msg) => f.write_str(msg),
-        }
-    }
-}
-
-impl std::error::Error for OperationError {}
-
-impl From<String> for OperationError {
-    fn from(s: String) -> Self {
-        Self::Other(s)
-    }
-}
+pub use rs_cam_core::compute::OperationError;
 
 impl From<OperationError> for ComputeError {
     fn from(e: OperationError) -> Self {

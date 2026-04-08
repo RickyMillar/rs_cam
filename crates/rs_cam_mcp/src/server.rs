@@ -93,12 +93,23 @@ pub struct SetToolParamInput {
     pub value: serde_json::Value,
 }
 
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct CollisionCheckParam {
+    /// Toolpath index (0-based)
+    pub index: usize,
+}
+
 fn text(msg: impl Into<String>) -> String {
     msg.into()
 }
 
 fn json_str(data: serde_json::Value) -> String {
     serde_json::to_string_pretty(&data).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}"))
+}
+
+/// Standardized error response when no project is loaded.
+fn no_project_error() -> String {
+    json_str(serde_json::json!({"error": "No project loaded. Call load_project first."}))
 }
 
 // ── Server ────────────────────────────────────────────────────────────
@@ -156,9 +167,7 @@ impl CamServer {
     async fn project_summary(&self) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
-            return json_str(
-                serde_json::json!({"error": "No project loaded. Call load_project first."}),
-            );
+            return no_project_error();
         };
         let bbox = session.stock_bbox();
         json_str(serde_json::json!({
@@ -181,7 +190,7 @@ impl CamServer {
     async fn list_toolpaths(&self) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
-            return json_str(serde_json::json!({"error": "No project loaded"}));
+            return no_project_error();
         };
         json_str(serde_json::to_value(session.list_toolpaths()).unwrap_or_default())
     }
@@ -193,7 +202,7 @@ impl CamServer {
     async fn list_tools(&self) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
-            return json_str(serde_json::json!({"error": "No project loaded"}));
+            return no_project_error();
         };
         json_str(serde_json::to_value(session.list_tools()).unwrap_or_default())
     }
@@ -208,17 +217,21 @@ impl CamServer {
     ) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
-            return json_str(serde_json::json!({"error": "No project loaded"}));
+            return no_project_error();
         };
         match session.get_toolpath_config(index) {
-            Some(tc) => json_str(serde_json::json!({
-                "id": tc.id,
-                "name": tc.name,
-                "enabled": tc.enabled,
-                "operation": tc.operation.label(),
-                "tool_id": tc.tool_id,
-                "model_id": tc.model_id,
-            })),
+            Some(tc) => {
+                let op_value =
+                    serde_json::to_value(&tc.operation).unwrap_or_else(|_| serde_json::json!({}));
+                json_str(serde_json::json!({
+                    "id": tc.id,
+                    "name": tc.name,
+                    "enabled": tc.enabled,
+                    "tool_id": tc.tool_id,
+                    "model_id": tc.model_id,
+                    "operation": op_value,
+                }))
+            }
             None => {
                 json_str(serde_json::json!({"error": format!("Toolpath index {index} not found")}))
             }
@@ -238,7 +251,7 @@ impl CamServer {
             let cancel = std::sync::atomic::AtomicBool::new(false);
             let mut guard = session.blocking_lock();
             let Some(s) = guard.as_mut() else {
-                return Err("No project loaded".to_owned());
+                return Err("No project loaded. Call load_project first.".to_owned());
             };
             s.generate_toolpath(index, &cancel)
                 .map(|r| {
@@ -270,7 +283,7 @@ impl CamServer {
             let cancel = std::sync::atomic::AtomicBool::new(false);
             let mut guard = session.blocking_lock();
             let Some(s) = guard.as_mut() else {
-                return Err("No project loaded".to_owned());
+                return Err("No project loaded. Call load_project first.".to_owned());
             };
             let before: usize = (0..s.toolpath_count())
                 .filter(|i| s.get_result(*i).is_some())
@@ -309,7 +322,7 @@ impl CamServer {
             };
             let mut guard = session.blocking_lock();
             let Some(s) = guard.as_mut() else {
-                return Err("No project loaded".to_owned());
+                return Err("No project loaded. Call load_project first.".to_owned());
             };
             s.run_simulation(&opts, &cancel)
                 .map_err(|e| e.to_string())?;
@@ -340,7 +353,7 @@ impl CamServer {
     async fn get_diagnostics(&self) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
-            return json_str(serde_json::json!({"error": "No project loaded"}));
+            return no_project_error();
         };
         json_str(serde_json::to_value(session.diagnostics()).unwrap_or_default())
     }
@@ -352,7 +365,7 @@ impl CamServer {
     ) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
-            return text("No project loaded");
+            return no_project_error();
         };
         match session.export_gcode(Path::new(&path), None) {
             Ok(()) => text(format!("G-code exported to {path}")),
@@ -374,7 +387,7 @@ impl CamServer {
     ) -> String {
         let mut guard = self.session.lock().await;
         let Some(session) = guard.as_mut() else {
-            return text("No project loaded");
+            return no_project_error();
         };
         match session.set_toolpath_param(index, &param, value) {
             Ok(()) => text(format!(
@@ -398,7 +411,7 @@ impl CamServer {
     ) -> String {
         let mut guard = self.session.lock().await;
         let Some(session) = guard.as_mut() else {
-            return text("No project loaded");
+            return no_project_error();
         };
         match session.set_tool_param(index, &param, &value) {
             Ok(()) => text(format!(
@@ -424,7 +437,7 @@ impl CamServer {
     ) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
-            return text("No project loaded");
+            return no_project_error();
         };
         let Some(sim) = session.simulation_result() else {
             return text("No simulation result. Run run_simulation first.");
@@ -491,7 +504,7 @@ impl CamServer {
     ) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
-            return text("No project loaded");
+            return no_project_error();
         };
         let Some(result) = session.get_result(index) else {
             return text(format!(
@@ -543,6 +556,66 @@ impl CamServer {
                 Err(e) => text(format!("Failed to write: {e}")),
             }
         }
+    }
+
+    #[tool(
+        name = "collision_check",
+        description = "Run a holder/shank collision check for a specific toolpath. Requires the toolpath to be generated first. Returns collision count, positions, and minimum safe stickout."
+    )]
+    async fn collision_check(
+        &self,
+        Parameters(CollisionCheckParam { index }): Parameters<CollisionCheckParam>,
+    ) -> String {
+        let session = Arc::clone(&self.session);
+        let result = tokio::task::spawn_blocking(move || {
+            let cancel = std::sync::atomic::AtomicBool::new(false);
+            let guard = session.blocking_lock();
+            let Some(s) = guard.as_ref() else {
+                return Err("No project loaded. Call load_project first.".to_owned());
+            };
+            s.collision_check(index, &cancel)
+                .map(|r| {
+                    serde_json::json!({
+                        "index": index,
+                        "collision_count": r.collision_report.collisions.len(),
+                        "min_safe_stickout_mm": r.collision_report.min_safe_stickout,
+                        "is_clear": r.collision_report.is_clear(),
+                        "collision_positions": r.collision_positions,
+                    })
+                })
+                .map_err(|e| e.to_string())
+        })
+        .await;
+
+        match result {
+            Ok(Ok(v)) => json_str(v),
+            Ok(Err(e)) => json_str(serde_json::json!({"error": e})),
+            Err(e) => json_str(serde_json::json!({"error": format!("Task failed: {e}")})),
+        }
+    }
+
+    #[tool(
+        name = "list_setups",
+        description = "List all setups in the loaded project with name, face orientation, and toolpath indices"
+    )]
+    async fn list_setups(&self) -> String {
+        let guard = self.session.lock().await;
+        let Some(session) = guard.as_ref() else {
+            return no_project_error();
+        };
+        let setups: Vec<serde_json::Value> = session
+            .list_setups()
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "id": s.id,
+                    "name": s.name,
+                    "face_up": s.face_up.label(),
+                    "toolpath_indices": s.toolpath_indices,
+                })
+            })
+            .collect();
+        json_str(serde_json::json!({ "setups": setups }))
     }
 }
 

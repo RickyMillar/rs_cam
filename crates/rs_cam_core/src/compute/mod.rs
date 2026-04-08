@@ -53,8 +53,8 @@ pub use transform::{FaceUp, SetupTransformInfo, ZRotation};
 // ── Phase 2: Execution helper re-exports ──
 
 pub use cutter::build_cutter;
+pub use execute::OperationError;
 pub use semantic_helpers::{
-    CutRun, append_toolpath, bind_scope_to_full_toolpath, bind_scope_to_run, contour_toolpath,
-    cutting_runs, line_toolpath,
+    CutRun, append_toolpath, bind_scope_to_run, contour_toolpath, cutting_runs, line_toolpath,
 };
 pub use stats::compute_stats;
