@@ -3879,6 +3879,7 @@ dependencies = [
 name = "rs_cam_mcp"
 version = "0.1.0"
 dependencies = [
+ "image",
  "rmcp",
  "rs_cam_core",
  "serde",
