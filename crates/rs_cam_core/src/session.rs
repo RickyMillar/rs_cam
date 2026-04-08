@@ -416,7 +416,7 @@ pub struct ToolpathConfig {
 
 /// Result of generating a single toolpath.
 pub struct ToolpathComputeResult {
-    pub toolpath: Toolpath,
+    pub toolpath: Arc<Toolpath>,
     pub stats: ToolpathStats,
     pub debug_trace: Option<ToolpathDebugTrace>,
     pub semantic_trace: Option<ToolpathSemanticTrace>,
@@ -1058,7 +1058,7 @@ impl ProjectSession {
                 self.results.insert(
                     index,
                     ToolpathComputeResult {
-                        toolpath,
+                        toolpath: Arc::new(toolpath),
                         stats,
                         debug_trace: Some(debug_trace),
                         semantic_trace: Some(semantic_trace),
@@ -1155,7 +1155,7 @@ impl ProjectSession {
                     entries.push(SimToolpathEntry {
                         id: tc.id,
                         name: tc.name.clone(),
-                        toolpath: Arc::new(result.toolpath.clone()),
+                        toolpath: Arc::clone(&result.toolpath),
                         tool: tool_def,
                         flute_count,
                         tool_summary,
@@ -1251,9 +1251,9 @@ impl ProjectSession {
         let tool_def = build_cutter(tool);
 
         let request = CollisionCheckRequest {
-            toolpath: result.toolpath.clone(),
+            toolpath: &result.toolpath,
             tool: tool_def,
-            mesh: model.as_ref().clone(),
+            mesh: model,
         };
         let check_result = run_collision_check(&request, cancel)?;
         Ok(check_result)
@@ -1700,5 +1700,144 @@ mod tests {
             ToolType::TaperedBallNose
         ));
         assert!(matches!(parse_tool_type("unknown"), ToolType::EndMill));
+    }
+
+    /// Create a session with one tool and one Pocket toolpath for mutation tests.
+    fn session_with_toolpath() -> ProjectSession {
+        use crate::compute::catalog::OperationConfig;
+        let project = ProjectFile {
+            format_version: 3,
+            job: ProjectJobSection::default(),
+            tools: vec![ProjectToolSection {
+                id: Some(0),
+                name: "Test EndMill".to_owned(),
+                tool_type: "end_mill".to_owned(),
+                diameter: 6.35,
+                cutting_length: 25.0,
+                corner_radius: 2.0,
+                included_angle: 90.0,
+                taper_half_angle: 15.0,
+                shaft_diameter: 6.35,
+                holder_diameter: 25.0,
+                shank_diameter: 6.35,
+                shank_length: 20.0,
+                stickout: 45.0,
+                flute_count: 2,
+            }],
+            models: Vec::new(),
+            setups: vec![ProjectSetupSection {
+                id: Some(0),
+                name: "Setup 1".to_owned(),
+                face_up: "top".to_owned(),
+                toolpaths: vec![ProjectToolpathSection {
+                    id: Some(0),
+                    name: "Test Pocket".to_owned(),
+                    operation: Some(OperationConfig::new_default(
+                        crate::compute::catalog::OperationType::Pocket,
+                    )),
+                    enabled: true,
+                    tool_id: Some(0),
+                    model_id: Some(0),
+                    dressups: crate::compute::config::DressupConfig::default(),
+                    heights: crate::compute::config::HeightsConfig::default(),
+                    pre_gcode: None,
+                    post_gcode: None,
+                }],
+            }],
+            toolpaths: Vec::new(),
+        };
+        ProjectSession::from_project_file(project, Path::new(".")).unwrap()
+    }
+
+    #[test]
+    fn set_common_param_feed_rate() {
+        let mut session = session_with_toolpath();
+        let original = session.toolpath_configs[0].operation.feed_rate();
+
+        session
+            .set_toolpath_param(0, "feed_rate", serde_json::json!(1500.0))
+            .unwrap();
+
+        let updated = session.toolpath_configs[0].operation.feed_rate();
+        assert!(
+            (updated - 1500.0).abs() < 1e-6,
+            "feed_rate should be 1500.0, got {updated} (was {original})"
+        );
+    }
+
+    #[test]
+    fn set_config_specific_param() {
+        let mut session = session_with_toolpath();
+
+        // Pocket has a config-specific "angle" parameter
+        session
+            .set_toolpath_param(0, "angle", serde_json::json!(45.0))
+            .unwrap();
+
+        // Verify it changed via serde round-trip
+        let json = serde_json::to_value(&session.toolpath_configs[0].operation).unwrap();
+        let angle = json["params"]["angle"].as_f64().unwrap();
+        assert!(
+            (angle - 45.0).abs() < 1e-6,
+            "angle should be 45.0, got {angle}"
+        );
+    }
+
+    #[test]
+    fn invalid_param_name_returns_error() {
+        let mut session = session_with_toolpath();
+
+        let result = session.set_toolpath_param(
+            0,
+            "nonexistent_param_xyz",
+            serde_json::json!(42.0),
+        );
+
+        assert!(result.is_err(), "Should fail for unknown param name");
+        assert!(
+            matches!(result.unwrap_err(), SessionError::InvalidParam(_)),
+            "Should be InvalidParam error"
+        );
+    }
+
+    #[test]
+    fn set_tool_param_diameter() {
+        let mut session = session_with_toolpath();
+
+        session
+            .set_tool_param(0, "diameter", &serde_json::json!(10.0))
+            .unwrap();
+
+        let updated = session.tools[0].diameter;
+        assert!(
+            (updated - 10.0).abs() < 1e-6,
+            "diameter should be 10.0, got {updated}"
+        );
+    }
+
+    #[test]
+    fn set_toolpath_param_invalidates_cached_result() {
+        let mut session = session_with_toolpath();
+
+        // Manually insert a fake cached result
+        session.results.insert(
+            0,
+            ToolpathComputeResult {
+                toolpath: std::sync::Arc::new(crate::toolpath::Toolpath::new()),
+                stats: crate::compute::config::ToolpathStats::default(),
+                debug_trace: None,
+                semantic_trace: None,
+            },
+        );
+        assert!(session.results.contains_key(&0), "Precondition: result cached");
+
+        session
+            .set_toolpath_param(0, "feed_rate", serde_json::json!(2000.0))
+            .unwrap();
+
+        assert!(
+            !session.results.contains_key(&0),
+            "Cached result should be invalidated after set_toolpath_param"
+        );
     }
 }

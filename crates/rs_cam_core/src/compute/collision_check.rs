@@ -10,10 +10,10 @@ use crate::tool::ToolDefinition;
 use crate::toolpath::Toolpath;
 
 /// Request for a holder/shank collision check.
-pub struct CollisionCheckRequest {
-    pub toolpath: Toolpath,
+pub struct CollisionCheckRequest<'a> {
+    pub toolpath: &'a Toolpath,
     pub tool: ToolDefinition,
-    pub mesh: TriangleMesh,
+    pub mesh: &'a TriangleMesh,
 }
 
 /// Result of a collision check.
@@ -53,16 +53,16 @@ impl From<Cancelled> for CollisionCheckError {
 ///
 /// Returns collision positions as `[f32; 3]` arrays for rendering markers.
 pub fn run_collision_check(
-    request: &CollisionCheckRequest,
+    request: &CollisionCheckRequest<'_>,
     cancel: &AtomicBool,
 ) -> Result<CollisionCheckResult, CollisionCheckError> {
-    let index = SpatialIndex::build_auto(&request.mesh);
+    let index = SpatialIndex::build_auto(request.mesh);
     let assembly = request.tool.to_assembly();
 
     let report = check_collisions_interpolated_with_cancel(
-        &request.toolpath,
+        request.toolpath,
         &assembly,
-        &request.mesh,
+        request.mesh,
         &index,
         1.0,
         &|| cancel.load(Ordering::SeqCst),
@@ -116,9 +116,9 @@ mod tests {
         );
 
         let req = CollisionCheckRequest {
-            toolpath: tp,
+            toolpath: &tp,
             tool,
-            mesh,
+            mesh: &mesh,
         };
         let cancel = AtomicBool::new(false);
         let result = run_collision_check(&req, &cancel).unwrap();
@@ -143,9 +143,9 @@ mod tests {
         );
 
         let req = CollisionCheckRequest {
-            toolpath: tp,
+            toolpath: &tp,
             tool,
-            mesh,
+            mesh: &mesh,
         };
         let cancel = AtomicBool::new(true);
         let result = run_collision_check(&req, &cancel);

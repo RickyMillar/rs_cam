@@ -896,3 +896,267 @@ fn effective_levels(
         stepping.all_levels()
     }
 }
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicBool;
+
+    use crate::compute::catalog::{OperationConfig, OperationType};
+    use crate::compute::config::ResolvedHeights;
+    use crate::compute::cutter::build_cutter;
+    use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use crate::geo::{BoundingBox3, P3};
+    use crate::polygon::Polygon2;
+
+    /// Build a default tool definition and config for a given tool type.
+    fn make_tool(tool_type: ToolType) -> (crate::tool::ToolDefinition, ToolConfig) {
+        let cfg = ToolConfig::new_default(ToolId(0), tool_type);
+        let def = build_cutter(&cfg);
+        (def, cfg)
+    }
+
+    /// Sensible resolved heights for testing.
+    fn test_heights() -> ResolvedHeights {
+        ResolvedHeights {
+            clearance_z: 40.0,
+            retract_z: 30.0,
+            feed_z: 28.0,
+            top_z: 25.0,
+            bottom_z: 0.0,
+        }
+    }
+
+    /// A stock bbox suitable for most tests.
+    fn test_stock_bbox() -> BoundingBox3 {
+        BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(100.0, 100.0, 25.0),
+        }
+    }
+
+    #[test]
+    fn missing_polygons_error_for_2d_operation() {
+        let op = OperationConfig::new_default(OperationType::Profile);
+        let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let cancel = AtomicBool::new(false);
+
+        let result = execute_operation(
+            &op,
+            None,
+            None,
+            None, // no polygons
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &[],
+            &bbox,
+            None,
+            None,
+            &cancel,
+            None,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, OperationError::MissingGeometry(_)),
+            "Expected MissingGeometry, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn missing_mesh_error_for_3d_operation() {
+        let op = OperationConfig::new_default(OperationType::DropCutter);
+        let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let cancel = AtomicBool::new(false);
+
+        let result = execute_operation(
+            &op,
+            None, // no mesh
+            None,
+            None,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &[],
+            &bbox,
+            None,
+            None,
+            &cancel,
+            None,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, OperationError::MissingGeometry(_)),
+            "Expected MissingGeometry, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn invalid_tool_for_vcarve() {
+        let op = OperationConfig::new_default(OperationType::VCarve);
+        let (tool_def, tool_cfg) = make_tool(ToolType::EndMill); // not a V-Bit
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let cancel = AtomicBool::new(false);
+        let polys = vec![Polygon2::rectangle(10.0, 10.0, 50.0, 50.0)];
+
+        let result = execute_operation(
+            &op,
+            None,
+            None,
+            Some(&polys),
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &[],
+            &bbox,
+            None,
+            None,
+            &cancel,
+            None,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, OperationError::InvalidTool(_)),
+            "Expected InvalidTool, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn invalid_tool_for_scallop() {
+        let op = OperationConfig::new_default(OperationType::Scallop);
+        let (tool_def, tool_cfg) = make_tool(ToolType::EndMill); // not ball nose
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let cancel = AtomicBool::new(false);
+
+        // Scallop requires a mesh, but the tool check happens before mesh access
+        let result = execute_operation(
+            &op,
+            None,
+            None,
+            None,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &[],
+            &bbox,
+            None,
+            None,
+            &cancel,
+            None,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, OperationError::InvalidTool(_)),
+            "Expected InvalidTool, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn face_produces_output() {
+        let op = OperationConfig::new_default(OperationType::Face);
+        let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let cancel = AtomicBool::new(false);
+
+        let result = execute_operation(
+            &op,
+            None,
+            None,
+            None,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &[],
+            &bbox,
+            None,
+            None,
+            &cancel,
+            None,
+        );
+
+        assert!(result.is_ok(), "Face should succeed, got: {result:?}");
+        let tp = result.unwrap();
+        assert!(
+            !tp.moves.is_empty(),
+            "Face toolpath should contain at least one move"
+        );
+    }
+
+    #[test]
+    fn drill_produces_output() {
+        let op = OperationConfig::new_default(OperationType::Drill);
+        let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let cancel = AtomicBool::new(false);
+
+        // Create polygons representing circle centroids (small polygons
+        // whose centroid becomes the drill position).
+        let circle_poly = Polygon2::rectangle(24.0, 24.0, 26.0, 26.0);
+        let polys = vec![circle_poly];
+
+        let result = execute_operation(
+            &op,
+            None,
+            None,
+            Some(&polys),
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &[],
+            &bbox,
+            None,
+            None,
+            &cancel,
+            None,
+        );
+
+        assert!(result.is_ok(), "Drill should succeed, got: {result:?}");
+        let tp = result.unwrap();
+        assert!(
+            !tp.moves.is_empty(),
+            "Drill toolpath should contain at least one move"
+        );
+    }
+
+    #[test]
+    fn apply_dressups_preserves_moves() {
+        // Build a simple toolpath with a few moves
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 30.0));
+        tp.rapid_to(P3::new(10.0, 10.0, 30.0));
+        tp.feed_to(P3::new(10.0, 10.0, 0.0), 1000.0);
+        tp.feed_to(P3::new(50.0, 10.0, 0.0), 1000.0);
+        tp.feed_to(P3::new(50.0, 50.0, 0.0), 1000.0);
+        tp.rapid_to(P3::new(50.0, 50.0, 30.0));
+
+        let cfg = DressupConfig::default();
+        let result = apply_dressups(tp, &cfg, 6.35, 30.0, None, None, None);
+
+        assert!(
+            !result.moves.is_empty(),
+            "apply_dressups with default config should preserve moves"
+        );
+    }
+}
