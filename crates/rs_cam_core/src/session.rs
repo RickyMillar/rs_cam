@@ -168,6 +168,10 @@ pub struct ProjectStockConfig {
     pub origin_z: f64,
     #[serde(default)]
     pub material: crate::material::Material,
+    #[serde(default)]
+    pub alignment_pins: Vec<crate::compute::stock_config::AlignmentPin>,
+    #[serde(default)]
+    pub flip_axis: Option<crate::compute::stock_config::FlipAxis>,
 }
 
 impl Default for ProjectStockConfig {
@@ -180,6 +184,8 @@ impl Default for ProjectStockConfig {
             origin_y: 0.0,
             origin_z: 0.0,
             material: crate::material::Material::default(),
+            alignment_pins: Vec::new(),
+            flip_axis: None,
         }
     }
 }
@@ -1444,8 +1450,8 @@ fn stock_from_project(ps: &ProjectStockConfig) -> StockConfig {
         auto_from_model: false,
         padding: 5.0,
         material: ps.material.clone(),
-        alignment_pins: Vec::new(),
-        flip_axis: None,
+        alignment_pins: ps.alignment_pins.clone(),
+        flip_axis: ps.flip_axis,
         workholding_rigidity: crate::feeds::WorkholdingRigidity::Medium,
     }
 }
