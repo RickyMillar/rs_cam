@@ -333,6 +333,77 @@ pub fn raster_toolpath_from_grid(
     tp
 }
 
+/// Convert a drop-cutter grid into a zigzag raster toolpath with slope filtering.
+///
+/// Points whose slope angle (from `slope_angles`) falls outside the range
+/// `[slope_from, slope_to]` are skipped. Cutting segments are split at
+/// filtered-out cells with proper retract/plunge transitions.
+#[allow(clippy::indexing_slicing)] // bounded by grid dimensions
+pub fn raster_toolpath_from_grid_with_slope_filter(
+    grid: &DropCutterGrid,
+    slope_angles: &[f64],
+    slope_from: f64,
+    slope_to: f64,
+    feed_rate: f64,
+    plunge_rate: f64,
+    safe_z: f64,
+) -> Toolpath {
+    let mut tp = Toolpath::new();
+
+    if grid.points.is_empty() {
+        return tp;
+    }
+
+    for row in 0..grid.rows {
+        if grid.cols == 0 {
+            continue;
+        }
+        // Zigzag: even rows go left-to-right, odd rows go right-to-left
+        let reverse = row % 2 != 0;
+
+        let mut in_cut = false;
+        let col_iter: Box<dyn Iterator<Item = usize>> = if reverse {
+            Box::new((0..grid.cols).rev())
+        } else {
+            Box::new(0..grid.cols)
+        };
+
+        for col in col_iter {
+            let idx = row * grid.cols + col;
+            // Skip points outside the slope range
+            if let Some(&angle) = slope_angles.get(idx)
+                && (angle < slope_from || angle > slope_to)
+            {
+                if in_cut {
+                    let prev = grid.get(row, col);
+                    tp.rapid_to(P3::new(prev.x, prev.y, safe_z));
+                    in_cut = false;
+                }
+                continue;
+            }
+
+            let pt = grid.get(row, col);
+            if !in_cut {
+                tp.rapid_to(P3::new(pt.x, pt.y, safe_z));
+                tp.feed_to(pt.position(), plunge_rate);
+                in_cut = true;
+            } else {
+                tp.feed_to(pt.position(), feed_rate);
+            }
+        }
+
+        if in_cut {
+            // Retract at end of row
+            if let Some(last_move) = tp.moves.last() {
+                let last_pos = last_move.target;
+                tp.rapid_to(P3::new(last_pos.x, last_pos.y, safe_z));
+            }
+        }
+    }
+
+    tp
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {

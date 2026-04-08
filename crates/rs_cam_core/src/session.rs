@@ -1024,6 +1024,7 @@ impl ProjectSession {
             None, // no prev_tool_radius for session path
             Some(&core_ctx),
             cancel,
+            None, // no initial_stock for session path
         );
 
         match tp_result {
@@ -1039,6 +1040,9 @@ impl ProjectSession {
                     &tc.dressups,
                     tool.diameter,
                     heights.retract_z,
+                    None,
+                    None,
+                    None,
                 );
 
                 let stats = ToolpathStats {

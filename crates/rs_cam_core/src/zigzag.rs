@@ -184,7 +184,7 @@ fn scan_line_intersections(edges: &[(P2, P2)], perp_pos: f64, cos_a: f64, sin_a:
     intersections
 }
 
-fn lines_to_toolpath(lines: &[[P2; 2]], params: &ZigzagParams) -> Toolpath {
+pub fn lines_to_toolpath(lines: &[[P2; 2]], params: &ZigzagParams) -> Toolpath {
     let mut tp = Toolpath::new();
 
     if lines.is_empty() {

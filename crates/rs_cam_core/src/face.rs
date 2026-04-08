@@ -8,7 +8,7 @@ use crate::depth::{DepthDistribution, DepthStepping, depth_stepped_toolpath};
 use crate::geo::BoundingBox3;
 use crate::polygon::Polygon2;
 use crate::toolpath::Toolpath;
-use crate::zigzag::{ZigzagParams, zigzag_toolpath};
+use crate::zigzag::{ZigzagParams, lines_to_toolpath, zigzag_lines, zigzag_toolpath};
 
 /// Direction of facing passes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -43,6 +43,51 @@ pub struct FaceParams {
     pub direction: FaceDirection,
 }
 
+/// Generate a one-way (unidirectional) raster toolpath inside a polygon.
+///
+/// Uses `zigzag_lines` to compute scan rows, then normalises every row so
+/// they all cut in the same direction (the direction of the first row).
+/// Between rows the tool rapids at `safe_z`, exactly like the zigzag path
+/// but without alternating.
+fn oneway_toolpath(polygon: &Polygon2, zp: &ZigzagParams) -> Toolpath {
+    let mut lines = zigzag_lines(polygon, zp.tool_radius, zp.stepover, zp.angle);
+
+    if lines.len() > 1 {
+        // Pick the direction of the first row as the canonical direction.
+        // For angle=0 this is the X component; generalise via the scan
+        // direction vector (cos(angle), sin(angle)).
+        let angle_rad = zp.angle.to_radians();
+        let cos_a = angle_rad.cos();
+        let sin_a = angle_rad.sin();
+
+        // Dot the first row's displacement with the scan direction to
+        // determine the canonical sign.
+        // Compute reference dot product from the first line's direction.
+        let ref_dot = lines.first().map(|first| {
+            #[allow(clippy::indexing_slicing)]
+            // SAFETY: each line is a fixed-size [P2; 2] array
+            let dx = first[1].x - first[0].x;
+            #[allow(clippy::indexing_slicing)]
+            let dy = first[1].y - first[0].y;
+            dx * cos_a + dy * sin_a
+        });
+
+        if let Some(ref_dot) = ref_dot {
+            for line in &mut lines {
+                #[allow(clippy::indexing_slicing)]
+                // SAFETY: each line is a fixed-size [P2; 2] array
+                let dot = (line[1].x - line[0].x) * cos_a + (line[1].y - line[0].y) * sin_a;
+                // If this row goes the opposite way, swap its endpoints.
+                if dot * ref_dot < 0.0 {
+                    line.swap(0, 1);
+                }
+            }
+        }
+    }
+
+    lines_to_toolpath(&lines, zp)
+}
+
 /// Generate a face/surfacing toolpath over the XY extent of a bounding box.
 ///
 /// Creates a rectangle from the bounding box XY bounds (expanded by
@@ -57,6 +102,14 @@ pub fn face_toolpath(bounds: &BoundingBox3, params: &FaceParams) -> Toolpath {
         bounds.max.y + params.stock_offset,
     );
 
+    // Choose the raster strategy based on direction.
+    let raster_fn = |polygon: &Polygon2, zp: &ZigzagParams| -> Toolpath {
+        match params.direction {
+            FaceDirection::OneWay => oneway_toolpath(polygon, zp),
+            FaceDirection::Zigzag => zigzag_toolpath(polygon, zp),
+        }
+    };
+
     if params.depth <= 0.0 {
         // Single pass at Z=0 (stock top)
         let zp = ZigzagParams {
@@ -68,7 +121,7 @@ pub fn face_toolpath(bounds: &BoundingBox3, params: &FaceParams) -> Toolpath {
             safe_z: params.safe_z,
             angle: 0.0,
         };
-        zigzag_toolpath(&rect, &zp)
+        raster_fn(&rect, &zp)
     } else {
         // Multi-pass depth stepping
         let stepping = DepthStepping {
@@ -90,7 +143,7 @@ pub fn face_toolpath(bounds: &BoundingBox3, params: &FaceParams) -> Toolpath {
                 safe_z: params.safe_z,
                 angle: 0.0,
             };
-            zigzag_toolpath(&rect, &zp)
+            raster_fn(&rect, &zp)
         })
     }
 }
@@ -254,6 +307,127 @@ mod tests {
                 z
             );
         }
+    }
+
+    // --- OneWay direction produces same-direction passes ---
+
+    #[test]
+    fn face_oneway_all_passes_same_x_direction() {
+        let bounds = stock_100x100();
+        let mut params = default_params();
+        params.direction = FaceDirection::OneWay;
+
+        let tp = face_toolpath(&bounds, &params);
+
+        // Collect X coordinates of cutting moves at feed_rate.
+        // Each pass is a single cut segment; check that all segments have the
+        // same X direction (i.e., all increasing or all decreasing).
+        let cutting_moves: Vec<(f64, f64)> = {
+            let mut segs = Vec::new();
+            let mut prev_x: Option<f64> = None;
+            for m in &tp.moves {
+                if let MoveType::Linear { feed_rate } = m.move_type
+                    && (feed_rate - params.feed_rate).abs() < 1e-10
+                    && let Some(px) = prev_x
+                {
+                    segs.push((px, m.target.x));
+                }
+                prev_x = Some(m.target.x);
+            }
+            segs
+        };
+
+        assert!(
+            !cutting_moves.is_empty(),
+            "OneWay face should produce cutting segments"
+        );
+
+        // All deltas should have the same sign (or be near-zero for single-point segments).
+        let mut positive = 0;
+        let mut negative = 0;
+        for (sx, ex) in &cutting_moves {
+            let dx = ex - sx;
+            if dx > 1.0 {
+                positive += 1;
+            } else if dx < -1.0 {
+                negative += 1;
+            }
+        }
+
+        // Exactly one of positive/negative should be non-zero.
+        assert!(
+            positive == 0 || negative == 0,
+            "OneWay should have all passes in the same X direction, \
+             but got {} positive and {} negative segments",
+            positive,
+            negative
+        );
+        assert!(
+            positive > 0 || negative > 0,
+            "Should have at least one significant cutting segment"
+        );
+    }
+
+    #[test]
+    fn face_oneway_with_depth_stepping() {
+        let bounds = stock_100x100();
+        let mut params = default_params();
+        params.direction = FaceDirection::OneWay;
+        params.depth = 4.0;
+        params.depth_per_pass = 2.0;
+
+        let tp = face_toolpath(&bounds, &params);
+
+        // Should produce multiple Z levels
+        let mut cut_zs: Vec<f64> = tp
+            .moves
+            .iter()
+            .filter(|m| {
+                matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - params.feed_rate).abs() < 1e-10)
+            })
+            .map(|m| (m.target.z * 1000.0).round() / 1000.0)
+            .collect();
+        cut_zs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        cut_zs.dedup();
+
+        assert_eq!(
+            cut_zs.len(),
+            2,
+            "4mm depth at 2mm/pass should produce 2 Z levels, got {:?}",
+            cut_zs
+        );
+
+        // All cutting segments should go in the same X direction (unidirectional)
+        let cutting_moves: Vec<(f64, f64)> = {
+            let mut segs = Vec::new();
+            let mut prev_x: Option<f64> = None;
+            for m in &tp.moves {
+                if let MoveType::Linear { feed_rate } = m.move_type
+                    && (feed_rate - params.feed_rate).abs() < 1e-10
+                    && let Some(px) = prev_x
+                {
+                    segs.push((px, m.target.x));
+                }
+                prev_x = Some(m.target.x);
+            }
+            segs
+        };
+
+        let mut positive = 0;
+        let mut negative = 0;
+        for (sx, ex) in &cutting_moves {
+            let dx = ex - sx;
+            if dx > 1.0 {
+                positive += 1;
+            } else if dx < -1.0 {
+                negative += 1;
+            }
+        }
+
+        assert!(
+            positive == 0 || negative == 0,
+            "OneWay with depth stepping should have all passes in the same X direction"
+        );
     }
 
     // --- Task E-face: Zigzag direction produces alternating X directions ---

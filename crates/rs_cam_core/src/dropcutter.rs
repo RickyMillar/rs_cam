@@ -251,6 +251,51 @@ fn batch_compute_points<C: MillingCutter + ?Sized>(
     }
 }
 
+/// Compute per-cell slope angle (degrees from horizontal) from a drop-cutter grid.
+///
+/// Uses finite differences of adjacent Z values to estimate the surface normal
+/// at each cell, then converts to an angle from horizontal (0 deg = flat, 90 deg = vertical).
+#[allow(clippy::indexing_slicing)] // bounded by grid dimensions
+pub fn compute_grid_slopes(grid: &DropCutterGrid) -> Vec<f64> {
+    let rows = grid.rows;
+    let cols = grid.cols;
+    let mut slopes = vec![0.0f64; rows * cols];
+
+    for row in 0..rows {
+        for col in 0..cols {
+            let z = grid.get(row, col).z;
+
+            // Finite difference: dz/dx and dz/dy from neighbors
+            let dz_dx = if col > 0 && col + 1 < cols {
+                (grid.get(row, col + 1).z - grid.get(row, col.saturating_sub(1)).z)
+                    / (2.0 * grid.x_step)
+            } else if col + 1 < cols {
+                (grid.get(row, col + 1).z - z) / grid.x_step
+            } else if col > 0 {
+                (z - grid.get(row, col - 1).z) / grid.x_step
+            } else {
+                0.0
+            };
+
+            let dz_dy = if row > 0 && row + 1 < rows {
+                (grid.get(row + 1, col).z - grid.get(row.saturating_sub(1), col).z)
+                    / (2.0 * grid.y_step)
+            } else if row + 1 < rows {
+                (grid.get(row + 1, col).z - z) / grid.y_step
+            } else if row > 0 {
+                (z - grid.get(row - 1, col).z) / grid.y_step
+            } else {
+                0.0
+            };
+
+            // Slope angle from horizontal: atan(sqrt(dz_dx^2 + dz_dy^2))
+            let gradient = (dz_dx * dz_dx + dz_dy * dz_dy).sqrt();
+            slopes[row * cols + col] = gradient.atan().to_degrees();
+        }
+    }
+    slopes
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
