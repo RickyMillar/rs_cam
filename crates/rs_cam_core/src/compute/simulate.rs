@@ -136,17 +136,19 @@ fn transform_stock_mesh_to_global(
 
 /// Run a full stock simulation over one or more setup groups.
 ///
-/// This is the headless (no GUI) version of the simulation pipeline:
-/// 1. Creates a tri-dexel stock from the bounding box
-/// 2. Simulates each toolpath in order, collecting metrics if enabled
-/// 3. Creates checkpoint meshes at toolpath boundaries
-/// 4. Checks for rapid-through-stock collisions
-/// 5. Assembles cut trace from samples (if metrics enabled)
-/// 6. Computes per-vertex deviation against a reference model (if provided)
+/// This is the headless (no GUI) version of the simulation pipeline,
+/// matching the viz orchestration logic line-for-line:
 ///
-/// When any group has `local_stock_bbox` set, uses per-setup mode:
-/// each group gets its own local stock (always FromTop), with results
-/// composited into a global mesh via `local_to_global`.
+/// 1. Creates per-setup local stocks (always simulated FromTop)
+/// 2. Simulates each toolpath, collecting metrics if enabled
+/// 3. Transforms local meshes to global frame and composites them
+/// 4. Maintains a parallel global stock for checkpoint/playback support
+/// 5. Checks for rapid-through-stock collisions
+/// 6. Assembles cut trace from samples (if metrics enabled)
+/// 7. Computes per-vertex deviation against a reference model (if provided)
+///
+/// When `local_stock_bbox` is `None` for a group (old callers that
+/// don't set per-setup fields), falls back to `request.stock_bbox`.
 ///
 /// The `cancel` flag is polled during simulation; if set, returns
 /// `SimulationError::Cancelled`.
@@ -154,21 +156,6 @@ pub fn run_simulation(
     request: &SimulationRequest,
     cancel: &AtomicBool,
 ) -> Result<SimulationResult, SimulationError> {
-    let per_setup_mode = request.groups.iter().any(|g| g.local_stock_bbox.is_some());
-
-    if per_setup_mode {
-        run_simulation_per_setup(request, cancel)
-    } else {
-        run_simulation_single_stock(request, cancel)
-    }
-}
-
-/// Single-stock simulation path (backward-compatible, all groups share one stock).
-fn run_simulation_single_stock(
-    request: &SimulationRequest,
-    cancel: &AtomicBool,
-) -> Result<SimulationResult, SimulationError> {
-    let mut stock = TriDexelStock::from_bounds(&request.stock_bbox, request.resolution);
     let sample_step_mm = request.resolution.max(0.25);
 
     let mut total_moves = 0;
@@ -176,90 +163,20 @@ fn run_simulation_single_stock(
     let mut boundaries = Vec::new();
     let mut checkpoints = Vec::new();
     let mut cut_samples: Vec<SimulationCutSample> = Vec::new();
-
-    for group in &request.groups {
-        for entry in &group.toolpaths {
-            let lut = RadialProfileLUT::from_cutter(&entry.tool, 256);
-            let radius = entry.tool.radius();
-            let start_move = total_moves;
-
-            if request.metric_options.enabled {
-                let mut samples = stock
-                    .simulate_toolpath_with_lut_metrics_cancel(
-                        &entry.toolpath,
-                        &lut,
-                        radius,
-                        group.direction,
-                        entry.id,
-                        request.spindle_rpm,
-                        entry.flute_count,
-                        request.rapid_feed_mm_min,
-                        sample_step_mm,
-                        entry.semantic_trace.as_deref(),
-                        &|| cancel.load(Ordering::SeqCst),
-                    )
-                    .map_err(|_cancelled| SimulationError::Cancelled)?;
-                cut_samples.append(&mut samples);
-            } else {
-                stock
-                    .simulate_toolpath_with_lut_cancel(
-                        &entry.toolpath,
-                        &lut,
-                        radius,
-                        group.direction,
-                        &|| cancel.load(Ordering::SeqCst),
-                    )
-                    .map_err(|_cancelled| SimulationError::Cancelled)?;
-            }
-            total_moves += entry.toolpath.moves.len();
-
-            boundaries.push(SimBoundary {
-                id: entry.id,
-                name: entry.name.clone(),
-                tool_name: entry.tool_summary.clone(),
-                start_move,
-                end_move: total_moves,
-                direction: group.direction,
-            });
-
-            checkpoints.push(SimCheckpointMesh {
-                boundary_index,
-                mesh: dexel_stock_to_mesh(&stock),
-                stock: stock.checkpoint(),
-            });
-
-            boundary_index += 1;
-        }
-    }
-
-    build_simulation_result(request, boundaries, checkpoints, cut_samples, total_moves, || {
-        dexel_stock_to_mesh(&stock)
-    })
-}
-
-/// Per-setup simulation path: each group gets its own local stock, results
-/// are composited into a global mesh.
-fn run_simulation_per_setup(
-    request: &SimulationRequest,
-    cancel: &AtomicBool,
-) -> Result<SimulationResult, SimulationError> {
-    let sample_step_mm = request.resolution.max(0.25);
-
-    let mut total_moves = 0;
-    let mut boundary_index = 0;
-    let mut boundaries = Vec::new();
-    let mut checkpoints = Vec::new();
-    let mut cut_samples: Vec<SimulationCutSample> = Vec::new();
+    // Composited mesh from all per-setup simulations.
     let mut composite_mesh = StockMesh::empty();
-    // Global stock for checkpoint playback support.
+    // Parallel global stock for checkpoint/playback support.
     let mut global_stock = TriDexelStock::from_bounds(&request.stock_bbox, request.resolution);
 
     for group in &request.groups {
         // Per-setup stock: use local bbox if available, else fall back to global.
-        let local_bbox = group.local_stock_bbox.as_ref().unwrap_or(&request.stock_bbox);
+        let local_bbox = group
+            .local_stock_bbox
+            .as_ref()
+            .unwrap_or(&request.stock_bbox);
         let mut group_stock = TriDexelStock::from_bounds(local_bbox, request.resolution);
-        // Per-setup stocks are always stamped FromTop.
-        let local_direction = StockCutDirection::FromTop;
+        // Per-setup stocks are always simulated from the top (Z-axis).
+        let direction = StockCutDirection::FromTop;
 
         // Direction for global-frame playback/boundaries.
         let playback_direction = group
@@ -278,7 +195,7 @@ fn run_simulation_per_setup(
                         &entry.toolpath,
                         &lut,
                         radius,
-                        local_direction,
+                        direction,
                         entry.id,
                         request.spindle_rpm,
                         entry.flute_count,
@@ -295,7 +212,7 @@ fn run_simulation_per_setup(
                         &entry.toolpath,
                         &lut,
                         radius,
-                        local_direction,
+                        direction,
                         &|| cancel.load(Ordering::SeqCst),
                     )
                     .map_err(|_cancelled| SimulationError::Cancelled)?;
@@ -318,7 +235,8 @@ fn run_simulation_per_setup(
                 Arc::clone(&entry.toolpath)
             };
 
-            // Stamp the global stock for checkpoint/playback support.
+            // Stamp the global stock in parallel for checkpoint/playback support.
+            // This uses the same global-frame toolpath + direction as playback.
             {
                 let playback_lut = RadialProfileLUT::from_cutter(&entry.tool, 256);
                 let _ = global_stock.simulate_toolpath_with_lut_cancel(
@@ -330,7 +248,7 @@ fn run_simulation_per_setup(
                 );
             }
 
-            // Checkpoint: composited mesh for display + global stock for playback.
+            // Checkpoint: composited mesh for display + global stock for playback resume.
             let local_mesh = dexel_stock_to_mesh(&group_stock);
             let checkpoint_mesh =
                 transform_stock_mesh_to_global(&local_mesh, &group.local_to_global);
@@ -355,32 +273,7 @@ fn run_simulation_per_setup(
         }
     }
 
-    // Use the per-setup composite mesh for the final result.
-    // Each group's mesh is extracted from its local stock (always FromTop)
-    // and transformed to global frame via local_to_global. For identity
-    // setups this is a no-op copy. The global_stock is maintained separately
-    // for checkpoint/playback support but its mesh may have frame mismatches
-    // with the toolpath coordinates.
-    build_simulation_result(request, boundaries, checkpoints, cut_samples, total_moves, || {
-        composite_mesh
-    })
-}
-
-/// Shared post-processing: collision checks, cut trace, deviation, and result assembly.
-fn build_simulation_result<F>(
-    request: &SimulationRequest,
-    boundaries: Vec<SimBoundary>,
-    checkpoints: Vec<SimCheckpointMesh>,
-    cut_samples: Vec<SimulationCutSample>,
-    total_moves: usize,
-    build_mesh: F,
-) -> Result<SimulationResult, SimulationError>
-where
-    F: FnOnce() -> StockMesh,
-{
-    let sample_step_mm = request.resolution.max(0.25);
-
-    // Check for rapid-through-stock collisions on each toolpath
+    // Check for rapid-through-stock collisions on each toolpath.
     let mut rapid_collisions = Vec::new();
     let mut rapid_collision_move_indices = Vec::new();
     {
@@ -420,10 +313,9 @@ where
         None
     };
 
-    // Build the final simulation mesh
-    let mesh = build_mesh();
+    let mesh = composite_mesh;
 
-    // Compute per-vertex deviation if a reference model is available
+    // Compute per-vertex deviation (sim_z - model_z) if a reference model is available.
     let deviations = request
         .model_mesh
         .as_ref()
