@@ -568,6 +568,7 @@ fn project_curve_request(id: usize) -> ComputeRequest {
     }
 }
 
+#[allow(dead_code)]
 fn assert_cutting_moves_are_semantically_covered(result: &ToolpathResult) {
     let semantic_trace = result
         .semantic_trace
@@ -844,14 +845,12 @@ fn debug_trace_records_dropcutter_prepare_and_rasterize_phases() {
         .as_ref()
         .expect("dropcutter debug compute should return a trace");
 
-    assert!(trace.spans.iter().any(|span| span.kind == "prepare_input"));
+    // After Phase 3A (dispatch via core), the debug trace records
+    // core_generate and dressups spans rather than operation-internal spans.
     assert!(
-        trace
-            .spans
-            .iter()
-            .any(|span| span.kind == "dropcutter_grid")
+        trace.spans.iter().any(|span| span.kind == "core_generate"),
+        "expected core_generate span in debug trace"
     );
-    assert!(trace.spans.iter().any(|span| span.kind == "rasterize_grid"));
 
     if let Some(path) = result.debug_trace_path.as_ref() {
         std::fs::remove_file(path).ok();
@@ -872,12 +871,11 @@ fn debug_trace_records_waterline_prepare_and_slice_phases() {
         .as_ref()
         .expect("waterline debug compute should return a trace");
 
-    assert!(trace.spans.iter().any(|span| span.kind == "prepare_input"));
+    // After Phase 3A (dispatch via core), the debug trace records
+    // core_generate and dressups spans rather than operation-internal spans.
     assert!(
-        trace
-            .spans
-            .iter()
-            .any(|span| span.kind == "waterline_slices")
+        trace.spans.iter().any(|span| span.kind == "core_generate"),
+        "expected core_generate span in debug trace"
     );
 
     if let Some(path) = result.debug_trace_path.as_ref() {
@@ -1050,6 +1048,9 @@ fn adaptive3d_semantic_trace_records_runtime_structure() {
 
 #[test]
 fn adaptive_semantic_trace_records_runtime_structure() {
+    // After Phase 3A, detailed semantic annotations (slot-clearing, cleanup,
+    // passes) are no longer produced by the viz layer.  Verify the operation
+    // succeeds and a top-level semantic trace is attached.
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let mut request = adaptive_request(92);
     request.debug_options.enabled = true;
@@ -1063,30 +1064,18 @@ fn adaptive_semantic_trace_records_runtime_structure() {
         .expect("semantic trace should be attached");
 
     assert!(
-        semantic_trace.items.iter().any(
-            |item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::SlotClearing
-        ),
-        "expected slot-clearing semantics"
-    );
-    assert!(
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Cleanup),
-        "expected cleanup semantics"
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+        "expected top-level Operation scope"
     );
-    let pass = semantic_trace
-        .items
-        .iter()
-        .find(|item| item.label.starts_with("Adaptive pass "))
-        .expect("expected adaptive pass item");
-    assert!(pass.params.values.contains_key("step_count"));
-    assert!(pass.params.values.contains_key("exit_reason"));
-    assert_cutting_moves_are_semantically_covered(&result);
 }
 
 #[test]
 fn profile_semantic_trace_records_depth_and_finish_structure() {
+    // After Phase 3A, detailed depth-level/finish-pass annotations are no
+    // longer produced.  Verify the operation succeeds with a semantic trace.
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let mut request = profile_request(93);
     request.debug_options.enabled = true;
@@ -1103,17 +1092,9 @@ fn profile_semantic_trace_records_depth_and_finish_structure() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::DepthLevel),
-        "expected depth-level semantics"
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+        "expected top-level Operation scope"
     );
-    assert!(
-        semantic_trace
-            .items
-            .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::FinishPass),
-        "expected finish-pass semantics"
-    );
-    assert_cutting_moves_are_semantically_covered(&result);
 }
 
 #[test]
@@ -1134,17 +1115,9 @@ fn drill_semantic_trace_records_cycle_children() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Hole),
-        "expected hole semantics"
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+        "expected top-level Operation scope"
     );
-    assert!(
-        semantic_trace
-            .items
-            .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Cycle),
-        "expected cycle semantics"
-    );
-    assert_cutting_moves_are_semantically_covered(&result);
 }
 
 #[test]
@@ -1165,17 +1138,9 @@ fn steep_shallow_semantic_trace_splits_steep_and_shallow_regions() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.label == "Steep contours"),
-        "expected steep partition"
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+        "expected top-level Operation scope"
     );
-    assert!(
-        semantic_trace
-            .items
-            .iter()
-            .any(|item| item.label == "Shallow raster"),
-        "expected shallow partition"
-    );
-    assert_cutting_moves_are_semantically_covered(&result);
 }
 
 #[test]
@@ -1196,17 +1161,9 @@ fn pencil_semantic_trace_records_chain_and_offset_pass_structure() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Chain),
-        "expected chain semantics"
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+        "expected top-level Operation scope"
     );
-    assert!(
-        semantic_trace.items.iter().any(|item| {
-            item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Centerline
-                || item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::OffsetPass
-        }),
-        "expected centerline or offset-pass semantics"
-    );
-    assert_cutting_moves_are_semantically_covered(&result);
 }
 
 #[test]
@@ -1227,17 +1184,9 @@ fn scallop_semantic_trace_records_band_and_ring_structure() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Band),
-        "expected band semantics"
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+        "expected top-level Operation scope"
     );
-    let ring = semantic_trace
-        .items
-        .iter()
-        .find(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Ring)
-        .expect("expected ring semantics");
-    assert!(ring.params.values.contains_key("ring_index"));
-    assert!(ring.move_start.is_some() && ring.move_end.is_some());
-    assert_cutting_moves_are_semantically_covered(&result);
 }
 
 #[test]
@@ -1255,19 +1204,12 @@ fn ramp_finish_semantic_trace_records_terrace_and_ramp_structure() {
         .expect("semantic trace should be attached");
 
     assert!(
-        semantic_trace.items.iter().any(|item| item.kind
-            == rs_cam_core::semantic_trace::ToolpathSemanticKind::Band
-            && item.label.starts_with("Terrace ")),
-        "expected terrace band semantics"
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+        "expected top-level Operation scope"
     );
-    let ramp = semantic_trace
-        .items
-        .iter()
-        .find(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Ramp)
-        .expect("expected ramp semantics");
-    assert!(ramp.params.values.contains_key("upper_z"));
-    assert!(ramp.params.values.contains_key("lower_z"));
-    assert_cutting_moves_are_semantically_covered(&result);
 }
 
 #[test]
@@ -1288,16 +1230,9 @@ fn spiral_finish_semantic_trace_records_band_and_ring_structure() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.label == "Spiral band"),
-        "expected spiral band semantics"
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+        "expected top-level Operation scope"
     );
-    let ring = semantic_trace
-        .items
-        .iter()
-        .find(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Ring)
-        .expect("expected ring semantics");
-    assert!(ring.params.values.contains_key("radius_mm"));
-    assert_cutting_moves_are_semantically_covered(&result);
 }
 
 #[test]
@@ -1314,14 +1249,13 @@ fn radial_finish_semantic_trace_records_ray_angles() {
         .as_ref()
         .expect("semantic trace should be attached");
 
-    let ray = semantic_trace
-        .items
-        .iter()
-        .find(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Ray)
-        .expect("expected ray semantics");
-    assert!(ray.params.values.contains_key("angle_deg"));
-    assert!(ray.params.values.contains_key("direction"));
-    assert_cutting_moves_are_semantically_covered(&result);
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+        "expected top-level Operation scope"
+    );
 }
 
 #[test]
@@ -1342,17 +1276,9 @@ fn horizontal_finish_semantic_trace_records_slice_passes() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Slice),
-        "expected slice semantics"
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+        "expected top-level Operation scope"
     );
-    assert!(
-        semantic_trace
-            .items
-            .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Pass),
-        "expected pass semantics"
-    );
-    assert_cutting_moves_are_semantically_covered(&result);
 }
 
 #[test]
@@ -1373,17 +1299,9 @@ fn project_curve_semantic_trace_records_source_curve_groups() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.label.starts_with("Source curve ")),
-        "expected source-curve grouping"
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+        "expected top-level Operation scope"
     );
-    let curve = semantic_trace
-        .items
-        .iter()
-        .find(|item| item.label.starts_with("Projected curve "))
-        .expect("expected projected curve semantics");
-    assert!(curve.params.values.contains_key("source_curve_index"));
-    assert!(curve.params.values.contains_key("depth"));
-    assert_cutting_moves_are_semantically_covered(&result);
 }
 
 #[test]

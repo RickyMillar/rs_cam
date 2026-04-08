@@ -454,15 +454,17 @@ pub fn execute_operation(
             let slope_filter_active = cfg.slope_from > 0.01 || cfg.slope_to < 89.99;
             if slope_filter_active {
                 let slope_angles = crate::dropcutter::compute_grid_slopes(&grid);
-                Ok(crate::toolpath::raster_toolpath_from_grid_with_slope_filter(
-                    &grid,
-                    &slope_angles,
-                    cfg.slope_from,
-                    cfg.slope_to,
-                    feed_rate,
-                    plunge_rate,
-                    safe_z,
-                ))
+                Ok(
+                    crate::toolpath::raster_toolpath_from_grid_with_slope_filter(
+                        &grid,
+                        &slope_angles,
+                        cfg.slope_from,
+                        cfg.slope_to,
+                        feed_rate,
+                        plunge_rate,
+                        safe_z,
+                    ),
+                )
             } else {
                 Ok(crate::toolpath::raster_toolpath_from_grid(
                     &grid,

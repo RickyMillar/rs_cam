@@ -461,8 +461,20 @@ fn emit_z_grid_cavity_surfaces(
             let a_gaps = &cell_gaps[row * cols + col];
             let b_gaps = &cell_gaps[row * cols + col + 1];
             emit_cavity_wall_edges(
-                grid, vertices, colors, indices, stock_top, stock_bot, z_range, a_gaps, b_gaps,
-                row, col, row, col + 1, true,
+                grid,
+                vertices,
+                colors,
+                indices,
+                stock_top,
+                stock_bot,
+                z_range,
+                a_gaps,
+                b_gaps,
+                row,
+                col,
+                row,
+                col + 1,
+                true,
             );
         }
     }
@@ -473,8 +485,20 @@ fn emit_z_grid_cavity_surfaces(
             let a_gaps = &cell_gaps[row * cols + col];
             let b_gaps = &cell_gaps[(row + 1) * cols + col];
             emit_cavity_wall_edges(
-                grid, vertices, colors, indices, stock_top, stock_bot, z_range, a_gaps, b_gaps,
-                row, col, row + 1, col, false,
+                grid,
+                vertices,
+                colors,
+                indices,
+                stock_top,
+                stock_bot,
+                z_range,
+                a_gaps,
+                b_gaps,
+                row,
+                col,
+                row + 1,
+                col,
+                false,
             );
         }
     }
@@ -522,8 +546,20 @@ fn emit_cavity_wall_edges(
     for gap in a_gaps {
         if find_matching_gap(b_gaps, gap).is_none() {
             emit_cavity_wall_quad(
-                grid, vertices, colors, indices, stock_top, stock_bot, z_range, gap, a_row, a_col,
-                b_row, b_col, is_col_direction, true,
+                grid,
+                vertices,
+                colors,
+                indices,
+                stock_top,
+                stock_bot,
+                z_range,
+                gap,
+                a_row,
+                a_col,
+                b_row,
+                b_col,
+                is_col_direction,
+                true,
             );
         }
     }
@@ -531,8 +567,20 @@ fn emit_cavity_wall_edges(
     for gap in b_gaps {
         if find_matching_gap(a_gaps, gap).is_none() {
             emit_cavity_wall_quad(
-                grid, vertices, colors, indices, stock_top, stock_bot, z_range, gap, b_row, b_col,
-                a_row, a_col, is_col_direction, false,
+                grid,
+                vertices,
+                colors,
+                indices,
+                stock_top,
+                stock_bot,
+                z_range,
+                gap,
+                b_row,
+                b_col,
+                a_row,
+                a_col,
+                is_col_direction,
+                false,
             );
         }
     }

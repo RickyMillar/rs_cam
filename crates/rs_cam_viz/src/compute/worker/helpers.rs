@@ -17,6 +17,7 @@ pub(super) fn effective_safe_z(req: &ComputeRequest) -> f64 {
     req.heights.retract_z
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn require_polygons(req: &ComputeRequest) -> Result<&[Polygon2], OperationError> {
     req.polygons.as_ref().map(|p| p.as_slice()).ok_or_else(|| {
         OperationError::MissingGeometry(
@@ -25,6 +26,7 @@ pub(super) fn require_polygons(req: &ComputeRequest) -> Result<&[Polygon2], Oper
     })
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn require_mesh(
     req: &ComputeRequest,
 ) -> Result<(&TriangleMesh, SpatialIndex), OperationError> {
