@@ -41,9 +41,13 @@ pub struct ExportParam {
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct ScreenshotSimParam {
-    /// Output HTML file path
+    /// Output file path (.png for 6-view composite, .html for interactive 3D)
     pub path: String,
-    /// Include toolpath overlay lines (default true)
+    /// Image width in pixels (default 1200, PNG only)
+    pub width: Option<u32>,
+    /// Image height in pixels (default 800, PNG only)
+    pub height: Option<u32>,
+    /// Include toolpath overlay lines (HTML only, default true)
     pub include_toolpaths: Option<bool>,
 }
 
@@ -323,12 +327,12 @@ impl CamServer {
 
     #[tool(
         name = "screenshot_simulation",
-        description = "Export an interactive 3D HTML view of the simulated stock. Run simulation first. Opens in any browser."
+        description = "Export simulated stock as a 6-view composite PNG (default) or interactive 3D HTML. Run simulation first. Use .png for agent-viewable images, .html for interactive browser views."
     )]
     async fn screenshot_simulation(
         &self,
         #[allow(clippy::needless_pass_by_value)]
-        Parameters(ScreenshotSimParam { path, include_toolpaths }): Parameters<ScreenshotSimParam>,
+        Parameters(ScreenshotSimParam { path, width, height, include_toolpaths }): Parameters<ScreenshotSimParam>,
     ) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
@@ -338,28 +342,46 @@ impl CamServer {
             return text("No simulation result. Run run_simulation first.");
         };
 
-        let toolpaths: Vec<&rs_cam_core::toolpath::Toolpath> =
-            if include_toolpaths.unwrap_or(true) {
-                (0..session.toolpath_count())
-                    .filter_map(|i| session.get_result(i).map(|r| &r.toolpath))
-                    .collect()
-            } else {
-                Vec::new()
-            };
+        if path.ends_with(".png") {
+            let w = width.unwrap_or(1200);
+            let h = height.unwrap_or(800);
+            match rs_cam_core::fingerprint::save_mesh_composite_png(
+                &sim.mesh,
+                Path::new(&path),
+                w,
+                h,
+            ) {
+                Ok(()) => text(format!(
+                    "6-view composite exported to {path} ({w}x{h}, {} vertices, {} triangles)",
+                    sim.mesh.vertex_count(),
+                    sim.mesh.indices.len() / 3,
+                )),
+                Err(e) => text(format!("Failed to render: {e}")),
+            }
+        } else {
+            let toolpaths: Vec<&rs_cam_core::toolpath::Toolpath> =
+                if include_toolpaths.unwrap_or(true) {
+                    (0..session.toolpath_count())
+                        .filter_map(|i| session.get_result(i).map(|r| &r.toolpath))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
 
-        let html = rs_cam_core::viz::stock_mesh_to_3d_html(
-            &sim.mesh,
-            &toolpaths,
-            &format!("{} — Simulation", session.name()),
-        );
+            let html = rs_cam_core::viz::stock_mesh_to_3d_html(
+                &sim.mesh,
+                &toolpaths,
+                &format!("{} — Simulation", session.name()),
+            );
 
-        match std::fs::write(&path, &html) {
-            Ok(()) => text(format!(
-                "Simulation view exported to {path} ({} vertices, {} triangles)",
-                sim.mesh.vertex_count(),
-                sim.mesh.indices.len() / 3,
-            )),
-            Err(e) => text(format!("Failed to write: {e}")),
+            match std::fs::write(&path, &html) {
+                Ok(()) => text(format!(
+                    "Simulation view exported to {path} ({} vertices, {} triangles)",
+                    sim.mesh.vertex_count(),
+                    sim.mesh.indices.len() / 3,
+                )),
+                Err(e) => text(format!("Failed to write: {e}")),
+            }
         }
     }
 
