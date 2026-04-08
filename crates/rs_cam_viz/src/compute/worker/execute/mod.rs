@@ -8,8 +8,8 @@ use super::helpers::{
     effective_safe_z, simulation_metric_artifact_dir,
 };
 use super::{
-    Arc, AtomicBool, ComputeError, ComputeRequest, SimBoundary, SimCheckpointMesh,
-    SimulationRequest, SimulationResult, Toolpath, ToolpathPhaseTracker, ToolpathResult,
+    Arc, AtomicBool, ComputeError, ComputeRequest, SimBoundary, SimulationRequest,
+    SimulationResult, Toolpath, ToolpathPhaseTracker, ToolpathResult,
 };
 #[cfg(test)]
 use super::{
@@ -215,16 +215,8 @@ where
         })
         .collect();
 
-    // Convert core checkpoints to viz checkpoints (same types, just re-wrap).
-    let checkpoints: Vec<SimCheckpointMesh> = core_result
-        .checkpoints
-        .into_iter()
-        .map(|cp| SimCheckpointMesh {
-            boundary_index: cp.boundary_index,
-            mesh: cp.mesh,
-            stock: cp.stock,
-        })
-        .collect();
+    // Core and viz now share the same SimCheckpointMesh type (re-exported).
+    let checkpoints = core_result.checkpoints;
 
     // Write cut-trace artifact to disk (viz-only filesystem concern).
     let (cut_trace, cut_trace_path) = if let Some(trace) = core_result.cut_trace {
