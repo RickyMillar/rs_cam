@@ -58,8 +58,17 @@ pub struct ScreenshotSimParam {
 pub struct ScreenshotToolpathParam {
     /// Toolpath index (0-based)
     pub index: usize,
-    /// Output HTML file path
+    /// Output file path (.png for 6-view composite, .html for interactive 3D)
     pub path: String,
+    /// Image width in pixels (default 1200, PNG only)
+    pub width: Option<u32>,
+    /// Image height in pixels (default 800, PNG only)
+    pub height: Option<u32>,
+    /// Show machined stock as dimmed background context (default false, PNG only).
+    /// Requires simulation to have been run first.
+    pub show_stock: Option<bool>,
+    /// Include rapid moves in the rendering (default true, PNG only)
+    pub include_rapids: Option<bool>,
 }
 
 fn text(msg: impl Into<String>) -> String {
@@ -391,11 +400,12 @@ impl CamServer {
 
     #[tool(
         name = "screenshot_toolpath",
-        description = "Export an interactive 3D HTML view of a single generated toolpath. Opens in any browser."
+        description = "Export a single generated toolpath as a 6-view composite PNG or interactive 3D HTML. Green = cutting, orange = rapid. Use show_stock=true to overlay on dimmed machined stock for context."
     )]
     async fn screenshot_toolpath(
         &self,
-        Parameters(ScreenshotToolpathParam { index, path }): Parameters<ScreenshotToolpathParam>,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(ScreenshotToolpathParam { index, path, width, height, show_stock, include_rapids }): Parameters<ScreenshotToolpathParam>,
     ) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
@@ -405,17 +415,46 @@ impl CamServer {
             return text(format!("Toolpath {index} not generated. Run generate_toolpath first."));
         };
 
-        let bbox = session.stock_bbox();
-        let bounds = [bbox.min.x, bbox.min.y, bbox.min.z, bbox.max.x, bbox.max.y, bbox.max.z];
-        let html = rs_cam_core::viz::toolpath_standalone_3d_html(&result.toolpath, Some(bounds));
+        if path.ends_with(".png") {
+            let w = width.unwrap_or(1200);
+            let h = height.unwrap_or(800);
+            let bg = if show_stock.unwrap_or(false) {
+                session.simulation_result().map(|sim| {
+                    let mut m = sim.mesh.clone();
+                    m.apply_height_gradient();
+                    m
+                })
+            } else {
+                None
+            };
+            let pixels = rs_cam_core::fingerprint::render_toolpath_composite(
+                &result.toolpath,
+                bg.as_ref(),
+                w,
+                h,
+                include_rapids.unwrap_or(true),
+            );
+            match image::save_buffer(Path::new(&path), &pixels, w, h, image::ColorType::Rgba8) {
+                Ok(()) => text(format!(
+                    "Toolpath {index} exported to {path} ({w}x{h}, {} moves, {:.0}mm cutting)",
+                    result.toolpath.moves.len(),
+                    result.stats.cutting_distance,
+                )),
+                Err(e) => text(format!("Failed to save PNG: {e}")),
+            }
+        } else {
+            let bbox = session.stock_bbox();
+            let bounds = [bbox.min.x, bbox.min.y, bbox.min.z, bbox.max.x, bbox.max.y, bbox.max.z];
+            let html = rs_cam_core::viz::toolpath_standalone_3d_html(&result.toolpath, Some(bounds));
 
-        match std::fs::write(&path, &html) {
-            Ok(()) => text(format!(
-                "Toolpath view exported to {path} ({} moves, {:.0}mm cutting)",
-                result.toolpath.moves.len(),
-                result.stats.cutting_distance,
-            )),
-            Err(e) => text(format!("Failed to write: {e}")),
+            match std::fs::write(&path, &html) {
+                Ok(()) => text(format!(
+                    "Toolpath view exported to {path} ({} moves, {:.0}mm cutting)",
+                    result.toolpath.moves.len(),
+                    result.stats.cutting_distance,
+                )),
+                Err(e) => text(format!("Failed to write: {e}")),
+            }
         }
     }
 }

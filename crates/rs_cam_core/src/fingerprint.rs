@@ -447,8 +447,38 @@ pub fn render_stock_composite(
 ) -> Vec<u8> {
     use crate::dexel_mesh::dexel_stock_to_mesh;
 
-    let mesh = dexel_stock_to_mesh(stock);
+    let mut mesh = dexel_stock_to_mesh(stock);
+    mesh.apply_height_gradient();
     render_mesh_composite(&mesh, width, height)
+}
+
+/// Render a toolpath as a 6-view composite PNG, optionally with stock background.
+///
+/// Converts toolpath moves to a tube mesh and renders through the same
+/// pipeline as stock composites. If `background_mesh` is provided, it is
+/// rendered dimmed as spatial context with full z-buffer interaction.
+#[allow(clippy::indexing_slicing)]
+pub fn render_toolpath_composite(
+    toolpath: &crate::toolpath::Toolpath,
+    background_mesh: Option<&crate::stock_mesh::StockMesh>,
+    width: u32,
+    height: u32,
+    include_rapids: bool,
+) -> Vec<u8> {
+    use crate::stock_mesh::{auto_ribbon_radius, toolpath_to_tube_mesh};
+
+    let radius = auto_ribbon_radius(toolpath);
+    let tp_mesh = toolpath_to_tube_mesh(toolpath, radius, include_rapids);
+
+    let combined = if let Some(bg) = background_mesh {
+        let mut m = bg.with_dimmed_colors(0.35);
+        m.append(&tp_mesh);
+        m
+    } else {
+        tp_mesh
+    };
+
+    render_mesh_composite(&combined, width, height)
 }
 
 /// Render a composite 6-view PNG from an existing `StockMesh`.
@@ -646,7 +676,7 @@ fn render_view_to_pixels(
         let px2 = off_x + (projected[i2][0] - sx_min) * scale;
         let py2 = off_y + proj_h - (projected[i2][1] - sy_min) * scale;
 
-        // Compute shaded color once per triangle
+        // Per-face normal for Phong shading
         let ax = f64::from(mesh.vertices[i1 * 3]) - f64::from(mesh.vertices[i0 * 3]);
         let ay = f64::from(mesh.vertices[i1 * 3 + 1]) - f64::from(mesh.vertices[i0 * 3 + 1]);
         let az_v = f64::from(mesh.vertices[i1 * 3 + 2]) - f64::from(mesh.vertices[i0 * 3 + 2]);
@@ -659,34 +689,34 @@ fn render_view_to_pixels(
         let nlen = (nx * nx + ny * ny + nz * nz).sqrt().max(1e-10);
         let dot =
             ((nx / nlen) * light_x + (ny / nlen) * light_y + (nz / nlen) * light_z).clamp(0.0, 1.0);
-        let shade = 0.3 + 0.7 * dot;
+        let shade = 0.35 + 0.65 * dot;
 
-        let base_r = (f64::from(mesh.colors[i0 * 3])
-            + f64::from(mesh.colors[i1 * 3])
-            + f64::from(mesh.colors[i2 * 3]))
-            / 3.0;
-        let base_g = (f64::from(mesh.colors[i0 * 3 + 1])
-            + f64::from(mesh.colors[i1 * 3 + 1])
-            + f64::from(mesh.colors[i2 * 3 + 1]))
-            / 3.0;
-        let base_b = (f64::from(mesh.colors[i0 * 3 + 2])
-            + f64::from(mesh.colors[i1 * 3 + 2])
-            + f64::from(mesh.colors[i2 * 3 + 2]))
-            / 3.0;
+        // Per-vertex colors for interpolation
+        let c0 = [
+            f64::from(mesh.colors[i0 * 3]),
+            f64::from(mesh.colors[i0 * 3 + 1]),
+            f64::from(mesh.colors[i0 * 3 + 2]),
+        ];
+        let c1 = [
+            f64::from(mesh.colors[i1 * 3]),
+            f64::from(mesh.colors[i1 * 3 + 1]),
+            f64::from(mesh.colors[i1 * 3 + 2]),
+        ];
+        let c2 = [
+            f64::from(mesh.colors[i2 * 3]),
+            f64::from(mesh.colors[i2 * 3 + 1]),
+            f64::from(mesh.colors[i2 * 3 + 2]),
+        ];
 
-        let cr = (base_r * shade * 255.0).clamp(0.0, 255.0) as u8;
-        let cg = (base_g * shade * 255.0).clamp(0.0, 255.0) as u8;
-        let cb = (base_b * shade * 255.0).clamp(0.0, 255.0) as u8;
-
-        // Rasterize triangle with scanline fill
+        // Rasterize with per-pixel color interpolation
         rasterize_triangle(
-            pixels, &mut zbuf, buf_w, vx, vy, vw, vh, px0, py0, px1, py1, px2, py2, tri_depth, cr,
-            cg, cb,
+            pixels, &mut zbuf, buf_w, vx, vy, vw, vh, px0, py0, px1, py1, px2, py2, tri_depth,
+            shade, c0, c1, c2,
         );
     }
 }
 
-/// Scanline rasterize a triangle into the pixel buffer with z-test.
+/// Scanline rasterize a triangle with per-pixel color interpolation and z-test.
 #[allow(clippy::too_many_arguments)]
 fn rasterize_triangle(
     pixels: &mut [u8],
@@ -703,9 +733,10 @@ fn rasterize_triangle(
     x2: f64,
     y2: f64,
     depth: f64,
-    r: u8,
-    g: u8,
-    b: u8,
+    shade: f64,
+    c0: [f64; 3],
+    c1: [f64; 3],
+    c2: [f64; 3],
 ) {
     // Bounding box clipped to viewport
     let min_x = x0.min(x1).min(x2).max(0.0) as usize;
@@ -720,6 +751,10 @@ fn rasterize_triangle(
     let dy12 = y2 - y1;
     let dx20 = x0 - x2;
     let dy20 = y0 - y2;
+
+    // Total area (2x) for barycentric normalization
+    let area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+    let inv_area = if area.abs() < 1e-10 { 0.0 } else { 1.0 / area };
 
     for py in min_y..=max_y {
         for px in min_x..=max_x {
@@ -740,6 +775,19 @@ fn rasterize_triangle(
                     let zi = py * vw + px;
                     if depth > zbuf[zi] {
                         zbuf[zi] = depth;
+
+                        // Barycentric weights for per-pixel color interpolation
+                        let w0 = ((x1 - fx) * (y2 - fy) - (x2 - fx) * (y1 - fy)) * inv_area;
+                        let w1 = ((x2 - fx) * (y0 - fy) - (x0 - fx) * (y2 - fy)) * inv_area;
+                        let w2 = 1.0 - w0 - w1;
+
+                        let r = ((c0[0] * w0 + c1[0] * w1 + c2[0] * w2) * shade * 255.0)
+                            .clamp(0.0, 255.0) as u8;
+                        let g = ((c0[1] * w0 + c1[1] * w1 + c2[1] * w2) * shade * 255.0)
+                            .clamp(0.0, 255.0) as u8;
+                        let b = ((c0[2] * w0 + c1[2] * w1 + c2[2] * w2) * shade * 255.0)
+                            .clamp(0.0, 255.0) as u8;
+
                         let pi = ((vy + py) * buf_w + (vx + px)) * 4;
                         if pi + 3 < pixels.len() {
                             pixels[pi] = r;
