@@ -1086,6 +1086,220 @@ fn draw_feeds_card(ui: &mut egui::Ui, entry: &ToolpathEntry) {
     });
 }
 
+// ── Vendor LUT viewer ──────────────────────────────────────────────────
+
+/// Map `ToolType` to the vendor LUT `ToolFamily` for filtering.
+fn tool_type_to_lut_family(
+    tt: crate::state::job::ToolType,
+) -> rs_cam_core::feeds::vendor_lut::ToolFamily {
+    use rs_cam_core::feeds::vendor_lut::ToolFamily;
+    match tt {
+        crate::state::job::ToolType::EndMill => ToolFamily::FlatEnd,
+        crate::state::job::ToolType::BallNose => ToolFamily::BallNose,
+        crate::state::job::ToolType::BullNose => ToolFamily::BullNose,
+        crate::state::job::ToolType::VBit => ToolFamily::ChamferVbit,
+        crate::state::job::ToolType::TaperedBallNose => ToolFamily::TaperedBallNose,
+    }
+}
+
+/// Human-readable label for a `MaterialFamily`.
+fn material_family_label(m: rs_cam_core::feeds::vendor_lut::MaterialFamily) -> &'static str {
+    use rs_cam_core::feeds::vendor_lut::MaterialFamily;
+    match m {
+        MaterialFamily::Softwood => "Softwood",
+        MaterialFamily::Hardwood => "Hardwood",
+        MaterialFamily::PlywoodSoftwood => "Plywood (Soft)",
+        MaterialFamily::PlywoodHardwood => "Plywood (Hard)",
+        MaterialFamily::Mdf => "MDF",
+        MaterialFamily::Hdf => "HDF",
+        MaterialFamily::Particleboard => "Particleboard",
+        MaterialFamily::Acrylic => "Acrylic",
+        MaterialFamily::Hdpe => "HDPE",
+        MaterialFamily::Polycarbonate => "Polycarbonate",
+        MaterialFamily::Delrin => "Delrin",
+        MaterialFamily::Aluminum => "Aluminum",
+    }
+}
+
+/// Human-readable label for a `ToolFamily`.
+fn tool_family_label(f: rs_cam_core::feeds::vendor_lut::ToolFamily) -> &'static str {
+    use rs_cam_core::feeds::vendor_lut::ToolFamily;
+    match f {
+        ToolFamily::FlatEnd => "Flat End",
+        ToolFamily::BallNose => "Ball Nose",
+        ToolFamily::TaperedBallNose => "Tapered Ball",
+        ToolFamily::BullNose => "Bull Nose",
+        ToolFamily::ChamferVbit => "V-Bit",
+        ToolFamily::FacingBit => "Facing",
+    }
+}
+
+/// Human-readable label for an `EvidenceGrade`.
+fn evidence_grade_label(g: rs_cam_core::feeds::vendor_lut::EvidenceGrade) -> &'static str {
+    use rs_cam_core::feeds::vendor_lut::EvidenceGrade;
+    match g {
+        EvidenceGrade::A => "A (vendor)",
+        EvidenceGrade::B => "B (derived)",
+        EvidenceGrade::C => "C (community)",
+    }
+}
+
+/// Draw a collapsible vendor cutting data viewer, filtered by current tool.
+fn draw_vendor_lut_viewer(
+    ui: &mut egui::Ui,
+    tool_type: crate::state::job::ToolType,
+    tool_diameter: f64,
+) {
+    ui.add_space(8.0);
+
+    let header = egui::RichText::new("Vendor Cutting Data")
+        .strong()
+        .color(egui::Color32::from_rgb(180, 180, 195));
+
+    egui::CollapsingHeader::new(header)
+        .default_open(false)
+        .show(ui, |ui| {
+            let lut = &*VENDOR_LUT;
+            let target_family = tool_type_to_lut_family(tool_type);
+
+            // Filter observations: match tool family, and prefer matching diameter
+            // (show all diameters for this family so the user can see the full picture).
+            let matching: Vec<&rs_cam_core::feeds::vendor_lut::VendorObservation> = lut
+                .observations
+                .iter()
+                .filter(|obs| obs.tool_family == target_family)
+                .collect();
+
+            if matching.is_empty() {
+                ui.label(
+                    egui::RichText::new("No matching vendor data for this tool type")
+                        .small()
+                        .color(egui::Color32::from_rgb(160, 140, 100)),
+                );
+                return;
+            }
+
+            ui.label(
+                egui::RichText::new(format!(
+                    "{} observations for {} tools (current: {:.1} mm)",
+                    matching.len(),
+                    tool_family_label(target_family),
+                    tool_diameter,
+                ))
+                .small()
+                .color(egui::Color32::from_rgb(140, 140, 155)),
+            );
+            ui.add_space(4.0);
+
+            // Table header
+            let dim = egui::Color32::from_rgb(120, 125, 140);
+            let val = egui::Color32::from_rgb(170, 170, 185);
+            let highlight = egui::Color32::from_rgb(100, 180, 140);
+            let header_font = egui::FontId::proportional(9.0);
+            let body_font = egui::FontId::proportional(9.0);
+
+            egui::Grid::new("vendor_lut_table")
+                .num_columns(7)
+                .spacing([6.0, 2.0])
+                .striped(true)
+                .show(ui, |ui| {
+                    // Column headers
+                    for label in [
+                        "Material", "Dia (mm)", "Flutes", "RPM", "Chipload", "DOC (mm)", "Grade",
+                    ] {
+                        ui.label(
+                            egui::RichText::new(label)
+                                .font(header_font.clone())
+                                .strong()
+                                .color(dim),
+                        );
+                    }
+                    ui.end_row();
+
+                    for obs in &matching {
+                        // Highlight rows matching the current tool diameter (within 0.1mm)
+                        let is_diameter_match = (obs.diameter_mm - tool_diameter).abs() < 0.1;
+                        let row_color = if is_diameter_match { highlight } else { val };
+
+                        // Material
+                        ui.label(
+                            egui::RichText::new(material_family_label(obs.material_family))
+                                .font(body_font.clone())
+                                .color(row_color),
+                        );
+
+                        // Diameter
+                        ui.label(
+                            egui::RichText::new(format!("{:.1}", obs.diameter_mm))
+                                .font(body_font.clone())
+                                .color(row_color),
+                        );
+
+                        // Flutes
+                        ui.label(
+                            egui::RichText::new(format!("{}", obs.flute_count))
+                                .font(body_font.clone())
+                                .color(row_color),
+                        );
+
+                        // RPM range
+                        let rpm_text = match (obs.rpm_min, obs.rpm_max) {
+                            (Some(lo), Some(hi)) => format!("{lo:.0}-{hi:.0}"),
+                            (Some(lo), None) => format!("{lo:.0}"),
+                            (None, Some(hi)) => format!("{hi:.0}"),
+                            (None, None) => {
+                                if let Some(nom) = obs.rpm_nominal {
+                                    format!("{nom:.0}")
+                                } else {
+                                    "-".to_owned()
+                                }
+                            }
+                        };
+                        ui.label(
+                            egui::RichText::new(rpm_text)
+                                .font(body_font.clone())
+                                .color(row_color),
+                        );
+
+                        // Chipload range (mm/tooth)
+                        let chip_text = match (obs.chipload_min_mm_tooth, obs.chipload_max_mm_tooth)
+                        {
+                            (Some(lo), Some(hi)) => format!("{lo:.3}-{hi:.3}"),
+                            (Some(lo), None) => format!("{lo:.3}"),
+                            (None, Some(hi)) => format!("{hi:.3}"),
+                            (None, None) => "-".to_owned(),
+                        };
+                        ui.label(
+                            egui::RichText::new(chip_text)
+                                .font(body_font.clone())
+                                .color(row_color),
+                        );
+
+                        // DOC range (ap)
+                        let doc_text = match (obs.ap_min_mm, obs.ap_max_mm) {
+                            (Some(lo), Some(hi)) => format!("{lo:.1}-{hi:.1}"),
+                            (Some(v), None) | (None, Some(v)) => format!("{v:.1}"),
+                            (None, None) => "-".to_owned(),
+                        };
+                        ui.label(
+                            egui::RichText::new(doc_text)
+                                .font(body_font.clone())
+                                .color(row_color),
+                        );
+
+                        // Evidence grade
+                        ui.label(
+                            egui::RichText::new(evidence_grade_label(obs.evidence_grade))
+                                .font(body_font.clone())
+                                .color(row_color),
+                        );
+
+                        ui.end_row();
+                    }
+                });
+        });
+}
+
 // ── Engagement diagram ──────────────────────────────────────────────────
 
 /// Draw a split-view engagement diagram: top-down WOC (left) + side DOC (right).
@@ -2145,6 +2359,9 @@ fn draw_toolpath_panel(
                 ui.add_space(6.0);
                 draw_engagement_diagram(ui, result, tool_diameter, tool_type);
             }
+
+            // Vendor cutting data viewer (always available, filtered by tool)
+            draw_vendor_lut_viewer(ui, tool_type, tool_diameter);
         }
 
         ToolpathTab::Heights => {
