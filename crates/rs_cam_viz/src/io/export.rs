@@ -1,10 +1,12 @@
 use rs_cam_core::gcode::{
-    GcodePhase, GcodeSetupPhase, emit_gcode_multi_setup, emit_gcode_phased,
+    ControllerCompensation, GcodePhase, GcodeSetupPhase, emit_gcode_multi_setup, emit_gcode_phased,
     replace_rapids_with_feed,
 };
 
 use crate::state::job::{JobState, SetupId, ToolConfig};
-use crate::state::toolpath::{ToolpathEntry, ToolpathResult};
+use crate::state::toolpath::{
+    CompensationType, OperationConfig, ProfileSide, ToolpathEntry, ToolpathResult,
+};
 
 fn gcode_phase_for_toolpath<'a>(
     job: &'a JobState,
@@ -29,7 +31,30 @@ fn gcode_phase_for_toolpath<'a>(
         },
         tool_number: tool.map(tool_number_for_export),
         coolant: toolpath.coolant,
+        controller_compensation: controller_comp_for_toolpath(toolpath),
     }
+}
+
+/// Determine controller compensation direction for a profile toolpath with `InControl`.
+///
+/// The mapping is:
+/// - Outside + Climb  -> G42 (Right)
+/// - Outside + Conventional -> G41 (Left)
+/// - Inside  + Climb  -> G41 (Left)
+/// - Inside  + Conventional -> G42 (Right)
+fn controller_comp_for_toolpath(toolpath: &ToolpathEntry) -> Option<ControllerCompensation> {
+    if let OperationConfig::Profile(ref cfg) = toolpath.operation
+        && cfg.compensation == CompensationType::InControl
+    {
+        let dir = match (cfg.side, cfg.climb) {
+            (ProfileSide::Outside, true) => ControllerCompensation::Right,
+            (ProfileSide::Outside, false) => ControllerCompensation::Left,
+            (ProfileSide::Inside, true) => ControllerCompensation::Left,
+            (ProfileSide::Inside, false) => ControllerCompensation::Right,
+        };
+        return Some(dir);
+    }
+    None
 }
 
 fn tool_number_for_export(tool: &ToolConfig) -> u32 {

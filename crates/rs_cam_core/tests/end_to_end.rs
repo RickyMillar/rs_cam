@@ -170,6 +170,7 @@ fn pocket_and_profile_on_same_polygon() {
         plunge_rate: 500.0,
         safe_z: 10.0,
         climb: false,
+        compensate_in_controller: false,
     };
     let profile_tp = profile_toolpath(&polygon, &profile_params);
     assert!(

@@ -13,21 +13,21 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use serde::Deserialize;
 
 use crate::collision::check_rapid_collisions;
 use crate::compute::catalog::OperationConfig;
 use crate::compute::collision_check::{
-    run_collision_check, CollisionCheckError, CollisionCheckRequest, CollisionCheckResult,
+    CollisionCheckError, CollisionCheckRequest, CollisionCheckResult, run_collision_check,
 };
 use crate::compute::config::{DressupConfig, HeightContext, HeightsConfig, ToolpathStats};
 use crate::compute::cutter::build_cutter;
 use crate::compute::simulate::{
-    run_simulation, SimGroupEntry, SimToolpathEntry, SimulationError, SimulationRequest,
-    SimulationResult,
+    SimGroupEntry, SimToolpathEntry, SimulationError, SimulationRequest, SimulationResult,
+    run_simulation,
 };
 use crate::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
@@ -37,7 +37,7 @@ use crate::dexel_stock::StockCutDirection;
 use crate::geo::{BoundingBox3, P3};
 use crate::mesh::TriangleMesh;
 use crate::polygon::Polygon2;
-use crate::semantic_trace::{enrich_traces, ToolpathSemanticRecorder, ToolpathSemanticTrace};
+use crate::semantic_trace::{ToolpathSemanticRecorder, ToolpathSemanticTrace, enrich_traces};
 use crate::simulation_cut::SimulationMetricOptions;
 use crate::toolpath::Toolpath;
 
@@ -1331,7 +1331,11 @@ impl ProjectSession {
 
     /// Export G-code for all computed toolpaths.
     pub fn export_gcode(&self, path: &Path, _setup_id: Option<usize>) -> Result<(), SessionError> {
-        use crate::gcode::{emit_gcode_phased, CoolantMode, GcodePhase, PostFormat};
+        use crate::compute::{CompensationType, OperationConfig};
+        use crate::gcode::{
+            ControllerCompensation, CoolantMode, GcodePhase, PostFormat, emit_gcode_phased,
+        };
+        use crate::profile::ProfileSide;
 
         let post_format = match self.post.format.to_ascii_lowercase().as_str() {
             "linuxcnc" | "linux_cnc" => PostFormat::LinuxCnc,
@@ -1344,6 +1348,22 @@ impl ProjectSession {
         let mut phases: Vec<GcodePhase<'_>> = Vec::new();
         for (idx, tc) in self.toolpath_configs.iter().enumerate() {
             if let Some(result) = self.results.get(&idx) {
+                // Determine controller compensation for profile operations
+                let controller_compensation =
+                    if let OperationConfig::Profile(ref cfg) = tc.operation {
+                        if cfg.compensation == CompensationType::InControl {
+                            Some(match (cfg.side, cfg.climb) {
+                                (ProfileSide::Outside, true) => ControllerCompensation::Right,
+                                (ProfileSide::Outside, false) => ControllerCompensation::Left,
+                                (ProfileSide::Inside, true) => ControllerCompensation::Left,
+                                (ProfileSide::Inside, false) => ControllerCompensation::Right,
+                            })
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
                 phases.push(GcodePhase {
                     toolpath: &result.toolpath,
                     spindle_rpm: self.post.spindle_speed,
@@ -1352,6 +1372,7 @@ impl ProjectSession {
                     coolant: CoolantMode::Off,
                     pre_gcode: tc.pre_gcode.as_deref(),
                     post_gcode: tc.post_gcode.as_deref(),
+                    controller_compensation,
                 });
             }
         }

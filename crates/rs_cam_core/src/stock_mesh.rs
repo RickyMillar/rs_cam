@@ -252,10 +252,26 @@ fn push_tube_segment(
     // 8 vertices: 4 at `from`, 4 at `to`
     let corners = [
         // from face
-        [from.x - u[0] - v[0], from.y - u[1] - v[1], from.z - u[2] - v[2]],
-        [from.x + u[0] - v[0], from.y + u[1] - v[1], from.z + u[2] - v[2]],
-        [from.x + u[0] + v[0], from.y + u[1] + v[1], from.z + u[2] + v[2]],
-        [from.x - u[0] + v[0], from.y - u[1] + v[1], from.z - u[2] + v[2]],
+        [
+            from.x - u[0] - v[0],
+            from.y - u[1] - v[1],
+            from.z - u[2] - v[2],
+        ],
+        [
+            from.x + u[0] - v[0],
+            from.y + u[1] - v[1],
+            from.z + u[2] - v[2],
+        ],
+        [
+            from.x + u[0] + v[0],
+            from.y + u[1] + v[1],
+            from.z + u[2] + v[2],
+        ],
+        [
+            from.x - u[0] + v[0],
+            from.y - u[1] + v[1],
+            from.z - u[2] + v[2],
+        ],
         // to face
         [to.x - u[0] - v[0], to.y - u[1] - v[1], to.z - u[2] - v[2]],
         [to.x + u[0] - v[0], to.y + u[1] - v[1], to.z + u[2] - v[2]],
@@ -277,12 +293,18 @@ fn push_tube_segment(
     #[allow(clippy::indexing_slicing)]
     {
         let idx: [[u32; 3]; 12] = [
-            [0, 1, 5], [0, 5, 4], // front
-            [1, 2, 6], [1, 6, 5], // right
-            [2, 3, 7], [2, 7, 6], // back
-            [3, 0, 4], [3, 4, 7], // left
-            [0, 3, 2], [0, 2, 1], // start cap
-            [4, 5, 6], [4, 6, 7], // end cap
+            [0, 1, 5],
+            [0, 5, 4], // front
+            [1, 2, 6],
+            [1, 6, 5], // right
+            [2, 3, 7],
+            [2, 7, 6], // back
+            [3, 0, 4],
+            [3, 4, 7], // left
+            [0, 3, 2],
+            [0, 2, 1], // start cap
+            [4, 5, 6],
+            [4, 6, 7], // end cap
         ];
         for tri in &idx {
             mesh.indices.push(base + tri[0]);

@@ -164,16 +164,17 @@ fn build_core_simulation_request(
 /// concern (incremental playback in the 3D viewport).
 fn build_playback_data(
     req: &SimulationRequest,
-) -> Vec<(Arc<Toolpath>, super::ToolConfig, rs_cam_core::dexel_stock::StockCutDirection)> {
+) -> Vec<(
+    Arc<Toolpath>,
+    super::ToolConfig,
+    rs_cam_core::dexel_stock::StockCutDirection,
+)> {
     let mut playback = Vec::new();
     for group in &req.groups {
-        let playback_direction = group
-            .local_to_global
-            .as_ref()
-            .map_or(
-                rs_cam_core::dexel_stock::StockCutDirection::FromTop,
-                |info| info.cut_direction(),
-            );
+        let playback_direction = group.local_to_global.as_ref().map_or(
+            rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+            |info| info.cut_direction(),
+        );
         for tp in &group.toolpaths {
             let global_tp = if let Some(info) = &group.local_to_global {
                 Arc::new(info.transform_toolpath(&tp.toolpath))

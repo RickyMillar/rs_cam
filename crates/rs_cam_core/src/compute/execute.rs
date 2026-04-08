@@ -142,6 +142,8 @@ pub fn execute_operation(
                             plunge_rate,
                             safe_z,
                             climb: cfg.climb,
+                            compensate_in_controller: cfg.compensation
+                                == crate::compute::CompensationType::InControl,
                         },
                     );
                     if pass_tp.moves.is_empty() {
