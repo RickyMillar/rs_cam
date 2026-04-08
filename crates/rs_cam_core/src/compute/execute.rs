@@ -71,6 +71,7 @@ pub fn execute_operation(
     prev_tool_radius: Option<f64>,
     debug_ctx: Option<&ToolpathDebugContext>,
     cancel: &AtomicBool,
+    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
 ) -> Result<Toolpath, OperationError> {
     let tool_radius = tool_def.radius();
     let safe_z = heights.retract_z;
@@ -196,7 +197,7 @@ pub fn execute_operation(
                             tolerance: cfg.tolerance,
                             slot_clearing: cfg.slot_clearing,
                             min_cutting_radius: cfg.min_cutting_radius,
-                            initial_stock: None,
+                            initial_stock: initial_stock.cloned(),
                         },
                     )
                 });
@@ -450,12 +451,26 @@ pub fn execute_operation(
                 &(|| cancel.load(Ordering::SeqCst)),
             )
             .map_err(|_e| OperationError::Cancelled)?;
-            Ok(crate::toolpath::raster_toolpath_from_grid(
-                &grid,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-            ))
+            let slope_filter_active = cfg.slope_from > 0.01 || cfg.slope_to < 89.99;
+            if slope_filter_active {
+                let slope_angles = crate::dropcutter::compute_grid_slopes(&grid);
+                Ok(crate::toolpath::raster_toolpath_from_grid_with_slope_filter(
+                    &grid,
+                    &slope_angles,
+                    cfg.slope_from,
+                    cfg.slope_to,
+                    feed_rate,
+                    plunge_rate,
+                    safe_z,
+                ))
+            } else {
+                Ok(crate::toolpath::raster_toolpath_from_grid(
+                    &grid,
+                    feed_rate,
+                    plunge_rate,
+                    safe_z,
+                ))
+            }
         }
         OperationConfig::Adaptive3d(cfg) => {
             let m = require_mesh(mesh)?;
@@ -519,7 +534,7 @@ pub fn execute_operation(
                 detect_flat_areas: cfg.detect_flat_areas,
                 max_stay_down_dist: None,
                 region_ordering,
-                initial_stock: None,
+                initial_stock: initial_stock.cloned(),
                 safe_z,
                 clearing_strategy,
                 z_blend: cfg.z_blend,
@@ -551,8 +566,8 @@ pub fn execute_operation(
                 m,
                 idx,
                 tool_def,
-                m.bbox.max.z,
-                m.bbox.min.z,
+                heights.top_z,
+                heights.bottom_z,
                 cfg.z_step,
                 &params,
                 &(|| cancel.load(Ordering::SeqCst)),
@@ -578,6 +593,11 @@ pub fn execute_operation(
             Ok(crate::pencil::pencil_toolpath(m, idx, tool_def, &params))
         }
         OperationConfig::Scallop(cfg) => {
+            if !tool_cfg.tool_type.has_ball_tip() {
+                return Err(OperationError::InvalidTool(
+                    "Scallop requires a ball-tip tool (Ball Nose or Tapered Ball Nose)".into(),
+                ));
+            }
             let m = require_mesh(mesh)?;
             let idx = index
                 .ok_or_else(|| OperationError::Other("Scallop requires a spatial index".into()))?;
@@ -728,12 +748,19 @@ pub fn execute_operation(
 /// Apply the standard dressup pipeline to a toolpath.
 ///
 /// Steps: entry style → dogbones → lead in/out → link moves → arc fitting
-/// → rapid order optimization.
+/// → rapid order optimization → air-cut filter → feed rate optimization.
+///
+/// The last two steps are optional and require additional context:
+/// - Air-cut filter needs `prior_stock` (the stock state before this toolpath).
+/// - Feed optimization needs a mutable stock copy, a cutter, and `cfg.feed_optimization == true`.
 pub fn apply_dressups(
     mut tp: Toolpath,
     cfg: &DressupConfig,
     tool_diameter: f64,
     safe_z: f64,
+    prior_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    feed_opt_stock: Option<&mut crate::dexel_stock::TriDexelStock>,
+    cutter: Option<&dyn MillingCutter>,
 ) -> Toolpath {
     use crate::dressup::{
         EntryStyle, LinkMoveParams, apply_dogbones, apply_entry, apply_lead_in_out,
@@ -806,6 +833,33 @@ pub fn apply_dressups(
     // 6. Rapid order optimization
     if cfg.optimize_rapid_order {
         tp = crate::tsp::optimize_rapid_order(&tp, safe_z);
+    }
+
+    // 7. Air-cut filter (when prior stock is available)
+    if let Some(stock) = prior_stock {
+        tp = crate::dressup::filter_air_cuts(tp, stock, tool_radius, safe_z, 0.1);
+    }
+
+    // 8. Feed rate optimization (when enabled and stock + cutter are available)
+    if cfg.feed_optimization
+        && let (Some(stock), Some(cut)) = (feed_opt_stock, cutter)
+    {
+        let nominal = tp
+            .moves
+            .iter()
+            .find_map(|m| match m.move_type {
+                crate::toolpath::MoveType::Linear { feed_rate } => Some(feed_rate),
+                _ => None,
+            })
+            .unwrap_or(1000.0);
+        let params = crate::feedopt::FeedOptParams {
+            nominal_feed_rate: nominal,
+            max_feed_rate: cfg.feed_max_rate,
+            min_feed_rate: nominal * 0.5,
+            ramp_rate: cfg.feed_ramp_rate,
+            air_cut_threshold: 0.05,
+        };
+        tp = crate::feedopt::optimize_feed_rates(&tp, cut, stock, &params);
     }
 
     tp
