@@ -126,11 +126,7 @@ pub struct SimBoundary {
     pub direction: StockCutDirection,
 }
 
-pub struct SimCheckpointMesh {
-    pub boundary_index: usize,
-    pub mesh: StockMesh,
-    pub stock: TriDexelStock,
-}
+pub use rs_cam_core::compute::simulate::SimCheckpointMesh;
 
 pub struct SimulationResult {
     pub mesh: StockMesh,
