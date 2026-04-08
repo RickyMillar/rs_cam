@@ -13,21 +13,21 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use serde::Deserialize;
 
 use crate::collision::check_rapid_collisions;
 use crate::compute::catalog::OperationConfig;
 use crate::compute::collision_check::{
-    CollisionCheckError, CollisionCheckRequest, CollisionCheckResult, run_collision_check,
+    run_collision_check, CollisionCheckError, CollisionCheckRequest, CollisionCheckResult,
 };
 use crate::compute::config::{DressupConfig, HeightContext, HeightsConfig, ToolpathStats};
 use crate::compute::cutter::build_cutter;
 use crate::compute::simulate::{
-    SimGroupEntry, SimToolpathEntry, SimulationError, SimulationRequest, SimulationResult,
-    run_simulation,
+    run_simulation, SimGroupEntry, SimToolpathEntry, SimulationError, SimulationRequest,
+    SimulationResult,
 };
 use crate::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
@@ -37,7 +37,7 @@ use crate::dexel_stock::StockCutDirection;
 use crate::geo::{BoundingBox3, P3};
 use crate::mesh::TriangleMesh;
 use crate::polygon::Polygon2;
-use crate::semantic_trace::{ToolpathSemanticRecorder, ToolpathSemanticTrace, enrich_traces};
+use crate::semantic_trace::{enrich_traces, ToolpathSemanticRecorder, ToolpathSemanticTrace};
 use crate::simulation_cut::SimulationMetricOptions;
 use crate::toolpath::Toolpath;
 
@@ -66,6 +66,8 @@ pub enum SessionError {
     CollisionCheck(CollisionCheckError),
     /// Export error.
     Export(String),
+    /// Invalid parameter name or value.
+    InvalidParam(String),
 }
 
 impl std::fmt::Display for SessionError {
@@ -83,6 +85,7 @@ impl std::fmt::Display for SessionError {
             Self::Simulation(e) => write!(f, "Simulation error: {e}"),
             Self::CollisionCheck(e) => write!(f, "Collision check error: {e}"),
             Self::Export(msg) => write!(f, "Export error: {msg}"),
+            Self::InvalidParam(msg) => write!(f, "Invalid parameter: {msg}"),
         }
     }
 }
@@ -755,6 +758,180 @@ impl ProjectSession {
         &self.post
     }
 
+    // ── Mutation ──────────────────────────────────────────────────
+
+    /// Set a parameter on a toolpath's operation config.
+    ///
+    /// Common parameters (`feed_rate`, `plunge_rate`, `stepover`, `depth_per_pass`)
+    /// are applied via the [`OperationParams`] trait. Config-specific parameters
+    /// (e.g. `angle`, `min_z`, `passes`) are applied via serde round-trip so that
+    /// all 23 operation variants are handled generically.
+    ///
+    /// Invalidates the cached compute result for this toolpath.
+    pub fn set_toolpath_param(
+        &mut self,
+        index: usize,
+        param: &str,
+        value: serde_json::Value,
+    ) -> Result<(), SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get_mut(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+
+        match param {
+            "feed_rate" => {
+                let v = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("feed_rate must be a number".to_owned())
+                })?;
+                tc.operation.set_feed_rate(v);
+            }
+            "plunge_rate" => {
+                let v = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("plunge_rate must be a number".to_owned())
+                })?;
+                tc.operation.set_plunge_rate(v);
+            }
+            "stepover" => {
+                let v = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("stepover must be a number".to_owned())
+                })?;
+                tc.operation.set_stepover(v);
+            }
+            "depth_per_pass" => {
+                let v = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("depth_per_pass must be a number".to_owned())
+                })?;
+                tc.operation.set_depth_per_pass(v);
+            }
+            _ => {
+                // Config-specific param: serialize -> merge -> deserialize
+                let mut json = serde_json::to_value(&tc.operation).map_err(|e| {
+                    SessionError::InvalidParam(format!("failed to serialize config: {e}"))
+                })?;
+                // The OperationConfig uses tagged representation: { "kind": "...", "params": { ... } }
+                // Merge the param into the "params" object.
+                let params_obj = json
+                    .get_mut("params")
+                    .and_then(|v| v.as_object_mut())
+                    .ok_or_else(|| {
+                        SessionError::InvalidParam(
+                            "unexpected config structure during serde round-trip".to_owned(),
+                        )
+                    })?;
+                if !params_obj.contains_key(param) {
+                    return Err(SessionError::InvalidParam(format!(
+                        "unknown parameter '{param}' for {} operation",
+                        tc.operation.label()
+                    )));
+                }
+                params_obj.insert(param.to_owned(), value);
+                tc.operation = serde_json::from_value(json).map_err(|e| {
+                    SessionError::InvalidParam(format!("invalid value for '{param}': {e}"))
+                })?;
+            }
+        }
+
+        // Invalidate cached result for this toolpath
+        self.results.remove(&index);
+        self.simulation = None;
+
+        Ok(())
+    }
+
+    /// Set a parameter on a tool definition.
+    ///
+    /// Supported parameters: `diameter`, `flute_count`, `stickout`, `corner_radius`,
+    /// `cutting_length`, `included_angle`, `taper_half_angle`, `shaft_diameter`,
+    /// `shank_diameter`, `shank_length`, `holder_diameter`.
+    ///
+    /// Invalidates cached results for all toolpaths that reference this tool.
+    pub fn set_tool_param(
+        &mut self,
+        index: usize,
+        param: &str,
+        value: &serde_json::Value,
+    ) -> Result<(), SessionError> {
+        let tool = self.tools.get_mut(index).ok_or_else(|| {
+            SessionError::InvalidParam(format!("tool index {index} out of bounds"))
+        })?;
+
+        match param {
+            "diameter" => {
+                tool.diameter = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("diameter must be a number".to_owned())
+                })?;
+            }
+            "flute_count" => {
+                let v = value.as_u64().ok_or_else(|| {
+                    SessionError::InvalidParam("flute_count must be an integer".to_owned())
+                })?;
+                tool.flute_count = v as u32;
+            }
+            "stickout" => {
+                tool.stickout = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("stickout must be a number".to_owned())
+                })?;
+            }
+            "corner_radius" => {
+                tool.corner_radius = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("corner_radius must be a number".to_owned())
+                })?;
+            }
+            "cutting_length" => {
+                tool.cutting_length = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("cutting_length must be a number".to_owned())
+                })?;
+            }
+            "included_angle" => {
+                tool.included_angle = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("included_angle must be a number".to_owned())
+                })?;
+            }
+            "taper_half_angle" => {
+                tool.taper_half_angle = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("taper_half_angle must be a number".to_owned())
+                })?;
+            }
+            "shaft_diameter" => {
+                tool.shaft_diameter = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("shaft_diameter must be a number".to_owned())
+                })?;
+            }
+            "shank_diameter" => {
+                tool.shank_diameter = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("shank_diameter must be a number".to_owned())
+                })?;
+            }
+            "shank_length" => {
+                tool.shank_length = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("shank_length must be a number".to_owned())
+                })?;
+            }
+            "holder_diameter" => {
+                tool.holder_diameter = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("holder_diameter must be a number".to_owned())
+                })?;
+            }
+            _ => {
+                return Err(SessionError::InvalidParam(format!(
+                    "unknown tool parameter '{param}'"
+                )));
+            }
+        }
+
+        // Invalidate cached results for all toolpaths that use this tool
+        let tool_raw_id = tool.id.0;
+        for (idx, tc) in self.toolpath_configs.iter().enumerate() {
+            if tc.tool_id == tool_raw_id {
+                self.results.remove(&idx);
+            }
+        }
+        self.simulation = None;
+
+        Ok(())
+    }
+
     // ── Compute ────────────────────────────────────────────────────
 
     /// Generate a single toolpath by index.
@@ -982,7 +1159,9 @@ impl ProjectSession {
                 let z_rotation = ZRotation::Deg0;
                 let (eff_w, eff_d, eff_h) = {
                     let (w, d, h) =
-                        setup.face_up.effective_stock(self.stock.x, self.stock.y, self.stock.z);
+                        setup
+                            .face_up
+                            .effective_stock(self.stock.x, self.stock.y, self.stock.z);
                     z_rotation.effective_stock(w, d, h)
                 };
                 let local_stock_bbox = Some(BoundingBox3 {
@@ -1152,7 +1331,7 @@ impl ProjectSession {
 
     /// Export G-code for all computed toolpaths.
     pub fn export_gcode(&self, path: &Path, _setup_id: Option<usize>) -> Result<(), SessionError> {
-        use crate::gcode::{CoolantMode, GcodePhase, PostFormat, emit_gcode_phased};
+        use crate::gcode::{emit_gcode_phased, CoolantMode, GcodePhase, PostFormat};
 
         let post_format = match self.post.format.to_ascii_lowercase().as_str() {
             "linuxcnc" | "linux_cnc" => PostFormat::LinuxCnc,

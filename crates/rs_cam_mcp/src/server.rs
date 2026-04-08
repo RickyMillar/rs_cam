@@ -71,6 +71,28 @@ pub struct ScreenshotToolpathParam {
     pub include_rapids: Option<bool>,
 }
 
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SetToolpathParamInput {
+    /// Toolpath index (0-based)
+    pub index: usize,
+    /// Parameter name (e.g. "feed_rate", "stepover", "depth_per_pass", "plunge_rate",
+    /// or any config-specific field like "angle", "min_z", "passes")
+    pub param: String,
+    /// New value (numeric)
+    pub value: serde_json::Value,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SetToolParamInput {
+    /// Tool index (0-based)
+    pub index: usize,
+    /// Parameter name (e.g. "diameter", "flute_count", "stickout", "corner_radius",
+    /// "cutting_length", "shaft_diameter", "shank_diameter", "shank_length", "holder_diameter")
+    pub param: String,
+    /// New value (numeric)
+    pub value: serde_json::Value,
+}
+
 fn text(msg: impl Into<String>) -> String {
     msg.into()
 }
@@ -334,6 +356,44 @@ impl CamServer {
         match session.export_gcode(Path::new(&path), None) {
             Ok(()) => text(format!("G-code exported to {path}")),
             Err(e) => text(format!("Export failed: {e}")),
+        }
+    }
+
+    #[tool(
+        name = "set_toolpath_param",
+        description = "Set a toolpath parameter. Common params: feed_rate, plunge_rate, stepover, depth_per_pass. Config-specific params vary by operation type. Marks the toolpath as stale — regenerate to apply."
+    )]
+    async fn set_toolpath_param(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(SetToolpathParamInput { index, param, value }): Parameters<SetToolpathParamInput>,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return text("No project loaded");
+        };
+        match session.set_toolpath_param(index, &param, value) {
+            Ok(()) => text(format!("Set toolpath {index} param '{param}'. Regenerate to apply.")),
+            Err(e) => text(format!("Error: {e}")),
+        }
+    }
+
+    #[tool(
+        name = "set_tool_param",
+        description = "Set a tool parameter (e.g. diameter, flute_count, stickout, corner_radius). Invalidates all toolpaths using this tool — regenerate to apply."
+    )]
+    async fn set_tool_param(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(SetToolParamInput { index, param, value }): Parameters<SetToolParamInput>,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return text("No project loaded");
+        };
+        match session.set_tool_param(index, &param, &value) {
+            Ok(()) => text(format!("Set tool {index} param '{param}'. Regenerate affected toolpaths to apply.")),
+            Err(e) => text(format!("Error: {e}")),
         }
     }
 
