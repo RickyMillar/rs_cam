@@ -428,13 +428,17 @@ pub fn execute_operation(
             let idx = index.ok_or_else(|| {
                 OperationError::Other("DropCutter requires a spatial index".into())
             })?;
+            // Clamp min_z so the drop-cutter grid never emits moves below
+            // the stock bottom.  The default (-50) would destroy the stock
+            // during simulation via ray_subtract_above.
+            let effective_min_z = cfg.min_z.max(stock_bbox.min.z - 1.0);
             let grid = crate::dropcutter::batch_drop_cutter_with_cancel(
                 m,
                 idx,
                 tool_def,
                 cfg.stepover,
                 0.0,
-                cfg.min_z,
+                effective_min_z,
                 &(|| cancel.load(Ordering::SeqCst)),
             )
             .map_err(|_e| OperationError::Cancelled)?;

@@ -352,6 +352,12 @@ pub struct ProjectToolpathSection {
     pub dressups: DressupConfig,
     #[serde(default)]
     pub heights: HeightsConfig,
+    /// Raw G-code to emit before this toolpath's moves.
+    #[serde(default)]
+    pub pre_gcode: Option<String>,
+    /// Raw G-code to emit after this toolpath's moves.
+    #[serde(default)]
+    pub post_gcode: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -393,6 +399,10 @@ pub struct ToolpathConfig {
     pub heights: HeightsConfig,
     pub tool_id: usize,
     pub model_id: usize,
+    /// Raw G-code to emit before this toolpath's moves.
+    pub pre_gcode: Option<String>,
+    /// Raw G-code to emit after this toolpath's moves.
+    pub post_gcode: Option<String>,
 }
 
 /// Result of generating a single toolpath.
@@ -588,6 +598,8 @@ impl ProjectSession {
                             heights: tp_section.heights.clone(),
                             tool_id: tp_section.tool_id.unwrap_or(0),
                             model_id: tp_section.model_id.unwrap_or(0),
+                            pre_gcode: tp_section.pre_gcode.clone(),
+                            post_gcode: tp_section.post_gcode.clone(),
                         });
                         tp_indices.push(tp_idx);
                     }
@@ -616,6 +628,8 @@ impl ProjectSession {
                         heights: tp_section.heights.clone(),
                         tool_id: tp_section.tool_id.unwrap_or(0),
                         model_id: tp_section.model_id.unwrap_or(0),
+                        pre_gcode: tp_section.pre_gcode.clone(),
+                        post_gcode: tp_section.post_gcode.clone(),
                     });
                     tp_indices.push(tp_idx);
                 }
@@ -1157,8 +1171,8 @@ impl ProjectSession {
                     label: &tc.name,
                     tool_number: None,
                     coolant: CoolantMode::Off,
-                    pre_gcode: None,
-                    post_gcode: None,
+                    pre_gcode: tc.pre_gcode.as_deref(),
+                    post_gcode: tc.post_gcode.as_deref(),
                 });
             }
         }
