@@ -355,13 +355,14 @@ fn run_simulation_per_setup(
         }
     }
 
-    // Use the global stock mesh for the final result — it has all setups
-    // stamped in global frame and correctly represents the combined material
-    // removal. The per-setup composite_mesh is an approximation that just
-    // concatenates group meshes without boolean intersection.
-    let final_mesh = dexel_stock_to_mesh(&global_stock);
+    // Use the per-setup composite mesh for the final result.
+    // Each group's mesh is extracted from its local stock (always FromTop)
+    // and transformed to global frame via local_to_global. For identity
+    // setups this is a no-op copy. The global_stock is maintained separately
+    // for checkpoint/playback support but its mesh may have frame mismatches
+    // with the toolpath coordinates.
     build_simulation_result(request, boundaries, checkpoints, cut_samples, total_moves, || {
-        final_mesh
+        composite_mesh
     })
 }
 
