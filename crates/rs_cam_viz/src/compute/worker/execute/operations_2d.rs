@@ -79,6 +79,8 @@ pub(super) fn run_profile(
                     plunge_rate: cfg.plunge_rate,
                     safe_z,
                     climb: cfg.climb,
+                    compensate_in_controller: cfg.compensation
+                        == rs_cam_core::compute::CompensationType::InControl,
                 },
             )
         };

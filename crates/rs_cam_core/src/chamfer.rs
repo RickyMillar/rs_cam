@@ -81,6 +81,7 @@ pub fn chamfer_toolpath(polygon: &Polygon2, params: &ChamferParams) -> Toolpath 
         plunge_rate: params.plunge_rate,
         safe_z: params.safe_z,
         climb: false,
+        compensate_in_controller: false,
     };
 
     profile_toolpath(polygon, &profile_params)

@@ -8,7 +8,7 @@ use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::ServerInfo;
 use rmcp::schemars;
-use rmcp::{ServerHandler, tool, tool_router};
+use rmcp::{tool, tool_router, ServerHandler};
 use serde::Deserialize;
 
 use rs_cam_core::session::{ProjectSession, SimulationOptions};
@@ -98,7 +98,7 @@ fn text(msg: impl Into<String>) -> String {
 }
 
 fn json_str(data: serde_json::Value) -> String {
-    serde_json::to_string_pretty(&data).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}" ))
+    serde_json::to_string_pretty(&data).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}"))
 }
 
 // ── Server ────────────────────────────────────────────────────────────
@@ -156,7 +156,9 @@ impl CamServer {
     async fn project_summary(&self) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
-            return json_str(serde_json::json!({"error": "No project loaded. Call load_project first."}));
+            return json_str(
+                serde_json::json!({"error": "No project loaded. Call load_project first."}),
+            );
         };
         let bbox = session.stock_bbox();
         json_str(serde_json::json!({
@@ -217,7 +219,9 @@ impl CamServer {
                 "tool_id": tc.tool_id,
                 "model_id": tc.model_id,
             })),
-            None => json_str(serde_json::json!({"error": format!("Toolpath index {index} not found")})),
+            None => {
+                json_str(serde_json::json!({"error": format!("Toolpath index {index} not found")}))
+            }
         }
     }
 
@@ -341,10 +345,7 @@ impl CamServer {
         json_str(serde_json::to_value(session.diagnostics()).unwrap_or_default())
     }
 
-    #[tool(
-        name = "export_gcode",
-        description = "Export G-code to a file path"
-    )]
+    #[tool(name = "export_gcode", description = "Export G-code to a file path")]
     async fn export_gcode(
         &self,
         Parameters(ExportParam { path }): Parameters<ExportParam>,
@@ -365,15 +366,20 @@ impl CamServer {
     )]
     async fn set_toolpath_param(
         &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(SetToolpathParamInput { index, param, value }): Parameters<SetToolpathParamInput>,
+        #[allow(clippy::needless_pass_by_value)] Parameters(SetToolpathParamInput {
+            index,
+            param,
+            value,
+        }): Parameters<SetToolpathParamInput>,
     ) -> String {
         let mut guard = self.session.lock().await;
         let Some(session) = guard.as_mut() else {
             return text("No project loaded");
         };
         match session.set_toolpath_param(index, &param, value) {
-            Ok(()) => text(format!("Set toolpath {index} param '{param}'. Regenerate to apply.")),
+            Ok(()) => text(format!(
+                "Set toolpath {index} param '{param}'. Regenerate to apply."
+            )),
             Err(e) => text(format!("Error: {e}")),
         }
     }
@@ -384,15 +390,20 @@ impl CamServer {
     )]
     async fn set_tool_param(
         &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(SetToolParamInput { index, param, value }): Parameters<SetToolParamInput>,
+        #[allow(clippy::needless_pass_by_value)] Parameters(SetToolParamInput {
+            index,
+            param,
+            value,
+        }): Parameters<SetToolParamInput>,
     ) -> String {
         let mut guard = self.session.lock().await;
         let Some(session) = guard.as_mut() else {
             return text("No project loaded");
         };
         match session.set_tool_param(index, &param, &value) {
-            Ok(()) => text(format!("Set tool {index} param '{param}'. Regenerate affected toolpaths to apply.")),
+            Ok(()) => text(format!(
+                "Set tool {index} param '{param}'. Regenerate affected toolpaths to apply."
+            )),
             Err(e) => text(format!("Error: {e}")),
         }
     }
@@ -403,8 +414,13 @@ impl CamServer {
     )]
     async fn screenshot_simulation(
         &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(ScreenshotSimParam { path, width, height, checkpoint, include_toolpaths }): Parameters<ScreenshotSimParam>,
+        #[allow(clippy::needless_pass_by_value)] Parameters(ScreenshotSimParam {
+            path,
+            width,
+            height,
+            checkpoint,
+            include_toolpaths,
+        }): Parameters<ScreenshotSimParam>,
     ) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
@@ -464,15 +480,23 @@ impl CamServer {
     )]
     async fn screenshot_toolpath(
         &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(ScreenshotToolpathParam { index, path, width, height, show_stock, include_rapids }): Parameters<ScreenshotToolpathParam>,
+        #[allow(clippy::needless_pass_by_value)] Parameters(ScreenshotToolpathParam {
+            index,
+            path,
+            width,
+            height,
+            show_stock,
+            include_rapids,
+        }): Parameters<ScreenshotToolpathParam>,
     ) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
             return text("No project loaded");
         };
         let Some(result) = session.get_result(index) else {
-            return text(format!("Toolpath {index} not generated. Run generate_toolpath first."));
+            return text(format!(
+                "Toolpath {index} not generated. Run generate_toolpath first."
+            ));
         };
 
         if path.ends_with(".png") {
@@ -504,8 +528,11 @@ impl CamServer {
             }
         } else {
             let bbox = session.stock_bbox();
-            let bounds = [bbox.min.x, bbox.min.y, bbox.min.z, bbox.max.x, bbox.max.y, bbox.max.z];
-            let html = rs_cam_core::viz::toolpath_standalone_3d_html(&result.toolpath, Some(bounds));
+            let bounds = [
+                bbox.min.x, bbox.min.y, bbox.min.z, bbox.max.x, bbox.max.y, bbox.max.z,
+            ];
+            let html =
+                rs_cam_core::viz::toolpath_standalone_3d_html(&result.toolpath, Some(bounds));
 
             match std::fs::write(&path, &html) {
                 Ok(()) => text(format!(
@@ -524,9 +551,7 @@ impl ServerHandler for CamServer {
         let mut info = ServerInfo::default();
         info.server_info.name = "rs-cam".into();
         info.server_info.version = "0.1.0".into();
-        info.capabilities.tools = Some(rmcp::model::ToolsCapability {
-            list_changed: None,
-        });
+        info.capabilities.tools = Some(rmcp::model::ToolsCapability { list_changed: None });
         info
     }
 }

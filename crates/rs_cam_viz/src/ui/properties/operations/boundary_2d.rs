@@ -1,6 +1,6 @@
 use crate::state::toolpath::{
-    AdaptiveConfig, FaceConfig, FaceDirection, InlayConfig, PocketConfig, PocketPattern,
-    ProfileConfig, ProfileSide, RestConfig, VCarveConfig, ZigzagConfig,
+    AdaptiveConfig, CompensationType, FaceConfig, FaceDirection, InlayConfig, PocketConfig,
+    PocketPattern, ProfileConfig, ProfileSide, RestConfig, VCarveConfig, ZigzagConfig,
 };
 
 use super::super::dv;
@@ -121,10 +121,23 @@ pub(in crate::ui::properties) fn draw_profile_params(ui: &mut egui::Ui, cfg: &mu
             ui.checkbox(&mut cfg.climb, "");
             ui.end_row();
             ui.label("Compensation:");
-            // Only "In Computer" is implemented. G41/G42 ("In Control") is not
-            // yet wired to the G-code emitter, so the option is hidden to avoid
-            // misleading users. Restore when controller compensation is implemented.
-            ui.label("In Computer");
+            egui::ComboBox::from_id_salt("prof_comp")
+                .selected_text(match cfg.compensation {
+                    CompensationType::InComputer => "In Computer",
+                    CompensationType::InControl => "In Control",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut cfg.compensation,
+                        CompensationType::InComputer,
+                        "In Computer",
+                    );
+                    ui.selectable_value(
+                        &mut cfg.compensation,
+                        CompensationType::InControl,
+                        "In Control",
+                    );
+                });
             ui.end_row();
         });
     ui.add_space(8.0);

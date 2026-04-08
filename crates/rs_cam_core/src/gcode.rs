@@ -8,6 +8,16 @@ use crate::toolpath::{MoveType, Toolpath};
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 
+/// Direction for G41/G42 controller cutter compensation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ControllerCompensation {
+    /// G41 — cutter compensation left.
+    Left,
+    /// G42 — cutter compensation right.
+    Right,
+}
+
 /// Coolant mode for G-code output.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -285,6 +295,9 @@ pub struct GcodePhase<'a> {
     /// Coolant mode for this phase. Coolant on/off commands are emitted
     /// when the mode changes between phases.
     pub coolant: CoolantMode,
+    /// Controller cutter compensation (G41/G42). When `Some`, a G41/G42
+    /// command is emitted before the first cutting move and G40 after the last.
+    pub controller_compensation: Option<ControllerCompensation>,
 }
 
 /// Emit G-code from multiple phases, inserting tool changes, spindle speed
@@ -369,6 +382,11 @@ pub fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &dyn PostProcessor) ->
             }
         }
 
+        // Controller compensation: emit G41/G42 before first cutting move
+        let comp = phase.controller_compensation;
+        let mut comp_started = false;
+        let tool_num_for_comp = phase.tool_number.unwrap_or(1);
+
         for m in &phase.toolpath.moves {
             match m.move_type {
                 MoveType::Rapid => {
@@ -376,6 +394,16 @@ pub fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &dyn PostProcessor) ->
                     last_feed = None;
                 }
                 MoveType::Linear { feed_rate } => {
+                    if let Some(dir) = comp
+                        && !comp_started
+                    {
+                        let code = match dir {
+                            ControllerCompensation::Left => "G41",
+                            ControllerCompensation::Right => "G42",
+                        };
+                        let _ = writeln!(output, "{code} D{tool_num_for_comp}");
+                        comp_started = true;
+                    }
                     if last_feed != Some(feed_rate) {
                         output
                             .push_str(&post.linear(m.target.x, m.target.y, m.target.z, feed_rate));
@@ -390,18 +418,43 @@ pub fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &dyn PostProcessor) ->
                     }
                 }
                 MoveType::ArcCW { i, j, feed_rate } => {
+                    if let Some(dir) = comp
+                        && !comp_started
+                    {
+                        let code = match dir {
+                            ControllerCompensation::Left => "G41",
+                            ControllerCompensation::Right => "G42",
+                        };
+                        let _ = writeln!(output, "{code} D{tool_num_for_comp}");
+                        comp_started = true;
+                    }
                     output.push_str(
                         &post.arc_cw(m.target.x, m.target.y, m.target.z, i, j, feed_rate),
                     );
                     last_feed = Some(feed_rate);
                 }
                 MoveType::ArcCCW { i, j, feed_rate } => {
+                    if let Some(dir) = comp
+                        && !comp_started
+                    {
+                        let code = match dir {
+                            ControllerCompensation::Left => "G41",
+                            ControllerCompensation::Right => "G42",
+                        };
+                        let _ = writeln!(output, "{code} D{tool_num_for_comp}");
+                        comp_started = true;
+                    }
                     output.push_str(
                         &post.arc_ccw(m.target.x, m.target.y, m.target.z, i, j, feed_rate),
                     );
                     last_feed = Some(feed_rate);
                 }
             }
+        }
+
+        // Cancel controller compensation after the last cutting move
+        if comp_started {
+            let _ = writeln!(output, "G40");
         }
 
         if let Some(post_gc) = phase.post_gcode
@@ -550,6 +603,11 @@ pub fn emit_gcode_multi_setup(
                 }
             }
 
+            // Controller compensation: emit G41/G42 before first cutting move
+            let comp = phase.controller_compensation;
+            let mut comp_started = false;
+            let tool_num_for_comp = phase.tool_number.unwrap_or(1);
+
             for m in &phase.toolpath.moves {
                 match m.move_type {
                     MoveType::Rapid => {
@@ -557,6 +615,16 @@ pub fn emit_gcode_multi_setup(
                         last_feed = None;
                     }
                     MoveType::Linear { feed_rate } => {
+                        if let Some(dir) = comp
+                            && !comp_started
+                        {
+                            let code = match dir {
+                                ControllerCompensation::Left => "G41",
+                                ControllerCompensation::Right => "G42",
+                            };
+                            let _ = writeln!(output, "{code} D{tool_num_for_comp}");
+                            comp_started = true;
+                        }
                         if last_feed != Some(feed_rate) {
                             output.push_str(
                                 &post.linear(m.target.x, m.target.y, m.target.z, feed_rate),
@@ -571,18 +639,43 @@ pub fn emit_gcode_multi_setup(
                         }
                     }
                     MoveType::ArcCW { i, j, feed_rate } => {
+                        if let Some(dir) = comp
+                            && !comp_started
+                        {
+                            let code = match dir {
+                                ControllerCompensation::Left => "G41",
+                                ControllerCompensation::Right => "G42",
+                            };
+                            let _ = writeln!(output, "{code} D{tool_num_for_comp}");
+                            comp_started = true;
+                        }
                         output.push_str(
                             &post.arc_cw(m.target.x, m.target.y, m.target.z, i, j, feed_rate),
                         );
                         last_feed = Some(feed_rate);
                     }
                     MoveType::ArcCCW { i, j, feed_rate } => {
+                        if let Some(dir) = comp
+                            && !comp_started
+                        {
+                            let code = match dir {
+                                ControllerCompensation::Left => "G41",
+                                ControllerCompensation::Right => "G42",
+                            };
+                            let _ = writeln!(output, "{code} D{tool_num_for_comp}");
+                            comp_started = true;
+                        }
                         output.push_str(
                             &post.arc_ccw(m.target.x, m.target.y, m.target.z, i, j, feed_rate),
                         );
                         last_feed = Some(feed_rate);
                     }
                 }
+            }
+
+            // Cancel controller compensation after the last cutting move
+            if comp_started {
+                let _ = writeln!(output, "G40");
             }
 
             if let Some(post_gc) = phase.post_gcode
@@ -745,6 +838,7 @@ mod tests {
                 post_gcode: None,
                 tool_number: None,
                 coolant: CoolantMode::Off,
+                controller_compensation: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -754,6 +848,7 @@ mod tests {
                 post_gcode: None,
                 tool_number: None,
                 coolant: CoolantMode::Off,
+                controller_compensation: None,
             },
         ];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
@@ -787,6 +882,7 @@ mod tests {
                 post_gcode: None,
                 tool_number: None,
                 coolant: CoolantMode::Off,
+                controller_compensation: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -796,6 +892,7 @@ mod tests {
                 post_gcode: None,
                 tool_number: None,
                 coolant: CoolantMode::Off,
+                controller_compensation: None,
             },
         ];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
@@ -839,6 +936,7 @@ mod tests {
                     post_gcode: None,
                     tool_number: None,
                     coolant: CoolantMode::Off,
+                    controller_compensation: None,
                 }],
             },
             GcodeSetupPhase {
@@ -851,6 +949,7 @@ mod tests {
                     post_gcode: None,
                     tool_number: None,
                     coolant: CoolantMode::Off,
+                    controller_compensation: None,
                 }],
             },
         ];
@@ -880,6 +979,7 @@ mod tests {
             post_gcode: Some("M9"),
             tool_number: None,
             coolant: CoolantMode::Off,
+            controller_compensation: None,
         }];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
 
@@ -918,6 +1018,7 @@ mod tests {
                 post_gcode: Some("M9"),
                 tool_number: None,
                 coolant: CoolantMode::Off,
+                controller_compensation: None,
             }],
         }];
 
@@ -946,6 +1047,7 @@ mod tests {
             post_gcode: None,
             tool_number: None,
             coolant: CoolantMode::Off,
+            controller_compensation: None,
         }];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
 
@@ -976,6 +1078,7 @@ mod tests {
                 post_gcode: None,
                 tool_number: Some(1),
                 coolant: CoolantMode::Off,
+                controller_compensation: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -985,6 +1088,7 @@ mod tests {
                 post_gcode: None,
                 tool_number: Some(2),
                 coolant: CoolantMode::Off,
+                controller_compensation: None,
             },
         ];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
@@ -1027,6 +1131,7 @@ mod tests {
                 post_gcode: None,
                 tool_number: Some(1),
                 coolant: CoolantMode::Off,
+                controller_compensation: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -1036,6 +1141,7 @@ mod tests {
                 post_gcode: None,
                 tool_number: Some(1),
                 coolant: CoolantMode::Off,
+                controller_compensation: None,
             },
         ];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
@@ -1057,6 +1163,7 @@ mod tests {
             post_gcode: None,
             tool_number: None,
             coolant: CoolantMode::Mist,
+            controller_compensation: None,
         }];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
 
@@ -1085,6 +1192,7 @@ mod tests {
             post_gcode: None,
             tool_number: None,
             coolant: CoolantMode::Flood,
+            controller_compensation: None,
         }];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
 
@@ -1105,6 +1213,7 @@ mod tests {
             post_gcode: None,
             tool_number: None,
             coolant: CoolantMode::Both,
+            controller_compensation: None,
         }];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
 
@@ -1126,6 +1235,7 @@ mod tests {
             post_gcode: None,
             tool_number: None,
             coolant: CoolantMode::Off,
+            controller_compensation: None,
         }];
         let gcode = emit_gcode_phased(&phases, &GrblPost);
 
@@ -1151,6 +1261,7 @@ mod tests {
                 post_gcode: None,
                 tool_number: Some(1),
                 coolant: CoolantMode::Flood,
+                controller_compensation: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -1160,6 +1271,7 @@ mod tests {
                 post_gcode: None,
                 tool_number: Some(2),
                 coolant: CoolantMode::Mist,
+                controller_compensation: None,
             },
         ];
         let gcode = emit_gcode_phased(&phases, &GrblPost);

@@ -453,6 +453,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                                 plunge_rate,
                                 safe_z,
                                 climb,
+                                compensate_in_controller: false,
                             },
                         )
                     });

@@ -1613,6 +1613,7 @@ fn main() -> Result<()> {
                             post_gcode: None,
                             tool_number: phase.tool_number,
                             coolant: phase.coolant,
+                            controller_compensation: None,
                         })
                         .collect();
                     if setup_phases.is_empty() {
@@ -1660,6 +1661,7 @@ fn main() -> Result<()> {
                         post_gcode: None,
                         tool_number: phase.tool_number,
                         coolant: phase.coolant,
+                        controller_compensation: None,
                     })
                     .collect();
                 info!("Emitting G-code ({})...", post_proc.name());
@@ -2112,6 +2114,7 @@ fn main() -> Result<()> {
                             plunge_rate,
                             safe_z,
                             climb,
+                            compensate_in_controller: false,
                         },
                     )
                 });

@@ -12,8 +12,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 
-use rmcp::ServiceExt;
 use rmcp::handler::server::router::Router;
+use rmcp::ServiceExt;
 use rs_cam_core::session::ProjectSession;
 use server::CamServer;
 

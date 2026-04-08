@@ -172,6 +172,7 @@ fn test_no_nan_in_profile_toolpath() {
                 plunge_rate: 500.0,
                 safe_z: 10.0,
                 climb: false,
+                compensate_in_controller: false,
             };
 
             let tp = profile_toolpath(&polygon, &params);

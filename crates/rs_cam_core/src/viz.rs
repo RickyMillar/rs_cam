@@ -1928,7 +1928,13 @@ fn serialize_stock_mesh(mesh: &StockMesh) -> (String, String, String) {
     while i + 2 < mesh.vertices.len() {
         // SAFETY: loop guard ensures i+2 is in bounds
         #[allow(clippy::indexing_slicing)]
-        let _ = write!(verts, "{},{},{},", mesh.vertices[i], mesh.vertices[i + 1], mesh.vertices[i + 2]);
+        let _ = write!(
+            verts,
+            "{},{},{},",
+            mesh.vertices[i],
+            mesh.vertices[i + 1],
+            mesh.vertices[i + 2]
+        );
         i += 3;
     }
 
@@ -1937,7 +1943,13 @@ fn serialize_stock_mesh(mesh: &StockMesh) -> (String, String, String) {
     while j + 2 < mesh.colors.len() {
         // SAFETY: loop guard ensures j+2 is in bounds
         #[allow(clippy::indexing_slicing)]
-        let _ = write!(colors, "{:.3},{:.3},{:.3},", mesh.colors[j], mesh.colors[j + 1], mesh.colors[j + 2]);
+        let _ = write!(
+            colors,
+            "{:.3},{:.3},{:.3},",
+            mesh.colors[j],
+            mesh.colors[j + 1],
+            mesh.colors[j + 2]
+        );
         j += 3;
     }
 
@@ -1973,11 +1985,7 @@ fn stock_mesh_bbox(vertices: &[f32]) -> BoundingBox3 {
 /// Optionally overlays toolpath lines. No animation, no re-simulation — pure visualization
 /// of an existing `StockMesh`.
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-pub fn stock_mesh_to_3d_html(
-    mesh: &StockMesh,
-    toolpaths: &[&Toolpath],
-    title: &str,
-) -> String {
+pub fn stock_mesh_to_3d_html(mesh: &StockMesh, toolpaths: &[&Toolpath], title: &str) -> String {
     let mut html = String::with_capacity(2 * 1024 * 1024);
 
     let bbox = stock_mesh_bbox(&mesh.vertices);

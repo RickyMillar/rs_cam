@@ -72,7 +72,9 @@ impl RsCamApp {
                     vec![[0.65, 0.45, 0.25]; num_verts]
                 }
             }
-            StockVizMode::ByHeight => rs_cam_core::stock_mesh::height_gradient_colors(&mesh.vertices),
+            StockVizMode::ByHeight => {
+                rs_cam_core::stock_mesh::height_gradient_colors(&mesh.vertices)
+            }
             StockVizMode::ByOperation => sim_render::operation_placeholder_colors(num_verts),
         }
     }

@@ -544,6 +544,7 @@ mod tests {
                     plunge_rate: 500.0,
                     safe_z: 10.0,
                     climb: false,
+                    compensate_in_controller: false,
                 },
             )
         });
@@ -632,6 +633,7 @@ mod tests {
                         plunge_rate: 400.0,
                         safe_z: 10.0,
                         climb: true,
+                        compensate_in_controller: false,
                     },
                 )
             },

@@ -33,6 +33,9 @@ pub struct ProfileParams {
     pub safe_z: f64,
     /// Climb milling: true = CW (climb), false = CCW (conventional).
     pub climb: bool,
+    /// When true, the controller handles tool radius compensation (G41/G42),
+    /// so the toolpath follows the exact boundary geometry with no software offset.
+    pub compensate_in_controller: bool,
 }
 
 /// Generate a profile cutting toolpath along the polygon boundary.
@@ -43,10 +46,19 @@ pub struct ProfileParams {
 /// Returns an empty toolpath if the offset collapses (e.g., inside profile
 /// on a polygon smaller than the tool diameter).
 pub fn profile_toolpath(polygon: &Polygon2, params: &ProfileParams) -> Toolpath {
-    let contour = profile_contour(polygon, params.tool_radius, params.side);
-    match contour {
-        Some(pts) => contour_to_toolpath(&pts, params),
-        None => Toolpath::new(),
+    if params.compensate_in_controller {
+        // Controller handles the offset — toolpath follows the exact boundary.
+        let pts = polygon.exterior.clone();
+        if pts.len() < 3 {
+            return Toolpath::new();
+        }
+        contour_to_toolpath(&pts, params)
+    } else {
+        let contour = profile_contour(polygon, params.tool_radius, params.side);
+        match contour {
+            Some(pts) => contour_to_toolpath(&pts, params),
+            None => Toolpath::new(),
+        }
     }
 }
 
@@ -129,6 +141,7 @@ mod tests {
             plunge_rate: 500.0,
             safe_z: 10.0,
             climb: false,
+            compensate_in_controller: false,
         }
     }
 
@@ -334,6 +347,7 @@ mod tests {
                 plunge_rate: 400.0,
                 safe_z: 5.0,
                 climb: false,
+                compensate_in_controller: false,
             },
         );
         assert!(
