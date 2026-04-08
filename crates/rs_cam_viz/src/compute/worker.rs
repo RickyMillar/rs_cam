@@ -18,51 +18,26 @@ use std::sync::mpsc;
 use std::sync::{Condvar, Mutex};
 use std::time::Instant;
 
-use rs_cam_core::adaptive::AdaptiveParams;
-use rs_cam_core::adaptive3d::{Adaptive3dParams, EntryStyle3d};
 use rs_cam_core::arcfit::fit_arcs;
-use rs_cam_core::chamfer::{ChamferParams, chamfer_toolpath};
 use rs_cam_core::collision::{CollisionReport, RapidCollision};
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dressup::{
-    LinkMoveParams, apply_dogbones, apply_entry, apply_lead_in_out, apply_link_moves, apply_tabs,
-    even_tabs, filter_air_cuts,
+    LinkMoveParams, apply_dogbones, apply_entry, apply_lead_in_out, apply_link_moves,
+    filter_air_cuts,
 };
-use rs_cam_core::drill::{DrillCycle, DrillParams, drill_toolpath};
-use rs_cam_core::dropcutter::batch_drop_cutter_with_cancel;
 use rs_cam_core::feedopt::{FeedOptParams, optimize_feed_rates};
 use rs_cam_core::geo::BoundingBox3;
-use rs_cam_core::horizontal_finish::{HorizontalFinishParams, horizontal_finish_toolpath};
-use rs_cam_core::inlay::{InlayParams, inlay_toolpaths};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::pencil::PencilParams;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::profile::{ProfileParams, profile_toolpath};
-use rs_cam_core::project_curve::{ProjectCurveParams, project_curve_toolpath};
-use rs_cam_core::radial_finish::{RadialFinishParams, radial_finish_toolpath};
-use rs_cam_core::ramp_finish::RampFinishParams;
-use rs_cam_core::rest::{RestParams, rest_machining_toolpath};
-use rs_cam_core::scallop::ScallopParams;
-use rs_cam_core::spiral_finish::SpiralFinishParams;
-use rs_cam_core::steep_shallow::{SteepShallowParams, steep_shallow_toolpath};
 use rs_cam_core::stock_mesh::StockMesh;
-use rs_cam_core::tool::ToolDefinition;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
-use rs_cam_core::trace::TraceParams;
-use rs_cam_core::vcarve::{VCarveParams, vcarve_toolpath};
-use rs_cam_core::waterline::WaterlineParams;
-use rs_cam_core::zigzag::{ZigzagParams, zigzag_toolpath};
 
 use super::{ComputeBackend, ComputeError, ComputeLane, ComputeMessage, LaneSnapshot, LaneState};
-use crate::state::job::{ToolConfig, ToolType};
+use crate::state::job::ToolConfig;
+#[cfg(test)]
+use crate::state::job::ToolType;
 use crate::state::toolpath::{
-    Adaptive3dConfig, Adaptive3dEntryStyle, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig,
-    DressupConfig, DressupEntryStyle, DrillConfig, DrillCycleType, DropCutterConfig, FaceConfig,
-    FaceDirection, HorizontalFinishConfig, InlayConfig, OperationConfig, PencilConfig,
-    PocketConfig, PocketPattern, ProfileConfig, ProjectCurveConfig, RadialFinishConfig,
-    RampFinishConfig, RestConfig, ScallopConfig, SpiralFinishConfig, SteepShallowConfig,
-    StockSource, ToolpathId, ToolpathResult, TraceConfig, VCarveConfig, WaterlineConfig,
-    ZigzagConfig,
+    DressupConfig, DressupEntryStyle, OperationConfig, StockSource, ToolpathId, ToolpathResult,
 };
 
 pub struct ComputeRequest {
