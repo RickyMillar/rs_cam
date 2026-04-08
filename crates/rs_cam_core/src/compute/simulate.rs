@@ -93,6 +93,8 @@ pub struct SimulationResult {
     /// Move indices with rapid collisions (for timeline markers).
     pub rapid_collision_move_indices: Vec<usize>,
     pub cut_trace: Option<Arc<SimulationCutTrace>>,
+    /// True when the requested resolution was coarsened to fit within grid limits.
+    pub resolution_clamped: bool,
 }
 
 /// Error type for simulation failures.
@@ -136,8 +138,7 @@ fn transform_stock_mesh_to_global(
 
 /// Run a full stock simulation over one or more setup groups.
 ///
-/// This is the headless (no GUI) version of the simulation pipeline,
-/// matching the viz orchestration logic line-for-line:
+/// This is the headless (no GUI) version of the simulation pipeline:
 ///
 /// 1. Creates per-setup local stocks (always simulated FromTop)
 /// 2. Simulates each toolpath, collecting metrics if enabled
@@ -156,6 +157,30 @@ pub fn run_simulation(
     request: &SimulationRequest,
     cancel: &AtomicBool,
 ) -> Result<SimulationResult, SimulationError> {
+    run_simulation_with_phase(request, cancel, |_| {})
+}
+
+/// Run a full stock simulation with a phase callback for progress reporting.
+///
+/// Identical to [`run_simulation`] but calls `set_phase` with a human-readable
+/// label at each major step (e.g. "Initialize stock", "Simulate Pocket1",
+/// "Scan rapid collisions", "Build simulation mesh", "Compute deviations").
+pub fn run_simulation_with_phase<F>(
+    request: &SimulationRequest,
+    cancel: &AtomicBool,
+    mut set_phase: F,
+) -> Result<SimulationResult, SimulationError>
+where
+    F: FnMut(&str),
+{
+    set_phase("Initialize stock");
+
+    // Detect whether the grid will be coarsened beyond the requested resolution.
+    let resolution_clamped = {
+        let sx = request.stock_bbox.max.x - request.stock_bbox.min.x;
+        let sy = request.stock_bbox.max.y - request.stock_bbox.min.y;
+        crate::dexel::DexelGrid::would_exceed_grid(request.resolution, sx, sy).is_some()
+    };
     let sample_step_mm = request.resolution.max(0.25);
 
     let mut total_moves = 0;
@@ -196,6 +221,7 @@ pub fn run_simulation(
             .map_or(StockCutDirection::FromTop, |info| info.cut_direction());
 
         for entry in &group.toolpaths {
+            set_phase(&format!("Simulate {}", entry.name));
             let lut = RadialProfileLUT::from_cutter(&entry.tool, 256);
             let radius = entry.tool.radius();
             let start_move = total_moves;
@@ -285,6 +311,7 @@ pub fn run_simulation(
     }
 
     // Check for rapid-through-stock collisions on each toolpath.
+    set_phase("Scan rapid collisions");
     let mut rapid_collisions = Vec::new();
     let mut rapid_collision_move_indices = Vec::new();
     {
@@ -324,13 +351,19 @@ pub fn run_simulation(
         None
     };
 
+    set_phase("Build simulation mesh");
     let mesh = composite_mesh;
 
     // Compute per-vertex deviation (sim_z - model_z) if a reference model is available.
-    let deviations = request
-        .model_mesh
-        .as_ref()
-        .map(|model| compute_deviations(&mesh.vertices, model));
+    let deviations = if request.model_mesh.is_some() {
+        set_phase("Compute deviations");
+        request
+            .model_mesh
+            .as_ref()
+            .map(|model| compute_deviations(&mesh.vertices, model))
+    } else {
+        None
+    };
 
     Ok(SimulationResult {
         mesh,
@@ -341,6 +374,7 @@ pub fn run_simulation(
         rapid_collisions,
         rapid_collision_move_indices,
         cut_trace,
+        resolution_clamped,
     })
 }
 
