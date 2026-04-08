@@ -12,6 +12,7 @@ use crate::dexel_mesh::dexel_stock_to_mesh;
 use crate::dexel_stock::TriDexelStock;
 use crate::geo::BoundingBox3;
 use crate::mesh::TriangleMesh;
+use crate::stock_mesh::StockMesh;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveType, Toolpath};
 use std::fmt::Write;
@@ -1914,6 +1915,180 @@ scene.add(new THREE.Mesh(srcG,new THREE.MeshPhongMaterial({{
         bbox_min_y = hm_bbox.min.y,
         bbox_min_z = hm_bbox.min.z,
     );
+
+    html
+}
+
+// ── Static stock mesh viewer ──────────────────────────────────────────
+
+/// Serialize a `StockMesh` into CSV vertex/index/color strings for Three.js.
+fn serialize_stock_mesh(mesh: &StockMesh) -> (String, String, String) {
+    let mut verts = String::new();
+    let mut i = 0;
+    while i + 2 < mesh.vertices.len() {
+        // SAFETY: loop guard ensures i+2 is in bounds
+        #[allow(clippy::indexing_slicing)]
+        let _ = write!(verts, "{},{},{},", mesh.vertices[i], mesh.vertices[i + 1], mesh.vertices[i + 2]);
+        i += 3;
+    }
+
+    let mut colors = String::new();
+    let mut j = 0;
+    while j + 2 < mesh.colors.len() {
+        // SAFETY: loop guard ensures j+2 is in bounds
+        #[allow(clippy::indexing_slicing)]
+        let _ = write!(colors, "{:.3},{:.3},{:.3},", mesh.colors[j], mesh.colors[j + 1], mesh.colors[j + 2]);
+        j += 3;
+    }
+
+    let mut indices = String::new();
+    for idx in &mesh.indices {
+        let _ = write!(indices, "{},", idx);
+    }
+
+    (verts, colors, indices)
+}
+
+/// Compute a bounding box from a flat vertex array.
+fn stock_mesh_bbox(vertices: &[f32]) -> BoundingBox3 {
+    use crate::geo::P3;
+    let mut bbox = BoundingBox3::empty();
+    let mut i = 0;
+    while i + 2 < vertices.len() {
+        // SAFETY: loop guard ensures i+2 is in bounds
+        #[allow(clippy::indexing_slicing)]
+        bbox.expand_to(P3::new(
+            f64::from(vertices[i]),
+            f64::from(vertices[i + 1]),
+            f64::from(vertices[i + 2]),
+        ));
+        i += 3;
+    }
+    bbox
+}
+
+/// Generate a static 3D HTML viewer for a simulated stock mesh.
+///
+/// Renders the stock surface with per-vertex depth coloring (from `dexel_stock_to_mesh`).
+/// Optionally overlays toolpath lines. No animation, no re-simulation — pure visualization
+/// of an existing `StockMesh`.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub fn stock_mesh_to_3d_html(
+    mesh: &StockMesh,
+    toolpaths: &[&Toolpath],
+    title: &str,
+) -> String {
+    let mut html = String::with_capacity(2 * 1024 * 1024);
+
+    let bbox = stock_mesh_bbox(&mesh.vertices);
+    let center = bbox.center();
+    let extent = (bbox.max.x - bbox.min.x)
+        .max(bbox.max.y - bbox.min.y)
+        .max(bbox.max.z - bbox.min.z);
+    let cam_dist = extent * 1.5;
+
+    let (mesh_verts, mesh_colors, mesh_indices) = serialize_stock_mesh(mesh);
+
+    // Merge all toolpath lines
+    let mut all_cut_verts = String::new();
+    let mut all_cut_colors = String::new();
+    let mut all_rapid_verts = String::new();
+    let mut total_moves = 0usize;
+    let mut total_cutting = 0.0f64;
+    let mut total_rapid = 0.0f64;
+    for tp in toolpaths {
+        let data = serialize_toolpath_lines(tp);
+        all_cut_verts.push_str(&data.cut_verts);
+        all_cut_colors.push_str(&data.cut_colors);
+        all_rapid_verts.push_str(&data.rapid_verts);
+        total_moves += tp.moves.len();
+        total_cutting += tp.total_cutting_distance();
+        total_rapid += tp.total_rapid_distance();
+    }
+
+    html_head(&mut html, title, "");
+
+    let _ = write!(
+        html,
+        r##"<div id="info">
+  {title}<br>
+  Stock: {verts} vertices, {tris} triangles<br>
+  Toolpaths: {tp_count}, {tp_moves} moves, {tp_cut:.0}mm cutting, {tp_rapid:.0}mm rapid<br>
+  Mouse: orbit | Scroll: zoom | Right-click: pan
+</div>
+"##,
+        title = title,
+        verts = mesh.vertex_count(),
+        tris = mesh.indices.len() / 3,
+        tp_count = toolpaths.len(),
+        tp_moves = total_moves,
+        tp_cut = total_cutting,
+        tp_rapid = total_rapid,
+    );
+
+    html_importmap(&mut html);
+    html_scene_setup(
+        &mut html,
+        center.x,
+        center.y,
+        center.z,
+        cam_dist,
+        &CameraOffsets {
+            x: 0.5,
+            y: 0.8,
+            z: 1.0,
+        },
+    );
+
+    // Stock mesh with vertex colors
+    let _ = write!(
+        html,
+        r##"
+// --- Stock mesh ---
+const stockVerts = new Float32Array([{verts_data}]);
+const stockColors = new Float32Array([{colors_data}]);
+const stockIdx = new Uint32Array([{idx_data}]);
+const stockGeo = new THREE.BufferGeometry();
+stockGeo.setAttribute('position', new THREE.BufferAttribute(stockVerts, 3));
+stockGeo.setAttribute('color', new THREE.BufferAttribute(stockColors, 3));
+stockGeo.setIndex(new THREE.BufferAttribute(stockIdx, 1));
+stockGeo.computeVertexNormals();
+
+const stockMat = new THREE.MeshPhongMaterial({{
+  vertexColors: true,
+  side: THREE.DoubleSide,
+  flatShading: false,
+  shininess: 20,
+}});
+scene.add(new THREE.Mesh(stockGeo, stockMat));
+"##,
+        verts_data = mesh_verts.trim_end_matches(','),
+        colors_data = mesh_colors.trim_end_matches(','),
+        idx_data = mesh_indices.trim_end_matches(','),
+    );
+
+    // Toolpath overlay (if any)
+    if !toolpaths.is_empty() {
+        html_toolpath_objects(
+            &mut html,
+            all_cut_verts.trim_end_matches(','),
+            all_cut_colors.trim_end_matches(','),
+            all_rapid_verts.trim_end_matches(','),
+            0.3,
+        );
+    }
+
+    html_grid_axes(
+        &mut html,
+        extent * 1.2,
+        center.x,
+        center.y,
+        bbox.min.z - 0.1,
+        bbox.min.x,
+        bbox.min.y,
+        bbox.min.z,
+    );
+    html_tail(&mut html);
 
     html
 }
