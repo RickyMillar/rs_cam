@@ -464,7 +464,7 @@ impl CamServer {
             let toolpaths: Vec<&rs_cam_core::toolpath::Toolpath> =
                 if include_toolpaths.unwrap_or(true) {
                     (0..session.toolpath_count())
-                        .filter_map(|i| session.get_result(i).map(|r| &r.toolpath))
+                        .filter_map(|i| session.get_result(i).map(|r| r.toolpath.as_ref()))
                         .collect()
                 } else {
                     Vec::new()

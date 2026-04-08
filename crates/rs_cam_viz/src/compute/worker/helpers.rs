@@ -343,9 +343,9 @@ where
 
     set_phase("Build collision index");
     let core_req = core_cc::CollisionCheckRequest {
-        toolpath: (*req.toolpath).clone(),
+        toolpath: &req.toolpath,
         tool: build_cutter(&req.tool),
-        mesh: (*req.mesh).clone(),
+        mesh: &req.mesh,
     };
     set_phase("Check collisions");
     let core_result =
