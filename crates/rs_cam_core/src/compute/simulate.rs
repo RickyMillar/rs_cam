@@ -166,7 +166,18 @@ pub fn run_simulation(
     // Composited mesh from all per-setup simulations.
     let mut composite_mesh = StockMesh::empty();
     // Parallel global stock for checkpoint/playback support.
-    let mut global_stock = TriDexelStock::from_bounds(&request.stock_bbox, request.resolution);
+    // Use zero-origin bbox (stock dims only) because local_to_global
+    // returns stock-relative coordinates (0→stock_x, 0→stock_y, 0→stock_z),
+    // NOT world coordinates with origin offsets.
+    let global_bbox = BoundingBox3 {
+        min: P3::new(0.0, 0.0, 0.0),
+        max: P3::new(
+            request.stock_bbox.max.x - request.stock_bbox.min.x,
+            request.stock_bbox.max.y - request.stock_bbox.min.y,
+            request.stock_bbox.max.z - request.stock_bbox.min.z,
+        ),
+    };
+    let mut global_stock = TriDexelStock::from_bounds(&global_bbox, request.resolution);
 
     for group in &request.groups {
         // Per-setup stock: use local bbox if available, else fall back to global.

@@ -352,9 +352,7 @@ impl CamServer {
                 h,
             ) {
                 Ok(()) => text(format!(
-                    "6-view composite exported to {path} ({w}x{h}, {} vertices, {} triangles)",
-                    sim.mesh.vertex_count(),
-                    sim.mesh.indices.len() / 3,
+                    "6-view composite exported to {path} ({w}x{h})",
                 )),
                 Err(e) => text(format!("Failed to render: {e}")),
             }
