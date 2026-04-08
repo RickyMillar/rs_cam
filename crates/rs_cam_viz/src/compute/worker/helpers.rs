@@ -1,8 +1,8 @@
 use super::{
-    AtomicBool, CollisionRequest, CollisionResult, ComputeError, ComputeRequest, DepthDistribution,
-    DepthStepping, DressupEntryStyle, FeedOptParams, LinkMoveParams, MoveType, Polygon2,
-    SimulationRequest, SpatialIndex, Toolpath, TriangleMesh, apply_dogbones, apply_entry,
-    apply_lead_in_out, apply_link_moves, filter_air_cuts, fit_arcs, optimize_feed_rates,
+    AtomicBool, CollisionRequest, CollisionResult, ComputeError, ComputeRequest, DressupEntryStyle,
+    FeedOptParams, LinkMoveParams, MoveType, Polygon2, SimulationRequest, SpatialIndex, Toolpath,
+    TriangleMesh, apply_dogbones, apply_entry, apply_lead_in_out, apply_link_moves,
+    filter_air_cuts, fit_arcs, optimize_feed_rates,
 };
 use crate::compute::OperationError;
 use serde_json::json;
@@ -327,56 +327,6 @@ pub(super) fn feed_optimization_stock(req: &ComputeRequest) -> Result<TriDexelSt
         .ok_or("Feed optimization requires known stock bounds.")?;
     let cell_size = (req.tool.diameter / 4.0).clamp(0.25, 2.0);
     Ok(TriDexelStock::from_bounds(bbox, cell_size))
-}
-
-#[allow(dead_code)]
-pub(super) fn make_depth(depth: f64, per_pass: f64) -> DepthStepping {
-    make_depth_ext(depth, per_pass, 0, 0.0)
-}
-
-#[allow(dead_code)]
-pub(super) fn make_depth_with_finishing(
-    depth: f64,
-    per_pass: f64,
-    finishing_passes: usize,
-) -> DepthStepping {
-    make_depth_ext(depth, per_pass, finishing_passes, 0.0)
-}
-
-#[allow(dead_code)]
-fn make_depth_ext(depth: f64, per_pass: f64, finishing_passes: usize, top_z: f64) -> DepthStepping {
-    DepthStepping {
-        start_z: top_z,
-        final_z: top_z - depth.abs(),
-        max_step_down: per_pass,
-        distribution: DepthDistribution::Even,
-        finish_allowance: 0.0,
-        finishing_passes,
-    }
-}
-
-#[allow(dead_code)]
-fn make_depth_from_heights(
-    heights: &crate::state::toolpath::ResolvedHeights,
-    per_pass: f64,
-    finishing_passes: usize,
-) -> DepthStepping {
-    DepthStepping {
-        start_z: heights.top_z,
-        final_z: heights.bottom_z,
-        max_step_down: per_pass,
-        distribution: DepthDistribution::Even,
-        finish_allowance: 0.0,
-        finishing_passes,
-    }
-}
-
-#[allow(dead_code)]
-pub(super) fn run_collision_check(
-    req: &CollisionRequest,
-    cancel: &AtomicBool,
-) -> Result<CollisionResult, ComputeError> {
-    run_collision_check_with_phase(req, cancel, |_| {})
 }
 
 pub(super) fn run_collision_check_with_phase<F>(

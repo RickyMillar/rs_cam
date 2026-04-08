@@ -2,56 +2,16 @@ use super::{
     AdaptiveConfig, AdaptiveLevelSlice, AdaptiveParams, AlignmentPinDrillConfig, AtomicBool,
     ChamferConfig, ChamferParams, ComputeError, ComputeRequest, DrillConfig, DrillCycle,
     DrillCycleType, DrillParams, FaceConfig, FaceDirection, InlayConfig, InlayParams,
-    OperationExecutionContext, Ordering, PocketConfig, PocketParams, PocketPattern, Polygon2,
-    ProfileConfig, ProfileParams, RestConfig, RestParams, SemanticToolpathOp, ToolType, Toolpath,
+    OperationExecutionContext, Ordering, PocketConfig, PocketPattern, Polygon2, ProfileConfig,
+    ProfileParams, RestConfig, RestParams, SemanticToolpathOp, ToolType, Toolpath,
     ToolpathSemanticKind, TraceConfig, TraceParams, VCarveConfig, VCarveParams, ZigzagConfig,
     ZigzagParams, annotate_adaptive_runtime_semantics, annotate_operation_scope, append_toolpath,
     apply_tabs, bind_scope_to_offset_run, bind_scope_to_run, chamfer_toolpath, contour_toolpath,
     cutting_runs, drill_toolpath, effective_safe_z, even_tabs, inlay_toolpaths, line_toolpath,
-    pocket_toolpath, profile_toolpath, require_polygons, rest_machining_toolpath,
-    semantic_child_context, vcarve_toolpath, zigzag_toolpath,
+    profile_toolpath, require_polygons, rest_machining_toolpath, semantic_child_context,
+    vcarve_toolpath, zigzag_toolpath,
 };
 use crate::compute::OperationError;
-
-#[allow(dead_code)]
-fn run_pocket(req: &ComputeRequest, cfg: &PocketConfig) -> Result<Toolpath, OperationError> {
-    let polys = require_polygons(req)?;
-    let tr = req.tool.diameter / 2.0;
-    let safe_z = effective_safe_z(req);
-    let mut out = Toolpath::new();
-    for p in polys {
-        let tp = rs_cam_core::depth::toolpath_at_levels(&req.cutting_levels, safe_z, |z| match cfg
-            .pattern
-        {
-            PocketPattern::Contour => pocket_toolpath(
-                p,
-                &PocketParams {
-                    tool_radius: tr,
-                    stepover: cfg.stepover,
-                    cut_depth: z,
-                    feed_rate: cfg.feed_rate,
-                    plunge_rate: cfg.plunge_rate,
-                    safe_z,
-                    climb: cfg.climb,
-                },
-            ),
-            PocketPattern::Zigzag => zigzag_toolpath(
-                p,
-                &ZigzagParams {
-                    tool_radius: tr,
-                    stepover: cfg.stepover,
-                    cut_depth: z,
-                    feed_rate: cfg.feed_rate,
-                    plunge_rate: cfg.plunge_rate,
-                    safe_z,
-                    angle: cfg.angle,
-                },
-            ),
-        });
-        out.moves.extend(tp.moves);
-    }
-    Ok(out)
-}
 
 pub(super) fn run_profile(
     req: &ComputeRequest,
@@ -327,37 +287,6 @@ fn run_trace(req: &ComputeRequest, cfg: &TraceConfig) -> Result<Toolpath, Operat
         out.moves.extend(tp.moves);
     }
     Ok(out)
-}
-
-#[allow(dead_code)]
-fn run_drill(req: &ComputeRequest, cfg: &DrillConfig) -> Result<Toolpath, OperationError> {
-    let polys = require_polygons(req)?;
-    let mut holes = Vec::new();
-    for p in polys {
-        if p.exterior.is_empty() {
-            continue;
-        }
-        let (sx, sy) = p
-            .exterior
-            .iter()
-            .fold((0.0, 0.0), |(ax, ay), pt| (ax + pt.x, ay + pt.y));
-        let n = p.exterior.len() as f64;
-        holes.push([sx / n, sy / n]);
-    }
-    if holes.is_empty() {
-        return Err(OperationError::MissingGeometry(
-            "No hole positions found (import SVG with circles)".to_owned(),
-        ));
-    }
-    let cycle = cfg.cycle.to_core(cfg);
-    let params = DrillParams {
-        depth: cfg.depth,
-        cycle,
-        feed_rate: cfg.feed_rate,
-        safe_z: effective_safe_z(req),
-        retract_z: cfg.retract_z,
-    };
-    Ok(drill_toolpath(&holes, &params))
 }
 
 fn run_chamfer(req: &ComputeRequest, cfg: &ChamferConfig) -> Result<Toolpath, OperationError> {

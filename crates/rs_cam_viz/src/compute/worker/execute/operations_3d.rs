@@ -12,9 +12,8 @@ use super::{
     annotate_radial_finish_semantics, annotate_ramp_finish_runtime_semantics,
     annotate_scallop_runtime_semantics, annotate_spiral_finish_runtime_semantics, append_toolpath,
     batch_drop_cutter_with_cancel, bind_scope_to_run, build_cutter, cutting_runs, effective_safe_z,
-    horizontal_finish_toolpath, project_curve_toolpath, radial_finish_toolpath,
-    raster_toolpath_from_grid, require_mesh, require_polygons, steep_shallow_toolpath,
-    waterline_toolpath_with_cancel,
+    horizontal_finish_toolpath, project_curve_toolpath, radial_finish_toolpath, require_mesh,
+    require_polygons, steep_shallow_toolpath,
 };
 use crate::compute::OperationError;
 
@@ -73,32 +72,6 @@ fn prepare_mesh_operation<'a>(
     let (mesh, index) = require_mesh(req)?;
     let cutter = build_cutter(&req.tool);
     Ok((mesh, index, cutter))
-}
-
-#[allow(dead_code)]
-fn run_dropcutter(
-    req: &ComputeRequest,
-    cfg: &DropCutterConfig,
-    cancel: &AtomicBool,
-    phase_tracker: Option<&ToolpathPhaseTracker>,
-    debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
-) -> Result<Toolpath, ComputeError> {
-    let (mesh, index, cutter) =
-        prepare_mesh_operation(req, phase_tracker, debug).map_err(ComputeError::from)?;
-    let grid = {
-        let _phase_scope = phase_tracker.map(|tracker| tracker.start_phase("Drop-cutter grid"));
-        let _grid_scope = debug.map(|ctx| ctx.start_span("dropcutter_grid", "Drop-cutter grid"));
-        batch_drop_cutter_with_cancel(mesh, &index, &cutter, cfg.stepover, 0.0, cfg.min_z, &|| {
-            cancel.load(Ordering::SeqCst)
-        })
-        .map_err(|_e| ComputeError::Cancelled)?
-    };
-    let toolpath = {
-        let _phase_scope = phase_tracker.map(|tracker| tracker.start_phase("Rasterize grid"));
-        let _raster_scope = debug.map(|ctx| ctx.start_span("rasterize_grid", "Rasterize grid"));
-        raster_toolpath_from_grid(&grid, cfg.feed_rate, cfg.plunge_rate, effective_safe_z(req))
-    };
-    Ok(toolpath)
 }
 
 fn run_adaptive3d_annotated(
@@ -191,42 +164,6 @@ fn run_adaptive3d_annotated(
         debug,
     )
     .map_err(|_e| ComputeError::Cancelled)
-}
-
-#[allow(dead_code)]
-fn run_waterline(
-    req: &ComputeRequest,
-    cfg: &WaterlineConfig,
-    cancel: &AtomicBool,
-    phase_tracker: Option<&ToolpathPhaseTracker>,
-    debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
-) -> Result<Toolpath, ComputeError> {
-    let (mesh, index, cutter) =
-        prepare_mesh_operation(req, phase_tracker, debug).map_err(ComputeError::from)?;
-    let params = WaterlineParams {
-        sampling: cfg.sampling,
-        feed_rate: cfg.feed_rate,
-        plunge_rate: cfg.plunge_rate,
-        safe_z: effective_safe_z(req),
-    };
-    {
-        let _phase_scope = phase_tracker.map(|tracker| tracker.start_phase("Waterline slices"));
-        let _waterline_scope =
-            debug.map(|ctx| ctx.start_span("waterline_slices", "Waterline slices"));
-        // Z range comes from the Heights system (top_z / bottom_z)
-        // so waterline auto-tracks stock changes like all other operations.
-        waterline_toolpath_with_cancel(
-            mesh,
-            &index,
-            &cutter,
-            req.heights.top_z,
-            req.heights.bottom_z,
-            cfg.z_step,
-            &params,
-            &|| cancel.load(Ordering::SeqCst),
-        )
-        .map_err(|_e| ComputeError::Cancelled)
-    }
 }
 
 fn run_pencil_annotated(

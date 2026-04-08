@@ -1260,14 +1260,23 @@ impl ProjectSession {
         let stock_bbox = self.stock_bbox();
 
         let mut per_toolpath = Vec::new();
-        let total_collision_count: usize = 0;
+        let mut total_collision_count: usize = 0;
         let mut total_rapid_collision_count: usize = 0;
+        let no_cancel = AtomicBool::new(false);
 
         for (idx, tc) in self.toolpath_configs.iter().enumerate() {
             if let Some(result) = self.results.get(&idx) {
                 let rapid_collisions = check_rapid_collisions(&result.toolpath, &stock_bbox);
                 let rapid_count = rapid_collisions.len();
                 total_rapid_collision_count += rapid_count;
+
+                // Run holder/shank collision check; gracefully default to 0
+                // if model geometry is missing or check otherwise fails.
+                let holder_collision_count = self
+                    .collision_check(idx, &no_cancel)
+                    .map(|r| r.collision_report.collisions.len())
+                    .unwrap_or(0);
+                total_collision_count += holder_collision_count;
 
                 let tool_name = self
                     .find_tool_by_raw_id(tc.tool_id)
@@ -1282,7 +1291,7 @@ impl ProjectSession {
                     move_count: result.stats.move_count,
                     cutting_distance_mm: result.stats.cutting_distance,
                     rapid_distance_mm: result.stats.rapid_distance,
-                    collision_count: 0, // Full collision check requires explicit call
+                    collision_count: holder_collision_count,
                     rapid_collision_count: rapid_count,
                 });
             }
