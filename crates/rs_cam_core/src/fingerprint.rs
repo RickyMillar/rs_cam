@@ -448,6 +448,20 @@ pub fn render_stock_composite(
     use crate::dexel_mesh::dexel_stock_to_mesh;
 
     let mesh = dexel_stock_to_mesh(stock);
+    render_mesh_composite(&mesh, width, height)
+}
+
+/// Render a composite 6-view PNG from an existing `StockMesh`.
+///
+/// Same 6-view layout as [`render_stock_composite`] but skips the
+/// dexel-to-mesh conversion — use this when you already have the mesh
+/// (e.g. from `SimulationResult::mesh`).
+#[allow(clippy::indexing_slicing)] // bounded by mesh indices
+pub fn render_mesh_composite(
+    mesh: &crate::stock_mesh::StockMesh,
+    width: u32,
+    height: u32,
+) -> Vec<u8> {
     let w = width as usize;
     let h = height as usize;
     // RGBA buffer, dark gray background
@@ -499,7 +513,7 @@ pub fn render_stock_composite(
             &mut pixels,
             w,
             h,
-            &mesh,
+            mesh,
             vert_count,
             cx,
             cy,
@@ -514,6 +528,21 @@ pub fn render_stock_composite(
     }
 
     pixels
+}
+
+/// Render a 6-view composite and save as PNG.
+///
+/// Convenience wrapper around [`render_mesh_composite`] that encodes the
+/// RGBA pixels to a PNG file on disk.
+pub fn save_mesh_composite_png(
+    mesh: &crate::stock_mesh::StockMesh,
+    path: &std::path::Path,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    let pixels = render_mesh_composite(mesh, width, height);
+    image::save_buffer(path, &pixels, width, height, image::ColorType::Rgba8)
+        .map_err(|e| format!("PNG save failed: {e}"))
 }
 
 /// Rasterize one view of the stock mesh into an RGBA pixel buffer.
