@@ -39,6 +39,22 @@ pub struct ExportParam {
     pub path: String,
 }
 
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct ScreenshotSimParam {
+    /// Output HTML file path
+    pub path: String,
+    /// Include toolpath overlay lines (default true)
+    pub include_toolpaths: Option<bool>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct ScreenshotToolpathParam {
+    /// Toolpath index (0-based)
+    pub index: usize,
+    /// Output HTML file path
+    pub path: String,
+}
+
 fn text(msg: impl Into<String>) -> String {
     msg.into()
 }
@@ -302,6 +318,78 @@ impl CamServer {
         match session.export_gcode(Path::new(&path), None) {
             Ok(()) => text(format!("G-code exported to {path}")),
             Err(e) => text(format!("Export failed: {e}")),
+        }
+    }
+
+    #[tool(
+        name = "screenshot_simulation",
+        description = "Export an interactive 3D HTML view of the simulated stock. Run simulation first. Opens in any browser."
+    )]
+    async fn screenshot_simulation(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(ScreenshotSimParam { path, include_toolpaths }): Parameters<ScreenshotSimParam>,
+    ) -> String {
+        let guard = self.session.lock().await;
+        let Some(session) = guard.as_ref() else {
+            return text("No project loaded");
+        };
+        let Some(sim) = session.simulation_result() else {
+            return text("No simulation result. Run run_simulation first.");
+        };
+
+        let toolpaths: Vec<&rs_cam_core::toolpath::Toolpath> =
+            if include_toolpaths.unwrap_or(true) {
+                (0..session.toolpath_count())
+                    .filter_map(|i| session.get_result(i).map(|r| &r.toolpath))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
+        let html = rs_cam_core::viz::stock_mesh_to_3d_html(
+            &sim.mesh,
+            &toolpaths,
+            &format!("{} — Simulation", session.name()),
+        );
+
+        match std::fs::write(&path, &html) {
+            Ok(()) => text(format!(
+                "Simulation view exported to {path} ({} vertices, {} triangles)",
+                sim.mesh.vertex_count(),
+                sim.mesh.indices.len() / 3,
+            )),
+            Err(e) => text(format!("Failed to write: {e}")),
+        }
+    }
+
+    #[tool(
+        name = "screenshot_toolpath",
+        description = "Export an interactive 3D HTML view of a single generated toolpath. Opens in any browser."
+    )]
+    async fn screenshot_toolpath(
+        &self,
+        Parameters(ScreenshotToolpathParam { index, path }): Parameters<ScreenshotToolpathParam>,
+    ) -> String {
+        let guard = self.session.lock().await;
+        let Some(session) = guard.as_ref() else {
+            return text("No project loaded");
+        };
+        let Some(result) = session.get_result(index) else {
+            return text(format!("Toolpath {index} not generated. Run generate_toolpath first."));
+        };
+
+        let bbox = session.stock_bbox();
+        let bounds = [bbox.min.x, bbox.min.y, bbox.min.z, bbox.max.x, bbox.max.y, bbox.max.z];
+        let html = rs_cam_core::viz::toolpath_standalone_3d_html(&result.toolpath, Some(bounds));
+
+        match std::fs::write(&path, &html) {
+            Ok(()) => text(format!(
+                "Toolpath view exported to {path} ({} moves, {:.0}mm cutting)",
+                result.toolpath.moves.len(),
+                result.stats.cutting_distance,
+            )),
+            Err(e) => text(format!("Failed to write: {e}")),
         }
     }
 }
