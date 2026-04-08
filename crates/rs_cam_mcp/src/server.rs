@@ -47,6 +47,9 @@ pub struct ScreenshotSimParam {
     pub width: Option<u32>,
     /// Image height in pixels (default 800, PNG only)
     pub height: Option<u32>,
+    /// Checkpoint index to render (default: last). Each toolpath produces one
+    /// checkpoint. Use a lower index to see intermediate states.
+    pub checkpoint: Option<usize>,
     /// Include toolpath overlay lines (HTML only, default true)
     pub include_toolpaths: Option<bool>,
 }
@@ -332,7 +335,7 @@ impl CamServer {
     async fn screenshot_simulation(
         &self,
         #[allow(clippy::needless_pass_by_value)]
-        Parameters(ScreenshotSimParam { path, width, height, include_toolpaths }): Parameters<ScreenshotSimParam>,
+        Parameters(ScreenshotSimParam { path, width, height, checkpoint, include_toolpaths }): Parameters<ScreenshotSimParam>,
     ) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
@@ -345,16 +348,19 @@ impl CamServer {
         if path.ends_with(".png") {
             let w = width.unwrap_or(1200);
             let h = height.unwrap_or(800);
-            match rs_cam_core::fingerprint::save_mesh_composite_png(
-                &sim.mesh,
-                Path::new(&path),
-                w,
-                h,
-            ) {
+            // Render from checkpoint's dexel stock (same pipeline as GUI).
+            // Default to last checkpoint; fall back to composite mesh.
+            let cp_idx = checkpoint.unwrap_or_else(|| sim.checkpoints.len().saturating_sub(1));
+            let pixels = if let Some(cp) = sim.checkpoints.get(cp_idx) {
+                rs_cam_core::fingerprint::render_stock_composite(&cp.stock, w, h)
+            } else {
+                rs_cam_core::fingerprint::render_mesh_composite(&sim.mesh, w, h)
+            };
+            match image::save_buffer(Path::new(&path), &pixels, w, h, image::ColorType::Rgba8) {
                 Ok(()) => text(format!(
-                    "6-view composite exported to {path} ({w}x{h})",
+                    "6-view composite exported to {path} ({w}x{h}, checkpoint {cp_idx})",
                 )),
-                Err(e) => text(format!("Failed to render: {e}")),
+                Err(e) => text(format!("Failed to save PNG: {e}")),
             }
         } else {
             let toolpaths: Vec<&rs_cam_core::toolpath::Toolpath> =
