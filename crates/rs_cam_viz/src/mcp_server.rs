@@ -6,10 +6,10 @@
 
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::ServerInfo;
-use rmcp::{ServerHandler, tool, tool_router};
+use rmcp::model::{Meta, ProgressNotificationParam, ServerInfo};
+use rmcp::{Peer, RoleServer, ServerHandler, tool, tool_router};
 
-use crate::mcp_bridge::{McpRequest, McpRequestKind};
+use crate::mcp_bridge::{McpRequest, McpRequestKind, ProgressUpdate};
 
 // Re-use parameter structs from the standalone MCP crate.
 use rs_cam_mcp::server::{
@@ -43,10 +43,14 @@ impl EmbeddedCamServer {
         Self::tool_router()
     }
 
-    /// Send a request to the GUI and await the response.
+    /// Send a request to the GUI and await the response (no progress tracking).
     async fn send_request(&self, kind: McpRequestKind) -> Result<String, String> {
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-        let request = McpRequest { kind, response_tx };
+        let request = McpRequest {
+            kind,
+            response_tx,
+            progress_tx: None,
+        };
         self.request_tx
             .send(request)
             .map_err(|e| format!("Failed to send MCP request: {e}"))?;
@@ -54,6 +58,59 @@ impl EmbeddedCamServer {
         match response_rx.await {
             Ok(resp) => resp.result,
             Err(e) => Err(format!("MCP response channel closed: {e}")),
+        }
+    }
+
+    /// Send a request to the GUI and forward progress notifications to the MCP
+    /// client while awaiting the final response.
+    async fn send_with_progress(
+        &self,
+        kind: McpRequestKind,
+        meta: Meta,
+        peer: Peer<RoleServer>,
+    ) -> Result<String, String> {
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<ProgressUpdate>(32);
+
+        let request = McpRequest {
+            kind,
+            response_tx,
+            progress_tx: Some(progress_tx),
+        };
+
+        self.request_tx
+            .send(request)
+            .map_err(|e| format!("Failed to send MCP request: {e}"))?;
+        self.egui_ctx.request_repaint();
+
+        // If we have a progress token, forward progress notifications to the client.
+        let progress_token = meta.get_progress_token();
+        if let Some(token) = progress_token {
+            let mut resp_rx = std::pin::pin!(response_rx);
+            loop {
+                tokio::select! {
+                    Some(update) = progress_rx.recv() => {
+                        let _ = peer.notify_progress(ProgressNotificationParam {
+                            progress_token: token.clone(),
+                            progress: update.progress,
+                            total: update.total,
+                            message: Some(update.message),
+                        }).await;
+                    }
+                    result = &mut resp_rx => {
+                        return match result {
+                            Ok(resp) => resp.result,
+                            Err(e) => Err(format!("MCP response channel closed: {e}")),
+                        };
+                    }
+                }
+            }
+        } else {
+            // No progress token -- just await the response.
+            match response_rx.await {
+                Ok(resp) => resp.result,
+                Err(e) => Err(format!("MCP response channel closed: {e}")),
+            }
         }
     }
 
@@ -445,9 +502,11 @@ impl EmbeddedCamServer {
     async fn generate_toolpath(
         &self,
         Parameters(IndexParam { index }): Parameters<IndexParam>,
+        meta: Meta,
+        peer: Peer<RoleServer>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::GenerateToolpath { index })
+            self.send_with_progress(McpRequestKind::GenerateToolpath { index }, meta, peer)
                 .await,
         )
     }
@@ -456,8 +515,11 @@ impl EmbeddedCamServer {
         name = "generate_all",
         description = "Generate all enabled toolpaths. Returns count of newly generated toolpaths."
     )]
-    async fn generate_all(&self) -> String {
-        Self::format_result(self.send_request(McpRequestKind::GenerateAll).await)
+    async fn generate_all(&self, meta: Meta, peer: Peer<RoleServer>) -> String {
+        Self::format_result(
+            self.send_with_progress(McpRequestKind::GenerateAll, meta, peer)
+                .await,
+        )
     }
 
     #[tool(
@@ -467,9 +529,11 @@ impl EmbeddedCamServer {
     async fn run_simulation(
         &self,
         Parameters(SimulationParam { resolution }): Parameters<SimulationParam>,
+        meta: Meta,
+        peer: Peer<RoleServer>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::RunSimulation { resolution })
+            self.send_with_progress(McpRequestKind::RunSimulation { resolution }, meta, peer)
                 .await,
         )
     }
@@ -481,9 +545,11 @@ impl EmbeddedCamServer {
     async fn collision_check(
         &self,
         Parameters(CollisionCheckParam { index }): Parameters<CollisionCheckParam>,
+        meta: Meta,
+        peer: Peer<RoleServer>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::CollisionCheck { index })
+            self.send_with_progress(McpRequestKind::CollisionCheck { index }, meta, peer)
                 .await,
         )
     }

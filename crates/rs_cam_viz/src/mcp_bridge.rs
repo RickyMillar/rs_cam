@@ -6,10 +6,23 @@ use std::collections::HashMap;
 
 use crate::state::toolpath::ToolpathId;
 
+/// A progress update sent from GUI to MCP during long operations.
+#[derive(Debug, Clone)]
+pub struct ProgressUpdate {
+    /// Human-readable status message.
+    pub message: String,
+    /// Progress value (0.0 to total).
+    pub progress: f64,
+    /// Total steps (if known).
+    pub total: Option<f64>,
+}
+
 /// A request from the MCP server to the GUI thread.
 pub struct McpRequest {
     pub kind: McpRequestKind,
     pub response_tx: tokio::sync::oneshot::Sender<McpResponse>,
+    /// Optional channel for streaming progress updates back to the MCP client.
+    pub progress_tx: Option<tokio::sync::mpsc::Sender<ProgressUpdate>>,
 }
 
 /// What the MCP server is asking the GUI to do.
@@ -155,6 +168,8 @@ pub struct PendingGenerateAll {
     /// Per-toolpath error messages for failed generations.
     pub errors: Vec<(usize, String)>,
     pub response_tx: tokio::sync::oneshot::Sender<McpResponse>,
+    /// Optional channel for streaming per-toolpath progress back to the MCP client.
+    pub progress_tx: Option<tokio::sync::mpsc::Sender<ProgressUpdate>>,
 }
 
 impl PendingMcpCompute {
