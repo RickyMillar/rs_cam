@@ -107,15 +107,18 @@ fn workspace_tab(
 
 /// Badge for the Toolpaths tab: count of pending operations.
 fn toolpath_badge(state: &AppState) -> Option<(String, egui::Color32)> {
+    use crate::state::runtime::ComputeStatus;
     let pending = state
-        .job
-        .all_toolpaths()
-        .filter(|tp| {
-            tp.enabled
+        .session
+        .toolpath_configs()
+        .iter()
+        .filter(|tc| {
+            let rt = state.gui.toolpath_rt.get(&tc.id);
+            let status = rt.map_or(&ComputeStatus::Pending, |r| &r.status);
+            tc.enabled
                 && matches!(
-                    tp.status,
-                    crate::state::toolpath::ComputeStatus::Pending
-                        | crate::state::toolpath::ComputeStatus::Computing
+                    status,
+                    ComputeStatus::Pending | ComputeStatus::Computing
                 )
         })
         .count();
@@ -134,7 +137,7 @@ fn simulation_badge(state: &AppState) -> Option<(String, egui::Color32)> {
         return None;
     }
 
-    if sim.is_stale(state.job.edit_counter) {
+    if sim.is_stale(state.gui.edit_counter) {
         return Some((" stale".to_owned(), theme::WARNING));
     }
 
@@ -153,16 +156,25 @@ fn readiness_badge(state: &AppState) -> Option<(String, egui::Color32)> {
 
     // Count uncomputed enabled operations
     let uncomputed = state
-        .job
-        .all_toolpaths()
-        .filter(|tp| tp.enabled && tp.result.is_none())
+        .session
+        .toolpath_configs()
+        .iter()
+        .filter(|tc| {
+            tc.enabled
+                && state
+                    .gui
+                    .toolpath_rt
+                    .get(&tc.id)
+                    .and_then(|rt| rt.result.as_ref())
+                    .is_none()
+        })
         .count();
 
     // Check collisions
     let collisions = sim.checks.holder_collision_count + sim.checks.rapid_collisions.len();
 
     // Check simulation staleness
-    let stale = sim.has_results() && sim.is_stale(state.job.edit_counter);
+    let stale = sim.has_results() && sim.is_stale(state.gui.edit_counter);
 
     if collisions > 0 {
         Some((format!("{collisions} collision(s)"), theme::ERROR))
@@ -170,7 +182,13 @@ fn readiness_badge(state: &AppState) -> Option<(String, egui::Color32)> {
         Some((format!("{uncomputed} uncomputed"), theme::WARNING))
     } else if stale {
         Some(("sim stale".to_owned(), theme::WARNING))
-    } else if !sim.has_results() && state.job.all_toolpaths().any(|tp| tp.enabled) {
+    } else if !sim.has_results()
+        && state
+            .session
+            .toolpath_configs()
+            .iter()
+            .any(|tc| tc.enabled)
+    {
         Some(("not simulated".to_owned(), theme::TEXT_DIM))
     } else {
         None

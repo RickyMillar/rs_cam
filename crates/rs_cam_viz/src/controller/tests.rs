@@ -11,13 +11,14 @@ use crate::compute::{
     CollisionRequest, ComputeMessage, ComputeRequest, LaneState, SimulationRequest,
     SimulationResult,
 };
-use crate::state::job::{
-    LoadedModel, ModelId, ModelKind, ModelUnits, Setup, ToolConfig, ToolId, ToolType,
-};
+use crate::state::job::{self, SetupId, ToolConfig, ToolId, ToolType};
+use crate::state::runtime::ToolpathRuntime;
 use crate::state::selection::Selection;
 use crate::state::toolpath::{
     Adaptive3dConfig, OperationConfig, ToolpathEntry, ToolpathId, ToolpathResult,
 };
+use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
+use rs_cam_core::session::{LoadedModel, ToolpathConfig};
 
 struct ScriptedBackend {
     toolpath_lane: LaneSnapshot,
@@ -78,7 +79,7 @@ fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_
         },
         total_moves: 12,
         boundaries: vec![crate::state::simulation::ToolpathBoundary {
-            id: ToolpathId(1),
+            id: ToolpathId(0),
             name: "Adaptive 3D".to_owned(),
             tool_name: "Tool".to_owned(),
             start_move: 4,
@@ -102,7 +103,7 @@ fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_
     });
 
     controller.handle_internal_event(crate::ui::AppEvent::InspectToolpathInSimulation(
-        ToolpathId(1),
+        ToolpathId(0),
     ));
     let events = controller.drain_events();
 
@@ -130,7 +131,7 @@ fn inspect_toolpath_in_simulation_queues_targeted_run_when_results_missing() {
     let mut controller = sample_controller();
 
     controller.handle_internal_event(crate::ui::AppEvent::InspectToolpathInSimulation(
-        ToolpathId(1),
+        ToolpathId(0),
     ));
     let events = controller.drain_events();
 
@@ -140,18 +141,18 @@ fn inspect_toolpath_in_simulation_queues_targeted_run_when_results_missing() {
     )));
     assert!(events.iter().any(|event| matches!(
         event,
-        crate::ui::AppEvent::RunSimulationWith(ids) if ids == &vec![ToolpathId(1)]
+        crate::ui::AppEvent::RunSimulationWith(ids) if ids == &vec![ToolpathId(0)]
     )));
     assert_eq!(
         controller.state.simulation.debug.pending_inspect_toolpath,
-        Some(ToolpathId(1))
+        Some(ToolpathId(0))
     );
 }
 
 #[test]
 fn simulation_results_land_on_pending_inspect_toolpath_start() {
     let mut controller = sample_controller();
-    controller.state.simulation.debug.pending_inspect_toolpath = Some(ToolpathId(1));
+    controller.state.simulation.debug.pending_inspect_toolpath = Some(ToolpathId(0));
     controller
         .compute
         .drained
@@ -164,7 +165,7 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
             total_moves: 8,
             deviations: None,
             boundaries: vec![crate::compute::worker::SimBoundary {
-                id: ToolpathId(1),
+                id: ToolpathId(0),
                 name: "Adaptive 3D".to_owned(),
                 tool_name: "Tool".to_owned(),
                 start_move: 2,
@@ -203,28 +204,74 @@ fn fixture_path(name: &str) -> std::path::PathBuf {
 fn sample_controller() -> AppController<ScriptedBackend> {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
-    controller.state.job.tools.push(tool);
+    controller.state.session.tools_mut().push(tool.clone());
 
-    let mesh = make_test_flat(40.0);
-    controller.state.job.models.push(LoadedModel {
-        id: ModelId(1),
+    let mesh = Arc::new(make_test_flat(40.0));
+    controller.state.session.add_model(LoadedModel {
+        id: 0,
         path: std::path::PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
-        kind: ModelKind::Stl,
-        mesh: Some(Arc::new(mesh)),
+        kind: Some(ModelKind::Stl),
+        mesh: Some(Arc::clone(&mesh)),
         polygons: None,
         enriched_mesh: None,
-        units: ModelUnits::Millimeters,
+        units: Some(ModelUnits::Millimeters),
         winding_report: None,
         load_error: None,
     });
 
+    let tp_config = ToolpathConfig {
+        id: 0,
+        name: "Scallop".to_owned(),
+        enabled: true,
+        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: 1,
+        model_id: 0,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: Default::default(),
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        face_selection: None,
+        feeds_auto: Default::default(),
+        debug_options: Default::default(),
+    };
+    controller.state.session.add_toolpath(0, tp_config).unwrap();
+    let tp_id = controller.state.session.toolpath_configs()[0].id;
+    let mut rt = ToolpathRuntime::new(true);
+    rt.result = Some(ToolpathResult {
+        toolpath: Arc::new(Toolpath::new()),
+        stats: Default::default(),
+        debug_trace: None,
+        semantic_trace: None,
+        debug_trace_path: None,
+    });
+    controller.state.gui.toolpath_rt.insert(tp_id, rt);
+
+    // Also populate state.job for backward compatibility with UI code
+    // that hasn't been migrated yet (e.g. properties panel).
+    controller.state.job.tools.push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    controller.state.job.models.push(job::LoadedModel {
+        id: job::ModelId(0),
+        path: std::path::PathBuf::from("flat.stl"),
+        name: "Flat".to_owned(),
+        kind: job::ModelKind::Stl,
+        mesh: Some(mesh),
+        polygons: None,
+        enriched_mesh: None,
+        units: job::ModelUnits::Millimeters,
+        winding_report: None,
+        load_error: None,
+    });
     let mut entry = ToolpathEntry::from_init(
         crate::state::toolpath::ToolpathEntryInit::from_loaded_state(
-            ToolpathId(1),
+            ToolpathId(tp_id),
             "Scallop".to_owned(),
             ToolId(1),
-            ModelId(1),
+            job::ModelId(0),
             OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
         ),
     );
@@ -236,7 +283,8 @@ fn sample_controller() -> AppController<ScriptedBackend> {
         debug_trace_path: None,
     });
     controller.state.job.push_toolpath(entry);
-    controller.state.selection = Selection::Toolpath(ToolpathId(1));
+
+    controller.state.selection = Selection::Toolpath(ToolpathId(tp_id));
     controller
 }
 
@@ -343,27 +391,28 @@ fn fixture_projects_load_2d_and_3d_models() {
         .open_job_from_path(&fixture_path("sample_2d_project.toml"))
         .expect("open 2d fixture");
     assert!(controller.load_warnings().is_empty());
-    assert_eq!(controller.state.job.models.len(), 1);
-    assert!(controller.state.job.models[0].polygons.is_some());
-    assert!(controller.state.job.models[0].mesh.is_none());
+    assert_eq!(controller.state.session.models().len(), 1);
+    assert!(controller.state.session.models()[0].polygons.is_some());
+    assert!(controller.state.session.models()[0].mesh.is_none());
 
     controller
         .open_job_from_path(&fixture_path("sample_3d_project.toml"))
         .expect("open 3d fixture");
     assert!(controller.load_warnings().is_empty());
-    assert_eq!(controller.state.job.models.len(), 1);
-    assert!(controller.state.job.models[0].mesh.is_some());
-    assert!(controller.state.job.models[0].polygons.is_none());
+    assert_eq!(controller.state.session.models().len(), 1);
+    assert!(controller.state.session.models()[0].mesh.is_some());
+    assert!(controller.state.session.models()[0].polygons.is_none());
 }
 
 #[test]
 fn controller_save_open_and_export_smoke() {
     let mut controller = sample_controller();
-    controller.state.job.name = "Smoke".to_owned();
+    controller.state.session.set_name("Smoke".to_owned());
     controller
         .state
-        .job
-        .find_toolpath_mut(ToolpathId(1))
+        .gui
+        .toolpath_rt
+        .get_mut(&0)
         .unwrap()
         .result = Some(ToolpathResult {
         toolpath: Arc::new({
@@ -406,24 +455,35 @@ fn controller_save_open_and_export_smoke() {
 fn simulation_results_capture_setup_boundaries() {
     let mut controller = sample_controller();
 
-    let second_setup_id = controller.state.job.next_setup_id();
+    let setup_idx = controller.state.session.add_setup(
+        "Bottom Side".to_owned(),
+        rs_cam_core::compute::transform::FaceUp::default(),
+    );
+    let tp2_config = ToolpathConfig {
+        id: 0,
+        name: "Profile".to_owned(),
+        enabled: true,
+        operation: OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: 1,
+        model_id: 0,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: Default::default(),
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        face_selection: None,
+        feeds_auto: Default::default(),
+        debug_options: Default::default(),
+    };
     controller
         .state
-        .job
-        .setups
-        .push(Setup::new(second_setup_id, "Bottom Side".to_owned()));
-    controller.state.job.push_toolpath_to_setup(
-        second_setup_id,
-        ToolpathEntry::from_init(
-            crate::state::toolpath::ToolpathEntryInit::from_loaded_state(
-                ToolpathId(2),
-                "Profile".to_owned(),
-                ToolId(1),
-                ModelId(1),
-                OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
-            ),
-        ),
-    );
+        .session
+        .add_toolpath(setup_idx, tp2_config)
+        .unwrap();
+    let tp2_id = controller.state.session.toolpath_configs()[1].id;
 
     controller
         .compute
@@ -439,7 +499,7 @@ fn simulation_results_capture_setup_boundaries() {
                 deviations: None,
                 boundaries: vec![
                     crate::compute::worker::SimBoundary {
-                        id: ToolpathId(1),
+                        id: ToolpathId(0),
                         name: "Adaptive 3D".to_owned(),
                         tool_name: "End Mill".to_owned(),
                         start_move: 0,
@@ -447,7 +507,7 @@ fn simulation_results_capture_setup_boundaries() {
                         direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
                     },
                     crate::compute::worker::SimBoundary {
-                        id: ToolpathId(2),
+                        id: ToolpathId(tp2_id),
                         name: "Profile".to_owned(),
                         tool_name: "End Mill".to_owned(),
                         start_move: 10,
@@ -565,18 +625,18 @@ fn simulation_staleness_tracks_edits() {
         !controller
             .state
             .simulation
-            .is_stale(controller.state.job.edit_counter),
+            .is_stale(controller.state.gui.edit_counter),
         "Fresh simulation should not be stale"
     );
 
     // Mark an edit
-    controller.state.job.mark_edited();
+    controller.state.gui.mark_edited();
 
     assert!(
         controller
             .state
             .simulation
-            .is_stale(controller.state.job.edit_counter),
+            .is_stale(controller.state.gui.edit_counter),
         "Simulation should be stale after job edit"
     );
 }
@@ -612,7 +672,7 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
     let mut boundaries = Vec::new();
     for i in 0..num_setups {
         boundaries.push(crate::compute::worker::SimBoundary {
-            id: ToolpathId(1),
+            id: ToolpathId(0),
             name: format!("Op {}", i + 1),
             tool_name: "EndMill".to_owned(),
             start_move: i * 10,
@@ -663,7 +723,7 @@ fn toolpath_results_persist_debug_trace_metadata() {
 
     controller.compute.drained.push(ComputeMessage::Toolpath(
         crate::compute::worker::ComputeResult {
-            toolpath_id: ToolpathId(1),
+            toolpath_id: ToolpathId(0),
             result: Ok(ToolpathResult {
                 toolpath: Arc::clone(&toolpath),
                 stats: Default::default(),
@@ -679,12 +739,13 @@ fn toolpath_results_persist_debug_trace_metadata() {
 
     controller.drain_compute_results();
 
-    let entry = controller
+    let rt = controller
         .state
-        .job
-        .find_toolpath(ToolpathId(1))
-        .expect("toolpath should exist");
-    let result = entry.result.as_ref().expect("result should be stored");
+        .gui
+        .toolpath_rt
+        .get(&0)
+        .expect("toolpath runtime should exist");
+    let result = rt.result.as_ref().expect("result should be stored");
     let stored_trace = result
         .debug_trace
         .as_ref()
@@ -698,21 +759,19 @@ fn toolpath_results_persist_debug_trace_metadata() {
         Some(1)
     );
     assert_eq!(
-        entry
-            .semantic_trace
+        rt.semantic_trace
             .as_ref()
             .map(|trace| trace.summary.item_count),
         Some(1)
     );
     assert_eq!(
-        entry
-            .debug_trace
+        rt.debug_trace
             .as_ref()
             .map(|trace| trace.summary.span_count),
         Some(1)
     );
     assert_eq!(result.debug_trace_path.as_ref(), Some(&debug_path));
-    assert_eq!(entry.debug_trace_path.as_ref(), Some(&debug_path));
+    assert_eq!(rt.debug_trace_path.as_ref(), Some(&debug_path));
 }
 
 #[test]
@@ -737,7 +796,7 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
 
     controller.compute.drained.push(ComputeMessage::Toolpath(
         crate::compute::worker::ComputeResult {
-            toolpath_id: ToolpathId(1),
+            toolpath_id: ToolpathId(0),
             result: Err(crate::compute::ComputeError::Cancelled),
             debug_trace: Some(Arc::clone(&trace)),
             semantic_trace: Some(Arc::clone(&semantic_trace)),
@@ -747,31 +806,30 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
 
     controller.drain_compute_results();
 
-    let entry = controller
+    let rt = controller
         .state
-        .job
-        .find_toolpath(ToolpathId(1))
-        .expect("toolpath should exist");
+        .gui
+        .toolpath_rt
+        .get(&0)
+        .expect("toolpath runtime should exist");
     assert!(matches!(
-        entry.status,
-        crate::state::toolpath::ComputeStatus::Pending
+        rt.status,
+        crate::state::runtime::ComputeStatus::Pending
     ));
-    assert!(entry.result.is_none());
+    assert!(rt.result.is_none());
     assert_eq!(
-        entry
-            .debug_trace
+        rt.debug_trace
             .as_ref()
             .map(|trace| trace.summary.span_count),
         Some(1)
     );
     assert_eq!(
-        entry
-            .semantic_trace
+        rt.semantic_trace
             .as_ref()
             .map(|trace| trace.summary.item_count),
         Some(1)
     );
-    assert_eq!(entry.debug_trace_path.as_ref(), Some(&debug_path));
+    assert_eq!(rt.debug_trace_path.as_ref(), Some(&debug_path));
 }
 
 // ---------------------------------------------------------------------------
@@ -781,13 +839,13 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
 #[test]
 fn remove_tool_blocked_when_toolpath_references_it() {
     let mut controller = sample_controller();
-    let tool_count_before = controller.state.job.tools.len();
+    let tool_count_before = controller.state.session.tools().len();
     assert_eq!(tool_count_before, 1);
 
     // ToolId(1) is referenced by the sample toolpath — deletion must be blocked.
     controller.handle_internal_event(crate::ui::AppEvent::RemoveTool(ToolId(1)));
     assert_eq!(
-        controller.state.job.tools.len(),
+        controller.state.session.tools().len(),
         tool_count_before,
         "Tool should not be removed while a toolpath references it"
     );
@@ -800,20 +858,20 @@ fn remove_tool_succeeds_when_no_toolpath_references_it() {
     // Add a second tool that is not referenced by any toolpath.
     let unreferenced_id = ToolId(99);
     let extra_tool = ToolConfig::new_default(unreferenced_id, ToolType::EndMill);
-    controller.state.job.tools.push(extra_tool);
-    let tool_count_before = controller.state.job.tools.len();
+    controller.state.session.tools_mut().push(extra_tool);
+    let tool_count_before = controller.state.session.tools().len();
 
     controller.handle_internal_event(crate::ui::AppEvent::RemoveTool(unreferenced_id));
     assert_eq!(
-        controller.state.job.tools.len(),
+        controller.state.session.tools().len(),
         tool_count_before - 1,
         "Unreferenced tool should be removed"
     );
     assert!(
         controller
             .state
-            .job
-            .tools
+            .session
+            .tools()
             .iter()
             .all(|t| t.id != unreferenced_id),
         "The specific tool should no longer be in the list"
@@ -827,28 +885,16 @@ fn remove_tool_succeeds_when_no_toolpath_references_it() {
 #[test]
 fn add_toolpath_blocked_when_no_tools_exist() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
-    // No tools added — controller.state.job.tools is empty.
-    assert!(controller.state.job.tools.is_empty());
+    // No tools added — controller.state.session.tools() is empty.
+    assert!(controller.state.session.tools().is_empty());
 
-    let tp_count_before: usize = controller
-        .state
-        .job
-        .setups
-        .iter()
-        .map(|s| s.toolpaths.len())
-        .sum();
+    let tp_count_before = controller.state.session.toolpath_count();
 
     controller.handle_internal_event(crate::ui::AppEvent::AddToolpath(
         crate::state::toolpath::OperationType::Adaptive3d,
     ));
 
-    let tp_count_after: usize = controller
-        .state
-        .job
-        .setups
-        .iter()
-        .map(|s| s.toolpaths.len())
-        .sum();
+    let tp_count_after = controller.state.session.toolpath_count();
     assert_eq!(
         tp_count_before, tp_count_after,
         "No toolpath should be created when no tools exist"
@@ -862,13 +908,13 @@ fn add_toolpath_blocked_when_no_tools_exist() {
 #[test]
 fn add_tool_and_remove_tool_lifecycle() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
-    assert!(controller.state.job.tools.is_empty());
+    assert!(controller.state.session.tools().is_empty());
 
     // Add a tool
     controller.handle_internal_event(crate::ui::AppEvent::AddTool(ToolType::EndMill));
-    assert_eq!(controller.state.job.tools.len(), 1);
-    let tool_id = controller.state.job.tools[0].id;
-    assert_eq!(controller.state.job.tools[0].tool_type, ToolType::EndMill);
+    assert_eq!(controller.state.session.tools().len(), 1);
+    let tool_id = controller.state.session.tools()[0].id;
+    assert_eq!(controller.state.session.tools()[0].tool_type, ToolType::EndMill);
 
     // Verify selection was set to the new tool
     assert_eq!(controller.state.selection, Selection::Tool(tool_id));
@@ -876,7 +922,7 @@ fn add_tool_and_remove_tool_lifecycle() {
     // Remove the tool (no toolpaths reference it)
     controller.handle_internal_event(crate::ui::AppEvent::RemoveTool(tool_id));
     assert!(
-        controller.state.job.tools.is_empty(),
+        controller.state.session.tools().is_empty(),
         "Tool should be removed when no toolpaths reference it"
     );
 }
@@ -885,24 +931,24 @@ fn add_tool_and_remove_tool_lifecycle() {
 fn add_setup_and_remove_setup_lifecycle() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
     // Starts with one default setup
-    assert_eq!(controller.state.job.setups.len(), 1);
-    let original_setup_id = controller.state.job.setups[0].id;
+    assert_eq!(controller.state.session.list_setups().len(), 1);
+    let original_setup_id = SetupId(controller.state.session.list_setups()[0].id);
 
     // Add a second setup
     controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
-    assert_eq!(controller.state.job.setups.len(), 2);
-    let new_setup_id = controller.state.job.setups[1].id;
+    assert_eq!(controller.state.session.list_setups().len(), 2);
+    let new_setup_id = SetupId(controller.state.session.list_setups()[1].id);
     assert_ne!(original_setup_id, new_setup_id);
 
     // Remove the second setup
     controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(new_setup_id));
-    assert_eq!(controller.state.job.setups.len(), 1);
-    assert_eq!(controller.state.job.setups[0].id, original_setup_id);
+    assert_eq!(controller.state.session.list_setups().len(), 1);
+    assert_eq!(SetupId(controller.state.session.list_setups()[0].id), original_setup_id);
 
     // Min 1 setup enforced: try to remove the last one
     controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(original_setup_id));
     assert_eq!(
-        controller.state.job.setups.len(),
+        controller.state.session.list_setups().len(),
         1,
         "Cannot remove the last setup — minimum 1 enforced"
     );
@@ -911,7 +957,7 @@ fn add_setup_and_remove_setup_lifecycle() {
 #[test]
 fn add_toolpath_and_remove_toolpath_lifecycle() {
     let mut controller = sample_controller();
-    let tp_count_before = controller.state.job.toolpath_count();
+    let tp_count_before = controller.state.session.toolpath_count();
     assert!(
         tp_count_before >= 1,
         "sample_controller starts with 1 toolpath"
@@ -921,7 +967,7 @@ fn add_toolpath_and_remove_toolpath_lifecycle() {
     controller.handle_internal_event(crate::ui::AppEvent::AddToolpath(
         crate::state::toolpath::OperationType::Pocket,
     ));
-    let tp_count_after = controller.state.job.toolpath_count();
+    let tp_count_after = controller.state.session.toolpath_count();
     assert_eq!(
         tp_count_after,
         tp_count_before + 1,
@@ -936,12 +982,12 @@ fn add_toolpath_and_remove_toolpath_lifecycle() {
     // Remove it
     controller.handle_internal_event(crate::ui::AppEvent::RemoveToolpath(new_tp_id));
     assert_eq!(
-        controller.state.job.toolpath_count(),
+        controller.state.session.toolpath_count(),
         tp_count_before,
         "Toolpath should be removed"
     );
     assert!(
-        controller.state.job.find_toolpath(new_tp_id).is_none(),
+        controller.state.session.find_toolpath_config_by_id(new_tp_id.0).is_none(),
         "Removed toolpath should not be findable"
     );
 }
@@ -956,7 +1002,7 @@ fn add_toolpath_requires_geometry_for_polygon_operations() {
     ));
 
     assert_eq!(
-        controller.state.job.toolpath_count(),
+        controller.state.session.toolpath_count(),
         0,
         "Polygon-based toolpaths should not be created without an imported model"
     );
@@ -998,17 +1044,17 @@ fn reset_simulation_cancels_analysis_lane() {
 #[test]
 fn duplicate_tool_creates_independent_copy() {
     let mut controller = sample_controller();
-    let original_tool = controller.state.job.tools[0].clone();
+    let original_tool = controller.state.session.tools()[0].clone();
     let original_id = original_tool.id;
 
     controller.handle_internal_event(crate::ui::AppEvent::DuplicateTool(original_id));
     assert_eq!(
-        controller.state.job.tools.len(),
+        controller.state.session.tools().len(),
         2,
         "Should have original + copy"
     );
 
-    let copy = &controller.state.job.tools[1];
+    let copy = &controller.state.session.tools()[1];
     assert_ne!(copy.id, original_id, "Copy should have a different ID");
     assert!(
         copy.name.contains("(copy)"),
@@ -1020,14 +1066,14 @@ fn duplicate_tool_creates_independent_copy() {
 
     // Modifying the copy should not affect the original (they are independent)
     // We verify they are separate entries in the tools list
-    assert_eq!(controller.state.job.tools[0].id, original_id);
-    assert_ne!(controller.state.job.tools[1].id, original_id);
+    assert_eq!(controller.state.session.tools()[0].id, original_id);
+    assert_ne!(controller.state.session.tools()[1].id, original_id);
 }
 
 #[test]
 fn rename_setup_updates_name() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
-    let setup_id = controller.state.job.setups[0].id;
+    let setup_id = SetupId(controller.state.session.list_setups()[0].id);
 
     controller.handle_internal_event(crate::ui::AppEvent::RenameSetup(
         setup_id,
@@ -1035,7 +1081,7 @@ fn rename_setup_updates_name() {
     ));
 
     assert_eq!(
-        controller.state.job.setups[0].name, "My Custom Setup",
+        controller.state.session.list_setups()[0].name, "My Custom Setup",
         "Setup name should be updated"
     );
 }
@@ -1050,7 +1096,7 @@ fn delete_selected_tool_clears_selection() {
 
     // Add a tool and select it
     controller.handle_internal_event(crate::ui::AppEvent::AddTool(ToolType::BallNose));
-    let tool_id = controller.state.job.tools[0].id;
+    let tool_id = controller.state.session.tools()[0].id;
     assert_eq!(controller.state.selection, Selection::Tool(tool_id));
 
     // Remove the tool
@@ -1069,12 +1115,12 @@ fn delete_setup_containing_selected_fixture_clears_selection() {
 
     // Add a second setup so we can delete it (min 1 enforced)
     controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
-    assert_eq!(controller.state.job.setups.len(), 2);
-    let second_setup_id = controller.state.job.setups[1].id;
+    assert_eq!(controller.state.session.list_setups().len(), 2);
+    let second_setup_id = SetupId(controller.state.session.list_setups()[1].id);
 
     // Add a fixture to the second setup
     controller.handle_internal_event(crate::ui::AppEvent::AddFixture(second_setup_id));
-    let fixture_id = controller.state.job.setups[1].fixtures[0].id;
+    let fixture_id = controller.state.session.list_setups()[1].fixtures[0].id;
 
     // Select the fixture
     controller.handle_internal_event(crate::ui::AppEvent::Select(Selection::Fixture(
@@ -1099,7 +1145,7 @@ fn delete_setup_containing_selected_fixture_clears_selection() {
 #[test]
 fn delete_selected_toolpath_clears_selection() {
     let mut controller = sample_controller();
-    let tp_id = ToolpathId(1);
+    let tp_id = ToolpathId(0);
     controller.state.selection = Selection::Toolpath(tp_id);
 
     // Remove the selected toolpath
@@ -1125,14 +1171,14 @@ fn delete_unselected_toolpath_preserves_selection() {
     };
 
     // Select back to the original toolpath
-    controller.state.selection = Selection::Toolpath(ToolpathId(1));
+    controller.state.selection = Selection::Toolpath(ToolpathId(0));
 
     // Delete the other toolpath
     controller.handle_internal_event(crate::ui::AppEvent::RemoveToolpath(new_tp_id));
 
     assert_eq!(
         controller.state.selection,
-        Selection::Toolpath(ToolpathId(1)),
+        Selection::Toolpath(ToolpathId(0)),
         "Selection should be preserved when a different toolpath is deleted"
     );
 }
@@ -1143,11 +1189,11 @@ fn delete_setup_with_selected_keep_out_clears_selection() {
 
     // Add a second setup
     controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
-    let second_setup_id = controller.state.job.setups[1].id;
+    let second_setup_id = SetupId(controller.state.session.list_setups()[1].id);
 
     // Add a keep-out zone to the second setup
     controller.handle_internal_event(crate::ui::AppEvent::AddKeepOut(second_setup_id));
-    let keep_out_id = controller.state.job.setups[1].keep_out_zones[0].id;
+    let keep_out_id = controller.state.session.list_setups()[1].keep_out_zones[0].id;
 
     // Select the keep-out
     controller.handle_internal_event(crate::ui::AppEvent::Select(Selection::KeepOut(

@@ -17,11 +17,20 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             let sim = &state.simulation;
 
             // --- Operations check ---
-            let enabled_count = state.job.all_toolpaths().filter(|tp| tp.enabled).count();
+            let enabled_count = state.session.toolpath_configs().iter().filter(|tc| tc.enabled).count();
             let computed_count = state
-                .job
-                .all_toolpaths()
-                .filter(|tp| tp.enabled && tp.result.is_some())
+                .session
+                .toolpath_configs()
+                .iter()
+                .filter(|tc| {
+                    tc.enabled
+                        && state
+                            .gui
+                            .toolpath_rt
+                            .get(&tc.id)
+                            .and_then(|rt| rt.result.as_ref())
+                            .is_some()
+                })
                 .count();
 
             check_card(
@@ -43,7 +52,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
 
             // --- Simulation check ---
             let sim_status = if sim.has_results() {
-                if sim.is_stale(state.job.edit_counter) {
+                if sim.is_stale(state.gui.edit_counter) {
                     CheckStatus::Warning
                 } else {
                     CheckStatus::Pass
@@ -52,7 +61,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 CheckStatus::Warning
             };
             let sim_detail = if sim.has_results() {
-                if sim.is_stale(state.job.edit_counter) {
+                if sim.is_stale(state.gui.edit_counter) {
                     "Stale — parameters changed"
                 } else {
                     "Up to date"
@@ -258,11 +267,12 @@ fn check_card(
 
 fn estimate_total_time(state: &AppState) -> f64 {
     let mut total_secs = 0.0;
-    for tp in state.job.all_toolpaths() {
-        if tp.enabled
-            && let Some(result) = &tp.result
+    for tc in state.session.toolpath_configs() {
+        if tc.enabled
+            && let Some(rt) = state.gui.toolpath_rt.get(&tc.id)
+            && let Some(result) = &rt.result
         {
-            let feed = tp.operation.feed_rate();
+            let feed = tc.operation.feed_rate();
             total_secs += (result.stats.cutting_distance / feed) * 60.0;
         }
     }
@@ -271,17 +281,17 @@ fn estimate_total_time(state: &AppState) -> f64 {
 
 fn count_tool_changes(state: &AppState) -> usize {
     let mut count = 0;
-    let mut last_tool = None;
-    for tp in state.job.all_toolpaths() {
-        if !tp.enabled {
+    let mut last_tool: Option<usize> = None;
+    for tc in state.session.toolpath_configs() {
+        if !tc.enabled {
             continue;
         }
         if let Some(last) = last_tool
-            && tp.tool_id != last
+            && tc.tool_id != last
         {
             count += 1;
         }
-        last_tool = Some(tp.tool_id);
+        last_tool = Some(tc.tool_id);
     }
     count
 }

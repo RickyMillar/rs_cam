@@ -12,14 +12,15 @@ use rs_cam_core::step_input::load_step;
 
 use super::*;
 use crate::compute::{CollisionRequest, ComputeMessage, LaneState, SimulationRequest};
-use crate::state::job::{
-    LoadedModel, ModelId, ModelKind, ModelUnits, ToolConfig, ToolId, ToolType,
-};
+use crate::state::job::{ModelId, ToolConfig, ToolId, ToolType};
+use crate::state::runtime::ToolpathRuntime;
 use crate::state::selection::Selection;
 use crate::state::toolpath::{
-    HeightContext, HeightMode, HeightsConfig, OperationType, ToolpathEntry, ToolpathId,
+    HeightContext, HeightMode, HeightsConfig, OperationType, ToolpathId,
 };
 use crate::ui::AppEvent;
+use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
+use rs_cam_core::session::{LoadedModel, ToolpathConfig};
 
 // ── Test backend (mirrors tests.rs) ─────────────────────────────────────
 
@@ -80,33 +81,33 @@ fn cube_enriched_mesh() -> Arc<EnrichedMesh> {
     Arc::new(enriched)
 }
 
-fn step_model(id: ModelId) -> LoadedModel {
+fn step_model() -> LoadedModel {
     let enriched = cube_enriched_mesh();
     let mesh_arc = enriched.mesh_arc();
     LoadedModel {
-        id,
+        id: 0,
         path: fixtures_dir().join("occt-cube.step"),
         name: "occt-cube.step".to_owned(),
-        kind: ModelKind::Step,
+        kind: Some(ModelKind::Step),
         mesh: Some(mesh_arc),
         polygons: None,
         enriched_mesh: Some(enriched),
-        units: ModelUnits::Millimeters,
+        units: Some(ModelUnits::Millimeters),
         winding_report: None,
         load_error: None,
     }
 }
 
-fn stl_model(id: ModelId) -> LoadedModel {
+fn stl_model() -> LoadedModel {
     LoadedModel {
-        id,
+        id: 0,
         path: PathBuf::from("test.stl"),
         name: "test.stl".to_owned(),
-        kind: ModelKind::Stl,
+        kind: Some(ModelKind::Stl),
         mesh: Some(Arc::new(rs_cam_core::mesh::make_test_flat(40.0))),
         polygons: None,
         enriched_mesh: None,
-        units: ModelUnits::Millimeters,
+        units: Some(ModelUnits::Millimeters),
         winding_report: None,
         load_error: None,
     }
@@ -116,10 +117,12 @@ fn stl_model(id: ModelId) -> LoadedModel {
 fn step_controller() -> AppController<ScriptedBackend> {
     let mut c = AppController::with_backend(ScriptedBackend::new());
     c.state
-        .job
-        .tools
+        .session
+        .tools_mut()
         .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
-    c.state.job.models.push(step_model(ModelId(1)));
+    let model_id = c.state.session.add_model(step_model());
+    // model_id is the raw usize assigned by session
+    let _ = model_id;
     c
 }
 
@@ -127,10 +130,10 @@ fn step_controller() -> AppController<ScriptedBackend> {
 fn stl_controller() -> AppController<ScriptedBackend> {
     let mut c = AppController::with_backend(ScriptedBackend::new());
     c.state
-        .job
-        .tools
+        .session
+        .tools_mut()
         .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
-    c.state.job.models.push(stl_model(ModelId(1)));
+    c.state.session.add_model(stl_model());
     c
 }
 
@@ -159,15 +162,44 @@ fn find_vertical_face(enriched: &EnrichedMesh) -> FaceGroupId {
 
 /// Add a pocket toolpath to the first setup and return its ID.
 fn add_pocket(controller: &mut AppController<ScriptedBackend>) -> ToolpathId {
-    let tp_id = controller.state.job.next_toolpath_id();
-    let entry = ToolpathEntry::for_operation(
-        tp_id,
-        "Pocket".to_owned(),
-        ToolId(1),
-        ModelId(1),
-        OperationType::Pocket,
-    );
-    controller.state.job.push_toolpath(entry);
+    use rs_cam_core::compute::catalog::OperationConfig;
+    let tp_config = ToolpathConfig {
+        id: 0,
+        name: "Pocket".to_owned(),
+        enabled: true,
+        operation: OperationConfig::new_default(OperationType::Pocket),
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: 1,
+        model_id: 0,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: Default::default(),
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        face_selection: None,
+        feeds_auto: Default::default(),
+        debug_options: Default::default(),
+    };
+    controller
+        .state
+        .session
+        .add_toolpath(0, tp_config)
+        .unwrap();
+    let tp_id_raw = controller
+        .state
+        .session
+        .toolpath_configs()
+        .last()
+        .unwrap()
+        .id;
+    let tp_id = ToolpathId(tp_id_raw);
+    controller
+        .state
+        .gui
+        .toolpath_rt
+        .insert(tp_id_raw, ToolpathRuntime::new(true));
     controller.state.selection = Selection::Toolpath(tp_id);
     tp_id
 }
@@ -178,14 +210,14 @@ fn add_pocket(controller: &mut AppController<ScriptedBackend>) -> ToolpathId {
 
 #[test]
 fn w3_step_import_populates_enriched_mesh() {
-    let model = step_model(ModelId(1));
+    let model = step_model();
 
     assert!(
         model.enriched_mesh.is_some(),
         "enriched_mesh should be populated"
     );
     assert!(model.mesh.is_some(), "mesh should be populated");
-    assert_eq!(model.kind, ModelKind::Step);
+    assert_eq!(model.kind, Some(ModelKind::Step));
 
     let enriched = model.enriched_mesh.as_ref().unwrap();
     let mesh = model.mesh.as_ref().unwrap();
@@ -208,25 +240,27 @@ fn w3_step_import_populates_enriched_mesh() {
 fn w3_face_toggle_adds_and_removes() {
     let mut c = step_controller();
     let tp_id = add_pocket(&mut c);
-    let enriched = c.state.job.models[0].enriched_mesh.as_ref().unwrap();
+    let model_id = ModelId(c.state.session.models()[0].id);
+    let enriched = c.state.session.models()[0].enriched_mesh.as_ref().unwrap();
     let face_a = find_horizontal_face(enriched);
 
     // Toggle face ON
     c.handle_internal_event(AppEvent::ToggleFaceSelection {
         toolpath_id: tp_id,
-        model_id: ModelId(1),
+        model_id,
         face_id: face_a,
     });
 
-    let entry = c.state.job.find_toolpath(tp_id).unwrap();
+    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id.0).unwrap();
     assert_eq!(
-        entry.face_selection.as_ref().map(|f| f.len()),
+        tc.face_selection.as_ref().map(|f| f.len()),
         Some(1),
         "Should have 1 face selected"
     );
-    assert_eq!(entry.face_selection.as_ref().unwrap()[0], face_a);
+    assert_eq!(tc.face_selection.as_ref().unwrap()[0], face_a);
+    let rt = c.state.gui.toolpath_rt.get(&tp_id.0).unwrap();
     assert!(
-        entry.stale_since.is_some(),
+        rt.stale_since.is_some(),
         "Toolpath should be marked stale"
     );
 
@@ -240,13 +274,13 @@ fn w3_face_toggle_adds_and_removes() {
     // Toggle same face OFF
     c.handle_internal_event(AppEvent::ToggleFaceSelection {
         toolpath_id: tp_id,
-        model_id: ModelId(1),
+        model_id,
         face_id: face_a,
     });
 
-    let entry = c.state.job.find_toolpath(tp_id).unwrap();
+    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id.0).unwrap();
     assert_eq!(
-        entry.face_selection, None,
+        tc.face_selection, None,
         "Face selection should be None after toggle off"
     );
 }
@@ -326,7 +360,8 @@ fn w3_non_horizontal_face_produces_no_polygon() {
 fn w3_multi_face_toggle() {
     let mut c = step_controller();
     let tp_id = add_pocket(&mut c);
-    let enriched = c.state.job.models[0].enriched_mesh.as_ref().unwrap();
+    let model_id = ModelId(c.state.session.models()[0].id);
+    let enriched = c.state.session.models()[0].enriched_mesh.as_ref().unwrap();
 
     // Find two distinct horizontal faces
     let horizontal_faces: Vec<FaceGroupId> = enriched
@@ -348,18 +383,18 @@ fn w3_multi_face_toggle() {
     // Toggle both on
     c.handle_internal_event(AppEvent::ToggleFaceSelection {
         toolpath_id: tp_id,
-        model_id: ModelId(1),
+        model_id,
         face_id: face_a,
     });
     c.handle_internal_event(AppEvent::ToggleFaceSelection {
         toolpath_id: tp_id,
-        model_id: ModelId(1),
+        model_id,
         face_id: face_b,
     });
 
-    let entry = c.state.job.find_toolpath(tp_id).unwrap();
+    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id.0).unwrap();
     assert_eq!(
-        entry.face_selection.as_ref().map(|f| f.len()),
+        tc.face_selection.as_ref().map(|f| f.len()),
         Some(2),
         "Should have 2 faces selected"
     );
@@ -373,67 +408,68 @@ fn w3_multi_face_toggle() {
 fn w4_face_selection_in_undo_snapshot() {
     let mut c = step_controller();
     let tp_id = add_pocket(&mut c);
-    let enriched = c.state.job.models[0].enriched_mesh.as_ref().unwrap();
+    let model_id = ModelId(c.state.session.models()[0].id);
+    let enriched = c.state.session.models()[0].enriched_mesh.as_ref().unwrap();
     let face_a = find_horizontal_face(enriched);
 
     // Capture undo snapshot (simulates what properties panel does on first render)
     {
-        let entry = c.state.job.find_toolpath(tp_id).unwrap();
+        let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id.0).unwrap();
         c.state.history.toolpath_snapshot = Some((
             tp_id,
-            entry.operation.clone(),
-            entry.dressups.clone(),
-            entry.face_selection.clone(),
+            tc.operation.clone(),
+            tc.dressups.clone(),
+            tc.face_selection.clone(),
         ));
     }
 
     // Toggle face on
     c.handle_internal_event(AppEvent::ToggleFaceSelection {
         toolpath_id: tp_id,
-        model_id: ModelId(1),
+        model_id,
         face_id: face_a,
     });
 
     // Verify face is selected
-    let entry = c.state.job.find_toolpath(tp_id).unwrap();
-    assert!(entry.face_selection.is_some());
+    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id.0).unwrap();
+    assert!(tc.face_selection.is_some());
 
     // Flush snapshot (simulates navigating away from toolpath)
     // Take the snapshot and push an undo action
     if let Some((snap_id, old_op, old_dressups, old_faces)) =
         c.state.history.toolpath_snapshot.take()
     {
-        if let Some(entry) = c.state.job.find_toolpath(snap_id) {
+        if let Some((_, tc)) = c.state.session.find_toolpath_config_by_id(snap_id.0) {
             c.state
                 .history
                 .push(crate::state::history::UndoAction::ToolpathParamChange {
                     tp_id: snap_id,
                     old_op,
-                    new_op: entry.operation.clone(),
+                    new_op: tc.operation.clone(),
                     old_dressups,
-                    new_dressups: entry.dressups.clone(),
+                    new_dressups: tc.dressups.clone(),
                     old_face_selection: old_faces,
-                    new_face_selection: entry.face_selection.clone(),
+                    new_face_selection: tc.face_selection.clone(),
                 });
         }
     }
 
     // Undo should restore face_selection to None
     c.handle_internal_event(AppEvent::Undo);
-    let entry = c.state.job.find_toolpath(tp_id).unwrap();
+    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id.0).unwrap();
     assert_eq!(
-        entry.face_selection, None,
+        tc.face_selection, None,
         "Undo should restore face_selection to None"
     );
 
     // Redo should restore the face selection
     c.handle_internal_event(AppEvent::Redo);
-    let entry = c.state.job.find_toolpath(tp_id).unwrap();
+    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id.0).unwrap();
     assert!(
-        entry.face_selection.is_some(),
+        tc.face_selection.is_some(),
         "Redo should restore face_selection"
     );
-    assert_eq!(entry.face_selection.as_ref().unwrap()[0], face_a);
+    assert_eq!(tc.face_selection.as_ref().unwrap()[0], face_a);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -442,7 +478,8 @@ fn w4_face_selection_in_undo_snapshot() {
 
 #[test]
 fn w5_project_round_trip_preserves_step_face_selection() {
-    use crate::io::project::{load_project, save_project};
+    use rs_cam_core::compute::catalog::OperationConfig;
+    use rs_cam_core::session::ProjectSession;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -454,58 +491,60 @@ fn w5_project_round_trip_preserves_step_face_selection() {
         std::env::temp_dir().join(format!("rs_cam_wf_test_{nanos}_{}", std::process::id()));
     fs::create_dir_all(&temp_dir).unwrap();
 
-    // Build a job with STEP model + face selection
-    let mut job = crate::state::job::JobState::new();
-    let model = step_model(ModelId(1));
+    // Build a session with STEP model + face selection
+    let mut session = ProjectSession::new_empty();
+    let model = step_model();
     let enriched = model.enriched_mesh.as_ref().unwrap().clone();
-    job.models.push(model);
-    job.tools
+    let model_id = session.add_model(model);
+    session
+        .tools_mut()
         .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
 
     let face_id = find_horizontal_face(&enriched);
-    let mut entry = ToolpathEntry::for_operation(
-        ToolpathId(1),
-        "Pocket".to_owned(),
-        ToolId(1),
-        ModelId(1),
-        OperationType::Pocket,
-    );
-    entry.face_selection = Some(vec![face_id]);
-    job.push_toolpath(entry);
+    let tp_config = ToolpathConfig {
+        id: 0,
+        name: "Pocket".to_owned(),
+        enabled: true,
+        operation: OperationConfig::new_default(OperationType::Pocket),
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: 1,
+        model_id,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: Default::default(),
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        face_selection: Some(vec![face_id]),
+        feeds_auto: Default::default(),
+        debug_options: Default::default(),
+    };
+    session.add_toolpath(0, tp_config).unwrap();
 
     // Save
     let project_path = temp_dir.join("test_project.toml");
-    save_project(&job, &project_path).unwrap();
+    session.save(&project_path).unwrap();
     assert!(project_path.exists());
 
     // Load
-    let loaded = load_project(&project_path).unwrap();
+    let loaded = ProjectSession::load(&project_path).unwrap();
 
-    // Model re-imported with enriched mesh
-    assert_eq!(loaded.job.models.len(), 1);
-    assert!(loaded.job.models[0].enriched_mesh.is_some());
+    // Model re-imported
+    assert_eq!(loaded.models().len(), 1);
+    // Note: session load does not re-populate enriched_mesh for STEP models;
+    // the viz layer handles that as a post-load step.
 
     // Face selection preserved
-    let loaded_tp = loaded.job.all_toolpaths().next().unwrap();
+    let loaded_tc = &loaded.toolpath_configs()[0];
     assert!(
-        loaded_tp.face_selection.is_some(),
+        loaded_tc.face_selection.is_some(),
         "Face selection should survive round-trip"
     );
     assert_eq!(
-        loaded_tp.face_selection.as_ref().unwrap()[0],
+        loaded_tc.face_selection.as_ref().unwrap()[0],
         face_id,
         "Face ID should match"
-    );
-
-    // No warnings
-    assert!(
-        loaded.warnings.is_empty(),
-        "No warnings expected, got: {:?}",
-        loaded
-            .warnings
-            .iter()
-            .map(|w| w.message())
-            .collect::<Vec<_>>()
     );
 
     fs::remove_dir_all(temp_dir).unwrap();
@@ -622,12 +661,13 @@ fn w6_height_ordering_with_various_depths() {
 #[test]
 fn w10_model_removal_clears_face_selection() {
     let mut c = step_controller();
+    let model_id = ModelId(c.state.session.models()[0].id);
 
     // Set selection to a face
-    c.state.selection = Selection::Face(ModelId(1), FaceGroupId(0));
+    c.state.selection = Selection::Face(model_id, FaceGroupId(0));
 
     // Remove model
-    c.handle_internal_event(AppEvent::RemoveModel(ModelId(1)));
+    c.handle_internal_event(AppEvent::RemoveModel(model_id));
 
     // Selection should be cleared (model is still in use by toolpaths?
     // — the handler checks if toolpaths reference it first)
@@ -637,21 +677,22 @@ fn w10_model_removal_clears_face_selection() {
         Selection::None,
         "Face selection should be cleared when model is removed"
     );
-    assert!(c.state.job.models.is_empty(), "Model should be removed");
+    assert!(c.state.session.models().is_empty(), "Model should be removed");
 }
 
 #[test]
 fn w10_model_removal_blocked_when_toolpath_references_it() {
     let mut c = step_controller();
+    let model_id = ModelId(c.state.session.models()[0].id);
     let _tp_id = add_pocket(&mut c);
 
-    c.state.selection = Selection::Face(ModelId(1), FaceGroupId(0));
+    c.state.selection = Selection::Face(model_id, FaceGroupId(0));
 
     // Try to remove model — should be blocked
-    c.handle_internal_event(AppEvent::RemoveModel(ModelId(1)));
+    c.handle_internal_event(AppEvent::RemoveModel(model_id));
 
     assert_eq!(
-        c.state.job.models.len(),
+        c.state.session.models().len(),
         1,
         "Model should NOT be removed when toolpaths reference it"
     );

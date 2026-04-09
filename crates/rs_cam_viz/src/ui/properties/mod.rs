@@ -37,7 +37,7 @@ fn flush_tool_snapshot(state: &mut AppState) {
     if let Some((tool_id, old)) = state.history.tool_snapshot.take() {
         if !matches!(state.selection, crate::state::selection::Selection::Tool(id) if id == tool_id)
         {
-            if let Some(current) = state.job.tools.iter().find(|t| t.id == tool_id) {
+            if let Some(current) = state.session.tools().iter().find(|t| t.id == tool_id) {
                 state
                     .history
                     .push(crate::state::history::UndoAction::ToolChange {
@@ -45,7 +45,7 @@ fn flush_tool_snapshot(state: &mut AppState) {
                         old,
                         new: current.clone(),
                     });
-                state.job.mark_edited();
+                state.gui.mark_edited();
             }
         } else {
             // Still editing — put the snapshot back.
@@ -65,9 +65,9 @@ fn flush_post_snapshot(state: &mut AppState) {
                 .history
                 .push(crate::state::history::UndoAction::PostChange {
                     old,
-                    new: state.job.post.clone(),
+                    new: state.gui.post.clone(),
                 });
-            state.job.mark_edited();
+            state.gui.mark_edited();
         } else {
             state.history.post_snapshot = Some(old);
         }
@@ -82,9 +82,9 @@ fn flush_machine_snapshot(state: &mut AppState) {
                 .history
                 .push(crate::state::history::UndoAction::MachineChange {
                     old,
-                    new: state.job.machine.clone(),
+                    new: state.session.machine().clone(),
                 });
-            state.job.mark_edited();
+            state.gui.mark_edited();
         } else {
             state.history.machine_snapshot = Some(old);
         }
@@ -96,19 +96,19 @@ fn flush_toolpath_snapshot(state: &mut AppState) {
     if let Some((tp_id, old_op, old_dressups, old_faces)) = state.history.toolpath_snapshot.take() {
         if !matches!(state.selection, crate::state::selection::Selection::Toolpath(id) if id == tp_id)
         {
-            if let Some(entry) = state.job.find_toolpath(tp_id) {
+            if let Some((_, tc)) = state.session.find_toolpath_config_by_id(tp_id.0) {
                 state
                     .history
                     .push(crate::state::history::UndoAction::ToolpathParamChange {
                         tp_id,
                         old_op,
-                        new_op: entry.operation.clone(),
+                        new_op: tc.operation.clone(),
                         old_dressups,
-                        new_dressups: entry.dressups.clone(),
+                        new_dressups: tc.dressups.clone(),
                         old_face_selection: old_faces,
-                        new_face_selection: entry.face_selection.clone(),
+                        new_face_selection: tc.face_selection.clone(),
                     });
-                state.job.mark_edited();
+                state.gui.mark_edited();
             }
         } else {
             state.history.toolpath_snapshot = Some((tp_id, old_op, old_dressups, old_faces));
@@ -131,8 +131,8 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
 
     match state.selection.clone() {
         Selection::None => {
-            if state.job.models.is_empty()
-                && state.job.setups.iter().all(|s| s.toolpaths.is_empty())
+            if state.session.models().is_empty()
+                && state.session.list_setups().iter().all(|s| s.toolpath_indices.is_empty())
             {
                 ui.label(
                     egui::RichText::new("Getting started:")
@@ -156,40 +156,40 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
         Selection::Stock => {
             // Capture snapshot for undo before editing
             if state.history.stock_snapshot.is_none() {
-                state.history.stock_snapshot = Some(state.job.stock.clone());
+                state.history.stock_snapshot = Some(state.session.stock_config().clone());
             }
             let has_flipped_setup = state
-                .job
-                .setups
+                .session
+                .list_setups()
                 .iter()
                 .any(|s| s.face_up != crate::state::job::FaceUp::Top);
-            stock::draw(ui, &mut state.job.stock, has_flipped_setup, events);
+            stock::draw(ui, state.session.stock_mut(), has_flipped_setup, events);
             // If an edit just finished (DragValue released), push undo
             if events
                 .iter()
                 .any(|e| matches!(e, AppEvent::StockChanged | AppEvent::StockMaterialChanged))
                 && let Some(old) = state.history.stock_snapshot.take()
-                && old != state.job.stock
+                && old != *state.session.stock_config()
             {
                 state
                     .history
                     .push(crate::state::history::UndoAction::StockChange {
                         old,
-                        new: state.job.stock.clone(),
+                        new: state.session.stock_config().clone(),
                     });
             }
         }
         Selection::PostProcessor => {
             // Capture snapshot for undo before editing
             if state.history.post_snapshot.is_none() {
-                state.history.post_snapshot = Some(state.job.post.clone());
+                state.history.post_snapshot = Some(state.gui.post.clone());
             }
-            post::draw(ui, &mut state.job.post);
+            post::draw(ui, &mut state.gui.post);
         }
         Selection::Machine => {
             // Capture snapshot for undo before editing
             if state.history.machine_snapshot.is_none() {
-                state.history.machine_snapshot = Some(state.job.machine.clone());
+                state.history.machine_snapshot = Some(state.session.machine().clone());
             }
             draw_machine_panel(ui, state, events);
         }
@@ -199,28 +199,30 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
         Selection::Tool(id) => {
             // Capture snapshot for undo before editing
             if state.history.tool_snapshot.is_none()
-                && let Some(t) = state.job.tools.iter().find(|t| t.id == id)
+                && let Some(t) = state.session.tools().iter().find(|t| t.id == id)
             {
                 state.history.tool_snapshot = Some((id, t.clone()));
             }
-            if let Some(t) = state.job.tools.iter_mut().find(|t| t.id == id) {
+            if let Some(t) = state.session.tools_mut().iter_mut().find(|t| t.id == id) {
                 tool::draw(ui, t);
             }
         }
         Selection::Setup(setup_id) => {
+            // setup::draw still takes &mut Setup (viz type); keep using state.job
+            // until that sub-panel is migrated.
             if let Some(setup_state) = state
                 .job
                 .setups
                 .iter_mut()
                 .find(|setup| setup.id == setup_id)
             {
-                let pin_count = state.job.stock.alignment_pins.len();
-                let has_flip_axis = state.job.stock.flip_axis.is_some();
+                let pin_count = state.session.stock_config().alignment_pins.len();
+                let has_flip_axis = state.session.stock_config().flip_axis.is_some();
                 let all_models: Vec<_> = state
-                    .job
-                    .models
+                    .session
+                    .models()
                     .iter()
-                    .map(|m| (m.id, m.name.clone()))
+                    .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
                     .collect();
                 setup::draw(
                     ui,
@@ -265,15 +267,15 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             ui.heading("Face Selected");
             ui.separator();
             let model_name = state
-                .job
-                .models
+                .session
+                .models()
                 .iter()
-                .find(|m| m.id == model_id)
+                .find(|m| m.id == model_id.0)
                 .map(|m| m.name.as_str())
                 .unwrap_or("Unknown");
             ui.label(format!("Model: {model_name}"));
             ui.label(format!("Face: {}", face_id.0));
-            if let Some(model) = state.job.models.iter().find(|m| m.id == model_id)
+            if let Some(model) = state.session.models().iter().find(|m| m.id == model_id.0)
                 && let Some(enriched) = &model.enriched_mesh
                 && let Some(group) = enriched.face_group(face_id)
             {
@@ -285,10 +287,10 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             ui.heading("Faces Selected");
             ui.separator();
             let model_name = state
-                .job
-                .models
+                .session
+                .models()
                 .iter()
-                .find(|m| m.id == model_id)
+                .find(|m| m.id == model_id.0)
                 .map(|m| m.name.as_str())
                 .unwrap_or("Unknown");
             ui.label(format!("Model: {model_name}"));
@@ -297,64 +299,68 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
         Selection::Toolpath(id) => {
             // Capture snapshot for undo before editing
             if state.history.toolpath_snapshot.is_none()
-                && let Some(entry) = state.job.find_toolpath(id)
+                && let Some((_, tc)) = state.session.find_toolpath_config_by_id(id.0)
             {
                 state.history.toolpath_snapshot = Some((
                     id,
-                    entry.operation.clone(),
-                    entry.dressups.clone(),
-                    entry.face_selection.clone(),
+                    tc.operation.clone(),
+                    tc.dressups.clone(),
+                    tc.face_selection.clone(),
                 ));
             }
             // Snapshot tool/model lists to avoid borrow conflict with toolpaths
             let tools: Vec<_> = state
-                .job
-                .tools
+                .session
+                .tools()
                 .iter()
                 .map(|t| (t.id, t.summary(), t.diameter))
                 .collect();
             // Filter models by setup's model_ids (empty = all).
-            let setup_for_tp = state
-                .job
-                .setups
+            // For now use all models — setup model scoping will be
+            // wired via SetupRuntime in a later pass.
+            let models: Vec<_> = state
+                .session
+                .models()
                 .iter()
-                .find(|s| s.toolpaths.iter().any(|t| t.id == id));
-            let models: Vec<_> = if let Some(setup) = setup_for_tp {
-                setup
-                    .available_models(&state.job.models)
-                    .into_iter()
-                    .map(|m| (m.id, m.name.clone()))
-                    .collect()
-            } else {
-                state
-                    .job
-                    .models
-                    .iter()
-                    .map(|m| (m.id, m.name.clone()))
-                    .collect()
-            };
+                .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
+                .collect();
             // Snapshot tool configs for feeds calculation
-            let tool_configs: Vec<_> = state.job.tools.iter().map(|t| (t.id, t.clone())).collect();
+            let tool_configs: Vec<_> = state.session.tools().iter().map(|t| (t.id, t.clone())).collect();
             let validation = ToolpathValidationContext::from_job(&state.job);
-            let material = state.job.stock.material.clone();
-            let machine = state.job.machine.clone();
-            let workholding = state.job.stock.workholding_rigidity;
+            let material = state.session.stock_config().material.clone();
+            let machine = state.session.machine().clone();
+            let workholding = state.session.stock_config().workholding_rigidity;
 
             // Check if the toolpath's model has enriched mesh (for face selection UI)
             let model_has_enriched = state
-                .job
-                .find_toolpath(id)
-                .and_then(|tp| state.job.models.iter().find(|m| m.id == tp.model_id))
+                .session
+                .find_toolpath_config_by_id(id.0)
+                .and_then(|(_, tc)| state.session.models().iter().find(|m| m.id == tc.model_id))
                 .map(|m| m.enriched_mesh.is_some())
                 .unwrap_or(false);
 
             // Snapshot height context before mutable borrow (needs stock + model bbox)
             let height_ctx = state
-                .job
-                .find_toolpath(id)
-                .map(|tp| state.job.height_context_for(tp));
+                .session
+                .find_toolpath_config_by_id(id.0)
+                .map(|(_, tc)| {
+                    let sb = state.session.stock_config().bbox();
+                    let mb = state.session.models().iter()
+                        .find(|m| m.id == tc.model_id)
+                        .and_then(|m| m.mesh.as_ref().map(|mesh| mesh.bbox));
+                    HeightContext {
+                        safe_z: state.gui.post.safe_z,
+                        op_depth: tc.operation.default_depth_for_heights(),
+                        stock_top_z: sb.max.z,
+                        stock_bottom_z: sb.min.z,
+                        model_top_z: mb.map(|b| b.max.z),
+                        model_bottom_z: mb.map(|b| b.min.z),
+                    }
+                });
 
             // Snapshot operation and heights for stale_since detection
+            // draw_toolpath_panel still takes &mut ToolpathEntry; keep using state.job
+            // until the panel function is migrated to session types.
             let op_before = state
                 .job
                 .find_toolpath(id)
@@ -391,7 +397,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     .is_some_and(|b| *b != format!("{:?}", entry.heights));
                 if op_changed || heights_changed {
                     entry.stale_since = Some(std::time::Instant::now());
-                    state.job.mark_edited();
+                    state.gui.mark_edited();
                 }
                 if heights_changed {
                     // Trigger GPU re-upload so height plane positions update
@@ -410,7 +416,7 @@ fn draw_model_properties(
 ) {
     use crate::state::job::ModelUnits;
 
-    let Some(model) = state.job.models.iter().find(|m| m.id == id) else {
+    let Some(model) = state.session.models().iter().find(|m| m.id == id.0) else {
         return;
     };
 
@@ -561,7 +567,7 @@ fn draw_model_properties(
                     .color(egui::Color32::from_rgb(180, 180, 195)),
             );
 
-            let current_units = model.units;
+            let current_units = model.units.unwrap_or(ModelUnits::Millimeters);
             let current_label = current_units.label();
 
             ui.horizontal(|ui| {
@@ -749,7 +755,7 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
     ui.separator();
 
     let presets = rs_cam_core::machine::MachineProfile::presets();
-    let current_key = state.job.machine.to_key();
+    let current_key = state.session.machine().to_key();
     let mut selected_idx = presets
         .iter()
         .position(|(_, p)| p.to_key() == current_key)
@@ -762,7 +768,7 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
             .show_ui(ui, |ui| {
                 for (i, (label, _)) in presets.iter().enumerate() {
                     if ui.selectable_value(&mut selected_idx, i, *label).changed() {
-                        state.job.machine = presets[i].1.clone();
+                        *state.session.machine_mut() = presets[i].1.clone();
                         events.push(AppEvent::MachineChanged);
                     }
                 }
@@ -776,12 +782,12 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
         .num_columns(2)
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
-            let (min_rpm, max_rpm) = state.job.machine.rpm_range();
+            let (min_rpm, max_rpm) = state.session.machine().rpm_range();
             ui.label("RPM Range:");
             ui.label(format!("{:.0} - {:.0}", min_rpm, max_rpm));
             ui.end_row();
 
-            let max_power = match state.job.machine.power {
+            let max_power = match state.session.machine().power {
                 rs_cam_core::machine::PowerModel::VfdConstantTorque { rated_power_kw, .. } => {
                     rated_power_kw
                 }
@@ -792,11 +798,11 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
             ui.end_row();
 
             ui.label("Max Feed:");
-            ui.label(format!("{:.0} mm/min", state.job.machine.max_feed_mm_min));
+            ui.label(format!("{:.0} mm/min", state.session.machine().max_feed_mm_min));
             ui.end_row();
 
             ui.label("Max Shank:");
-            ui.label(format!("{:.1} mm", state.job.machine.max_shank_mm));
+            ui.label(format!("{:.1} mm", state.session.machine().max_shank_mm));
             ui.end_row();
         });
 
@@ -807,7 +813,7 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
         ui.label("Aggressiveness:");
         if ui
             .add(
-                egui::Slider::new(&mut state.job.machine.safety_factor, 0.60..=0.95)
+                egui::Slider::new(&mut state.session.machine_mut().safety_factor, 0.60..=0.95)
                     .text("")
                     .show_value(true),
             )
@@ -817,9 +823,9 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
         }
     });
     ui.label(
-        egui::RichText::new(if state.job.machine.safety_factor < 0.72 {
+        egui::RichText::new(if state.session.machine().safety_factor < 0.72 {
             "Conservative — safer for new setups"
-        } else if state.job.machine.safety_factor > 0.85 {
+        } else if state.session.machine().safety_factor > 0.85 {
             "Aggressive — experienced operators only"
         } else {
             "Balanced — good for most work"
@@ -835,7 +841,7 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
     ui.horizontal(|ui| {
         ui.label("Workholding:");
         use rs_cam_core::feeds::WorkholdingRigidity;
-        let rigidity = &mut state.job.stock.workholding_rigidity;
+        let rigidity = &mut state.session.stock_mut().workholding_rigidity;
         let label = match rigidity {
             WorkholdingRigidity::Low => "Low",
             WorkholdingRigidity::Medium => "Medium",
@@ -859,10 +865,10 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
             });
     });
     if rigidity_changed {
-        state.job.mark_edited();
+        state.gui.mark_edited();
     }
     ui.label(
-        egui::RichText::new(match state.job.stock.workholding_rigidity {
+        egui::RichText::new(match state.session.stock_config().workholding_rigidity {
             rs_cam_core::feeds::WorkholdingRigidity::Low => {
                 "Low — tape/CA glue, vacuum table, thin stock"
             }

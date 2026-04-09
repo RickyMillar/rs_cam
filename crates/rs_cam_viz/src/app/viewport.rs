@@ -196,8 +196,8 @@ impl RsCamApp {
             && self
                 .controller
                 .state()
-                .job
-                .models
+                .session
+                .models()
                 .iter()
                 .any(|m| m.enriched_mesh.is_some())
             && let Some(pos) = ui.input(|i| i.pointer.hover_pos())
@@ -270,17 +270,17 @@ impl RsCamApp {
                 _pad1: 0.0,
             },
             line_uniforms: LineUniforms { view_proj },
-            has_mesh: state.job.models.iter().any(|model| model.mesh.is_some())
+            has_mesh: state.session.models().iter().any(|model| model.mesh.is_some())
                 && state.viewport.render_mode == crate::state::viewport::RenderMode::Shaded
                 && state.workspace != Workspace::Simulation,
             show_grid: state.viewport.show_grid,
             show_stock: state.viewport.show_stock
-                && state.job.models.iter().any(|model| model.mesh.is_some()),
+                && state.session.models().iter().any(|model| model.mesh.is_some()),
             show_fixtures: state.viewport.show_fixtures
                 && (state.workspace != Workspace::Simulation
-                    || !state.job.stock.alignment_pins.is_empty()),
+                    || !state.session.stock_config().alignment_pins.is_empty()),
             show_polygons: state.viewport.show_polygons
-                && state.job.models.iter().any(|m| m.polygons.is_some()),
+                && state.session.models().iter().any(|m| m.polygons.is_some()),
             show_solid_stock: state.viewport.show_stock && state.workspace == Workspace::Setup,
             show_height_planes: state.workspace == Workspace::Toolpaths
                 && matches!(state.selection, Selection::Toolpath(_)),
@@ -302,14 +302,14 @@ impl RsCamApp {
                 None
             },
             show_origin_axes: state.viewport.show_stock
-                && state.job.models.iter().any(|model| model.mesh.is_some()),
+                && state.session.models().iter().any(|model| model.mesh.is_some()),
             origin_axes_origin: [
-                state.job.stock.origin_x as f32,
-                state.job.stock.origin_y as f32,
-                state.job.stock.origin_z as f32,
+                state.session.stock_config().origin_x as f32,
+                state.session.stock_config().origin_y as f32,
+                state.session.stock_config().origin_z as f32,
             ],
             origin_axes_length: {
-                let s = &state.job.stock;
+                let s = state.session.stock_config();
                 let min_dim = s.x.min(s.y).min(s.z) as f32;
                 (min_dim * 0.3).clamp(5.0, 50.0)
             },
