@@ -214,6 +214,9 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn run_simulation_with_all(&mut self) {
+        // Keep the session in sync with the current GUI state before simulation.
+        self.sync_session_from_job();
+
         let Some((groups, all_toolpaths_flat, stock_bbox)) = self.build_simulation_groups(
             |_setup_idx, tp| tp.enabled,
             |_setup_idx| false, // never stop early
@@ -229,6 +232,9 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn run_simulation_with_ids(&mut self, ids: &[ToolpathId]) {
+        // Keep the session in sync with the current GUI state before simulation.
+        self.sync_session_from_job();
+
         let target_setup_idx = self
             .state
             .job

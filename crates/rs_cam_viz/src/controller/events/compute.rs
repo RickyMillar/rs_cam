@@ -11,6 +11,9 @@ use super::super::AppController;
 
 impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn submit_toolpath_compute(&mut self, tp_id: ToolpathId) {
+        // Keep the session in sync with the current GUI state before compute.
+        self.sync_session_from_job();
+
         let Some((
             tool_id,
             model_id,

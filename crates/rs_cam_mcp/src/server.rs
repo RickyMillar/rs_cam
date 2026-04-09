@@ -420,6 +420,7 @@ impl CamServer {
                 resolution: res,
                 skip_ids: Vec::new(),
                 metrics_enabled: true,
+                auto_resolution: false,
             };
             let mut guard = session.blocking_lock();
             let Some(s) = guard.as_mut() else {
