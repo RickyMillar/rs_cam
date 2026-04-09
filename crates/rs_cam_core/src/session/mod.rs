@@ -527,6 +527,26 @@ impl ProjectSession {
         &self.post
     }
 
+    /// Machine profile.
+    pub fn machine(&self) -> &crate::machine::MachineProfile {
+        &self.machine
+    }
+
+    /// All loaded tools.
+    pub fn tools(&self) -> &[ToolConfig] {
+        &self.tools
+    }
+
+    /// All loaded models.
+    pub fn models(&self) -> &[LoadedModel] {
+        &self.models
+    }
+
+    /// All toolpath configurations.
+    pub fn toolpath_configs(&self) -> &[ToolpathConfig] {
+        &self.toolpath_configs
+    }
+
     // ── Internal helpers ───────────────────────────────────────────
 
     pub(crate) fn find_tool_by_raw_id(&self, raw_id: usize) -> Option<&ToolConfig> {

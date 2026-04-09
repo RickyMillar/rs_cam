@@ -71,6 +71,10 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     show_load_warnings: bool,
     status_message: Option<(String, Instant)>,
     notifications: Vec<Notification>,
+    /// Shared project session from core — keeps GUI and core in sync.
+    /// Populated when a project is loaded; `None` for new untitled projects.
+    #[allow(dead_code)] // Phase 4d-4e will wire up reads
+    pub session: Option<rs_cam_core::session::ProjectSession>,
 }
 
 impl AppController<ThreadedComputeBackend> {
@@ -97,6 +101,7 @@ impl<B: ComputeBackend> AppController<B> {
             show_load_warnings: false,
             status_message: None,
             notifications: Vec::new(),
+            session: None,
         }
     }
 
