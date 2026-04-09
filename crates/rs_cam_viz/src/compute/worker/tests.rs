@@ -568,33 +568,6 @@ fn project_curve_request(id: usize) -> ComputeRequest {
     }
 }
 
-#[allow(dead_code)]
-fn assert_cutting_moves_are_semantically_covered(result: &ToolpathResult) {
-    let semantic_trace = result
-        .semantic_trace
-        .as_ref()
-        .expect("semantic trace should be attached");
-    for (move_idx, mv) in result.toolpath.moves.iter().enumerate() {
-        let is_cut = matches!(
-            mv.move_type,
-            rs_cam_core::toolpath::MoveType::Linear { .. }
-                | rs_cam_core::toolpath::MoveType::ArcCW { .. }
-                | rs_cam_core::toolpath::MoveType::ArcCCW { .. }
-        );
-        if !is_cut {
-            continue;
-        }
-        assert!(
-            semantic_trace.items.iter().any(|item| {
-                item.kind != rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation
-                    && item.move_start.is_some_and(|start| start <= move_idx)
-                    && item.move_end.is_some_and(|end| move_idx <= end)
-            }),
-            "expected move {move_idx} to be covered by a non-root semantic item"
-        );
-    }
-}
-
 fn long_simulation_request() -> SimulationRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     let mut toolpath = Toolpath::new();

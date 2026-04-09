@@ -1,0 +1,676 @@
+//! Compute and mutation methods on [`ProjectSession`].
+
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
+use crate::collision::check_rapid_collisions;
+use crate::compute::collision_check::{CollisionCheckRequest, CollisionCheckResult, run_collision_check};
+use crate::compute::config::{HeightContext, ToolpathStats};
+use crate::compute::cutter::build_cutter;
+use crate::compute::simulate::{
+    SimGroupEntry, SimToolpathEntry, SimulationRequest, run_simulation,
+};
+use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use crate::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
+use crate::debug_trace::ToolpathDebugRecorder;
+use crate::dexel_stock::StockCutDirection;
+use crate::geo::{BoundingBox3, P3};
+use crate::semantic_trace::{ToolpathSemanticRecorder, enrich_traces};
+use crate::simulation_cut::SimulationMetricOptions;
+
+use super::{
+    ProjectDiagnostics, ProjectSession, SessionError, SimulationOptions, ToolpathComputeResult,
+    ToolpathDiagnostic,
+};
+
+impl ProjectSession {
+    // ── Mutation ──────────────────────────────────────────────────
+
+    /// Set a parameter on a toolpath's operation config.
+    ///
+    /// Common parameters (`feed_rate`, `plunge_rate`, `stepover`, `depth_per_pass`)
+    /// are applied via the [`OperationParams`] trait. Config-specific parameters
+    /// (e.g. `angle`, `min_z`, `passes`) are applied via serde round-trip so that
+    /// all 23 operation variants are handled generically.
+    ///
+    /// Invalidates the cached compute result for this toolpath.
+    pub fn set_toolpath_param(
+        &mut self,
+        index: usize,
+        param: &str,
+        value: serde_json::Value,
+    ) -> Result<(), SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get_mut(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+
+        match param {
+            "feed_rate" => {
+                let v = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("feed_rate must be a number".to_owned())
+                })?;
+                tc.operation.set_feed_rate(v);
+            }
+            "plunge_rate" => {
+                let v = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("plunge_rate must be a number".to_owned())
+                })?;
+                tc.operation.set_plunge_rate(v);
+            }
+            "stepover" => {
+                let v = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("stepover must be a number".to_owned())
+                })?;
+                tc.operation.set_stepover(v);
+            }
+            "depth_per_pass" => {
+                let v = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("depth_per_pass must be a number".to_owned())
+                })?;
+                tc.operation.set_depth_per_pass(v);
+            }
+            _ => {
+                // Config-specific param: serialize -> merge -> deserialize
+                let mut json = serde_json::to_value(&tc.operation).map_err(|e| {
+                    SessionError::InvalidParam(format!("failed to serialize config: {e}"))
+                })?;
+                // The OperationConfig uses tagged representation: { "kind": "...", "params": { ... } }
+                // Merge the param into the "params" object.
+                let params_obj = json
+                    .get_mut("params")
+                    .and_then(|v| v.as_object_mut())
+                    .ok_or_else(|| {
+                        SessionError::InvalidParam(
+                            "unexpected config structure during serde round-trip".to_owned(),
+                        )
+                    })?;
+                if !params_obj.contains_key(param) {
+                    return Err(SessionError::InvalidParam(format!(
+                        "unknown parameter '{param}' for {} operation",
+                        tc.operation.label()
+                    )));
+                }
+                params_obj.insert(param.to_owned(), value);
+                tc.operation = serde_json::from_value(json).map_err(|e| {
+                    SessionError::InvalidParam(format!("invalid value for '{param}': {e}"))
+                })?;
+            }
+        }
+
+        // Invalidate cached result for this toolpath
+        self.results.remove(&index);
+        self.simulation = None;
+
+        Ok(())
+    }
+
+    /// Set a parameter on a tool definition.
+    ///
+    /// Supported parameters: `diameter`, `flute_count`, `stickout`, `corner_radius`,
+    /// `cutting_length`, `included_angle`, `taper_half_angle`, `shaft_diameter`,
+    /// `shank_diameter`, `shank_length`, `holder_diameter`.
+    ///
+    /// Invalidates cached results for all toolpaths that reference this tool.
+    pub fn set_tool_param(
+        &mut self,
+        index: usize,
+        param: &str,
+        value: &serde_json::Value,
+    ) -> Result<(), SessionError> {
+        let tool = self.tools.get_mut(index).ok_or_else(|| {
+            SessionError::InvalidParam(format!("tool index {index} out of bounds"))
+        })?;
+
+        match param {
+            "diameter" => {
+                tool.diameter = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("diameter must be a number".to_owned())
+                })?;
+            }
+            "flute_count" => {
+                let v = value.as_u64().ok_or_else(|| {
+                    SessionError::InvalidParam("flute_count must be an integer".to_owned())
+                })?;
+                tool.flute_count = v as u32;
+            }
+            "stickout" => {
+                tool.stickout = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("stickout must be a number".to_owned())
+                })?;
+            }
+            "corner_radius" => {
+                tool.corner_radius = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("corner_radius must be a number".to_owned())
+                })?;
+            }
+            "cutting_length" => {
+                tool.cutting_length = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("cutting_length must be a number".to_owned())
+                })?;
+            }
+            "included_angle" => {
+                tool.included_angle = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("included_angle must be a number".to_owned())
+                })?;
+            }
+            "taper_half_angle" => {
+                tool.taper_half_angle = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("taper_half_angle must be a number".to_owned())
+                })?;
+            }
+            "shaft_diameter" => {
+                tool.shaft_diameter = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("shaft_diameter must be a number".to_owned())
+                })?;
+            }
+            "shank_diameter" => {
+                tool.shank_diameter = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("shank_diameter must be a number".to_owned())
+                })?;
+            }
+            "shank_length" => {
+                tool.shank_length = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("shank_length must be a number".to_owned())
+                })?;
+            }
+            "holder_diameter" => {
+                tool.holder_diameter = value.as_f64().ok_or_else(|| {
+                    SessionError::InvalidParam("holder_diameter must be a number".to_owned())
+                })?;
+            }
+            _ => {
+                return Err(SessionError::InvalidParam(format!(
+                    "unknown tool parameter '{param}'"
+                )));
+            }
+        }
+
+        // Invalidate cached results for all toolpaths that use this tool
+        let tool_raw_id = tool.id.0;
+        for (idx, tc) in self.toolpath_configs.iter().enumerate() {
+            if tc.tool_id == tool_raw_id {
+                self.results.remove(&idx);
+            }
+        }
+        self.simulation = None;
+
+        Ok(())
+    }
+
+    // ── Compute ────────────────────────────────────────────────────
+
+    /// Generate a single toolpath by index.
+    pub fn generate_toolpath(
+        &mut self,
+        index: usize,
+        cancel: &AtomicBool,
+    ) -> Result<&ToolpathComputeResult, SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+
+        let tool = self
+            .find_tool_by_raw_id(tc.tool_id)
+            .ok_or(SessionError::ToolNotFound(ToolId(tc.tool_id)))?
+            .clone();
+
+        let model = self.find_model_by_raw_id(tc.model_id);
+
+        let mesh = model.and_then(|m| m.mesh.clone());
+        let polygons = model.and_then(|m| m.polygons.clone());
+
+        // Validate geometry requirements
+        if tc.operation.is_3d() && mesh.is_none() {
+            return Err(SessionError::MissingGeometry(
+                "Operation requires a 3D mesh (STL/STEP)".to_owned(),
+            ));
+        }
+        if !tc.operation.is_3d() && !tc.operation.is_stock_based() && polygons.is_none() {
+            return Err(SessionError::MissingGeometry(
+                "Operation requires 2D geometry (SVG/DXF)".to_owned(),
+            ));
+        }
+
+        // Find the setup for orientation
+        let setup = self.find_setup_for_toolpath_index(index);
+        let face_up = setup.map(|s| s.face_up).unwrap_or(FaceUp::Top);
+
+        // Build effective stock bbox (apply setup orientation)
+        let effective_stock_bbox = self.effective_stock_bbox(face_up);
+
+        // Resolve heights
+        let model_bbox = mesh.as_ref().map(|m| &m.bbox);
+        let height_ctx = HeightContext {
+            safe_z: self.post.safe_z,
+            op_depth: tc.operation.default_depth_for_heights(),
+            stock_top_z: effective_stock_bbox.max.z,
+            stock_bottom_z: effective_stock_bbox.min.z,
+            model_top_z: model_bbox.map(|b| b.max.z),
+            model_bottom_z: model_bbox.map(|b| b.min.z),
+        };
+        let heights = tc.heights.resolve(&height_ctx);
+
+        // Build tool definition
+        let tool_def = build_cutter(&tool);
+
+        // Build spatial index for 3D ops
+        let spatial_index = mesh
+            .as_ref()
+            .map(|m| crate::mesh::SpatialIndex::build_auto(m));
+
+        // Create recorders
+        let debug_recorder = ToolpathDebugRecorder::new(tc.name.clone(), tc.operation.label());
+        let semantic_recorder =
+            ToolpathSemanticRecorder::new(tc.name.clone(), tc.operation.label());
+        let debug_root = debug_recorder.root_context();
+        let _semantic_root = semantic_recorder.root_context();
+
+        let core_scope = debug_root.start_span("core_generate", tc.operation.label());
+        let core_ctx = core_scope.context();
+
+        // Execute the operation via the shared compute::execute module
+        let tp_result = crate::compute::execute::execute_operation(
+            &tc.operation,
+            mesh.as_deref(),
+            spatial_index.as_ref(),
+            polygons.as_deref().map(|v| v.as_slice()),
+            &tool_def,
+            &tool,
+            &heights,
+            &[], // no pre-computed cutting levels; DepthStepping used internally
+            &effective_stock_bbox,
+            None, // no prev_tool_radius for session path
+            Some(&core_ctx),
+            cancel,
+            None, // no initial_stock for session path
+        );
+
+        match tp_result {
+            Ok(mut toolpath) => {
+                if !toolpath.moves.is_empty() {
+                    core_scope.set_move_range(0, toolpath.moves.len().saturating_sub(1));
+                }
+                drop(core_scope);
+
+                // Apply dressups
+                toolpath = crate::compute::execute::apply_dressups(
+                    toolpath,
+                    &tc.dressups,
+                    tool.diameter,
+                    heights.retract_z,
+                    None,
+                    None,
+                    None,
+                );
+
+                let stats = ToolpathStats {
+                    move_count: toolpath.moves.len(),
+                    cutting_distance: toolpath.total_cutting_distance(),
+                    rapid_distance: toolpath.total_rapid_distance(),
+                };
+
+                let mut debug_trace = debug_recorder.finish();
+                let mut semantic_trace = semantic_recorder.finish();
+                enrich_traces(&mut debug_trace, &mut semantic_trace);
+
+                self.results.insert(
+                    index,
+                    ToolpathComputeResult {
+                        toolpath: Arc::new(toolpath),
+                        stats,
+                        debug_trace: Some(debug_trace),
+                        semantic_trace: Some(semantic_trace),
+                    },
+                );
+                // SAFETY: we just inserted at this key
+                #[allow(clippy::indexing_slicing)]
+                Ok(&self.results[&index])
+            }
+            Err(e) => {
+                drop(core_scope);
+                let _ = debug_recorder.finish();
+                let _ = semantic_recorder.finish();
+                Err(SessionError::OperationFailed(e.to_string()))
+            }
+        }
+    }
+
+    /// Generate all enabled toolpaths, skipping those whose IDs are in `skip`.
+    pub fn generate_all(
+        &mut self,
+        skip_ids: &[usize],
+        cancel: &AtomicBool,
+    ) -> Result<(), SessionError> {
+        // Collect info needed for skip/logging before mutable borrow
+        let tp_info: Vec<(usize, usize, String, bool)> = self
+            .toolpath_configs
+            .iter()
+            .enumerate()
+            .map(|(idx, tc)| (idx, tc.id, tc.name.clone(), tc.enabled))
+            .collect();
+
+        for (idx, tp_id, tp_name, enabled) in &tp_info {
+            if !enabled {
+                continue;
+            }
+            if skip_ids.contains(tp_id) {
+                tracing::info!(id = tp_id, name = %tp_name, "Skipping toolpath (skip list)");
+                continue;
+            }
+            match self.generate_toolpath(*idx, cancel) {
+                Ok(_) => {}
+                Err(SessionError::MissingGeometry(msg)) => {
+                    tracing::warn!(id = tp_id, name = %tp_name, reason = %msg, "Skipping toolpath");
+                }
+                Err(e) => {
+                    tracing::error!(id = tp_id, name = %tp_name, error = %e, "Toolpath failed");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // ── Analysis ───────────────────────────────────────────────────
+
+    /// Run tri-dexel stock simulation over all computed toolpaths.
+    pub fn run_simulation(
+        &mut self,
+        opts: &SimulationOptions,
+        cancel: &AtomicBool,
+    ) -> Result<&super::SimulationResult, SessionError> {
+        let stock_bbox = self.stock_bbox();
+
+        // Build simulation groups from setups
+        let mut groups = Vec::new();
+        for setup in &self.setups {
+            let direction = match setup.face_up {
+                FaceUp::Bottom => StockCutDirection::FromBottom,
+                _ => StockCutDirection::FromTop,
+            };
+
+            let mut entries = Vec::new();
+            for &tp_idx in &setup.toolpath_indices {
+                if let Some(result) = self.results.get(&tp_idx) {
+                    let Some(tc) = self.toolpath_configs.get(tp_idx) else {
+                        continue;
+                    };
+                    if opts.skip_ids.contains(&tc.id) {
+                        continue;
+                    }
+                    if result.toolpath.moves.len() < 2 {
+                        continue;
+                    }
+
+                    let tool_config = self.find_tool_by_raw_id(tc.tool_id);
+                    let flute_count = tool_config.map(|t| t.flute_count).unwrap_or(2);
+                    let tool_summary = tool_config
+                        .map(|t| t.summary())
+                        .unwrap_or_else(|| "Unknown".to_owned());
+                    let tool_def = tool_config.map(build_cutter).unwrap_or_else(|| {
+                        build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill))
+                    });
+
+                    entries.push(SimToolpathEntry {
+                        id: tc.id,
+                        name: tc.name.clone(),
+                        toolpath: Arc::clone(&result.toolpath),
+                        tool: tool_def,
+                        flute_count,
+                        tool_summary,
+                        semantic_trace: result.semantic_trace.as_ref().map(|t| Arc::new(t.clone())),
+                    });
+                }
+            }
+
+            if !entries.is_empty() {
+                // Compute per-setup local stock bbox and transform info.
+                let z_rotation = ZRotation::Deg0;
+                let (eff_w, eff_d, eff_h) = {
+                    let (w, d, h) =
+                        setup
+                            .face_up
+                            .effective_stock(self.stock.x, self.stock.y, self.stock.z);
+                    z_rotation.effective_stock(w, d, h)
+                };
+                let local_stock_bbox = Some(BoundingBox3 {
+                    min: P3::new(0.0, 0.0, 0.0),
+                    max: P3::new(eff_w, eff_d, eff_h),
+                });
+                let local_to_global =
+                    if setup.face_up != FaceUp::Top || z_rotation != ZRotation::Deg0 {
+                        Some(SetupTransformInfo {
+                            face_up: setup.face_up,
+                            z_rotation,
+                            stock_x: self.stock.x,
+                            stock_y: self.stock.y,
+                            stock_z: self.stock.z,
+                        })
+                    } else {
+                        None
+                    };
+
+                groups.push(SimGroupEntry {
+                    toolpaths: entries,
+                    direction,
+                    local_stock_bbox,
+                    local_to_global,
+                });
+            }
+        }
+
+        let request = SimulationRequest {
+            groups,
+            stock_bbox,
+            stock_top_z: stock_bbox.max.z,
+            resolution: opts.resolution,
+            metric_options: SimulationMetricOptions {
+                enabled: opts.metrics_enabled,
+            },
+            spindle_rpm: self.post.spindle_speed,
+            rapid_feed_mm_min: if self.post.high_feedrate_mode {
+                self.post.high_feedrate
+            } else {
+                5000.0
+            },
+            model_mesh: self.models.iter().find_map(|m| m.mesh.clone()),
+        };
+
+        let result = run_simulation(&request, cancel)?;
+        self.simulation = Some(result);
+        // SAFETY: we just assigned Some
+        #[allow(clippy::unwrap_used)]
+        Ok(self.simulation.as_ref().unwrap())
+    }
+
+    /// Run a collision check for a specific toolpath by index.
+    pub fn collision_check(
+        &self,
+        index: usize,
+        cancel: &AtomicBool,
+    ) -> Result<CollisionCheckResult, SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        let result = self
+            .results
+            .get(&index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        let model = self
+            .find_model_by_raw_id(tc.model_id)
+            .and_then(|m| m.mesh.as_ref())
+            .ok_or_else(|| {
+                SessionError::MissingGeometry("Collision check requires a 3D mesh".to_owned())
+            })?;
+
+        let tool = self
+            .find_tool_by_raw_id(tc.tool_id)
+            .ok_or(SessionError::ToolNotFound(ToolId(tc.tool_id)))?;
+        let tool_def = build_cutter(tool);
+
+        let request = CollisionCheckRequest {
+            toolpath: &result.toolpath,
+            tool: tool_def,
+            mesh: model,
+        };
+        let check_result = run_collision_check(&request, cancel)?;
+        Ok(check_result)
+    }
+
+    /// Compute project diagnostics from current results and simulation.
+    pub fn diagnostics(&self) -> ProjectDiagnostics {
+        let stock_bbox = self.stock_bbox();
+
+        let mut per_toolpath = Vec::new();
+        let mut total_collision_count: usize = 0;
+        let mut total_rapid_collision_count: usize = 0;
+        let no_cancel = AtomicBool::new(false);
+
+        for (idx, tc) in self.toolpath_configs.iter().enumerate() {
+            if let Some(result) = self.results.get(&idx) {
+                let rapid_collisions = check_rapid_collisions(&result.toolpath, &stock_bbox);
+                let rapid_count = rapid_collisions.len();
+                total_rapid_collision_count += rapid_count;
+
+                // Run holder/shank collision check; gracefully default to 0
+                // if model geometry is missing or check otherwise fails.
+                let holder_collision_count = self
+                    .collision_check(idx, &no_cancel)
+                    .map(|r| r.collision_report.collisions.len())
+                    .unwrap_or(0);
+                total_collision_count += holder_collision_count;
+
+                let tool_name = self
+                    .find_tool_by_raw_id(tc.tool_id)
+                    .map(|t| t.name.clone())
+                    .unwrap_or_default();
+
+                per_toolpath.push(ToolpathDiagnostic {
+                    toolpath_id: tc.id,
+                    name: tc.name.clone(),
+                    operation_type: tc.operation.label().to_owned(),
+                    tool_name,
+                    move_count: result.stats.move_count,
+                    cutting_distance_mm: result.stats.cutting_distance,
+                    rapid_distance_mm: result.stats.rapid_distance,
+                    collision_count: holder_collision_count,
+                    rapid_collision_count: rapid_count,
+                });
+            }
+        }
+
+        // Extract simulation metrics if available
+        let (total_runtime_s, air_cut_percentage, average_engagement) =
+            if let Some(sim) = &self.simulation {
+                if let Some(trace) = &sim.cut_trace {
+                    let summary = &trace.summary;
+                    let air_pct = if summary.total_runtime_s > 0.0 {
+                        summary.air_cut_time_s / summary.total_runtime_s * 100.0
+                    } else {
+                        0.0
+                    };
+                    (summary.total_runtime_s, air_pct, summary.average_engagement)
+                } else {
+                    (0.0, 0.0, 0.0)
+                }
+            } else {
+                (0.0, 0.0, 0.0)
+            };
+
+        let verdict = if total_collision_count > 0 {
+            format!(
+                "ERROR: {} holder/shank collisions detected",
+                total_collision_count
+            )
+        } else if total_rapid_collision_count > 0 {
+            format!(
+                "WARNING: {} rapid-through-stock collisions",
+                total_rapid_collision_count
+            )
+        } else if air_cut_percentage > 40.0 {
+            format!("WARNING: {air_cut_percentage:.1}% air cutting")
+        } else {
+            "OK".to_owned()
+        };
+
+        ProjectDiagnostics {
+            total_runtime_s,
+            air_cut_percentage,
+            average_engagement,
+            collision_count: total_collision_count,
+            rapid_collision_count: total_rapid_collision_count,
+            per_toolpath,
+            verdict,
+        }
+    }
+
+    // ── Export ──────────────────────────────────────────────────────
+
+    /// Export G-code for all computed toolpaths.
+    pub fn export_gcode(&self, path: &Path, _setup_id: Option<usize>) -> Result<(), SessionError> {
+        use crate::compute::{CompensationType, OperationConfig};
+        use crate::gcode::{
+            ControllerCompensation, CoolantMode, GcodePhase, PostFormat, emit_gcode_phased,
+        };
+        use crate::profile::ProfileSide;
+
+        let post_format = match self.post.format.to_ascii_lowercase().as_str() {
+            "linuxcnc" | "linux_cnc" => PostFormat::LinuxCnc,
+            "mach3" => PostFormat::Mach3,
+            _ => PostFormat::Grbl,
+        };
+        let post = post_format.post_processor();
+
+        // Collect all computed toolpaths as phases
+        let mut phases: Vec<GcodePhase<'_>> = Vec::new();
+        for (idx, tc) in self.toolpath_configs.iter().enumerate() {
+            if let Some(result) = self.results.get(&idx) {
+                // Determine controller compensation for profile operations
+                let controller_compensation =
+                    if let OperationConfig::Profile(ref cfg) = tc.operation {
+                        if cfg.compensation == CompensationType::InControl {
+                            Some(match (cfg.side, cfg.climb) {
+                                (ProfileSide::Outside, true) => ControllerCompensation::Right,
+                                (ProfileSide::Outside, false) => ControllerCompensation::Left,
+                                (ProfileSide::Inside, true) => ControllerCompensation::Left,
+                                (ProfileSide::Inside, false) => ControllerCompensation::Right,
+                            })
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                phases.push(GcodePhase {
+                    toolpath: &result.toolpath,
+                    spindle_rpm: self.post.spindle_speed,
+                    label: &tc.name,
+                    tool_number: None,
+                    coolant: CoolantMode::Off,
+                    pre_gcode: tc.pre_gcode.as_deref(),
+                    post_gcode: tc.post_gcode.as_deref(),
+                    controller_compensation,
+                });
+            }
+        }
+
+        let gcode = emit_gcode_phased(&phases, post.as_ref());
+        std::fs::write(path, gcode).map_err(|e| {
+            SessionError::Export(format!("Failed to write G-code to {}: {e}", path.display()))
+        })
+    }
+
+    /// Export diagnostics as JSON files to an output directory.
+    pub fn export_diagnostics_json(&self, output_dir: &Path) -> Result<(), SessionError> {
+        std::fs::create_dir_all(output_dir)?;
+        let diag = self.diagnostics();
+        let json = serde_json::to_string_pretty(&diag)
+            .map_err(|e| SessionError::Export(format!("Failed to serialize diagnostics: {e}")))?;
+        let path = output_dir.join("summary.json");
+        std::fs::write(&path, json)
+            .map_err(|e| SessionError::Export(format!("Failed to write {}: {e}", path.display())))
+    }
+}

@@ -102,14 +102,6 @@ fn generate_via_core(
     Ok(tp)
 }
 
-#[allow(dead_code)]
-pub(super) fn run_simulation(
-    req: &SimulationRequest,
-    cancel: &AtomicBool,
-) -> Result<SimulationResult, ComputeError> {
-    run_simulation_with_phase(req, cancel, |_| {})
-}
-
 /// Convert viz `SimulationRequest` into a core `SimulationRequest` so the
 /// actual simulation can be delegated to `rs_cam_core::compute::simulate`.
 fn build_core_simulation_request(
