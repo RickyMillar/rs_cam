@@ -326,7 +326,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .collect();
             // Snapshot tool configs for feeds calculation
             let tool_configs: Vec<_> = state.session.tools().iter().map(|t| (t.id, t.clone())).collect();
-            let validation = ToolpathValidationContext::from_job(&state.job);
+            let validation = ToolpathValidationContext::from_session(&state.session);
             let material = state.session.stock_config().material.clone();
             let machine = state.session.machine().clone();
             let workholding = state.session.stock_config().workholding_rigidity;

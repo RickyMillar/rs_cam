@@ -3,23 +3,26 @@ use super::sim_debug::{
     debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
 };
 use crate::render::toolpath_render::palette_color;
-use crate::state::job::JobState;
+use crate::state::runtime::GuiState;
 use crate::state::simulation::{ActiveSemanticItem, SimulationDebugTab, SimulationState};
 use egui_plot::{Bar, BarChart, Legend, Line, Plot, PlotPoints};
+use rs_cam_core::session::ProjectSession;
 
 /// Bottom panel in simulation workspace: transport controls, timeline scrubber, speed control.
 pub fn draw(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
-    job: &JobState,
+    session: &ProjectSession,
+    gui: &GuiState,
     events: &mut Vec<AppEvent>,
 ) {
-    sim.sync_debug_state(job);
-    let active_semantic = sim.active_semantic_item(job);
+    let max_feed = session.machine().max_feed_mm_min;
+    sim.sync_debug_state(gui, max_feed);
+    let active_semantic = sim.active_semantic_item(gui, max_feed);
     let current_boundary = sim.current_boundary().cloned();
 
-    draw_transport_and_scrubber(ui, sim, job, events);
-    draw_boundary_timeline(ui, sim, job, &current_boundary, &active_semantic, events);
+    draw_transport_and_scrubber(ui, sim, session, gui, events);
+    draw_boundary_timeline(ui, sim, gui, max_feed, &current_boundary, &active_semantic, events);
     draw_speed_controls(ui, sim);
 
     if sim.debug.enabled {
@@ -66,7 +69,7 @@ pub fn draw(
                     draw_semantic_drawer(
                         ui,
                         sim,
-                        job,
+                        gui,
                         current_boundary.as_ref(),
                         active_semantic.as_ref(),
                         events,
@@ -76,7 +79,8 @@ pub fn draw(
                     draw_generation_drawer(
                         ui,
                         sim,
-                        job,
+                        gui,
+                        max_feed,
                         current_boundary.as_ref(),
                         active_semantic.as_ref(),
                         events,
@@ -86,14 +90,15 @@ pub fn draw(
                     draw_cutting_drawer(
                         ui,
                         sim,
-                        job,
+                        gui,
+                        max_feed,
                         current_boundary.as_ref(),
                         active_semantic.as_ref(),
                         events,
                     );
                 }
                 SimulationDebugTab::Trace => {
-                    draw_trace_drawer(ui, sim, job, current_boundary.as_ref());
+                    draw_trace_drawer(ui, sim, gui, current_boundary.as_ref());
                 }
             }
         }
@@ -104,7 +109,8 @@ pub fn draw(
 fn draw_transport_and_scrubber(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
-    job: &JobState,
+    session: &ProjectSession,
+    gui: &GuiState,
     events: &mut Vec<AppEvent>,
 ) {
     ui.horizontal(|ui| {
@@ -158,7 +164,7 @@ fn draw_transport_and_scrubber(
         if sim.total_moves() > 0 {
             ui.separator();
 
-            let (elapsed_time, total_time) = estimate_times(sim, job);
+            let (elapsed_time, total_time) = estimate_times(sim, session, gui);
             let elapsed_str = format_time(elapsed_time);
             let total_str = format_time(total_time);
             ui.label(
@@ -214,7 +220,8 @@ fn draw_transport_and_scrubber(
 fn draw_boundary_timeline(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
-    job: &JobState,
+    gui: &GuiState,
+    max_feed: f64,
     current_boundary: &Option<crate::state::simulation::ToolpathBoundary>,
     active_semantic: &Option<ActiveSemanticItem>,
     events: &mut Vec<AppEvent>,
@@ -334,7 +341,7 @@ fn draw_boundary_timeline(
     if sim.debug.enabled
         && let Some(boundary) = current_boundary.as_ref()
     {
-        draw_semantic_band(ui, sim, job, boundary, active_semantic.as_ref(), events);
+        draw_semantic_band(ui, sim, gui, max_feed, boundary, active_semantic.as_ref(), events);
     }
 }
 
@@ -377,15 +384,16 @@ fn draw_speed_controls(ui: &mut egui::Ui, sim: &mut SimulationState) {
 }
 
 /// Estimate elapsed and total time (in seconds) based on feed rates.
-fn estimate_times(sim: &SimulationState, job: &JobState) -> (f64, f64) {
+fn estimate_times(sim: &SimulationState, session: &ProjectSession, gui: &GuiState) -> (f64, f64) {
     let mut total_secs = 0.0;
     let mut elapsed_secs = 0.0;
 
     for boundary in sim.boundaries() {
-        if let Some(tp) = job.find_toolpath(boundary.id)
-            && let Some(result) = &tp.result
+        if let Some(rt) = gui.toolpath_rt.get(&boundary.id.0)
+            && let Some(result) = &rt.result
+            && let Some((_, tc)) = session.find_toolpath_config_by_id(boundary.id.0)
         {
-            let feed = tp.operation.feed_rate();
+            let feed = tc.operation.feed_rate();
             let op_time = (result.stats.cutting_distance / feed) * 60.0;
             total_secs += op_time;
 
@@ -416,15 +424,16 @@ fn format_time(secs: f64) -> String {
 fn draw_semantic_band(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
-    job: &JobState,
+    gui: &GuiState,
+    max_feed: f64,
     boundary: &crate::state::simulation::ToolpathBoundary,
     active_semantic: Option<&ActiveSemanticItem>,
     events: &mut Vec<AppEvent>,
 ) {
-    let Some(toolpath) = job.find_toolpath(boundary.id) else {
+    let Some(rt) = gui.toolpath_rt.get(&boundary.id.0) else {
         return;
     };
-    let Some(trace) = toolpath.semantic_trace.as_ref() else {
+    let Some(trace) = rt.semantic_trace.as_ref() else {
         return;
     };
     let Some(index) = sim.debug.semantic_indexes.get(&boundary.id).cloned() else {
@@ -467,7 +476,7 @@ fn draw_semantic_band(
         }
     }
 
-    if let Some(debug_trace) = toolpath.debug_trace.as_ref() {
+    if let Some(debug_trace) = rt.debug_trace.as_ref() {
         for annotation in &debug_trace.annotations {
             let x = rect.min.x + (annotation.move_index as f32 / local_total as f32) * total_width;
             painter.line_segment(
@@ -517,7 +526,7 @@ fn draw_semantic_band(
     if response.clicked()
         && let Some(pointer) = response.interact_pointer_pos()
     {
-        if let Some(debug_trace) = toolpath.debug_trace.as_ref() {
+        if let Some(debug_trace) = rt.debug_trace.as_ref() {
             let nearest_annotation = debug_trace
                 .annotations
                 .iter()
@@ -558,7 +567,7 @@ fn draw_semantic_band(
                 .filter(|(_, distance)| *distance <= 6.0)
                 .min_by(|left, right| left.1.total_cmp(&right.1));
             if let Some((issue, _)) = nearest_issue
-                && let Some(target) = sim.trace_target_for_cut_issue(job, &issue)
+                && let Some(target) = sim.trace_target_for_cut_issue(&issue)
             {
                 if let Some(item_id) = target.semantic_item_id {
                     sim.pin_semantic_item(boundary.id, item_id);
@@ -595,7 +604,9 @@ fn draw_semantic_band(
             sim.pin_semantic_item(boundary.id, item.id);
             sim.debug.focused_issue_index = None;
             sim.debug.focused_hotspot = None;
-            if let Some(target) = sim.trace_target_for_item(job, boundary.id, item.id, false) {
+            if let Some(target) =
+                sim.trace_target_for_item(gui, max_feed, boundary.id, item.id, false)
+            {
                 events.push(AppEvent::SimJumpToMove(target.move_index));
             }
             return;
@@ -613,7 +624,7 @@ fn draw_semantic_band(
 fn draw_semantic_drawer(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
-    job: &JobState,
+    gui: &GuiState,
     current_boundary: Option<&crate::state::simulation::ToolpathBoundary>,
     active_semantic: Option<&ActiveSemanticItem>,
     events: &mut Vec<AppEvent>,
@@ -622,11 +633,11 @@ fn draw_semantic_drawer(
         ui.label("No active toolpath.");
         return;
     };
-    let Some(toolpath) = job.find_toolpath(boundary.id) else {
+    let Some(rt) = gui.toolpath_rt.get(&boundary.id.0) else {
         ui.label("Toolpath missing.");
         return;
     };
-    let Some(trace) = toolpath.semantic_trace.as_ref() else {
+    let Some(trace) = rt.semantic_trace.as_ref() else {
         ui.label("No semantic trace available.");
         return;
     };
@@ -785,7 +796,8 @@ fn draw_semantic_drawer_item(
 fn draw_generation_drawer(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
-    job: &JobState,
+    gui: &GuiState,
+    max_feed: f64,
     current_boundary: Option<&crate::state::simulation::ToolpathBoundary>,
     active_semantic: Option<&ActiveSemanticItem>,
     events: &mut Vec<AppEvent>,
@@ -794,11 +806,11 @@ fn draw_generation_drawer(
         ui.label("No active toolpath.");
         return;
     };
-    let Some(toolpath) = job.find_toolpath(boundary.id) else {
+    let Some(rt) = gui.toolpath_rt.get(&boundary.id.0) else {
         ui.label("Toolpath missing.");
         return;
     };
-    let Some(trace) = toolpath.debug_trace.as_ref() else {
+    let Some(trace) = rt.debug_trace.as_ref() else {
         ui.label("No performance trace available.");
         return;
     };
@@ -815,7 +827,7 @@ fn draw_generation_drawer(
         ui.label(format!("Hotspots: {}", summary.hotspot_count));
     });
 
-    if let Some(annotation) = sim.current_debug_annotation(job)
+    if let Some(annotation) = sim.current_debug_annotation(gui)
         && annotation.0 == boundary.id
     {
         ui.label(
@@ -825,7 +837,7 @@ fn draw_generation_drawer(
         );
     }
 
-    if let Some((_, span)) = sim.active_debug_span(job)
+    if let Some((_, span)) = sim.active_debug_span(gui, max_feed)
         && boundary.id == current_boundary.map(|b| b.id).unwrap_or(boundary.id)
     {
         ui.label(
@@ -876,7 +888,7 @@ fn draw_generation_drawer(
                     }
                     if response.clicked()
                         && let Some(target) =
-                            sim.trace_target_for_span(job, boundary.id, span.id, false)
+                            sim.trace_target_for_span(gui, max_feed, boundary.id, span.id, false)
                     {
                         if let Some(item_id) = target.semantic_item_id {
                             sim.pin_semantic_item(boundary.id, item_id);
@@ -927,7 +939,8 @@ fn draw_generation_drawer(
                     .selected(is_focused),
                 );
                 if response.clicked()
-                    && let Some(target) = sim.trace_target_for_hotspot(job, boundary.id, index)
+                    && let Some(target) =
+                        sim.trace_target_for_hotspot(gui, max_feed, boundary.id, index)
                 {
                     sim.debug.focused_hotspot = Some((boundary.id, index));
                     if let Some(item_id) = target.semantic_item_id {
@@ -970,7 +983,8 @@ fn draw_generation_drawer(
 fn draw_cutting_drawer(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
-    job: &JobState,
+    gui: &GuiState,
+    max_feed: f64,
     current_boundary: Option<&crate::state::simulation::ToolpathBoundary>,
     active_semantic: Option<&ActiveSemanticItem>,
     events: &mut Vec<AppEvent>,
@@ -1143,7 +1157,7 @@ fn draw_cutting_drawer(
                 );
                 if response.clicked()
                     && let Some(target) =
-                        sim.trace_target_for_item(job, boundary.id, item.semantic_item_id, false)
+                        sim.trace_target_for_item(gui, max_feed, boundary.id, item.semantic_item_id, false)
                 {
                     sim.pin_semantic_item(boundary.id, item.semantic_item_id);
                     sim.debug.focused_issue_index = None;
@@ -1184,7 +1198,7 @@ fn draw_cutting_drawer(
                     ))
                     .small(),
                 )
-                .selected(sim.current_issue(job).as_ref().is_some_and(|current| {
+                .selected(sim.current_issue(gui, max_feed).as_ref().is_some_and(|current| {
                     current.toolpath_id == Some(boundary.id)
                         && current.move_index == boundary.start_move + issue.move_index
                         && current.kind == match issue.kind {
@@ -1198,7 +1212,7 @@ fn draw_cutting_drawer(
                 })),
             );
             if response.clicked()
-                && let Some(target) = sim.trace_target_for_cut_issue(job, issue)
+                && let Some(target) = sim.trace_target_for_cut_issue(issue)
             {
                 if let Some(item_id) = target.semantic_item_id {
                     sim.pin_semantic_item(boundary.id, item_id);
@@ -1227,7 +1241,7 @@ fn draw_cutting_drawer(
                     egui::Button::new(
                         egui::RichText::new(format!(
                             "{} | wasted {:.2}s | total {:.2}s",
-                            cut_hotspot_label(job, boundary.id, &hotspot),
+                            cut_hotspot_label(gui, boundary.id, &hotspot),
                             hotspot.wasted_runtime_s,
                             hotspot.total_runtime_s
                         ))
@@ -1284,22 +1298,22 @@ fn draw_cutting_drawer(
 fn draw_trace_drawer(
     ui: &mut egui::Ui,
     sim: &SimulationState,
-    job: &JobState,
+    gui: &GuiState,
     current_boundary: Option<&crate::state::simulation::ToolpathBoundary>,
 ) {
     let Some(boundary) = current_boundary else {
         ui.label("No active toolpath.");
         return;
     };
-    let Some(toolpath) = job.find_toolpath(boundary.id) else {
+    let Some(rt) = gui.toolpath_rt.get(&boundary.id.0) else {
         ui.label("Toolpath missing.");
         return;
     };
 
-    let availability = SimulationState::trace_availability_for_toolpath(job, boundary.id);
+    let availability = SimulationState::trace_availability_for_toolpath(gui, boundary.id);
     ui.label(format!("Trace status: {:?}", availability));
-    ui.label(format!("Toolpath: {}", toolpath.name));
-    if let Some(path) = &toolpath.debug_trace_path {
+    ui.label(format!("Toolpath: {}", boundary.name));
+    if let Some(path) = &rt.debug_trace_path {
         ui.label(
             egui::RichText::new(path.display().to_string())
                 .small()
@@ -1314,13 +1328,13 @@ fn draw_trace_drawer(
         );
     }
 
-    if let Some(semantic_trace) = &toolpath.semantic_trace {
+    if let Some(semantic_trace) = &rt.semantic_trace {
         ui.label(format!(
             "Semantic items: {} (move-linked {})",
             semantic_trace.summary.item_count, semantic_trace.summary.move_linked_item_count
         ));
     }
-    if let Some(debug_trace) = &toolpath.debug_trace {
+    if let Some(debug_trace) = &rt.debug_trace {
         ui.label(format!(
             "Perf spans: {} | annotations: {}",
             debug_trace.spans.len(),
@@ -1357,12 +1371,13 @@ fn draw_trace_drawer(
 }
 
 fn cut_hotspot_label(
-    job: &JobState,
+    gui: &GuiState,
     toolpath_id: crate::state::toolpath::ToolpathId,
     hotspot: &rs_cam_core::simulation_cut::SimulationCutHotspot,
 ) -> String {
-    job.find_toolpath(toolpath_id)
-        .and_then(|toolpath| toolpath.semantic_trace.as_ref())
+    gui.toolpath_rt
+        .get(&toolpath_id.0)
+        .and_then(|rt| rt.semantic_trace.as_ref())
         .and_then(|trace| {
             hotspot.semantic_item_id.and_then(|item_id| {
                 trace

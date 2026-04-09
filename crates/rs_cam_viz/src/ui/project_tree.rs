@@ -289,7 +289,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                         .selectable_label(selected, egui::RichText::new(&label).color(text_color));
                     draw_trace_badge(
                         ui,
-                        SimulationState::trace_availability_for_toolpath(&state.job, tp_id),
+                        SimulationState::trace_availability_for_toolpath(&state.gui, tp_id),
                     );
                 });
                 // Make the full row clickable (not just the label text)

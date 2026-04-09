@@ -1,26 +1,35 @@
 use super::AppEvent;
 use super::sim_debug::{draw_trace_badge, semantic_kind_color, semantic_kind_label};
 use crate::render::toolpath_render::palette_color;
-use crate::state::job::{JobState, SetupId};
+use crate::state::job::SetupId;
+use crate::state::runtime::GuiState;
 use crate::state::simulation::SimulationState;
 use crate::state::toolpath::ToolpathId;
 use crate::ui::theme;
+use rs_cam_core::session::ProjectSession;
 
 /// Left panel in simulation workspace: operation list with checkboxes, progress bars, and jump buttons.
 pub fn draw(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
-    job: &JobState,
+    session: &ProjectSession,
+    gui: &GuiState,
     events: &mut Vec<AppEvent>,
 ) {
+    let max_feed = session.machine().max_feed_mm_min;
     ui.heading("Verification");
     ui.separator();
 
     // Empty state: no results yet
     if sim.boundaries().is_empty() {
-        let has_computed = job
-            .all_toolpaths()
-            .any(|tp| tp.enabled && tp.result.is_some());
+        let has_computed = session.toolpath_configs().iter().any(|tc| {
+            tc.enabled
+                && gui
+                    .toolpath_rt
+                    .get(&tc.id)
+                    .and_then(|rt| rt.result.as_ref())
+                    .is_some()
+        });
 
         egui::Frame::default()
             .fill(theme::CARD_FILL)
@@ -70,7 +79,7 @@ pub fn draw(
     }
 
     // Staleness warning
-    if sim.is_stale(job.edit_counter) {
+    if sim.is_stale(gui.edit_counter) {
         egui::Frame::default()
             .fill(egui::Color32::from_rgb(50, 42, 20))
             .stroke(egui::Stroke::new(1.5, theme::WARNING))
@@ -104,8 +113,8 @@ pub fn draw(
     let selected_set: Vec<ToolpathId> = sim.selected_toolpaths().cloned().unwrap_or_default();
     let boundaries = sim.boundaries().to_vec();
     let setup_boundaries = sim.setup_boundaries().to_vec();
-    sim.sync_debug_state(job);
-    let active_item = sim.active_semantic_item(job);
+    sim.sync_debug_state(gui, max_feed);
+    let active_item = sim.active_semantic_item(gui, max_feed);
     let active_item_id = active_item
         .as_ref()
         .map(|item| (item.toolpath_id, item.item.id));
@@ -179,7 +188,7 @@ pub fn draw(
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     draw_trace_badge(
                         ui,
-                        SimulationState::trace_availability_for_toolpath(job, boundary.id),
+                        SimulationState::trace_availability_for_toolpath(gui, boundary.id),
                     );
                 });
             });
@@ -193,7 +202,7 @@ pub fn draw(
                 );
 
                 // Estimated time from job toolpaths
-                if let Some(est) = estimate_op_time(job, boundary.id) {
+                if let Some(est) = estimate_op_time(session, gui, boundary.id) {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
                             egui::RichText::new(est)
@@ -264,9 +273,10 @@ pub fn draw(
             });
 
             if sim.debug.enabled {
-                let has_semantic = job
-                    .find_toolpath(boundary.id)
-                    .and_then(|toolpath| toolpath.semantic_trace.as_ref())
+                let has_semantic = gui
+                    .toolpath_rt
+                    .get(&boundary.id.0)
+                    .and_then(|rt| rt.semantic_trace.as_ref())
                     .is_some();
                 if is_current && has_semantic {
                     sim.debug.set_toolpath_expanded(boundary.id, true);
@@ -289,7 +299,7 @@ pub fn draw(
                     }
 
                     if sim.debug.is_toolpath_expanded(boundary.id) {
-                        draw_semantic_outline(ui, sim, job, boundary, active_item_id, events);
+                        draw_semantic_outline(ui, sim, gui, boundary, active_item_id, events);
                     }
                 }
             }
@@ -334,15 +344,15 @@ pub fn draw(
     fn draw_semantic_outline(
         ui: &mut egui::Ui,
         sim: &mut SimulationState,
-        job: &JobState,
+        gui: &GuiState,
         boundary: &crate::state::simulation::ToolpathBoundary,
         active_item_id: Option<(ToolpathId, u64)>,
         events: &mut Vec<AppEvent>,
     ) {
-        let Some(toolpath) = job.find_toolpath(boundary.id) else {
+        let Some(rt) = gui.toolpath_rt.get(&boundary.id.0) else {
             return;
         };
-        let Some(trace) = toolpath.semantic_trace.as_ref() else {
+        let Some(trace) = rt.semantic_trace.as_ref() else {
             return;
         };
         let Some(index) = sim.debug.semantic_indexes.get(&boundary.id).cloned() else {
@@ -452,21 +462,11 @@ pub fn draw(
 }
 
 /// Estimate operation time as a formatted string.
-fn estimate_op_time(job: &JobState, tp_id: ToolpathId) -> Option<String> {
-    let tp = job.find_toolpath(tp_id)?;
-    let result = tp.result.as_ref()?;
-    let feed = match &tp.operation {
-        crate::state::toolpath::OperationConfig::Face(c) => c.feed_rate,
-        crate::state::toolpath::OperationConfig::Pocket(c) => c.feed_rate,
-        crate::state::toolpath::OperationConfig::Profile(c) => c.feed_rate,
-        crate::state::toolpath::OperationConfig::Adaptive(c) => c.feed_rate,
-        crate::state::toolpath::OperationConfig::DropCutter(c) => c.feed_rate,
-        crate::state::toolpath::OperationConfig::Trace(c) => c.feed_rate,
-        crate::state::toolpath::OperationConfig::Drill(c) => c.feed_rate,
-        crate::state::toolpath::OperationConfig::Chamfer(c) => c.feed_rate,
-        crate::state::toolpath::OperationConfig::Zigzag(c) => c.feed_rate,
-        _ => 1000.0,
-    };
+fn estimate_op_time(session: &ProjectSession, gui: &GuiState, tp_id: ToolpathId) -> Option<String> {
+    let rt = gui.toolpath_rt.get(&tp_id.0)?;
+    let result = rt.result.as_ref()?;
+    let (_, tc) = session.find_toolpath_config_by_id(tp_id.0)?;
+    let feed = tc.operation.feed_rate();
     let est_secs = (result.stats.cutting_distance / feed) * 60.0;
     let est_min = (est_secs / 60.0).floor() as u32;
     let est_sec = (est_secs % 60.0) as u32;
