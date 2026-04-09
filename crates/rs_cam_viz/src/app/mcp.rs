@@ -332,8 +332,7 @@ impl super::RsCamApp {
     }
 
     fn mcp_get_diagnostics(&self) -> String {
-        let session = &self.controller.state().session;
-        json_str(serde_json::to_value(session.diagnostics()).unwrap_or_default())
+        json_str(self.controller.build_mcp_diagnostics())
     }
 
     fn mcp_get_cut_trace(

@@ -663,27 +663,7 @@ impl<B: ComputeBackend> AppController<B> {
         if let Some(ref mut pending) = self.pending_mcp
             && let Some(sender) = pending.simulation.take()
         {
-            let diag = self.state.session.diagnostics();
-            let mut resp = serde_json::json!({
-                "total_runtime_s": diag.total_runtime_s,
-                "air_cut_percentage": diag.air_cut_percentage,
-                "average_engagement": diag.average_engagement,
-                "collision_count": diag.collision_count,
-                "rapid_collision_count": diag.rapid_collision_count,
-                "verdict": diag.verdict,
-                "per_toolpath": diag.per_toolpath,
-            });
-            if let Some(ref results) = self.state.simulation.results
-                && let Some(ref ct) = results.cut_trace
-            {
-                // SAFETY: resp is a known JSON object we just constructed
-                #[allow(clippy::indexing_slicing)]
-                {
-                    resp["semantic_summary_count"] = serde_json::json!(ct.semantic_summaries.len());
-                    resp["hotspot_count"] = serde_json::json!(ct.hotspots.len());
-                    resp["issue_count"] = serde_json::json!(ct.issues.len());
-                }
-            }
+            let resp = self.build_mcp_diagnostics();
             let _ = sender.send(McpResponse {
                 result: Ok(json_str(resp)),
             });
@@ -724,6 +704,92 @@ impl<B: ComputeBackend> AppController<B> {
             }));
             let _ = sender.send(McpResponse { result: Ok(resp) });
         }
+    }
+
+    /// Build diagnostics JSON from GUI state (toolpath_rt + simulation results).
+    ///
+    /// Unlike `session.diagnostics()` which reads from the session's internal
+    /// result cache (only populated by the standalone MCP), this reads from
+    /// `gui.toolpath_rt` and `state.simulation.results` — where the GUI's
+    /// compute pipeline actually stores data.
+    #[cfg(feature = "mcp")]
+    pub fn build_mcp_diagnostics(&self) -> serde_json::Value {
+        let session = &self.state.session;
+        let gui = &self.state.gui;
+
+        let mut per_toolpath = Vec::new();
+        for tc in session.toolpath_configs() {
+            if let Some(rt) = gui.toolpath_rt.get(&tc.id)
+                && let Some(ref result) = rt.result
+            {
+                let tool_name = session
+                    .tools()
+                    .iter()
+                    .find(|t| t.id.0 == tc.tool_id)
+                    .map(|t| t.name.clone())
+                    .unwrap_or_default();
+
+                per_toolpath.push(serde_json::json!({
+                    "toolpath_id": tc.id,
+                    "name": tc.name,
+                    "operation_type": tc.operation.label(),
+                    "tool_name": tool_name,
+                    "move_count": result.stats.move_count,
+                    "cutting_distance_mm": result.stats.cutting_distance,
+                    "rapid_distance_mm": result.stats.rapid_distance,
+                }));
+            }
+        }
+
+        let (total_runtime_s, air_cut_pct, avg_engagement) =
+            if let Some(ref sim_results) = self.state.simulation.results
+                && let Some(ref ct) = sim_results.cut_trace
+            {
+                let s = &ct.summary;
+                let air = if s.total_runtime_s > 0.0 {
+                    s.air_cut_time_s / s.total_runtime_s * 100.0
+                } else {
+                    0.0
+                };
+                (s.total_runtime_s, air, s.average_engagement)
+            } else {
+                (0.0, 0.0, 0.0)
+            };
+
+        let rapid_collision_count = self.state.simulation.checks.rapid_collisions.len();
+
+        let verdict = if rapid_collision_count > 0 {
+            "WARNING: rapid collisions detected"
+        } else if air_cut_pct > 20.0 {
+            "WARNING: high air cutting"
+        } else {
+            "OK"
+        };
+
+        let mut resp = serde_json::json!({
+            "total_runtime_s": total_runtime_s,
+            "air_cut_percentage": air_cut_pct,
+            "average_engagement": avg_engagement,
+            "collision_count": 0,
+            "rapid_collision_count": rapid_collision_count,
+            "verdict": verdict,
+            "per_toolpath": per_toolpath,
+        });
+
+        if let Some(ref sim_results) = self.state.simulation.results
+            && let Some(ref ct) = sim_results.cut_trace
+        {
+            // SAFETY: resp is a known JSON object we just constructed
+            #[allow(clippy::indexing_slicing)]
+            {
+                resp["semantic_summary_count"] =
+                    serde_json::json!(ct.semantic_summaries.len());
+                resp["hotspot_count"] = serde_json::json!(ct.hotspots.len());
+                resp["issue_count"] = serde_json::json!(ct.issues.len());
+            }
+        }
+
+        resp
     }
 
     #[cfg(feature = "mcp")]
