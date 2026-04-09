@@ -5,12 +5,20 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
-use super::{LoadedGeometry, LoadedModel, SessionError, SetupData, ToolpathConfig};
+use super::{
+    Fixture, FixtureKind, KeepOutZone, LoadedGeometry, LoadedModel, SessionError, SetupData,
+    ToolpathConfig,
+};
 use crate::compute::catalog::OperationConfig;
-use crate::compute::config::{DressupConfig, HeightsConfig};
-use crate::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
+use crate::compute::config::{
+    BoundaryConfig, DressupConfig, FeedsAutoMode, HeightsConfig, StockSource,
+};
+use crate::compute::stock_config::{FixtureId, KeepOutId, ModelKind, ModelUnits, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use crate::compute::transform::FaceUp;
+use crate::compute::transform::{FaceUp, ZRotation};
+use crate::debug_trace::ToolpathDebugOptions;
+use crate::enriched_mesh::FaceGroupId;
+use crate::gcode::CoolantMode;
 use crate::mesh::TriangleMesh;
 
 // ── Project file types (TOML deserialization) ──────────────────────────
@@ -235,7 +243,85 @@ pub struct ProjectSetupSection {
     #[serde(default = "default_face_up")]
     pub face_up: String,
     #[serde(default)]
+    pub z_rotation: String,
+    #[serde(default)]
+    pub fixtures: Vec<ProjectFixtureSection>,
+    #[serde(default)]
+    pub keep_out_zones: Vec<ProjectKeepOutSection>,
+    #[serde(default)]
     pub toolpaths: Vec<ProjectToolpathSection>,
+}
+
+/// Fixture section in the project file.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProjectFixtureSection {
+    #[serde(default)]
+    pub id: Option<usize>,
+    #[serde(default = "default_fixture_name")]
+    pub name: String,
+    #[serde(default = "default_fixture_kind")]
+    pub kind: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub origin_x: f64,
+    #[serde(default)]
+    pub origin_y: f64,
+    #[serde(default)]
+    pub origin_z: f64,
+    #[serde(default = "default_fixture_size_x")]
+    pub size_x: f64,
+    #[serde(default = "default_fixture_size_y")]
+    pub size_y: f64,
+    #[serde(default = "default_fixture_size_z")]
+    pub size_z: f64,
+    #[serde(default = "default_fixture_clearance")]
+    pub clearance: f64,
+}
+
+fn default_fixture_name() -> String {
+    "Fixture".to_owned()
+}
+fn default_fixture_kind() -> String {
+    "clamp".to_owned()
+}
+fn default_fixture_size_x() -> f64 {
+    30.0
+}
+fn default_fixture_size_y() -> f64 {
+    15.0
+}
+fn default_fixture_size_z() -> f64 {
+    20.0
+}
+fn default_fixture_clearance() -> f64 {
+    3.0
+}
+
+/// Keep-out zone section in the project file.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProjectKeepOutSection {
+    #[serde(default)]
+    pub id: Option<usize>,
+    #[serde(default = "default_keep_out_name")]
+    pub name: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub origin_x: f64,
+    #[serde(default)]
+    pub origin_y: f64,
+    #[serde(default = "default_keep_out_size")]
+    pub size_x: f64,
+    #[serde(default = "default_keep_out_size")]
+    pub size_y: f64,
+}
+
+fn default_keep_out_name() -> String {
+    "Keep-Out".to_owned()
+}
+fn default_keep_out_size() -> f64 {
+    20.0
 }
 
 fn default_setup_name() -> String {
@@ -270,6 +356,27 @@ pub struct ProjectToolpathSection {
     /// Raw G-code to emit after this toolpath's moves.
     #[serde(default)]
     pub post_gcode: Option<String>,
+    /// Machining boundary configuration.
+    #[serde(default)]
+    pub boundary: BoundaryConfig,
+    /// When true, inherit boundary from stock default.
+    #[serde(default = "default_true")]
+    pub boundary_inherit: bool,
+    /// Where this toolpath's stock material comes from.
+    #[serde(default)]
+    pub stock_source: StockSource,
+    /// Coolant mode for G-code output.
+    #[serde(default)]
+    pub coolant: CoolantMode,
+    /// Optional BREP face selection (raw u16 IDs).
+    #[serde(default)]
+    pub face_selection: Option<Vec<u16>>,
+    /// Tracks which feed parameters are auto-calculated vs user-overridden.
+    #[serde(default)]
+    pub feeds_auto: FeedsAutoMode,
+    /// Debug trace options.
+    #[serde(default)]
+    pub debug_options: ToolpathDebugOptions,
 }
 
 fn default_true() -> bool {
@@ -417,6 +524,74 @@ pub(crate) fn load_model_geometry(
     }
 }
 
+/// Convert a TOML toolpath section into a session `ToolpathConfig`.
+fn toolpath_config_from_section(
+    tp: &ProjectToolpathSection,
+    tp_id: usize,
+    operation: &OperationConfig,
+) -> ToolpathConfig {
+    ToolpathConfig {
+        id: tp_id,
+        name: tp.name.clone(),
+        enabled: tp.enabled,
+        operation: operation.clone(),
+        dressups: tp.dressups.clone(),
+        heights: tp.heights.clone(),
+        tool_id: tp.tool_id.unwrap_or(0),
+        model_id: tp.model_id.unwrap_or(0),
+        pre_gcode: tp.pre_gcode.clone(),
+        post_gcode: tp.post_gcode.clone(),
+        boundary: tp.boundary.clone(),
+        boundary_inherit: tp.boundary_inherit,
+        stock_source: tp.stock_source,
+        coolant: tp.coolant,
+        face_selection: tp
+            .face_selection
+            .as_ref()
+            .map(|ids| ids.iter().copied().map(FaceGroupId).collect()),
+        feeds_auto: tp.feeds_auto.clone(),
+        debug_options: tp.debug_options,
+    }
+}
+
+/// Convert TOML fixture sections into session `Fixture` values.
+fn build_fixtures(sections: &[ProjectFixtureSection]) -> Vec<Fixture> {
+    sections
+        .iter()
+        .enumerate()
+        .map(|(idx, fs)| Fixture {
+            id: FixtureId(fs.id.unwrap_or(idx)),
+            name: fs.name.clone(),
+            kind: FixtureKind::from_key(&fs.kind),
+            enabled: fs.enabled,
+            origin_x: fs.origin_x,
+            origin_y: fs.origin_y,
+            origin_z: fs.origin_z,
+            size_x: fs.size_x,
+            size_y: fs.size_y,
+            size_z: fs.size_z,
+            clearance: fs.clearance,
+        })
+        .collect()
+}
+
+/// Convert TOML keep-out sections into session `KeepOutZone` values.
+fn build_keep_out_zones(sections: &[ProjectKeepOutSection]) -> Vec<KeepOutZone> {
+    sections
+        .iter()
+        .enumerate()
+        .map(|(idx, ks)| KeepOutZone {
+            id: KeepOutId(ks.id.unwrap_or(idx)),
+            name: ks.name.clone(),
+            enabled: ks.enabled,
+            origin_x: ks.origin_x,
+            origin_y: ks.origin_y,
+            size_x: ks.size_x,
+            size_y: ks.size_y,
+        })
+        .collect()
+}
+
 /// Build a [`ProjectSession`](super::ProjectSession) from a parsed [`ProjectFile`].
 ///
 /// This is the core of `ProjectSession::from_project_file` but lives here so
@@ -439,6 +614,12 @@ pub(super) fn build_session_from_project(
     let mut models = Vec::new();
     for (idx, model_section) in project.models.iter().enumerate() {
         let model_id = model_section.id.unwrap_or(idx);
+        let model_path = std::path::PathBuf::from(&model_section.path);
+        let model_kind = model_section
+            .kind
+            .or_else(|| infer_model_kind(&model_path));
+        let model_units = model_section.units;
+
         match load_model_geometry(model_section, base_dir) {
             Ok(LoadedGeometry::Mesh(mesh)) => {
                 tracing::info!(
@@ -451,6 +632,10 @@ pub(super) fn build_session_from_project(
                     name: model_section.name.clone(),
                     mesh: Some(Arc::new(mesh)),
                     polygons: None,
+                    path: model_path,
+                    kind: model_kind,
+                    units: model_units,
+                    enriched_mesh: None,
                 });
             }
             Ok(LoadedGeometry::Polygons(polys)) => {
@@ -464,6 +649,10 @@ pub(super) fn build_session_from_project(
                     name: model_section.name.clone(),
                     mesh: None,
                     polygons: Some(Arc::new(polys)),
+                    path: model_path,
+                    kind: model_kind,
+                    units: model_units,
+                    enriched_mesh: None,
                 });
             }
             Err(e) => {
@@ -477,6 +666,10 @@ pub(super) fn build_session_from_project(
                     name: model_section.name.clone(),
                     mesh: None,
                     polygons: None,
+                    path: model_path,
+                    kind: model_kind,
+                    units: model_units,
+                    enriched_mesh: None,
                 });
             }
         }
@@ -490,32 +683,30 @@ pub(super) fn build_session_from_project(
         for (setup_idx, setup_section) in project.setups.iter().enumerate() {
             let setup_id = setup_section.id.unwrap_or(setup_idx);
             let face_up = FaceUp::from_key(&setup_section.face_up);
+            let z_rotation = ZRotation::from_key(&setup_section.z_rotation);
             let mut tp_indices = Vec::new();
 
             for tp_section in &setup_section.toolpaths {
                 let tp_idx = toolpath_configs.len();
                 let tp_id = tp_section.id.unwrap_or(tp_idx);
                 if let Some(operation) = &tp_section.operation {
-                    toolpath_configs.push(ToolpathConfig {
-                        id: tp_id,
-                        name: tp_section.name.clone(),
-                        enabled: tp_section.enabled,
-                        operation: operation.clone(),
-                        dressups: tp_section.dressups.clone(),
-                        heights: tp_section.heights.clone(),
-                        tool_id: tp_section.tool_id.unwrap_or(0),
-                        model_id: tp_section.model_id.unwrap_or(0),
-                        pre_gcode: tp_section.pre_gcode.clone(),
-                        post_gcode: tp_section.post_gcode.clone(),
-                    });
+                    toolpath_configs.push(toolpath_config_from_section(
+                        tp_section, tp_id, operation,
+                    ));
                     tp_indices.push(tp_idx);
                 }
             }
+
+            let fixtures = build_fixtures(&setup_section.fixtures);
+            let keep_out_zones = build_keep_out_zones(&setup_section.keep_out_zones);
 
             setups.push(SetupData {
                 id: setup_id,
                 name: setup_section.name.clone(),
                 face_up,
+                z_rotation,
+                fixtures,
+                keep_out_zones,
                 toolpath_indices: tp_indices,
             });
         }
@@ -526,18 +717,9 @@ pub(super) fn build_session_from_project(
             let tp_idx = toolpath_configs.len();
             let tp_id = tp_section.id.unwrap_or(tp_idx);
             if let Some(operation) = &tp_section.operation {
-                toolpath_configs.push(ToolpathConfig {
-                    id: tp_id,
-                    name: tp_section.name.clone(),
-                    enabled: tp_section.enabled,
-                    operation: operation.clone(),
-                    dressups: tp_section.dressups.clone(),
-                    heights: tp_section.heights.clone(),
-                    tool_id: tp_section.tool_id.unwrap_or(0),
-                    model_id: tp_section.model_id.unwrap_or(0),
-                    pre_gcode: tp_section.pre_gcode.clone(),
-                    post_gcode: tp_section.post_gcode.clone(),
-                });
+                toolpath_configs.push(toolpath_config_from_section(
+                    tp_section, tp_id, operation,
+                ));
                 tp_indices.push(tp_idx);
             }
         }
@@ -546,6 +728,9 @@ pub(super) fn build_session_from_project(
                 id: 0,
                 name: "Default".to_owned(),
                 face_up: FaceUp::Top,
+                z_rotation: ZRotation::default(),
+                fixtures: Vec::new(),
+                keep_out_zones: Vec::new(),
                 toolpath_indices: tp_indices,
             });
         }
