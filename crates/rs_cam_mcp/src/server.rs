@@ -11,6 +11,11 @@ use rmcp::schemars;
 use rmcp::{tool, tool_router, ServerHandler};
 use serde::Deserialize;
 
+use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+use rs_cam_core::compute::config::{
+    BoundaryConfig, BoundaryContainment, BoundarySource, DressupConfig,
+};
+use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::session::{ProjectSession, SimulationOptions};
 
 // ── Parameter structs ─────────────────────────────────────────────────
@@ -107,6 +112,92 @@ struct CutTraceParam {
     max_hotspots: Option<usize>,
     /// Maximum issues to return (default: 50)
     max_issues: Option<usize>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+struct AddToolpathParam {
+    /// Setup index (0-based) to add the toolpath into
+    setup_index: usize,
+    /// Operation type (e.g. "pocket", "adaptive3d", "drop_cutter", "profile")
+    operation_type: String,
+    /// Tool index (0-based) from list_tools
+    tool_index: usize,
+    /// Model ID (raw numeric ID shown in toolpath configs, usually 0 for the first model)
+    model_id: usize,
+    /// Optional name for the toolpath
+    name: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+struct RemoveToolpathParam {
+    /// Toolpath index (0-based)
+    index: usize,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+struct AddToolParam {
+    /// Display name for the tool
+    name: String,
+    /// Tool type (e.g. "end_mill", "ball_nose", "bull_nose", "v_bit", "tapered_ball_nose")
+    tool_type: String,
+    /// Tool diameter in mm
+    diameter: f64,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+struct RemoveToolParam {
+    /// Tool index (0-based)
+    index: usize,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+struct SetStockConfigParam {
+    /// Stock width (X) in mm
+    x: f64,
+    /// Stock depth (Y) in mm
+    y: f64,
+    /// Stock height (Z) in mm
+    z: f64,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+struct SetBoundaryConfigParam {
+    /// Toolpath index (0-based)
+    index: usize,
+    /// Enable or disable boundary
+    enabled: bool,
+    /// Boundary source: "stock" or "model_silhouette"
+    source: Option<String>,
+    /// Containment mode: "center", "inside", or "outside"
+    containment: Option<String>,
+    /// Additional offset in mm (positive = expand, negative = shrink)
+    offset: Option<f64>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+struct SetDressupConfigParam {
+    /// Toolpath index (0-based)
+    index: usize,
+    /// Dressup configuration as a JSON object (fields match DressupConfig)
+    dressup: serde_json::Value,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+struct SaveProjectParam {
+    /// File path to save the project TOML to (required)
+    path: String,
+}
+
+/// Parse a string into an `OperationType` (snake_case).
+fn parse_operation_type(s: &str) -> Result<OperationType, String> {
+    serde_json::from_value(serde_json::Value::String(s.to_owned()))
+        .map_err(|_| format!("Unknown operation type '{s}'. Valid types: face, pocket, profile, adaptive, v_carve, rest, inlay, zigzag, trace, drill, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve, alignment_pin_drill"))
+}
+
+/// Parse a string into a `ToolType` (snake_case).
+fn parse_tool_type(s: &str) -> Result<ToolType, String> {
+    serde_json::from_value(serde_json::Value::String(s.to_owned()))
+        .map_err(|_| format!("Unknown tool type '{s}'. Valid types: end_mill, ball_nose, bull_nose, v_bit, tapered_ball_nose"))
 }
 
 fn text(msg: impl Into<String>) -> String {
@@ -686,6 +777,278 @@ impl CamServer {
             "issues": issues_val,
         }))
     }
+
+    // ── Mutation tools (Phase 6) ──────────────────────────────────
+
+    #[tool(
+        name = "add_toolpath",
+        description = "Add a new toolpath with default parameters to a setup. Returns the new toolpath index. Supported operation types: face, pocket, profile, adaptive, v_carve, rest, inlay, zigzag, trace, drill, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve."
+    )]
+    async fn add_toolpath(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(AddToolpathParam {
+            setup_index,
+            operation_type,
+            tool_index,
+            model_id,
+            name,
+        }): Parameters<AddToolpathParam>,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return no_project_error();
+        };
+
+        let op_type = match parse_operation_type(&operation_type) {
+            Ok(ot) => ot,
+            Err(e) => return json_str(serde_json::json!({"error": e})),
+        };
+
+        // Resolve tool_id (raw ID) from the tool at tool_index
+        let tools = session.list_tools();
+        let tool_raw_id = match tools.get(tool_index) {
+            Some(info) => info.id.0,
+            None => {
+                return json_str(
+                    serde_json::json!({"error": format!("Tool index {tool_index} not found")}),
+                )
+            }
+        };
+
+        let op_config = OperationConfig::new_default(op_type);
+        let label = op_type.label();
+        let tp_name = name.unwrap_or_else(|| label.to_owned());
+
+        let config = rs_cam_core::session::ToolpathConfig {
+            id: 0, // overwritten by add_toolpath
+            name: tp_name,
+            enabled: true,
+            operation: op_config,
+            dressups: DressupConfig::default(),
+            heights: rs_cam_core::compute::config::HeightsConfig::default(),
+            tool_id: tool_raw_id,
+            model_id,
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: BoundaryConfig::default(),
+            boundary_inherit: true,
+            stock_source: rs_cam_core::compute::config::StockSource::default(),
+            coolant: rs_cam_core::gcode::CoolantMode::default(),
+            face_selection: None,
+            feeds_auto: rs_cam_core::compute::config::FeedsAutoMode::default(),
+            debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+        };
+
+        match session.add_toolpath(setup_index, config) {
+            Ok(idx) => json_str(serde_json::json!({
+                "index": idx,
+                "operation": label,
+            })),
+            Err(e) => json_str(serde_json::json!({"error": format!("{e}")})),
+        }
+    }
+
+    #[tool(
+        name = "remove_toolpath",
+        description = "Remove a toolpath by index. Updates setup indices automatically."
+    )]
+    async fn remove_toolpath(
+        &self,
+        Parameters(RemoveToolpathParam { index }): Parameters<RemoveToolpathParam>,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return no_project_error();
+        };
+        match session.remove_toolpath(index) {
+            Ok(()) => text(format!("Removed toolpath {index}")),
+            Err(e) => text(format!("Error: {e}")),
+        }
+    }
+
+    #[tool(
+        name = "add_tool",
+        description = "Add a new tool to the project. Supported types: end_mill, ball_nose, bull_nose, v_bit, tapered_ball_nose. Returns the new tool index."
+    )]
+    async fn add_tool(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(AddToolParam {
+            name,
+            tool_type,
+            diameter,
+        }): Parameters<AddToolParam>,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return no_project_error();
+        };
+
+        let tt = match parse_tool_type(&tool_type) {
+            Ok(t) => t,
+            Err(e) => return json_str(serde_json::json!({"error": e})),
+        };
+
+        let mut config = ToolConfig::new_default(ToolId(0), tt);
+        config.name = name;
+        config.diameter = diameter;
+
+        let idx = session.add_tool(config);
+        json_str(serde_json::json!({
+            "index": idx,
+            "tool_type": tool_type,
+            "diameter": diameter,
+        }))
+    }
+
+    #[tool(
+        name = "remove_tool",
+        description = "Remove a tool by index. Fails if any toolpath still references the tool."
+    )]
+    async fn remove_tool(
+        &self,
+        Parameters(RemoveToolParam { index }): Parameters<RemoveToolParam>,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return no_project_error();
+        };
+        match session.remove_tool(index) {
+            Ok(()) => text(format!("Removed tool {index}")),
+            Err(e) => text(format!("Error: {e}")),
+        }
+    }
+
+    #[tool(
+        name = "set_stock_config",
+        description = "Set stock dimensions (width x depth x height in mm). Invalidates simulation — re-run to update."
+    )]
+    async fn set_stock_config(
+        &self,
+        Parameters(SetStockConfigParam { x, y, z }): Parameters<SetStockConfigParam>,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return no_project_error();
+        };
+        let mut stock = session.stock_config().clone();
+        stock.x = x;
+        stock.y = y;
+        stock.z = z;
+        session.set_stock_config(stock);
+        text(format!(
+            "Stock set to {x:.1} x {y:.1} x {z:.1} mm. Regenerate toolpaths and simulation to apply."
+        ))
+    }
+
+    #[tool(
+        name = "set_boundary_config",
+        description = "Set the machining boundary for a toolpath. Sources: 'stock', 'model_silhouette'. Containment: 'center', 'inside', 'outside'. Invalidates cached result."
+    )]
+    async fn set_boundary_config(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(SetBoundaryConfigParam {
+            index,
+            enabled,
+            source,
+            containment,
+            offset,
+        }): Parameters<SetBoundaryConfigParam>,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return no_project_error();
+        };
+
+        let boundary_source = match source.as_deref() {
+            Some("stock") | None => BoundarySource::Stock,
+            Some("model_silhouette") => BoundarySource::ModelSilhouette,
+            Some(other) => {
+                return json_str(serde_json::json!({
+                    "error": format!("Unknown boundary source '{other}'. Use 'stock' or 'model_silhouette'.")
+                }))
+            }
+        };
+
+        let boundary_containment = match containment.as_deref() {
+            Some("center") | None => BoundaryContainment::Center,
+            Some("inside") => BoundaryContainment::Inside,
+            Some("outside") => BoundaryContainment::Outside,
+            Some(other) => {
+                return json_str(serde_json::json!({
+                    "error": format!("Unknown containment '{other}'. Use 'center', 'inside', or 'outside'.")
+                }))
+            }
+        };
+
+        let boundary = BoundaryConfig {
+            enabled,
+            source: boundary_source,
+            containment: boundary_containment,
+            offset: offset.unwrap_or(0.0),
+        };
+
+        match session.set_boundary_config(index, boundary) {
+            Ok(()) => text(format!(
+                "Boundary set on toolpath {index}. Regenerate to apply."
+            )),
+            Err(e) => text(format!("Error: {e}")),
+        }
+    }
+
+    #[tool(
+        name = "set_dressup_config",
+        description = "Set dressup configuration for a toolpath. Pass a JSON object with dressup fields: entry_style, ramp_angle, helix_radius, helix_pitch, dogbone, lead_in_out, lead_radius, link_moves, link_max_distance, link_feed_rate, arc_fitting, arc_tolerance, feed_optimization, feed_max_rate, feed_ramp_rate, optimize_rapid_order, retract_strategy."
+    )]
+    async fn set_dressup_config(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(SetDressupConfigParam { index, dressup }): Parameters<
+            SetDressupConfigParam,
+        >,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return no_project_error();
+        };
+
+        let dressup_config: DressupConfig = match serde_json::from_value(dressup) {
+            Ok(dc) => dc,
+            Err(e) => {
+                return json_str(serde_json::json!({
+                    "error": format!("Invalid dressup config: {e}")
+                }))
+            }
+        };
+
+        match session.set_dressup_config(index, dressup_config) {
+            Ok(()) => text(format!(
+                "Dressup config set on toolpath {index}. Regenerate to apply."
+            )),
+            Err(e) => text(format!("Error: {e}")),
+        }
+    }
+
+    #[tool(
+        name = "save_project",
+        description = "Save the current project state to a TOML file."
+    )]
+    async fn save_project(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(SaveProjectParam { path }): Parameters<
+            SaveProjectParam,
+        >,
+    ) -> String {
+        let guard = self.session.lock().await;
+        let Some(session) = guard.as_ref() else {
+            return no_project_error();
+        };
+        match session.save(Path::new(&path)) {
+            Ok(()) => text(format!("Project saved to {path}")),
+            Err(e) => text(format!("Save failed: {e}")),
+        }
+    }
+
+    // ── Query tools ──────────────────────────────────────────────────
 
     #[tool(
         name = "list_setups",

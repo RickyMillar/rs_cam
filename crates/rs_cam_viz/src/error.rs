@@ -53,3 +53,9 @@ impl From<String> for VizError {
         Self::Other(s)
     }
 }
+
+impl From<rs_cam_core::session::SessionError> for VizError {
+    fn from(e: rs_cam_core::session::SessionError) -> Self {
+        Self::ProjectLoad(e.to_string())
+    }
+}
