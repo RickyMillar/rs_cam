@@ -16,7 +16,7 @@ use operations::{
     draw_steep_shallow_params, draw_stepover_diagram, draw_trace_params, draw_vcarve_params,
     draw_waterline_params, draw_zigzag_params,
 };
-pub use operations::{ToolpathValidationContext, collect_warnings, validate_toolpath};
+pub use operations::{ToolpathValidationContext, collect_warnings, validate_toolpath, validate_toolpath_config};
 
 use crate::state::AppState;
 use crate::state::selection::Selection;

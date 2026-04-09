@@ -12,6 +12,8 @@ use rs_cam_core::compute::stock_config::ModelId;
 use rs_cam_core::feeds::FeedsResult;
 use rs_cam_core::session::ToolpathConfig;
 
+use super::job::{PostConfig, PostFormat};
+
 // Re-export ComputeStatus from core (canonical definition).
 pub use rs_cam_core::compute::config::ComputeStatus;
 
@@ -239,6 +241,8 @@ pub struct GuiState {
     pub file_path: Option<PathBuf>,
     pub dirty: bool,
     pub edit_counter: u64,
+    /// Viz-friendly post config view (mirrors session post config with enum format).
+    pub post: PostConfig,
     /// Per-toolpath GUI runtime state, keyed by toolpath semantic ID.
     pub toolpath_rt: HashMap<usize, ToolpathRuntime>,
     /// Per-setup GUI runtime state, keyed by setup semantic ID.
@@ -251,8 +255,40 @@ impl GuiState {
             file_path: None,
             dirty: false,
             edit_counter: 0,
+            post: PostConfig::default(),
             toolpath_rt: HashMap::new(),
             setup_rt: HashMap::new(),
+        }
+    }
+
+    /// Build a `PostConfig` (viz enum format) from the session's string-based config.
+    pub fn post_from_session(session_post: &rs_cam_core::session::ProjectPostConfig) -> PostConfig {
+        PostConfig {
+            format: match session_post.format.to_ascii_lowercase().as_str() {
+                "linuxcnc" => PostFormat::LinuxCnc,
+                "mach3" => PostFormat::Mach3,
+                _ => PostFormat::Grbl,
+            },
+            spindle_speed: session_post.spindle_speed,
+            safe_z: session_post.safe_z,
+            high_feedrate_mode: session_post.high_feedrate_mode,
+            high_feedrate: session_post.high_feedrate,
+        }
+    }
+
+    /// Sync session post config from the viz-friendly PostConfig.
+    pub fn post_to_session(post: &PostConfig) -> rs_cam_core::session::ProjectPostConfig {
+        rs_cam_core::session::ProjectPostConfig {
+            format: match post.format {
+                PostFormat::Grbl => "grbl",
+                PostFormat::LinuxCnc => "linuxcnc",
+                PostFormat::Mach3 => "mach3",
+            }
+            .to_owned(),
+            spindle_speed: post.spindle_speed,
+            safe_z: post.safe_z,
+            high_feedrate_mode: post.high_feedrate_mode,
+            high_feedrate: post.high_feedrate,
         }
     }
 

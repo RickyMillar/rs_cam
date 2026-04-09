@@ -11,44 +11,27 @@ use super::super::AppController;
 
 impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn submit_toolpath_compute(&mut self, tp_id: ToolpathId) {
-        // Keep the session in sync with the current GUI state before compute.
-        self.sync_session_from_job();
-
-        let Some((
-            tool_id,
-            model_id,
-            mut operation,
-            dressups,
-            heights_config,
-            stock_source,
-            toolpath_name,
-            boundary,
-            debug_options,
-            face_selection_for_toolpath,
-        )) = self.state.job.find_toolpath(tp_id).map(|toolpath| {
-            (
-                toolpath.tool_id,
-                toolpath.model_id,
-                toolpath.operation.clone(),
-                toolpath.dressups.clone(),
-                toolpath.heights.clone(),
-                toolpath.stock_source,
-                toolpath.name.clone(),
-                toolpath.boundary.clone(),
-                toolpath.debug_options,
-                toolpath.face_selection.clone(),
-            )
-        })
-        else {
+        let Some((tp_idx, tc)) = self.state.session.find_toolpath_config_by_id(tp_id.0) else {
             return;
         };
 
+        let tool_id_raw = tc.tool_id;
+        let model_id_raw = tc.model_id;
+        let mut operation = tc.operation.clone();
+        let dressups = tc.dressups.clone();
+        let heights_config = tc.heights.clone();
+        let stock_source = tc.stock_source;
+        let toolpath_name = tc.name.clone();
+        let boundary = tc.boundary.clone();
+        let debug_options = tc.debug_options;
+        let face_selection_for_toolpath = tc.face_selection.clone();
+
         let Some(tool) = self
             .state
-            .job
-            .tools
+            .session
+            .tools()
             .iter()
-            .find(|tool| tool.id == tool_id)
+            .find(|t| t.id.0 == tool_id_raw)
             .cloned()
         else {
             self.push_notification(
@@ -58,28 +41,30 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         };
 
-        // Run the same validation the UI uses so both paths are consistent.
+        // Run validation
         {
             let validation =
-                crate::ui::properties::ToolpathValidationContext::from_job(&self.state.job);
-            if let Some(entry) = self.state.job.find_toolpath(tp_id) {
-                let errs = crate::ui::properties::validate_toolpath(entry, &validation);
+                crate::ui::properties::ToolpathValidationContext::from_session(&self.state.session);
+            if let Some((_, tc)) = self.state.session.find_toolpath_config_by_id(tp_id.0) {
+                let errs = crate::ui::properties::validate_toolpath_config(tc, &validation);
                 if !errs.is_empty() {
-                    if let Some(tp) = self.state.job.find_toolpath_mut(tp_id) {
-                        tp.status = ComputeStatus::Error(errs.join("; "));
+                    if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id.0) {
+                        rt.status = ComputeStatus::Error(errs.join("; "));
                     }
                     return;
                 }
             }
         }
 
-        let setup_ref = self
+        // Find the setup that contains this toolpath
+        let setup_data = self
             .state
-            .job
-            .setups
+            .session
+            .list_setups()
             .iter()
-            .find(|setup| setup.toolpaths.iter().any(|toolpath| toolpath.id == tp_id));
-        let mut keep_out_footprints = setup_ref
+            .find(|s| s.toolpath_indices.contains(&tp_idx));
+
+        let mut keep_out_footprints = setup_data
             .map(|setup| {
                 let mut footprints = Vec::new();
                 for fixture in &setup.fixtures {
@@ -95,23 +80,35 @@ impl<B: ComputeBackend> AppController<B> {
                 footprints
             })
             .unwrap_or_default();
-        let transform_setup = setup_ref.map(|setup| {
-            let mut transform_setup = crate::state::job::Setup::new(setup.id, setup.name.clone());
-            transform_setup.face_up = setup.face_up;
-            transform_setup.z_rotation = setup.z_rotation;
-            transform_setup
+
+        // Build a lightweight "setup" for transforms using session types
+        let transform_setup = setup_data.map(|setup| {
+            crate::state::job::Setup::new(
+                crate::state::job::SetupId(setup.id),
+                setup.name.clone(),
+            )
         });
-        let stock_snapshot = self.state.job.stock.clone();
+        // If there's a real setup, copy face_up and z_rotation
+        let transform_setup = match (transform_setup, setup_data) {
+            (Some(mut s), Some(sd)) => {
+                s.face_up = sd.face_up;
+                s.z_rotation = sd.z_rotation;
+                Some(s)
+            }
+            _ => None,
+        };
+
+        let stock_snapshot = self.state.session.stock_config().clone();
 
         let model = self
             .state
-            .job
-            .models
+            .session
+            .models()
             .iter()
-            .find(|model| model.id == model_id);
-        let mut polygons = model.and_then(|model| model.polygons.clone());
-        let mut mesh = model.and_then(|model| model.mesh.clone());
-        let enriched_mesh = model.and_then(|model| model.enriched_mesh.clone());
+            .find(|m| m.id == model_id_raw);
+        let mut polygons = model.and_then(|m| m.polygons.clone());
+        let mut mesh = model.and_then(|m| m.mesh.clone());
+        let enriched_mesh = model.and_then(|m| m.enriched_mesh.clone());
         let face_selection = face_selection_for_toolpath;
 
         // ProjectCurve: use a separate model's mesh for the 3D surface when configured.
@@ -120,17 +117,14 @@ impl<B: ComputeBackend> AppController<B> {
         {
             mesh = self
                 .state
-                .job
-                .models
+                .session
+                .models()
                 .iter()
-                .find(|m| m.id == surface_id)
+                .find(|m| m.id == surface_id.0)
                 .and_then(|m| m.mesh.clone());
         }
 
         // Derive polygons from selected BREP faces when no explicit polygons exist.
-        // This enables all 2.5D operations (pocket, profile, adaptive, trace, etc.)
-        // to work with STEP models by extracting face boundary loops as Polygon2.
-        // Also extract the face Z height to set the toolpath top_z correctly.
         let mut face_top_z: Option<f64> = None;
         if polygons.is_none()
             && let (Some(face_ids), Some(enriched)) = (&face_selection, &enriched_mesh)
@@ -138,8 +132,6 @@ impl<B: ComputeBackend> AppController<B> {
         {
             if let Some(poly) = enriched.faces_boundary_as_polygon(face_ids) {
                 polygons = Some(Arc::new(vec![poly]));
-                // Extract the Z height from the selected faces' bounding boxes.
-                // For horizontal planar faces, bbox.min.z ≈ bbox.max.z ≈ face Z.
                 let z = face_ids
                     .iter()
                     .filter_map(|fid| enriched.face_group(*fid))
@@ -183,15 +175,14 @@ impl<B: ComputeBackend> AppController<B> {
 
         let is_3d = operation.is_3d();
         if is_3d && mesh.is_none() {
-            if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
-                toolpath.status =
-                    ComputeStatus::Error("No 3D mesh (import STL or STEP)".to_owned());
+            if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id.0) {
+                rt.status = ComputeStatus::Error("No 3D mesh (import STL or STEP)".to_owned());
             }
             return;
         }
         if !is_3d && !operation.is_stock_based() && polygons.is_none() {
-            if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
-                toolpath.status = ComputeStatus::Error(
+            if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id.0) {
+                rt.status = ComputeStatus::Error(
                     "No 2D geometry (import SVG/DXF or select STEP faces)".to_owned(),
                 );
             }
@@ -201,11 +192,11 @@ impl<B: ComputeBackend> AppController<B> {
         let prev_tool_radius = if let OperationConfig::Rest(config) = &operation {
             config.prev_tool_id.and_then(|prev_tool_id| {
                 self.state
-                    .job
-                    .tools
+                    .session
+                    .tools()
                     .iter()
-                    .find(|tool| tool.id == prev_tool_id)
-                    .map(|tool| tool.diameter / 2.0)
+                    .find(|t| t.id == prev_tool_id)
+                    .map(|t| t.diameter / 2.0)
             })
         } else {
             None
@@ -215,23 +206,23 @@ impl<B: ComputeBackend> AppController<B> {
         if let OperationConfig::AlignmentPinDrill(ref mut cfg) = operation {
             cfg.holes = self
                 .state
-                .job
-                .stock
+                .session
+                .stock_config()
                 .alignment_pins
                 .iter()
                 .map(|p| [p.x, p.y])
                 .collect();
         }
 
-        if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
-            toolpath.status = ComputeStatus::Computing;
-            toolpath.result = None;
-            toolpath.debug_trace = None;
-            toolpath.semantic_trace = None;
-            toolpath.debug_trace_path = None;
-        }
+        // Update GUI runtime status
+        let rt = self.state.gui.toolpath_rt_or_default(tp_id.0);
+        rt.status = ComputeStatus::Computing;
+        rt.result = None;
+        rt.debug_trace = None;
+        rt.semantic_trace = None;
+        rt.debug_trace_path = None;
 
-        let safe_z = self.state.job.post.safe_z;
+        let safe_z = self.state.gui.post.safe_z;
 
         // Compute setup-local stock bbox FIRST so heights resolve in the correct frame.
         let stock_bbox = if let Some(transform_setup) = transform_setup.as_ref() {
@@ -241,17 +232,22 @@ impl<B: ComputeBackend> AppController<B> {
                 max: rs_cam_core::geo::P3::new(width, depth, height),
             }
         } else {
-            self.state.job.stock.bbox()
+            stock_snapshot.bbox()
         };
 
         let model_bb = self
             .state
-            .job
-            .models
+            .session
+            .models()
             .iter()
-            .find(|m| m.id == model_id)
-            .and_then(|m| m.bbox());
-        // Transform model bbox into setup-local frame when a setup exists.
+            .find(|m| m.id == model_id_raw)
+            .and_then(|m| {
+                if let Some(mesh) = &m.mesh {
+                    Some(mesh.bbox)
+                } else {
+                    None
+                }
+            });
         let (model_top_z, model_bottom_z) = match (model_bb, transform_setup.as_ref()) {
             (Some(bb), Some(setup)) => {
                 let mut min_z = f64::INFINITY;
@@ -286,22 +282,16 @@ impl<B: ComputeBackend> AppController<B> {
             model_bottom_z,
         };
         let mut heights = heights_config.resolve(&height_ctx);
-        // When face selection provides a Z height, use it as the top_z
-        // so the toolpath cuts at the face level, not at Z=0.
         if let Some(fz) = face_top_z
             && heights_config.top_z.is_auto()
         {
             heights.top_z = fz;
-            // Shift bottom_z relative to the face top
             if heights_config.bottom_z.is_auto() {
                 heights.bottom_z = fz - operation.default_depth_for_heights().abs();
             }
         }
 
-        // TODO: build_prior_stock for FromRemainingStock requires tri-dexel
-        // simulation of prior toolpaths — not yet implemented.
         let prior_stock: Option<TriDexelStock> = None;
-
         let cutting_levels = operation.cutting_levels(heights.top_z);
 
         self.compute.submit_toolpath(ComputeRequest {
@@ -327,39 +317,35 @@ impl<B: ComputeBackend> AppController<B> {
         });
     }
 
-    /// Build a TriDexelStock representing the remaining material after simulating
-    /// all prior enabled toolpaths (those that appear before `tp_id`) in the same
-    /// setup.  Returns `None` when there are no prior results to simulate.
     // SAFETY: tp_index from position() within setup.toolpaths, slice always in bounds
     #[allow(clippy::indexing_slicing)]
     pub(crate) fn drain_compute_results(&mut self) {
         for message in self.compute.drain_results() {
             match message {
                 ComputeMessage::Toolpath(result) => {
-                    if let Some(toolpath) = self.state.job.find_toolpath_mut(result.toolpath_id) {
-                        toolpath.debug_trace = result.debug_trace.clone();
-                        toolpath.semantic_trace = result.semantic_trace.clone();
-                        toolpath.debug_trace_path = result.debug_trace_path.clone();
-                        match result.result {
-                            Ok(computed) => {
-                                toolpath.status = ComputeStatus::Done;
-                                toolpath.result = Some(computed);
-                            }
-                            Err(ComputeError::Cancelled) => {
-                                toolpath.status = ComputeStatus::Pending;
-                                toolpath.result = None;
-                            }
-                            Err(ComputeError::Message(error)) => {
-                                toolpath.status = ComputeStatus::Error(error);
-                                toolpath.result = None;
-                            }
+                    let tp_id = result.toolpath_id;
+                    let rt = self.state.gui.toolpath_rt_or_default(tp_id.0);
+                    rt.debug_trace = result.debug_trace.clone();
+                    rt.semantic_trace = result.semantic_trace.clone();
+                    rt.debug_trace_path = result.debug_trace_path.clone();
+                    match result.result {
+                        Ok(computed) => {
+                            rt.status = ComputeStatus::Done;
+                            rt.result = Some(computed);
+                        }
+                        Err(ComputeError::Cancelled) => {
+                            rt.status = ComputeStatus::Pending;
+                            rt.result = None;
+                        }
+                        Err(ComputeError::Message(error)) => {
+                            rt.status = ComputeStatus::Error(error);
+                            rt.result = None;
                         }
                     }
                     self.pending_upload = true;
                 }
                 ComputeMessage::Simulation(result) => match result {
                     Ok(simulation) => {
-                        // Warn user if resolution was silently coarsened
                         if simulation.resolution_clamped {
                             self.push_notification(
                                 "Sim resolution was coarsened to fit grid limits — \
@@ -368,7 +354,6 @@ impl<B: ComputeBackend> AppController<B> {
                                 crate::controller::Severity::Warning,
                             );
                         }
-                        // Warn if mesh is empty (would render as blank)
                         if simulation.mesh.indices.is_empty() {
                             self.push_notification(
                                 "Simulation produced an empty mesh — \
@@ -377,7 +362,6 @@ impl<B: ComputeBackend> AppController<B> {
                                 crate::controller::Severity::Warning,
                             );
                         }
-                        // Build boundaries
                         let boundaries: Vec<_> = simulation
                             .boundaries
                             .iter()
@@ -391,21 +375,20 @@ impl<B: ComputeBackend> AppController<B> {
                             })
                             .collect();
 
-                        // Build setup boundaries
                         let setup_boundaries = {
                             let mut sbs = Vec::new();
                             let mut last_setup_id = None;
                             for boundary in &boundaries {
-                                let setup_id = self.state.job.setup_of_toolpath(boundary.id);
+                                let setup_id = self.setup_of_toolpath(boundary.id);
                                 if setup_id != last_setup_id {
                                     if let Some(setup_id) = setup_id {
                                         let setup_name = self
                                             .state
-                                            .job
-                                            .setups
+                                            .session
+                                            .list_setups()
                                             .iter()
-                                            .find(|setup| setup.id == setup_id)
-                                            .map(|setup| setup.name.clone())
+                                            .find(|s| s.id == setup_id.0)
+                                            .map(|s| s.name.clone())
                                             .unwrap_or_default();
                                         sbs.push(crate::state::simulation::SetupBoundary {
                                             setup_id,
@@ -419,7 +402,6 @@ impl<B: ComputeBackend> AppController<B> {
                             sbs
                         };
 
-                        // Build checkpoints
                         let checkpoints: Vec<_> = simulation
                             .checkpoints
                             .into_iter()
@@ -430,7 +412,6 @@ impl<B: ComputeBackend> AppController<B> {
                             })
                             .collect();
 
-                        // Store rapid collision data in checks
                         if !simulation.rapid_collisions.is_empty() {
                             tracing::warn!(
                                 "{} rapid collisions detected",
@@ -441,24 +422,15 @@ impl<B: ComputeBackend> AppController<B> {
                         self.state.simulation.checks.rapid_collision_move_indices =
                             simulation.rapid_collision_move_indices;
 
-                        // Cache deviations for viz mode re-coloring.
-                        // display_mesh starts as None — the first playback frame
-                        // will fill it in from the live stock, showing progressive
-                        // cutting from the uncut block.
                         self.state.simulation.playback.display_deviations = simulation.deviations;
                         self.state.simulation.playback.display_mesh = None;
 
-                        // Global stock bbox (stock-relative, origin at 0,0,0)
+                        let stock = self.state.session.stock_config();
                         let stock_bbox = rs_cam_core::geo::BoundingBox3 {
                             min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
-                            max: rs_cam_core::geo::P3::new(
-                                self.state.job.stock.x,
-                                self.state.job.stock.y,
-                                self.state.job.stock.z,
-                            ),
+                            max: rs_cam_core::geo::P3::new(stock.x, stock.y, stock.z),
                         };
 
-                        // Store results as cached artifact
                         self.state.simulation.results = Some(SimulationResults {
                             mesh: simulation.mesh,
                             total_moves: simulation.total_moves,
@@ -489,7 +461,6 @@ impl<B: ComputeBackend> AppController<B> {
                             self.state.simulation.playback.playing = false;
                         }
 
-                        // Store fresh tri-dexel stock for playback (global frame)
                         let initial_stock = TriDexelStock::from_bounds(
                             &stock_bbox,
                             self.state.simulation.resolution,
@@ -497,7 +468,6 @@ impl<B: ComputeBackend> AppController<B> {
                         self.state.simulation.playback.live_stock = Some(initial_stock);
                         self.state.simulation.playback.live_sim_move = 0;
 
-                        // Update staleness metadata
                         let prev_gen = self
                             .state
                             .simulation
@@ -506,7 +476,7 @@ impl<B: ComputeBackend> AppController<B> {
                             .map_or(0, |m| m.sim_generation);
                         self.state.simulation.last_run = Some(SimulationRunMeta {
                             sim_generation: prev_gen + 1,
-                            last_sim_edit_counter: self.state.job.edit_counter,
+                            last_sim_edit_counter: self.state.gui.edit_counter,
                         });
 
                         self.pending_upload = true;
@@ -537,7 +507,6 @@ impl<B: ComputeBackend> AppController<B> {
                             tracing::warn!("{msg}");
                             self.push_notification(msg, super::super::Severity::Warning);
                         }
-                        // Wire results into simulation checks state
                         self.state.simulation.checks.holder_collision_count = count;
                         self.state.simulation.checks.min_safe_stickout = if count > 0 {
                             Some(collision.report.min_safe_stickout)

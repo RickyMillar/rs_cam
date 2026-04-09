@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use rs_cam_core::geo::BoundingBox3;
+use rs_cam_core::session::ToolpathConfig;
 
 use crate::compute::{
     CollisionRequest, ComputeBackend, ComputeLane, SetupSimGroup, SetupSimToolpath,
     SimulationRequest,
 };
-use crate::state::toolpath::ToolpathEntry;
 use crate::state::toolpath::ToolpathId;
 
 use super::super::AppController;
@@ -18,8 +18,7 @@ impl<B: ComputeBackend> AppController<B> {
         self.invalidate_simulation();
     }
 
-    /// Clear all cached simulation state — used after undo/redo of stock,
-    /// tool, or machine changes that invalidate the sim mesh.
+    /// Clear all cached simulation state.
     pub(crate) fn invalidate_simulation(&mut self) {
         self.compute.cancel_lane(ComputeLane::Analysis);
         let sim = &mut self.state.simulation;
@@ -99,15 +98,13 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    /// Build per-setup simulation groups by applying a per-setup toolpath filter.
-    /// Returns `(groups, all_toolpaths_flat, stock_bbox)` or `None` if no
-    /// toolpaths matched.
+    /// Build per-setup simulation groups.
     pub(crate) fn build_simulation_groups(
         &self,
-        mut include_toolpath: impl FnMut(usize, &ToolpathEntry) -> bool,
+        mut include_toolpath: impl FnMut(usize, &ToolpathConfig) -> bool,
         mut stop_after_setup: impl FnMut(usize) -> bool,
     ) -> Option<(Vec<SetupSimGroup>, Vec<SetupSimToolpath>, BoundingBox3)> {
-        let stock = &self.state.job.stock;
+        let stock = self.state.session.stock_config();
         let stock_bbox = BoundingBox3 {
             min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
             max: rs_cam_core::geo::P3::new(stock.x, stock.y, stock.z),
@@ -116,27 +113,28 @@ impl<B: ComputeBackend> AppController<B> {
         let mut groups: Vec<SetupSimGroup> = Vec::new();
         let mut all_toolpaths_flat = Vec::new();
 
-        for (i, setup) in self.state.job.setups.iter().enumerate() {
-            // Toolpaths stay in setup-local frame — no transform needed.
+        for (i, setup) in self.state.session.list_setups().iter().enumerate() {
             let toolpaths: Vec<_> = setup
-                .toolpaths
+                .toolpath_indices
                 .iter()
-                .filter(|tp| include_toolpath(i, tp))
-                .filter_map(|tp| {
-                    let result = tp.result.as_ref()?;
+                .filter_map(|&tp_idx| self.state.session.toolpath_configs().get(tp_idx))
+                .filter(|tc| include_toolpath(i, tc))
+                .filter_map(|tc| {
+                    let rt = self.state.gui.toolpath_rt.get(&tc.id)?;
+                    let result = rt.result.as_ref()?;
                     let tool = self
                         .state
-                        .job
-                        .tools
+                        .session
+                        .tools()
                         .iter()
-                        .find(|t| t.id == tp.tool_id)?
+                        .find(|t| t.id.0 == tc.tool_id)?
                         .clone();
                     Some(SetupSimToolpath {
-                        id: tp.id,
-                        name: tp.name.clone(),
+                        id: ToolpathId(tc.id),
+                        name: tc.name.clone(),
                         toolpath: Arc::clone(&result.toolpath),
                         tool,
-                        semantic_trace: tp.semantic_trace.clone(),
+                        semantic_trace: rt.semantic_trace.clone(),
                     })
                 })
                 .collect();
@@ -144,14 +142,18 @@ impl<B: ComputeBackend> AppController<B> {
             if !toolpaths.is_empty() {
                 all_toolpaths_flat.extend(toolpaths.clone());
 
-                // Build the per-setup local stock bbox.
-                let (eff_w, eff_d, eff_h) = setup.effective_stock(stock);
+                let (eff_w, eff_d, eff_h) =
+                    setup.face_up.effective_stock(stock.x, stock.y, stock.z);
+                let (eff_w, eff_d, eff_h) =
+                    setup.z_rotation.effective_stock(eff_w, eff_d, eff_h);
                 let local_stock_bbox = BoundingBox3 {
                     min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
                     max: rs_cam_core::geo::P3::new(eff_w, eff_d, eff_h),
                 };
 
-                let local_to_global = if setup.needs_transform() {
+                let needs_transform = setup.face_up != rs_cam_core::compute::transform::FaceUp::Top
+                    || setup.z_rotation != rs_cam_core::compute::transform::ZRotation::Deg0;
+                let local_to_global = if needs_transform {
                     Some(crate::compute::SetupTransformInfo {
                         face_up: setup.face_up,
                         z_rotation: setup.z_rotation,
@@ -181,7 +183,7 @@ impl<B: ComputeBackend> AppController<B> {
         Some((groups, all_toolpaths_flat, stock_bbox))
     }
 
-    /// Submit a simulation request, handling auto-resolution and model mesh.
+    /// Submit a simulation request.
     pub(crate) fn submit_simulation_for_groups(
         &mut self,
         groups: Vec<SetupSimGroup>,
@@ -194,8 +196,12 @@ impl<B: ComputeBackend> AppController<B> {
                 auto_resolution_for_tools(all_toolpaths_flat, &stock_bbox);
         }
 
-        // Pass model mesh in world coordinates — same frame as the dexel stock mesh.
-        let model_mesh = self.state.job.models.iter().find_map(|m| m.mesh.clone());
+        let model_mesh = self
+            .state
+            .session
+            .models()
+            .iter()
+            .find_map(|m| m.mesh.clone());
 
         self.compute.submit_simulation(SimulationRequest {
             groups,
@@ -203,23 +209,20 @@ impl<B: ComputeBackend> AppController<B> {
             stock_top_z: stock_bbox.max.z,
             resolution: self.state.simulation.resolution,
             metric_options: self.state.simulation.metric_options,
-            spindle_rpm: self.state.job.post.spindle_speed,
-            rapid_feed_mm_min: if self.state.job.post.high_feedrate_mode {
-                self.state.job.post.high_feedrate.max(1.0)
+            spindle_rpm: self.state.gui.post.spindle_speed,
+            rapid_feed_mm_min: if self.state.gui.post.high_feedrate_mode {
+                self.state.gui.post.high_feedrate.max(1.0)
             } else {
-                self.state.job.machine.max_feed_mm_min.max(1.0)
+                self.state.session.machine().max_feed_mm_min.max(1.0)
             },
             model_mesh,
         });
     }
 
     pub(crate) fn run_simulation_with_all(&mut self) {
-        // Keep the session in sync with the current GUI state before simulation.
-        self.sync_session_from_job();
-
         let Some((groups, all_toolpaths_flat, stock_bbox)) = self.build_simulation_groups(
-            |_setup_idx, tp| tp.enabled,
-            |_setup_idx| false, // never stop early
+            |_setup_idx, tc| tc.enabled,
+            |_setup_idx| false,
         ) else {
             tracing::warn!("No computed toolpaths to simulate");
             self.push_notification(
@@ -232,15 +235,20 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn run_simulation_with_ids(&mut self, ids: &[ToolpathId]) {
-        // Keep the session in sync with the current GUI state before simulation.
-        self.sync_session_from_job();
-
         let target_setup_idx = self
             .state
-            .job
-            .setups
+            .session
+            .list_setups()
             .iter()
-            .position(|s| s.toolpaths.iter().any(|tp| ids.contains(&tp.id)));
+            .position(|s| {
+                s.toolpath_indices.iter().any(|&tp_idx| {
+                    self.state
+                        .session
+                        .toolpath_configs()
+                        .get(tp_idx)
+                        .map_or(false, |tc| ids.iter().any(|id| id.0 == tc.id))
+                })
+            });
         let Some(target_setup_idx) = target_setup_idx else {
             tracing::warn!("No computed toolpaths to simulate");
             self.push_notification(
@@ -251,11 +259,11 @@ impl<B: ComputeBackend> AppController<B> {
         };
 
         let Some((groups, all_toolpaths_flat, stock_bbox)) = self.build_simulation_groups(
-            |setup_idx, tp| {
+            |setup_idx, tc| {
                 if setup_idx == target_setup_idx {
-                    ids.contains(&tp.id)
+                    ids.iter().any(|id| id.0 == tc.id)
                 } else if setup_idx < target_setup_idx {
-                    tp.enabled
+                    tc.enabled
                 } else {
                     false
                 }
@@ -273,24 +281,31 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn request_collision_check(&mut self) {
-        let toolpath_data = self.state.job.all_toolpaths().find_map(|toolpath| {
-            let result = toolpath.result.as_ref()?;
-            let tool = self
-                .state
-                .job
-                .tools
-                .iter()
-                .find(|tool| tool.id == toolpath.tool_id)?
-                .clone();
-            let mesh = self
-                .state
-                .job
-                .models
-                .iter()
-                .find(|model| model.id == toolpath.model_id)
-                .and_then(|model| model.mesh.clone())?;
-            Some((Arc::clone(&result.toolpath), tool, mesh))
-        });
+        // Find first toolpath with a result and matching tool/model
+        let toolpath_data = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .find_map(|tc| {
+                let rt = self.state.gui.toolpath_rt.get(&tc.id)?;
+                let result = rt.result.as_ref()?;
+                let tool = self
+                    .state
+                    .session
+                    .tools()
+                    .iter()
+                    .find(|t| t.id.0 == tc.tool_id)?
+                    .clone();
+                let mesh = self
+                    .state
+                    .session
+                    .models()
+                    .iter()
+                    .find(|m| m.id == tc.model_id)
+                    .and_then(|m| m.mesh.clone())?;
+                Some((Arc::clone(&result.toolpath), tool, mesh))
+            });
 
         if let Some((toolpath, tool, mesh)) = toolpath_data {
             self.compute.submit_collision(CollisionRequest {
@@ -308,19 +323,15 @@ impl<B: ComputeBackend> AppController<B> {
     }
 }
 
-/// Targets ~5 cells across the smallest tool radius so curved profiles
-/// (especially ball nose) are visually resolved.  Clamped to [0.02, 0.5] mm
-/// and further limited so the grid stays under ~8 M cells.
+/// Auto-resolution calculation.
 fn auto_resolution_for_tools(toolpaths: &[SetupSimToolpath], stock_bbox: &BoundingBox3) -> f64 {
     let min_radius = toolpaths
         .iter()
         .map(|toolpath| toolpath.tool.diameter / 2.0)
         .fold(f64::INFINITY, f64::min);
 
-    // 5 cells across the radius gives decent curve resolution
     let from_tool = (min_radius / 5.0).clamp(0.02, 0.5);
 
-    // Cap so grid stays under ~8M cells (reasonable memory / mesh size)
     let max_cells: f64 = 8_000_000.0;
     let sx = stock_bbox.max.x - stock_bbox.min.x;
     let sy = stock_bbox.max.y - stock_bbox.min.y;

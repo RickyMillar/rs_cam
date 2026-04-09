@@ -1,5 +1,6 @@
 use crate::compute::{ComputeLane, LaneSnapshot, LaneState};
 use crate::state::AppState;
+use crate::state::runtime::ComputeStatus;
 use crate::ui::automation;
 use crate::ui::theme;
 
@@ -10,10 +11,10 @@ pub fn draw(
     lanes: &[LaneSnapshot; 2],
 ) {
     ui.horizontal(|ui| {
-        let model_count = state.job.models.len();
+        let model_count = state.session.models().len();
         let tri_count: usize = state
-            .job
-            .models
+            .session
+            .models()
             .iter()
             .filter_map(|model| model.mesh.as_ref().map(|mesh| mesh.triangles.len()))
             .sum();
@@ -28,19 +29,15 @@ pub fn draw(
         }
 
         let tp_done = state
-            .job
-            .all_toolpaths()
-            .filter(|toolpath| {
-                matches!(toolpath.status, crate::state::toolpath::ComputeStatus::Done)
-            })
+            .gui
+            .toolpath_rt
+            .values()
+            .filter(|rt| matches!(rt.status, ComputeStatus::Done))
             .count();
+        let tp_total = state.session.toolpath_configs().len();
         if tp_done > 0 {
             ui.separator();
-            ui.label(format!(
-                "Toolpaths: {}/{}",
-                tp_done,
-                state.job.toolpath_count()
-            ));
+            ui.label(format!("Toolpaths: {}/{}", tp_done, tp_total));
         }
 
         for lane in lanes {
@@ -85,7 +82,7 @@ pub fn draw(
             );
         }
 
-        if state.job.dirty {
+        if state.gui.dirty {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
                     egui::RichText::new("Modified")

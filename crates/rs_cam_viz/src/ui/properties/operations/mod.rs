@@ -1638,6 +1638,162 @@ impl ToolpathValidationContext {
     }
 }
 
+impl ToolpathValidationContext {
+    /// Build from a `ProjectSession` (no `JobState` needed).
+    pub fn from_session(session: &rs_cam_core::session::ProjectSession) -> Self {
+        Self {
+            tools: session
+                .tools()
+                .iter()
+                .map(|tool| ValidationTool {
+                    id: tool.id,
+                    tool_type: tool.tool_type,
+                    diameter: tool.diameter,
+                    cutting_length: tool.cutting_length,
+                })
+                .collect(),
+            models: session
+                .models()
+                .iter()
+                .map(|model| ValidationModel {
+                    id: crate::state::job::ModelId(model.id),
+                    has_polygons: model.polygons.is_some(),
+                    has_mesh: model.mesh.is_some(),
+                    has_enriched_mesh: model.enriched_mesh.is_some(),
+                })
+                .collect(),
+            setups: session
+                .list_setups()
+                .iter()
+                .map(|setup| ValidationSetup {
+                    toolpaths: setup
+                        .toolpath_indices
+                        .iter()
+                        .filter_map(|&tp_idx| session.toolpath_configs().get(tp_idx))
+                        .map(|tc| ValidationToolpath {
+                            id: ToolpathId(tc.id),
+                            tool_id: crate::state::job::ToolId(tc.tool_id),
+                            model_id: crate::state::job::ModelId(tc.model_id),
+                            enabled: tc.enabled,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Validate a session `ToolpathConfig` using the same logic as `validate_toolpath`.
+pub fn validate_toolpath_config(
+    tc: &rs_cam_core::session::ToolpathConfig,
+    ctx: &ToolpathValidationContext,
+) -> Vec<String> {
+    let mut errs = Vec::new();
+
+    let tool_id = crate::state::job::ToolId(tc.tool_id);
+    let model_id = crate::state::job::ModelId(tc.model_id);
+    let tp_id = ToolpathId(tc.id);
+
+    let Some(tool) = ctx.tools.iter().find(|t| t.id == tool_id) else {
+        errs.push("No tool selected".into());
+        return errs;
+    };
+    let tool_diameter = tool.diameter;
+
+    // Geometry validation (inline, operating on tc fields)
+    if !tc.operation.is_stock_based() {
+        let model = ctx.models.iter().find(|m| m.id == model_id);
+        if let Some(model) = model {
+            let has_face_polygons = model.has_enriched_mesh
+                && tc.face_selection.as_ref().is_some_and(|f| !f.is_empty());
+            let has_polygons = model.has_polygons || has_face_polygons;
+            let has_mesh = model.has_mesh;
+
+            if tc.operation.needs_both() {
+                let effective_has_mesh = if let OperationConfig::ProjectCurve(ref cfg) = tc.operation
+                    && let Some(surface_id) = cfg.surface_model_id
+                {
+                    ctx.models.iter().find(|m| m.id == surface_id).is_some_and(|m| m.has_mesh)
+                } else {
+                    has_mesh
+                };
+                if !has_polygons || !effective_has_mesh {
+                    errs.push("Selected model must provide both 2D geometry and a 3D mesh".into());
+                }
+            } else if tc.operation.is_3d() {
+                if !has_mesh {
+                    errs.push("Selected model has no 3D mesh".into());
+                }
+            } else if !has_polygons {
+                errs.push("Selected model has no 2D geometry".into());
+            }
+        } else {
+            errs.push("Selected model is missing".into());
+        }
+    }
+
+    match &tc.operation {
+        OperationConfig::Pocket(c) => {
+            if c.stepover >= tool_diameter {
+                errs.push("Stepover must be less than tool diameter".into());
+            }
+        }
+        OperationConfig::Adaptive(c) => {
+            if c.stepover >= tool_diameter {
+                errs.push("Stepover must be less than tool diameter".into());
+            }
+        }
+        OperationConfig::VCarve(_) => {
+            if tool.tool_type != ToolType::VBit {
+                errs.push("VCarve requires a V-Bit tool".into());
+            }
+        }
+        OperationConfig::Inlay(_) => {
+            if tool.tool_type != ToolType::VBit {
+                errs.push("Inlay requires a V-Bit tool".into());
+            }
+        }
+        OperationConfig::Chamfer(_) => {
+            if tool.tool_type != ToolType::VBit {
+                errs.push("Chamfer requires a V-Bit tool".into());
+            }
+        }
+        OperationConfig::Rest(c) => {
+            if c.prev_tool_id.is_none() {
+                errs.push("Previous tool not selected".into());
+            } else if let Some(prev) = c.prev_tool_id {
+                let prev_d = ctx.tools.iter().find(|t| t.id == prev).map(|t| t.diameter);
+                if let Some(pd) = prev_d
+                    && pd <= tool_diameter
+                {
+                    errs.push("Previous tool must be larger than current tool".into());
+                }
+                // Check prior source
+                let has_prior = ctx.setups.iter().any(|setup| {
+                    if let Some(pos) = setup.toolpaths.iter().position(|tp| tp.id == tp_id) {
+                        // SAFETY: pos from position() within toolpaths
+                        #[allow(clippy::indexing_slicing)]
+                        setup.toolpaths[..pos].iter().any(|tp| {
+                            tp.enabled && tp.tool_id == prev && tp.model_id == model_id
+                        })
+                    } else {
+                        false
+                    }
+                });
+                if !has_prior {
+                    errs.push(
+                        "Rest machining requires an earlier enabled operation in the same setup using the previous tool on the same model"
+                            .into(),
+                    );
+                }
+            }
+        }
+        _ => {}
+    }
+
+    errs
+}
+
 pub fn validate_toolpath(entry: &ToolpathEntry, ctx: &ToolpathValidationContext) -> Vec<String> {
     let mut errs = Vec::new();
 

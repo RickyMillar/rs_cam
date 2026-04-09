@@ -62,7 +62,7 @@ impl<B: ComputeBackend> AppController<B> {
             }
             AppEvent::FixtureChanged => {
                 self.pending_upload = true;
-                self.state.job.mark_edited();
+                self.state.gui.mark_edited();
             }
 
             // --- Toolpath events ---
@@ -77,16 +77,20 @@ impl<B: ComputeBackend> AppController<B> {
                 self.handle_move_toolpath_to_setup(tp_id, setup_id, idx);
             }
             AppEvent::ToggleToolpathEnabled(tp_id) => {
-                if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
-                    toolpath.enabled = !toolpath.enabled;
+                if let Some((idx, _tc)) =
+                    self.state.session.find_toolpath_config_by_id(tp_id.0)
+                {
+                    if let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx) {
+                        tc.enabled = !tc.enabled;
+                    }
                 }
             }
             AppEvent::RemoveToolpath(tp_id) => self.handle_remove_toolpath(tp_id),
             AppEvent::GenerateToolpath(tp_id) => self.submit_toolpath_compute(tp_id),
             AppEvent::GenerateAll => self.handle_generate_all(),
             AppEvent::ToggleToolpathVisibility(tp_id) => {
-                if let Some(toolpath) = self.state.job.find_toolpath_mut(tp_id) {
-                    toolpath.visible = !toolpath.visible;
+                if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id.0) {
+                    rt.visible = !rt.visible;
                     self.pending_upload = true;
                 }
             }
@@ -120,22 +124,26 @@ impl<B: ComputeBackend> AppController<B> {
                 model_id: _,
                 face_id,
             } => {
-                if let Some(entry) = self.state.job.find_toolpath_mut(toolpath_id) {
-                    let faces = entry.face_selection.get_or_insert_with(Vec::new);
-                    if let Some(pos) = faces.iter().position(|f| *f == face_id) {
-                        faces.remove(pos);
-                    } else {
-                        faces.push(face_id);
+                if let Some((idx, _)) =
+                    self.state.session.find_toolpath_config_by_id(toolpath_id.0)
+                {
+                    if let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx) {
+                        let faces = tc.face_selection.get_or_insert_with(Vec::new);
+                        if let Some(pos) = faces.iter().position(|f| *f == face_id) {
+                            faces.remove(pos);
+                        } else {
+                            faces.push(face_id);
+                        }
+                        if faces.is_empty() {
+                            tc.face_selection = None;
+                        }
                     }
-                    if faces.is_empty() {
-                        entry.face_selection = None;
+                    // Mark stale in GUI runtime
+                    if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
+                        rt.stale_since = Some(std::time::Instant::now());
                     }
-                    // Keep toolpath selected so properties pane stays visible.
-                    // Face highlighting is driven by the toolpath's face_selection,
-                    // not the visual Selection enum.
                     self.state.selection = Selection::Toolpath(toolpath_id);
-                    entry.stale_since = Some(std::time::Instant::now());
-                    self.state.job.dirty = true;
+                    self.state.gui.mark_edited();
                     self.pending_upload = true;
                 }
             }
@@ -147,10 +155,10 @@ impl<B: ComputeBackend> AppController<B> {
             // --- Stock / machine events ---
             AppEvent::StockChanged => self.handle_stock_changed(),
             AppEvent::StockMaterialChanged => {
-                self.state.job.mark_edited();
+                self.state.gui.mark_edited();
             }
             AppEvent::MachineChanged => {
-                self.state.job.mark_edited();
+                self.state.gui.mark_edited();
             }
 
             // --- Pass-through events handled elsewhere ---
