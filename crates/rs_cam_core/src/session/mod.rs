@@ -16,8 +16,9 @@ pub mod project_file;
 
 // Re-export all public project_file types so external crates see no path change.
 pub use project_file::{
-    ProjectFile, ProjectJobSection, ProjectModelSection, ProjectPostConfig, ProjectSetupSection,
-    ProjectStockConfig, ProjectToolSection, ProjectToolpathSection,
+    ProjectFile, ProjectFixtureSection, ProjectJobSection, ProjectKeepOutSection,
+    ProjectModelSection, ProjectPostConfig, ProjectSetupSection, ProjectStockConfig,
+    ProjectToolSection, ProjectToolpathSection,
 };
 
 use std::collections::HashMap;
@@ -25,12 +26,16 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::compute::catalog::OperationConfig;
-use crate::compute::config::{DressupConfig, HeightsConfig, ToolpathStats};
+use crate::compute::config::{
+    BoundaryConfig, DressupConfig, FeedsAutoMode, HeightsConfig, StockSource, ToolpathStats,
+};
 use crate::compute::simulate::SimulationResult;
-use crate::compute::stock_config::StockConfig;
+use crate::compute::stock_config::{FixtureId, KeepOutId, ModelKind, ModelUnits, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use crate::compute::transform::FaceUp;
-use crate::debug_trace::ToolpathDebugTrace;
+use crate::compute::transform::{FaceUp, ZRotation};
+use crate::debug_trace::{ToolpathDebugOptions, ToolpathDebugTrace};
+use crate::enriched_mesh::{EnrichedMesh, FaceGroupId};
+use crate::gcode::CoolantMode;
 use crate::geo::{BoundingBox3, P3};
 use crate::mesh::TriangleMesh;
 use crate::polygon::Polygon2;
@@ -123,6 +128,122 @@ pub struct LoadedModel {
     pub name: String,
     pub mesh: Option<Arc<TriangleMesh>>,
     pub polygons: Option<Arc<Vec<Polygon2>>>,
+    /// Original file path (for save round-trip).
+    pub path: std::path::PathBuf,
+    /// File kind (stl, svg, dxf, step).
+    pub kind: Option<ModelKind>,
+    /// Assumed units of the source file (determines scale factor to mm).
+    pub units: Option<ModelUnits>,
+    /// Enriched mesh with BREP face groups (for STEP/CAD models).
+    pub enriched_mesh: Option<Arc<EnrichedMesh>>,
+}
+
+/// Kind of workholding fixture (compute-relevant subset of viz `FixtureKind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FixtureKind {
+    #[default]
+    Clamp,
+    Vise,
+    VacuumPod,
+    Custom,
+}
+
+impl FixtureKind {
+    pub fn from_key(s: &str) -> Self {
+        match s.to_ascii_lowercase().as_str() {
+            "vise" => Self::Vise,
+            "vacuum_pod" | "vacuumpod" => Self::VacuumPod,
+            "custom" => Self::Custom,
+            _ => Self::Clamp,
+        }
+    }
+}
+
+/// A physical workholding fixture — compute-relevant fields only.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Fixture {
+    pub id: FixtureId,
+    pub name: String,
+    pub kind: FixtureKind,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Position of the fixture's min corner in workpiece coordinates (mm).
+    #[serde(default)]
+    pub origin_x: f64,
+    #[serde(default)]
+    pub origin_y: f64,
+    #[serde(default)]
+    pub origin_z: f64,
+    /// Dimensions of the fixture bounding box (mm).
+    #[serde(default = "default_fixture_size")]
+    pub size_x: f64,
+    #[serde(default = "default_fixture_size")]
+    pub size_y: f64,
+    #[serde(default = "default_fixture_height")]
+    pub size_z: f64,
+    /// Extra clearance around the fixture for tool avoidance (mm).
+    #[serde(default = "default_fixture_clearance")]
+    pub clearance: f64,
+}
+
+fn default_true() -> bool {
+    true
+}
+fn default_fixture_size() -> f64 {
+    30.0
+}
+fn default_fixture_height() -> f64 {
+    20.0
+}
+fn default_fixture_clearance() -> f64 {
+    3.0
+}
+
+impl Fixture {
+    /// XY footprint polygon (with clearance) for boundary subtraction.
+    pub fn footprint(&self) -> Polygon2 {
+        let min_x = self.origin_x - self.clearance;
+        let min_y = self.origin_y - self.clearance;
+        let max_x = self.origin_x + self.size_x + self.clearance;
+        let max_y = self.origin_y + self.size_y + self.clearance;
+        Polygon2::rectangle(min_x, min_y, max_x, max_y)
+    }
+}
+
+/// A rectangular region the tool must avoid (XY only, full Z extent).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct KeepOutZone {
+    pub id: KeepOutId,
+    pub name: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Position of the zone's min corner (mm).
+    #[serde(default)]
+    pub origin_x: f64,
+    #[serde(default)]
+    pub origin_y: f64,
+    /// Dimensions of the zone (mm).
+    #[serde(default = "default_keep_out_size")]
+    pub size_x: f64,
+    #[serde(default = "default_keep_out_size")]
+    pub size_y: f64,
+}
+
+fn default_keep_out_size() -> f64 {
+    20.0
+}
+
+impl KeepOutZone {
+    /// XY footprint polygon for boundary subtraction.
+    pub fn footprint(&self) -> Polygon2 {
+        Polygon2::rectangle(
+            self.origin_x,
+            self.origin_y,
+            self.origin_x + self.size_x,
+            self.origin_y + self.size_y,
+        )
+    }
 }
 
 /// A setup's orientation and toolpath indices.
@@ -130,6 +251,12 @@ pub struct SetupData {
     pub id: usize,
     pub name: String,
     pub face_up: FaceUp,
+    /// Rotation of the stock about the vertical (Z) axis.
+    pub z_rotation: ZRotation,
+    /// Workholding fixtures in this setup.
+    pub fixtures: Vec<Fixture>,
+    /// Keep-out zones in this setup.
+    pub keep_out_zones: Vec<KeepOutZone>,
     /// Indices into the session's `toolpath_configs` vec.
     pub toolpath_indices: Vec<usize>,
 }
@@ -148,6 +275,20 @@ pub struct ToolpathConfig {
     pub pre_gcode: Option<String>,
     /// Raw G-code to emit after this toolpath's moves.
     pub post_gcode: Option<String>,
+    /// Machining boundary configuration.
+    pub boundary: BoundaryConfig,
+    /// When true, inherit boundary from stock default.
+    pub boundary_inherit: bool,
+    /// Where this toolpath's stock material comes from.
+    pub stock_source: StockSource,
+    /// Coolant mode for G-code output.
+    pub coolant: CoolantMode,
+    /// Optional BREP face selection (for STEP/CAD models).
+    pub face_selection: Option<Vec<FaceGroupId>>,
+    /// Tracks which feed parameters are auto-calculated vs user-overridden.
+    pub feeds_auto: FeedsAutoMode,
+    /// Debug trace options for this toolpath.
+    pub debug_options: ToolpathDebugOptions,
 }
 
 /// Result of generating a single toolpath.
@@ -539,6 +680,9 @@ mod tests {
                 id: Some(0),
                 name: "Setup 1".to_owned(),
                 face_up: "top".to_owned(),
+                z_rotation: String::new(),
+                fixtures: Vec::new(),
+                keep_out_zones: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {
                     id: Some(0),
                     name: "Test Pocket".to_owned(),
@@ -552,6 +696,13 @@ mod tests {
                     heights: crate::compute::config::HeightsConfig::default(),
                     pre_gcode: None,
                     post_gcode: None,
+                    boundary: crate::compute::config::BoundaryConfig::default(),
+                    boundary_inherit: true,
+                    stock_source: crate::compute::config::StockSource::default(),
+                    coolant: crate::gcode::CoolantMode::default(),
+                    face_selection: None,
+                    feeds_auto: crate::compute::config::FeedsAutoMode::default(),
+                    debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
                 }],
             }],
             toolpaths: Vec::new(),
