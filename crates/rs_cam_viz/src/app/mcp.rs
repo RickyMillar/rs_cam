@@ -10,7 +10,7 @@ use rs_cam_core::compute::config::{
 };
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId};
 
-use crate::mcp_bridge::{McpRequest, McpRequestKind, McpResponse, PendingGenerateAll};
+use crate::mcp_bridge::{McpRequest, McpRequestKind, McpResponse, PendingGenerateAll, ProgressUpdate};
 use crate::state::toolpath::ToolpathId;
 
 use rs_cam_mcp::server::{json_str, no_project_error, parse_operation_type, parse_tool_type, text};
@@ -39,7 +39,11 @@ impl super::RsCamApp {
     }
 
     fn handle_mcp_request(&mut self, request: McpRequest) {
-        let McpRequest { kind, response_tx } = request;
+        let McpRequest {
+            kind,
+            response_tx,
+            progress_tx,
+        } = request;
 
         match kind {
             // ── Read operations ──────────────────────────────────────
@@ -183,15 +187,23 @@ impl super::RsCamApp {
 
             // ── Compute operations (async — store oneshot) ───────────
             McpRequestKind::GenerateToolpath { index } => {
+                self.mcp_send_progress(&progress_tx, "Generating toolpath...", 0.0, Some(1.0));
                 self.mcp_generate_toolpath(index, response_tx);
             }
             McpRequestKind::GenerateAll => {
-                self.mcp_generate_all(response_tx);
+                self.mcp_generate_all(response_tx, progress_tx);
             }
             McpRequestKind::RunSimulation { resolution } => {
+                self.mcp_send_progress(&progress_tx, "Starting simulation...", 0.0, Some(1.0));
                 self.mcp_run_simulation(resolution, response_tx);
             }
             McpRequestKind::CollisionCheck { index } => {
+                self.mcp_send_progress(
+                    &progress_tx,
+                    "Running collision check...",
+                    0.0,
+                    Some(1.0),
+                );
                 self.mcp_collision_check(index, response_tx);
             }
 
@@ -230,6 +242,23 @@ impl super::RsCamApp {
                 );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+        }
+    }
+
+    /// Send a progress update to the MCP client (non-blocking).
+    fn mcp_send_progress(
+        &self,
+        progress_tx: &Option<tokio::sync::mpsc::Sender<ProgressUpdate>>,
+        message: &str,
+        progress: f64,
+        total: Option<f64>,
+    ) {
+        if let Some(ref tx) = *progress_tx {
+            let _ = tx.try_send(ProgressUpdate {
+                message: message.to_owned(),
+                progress,
+                total,
+            });
         }
     }
 
@@ -1093,7 +1122,11 @@ impl super::RsCamApp {
         }
     }
 
-    fn mcp_generate_all(&mut self, response_tx: tokio::sync::oneshot::Sender<McpResponse>) {
+    fn mcp_generate_all(
+        &mut self,
+        response_tx: tokio::sync::oneshot::Sender<McpResponse>,
+        progress_tx: Option<tokio::sync::mpsc::Sender<ProgressUpdate>>,
+    ) {
         let ids: Vec<ToolpathId> = self
             .controller
             .state()
@@ -1111,6 +1144,14 @@ impl super::RsCamApp {
             return;
         }
 
+        let total = ids.len();
+        self.mcp_send_progress(
+            &progress_tx,
+            &format!("Generating {total} toolpaths..."),
+            0.0,
+            Some(total as f64),
+        );
+
         // Push generate events for each
         for &id in &ids {
             self.controller
@@ -1126,6 +1167,7 @@ impl super::RsCamApp {
                 failed: 0,
                 errors: Vec::new(),
                 response_tx,
+                progress_tx,
             });
         } else {
             let _ = response_tx.send(McpResponse {

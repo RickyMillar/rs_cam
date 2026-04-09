@@ -602,6 +602,30 @@ impl<B: ComputeBackend> AppController<B> {
                             .unwrap_or_else(|| "Toolpath runtime not found".to_owned());
                         ga.errors.push((tp_id.0, error_msg));
                     }
+
+                    // Send progress update via the progress channel (non-blocking).
+                    if let Some(ref progress_tx) = ga.progress_tx {
+                        let total =
+                            (ga.completed + ga.failed + ga.remaining.len()) as f64;
+                        let current = (ga.completed + ga.failed) as f64;
+                        let tp_name = self
+                            .state
+                            .session
+                            .find_toolpath_config_by_id(tp_id.0)
+                            .map(|(_, tc)| tc.name.clone())
+                            .unwrap_or_else(|| format!("toolpath {}", tp_id.0));
+                        let msg = format!(
+                            "Completed {}/{}: {}",
+                            current as usize, total as usize, tp_name
+                        );
+                        let _ = progress_tx.try_send(
+                            crate::mcp_bridge::ProgressUpdate {
+                                message: msg,
+                                progress: current,
+                                total: Some(total),
+                            },
+                        );
+                    }
                 }
 
                 if ga.remaining.is_empty()
