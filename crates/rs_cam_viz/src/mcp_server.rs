@@ -13,8 +13,9 @@ use crate::mcp_bridge::{McpRequest, McpRequestKind};
 
 // Re-use parameter structs from the standalone MCP crate.
 use rs_cam_mcp::server::{
-    AddToolParam, AddToolpathParam, CollisionCheckParam, CutTraceParam, ExportParam, IndexParam,
-    LoadProjectParam, RemoveToolParam, RemoveToolpathParam, SaveProjectParam, ScreenshotSimParam,
+    AddAlignmentPinParam, AddToolParam, AddToolpathParam, CollisionCheckParam, CutTraceParam,
+    ExportParam, IndexParam, LoadProjectParam, ModelIdParam, RemoveAlignmentPinParam,
+    RemoveToolParam, RemoveToolpathParam, SaveProjectParam, ScreenshotSimParam,
     ScreenshotToolpathParam, SetBoundaryConfigParam, SetDressupConfigParam, SetStockConfigParam,
     SetToolParamInput, SetToolpathParamInput, SimulationParam,
 };
@@ -149,7 +150,73 @@ impl EmbeddedCamServer {
         )
     }
 
+    #[tool(
+        name = "inspect_model",
+        description = "Inspect all loaded models: mesh stats, bbox, BREP face summary, polygon summary. Returns a JSON array."
+    )]
+    async fn inspect_model(&self) -> String {
+        Self::format_result(self.send_request(McpRequestKind::InspectModel).await)
+    }
+
+    #[tool(
+        name = "inspect_stock",
+        description = "Inspect stock configuration: dimensions, origin, material, padding, alignment pins, workholding rigidity."
+    )]
+    async fn inspect_stock(&self) -> String {
+        Self::format_result(self.send_request(McpRequestKind::InspectStock).await)
+    }
+
+    #[tool(
+        name = "inspect_machine",
+        description = "Inspect machine profile: spindle, power, feeds limits, rigidity factors."
+    )]
+    async fn inspect_machine(&self) -> String {
+        Self::format_result(self.send_request(McpRequestKind::InspectMachine).await)
+    }
+
+    #[tool(
+        name = "inspect_brep_faces",
+        description = "Inspect BREP faces and edges for a STEP model. Returns detailed surface types, normals, radii, bboxes, and edge dihedral angles."
+    )]
+    async fn inspect_brep_faces(
+        &self,
+        Parameters(ModelIdParam { model_id }): Parameters<ModelIdParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::InspectBrepFaces { model_id })
+                .await,
+        )
+    }
+
     // ── Mutation tools ───────────────────────────────────────────────
+
+    #[tool(
+        name = "add_alignment_pin",
+        description = "Add an alignment pin to the stock config at the given position. Used for multi-setup registration."
+    )]
+    async fn add_alignment_pin(
+        &self,
+        Parameters(AddAlignmentPinParam { x, y, diameter }): Parameters<AddAlignmentPinParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::AddAlignmentPin { x, y, diameter })
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "remove_alignment_pin",
+        description = "Remove an alignment pin by index (0-based) from the stock config."
+    )]
+    async fn remove_alignment_pin(
+        &self,
+        Parameters(RemoveAlignmentPinParam { index }): Parameters<RemoveAlignmentPinParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::RemoveAlignmentPin { index })
+                .await,
+        )
+    }
 
     #[tool(
         name = "load_project",
