@@ -263,7 +263,7 @@ fn draw_toolpath_card(
 
                 draw_trace_badge(
                     ui,
-                    SimulationState::trace_availability_for_toolpath(&state.job, tp_id),
+                    SimulationState::trace_availability_for_toolpath(&state.gui, tp_id),
                 );
 
                 // Name

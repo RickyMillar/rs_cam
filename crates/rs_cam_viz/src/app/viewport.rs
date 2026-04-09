@@ -64,7 +64,10 @@ impl RsCamApp {
 
         let target = {
             let state = self.controller.state_mut();
+            let max_feed = state.session.machine().max_feed_mm_min;
             state.simulation.pick_semantic_item_with_ray(
+                &state.gui,
+                max_feed,
                 &state.job,
                 &rs_cam_core::geo::P3::new(
                     ray_origin.x as f64,
@@ -327,9 +330,10 @@ impl RsCamApp {
             let active_overlay = {
                 let state = self.controller.state_mut();
                 if state.simulation.debug.enabled && state.simulation.debug.highlight_active_item {
+                    let max_feed = state.session.machine().max_feed_mm_min;
                     state
                         .simulation
-                        .active_semantic_item(&state.job)
+                        .active_semantic_item(&state.gui, max_feed)
                         .and_then(|active| {
                             state
                                 .simulation

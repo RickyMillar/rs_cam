@@ -2,24 +2,27 @@ use super::AppEvent;
 use super::sim_debug::{
     debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
 };
-use crate::state::job::JobState;
+use crate::state::runtime::GuiState;
 use crate::state::simulation::{SimulationIssueKind, SimulationState, StockVizMode};
 use crate::ui::theme;
+use rs_cam_core::session::ProjectSession;
 
 /// Right panel in simulation workspace: current state, warnings, and summary stats.
 pub fn draw(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
-    job: &JobState,
+    session: &ProjectSession,
+    gui: &GuiState,
     events: &mut Vec<AppEvent>,
 ) {
+    let max_feed = session.machine().max_feed_mm_min;
     ui.heading("Diagnostics");
     ui.separator();
 
     // ── Summary card (go/no-go at a glance) ─────────────────
     if sim.results.is_some() {
         let op_count = sim.boundaries().len();
-        let (total_cutting, _total_rapid, total_time_min) = aggregate_stats(sim, job);
+        let (total_cutting, _total_rapid, total_time_min) = aggregate_stats(sim, session, gui);
         let collision_count = sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
 
         let time_str = if total_time_min >= 1.0 {
@@ -66,8 +69,8 @@ pub fn draw(
         ui.add_space(4.0);
     }
 
-    let active_semantic = sim.active_semantic_item(job);
-    let linked_span = sim.active_debug_span(job);
+    let active_semantic = sim.active_semantic_item(gui, max_feed);
+    let linked_span = sim.active_debug_span(gui, max_feed);
     let current_boundary_id = sim.current_boundary().map(|boundary| boundary.id);
 
     if sim.debug.enabled {
@@ -76,16 +79,16 @@ pub fn draw(
                 sim.clear_pinned_semantic_item();
             }
             if ui.small_button("Prev Issue").clicked()
-                && let Some(target) = sim.focus_issue_delta(job, -1)
+                && let Some(target) = sim.focus_issue_delta(gui, max_feed, -1)
             {
                 events.push(AppEvent::SimJumpToMove(target.move_index));
             }
             if ui.small_button("Next Issue").clicked()
-                && let Some(target) = sim.focus_issue_delta(job, 1)
+                && let Some(target) = sim.focus_issue_delta(gui, max_feed, 1)
             {
                 events.push(AppEvent::SimJumpToMove(target.move_index));
             }
-            if let Some(issue) = sim.current_issue(job) {
+            if let Some(issue) = sim.current_issue(gui, max_feed) {
                 ui.label(
                     egui::RichText::new(format!(
                         "{}: {}",
@@ -180,8 +183,8 @@ pub fn draw(
             // Warn when the current resolution would exceed the dexel grid cap
             // or when the resulting mesh would be too large for the GPU.
             {
-                let sx = job.stock.x;
-                let sy = job.stock.y;
+                let sx = session.stock_config().x;
+                let sy = session.stock_config().y;
                 let res = sim.resolution;
                 if !sim.auto_resolution
                     && rs_cam_core::dexel::DexelGrid::would_exceed_grid(res, sx, sy).is_some()
@@ -220,7 +223,8 @@ pub fn draw(
                     }
                     if ui.small_button("Start").clicked()
                         && let Some(target) = sim.trace_target_for_item(
-                            job,
+                            gui,
+                            max_feed,
                             active.toolpath_id,
                             active.item.id,
                             false,
@@ -229,8 +233,13 @@ pub fn draw(
                         events.push(AppEvent::SimJumpToMove(target.move_index));
                     }
                     if ui.small_button("End").clicked()
-                        && let Some(target) =
-                            sim.trace_target_for_item(job, active.toolpath_id, active.item.id, true)
+                        && let Some(target) = sim.trace_target_for_item(
+                            gui,
+                            max_feed,
+                            active.toolpath_id,
+                            active.item.id,
+                            true,
+                        )
                     {
                         events.push(AppEvent::SimJumpToMove(target.move_index));
                     }
@@ -255,7 +264,7 @@ pub fn draw(
                     ui.label(format!("Z: {:.3} → {:.3}", z_min, z_max));
                 }
                 if let Some(metrics) =
-                    sim.semantic_runtime_metrics(job, active.toolpath_id, active.item.id)
+                    sim.semantic_runtime_metrics(gui, max_feed, active.toolpath_id, active.item.id)
                 {
                     ui.label(format!(
                         "Runtime: {:.2}s total | {:.2}s cutting | {:.2}s rapid",
@@ -296,8 +305,8 @@ pub fn draw(
         .default_open(true)
         .show(ui, |ui| {
             let debug_trace = current_boundary_id
-                .and_then(|toolpath_id| job.find_toolpath(toolpath_id))
-                .and_then(|toolpath| toolpath.debug_trace.as_ref());
+                .and_then(|toolpath_id| gui.toolpath_rt.get(&toolpath_id.0))
+                .and_then(|rt| rt.debug_trace.as_ref());
 
             if let Some(trace) = debug_trace {
                 ui.label(format!(
@@ -337,7 +346,7 @@ pub fn draw(
                         );
                     }
                 }
-                if let Some((_, annotation)) = sim.current_debug_annotation(job) {
+                if let Some((_, annotation)) = sim.current_debug_annotation(gui) {
                     ui.label(
                         egui::RichText::new(format!("Annotation: {}", annotation.label))
                             .small()
@@ -472,7 +481,7 @@ pub fn draw(
             }
 
             // Move type from current move index
-            let move_info = current_move_info(sim, job);
+            let move_info = current_move_info(sim, session, gui);
             ui.horizontal(|ui| {
                 ui.label("Move:");
                 ui.label(format!(
@@ -555,7 +564,7 @@ pub fn draw(
             }
 
             // Stale results warning
-            if sim.is_stale(job.edit_counter) {
+            if sim.is_stale(gui.edit_counter) {
                 ui.label(
                     egui::RichText::new("\u{26A0} Results stale (params changed)")
                         .color(theme::WARNING),
@@ -587,7 +596,7 @@ pub fn draw(
             });
 
             // Aggregate stats from job toolpaths
-            let (total_cutting, total_rapid, total_time_min) = aggregate_stats(sim, job);
+            let (total_cutting, total_rapid, total_time_min) = aggregate_stats(sim, session, gui);
 
             ui.horizontal(|ui| {
                 ui.label("Cutting dist:");
@@ -624,10 +633,11 @@ pub fn draw(
                         ui.end_row();
 
                         for boundary in sim.boundaries() {
-                            if let Some(tp) = job.find_toolpath(boundary.id)
-                                && let Some(result) = &tp.result
+                            if let Some(rt) = gui.toolpath_rt.get(&boundary.id.0)
+                                && let Some(result) = &rt.result
+                                && let Some((_, tc)) = session.find_toolpath_config_by_id(boundary.id.0)
                             {
-                                let feed = tp.operation.feed_rate();
+                                let feed = tc.operation.feed_rate();
                                 let time_min = result.stats.cutting_distance / feed;
                                 let m = time_min.floor() as u32;
                                 let s = ((time_min - m as f64) * 60.0) as u32;
@@ -663,14 +673,20 @@ fn issue_kind_label(kind: SimulationIssueKind) -> &'static str {
 /// Determine the move type and feed rate at the current move index.
 // SAFETY: local_idx bounds-checked against moves.len() before indexing
 #[allow(clippy::indexing_slicing)]
-fn current_move_info(sim: &SimulationState, job: &JobState) -> Option<(String, Option<f64>)> {
+fn current_move_info(
+    sim: &SimulationState,
+    session: &ProjectSession,
+    gui: &GuiState,
+) -> Option<(String, Option<f64>)> {
     let current = sim.playback.current_move;
     let mut cumulative = 0;
-    for tp in job.all_toolpaths() {
-        if !tp.enabled {
+    for tc in session.toolpath_configs() {
+        if !tc.enabled {
             continue;
         }
-        if let Some(result) = &tp.result {
+        if let Some(rt) = gui.toolpath_rt.get(&tc.id)
+            && let Some(result) = &rt.result
+        {
             let tp_moves = result.toolpath.moves.len();
             if current <= cumulative + tp_moves {
                 let local_idx = current.saturating_sub(cumulative);
@@ -697,18 +713,19 @@ fn current_move_info(sim: &SimulationState, job: &JobState) -> Option<(String, O
 }
 
 /// Aggregate cutting distance, rapid distance, and estimated time across all boundaries.
-fn aggregate_stats(sim: &SimulationState, job: &JobState) -> (f64, f64, f64) {
+fn aggregate_stats(sim: &SimulationState, session: &ProjectSession, gui: &GuiState) -> (f64, f64, f64) {
     let mut total_cutting = 0.0;
     let mut total_rapid = 0.0;
     let mut total_time_min = 0.0;
 
     for boundary in sim.boundaries() {
-        if let Some(tp) = job.find_toolpath(boundary.id)
-            && let Some(result) = &tp.result
+        if let Some(rt) = gui.toolpath_rt.get(&boundary.id.0)
+            && let Some(result) = &rt.result
+            && let Some((_, tc)) = session.find_toolpath_config_by_id(boundary.id.0)
         {
             total_cutting += result.stats.cutting_distance;
             total_rapid += result.stats.rapid_distance;
-            let feed = tp.operation.feed_rate();
+            let feed = tc.operation.feed_rate();
             total_time_min += result.stats.cutting_distance / feed;
         }
     }

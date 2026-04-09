@@ -255,7 +255,13 @@ impl RsCamApp {
             .min_height(60.0)
             .show(ctx, |ui| {
                 let (state, events) = self.controller.state_and_events_mut();
-                crate::ui::sim_timeline::draw(ui, &mut state.simulation, &state.job, events);
+                crate::ui::sim_timeline::draw(
+                    ui,
+                    &mut state.simulation,
+                    &state.session,
+                    &state.gui,
+                    events,
+                );
             });
 
         // Left panel: operation list
@@ -265,7 +271,13 @@ impl RsCamApp {
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_and_events_mut();
-                    crate::ui::sim_op_list::draw(ui, &mut state.simulation, &state.job, events);
+                    crate::ui::sim_op_list::draw(
+                        ui,
+                        &mut state.simulation,
+                        &state.session,
+                        &state.gui,
+                        events,
+                    );
                 });
             });
 
@@ -276,7 +288,13 @@ impl RsCamApp {
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_and_events_mut();
-                    crate::ui::sim_diagnostics::draw(ui, &mut state.simulation, &state.job, events);
+                    crate::ui::sim_diagnostics::draw(
+                        ui,
+                        &mut state.simulation,
+                        &state.session,
+                        &state.gui,
+                        events,
+                    );
                 });
             });
 
