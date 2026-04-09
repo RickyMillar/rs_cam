@@ -22,7 +22,7 @@ pub(super) use surface_3d::{
     draw_steep_shallow_params, draw_waterline_params,
 };
 
-use crate::state::job::{JobState, ToolType};
+use crate::state::job::ToolType;
 use crate::state::toolpath::{
     ComputeStatus, HeightContext, HeightMode, HeightReference, HeightsConfig, OperationConfig,
     PocketPattern, ReferenceOffset, ToolpathEntry, ToolpathId, UiProcessRole,
@@ -1596,49 +1596,6 @@ struct ValidationToolpath {
 }
 
 impl ToolpathValidationContext {
-    pub fn from_job(job: &JobState) -> Self {
-        Self {
-            tools: job
-                .tools
-                .iter()
-                .map(|tool| ValidationTool {
-                    id: tool.id,
-                    tool_type: tool.tool_type,
-                    diameter: tool.diameter,
-                    cutting_length: tool.cutting_length,
-                })
-                .collect(),
-            models: job
-                .models
-                .iter()
-                .map(|model| ValidationModel {
-                    id: model.id,
-                    has_polygons: model.polygons.is_some(),
-                    has_mesh: model.mesh.is_some(),
-                    has_enriched_mesh: model.enriched_mesh.is_some(),
-                })
-                .collect(),
-            setups: job
-                .setups
-                .iter()
-                .map(|setup| ValidationSetup {
-                    toolpaths: setup
-                        .toolpaths
-                        .iter()
-                        .map(|toolpath| ValidationToolpath {
-                            id: toolpath.id,
-                            tool_id: toolpath.tool_id,
-                            model_id: toolpath.model_id,
-                            enabled: toolpath.enabled,
-                        })
-                        .collect(),
-                })
-                .collect(),
-        }
-    }
-}
-
-impl ToolpathValidationContext {
     /// Build from a `ProjectSession` (no `JobState` needed).
     pub fn from_session(session: &rs_cam_core::session::ProjectSession) -> Self {
         Self {
@@ -1710,10 +1667,14 @@ pub fn validate_toolpath_config(
             let has_mesh = model.has_mesh;
 
             if tc.operation.needs_both() {
-                let effective_has_mesh = if let OperationConfig::ProjectCurve(ref cfg) = tc.operation
+                let effective_has_mesh = if let OperationConfig::ProjectCurve(ref cfg) =
+                    tc.operation
                     && let Some(surface_id) = cfg.surface_model_id
                 {
-                    ctx.models.iter().find(|m| m.id == surface_id).is_some_and(|m| m.has_mesh)
+                    ctx.models
+                        .iter()
+                        .find(|m| m.id == surface_id)
+                        .is_some_and(|m| m.has_mesh)
                 } else {
                     has_mesh
                 };
@@ -1773,9 +1734,9 @@ pub fn validate_toolpath_config(
                     if let Some(pos) = setup.toolpaths.iter().position(|tp| tp.id == tp_id) {
                         // SAFETY: pos from position() within toolpaths
                         #[allow(clippy::indexing_slicing)]
-                        setup.toolpaths[..pos].iter().any(|tp| {
-                            tp.enabled && tp.tool_id == prev && tp.model_id == model_id
-                        })
+                        setup.toolpaths[..pos]
+                            .iter()
+                            .any(|tp| tp.enabled && tp.tool_id == prev && tp.model_id == model_id)
                     } else {
                         false
                     }
@@ -2104,40 +2065,39 @@ mod tests {
 
     use rs_cam_core::mesh::make_test_flat;
     use rs_cam_core::polygon::Polygon2;
+    use rs_cam_core::session::ProjectSession;
 
     use super::*;
-    use crate::state::job::{
-        JobState, LoadedModel, ModelId, ModelKind, ModelUnits, ToolConfig, ToolId,
-    };
+    use crate::state::job::{ModelId, ModelKind, ModelUnits, ToolConfig, ToolId, ToolType};
     use crate::state::toolpath::OperationType;
 
-    fn polygon_model(id: ModelId) -> LoadedModel {
-        LoadedModel {
+    fn session_polygon_model(id: usize) -> rs_cam_core::session::LoadedModel {
+        rs_cam_core::session::LoadedModel {
             id,
             path: PathBuf::from("demo.svg"),
             name: "2D".to_owned(),
-            kind: ModelKind::Svg,
+            kind: Some(ModelKind::Svg),
             mesh: None,
             polygons: Some(Arc::new(vec![Polygon2::rectangle(
                 -10.0, -10.0, 10.0, 10.0,
             )])),
             enriched_mesh: None,
-            units: ModelUnits::Millimeters,
+            units: Some(ModelUnits::Millimeters),
             winding_report: None,
             load_error: None,
         }
     }
 
-    fn mesh_model(id: ModelId) -> LoadedModel {
-        LoadedModel {
+    fn session_mesh_model(id: usize) -> rs_cam_core::session::LoadedModel {
+        rs_cam_core::session::LoadedModel {
             id,
             path: PathBuf::from("demo.stl"),
             name: "3D".to_owned(),
-            kind: ModelKind::Stl,
+            kind: Some(ModelKind::Stl),
             mesh: Some(Arc::new(make_test_flat(20.0))),
             polygons: None,
             enriched_mesh: None,
-            units: ModelUnits::Millimeters,
+            units: Some(ModelUnits::Millimeters),
             winding_report: None,
             load_error: None,
         }
@@ -2149,12 +2109,39 @@ mod tests {
         tool
     }
 
+    fn make_session_toolpath_config(
+        name: &str,
+        tool_id: usize,
+        model_id: usize,
+        op: OperationConfig,
+    ) -> rs_cam_core::session::ToolpathConfig {
+        rs_cam_core::session::ToolpathConfig {
+            id: 0, // assigned by session.add_toolpath
+            name: name.to_owned(),
+            enabled: true,
+            operation: op,
+            dressups: Default::default(),
+            heights: Default::default(),
+            tool_id,
+            model_id,
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: Default::default(),
+            boundary_inherit: true,
+            stock_source: Default::default(),
+            coolant: Default::default(),
+            face_selection: None,
+            feeds_auto: Default::default(),
+            debug_options: Default::default(),
+        }
+    }
+
     #[test]
     fn validate_toolpath_rejects_wrong_geometry_type() {
-        let mut job = JobState::new();
-        job.tools
-            .push(sample_tool(ToolId(1), ToolType::EndMill, 6.0));
-        job.models.push(mesh_model(ModelId(2)));
+        let mut session = ProjectSession::new_empty();
+        session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 6.0)]);
+        // Push directly to preserve the ID we chose.
+        session.models_mut().push(session_mesh_model(2));
 
         let entry = ToolpathEntry::for_operation(
             ToolpathId(3),
@@ -2164,7 +2151,7 @@ mod tests {
             OperationType::Pocket,
         );
 
-        let errs = validate_toolpath(&entry, &ToolpathValidationContext::from_job(&job));
+        let errs = validate_toolpath(&entry, &ToolpathValidationContext::from_session(&session));
         assert!(
             errs.iter().any(|err| err.contains("2D geometry")),
             "expected 2D geometry validation error, got {errs:?}"
@@ -2173,15 +2160,27 @@ mod tests {
 
     #[test]
     fn validate_rest_requires_earlier_matching_operation() {
-        let mut job = JobState::new();
-        job.tools
-            .push(sample_tool(ToolId(1), ToolType::EndMill, 10.0));
-        job.tools
-            .push(sample_tool(ToolId(2), ToolType::EndMill, 6.0));
-        job.models.push(polygon_model(ModelId(4)));
+        let mut session = ProjectSession::new_empty();
+        session.replace_tools(vec![
+            sample_tool(ToolId(1), ToolType::EndMill, 10.0),
+            sample_tool(ToolId(2), ToolType::EndMill, 6.0),
+        ]);
+        session.models_mut().push(session_polygon_model(4));
 
+        // Add the rest toolpath config to the session (no prior roughing)
+        let mut rest_op = OperationConfig::Rest(Default::default());
+        if let OperationConfig::Rest(cfg) = &mut rest_op {
+            cfg.prev_tool_id = Some(ToolId(1));
+        }
+        let rest_config = make_session_toolpath_config("Rest", 2, 4, rest_op);
+        let rest_idx = session.add_toolpath(0, rest_config).unwrap();
+
+        // Build entry with the session-assigned ID
+        // SAFETY: rest_idx bounded by add_toolpath return
+        #[allow(clippy::indexing_slicing)]
+        let rest_id = session.toolpath_configs()[rest_idx].id;
         let mut rest = ToolpathEntry::for_operation(
-            ToolpathId(6),
+            ToolpathId(rest_id),
             "Rest".to_owned(),
             ToolId(2),
             ModelId(4),
@@ -2190,12 +2189,8 @@ mod tests {
         if let OperationConfig::Rest(cfg) = &mut rest.operation {
             cfg.prev_tool_id = Some(ToolId(1));
         }
-        job.push_toolpath(rest);
 
-        let errs = validate_toolpath(
-            job.find_toolpath(ToolpathId(6)).unwrap(),
-            &ToolpathValidationContext::from_job(&job),
-        );
+        let errs = validate_toolpath(&rest, &ToolpathValidationContext::from_session(&session));
         assert!(
             errs.iter()
                 .any(|err| err.contains("earlier enabled operation")),
@@ -2205,22 +2200,36 @@ mod tests {
 
     #[test]
     fn validate_rest_accepts_earlier_matching_operation() {
-        let mut job = JobState::new();
-        job.tools
-            .push(sample_tool(ToolId(1), ToolType::EndMill, 10.0));
-        job.tools
-            .push(sample_tool(ToolId(2), ToolType::EndMill, 6.0));
-        job.models.push(polygon_model(ModelId(4)));
+        let mut session = ProjectSession::new_empty();
+        session.replace_tools(vec![
+            sample_tool(ToolId(1), ToolType::EndMill, 10.0),
+            sample_tool(ToolId(2), ToolType::EndMill, 6.0),
+        ]);
+        session.models_mut().push(session_polygon_model(4));
 
-        let roughing = ToolpathEntry::for_operation(
-            ToolpathId(5),
-            "Pocket".to_owned(),
-            ToolId(1),
-            ModelId(4),
-            OperationType::Pocket,
+        // Add roughing toolpath first
+        let roughing_config = make_session_toolpath_config(
+            "Pocket",
+            1,
+            4,
+            OperationConfig::Pocket(Default::default()),
         );
+        session.add_toolpath(0, roughing_config).unwrap();
+
+        // Add rest toolpath — session assigns the ID
+        let mut rest_op = OperationConfig::Rest(Default::default());
+        if let OperationConfig::Rest(cfg) = &mut rest_op {
+            cfg.prev_tool_id = Some(ToolId(1));
+        }
+        let rest_config = make_session_toolpath_config("Rest", 2, 4, rest_op);
+        let rest_idx = session.add_toolpath(0, rest_config).unwrap();
+
+        // Build entry with the session-assigned ID so validation can locate it
+        // SAFETY: rest_idx bounded by add_toolpath return
+        #[allow(clippy::indexing_slicing)]
+        let rest_id = session.toolpath_configs()[rest_idx].id;
         let mut rest = ToolpathEntry::for_operation(
-            ToolpathId(6),
+            ToolpathId(rest_id),
             "Rest".to_owned(),
             ToolId(2),
             ModelId(4),
@@ -2229,13 +2238,8 @@ mod tests {
         if let OperationConfig::Rest(cfg) = &mut rest.operation {
             cfg.prev_tool_id = Some(ToolId(1));
         }
-        job.push_toolpath(roughing);
-        job.push_toolpath(rest);
 
-        let errs = validate_toolpath(
-            job.find_toolpath(ToolpathId(6)).unwrap(),
-            &ToolpathValidationContext::from_job(&job),
-        );
+        let errs = validate_toolpath(&rest, &ToolpathValidationContext::from_session(&session));
         assert!(
             !errs
                 .iter()
