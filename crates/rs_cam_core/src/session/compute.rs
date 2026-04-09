@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use crate::collision::check_rapid_collisions;
+use crate::compute::annotate::annotate_from_runtime_events;
 use crate::compute::collision_check::{
     CollisionCheckRequest, CollisionCheckResult, run_collision_check,
 };
@@ -18,7 +19,6 @@ use crate::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
 use crate::debug_trace::ToolpathDebugRecorder;
 use crate::dexel_stock::StockCutDirection;
 use crate::geo::{BoundingBox3, P3};
-use crate::compute::annotate::annotate_from_runtime_events;
 use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces};
 use crate::simulation_cut::SimulationMetricOptions;
 
@@ -222,8 +222,8 @@ impl ProjectSession {
 
         let model = self.find_model_by_raw_id(tc.model_id);
 
-        let mesh = model.and_then(|m| m.mesh.clone());
-        let polygons = model.and_then(|m| m.polygons.clone());
+        let mut mesh = model.and_then(|m| m.mesh.clone());
+        let mut polygons = model.and_then(|m| m.polygons.clone());
 
         // Validate geometry requirements
         if tc.operation.is_3d() && mesh.is_none() {
@@ -237,14 +237,59 @@ impl ProjectSession {
             ));
         }
 
-        // Find the setup for orientation
+        // Find the setup for orientation and keep-out info
         let setup = self.find_setup_for_toolpath_index(index);
         let face_up = setup.map(|s| s.face_up).unwrap_or(FaceUp::Top);
+        let z_rotation = setup.map(|s| s.z_rotation).unwrap_or(ZRotation::Deg0);
+        let needs_transform = face_up != FaceUp::Top || z_rotation != ZRotation::Deg0;
 
-        // Build effective stock bbox (apply setup orientation)
-        let effective_stock_bbox = self.effective_stock_bbox(face_up);
+        // Collect keep-out footprints from setup fixtures and keep-out zones
+        let mut keep_out_footprints: Vec<crate::polygon::Polygon2> = Vec::new();
+        if let Some(s) = setup {
+            for fixture in &s.fixtures {
+                if fixture.enabled {
+                    keep_out_footprints.push(fixture.footprint());
+                }
+            }
+            for keep_out in &s.keep_out_zones {
+                if keep_out.enabled {
+                    keep_out_footprints.push(keep_out.footprint());
+                }
+            }
+        }
 
-        // Resolve heights
+        // Clone boundary config before we lose the borrow on tc
+        let boundary_config = tc.boundary.clone();
+
+        // ── Setup transforms ──────────────────────────────────────────
+        // When a setup has non-identity face_up or z_rotation, transform
+        // mesh and polygons into setup-local coordinates (matching the GUI
+        // compute path).
+        if needs_transform {
+            if let Some(raw_mesh) = mesh.as_ref() {
+                mesh = Some(Arc::new(
+                    self.transform_mesh_to_setup(raw_mesh, face_up, z_rotation),
+                ));
+            }
+            if let Some(raw_polygons) = polygons.as_ref() {
+                polygons = Some(Arc::new(self.transform_polygons_to_setup(
+                    raw_polygons,
+                    face_up,
+                    z_rotation,
+                )));
+            }
+            // Transform keep-out footprints into setup-local frame
+            if !keep_out_footprints.is_empty() {
+                keep_out_footprints =
+                    self.transform_polygons_to_setup(&keep_out_footprints, face_up, z_rotation);
+            }
+        }
+
+        // Build effective stock bbox in setup-local coordinates
+        let effective_stock_bbox = self.effective_stock_bbox_with_rotation(face_up, z_rotation);
+
+        // Resolve heights — use the transformed mesh bbox so Z values are in the
+        // setup-local frame.
         let model_bbox = mesh.as_ref().map(|m| &m.bbox);
         let height_ctx = HeightContext {
             safe_z: self.post.safe_z,
@@ -304,8 +349,7 @@ impl ProjectSession {
                 drop(core_scope);
 
                 // Build semantic trace from runtime annotations
-                let op_scope =
-                    semantic_root.start_item(ToolpathSemanticKind::Operation, &op_label);
+                let op_scope = semantic_root.start_item(ToolpathSemanticKind::Operation, &op_label);
                 if !toolpath.moves.is_empty() {
                     op_scope.bind_to_toolpath(&toolpath, 0, toolpath.moves.len());
                 }
@@ -322,6 +366,21 @@ impl ProjectSession {
                     None,
                     None,
                 );
+
+                // ── Boundary clipping ─────────────────────────────────
+                // After dressups, clip the toolpath to the machining boundary
+                // (matching the GUI compute path).
+                if boundary_config.enabled {
+                    toolpath = Self::apply_boundary_clip(
+                        toolpath,
+                        &boundary_config,
+                        &effective_stock_bbox,
+                        &keep_out_footprints,
+                        tool.diameter,
+                        heights.retract_z,
+                        &semantic_root,
+                    );
+                }
 
                 let stats = ToolpathStats {
                     move_count: toolpath.moves.len(),
@@ -352,6 +411,68 @@ impl ProjectSession {
                 let _ = semantic_recorder.finish();
                 Err(SessionError::OperationFailed(e.to_string()))
             }
+        }
+    }
+
+    /// Apply boundary clipping to a toolpath, subtracting keep-out footprints.
+    fn apply_boundary_clip(
+        toolpath: crate::toolpath::Toolpath,
+        boundary_config: &crate::compute::config::BoundaryConfig,
+        stock_bbox: &BoundingBox3,
+        keep_out_footprints: &[crate::polygon::Polygon2],
+        tool_diameter: f64,
+        safe_z: f64,
+        semantic_ctx: &crate::semantic_trace::ToolpathSemanticContext,
+    ) -> crate::toolpath::Toolpath {
+        use crate::boundary::{
+            ToolContainment, clip_toolpath_to_boundary, effective_boundary, subtract_keepouts,
+        };
+
+        // Build the boundary polygon from stock bbox (setup-local coordinates).
+        let mut stock_poly = crate::polygon::Polygon2::rectangle(
+            stock_bbox.min.x,
+            stock_bbox.min.y,
+            stock_bbox.max.x,
+            stock_bbox.max.y,
+        );
+
+        // Subtract keep-out footprints (fixtures + keep-out zones).
+        if !keep_out_footprints.is_empty() {
+            stock_poly = subtract_keepouts(&stock_poly, keep_out_footprints);
+        }
+
+        // Map BoundaryContainment -> ToolContainment.
+        let containment = match boundary_config.containment {
+            crate::compute::config::BoundaryContainment::Center => ToolContainment::Center,
+            crate::compute::config::BoundaryContainment::Inside => ToolContainment::Inside,
+            crate::compute::config::BoundaryContainment::Outside => ToolContainment::Outside,
+        };
+
+        let tool_radius = tool_diameter / 2.0;
+        let boundaries = effective_boundary(&stock_poly, containment, tool_radius);
+        if let Some(boundary) = boundaries.first() {
+            let clipped = clip_toolpath_to_boundary(&toolpath, boundary, safe_z);
+
+            // Record semantic trace for boundary clip
+            let clip_scope =
+                semantic_ctx.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
+            clip_scope.set_param(
+                "containment",
+                match boundary_config.containment {
+                    crate::compute::config::BoundaryContainment::Center => "center",
+                    crate::compute::config::BoundaryContainment::Inside => "inside",
+                    crate::compute::config::BoundaryContainment::Outside => "outside",
+                },
+            );
+            clip_scope.set_param("keep_out_count", keep_out_footprints.len());
+            if !clipped.moves.is_empty() {
+                clip_scope.bind_to_toolpath(&clipped, 0, clipped.moves.len());
+            }
+
+            clipped
+        } else {
+            // Boundary collapsed (e.g. tool too large for stock) — return original
+            toolpath
         }
     }
 
@@ -444,7 +565,7 @@ impl ProjectSession {
 
             if !entries.is_empty() {
                 // Compute per-setup local stock bbox and transform info.
-                let z_rotation = ZRotation::Deg0;
+                let z_rotation = setup.z_rotation;
                 let (eff_w, eff_d, eff_h) = {
                     let (w, d, h) =
                         setup

@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::{
     Fixture, FixtureKind, KeepOutZone, LoadedGeometry, LoadedModel, SessionError, SetupData,
@@ -24,7 +24,7 @@ use crate::mesh::TriangleMesh;
 // ── Project file types (TOML deserialization) ──────────────────────────
 
 /// Top-level project file structure (format_version=3).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectFile {
     #[serde(default = "default_format_version")]
     pub format_version: u32,
@@ -46,7 +46,7 @@ fn default_format_version() -> u32 {
 }
 
 /// Job-level settings (name, stock, post).
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProjectJobSection {
     #[serde(default = "default_job_name")]
     pub name: String,
@@ -63,7 +63,7 @@ fn default_job_name() -> String {
 }
 
 /// Stock dimensions as saved in the project file.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectStockConfig {
     #[serde(default = "default_stock_dim")]
     pub x: f64,
@@ -109,7 +109,7 @@ fn default_stock_z() -> f64 {
 }
 
 /// Post-processor configuration from the project file.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectPostConfig {
     #[serde(default)]
     pub format: String,
@@ -146,7 +146,7 @@ fn default_high_feedrate() -> f64 {
 }
 
 /// Tool definition in the project file.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectToolSection {
     #[serde(default)]
     pub id: Option<usize>,
@@ -219,7 +219,7 @@ fn default_flute_count() -> u32 {
 }
 
 /// Model reference in the project file.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectModelSection {
     #[serde(default)]
     pub id: Option<usize>,
@@ -234,7 +234,7 @@ pub struct ProjectModelSection {
 }
 
 /// Setup section in the project file.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectSetupSection {
     #[serde(default)]
     pub id: Option<usize>,
@@ -253,7 +253,7 @@ pub struct ProjectSetupSection {
 }
 
 /// Fixture section in the project file.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectFixtureSection {
     #[serde(default)]
     pub id: Option<usize>,
@@ -299,7 +299,7 @@ fn default_fixture_clearance() -> f64 {
 }
 
 /// Keep-out zone section in the project file.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectKeepOutSection {
     #[serde(default)]
     pub id: Option<usize>,
@@ -332,7 +332,7 @@ fn default_face_up() -> String {
 }
 
 /// Toolpath section in the project file.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectToolpathSection {
     #[serde(default)]
     pub id: Option<usize>,
@@ -615,9 +615,7 @@ pub(super) fn build_session_from_project(
     for (idx, model_section) in project.models.iter().enumerate() {
         let model_id = model_section.id.unwrap_or(idx);
         let model_path = std::path::PathBuf::from(&model_section.path);
-        let model_kind = model_section
-            .kind
-            .or_else(|| infer_model_kind(&model_path));
+        let model_kind = model_section.kind.or_else(|| infer_model_kind(&model_path));
         let model_units = model_section.units;
 
         match load_model_geometry(model_section, base_dir) {
@@ -690,9 +688,8 @@ pub(super) fn build_session_from_project(
                 let tp_idx = toolpath_configs.len();
                 let tp_id = tp_section.id.unwrap_or(tp_idx);
                 if let Some(operation) = &tp_section.operation {
-                    toolpath_configs.push(toolpath_config_from_section(
-                        tp_section, tp_id, operation,
-                    ));
+                    toolpath_configs
+                        .push(toolpath_config_from_section(tp_section, tp_id, operation));
                     tp_indices.push(tp_idx);
                 }
             }
@@ -717,9 +714,7 @@ pub(super) fn build_session_from_project(
             let tp_idx = toolpath_configs.len();
             let tp_id = tp_section.id.unwrap_or(tp_idx);
             if let Some(operation) = &tp_section.operation {
-                toolpath_configs.push(toolpath_config_from_section(
-                    tp_section, tp_id, operation,
-                ));
+                toolpath_configs.push(toolpath_config_from_section(tp_section, tp_id, operation));
                 tp_indices.push(tp_idx);
             }
         }
@@ -736,6 +731,16 @@ pub(super) fn build_session_from_project(
         }
     }
 
+    // Compute next IDs by scanning existing maximums
+    let next_toolpath_id = toolpath_configs
+        .iter()
+        .map(|tc| tc.id)
+        .max()
+        .map_or(0, |m| m + 1);
+    let next_tool_id = tools.iter().map(|t| t.id.0).max().map_or(0, |m| m + 1);
+    let next_setup_id = setups.iter().map(|s| s.id).max().map_or(0, |m| m + 1);
+    let next_model_id = models.iter().map(|m| m.id).max().map_or(0, |m| m + 1);
+
     Ok(super::ProjectSession {
         name: project.job.name.clone(),
         stock,
@@ -747,5 +752,9 @@ pub(super) fn build_session_from_project(
         toolpath_configs,
         results: std::collections::HashMap::new(),
         simulation: None,
+        next_toolpath_id,
+        next_tool_id,
+        next_setup_id,
+        next_model_id,
     })
 }

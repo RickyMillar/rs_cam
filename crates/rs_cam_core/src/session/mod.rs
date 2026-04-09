@@ -12,7 +12,9 @@
 //! ```
 
 mod compute;
+mod mutation;
 pub mod project_file;
+mod save;
 
 // Re-export all public project_file types so external crates see no path change.
 pub use project_file::{
@@ -54,12 +56,20 @@ pub enum SessionError {
     Io(std::io::Error),
     /// TOML parsing error.
     TomlParse(String),
+    /// TOML serialization error.
+    TomlSerialize(String),
     /// Model loading failure.
     ModelLoad { name: String, detail: String },
     /// Toolpath not found by index.
     ToolpathNotFound(usize),
     /// Tool not found by id.
     ToolNotFound(ToolId),
+    /// Setup not found by index.
+    SetupNotFound(usize),
+    /// Tool still referenced by toolpaths — cannot remove.
+    ToolInUse(ToolId),
+    /// Setup still has toolpaths — cannot remove.
+    SetupHasToolpaths(usize),
     /// Geometry missing for the requested operation.
     MissingGeometry(String),
     /// Operation execution failure.
@@ -79,11 +89,17 @@ impl std::fmt::Display for SessionError {
         match self {
             Self::Io(e) => write!(f, "I/O error: {e}"),
             Self::TomlParse(e) => write!(f, "TOML parse error: {e}"),
+            Self::TomlSerialize(e) => write!(f, "TOML serialize error: {e}"),
             Self::ModelLoad { name, detail } => {
                 write!(f, "Failed to load model '{name}': {detail}")
             }
             Self::ToolpathNotFound(id) => write!(f, "Toolpath {id} not found"),
             Self::ToolNotFound(id) => write!(f, "Tool {} not found", id.0),
+            Self::SetupNotFound(id) => write!(f, "Setup {id} not found"),
+            Self::ToolInUse(id) => write!(f, "Tool {} is still referenced by toolpaths", id.0),
+            Self::SetupHasToolpaths(id) => {
+                write!(f, "Setup {id} still has toolpaths — remove them first")
+            }
             Self::MissingGeometry(msg) => write!(f, "Missing geometry: {msg}"),
             Self::OperationFailed(msg) => write!(f, "Operation failed: {msg}"),
             Self::Simulation(e) => write!(f, "Simulation error: {e}"),
@@ -388,6 +404,13 @@ pub struct ProjectSession {
     // Computed results (keyed by toolpath index)
     pub(crate) results: HashMap<usize, ToolpathComputeResult>,
     pub(crate) simulation: Option<SimulationResult>,
+
+    // ID generators (max existing ID + 1)
+    pub(crate) next_toolpath_id: usize,
+    pub(crate) next_tool_id: usize,
+    pub(crate) next_setup_id: usize,
+    #[allow(dead_code)] // Will be used in Phase 3+ (model CRUD)
+    pub(crate) next_model_id: usize,
 }
 
 impl ProjectSession {
@@ -526,18 +549,103 @@ impl ProjectSession {
             .find(|s| s.toolpath_indices.contains(&tp_index))
     }
 
-    pub(crate) fn effective_stock_bbox(&self, face_up: FaceUp) -> BoundingBox3 {
-        let bbox = self.stock.bbox();
-        match face_up {
-            FaceUp::Bottom => {
-                // For bottom-up setups, use a local frame
-                BoundingBox3 {
-                    min: P3::new(0.0, 0.0, 0.0),
-                    max: P3::new(self.stock.x, self.stock.y, self.stock.z),
-                }
-            }
-            _ => bbox,
+    /// Compute the stock bounding box in setup-local coordinates, accounting for
+    /// both face-up orientation and Z rotation.
+    pub(crate) fn effective_stock_bbox_with_rotation(
+        &self,
+        face_up: FaceUp,
+        z_rotation: ZRotation,
+    ) -> BoundingBox3 {
+        let (eff_w, eff_d, eff_h) = {
+            let (w, d, h) = face_up.effective_stock(self.stock.x, self.stock.y, self.stock.z);
+            z_rotation.effective_stock(w, d, h)
+        };
+        // Setup-local frame always has origin at (0,0,0).
+        BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(eff_w, eff_d, eff_h),
         }
+    }
+
+    // ── Geometry transforms for setup-local frame ────────────────
+
+    /// Transform a 3D point from global/world coordinates to setup-local frame.
+    ///
+    /// The transform chain is:
+    /// 1. Translate from world to stock-relative (origin at 0,0,0)
+    /// 2. Apply face-up flip on stock-relative coordinates
+    /// 3. Apply Z rotation
+    fn transform_point_to_setup(&self, p: P3, face_up: FaceUp, z_rotation: ZRotation) -> P3 {
+        // 1. Translate world -> stock-relative
+        let rel = P3::new(
+            p.x - self.stock.origin_x,
+            p.y - self.stock.origin_y,
+            p.z - self.stock.origin_z,
+        );
+        // 2. Apply FaceUp flip
+        let flipped = face_up.transform_point(rel, self.stock.x, self.stock.y, self.stock.z);
+        // 3. Apply ZRotation
+        let (eff_w, eff_d, _) = face_up.effective_stock(self.stock.x, self.stock.y, self.stock.z);
+        z_rotation.transform_point(flipped, eff_w, eff_d)
+    }
+
+    /// Transform a triangle mesh from global to setup-local coordinates.
+    pub(crate) fn transform_mesh_to_setup(
+        &self,
+        mesh: &TriangleMesh,
+        face_up: FaceUp,
+        z_rotation: ZRotation,
+    ) -> TriangleMesh {
+        let new_verts: Vec<P3> = mesh
+            .vertices
+            .iter()
+            .map(|v| self.transform_point_to_setup(*v, face_up, z_rotation))
+            .collect();
+        TriangleMesh::from_raw(new_verts, mesh.triangles.clone())
+    }
+
+    /// Transform 2D polygons from global to setup-local XY coordinates.
+    pub(crate) fn transform_polygons_to_setup(
+        &self,
+        polygons: &[Polygon2],
+        face_up: FaceUp,
+        z_rotation: ZRotation,
+    ) -> Vec<Polygon2> {
+        use crate::geo::P2;
+        polygons
+            .iter()
+            .map(|poly| {
+                let ext: Vec<P2> = poly
+                    .exterior
+                    .iter()
+                    .map(|p| {
+                        let p3 = self.transform_point_to_setup(
+                            P3::new(p.x, p.y, 0.0),
+                            face_up,
+                            z_rotation,
+                        );
+                        P2::new(p3.x, p3.y)
+                    })
+                    .collect();
+                let holes: Vec<Vec<P2>> = poly
+                    .holes
+                    .iter()
+                    .map(|hole| {
+                        hole.iter()
+                            .map(|p| {
+                                let p3 = self.transform_point_to_setup(
+                                    P3::new(p.x, p.y, 0.0),
+                                    face_up,
+                                    z_rotation,
+                                );
+                                P2::new(p3.x, p3.y)
+                            })
+                            .collect()
+                    })
+                    .collect();
+                Polygon2::with_holes(ext, holes)
+            })
+            .collect()
     }
 }
 
@@ -800,5 +908,138 @@ mod tests {
             !session.results.contains_key(&0),
             "Cached result should be invalidated after set_toolpath_param"
         );
+    }
+
+    // ── CRUD mutation tests ───────────────────────────────────────
+
+    #[test]
+    fn add_toolpath_then_list() {
+        use crate::compute::catalog::{OperationConfig, OperationType};
+
+        let mut session = session_with_toolpath();
+        assert_eq!(session.toolpath_count(), 1);
+
+        let new_tp = ToolpathConfig {
+            id: 0, // will be overwritten by add_toolpath
+            name: "New Profile".to_owned(),
+            enabled: true,
+            operation: OperationConfig::new_default(OperationType::Profile),
+            dressups: crate::compute::config::DressupConfig::default(),
+            heights: crate::compute::config::HeightsConfig::default(),
+            tool_id: 0,
+            model_id: 0,
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: crate::compute::config::BoundaryConfig::default(),
+            boundary_inherit: true,
+            stock_source: crate::compute::config::StockSource::default(),
+            coolant: crate::gcode::CoolantMode::default(),
+            face_selection: None,
+            feeds_auto: crate::compute::config::FeedsAutoMode::default(),
+            debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+        };
+
+        let idx = session.add_toolpath(0, new_tp).unwrap();
+        assert_eq!(idx, 1);
+        assert_eq!(session.toolpath_count(), 2);
+
+        let summaries = session.list_toolpaths();
+        assert_eq!(summaries.len(), 2);
+        assert_eq!(summaries[1].name, "New Profile");
+    }
+
+    #[test]
+    fn remove_toolpath_then_list() {
+        let mut session = session_with_toolpath();
+        assert_eq!(session.toolpath_count(), 1);
+
+        session.remove_toolpath(0).unwrap();
+        assert_eq!(session.toolpath_count(), 0);
+        assert!(session.list_toolpaths().is_empty());
+
+        // Setup should have no more toolpath indices
+        assert!(session.setups[0].toolpath_indices.is_empty());
+    }
+
+    #[test]
+    fn save_reload_roundtrip() {
+        let session = session_with_toolpath();
+        let dir = std::env::temp_dir().join("rs_cam_test_roundtrip");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("roundtrip_test.toml");
+
+        // Save
+        session.save(&path).unwrap();
+
+        // Reload
+        let content = std::fs::read_to_string(&path).unwrap();
+        let reloaded_project: ProjectFile = toml::from_str(&content).unwrap();
+        let reloaded = ProjectSession::from_project_file(reloaded_project, Path::new(".")).unwrap();
+
+        // Verify key state matches
+        assert_eq!(reloaded.name(), session.name());
+        assert_eq!(reloaded.toolpath_count(), session.toolpath_count());
+        assert_eq!(reloaded.setup_count(), session.setup_count());
+        assert_eq!(reloaded.list_tools().len(), session.list_tools().len());
+
+        // Stock dimensions
+        let orig_bbox = session.stock_bbox();
+        let reload_bbox = reloaded.stock_bbox();
+        assert!((orig_bbox.max.x - reload_bbox.max.x).abs() < 1e-6);
+        assert!((orig_bbox.max.y - reload_bbox.max.y).abs() < 1e-6);
+        assert!((orig_bbox.max.z - reload_bbox.max.z).abs() < 1e-6);
+
+        // Toolpath name preserved
+        let orig_tps = session.list_toolpaths();
+        let reload_tps = reloaded.list_toolpaths();
+        assert_eq!(orig_tps[0].name, reload_tps[0].name);
+        assert_eq!(orig_tps[0].enabled, reload_tps[0].enabled);
+
+        // Cleanup
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn set_stock_invalidates_simulation() {
+        use crate::compute::simulate::SimulationResult;
+        use crate::stock_mesh::StockMesh;
+
+        let mut session = session_with_toolpath();
+
+        // Manually set a fake simulation result
+        session.simulation = Some(SimulationResult {
+            mesh: StockMesh {
+                vertices: Vec::new(),
+                indices: Vec::new(),
+                colors: Vec::new(),
+            },
+            total_moves: 0,
+            deviations: None,
+            boundaries: Vec::new(),
+            checkpoints: Vec::new(),
+            rapid_collisions: Vec::new(),
+            rapid_collision_move_indices: Vec::new(),
+            cut_trace: None,
+            resolution_clamped: false,
+        });
+        assert!(
+            session.simulation_result().is_some(),
+            "Precondition: simulation present"
+        );
+
+        let new_stock = StockConfig {
+            x: 200.0,
+            y: 200.0,
+            z: 50.0,
+            ..StockConfig::default()
+        };
+        session.set_stock_config(new_stock);
+
+        assert!(
+            session.simulation_result().is_none(),
+            "Simulation should be invalidated after set_stock_config"
+        );
+        assert!((session.stock_config().x - 200.0).abs() < 1e-6);
     }
 }
