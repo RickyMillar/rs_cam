@@ -739,6 +739,29 @@ impl ProjectSession {
         z_rotation.transform_point(flipped, eff_w, eff_d)
     }
 
+    /// Inverse transform: from setup-local frame back to global/world coordinates.
+    ///
+    /// Undoes ZRotation, then FaceUp, then translates back to world coords.
+    pub fn inverse_transform_point_from_setup(
+        &self,
+        p: P3,
+        face_up: FaceUp,
+        z_rotation: ZRotation,
+    ) -> P3 {
+        // 1. Undo ZRotation
+        let (eff_w, eff_d, _) = face_up.effective_stock(self.stock.x, self.stock.y, self.stock.z);
+        let unrotated = z_rotation.inverse_transform_point(p, eff_w, eff_d);
+        // 2. Undo FaceUp flip -> stock-relative
+        let rel =
+            face_up.inverse_transform_point(unrotated, self.stock.x, self.stock.y, self.stock.z);
+        // 3. Translate stock-relative -> world
+        P3::new(
+            rel.x + self.stock.origin_x,
+            rel.y + self.stock.origin_y,
+            rel.z + self.stock.origin_z,
+        )
+    }
+
     /// Transform a triangle mesh from global to setup-local coordinates.
     pub(crate) fn transform_mesh_to_setup(
         &self,

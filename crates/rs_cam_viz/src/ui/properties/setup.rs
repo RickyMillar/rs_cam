@@ -1,9 +1,24 @@
-use crate::state::job::{
-    Corner, FaceUp, Fixture, FixtureKind, KeepOutZone, ModelId, Setup, SetupId, XYDatum, ZDatum,
-    ZRotation,
-};
+use crate::state::job::{FaceUp, ModelId, SetupId, ZRotation};
+use crate::state::runtime::{Corner, SetupRuntime, XYDatum, ZDatum};
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
+use rs_cam_core::session::{Fixture, FixtureKind, KeepOutZone, SetupData};
+
+fn fixture_kind_label(kind: FixtureKind) -> &'static str {
+    match kind {
+        FixtureKind::Clamp => "Clamp",
+        FixtureKind::Vise => "Vise",
+        FixtureKind::VacuumPod => "Vacuum Pod",
+        FixtureKind::Custom => "Custom",
+    }
+}
+
+const FIXTURE_KINDS: &[FixtureKind] = &[
+    FixtureKind::Clamp,
+    FixtureKind::Vise,
+    FixtureKind::VacuumPod,
+    FixtureKind::Custom,
+];
 
 /// Draw the setup overview panel (fixtures list, keep-out list, setup name).
 ///
@@ -14,7 +29,8 @@ use crate::ui::AppEvent;
 pub fn draw(
     ui: &mut egui::Ui,
     setup_id: SetupId,
-    setup: &mut Setup,
+    setup_data: &mut SetupData,
+    setup_rt: &mut SetupRuntime,
     pin_count: usize,
     has_flip_axis: bool,
     all_models: &[(ModelId, String)],
@@ -25,7 +41,7 @@ pub fn draw(
 
     ui.horizontal(|ui| {
         ui.label("Name:");
-        let mut name = setup.name.clone();
+        let mut name = setup_data.name.clone();
         if ui.text_edit_singleline(&mut name).changed() {
             events.push(AppEvent::RenameSetup(setup_id, name));
         }
@@ -41,14 +57,14 @@ pub fn draw(
     ui.horizontal(|ui| {
         ui.label("Face Up:");
         egui::ComboBox::from_id_salt("face_up")
-            .selected_text(setup.face_up.label())
+            .selected_text(setup_data.face_up.label())
             .show_ui(ui, |ui| {
                 for &face in FaceUp::ALL {
                     if ui
-                        .selectable_label(setup.face_up == face, face.label())
+                        .selectable_label(setup_data.face_up == face, face.label())
                         .clicked()
                     {
-                        setup.face_up = face;
+                        setup_data.face_up = face;
                         events.push(AppEvent::FixtureChanged);
                         events.push(AppEvent::PreviewOrientation(face));
                     }
@@ -59,17 +75,17 @@ pub fn draw(
         ui.label("Z Rotation:");
         for &rot in ZRotation::ALL {
             if ui
-                .selectable_label(setup.z_rotation == rot, rot.label())
+                .selectable_label(setup_data.z_rotation == rot, rot.label())
                 .clicked()
             {
-                setup.z_rotation = rot;
+                setup_data.z_rotation = rot;
                 events.push(AppEvent::FixtureChanged);
             }
         }
     });
-    if setup.face_up != FaceUp::Top {
+    if setup_data.face_up != FaceUp::Top {
         ui.label(
-            egui::RichText::new(setup.face_up.flip_instruction())
+            egui::RichText::new(setup_data.face_up.flip_instruction())
                 .italics()
                 .color(egui::Color32::from_rgb(220, 180, 60)),
         );
@@ -93,7 +109,7 @@ pub fn draw(
             .color(egui::Color32::from_rgb(180, 180, 195)),
     );
 
-    let xy_label = match &setup.datum.xy_method {
+    let xy_label = match &setup_rt.datum.xy_method {
         XYDatum::CornerProbe(corner) => format!("Corner Probe ({})", corner.label()),
         XYDatum::CenterOfStock => "Center of Stock".into(),
         XYDatum::AlignmentPins => "Alignment Pins".into(),
@@ -108,88 +124,88 @@ pub fn draw(
                     let label = format!("Corner Probe ({})", corner.label());
                     if ui
                         .selectable_label(
-                            setup.datum.xy_method == XYDatum::CornerProbe(corner),
+                            setup_rt.datum.xy_method == XYDatum::CornerProbe(corner),
                             &label,
                         )
                         .clicked()
                     {
-                        setup.datum.xy_method = XYDatum::CornerProbe(corner);
+                        setup_rt.datum.xy_method = XYDatum::CornerProbe(corner);
                         events.push(AppEvent::FixtureChanged);
                     }
                 }
                 if ui
                     .selectable_label(
-                        setup.datum.xy_method == XYDatum::CenterOfStock,
+                        setup_rt.datum.xy_method == XYDatum::CenterOfStock,
                         "Center of Stock",
                     )
                     .clicked()
                 {
-                    setup.datum.xy_method = XYDatum::CenterOfStock;
+                    setup_rt.datum.xy_method = XYDatum::CenterOfStock;
                     events.push(AppEvent::FixtureChanged);
                 }
                 if ui
                     .selectable_label(
-                        setup.datum.xy_method == XYDatum::AlignmentPins,
+                        setup_rt.datum.xy_method == XYDatum::AlignmentPins,
                         "Alignment Pins",
                     )
                     .clicked()
                 {
-                    setup.datum.xy_method = XYDatum::AlignmentPins;
+                    setup_rt.datum.xy_method = XYDatum::AlignmentPins;
                     events.push(AppEvent::FixtureChanged);
                 }
                 if ui
-                    .selectable_label(setup.datum.xy_method == XYDatum::Manual, "Manual")
+                    .selectable_label(setup_rt.datum.xy_method == XYDatum::Manual, "Manual")
                     .clicked()
                 {
-                    setup.datum.xy_method = XYDatum::Manual;
+                    setup_rt.datum.xy_method = XYDatum::Manual;
                     events.push(AppEvent::FixtureChanged);
                 }
             });
     });
 
-    let z_label = setup.datum.z_method.label();
+    let z_label = setup_rt.datum.z_method.label();
     ui.horizontal(|ui| {
         ui.label("Z Method:");
         egui::ComboBox::from_id_salt("z_datum")
             .selected_text(&z_label)
             .show_ui(ui, |ui| {
                 if ui
-                    .selectable_label(setup.datum.z_method == ZDatum::StockTop, "Stock Top")
+                    .selectable_label(setup_rt.datum.z_method == ZDatum::StockTop, "Stock Top")
                     .clicked()
                 {
-                    setup.datum.z_method = ZDatum::StockTop;
+                    setup_rt.datum.z_method = ZDatum::StockTop;
                     events.push(AppEvent::FixtureChanged);
                 }
                 if ui
                     .selectable_label(
-                        setup.datum.z_method == ZDatum::MachineTable,
+                        setup_rt.datum.z_method == ZDatum::MachineTable,
                         "Machine Table",
                     )
                     .clicked()
                 {
-                    setup.datum.z_method = ZDatum::MachineTable;
+                    setup_rt.datum.z_method = ZDatum::MachineTable;
                     events.push(AppEvent::FixtureChanged);
                 }
                 if ui
                     .selectable_label(
-                        matches!(setup.datum.z_method, ZDatum::FixedOffset(_)),
+                        matches!(setup_rt.datum.z_method, ZDatum::FixedOffset(_)),
                         "Fixed Offset",
                     )
                     .clicked()
                 {
-                    setup.datum.z_method = ZDatum::FixedOffset(0.0);
+                    setup_rt.datum.z_method = ZDatum::FixedOffset(0.0);
                     events.push(AppEvent::FixtureChanged);
                 }
                 if ui
-                    .selectable_label(setup.datum.z_method == ZDatum::Manual, "Manual")
+                    .selectable_label(setup_rt.datum.z_method == ZDatum::Manual, "Manual")
                     .clicked()
                 {
-                    setup.datum.z_method = ZDatum::Manual;
+                    setup_rt.datum.z_method = ZDatum::Manual;
                     events.push(AppEvent::FixtureChanged);
                 }
             });
     });
-    if let ZDatum::FixedOffset(ref mut z) = setup.datum.z_method {
+    if let ZDatum::FixedOffset(ref mut z) = setup_rt.datum.z_method {
         ui.horizontal(|ui| {
             ui.label("  Z Offset:");
             if ui
@@ -203,7 +219,7 @@ pub fn draw(
 
     ui.horizontal(|ui| {
         ui.label("Notes:");
-        if ui.text_edit_singleline(&mut setup.datum.notes).changed() {
+        if ui.text_edit_singleline(&mut setup_rt.datum.notes).changed() {
             events.push(AppEvent::FixtureChanged);
         }
     });
@@ -217,7 +233,7 @@ pub fn draw(
                 .small()
                 .color(egui::Color32::from_rgb(140, 180, 140)),
         );
-    } else if setup.datum.xy_method == XYDatum::AlignmentPins {
+    } else if setup_rt.datum.xy_method == XYDatum::AlignmentPins {
         ui.label(
             egui::RichText::new("No pins defined — add them in Stock properties")
                 .small()
@@ -239,7 +255,7 @@ pub fn draw(
                 .color(egui::Color32::from_rgb(120, 120, 130)),
         );
     } else {
-        if setup.model_ids.is_empty() {
+        if setup_rt.model_ids.is_empty() {
             ui.label(
                 egui::RichText::new("All models (unconstrained)")
                     .small()
@@ -247,29 +263,26 @@ pub fn draw(
             );
         }
         for &(model_id, ref model_name) in all_models {
-            let mut checked = setup.model_ids.is_empty() || setup.model_ids.contains(&model_id);
+            let mut checked = setup_rt.model_ids.is_empty() || setup_rt.model_ids.contains(&model_id);
             if ui.checkbox(&mut checked, model_name.as_str()).changed() {
                 if checked {
                     // When toggling on: if currently "all", start explicit list with this one.
-                    if setup.model_ids.is_empty() {
-                        // Switching from "all" to explicit — add all then the logic below removes.
-                        // Actually: add just this model. But that would remove others.
-                        // Better: leave empty (all) until user unchecks one.
+                    if setup_rt.model_ids.is_empty() {
                         // On check: if explicit list exists, add to it.
-                        setup.model_ids.push(model_id);
-                    } else if !setup.model_ids.contains(&model_id) {
-                        setup.model_ids.push(model_id);
+                        setup_rt.model_ids.push(model_id);
+                    } else if !setup_rt.model_ids.contains(&model_id) {
+                        setup_rt.model_ids.push(model_id);
                     }
                     // If all models are now checked, revert to empty (= all).
-                    if setup.model_ids.len() == all_models.len() {
-                        setup.model_ids.clear();
+                    if setup_rt.model_ids.len() == all_models.len() {
+                        setup_rt.model_ids.clear();
                     }
                 } else {
                     // When toggling off: if currently "all", materialise the full list first.
-                    if setup.model_ids.is_empty() {
-                        setup.model_ids = all_models.iter().map(|(id, _)| *id).collect();
+                    if setup_rt.model_ids.is_empty() {
+                        setup_rt.model_ids = all_models.iter().map(|(id, _)| *id).collect();
                     }
-                    setup.model_ids.retain(|id| *id != model_id);
+                    setup_rt.model_ids.retain(|id| *id != model_id);
                 }
             }
         }
@@ -283,15 +296,15 @@ pub fn draw(
             .color(egui::Color32::from_rgb(180, 180, 195)),
     );
 
-    if setup.fixtures.is_empty() {
+    if setup_data.fixtures.is_empty() {
         ui.label(
             egui::RichText::new("No fixtures")
                 .italics()
                 .color(egui::Color32::from_rgb(120, 120, 130)),
         );
     }
-    for fixture in &setup.fixtures {
-        let label = format!("{} [{}]", fixture.name, fixture.kind.label());
+    for fixture in &setup_data.fixtures {
+        let label = format!("{} [{}]", fixture.name, fixture_kind_label(fixture.kind));
         let resp = ui.selectable_label(false, &label);
         if resp.clicked() {
             events.push(AppEvent::Select(Selection::Fixture(setup_id, fixture.id)));
@@ -315,14 +328,14 @@ pub fn draw(
             .color(egui::Color32::from_rgb(180, 180, 195)),
     );
 
-    if setup.keep_out_zones.is_empty() {
+    if setup_data.keep_out_zones.is_empty() {
         ui.label(
             egui::RichText::new("No keep-out zones")
                 .italics()
                 .color(egui::Color32::from_rgb(120, 120, 130)),
         );
     }
-    for zone in &setup.keep_out_zones {
+    for zone in &setup_data.keep_out_zones {
         let resp = ui.selectable_label(false, &zone.name);
         if resp.clicked() {
             events.push(AppEvent::Select(Selection::KeepOut(setup_id, zone.id)));
@@ -359,11 +372,11 @@ pub fn draw_fixture_properties(
     ui.horizontal(|ui| {
         ui.label("Type:");
         egui::ComboBox::from_id_salt("fixture_kind")
-            .selected_text(fixture.kind.label())
+            .selected_text(fixture_kind_label(fixture.kind))
             .show_ui(ui, |ui| {
-                for &kind in FixtureKind::ALL {
+                for &kind in FIXTURE_KINDS {
                     if ui
-                        .selectable_label(fixture.kind == kind, kind.label())
+                        .selectable_label(fixture.kind == kind, fixture_kind_label(kind))
                         .clicked()
                     {
                         fixture.kind = kind;

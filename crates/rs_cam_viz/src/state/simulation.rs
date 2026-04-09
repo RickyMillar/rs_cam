@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use super::job::{JobState, SetupId};
+use super::job::SetupId;
+use rs_cam_core::session::ProjectSession;
 use super::runtime::GuiState;
 use super::toolpath::ToolpathId;
 use rs_cam_core::collision::{CollisionReport, RapidCollision};
@@ -932,10 +933,10 @@ impl SimulationState {
         &mut self,
         gui: &GuiState,
         max_feed_mm_min: f64,
-        job: &JobState,
+        session: &ProjectSession,
     ) -> Option<(ToolpathId, ToolpathDebugBounds2, f64, f64)> {
         let active = self.active_semantic_item(gui, max_feed_mm_min)?;
-        let bbox = self.semantic_item_bbox_in_simulation(job, active.toolpath_id, &active.item)?;
+        let bbox = self.semantic_item_bbox_in_simulation(session, active.toolpath_id, &active.item)?;
         Some((
             active.toolpath_id,
             ToolpathDebugBounds2 {
@@ -951,7 +952,7 @@ impl SimulationState {
 
     pub fn semantic_item_bbox_in_simulation(
         &self,
-        job: &JobState,
+        session: &ProjectSession,
         toolpath_id: ToolpathId,
         item: &ToolpathSemanticItem,
     ) -> Option<BoundingBox3> {
@@ -968,13 +969,13 @@ impl SimulationState {
             P3::new(xy.max_x, xy.max_y, z_max),
             P3::new(xy.min_x, xy.max_y, z_max),
         ];
-        let setup = job
-            .setup_of_toolpath(toolpath_id)
-            .and_then(|setup_id| job.setups.iter().find(|setup| setup.id == setup_id));
+        let setup = session
+            .setup_of_toolpath_id(toolpath_id.0)
+            .and_then(|idx| session.list_setups().get(idx));
         Some(BoundingBox3::from_points(local_corners.into_iter().map(
             |corner| {
-                setup.map_or(corner, |setup| {
-                    setup.inverse_transform_point(corner, &job.stock)
+                setup.map_or(corner, |s| {
+                    session.inverse_transform_point_from_setup(corner, s.face_up, s.z_rotation)
                 })
             },
         )))
@@ -1200,7 +1201,7 @@ impl SimulationState {
         &mut self,
         gui: &GuiState,
         max_feed_mm_min: f64,
-        job: &JobState,
+        session: &ProjectSession,
         origin: &P3,
         dir: &V3,
     ) -> Option<SimulationTraceTarget> {
@@ -1222,7 +1223,7 @@ impl SimulationState {
                 if item.move_start.is_none() || item.move_end.is_none() {
                     continue;
                 }
-                let Some(bbox) = self.semantic_item_bbox_in_simulation(job, boundary.id, item)
+                let Some(bbox) = self.semantic_item_bbox_in_simulation(session, boundary.id, item)
                 else {
                     continue;
                 };
@@ -1921,14 +1922,14 @@ mod tests {
     #[test]
     fn semantic_pick_prefers_deeper_item_then_smaller_move_span() {
         let gui = gui_with_traces();
-        let job = crate::state::job::JobState::new();
+        let session = rs_cam_core::session::ProjectSession::new_empty();
         let mut sim = simulation_for_toolpath();
 
         let target = sim
             .pick_semantic_item_with_ray(
                 &gui,
                 TEST_MAX_FEED,
-                &job,
+                &session,
                 &P3::new(2.0, 2.0, 10.0),
                 &V3::new(0.0, 0.0, -1.0),
             )

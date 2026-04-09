@@ -1,10 +1,12 @@
 use crate::render::camera::OrbitCamera;
 use crate::state::Workspace;
-use crate::state::job::{FixtureId, JobState, KeepOutId, ModelId, SetupId};
+use crate::state::job::{FixtureId, KeepOutId, ModelId, SetupId};
+use crate::state::runtime::GuiState;
 use crate::state::toolpath::ToolpathId;
 use rs_cam_core::enriched_mesh::FaceGroupId;
-use rs_cam_core::geo::{P3, V3};
+use rs_cam_core::geo::{BoundingBox3, P3, V3};
 use rs_cam_core::mesh::ray_pick_triangle;
+use rs_cam_core::session::ProjectSession;
 
 /// Screen-space pick threshold for point-like markers (collision dots, pins).
 const PICK_THRESHOLD_POINT: f32 = 12.0;
@@ -54,7 +56,8 @@ pub struct PickContext<'a> {
 /// Returns the highest-priority hit, or `None`.
 pub fn pick(
     ctx: &PickContext<'_>,
-    job: &JobState,
+    session: &ProjectSession,
+    gui: &GuiState,
     collision_positions: &[[f32; 3]],
     workspace: Workspace,
     isolate_toolpath: Option<ToolpathId>,
@@ -67,7 +70,7 @@ pub fn pick(
     }
 
     if matches!(workspace, Workspace::Setup | Workspace::Toolpaths)
-        && let Some(hit) = pick_alignment_pins(ctx, job)
+        && let Some(hit) = pick_alignment_pins(ctx, session)
     {
         return Some(hit);
     }
@@ -86,19 +89,22 @@ pub fn pick(
     let mut best_t = f64::INFINITY;
     let mut best_hit: Option<PickHit> = None;
 
+    let stock = session.stock_config();
+
     // Fixtures (Setup only)
     if workspace == Workspace::Setup {
-        for setup in &job.setups {
+        for setup in session.list_setups() {
             for fixture in &setup.fixtures {
                 if !fixture.enabled {
                     continue;
                 }
-                if let Some(t) = fixture.clearance_bbox().ray_intersect(&origin, &dir)
+                let clearance_bbox = fixture_clearance_bbox(fixture);
+                if let Some(t) = clearance_bbox.ray_intersect(&origin, &dir)
                     && t < best_t
                 {
                     best_t = t;
                     best_hit = Some(PickHit::Fixture {
-                        setup_id: setup.id,
+                        setup_id: SetupId(setup.id),
                         fixture_id: fixture.id,
                     });
                 }
@@ -108,18 +114,18 @@ pub fn pick(
 
     // Keep-outs (Setup only)
     if workspace == Workspace::Setup {
-        for setup in &job.setups {
+        for setup in session.list_setups() {
             for keep_out in &setup.keep_out_zones {
                 if !keep_out.enabled {
                     continue;
                 }
-                let bbox = keep_out.bbox(&job.stock);
+                let bbox = keep_out_bbox(keep_out, stock);
                 if let Some(t) = bbox.ray_intersect(&origin, &dir)
                     && t < best_t
                 {
                     best_t = t;
                     best_hit = Some(PickHit::KeepOut {
-                        setup_id: setup.id,
+                        setup_id: SetupId(setup.id),
                         keep_out_id: keep_out.id,
                     });
                 }
@@ -129,7 +135,7 @@ pub fn pick(
 
     // Stock (Setup + Toolpaths)
     if matches!(workspace, Workspace::Setup | Workspace::Toolpaths) {
-        let stock_bbox = job.stock.bbox();
+        let stock_bbox = stock.bbox();
         if let Some(t) = stock_bbox.ray_intersect(&origin, &dir)
             && t < best_t
         {
@@ -141,7 +147,7 @@ pub fn pick(
 
     // Model face picking (enriched mesh only, Toolpaths workspace)
     if matches!(workspace, Workspace::Toolpaths) {
-        for model in &job.models {
+        for model in session.models() {
             if let Some(enriched) = &model.enriched_mesh {
                 let mesh = enriched.as_mesh();
                 // Fast AABB rejection
@@ -154,7 +160,7 @@ pub fn pick(
                     best_t = t;
                     let face_id = enriched.face_for_triangle(tri_idx);
                     best_hit = Some(PickHit::ModelFace {
-                        model_id: model.id,
+                        model_id: ModelId(model.id),
                         face_id,
                     });
                 }
@@ -168,7 +174,7 @@ pub fn pick(
 
     // 3. Toolpath screen-space pick (Toolpaths + Simulation)
     if matches!(workspace, Workspace::Toolpaths | Workspace::Simulation)
-        && let Some(hit) = pick_toolpaths(ctx, job, isolate_toolpath)
+        && let Some(hit) = pick_toolpaths(ctx, session, gui, isolate_toolpath)
     {
         return Some(hit);
     }
@@ -199,15 +205,16 @@ fn pick_collision_markers(ctx: &PickContext<'_>, positions: &[[f32; 3]]) -> Opti
     best_idx.map(|index| PickHit::CollisionMarker { index })
 }
 
-fn pick_alignment_pins(ctx: &PickContext<'_>, job: &JobState) -> Option<PickHit> {
+fn pick_alignment_pins(ctx: &PickContext<'_>, session: &ProjectSession) -> Option<PickHit> {
     let threshold = PICK_THRESHOLD_POINT;
     let mut best_dist = threshold;
     let mut best_hit = None;
+    let stock = session.stock_config();
     // Pin coords are stock-relative; in the local frame (Top/Deg0) the stock
     // sits at (0,0,0) so pin positions are (pin.x, pin.y, stock.z).
-    let local_top = job.stock.z as f32;
+    let local_top = stock.z as f32;
 
-    for (pin_idx, pin) in job.stock.alignment_pins.iter().enumerate() {
+    for (pin_idx, pin) in stock.alignment_pins.iter().enumerate() {
         let world = [pin.x as f32, pin.y as f32, local_top];
         if let Some(screen) = ctx
             .camera
@@ -230,23 +237,28 @@ fn pick_alignment_pins(ctx: &PickContext<'_>, job: &JobState) -> Option<PickHit>
 #[allow(clippy::indexing_slicing)]
 fn pick_toolpaths(
     ctx: &PickContext<'_>,
-    job: &JobState,
+    session: &ProjectSession,
+    gui: &GuiState,
     isolate_toolpath: Option<ToolpathId>,
 ) -> Option<PickHit> {
     let threshold = PICK_THRESHOLD_TOOLPATH;
     let mut best_dist = threshold;
     let mut best_id = None;
 
-    for tp in job.all_toolpaths() {
-        if !tp.visible {
+    for tc in session.toolpath_configs() {
+        let tp_id = ToolpathId(tc.id);
+        let rt = gui.toolpath_rt.get(&tc.id);
+        let visible = rt.map_or(true, |r| r.visible);
+        if !visible {
             continue;
         }
         if let Some(iso_id) = isolate_toolpath
-            && tp.id != iso_id
+            && tp_id != iso_id
         {
             continue;
         }
-        let Some(result) = &tp.result else {
+        let result = rt.and_then(|r| r.result.as_ref());
+        let Some(result) = result else {
             continue;
         };
 
@@ -264,13 +276,41 @@ fn pick_toolpaths(
                 let dist = (dx * dx + dy * dy).sqrt();
                 if dist < best_dist {
                     best_dist = dist;
-                    best_id = Some(tp.id);
+                    best_id = Some(tp_id);
                 }
             }
         }
     }
 
     best_id.map(|id| PickHit::Toolpath { id })
+}
+
+/// Compute a fixture's clearance bounding box for ray picking.
+fn fixture_clearance_bbox(f: &rs_cam_core::session::Fixture) -> BoundingBox3 {
+    let c = f.clearance;
+    BoundingBox3 {
+        min: P3::new(f.origin_x - c, f.origin_y - c, f.origin_z),
+        max: P3::new(
+            f.origin_x + f.size_x + c,
+            f.origin_y + f.size_y + c,
+            f.origin_z + f.size_z,
+        ),
+    }
+}
+
+/// Compute a keep-out zone's bounding box for ray picking.
+fn keep_out_bbox(
+    k: &rs_cam_core::session::KeepOutZone,
+    stock: &rs_cam_core::compute::stock_config::StockConfig,
+) -> BoundingBox3 {
+    BoundingBox3 {
+        min: P3::new(k.origin_x, k.origin_y, stock.origin_z),
+        max: P3::new(
+            k.origin_x + k.size_x,
+            k.origin_y + k.size_y,
+            stock.origin_z + stock.z,
+        ),
+    }
 }
 
 /// Determine which face of an AABB was hit based on the intersection point.

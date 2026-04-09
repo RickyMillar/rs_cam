@@ -153,6 +153,7 @@ pub struct ToolpathEntry {
     pub debug_trace_path: Option<PathBuf>,
 }
 
+#[derive(Clone)]
 pub struct ToolpathResult {
     pub toolpath: Arc<Toolpath>,
     pub stats: ToolpathStats,

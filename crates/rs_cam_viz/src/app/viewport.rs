@@ -29,13 +29,17 @@ impl RsCamApp {
         let workspace = self.controller.state().workspace;
         let isolate = self.controller.state().viewport.isolate_toolpath;
 
-        let hit = crate::interaction::picking::pick(
-            &ctx,
-            &self.controller.state().job,
-            self.controller.collision_positions(),
-            workspace,
-            isolate,
-        );
+        let hit = {
+            let state = self.controller.state();
+            crate::interaction::picking::pick(
+                &ctx,
+                &state.session,
+                &state.gui,
+                self.controller.collision_positions(),
+                workspace,
+                isolate,
+            )
+        };
 
         if let Some(hit) = hit {
             self.handle_pick_hit(hit);
@@ -68,7 +72,7 @@ impl RsCamApp {
             state.simulation.pick_semantic_item_with_ray(
                 &state.gui,
                 max_feed,
-                &state.job,
+                &state.session,
                 &rs_cam_core::geo::P3::new(
                     ray_origin.x as f64,
                     ray_origin.y as f64,
@@ -221,7 +225,8 @@ impl RsCamApp {
             if let Some(crate::interaction::picking::PickHit::ModelFace { face_id, .. }) =
                 crate::interaction::picking::pick(
                     &pick_ctx,
-                    &state.job,
+                    &state.session,
+                    &state.gui,
                     self.controller.collision_positions(),
                     state.workspace,
                     state.viewport.isolate_toolpath,
@@ -338,7 +343,7 @@ impl RsCamApp {
                             state
                                 .simulation
                                 .semantic_item_bbox_in_simulation(
-                                    &state.job,
+                                    &state.session,
                                     active.toolpath_id,
                                     &active.item,
                                 )
