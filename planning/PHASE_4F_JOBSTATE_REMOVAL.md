@@ -7,6 +7,25 @@ The GUI now loads projects through `ProjectSession` and syncs state
 before compute/simulation. The MCP server has full CRUD. Both paths
 converge at `execute_operation_annotated()`.
 
+### Verification Results (2026-04-09)
+
+| Area | Status | Notes |
+|------|--------|-------|
+| TOML Loading | PASS | All fields round-trip correctly (fixed: stock padding/rigidity, tool material/vendor) |
+| Compute Core | PASS | Setup transforms, boundary clipping, cutting_levels, prev_tool_radius all wired |
+| Simulation | PASS | Setup transforms, auto-resolution, machine-based rapid feed |
+| Mutations | PASS | Full CRUD on toolpaths, tools, setups, stock, post |
+| Save | PASS | format_version=3, all fields preserved |
+| MCP Coverage | PASS | All public methods wrapped as MCP tools |
+
+### Known Remaining Gaps (non-blocking for Phase 4f)
+
+- **BREP face selection** — core can't extract face boundary from STEP enriched mesh (GUI-only feature, rarely used)
+- **ProjectCurve surface model** — core doesn't look up alternate surface mesh for ProjectCurve operations
+- **AlignmentPinDrill refresh** — core doesn't refresh pin coordinates from stock config dynamically
+- **Per-setup datum** — core doesn't track xy_datum, z_datum, datum_notes (GUI display only)
+- **Toolpath visible/locked/auto_regen** — UI-only fields, correctly handled in ToolpathUiState split
+
 **What remains:** Replace `JobState` with `ProjectSession` in the GUI,
 eliminating the dual-state model and the `sync_session_from_job()` bridge.
 
