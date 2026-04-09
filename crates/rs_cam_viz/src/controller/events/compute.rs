@@ -594,18 +594,38 @@ impl<B: ComputeBackend> AppController<B> {
                         ga.completed += 1;
                     } else {
                         ga.failed += 1;
+                        let error_msg = rt
+                            .map(|rt| match &rt.status {
+                                crate::state::toolpath::ComputeStatus::Error(e) => e.clone(),
+                                _ => "No result produced".to_owned(),
+                            })
+                            .unwrap_or_else(|| "Toolpath runtime not found".to_owned());
+                        ga.errors.push((tp_id.0, error_msg));
                     }
                 }
 
-                if ga.remaining.is_empty() {
-                    // All done, send response
-                    if let Some(ga) = pending.generate_all.take() {
-                        let resp = rs_cam_mcp::server::text(format!(
-                            "Generated {} toolpaths ({} failed)",
-                            ga.completed, ga.failed,
-                        ));
-                        let _ = ga.response_tx.send(McpResponse { result: Ok(resp) });
-                    }
+                if ga.remaining.is_empty()
+                    && let Some(ga) = pending.generate_all.take()
+                {
+                    let resp = if ga.errors.is_empty() {
+                        rs_cam_mcp::server::text(format!(
+                            "Generated {} toolpaths",
+                            ga.completed,
+                        ))
+                    } else {
+                        let error_details: Vec<String> = ga
+                            .errors
+                            .iter()
+                            .map(|(id, msg)| format!("  toolpath {id}: {msg}"))
+                            .collect();
+                        rs_cam_mcp::server::text(format!(
+                            "Generated {} toolpaths ({} failed):\n{}",
+                            ga.completed,
+                            ga.failed,
+                            error_details.join("\n"),
+                        ))
+                    };
+                    let _ = ga.response_tx.send(McpResponse { result: Ok(resp) });
                 }
             }
         }

@@ -152,6 +152,8 @@ pub struct PendingGenerateAll {
     pub remaining: Vec<ToolpathId>,
     pub completed: usize,
     pub failed: usize,
+    /// Per-toolpath error messages for failed generations.
+    pub errors: Vec<(usize, String)>,
     pub response_tx: tokio::sync::oneshot::Sender<McpResponse>,
 }
 

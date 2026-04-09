@@ -1124,6 +1124,7 @@ impl super::RsCamApp {
                 remaining: ids,
                 completed: 0,
                 failed: 0,
+                errors: Vec::new(),
                 response_tx,
             });
         } else {
@@ -1143,6 +1144,14 @@ impl super::RsCamApp {
             self.controller.state_mut().simulation.resolution = res;
             self.controller.state_mut().simulation.auto_resolution = false;
         }
+
+        // Always enable metrics when MCP triggers simulation — the standalone
+        // MCP server hardcodes this, and diagnostics/cut_trace require it.
+        self.controller
+            .state_mut()
+            .simulation
+            .metric_options
+            .enabled = true;
 
         // Push the simulation event
         self.controller
