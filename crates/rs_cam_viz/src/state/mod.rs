@@ -1,5 +1,6 @@
 pub mod history;
 pub mod job;
+pub mod runtime;
 pub mod selection;
 pub mod simulation;
 pub mod toolpath;
@@ -7,6 +8,7 @@ pub mod viewport;
 
 use history::UndoHistory;
 use job::JobState;
+use runtime::GuiState;
 use selection::Selection;
 use simulation::SimulationState;
 use viewport::ViewportState;
@@ -26,6 +28,10 @@ pub enum Workspace {
 pub struct AppState {
     pub workspace: Workspace,
     pub job: JobState,
+    /// Unified project session — single source of truth for CAM data.
+    pub session: rs_cam_core::session::ProjectSession,
+    /// GUI-only runtime overlay (dirty flag, per-toolpath display state, datum config).
+    pub gui: GuiState,
     pub selection: Selection,
     pub viewport: ViewportState,
     pub simulation: SimulationState,
@@ -41,6 +47,8 @@ impl AppState {
         Self {
             workspace: Workspace::Toolpaths,
             job: JobState::new(),
+            session: rs_cam_core::session::ProjectSession::new_empty(),
+            gui: GuiState::new(),
             selection: Selection::None,
             viewport: ViewportState::new(),
             simulation: SimulationState::new(),

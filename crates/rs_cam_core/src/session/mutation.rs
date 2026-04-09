@@ -186,6 +186,28 @@ impl ProjectSession {
         Ok(())
     }
 
+    // ── Model CRUD ────────────────────────────────────────────────
+
+    /// Add a model and return its ID.
+    pub fn add_model(&mut self, mut model: super::LoadedModel) -> usize {
+        model.id = self.next_model_id;
+        self.next_model_id += 1;
+        let id = model.id;
+        self.models.push(model);
+        id
+    }
+
+    /// Remove a model by index.
+    pub fn remove_model(&mut self, index: usize) -> Result<(), SessionError> {
+        if index >= self.models.len() {
+            return Err(SessionError::MissingGeometry(format!(
+                "Model index {index} not found"
+            )));
+        }
+        self.models.remove(index);
+        Ok(())
+    }
+
     // ── Tool CRUD ─────────────────────────────────────────────────
 
     /// Add a tool and return its index in the tools vec.
