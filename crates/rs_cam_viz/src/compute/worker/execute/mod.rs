@@ -21,6 +21,8 @@ use crate::state::toolpath::{
     FaceConfig, FaceDirection, HeightContext, HeightsConfig, InlayConfig, ProfileConfig,
     RestConfig, ZigzagConfig,
 };
+use rs_cam_core::compute::annotate::annotate_from_runtime_events;
+use rs_cam_core::compute::execute::execute_operation_annotated;
 use rs_cam_core::compute::{build_cutter, compute_stats};
 #[cfg(test)]
 use rs_cam_core::geo::P3;
@@ -76,7 +78,7 @@ fn generate_via_core(
         scope.set_debug_span_id(span_id);
     }
 
-    let tp = rs_cam_core::compute::execute::execute_operation(
+    let result = execute_operation_annotated(
         &req.operation,
         mesh_ref,
         index_ref,
@@ -94,12 +96,17 @@ fn generate_via_core(
     .map_err(ComputeError::from)?;
 
     if let Some(scope) = op_scope.as_ref()
-        && !tp.moves.is_empty()
+        && !result.toolpath.moves.is_empty()
     {
-        scope.bind_to_toolpath(&tp, 0, tp.moves.len());
+        scope.bind_to_toolpath(&result.toolpath, 0, result.toolpath.moves.len());
     }
 
-    Ok(tp)
+    if let Some(scope) = op_scope.as_ref() {
+        let child_ctx = scope.context();
+        annotate_from_runtime_events(&result.annotations, &result.toolpath, &child_ctx);
+    }
+
+    Ok(result.toolpath)
 }
 
 /// Convert viz `SimulationRequest` into a core `SimulationRequest` so the

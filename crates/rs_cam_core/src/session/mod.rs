@@ -444,8 +444,8 @@ impl serde::Serialize for ProjectDiagnostics {
     clippy::indexing_slicing
 )]
 mod tests {
-    use super::*;
     use super::project_file::parse_tool_type;
+    use super::*;
 
     #[test]
     fn empty_project_loads() {
@@ -597,11 +597,8 @@ mod tests {
     fn invalid_param_name_returns_error() {
         let mut session = session_with_toolpath();
 
-        let result = session.set_toolpath_param(
-            0,
-            "nonexistent_param_xyz",
-            serde_json::json!(42.0),
-        );
+        let result =
+            session.set_toolpath_param(0, "nonexistent_param_xyz", serde_json::json!(42.0));
 
         assert!(result.is_err(), "Should fail for unknown param name");
         assert!(
@@ -639,7 +636,10 @@ mod tests {
                 semantic_trace: None,
             },
         );
-        assert!(session.results.contains_key(&0), "Precondition: result cached");
+        assert!(
+            session.results.contains_key(&0),
+            "Precondition: result cached"
+        );
 
         session
             .set_toolpath_param(0, "feed_rate", serde_json::json!(2000.0))

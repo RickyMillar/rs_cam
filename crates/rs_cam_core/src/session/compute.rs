@@ -5,7 +5,9 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use crate::collision::check_rapid_collisions;
-use crate::compute::collision_check::{CollisionCheckRequest, CollisionCheckResult, run_collision_check};
+use crate::compute::collision_check::{
+    CollisionCheckRequest, CollisionCheckResult, run_collision_check,
+};
 use crate::compute::config::{HeightContext, ToolpathStats};
 use crate::compute::cutter::build_cutter;
 use crate::compute::simulate::{
@@ -16,7 +18,8 @@ use crate::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
 use crate::debug_trace::ToolpathDebugRecorder;
 use crate::dexel_stock::StockCutDirection;
 use crate::geo::{BoundingBox3, P3};
-use crate::semantic_trace::{ToolpathSemanticRecorder, enrich_traces};
+use crate::compute::annotate::annotate_from_runtime_events;
+use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces};
 use crate::simulation_cut::SimulationMetricOptions;
 
 use super::{
@@ -266,13 +269,15 @@ impl ProjectSession {
         let semantic_recorder =
             ToolpathSemanticRecorder::new(tc.name.clone(), tc.operation.label());
         let debug_root = debug_recorder.root_context();
-        let _semantic_root = semantic_recorder.root_context();
+        let semantic_root = semantic_recorder.root_context();
 
         let core_scope = debug_root.start_span("core_generate", tc.operation.label());
         let core_ctx = core_scope.context();
 
-        // Execute the operation via the shared compute::execute module
-        let tp_result = crate::compute::execute::execute_operation(
+        let op_label = tc.operation.label().to_owned();
+
+        // Execute the operation via the shared compute::execute module (annotated variant)
+        let tp_result = crate::compute::execute::execute_operation_annotated(
             &tc.operation,
             mesh.as_deref(),
             spatial_index.as_ref(),
@@ -289,11 +294,23 @@ impl ProjectSession {
         );
 
         match tp_result {
-            Ok(mut toolpath) => {
+            Ok(annotated) => {
+                let mut toolpath = annotated.toolpath;
+                let annotations = annotated.annotations;
+
                 if !toolpath.moves.is_empty() {
                     core_scope.set_move_range(0, toolpath.moves.len().saturating_sub(1));
                 }
                 drop(core_scope);
+
+                // Build semantic trace from runtime annotations
+                let op_scope =
+                    semantic_root.start_item(ToolpathSemanticKind::Operation, &op_label);
+                if !toolpath.moves.is_empty() {
+                    op_scope.bind_to_toolpath(&toolpath, 0, toolpath.moves.len());
+                }
+                let child_ctx = op_scope.context();
+                annotate_from_runtime_events(&annotations, &toolpath, &child_ctx);
 
                 // Apply dressups
                 toolpath = crate::compute::execute::apply_dressups(

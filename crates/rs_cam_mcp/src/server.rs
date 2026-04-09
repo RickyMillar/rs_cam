@@ -99,6 +99,16 @@ pub struct CollisionCheckParam {
     pub index: usize,
 }
 
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+struct CutTraceParam {
+    /// Optional: filter results to a single toolpath by index
+    toolpath_id: Option<usize>,
+    /// Maximum hotspots to return (default: 20)
+    max_hotspots: Option<usize>,
+    /// Maximum issues to return (default: 50)
+    max_issues: Option<usize>,
+}
+
 fn text(msg: impl Into<String>) -> String {
     msg.into()
 }
@@ -327,7 +337,7 @@ impl CamServer {
             s.run_simulation(&opts, &cancel)
                 .map_err(|e| e.to_string())?;
             let diag = s.diagnostics();
-            Ok::<_, String>(serde_json::json!({
+            let mut resp = serde_json::json!({
                 "total_runtime_s": diag.total_runtime_s,
                 "air_cut_percentage": diag.air_cut_percentage,
                 "average_engagement": diag.average_engagement,
@@ -335,7 +345,20 @@ impl CamServer {
                 "rapid_collision_count": diag.rapid_collision_count,
                 "verdict": diag.verdict,
                 "per_toolpath": diag.per_toolpath,
-            }))
+            });
+            if let Some(sim) = s.simulation_result() {
+                if let Some(ct) = sim.cut_trace.as_ref() {
+                    // SAFETY: resp is a known JSON object we just constructed
+                    #[allow(clippy::indexing_slicing)]
+                    {
+                        resp["semantic_summary_count"] =
+                            serde_json::json!(ct.semantic_summaries.len());
+                        resp["hotspot_count"] = serde_json::json!(ct.hotspots.len());
+                        resp["issue_count"] = serde_json::json!(ct.issues.len());
+                    }
+                }
+            }
+            Ok::<_, String>(resp)
         })
         .await;
 
@@ -592,6 +615,76 @@ impl CamServer {
             Ok(Err(e)) => json_str(serde_json::json!({"error": e})),
             Err(e) => json_str(serde_json::json!({"error": format!("Task failed: {e}")})),
         }
+    }
+
+    #[tool(
+        name = "get_cut_trace",
+        description = "Get simulation cut trace data: semantic summaries, hotspots, and issues. Run simulation first. Use toolpath_id to filter to a single toolpath."
+    )]
+    async fn get_cut_trace(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(CutTraceParam {
+            toolpath_id,
+            max_hotspots,
+            max_issues,
+        }): Parameters<CutTraceParam>,
+    ) -> String {
+        let guard = self.session.lock().await;
+        let Some(session) = guard.as_ref() else {
+            return no_project_error();
+        };
+        let Some(sim) = session.simulation_result() else {
+            return json_str(
+                serde_json::json!({"error": "No simulation result. Run run_simulation first."}),
+            );
+        };
+        let Some(ct) = sim.cut_trace.as_ref() else {
+            return json_str(
+                serde_json::json!({"error": "No cut trace data. Run simulation with a loaded project."}),
+            );
+        };
+
+        let max_h = max_hotspots.unwrap_or(20);
+        let max_i = max_issues.unwrap_or(50);
+
+        let summaries: Vec<&_> = ct
+            .semantic_summaries
+            .iter()
+            .filter(|s| toolpath_id.is_none_or(|id| s.toolpath_id == id))
+            .collect();
+        let hotspots: Vec<&_> = ct
+            .hotspots
+            .iter()
+            .filter(|h| toolpath_id.is_none_or(|id| h.toolpath_id == id))
+            .collect();
+        let issues: Vec<&_> = ct
+            .issues
+            .iter()
+            .filter(|i| toolpath_id.is_none_or(|id| i.toolpath_id == id))
+            .collect();
+
+        let hotspot_count = hotspots.len();
+        let issue_count = issues.len();
+
+        let summaries_val =
+            serde_json::to_value(&summaries).unwrap_or_else(|_| serde_json::json!([]));
+        let hotspots_val: Vec<_> = hotspots.iter().take(max_h).collect();
+        let hotspots_val =
+            serde_json::to_value(&hotspots_val).unwrap_or_else(|_| serde_json::json!([]));
+        let issues_val: Vec<_> = issues.iter().take(max_i).collect();
+        let issues_val =
+            serde_json::to_value(&issues_val).unwrap_or_else(|_| serde_json::json!([]));
+        let summary_val =
+            serde_json::to_value(&ct.summary).unwrap_or_else(|_| serde_json::json!({}));
+
+        json_str(serde_json::json!({
+            "summary": summary_val,
+            "semantic_summaries": summaries_val,
+            "hotspots": hotspots_val,
+            "hotspot_count": hotspot_count,
+            "issue_count": issue_count,
+            "issues": issues_val,
+        }))
     }
 
     #[tool(
