@@ -149,10 +149,13 @@ impl RsCamApp {
                     self.export_gcode_with_summary();
                 }
                 AppEvent::ExportCombinedGcode => {
-                    match crate::io::export::export_combined_gcode(&self.controller.state().job) {
+                    match crate::io::export::export_combined_gcode_from_session(
+                        &self.controller.state().session,
+                        &self.controller.state().gui,
+                    ) {
                         Ok(gcode) => {
                             let default_name =
-                                format!("{}_combined.nc", self.controller.state().job.name)
+                                format!("{}_combined.nc", self.controller.state().session.name())
                                     .replace(' ', "_")
                                     .to_lowercase();
                             if let Some(path) = rfd::FileDialog::new()
@@ -184,21 +187,25 @@ impl RsCamApp {
                     let setup_name = self
                         .controller
                         .state()
-                        .job
-                        .setups
+                        .session
+                        .list_setups()
                         .iter()
-                        .find(|setup| setup.id == setup_id)
-                        .map(|setup| setup.name.clone())
+                        .find(|s| crate::state::job::SetupId(s.id) == setup_id)
+                        .map(|s| s.name.clone())
                         .unwrap_or_default();
-                    match crate::io::export::export_setup_gcode(
-                        &self.controller.state().job,
+                    match crate::io::export::export_setup_gcode_from_session(
+                        &self.controller.state().session,
+                        &self.controller.state().gui,
                         setup_id,
                     ) {
                         Ok(gcode) => {
-                            let default_name =
-                                format!("{}_{}.nc", self.controller.state().job.name, setup_name)
-                                    .replace(' ', "_")
-                                    .to_lowercase();
+                            let default_name = format!(
+                                "{}_{}.nc",
+                                self.controller.state().session.name(),
+                                setup_name
+                            )
+                            .replace(' ', "_")
+                            .to_lowercase();
                             if let Some(path) = rfd::FileDialog::new()
                                 .add_filter("G-code", &["nc", "gcode", "ngc"])
                                 .set_file_name(&default_name)
@@ -254,7 +261,7 @@ impl RsCamApp {
                     }
                 }
                 AppEvent::SaveJob => {
-                    let path = self.controller.state().job.file_path.clone().or_else(|| {
+                    let path = self.controller.state().gui.file_path.clone().or_else(|| {
                         rfd::FileDialog::new()
                             .add_filter("TOML Job", &["toml"])
                             .set_file_name("job.toml")
@@ -292,7 +299,7 @@ impl RsCamApp {
                 }
 
                 AppEvent::Quit => {
-                    if self.controller.state().job.dirty {
+                    if self.controller.state().gui.dirty {
                         self.show_quit_dialog = true;
                     } else {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
