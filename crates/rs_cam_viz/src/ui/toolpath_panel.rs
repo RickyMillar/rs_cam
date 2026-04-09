@@ -4,11 +4,13 @@ use super::AppEvent;
 use super::sim_debug::draw_trace_badge;
 use crate::render::toolpath_render::palette_color;
 use crate::state::AppState;
-use crate::state::job::SetupId;
+use crate::state::job::{SetupId, ToolId};
+use crate::state::runtime::ComputeStatus;
 use crate::state::selection::Selection;
 use crate::state::simulation::SimulationState;
-use crate::state::toolpath::{ComputeStatus, OperationType, ToolpathId};
+use crate::state::toolpath::{OperationType, ToolpathId};
 use crate::ui::theme;
+use rs_cam_core::session::ToolpathConfig;
 
 /// Left panel for the Toolpath workspace: operation queue with status chips.
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
@@ -24,11 +26,12 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
     ui.add_space(6.0);
 
-    let multi_setup = state.job.setups.len() > 1;
+    let setups = state.session.list_setups();
+    let multi_setup = setups.len() > 1;
     let mut global_idx = 0usize;
 
-    for setup in &state.job.setups {
-        let setup_id = setup.id;
+    for setup in setups {
+        let setup_id = SetupId(setup.id);
 
         // Setup header (only if multi-setup)
         if multi_setup {
@@ -41,11 +44,17 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 );
                 // Count ready/total
                 let ready = setup
-                    .toolpaths
+                    .toolpath_indices
                     .iter()
-                    .filter(|tp| matches!(tp.status, ComputeStatus::Done))
+                    .filter(|&&idx| {
+                        state
+                            .session
+                            .get_toolpath_config(idx)
+                            .and_then(|tc| state.gui.toolpath_rt.get(&tc.id))
+                            .is_some_and(|rt| matches!(rt.status, ComputeStatus::Done))
+                    })
                     .count();
-                let total = setup.toolpaths.len();
+                let total = setup.toolpath_indices.len();
                 ui.label(
                     egui::RichText::new(format!("{ready}/{total}"))
                         .small()
@@ -60,8 +69,9 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
         // Drop zone for this setup
         let drop_frame = egui::Frame::default().inner_margin(2.0);
+        let tp_count = setup.toolpath_indices.len();
         let (inner_resp, dropped_payload) = ui.dnd_drop_zone::<ToolpathId, ()>(drop_frame, |ui| {
-            if setup.toolpaths.is_empty() {
+            if setup.toolpath_indices.is_empty() {
                 ui.label(
                     egui::RichText::new("No toolpaths")
                         .italics()
@@ -69,24 +79,33 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 );
             }
 
-            for (local_idx, tp) in setup.toolpaths.iter().enumerate() {
+            for (local_idx, &tp_idx) in setup.toolpath_indices.iter().enumerate() {
                 let i = global_idx;
                 global_idx += 1;
-                draw_toolpath_card(ui, state, events, tp, i, local_idx);
+                if let Some(tc) = state.session.get_toolpath_config(tp_idx) {
+                    let rt = state.gui.toolpath_rt.get(&tc.id);
+                    draw_toolpath_card(ui, state, events, tc, rt, i, local_idx);
+                }
             }
         });
 
         // Handle drop
         if let Some(payload) = dropped_payload {
             let dragged_tp_id: ToolpathId = Arc::unwrap_or_clone(payload);
-            let source_setup = state.job.setup_of_toolpath(dragged_tp_id);
+            let source_setup = state
+                .session
+                .setup_of_toolpath_id(dragged_tp_id.0)
+                .map(|idx| {
+                    // SAFETY: setup_of_toolpath_id returns a valid index into list_setups
+                    #[allow(clippy::indexing_slicing)]
+                    SetupId(state.session.list_setups()[idx].id)
+                });
 
             // Determine drop index from pointer position
             let drop_idx = compute_drop_index(
                 &inner_resp.response,
                 ui,
-                setup.toolpaths.len(),
-                &setup.toolpaths,
+                tp_count,
             );
 
             if source_setup == Some(setup_id) {
@@ -104,9 +123,9 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     }
 
     // Single-setup: show "+ Add" below toolpath list
-    if !multi_setup && let Some(setup) = state.job.setups.first() {
+    if !multi_setup && let Some(setup) = setups.first() {
         ui.add_space(4.0);
-        add_toolpath_menu(ui, setup.id, state, events);
+        add_toolpath_menu(ui, SetupId(setup.id), state, events);
     }
 
     // Tool library (compact, collapsed by default)
@@ -114,7 +133,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     egui::CollapsingHeader::new("Tool Library")
         .default_open(false)
         .show(ui, |ui| {
-            for tool in &state.job.tools {
+            for tool in state.session.tools() {
                 let selected = state.selection == Selection::Tool(tool.id);
                 if ui.selectable_label(selected, tool.summary()).clicked() {
                     events.push(AppEvent::Select(Selection::Tool(tool.id)));
@@ -137,12 +156,18 @@ fn draw_toolpath_card(
     ui: &mut egui::Ui,
     state: &AppState,
     events: &mut Vec<AppEvent>,
-    tp: &crate::state::toolpath::ToolpathEntry,
+    tc: &ToolpathConfig,
+    rt: Option<&crate::state::runtime::ToolpathRuntime>,
     global_idx: usize,
     _local_idx: usize,
 ) {
-    let selected = state.selection == Selection::Toolpath(tp.id);
-    let dim = !tp.enabled || !tp.visible;
+    let tp_id = ToolpathId(tc.id);
+    let selected = state.selection == Selection::Toolpath(tp_id);
+    let visible = rt.is_none_or(|r| r.visible);
+    let auto_regen = rt.is_none_or(|r| r.auto_regen);
+    let status = rt.map_or(&ComputeStatus::Pending, |r| &r.status);
+    let result = rt.and_then(|r| r.result.as_ref());
+    let dim = !tc.enabled || !visible;
 
     let pc = palette_color(global_idx);
     let swatch_color = egui::Color32::from_rgb(
@@ -157,8 +182,6 @@ fn draw_toolpath_card(
         egui::Color32::from_rgb(48, 48, 58)
     };
 
-    let tp_id = tp.id;
-
     let inner_response = egui::Frame::default()
         .fill(if selected {
             theme::CARD_FILL_SELECTED
@@ -172,7 +195,7 @@ fn draw_toolpath_card(
             // Click anywhere on the card to select.
             let card_resp = ui.interact(
                 ui.max_rect(),
-                egui::Id::new("tp_card_click").with(tp.id.0),
+                egui::Id::new("tp_card_click").with(tc.id),
                 egui::Sense::click(),
             );
             if card_resp.clicked() {
@@ -182,7 +205,7 @@ fn draw_toolpath_card(
             // Row 1: drag grip + swatch + status + name
             ui.horizontal(|ui| {
                 // Drag grip handle — drag this to reorder.
-                let grip_id = egui::Id::new("tp_grip").with(tp.id.0);
+                let grip_id = egui::Id::new("tp_grip").with(tc.id);
                 let (grip_rect, grip_resp) =
                     ui.allocate_exact_size(egui::vec2(10.0, 14.0), egui::Sense::drag());
                 // Draw grip dots (⠿)
@@ -214,7 +237,7 @@ fn draw_toolpath_card(
                 ui.painter().rect_filled(rect, 2.0, swatch_color);
 
                 // Status chip
-                let (status_text, status_color) = match &tp.status {
+                let (status_text, status_color) = match status {
                     ComputeStatus::Pending => ("PEND", theme::TEXT_DIM),
                     ComputeStatus::Computing => ("GEN", theme::WARNING),
                     ComputeStatus::Done => ("OK", theme::SUCCESS_BRIGHT),
@@ -227,7 +250,7 @@ fn draw_toolpath_card(
                         .color(status_color),
                 );
                 // Manual-gen indicator for 3D ops
-                if !tp.auto_regen {
+                if !auto_regen {
                     ui.label(
                         egui::RichText::new("MAN")
                             .small()
@@ -249,13 +272,13 @@ fn draw_toolpath_card(
                 } else {
                     egui::Color32::from_rgb(190, 190, 200)
                 };
-                ui.label(egui::RichText::new(&tp.name).color(text_color));
+                ui.label(egui::RichText::new(&tc.name).color(text_color));
             });
 
             // Row 2: tool info + quick actions
             ui.horizontal(|ui| {
                 // Tool name
-                if let Some(tool) = state.job.tools.iter().find(|t| t.id == tp.tool_id) {
+                if let Some(tool) = state.session.tools().iter().find(|t| t.id == ToolId(tc.tool_id)) {
                     ui.label(
                         egui::RichText::new(tool.summary())
                             .small()
@@ -264,12 +287,12 @@ fn draw_toolpath_card(
                 }
 
                 // Rest dependency badge
-                if let crate::state::toolpath::OperationConfig::Rest(ref rest_cfg) = tp.operation {
+                if let crate::state::toolpath::OperationConfig::Rest(ref rest_cfg) = tc.operation {
                     draw_rest_badge(ui, rest_cfg, state, tp_id);
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if tp.result.is_some()
+                    if result.is_some()
                         && ui
                             .small_button("Sim")
                             .on_hover_text("Inspect in Simulation")
@@ -279,7 +302,7 @@ fn draw_toolpath_card(
                     }
 
                     // Quick generate button
-                    if matches!(tp.status, ComputeStatus::Pending)
+                    if matches!(status, ComputeStatus::Pending)
                         && ui
                             .small_button("\u{25B6}")
                             .on_hover_text("Generate")
@@ -291,9 +314,9 @@ fn draw_toolpath_card(
             });
 
             // Row 3: stats (only when computed)
-            if let Some(ref result) = tp.result {
+            if let Some(result) = result {
                 let stats = &result.stats;
-                let feed = tp.operation.feed_rate();
+                let feed = tc.operation.feed_rate();
                 let cut_time_min = if feed > 0.0 {
                     stats.cutting_distance / feed
                 } else {
@@ -327,16 +350,16 @@ fn draw_toolpath_card(
                     events.push(AppEvent::GenerateToolpath(tp_id));
                     ui.close_menu();
                 }
-                if tp.result.is_some() && ui.button("Inspect in Simulation").clicked() {
+                if result.is_some() && ui.button("Inspect in Simulation").clicked() {
                     events.push(AppEvent::InspectToolpathInSimulation(tp_id));
                     ui.close_menu();
                 }
-                let vis_label = if tp.visible { "Hide" } else { "Show" };
+                let vis_label = if visible { "Hide" } else { "Show" };
                 if ui.button(vis_label).clicked() {
                     events.push(AppEvent::ToggleToolpathVisibility(tp_id));
                     ui.close_menu();
                 }
-                let en_label = if tp.enabled { "Disable" } else { "Enable" };
+                let en_label = if tc.enabled { "Disable" } else { "Enable" };
                 if ui.button(en_label).clicked() {
                     events.push(AppEvent::ToggleToolpathEnabled(tp_id));
                     ui.close_menu();
@@ -383,7 +406,6 @@ fn compute_drop_index(
     response: &egui::Response,
     ui: &egui::Ui,
     count: usize,
-    _toolpaths: &[crate::state::toolpath::ToolpathEntry],
 ) -> usize {
     if count == 0 {
         return 0;
@@ -408,8 +430,8 @@ fn add_toolpath_menu(
     state: &AppState,
     events: &mut Vec<AppEvent>,
 ) {
-    let has_mesh = state.job.models.iter().any(|m| m.mesh.is_some());
-    let has_polygons = state.job.models.iter().any(|m| m.polygons.is_some());
+    let has_mesh = state.session.models().iter().any(|m| m.mesh.is_some());
+    let has_polygons = state.session.models().iter().any(|m| m.polygons.is_some());
 
     ui.menu_button("+ Add", |ui| {
         ui.label(egui::RichText::new("2.5D (from SVG)").strong());
@@ -472,39 +494,53 @@ fn draw_rest_badge(
     state: &AppState,
     tp_id: ToolpathId,
 ) {
-    let setup_id = state.job.setup_of_toolpath(tp_id);
+    let setup_idx = state.session.setup_of_toolpath_id(tp_id.0);
     let prev_tool_id = rest_cfg.prev_tool_id;
 
     let (badge_text, badge_color) = if let Some(prev_id) = prev_tool_id {
         // Check if there's a toolpath in the same setup using this tool
-        let same_setup_has_dep = setup_id.is_some_and(|sid| {
+        let same_setup_has_dep = setup_idx.is_some_and(|si| {
             state
-                .job
-                .setups
-                .iter()
-                .find(|s| s.id == sid)
+                .session
+                .list_setups()
+                .get(si)
                 .is_some_and(|setup| {
-                    setup
-                        .toolpaths
-                        .iter()
-                        .any(|other| other.id != tp_id && other.tool_id == prev_id)
+                    setup.toolpath_indices.iter().any(|&idx| {
+                        state
+                            .session
+                            .get_toolpath_config(idx)
+                            .is_some_and(|other| {
+                                other.id != tp_id.0
+                                    && other.tool_id == prev_id.0
+                            })
+                    })
                 })
         });
 
         if same_setup_has_dep {
             // Check if the dependency toolpath is stale or pending
-            let dep_stale = setup_id.is_some_and(|sid| {
+            let dep_stale = setup_idx.is_some_and(|si| {
                 state
-                    .job
-                    .setups
-                    .iter()
-                    .find(|s| s.id == sid)
+                    .session
+                    .list_setups()
+                    .get(si)
                     .is_some_and(|setup| {
-                        setup.toolpaths.iter().any(|other| {
-                            other.id != tp_id
-                                && other.tool_id == prev_id
-                                && (matches!(other.status, ComputeStatus::Pending)
-                                    || other.stale_since.is_some())
+                        setup.toolpath_indices.iter().any(|&idx| {
+                            state
+                                .session
+                                .get_toolpath_config(idx)
+                                .is_some_and(|other| {
+                                    other.id != tp_id.0
+                                        && other.tool_id == prev_id.0
+                                        && state
+                                            .gui
+                                            .toolpath_rt
+                                            .get(&other.id)
+                                            .is_none_or(|rt| {
+                                                matches!(rt.status, ComputeStatus::Pending)
+                                                    || rt.stale_since.is_some()
+                                            })
+                                })
                         })
                     })
             });

@@ -1,5 +1,6 @@
 use super::AppEvent;
 use crate::state::AppState;
+use crate::state::job::SetupId;
 
 pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
     // Keyboard shortcuts
@@ -82,17 +83,17 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                     ui.close_menu();
                     events.push(AppEvent::ExportGcode);
                 }
-                if state.job.setups.len() > 1 {
+                if state.session.list_setups().len() > 1 {
                     if ui.button("Export Combined (M0 pauses)...").clicked() {
                         ui.close_menu();
                         events.push(AppEvent::ExportCombinedGcode);
                     }
                     ui.separator();
-                    for setup in &state.job.setups {
+                    for setup in state.session.list_setups() {
                         let label = format!("Export '{}'...", setup.name);
                         if ui.button(&label).clicked() {
                             ui.close_menu();
-                            events.push(AppEvent::ExportSetupGcode(setup.id));
+                            events.push(AppEvent::ExportSetupGcode(SetupId(setup.id)));
                         }
                     }
                 }

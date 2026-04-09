@@ -1,8 +1,10 @@
 use super::AppEvent;
 use crate::state::AppState;
-use crate::state::job::{FaceUp, Setup, XYDatum};
+use crate::state::job::{FaceUp, ModelId, SetupId};
+use crate::state::runtime::XYDatum;
 use crate::state::selection::Selection;
 use crate::ui::theme;
+use rs_cam_core::session::SetupData;
 
 /// Left panel for the Setup workspace: setup list with summary cards.
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
@@ -10,9 +12,10 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     ui.separator();
 
     // Stock summary — show effective dims for the active setup orientation
-    let stock = &state.job.stock;
+    let stock = state.session.stock_config();
     let (eff_w, eff_d, eff_h) = if let Some(setup) = active_setup(state) {
-        setup.effective_stock(stock)
+        let (w, d, h) = setup.face_up.effective_stock(stock.x, stock.y, stock.z);
+        setup.z_rotation.effective_stock(w, d, h)
     } else {
         (stock.x, stock.y, stock.z)
     };
@@ -46,13 +49,14 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     ui.add_space(6.0);
 
     // Setup cards
-    for setup in &state.job.setups {
+    for setup in state.session.list_setups() {
         draw_setup_card(ui, setup, state, events);
         ui.add_space(4.0);
     }
 
     // Add setup button
-    if state.job.setups.len() > 1 || !state.job.setups.is_empty() {
+    let setups = state.session.list_setups();
+    if setups.len() > 1 || !setups.is_empty() {
         ui.add_space(4.0);
         if ui.button("+ Add Setup").clicked() {
             events.push(AppEvent::AddSetup);
@@ -65,26 +69,27 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     egui::CollapsingHeader::new("Models")
         .default_open(false)
         .show(ui, |ui| {
-            if state.job.models.is_empty() {
+            if state.session.models().is_empty() {
                 ui.label(
                     egui::RichText::new("No models imported")
                         .italics()
                         .color(theme::TEXT_DIM),
                 );
             }
-            for model in &state.job.models {
-                let selected = state.selection == Selection::Model(model.id);
+            for model in state.session.models() {
+                let mid = ModelId(model.id);
+                let selected = state.selection == Selection::Model(mid);
                 let response = ui.selectable_label(selected, &model.name);
                 if response.clicked() {
-                    events.push(AppEvent::Select(Selection::Model(model.id)));
+                    events.push(AppEvent::Select(Selection::Model(mid)));
                 }
                 response.context_menu(|ui| {
                     if ui.button("Reload from disk").clicked() {
-                        events.push(AppEvent::ReloadModel(model.id));
+                        events.push(AppEvent::ReloadModel(mid));
                         ui.close_menu();
                     }
                     if ui.button("Delete").clicked() {
-                        events.push(AppEvent::RemoveModel(model.id));
+                        events.push(AppEvent::RemoveModel(mid));
                         ui.close_menu();
                     }
                 });
@@ -92,8 +97,9 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         });
 }
 
-fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &mut Vec<AppEvent>) {
-    let is_selected = state.selection == Selection::Setup(setup.id);
+fn draw_setup_card(ui: &mut egui::Ui, setup: &SetupData, state: &AppState, events: &mut Vec<AppEvent>) {
+    let setup_id = SetupId(setup.id);
+    let is_selected = state.selection == Selection::Setup(setup_id);
     let base_border = if is_selected {
         theme::ACCENT
     } else {
@@ -128,7 +134,7 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &
                 ui.spacing_mut().item_spacing.x = 12.0;
 
                 // Orientation chip
-                let orient = if setup.z_rotation == crate::state::job::ZRotation::Deg0 {
+                let orient = if setup.z_rotation == rs_cam_core::compute::transform::ZRotation::Deg0 {
                     setup.face_up.label().to_owned()
                 } else {
                     format!("{} +{}", setup.face_up.label(), setup.z_rotation.label())
@@ -141,12 +147,15 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &
                 );
 
                 // Datum chip
-                let datum = match &setup.datum.xy_method {
-                    XYDatum::CornerProbe(c) => format!("Corner ({})", c.label()),
-                    XYDatum::CenterOfStock => "Center".into(),
-                    XYDatum::AlignmentPins => "Pins".into(),
-                    XYDatum::Manual => "Manual".into(),
-                };
+                let datum_config = state.gui.setup_rt.get(&setup.id);
+                let datum = datum_config
+                    .map(|srt| match &srt.datum.xy_method {
+                        XYDatum::CornerProbe(c) => format!("Corner ({})", c.label()),
+                        XYDatum::CenterOfStock => "Center".into(),
+                        XYDatum::AlignmentPins => "Pins".into(),
+                        XYDatum::Manual => "Manual".into(),
+                    })
+                    .unwrap_or_else(|| "Corner (Front-Left)".into());
                 chip(ui, "XY", &datum, egui::Color32::from_rgb(140, 160, 100));
             });
 
@@ -156,7 +165,7 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &
 
                 let fixture_count = setup.fixtures.len();
                 let keepout_count = setup.keep_out_zones.len();
-                let pin_count = state.job.stock.alignment_pins.len();
+                let pin_count = state.session.stock_config().alignment_pins.len();
 
                 if fixture_count > 0 {
                     chip(
@@ -203,7 +212,7 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &
             }
 
             // Fresh-stock warning for non-first setups
-            if state.job.setups.first().map(|s| s.id) != Some(setup.id) {
+            if state.session.list_setups().first().map(|s| s.id) != Some(setup.id) {
                 ui.label(
                     egui::RichText::new("Starts from uncut stock (prior setups not reflected)")
                         .small()
@@ -216,7 +225,7 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &Setup, state: &AppState, events: &
         .interact(egui::Sense::click());
 
     if card_response.clicked() {
-        events.push(AppEvent::Select(Selection::Setup(setup.id)));
+        events.push(AppEvent::Select(Selection::Setup(setup_id)));
     }
 
     // Update border color on hover
@@ -249,26 +258,37 @@ fn chip(ui: &mut egui::Ui, key: &str, value: &str, color: egui::Color32) {
 
 /// Compact project summary: ops, tools, estimated time, readiness.
 fn draw_project_summary(ui: &mut egui::Ui, state: &AppState) {
-    let enabled_ops = state.job.all_toolpaths().filter(|tp| tp.enabled).count();
+    let enabled_ops = state.session.toolpath_configs().iter().filter(|tc| tc.enabled).count();
     if enabled_ops == 0 {
         return;
     }
 
     let computed = state
-        .job
-        .all_toolpaths()
-        .filter(|tp| tp.enabled && tp.result.is_some())
+        .session
+        .toolpath_configs()
+        .iter()
+        .filter(|tc| {
+            tc.enabled
+                && state
+                    .gui
+                    .toolpath_rt
+                    .get(&tc.id)
+                    .and_then(|rt| rt.result.as_ref())
+                    .is_some()
+        })
         .count();
-    let tool_count = state.job.tools.len();
+    let tool_count = state.session.tools().len();
 
     // Estimated cycle time from computed toolpaths
     let mut total_time_min = 0.0_f64;
-    for tp in state.job.all_toolpaths() {
-        if !tp.enabled {
+    for tc in state.session.toolpath_configs() {
+        if !tc.enabled {
             continue;
         }
-        if let Some(ref result) = tp.result {
-            let feed = tp.operation.feed_rate();
+        if let Some(rt) = state.gui.toolpath_rt.get(&tc.id)
+            && let Some(ref result) = rt.result
+        {
+            let feed = tc.operation.feed_rate();
             if feed > 0.0 {
                 total_time_min += result.stats.cutting_distance / feed;
             }
@@ -314,16 +334,21 @@ fn draw_project_summary(ui: &mut egui::Ui, state: &AppState) {
 }
 
 /// Determine the active setup from the current selection.
-fn active_setup(state: &AppState) -> Option<&Setup> {
+fn active_setup(state: &AppState) -> Option<&SetupData> {
+    let setups = state.session.list_setups();
     let setup_id = match &state.selection {
         Selection::Setup(id) => Some(*id),
         Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
-        Selection::Toolpath(tp_id) => state.job.setup_of_toolpath(*tp_id),
+        Selection::Toolpath(tp_id) => state
+            .session
+            .setup_of_toolpath_id(tp_id.0)
+            .and_then(|idx| setups.get(idx))
+            .map(|s| SetupId(s.id)),
         _ => None,
     };
     if let Some(sid) = setup_id {
-        state.job.setups.iter().find(|s| s.id == sid)
+        setups.iter().find(|s| s.id == sid.0)
     } else {
-        state.job.setups.first()
+        setups.first()
     }
 }
