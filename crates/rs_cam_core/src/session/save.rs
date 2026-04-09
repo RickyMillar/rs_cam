@@ -8,7 +8,7 @@ use super::project_file::{
     ProjectToolSection, ProjectToolpathSection,
 };
 use super::{ProjectSession, SessionError};
-use crate::compute::tool_config::ToolType;
+use crate::compute::tool_config::{BitCutDirection, ToolMaterial, ToolType};
 
 /// Convert a `ToolType` to the string key used in project files.
 fn tool_type_to_key(tt: ToolType) -> String {
@@ -18,6 +18,25 @@ fn tool_type_to_key(tt: ToolType) -> String {
         ToolType::BullNose => "bull_nose",
         ToolType::VBit => "v_bit",
         ToolType::TaperedBallNose => "tapered_ball_nose",
+    }
+    .to_owned()
+}
+
+/// Convert a `ToolMaterial` to the string key used in project files.
+fn tool_material_to_key(tm: ToolMaterial) -> String {
+    match tm {
+        ToolMaterial::Carbide => "carbide",
+        ToolMaterial::Hss => "hss",
+    }
+    .to_owned()
+}
+
+/// Convert a `BitCutDirection` to the string key used in project files.
+fn cut_direction_to_key(cd: BitCutDirection) -> String {
+    match cd {
+        BitCutDirection::UpCut => "up_cut",
+        BitCutDirection::DownCut => "down_cut",
+        BitCutDirection::Compression => "compression",
     }
     .to_owned()
 }
@@ -54,6 +73,9 @@ impl ProjectSession {
             origin_x: self.stock.origin_x,
             origin_y: self.stock.origin_y,
             origin_z: self.stock.origin_z,
+            padding: self.stock.padding,
+            workholding_rigidity: self.stock.workholding_rigidity,
+            auto_from_model: self.stock.auto_from_model,
             material: self.stock.material.clone(),
             alignment_pins: self.stock.alignment_pins.clone(),
             flip_axis: self.stock.flip_axis,
@@ -95,6 +117,11 @@ impl ProjectSession {
                 shank_length: t.shank_length,
                 stickout: t.stickout,
                 flute_count: t.flute_count,
+                tool_number: Some(t.tool_number as usize),
+                tool_material: tool_material_to_key(t.tool_material),
+                cut_direction: cut_direction_to_key(t.cut_direction),
+                vendor: t.vendor.clone(),
+                product_id: t.product_id.clone(),
             })
             .collect();
 

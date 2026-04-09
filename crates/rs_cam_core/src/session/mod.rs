@@ -806,6 +806,11 @@ mod tests {
                 shank_length: 20.0,
                 stickout: 45.0,
                 flute_count: 2,
+                tool_number: None,
+                tool_material: "carbide".to_owned(),
+                cut_direction: "up_cut".to_owned(),
+                vendor: String::new(),
+                product_id: String::new(),
             }],
             models: Vec::new(),
             setups: vec![ProjectSetupSection {
