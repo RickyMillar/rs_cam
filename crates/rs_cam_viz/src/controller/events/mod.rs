@@ -79,10 +79,9 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::ToggleToolpathEnabled(tp_id) => {
                 if let Some((idx, _tc)) =
                     self.state.session.find_toolpath_config_by_id(tp_id.0)
+                    && let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx)
                 {
-                    if let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx) {
-                        tc.enabled = !tc.enabled;
-                    }
+                    tc.enabled = !tc.enabled;
                 }
             }
             AppEvent::RemoveToolpath(tp_id) => self.handle_remove_toolpath(tp_id),

@@ -248,7 +248,7 @@ fn pick_toolpaths(
     for tc in session.toolpath_configs() {
         let tp_id = ToolpathId(tc.id);
         let rt = gui.toolpath_rt.get(&tc.id);
-        let visible = rt.map_or(true, |r| r.visible);
+        let visible = rt.is_none_or(|r| r.visible);
         if !visible {
             continue;
         }

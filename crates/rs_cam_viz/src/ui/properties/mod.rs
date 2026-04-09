@@ -1984,7 +1984,7 @@ fn build_entry_from_session_and_gui(
         feeds_auto: tc.feeds_auto.clone(),
         face_selection: tc.face_selection.clone(),
         feeds_result: rt.feeds_result.clone(),
-        debug_options: tc.debug_options.clone(),
+        debug_options: tc.debug_options,
         debug_trace: rt.debug_trace.clone(),
         semantic_trace: rt.semantic_trace.clone(),
         debug_trace_path: rt.debug_trace_path.clone(),
@@ -2012,7 +2012,7 @@ fn write_entry_config_to_session(
         tc.stock_source = entry.stock_source;
         tc.feeds_auto = entry.feeds_auto.clone();
         tc.face_selection = entry.face_selection.clone();
-        tc.debug_options = entry.debug_options.clone();
+        tc.debug_options = entry.debug_options;
     }
 }
 
