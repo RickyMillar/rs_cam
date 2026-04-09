@@ -83,10 +83,7 @@ impl<B: ComputeBackend> AppController<B> {
 
         // Build a lightweight "setup" for transforms using session types
         let transform_setup = setup_data.map(|setup| {
-            crate::state::job::Setup::new(
-                crate::state::job::SetupId(setup.id),
-                setup.name.clone(),
-            )
+            crate::state::job::Setup::new(crate::state::job::SetupId(setup.id), setup.name.clone())
         });
         // If there's a real setup, copy face_up and z_rotation
         let transform_setup = match (transform_setup, setup_data) {
@@ -337,6 +334,10 @@ impl<B: ComputeBackend> AppController<B> {
                         }
                     }
                     self.pending_upload = true;
+
+                    // Notify pending MCP request for this toolpath
+                    #[cfg(feature = "mcp")]
+                    self.notify_mcp_toolpath_complete(tp_id);
                 }
                 ComputeMessage::Simulation(result) => match result {
                     Ok(simulation) => {
@@ -474,14 +475,23 @@ impl<B: ComputeBackend> AppController<B> {
                         });
 
                         self.pending_upload = true;
+
+                        // Notify pending MCP simulation request
+                        #[cfg(feature = "mcp")]
+                        self.notify_mcp_simulation_complete();
                     }
-                    Err(ComputeError::Cancelled) => {}
+                    Err(ComputeError::Cancelled) => {
+                        #[cfg(feature = "mcp")]
+                        self.notify_mcp_simulation_error("Simulation cancelled");
+                    }
                     Err(ComputeError::Message(error)) => {
                         tracing::error!("Simulation failed: {error}");
                         self.push_notification(
                             format!("Simulation failed: {error}"),
                             super::super::Severity::Error,
                         );
+                        #[cfg(feature = "mcp")]
+                        self.notify_mcp_simulation_error(&error);
                     }
                 },
                 ComputeMessage::Collision(result) => match result {
@@ -507,20 +517,182 @@ impl<B: ComputeBackend> AppController<B> {
                         } else {
                             None
                         };
+                        // Extract MCP response data before moving ownership
+                        #[cfg(feature = "mcp")]
+                        let mcp_collision_count = collision.report.collisions.len();
+                        #[cfg(feature = "mcp")]
+                        let mcp_min_safe_stickout = collision.report.min_safe_stickout;
+                        #[cfg(feature = "mcp")]
+                        let mcp_is_clear = collision.report.is_clear();
+
                         self.state.simulation.checks.collision_report = Some(collision.report);
                         self.collision_positions = collision.positions;
                         self.pending_upload = true;
+
+                        // Notify pending MCP collision request
+                        #[cfg(feature = "mcp")]
+                        self.notify_mcp_collision_complete(
+                            mcp_collision_count,
+                            mcp_min_safe_stickout,
+                            mcp_is_clear,
+                        );
                     }
-                    Err(ComputeError::Cancelled) => {}
+                    Err(ComputeError::Cancelled) => {
+                        #[cfg(feature = "mcp")]
+                        self.notify_mcp_collision_error("Collision check cancelled");
+                    }
                     Err(ComputeError::Message(error)) => {
                         tracing::error!("Collision check failed: {error}");
                         self.push_notification(
                             format!("Collision check failed: {error}"),
                             super::super::Severity::Error,
                         );
+                        #[cfg(feature = "mcp")]
+                        self.notify_mcp_collision_error(&error);
                     }
                 },
             }
+        }
+    }
+
+    // ── MCP notification helpers ─────────────────────────────────────
+    #[cfg(feature = "mcp")]
+    fn notify_mcp_toolpath_complete(&mut self, tp_id: crate::state::toolpath::ToolpathId) {
+        use crate::mcp_bridge::McpResponse;
+        use rs_cam_mcp::server::json_str;
+
+        if let Some(ref mut pending) = self.pending_mcp {
+            // Check individual toolpath request
+            if let Some(sender) = pending.toolpath.remove(&tp_id) {
+                let rt = self.state.gui.toolpath_rt.get(&tp_id.0);
+                let resp = match rt.and_then(|rt| rt.result.as_ref()) {
+                    Some(result) => json_str(serde_json::json!({
+                        "id": tp_id.0,
+                        "move_count": result.stats.move_count,
+                        "cutting_distance_mm": result.stats.cutting_distance,
+                        "rapid_distance_mm": result.stats.rapid_distance,
+                    })),
+                    None => {
+                        let status_msg = rt
+                            .map(|rt| match &rt.status {
+                                ComputeStatus::Error(e) => format!("Error: {e}"),
+                                _ => "Toolpath generation produced no result".to_owned(),
+                            })
+                            .unwrap_or_else(|| "Toolpath not found".to_owned());
+                        json_str(serde_json::json!({"error": status_msg}))
+                    }
+                };
+                let _ = sender.send(McpResponse { result: Ok(resp) });
+            }
+
+            // Check generate_all tracking
+            if let Some(ref mut ga) = pending.generate_all {
+                if let Some(pos) = ga.remaining.iter().position(|id| *id == tp_id) {
+                    ga.remaining.remove(pos);
+                    let rt = self.state.gui.toolpath_rt.get(&tp_id.0);
+                    if rt.and_then(|rt| rt.result.as_ref()).is_some() {
+                        ga.completed += 1;
+                    } else {
+                        ga.failed += 1;
+                    }
+                }
+
+                if ga.remaining.is_empty() {
+                    // All done, send response
+                    if let Some(ga) = pending.generate_all.take() {
+                        let resp = rs_cam_mcp::server::text(format!(
+                            "Generated {} toolpaths ({} failed)",
+                            ga.completed, ga.failed,
+                        ));
+                        let _ = ga.response_tx.send(McpResponse { result: Ok(resp) });
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "mcp")]
+    fn notify_mcp_simulation_complete(&mut self) {
+        use crate::mcp_bridge::McpResponse;
+        use rs_cam_mcp::server::json_str;
+
+        if let Some(ref mut pending) = self.pending_mcp
+            && let Some(sender) = pending.simulation.take()
+        {
+            let diag = self.state.session.diagnostics();
+            let mut resp = serde_json::json!({
+                "total_runtime_s": diag.total_runtime_s,
+                "air_cut_percentage": diag.air_cut_percentage,
+                "average_engagement": diag.average_engagement,
+                "collision_count": diag.collision_count,
+                "rapid_collision_count": diag.rapid_collision_count,
+                "verdict": diag.verdict,
+                "per_toolpath": diag.per_toolpath,
+            });
+            if let Some(ref results) = self.state.simulation.results
+                && let Some(ref ct) = results.cut_trace
+            {
+                // SAFETY: resp is a known JSON object we just constructed
+                #[allow(clippy::indexing_slicing)]
+                {
+                    resp["semantic_summary_count"] = serde_json::json!(ct.semantic_summaries.len());
+                    resp["hotspot_count"] = serde_json::json!(ct.hotspots.len());
+                    resp["issue_count"] = serde_json::json!(ct.issues.len());
+                }
+            }
+            let _ = sender.send(McpResponse {
+                result: Ok(json_str(resp)),
+            });
+        }
+    }
+
+    #[cfg(feature = "mcp")]
+    fn notify_mcp_simulation_error(&mut self, error: &str) {
+        use crate::mcp_bridge::McpResponse;
+        use rs_cam_mcp::server::json_str;
+
+        if let Some(ref mut pending) = self.pending_mcp
+            && let Some(sender) = pending.simulation.take()
+        {
+            let _ = sender.send(McpResponse {
+                result: Ok(json_str(serde_json::json!({"error": error}))),
+            });
+        }
+    }
+
+    #[cfg(feature = "mcp")]
+    fn notify_mcp_collision_complete(
+        &mut self,
+        collision_count: usize,
+        min_safe_stickout: f64,
+        is_clear: bool,
+    ) {
+        use crate::mcp_bridge::McpResponse;
+        use rs_cam_mcp::server::json_str;
+
+        if let Some(ref mut pending) = self.pending_mcp
+            && let Some(sender) = pending.collision.take()
+        {
+            let resp = json_str(serde_json::json!({
+                "collision_count": collision_count,
+                "min_safe_stickout_mm": min_safe_stickout,
+                "is_clear": is_clear,
+            }));
+            let _ = sender.send(McpResponse { result: Ok(resp) });
+        }
+    }
+
+    #[cfg(feature = "mcp")]
+    fn notify_mcp_collision_error(&mut self, error: &str) {
+        use crate::mcp_bridge::McpResponse;
+        use rs_cam_mcp::server::json_str;
+
+        if let Some(ref mut pending) = self.pending_mcp
+            && let Some(sender) = pending.collision.take()
+        {
+            let _ = sender.send(McpResponse {
+                result: Ok(json_str(serde_json::json!({"error": error}))),
+            });
         }
     }
 }

@@ -17,7 +17,12 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             let sim = &state.simulation;
 
             // --- Operations check ---
-            let enabled_count = state.session.toolpath_configs().iter().filter(|tc| tc.enabled).count();
+            let enabled_count = state
+                .session
+                .toolpath_configs()
+                .iter()
+                .filter(|tc| tc.enabled)
+                .count();
             let computed_count = state
                 .session
                 .toolpath_configs()

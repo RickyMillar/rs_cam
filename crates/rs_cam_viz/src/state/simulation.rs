@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::job::SetupId;
-use rs_cam_core::session::ProjectSession;
 use super::runtime::GuiState;
 use super::toolpath::ToolpathId;
 use rs_cam_core::collision::{CollisionReport, RapidCollision};
@@ -13,6 +12,7 @@ use rs_cam_core::geo::{BoundingBox3, P3, V3};
 use rs_cam_core::semantic_trace::{
     ToolpathSemanticItem, ToolpathSemanticKind, ToolpathSemanticTrace,
 };
+use rs_cam_core::session::ProjectSession;
 use rs_cam_core::simulation_cut::{
     SimulationCutHotspot, SimulationCutIssue, SimulationCutIssueKind, SimulationCutSample,
     SimulationCutTrace, SimulationMetricOptions, SimulationSemanticCutSummary,
@@ -494,8 +494,7 @@ impl SimulationState {
 
     pub fn sync_debug_state(&mut self, gui: &GuiState, max_feed_mm_min: f64) {
         let boundaries = self.boundaries().to_vec();
-        self.debug
-            .sync_semantic_indexes(gui, &boundaries);
+        self.debug.sync_semantic_indexes(gui, &boundaries);
         self.debug
             .sync_runtime_profiles(gui, &boundaries, max_feed_mm_min);
         let boundary_ids: HashSet<_> = boundaries.iter().map(|boundary| boundary.id).collect();
@@ -850,7 +849,13 @@ impl SimulationState {
                 .find(|item| item.debug_span_id == Some(span_id))
                 .map(|item| item.id)
         })?;
-        self.trace_target_for_item(gui, max_feed_mm_min, toolpath_id, semantic_item_id, prefer_end)
+        self.trace_target_for_item(
+            gui,
+            max_feed_mm_min,
+            toolpath_id,
+            semantic_item_id,
+            prefer_end,
+        )
     }
 
     pub fn trace_target_for_hotspot(
@@ -936,7 +941,8 @@ impl SimulationState {
         session: &ProjectSession,
     ) -> Option<(ToolpathId, ToolpathDebugBounds2, f64, f64)> {
         let active = self.active_semantic_item(gui, max_feed_mm_min)?;
-        let bbox = self.semantic_item_bbox_in_simulation(session, active.toolpath_id, &active.item)?;
+        let bbox =
+            self.semantic_item_bbox_in_simulation(session, active.toolpath_id, &active.item)?;
         Some((
             active.toolpath_id,
             ToolpathDebugBounds2 {
@@ -1016,9 +1022,12 @@ impl SimulationState {
                 }
 
                 for (hotspot_index, hotspot) in trace.hotspots.iter().enumerate() {
-                    let Some(target) =
-                        self.trace_target_for_hotspot(gui, max_feed_mm_min, boundary.id, hotspot_index)
-                    else {
+                    let Some(target) = self.trace_target_for_hotspot(
+                        gui,
+                        max_feed_mm_min,
+                        boundary.id,
+                        hotspot_index,
+                    ) else {
                         continue;
                     };
                     issues.push(SimulationIssue {
@@ -1105,7 +1114,11 @@ impl SimulationState {
         issues
     }
 
-    pub fn current_issue(&mut self, gui: &GuiState, max_feed_mm_min: f64) -> Option<SimulationIssue> {
+    pub fn current_issue(
+        &mut self,
+        gui: &GuiState,
+        max_feed_mm_min: f64,
+    ) -> Option<SimulationIssue> {
         let issues = self.issues(gui, max_feed_mm_min);
         let index = self.debug.focused_issue_index?;
         issues.get(index).cloned()

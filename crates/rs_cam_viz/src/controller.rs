@@ -71,6 +71,10 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     show_load_warnings: bool,
     status_message: Option<(String, Instant)>,
     notifications: Vec<Notification>,
+    /// Pending MCP compute operations awaiting async results.
+    /// `Some` when MCP mode is enabled, `None` otherwise.
+    #[cfg(feature = "mcp")]
+    pub pending_mcp: Option<crate::mcp_bridge::PendingMcpCompute>,
 }
 
 impl AppController<ThreadedComputeBackend> {
@@ -97,6 +101,8 @@ impl<B: ComputeBackend> AppController<B> {
             show_load_warnings: false,
             status_message: None,
             notifications: Vec::new(),
+            #[cfg(feature = "mcp")]
+            pending_mcp: None,
         }
     }
 

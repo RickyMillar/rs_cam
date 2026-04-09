@@ -36,12 +36,8 @@ impl<B: ComputeBackend> AppController<B> {
                     old_face_selection,
                     ..
                 } => {
-                    if let Some((idx, _)) =
-                        self.state.session.find_toolpath_config_by_id(tp_id.0)
-                    {
-                        if let Some(tc) =
-                            self.state.session.toolpath_configs_mut().get_mut(idx)
-                        {
+                    if let Some((idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0) {
+                        if let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx) {
                             tc.operation = old_op;
                             tc.dressups = old_dressups;
                             tc.face_selection = old_face_selection;
@@ -91,12 +87,8 @@ impl<B: ComputeBackend> AppController<B> {
                     new_face_selection,
                     ..
                 } => {
-                    if let Some((idx, _)) =
-                        self.state.session.find_toolpath_config_by_id(tp_id.0)
-                    {
-                        if let Some(tc) =
-                            self.state.session.toolpath_configs_mut().get_mut(idx)
-                        {
+                    if let Some((idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0) {
+                        if let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx) {
                             tc.operation = new_op;
                             tc.dressups = new_dressups;
                             tc.face_selection = new_face_selection;

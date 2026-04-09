@@ -97,7 +97,12 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         });
 }
 
-fn draw_setup_card(ui: &mut egui::Ui, setup: &SetupData, state: &AppState, events: &mut Vec<AppEvent>) {
+fn draw_setup_card(
+    ui: &mut egui::Ui,
+    setup: &SetupData,
+    state: &AppState,
+    events: &mut Vec<AppEvent>,
+) {
     let setup_id = SetupId(setup.id);
     let is_selected = state.selection == Selection::Setup(setup_id);
     let base_border = if is_selected {
@@ -134,7 +139,8 @@ fn draw_setup_card(ui: &mut egui::Ui, setup: &SetupData, state: &AppState, event
                 ui.spacing_mut().item_spacing.x = 12.0;
 
                 // Orientation chip
-                let orient = if setup.z_rotation == rs_cam_core::compute::transform::ZRotation::Deg0 {
+                let orient = if setup.z_rotation == rs_cam_core::compute::transform::ZRotation::Deg0
+                {
                     setup.face_up.label().to_owned()
                 } else {
                     format!("{} +{}", setup.face_up.label(), setup.z_rotation.label())
@@ -258,7 +264,12 @@ fn chip(ui: &mut egui::Ui, key: &str, value: &str, color: egui::Color32) {
 
 /// Compact project summary: ops, tools, estimated time, readiness.
 fn draw_project_summary(ui: &mut egui::Ui, state: &AppState) {
-    let enabled_ops = state.session.toolpath_configs().iter().filter(|tc| tc.enabled).count();
+    let enabled_ops = state
+        .session
+        .toolpath_configs()
+        .iter()
+        .filter(|tc| tc.enabled)
+        .count();
     if enabled_ops == 0 {
         return;
     }

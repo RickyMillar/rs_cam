@@ -16,7 +16,9 @@ use operations::{
     draw_steep_shallow_params, draw_stepover_diagram, draw_trace_params, draw_vcarve_params,
     draw_waterline_params, draw_zigzag_params,
 };
-pub use operations::{ToolpathValidationContext, collect_warnings, validate_toolpath, validate_toolpath_config};
+pub use operations::{
+    ToolpathValidationContext, collect_warnings, validate_toolpath, validate_toolpath_config,
+};
 
 use crate::state::AppState;
 use crate::state::selection::Selection;
@@ -132,7 +134,11 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
     match state.selection.clone() {
         Selection::None => {
             if state.session.models().is_empty()
-                && state.session.list_setups().iter().all(|s| s.toolpath_indices.is_empty())
+                && state
+                    .session
+                    .list_setups()
+                    .iter()
+                    .all(|s| s.toolpath_indices.is_empty())
             {
                 ui.label(
                     egui::RichText::new("Getting started:")
@@ -312,7 +318,12 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
                 .collect();
             // Snapshot tool configs for feeds calculation
-            let tool_configs: Vec<_> = state.session.tools().iter().map(|t| (t.id, t.clone())).collect();
+            let tool_configs: Vec<_> = state
+                .session
+                .tools()
+                .iter()
+                .map(|t| (t.id, t.clone()))
+                .collect();
             let validation = ToolpathValidationContext::from_session(&state.session);
             let material = state.session.stock_config().material.clone();
             let machine = state.session.machine().clone();
@@ -332,7 +343,10 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .find_toolpath_config_by_id(id.0)
                 .map(|(_, tc)| {
                     let sb = state.session.stock_config().bbox();
-                    let mb = state.session.models().iter()
+                    let mb = state
+                        .session
+                        .models()
+                        .iter()
                         .find(|m| m.id == tc.model_id)
                         .and_then(|m| m.mesh.as_ref().map(|mesh| mesh.bbox));
                     HeightContext {
@@ -357,7 +371,8 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
 
             // Build a temporary ToolpathEntry from session config + gui runtime
             // so the existing draw_toolpath_panel can work unchanged.
-            if let Some(mut entry) = build_entry_from_session_and_gui(id, &state.session, &state.gui)
+            if let Some(mut entry) =
+                build_entry_from_session_and_gui(id, &state.session, &state.gui)
             {
                 draw_toolpath_panel(
                     ui,
@@ -793,7 +808,10 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
             ui.end_row();
 
             ui.label("Max Feed:");
-            ui.label(format!("{:.0} mm/min", state.session.machine().max_feed_mm_min));
+            ui.label(format!(
+                "{:.0} mm/min",
+                state.session.machine().max_feed_mm_min
+            ));
             ui.end_row();
 
             ui.label("Max Shank:");
@@ -2007,8 +2025,16 @@ fn write_entry_config_to_session(
         tc.boundary = entry.boundary.clone();
         tc.boundary_inherit = entry.boundary_inherit;
         tc.coolant = entry.coolant;
-        tc.pre_gcode = if entry.pre_gcode.is_empty() { None } else { Some(entry.pre_gcode.clone()) };
-        tc.post_gcode = if entry.post_gcode.is_empty() { None } else { Some(entry.post_gcode.clone()) };
+        tc.pre_gcode = if entry.pre_gcode.is_empty() {
+            None
+        } else {
+            Some(entry.pre_gcode.clone())
+        };
+        tc.post_gcode = if entry.post_gcode.is_empty() {
+            None
+        } else {
+            Some(entry.post_gcode.clone())
+        };
         tc.stock_source = entry.stock_source;
         tc.feeds_auto = entry.feeds_auto.clone();
         tc.face_selection = entry.face_selection.clone();
@@ -2017,10 +2043,7 @@ fn write_entry_config_to_session(
 }
 
 /// Write runtime changes from a `ToolpathEntry` back to the GUI's `ToolpathRuntime`.
-fn write_entry_runtime_to_gui(
-    entry: &ToolpathEntry,
-    gui: &mut crate::state::runtime::GuiState,
-) {
+fn write_entry_runtime_to_gui(entry: &ToolpathEntry, gui: &mut crate::state::runtime::GuiState) {
     if let Some(rt) = gui.toolpath_rt.get_mut(&entry.id.0) {
         rt.visible = entry.visible;
         rt.locked = entry.locked;

@@ -1,7 +1,18 @@
 fn main() -> eframe::Result {
-    tracing_subscriber::fmt::init();
+    let mcp_mode = std::env::args().any(|arg| arg == "--mcp");
+
+    if mcp_mode {
+        // MCP mode: stdout is the MCP transport, so redirect tracing to stderr.
+        tracing_subscriber::fmt()
+            .with_writer(std::io::stderr)
+            .with_ansi(false)
+            .init();
+    } else {
+        tracing_subscriber::fmt::init();
+    }
+
     install_panic_hook();
-    rs_cam_viz::run()
+    rs_cam_viz::run(mcp_mode)
 }
 
 fn install_panic_hook() {

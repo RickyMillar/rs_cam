@@ -125,10 +125,7 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .any(|s| s.face_up == FaceUp::Bottom);
         if !has_flipped {
-            let idx = self
-                .state
-                .session
-                .add_setup("".to_owned(), FaceUp::Bottom);
+            let idx = self.state.session.add_setup("".to_owned(), FaceUp::Bottom);
             if let Some(s) = self.state.session.setups_mut().get_mut(idx) {
                 s.name = format!("Setup {}", s.id + 1);
             }
@@ -142,9 +139,7 @@ impl<B: ComputeBackend> AppController<B> {
                 let margin = if stock.padding > 2.0 {
                     stock.padding / 2.0
                 } else {
-                    10.0_f64
-                        .min(stock.x / 4.0)
-                        .min(stock.y / 4.0)
+                    10.0_f64.min(stock.x / 4.0).min(stock.y / 4.0)
                 };
                 let cy = stock.y / 2.0;
                 let x_size = stock.x;
@@ -468,9 +463,10 @@ impl<B: ComputeBackend> AppController<B> {
                 cfg.holes = new_holes;
             }
             // Mark stale in GUI runtime
-            if let Some((_, tc)) = self.state.session.find_toolpath_config_by_id(
-                existing.map(|(_, id)| id).unwrap_or(0),
-            )
+            if let Some((_, tc)) = self
+                .state
+                .session
+                .find_toolpath_config_by_id(existing.map(|(_, id)| id).unwrap_or(0))
                 && let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tc.id)
             {
                 rt.result = None;

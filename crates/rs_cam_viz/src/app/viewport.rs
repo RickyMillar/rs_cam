@@ -278,12 +278,20 @@ impl RsCamApp {
                 _pad1: 0.0,
             },
             line_uniforms: LineUniforms { view_proj },
-            has_mesh: state.session.models().iter().any(|model| model.mesh.is_some())
+            has_mesh: state
+                .session
+                .models()
+                .iter()
+                .any(|model| model.mesh.is_some())
                 && state.viewport.render_mode == crate::state::viewport::RenderMode::Shaded
                 && state.workspace != Workspace::Simulation,
             show_grid: state.viewport.show_grid,
             show_stock: state.viewport.show_stock
-                && state.session.models().iter().any(|model| model.mesh.is_some()),
+                && state
+                    .session
+                    .models()
+                    .iter()
+                    .any(|model| model.mesh.is_some()),
             show_fixtures: state.viewport.show_fixtures
                 && (state.workspace != Workspace::Simulation
                     || !state.session.stock_config().alignment_pins.is_empty()),
@@ -310,7 +318,11 @@ impl RsCamApp {
                 None
             },
             show_origin_axes: state.viewport.show_stock
-                && state.session.models().iter().any(|model| model.mesh.is_some()),
+                && state
+                    .session
+                    .models()
+                    .iter()
+                    .any(|model| model.mesh.is_some()),
             origin_axes_origin: [
                 state.session.stock_config().origin_x as f32,
                 state.session.stock_config().origin_y as f32,

@@ -126,9 +126,7 @@ impl<B: ComputeBackend> AppController<B> {
             model.polygons = new_model.polygons.clone();
             model.units = Some(new_model.units);
             model.winding_report = new_model.winding_report;
-            if auto_stock
-                && let Some(mesh) = &model.mesh
-            {
+            if auto_stock && let Some(mesh) = &model.mesh {
                 stock_bbox_update = Some(mesh.bbox);
             }
         }
@@ -294,10 +292,7 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub fn export_gcode(&self) -> Result<String, VizError> {
-        crate::io::export::export_gcode_from_session(
-            &self.state.session,
-            &self.state.gui,
-        )
+        crate::io::export::export_gcode_from_session(&self.state.session, &self.state.gui)
     }
 
     pub fn export_svg_preview(&self) -> Result<String, VizError> {
@@ -336,9 +331,7 @@ impl<B: ComputeBackend> AppController<B> {
 // ── Legacy fallback: build session from viz JobState ─────────────────
 
 /// Build a `ProjectSession` from a legacy-loaded `JobState`.
-fn build_session_from_legacy_job(
-    job: &crate::state::job::JobState,
-) -> ProjectSession {
+fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
     session.set_name(job.name.clone());
     session.set_stock_config(job.stock.clone());

@@ -6,11 +6,15 @@ pub mod controller;
 pub mod error;
 pub mod interaction;
 pub mod io;
+#[cfg(feature = "mcp")]
+pub mod mcp_bridge;
+#[cfg(feature = "mcp")]
+pub mod mcp_server;
 pub mod render;
 pub mod state;
 pub mod ui;
 
-pub fn run() -> eframe::Result {
+pub fn run(mcp_mode: bool) -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1400.0, 900.0])
@@ -21,6 +25,6 @@ pub fn run() -> eframe::Result {
     eframe::run_native(
         "rs_cam",
         options,
-        Box::new(|cc| Ok(Box::new(app::RsCamApp::new(cc)))),
+        Box::new(move |cc| Ok(Box::new(app::RsCamApp::new(cc, mcp_mode)))),
     )
 }
