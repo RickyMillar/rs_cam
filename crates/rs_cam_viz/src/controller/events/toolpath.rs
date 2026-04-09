@@ -89,18 +89,17 @@ impl<B: ComputeBackend> AppController<B> {
             debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         };
 
-        if let Some(setup_idx) = target_setup_idx {
-            if let Ok(tp_idx) = self.state.session.add_toolpath(setup_idx, tc) {
-                if let Some(tc) = self.state.session.toolpath_configs().get(tp_idx) {
-                    let tp_id = ToolpathId(tc.id);
-                    // Create GUI runtime entry
-                    self.state
-                        .gui
-                        .toolpath_rt
-                        .insert(tc.id, crate::state::runtime::ToolpathRuntime::new(tc.operation.default_auto_regen()));
-                    self.state.selection = Selection::Toolpath(tp_id);
-                }
-            }
+        if let Some(setup_idx) = target_setup_idx
+            && let Ok(tp_idx) = self.state.session.add_toolpath(setup_idx, tc)
+            && let Some(tc) = self.state.session.toolpath_configs().get(tp_idx)
+        {
+            let tp_id = ToolpathId(tc.id);
+            // Create GUI runtime entry
+            self.state
+                .gui
+                .toolpath_rt
+                .insert(tc.id, crate::state::runtime::ToolpathRuntime::new(tc.operation.default_auto_regen()));
+            self.state.selection = Selection::Toolpath(tp_id);
         }
         self.state.gui.mark_edited();
     }
@@ -140,17 +139,16 @@ impl<B: ComputeBackend> AppController<B> {
         });
 
         if let Some(tc) = dup {
-            if let Some(setup_idx) = setup_idx {
-                if let Ok(tp_idx) = self.state.session.add_toolpath(setup_idx, tc) {
-                    if let Some(new_tc) = self.state.session.toolpath_configs().get(tp_idx) {
-                        let new_id = ToolpathId(new_tc.id);
-                        self.state.gui.toolpath_rt.insert(
-                            new_tc.id,
-                            crate::state::runtime::ToolpathRuntime::new(new_tc.operation.default_auto_regen()),
-                        );
-                        self.state.selection = Selection::Toolpath(new_id);
-                    }
-                }
+            if let Some(setup_idx) = setup_idx
+                && let Ok(tp_idx) = self.state.session.add_toolpath(setup_idx, tc)
+                && let Some(new_tc) = self.state.session.toolpath_configs().get(tp_idx)
+            {
+                let new_id = ToolpathId(new_tc.id);
+                self.state.gui.toolpath_rt.insert(
+                    new_tc.id,
+                    crate::state::runtime::ToolpathRuntime::new(new_tc.operation.default_auto_regen()),
+                );
+                self.state.selection = Selection::Toolpath(new_id);
             }
             self.state.gui.mark_edited();
         }
@@ -158,77 +156,65 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub(crate) fn handle_move_toolpath_up(&mut self, tp_id: ToolpathId) {
         // Find the setup and local position of this toolpath
-        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0) {
-            // Find setup containing this toolpath
-            if let Some(setup) = self
+        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0)
+            && let Some(setup) = self
                 .state
                 .session
                 .list_setups()
                 .iter()
                 .find(|s| s.toolpath_indices.contains(&tp_idx))
-            {
-                if let Some(local_pos) = setup
-                    .toolpath_indices
-                    .iter()
-                    .position(|&i| i == tp_idx)
-                {
-                    if local_pos > 0 {
-                        // SAFETY: local_pos - 1 is valid since local_pos > 0
-                        #[allow(clippy::indexing_slicing)]
-                        let swap_with = setup.toolpath_indices[local_pos - 1];
-                        let _ = self.state.session.reorder_toolpath(tp_idx, swap_with);
-                        self.state.gui.mark_edited();
-                    }
-                }
-            }
+            && let Some(local_pos) = setup
+                .toolpath_indices
+                .iter()
+                .position(|&i| i == tp_idx)
+            && local_pos > 0
+        {
+            // SAFETY: local_pos - 1 is valid since local_pos > 0
+            #[allow(clippy::indexing_slicing)]
+            let swap_with = setup.toolpath_indices[local_pos - 1];
+            let _ = self.state.session.reorder_toolpath(tp_idx, swap_with);
+            self.state.gui.mark_edited();
         }
     }
 
     pub(crate) fn handle_move_toolpath_down(&mut self, tp_id: ToolpathId) {
-        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0) {
-            if let Some(setup) = self
+        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0)
+            && let Some(setup) = self
                 .state
                 .session
                 .list_setups()
                 .iter()
                 .find(|s| s.toolpath_indices.contains(&tp_idx))
-            {
-                if let Some(local_pos) = setup
-                    .toolpath_indices
-                    .iter()
-                    .position(|&i| i == tp_idx)
-                {
-                    if local_pos + 1 < setup.toolpath_indices.len() {
-                        if let Some(&swap_with) = setup.toolpath_indices.get(local_pos + 1) {
-                            let _ = self.state.session.reorder_toolpath(tp_idx, swap_with);
-                            self.state.gui.mark_edited();
-                        }
-                    }
-                }
-            }
+            && let Some(local_pos) = setup
+                .toolpath_indices
+                .iter()
+                .position(|&i| i == tp_idx)
+            && local_pos + 1 < setup.toolpath_indices.len()
+            && let Some(&swap_with) = setup.toolpath_indices.get(local_pos + 1)
+        {
+            let _ = self.state.session.reorder_toolpath(tp_idx, swap_with);
+            self.state.gui.mark_edited();
         }
     }
 
     pub(crate) fn handle_reorder_toolpath(&mut self, tp_id: ToolpathId, target_idx: usize) {
-        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0) {
-            // target_idx is a local index within the setup
-            if let Some(setup) = self
+        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0)
+            && let Some(setup) = self
                 .state
                 .session
                 .list_setups()
                 .iter()
                 .find(|s| s.toolpath_indices.contains(&tp_idx))
+        {
+            let clamped = target_idx.min(setup.toolpath_indices.len().saturating_sub(1));
+            if let Some(&target_global_idx) = setup.toolpath_indices.get(clamped)
+                && tp_idx != target_global_idx
             {
-                let clamped = target_idx.min(setup.toolpath_indices.len().saturating_sub(1));
-                if let Some(&target_global_idx) = setup.toolpath_indices.get(clamped) {
-                    if tp_idx != target_global_idx {
-                        let _ = self
-                            .state
-                            .session
-                            .reorder_toolpath(tp_idx, target_global_idx);
-                        self.state.gui.mark_edited();
-                    }
-                }
+                let _ = self
+                    .state
+                    .session
+                    .reorder_toolpath(tp_idx, target_global_idx);
+                self.state.gui.mark_edited();
             }
         }
     }

@@ -367,16 +367,15 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub(crate) fn handle_stock_changed(&mut self) {
         let auto_from_model = self.state.session.stock_config().auto_from_model;
-        if auto_from_model {
-            if let Some(bbox) = self
+        if auto_from_model
+            && let Some(bbox) = self
                 .state
                 .session
                 .models()
                 .iter()
                 .find_map(|m| m.mesh.as_ref().map(|mesh| mesh.bbox))
-            {
-                self.state.session.stock_mut().update_from_bbox(&bbox);
-            }
+        {
+            self.state.session.stock_mut().update_from_bbox(&bbox);
         }
         self.pending_upload = true;
         self.state.gui.mark_edited();
@@ -463,19 +462,19 @@ impl<B: ComputeBackend> AppController<B> {
                 .iter()
                 .map(|p| [p.x, p.y])
                 .collect();
-            if let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx) {
-                if let OperationConfig::AlignmentPinDrill(ref mut cfg) = tc.operation {
-                    cfg.holes = new_holes;
-                }
+            if let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx)
+                && let OperationConfig::AlignmentPinDrill(ref mut cfg) = tc.operation
+            {
+                cfg.holes = new_holes;
             }
             // Mark stale in GUI runtime
             if let Some((_, tc)) = self.state.session.find_toolpath_config_by_id(
                 existing.map(|(_, id)| id).unwrap_or(0),
-            ) {
-                if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tc.id) {
-                    rt.result = None;
-                    rt.stale_since = Some(std::time::Instant::now());
-                }
+            )
+                && let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tc.id)
+            {
+                rt.result = None;
+                rt.stale_since = Some(std::time::Instant::now());
             }
         }
     }

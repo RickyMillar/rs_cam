@@ -204,7 +204,7 @@ fn fixture_path(name: &str) -> std::path::PathBuf {
 fn sample_controller() -> AppController<ScriptedBackend> {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
-    controller.state.session.tools_mut().push(tool.clone());
+    controller.state.session.tools_mut().push(tool);
 
     let mesh = Arc::new(make_test_flat(40.0));
     controller.state.session.add_model(LoadedModel {

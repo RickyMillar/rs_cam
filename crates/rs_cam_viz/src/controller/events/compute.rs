@@ -241,13 +241,7 @@ impl<B: ComputeBackend> AppController<B> {
             .models()
             .iter()
             .find(|m| m.id == model_id_raw)
-            .and_then(|m| {
-                if let Some(mesh) = &m.mesh {
-                    Some(mesh.bbox)
-                } else {
-                    None
-                }
-            });
+            .and_then(|m| m.mesh.as_ref().map(|mesh| mesh.bbox));
         let (model_top_z, model_bottom_z) = match (model_bb, transform_setup.as_ref()) {
             (Some(bb), Some(setup)) => {
                 let mut min_z = f64::INFINITY;

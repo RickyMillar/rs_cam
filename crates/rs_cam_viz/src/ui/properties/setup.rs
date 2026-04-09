@@ -26,6 +26,7 @@ const FIXTURE_KINDS: &[FixtureKind] = &[
 /// stock-level, not per-setup). `has_flip_axis` indicates whether a flip axis
 /// is configured on the stock. `all_models` lists every loaded model for the
 /// model-scoping checkboxes.
+#[allow(clippy::too_many_arguments)]
 pub fn draw(
     ui: &mut egui::Ui,
     setup_id: SetupId,

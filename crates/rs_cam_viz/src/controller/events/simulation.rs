@@ -246,7 +246,7 @@ impl<B: ComputeBackend> AppController<B> {
                         .session
                         .toolpath_configs()
                         .get(tp_idx)
-                        .map_or(false, |tc| ids.iter().any(|id| id.0 == tc.id))
+                        .is_some_and(|tc| ids.iter().any(|id| id.0 == tc.id))
                 })
             });
         let Some(target_setup_idx) = target_setup_idx else {

@@ -126,10 +126,10 @@ impl<B: ComputeBackend> AppController<B> {
             model.polygons = new_model.polygons.clone();
             model.units = Some(new_model.units);
             model.winding_report = new_model.winding_report;
-            if auto_stock {
-                if let Some(mesh) = &model.mesh {
-                    stock_bbox_update = Some(mesh.bbox);
-                }
+            if auto_stock
+                && let Some(mesh) = &model.mesh
+            {
+                stock_bbox_update = Some(mesh.bbox);
             }
         }
         if let Some(mesh_bbox) = stock_bbox_update {
@@ -169,7 +169,7 @@ impl<B: ComputeBackend> AppController<B> {
             model.polygons = reloaded.polygons.clone();
             model.enriched_mesh = reloaded.enriched_mesh.clone();
             model.winding_report = reloaded.winding_report;
-            model.load_error = reloaded.load_error.clone();
+            model.load_error = reloaded.load_error;
         }
 
         self.pending_upload = true;
