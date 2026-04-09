@@ -4,6 +4,7 @@
 //! (Phase 2), and simulation/collision logic (Phase 3) extracted from
 //! `rs_cam_viz` so they can be used by both the GUI and CLI.
 
+pub mod annotate;
 pub mod catalog;
 pub mod collision_check;
 pub mod config;
@@ -53,7 +54,7 @@ pub use transform::{FaceUp, SetupTransformInfo, ZRotation};
 // ── Phase 2: Execution helper re-exports ──
 
 pub use cutter::build_cutter;
-pub use execute::OperationError;
+pub use execute::{AnnotatedToolpath, OperationAnnotations, OperationError};
 pub use semantic_helpers::{
     CutRun, append_toolpath, bind_scope_to_run, contour_toolpath, cutting_runs, line_toolpath,
 };

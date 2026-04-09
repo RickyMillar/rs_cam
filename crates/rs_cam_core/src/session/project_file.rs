@@ -5,13 +5,13 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
+use super::{LoadedGeometry, LoadedModel, SessionError, SetupData, ToolpathConfig};
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{DressupConfig, HeightsConfig};
 use crate::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::transform::FaceUp;
 use crate::mesh::TriangleMesh;
-use super::{LoadedGeometry, LoadedModel, SessionError, SetupData, ToolpathConfig};
 
 // ── Project file types (TOML deserialization) ──────────────────────────
 
