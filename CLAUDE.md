@@ -87,6 +87,52 @@ All 16 clippy lints below are **deny** at workspace level (`Cargo.toml`). Clippy
 
 Run `/dev` for the full reference. Run `/verify` before committing.
 
+## MCP live control (rs-cam tools)
+
+The GUI embeds an MCP server (`--mcp` flag) so Claude can control the live GUI in real-time. When the `rs-cam` MCP is connected, follow this workflow:
+
+### Standard workflow
+
+1. **Load**: `load_project` with a `.toml` file path
+2. **Inspect**: `inspect_model` (geometry, bbox, triangle count), `inspect_stock` (dimensions, material), `inspect_machine` (spindle, power, rigidity)
+3. **Review**: `list_toolpaths`, `get_toolpath_params` for each index
+4. **Generate**: `generate_all` or `generate_toolpath` per index
+5. **Simulate**: `run_simulation` (always collects metrics)
+6. **Diagnose**: response includes per-toolpath stats, air cutting %, collisions, verdict
+7. **Visualize**: `screenshot_simulation` / `screenshot_toolpath` to `.png` then Read the image
+8. **Iterate**: `set_toolpath_param`, `set_tool_param`, regenerate, re-simulate
+
+### Key diagnostic thresholds
+
+| Metric | Good | Concern | Bad |
+|--------|------|---------|-----|
+| Air cutting % | < 5% | 5-20% | > 20% |
+| Rapid collisions | 0 | 1-10 | > 10 |
+| Avg engagement | > 0.3 | 0.1-0.3 | < 0.1 |
+
+### Model types and what they need
+
+| Kind | Geometry | Typical operations |
+|------|----------|-------------------|
+| `stl` (3D mesh) | `inspect_model` → bbox, triangle count | adaptive3d (rough), drop_cutter/waterline/scallop (finish) |
+| `step` (BREP) | `inspect_model` + `inspect_brep_faces` → face types, normals | Same as STL + face-selective operations |
+| `svg`/`dxf` (2D) | `inspect_model` → polygon count, area, perimeter | pocket, profile, adaptive, v_carve, trace |
+
+### Tool selection guidance
+
+- **Roughing**: Use end mills. `adaptive3d` for 3D surfaces, `adaptive`/`pocket` for 2.5D
+- **Finishing**: Use ball nose for 3D surfaces (required for `scallop`). End mills OK for `drop_cutter`, `waterline`
+- **Fine detail**: Smaller diameter = better detail but longer runtime
+- Check `inspect_machine` for max shank diameter constraint
+
+### Common pitfalls
+
+- `stock_top_z` in roughing config must match actual stock height, not an arbitrary value
+- Scallop requires a ball-tip tool (ball nose or tapered ball nose)
+- Horizontal finish is useless on terrain — only cuts near-flat areas
+- After `set_toolpath_param`, the toolpath is stale — must `generate_toolpath` again
+- After modifying tools, ALL dependent toolpaths go stale
+
 ## Agent skills
 
 Project-level Claude Code customizations in `.claude/`:
