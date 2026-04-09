@@ -9,27 +9,33 @@ impl RsCamApp {
                 let mut cutting_dist = 0.0f64;
                 let mut est_time_min = 0.0f64;
 
-                for tp in self.controller.state().job.all_toolpaths() {
-                    if tp.enabled
-                        && let Some(result) = &tp.result
-                    {
-                        total_moves += result.stats.move_count;
-                        cutting_dist += result.stats.cutting_distance;
-                        let feed = tp.operation.feed_rate().max(1.0);
-                        est_time_min += result.stats.cutting_distance / feed;
+                let tool_changes = {
+                    let state = self.controller.state();
+                    let session = &state.session;
+                    let gui = &state.gui;
+                    for tc in session.toolpath_configs() {
+                        if tc.enabled
+                            && let Some(result) =
+                                gui.toolpath_rt.get(&tc.id).and_then(|r| r.result.as_ref())
+                        {
+                            total_moves += result.stats.move_count;
+                            cutting_dist += result.stats.cutting_distance;
+                            let feed = tc.operation.feed_rate().max(1.0);
+                            est_time_min += result.stats.cutting_distance / feed;
+                        }
                     }
-                }
 
-                let mut seen_tools = Vec::new();
-                for tp in self.controller.state().job.all_toolpaths() {
-                    if tp.enabled && !seen_tools.contains(&tp.tool_id) {
-                        seen_tools.push(tp.tool_id);
+                    let mut seen_tools = Vec::new();
+                    for tc in session.toolpath_configs() {
+                        if tc.enabled && !seen_tools.contains(&tc.tool_id) {
+                            seen_tools.push(tc.tool_id);
+                        }
                     }
-                }
-                let tool_changes = if seen_tools.len() > 1 {
-                    seen_tools.len() - 1
-                } else {
-                    0
+                    if seen_tools.len() > 1 {
+                        seen_tools.len() - 1
+                    } else {
+                        0
+                    }
                 };
 
                 tracing::info!(
@@ -116,7 +122,7 @@ impl RsCamApp {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     if ui.button("Save & Quit").clicked() {
-                        let path = self.controller.state().job.file_path.clone().or_else(|| {
+                        let path = self.controller.state().gui.file_path.clone().or_else(|| {
                             rfd::FileDialog::new()
                                 .add_filter("TOML Job", &["toml"])
                                 .set_file_name("job.toml")

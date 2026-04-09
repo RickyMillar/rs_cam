@@ -110,7 +110,7 @@ impl RsCamApp {
                     .results
                     .as_ref()
                     .map(|r| r.stock_bbox)
-                    .unwrap_or_else(|| self.controller.state().job.stock.bbox());
+                    .unwrap_or_else(|| self.controller.state().session.stock_bbox());
                 let res = self.controller.state().simulation.resolution;
                 let fresh = TriDexelStock::from_bounds(&bbox, res);
                 let pb = &mut self.controller.state_mut().simulation.playback;
@@ -221,11 +221,13 @@ impl RsCamApp {
         let setup = self
             .controller
             .state()
-            .job
-            .setups
+            .session
+            .list_setups()
             .iter()
-            .find(|s| s.id == sb.setup_id)?;
-        Some((setup.face_up, setup.z_rotation, setup.needs_transform()))
+            .find(|s| crate::state::job::SetupId(s.id) == sb.setup_id)?;
+        let needs_transform = setup.face_up != crate::state::job::FaceUp::Top
+            || setup.z_rotation != crate::state::job::ZRotation::Deg0;
+        Some((setup.face_up, setup.z_rotation, needs_transform))
     }
 
     /// Update tool model position during simulation playback.
@@ -249,30 +251,33 @@ impl RsCamApp {
         let current = self.controller.state().simulation.playback.current_move;
         let mut cumulative = 0;
         let mut found = None;
-        for tp in self.controller.state().job.all_toolpaths() {
-            if !tp.enabled {
-                continue;
-            }
-            if let Some(result) = &tp.result {
-                let tp_moves = result.toolpath.moves.len();
-                if current <= cumulative + tp_moves {
-                    let local_idx = current.saturating_sub(cumulative);
-                    if local_idx < result.toolpath.moves.len() {
-                        // Toolpath is in local coords, viewport is in local frame — use directly
-                        let pos = result.toolpath.moves[local_idx].target;
-                        let tool_info = self
-                            .controller
-                            .state()
-                            .job
-                            .tools
-                            .iter()
-                            .find(|tool| tool.id == tp.tool_id)
-                            .cloned();
-                        found = Some((pos, tool_info));
-                    }
-                    break;
+        {
+            let state = self.controller.state();
+            let session = &state.session;
+            let gui = &state.gui;
+            for tc in session.toolpath_configs() {
+                if !tc.enabled {
+                    continue;
                 }
-                cumulative += tp_moves;
+                let rt = gui.toolpath_rt.get(&tc.id);
+                if let Some(result) = rt.and_then(|r| r.result.as_ref()) {
+                    let tp_moves = result.toolpath.moves.len();
+                    if current <= cumulative + tp_moves {
+                        let local_idx = current.saturating_sub(cumulative);
+                        if local_idx < result.toolpath.moves.len() {
+                            // Toolpath is in local coords, viewport is in local frame — use directly
+                            let pos = result.toolpath.moves[local_idx].target;
+                            let tool_info = session
+                                .tools()
+                                .iter()
+                                .find(|tool| tool.id.0 == tc.tool_id)
+                                .cloned();
+                            found = Some((pos, tool_info));
+                        }
+                        break;
+                    }
+                    cumulative += tp_moves;
+                }
             }
         }
 

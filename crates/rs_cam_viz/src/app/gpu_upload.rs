@@ -6,7 +6,10 @@ use crate::render::sim_render::{self, SimMeshGpuData};
 use crate::render::stock_render::StockGpuData;
 use crate::render::toolpath_render::{self, ToolpathGpuData};
 use crate::state::Workspace;
-use crate::state::job::transform_mesh;
+use crate::state::job::{
+    self, Setup, SetupId, height_context_from_session, session_fixture_bbox,
+    session_fixture_clearance_bbox, session_keep_out_bbox, transform_mesh,
+};
 use crate::state::selection::Selection;
 use crate::state::simulation::StockVizMode;
 
@@ -20,9 +23,9 @@ impl RsCamApp {
         let state = self.controller.state();
         match &state.selection {
             Selection::Toolpath(tp_id) => state
-                .job
-                .find_toolpath(*tp_id)
-                .and_then(|entry| entry.face_selection.clone())
+                .session
+                .find_toolpath_config_by_id(tp_id.0)
+                .and_then(|(_, tc)| tc.face_selection.clone())
                 .unwrap_or_default(),
             Selection::Face(_, face_id) => vec![*face_id],
             Selection::Faces(_, face_ids) => face_ids.clone(),
@@ -89,7 +92,7 @@ impl RsCamApp {
         move_idx: usize,
     ) {
         if let Some((face_up, z_rot, true)) = self.active_setup_orientation(move_idx) {
-            let stock_cfg = &self.controller.state().job.stock;
+            let stock_cfg = self.controller.state().session.stock_config();
             let (eff_w, eff_d, _) = face_up.effective_stock(stock_cfg.x, stock_cfg.y, stock_cfg.z);
             for i in (0..mesh.vertices.len()).step_by(3) {
                 let p = rs_cam_core::geo::P3::new(
@@ -119,24 +122,32 @@ impl RsCamApp {
         // Everything is always displayed in the active setup's local coordinate
         // frame ("machine view").  Toolpaths, simulation, mesh, stock — all at
         // (0,0,0)-relative local coords.
-        let active_setup_ref = {
-            let sel = &self.controller.state().selection;
+        let active_setup_ref: Option<Setup> = {
+            let state = self.controller.state();
+            let sel = &state.selection;
             let setup_id = match sel {
                 Selection::Setup(id) => Some(*id),
                 Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
-                Selection::Toolpath(tp_id) => self.controller.state().job.setup_of_toolpath(*tp_id),
+                Selection::Toolpath(tp_id) => {
+                    // Map toolpath ID → setup via session
+                    state
+                        .session
+                        .setup_of_toolpath_id(tp_id.0)
+                        .and_then(|idx| state.session.list_setups().get(idx))
+                        .map(|sd| SetupId(sd.id))
+                }
                 _ => None,
             };
-            if let Some(sid) = setup_id {
-                self.controller
-                    .state()
-                    .job
-                    .setups
+            let session_setup = if let Some(sid) = setup_id {
+                state
+                    .session
+                    .list_setups()
                     .iter()
-                    .find(|s| s.id == sid)
+                    .find(|s| SetupId(s.id) == sid)
             } else {
-                self.controller.state().job.setups.first()
-            }
+                state.session.list_setups().first()
+            };
+            session_setup.map(|sd| Setup::for_transforms(SetupId(sd.id), sd.face_up, sd.z_rotation))
         };
         let use_local_frame = active_setup_ref.is_some();
 
@@ -145,16 +156,17 @@ impl RsCamApp {
         resources.mesh_data_list.clear();
         let selected_faces = self.selected_face_ids();
         let hovered_face = self.hovered_face_id();
-        for model in &self.controller.state().job.models {
+        let stock = self.controller.state().session.stock_config().clone();
+        for model in self.controller.state().session.models() {
             // If model has enriched mesh (STEP), use face-colored rendering
             if let Some(enriched) = &model.enriched_mesh {
                 let transform: crate::render::mesh_render::VertexTransform<'_> = if use_local_frame
                 {
                     // SAFETY: use_local_frame is active_setup_ref.is_some()
                     #[allow(clippy::unwrap_used)]
-                    let setup = active_setup_ref.unwrap();
-                    let stock = &self.controller.state().job.stock;
-                    Some(Box::new(move |p| setup.transform_point(p, stock)))
+                    let setup = active_setup_ref.as_ref().unwrap();
+                    let stock_ref = &stock;
+                    Some(Box::new(move |p| setup.transform_point(p, stock_ref)))
                 } else {
                     None
                 };
@@ -172,9 +184,8 @@ impl RsCamApp {
                 let gpu = if use_local_frame {
                     // SAFETY: use_local_frame is true iff active_setup_ref.is_some().
                     #[allow(clippy::unwrap_used)]
-                    let setup = active_setup_ref.unwrap();
-                    let transformed =
-                        transform_mesh(mesh, setup, &self.controller.state().job.stock);
+                    let setup = active_setup_ref.as_ref().unwrap();
+                    let transformed = transform_mesh(mesh, setup, &stock);
                     MeshGpuData::from_mesh(
                         &render_state.device,
                         &resources.gpu_limits,
@@ -199,13 +210,11 @@ impl RsCamApp {
             let poly_z = if use_local_frame {
                 // SAFETY: use_local_frame iff active_setup_ref.is_some()
                 #[allow(clippy::unwrap_used)]
-                let setup = active_setup_ref.unwrap();
-                let (_, _, h) = setup.effective_stock(&self.controller.state().job.stock);
+                let setup = active_setup_ref.as_ref().unwrap();
+                let (_, _, h) = setup.effective_stock(&stock);
                 h as f32 + 0.05
             } else {
-                (self.controller.state().job.stock.origin_z + self.controller.state().job.stock.z)
-                    as f32
-                    + 0.05
+                (stock.origin_z + stock.z) as f32 + 0.05
             };
             // Convert a 2D ring to line-list vertices.
             // `close`: if true, adds closing edge from last→first vertex.
@@ -218,10 +227,9 @@ impl RsCamApp {
                         if use_local_frame {
                             // SAFETY: use_local_frame iff active_setup_ref.is_some()
                             #[allow(clippy::unwrap_used)]
-                            let setup = active_setup_ref.unwrap();
-                            let stock = &self.controller.state().job.stock;
+                            let setup = active_setup_ref.as_ref().unwrap();
                             let tp = setup
-                                .transform_point(rs_cam_core::geo::P3::new(p.x, p.y, 0.0), stock);
+                                .transform_point(rs_cam_core::geo::P3::new(p.x, p.y, 0.0), &stock);
                             (tp.x, tp.y)
                         } else {
                             (p.x, p.y)
@@ -257,7 +265,7 @@ impl RsCamApp {
                         });
                     }
                 };
-            for model in &self.controller.state().job.models {
+            for model in self.controller.state().session.models() {
                 if let Some(polys) = &model.polygons {
                     let mut verts = Vec::new();
                     for poly in polys.iter() {
@@ -287,14 +295,14 @@ impl RsCamApp {
         let stock_bbox = if use_local_frame {
             // SAFETY: use_local_frame is true iff active_setup_ref.is_some().
             #[allow(clippy::unwrap_used)]
-            let setup = active_setup_ref.unwrap();
-            let (w, d, h) = setup.effective_stock(&self.controller.state().job.stock);
+            let setup = active_setup_ref.as_ref().unwrap();
+            let (w, d, h) = setup.effective_stock(&stock);
             rs_cam_core::geo::BoundingBox3 {
                 min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
                 max: rs_cam_core::geo::P3::new(w, d, h),
             }
         } else {
-            self.controller.state().job.stock.bbox()
+            stock.bbox()
         };
         resources.stock_data = Some(StockGpuData::from_bbox(&render_state.device, &stock_bbox));
         resources.solid_stock_data =
@@ -305,13 +313,16 @@ impl RsCamApp {
 
         // Upload origin axes at stock origin (local origin when in machine view)
         {
-            let s = &self.controller.state().job.stock;
             let origin = if use_local_frame {
                 [0.0_f32, 0.0, 0.0]
             } else {
-                [s.origin_x as f32, s.origin_y as f32, s.origin_z as f32]
+                [
+                    stock.origin_x as f32,
+                    stock.origin_y as f32,
+                    stock.origin_z as f32,
+                ]
             };
-            let min_dim = s.x.min(s.y).min(s.z) as f32;
+            let min_dim = stock.x.min(stock.y).min(stock.z) as f32;
             let length = (min_dim * 0.3).clamp(5.0, 50.0);
             resources.origin_axes_data = Some(crate::render::grid_render::OriginAxesGpuData::new(
                 &render_state.device,
@@ -325,70 +336,73 @@ impl RsCamApp {
             use crate::render::fixture_render::FixtureGpuData;
             use rs_cam_core::geo::{BoundingBox3, P3};
 
-            let job = &self.controller.state().job;
-            let selection = &self.controller.state().selection;
+            let state = self.controller.state();
+            let selection = &state.selection;
 
             // Helper: forward-transform a bbox into the setup's local frame.
             // After transforming corners, min/max may swap, so rebuild via from_points.
-            let transform_bbox =
-                |bb: BoundingBox3, setup: &crate::state::job::Setup| -> BoundingBox3 {
-                    let corners = [
-                        P3::new(bb.min.x, bb.min.y, bb.min.z),
-                        P3::new(bb.max.x, bb.min.y, bb.min.z),
-                        P3::new(bb.min.x, bb.max.y, bb.min.z),
-                        P3::new(bb.max.x, bb.max.y, bb.min.z),
-                        P3::new(bb.min.x, bb.min.y, bb.max.z),
-                        P3::new(bb.max.x, bb.min.y, bb.max.z),
-                        P3::new(bb.min.x, bb.max.y, bb.max.z),
-                        P3::new(bb.max.x, bb.max.y, bb.max.z),
-                    ];
-                    BoundingBox3::from_points(
-                        corners
-                            .iter()
-                            .map(|c| setup.transform_point(*c, &job.stock)),
-                    )
-                };
+            let transform_bbox = |bb: BoundingBox3, setup: &Setup| -> BoundingBox3 {
+                let corners = [
+                    P3::new(bb.min.x, bb.min.y, bb.min.z),
+                    P3::new(bb.max.x, bb.min.y, bb.min.z),
+                    P3::new(bb.min.x, bb.max.y, bb.min.z),
+                    P3::new(bb.max.x, bb.max.y, bb.min.z),
+                    P3::new(bb.min.x, bb.min.y, bb.max.z),
+                    P3::new(bb.max.x, bb.min.y, bb.max.z),
+                    P3::new(bb.min.x, bb.max.y, bb.max.z),
+                    P3::new(bb.max.x, bb.max.y, bb.max.z),
+                ];
+                BoundingBox3::from_points(corners.iter().map(|c| setup.transform_point(*c, &stock)))
+            };
 
             // Only show fixtures/keepouts/pins from the active setup (each
             // setup has its own local frame, so mixing them is wrong).
-            let active_setups: Vec<&crate::state::job::Setup> =
-                active_setup_ref.into_iter().collect();
+            // Get the active setup's session data for fixtures/keepouts/pins.
+            let active_session_setup = active_setup_ref.as_ref().and_then(|s| {
+                state
+                    .session
+                    .list_setups()
+                    .iter()
+                    .find(|sd| sd.id == s.id.0)
+            });
 
             // Fixture/keep-out boxes are only shown outside Simulation.
             let mut boxes = Vec::new();
-            let in_sim = self.controller.state().workspace == Workspace::Simulation;
-            if !in_sim {
-                for setup in &active_setups {
-                    for fixture in &setup.fixtures {
-                        if fixture.enabled {
-                            let selected = *selection == Selection::Fixture(setup.id, fixture.id);
-                            let color = if selected {
-                                [1.0_f32, 0.9, 0.4] // bright highlight
-                            } else {
-                                [0.9_f32, 0.7, 0.2]
-                            };
-                            let clearance = fixture.clearance_bbox();
-                            let display_clearance = transform_bbox(clearance, setup);
-                            boxes.push((display_clearance, color));
-                            if selected {
-                                let inner = fixture.bbox();
-                                let display_inner = transform_bbox(inner, setup);
-                                boxes.push((display_inner, [0.9_f32, 0.9, 0.9]));
-                            }
+            let in_sim = state.workspace == Workspace::Simulation;
+            if !in_sim && let Some(sd) = active_session_setup {
+                // SAFETY: active_setup_ref.is_some() when active_session_setup.is_some()
+                #[allow(clippy::unwrap_used)]
+                let setup = active_setup_ref.as_ref().unwrap();
+                for fixture in &sd.fixtures {
+                    if fixture.enabled {
+                        let selected = *selection == Selection::Fixture(SetupId(sd.id), fixture.id);
+                        let color = if selected {
+                            [1.0_f32, 0.9, 0.4] // bright highlight
+                        } else {
+                            [0.9_f32, 0.7, 0.2]
+                        };
+                        let clearance = session_fixture_clearance_bbox(fixture);
+                        let display_clearance = transform_bbox(clearance, setup);
+                        boxes.push((display_clearance, color));
+                        if selected {
+                            let inner = session_fixture_bbox(fixture);
+                            let display_inner = transform_bbox(inner, setup);
+                            boxes.push((display_inner, [0.9_f32, 0.9, 0.9]));
                         }
                     }
-                    for keep_out in &setup.keep_out_zones {
-                        if keep_out.enabled {
-                            let selected = *selection == Selection::KeepOut(setup.id, keep_out.id);
-                            let color = if selected {
-                                [1.0_f32, 0.4, 0.4] // bright highlight
-                            } else {
-                                [0.9_f32, 0.2, 0.2]
-                            };
-                            let ko_bb = keep_out.bbox(&job.stock);
-                            let display_ko = transform_bbox(ko_bb, setup);
-                            boxes.push((display_ko, color));
-                        }
+                }
+                for keep_out in &sd.keep_out_zones {
+                    if keep_out.enabled {
+                        let selected =
+                            *selection == Selection::KeepOut(SetupId(sd.id), keep_out.id);
+                        let color = if selected {
+                            [1.0_f32, 0.4, 0.4] // bright highlight
+                        } else {
+                            [0.9_f32, 0.2, 0.2]
+                        };
+                        let ko_bb = session_keep_out_bbox(keep_out, &stock);
+                        let display_ko = transform_bbox(ko_bb, setup);
+                        boxes.push((display_ko, color));
                     }
                 }
             }
@@ -396,41 +410,41 @@ impl RsCamApp {
             // Render stock-level alignment pins as circles (visible in all setups).
             // Pin coords are stock-relative — add origin to get global for transform_point.
             let mut pin_vertices: Vec<crate::render::LineVertex> = Vec::new();
-            let ox = job.stock.origin_x;
-            let oy = job.stock.origin_y;
-            let oz = job.stock.origin_z;
-            for setup in &active_setups {
-                for pin in &job.stock.alignment_pins {
+            let ox = stock.origin_x;
+            let oy = stock.origin_y;
+            let oz = stock.origin_z;
+            if let Some(setup) = active_setup_ref.as_ref() {
+                for pin in &stock.alignment_pins {
                     let radius = (pin.diameter / 2.0) as f32;
                     // Slight Z offset above stock top to avoid Z-fighting with stock surface.
-                    let global_pt = P3::new(pin.x + ox, pin.y + oy, oz + job.stock.z + 0.1);
-                    let local_pt = setup.transform_point(global_pt, &job.stock);
+                    let global_pt = P3::new(pin.x + ox, pin.y + oy, oz + stock.z + 0.1);
+                    let local_pt = setup.transform_point(global_pt, &stock);
                     let (cx, cy, cz) = (local_pt.x as f32, local_pt.y as f32, local_pt.z as f32);
                     let color = [0.2_f32, 0.9, 0.3];
                     super::push_circle_vertices(&mut pin_vertices, cx, cy, cz, radius, color, 16);
                 }
 
                 // Flip axis dashed centerline
-                if let Some(axis) = job.stock.flip_axis {
-                    let stock_top = oz + job.stock.z;
+                if let Some(axis) = stock.flip_axis {
+                    let stock_top = oz + stock.z;
                     let (start_g, end_g) = match axis {
-                        crate::state::job::FlipAxis::Horizontal => {
-                            let y = job.stock.y / 2.0 + oy;
+                        job::FlipAxis::Horizontal => {
+                            let y = stock.y / 2.0 + oy;
                             (
                                 P3::new(ox, y, stock_top),
-                                P3::new(ox + job.stock.x, y, stock_top),
+                                P3::new(ox + stock.x, y, stock_top),
                             )
                         }
-                        crate::state::job::FlipAxis::Vertical => {
-                            let x = job.stock.x / 2.0 + ox;
+                        job::FlipAxis::Vertical => {
+                            let x = stock.x / 2.0 + ox;
                             (
                                 P3::new(x, oy, stock_top),
-                                P3::new(x, oy + job.stock.y, stock_top),
+                                P3::new(x, oy + stock.y, stock_top),
                             )
                         }
                     };
-                    let start_l = setup.transform_point(start_g, &job.stock);
-                    let end_l = setup.transform_point(end_g, &job.stock);
+                    let start_l = setup.transform_point(start_g, &stock);
+                    let end_l = setup.transform_point(end_g, &stock);
                     let s = [start_l.x as f32, start_l.y as f32, start_l.z as f32];
                     let e = [end_l.x as f32, end_l.y as f32, end_l.z as f32];
                     let axis_color = [0.9_f32, 0.7, 0.2];
@@ -440,16 +454,20 @@ impl RsCamApp {
 
             // Add datum crosshair markers in Setup workspace.
             // Datum is always in local frame coords.
-            if self.controller.state().workspace == Workspace::Setup
-                && let Some(setup) = active_setup_ref
+            if state.workspace == Workspace::Setup
+                && let Some(setup) = active_setup_ref.as_ref()
+                && let Some(sd) = active_session_setup
             {
-                use crate::state::job::{Corner, XYDatum};
+                use crate::state::runtime::{Corner, XYDatum};
 
-                let (eff_w, eff_d, eff_h) = setup.effective_stock(&job.stock);
+                let (eff_w, eff_d, eff_h) = setup.effective_stock(&stock);
                 let color = [0.9_f32, 0.2, 0.9]; // magenta
 
+                // Read datum from SetupRuntime
+                let datum = state.gui.setup_rt.get(&sd.id).map(|sr| &sr.datum);
+
                 // Datum in setup-local frame: XY at corner/center, Z at top surface
-                let local_datum: Option<P3> = match &setup.datum.xy_method {
+                let local_datum: Option<P3> = datum.and_then(|d| match &d.xy_method {
                     XYDatum::CornerProbe(corner) => {
                         let x = match corner {
                             Corner::FrontLeft | Corner::BackLeft => 0.0,
@@ -463,7 +481,7 @@ impl RsCamApp {
                     }
                     XYDatum::CenterOfStock => Some(P3::new(eff_w / 2.0, eff_d / 2.0, eff_h)),
                     _ => None,
-                };
+                });
 
                 if let Some(local) = local_datum {
                     // Always in local frame — use local coords directly.
@@ -624,92 +642,104 @@ impl RsCamApp {
         let isolate = self.controller.state().viewport.isolate_toolpath;
 
         // Determine which setup is active for filtering toolpath display
-        let active_setup_id = active_setup_ref.map(|s| s.id);
+        let active_setup_id = active_setup_ref.as_ref().map(|s| s.id);
 
-        for (i, tp) in self.controller.state().job.toolpaths_enumerated() {
-            // Only show toolpaths from the active setup — each setup has its
-            // own local coordinate frame, so mixing them would be wrong.
-            {
-                let tp_setup = self.controller.state().job.setup_of_toolpath(tp.id);
-                if tp_setup != active_setup_id {
+        // Iterate session toolpath configs + GUI runtime
+        {
+            let state = self.controller.state();
+            let session = &state.session;
+            let gui = &state.gui;
+            for (i, tc) in session.toolpath_configs().iter().enumerate() {
+                // Find which setup owns this toolpath
+                let tp_setup_id = session
+                    .setup_of_toolpath_id(tc.id)
+                    .and_then(|idx| session.list_setups().get(idx))
+                    .map(|sd| SetupId(sd.id));
+                if tp_setup_id != active_setup_id {
                     continue;
                 }
-            }
 
-            // Skip invisible toolpaths; also skip if not the isolated toolpath
-            let visible = tp.visible
-                && match isolate {
-                    Some(iso_id) => tp.id == iso_id,
-                    None => true,
-                };
-            if visible && let Some(result) = &tp.result {
-                let selected = selected_tp_id == Some(tp.id);
+                // Get runtime state for this toolpath
+                let rt = gui.toolpath_rt.get(&tc.id);
 
-                // In Setup/Toolpaths workspace (local frame), toolpaths are already
-                // Toolpaths are always in local coords, viewport is always in
-                // local frame — use directly, no transform needed.
-                let render_tp = result.toolpath.as_ref();
-
-                let color_mode = self.controller.state().viewport.toolpath_color_mode;
-                let mut gpu_data = if matches!(
-                    color_mode,
-                    crate::state::viewport::ToolpathColorMode::Engagement
-                ) {
-                    ToolpathGpuData::from_toolpath_engagement(
-                        &render_state.device,
-                        &resources.gpu_limits,
-                        render_tp,
-                        tp.operation.feed_rate(),
-                    )
-                } else {
-                    ToolpathGpuData::from_toolpath(
-                        &render_state.device,
-                        &resources.gpu_limits,
-                        render_tp,
-                        i,
-                        selected,
-                    )
-                };
-
-                // Generate entry path preview for selected toolpaths with a non-None entry style
-                if selected {
-                    use crate::state::toolpath::DressupEntryStyle;
-                    let entry_style = match tp.dressups.entry_style {
-                        DressupEntryStyle::None => toolpath_render::EntryStyle::None,
-                        DressupEntryStyle::Ramp => toolpath_render::EntryStyle::Ramp,
-                        DressupEntryStyle::Helix => toolpath_render::EntryStyle::Helix,
+                // Skip invisible toolpaths; also skip if not the isolated toolpath
+                let tp_id = crate::state::toolpath::ToolpathId(tc.id);
+                let visible = rt.is_none_or(|r| r.visible)
+                    && match isolate {
+                        Some(iso_id) => tp_id == iso_id,
+                        None => true,
                     };
-                    let height_ctx = self.controller.state().job.height_context_for(tp);
-                    let resolved = tp.heights.resolve(&height_ctx);
-                    let config = toolpath_render::EntryPreviewConfig {
-                        entry_style,
-                        ramp_angle_deg: tp.dressups.ramp_angle,
-                        helix_radius: tp.dressups.helix_radius,
-                        helix_pitch: tp.dressups.helix_pitch,
-                        lead_in_out: tp.dressups.lead_in_out,
-                        lead_radius: tp.dressups.lead_radius,
-                        feed_z: resolved.feed_z,
-                        top_z: resolved.top_z,
+                let result = rt.and_then(|r| r.result.as_ref());
+                if visible && let Some(result) = result {
+                    let selected = selected_tp_id == Some(tp_id);
+
+                    // In Setup/Toolpaths workspace (local frame), toolpaths are already
+                    // Toolpaths are always in local coords, viewport is always in
+                    // local frame — use directly, no transform needed.
+                    let render_tp = result.toolpath.as_ref();
+
+                    let color_mode = state.viewport.toolpath_color_mode;
+                    let mut gpu_data = if matches!(
+                        color_mode,
+                        crate::state::viewport::ToolpathColorMode::Engagement
+                    ) {
+                        ToolpathGpuData::from_toolpath_engagement(
+                            &render_state.device,
+                            &resources.gpu_limits,
+                            render_tp,
+                            tc.operation.feed_rate(),
+                        )
+                    } else {
+                        ToolpathGpuData::from_toolpath(
+                            &render_state.device,
+                            &resources.gpu_limits,
+                            render_tp,
+                            i,
+                            selected,
+                        )
                     };
-                    let preview_verts =
-                        toolpath_render::entry_preview_vertices(&result.toolpath, &config);
-                    gpu_data.attach_entry_preview(
-                        &render_state.device,
-                        &resources.gpu_limits,
-                        &preview_verts,
-                    );
+
+                    // Generate entry path preview for selected toolpaths with a non-None entry style
+                    if selected {
+                        use crate::state::toolpath::DressupEntryStyle;
+                        let entry_style = match tc.dressups.entry_style {
+                            DressupEntryStyle::None => toolpath_render::EntryStyle::None,
+                            DressupEntryStyle::Ramp => toolpath_render::EntryStyle::Ramp,
+                            DressupEntryStyle::Helix => toolpath_render::EntryStyle::Helix,
+                        };
+                        let height_ctx = height_context_from_session(session, tc);
+                        let resolved = tc.heights.resolve(&height_ctx);
+                        let config = toolpath_render::EntryPreviewConfig {
+                            entry_style,
+                            ramp_angle_deg: tc.dressups.ramp_angle,
+                            helix_radius: tc.dressups.helix_radius,
+                            helix_pitch: tc.dressups.helix_pitch,
+                            lead_in_out: tc.dressups.lead_in_out,
+                            lead_radius: tc.dressups.lead_radius,
+                            feed_z: resolved.feed_z,
+                            top_z: resolved.top_z,
+                        };
+                        let preview_verts =
+                            toolpath_render::entry_preview_vertices(&result.toolpath, &config);
+                        gpu_data.attach_entry_preview(
+                            &render_state.device,
+                            &resources.gpu_limits,
+                            &preview_verts,
+                        );
+                    }
+
+                    resources.toolpath_data.push(gpu_data);
                 }
-
-                resources.toolpath_data.push(gpu_data);
             }
         }
 
         // Upload height plane overlays whenever a toolpath is selected (any workspace)
         if let Selection::Toolpath(tp_id) = self.controller.state().selection {
-            let job = &self.controller.state().job;
-            if let Some(tp) = job.all_toolpaths().find(|t| t.id == tp_id) {
-                let height_ctx = job.height_context_for(tp);
-                let heights = tp.heights.resolve(&height_ctx);
+            let state = self.controller.state();
+            let session = &state.session;
+            if let Some((_, tc)) = session.find_toolpath_config_by_id(tp_id.0) {
+                let height_ctx = height_context_from_session(session, tc);
+                let heights = tc.heights.resolve(&height_ctx);
                 // Use the same stock bbox as the rest of the viewport (local or global)
                 let hp_stock_bbox = stock_bbox;
                 resources.height_planes_data = Some(

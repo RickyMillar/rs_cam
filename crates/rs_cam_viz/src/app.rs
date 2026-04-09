@@ -58,9 +58,9 @@ impl RsCamApp {
         // Select a specific setup by index via RS_CAM_SETUP
         if let Ok(setup_str) = std::env::var("RS_CAM_SETUP")
             && let Ok(idx) = setup_str.parse::<usize>()
-            && let Some(setup) = controller.state().job.setups.get(idx)
+            && let Some(setup) = controller.state().session.list_setups().get(idx)
         {
-            let setup_id = setup.id;
+            let setup_id = crate::state::job::SetupId(setup.id);
             controller.state_mut().selection = crate::state::selection::Selection::Setup(setup_id);
         }
 
@@ -98,10 +98,16 @@ impl RsCamApp {
         if let Some(bbox) = self
             .controller
             .state()
-            .job
-            .models
+            .session
+            .models()
             .iter()
-            .find_map(|model| model.bbox())
+            .find_map(|model| {
+                model.mesh.as_ref().map(|m| m.bbox).or_else(|| {
+                    crate::state::job::session_polygons_bbox(
+                        model.polygons.as_deref().map(|v| v.as_slice()),
+                    )
+                })
+            })
         {
             self.fit_camera_to_bbox(&bbox);
         } else {
@@ -342,7 +348,7 @@ impl eframe::App for RsCamApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // Intercept OS close button when there are unsaved changes
         let os_close_requested = ctx.input(|i| i.viewport().close_requested());
-        if os_close_requested && self.controller.state().job.dirty {
+        if os_close_requested && self.controller.state().gui.dirty {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.show_quit_dialog = true;
         }

@@ -410,6 +410,23 @@ pub struct Setup {
 }
 
 impl Setup {
+    /// Build a minimal `Setup` for transform computations only (no fixtures/toolpaths).
+    /// Use when you have session `SetupData` and only need `transform_point`,
+    /// `effective_stock`, `needs_transform`, etc.
+    pub fn for_transforms(id: SetupId, face_up: FaceUp, z_rotation: ZRotation) -> Self {
+        Self {
+            id,
+            name: String::new(),
+            face_up,
+            z_rotation,
+            datum: DatumConfig::default(),
+            fixtures: Vec::new(),
+            keep_out_zones: Vec::new(),
+            toolpaths: Vec::new(),
+            model_ids: Vec::new(),
+        }
+    }
+
     pub fn new(id: SetupId, name: String) -> Self {
         Self {
             id,
@@ -489,6 +506,109 @@ impl Setup {
     /// Whether this setup requires geometry transforms (non-identity orientation).
     pub fn needs_transform(&self) -> bool {
         self.face_up != FaceUp::Top || self.z_rotation != ZRotation::Deg0
+    }
+}
+
+// ── Helpers for session fixture/keep-out bbox computation ──
+// The core session `Fixture` and `KeepOutZone` lack bbox methods, so we
+// provide free functions here that mirror the viz-local equivalents.
+
+/// Build a [`HeightContext`] for a session toolpath config using session data.
+pub fn height_context_from_session(
+    session: &rs_cam_core::session::ProjectSession,
+    tc: &rs_cam_core::session::ToolpathConfig,
+) -> rs_cam_core::compute::config::HeightContext {
+    let sb = session.stock_config().bbox();
+    let mb = session
+        .models()
+        .iter()
+        .find(|m| m.id == tc.model_id)
+        .and_then(|m| {
+            m.mesh
+                .as_ref()
+                .map(|mesh| mesh.bbox)
+                .or_else(|| session_polygons_bbox(m.polygons.as_deref().map(|v| v.as_slice())))
+        });
+    rs_cam_core::compute::config::HeightContext {
+        safe_z: session.post_config().safe_z,
+        op_depth: tc.operation.default_depth_for_heights(),
+        stock_top_z: sb.max.z,
+        stock_bottom_z: sb.min.z,
+        model_top_z: mb.map(|b| b.max.z),
+        model_bottom_z: mb.map(|b| b.min.z),
+    }
+}
+
+/// Compute a 2D bounding box from a polygon slice (for DXF/SVG models without a mesh).
+pub fn session_polygons_bbox(
+    polygons: Option<&[rs_cam_core::polygon::Polygon2]>,
+) -> Option<BoundingBox3> {
+    let polygons = polygons?;
+    let mut min_x = f64::INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    for poly in polygons {
+        for pt in poly
+            .exterior
+            .iter()
+            .chain(poly.holes.iter().flat_map(|h| h.iter()))
+        {
+            min_x = min_x.min(pt.x);
+            min_y = min_y.min(pt.y);
+            max_x = max_x.max(pt.x);
+            max_y = max_y.max(pt.y);
+        }
+    }
+    if !min_x.is_finite() {
+        return None;
+    }
+    Some(BoundingBox3 {
+        min: rs_cam_core::geo::P3::new(min_x, min_y, 0.0),
+        max: rs_cam_core::geo::P3::new(max_x, max_y, 0.0),
+    })
+}
+
+/// Bounding box of a session `Fixture` (physical extents, no clearance).
+pub fn session_fixture_bbox(f: &rs_cam_core::session::Fixture) -> BoundingBox3 {
+    use rs_cam_core::geo::P3;
+    BoundingBox3 {
+        min: P3::new(f.origin_x, f.origin_y, f.origin_z),
+        max: P3::new(
+            f.origin_x + f.size_x,
+            f.origin_y + f.size_y,
+            f.origin_z + f.size_z,
+        ),
+    }
+}
+
+/// Clearance bounding box of a session `Fixture` (inflated by clearance margin).
+pub fn session_fixture_clearance_bbox(f: &rs_cam_core::session::Fixture) -> BoundingBox3 {
+    use rs_cam_core::geo::P3;
+    let c = f.clearance;
+    BoundingBox3 {
+        min: P3::new(f.origin_x - c, f.origin_y - c, f.origin_z),
+        max: P3::new(
+            f.origin_x + f.size_x + c,
+            f.origin_y + f.size_y + c,
+            f.origin_z + f.size_z,
+        ),
+    }
+}
+
+/// Bounding box of a session `KeepOutZone` (full Z extent of stock).
+pub fn session_keep_out_bbox(
+    ko: &rs_cam_core::session::KeepOutZone,
+    stock: &StockConfig,
+) -> BoundingBox3 {
+    use rs_cam_core::geo::P3;
+    BoundingBox3 {
+        min: P3::new(ko.origin_x, ko.origin_y, stock.origin_z),
+        max: P3::new(
+            ko.origin_x + ko.size_x,
+            ko.origin_y + ko.size_y,
+            stock.origin_z + stock.z,
+        ),
     }
 }
 
