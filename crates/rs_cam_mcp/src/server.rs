@@ -188,6 +188,34 @@ pub struct SaveProjectParam {
     pub path: String,
 }
 
+/// Model ID parameter (used by embedded MCP server in rs_cam_viz).
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+#[allow(dead_code)]
+pub struct ModelIdParam {
+    /// Model ID (0-based)
+    pub model_id: usize,
+}
+
+/// Add alignment pin parameter (used by embedded MCP server in rs_cam_viz).
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+#[allow(dead_code)]
+pub struct AddAlignmentPinParam {
+    /// X position of the alignment pin in mm
+    pub x: f64,
+    /// Y position of the alignment pin in mm
+    pub y: f64,
+    /// Diameter of the alignment pin in mm
+    pub diameter: f64,
+}
+
+/// Remove alignment pin parameter (used by embedded MCP server in rs_cam_viz).
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+#[allow(dead_code)]
+pub struct RemoveAlignmentPinParam {
+    /// Index of the alignment pin to remove (0-based)
+    pub index: usize,
+}
+
 /// Parse a string into an `OperationType` (snake_case).
 pub fn parse_operation_type(s: &str) -> Result<OperationType, String> {
     serde_json::from_value(serde_json::Value::String(s.to_owned()))

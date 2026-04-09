@@ -75,8 +75,32 @@ impl super::RsCamApp {
                 let resp = self.mcp_get_cut_trace(toolpath_id, max_hotspots, max_issues);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::InspectModel => {
+                let resp = self.mcp_inspect_model();
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::InspectStock => {
+                let resp = self.mcp_inspect_stock();
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::InspectMachine => {
+                let resp = self.mcp_inspect_machine();
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::InspectBrepFaces { model_id } => {
+                let resp = self.mcp_inspect_brep_faces(model_id);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
 
             // ── Mutation operations ──────────────────────────────────
+            McpRequestKind::AddAlignmentPin { x, y, diameter } => {
+                let resp = self.mcp_add_alignment_pin(x, y, diameter);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::RemoveAlignmentPin { index } => {
+                let resp = self.mcp_remove_alignment_pin(index);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::LoadProject { path } => {
                 let resp = self.mcp_load_project(&path);
                 let _ = response_tx.send(resp);
@@ -341,6 +365,390 @@ impl super::RsCamApp {
             "hotspot_count": hotspot_count,
             "issue_count": issue_count,
             "issues": issues_val,
+        }))
+    }
+
+    // ── Inspection implementations ──────────────────────────────────
+
+    fn mcp_inspect_model(&self) -> String {
+        let session = &self.controller.state().session;
+        let models = session.models();
+        if models.is_empty() {
+            return json_str(serde_json::json!([]));
+        }
+
+        let mut result = Vec::new();
+        for model in models {
+            let mut map = serde_json::Map::new();
+            map.insert("id".into(), serde_json::json!(model.id));
+            map.insert("name".into(), serde_json::json!(model.name));
+            map.insert(
+                "kind".into(),
+                serde_json::json!(model.kind.map(|k| format!("{k:?}").to_lowercase())),
+            );
+            map.insert(
+                "units".into(),
+                serde_json::json!(model.units.as_ref().map(|u| u.label())),
+            );
+            map.insert(
+                "path".into(),
+                serde_json::json!(model.path.display().to_string()),
+            );
+            map.insert("load_error".into(), serde_json::json!(model.load_error));
+
+            // Mesh-level stats (STL and STEP)
+            if let Some(ref mesh) = model.mesh {
+                let bbox = &mesh.bbox;
+                map.insert(
+                    "bbox".into(),
+                    serde_json::json!({
+                        "min": [bbox.min.x, bbox.min.y, bbox.min.z],
+                        "max": [bbox.max.x, bbox.max.y, bbox.max.z],
+                    }),
+                );
+                map.insert(
+                    "dimensions".into(),
+                    serde_json::json!({
+                        "x": bbox.max.x - bbox.min.x,
+                        "y": bbox.max.y - bbox.min.y,
+                        "z": bbox.max.z - bbox.min.z,
+                    }),
+                );
+                map.insert(
+                    "triangle_count".into(),
+                    serde_json::json!(mesh.triangles.len()),
+                );
+                map.insert(
+                    "vertex_count".into(),
+                    serde_json::json!(mesh.vertices.len()),
+                );
+            }
+
+            // Winding consistency (STL-specific)
+            if let Some(winding) = model.winding_report {
+                map.insert(
+                    "winding_consistency".into(),
+                    serde_json::json!(1.0 - winding),
+                );
+            }
+
+            // BREP summary (STEP-specific)
+            if let Some(ref em) = model.enriched_mesh {
+                let concave_count = em.edges.iter().filter(|e| e.is_concave).count();
+                let faces_json: Vec<serde_json::Value> = em
+                    .face_groups
+                    .iter()
+                    .map(|fg| {
+                        serde_json::json!({
+                            "id": fg.id.0,
+                            "surface_type": format!("{:?}", fg.surface_type),
+                            "bbox": {
+                                "min": [fg.bbox.min.x, fg.bbox.min.y, fg.bbox.min.z],
+                                "max": [fg.bbox.max.x, fg.bbox.max.y, fg.bbox.max.z],
+                            },
+                        })
+                    })
+                    .collect();
+                map.insert(
+                    "brep".into(),
+                    serde_json::json!({
+                        "face_count": em.face_groups.len(),
+                        "edge_count": em.edges.len(),
+                        "concave_edge_count": concave_count,
+                        "faces": faces_json,
+                    }),
+                );
+            }
+
+            // Polygon summary (SVG/DXF-specific)
+            if let Some(ref polys) = model.polygons {
+                let count = polys.len();
+                let total_area: f64 = polys.iter().map(|p| p.area()).sum();
+                let total_perimeter: f64 = polys.iter().map(|p| p.perimeter()).sum();
+                let hole_count: usize = polys.iter().map(|p| p.holes.len()).sum();
+
+                // Compute 2D bbox from polygon exteriors
+                let mut min_x = f64::MAX;
+                let mut min_y = f64::MAX;
+                let mut max_x = f64::MIN;
+                let mut max_y = f64::MIN;
+                for poly in polys.iter() {
+                    for pt in &poly.exterior {
+                        if pt.x < min_x {
+                            min_x = pt.x;
+                        }
+                        if pt.y < min_y {
+                            min_y = pt.y;
+                        }
+                        if pt.x > max_x {
+                            max_x = pt.x;
+                        }
+                        if pt.y > max_y {
+                            max_y = pt.y;
+                        }
+                    }
+                }
+
+                let bbox_2d = if min_x <= max_x {
+                    serde_json::json!({ "min": [min_x, min_y], "max": [max_x, max_y] })
+                } else {
+                    serde_json::json!(null)
+                };
+
+                map.insert(
+                    "polygons".into(),
+                    serde_json::json!({
+                        "count": count,
+                        "total_area": total_area,
+                        "total_perimeter": total_perimeter,
+                        "hole_count": hole_count,
+                        "bbox_2d": bbox_2d,
+                    }),
+                );
+            }
+
+            result.push(serde_json::Value::Object(map));
+        }
+
+        json_str(serde_json::json!(result))
+    }
+
+    fn mcp_inspect_stock(&self) -> String {
+        let session = &self.controller.state().session;
+        let stock = session.stock_config();
+
+        let pins: Vec<serde_json::Value> = stock
+            .alignment_pins
+            .iter()
+            .map(|pin| {
+                serde_json::json!({
+                    "x": pin.x,
+                    "y": pin.y,
+                    "diameter": pin.diameter,
+                })
+            })
+            .collect();
+
+        json_str(serde_json::json!({
+            "dimensions": { "x": stock.x, "y": stock.y, "z": stock.z },
+            "origin": { "x": stock.origin_x, "y": stock.origin_y, "z": stock.origin_z },
+            "material": stock.material.label(),
+            "padding": stock.padding,
+            "auto_from_model": stock.auto_from_model,
+            "workholding_rigidity": format!("{:?}", stock.workholding_rigidity),
+            "alignment_pins": pins,
+            "flip_axis": stock.flip_axis.map(|fa| fa.label()),
+        }))
+    }
+
+    fn mcp_inspect_machine(&self) -> String {
+        let session = &self.controller.state().session;
+        let machine = session.machine();
+
+        let spindle = match &machine.spindle {
+            rs_cam_core::machine::SpindleConfig::Variable { min_rpm, max_rpm } => {
+                serde_json::json!({
+                    "type": "Variable",
+                    "min_rpm": min_rpm,
+                    "max_rpm": max_rpm,
+                })
+            }
+            rs_cam_core::machine::SpindleConfig::Discrete { speeds } => {
+                serde_json::json!({
+                    "type": "Discrete",
+                    "speeds": speeds,
+                })
+            }
+        };
+
+        let power = match &machine.power {
+            rs_cam_core::machine::PowerModel::ConstantPower { power_kw } => {
+                serde_json::json!({
+                    "type": "ConstantPower",
+                    "power_kw": power_kw,
+                })
+            }
+            rs_cam_core::machine::PowerModel::VfdConstantTorque {
+                rated_power_kw,
+                rated_rpm,
+            } => {
+                serde_json::json!({
+                    "type": "VfdConstantTorque",
+                    "rated_power_kw": rated_power_kw,
+                    "rated_rpm": rated_rpm,
+                })
+            }
+        };
+
+        let r = &machine.rigidity;
+        json_str(serde_json::json!({
+            "name": machine.name,
+            "max_feed_mm_min": machine.max_feed_mm_min,
+            "max_shank_mm": machine.max_shank_mm,
+            "safety_factor": machine.safety_factor,
+            "spindle": spindle,
+            "power": power,
+            "rigidity": {
+                "doc_roughing_factor": r.doc_roughing_factor,
+                "doc_finishing_factor": r.doc_finishing_factor,
+                "woc_roughing_factor": r.woc_roughing_factor,
+                "woc_roughing_max_mm": r.woc_roughing_max_mm,
+                "woc_finishing_mm": r.woc_finishing_mm,
+                "adaptive_doc_factor": r.adaptive_doc_factor,
+                "adaptive_woc_factor": r.adaptive_woc_factor,
+            },
+        }))
+    }
+
+    fn mcp_inspect_brep_faces(&self, model_id: usize) -> String {
+        let session = &self.controller.state().session;
+        let models = session.models();
+        let model = models.iter().find(|m| m.id == model_id);
+        let Some(model) = model else {
+            return json_str(serde_json::json!({"error": format!("Model {model_id} not found")}));
+        };
+
+        let Some(ref em) = model.enriched_mesh else {
+            return json_str(serde_json::json!({
+                "error": format!("Model '{}' has no BREP data (not a STEP model)", model.name)
+            }));
+        };
+
+        let faces_json: Vec<serde_json::Value> = em
+            .face_groups
+            .iter()
+            .map(|fg| {
+                let mut map = serde_json::Map::new();
+                map.insert("id".into(), serde_json::json!(fg.id.0));
+                map.insert(
+                    "surface_type".into(),
+                    serde_json::json!(format!("{:?}", fg.surface_type)),
+                );
+                map.insert(
+                    "bbox".into(),
+                    serde_json::json!({
+                        "min": [fg.bbox.min.x, fg.bbox.min.y, fg.bbox.min.z],
+                        "max": [fg.bbox.max.x, fg.bbox.max.y, fg.bbox.max.z],
+                    }),
+                );
+                map.insert(
+                    "triangle_count".into(),
+                    serde_json::json!(fg.triangle_range.len()),
+                );
+                map.insert(
+                    "has_2d_boundary".into(),
+                    serde_json::json!(fg.boundary_loops_2d.is_some()),
+                );
+
+                // Surface-type-specific fields
+                match &fg.surface_params {
+                    rs_cam_core::enriched_mesh::SurfaceParams::Plane { normal, .. } => {
+                        map.insert(
+                            "normal".into(),
+                            serde_json::json!([normal.x, normal.y, normal.z]),
+                        );
+                        map.insert(
+                            "is_horizontal".into(),
+                            serde_json::json!(normal.z.abs() > 0.95),
+                        );
+                    }
+                    rs_cam_core::enriched_mesh::SurfaceParams::Cylinder {
+                        radius,
+                        axis_dir,
+                        ..
+                    } => {
+                        map.insert("radius".into(), serde_json::json!(radius));
+                        map.insert(
+                            "axis".into(),
+                            serde_json::json!([axis_dir.x, axis_dir.y, axis_dir.z]),
+                        );
+                    }
+                    rs_cam_core::enriched_mesh::SurfaceParams::Cone {
+                        half_angle, axis, ..
+                    } => {
+                        map.insert(
+                            "half_angle_deg".into(),
+                            serde_json::json!(half_angle.to_degrees()),
+                        );
+                        map.insert("axis".into(), serde_json::json!([axis.x, axis.y, axis.z]));
+                    }
+                    rs_cam_core::enriched_mesh::SurfaceParams::Sphere { radius, .. } => {
+                        map.insert("radius".into(), serde_json::json!(radius));
+                    }
+                    rs_cam_core::enriched_mesh::SurfaceParams::Torus {
+                        major_radius,
+                        minor_radius,
+                        axis,
+                        ..
+                    } => {
+                        map.insert("major_radius".into(), serde_json::json!(major_radius));
+                        map.insert("minor_radius".into(), serde_json::json!(minor_radius));
+                        map.insert("axis".into(), serde_json::json!([axis.x, axis.y, axis.z]));
+                    }
+                    _ => {}
+                }
+
+                serde_json::Value::Object(map)
+            })
+            .collect();
+
+        let edges_json: Vec<serde_json::Value> = em
+            .edges
+            .iter()
+            .map(|edge| {
+                serde_json::json!({
+                    "id": edge.id,
+                    "face_a": edge.face_a.0,
+                    "face_b": edge.face_b.0,
+                    "dihedral_angle_deg": edge.dihedral_angle.to_degrees(),
+                    "is_concave": edge.is_concave,
+                    "vertex_count": edge.vertices.len(),
+                })
+            })
+            .collect();
+
+        json_str(serde_json::json!({
+            "model_id": model_id,
+            "face_count": em.face_groups.len(),
+            "faces": faces_json,
+            "edges": edges_json,
+        }))
+    }
+
+    // ── Alignment pin implementations ───────────────────────────────
+
+    fn mcp_add_alignment_pin(&mut self, x: f64, y: f64, diameter: f64) -> String {
+        use rs_cam_core::compute::stock_config::AlignmentPin;
+
+        let mut stock = self.controller.state().session.stock_config().clone();
+        stock.alignment_pins.push(AlignmentPin::new(x, y, diameter));
+        let pin_count = stock.alignment_pins.len();
+        self.controller.state_mut().session.set_stock_config(stock);
+        self.controller.state_mut().gui.mark_edited();
+        self.controller.set_pending_upload();
+        json_str(serde_json::json!({
+            "ok": true,
+            "message": format!("Added alignment pin at ({x:.1}, {y:.1}) dia {diameter:.1}mm"),
+            "pin_count": pin_count,
+        }))
+    }
+
+    fn mcp_remove_alignment_pin(&mut self, index: usize) -> String {
+        let mut stock = self.controller.state().session.stock_config().clone();
+        if index >= stock.alignment_pins.len() {
+            return json_str(serde_json::json!({
+                "error": format!("Pin index {index} out of range (have {})", stock.alignment_pins.len())
+            }));
+        }
+        stock.alignment_pins.remove(index);
+        let pin_count = stock.alignment_pins.len();
+        self.controller.state_mut().session.set_stock_config(stock);
+        self.controller.state_mut().gui.mark_edited();
+        self.controller.set_pending_upload();
+        json_str(serde_json::json!({
+            "ok": true,
+            "message": format!("Removed alignment pin {index}"),
+            "pin_count": pin_count,
         }))
     }
 

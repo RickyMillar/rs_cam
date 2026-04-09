@@ -29,7 +29,22 @@ pub enum McpRequestKind {
         max_issues: Option<usize>,
     },
 
+    InspectModel,
+    InspectStock,
+    InspectMachine,
+    InspectBrepFaces {
+        model_id: usize,
+    },
+
     // ── Mutations (instant) ──────────────────────────────────────────
+    AddAlignmentPin {
+        x: f64,
+        y: f64,
+        diameter: f64,
+    },
+    RemoveAlignmentPin {
+        index: usize,
+    },
     LoadProject {
         path: String,
     },
