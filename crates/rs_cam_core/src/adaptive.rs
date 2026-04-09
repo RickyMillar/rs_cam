@@ -516,7 +516,7 @@ fn path_bounds(path: &[P2]) -> Option<ToolpathDebugBounds2> {
 /// When near a wall (boundary_distance < 2 × tool_radius), a tangential
 /// bias steers the tool along the wall instead of into it.
 #[allow(clippy::too_many_arguments)]
-#[allow(dead_code)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn search_direction(
     grid: &MaterialGrid,
     machinable_mask: &[bool],
@@ -1062,7 +1062,7 @@ enum AdaptiveSegment {
 }
 
 /// Generate the 2D adaptive clearing path segments.
-#[allow(dead_code)]
+#[cfg_attr(not(test), allow(dead_code))]
 fn adaptive_segments(
     polygon: &Polygon2,
     tool_radius: f64,

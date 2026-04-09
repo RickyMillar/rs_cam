@@ -245,7 +245,6 @@ fn circle_from_least_squares(points: &[&P3]) -> Option<(f64, f64, f64)> {
 }
 
 /// Find the center and radius of a circle through 3 points.
-#[allow(dead_code)]
 fn circle_from_3_points(
     x1: f64,
     y1: f64,

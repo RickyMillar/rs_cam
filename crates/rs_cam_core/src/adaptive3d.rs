@@ -452,7 +452,7 @@ fn material_remaining_in_region(
 /// 2. Forward sweep +/-90 (19 candidates)
 /// 3. Full 360 (36 candidates)
 #[allow(clippy::too_many_arguments)]
-#[allow(dead_code)]
+#[cfg_attr(not(test), allow(dead_code))]
 fn search_direction_3d(
     material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,

@@ -6,7 +6,7 @@
 
 ### Shipped surface
 
-- 3-crate Rust workspace: core library, CLI, and desktop GUI
+- 4-crate Rust workspace: core library, CLI, desktop GUI, and MCP server
 - 23 GUI-exposed operations
 - 14 direct CLI commands plus TOML job execution
 - STL, SVG, DXF, and STEP import with BREP face selection
@@ -20,6 +20,23 @@
 - controller-first GUI architecture with canonical operation metadata and split compute/controller modules
 - shared adaptive support module used by both 2D and 3D adaptive search/control code
 - unified service layer: `ProjectSession` API in core, shared `execute_operation()` dispatch for all 23 ops
+- MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration
+
+## Recent work (2026-04-09)
+
+### Post-extraction cleanup (Phases 1–5)
+
+Systematic cleanup following the service layer extraction and GUI dispatch rewire.
+
+**Phase 1 — Quick wins**: Removed dead code (`pipeline` module, stale `run_*` helpers), unified `OperationError` enum across operation functions (replacing `Result<T, String>`), added MCP server tools, fixed simulation diagnostics bug.
+
+**Phase 2 — Core execution parity**: Wired slope filter, `initial_stock` (prior stock for air-cut filtering), dressup pipeline, and input validations into `rs_cam_core::compute::execute::execute_operation()` so core dispatch matches the full viz compute path.
+
+**Phase 3 — GUI dispatch rewired to core**: Replaced 23 per-operation `SemanticToolpathOp` trait implementations in viz with a single `generate_via_core()` bridge function that delegates to `execute_operation()`. Deleted ~2900 lines of duplicate dispatch code from `operations_2d.rs` and `operations_3d.rs`. Viz now only handles threading, phase tracking, dressups, boundary clipping, and debug/semantic tracing wrapper.
+
+**Phase 4 — Arc\<Toolpath\>, borrowed collision, 12 new tests**: Changed `ToolpathResult.toolpath` from owned `Toolpath` to `Arc<Toolpath>` to eliminate clones on the simulation and collision check paths. Collision check now borrows the toolpath instead of cloning. Added 12 new integration tests covering all 23 operations through `run_compute`.
+
+**Phase 5 — session.rs split, dead code cleanup**: Split `session.rs` (1400+ lines) into focused submodules (`session/mod.rs`, `session/loading.rs`, `session/execution.rs`, `session/export.rs`). Removed dead `run_simulation` wrapper and unused `assert_cutting_moves_are_semantically_covered` test helper from viz. Fixed incorrect `#[allow(dead_code)]` on `circle_from_3_points` in `arcfit.rs` (function is actively called). Tightened `#[allow(dead_code)]` to `#[cfg_attr(not(test), allow(dead_code))]` on three test-only functions (`search_direction`, `adaptive_segments`, `search_direction_3d`).
 
 ## Recent work (2026-04-07)
 
@@ -129,7 +146,7 @@ Full-codebase audit across 5 domains (operations, rendering, feeds/speeds, core/
 
 ## Current priorities
 
-- **Service layer Phase 7+8** — MCP server in viz (real-time AI agent access to running GUI session) + Claude Code integration. Design doc: `planning/SERVICE_LAYER_EXTRACTION.md`
+- **MCP server polish** — MCP server (`rs_cam_mcp`) is shipped with 16 tools; ongoing work to integrate with running GUI session for real-time AI agent access. Design doc: `planning/SERVICE_LAYER_EXTRACTION.md`
 - **Fix 2 remaining simulation test failures** — `multi_setup_top_bottom_simulation` and `multi_setup_backward_scrub_uses_checkpoints` fail because bottom-up tri-dexel cuts produce empty stock
 - **Stock-level alignment pins** — moving pins from per-setup to the stock definition so they persist across flips. Design doc: `planning/ALIGNMENT_PINS_DESIGN.md`
 - **Tri-dexel simulation** — Phases 1–6 complete (core types, stamping, mesh extraction, viz wiring, multi-setup carry-forward, side-face grids). Design doc: `architecture/TRI_DEXEL_SIMULATION.md`, implementation plan: `planning/VOXEL_SIM_DESIGN.md`
