@@ -11,11 +11,11 @@ use crate::compute::{
     CollisionRequest, ComputeMessage, ComputeRequest, LaneState, SimulationRequest,
     SimulationResult,
 };
-use crate::state::job::{self, SetupId, ToolConfig, ToolId, ToolType};
+use crate::state::job::{SetupId, ToolConfig, ToolId, ToolType};
 use crate::state::runtime::ToolpathRuntime;
 use crate::state::selection::Selection;
 use crate::state::toolpath::{
-    Adaptive3dConfig, OperationConfig, ToolpathEntry, ToolpathId, ToolpathResult,
+    Adaptive3dConfig, OperationConfig, ToolpathId, ToolpathResult,
 };
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::session::{LoadedModel, ToolpathConfig};
@@ -250,39 +250,6 @@ fn sample_controller() -> AppController<ScriptedBackend> {
         debug_trace_path: None,
     });
     controller.state.gui.toolpath_rt.insert(tp_id, rt);
-
-    // Also populate state.job for backward compatibility with UI code
-    // that hasn't been migrated yet (e.g. properties panel).
-    controller.state.job.tools.push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
-    controller.state.job.models.push(job::LoadedModel {
-        id: job::ModelId(0),
-        path: std::path::PathBuf::from("flat.stl"),
-        name: "Flat".to_owned(),
-        kind: job::ModelKind::Stl,
-        mesh: Some(mesh),
-        polygons: None,
-        enriched_mesh: None,
-        units: job::ModelUnits::Millimeters,
-        winding_report: None,
-        load_error: None,
-    });
-    let mut entry = ToolpathEntry::from_init(
-        crate::state::toolpath::ToolpathEntryInit::from_loaded_state(
-            ToolpathId(tp_id),
-            "Scallop".to_owned(),
-            ToolId(1),
-            job::ModelId(0),
-            OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
-        ),
-    );
-    entry.result = Some(ToolpathResult {
-        toolpath: Arc::new(Toolpath::new()),
-        stats: Default::default(),
-        debug_trace: None,
-        semantic_trace: None,
-        debug_trace_path: None,
-    });
-    controller.state.job.push_toolpath(entry);
 
     controller.state.selection = Selection::Toolpath(ToolpathId(tp_id));
     controller

@@ -208,26 +208,21 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             }
         }
         Selection::Setup(setup_id) => {
-            // setup::draw still takes &mut Setup (viz type); keep using state.job
-            // until that sub-panel is migrated.
-            if let Some(setup_state) = state
-                .job
-                .setups
-                .iter_mut()
-                .find(|setup| setup.id == setup_id)
-            {
-                let pin_count = state.session.stock_config().alignment_pins.len();
-                let has_flip_axis = state.session.stock_config().flip_axis.is_some();
-                let all_models: Vec<_> = state
-                    .session
-                    .models()
-                    .iter()
-                    .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
-                    .collect();
+            let pin_count = state.session.stock_config().alignment_pins.len();
+            let has_flip_axis = state.session.stock_config().flip_axis.is_some();
+            let all_models: Vec<_> = state
+                .session
+                .models()
+                .iter()
+                .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
+                .collect();
+            if let Some((_, setup_data)) = state.session.find_setup_by_id_mut(setup_id.0) {
+                let setup_rt = state.gui.setup_rt_or_default(setup_id.0);
                 setup::draw(
                     ui,
                     setup_id,
-                    setup_state,
+                    setup_data,
+                    setup_rt,
                     pin_count,
                     has_flip_axis,
                     &all_models,
@@ -236,12 +231,8 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             }
         }
         Selection::Fixture(setup_id, fixture_id) => {
-            if let Some(setup_state) = state
-                .job
-                .setups
-                .iter_mut()
-                .find(|setup| setup.id == setup_id)
-                && let Some(fixture) = setup_state
+            if let Some((_, setup_data)) = state.session.find_setup_by_id_mut(setup_id.0)
+                && let Some(fixture) = setup_data
                     .fixtures
                     .iter_mut()
                     .find(|fixture| fixture.id == fixture_id)
@@ -250,12 +241,8 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             }
         }
         Selection::KeepOut(setup_id, keep_out_id) => {
-            if let Some(setup_state) = state
-                .job
-                .setups
-                .iter_mut()
-                .find(|setup| setup.id == setup_id)
-                && let Some(zone) = setup_state
+            if let Some((_, setup_data)) = state.session.find_setup_by_id_mut(setup_id.0)
+                && let Some(zone) = setup_data
                     .keep_out_zones
                     .iter_mut()
                     .find(|zone| zone.id == keep_out_id)
@@ -359,21 +346,22 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 });
 
             // Snapshot operation and heights for stale_since detection
-            // draw_toolpath_panel still takes &mut ToolpathEntry; keep using state.job
-            // until the panel function is migrated to session types.
             let op_before = state
-                .job
-                .find_toolpath(id)
-                .map(|e| serde_json::to_string(&e.operation).unwrap_or_default());
+                .session
+                .find_toolpath_config_by_id(id.0)
+                .map(|(_, tc)| serde_json::to_string(&tc.operation).unwrap_or_default());
             let heights_before = state
-                .job
-                .find_toolpath(id)
-                .map(|e| format!("{:?}", e.heights));
+                .session
+                .find_toolpath_config_by_id(id.0)
+                .map(|(_, tc)| format!("{:?}", tc.heights));
 
-            if let Some(entry) = state.job.find_toolpath_mut(id) {
+            // Build a temporary ToolpathEntry from session config + gui runtime
+            // so the existing draw_toolpath_panel can work unchanged.
+            if let Some(mut entry) = build_entry_from_session_and_gui(id, &state.session, &state.gui)
+            {
                 draw_toolpath_panel(
                     ui,
-                    entry,
+                    &mut entry,
                     &tools,
                     &models,
                     &tool_configs,
@@ -385,18 +373,25 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     height_ctx.as_ref(),
                     events,
                 );
+
+                // Write config changes back to session
+                write_entry_config_to_session(&entry, &mut state.session);
+                // Write runtime changes back to gui
+                write_entry_runtime_to_gui(&entry, &mut state.gui);
             }
 
             // B3a: set stale_since when parameters or heights change
-            if let Some(entry) = state.job.find_toolpath_mut(id) {
+            if let Some((_, tc)) = state.session.find_toolpath_config_by_id(id.0) {
                 let op_changed = op_before.as_ref().is_some_and(|b| {
-                    *b != serde_json::to_string(&entry.operation).unwrap_or_default()
+                    *b != serde_json::to_string(&tc.operation).unwrap_or_default()
                 });
                 let heights_changed = heights_before
                     .as_ref()
-                    .is_some_and(|b| *b != format!("{:?}", entry.heights));
+                    .is_some_and(|b| *b != format!("{:?}", tc.heights));
                 if op_changed || heights_changed {
-                    entry.stale_since = Some(std::time::Instant::now());
+                    if let Some(rt) = state.gui.toolpath_rt.get_mut(&id.0) {
+                        rt.stale_since = Some(std::time::Instant::now());
+                    }
                     state.gui.mark_edited();
                 }
                 if heights_changed {
@@ -1948,6 +1943,94 @@ fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab, badges: &TabB
             ui.add_space(2.0);
         }
     });
+}
+
+/// Build a temporary `ToolpathEntry` from session `ToolpathConfig` + GUI `ToolpathRuntime`.
+///
+/// This allows the existing `draw_toolpath_panel` to work unchanged while the
+/// underlying data migrates from `JobState` to `ProjectSession`.
+fn build_entry_from_session_and_gui(
+    id: crate::state::toolpath::ToolpathId,
+    session: &rs_cam_core::session::ProjectSession,
+    gui: &crate::state::runtime::GuiState,
+) -> Option<ToolpathEntry> {
+    use crate::state::toolpath::ToolpathId;
+
+    let (_, tc) = session.find_toolpath_config_by_id(id.0)?;
+    let rt = gui.toolpath_rt.get(&id.0);
+    let default_rt = crate::state::runtime::ToolpathRuntime::new(true);
+    let rt = rt.unwrap_or(&default_rt);
+    Some(ToolpathEntry {
+        id: ToolpathId(tc.id),
+        name: tc.name.clone(),
+        enabled: tc.enabled,
+        visible: rt.visible,
+        locked: rt.locked,
+        tool_id: crate::state::job::ToolId(tc.tool_id),
+        model_id: crate::state::job::ModelId(tc.model_id),
+        operation: tc.operation.clone(),
+        dressups: tc.dressups.clone(),
+        heights: tc.heights.clone(),
+        boundary: tc.boundary.clone(),
+        boundary_inherit: tc.boundary_inherit,
+        coolant: tc.coolant,
+        pre_gcode: tc.pre_gcode.clone().unwrap_or_default(),
+        post_gcode: tc.post_gcode.clone().unwrap_or_default(),
+        stock_source: tc.stock_source,
+        status: rt.status.clone(),
+        result: rt.result.clone(),
+        stale_since: rt.stale_since,
+        auto_regen: rt.auto_regen,
+        feeds_auto: tc.feeds_auto.clone(),
+        face_selection: tc.face_selection.clone(),
+        feeds_result: rt.feeds_result.clone(),
+        debug_options: tc.debug_options.clone(),
+        debug_trace: rt.debug_trace.clone(),
+        semantic_trace: rt.semantic_trace.clone(),
+        debug_trace_path: rt.debug_trace_path.clone(),
+    })
+}
+
+/// Write config changes from a `ToolpathEntry` back to the session's `ToolpathConfig`.
+fn write_entry_config_to_session(
+    entry: &ToolpathEntry,
+    session: &mut rs_cam_core::session::ProjectSession,
+) {
+    if let Some((_, tc)) = session.find_toolpath_config_by_id_mut(entry.id.0) {
+        tc.name = entry.name.clone();
+        tc.enabled = entry.enabled;
+        tc.tool_id = entry.tool_id.0;
+        tc.model_id = entry.model_id.0;
+        tc.operation = entry.operation.clone();
+        tc.dressups = entry.dressups.clone();
+        tc.heights = entry.heights.clone();
+        tc.boundary = entry.boundary.clone();
+        tc.boundary_inherit = entry.boundary_inherit;
+        tc.coolant = entry.coolant;
+        tc.pre_gcode = if entry.pre_gcode.is_empty() { None } else { Some(entry.pre_gcode.clone()) };
+        tc.post_gcode = if entry.post_gcode.is_empty() { None } else { Some(entry.post_gcode.clone()) };
+        tc.stock_source = entry.stock_source;
+        tc.feeds_auto = entry.feeds_auto.clone();
+        tc.face_selection = entry.face_selection.clone();
+        tc.debug_options = entry.debug_options.clone();
+    }
+}
+
+/// Write runtime changes from a `ToolpathEntry` back to the GUI's `ToolpathRuntime`.
+fn write_entry_runtime_to_gui(
+    entry: &ToolpathEntry,
+    gui: &mut crate::state::runtime::GuiState,
+) {
+    if let Some(rt) = gui.toolpath_rt.get_mut(&entry.id.0) {
+        rt.visible = entry.visible;
+        rt.locked = entry.locked;
+        rt.auto_regen = entry.auto_regen;
+        rt.status = entry.status.clone();
+        rt.stale_since = entry.stale_since;
+        rt.feeds_result = entry.feeds_result.clone();
+        // result, debug_trace, semantic_trace, debug_trace_path are not
+        // mutated by the panel — skip to avoid unnecessary Arc clones.
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
