@@ -73,7 +73,6 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     notifications: Vec<Notification>,
     /// Shared project session from core — keeps GUI and core in sync.
     /// Populated when a project is loaded; `None` for new untitled projects.
-    #[allow(dead_code)] // Phase 4d-4e will wire up reads
     pub session: Option<rs_cam_core::session::ProjectSession>,
 }
 
@@ -217,6 +216,136 @@ impl<B: ComputeBackend> AppController<B> {
             return Some(msg.as_str());
         }
         None
+    }
+
+    /// Sync the session from the current `JobState`, pushing stock, tools,
+    /// post, machine, and all setup/toolpath configs into the session.
+    ///
+    /// This is a pragmatic bridge: instead of intercepting every individual
+    /// GUI mutation, we bulk-sync at key checkpoints (before compute, before
+    /// simulation).  Phase 4f (removing `JobState`) will eliminate the need
+    /// for this.
+    pub fn sync_session_from_job(&mut self) {
+        let Some(ref mut session) = self.session else {
+            return;
+        };
+
+        // Stock (same type, just clone)
+        session.set_stock_config(self.state.job.stock.clone());
+
+        // Post — map from viz's PostConfig (enum-based) to session's
+        // ProjectPostConfig (string-based).
+        let post_format_key = match self.state.job.post.format {
+            crate::state::job::PostFormat::Grbl => "grbl",
+            crate::state::job::PostFormat::LinuxCnc => "linuxcnc",
+            crate::state::job::PostFormat::Mach3 => "mach3",
+        };
+        session.set_post_config(rs_cam_core::session::ProjectPostConfig {
+            format: post_format_key.to_owned(),
+            spindle_speed: self.state.job.post.spindle_speed,
+            safe_z: self.state.job.post.safe_z,
+            high_feedrate_mode: self.state.job.post.high_feedrate_mode,
+            high_feedrate: self.state.job.post.high_feedrate,
+        });
+
+        // Machine (same type, just clone)
+        session.set_machine(self.state.job.machine.clone());
+
+        // Tools (same type, just clone the whole vec)
+        session.replace_tools(self.state.job.tools.clone());
+
+        // Setups + toolpaths — build session SetupData + ToolpathConfig vecs
+        // from the current JobState.
+        let mut session_setups = Vec::new();
+        let mut session_tp_configs = Vec::new();
+
+        for setup in &self.state.job.setups {
+            let mut tp_indices = Vec::new();
+            for tp in &setup.toolpaths {
+                let tp_index = session_tp_configs.len();
+                tp_indices.push(tp_index);
+                session_tp_configs.push(rs_cam_core::session::ToolpathConfig {
+                    id: tp.id.0,
+                    name: tp.name.clone(),
+                    enabled: tp.enabled,
+                    operation: tp.operation.clone(),
+                    dressups: tp.dressups.clone(),
+                    heights: tp.heights.clone(),
+                    tool_id: tp.tool_id.0,
+                    model_id: tp.model_id.0,
+                    pre_gcode: if tp.pre_gcode.is_empty() {
+                        None
+                    } else {
+                        Some(tp.pre_gcode.clone())
+                    },
+                    post_gcode: if tp.post_gcode.is_empty() {
+                        None
+                    } else {
+                        Some(tp.post_gcode.clone())
+                    },
+                    boundary: tp.boundary.clone(),
+                    boundary_inherit: tp.boundary_inherit,
+                    stock_source: tp.stock_source,
+                    coolant: tp.coolant,
+                    face_selection: tp.face_selection.clone(),
+                    feeds_auto: tp.feeds_auto.clone(),
+                    debug_options: tp.debug_options,
+                });
+            }
+
+            session_setups.push(rs_cam_core::session::SetupData {
+                id: setup.id.0,
+                name: setup.name.clone(),
+                face_up: setup.face_up,
+                z_rotation: setup.z_rotation,
+                fixtures: setup
+                    .fixtures
+                    .iter()
+                    .map(|f| rs_cam_core::session::Fixture {
+                        id: f.id,
+                        name: f.name.clone(),
+                        kind: match f.kind {
+                            crate::state::job::FixtureKind::Clamp => {
+                                rs_cam_core::session::FixtureKind::Clamp
+                            }
+                            crate::state::job::FixtureKind::Vise => {
+                                rs_cam_core::session::FixtureKind::Vise
+                            }
+                            crate::state::job::FixtureKind::VacuumPod => {
+                                rs_cam_core::session::FixtureKind::VacuumPod
+                            }
+                            crate::state::job::FixtureKind::Custom => {
+                                rs_cam_core::session::FixtureKind::Custom
+                            }
+                        },
+                        enabled: f.enabled,
+                        origin_x: f.origin_x,
+                        origin_y: f.origin_y,
+                        origin_z: f.origin_z,
+                        size_x: f.size_x,
+                        size_y: f.size_y,
+                        size_z: f.size_z,
+                        clearance: f.clearance,
+                    })
+                    .collect(),
+                keep_out_zones: setup
+                    .keep_out_zones
+                    .iter()
+                    .map(|k| rs_cam_core::session::KeepOutZone {
+                        id: k.id,
+                        name: k.name.clone(),
+                        enabled: k.enabled,
+                        origin_x: k.origin_x,
+                        origin_y: k.origin_y,
+                        size_x: k.size_x,
+                        size_y: k.size_y,
+                    })
+                    .collect(),
+                toolpath_indices: tp_indices,
+            });
+        }
+
+        session.replace_setups_and_toolpaths(session_setups, session_tp_configs);
     }
 
     pub fn process_auto_regen(&mut self) {

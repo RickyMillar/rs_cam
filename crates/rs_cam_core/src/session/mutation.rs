@@ -263,4 +263,62 @@ impl ProjectSession {
         self.post = post;
         self.simulation = None;
     }
+
+    /// Replace the machine profile.
+    pub fn set_machine(&mut self, machine: crate::machine::MachineProfile) {
+        self.machine = machine;
+    }
+
+    /// Replace the full tools list.
+    ///
+    /// Invalidates simulation (tool geometry changes affect material removal).
+    pub fn replace_tools(&mut self, tools: Vec<ToolConfig>) {
+        self.tools = tools;
+        // Update the next-ID counter so newly added tools don't collide.
+        self.next_tool_id = self.tools.iter().map(|t| t.id.0 + 1).max().unwrap_or(0);
+        self.simulation = None;
+    }
+
+    /// Replace a single toolpath configuration by its index in
+    /// `toolpath_configs`, invalidating its cached result and simulation.
+    pub fn replace_toolpath_config(
+        &mut self,
+        index: usize,
+        config: ToolpathConfig,
+    ) -> Result<(), SessionError> {
+        let slot = self
+            .toolpath_configs
+            .get_mut(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        *slot = config;
+        self.results.remove(&index);
+        self.simulation = None;
+        Ok(())
+    }
+
+    /// Wholesale replace all setups and toolpath configs from an external
+    /// source (e.g. GUI's `JobState`).  This is the bulk-sync path used by
+    /// `sync_session_from_job`.
+    ///
+    /// The caller is responsible for building valid `SetupData` and
+    /// `ToolpathConfig` vecs whose `toolpath_indices` are consistent.
+    pub fn replace_setups_and_toolpaths(
+        &mut self,
+        setups: Vec<SetupData>,
+        toolpath_configs: Vec<ToolpathConfig>,
+    ) {
+        self.setups = setups;
+        self.toolpath_configs = toolpath_configs;
+        // Update the next-ID counters.
+        self.next_toolpath_id = self
+            .toolpath_configs
+            .iter()
+            .map(|tc| tc.id + 1)
+            .max()
+            .unwrap_or(0);
+        self.next_setup_id = self.setups.iter().map(|s| s.id + 1).max().unwrap_or(0);
+        // Invalidate all cached results — the indices may have shifted.
+        self.results.clear();
+        self.simulation = None;
+    }
 }

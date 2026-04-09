@@ -599,11 +599,20 @@ impl ProjectSession {
             }
         }
 
+        // Compute effective resolution: auto-resolution matches the GUI's
+        // heuristic (5 cells across the smallest tool radius, clamped to
+        // [0.02, 0.5] mm, further capped so the grid stays under ~8M cells).
+        let resolution = if opts.auto_resolution {
+            auto_resolution_for_groups(&groups, &stock_bbox)
+        } else {
+            opts.resolution
+        };
+
         let request = SimulationRequest {
             groups,
             stock_bbox,
             stock_top_z: stock_bbox.max.z,
-            resolution: opts.resolution,
+            resolution,
             metric_options: SimulationMetricOptions {
                 enabled: opts.metrics_enabled,
             },
@@ -611,7 +620,7 @@ impl ProjectSession {
             rapid_feed_mm_min: if self.post.high_feedrate_mode {
                 self.post.high_feedrate
             } else {
-                5000.0
+                self.machine.max_feed_mm_min.max(1.0)
             },
             model_mesh: self.models.iter().find_map(|m| m.mesh.clone()),
         };
@@ -811,4 +820,31 @@ impl ProjectSession {
         std::fs::write(&path, json)
             .map_err(|e| SessionError::Export(format!("Failed to write {}: {e}", path.display())))
     }
+}
+
+/// Compute auto-resolution from simulation groups and stock bbox.
+///
+/// Mirrors the GUI's `auto_resolution_for_tools` heuristic:
+/// - 5 cells across the smallest tool radius for decent curve resolution
+/// - Clamped to [0.02, 0.5] mm
+/// - Further limited so the grid stays under ~8M cells
+fn auto_resolution_for_groups(groups: &[SimGroupEntry], stock_bbox: &BoundingBox3) -> f64 {
+    use crate::tool::MillingCutter as _;
+
+    let min_radius = groups
+        .iter()
+        .flat_map(|g| g.toolpaths.iter())
+        .map(|entry| entry.tool.radius())
+        .fold(f64::INFINITY, f64::min);
+
+    // 5 cells across the radius gives decent curve resolution
+    let from_tool = (min_radius / 5.0).clamp(0.02, 0.5);
+
+    // Cap so grid stays under ~8M cells (reasonable memory / mesh size)
+    let max_cells: f64 = 8_000_000.0;
+    let sx = stock_bbox.max.x - stock_bbox.min.x;
+    let sy = stock_bbox.max.y - stock_bbox.min.y;
+    let from_grid = ((sx * sy) / max_cells).sqrt().max(0.02);
+
+    from_tool.max(from_grid)
 }

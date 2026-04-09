@@ -343,6 +343,10 @@ pub struct SimulationOptions {
     pub skip_ids: Vec<usize>,
     /// Whether to collect detailed cut metrics.
     pub metrics_enabled: bool,
+    /// When `true`, override `resolution` with an auto-computed value based
+    /// on the smallest tool radius and the stock footprint (matching the GUI's
+    /// auto-resolution logic).
+    pub auto_resolution: bool,
 }
 
 impl Default for SimulationOptions {
@@ -351,6 +355,7 @@ impl Default for SimulationOptions {
             resolution: 0.5,
             skip_ids: Vec::new(),
             metrics_enabled: true,
+            auto_resolution: false,
         }
     }
 }
@@ -392,7 +397,6 @@ pub struct ProjectSession {
     pub(crate) name: String,
     pub(crate) stock: StockConfig,
     pub(crate) post: ProjectPostConfig,
-    #[allow(dead_code)] // Will be used in Phase 5+ (CLI/MCP wiring)
     pub(crate) machine: crate::machine::MachineProfile,
 
     // Loaded state

@@ -108,6 +108,7 @@ pub fn run_project_command(
         resolution,
         skip_ids: combined_skip.clone(),
         metrics_enabled: true,
+        auto_resolution: false,
     };
     session.run_simulation(&sim_opts, &cancel)?;
 
