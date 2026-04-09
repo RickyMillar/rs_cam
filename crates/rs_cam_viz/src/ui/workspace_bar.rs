@@ -115,11 +115,7 @@ fn toolpath_badge(state: &AppState) -> Option<(String, egui::Color32)> {
         .filter(|tc| {
             let rt = state.gui.toolpath_rt.get(&tc.id);
             let status = rt.map_or(&ComputeStatus::Pending, |r| &r.status);
-            tc.enabled
-                && matches!(
-                    status,
-                    ComputeStatus::Pending | ComputeStatus::Computing
-                )
+            tc.enabled && matches!(status, ComputeStatus::Pending | ComputeStatus::Computing)
         })
         .count();
     if pending > 0 {
@@ -182,13 +178,7 @@ fn readiness_badge(state: &AppState) -> Option<(String, egui::Color32)> {
         Some((format!("{uncomputed} uncomputed"), theme::WARNING))
     } else if stale {
         Some(("sim stale".to_owned(), theme::WARNING))
-    } else if !sim.has_results()
-        && state
-            .session
-            .toolpath_configs()
-            .iter()
-            .any(|tc| tc.enabled)
-    {
+    } else if !sim.has_results() && state.session.toolpath_configs().iter().any(|tc| tc.enabled) {
         Some(("not simulated".to_owned(), theme::TEXT_DIM))
     } else {
         None

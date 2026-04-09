@@ -11,15 +11,13 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub(crate) fn handle_add_toolpath(&mut self, op_type: crate::state::toolpath::OperationType) {
         let target_setup_idx = match self.state.selection {
-            Selection::Toolpath(tp_id) => self
-                .setup_of_toolpath(tp_id)
-                .and_then(|sid| {
-                    self.state
-                        .session
-                        .list_setups()
-                        .iter()
-                        .position(|s| s.id == sid.0)
-                }),
+            Selection::Toolpath(tp_id) => self.setup_of_toolpath(tp_id).and_then(|sid| {
+                self.state
+                    .session
+                    .list_setups()
+                    .iter()
+                    .position(|s| s.id == sid.0)
+            }),
             Selection::Setup(setup_id) => self
                 .state
                 .session
@@ -71,7 +69,11 @@ impl<B: ComputeBackend> AppController<B> {
         let role = operation.op_type().spec().ui_process_role;
         let tc = rs_cam_core::session::ToolpathConfig {
             id: 0, // will be assigned by session
-            name: format!("{} {}", op_type.label(), self.state.session.toolpath_configs().len() + 1),
+            name: format!(
+                "{} {}",
+                op_type.label(),
+                self.state.session.toolpath_configs().len() + 1
+            ),
             enabled: true,
             operation,
             dressups: crate::state::toolpath::DressupConfig::for_role(role),
@@ -95,48 +97,50 @@ impl<B: ComputeBackend> AppController<B> {
         {
             let tp_id = ToolpathId(tc.id);
             // Create GUI runtime entry
-            self.state
-                .gui
-                .toolpath_rt
-                .insert(tc.id, crate::state::runtime::ToolpathRuntime::new(tc.operation.default_auto_regen()));
+            self.state.gui.toolpath_rt.insert(
+                tc.id,
+                crate::state::runtime::ToolpathRuntime::new(tc.operation.default_auto_regen()),
+            );
             self.state.selection = Selection::Toolpath(tp_id);
         }
         self.state.gui.mark_edited();
     }
 
     pub(crate) fn handle_duplicate_toolpath(&mut self, tp_id: ToolpathId) {
-        let setup_idx = self
-            .setup_of_toolpath(tp_id)
-            .and_then(|sid| {
-                self.state
-                    .session
-                    .list_setups()
-                    .iter()
-                    .position(|s| s.id == sid.0)
-            });
+        let setup_idx = self.setup_of_toolpath(tp_id).and_then(|sid| {
+            self.state
+                .session
+                .list_setups()
+                .iter()
+                .position(|s| s.id == sid.0)
+        });
 
         // Build a new ToolpathConfig by reading fields from the source
-        let dup = self.state.session.find_toolpath_config_by_id(tp_id.0).map(|(_, src)| {
-            rs_cam_core::session::ToolpathConfig {
-                id: 0, // will be assigned by session
-                name: format!("{} (copy)", src.name),
-                enabled: src.enabled,
-                operation: src.operation.clone(),
-                dressups: src.dressups.clone(),
-                heights: src.heights.clone(),
-                tool_id: src.tool_id,
-                model_id: src.model_id,
-                pre_gcode: src.pre_gcode.clone(),
-                post_gcode: src.post_gcode.clone(),
-                boundary: src.boundary.clone(),
-                boundary_inherit: src.boundary_inherit,
-                stock_source: src.stock_source,
-                coolant: src.coolant,
-                face_selection: src.face_selection.clone(),
-                feeds_auto: src.feeds_auto.clone(),
-                debug_options: src.debug_options,
-            }
-        });
+        let dup = self
+            .state
+            .session
+            .find_toolpath_config_by_id(tp_id.0)
+            .map(|(_, src)| {
+                rs_cam_core::session::ToolpathConfig {
+                    id: 0, // will be assigned by session
+                    name: format!("{} (copy)", src.name),
+                    enabled: src.enabled,
+                    operation: src.operation.clone(),
+                    dressups: src.dressups.clone(),
+                    heights: src.heights.clone(),
+                    tool_id: src.tool_id,
+                    model_id: src.model_id,
+                    pre_gcode: src.pre_gcode.clone(),
+                    post_gcode: src.post_gcode.clone(),
+                    boundary: src.boundary.clone(),
+                    boundary_inherit: src.boundary_inherit,
+                    stock_source: src.stock_source,
+                    coolant: src.coolant,
+                    face_selection: src.face_selection.clone(),
+                    feeds_auto: src.feeds_auto.clone(),
+                    debug_options: src.debug_options,
+                }
+            });
 
         if let Some(tc) = dup {
             if let Some(setup_idx) = setup_idx
@@ -146,7 +150,9 @@ impl<B: ComputeBackend> AppController<B> {
                 let new_id = ToolpathId(new_tc.id);
                 self.state.gui.toolpath_rt.insert(
                     new_tc.id,
-                    crate::state::runtime::ToolpathRuntime::new(new_tc.operation.default_auto_regen()),
+                    crate::state::runtime::ToolpathRuntime::new(
+                        new_tc.operation.default_auto_regen(),
+                    ),
                 );
                 self.state.selection = Selection::Toolpath(new_id);
             }
@@ -163,10 +169,7 @@ impl<B: ComputeBackend> AppController<B> {
                 .list_setups()
                 .iter()
                 .find(|s| s.toolpath_indices.contains(&tp_idx))
-            && let Some(local_pos) = setup
-                .toolpath_indices
-                .iter()
-                .position(|&i| i == tp_idx)
+            && let Some(local_pos) = setup.toolpath_indices.iter().position(|&i| i == tp_idx)
             && local_pos > 0
         {
             // SAFETY: local_pos - 1 is valid since local_pos > 0
@@ -185,10 +188,7 @@ impl<B: ComputeBackend> AppController<B> {
                 .list_setups()
                 .iter()
                 .find(|s| s.toolpath_indices.contains(&tp_idx))
-            && let Some(local_pos) = setup
-                .toolpath_indices
-                .iter()
-                .position(|&i| i == tp_idx)
+            && let Some(local_pos) = setup.toolpath_indices.iter().position(|&i| i == tp_idx)
             && local_pos + 1 < setup.toolpath_indices.len()
             && let Some(&swap_with) = setup.toolpath_indices.get(local_pos + 1)
         {

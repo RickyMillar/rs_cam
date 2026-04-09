@@ -635,7 +635,8 @@ pub fn draw(
                         for boundary in sim.boundaries() {
                             if let Some(rt) = gui.toolpath_rt.get(&boundary.id.0)
                                 && let Some(result) = &rt.result
-                                && let Some((_, tc)) = session.find_toolpath_config_by_id(boundary.id.0)
+                                && let Some((_, tc)) =
+                                    session.find_toolpath_config_by_id(boundary.id.0)
                             {
                                 let feed = tc.operation.feed_rate();
                                 let time_min = result.stats.cutting_distance / feed;
@@ -713,7 +714,11 @@ fn current_move_info(
 }
 
 /// Aggregate cutting distance, rapid distance, and estimated time across all boundaries.
-fn aggregate_stats(sim: &SimulationState, session: &ProjectSession, gui: &GuiState) -> (f64, f64, f64) {
+fn aggregate_stats(
+    sim: &SimulationState,
+    session: &ProjectSession,
+    gui: &GuiState,
+) -> (f64, f64, f64) {
     let mut total_cutting = 0.0;
     let mut total_rapid = 0.0;
     let mut total_time_min = 0.0;

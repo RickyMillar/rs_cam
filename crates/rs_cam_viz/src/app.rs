@@ -3,6 +3,8 @@
 mod export;
 mod gpu_upload;
 mod input;
+#[cfg(feature = "mcp")]
+mod mcp;
 mod simulation;
 mod viewport;
 
@@ -26,10 +28,13 @@ pub struct RsCamApp {
     show_quit_dialog: bool,
     /// Track toolpath color mode changes to trigger re-upload.
     last_tp_color_mode: crate::state::viewport::ToolpathColorMode,
+    /// MCP request receiver (populated when `--mcp` is passed).
+    #[cfg(feature = "mcp")]
+    mcp_receiver: Option<std::sync::mpsc::Receiver<crate::mcp_bridge::McpRequest>>,
 }
 
 impl RsCamApp {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, mcp_mode: bool) -> Self {
         configure_theme(&cc.egui_ctx);
 
         if let Some(render_state) = cc.wgpu_render_state.as_ref() {
@@ -45,6 +50,57 @@ impl RsCamApp {
         let auto_screenshot_frame = std::env::var("RS_CAM_SCREENSHOT").ok().map(|_| 0u32);
 
         let mut controller = AppController::new();
+
+        // Set up MCP channel and spawn server thread if requested.
+        #[cfg(feature = "mcp")]
+        let mcp_receiver = if mcp_mode {
+            controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
+
+            let (tx, rx) = std::sync::mpsc::channel();
+            let egui_ctx = cc.egui_ctx.clone();
+
+            std::thread::Builder::new()
+                .name("mcp-server".into())
+                .spawn(move || {
+                    let rt = match tokio::runtime::Runtime::new() {
+                        Ok(rt) => rt,
+                        Err(e) => {
+                            tracing::error!("Failed to create tokio runtime for MCP: {e}");
+                            return;
+                        }
+                    };
+                    rt.block_on(async move {
+                        let server = crate::mcp_server::EmbeddedCamServer::new(tx, egui_ctx);
+                        let tool_router = crate::mcp_server::EmbeddedCamServer::into_tool_router();
+
+                        use rmcp::ServiceExt as _;
+
+                        let mut router = rmcp::handler::server::router::Router::new(server);
+                        router.tool_router = tool_router;
+
+                        tracing::info!("Starting embedded MCP server on stdio");
+                        match router.serve(rmcp::transport::stdio()).await {
+                            Ok(service) => match service.waiting().await {
+                                Ok(_quit_reason) => {}
+                                Err(e) => {
+                                    tracing::error!("MCP service error: {e}");
+                                }
+                            },
+                            Err(e) => {
+                                tracing::error!("MCP serve error: {e}");
+                            }
+                        }
+                        tracing::info!("Embedded MCP server shut down");
+                    });
+                })
+                .ok();
+
+            Some(rx)
+        } else {
+            None
+        };
+        #[cfg(not(feature = "mcp"))]
+        let _ = mcp_mode;
 
         // Load job file if RS_CAM_JOB is set
         if let Ok(job_path) = std::env::var("RS_CAM_JOB") {
@@ -84,6 +140,8 @@ impl RsCamApp {
             last_hover_face: None,
             show_quit_dialog: false,
             last_tp_color_mode: crate::state::viewport::ToolpathColorMode::Normal,
+            #[cfg(feature = "mcp")]
+            mcp_receiver,
         }
     }
 
@@ -370,6 +428,9 @@ impl eframe::App for RsCamApp {
         crate::ui::automation::begin_frame(ctx);
 
         self.controller.drain_compute_results();
+
+        #[cfg(feature = "mcp")]
+        self.drain_mcp_requests();
 
         // Re-upload toolpath GPU data when color mode changes
         let current_tp_mode = self.controller.state().viewport.toolpath_color_mode;

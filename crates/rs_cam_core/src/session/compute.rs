@@ -327,17 +327,17 @@ impl ProjectSession {
 
         // For Rest machining, resolve prev_tool_radius from the RestConfig's
         // prev_tool_id, matching the GUI compute path.
-        let prev_tool_radius =
-            if let crate::compute::OperationConfig::Rest(ref cfg) = tc.operation {
-                cfg.prev_tool_id.and_then(|prev_id| {
-                    self.tools
-                        .iter()
-                        .find(|t| t.id == prev_id)
-                        .map(|t| t.diameter / 2.0)
-                })
-            } else {
-                None
-            };
+        let prev_tool_radius = if let crate::compute::OperationConfig::Rest(ref cfg) = tc.operation
+        {
+            cfg.prev_tool_id.and_then(|prev_id| {
+                self.tools
+                    .iter()
+                    .find(|t| t.id == prev_id)
+                    .map(|t| t.diameter / 2.0)
+            })
+        } else {
+            None
+        };
 
         // Execute the operation via the shared compute::execute module (annotated variant)
         let tp_result = crate::compute::execute::execute_operation_annotated(

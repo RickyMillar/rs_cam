@@ -144,8 +144,7 @@ impl<B: ComputeBackend> AppController<B> {
 
                 let (eff_w, eff_d, eff_h) =
                     setup.face_up.effective_stock(stock.x, stock.y, stock.z);
-                let (eff_w, eff_d, eff_h) =
-                    setup.z_rotation.effective_stock(eff_w, eff_d, eff_h);
+                let (eff_w, eff_d, eff_h) = setup.z_rotation.effective_stock(eff_w, eff_d, eff_h);
                 let local_stock_bbox = BoundingBox3 {
                     min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
                     max: rs_cam_core::geo::P3::new(eff_w, eff_d, eff_h),
@@ -220,10 +219,9 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn run_simulation_with_all(&mut self) {
-        let Some((groups, all_toolpaths_flat, stock_bbox)) = self.build_simulation_groups(
-            |_setup_idx, tc| tc.enabled,
-            |_setup_idx| false,
-        ) else {
+        let Some((groups, all_toolpaths_flat, stock_bbox)) =
+            self.build_simulation_groups(|_setup_idx, tc| tc.enabled, |_setup_idx| false)
+        else {
             tracing::warn!("No computed toolpaths to simulate");
             self.push_notification(
                 "No computed toolpaths to simulate".into(),
@@ -235,20 +233,15 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn run_simulation_with_ids(&mut self, ids: &[ToolpathId]) {
-        let target_setup_idx = self
-            .state
-            .session
-            .list_setups()
-            .iter()
-            .position(|s| {
-                s.toolpath_indices.iter().any(|&tp_idx| {
-                    self.state
-                        .session
-                        .toolpath_configs()
-                        .get(tp_idx)
-                        .is_some_and(|tc| ids.iter().any(|id| id.0 == tc.id))
-                })
-            });
+        let target_setup_idx = self.state.session.list_setups().iter().position(|s| {
+            s.toolpath_indices.iter().any(|&tp_idx| {
+                self.state
+                    .session
+                    .toolpath_configs()
+                    .get(tp_idx)
+                    .is_some_and(|tc| ids.iter().any(|id| id.0 == tc.id))
+            })
+        });
         let Some(target_setup_idx) = target_setup_idx else {
             tracing::warn!("No computed toolpaths to simulate");
             self.push_notification(
@@ -282,30 +275,25 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub(crate) fn request_collision_check(&mut self) {
         // Find first toolpath with a result and matching tool/model
-        let toolpath_data = self
-            .state
-            .session
-            .toolpath_configs()
-            .iter()
-            .find_map(|tc| {
-                let rt = self.state.gui.toolpath_rt.get(&tc.id)?;
-                let result = rt.result.as_ref()?;
-                let tool = self
-                    .state
-                    .session
-                    .tools()
-                    .iter()
-                    .find(|t| t.id.0 == tc.tool_id)?
-                    .clone();
-                let mesh = self
-                    .state
-                    .session
-                    .models()
-                    .iter()
-                    .find(|m| m.id == tc.model_id)
-                    .and_then(|m| m.mesh.clone())?;
-                Some((Arc::clone(&result.toolpath), tool, mesh))
-            });
+        let toolpath_data = self.state.session.toolpath_configs().iter().find_map(|tc| {
+            let rt = self.state.gui.toolpath_rt.get(&tc.id)?;
+            let result = rt.result.as_ref()?;
+            let tool = self
+                .state
+                .session
+                .tools()
+                .iter()
+                .find(|t| t.id.0 == tc.tool_id)?
+                .clone();
+            let mesh = self
+                .state
+                .session
+                .models()
+                .iter()
+                .find(|m| m.id == tc.model_id)
+                .and_then(|m| m.mesh.clone())?;
+            Some((Arc::clone(&result.toolpath), tool, mesh))
+        });
 
         if let Some((toolpath, tool, mesh)) = toolpath_data {
             self.compute.submit_collision(CollisionRequest {

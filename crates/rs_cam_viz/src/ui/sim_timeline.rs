@@ -22,7 +22,15 @@ pub fn draw(
     let current_boundary = sim.current_boundary().cloned();
 
     draw_transport_and_scrubber(ui, sim, session, gui, events);
-    draw_boundary_timeline(ui, sim, gui, max_feed, &current_boundary, &active_semantic, events);
+    draw_boundary_timeline(
+        ui,
+        sim,
+        gui,
+        max_feed,
+        &current_boundary,
+        &active_semantic,
+        events,
+    );
     draw_speed_controls(ui, sim);
 
     if sim.debug.enabled {
@@ -341,7 +349,15 @@ fn draw_boundary_timeline(
     if sim.debug.enabled
         && let Some(boundary) = current_boundary.as_ref()
     {
-        draw_semantic_band(ui, sim, gui, max_feed, boundary, active_semantic.as_ref(), events);
+        draw_semantic_band(
+            ui,
+            sim,
+            gui,
+            max_feed,
+            boundary,
+            active_semantic.as_ref(),
+            events,
+        );
     }
 }
 
@@ -1156,8 +1172,13 @@ fn draw_cutting_drawer(
                     .selected(is_active),
                 );
                 if response.clicked()
-                    && let Some(target) =
-                        sim.trace_target_for_item(gui, max_feed, boundary.id, item.semantic_item_id, false)
+                    && let Some(target) = sim.trace_target_for_item(
+                        gui,
+                        max_feed,
+                        boundary.id,
+                        item.semantic_item_id,
+                        false,
+                    )
                 {
                     sim.pin_semantic_item(boundary.id, item.semantic_item_id);
                     sim.debug.focused_issue_index = None;
@@ -1198,8 +1219,9 @@ fn draw_cutting_drawer(
                     ))
                     .small(),
                 )
-                .selected(sim.current_issue(gui, max_feed).as_ref().is_some_and(|current| {
-                    current.toolpath_id == Some(boundary.id)
+                .selected(sim.current_issue(gui, max_feed).as_ref().is_some_and(
+                    |current| {
+                        current.toolpath_id == Some(boundary.id)
                         && current.move_index == boundary.start_move + issue.move_index
                         && current.kind == match issue.kind {
                             rs_cam_core::simulation_cut::SimulationCutIssueKind::AirCut => {
@@ -1209,7 +1231,8 @@ fn draw_cutting_drawer(
                                 crate::state::simulation::SimulationIssueKind::LowEngagement
                             }
                         }
-                })),
+                    },
+                )),
             );
             if response.clicked()
                 && let Some(target) = sim.trace_target_for_cut_issue(issue)

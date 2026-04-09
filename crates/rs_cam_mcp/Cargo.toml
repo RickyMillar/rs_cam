@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "MCP server for rs_cam — exposes ProjectSession to AI agents"
 
+[lib]
+name = "rs_cam_mcp"
+path = "src/lib.rs"
+
 [[bin]]
 name = "rs_cam_mcp"
 path = "src/main.rs"

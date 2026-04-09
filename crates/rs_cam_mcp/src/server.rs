@@ -105,111 +105,111 @@ pub struct CollisionCheckParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
-struct CutTraceParam {
+pub struct CutTraceParam {
     /// Optional: filter results to a single toolpath by index
-    toolpath_id: Option<usize>,
+    pub toolpath_id: Option<usize>,
     /// Maximum hotspots to return (default: 20)
-    max_hotspots: Option<usize>,
+    pub max_hotspots: Option<usize>,
     /// Maximum issues to return (default: 50)
-    max_issues: Option<usize>,
+    pub max_issues: Option<usize>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
-struct AddToolpathParam {
+pub struct AddToolpathParam {
     /// Setup index (0-based) to add the toolpath into
-    setup_index: usize,
+    pub setup_index: usize,
     /// Operation type (e.g. "pocket", "adaptive3d", "drop_cutter", "profile")
-    operation_type: String,
+    pub operation_type: String,
     /// Tool index (0-based) from list_tools
-    tool_index: usize,
+    pub tool_index: usize,
     /// Model ID (raw numeric ID shown in toolpath configs, usually 0 for the first model)
-    model_id: usize,
+    pub model_id: usize,
     /// Optional name for the toolpath
-    name: Option<String>,
+    pub name: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
-struct RemoveToolpathParam {
+pub struct RemoveToolpathParam {
     /// Toolpath index (0-based)
-    index: usize,
+    pub index: usize,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
-struct AddToolParam {
+pub struct AddToolParam {
     /// Display name for the tool
-    name: String,
+    pub name: String,
     /// Tool type (e.g. "end_mill", "ball_nose", "bull_nose", "v_bit", "tapered_ball_nose")
-    tool_type: String,
+    pub tool_type: String,
     /// Tool diameter in mm
-    diameter: f64,
+    pub diameter: f64,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
-struct RemoveToolParam {
+pub struct RemoveToolParam {
     /// Tool index (0-based)
-    index: usize,
+    pub index: usize,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
-struct SetStockConfigParam {
+pub struct SetStockConfigParam {
     /// Stock width (X) in mm
-    x: f64,
+    pub x: f64,
     /// Stock depth (Y) in mm
-    y: f64,
+    pub y: f64,
     /// Stock height (Z) in mm
-    z: f64,
+    pub z: f64,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
-struct SetBoundaryConfigParam {
+pub struct SetBoundaryConfigParam {
     /// Toolpath index (0-based)
-    index: usize,
+    pub index: usize,
     /// Enable or disable boundary
-    enabled: bool,
+    pub enabled: bool,
     /// Boundary source: "stock" or "model_silhouette"
-    source: Option<String>,
+    pub source: Option<String>,
     /// Containment mode: "center", "inside", or "outside"
-    containment: Option<String>,
+    pub containment: Option<String>,
     /// Additional offset in mm (positive = expand, negative = shrink)
-    offset: Option<f64>,
+    pub offset: Option<f64>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
-struct SetDressupConfigParam {
+pub struct SetDressupConfigParam {
     /// Toolpath index (0-based)
-    index: usize,
+    pub index: usize,
     /// Dressup configuration as a JSON object (fields match DressupConfig)
-    dressup: serde_json::Value,
+    pub dressup: serde_json::Value,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
-struct SaveProjectParam {
+pub struct SaveProjectParam {
     /// File path to save the project TOML to (required)
-    path: String,
+    pub path: String,
 }
 
 /// Parse a string into an `OperationType` (snake_case).
-fn parse_operation_type(s: &str) -> Result<OperationType, String> {
+pub fn parse_operation_type(s: &str) -> Result<OperationType, String> {
     serde_json::from_value(serde_json::Value::String(s.to_owned()))
         .map_err(|_| format!("Unknown operation type '{s}'. Valid types: face, pocket, profile, adaptive, v_carve, rest, inlay, zigzag, trace, drill, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve, alignment_pin_drill"))
 }
 
 /// Parse a string into a `ToolType` (snake_case).
-fn parse_tool_type(s: &str) -> Result<ToolType, String> {
+pub fn parse_tool_type(s: &str) -> Result<ToolType, String> {
     serde_json::from_value(serde_json::Value::String(s.to_owned()))
         .map_err(|_| format!("Unknown tool type '{s}'. Valid types: end_mill, ball_nose, bull_nose, v_bit, tapered_ball_nose"))
 }
 
-fn text(msg: impl Into<String>) -> String {
+pub fn text(msg: impl Into<String>) -> String {
     msg.into()
 }
 
-fn json_str(data: serde_json::Value) -> String {
+pub fn json_str(data: serde_json::Value) -> String {
     serde_json::to_string_pretty(&data).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}"))
 }
 
 /// Standardized error response when no project is loaded.
-fn no_project_error() -> String {
+pub fn no_project_error() -> String {
     json_str(serde_json::json!({"error": "No project loaded. Call load_project first."}))
 }
 

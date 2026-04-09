@@ -637,10 +637,7 @@ impl ProjectSession {
 
     /// Find which setup (by index) owns a toolpath with the given semantic ID.
     pub fn setup_of_toolpath_id(&self, tp_id: usize) -> Option<usize> {
-        let tp_index = self
-            .toolpath_configs
-            .iter()
-            .position(|tc| tc.id == tp_id)?;
+        let tp_index = self.toolpath_configs.iter().position(|tc| tc.id == tp_id)?;
         self.setups
             .iter()
             .position(|s| s.toolpath_indices.contains(&tp_index))
@@ -648,18 +645,12 @@ impl ProjectSession {
 
     /// Find a setup by its semantic ID (not vec index).
     pub fn find_setup_by_id(&self, id: usize) -> Option<(usize, &SetupData)> {
-        self.setups
-            .iter()
-            .enumerate()
-            .find(|(_, s)| s.id == id)
+        self.setups.iter().enumerate().find(|(_, s)| s.id == id)
     }
 
     /// Find a mutable setup by its semantic ID.
     pub fn find_setup_by_id_mut(&mut self, id: usize) -> Option<(usize, &mut SetupData)> {
-        self.setups
-            .iter_mut()
-            .enumerate()
-            .find(|(_, s)| s.id == id)
+        self.setups.iter_mut().enumerate().find(|(_, s)| s.id == id)
     }
 
     /// Collect all toolpath semantic IDs.

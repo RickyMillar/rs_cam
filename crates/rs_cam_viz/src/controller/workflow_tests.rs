@@ -15,9 +15,7 @@ use crate::compute::{CollisionRequest, ComputeMessage, LaneState, SimulationRequ
 use crate::state::job::{ModelId, ToolConfig, ToolId, ToolType};
 use crate::state::runtime::ToolpathRuntime;
 use crate::state::selection::Selection;
-use crate::state::toolpath::{
-    HeightContext, HeightMode, HeightsConfig, OperationType, ToolpathId,
-};
+use crate::state::toolpath::{HeightContext, HeightMode, HeightsConfig, OperationType, ToolpathId};
 use crate::ui::AppEvent;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::session::{LoadedModel, ToolpathConfig};
@@ -182,11 +180,7 @@ fn add_pocket(controller: &mut AppController<ScriptedBackend>) -> ToolpathId {
         feeds_auto: Default::default(),
         debug_options: Default::default(),
     };
-    controller
-        .state
-        .session
-        .add_toolpath(0, tp_config)
-        .unwrap();
+    controller.state.session.add_toolpath(0, tp_config).unwrap();
     let tp_id_raw = controller
         .state
         .session
@@ -259,10 +253,7 @@ fn w3_face_toggle_adds_and_removes() {
     );
     assert_eq!(tc.face_selection.as_ref().unwrap()[0], face_a);
     let rt = c.state.gui.toolpath_rt.get(&tp_id.0).unwrap();
-    assert!(
-        rt.stale_since.is_some(),
-        "Toolpath should be marked stale"
-    );
+    assert!(rt.stale_since.is_some(), "Toolpath should be marked stale");
 
     // Selection should stay on toolpath (not switch to Face panel)
     assert!(
@@ -677,7 +668,10 @@ fn w10_model_removal_clears_face_selection() {
         Selection::None,
         "Face selection should be cleared when model is removed"
     );
-    assert!(c.state.session.models().is_empty(), "Model should be removed");
+    assert!(
+        c.state.session.models().is_empty(),
+        "Model should be removed"
+    );
 }
 
 #[test]

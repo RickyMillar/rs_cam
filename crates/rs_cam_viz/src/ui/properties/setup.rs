@@ -264,7 +264,8 @@ pub fn draw(
             );
         }
         for &(model_id, ref model_name) in all_models {
-            let mut checked = setup_rt.model_ids.is_empty() || setup_rt.model_ids.contains(&model_id);
+            let mut checked =
+                setup_rt.model_ids.is_empty() || setup_rt.model_ids.contains(&model_id);
             if ui.checkbox(&mut checked, model_name.as_str()).changed() {
                 if checked {
                     // When toggling on: if currently "all", start explicit list with this one.

@@ -26,10 +26,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     if ui
         .selectable_label(
             state.selection == Selection::Stock,
-            format!(
-                "Stock ({:.0} x {:.0} x {:.0} mm)",
-                sc.x, sc.y, sc.z
-            ),
+            format!("Stock ({:.0} x {:.0} x {:.0} mm)", sc.x, sc.y, sc.z),
         )
         .clicked()
     {

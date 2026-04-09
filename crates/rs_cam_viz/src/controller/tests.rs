@@ -14,9 +14,7 @@ use crate::compute::{
 use crate::state::job::{SetupId, ToolConfig, ToolId, ToolType};
 use crate::state::runtime::ToolpathRuntime;
 use crate::state::selection::Selection;
-use crate::state::toolpath::{
-    Adaptive3dConfig, OperationConfig, ToolpathId, ToolpathResult,
-};
+use crate::state::toolpath::{Adaptive3dConfig, OperationConfig, ToolpathId, ToolpathResult};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::session::{LoadedModel, ToolpathConfig};
 
@@ -375,13 +373,7 @@ fn fixture_projects_load_2d_and_3d_models() {
 fn controller_save_open_and_export_smoke() {
     let mut controller = sample_controller();
     controller.state.session.set_name("Smoke".to_owned());
-    controller
-        .state
-        .gui
-        .toolpath_rt
-        .get_mut(&0)
-        .unwrap()
-        .result = Some(ToolpathResult {
+    controller.state.gui.toolpath_rt.get_mut(&0).unwrap().result = Some(ToolpathResult {
         toolpath: Arc::new({
             let mut toolpath = Toolpath::new();
             toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
@@ -881,7 +873,10 @@ fn add_tool_and_remove_tool_lifecycle() {
     controller.handle_internal_event(crate::ui::AppEvent::AddTool(ToolType::EndMill));
     assert_eq!(controller.state.session.tools().len(), 1);
     let tool_id = controller.state.session.tools()[0].id;
-    assert_eq!(controller.state.session.tools()[0].tool_type, ToolType::EndMill);
+    assert_eq!(
+        controller.state.session.tools()[0].tool_type,
+        ToolType::EndMill
+    );
 
     // Verify selection was set to the new tool
     assert_eq!(controller.state.selection, Selection::Tool(tool_id));
@@ -910,7 +905,10 @@ fn add_setup_and_remove_setup_lifecycle() {
     // Remove the second setup
     controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(new_setup_id));
     assert_eq!(controller.state.session.list_setups().len(), 1);
-    assert_eq!(SetupId(controller.state.session.list_setups()[0].id), original_setup_id);
+    assert_eq!(
+        SetupId(controller.state.session.list_setups()[0].id),
+        original_setup_id
+    );
 
     // Min 1 setup enforced: try to remove the last one
     controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(original_setup_id));
@@ -954,7 +952,11 @@ fn add_toolpath_and_remove_toolpath_lifecycle() {
         "Toolpath should be removed"
     );
     assert!(
-        controller.state.session.find_toolpath_config_by_id(new_tp_id.0).is_none(),
+        controller
+            .state
+            .session
+            .find_toolpath_config_by_id(new_tp_id.0)
+            .is_none(),
         "Removed toolpath should not be findable"
     );
 }
@@ -1048,7 +1050,8 @@ fn rename_setup_updates_name() {
     ));
 
     assert_eq!(
-        controller.state.session.list_setups()[0].name, "My Custom Setup",
+        controller.state.session.list_setups()[0].name,
+        "My Custom Setup",
         "Setup name should be updated"
     );
 }

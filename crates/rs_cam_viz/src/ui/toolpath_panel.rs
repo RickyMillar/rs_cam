@@ -102,11 +102,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 });
 
             // Determine drop index from pointer position
-            let drop_idx = compute_drop_index(
-                &inner_resp.response,
-                ui,
-                tp_count,
-            );
+            let drop_idx = compute_drop_index(&inner_resp.response, ui, tp_count);
 
             if source_setup == Some(setup_id) {
                 // Same setup: reorder
@@ -402,11 +398,7 @@ fn draw_toolpath_card(
 }
 
 /// Compute the drop index based on pointer position relative to the drop zone.
-fn compute_drop_index(
-    response: &egui::Response,
-    ui: &egui::Ui,
-    count: usize,
-) -> usize {
+fn compute_drop_index(response: &egui::Response, ui: &egui::Ui, count: usize) -> usize {
     if count == 0 {
         return 0;
     }
@@ -500,49 +492,31 @@ fn draw_rest_badge(
     let (badge_text, badge_color) = if let Some(prev_id) = prev_tool_id {
         // Check if there's a toolpath in the same setup using this tool
         let same_setup_has_dep = setup_idx.is_some_and(|si| {
-            state
-                .session
-                .list_setups()
-                .get(si)
-                .is_some_and(|setup| {
-                    setup.toolpath_indices.iter().any(|&idx| {
-                        state
-                            .session
-                            .get_toolpath_config(idx)
-                            .is_some_and(|other| {
-                                other.id != tp_id.0
-                                    && other.tool_id == prev_id.0
-                            })
-                    })
+            state.session.list_setups().get(si).is_some_and(|setup| {
+                setup.toolpath_indices.iter().any(|&idx| {
+                    state
+                        .session
+                        .get_toolpath_config(idx)
+                        .is_some_and(|other| other.id != tp_id.0 && other.tool_id == prev_id.0)
                 })
+            })
         });
 
         if same_setup_has_dep {
             // Check if the dependency toolpath is stale or pending
             let dep_stale = setup_idx.is_some_and(|si| {
-                state
-                    .session
-                    .list_setups()
-                    .get(si)
-                    .is_some_and(|setup| {
-                        setup.toolpath_indices.iter().any(|&idx| {
-                            state
-                                .session
-                                .get_toolpath_config(idx)
-                                .is_some_and(|other| {
-                                    other.id != tp_id.0
-                                        && other.tool_id == prev_id.0
-                                        && state
-                                            .gui
-                                            .toolpath_rt
-                                            .get(&other.id)
-                                            .is_none_or(|rt| {
-                                                matches!(rt.status, ComputeStatus::Pending)
-                                                    || rt.stale_since.is_some()
-                                            })
+                state.session.list_setups().get(si).is_some_and(|setup| {
+                    setup.toolpath_indices.iter().any(|&idx| {
+                        state.session.get_toolpath_config(idx).is_some_and(|other| {
+                            other.id != tp_id.0
+                                && other.tool_id == prev_id.0
+                                && state.gui.toolpath_rt.get(&other.id).is_none_or(|rt| {
+                                    matches!(rt.status, ComputeStatus::Pending)
+                                        || rt.stale_since.is_some()
                                 })
                         })
                     })
+                })
             });
 
             if dep_stale {
