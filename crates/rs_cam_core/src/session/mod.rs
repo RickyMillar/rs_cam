@@ -152,6 +152,10 @@ pub struct LoadedModel {
     pub units: Option<ModelUnits>,
     /// Enriched mesh with BREP face groups (for STEP/CAD models).
     pub enriched_mesh: Option<Arc<EnrichedMesh>>,
+    /// Percentage of inconsistent winding edges. `None` if not STL.
+    pub winding_report: Option<f64>,
+    /// Load/import failure preserved so broken references can round-trip.
+    pub load_error: Option<String>,
 }
 
 /// Kind of workholding fixture (compute-relevant subset of viz `FixtureKind`).
@@ -413,12 +417,39 @@ pub struct ProjectSession {
     pub(crate) next_toolpath_id: usize,
     pub(crate) next_tool_id: usize,
     pub(crate) next_setup_id: usize,
-    #[allow(dead_code)] // Will be used in Phase 3+ (model CRUD)
     pub(crate) next_model_id: usize,
 }
 
 impl ProjectSession {
     // ── Lifecycle ───────────────────────────────────────────────────
+
+    /// Create an empty session (for untitled / new projects).
+    pub fn new_empty() -> Self {
+        Self {
+            name: String::new(),
+            stock: StockConfig::default(),
+            post: ProjectPostConfig::default(),
+            machine: crate::machine::MachineProfile::default(),
+            models: Vec::new(),
+            tools: Vec::new(),
+            setups: vec![SetupData {
+                id: 0,
+                name: "Setup 1".to_owned(),
+                face_up: FaceUp::default(),
+                z_rotation: ZRotation::default(),
+                fixtures: Vec::new(),
+                keep_out_zones: Vec::new(),
+                toolpath_indices: Vec::new(),
+            }],
+            toolpath_configs: Vec::new(),
+            results: HashMap::new(),
+            simulation: None,
+            next_toolpath_id: 0,
+            next_tool_id: 0,
+            next_setup_id: 1,
+            next_model_id: 0,
+        }
+    }
 
     /// Load a project from a TOML file path.
     pub fn load(path: &Path) -> Result<Self, SessionError> {
@@ -549,6 +580,101 @@ impl ProjectSession {
     /// All toolpath configurations.
     pub fn toolpath_configs(&self) -> &[ToolpathConfig] {
         &self.toolpath_configs
+    }
+
+    // ── Mutable accessors ─────────────────────────────────────────
+
+    /// Mutable access to stock configuration.
+    pub fn stock_mut(&mut self) -> &mut StockConfig {
+        &mut self.stock
+    }
+
+    /// Mutable access to machine profile.
+    pub fn machine_mut(&mut self) -> &mut crate::machine::MachineProfile {
+        &mut self.machine
+    }
+
+    /// Mutable access to all tools.
+    pub fn tools_mut(&mut self) -> &mut Vec<ToolConfig> {
+        &mut self.tools
+    }
+
+    /// Mutable access to all loaded models.
+    pub fn models_mut(&mut self) -> &mut Vec<LoadedModel> {
+        &mut self.models
+    }
+
+    /// Mutable access to post-processor configuration.
+    pub fn post_mut(&mut self) -> &mut ProjectPostConfig {
+        &mut self.post
+    }
+
+    /// Replace the project name.
+    pub fn set_name(&mut self, name: String) {
+        self.name = name;
+    }
+
+    // ── ID lookup helpers ─────────────────────────────────────────
+
+    /// Find a toolpath config by its semantic ID (not vec index).
+    pub fn find_toolpath_config_by_id(&self, id: usize) -> Option<(usize, &ToolpathConfig)> {
+        self.toolpath_configs
+            .iter()
+            .enumerate()
+            .find(|(_, tc)| tc.id == id)
+    }
+
+    /// Find a mutable toolpath config by its semantic ID.
+    pub fn find_toolpath_config_by_id_mut(
+        &mut self,
+        id: usize,
+    ) -> Option<(usize, &mut ToolpathConfig)> {
+        self.toolpath_configs
+            .iter_mut()
+            .enumerate()
+            .find(|(_, tc)| tc.id == id)
+    }
+
+    /// Find which setup (by index) owns a toolpath with the given semantic ID.
+    pub fn setup_of_toolpath_id(&self, tp_id: usize) -> Option<usize> {
+        let tp_index = self
+            .toolpath_configs
+            .iter()
+            .position(|tc| tc.id == tp_id)?;
+        self.setups
+            .iter()
+            .position(|s| s.toolpath_indices.contains(&tp_index))
+    }
+
+    /// Find a setup by its semantic ID (not vec index).
+    pub fn find_setup_by_id(&self, id: usize) -> Option<(usize, &SetupData)> {
+        self.setups
+            .iter()
+            .enumerate()
+            .find(|(_, s)| s.id == id)
+    }
+
+    /// Find a mutable setup by its semantic ID.
+    pub fn find_setup_by_id_mut(&mut self, id: usize) -> Option<(usize, &mut SetupData)> {
+        self.setups
+            .iter_mut()
+            .enumerate()
+            .find(|(_, s)| s.id == id)
+    }
+
+    /// Collect all toolpath semantic IDs.
+    pub fn all_toolpath_ids(&self) -> Vec<usize> {
+        self.toolpath_configs.iter().map(|tc| tc.id).collect()
+    }
+
+    /// Mutable access to all toolpath configs.
+    pub fn toolpath_configs_mut(&mut self) -> &mut Vec<ToolpathConfig> {
+        &mut self.toolpath_configs
+    }
+
+    /// Mutable access to all setups.
+    pub fn setups_mut(&mut self) -> &mut Vec<SetupData> {
+        &mut self.setups
     }
 
     // ── Internal helpers ───────────────────────────────────────────

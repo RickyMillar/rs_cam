@@ -71,9 +71,6 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     show_load_warnings: bool,
     status_message: Option<(String, Instant)>,
     notifications: Vec<Notification>,
-    /// Shared project session from core — keeps GUI and core in sync.
-    /// Populated when a project is loaded; `None` for new untitled projects.
-    pub session: Option<rs_cam_core::session::ProjectSession>,
 }
 
 impl AppController<ThreadedComputeBackend> {
@@ -100,7 +97,6 @@ impl<B: ComputeBackend> AppController<B> {
             show_load_warnings: false,
             status_message: None,
             notifications: Vec::new(),
-            session: None,
         }
     }
 
@@ -226,40 +222,31 @@ impl<B: ComputeBackend> AppController<B> {
     /// simulation).  Phase 4f (removing `JobState`) will eliminate the need
     /// for this.
     pub fn sync_session_from_job(&mut self) {
-        let Some(ref mut session) = self.session else {
-            return;
-        };
+        // Build all data from `job` first (immutable borrow), then apply to
+        // `session` (mutable borrow).  This avoids borrow conflicts since
+        // both live inside `self.state`.
+        let job = &self.state.job;
 
-        // Stock (same type, just clone)
-        session.set_stock_config(self.state.job.stock.clone());
-
-        // Post — map from viz's PostConfig (enum-based) to session's
-        // ProjectPostConfig (string-based).
-        let post_format_key = match self.state.job.post.format {
+        let stock = job.stock.clone();
+        let post_format_key = match job.post.format {
             crate::state::job::PostFormat::Grbl => "grbl",
             crate::state::job::PostFormat::LinuxCnc => "linuxcnc",
             crate::state::job::PostFormat::Mach3 => "mach3",
         };
-        session.set_post_config(rs_cam_core::session::ProjectPostConfig {
+        let post = rs_cam_core::session::ProjectPostConfig {
             format: post_format_key.to_owned(),
-            spindle_speed: self.state.job.post.spindle_speed,
-            safe_z: self.state.job.post.safe_z,
-            high_feedrate_mode: self.state.job.post.high_feedrate_mode,
-            high_feedrate: self.state.job.post.high_feedrate,
-        });
+            spindle_speed: job.post.spindle_speed,
+            safe_z: job.post.safe_z,
+            high_feedrate_mode: job.post.high_feedrate_mode,
+            high_feedrate: job.post.high_feedrate,
+        };
+        let machine = job.machine.clone();
+        let tools = job.tools.clone();
 
-        // Machine (same type, just clone)
-        session.set_machine(self.state.job.machine.clone());
-
-        // Tools (same type, just clone the whole vec)
-        session.replace_tools(self.state.job.tools.clone());
-
-        // Setups + toolpaths — build session SetupData + ToolpathConfig vecs
-        // from the current JobState.
         let mut session_setups = Vec::new();
         let mut session_tp_configs = Vec::new();
 
-        for setup in &self.state.job.setups {
+        for setup in &job.setups {
             let mut tp_indices = Vec::new();
             for tp in &setup.toolpaths {
                 let tp_index = session_tp_configs.len();
@@ -345,6 +332,12 @@ impl<B: ComputeBackend> AppController<B> {
             });
         }
 
+        // Now apply everything to session (mutable borrow).
+        let session = &mut self.state.session;
+        session.set_stock_config(stock);
+        session.set_post_config(post);
+        session.set_machine(machine);
+        session.replace_tools(tools);
         session.replace_setups_and_toolpaths(session_setups, session_tp_configs);
     }
 

@@ -683,6 +683,8 @@ pub(super) fn build_session_from_project(
                     kind: model_kind,
                     units: model_units,
                     enriched_mesh: None,
+                    winding_report: None,
+                    load_error: None,
                 });
             }
             Ok(LoadedGeometry::Polygons(polys)) => {
@@ -700,6 +702,8 @@ pub(super) fn build_session_from_project(
                     kind: model_kind,
                     units: model_units,
                     enriched_mesh: None,
+                    winding_report: None,
+                    load_error: None,
                 });
             }
             Err(e) => {
@@ -717,6 +721,8 @@ pub(super) fn build_session_from_project(
                     kind: model_kind,
                     units: model_units,
                     enriched_mesh: None,
+                    winding_report: None,
+                    load_error: Some(e.to_string()),
                 });
             }
         }

@@ -159,7 +159,7 @@ impl<B: ComputeBackend> AppController<B> {
         // This is simpler than a full sync-back function and ensures
         // the session always reflects the persisted state.
         match ProjectSession::load(path) {
-            Ok(session) => self.session = Some(session),
+            Ok(session) => self.state.session = session,
             Err(e) => {
                 tracing::warn!("Session reload after save failed: {e}");
             }
@@ -176,7 +176,7 @@ impl<B: ComputeBackend> AppController<B> {
                     tracing::warn!("{message}");
                 }
                 self.state.job = job;
-                self.session = Some(session);
+                self.state.session = session;
                 self.state.selection = Selection::None;
                 self.state.simulation = SimulationState::new();
                 self.collision_positions.clear();
@@ -201,7 +201,7 @@ impl<B: ComputeBackend> AppController<B> {
                 }
 
                 self.state.job = loaded.job;
-                self.session = None;
+                self.state.session = rs_cam_core::session::ProjectSession::new_empty();
                 self.state.selection = Selection::None;
                 self.state.simulation = SimulationState::new();
                 self.collision_positions.clear();
