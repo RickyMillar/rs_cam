@@ -77,6 +77,12 @@ pub struct ProjectStockConfig {
     pub origin_y: f64,
     #[serde(default)]
     pub origin_z: f64,
+    #[serde(default = "default_stock_padding")]
+    pub padding: f64,
+    #[serde(default = "default_workholding_rigidity")]
+    pub workholding_rigidity: crate::feeds::WorkholdingRigidity,
+    #[serde(default = "default_true")]
+    pub auto_from_model: bool,
     #[serde(default)]
     pub material: crate::material::Material,
     #[serde(default)]
@@ -94,6 +100,9 @@ impl Default for ProjectStockConfig {
             origin_x: 0.0,
             origin_y: 0.0,
             origin_z: 0.0,
+            padding: 5.0,
+            workholding_rigidity: crate::feeds::WorkholdingRigidity::Medium,
+            auto_from_model: true,
             material: crate::material::Material::default(),
             alignment_pins: Vec::new(),
             flip_axis: None,
@@ -106,6 +115,12 @@ fn default_stock_dim() -> f64 {
 }
 fn default_stock_z() -> f64 {
     25.0
+}
+fn default_stock_padding() -> f64 {
+    5.0
+}
+fn default_workholding_rigidity() -> crate::feeds::WorkholdingRigidity {
+    crate::feeds::WorkholdingRigidity::Medium
 }
 
 /// Post-processor configuration from the project file.
@@ -176,6 +191,16 @@ pub struct ProjectToolSection {
     pub stickout: f64,
     #[serde(default = "default_flute_count")]
     pub flute_count: u32,
+    #[serde(default)]
+    pub tool_number: Option<usize>,
+    #[serde(default = "default_tool_material")]
+    pub tool_material: String,
+    #[serde(default = "default_cut_direction")]
+    pub cut_direction: String,
+    #[serde(default)]
+    pub vendor: String,
+    #[serde(default)]
+    pub product_id: String,
 }
 
 fn default_tool_name() -> String {
@@ -216,6 +241,12 @@ fn default_stickout() -> f64 {
 }
 fn default_flute_count() -> u32 {
     2
+}
+fn default_tool_material() -> String {
+    "carbide".to_owned()
+}
+fn default_cut_direction() -> String {
+    "up_cut".to_owned()
 }
 
 /// Model reference in the project file.
@@ -393,12 +424,12 @@ pub(crate) fn stock_from_project(ps: &ProjectStockConfig) -> StockConfig {
         origin_x: ps.origin_x,
         origin_y: ps.origin_y,
         origin_z: ps.origin_z,
-        auto_from_model: false,
-        padding: 5.0,
+        auto_from_model: ps.auto_from_model,
+        padding: ps.padding,
         material: ps.material.clone(),
         alignment_pins: ps.alignment_pins.clone(),
         flip_axis: ps.flip_axis,
-        workholding_rigidity: crate::feeds::WorkholdingRigidity::Medium,
+        workholding_rigidity: ps.workholding_rigidity,
     }
 }
 
@@ -413,11 +444,12 @@ pub(crate) fn parse_tool_type(s: &str) -> ToolType {
 }
 
 pub(crate) fn tool_from_project_section(ts: &ProjectToolSection, idx: usize) -> ToolConfig {
-    use crate::compute::tool_config::{BitCutDirection, ToolMaterial};
+    let tool_id = ts.id.unwrap_or(idx);
+    let tool_number = ts.tool_number.unwrap_or(tool_id + 1) as u32;
     ToolConfig {
-        id: ToolId(ts.id.unwrap_or(idx)),
+        id: ToolId(tool_id),
         name: ts.name.clone(),
-        tool_number: (ts.id.unwrap_or(idx) + 1) as u32,
+        tool_number,
         tool_type: parse_tool_type(&ts.tool_type),
         diameter: ts.diameter,
         cutting_length: ts.cutting_length,
@@ -430,10 +462,27 @@ pub(crate) fn tool_from_project_section(ts: &ProjectToolSection, idx: usize) -> 
         shank_length: ts.shank_length,
         stickout: ts.stickout,
         flute_count: ts.flute_count,
-        tool_material: ToolMaterial::Carbide,
-        cut_direction: BitCutDirection::UpCut,
-        vendor: String::new(),
-        product_id: String::new(),
+        tool_material: parse_tool_material(&ts.tool_material),
+        cut_direction: parse_cut_direction(&ts.cut_direction),
+        vendor: ts.vendor.clone(),
+        product_id: ts.product_id.clone(),
+    }
+}
+
+fn parse_tool_material(s: &str) -> crate::compute::tool_config::ToolMaterial {
+    use crate::compute::tool_config::ToolMaterial;
+    match s.to_ascii_lowercase().as_str() {
+        "hss" => ToolMaterial::Hss,
+        _ => ToolMaterial::Carbide,
+    }
+}
+
+fn parse_cut_direction(s: &str) -> crate::compute::tool_config::BitCutDirection {
+    use crate::compute::tool_config::BitCutDirection;
+    match s.to_ascii_lowercase().as_str() {
+        "down_cut" | "downcut" => BitCutDirection::DownCut,
+        "compression" => BitCutDirection::Compression,
+        _ => BitCutDirection::UpCut,
     }
 }
 
