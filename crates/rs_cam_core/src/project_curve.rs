@@ -34,6 +34,10 @@ pub struct ProjectCurveParams {
     pub point_spacing: f64,
     /// Which side of the mesh to project onto.
     pub direction: ProjectDirection,
+    /// When true, the mesh has already been Z-inverted by a bottom-facing setup
+    /// transform. `FromBelow` should NOT apply its own Z-flip in this case
+    /// (it would double-flip, cancelling the setup transform).
+    pub setup_z_flipped: bool,
 }
 
 impl Default for ProjectCurveParams {
@@ -45,6 +49,7 @@ impl Default for ProjectCurveParams {
             safe_z: 10.0,
             point_spacing: 0.5,
             direction: ProjectDirection::FromAbove,
+            setup_z_flipped: false,
         }
     }
 }
@@ -164,10 +169,19 @@ pub fn project_curve_toolpath(
             project_curve_inner(polygon, mesh, index, cutter, params, false)
         }
         ProjectDirection::FromBelow => {
-            // Flip the mesh Z so the bottom surface becomes the top.
-            let flipped = mesh.z_flipped();
-            let flipped_index = SpatialIndex::build_auto(&flipped);
-            project_curve_inner(polygon, &flipped, &flipped_index, cutter, params, true)
+            if params.setup_z_flipped {
+                // The mesh is already Z-inverted by a bottom-facing setup transform.
+                // The drop cutter will find the correct surface contact without an
+                // additional flip. Use z_flip=true so the depth goes upward (into
+                // the bottom surface).
+                project_curve_inner(polygon, mesh, index, cutter, params, true)
+            } else {
+                // Standalone (no setup transform): flip the mesh Z so the bottom
+                // surface becomes the top for the drop cutter.
+                let flipped = mesh.z_flipped();
+                let flipped_index = SpatialIndex::build_auto(&flipped);
+                project_curve_inner(polygon, &flipped, &flipped_index, cutter, params, true)
+            }
         }
     }
 }

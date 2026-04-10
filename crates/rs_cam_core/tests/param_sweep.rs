@@ -2025,6 +2025,7 @@ fn default_project_curve_params() -> ProjectCurveParams {
         safe_z: 30.0,
         point_spacing: 0.5,
         direction: rs_cam_core::project_curve::ProjectDirection::FromAbove,
+        setup_z_flipped: false,
     }
 }
 

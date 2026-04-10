@@ -898,6 +898,7 @@ pub fn execute_operation_annotated(
                 plunge_rate,
                 safe_z,
                 direction,
+                setup_z_flipped: cfg.setup_z_flipped,
             };
             let mut combined = Toolpath::new();
             for poly in polys {

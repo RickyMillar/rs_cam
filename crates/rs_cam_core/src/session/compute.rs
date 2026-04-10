@@ -88,13 +88,33 @@ impl ProjectSession {
                             "unexpected config structure during serde round-trip".to_owned(),
                         )
                     })?;
-                // Insert the value — even if the key doesn't exist yet (handles
-                // Optional fields that serde skips when None). The deserialize
-                // step below will reject truly unknown fields.
+                // Insert the value — even if the key doesn't exist yet. This
+                // handles Optional fields that serde skips when None (e.g.
+                // surface_model_id on ProjectCurve).
+                let existed = params_obj.contains_key(param);
                 params_obj.insert(param.to_owned(), value);
-                tc.operation = serde_json::from_value(json).map_err(|e| {
-                    SessionError::InvalidParam(format!("invalid value for '{param}': {e}"))
-                })?;
+                let new_op: crate::compute::catalog::OperationConfig =
+                    serde_json::from_value(json).map_err(|e| {
+                        SessionError::InvalidParam(format!("invalid value for '{param}': {e}"))
+                    })?;
+                // Verify the param was actually consumed: re-serialize and check.
+                // Serde ignores unknown fields by default, so a truly unknown param
+                // would deserialize successfully but be silently dropped.
+                if !existed {
+                    let check = serde_json::to_value(&new_op).ok();
+                    let found = check
+                        .as_ref()
+                        .and_then(|v| v.get("params"))
+                        .and_then(|v| v.as_object())
+                        .is_some_and(|obj| obj.contains_key(param));
+                    if !found {
+                        return Err(SessionError::InvalidParam(format!(
+                            "unknown parameter '{param}' for {} operation",
+                            tc.operation.label()
+                        )));
+                    }
+                }
+                tc.operation = new_op;
             }
         }
 
