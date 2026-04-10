@@ -17,7 +17,8 @@ use rs_cam_mcp::server::{
     ExportParam, IndexParam, LoadProjectParam, ModelIdParam, RemoveAlignmentPinParam,
     RemoveToolParam, RemoveToolpathParam, SaveProjectParam, ScreenshotSimParam,
     ScreenshotToolpathParam, SetBoundaryConfigParam, SetDressupConfigParam, SetStockConfigParam,
-    SetToolParamInput, SetToolpathParamInput, SimJumpToMoveParam, SimulationParam,
+    SetToolParamInput, SetToolpathParamInput, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam,
+    SimScrubToolpathParam, SimulationParam,
 };
 
 /// Embedded MCP server that forwards requests to the GUI thread.
@@ -584,6 +585,54 @@ impl EmbeddedCamServer {
     )]
     async fn sim_jump_to_end(&self) -> String {
         Self::format_result(self.send_request(McpRequestKind::SimJumpToEnd).await)
+    }
+
+    // ── Per-toolpath simulation scrubbing tools ───────────────────────
+
+    #[tool(
+        name = "sim_scrub_toolpath",
+        description = "Scrub the simulation to a percentage position within a specific toolpath. Returns the computed move index, toolpath name, and total moves in that toolpath. Requires a simulation to have been run first."
+    )]
+    async fn sim_scrub_toolpath(
+        &self,
+        Parameters(SimScrubToolpathParam { index, percent }): Parameters<SimScrubToolpathParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::SimScrubToolpath { index, percent })
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "sim_jump_to_toolpath_start",
+        description = "Jump the simulation to the first move of a specific toolpath. Convenience shortcut for sim_scrub_toolpath(index, 0.0)."
+    )]
+    async fn sim_jump_to_toolpath_start(
+        &self,
+        Parameters(SimJumpToToolpathBoundaryParam { index }): Parameters<
+            SimJumpToToolpathBoundaryParam,
+        >,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::SimJumpToToolpathStart { index })
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "sim_jump_to_toolpath_end",
+        description = "Jump the simulation to the last move of a specific toolpath. Convenience shortcut for sim_scrub_toolpath(index, 100.0)."
+    )]
+    async fn sim_jump_to_toolpath_end(
+        &self,
+        Parameters(SimJumpToToolpathBoundaryParam { index }): Parameters<
+            SimJumpToToolpathBoundaryParam,
+        >,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::SimJumpToToolpathEnd { index })
+                .await,
+        )
     }
 
     // ── Screenshot tools ─────────────────────────────────────────────

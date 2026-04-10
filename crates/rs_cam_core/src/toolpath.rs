@@ -311,9 +311,7 @@ pub fn raster_toolpath_from_grid(
         }
         // Zigzag: even rows go left-to-right, odd rows go right-to-left
         let reverse = row % 2 != 0;
-        let col_at = |i: usize| -> usize {
-            if reverse { grid.cols - 1 - i } else { i }
-        };
+        let col_at = |i: usize| -> usize { if reverse { grid.cols - 1 - i } else { i } };
 
         // When min_z filtering is active, partition the row into segments
         // where at least one point is above the clamp.
@@ -417,9 +415,7 @@ pub fn raster_toolpath_from_grid_with_slope_filter(
         }
         // Zigzag: even rows go left-to-right, odd rows go right-to-left
         let reverse = row % 2 != 0;
-        let col_at = |i: usize| -> usize {
-            if reverse { grid.cols - 1 - i } else { i }
-        };
+        let col_at = |i: usize| -> usize { if reverse { grid.cols - 1 - i } else { i } };
 
         // Phase 1: Find contiguous in-range segments for this row.
         // A point is "in-range" if its slope is within [slope_from, slope_to]
@@ -685,7 +681,11 @@ mod tests {
         // Two segments separated by gap of 10 (exceeds max_gap=3)
         let segs = vec![(0, 5), (16, 20)];
         let result = merge_slope_segments(&segs, 3);
-        assert_eq!(result, vec![(0, 5), (16, 20)], "Gap of 10 should NOT be merged");
+        assert_eq!(
+            result,
+            vec![(0, 5), (16, 20)],
+            "Gap of 10 should NOT be merged"
+        );
     }
 
     #[test]
@@ -698,7 +698,11 @@ mod tests {
 
     // --- slope-filtered raster toolpath tests ---
 
-    fn make_test_grid(rows: usize, cols: usize, z_fn: impl Fn(usize, usize) -> f64) -> DropCutterGrid {
+    fn make_test_grid(
+        rows: usize,
+        cols: usize,
+        z_fn: impl Fn(usize, usize) -> f64,
+    ) -> DropCutterGrid {
         use crate::tool::CLPoint;
         let mut points = Vec::with_capacity(rows * cols);
         for row in 0..rows {
@@ -737,7 +741,9 @@ mod tests {
         );
         // Should emit: rapid to (0,0,10) → plunge → feed 1-4 → retract at (4,0,10)
         // The retract should be at x=4 (last in-range col), NOT x=5 (first excluded)
-        let retracts: Vec<_> = tp.moves.iter()
+        let retracts: Vec<_> = tp
+            .moves
+            .iter()
             .filter(|m| m.move_type == MoveType::Rapid && m.target.z > 5.0)
             .collect();
         assert!(!retracts.is_empty());
@@ -767,7 +773,9 @@ mod tests {
         );
 
         // Count retract-plunge pairs (rapid moves at safe_z that aren't the first)
-        let rapids_at_safe: Vec<_> = tp.moves.iter()
+        let rapids_at_safe: Vec<_> = tp
+            .moves
+            .iter()
             .filter(|m| m.move_type == MoveType::Rapid)
             .collect();
 
@@ -775,7 +783,8 @@ mod tests {
         // = 2 rapids to start + 2 retracts = 4 rapid moves
         // Without bridging: segments (0-1), (3-4), (17-19) → 3 segments = 6 rapid moves
         assert_eq!(
-            rapids_at_safe.len(), 4,
+            rapids_at_safe.len(),
+            4,
             "Small gap should be bridged, expected 4 rapids (2 segments), got {}",
             rapids_at_safe.len()
         );
@@ -788,7 +797,10 @@ mod tests {
         let tp = raster_toolpath_from_grid_with_slope_filter(
             &grid, &slopes, 30.0, 90.0, 1000.0, 500.0, 10.0, None,
         );
-        assert!(tp.moves.is_empty(), "All-excluded grid should produce no moves");
+        assert!(
+            tp.moves.is_empty(),
+            "All-excluded grid should produce no moves"
+        );
     }
 
     #[test]
@@ -798,13 +810,13 @@ mod tests {
         let tp_filtered = raster_toolpath_from_grid_with_slope_filter(
             &grid, &slopes, 0.0, 90.0, 1000.0, 500.0, 10.0, None,
         );
-        let tp_unfiltered = raster_toolpath_from_grid(
-            &grid, 1000.0, 500.0, 10.0, None,
-        );
+        let tp_unfiltered = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None);
         assert_eq!(
-            tp_filtered.moves.len(), tp_unfiltered.moves.len(),
+            tp_filtered.moves.len(),
+            tp_unfiltered.moves.len(),
             "All-included slope filter should match unfiltered: {} vs {}",
-            tp_filtered.moves.len(), tp_unfiltered.moves.len()
+            tp_filtered.moves.len(),
+            tp_unfiltered.moves.len()
         );
     }
 
@@ -814,9 +826,7 @@ mod tests {
     fn test_min_z_reduces_move_count() {
         // Grid: 5 rows × 20 cols. Z values: col 0-4 at z=5 (above clamp),
         // col 5-19 at z=1 (below clamp of z=3).
-        let grid = make_test_grid(5, 20, |_, col| {
-            if col < 5 { 5.0 } else { 1.0 }
-        });
+        let grid = make_test_grid(5, 20, |_, col| if col < 5 { 5.0 } else { 1.0 });
 
         let tp_no_filter = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None);
         let tp_with_filter = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, Some(3.0));

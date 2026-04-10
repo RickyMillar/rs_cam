@@ -432,9 +432,11 @@ impl eframe::App for RsCamApp {
         #[cfg(feature = "mcp")]
         self.drain_mcp_requests();
 
-        // Request repaint while MCP highlights are fading (so the animation runs).
+        // Request repaint while MCP highlights are fading or notifications are active.
         #[cfg(feature = "mcp")]
-        if !self.controller.state().gui.mcp_highlights.is_empty() {
+        if !self.controller.state().gui.mcp_highlights.is_empty()
+            || self.controller.active_notifications().next().is_some()
+        {
             ctx.request_repaint();
         }
 
@@ -548,6 +550,7 @@ impl eframe::App for RsCamApp {
                 .collect();
             if !notifications.is_empty() {
                 egui::Area::new(egui::Id::new("toast_notifications"))
+                    .order(egui::Order::Foreground)
                     .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-12.0, -12.0))
                     .show(ctx, |ui| {
                         ui.set_max_width(400.0);
