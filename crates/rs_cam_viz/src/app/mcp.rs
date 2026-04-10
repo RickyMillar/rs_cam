@@ -121,8 +121,18 @@ impl super::RsCamApp {
                 let resp = self.mcp_remove_alignment_pin(index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::ImportModel { path } => {
+                let name = Path::new(&path)
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&path)
+                    .to_owned();
+                self.controller
+                    .push_notification(format!("MCP: Importing '{name}'"), Severity::Info);
+                let resp = self.mcp_import_model(&path);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::LoadProject { path } => {
-                // Extract file name for the toast before loading.
                 let name = Path::new(&path)
                     .file_stem()
                     .and_then(|s| s.to_str())
@@ -960,6 +970,64 @@ impl super::RsCamApp {
     }
 
     // ── Mutation implementations ─────────────────────────────────────
+
+    fn mcp_import_model(&mut self, path: &str) -> String {
+        let file_path = Path::new(path);
+        let ext = file_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+
+        let result = match ext.as_str() {
+            "stl" => self.controller.import_stl_path(file_path),
+            "dxf" => self.controller.import_dxf_path(file_path),
+            "svg" => self.controller.import_svg_path(file_path),
+            "step" | "stp" => self.controller.import_step_path(file_path),
+            _ => return json_str(serde_json::json!({
+                "error": format!("Unsupported file format '.{ext}'. Use .stl, .dxf, .svg, .step, or .stp")
+            })),
+        };
+
+        match result {
+            Ok(bbox) => {
+                // Find the most recently added model to report its details.
+                let models = self.controller.state().session.models();
+                let model = models.last();
+                let name = model.map(|m| m.name.as_str()).unwrap_or("unknown");
+                let id = model.map(|m| m.id).unwrap_or(0);
+                let kind = model
+                    .and_then(|m| m.kind)
+                    .map(|k| format!("{k:?}"))
+                    .unwrap_or_else(|| ext.clone());
+
+                let mut resp = serde_json::json!({
+                    "id": id,
+                    "name": name,
+                    "kind": kind.to_lowercase(),
+                });
+
+                if let Some(bbox) = bbox {
+                    // SAFETY: resp is a known JSON object we just constructed
+                    #[allow(clippy::indexing_slicing)]
+                    {
+                        resp["bbox"] = serde_json::json!({
+                            "min": [bbox.min.x, bbox.min.y, bbox.min.z],
+                            "max": [bbox.max.x, bbox.max.y, bbox.max.z],
+                        });
+                        resp["dimensions"] = serde_json::json!({
+                            "x": bbox.max.x - bbox.min.x,
+                            "y": bbox.max.y - bbox.min.y,
+                            "z": bbox.max.z - bbox.min.z,
+                        });
+                    }
+                }
+
+                json_str(resp)
+            }
+            Err(e) => json_str(serde_json::json!({"error": format!("{e}")})),
+        }
+    }
 
     fn mcp_load_project(&mut self, path: &str) -> McpResponse {
         match self.controller.open_job_from_path(Path::new(path)) {

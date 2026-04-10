@@ -277,6 +277,22 @@ impl EmbeddedCamServer {
     }
 
     #[tool(
+        name = "import_model",
+        description = "Import a model file into the current project. Supported formats: .stl (3D mesh), .dxf (2D vectors), .svg (2D vectors), .step/.stp (BREP CAD). Auto-detects format from file extension. Returns model ID and geometry summary."
+    )]
+    async fn import_model(
+        &self,
+        Parameters(rs_cam_mcp::server::ImportModelParam { path }): Parameters<
+            rs_cam_mcp::server::ImportModelParam,
+        >,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::ImportModel { path })
+                .await,
+        )
+    }
+
+    #[tool(
         name = "load_project",
         description = "Load a project TOML file. Must be called before other tools if no project was specified on startup."
     )]

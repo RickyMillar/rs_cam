@@ -58,6 +58,9 @@ pub enum McpRequestKind {
     RemoveAlignmentPin {
         index: usize,
     },
+    ImportModel {
+        path: String,
+    },
     LoadProject {
         path: String,
     },
