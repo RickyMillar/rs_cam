@@ -20,6 +20,31 @@ use rs_cam_core::session::{ProjectSession, SimulationOptions};
 
 // ── Parameter structs ─────────────────────────────────────────────────
 
+#[allow(dead_code)]
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct AddSetupParam {
+    /// Optional name for the new setup
+    pub name: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SetSetupFaceParam {
+    /// Setup index (0-based)
+    pub setup_index: usize,
+    /// Face orientation: "top", "bottom", "front", "back", "left", "right"
+    pub face_up: String,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct MoveToolpathToSetupParam {
+    /// Toolpath index (0-based, global across all setups)
+    pub toolpath_index: usize,
+    /// Target setup index (0-based)
+    pub target_setup_index: usize,
+}
+
 #[allow(dead_code)] // Used by rs_cam_viz embedded MCP, not the standalone binary
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct ImportModelParam {

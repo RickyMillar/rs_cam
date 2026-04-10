@@ -121,6 +121,42 @@ impl super::RsCamApp {
                 let resp = self.mcp_remove_alignment_pin(index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::AddSetup { name } => {
+                self.controller
+                    .push_notification("MCP: Adding setup".to_owned(), Severity::Info);
+                let resp = self.mcp_add_setup(name.as_deref());
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::SetSetupFace {
+                setup_index,
+                face_up,
+            } => {
+                self.controller.push_notification(
+                    format!("MCP: Set setup {setup_index} face to '{face_up}'"),
+                    Severity::Info,
+                );
+                self.controller
+                    .events_mut()
+                    .push(crate::ui::AppEvent::SwitchWorkspace(
+                        crate::state::Workspace::Setup,
+                    ));
+                let resp = self.mcp_set_setup_face(setup_index, &face_up);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::MoveToolpathToSetup {
+                toolpath_index,
+                target_setup_index,
+            } => {
+                self.controller.push_notification(
+                    format!(
+                        "MCP: Moving toolpath {toolpath_index} to setup {target_setup_index}"
+                    ),
+                    Severity::Info,
+                );
+                let resp =
+                    self.mcp_move_toolpath_to_setup(toolpath_index, target_setup_index);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::ImportModel { path } => {
                 let name = Path::new(&path)
                     .file_name()
@@ -970,6 +1006,111 @@ impl super::RsCamApp {
     }
 
     // ── Mutation implementations ─────────────────────────────────────
+
+    fn mcp_add_setup(&mut self, name: Option<&str>) -> String {
+        self.controller.handle_add_setup();
+        let setup_count = self.controller.state().session.list_setups().len();
+        let setup_id = self
+            .controller
+            .state()
+            .session
+            .list_setups()
+            .last()
+            .map(|s| s.id);
+        let Some(sid) = setup_id else {
+            return json_str(serde_json::json!({"error": "Failed to add setup"}));
+        };
+        if let Some(n) = name
+            && let Some((_, sd)) = self
+                .controller
+                .state_mut()
+                .session
+                .find_setup_by_id_mut(sid)
+        {
+            sd.name = n.to_owned();
+        }
+        let final_name = self
+            .controller
+            .state()
+            .session
+            .find_setup_by_id(sid)
+            .map(|(_, s)| s.name.clone())
+            .unwrap_or_default();
+        json_str(serde_json::json!({
+            "index": setup_count - 1,
+            "id": sid,
+            "name": final_name,
+        }))
+    }
+
+    fn mcp_set_setup_face(&mut self, setup_index: usize, face_up: &str) -> String {
+        let setups = self.controller.state().session.list_setups();
+        let Some(setup) = setups.get(setup_index) else {
+            return json_str(serde_json::json!({"error": format!("Setup index {setup_index} not found")}));
+        };
+        let setup_id = setup.id;
+
+        let face = match face_up.to_lowercase().as_str() {
+            "top" => rs_cam_core::compute::transform::FaceUp::Top,
+            "bottom" => rs_cam_core::compute::transform::FaceUp::Bottom,
+            "front" => rs_cam_core::compute::transform::FaceUp::Front,
+            "back" => rs_cam_core::compute::transform::FaceUp::Back,
+            "left" => rs_cam_core::compute::transform::FaceUp::Left,
+            "right" => rs_cam_core::compute::transform::FaceUp::Right,
+            _ => {
+                return json_str(serde_json::json!({
+                    "error": format!("Unknown face '{face_up}'. Use: top, bottom, front, back, left, right")
+                }));
+            }
+        };
+
+        if let Some((_, sd)) = self
+            .controller
+            .state_mut()
+            .session
+            .find_setup_by_id_mut(setup_id)
+        {
+            sd.face_up = face;
+            self.controller.state_mut().gui.mark_edited();
+            self.controller.set_pending_upload();
+            json_str(serde_json::json!({
+                "setup_index": setup_index,
+                "face_up": face_up.to_lowercase(),
+            }))
+        } else {
+            json_str(serde_json::json!({"error": "Setup not found"}))
+        }
+    }
+
+    fn mcp_move_toolpath_to_setup(
+        &mut self,
+        toolpath_index: usize,
+        target_setup_index: usize,
+    ) -> String {
+        let session = &self.controller.state().session;
+        let Some(tc) = session.toolpath_configs().get(toolpath_index) else {
+            return json_str(serde_json::json!({"error": format!("Toolpath index {toolpath_index} not found")}));
+        };
+        let tp_id = crate::state::toolpath::ToolpathId(tc.id);
+        let Some(target_setup) = session.list_setups().get(target_setup_index) else {
+            return json_str(serde_json::json!({"error": format!("Setup index {target_setup_index} not found")}));
+        };
+        let target_setup_id = crate::state::job::SetupId(target_setup.id);
+
+        self.controller
+            .events_mut()
+            .push(crate::ui::AppEvent::MoveToolpathToSetup(
+                tp_id,
+                target_setup_id,
+                0,
+            ));
+        self.controller.state_mut().gui.mark_edited();
+
+        json_str(serde_json::json!({
+            "toolpath_index": toolpath_index,
+            "target_setup_index": target_setup_index,
+        }))
+    }
 
     fn mcp_import_model(&mut self, path: &str) -> String {
         let file_path = Path::new(path);
