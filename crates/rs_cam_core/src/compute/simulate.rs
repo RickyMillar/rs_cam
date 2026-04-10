@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::collision::{RapidCollision, check_rapid_collisions};
+use crate::collision::{RapidCollision, check_rapid_collisions_against_stock};
 use crate::compute::transform::SetupTransformInfo;
 use crate::dexel_mesh::dexel_stock_to_mesh;
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
@@ -204,6 +204,12 @@ where
     };
     let mut global_stock = TriDexelStock::from_bounds(&global_bbox, request.resolution);
 
+    // Rapid collision accumulators — populated per-toolpath BEFORE each
+    // simulation step so we compare against the stock state left by all
+    // *previous* operations.
+    let mut rapid_collisions: Vec<RapidCollision> = Vec::new();
+    let mut rapid_collision_move_indices: Vec<usize> = Vec::new();
+
     for group in &request.groups {
         // Per-setup stock: use local bbox if available, else fall back to global.
         let local_bbox = group
@@ -221,6 +227,19 @@ where
             .map_or(StockCutDirection::FromTop, |info| info.cut_direction());
 
         for entry in &group.toolpaths {
+            // Check rapid collisions against the *current* stock state
+            // (after all previous toolpaths, before this one carves).
+            {
+                let rapids = check_rapid_collisions_against_stock(
+                    &entry.toolpath,
+                    &group_stock.z_grid,
+                );
+                for rc in &rapids {
+                    rapid_collision_move_indices.push(total_moves + rc.move_index);
+                }
+                rapid_collisions.extend(rapids);
+            }
+
             set_phase(&format!("Simulate {}", entry.name));
             let lut = RadialProfileLUT::from_cutter(&entry.tool, 256);
             let radius = entry.tool.radius();
@@ -307,24 +326,6 @@ where
             });
         } else {
             composite_mesh.append_transformed(&group_mesh, |x, y, z| (x, y, z));
-        }
-    }
-
-    // Check for rapid-through-stock collisions on each toolpath.
-    set_phase("Scan rapid collisions");
-    let mut rapid_collisions = Vec::new();
-    let mut rapid_collision_move_indices = Vec::new();
-    {
-        let mut cumulative_offset = 0;
-        for group in &request.groups {
-            for entry in &group.toolpaths {
-                let rapids = check_rapid_collisions(&entry.toolpath, &request.stock_bbox);
-                for rc in &rapids {
-                    rapid_collision_move_indices.push(cumulative_offset + rc.move_index);
-                }
-                rapid_collisions.extend(rapids);
-                cumulative_offset += entry.toolpath.moves.len();
-            }
         }
     }
 

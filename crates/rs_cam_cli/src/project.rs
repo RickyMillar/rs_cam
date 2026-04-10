@@ -169,8 +169,11 @@ pub fn run_project_command(
         let collision_count = col_report.map(|r| r.collisions.len()).unwrap_or(0);
         let min_safe = col_report.map(|r| r.min_safe_stickout);
 
-        let rapid_count =
-            rs_cam_core::collision::check_rapid_collisions(&result.toolpath, &stock_bbox).len();
+        let rapid_count = diag
+            .per_toolpath
+            .iter()
+            .find(|d| d.toolpath_id == tc.id)
+            .map_or(0, |d| d.rapid_collision_count);
 
         let diagnostic = ToolpathDiagnostic {
             toolpath_id: tc.id,
