@@ -88,12 +88,9 @@ impl ProjectSession {
                             "unexpected config structure during serde round-trip".to_owned(),
                         )
                     })?;
-                if !params_obj.contains_key(param) {
-                    return Err(SessionError::InvalidParam(format!(
-                        "unknown parameter '{param}' for {} operation",
-                        tc.operation.label()
-                    )));
-                }
+                // Insert the value — even if the key doesn't exist yet (handles
+                // Optional fields that serde skips when None). The deserialize
+                // step below will reject truly unknown fields.
                 params_obj.insert(param.to_owned(), value);
                 tc.operation = serde_json::from_value(json).map_err(|e| {
                     SessionError::InvalidParam(format!("invalid value for '{param}': {e}"))
