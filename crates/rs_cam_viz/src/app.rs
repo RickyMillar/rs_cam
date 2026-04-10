@@ -432,6 +432,12 @@ impl eframe::App for RsCamApp {
         #[cfg(feature = "mcp")]
         self.drain_mcp_requests();
 
+        // Request repaint while MCP highlights are fading (so the animation runs).
+        #[cfg(feature = "mcp")]
+        if !self.controller.state().gui.mcp_highlights.is_empty() {
+            ctx.request_repaint();
+        }
+
         // Re-upload toolpath GPU data when color mode changes
         let current_tp_mode = self.controller.state().viewport.toolpath_color_mode;
         if current_tp_mode != self.last_tp_color_mode {

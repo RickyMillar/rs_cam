@@ -216,6 +216,14 @@ pub struct RemoveAlignmentPinParam {
     pub index: usize,
 }
 
+/// Simulation jump-to-move parameter (used by embedded MCP server in rs_cam_viz).
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+#[allow(dead_code)]
+pub struct SimJumpToMoveParam {
+    /// Move index to jump to (0-based, up to total_moves)
+    pub move_index: usize,
+}
+
 /// Parse a string into an `OperationType` (snake_case).
 pub fn parse_operation_type(s: &str) -> Result<OperationType, String> {
     serde_json::from_value(serde_json::Value::String(s.to_owned()))

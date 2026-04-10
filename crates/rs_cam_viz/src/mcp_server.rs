@@ -17,7 +17,7 @@ use rs_cam_mcp::server::{
     ExportParam, IndexParam, LoadProjectParam, ModelIdParam, RemoveAlignmentPinParam,
     RemoveToolParam, RemoveToolpathParam, SaveProjectParam, ScreenshotSimParam,
     ScreenshotToolpathParam, SetBoundaryConfigParam, SetDressupConfigParam, SetStockConfigParam,
-    SetToolParamInput, SetToolpathParamInput, SimulationParam,
+    SetToolParamInput, SetToolpathParamInput, SimJumpToMoveParam, SimulationParam,
 };
 
 /// Embedded MCP server that forwards requests to the GUI thread.
@@ -552,6 +552,38 @@ impl EmbeddedCamServer {
             self.send_with_progress(McpRequestKind::CollisionCheck { index }, meta, peer)
                 .await,
         )
+    }
+
+    // ── Simulation scrubbing tools ──────────────────────────────────
+
+    #[tool(
+        name = "sim_jump_to_move",
+        description = "Jump the simulation playback to a specific move index. Updates the GUI viewport in real-time. Use after run_simulation to scrub through the cutting process. Move 0 is the start, total_moves is the end."
+    )]
+    async fn sim_jump_to_move(
+        &self,
+        Parameters(SimJumpToMoveParam { move_index }): Parameters<SimJumpToMoveParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::SimJumpToMove { move_index })
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "sim_jump_to_start",
+        description = "Jump the simulation playback to the very start (move 0). Convenience shortcut for sim_jump_to_move(0)."
+    )]
+    async fn sim_jump_to_start(&self) -> String {
+        Self::format_result(self.send_request(McpRequestKind::SimJumpToStart).await)
+    }
+
+    #[tool(
+        name = "sim_jump_to_end",
+        description = "Jump the simulation playback to the very end (last move). Convenience shortcut for sim_jump_to_move(total_moves)."
+    )]
+    async fn sim_jump_to_end(&self) -> String {
+        Self::format_result(self.send_request(McpRequestKind::SimJumpToEnd).await)
     }
 
     // ── Screenshot tools ─────────────────────────────────────────────

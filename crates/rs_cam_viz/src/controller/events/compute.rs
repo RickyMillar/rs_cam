@@ -605,8 +605,7 @@ impl<B: ComputeBackend> AppController<B> {
 
                     // Send progress update via the progress channel (non-blocking).
                     if let Some(ref progress_tx) = ga.progress_tx {
-                        let total =
-                            (ga.completed + ga.failed + ga.remaining.len()) as f64;
+                        let total = (ga.completed + ga.failed + ga.remaining.len()) as f64;
                         let current = (ga.completed + ga.failed) as f64;
                         let tp_name = self
                             .state
@@ -618,13 +617,11 @@ impl<B: ComputeBackend> AppController<B> {
                             "Completed {}/{}: {}",
                             current as usize, total as usize, tp_name
                         );
-                        let _ = progress_tx.try_send(
-                            crate::mcp_bridge::ProgressUpdate {
-                                message: msg,
-                                progress: current,
-                                total: Some(total),
-                            },
-                        );
+                        let _ = progress_tx.try_send(crate::mcp_bridge::ProgressUpdate {
+                            message: msg,
+                            progress: current,
+                            total: Some(total),
+                        });
                     }
                 }
 
@@ -632,10 +629,7 @@ impl<B: ComputeBackend> AppController<B> {
                     && let Some(ga) = pending.generate_all.take()
                 {
                     let resp = if ga.errors.is_empty() {
-                        rs_cam_mcp::server::text(format!(
-                            "Generated {} toolpaths",
-                            ga.completed,
-                        ))
+                        rs_cam_mcp::server::text(format!("Generated {} toolpaths", ga.completed,))
                     } else {
                         let error_details: Vec<String> = ga
                             .errors
@@ -741,20 +735,20 @@ impl<B: ComputeBackend> AppController<B> {
             }
         }
 
-        let (total_runtime_s, air_cut_pct, avg_engagement) =
-            if let Some(ref sim_results) = self.state.simulation.results
-                && let Some(ref ct) = sim_results.cut_trace
-            {
-                let s = &ct.summary;
-                let air = if s.total_runtime_s > 0.0 {
-                    s.air_cut_time_s / s.total_runtime_s * 100.0
-                } else {
-                    0.0
-                };
-                (s.total_runtime_s, air, s.average_engagement)
+        let (total_runtime_s, air_cut_pct, avg_engagement) = if let Some(ref sim_results) =
+            self.state.simulation.results
+            && let Some(ref ct) = sim_results.cut_trace
+        {
+            let s = &ct.summary;
+            let air = if s.total_runtime_s > 0.0 {
+                s.air_cut_time_s / s.total_runtime_s * 100.0
             } else {
-                (0.0, 0.0, 0.0)
+                0.0
             };
+            (s.total_runtime_s, air, s.average_engagement)
+        } else {
+            (0.0, 0.0, 0.0)
+        };
 
         let rapid_collision_count = self.state.simulation.checks.rapid_collisions.len();
 
@@ -782,8 +776,7 @@ impl<B: ComputeBackend> AppController<B> {
             // SAFETY: resp is a known JSON object we just constructed
             #[allow(clippy::indexing_slicing)]
             {
-                resp["semantic_summary_count"] =
-                    serde_json::json!(ct.semantic_summaries.len());
+                resp["semantic_summary_count"] = serde_json::json!(ct.semantic_summaries.len());
                 resp["hotspot_count"] = serde_json::json!(ct.hotspots.len());
                 resp["issue_count"] = serde_json::json!(ct.issues.len());
             }

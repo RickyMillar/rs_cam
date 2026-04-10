@@ -30,6 +30,28 @@ use crate::state::toolpath::{
 use crate::ui::AppEvent;
 use crate::ui::automation;
 
+/// Paint a brief blue glow behind a UI region when an MCP parameter was recently changed.
+/// Call this right after allocating the widget/row so the highlight paints behind it.
+/// The glow fades out over 2 seconds.
+#[cfg(feature = "mcp")]
+pub fn mcp_highlight_effect(ui: &mut egui::Ui, gui: &crate::state::runtime::GuiState, key: &str) {
+    if let Some(when) = gui.mcp_highlights.get(key) {
+        let elapsed = when.elapsed().as_secs_f32();
+        let duration = 2.0; // 2-second fade
+        if elapsed < duration {
+            // SAFETY: arithmetic is bounded: (1.0 - 0..1) * 80.0 = 0..80, fits u8.
+            #[allow(clippy::indexing_slicing)]
+            let alpha = ((1.0 - elapsed / duration) * 80.0) as u8;
+            let rect = ui.max_rect();
+            ui.painter().rect_filled(
+                rect,
+                4.0,
+                egui::Color32::from_rgba_unmultiplied(100, 180, 255, alpha),
+            );
+        }
+    }
+}
+
 /// Global embedded vendor LUT, loaded once on first access.
 static VENDOR_LUT: std::sync::LazyLock<rs_cam_core::feeds::VendorLut> =
     std::sync::LazyLock::new(rs_cam_core::feeds::VendorLut::embedded);
