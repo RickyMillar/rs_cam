@@ -658,7 +658,8 @@ mod tests {
 
         let collisions = check_rapid_collisions_against_stock(&tp, &grid);
         assert_eq!(
-            collisions.len(), 1,
+            collisions.len(),
+            1,
             "Diagonal retract through stock should be flagged"
         );
     }
@@ -700,7 +701,8 @@ mod tests {
 
         let collisions = check_rapid_collisions_against_stock(&tp, &grid);
         assert_eq!(
-            collisions.len(), 1,
+            collisions.len(),
+            1,
             "Rapid below remaining stock surface should be flagged"
         );
     }
@@ -720,12 +722,12 @@ mod tests {
         tp.rapid_to(P3::new(0.0, 0.0, safe_z));
         tp.feed_to(P3::new(0.0, 0.0, 3.0), 500.0);
         tp.feed_to(P3::new(100.0, 0.0, 5.0), 1000.0);
-        tp.rapid_to(P3::new(100.0, 0.0, safe_z));      // vertical retract
+        tp.rapid_to(P3::new(100.0, 0.0, safe_z)); // vertical retract
 
-        tp.rapid_to(P3::new(100.0, 1.0, safe_z));       // traverse at safe_z
+        tp.rapid_to(P3::new(100.0, 1.0, safe_z)); // traverse at safe_z
         tp.feed_to(P3::new(100.0, 1.0, 4.0), 500.0);
         tp.feed_to(P3::new(0.0, 1.0, 6.0), 1000.0);
-        tp.rapid_to(P3::new(0.0, 1.0, safe_z));         // vertical retract
+        tp.rapid_to(P3::new(0.0, 1.0, safe_z)); // vertical retract
 
         let collisions = check_rapid_collisions_against_stock(&tp, &grid);
         assert!(

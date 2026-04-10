@@ -230,10 +230,8 @@ where
             // Check rapid collisions against the *current* stock state
             // (after all previous toolpaths, before this one carves).
             {
-                let rapids = check_rapid_collisions_against_stock(
-                    &entry.toolpath,
-                    &group_stock.z_grid,
-                );
+                let rapids =
+                    check_rapid_collisions_against_stock(&entry.toolpath, &group_stock.z_grid);
                 for rc in &rapids {
                     rapid_collision_move_indices.push(total_moves + rc.move_index);
                 }

@@ -224,6 +224,24 @@ pub struct SimJumpToMoveParam {
     pub move_index: usize,
 }
 
+/// Per-toolpath percentage-based simulation scrub parameter.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+#[allow(dead_code)]
+pub struct SimScrubToolpathParam {
+    /// Toolpath index (0-based)
+    pub index: usize,
+    /// Position within this toolpath as percentage (0.0 = start, 100.0 = end)
+    pub percent: f64,
+}
+
+/// Jump to the start or end of a specific toolpath in the simulation.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+#[allow(dead_code)]
+pub struct SimJumpToToolpathBoundaryParam {
+    /// Toolpath index (0-based)
+    pub index: usize,
+}
+
 /// Parse a string into an `OperationType` (snake_case).
 pub fn parse_operation_type(s: &str) -> Result<OperationType, String> {
     serde_json::from_value(serde_json::Value::String(s.to_owned()))

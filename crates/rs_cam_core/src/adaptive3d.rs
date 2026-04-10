@@ -1509,13 +1509,7 @@ fn clear_z_level_contour_parallel(
             if let Some(first) = path.first() {
                 segments.push(Adaptive3dSegment::Rapid(*first));
                 if path.len() >= 2 {
-                    stamp_along_path(
-                        material_stock,
-                        ctx.lut,
-                        ctx.tool_radius,
-                        path,
-                        ctx.step_len,
-                    );
+                    stamp_along_path(material_stock, ctx.lut, ctx.tool_radius, path, ctx.step_len);
                     *last_pos = path.last().copied();
                     segments.push(Adaptive3dSegment::Cut(path.clone()));
                 } else {
@@ -4580,9 +4574,8 @@ mod tests {
 
         // Simulate the toolpath on a fresh stock
         let cell_size = 0.3;
-        let mut sim_stock = TriDexelStock::from_stock(
-            -25.5, -25.5, 25.5, 25.5, -1.0, stock_top_z, cell_size,
-        );
+        let mut sim_stock =
+            TriDexelStock::from_stock(-25.5, -25.5, 25.5, 25.5, -1.0, stock_top_z, cell_size);
         let lut = RadialProfileLUT::from_cutter(&cutter, 256);
         sim_stock
             .simulate_toolpath_with_lut_cancel(
@@ -4636,7 +4629,13 @@ mod tests {
 
         let cell_size = 0.3;
         let mut sim_stock = TriDexelStock::from_stock(
-            sim_x_min, sim_y_min, sim_x_max, sim_y_max, -1.0, stock_top_z, cell_size,
+            sim_x_min,
+            sim_y_min,
+            sim_x_max,
+            sim_y_max,
+            -1.0,
+            stock_top_z,
+            cell_size,
         );
         let lut = RadialProfileLUT::from_cutter(&cutter, 256);
         sim_stock
@@ -4688,7 +4687,9 @@ mod tests {
         assert!(
             uncleared_pct < 5.0,
             "Hemisphere contour-parallel should clear >95% of cells, but {:.1}% ({}/{}) have excess material",
-            uncleared_pct, uncleared_count, total_checked,
+            uncleared_pct,
+            uncleared_count,
+            total_checked,
         );
     }
 
@@ -4726,7 +4727,10 @@ mod tests {
         assert!(
             uncleared_pct < 1.0,
             "[{label}] Contour-parallel should clear >99% of interior, but {:.1}% ({}/{}) remain above z={:.1}",
-            uncleared_pct, uncleared_count, total_checked, z_threshold,
+            uncleared_pct,
+            uncleared_count,
+            total_checked,
+            z_threshold,
         );
     }
 }

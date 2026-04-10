@@ -592,7 +592,11 @@ pub fn execute_operation_annotated(
                 )
             } else {
                 crate::toolpath::raster_toolpath_from_grid(
-                    &grid, feed_rate, plunge_rate, safe_z, min_z_filter,
+                    &grid,
+                    feed_rate,
+                    plunge_rate,
+                    safe_z,
+                    min_z_filter,
                 )
             };
             Ok(AnnotatedToolpath {

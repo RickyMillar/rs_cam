@@ -130,6 +130,16 @@ pub enum McpRequestKind {
     },
     SimJumpToStart,
     SimJumpToEnd,
+    SimScrubToolpath {
+        index: usize,
+        percent: f64,
+    },
+    SimJumpToToolpathStart {
+        index: usize,
+    },
+    SimJumpToToolpathEnd {
+        index: usize,
+    },
 
     // ── Screenshots ──────────────────────────────────────────────────
     ScreenshotSimulation {

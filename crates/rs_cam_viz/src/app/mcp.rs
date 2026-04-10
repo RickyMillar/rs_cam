@@ -15,6 +15,7 @@ use crate::mcp_bridge::{
     McpRequest, McpRequestKind, McpResponse, PendingGenerateAll, ProgressUpdate,
 };
 use crate::state::Workspace;
+use crate::state::selection::Selection;
 use crate::state::toolpath::ToolpathId;
 use crate::ui::AppEvent;
 
@@ -169,7 +170,7 @@ impl super::RsCamApp {
                 self.controller
                     .events_mut()
                     .push(AppEvent::SwitchWorkspace(Workspace::Toolpaths));
-                // Record highlight for the changed parameter.
+                // Record highlight for the changed parameter and select the toolpath.
                 if let Some((_, tp_id)) = tp_info {
                     let key = format!("toolpath_{tp_id}_{param}");
                     self.controller
@@ -177,6 +178,7 @@ impl super::RsCamApp {
                         .gui
                         .mcp_highlights
                         .insert(key, std::time::Instant::now());
+                    self.controller.state_mut().selection = Selection::Toolpath(ToolpathId(tp_id));
                 }
                 let resp = self.mcp_set_toolpath_param(index, &param, value);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
@@ -200,7 +202,7 @@ impl super::RsCamApp {
                     format!("MCP: Set {param} = {value_str} on '{tool_name}'"),
                     Severity::Info,
                 );
-                // Record highlight for the changed parameter.
+                // Record highlight for the changed parameter and select the tool.
                 if let Some((_, tool_id)) = tool_info {
                     let key = format!("tool_{tool_id}_{param}");
                     self.controller
@@ -208,6 +210,7 @@ impl super::RsCamApp {
                         .gui
                         .mcp_highlights
                         .insert(key, std::time::Instant::now());
+                    self.controller.state_mut().selection = Selection::Tool(ToolId(tool_id));
                 }
                 let resp = self.mcp_set_tool_param(index, &param, &value);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
@@ -229,6 +232,18 @@ impl super::RsCamApp {
                     .push(AppEvent::SwitchWorkspace(Workspace::Toolpaths));
                 let resp =
                     self.mcp_add_toolpath(setup_index, &operation_type, tool_index, model_id, name);
+                // Select the newly added toolpath so its properties are visible.
+                let tp_count = self.controller.state().session.toolpath_count();
+                if tp_count > 0
+                    && let Some(tc) = self
+                        .controller
+                        .state()
+                        .session
+                        .toolpath_configs()
+                        .get(tp_count - 1)
+                {
+                    self.controller.state_mut().selection = Selection::Toolpath(ToolpathId(tc.id));
+                }
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::RemoveToolpath { index } => {
@@ -348,6 +363,27 @@ impl super::RsCamApp {
                     .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
                 let resp = self.mcp_sim_jump_to_end();
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::SimScrubToolpath { index, percent } => {
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
+                let resp = self.mcp_sim_scrub_toolpath(index, percent);
+                let _ = response_tx.send(McpResponse { result: resp });
+            }
+            McpRequestKind::SimJumpToToolpathStart { index } => {
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
+                let resp = self.mcp_sim_scrub_toolpath(index, 0.0);
+                let _ = response_tx.send(McpResponse { result: resp });
+            }
+            McpRequestKind::SimJumpToToolpathEnd { index } => {
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
+                let resp = self.mcp_sim_scrub_toolpath(index, 100.0);
+                let _ = response_tx.send(McpResponse { result: resp });
             }
 
             // ── Screenshot operations ────────────────────────────────
@@ -1550,6 +1586,43 @@ impl super::RsCamApp {
         let total = sim.total_moves();
         self.controller.events_mut().push(AppEvent::SimJumpToEnd);
         self.mcp_sim_playback_state(total)
+    }
+
+    /// Scrub to a percentage position within a specific toolpath.
+    fn mcp_sim_scrub_toolpath(&mut self, index: usize, percent: f64) -> Result<String, String> {
+        let sim = &self.controller.state().simulation;
+        if !sim.has_results() {
+            return Err("No simulation result. Run run_simulation first.".to_owned());
+        }
+
+        let boundaries = sim.boundaries();
+        let boundary = boundaries.get(index).ok_or_else(|| {
+            format!(
+                "Toolpath index {index} not found in simulation boundaries (have {})",
+                boundaries.len()
+            )
+        })?;
+
+        let clamped_percent = percent.clamp(0.0, 100.0);
+        let start = boundary.start_move;
+        let end = boundary.end_move;
+        let range = end.saturating_sub(start);
+        let move_index = start + (range as f64 * clamped_percent / 100.0) as usize;
+        let tp_name = boundary.name.clone();
+        let total_moves_in_toolpath = range;
+
+        self.controller
+            .events_mut()
+            .push(AppEvent::SimJumpToMove(move_index));
+
+        Ok(json_str(serde_json::json!({
+            "move_index": move_index,
+            "toolpath_name": tp_name,
+            "percent": clamped_percent,
+            "total_moves_in_toolpath": total_moves_in_toolpath,
+            "start_move": start,
+            "end_move": end,
+        })))
     }
 
     /// Build a JSON response with the current simulation playback state.
