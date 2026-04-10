@@ -188,6 +188,36 @@ fn draw_toolpath_card(
         .inner_margin(4.0)
         .rounding(3.0)
         .show(ui, |ui| {
+            // MCP parameter highlight: glow the card when an MCP action recently
+            // changed a parameter on this toolpath.
+            #[cfg(feature = "mcp")]
+            {
+                let prefix = format!("toolpath_{}_", tc.id);
+                // Find the most recent highlight timestamp for this toolpath.
+                let newest = state
+                    .gui
+                    .mcp_highlights
+                    .iter()
+                    .filter(|(k, _)| k.starts_with(&prefix))
+                    .map(|(_, when)| *when)
+                    .max();
+                if let Some(when) = newest {
+                    let elapsed = when.elapsed().as_secs_f32();
+                    let duration = 2.0;
+                    if elapsed < duration {
+                        // SAFETY: arithmetic bounded: (1.0 - 0..1) * 60.0 = 0..60, fits u8.
+                        #[allow(clippy::indexing_slicing)]
+                        let alpha = ((1.0 - elapsed / duration) * 60.0) as u8;
+                        let rect = ui.max_rect();
+                        ui.painter().rect_filled(
+                            rect,
+                            3.0,
+                            egui::Color32::from_rgba_unmultiplied(100, 180, 255, alpha),
+                        );
+                    }
+                }
+            }
+
             // Click anywhere on the card to select.
             let card_resp = ui.interact(
                 ui.max_rect(),

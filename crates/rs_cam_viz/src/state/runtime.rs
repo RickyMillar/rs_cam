@@ -247,6 +247,10 @@ pub struct GuiState {
     pub toolpath_rt: HashMap<usize, ToolpathRuntime>,
     /// Per-setup GUI runtime state, keyed by setup semantic ID.
     pub setup_rt: HashMap<usize, SetupRuntime>,
+    /// Recently changed parameters from MCP, with timestamp for fade-out.
+    /// Key: "toolpath_{id}_{param}" or "tool_{id}_{param}" or "stock_{param}"
+    #[cfg(feature = "mcp")]
+    pub mcp_highlights: HashMap<String, std::time::Instant>,
 }
 
 impl GuiState {
@@ -258,6 +262,8 @@ impl GuiState {
             post: PostConfig::default(),
             toolpath_rt: HashMap::new(),
             setup_rt: HashMap::new(),
+            #[cfg(feature = "mcp")]
+            mcp_highlights: HashMap::new(),
         }
     }
 

@@ -1966,13 +1966,56 @@ pub fn collect_warnings(
     }
 
     // -- Stepover checks --
-    if let Some(stepover) = entry.operation.stepover() {
-        let spec = entry.operation.op_type().spec();
-        // Stepover > 50% on finishing ops
-        if spec.ui_process_role == UiProcessRole::Finish
-            && stepover > tool.diameter * 0.5
-            && tool.diameter > 0.0
+    if let Some(stepover) = entry.operation.stepover()
+        && tool.diameter > 0.0
+    {
+        if stepover > tool.diameter {
+            warnings.push(OperationWarning {
+                severity: WarningSeverity::Error,
+                message: format!(
+                    "Stepover ({:.2} mm) exceeds tool diameter ({:.1} mm) \u{2014} will leave uncut strips.",
+                    stepover, tool.diameter,
+                ),
+            });
+        } else if stepover > tool.diameter * 0.8 {
+            warnings.push(OperationWarning {
+                severity: WarningSeverity::Warning,
+                message: format!(
+                    "Stepover is {:.0}% of tool diameter \u{2014} may leave visible scallops.",
+                    (stepover / tool.diameter) * 100.0,
+                ),
+            });
+        }
+
+        // Stepover vs recommended (from feeds calculation)
+        if let Some(ref result) = entry.feeds_result
+            && result.radial_width_mm > 0.0
+            && !entry.feeds_auto.stepover
         {
+            let ratio = stepover / result.radial_width_mm;
+            if ratio > 2.0 {
+                warnings.push(OperationWarning {
+                    severity: WarningSeverity::Warning,
+                    message: format!(
+                        "Stepover ({:.2} mm) is {:.1}x the recommended value ({:.2} mm) for this machine/material.",
+                        stepover, ratio, result.radial_width_mm,
+                    ),
+                });
+            }
+        }
+
+        // Very fine stepover (informational)
+        if stepover < tool.diameter * 0.05 {
+            warnings.push(OperationWarning {
+                severity: WarningSeverity::Info,
+                message: "Very fine stepover \u{2014} cycle time will be significantly longer."
+                    .into(),
+            });
+        }
+
+        // Finish-specific: stepover > 50%
+        let spec = entry.operation.op_type().spec();
+        if spec.ui_process_role == UiProcessRole::Finish && stepover > tool.diameter * 0.5 {
             warnings.push(OperationWarning {
                 severity: WarningSeverity::Warning,
                 message: format!(
@@ -1981,6 +2024,32 @@ pub fn collect_warnings(
                     (stepover / tool.diameter) * 100.0,
                 ),
             });
+        }
+
+        // Ball nose scallop height at this stepover
+        if matches!(
+            tool.tool_type,
+            ToolType::BallNose | ToolType::TaperedBallNose
+        ) && spec.ui_process_role == UiProcessRole::Finish
+        {
+            let ball_r = tool.diameter / 2.0;
+            if ball_r > 0.0 && stepover < tool.diameter {
+                // Scallop height = R - sqrt(R^2 - (stepover/2)^2)
+                let half_so = stepover / 2.0;
+                let inner = ball_r * ball_r - half_so * half_so;
+                if inner > 0.0 {
+                    let scallop_h = ball_r - inner.sqrt();
+                    if scallop_h > 0.1 {
+                        warnings.push(OperationWarning {
+                            severity: WarningSeverity::Warning,
+                            message: format!(
+                                "Scallop height will be {:.3} mm at this stepover. Reduce stepover for a smoother finish.",
+                                scallop_h,
+                            ),
+                        });
+                    }
+                }
+            }
         }
     }
 
@@ -1998,6 +2067,38 @@ pub fn collect_warnings(
         });
     }
 
+    // Depth vs recommended (from feeds calculation)
+    if let Some(dpp) = entry.operation.depth_per_pass()
+        && let Some(ref result) = entry.feeds_result
+        && result.axial_depth_mm > 0.0
+        && !entry.feeds_auto.depth_per_pass
+    {
+        let ratio = dpp / result.axial_depth_mm;
+        if ratio > 2.0 {
+            warnings.push(OperationWarning {
+                severity: WarningSeverity::Warning,
+                message: format!(
+                    "Depth per pass ({:.1} mm) is {:.1}x the recommended value ({:.1} mm) for this machine rigidity.",
+                    dpp, ratio, result.axial_depth_mm,
+                ),
+            });
+        }
+    }
+
+    // Depth > 1.5x tool diameter (high deflection risk)
+    if let Some(dpp) = entry.operation.depth_per_pass()
+        && tool.diameter > 0.0
+        && dpp > tool.diameter * 1.5
+    {
+        warnings.push(OperationWarning {
+            severity: WarningSeverity::Warning,
+            message: format!(
+                "Depth ({:.1} mm) exceeds 1.5x tool diameter ({:.1} mm) \u{2014} high deflection risk.",
+                dpp, tool.diameter,
+            ),
+        });
+    }
+
     // -- Feed rate checks --
     if plunge > feed && feed > 0.0 {
         warnings.push(OperationWarning {
@@ -2007,6 +2108,31 @@ pub fn collect_warnings(
                 plunge, feed,
             ),
         });
+    }
+
+    // Feed vs recommended (from feeds calculation)
+    if let Some(ref result) = entry.feeds_result
+        && result.feed_rate_mm_min > 0.0
+        && !entry.feeds_auto.feed_rate
+    {
+        let ratio = feed / result.feed_rate_mm_min;
+        if ratio > 2.0 {
+            warnings.push(OperationWarning {
+                severity: WarningSeverity::Warning,
+                message: format!(
+                    "Feed rate ({:.0} mm/min) is {:.1}x the auto-calculated value ({:.0} mm/min) \u{2014} risk of tool breakage.",
+                    feed, ratio, result.feed_rate_mm_min,
+                ),
+            });
+        } else if ratio < 0.2 {
+            warnings.push(OperationWarning {
+                severity: WarningSeverity::Info,
+                message: format!(
+                    "Feed rate ({:.0} mm/min) is very low ({:.0}% of recommended) \u{2014} may cause rubbing and heat buildup.",
+                    feed, ratio * 100.0,
+                ),
+            });
+        }
     }
 
     // -- Auto-regen notice --

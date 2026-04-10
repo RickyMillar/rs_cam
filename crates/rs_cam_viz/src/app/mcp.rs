@@ -10,8 +10,13 @@ use rs_cam_core::compute::config::{
 };
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId};
 
-use crate::mcp_bridge::{McpRequest, McpRequestKind, McpResponse, PendingGenerateAll, ProgressUpdate};
+use crate::controller::Severity;
+use crate::mcp_bridge::{
+    McpRequest, McpRequestKind, McpResponse, PendingGenerateAll, ProgressUpdate,
+};
+use crate::state::Workspace;
 use crate::state::toolpath::ToolpathId;
+use crate::ui::AppEvent;
 
 use rs_cam_mcp::server::{json_str, no_project_error, parse_operation_type, parse_tool_type, text};
 
@@ -19,6 +24,13 @@ impl super::RsCamApp {
     /// Non-blocking drain of MCP requests from the channel.
     /// Called once per frame from `update()`.
     pub(crate) fn drain_mcp_requests(&mut self) {
+        // Garbage-collect expired MCP highlights (older than 3 seconds).
+        self.controller
+            .state_mut()
+            .gui
+            .mcp_highlights
+            .retain(|_, when| when.elapsed().as_secs() < 3);
+
         let Some(receiver) = self.mcp_receiver.as_ref() else {
             return;
         };
@@ -98,6 +110,9 @@ impl super::RsCamApp {
 
             // ── Mutation operations ──────────────────────────────────
             McpRequestKind::AddAlignmentPin { x, y, diameter } => {
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Setup));
                 let resp = self.mcp_add_alignment_pin(x, y, diameter);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
@@ -106,10 +121,20 @@ impl super::RsCamApp {
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::LoadProject { path } => {
+                // Extract file name for the toast before loading.
+                let name = Path::new(&path)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&path)
+                    .to_owned();
+                self.controller
+                    .push_notification(format!("MCP: Loaded '{name}'"), Severity::Info);
                 let resp = self.mcp_load_project(&path);
                 let _ = response_tx.send(resp);
             }
             McpRequestKind::SaveProject { path } => {
+                self.controller
+                    .push_notification("MCP: Saved project".to_owned(), Severity::Info);
                 let resp = self.mcp_save_project(&path);
                 let _ = response_tx.send(resp);
             }
@@ -122,6 +147,37 @@ impl super::RsCamApp {
                 param,
                 value,
             } => {
+                // Look up toolpath name for the toast and highlight key.
+                let tp_info = self
+                    .controller
+                    .state()
+                    .session
+                    .toolpath_configs()
+                    .get(index)
+                    .map(|tc| (tc.name.clone(), tc.id));
+                let tp_name = tp_info
+                    .as_ref()
+                    .map_or_else(|| format!("#{index}"), |(name, _)| name.clone());
+                let value_str = match &value {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                };
+                self.controller.push_notification(
+                    format!("MCP: Set {param} = {value_str} on '{tp_name}'"),
+                    Severity::Info,
+                );
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Toolpaths));
+                // Record highlight for the changed parameter.
+                if let Some((_, tp_id)) = tp_info {
+                    let key = format!("toolpath_{tp_id}_{param}");
+                    self.controller
+                        .state_mut()
+                        .gui
+                        .mcp_highlights
+                        .insert(key, std::time::Instant::now());
+                }
                 let resp = self.mcp_set_toolpath_param(index, &param, value);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
@@ -130,6 +186,29 @@ impl super::RsCamApp {
                 param,
                 value,
             } => {
+                // Look up tool name for the toast and highlight key.
+                let tools = self.controller.state().session.list_tools();
+                let tool_info = tools.get(index).map(|t| (t.name.clone(), t.id.0));
+                let tool_name = tool_info
+                    .as_ref()
+                    .map_or_else(|| format!("#{index}"), |(name, _)| name.clone());
+                let value_str = match &value {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                };
+                self.controller.push_notification(
+                    format!("MCP: Set {param} = {value_str} on '{tool_name}'"),
+                    Severity::Info,
+                );
+                // Record highlight for the changed parameter.
+                if let Some((_, tool_id)) = tool_info {
+                    let key = format!("tool_{tool_id}_{param}");
+                    self.controller
+                        .state_mut()
+                        .gui
+                        .mcp_highlights
+                        .insert(key, std::time::Instant::now());
+                }
                 let resp = self.mcp_set_tool_param(index, &param, &value);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
@@ -140,11 +219,21 @@ impl super::RsCamApp {
                 model_id,
                 name,
             } => {
+                let display_name = name.as_deref().unwrap_or(&operation_type);
+                self.controller.push_notification(
+                    format!("MCP: Added toolpath '{display_name}'"),
+                    Severity::Info,
+                );
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Toolpaths));
                 let resp =
                     self.mcp_add_toolpath(setup_index, &operation_type, tool_index, model_id, name);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::RemoveToolpath { index } => {
+                self.controller
+                    .push_notification(format!("MCP: Removed toolpath {index}"), Severity::Info);
                 let resp = self.mcp_remove_toolpath(index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
@@ -153,6 +242,8 @@ impl super::RsCamApp {
                 tool_type,
                 diameter,
             } => {
+                self.controller
+                    .push_notification(format!("MCP: Added tool '{name}'"), Severity::Info);
                 let resp = self.mcp_add_tool(&name, &tool_type, diameter);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
@@ -161,6 +252,16 @@ impl super::RsCamApp {
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::SetStockConfig { x, y, z } => {
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Setup));
+                // Record highlight for stock dimensions.
+                let key = "stock_dimensions".to_owned();
+                self.controller
+                    .state_mut()
+                    .gui
+                    .mcp_highlights
+                    .insert(key, std::time::Instant::now());
                 let resp = self.mcp_set_stock_config(x, y, z);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
@@ -187,24 +288,66 @@ impl super::RsCamApp {
 
             // ── Compute operations (async — store oneshot) ───────────
             McpRequestKind::GenerateToolpath { index } => {
+                // Look up toolpath name for the toast.
+                let tp_name = self
+                    .controller
+                    .state()
+                    .session
+                    .toolpath_configs()
+                    .get(index)
+                    .map_or_else(|| format!("#{index}"), |tc| tc.name.clone());
+                self.controller.push_notification(
+                    format!("MCP: Generating toolpath '{tp_name}'..."),
+                    Severity::Info,
+                );
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Toolpaths));
                 self.mcp_send_progress(&progress_tx, "Generating toolpath...", 0.0, Some(1.0));
                 self.mcp_generate_toolpath(index, response_tx);
             }
             McpRequestKind::GenerateAll => {
+                self.controller.push_notification(
+                    "MCP: Generating all toolpaths...".to_owned(),
+                    Severity::Info,
+                );
                 self.mcp_generate_all(response_tx, progress_tx);
             }
             McpRequestKind::RunSimulation { resolution } => {
+                self.controller
+                    .push_notification("MCP: Running simulation...".to_owned(), Severity::Info);
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
                 self.mcp_send_progress(&progress_tx, "Starting simulation...", 0.0, Some(1.0));
                 self.mcp_run_simulation(resolution, response_tx);
             }
             McpRequestKind::CollisionCheck { index } => {
-                self.mcp_send_progress(
-                    &progress_tx,
-                    "Running collision check...",
-                    0.0,
-                    Some(1.0),
-                );
+                self.mcp_send_progress(&progress_tx, "Running collision check...", 0.0, Some(1.0));
                 self.mcp_collision_check(index, response_tx);
+            }
+
+            // ── Simulation scrubbing operations ─────────────────────
+            McpRequestKind::SimJumpToMove { move_index } => {
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
+                let resp = self.mcp_sim_jump_to_move(move_index);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::SimJumpToStart => {
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
+                let resp = self.mcp_sim_jump_to_start();
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::SimJumpToEnd => {
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
+                let resp = self.mcp_sim_jump_to_end();
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
 
             // ── Screenshot operations ────────────────────────────────
@@ -1369,5 +1512,80 @@ impl super::RsCamApp {
                 Err(e) => text(format!("Failed to write: {e}")),
             }
         }
+    }
+
+    // ── Simulation scrubbing implementations ────────────────────────
+
+    fn mcp_sim_jump_to_move(&mut self, move_index: usize) -> String {
+        let sim = &self.controller.state().simulation;
+        if !sim.has_results() {
+            return json_str(
+                serde_json::json!({"error": "No simulation result. Run run_simulation first."}),
+            );
+        }
+        self.controller
+            .events_mut()
+            .push(AppEvent::SimJumpToMove(move_index));
+        self.mcp_sim_playback_state(move_index)
+    }
+
+    fn mcp_sim_jump_to_start(&mut self) -> String {
+        let sim = &self.controller.state().simulation;
+        if !sim.has_results() {
+            return json_str(
+                serde_json::json!({"error": "No simulation result. Run run_simulation first."}),
+            );
+        }
+        self.controller.events_mut().push(AppEvent::SimJumpToStart);
+        self.mcp_sim_playback_state(0)
+    }
+
+    fn mcp_sim_jump_to_end(&mut self) -> String {
+        let sim = &self.controller.state().simulation;
+        if !sim.has_results() {
+            return json_str(
+                serde_json::json!({"error": "No simulation result. Run run_simulation first."}),
+            );
+        }
+        let total = sim.total_moves();
+        self.controller.events_mut().push(AppEvent::SimJumpToEnd);
+        self.mcp_sim_playback_state(total)
+    }
+
+    /// Build a JSON response with the current simulation playback state.
+    fn mcp_sim_playback_state(&self, move_index: usize) -> String {
+        let sim = &self.controller.state().simulation;
+        let total = sim.total_moves();
+        let clamped = move_index.min(total);
+
+        // Find which toolpath is active at this move index.
+        let active_toolpath = sim
+            .boundaries()
+            .iter()
+            .find(|b| clamped >= b.start_move && clamped <= b.end_move)
+            .map(|b| {
+                serde_json::json!({
+                    "name": b.name,
+                    "tool": b.tool_name,
+                    "start_move": b.start_move,
+                    "end_move": b.end_move,
+                })
+            });
+
+        // Find the checkpoint index (boundary index of the nearest completed toolpath).
+        let checkpoint = sim
+            .boundaries()
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| clamped >= b.end_move)
+            .map(|(i, _)| i)
+            .next_back();
+
+        json_str(serde_json::json!({
+            "move_index": clamped,
+            "total_moves": total,
+            "active_toolpath": active_toolpath,
+            "checkpoint": checkpoint,
+        }))
     }
 }

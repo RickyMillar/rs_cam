@@ -124,6 +124,13 @@ pub enum McpRequestKind {
         index: usize,
     },
 
+    // ── Simulation scrubbing ───────────────────────────────────────────
+    SimJumpToMove {
+        move_index: usize,
+    },
+    SimJumpToStart,
+    SimJumpToEnd,
+
     // ── Screenshots ──────────────────────────────────────────────────
     ScreenshotSimulation {
         path: String,

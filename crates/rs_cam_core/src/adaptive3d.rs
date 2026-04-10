@@ -1237,6 +1237,15 @@ fn stamp_along_path(
         Some(p) => *p,
         None => return,
     };
+    // Stamp at the first point unconditionally.
+    material_stock.stamp_tool_at(
+        lut,
+        tool_radius,
+        first.x,
+        first.y,
+        first.z,
+        StockCutDirection::FromTop,
+    );
     let mut travel = 0.0;
     let mut prev = first;
     for pt in path {
@@ -1352,7 +1361,14 @@ fn clear_z_level_contour_parallel(
     let offset_range = max_dist - tool_radius_cells;
     let z_blend_enabled = ctx.z_blend;
 
-    let mut threshold = tool_radius_cells;
+    // The starting threshold determines the outermost contour offset. For wide
+    // material regions (max_dist >> tool_radius), start at tool_radius_cells so
+    // the tool's outer edge just reaches the boundary. For narrower or annular
+    // regions, start lower so contours exist even in the narrowest sections where
+    // EDT is small. Using min(tool_radius, stepover * 0.5) keeps the first
+    // contour close enough to the boundary that even 2-3-cell-wide strips of
+    // material have cells above the threshold.
+    let mut threshold = tool_radius_cells.min(stepover_cells * 0.5).max(1.0);
     while threshold < max_dist {
         check_cancel(cancel)?;
 
@@ -1420,6 +1436,104 @@ fn clear_z_level_contour_parallel(
         }
 
         threshold += stepover_cells;
+    }
+
+    // Cleanup: narrow sections of the material region (annular rings near steep
+    // walls) may have EDT below the starting threshold, leaving them without a
+    // contour pass. Identify remaining material cells and stamp a raster cleanup.
+    let (cleanup_grid, cr, cc, co_x, co_y, c_cs) = build_material_bool_grid(
+        material_stock,
+        surface_hm,
+        z_level,
+        ctx.stock_to_leave,
+        region,
+    );
+    let cleanup_count = cleanup_grid.iter().filter(|&&b| b).count();
+    if cleanup_count > 0 {
+        // Raster through remaining material rows.  For each row with material
+        // cells, build contiguous runs and emit one cut per run.
+        let mut cleanup_pts: Vec<Vec<P3>> = Vec::new();
+        for row in 0..cr {
+            let mut run_start: Option<usize> = None;
+            for col in 0..cc {
+                // SAFETY: row*cc+col bounded by grid dimensions
+                #[allow(clippy::indexing_slicing)]
+                let is_mat = cleanup_grid[row * cc + col];
+                if is_mat {
+                    if run_start.is_none() {
+                        run_start = Some(col);
+                    }
+                } else if let Some(start) = run_start.take() {
+                    let mut path = Vec::new();
+                    let mut c = start;
+                    while c < col {
+                        let wx = co_x + c as f64 * c_cs;
+                        let wy = co_y + row as f64 * c_cs;
+                        let surf_z = surface_hm.surface_z_at_world(wx, wy);
+                        let z = if surf_z == f64::NEG_INFINITY {
+                            z_level
+                        } else {
+                            (surf_z + ctx.stock_to_leave).max(z_level)
+                        };
+                        path.push(P3::new(wx, wy, z));
+                        c += 1;
+                    }
+                    if path.len() >= 2 {
+                        cleanup_pts.push(path);
+                    }
+                }
+            }
+            // Close any run that reached the end of the row
+            if let Some(start) = run_start {
+                let mut path = Vec::new();
+                let mut c = start;
+                while c < cc {
+                    let wx = co_x + c as f64 * c_cs;
+                    let wy = co_y + row as f64 * c_cs;
+                    let surf_z = surface_hm.surface_z_at_world(wx, wy);
+                    let z = if surf_z == f64::NEG_INFINITY {
+                        z_level
+                    } else {
+                        (surf_z + ctx.stock_to_leave).max(z_level)
+                    };
+                    path.push(P3::new(wx, wy, z));
+                    c += 1;
+                }
+                if path.len() >= 2 {
+                    cleanup_pts.push(path);
+                }
+            }
+        }
+
+        for path in &cleanup_pts {
+            if let Some(first) = path.first() {
+                segments.push(Adaptive3dSegment::Rapid(*first));
+                if path.len() >= 2 {
+                    stamp_along_path(
+                        material_stock,
+                        ctx.lut,
+                        ctx.tool_radius,
+                        path,
+                        ctx.step_len,
+                    );
+                    *last_pos = path.last().copied();
+                    segments.push(Adaptive3dSegment::Cut(path.clone()));
+                } else {
+                    // Single-point run: stamp and emit as a tiny cut segment
+                    material_stock.stamp_tool_at(
+                        ctx.lut,
+                        ctx.tool_radius,
+                        first.x,
+                        first.y,
+                        first.z,
+                        StockCutDirection::FromTop,
+                    );
+                    let end = P3::new(first.x + ctx.step_len, first.y, first.z);
+                    *last_pos = Some(end);
+                    segments.push(Adaptive3dSegment::Cut(vec![*first, end]));
+                }
+            }
+        }
     }
 
     Ok(())
@@ -4434,6 +4548,185 @@ mod tests {
             max_z - min_z > 3.0,
             "Hemisphere contour-parallel should span multiple Z levels, range = {:.1}",
             max_z - min_z
+        );
+    }
+
+    /// Validate that contour-parallel clearing produces complete material removal
+    /// on a flat mesh (single Z level, no terrain variation).
+    #[test]
+    fn test_contour_parallel_complete_clearing() {
+        use crate::dexel_stock::StockCutDirection;
+        use crate::radial_profile::RadialProfileLUT;
+
+        let (mesh, si) = make_flat_mesh(); // 50x50mm flat at z=0
+        let cutter = flat_cutter(); // 6.35mm diameter
+        let tool_radius = cutter.radius();
+        let stock_top_z = 5.0;
+        let stock_to_leave = 0.0;
+
+        let params = Adaptive3dParams {
+            tool_radius,
+            stepover: 2.5,
+            depth_per_pass: 5.0,
+            stock_to_leave,
+            tolerance: 0.3,
+            stock_top_z,
+            clearing_strategy: ClearingStrategy3d::ContourParallel,
+            ..default_params()
+        };
+
+        let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+        assert!(tp.moves.len() > 10, "Should produce moves");
+
+        // Simulate the toolpath on a fresh stock
+        let cell_size = 0.3;
+        let mut sim_stock = TriDexelStock::from_stock(
+            -25.5, -25.5, 25.5, 25.5, -1.0, stock_top_z, cell_size,
+        );
+        let lut = RadialProfileLUT::from_cutter(&cutter, 256);
+        sim_stock
+            .simulate_toolpath_with_lut_cancel(
+                &tp,
+                &lut,
+                tool_radius,
+                StockCutDirection::FromTop,
+                &|| false,
+            )
+            .unwrap();
+
+        assert_clearing_complete(&sim_stock, tool_radius, cell_size, stock_to_leave, "flat");
+    }
+
+    /// Validate clearing completeness on a hemisphere (multi-Z-level, terrain).
+    ///
+    /// Only checks cells WITHIN the mesh bounding box (the adaptive3d internal stock
+    /// only covers mesh_bbox ± tool_radius). Cells outside that range are expected uncleared.
+    #[test]
+    fn test_contour_parallel_complete_clearing_hemisphere() {
+        use crate::dexel_stock::StockCutDirection;
+        use crate::radial_profile::RadialProfileLUT;
+
+        let (mesh, si) = make_hemisphere_mesh(); // radius=20, centered at origin
+        let cutter = flat_cutter(); // 6.35mm diameter
+        let tool_radius = cutter.radius();
+        let stock_top_z = 25.0;
+        let stock_to_leave = 0.5;
+
+        let params = Adaptive3dParams {
+            tool_radius,
+            stepover: 2.5,
+            depth_per_pass: 3.0,
+            stock_to_leave,
+            tolerance: 0.3,
+            stock_top_z,
+            clearing_strategy: ClearingStrategy3d::ContourParallel,
+            ..default_params()
+        };
+
+        let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+        assert!(tp.moves.len() > 10, "Should produce moves");
+
+        // Use the mesh bbox for the simulation stock (matching internal adaptive3d stock).
+        let bbox = &mesh.bbox;
+        let r = cutter.radius();
+        let sim_x_min = bbox.min.x - r - 0.5;
+        let sim_x_max = bbox.max.x + r + 0.5;
+        let sim_y_min = bbox.min.y - r - 0.5;
+        let sim_y_max = bbox.max.y + r + 0.5;
+
+        let cell_size = 0.3;
+        let mut sim_stock = TriDexelStock::from_stock(
+            sim_x_min, sim_y_min, sim_x_max, sim_y_max, -1.0, stock_top_z, cell_size,
+        );
+        let lut = RadialProfileLUT::from_cutter(&cutter, 256);
+        sim_stock
+            .simulate_toolpath_with_lut_cancel(
+                &tp,
+                &lut,
+                tool_radius,
+                StockCutDirection::FromTop,
+                &|| false,
+            )
+            .unwrap();
+
+        let grid = &sim_stock.z_grid;
+        let margin_cells = (tool_radius / cell_size).ceil() as usize + 2;
+        let mut uncleared_count = 0usize;
+        let mut total_checked = 0usize;
+        let max_excess = 3.5; // allow up to depth_per_pass + tolerance
+        let mut worst_excess = 0.0f64;
+
+        for row in margin_cells..grid.rows.saturating_sub(margin_cells) {
+            for col in margin_cells..grid.cols.saturating_sub(margin_cells) {
+                let x = grid.origin_u + col as f64 * cell_size;
+                let y = grid.origin_v + row as f64 * cell_size;
+                total_checked += 1;
+                if let Some(tz) = grid.top_z_at(row, col) {
+                    let r_sq = 20.0 * 20.0 - x * x - y * y;
+                    let surface_z = if r_sq > 0.0 { r_sq.sqrt() } else { 0.0 };
+                    let expected_max = (surface_z + stock_to_leave + max_excess) as f32;
+                    if tz > expected_max {
+                        uncleared_count += 1;
+                        let excess = (tz as f64) - (surface_z + stock_to_leave);
+                        if excess > worst_excess {
+                            worst_excess = excess;
+                        }
+                    }
+                }
+            }
+        }
+
+        let uncleared_pct = if total_checked > 0 {
+            uncleared_count as f64 / total_checked as f64 * 100.0
+        } else {
+            0.0
+        };
+
+        // Allow up to 5% uncleared — remaining cells are near steep/vertical
+        // walls at the hemisphere edge where the coarse mesh (16 subdivisions)
+        // and tool geometry limit clearing accuracy.
+        assert!(
+            uncleared_pct < 5.0,
+            "Hemisphere contour-parallel should clear >95% of cells, but {:.1}% ({}/{}) have excess material",
+            uncleared_pct, uncleared_count, total_checked,
+        );
+    }
+
+    /// Helper: assert that a simulated stock has been fully cleared (for flat surfaces).
+    fn assert_clearing_complete(
+        stock: &TriDexelStock,
+        tool_radius: f64,
+        cell_size: f64,
+        stock_to_leave: f64,
+        label: &str,
+    ) {
+        let grid = &stock.z_grid;
+        let margin_cells = (tool_radius / cell_size).ceil() as usize + 2;
+        let z_threshold = (stock_to_leave + 0.5) as f32;
+        let mut uncleared_count = 0usize;
+        let mut total_checked = 0usize;
+
+        for row in margin_cells..grid.rows.saturating_sub(margin_cells) {
+            for col in margin_cells..grid.cols.saturating_sub(margin_cells) {
+                total_checked += 1;
+                if let Some(tz) = grid.top_z_at(row, col)
+                    && tz > z_threshold
+                {
+                    uncleared_count += 1;
+                }
+            }
+        }
+
+        let uncleared_pct = if total_checked > 0 {
+            uncleared_count as f64 / total_checked as f64 * 100.0
+        } else {
+            0.0
+        };
+
+        assert!(
+            uncleared_pct < 1.0,
+            "[{label}] Contour-parallel should clear >99% of interior, but {:.1}% ({}/{}) remain above z={:.1}",
+            uncleared_pct, uncleared_count, total_checked, z_threshold,
         );
     }
 }
