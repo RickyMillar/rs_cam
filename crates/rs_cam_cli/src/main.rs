@@ -1903,7 +1903,7 @@ fn main() -> Result<()> {
                 "Drop-cutter grid"
             );
 
-            let mut toolpath = raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z);
+            let mut toolpath = raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z, None);
             info!(
                 moves = toolpath.moves.len(),
                 cutting_mm = format!("{:.1}", toolpath.total_cutting_distance()),

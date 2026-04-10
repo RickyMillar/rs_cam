@@ -570,6 +570,13 @@ pub fn execute_operation_annotated(
                 &(|| cancel.load(Ordering::SeqCst)),
             )
             .map_err(|_e| OperationError::Cancelled)?;
+            // Pass min_z to toolpath generation so zero-engagement passes
+            // (where the entire segment is clamped at min_z) are skipped.
+            let min_z_filter = if cfg.min_z > stock_bbox.min.z - 0.5 {
+                Some(effective_min_z)
+            } else {
+                None
+            };
             let slope_filter_active = cfg.slope_from > 0.01 || cfg.slope_to < 89.99;
             let tp = if slope_filter_active {
                 let slope_angles = crate::dropcutter::compute_grid_slopes(&grid);
@@ -581,9 +588,12 @@ pub fn execute_operation_annotated(
                     feed_rate,
                     plunge_rate,
                     safe_z,
+                    min_z_filter,
                 )
             } else {
-                crate::toolpath::raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z)
+                crate::toolpath::raster_toolpath_from_grid(
+                    &grid, feed_rate, plunge_rate, safe_z, min_z_filter,
+                )
             };
             Ok(AnnotatedToolpath {
                 toolpath: tp,
