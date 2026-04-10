@@ -20,6 +20,13 @@ use rs_cam_core::session::{ProjectSession, SimulationOptions};
 
 // ── Parameter structs ─────────────────────────────────────────────────
 
+#[allow(dead_code)] // Used by rs_cam_viz embedded MCP, not the standalone binary
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct ImportModelParam {
+    /// File path to import. Supported formats: .stl, .dxf, .svg, .step/.stp
+    pub path: String,
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct LoadProjectParam {
     /// Path to the project TOML file
