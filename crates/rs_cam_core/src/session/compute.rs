@@ -4,7 +4,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use crate::collision::check_rapid_collisions;
 use crate::compute::annotate::annotate_from_runtime_events;
 use crate::compute::collision_check::{
     CollisionCheckRequest, CollisionCheckResult, run_collision_check,
@@ -686,18 +685,43 @@ impl ProjectSession {
     }
 
     /// Compute project diagnostics from current results and simulation.
+    ///
+    /// Rapid collision counts come from the simulation result (which checks
+    /// against the actual remaining stock surface). If no simulation has
+    /// been run, rapid collision counts are 0 — we don't fall back to the
+    /// inaccurate original-bbox check.
     pub fn diagnostics(&self) -> ProjectDiagnostics {
-        let stock_bbox = self.stock_bbox();
-
         let mut per_toolpath = Vec::new();
         let mut total_collision_count: usize = 0;
         let mut total_rapid_collision_count: usize = 0;
         let no_cancel = AtomicBool::new(false);
 
+        // Build per-boundary rapid collision counts from the simulation result.
+        // Each boundary maps to one toolpath via its id.
+        let rapid_counts_by_boundary: Vec<(usize, usize)> = if let Some(sim) = &self.simulation {
+            sim.boundaries
+                .iter()
+                .map(|b| {
+                    let count = sim
+                        .rapid_collision_move_indices
+                        .iter()
+                        .filter(|&&mi| mi >= b.start_move && mi < b.end_move)
+                        .count();
+                    (b.id, count)
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         for (idx, tc) in self.toolpath_configs.iter().enumerate() {
             if let Some(result) = self.results.get(&idx) {
-                let rapid_collisions = check_rapid_collisions(&result.toolpath, &stock_bbox);
-                let rapid_count = rapid_collisions.len();
+                // Look up rapid collision count from simulation boundaries.
+                let rapid_count = rapid_counts_by_boundary
+                    .iter()
+                    .filter(|(id, _)| *id == idx)
+                    .map(|(_, count)| *count)
+                    .sum::<usize>();
                 total_rapid_collision_count += rapid_count;
 
                 // Run holder/shank collision check; gracefully default to 0

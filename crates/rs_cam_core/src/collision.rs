@@ -286,12 +286,18 @@ pub struct RapidCollision {
     pub end: P3,
 }
 
-/// Check for rapid (G0) moves that pass through stock material.
-/// Samples points along each rapid move and checks if any point is below
-/// the stock top Z and within the stock XY bounds.
-pub fn check_rapid_collisions(
+/// Check for rapid (G0) moves that pass through remaining stock material.
+///
+/// Samples points along each rapid move and queries the dexel Z-grid to
+/// determine whether material exists at that height. This correctly
+/// handles material already removed by prior operations.
+///
+/// Purely vertical retracts (same XY, Z going up) are skipped: the tool
+/// retracts from a just-machined column where no stock remains above it
+/// within the same toolpath.
+pub fn check_rapid_collisions_against_stock(
     toolpath: &Toolpath,
-    stock_bbox: &crate::geo::BoundingBox3,
+    z_grid: &crate::dexel::DexelGrid,
 ) -> Vec<RapidCollision> {
     let mut collisions = Vec::new();
 
@@ -318,7 +324,6 @@ pub fn check_rapid_collisions(
         }
 
         let dist = (dx * dx + dy * dy + dz * dz).sqrt();
-
         let n_steps = (dist / 1.0).ceil().max(1.0) as usize;
 
         let mut hit = false;
@@ -328,11 +333,11 @@ pub fn check_rapid_collisions(
             let py = start.y + t * dy;
             let pz = start.z + t * dz;
 
-            if pz < stock_bbox.max.z
-                && px >= stock_bbox.min.x
-                && px <= stock_bbox.max.x
-                && py >= stock_bbox.min.y
-                && py <= stock_bbox.max.y
+            // Check against actual remaining stock surface at this XY.
+            if let Some((row, col)) = z_grid.world_to_cell(px, py)
+                && z_grid
+                    .top_z_at(row, col)
+                    .is_some_and(|stock_top| pz < f64::from(stock_top))
             {
                 hit = true;
                 break;
@@ -555,17 +560,33 @@ mod tests {
         }
     }
 
+    /// Build a fresh (uncarved) dexel grid from a bounding box.
+    fn grid_from_bbox(bbox: &crate::geo::BoundingBox3) -> crate::dexel::DexelGrid {
+        crate::dexel::DexelGrid::z_grid_from_bounds(bbox, 1.0)
+    }
+
+    /// Build a dexel grid and carve away material above `clear_z` everywhere.
+    /// Simulates a rough pass that cleared down to `clear_z`.
+    fn grid_roughed_to(bbox: &crate::geo::BoundingBox3, clear_z: f32) -> crate::dexel::DexelGrid {
+        let mut grid = grid_from_bbox(bbox);
+        for ray in &mut grid.rays {
+            crate::dexel::ray_subtract_above(ray, clear_z);
+        }
+        grid
+    }
+
     #[test]
     fn test_rapid_above_stock_no_collision() {
         let stock = crate::geo::BoundingBox3 {
             min: P3::new(0.0, 0.0, 0.0),
             max: P3::new(100.0, 100.0, 20.0),
         };
+        let grid = grid_from_bbox(&stock);
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(0.0, 0.0, 50.0));
         tp.rapid_to(P3::new(100.0, 100.0, 50.0));
 
-        let collisions = check_rapid_collisions(&tp, &stock);
+        let collisions = check_rapid_collisions_against_stock(&tp, &grid);
         assert!(
             collisions.is_empty(),
             "Rapids above stock should not collide"
@@ -578,13 +599,14 @@ mod tests {
             min: P3::new(0.0, 0.0, 0.0),
             max: P3::new(100.0, 100.0, 20.0),
         };
+        let grid = grid_from_bbox(&stock);
         let mut tp = Toolpath::new();
         // Start high, feed down, then rapid across through stock
         tp.rapid_to(P3::new(0.0, 50.0, 50.0));
         tp.feed_to(P3::new(0.0, 50.0, 10.0), 500.0);
-        tp.rapid_to(P3::new(80.0, 50.0, 10.0)); // Z=10 is inside stock
+        tp.rapid_to(P3::new(80.0, 50.0, 10.0)); // Z=10 is inside stock (top=20)
 
-        let collisions = check_rapid_collisions(&tp, &stock);
+        let collisions = check_rapid_collisions_against_stock(&tp, &grid);
         assert_eq!(collisions.len(), 1, "Should detect one rapid collision");
         assert_eq!(collisions[0].move_index, 2);
     }
@@ -595,11 +617,12 @@ mod tests {
             min: P3::new(0.0, 0.0, 0.0),
             max: P3::new(100.0, 100.0, 20.0),
         };
+        let grid = grid_from_bbox(&stock);
         let mut tp = Toolpath::new();
         tp.feed_to(P3::new(50.0, 50.0, 10.0), 1000.0);
         tp.feed_to(P3::new(80.0, 50.0, 10.0), 1000.0);
 
-        let collisions = check_rapid_collisions(&tp, &stock);
+        let collisions = check_rapid_collisions_against_stock(&tp, &grid);
         assert!(collisions.is_empty(), "No rapids means no rapid collisions");
     }
 
@@ -609,64 +632,105 @@ mod tests {
             min: P3::new(0.0, 0.0, 0.0),
             max: P3::new(100.0, 100.0, 20.0),
         };
+        let grid = grid_from_bbox(&stock);
         let mut tp = Toolpath::new();
-        // Feed down into stock, then retract straight up (vertical rapid).
-        // This represents a tool retracting from a just-cut position — safe.
         tp.feed_to(P3::new(50.0, 50.0, 5.0), 1000.0);
-        tp.rapid_to(P3::new(50.0, 50.0, 30.0)); // vertical retract: same XY, Z going up
+        tp.rapid_to(P3::new(50.0, 50.0, 30.0)); // vertical retract
 
-        let collisions = check_rapid_collisions(&tp, &stock);
+        let collisions = check_rapid_collisions_against_stock(&tp, &grid);
         assert!(
             collisions.is_empty(),
-            "Vertical retract from cut position should not be flagged, got {} collisions",
+            "Vertical retract should not be flagged, got {} collisions",
             collisions.len()
         );
     }
 
     #[test]
-    fn test_diagonal_retract_still_flagged() {
+    fn test_diagonal_retract_through_stock_flagged() {
         let stock = crate::geo::BoundingBox3 {
             min: P3::new(0.0, 0.0, 0.0),
             max: P3::new(100.0, 100.0, 20.0),
         };
+        let grid = grid_from_bbox(&stock);
         let mut tp = Toolpath::new();
-        // Feed down into stock, then diagonal rapid (XY changes while below stock top)
         tp.feed_to(P3::new(50.0, 50.0, 5.0), 1000.0);
-        tp.rapid_to(P3::new(70.0, 50.0, 30.0)); // diagonal: XY changes + Z going up
+        tp.rapid_to(P3::new(70.0, 50.0, 30.0)); // diagonal through stock
 
-        let collisions = check_rapid_collisions(&tp, &stock);
+        let collisions = check_rapid_collisions_against_stock(&tp, &grid);
         assert_eq!(
             collisions.len(), 1,
-            "Diagonal retract through stock should still be flagged"
+            "Diagonal retract through stock should be flagged"
         );
     }
 
     #[test]
-    fn test_finish_raster_retract_pattern() {
-        // Simulate a 3D finish raster pattern: cut → retract → traverse → plunge → cut
+    fn test_rapid_through_roughed_airspace_not_flagged() {
+        // Stock 100x100x20. Roughed down to Z=8 everywhere.
+        // A horizontal rapid at Z=10 should be clear (material removed above Z=8).
+        let stock = crate::geo::BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(100.0, 100.0, 20.0),
+        };
+        let grid = grid_roughed_to(&stock, 8.0);
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 50.0, 10.0));
+        tp.rapid_to(P3::new(80.0, 50.0, 10.0)); // Z=10, stock topped at Z=8
+
+        let collisions = check_rapid_collisions_against_stock(&tp, &grid);
+        assert!(
+            collisions.is_empty(),
+            "Rapid above roughed surface should not collide, got {}",
+            collisions.len()
+        );
+    }
+
+    #[test]
+    fn test_rapid_through_remaining_stock_flagged() {
+        // Stock 100x100x20. Roughed down to Z=15.
+        // A horizontal rapid at Z=10 should collide (material exists at Z=10-15).
+        let stock = crate::geo::BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(100.0, 100.0, 20.0),
+        };
+        let grid = grid_roughed_to(&stock, 15.0);
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 50.0, 25.0));
+        tp.feed_to(P3::new(0.0, 50.0, 10.0), 500.0);
+        tp.rapid_to(P3::new(80.0, 50.0, 10.0)); // Z=10, stock topped at Z=15
+
+        let collisions = check_rapid_collisions_against_stock(&tp, &grid);
+        assert_eq!(
+            collisions.len(), 1,
+            "Rapid below remaining stock surface should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_finish_raster_after_roughing_no_collisions() {
+        // Stock 100x100x12, roughed down to Z=7.
+        // Finish raster with safe_z=14 — all rapids should be clear.
         let stock = crate::geo::BoundingBox3 {
             min: P3::new(0.0, 0.0, 0.0),
             max: P3::new(100.0, 100.0, 12.0),
         };
+        let grid = grid_roughed_to(&stock, 7.0);
         let safe_z = 14.0;
         let mut tp = Toolpath::new();
 
-        // Row 0: rapid to start at safe_z, plunge, cut, retract
         tp.rapid_to(P3::new(0.0, 0.0, safe_z));
-        tp.feed_to(P3::new(0.0, 0.0, 3.0), 500.0);   // plunge
-        tp.feed_to(P3::new(100.0, 0.0, 5.0), 1000.0);  // cut
-        tp.rapid_to(P3::new(100.0, 0.0, safe_z));       // vertical retract
+        tp.feed_to(P3::new(0.0, 0.0, 3.0), 500.0);
+        tp.feed_to(P3::new(100.0, 0.0, 5.0), 1000.0);
+        tp.rapid_to(P3::new(100.0, 0.0, safe_z));      // vertical retract
 
-        // Row 1: traverse at safe_z, plunge, cut, retract
-        tp.rapid_to(P3::new(100.0, 1.0, safe_z));       // horizontal at safe_z
-        tp.feed_to(P3::new(100.0, 1.0, 4.0), 500.0);   // plunge
-        tp.feed_to(P3::new(0.0, 1.0, 6.0), 1000.0);    // cut
+        tp.rapid_to(P3::new(100.0, 1.0, safe_z));       // traverse at safe_z
+        tp.feed_to(P3::new(100.0, 1.0, 4.0), 500.0);
+        tp.feed_to(P3::new(0.0, 1.0, 6.0), 1000.0);
         tp.rapid_to(P3::new(0.0, 1.0, safe_z));         // vertical retract
 
-        let collisions = check_rapid_collisions(&tp, &stock);
+        let collisions = check_rapid_collisions_against_stock(&tp, &grid);
         assert!(
             collisions.is_empty(),
-            "Well-formed raster finish should have zero rapid collisions, got {}",
+            "Finish raster after roughing should have zero collisions, got {}",
             collisions.len()
         );
     }
