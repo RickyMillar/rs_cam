@@ -681,6 +681,10 @@ pub struct ProjectCurveConfig {
     /// Project from above (Z-down, default) or below (Z-up).
     #[serde(default)]
     pub direction: ProjectCurveDirection,
+    /// Set by the compute pipeline when the mesh has already been Z-inverted
+    /// by a bottom-facing setup transform. Not persisted.
+    #[serde(skip)]
+    pub setup_z_flipped: bool,
 }
 
 impl Default for ProjectCurveConfig {
@@ -692,6 +696,7 @@ impl Default for ProjectCurveConfig {
             plunge_rate: 400.0,
             surface_model_id: None,
             direction: ProjectCurveDirection::FromAbove,
+            setup_z_flipped: false,
         }
     }
 }
