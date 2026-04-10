@@ -308,6 +308,15 @@ pub fn check_rapid_collisions(
         let dx = end.x - start.x;
         let dy = end.y - start.y;
         let dz = end.z - start.z;
+
+        // Skip purely vertical retracts (same XY, Z going up).
+        // After a cutting move the tool retracts from already-machined
+        // material — no stock can be present at that dexel column.
+        let xy_dist_sq = dx * dx + dy * dy;
+        if dz > 0.0 && xy_dist_sq < 0.01 {
+            continue;
+        }
+
         let dist = (dx * dx + dy * dy + dz * dz).sqrt();
 
         let n_steps = (dist / 1.0).ceil().max(1.0) as usize;
@@ -592,5 +601,73 @@ mod tests {
 
         let collisions = check_rapid_collisions(&tp, &stock);
         assert!(collisions.is_empty(), "No rapids means no rapid collisions");
+    }
+
+    #[test]
+    fn test_vertical_retract_not_flagged() {
+        let stock = crate::geo::BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(100.0, 100.0, 20.0),
+        };
+        let mut tp = Toolpath::new();
+        // Feed down into stock, then retract straight up (vertical rapid).
+        // This represents a tool retracting from a just-cut position — safe.
+        tp.feed_to(P3::new(50.0, 50.0, 5.0), 1000.0);
+        tp.rapid_to(P3::new(50.0, 50.0, 30.0)); // vertical retract: same XY, Z going up
+
+        let collisions = check_rapid_collisions(&tp, &stock);
+        assert!(
+            collisions.is_empty(),
+            "Vertical retract from cut position should not be flagged, got {} collisions",
+            collisions.len()
+        );
+    }
+
+    #[test]
+    fn test_diagonal_retract_still_flagged() {
+        let stock = crate::geo::BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(100.0, 100.0, 20.0),
+        };
+        let mut tp = Toolpath::new();
+        // Feed down into stock, then diagonal rapid (XY changes while below stock top)
+        tp.feed_to(P3::new(50.0, 50.0, 5.0), 1000.0);
+        tp.rapid_to(P3::new(70.0, 50.0, 30.0)); // diagonal: XY changes + Z going up
+
+        let collisions = check_rapid_collisions(&tp, &stock);
+        assert_eq!(
+            collisions.len(), 1,
+            "Diagonal retract through stock should still be flagged"
+        );
+    }
+
+    #[test]
+    fn test_finish_raster_retract_pattern() {
+        // Simulate a 3D finish raster pattern: cut → retract → traverse → plunge → cut
+        let stock = crate::geo::BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(100.0, 100.0, 12.0),
+        };
+        let safe_z = 14.0;
+        let mut tp = Toolpath::new();
+
+        // Row 0: rapid to start at safe_z, plunge, cut, retract
+        tp.rapid_to(P3::new(0.0, 0.0, safe_z));
+        tp.feed_to(P3::new(0.0, 0.0, 3.0), 500.0);   // plunge
+        tp.feed_to(P3::new(100.0, 0.0, 5.0), 1000.0);  // cut
+        tp.rapid_to(P3::new(100.0, 0.0, safe_z));       // vertical retract
+
+        // Row 1: traverse at safe_z, plunge, cut, retract
+        tp.rapid_to(P3::new(100.0, 1.0, safe_z));       // horizontal at safe_z
+        tp.feed_to(P3::new(100.0, 1.0, 4.0), 500.0);   // plunge
+        tp.feed_to(P3::new(0.0, 1.0, 6.0), 1000.0);    // cut
+        tp.rapid_to(P3::new(0.0, 1.0, safe_z));         // vertical retract
+
+        let collisions = check_rapid_collisions(&tp, &stock);
+        assert!(
+            collisions.is_empty(),
+            "Well-formed raster finish should have zero rapid collisions, got {}",
+            collisions.len()
+        );
     }
 }
