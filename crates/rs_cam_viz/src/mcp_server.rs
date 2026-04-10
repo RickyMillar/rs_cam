@@ -277,6 +277,61 @@ impl EmbeddedCamServer {
     }
 
     #[tool(
+        name = "add_setup",
+        description = "Add a new setup (workholding orientation) to the project. Returns the new setup index and ID. Use set_setup_face to change orientation."
+    )]
+    async fn add_setup(
+        &self,
+        Parameters(rs_cam_mcp::server::AddSetupParam { name }): Parameters<
+            rs_cam_mcp::server::AddSetupParam,
+        >,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::AddSetup { name }).await,
+        )
+    }
+
+    #[tool(
+        name = "set_setup_face",
+        description = "Set the face-up orientation for a setup. Options: 'top' (default), 'bottom', 'front', 'back', 'left', 'right'. Controls which face of the stock is accessible to the spindle."
+    )]
+    async fn set_setup_face(
+        &self,
+        Parameters(rs_cam_mcp::server::SetSetupFaceParam {
+            setup_index,
+            face_up,
+        }): Parameters<rs_cam_mcp::server::SetSetupFaceParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::SetSetupFace {
+                setup_index,
+                face_up,
+            })
+            .await,
+        )
+    }
+
+    #[tool(
+        name = "move_toolpath_to_setup",
+        description = "Move a toolpath from its current setup to a different setup. Both indices are 0-based."
+    )]
+    async fn move_toolpath_to_setup(
+        &self,
+        Parameters(rs_cam_mcp::server::MoveToolpathToSetupParam {
+            toolpath_index,
+            target_setup_index,
+        }): Parameters<rs_cam_mcp::server::MoveToolpathToSetupParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::MoveToolpathToSetup {
+                toolpath_index,
+                target_setup_index,
+            })
+            .await,
+        )
+    }
+
+    #[tool(
         name = "import_model",
         description = "Import a model file into the current project. Supported formats: .stl (3D mesh), .dxf (2D vectors), .svg (2D vectors), .step/.stp (BREP CAD). Auto-detects format from file extension. Returns model ID and geometry summary."
     )]

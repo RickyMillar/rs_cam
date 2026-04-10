@@ -61,6 +61,17 @@ pub enum McpRequestKind {
     ImportModel {
         path: String,
     },
+    AddSetup {
+        name: Option<String>,
+    },
+    SetSetupFace {
+        setup_index: usize,
+        face_up: String,
+    },
+    MoveToolpathToSetup {
+        toolpath_index: usize,
+        target_setup_index: usize,
+    },
     LoadProject {
         path: String,
     },
