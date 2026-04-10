@@ -741,7 +741,7 @@ fn generate_dropcutter(
     min_z: f64,
 ) -> Toolpath {
     let grid = batch_drop_cutter(mesh, index, cutter, stepover, 0.0, min_z);
-    raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z)
+    raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z, None)
 }
 
 #[test]

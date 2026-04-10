@@ -734,7 +734,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
 
                 let angle = op.angle.unwrap_or(0.0);
                 let grid = batch_drop_cutter(&mesh, &si, &cutter, stepover, angle, min_z);
-                raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z)
+                raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z, None)
             }
 
             _ => bail!(
