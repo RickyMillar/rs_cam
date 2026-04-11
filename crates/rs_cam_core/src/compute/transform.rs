@@ -243,7 +243,11 @@ impl SetupTransformInfo {
 
     /// Transform a triangle mesh from world coordinates to setup-local coordinates.
     pub fn apply_to_mesh(&self, mesh: &TriangleMesh) -> TriangleMesh {
-        let new_verts: Vec<P3> = mesh.vertices.iter().map(|v| self.world_to_local(*v)).collect();
+        let new_verts: Vec<P3> = mesh
+            .vertices
+            .iter()
+            .map(|v| self.world_to_local(*v))
+            .collect();
         TriangleMesh::from_raw(new_verts, mesh.triangles.clone())
     }
 
@@ -281,9 +285,9 @@ impl SetupTransformInfo {
     /// After the face-up + Z-rotation transform, stock occupies the axis-aligned
     /// box from (0,0,0) to `(eff_w, eff_d, eff_h)`.
     pub fn effective_stock_bbox(&self) -> crate::geo::BoundingBox3 {
-        let (w, d, h) =
-            self.face_up
-                .effective_stock(self.stock_x, self.stock_y, self.stock_z);
+        let (w, d, h) = self
+            .face_up
+            .effective_stock(self.stock_x, self.stock_y, self.stock_z);
         let (eff_w, eff_d, eff_h) = self.z_rotation.effective_stock(w, d, h);
         crate::geo::BoundingBox3 {
             min: P3::new(0.0, 0.0, 0.0),
