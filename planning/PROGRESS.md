@@ -22,6 +22,21 @@
 - unified service layer: `ProjectSession` API in core, shared `execute_operation()` dispatch for all 23 ops
 - MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration
 
+## Recent work (2026-04-11)
+
+### Tech debt audit — post service layer + MCP refactor
+
+Six-domain deep audit using specialist agents across all 110K lines. Full report: [`TECH_DEBT_AUDIT.md`](TECH_DEBT_AUDIT.md).
+
+**Key findings:**
+- **Session bypasses (CRITICAL)**: GUI controller still mutates state directly via `_mut()` accessors in 11+ places, skipping cache/simulation invalidation. Fix: add missing session methods, migrate handlers, restrict accessors.
+- **Test gaps (CRITICAL)**: Session API (2,297 LOC) has 3 tests, MCP server (1,173 LOC) has 0. Algorithm coverage is excellent (705+ inline tests). Fix: mutation CRUD tests, serde round-trip tests, project file round-trip tests.
+- **Tracing (CRITICAL)**: 5.9% of files have tracing. Session layer has zero. Fix: `#[instrument]` on all session public methods, replicate adaptive3d pattern.
+- **Data duplication (HIGH)**: `LoadedModel` defined in both core and viz with slightly different fields. Fix: viz wraps core type.
+- **Oversized modules (HIGH)**: adaptive3d (4.7K lines), adaptive (2.8K), dexel_stock (1.8K). Fix: split into sub-modules.
+- **MCP asymmetry (HIGH)**: 10 non-GUI tools missing from standalone MCP. Fix: add missing tools, extract shared parsing.
+- **Working well**: Compute ownership (zero production duplication), MCP thinness (no business logic leaks), algorithm tests, clippy compliance.
+
 ## Recent work (2026-04-09)
 
 ### Post-extraction cleanup (Phases 1–5)

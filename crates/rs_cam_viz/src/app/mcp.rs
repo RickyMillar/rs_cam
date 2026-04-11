@@ -148,13 +148,10 @@ impl super::RsCamApp {
                 target_setup_index,
             } => {
                 self.controller.push_notification(
-                    format!(
-                        "MCP: Moving toolpath {toolpath_index} to setup {target_setup_index}"
-                    ),
+                    format!("MCP: Moving toolpath {toolpath_index} to setup {target_setup_index}"),
                     Severity::Info,
                 );
-                let resp =
-                    self.mcp_move_toolpath_to_setup(toolpath_index, target_setup_index);
+                let resp = self.mcp_move_toolpath_to_setup(toolpath_index, target_setup_index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::ImportModel { path } => {
@@ -1046,7 +1043,9 @@ impl super::RsCamApp {
     fn mcp_set_setup_face(&mut self, setup_index: usize, face_up: &str) -> String {
         let setups = self.controller.state().session.list_setups();
         let Some(setup) = setups.get(setup_index) else {
-            return json_str(serde_json::json!({"error": format!("Setup index {setup_index} not found")}));
+            return json_str(
+                serde_json::json!({"error": format!("Setup index {setup_index} not found")}),
+            );
         };
         let setup_id = setup.id;
 
@@ -1089,11 +1088,15 @@ impl super::RsCamApp {
     ) -> String {
         let session = &self.controller.state().session;
         let Some(tc) = session.toolpath_configs().get(toolpath_index) else {
-            return json_str(serde_json::json!({"error": format!("Toolpath index {toolpath_index} not found")}));
+            return json_str(
+                serde_json::json!({"error": format!("Toolpath index {toolpath_index} not found")}),
+            );
         };
         let tp_id = crate::state::toolpath::ToolpathId(tc.id);
         let Some(target_setup) = session.list_setups().get(target_setup_index) else {
-            return json_str(serde_json::json!({"error": format!("Setup index {target_setup_index} not found")}));
+            return json_str(
+                serde_json::json!({"error": format!("Setup index {target_setup_index} not found")}),
+            );
         };
         let target_setup_id = crate::state::job::SetupId(target_setup.id);
 
@@ -1125,9 +1128,11 @@ impl super::RsCamApp {
             "dxf" => self.controller.import_dxf_path(file_path),
             "svg" => self.controller.import_svg_path(file_path),
             "step" | "stp" => self.controller.import_step_path(file_path),
-            _ => return json_str(serde_json::json!({
-                "error": format!("Unsupported file format '.{ext}'. Use .stl, .dxf, .svg, .step, or .stp")
-            })),
+            _ => {
+                return json_str(serde_json::json!({
+                    "error": format!("Unsupported file format '.{ext}'. Use .stl, .dxf, .svg, .step, or .stp")
+                }));
+            }
         };
 
         match result {

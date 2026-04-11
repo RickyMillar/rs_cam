@@ -74,45 +74,43 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn handle_remove_tool(&mut self, tool_id: crate::state::job::ToolId) {
-        let in_use = self
+        let index = self
             .state
             .session
-            .toolpath_configs()
+            .tools()
             .iter()
-            .any(|tc| tc.tool_id == tool_id.0);
-        if in_use {
-            tracing::warn!(
-                "Cannot remove tool {:?}: still referenced by one or more toolpaths",
-                tool_id
-            );
-            self.push_notification(
-                "Cannot remove tool: still referenced by one or more toolpaths".into(),
-                super::super::Severity::Warning,
-            );
-        } else {
-            self.state
-                .session
-                .tools_mut()
-                .retain(|tool| tool.id != tool_id);
-            if self.state.selection == Selection::Tool(tool_id) {
-                self.state.selection = Selection::None;
+            .position(|t| t.id == tool_id);
+        if let Some(idx) = index {
+            match self.state.session.remove_tool(idx) {
+                Ok(()) => {
+                    if self.state.selection == Selection::Tool(tool_id) {
+                        self.state.selection = Selection::None;
+                    }
+                    self.state.gui.mark_edited();
+                }
+                Err(rs_cam_core::session::SessionError::ToolInUse(_)) => {
+                    tracing::warn!(
+                        "Cannot remove tool {:?}: still referenced by one or more toolpaths",
+                        tool_id
+                    );
+                    self.push_notification(
+                        "Cannot remove tool: still referenced by one or more toolpaths".into(),
+                        super::super::Severity::Warning,
+                    );
+                }
+                Err(e) => {
+                    self.push_notification(e.to_string(), super::super::Severity::Error);
+                }
             }
-            self.state.gui.mark_edited();
         }
     }
 
     pub(crate) fn handle_add_setup(&mut self) {
-        let idx = self
-            .state
-            .session
-            .add_setup("".to_owned(), FaceUp::default());
+        let next_id = self.state.session.list_setups().len() + 1;
+        let name = format!("Setup {next_id}");
+        let idx = self.state.session.add_setup(name, FaceUp::default());
         if let Some(setup) = self.state.session.list_setups().get(idx) {
-            let id = SetupId(setup.id);
-            // Rename with proper number
-            if let Some(s) = self.state.session.setups_mut().get_mut(idx) {
-                s.name = format!("Setup {}", s.id + 1);
-            }
-            self.state.selection = Selection::Setup(id);
+            self.state.selection = Selection::Setup(SetupId(setup.id));
         }
         self.state.gui.mark_edited();
     }
@@ -125,10 +123,9 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .any(|s| s.face_up == FaceUp::Bottom);
         if !has_flipped {
-            let idx = self.state.session.add_setup("".to_owned(), FaceUp::Bottom);
-            if let Some(s) = self.state.session.setups_mut().get_mut(idx) {
-                s.name = format!("Setup {}", s.id + 1);
-            }
+            let next_id = self.state.session.list_setups().len() + 1;
+            let name = format!("Setup {next_id}");
+            self.state.session.add_setup(name, FaceUp::Bottom);
         }
         {
             let stock = self.state.session.stock_mut();
@@ -195,14 +192,14 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn handle_rename_setup(&mut self, setup_id: SetupId, name: String) {
-        if let Some(setup) = self
+        if let Some(idx) = self
             .state
             .session
-            .setups_mut()
-            .iter_mut()
-            .find(|s| s.id == setup_id.0)
+            .list_setups()
+            .iter()
+            .position(|s| s.id == setup_id.0)
         {
-            setup.name = name;
+            let _ = self.state.session.rename_setup(idx, name);
             self.state.gui.mark_edited();
         }
     }
@@ -220,14 +217,14 @@ impl<B: ComputeBackend> AppController<B> {
             .map_or(0, |id| id + 1);
         let fixture_id = crate::state::job::FixtureId(max_id);
 
-        if let Some(setup) = self
+        if let Some(idx) = self
             .state
             .session
-            .setups_mut()
-            .iter_mut()
-            .find(|s| s.id == setup_id.0)
+            .list_setups()
+            .iter()
+            .position(|s| s.id == setup_id.0)
         {
-            setup.fixtures.push(Fixture {
+            let fixture = Fixture {
                 id: fixture_id,
                 name: format!("Fixture {}", fixture_id.0 + 1),
                 kind: FixtureKind::Clamp,
@@ -239,7 +236,8 @@ impl<B: ComputeBackend> AppController<B> {
                 size_y: 15.0,
                 size_z: 20.0,
                 clearance: 3.0,
-            });
+            };
+            let _ = self.state.session.add_fixture(idx, fixture);
             self.state.selection = Selection::Fixture(setup_id, fixture_id);
             self.pending_upload = true;
             self.state.gui.mark_edited();
@@ -251,14 +249,14 @@ impl<B: ComputeBackend> AppController<B> {
         setup_id: SetupId,
         fixture_id: crate::state::job::FixtureId,
     ) {
-        if let Some(setup) = self
+        if let Some(idx) = self
             .state
             .session
-            .setups_mut()
-            .iter_mut()
-            .find(|s| s.id == setup_id.0)
+            .list_setups()
+            .iter()
+            .position(|s| s.id == setup_id.0)
         {
-            setup.fixtures.retain(|f| f.id != fixture_id);
+            let _ = self.state.session.remove_fixture(idx, fixture_id);
             if self.state.selection == Selection::Fixture(setup_id, fixture_id) {
                 self.state.selection = Selection::Setup(setup_id);
             }
@@ -279,14 +277,14 @@ impl<B: ComputeBackend> AppController<B> {
             .map_or(0, |id| id + 1);
         let keep_out_id = crate::state::job::KeepOutId(max_id);
 
-        if let Some(setup) = self
+        if let Some(idx) = self
             .state
             .session
-            .setups_mut()
-            .iter_mut()
-            .find(|s| s.id == setup_id.0)
+            .list_setups()
+            .iter()
+            .position(|s| s.id == setup_id.0)
         {
-            setup.keep_out_zones.push(KeepOutZone {
+            let zone = KeepOutZone {
                 id: keep_out_id,
                 name: format!("Keep-Out {}", keep_out_id.0 + 1),
                 enabled: true,
@@ -294,7 +292,8 @@ impl<B: ComputeBackend> AppController<B> {
                 origin_y: 0.0,
                 size_x: 20.0,
                 size_y: 20.0,
-            });
+            };
+            let _ = self.state.session.add_keep_out(idx, zone);
             self.state.selection = Selection::KeepOut(setup_id, keep_out_id);
             self.pending_upload = true;
             self.state.gui.mark_edited();
@@ -306,14 +305,14 @@ impl<B: ComputeBackend> AppController<B> {
         setup_id: SetupId,
         keep_out_id: crate::state::job::KeepOutId,
     ) {
-        if let Some(setup) = self
+        if let Some(idx) = self
             .state
             .session
-            .setups_mut()
-            .iter_mut()
-            .find(|s| s.id == setup_id.0)
+            .list_setups()
+            .iter()
+            .position(|s| s.id == setup_id.0)
         {
-            setup.keep_out_zones.retain(|k| k.id != keep_out_id);
+            let _ = self.state.session.remove_keep_out(idx, keep_out_id);
             if self.state.selection == Selection::KeepOut(setup_id, keep_out_id) {
                 self.state.selection = Selection::Setup(setup_id);
             }
@@ -325,6 +324,7 @@ impl<B: ComputeBackend> AppController<B> {
     // ── Model helpers ────────────────────────────────────────────────────
 
     pub(crate) fn handle_remove_model(&mut self, model_id: ModelId) {
+        // Check if any toolpath still references this model
         let in_use = self
             .state
             .session
@@ -340,11 +340,14 @@ impl<B: ComputeBackend> AppController<B> {
                 "Cannot remove model: still referenced by one or more toolpaths".into(),
                 super::super::Severity::Warning,
             );
-        } else {
-            self.state
-                .session
-                .models_mut()
-                .retain(|m| m.id != model_id.0);
+        } else if let Some(idx) = self
+            .state
+            .session
+            .models()
+            .iter()
+            .position(|m| m.id == model_id.0)
+        {
+            let _ = self.state.session.remove_model(idx);
             let clear_selection = matches!(
                 self.state.selection,
                 Selection::Model(mid) | Selection::Face(mid, _) | Selection::Faces(mid, _)
@@ -372,6 +375,7 @@ impl<B: ComputeBackend> AppController<B> {
         {
             self.state.session.stock_mut().update_from_bbox(&bbox);
         }
+        self.state.session.invalidate_stock();
         self.pending_upload = true;
         self.state.gui.mark_edited();
         self.sync_alignment_pin_drill();
@@ -447,7 +451,7 @@ impl<B: ComputeBackend> AppController<B> {
             if let Some((idx, _id)) = existing {
                 let _ = self.state.session.remove_toolpath(idx);
             }
-        } else if let Some((idx, _id)) = existing {
+        } else if let Some((idx, id)) = existing {
             // Pins exist and toolpath exists — update hole positions and mark stale.
             let new_holes: Vec<[f64; 2]> = self
                 .state
@@ -457,18 +461,12 @@ impl<B: ComputeBackend> AppController<B> {
                 .iter()
                 .map(|p| [p.x, p.y])
                 .collect();
-            if let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx)
-                && let OperationConfig::AlignmentPinDrill(ref mut cfg) = tc.operation
-            {
-                cfg.holes = new_holes;
-            }
-            // Mark stale in GUI runtime
-            if let Some((_, tc)) = self
+            let _ = self
                 .state
                 .session
-                .find_toolpath_config_by_id(existing.map(|(_, id)| id).unwrap_or(0))
-                && let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tc.id)
-            {
+                .set_alignment_pin_drill_holes(idx, new_holes);
+            // Mark stale in GUI runtime
+            if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&id) {
                 rt.result = None;
                 rt.stale_since = Some(std::time::Instant::now());
             }

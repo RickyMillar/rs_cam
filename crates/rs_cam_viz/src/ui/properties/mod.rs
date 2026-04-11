@@ -62,13 +62,12 @@ fn flush_tool_snapshot(state: &mut AppState) {
         if !matches!(state.selection, crate::state::selection::Selection::Tool(id) if id == tool_id)
         {
             if let Some(current) = state.session.tools().iter().find(|t| t.id == tool_id) {
+                let new = current.clone();
+                // Invalidate cached results for toolpaths using this tool
+                state.session.invalidate_tool(tool_id.0);
                 state
                     .history
-                    .push(crate::state::history::UndoAction::ToolChange {
-                        tool_id,
-                        old,
-                        new: current.clone(),
-                    });
+                    .push(crate::state::history::UndoAction::ToolChange { tool_id, old, new });
                 state.gui.mark_edited();
             }
         } else {

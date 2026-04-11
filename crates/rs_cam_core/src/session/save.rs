@@ -2,6 +2,8 @@
 
 use std::path::Path;
 
+use tracing::instrument;
+
 use super::project_file::{
     ProjectFile, ProjectFixtureSection, ProjectJobSection, ProjectKeepOutSection,
     ProjectModelSection, ProjectPostConfig, ProjectSetupSection, ProjectStockConfig,
@@ -46,6 +48,7 @@ impl ProjectSession {
     ///
     /// The file is written atomically: contents go to a temporary file in the
     /// same directory, then renamed into place.
+    #[instrument(skip(self))]
     pub fn save(&self, path: &Path) -> Result<(), SessionError> {
         let project = self.to_project_file();
         let toml_string = toml::to_string_pretty(&project)

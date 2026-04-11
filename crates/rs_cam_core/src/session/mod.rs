@@ -583,23 +583,42 @@ impl ProjectSession {
     }
 
     // ── Mutable accessors ─────────────────────────────────────────
+    //
+    // These provide raw mutable access for immediate-mode UI binding and
+    // internal bulk operations (undo, import). **Prefer named mutation
+    // methods** in `mutation.rs` for state changes that require cache
+    // invalidation. After using `stock_mut()` or `machine_mut()`, call
+    // `invalidate_stock()` / `invalidate_machine()` to clear stale caches.
 
     /// Mutable access to stock configuration.
+    ///
+    /// Call [`invalidate_stock()`](Self::invalidate_stock) after edits to
+    /// clear stale simulation caches.
     pub fn stock_mut(&mut self) -> &mut StockConfig {
         &mut self.stock
     }
 
     /// Mutable access to machine profile.
+    ///
+    /// Call [`invalidate_machine()`](Self::invalidate_machine) after edits to
+    /// clear stale simulation caches.
     pub fn machine_mut(&mut self) -> &mut crate::machine::MachineProfile {
         &mut self.machine
     }
 
     /// Mutable access to all tools.
+    ///
+    /// Prefer [`add_tool()`](Self::add_tool), [`remove_tool()`](Self::remove_tool),
+    /// or [`replace_tools()`](Self::replace_tools). Call
+    /// [`invalidate_tool()`](Self::invalidate_tool) after in-place edits.
     pub fn tools_mut(&mut self) -> &mut Vec<ToolConfig> {
         &mut self.tools
     }
 
     /// Mutable access to all loaded models.
+    ///
+    /// Prefer [`add_model()`](Self::add_model) and
+    /// [`remove_model()`](Self::remove_model).
     pub fn models_mut(&mut self) -> &mut Vec<LoadedModel> {
         &mut self.models
     }
@@ -659,11 +678,20 @@ impl ProjectSession {
     }
 
     /// Mutable access to all toolpath configs.
+    ///
+    /// Prefer named mutation methods: [`set_toolpath_enabled()`](Self::set_toolpath_enabled),
+    /// [`set_face_selection()`](Self::set_face_selection),
+    /// [`set_dressup_config()`](Self::set_dressup_config), etc.
     pub fn toolpath_configs_mut(&mut self) -> &mut Vec<ToolpathConfig> {
         &mut self.toolpath_configs
     }
 
     /// Mutable access to all setups.
+    ///
+    /// Prefer named mutation methods: [`rename_setup()`](Self::rename_setup),
+    /// [`add_fixture()`](Self::add_fixture), [`remove_fixture()`](Self::remove_fixture),
+    /// [`add_keep_out()`](Self::add_keep_out), [`remove_keep_out()`](Self::remove_keep_out),
+    /// [`move_toolpath_to_setup()`](Self::move_toolpath_to_setup).
     pub fn setups_mut(&mut self) -> &mut Vec<SetupData> {
         &mut self.setups
     }
