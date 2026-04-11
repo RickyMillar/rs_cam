@@ -47,28 +47,32 @@ pub enum RegionOrdering {
     ByArea,
 }
 
-/// Clearing strategy for each Z level.
-///
 /// Roughing strategy for 3D clearing.
 ///
 /// `ContourParallel` — fast, predictable contour-offset pocketing via EDT.
 ///   Fixed stepover, concentric contours from boundary inward. Best for
 ///   bulk roughing where speed matters more than constant engagement.
+///   The default.
 ///
-/// `Adaptive` — true constant-engagement clearing with variable stepover.
-///   Arcs around corners to maintain the engagement setpoint. Slower but
-///   better tool life and surface quality. (TODO: not yet implemented —
-///   falls back to ContourParallel)
+/// `Adaptive` — curvature-adjusted EDT clearing with variable stepover.
+///   Produces shorter cutting distance than ContourParallel on curved
+///   terrain by adapting the offset spacing to local curvature, without
+///   paying the per-step direction-search cost of AgentSearch.
 ///
-/// `AgentSearch` — legacy per-step direction search. Retained for testing.
+/// `AgentSearch` — per-step direction search with preflight skip and
+///   widen-band recovery. Slower to generate than ContourParallel or
+///   Adaptive but offers finer per-step control; retained for advanced
+///   cases where the geometry defeats the EDT-based strategies.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ClearingStrategy3d {
-    /// Legacy per-step direction search (for testing).
+    /// Per-step direction search with preflight skip and widen-band
+    /// recovery. Slow to generate; reach for it when ContourParallel or
+    /// Adaptive produce uncut bands on difficult geometry.
     AgentSearch,
     /// Fast contour-parallel offset clearing via EDT (default).
     #[default]
     ContourParallel,
-    /// Constant-engagement adaptive clearing via curvature-adjusted EDT offsets.
+    /// Curvature-adjusted adaptive clearing via variable-offset EDT.
     Adaptive,
 }
 
@@ -109,7 +113,7 @@ pub struct Adaptive3dParams {
     /// Pre-machined stock for two-sided machining.
     /// When Some, used as starting material instead of a fresh block at stock_top_z.
     pub initial_stock: Option<TriDexelStock>,
-    /// Clearing strategy per Z level (default: AgentSearch for backward compat).
+    /// Clearing strategy per Z level (default: ContourParallel).
     pub clearing_strategy: ClearingStrategy3d,
     /// Blend Z toward terrain surface across contour offsets.
     /// When true, outer contours stay near z_level and inner contours
