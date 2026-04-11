@@ -176,14 +176,24 @@ impl Default for StockConfig {
 }
 
 impl StockConfig {
-    /// Update stock dimensions from model bounding box.
+    /// Update stock dimensions from a model bounding box.
+    ///
+    /// XY dimensions always follow the bbox extent + padding.
+    /// Z is only updated when the bbox has non-zero Z extent;
+    /// for 2D models (SVG/DXF polygons with `min.z == max.z == 0`)
+    /// the current Z dimension and origin are preserved so the user's
+    /// default stock thickness isn't clobbered by attaching a 2D model.
+    /// See planning/adaptive_review_2026-04.md F-13.
     pub fn update_from_bbox(&mut self, bbox: &BoundingBox3) {
         self.x = bbox.max.x - bbox.min.x + 2.0 * self.padding;
         self.y = bbox.max.y - bbox.min.y + 2.0 * self.padding;
-        self.z = bbox.max.z - bbox.min.z + self.padding;
         self.origin_x = bbox.min.x - self.padding;
         self.origin_y = bbox.min.y - self.padding;
-        self.origin_z = bbox.min.z;
+        let bbox_z_range = bbox.max.z - bbox.min.z;
+        if bbox_z_range > 0.0 {
+            self.z = bbox_z_range + self.padding;
+            self.origin_z = bbox.min.z;
+        }
     }
 
     /// Get the bounding box of the stock.
@@ -197,5 +207,65 @@ impl StockConfig {
                 self.origin_z + self.z,
             ),
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::geo::P3;
+
+    #[test]
+    fn update_from_bbox_updates_xy_from_2d_bbox() {
+        let mut stock = StockConfig {
+            x: 100.0,
+            y: 100.0,
+            z: 25.0,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            origin_z: 0.0,
+            padding: 5.0,
+            ..StockConfig::default()
+        };
+        // 2D SVG/DXF polygon bbox: zero Z range
+        let bbox = BoundingBox3 {
+            min: P3::new(5.0, 5.0, 0.0),
+            max: P3::new(35.0, 35.0, 0.0),
+        };
+        stock.update_from_bbox(&bbox);
+        // XY should have been updated to fit 30x30 polygon + 5mm padding each side
+        assert!((stock.x - 40.0).abs() < 1e-9);
+        assert!((stock.y - 40.0).abs() < 1e-9);
+        assert!((stock.origin_x - 0.0).abs() < 1e-9);
+        assert!((stock.origin_y - 0.0).abs() < 1e-9);
+        // Z should be UNCHANGED from 25.0 — F-13 requires the user's
+        // default stock thickness survives attaching a 2D model.
+        assert!((stock.z - 25.0).abs() < 1e-9);
+        assert!((stock.origin_z - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn update_from_bbox_updates_z_from_3d_bbox() {
+        let mut stock = StockConfig {
+            x: 100.0,
+            y: 100.0,
+            z: 25.0,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            origin_z: 0.0,
+            padding: 5.0,
+            ..StockConfig::default()
+        };
+        // 3D mesh bbox with non-zero Z extent
+        let bbox = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(50.0, 40.0, 10.0),
+        };
+        stock.update_from_bbox(&bbox);
+        assert!((stock.x - 60.0).abs() < 1e-9); // 50 + 2*5
+        assert!((stock.y - 50.0).abs() < 1e-9); // 40 + 2*5
+        assert!((stock.z - 15.0).abs() < 1e-9); // 10 + 5
+        assert!((stock.origin_z - 0.0).abs() < 1e-9);
     }
 }

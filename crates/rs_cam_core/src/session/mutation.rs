@@ -14,6 +14,45 @@ use super::{
     ToolpathConfig,
 };
 use crate::compute::transform::ZRotation;
+use crate::geo::{BoundingBox3, P3};
+use crate::polygon::Polygon2;
+
+/// Compute a 3D bounding box from a slice of 2D polygons (SVG/DXF models).
+/// Z extent is zero; `update_from_bbox` preserves stock Z for 2D models.
+/// Returns `None` if all polygons are empty.
+fn polygons_bbox(polygons: &[Polygon2]) -> Option<BoundingBox3> {
+    let mut min_x = f64::INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    for poly in polygons {
+        for pt in poly
+            .exterior
+            .iter()
+            .chain(poly.holes.iter().flat_map(|h| h.iter()))
+        {
+            if pt.x < min_x {
+                min_x = pt.x;
+            }
+            if pt.y < min_y {
+                min_y = pt.y;
+            }
+            if pt.x > max_x {
+                max_x = pt.x;
+            }
+            if pt.y > max_y {
+                max_y = pt.y;
+            }
+        }
+    }
+    if !min_x.is_finite() {
+        return None;
+    }
+    Some(BoundingBox3 {
+        min: P3::new(min_x, min_y, 0.0),
+        max: P3::new(max_x, max_y, 0.0),
+    })
+}
 
 impl ProjectSession {
     // ── Toolpath CRUD ─────────────────────────────────────────────
@@ -203,12 +242,41 @@ impl ProjectSession {
     // ── Model CRUD ────────────────────────────────────────────────
 
     /// Add a model and return its ID.
+    ///
+    /// When `stock.auto_from_model` is enabled, the stock dimensions are
+    /// auto-updated from the new model's bounding box — mesh bbox for
+    /// STL/STEP models, polygon bbox for SVG/DXF. Without this, MCP
+    /// users who called `import_model` after loading a project saw the
+    /// stock stay at its pre-import size (see F-13 in the April review).
+    ///
+    /// For 2D polygon models (zero Z extent), `update_from_bbox`
+    /// preserves the existing stock Z dimension rather than collapsing
+    /// it to 0.
     #[instrument(skip(self, model))]
     pub fn add_model(&mut self, mut model: super::LoadedModel) -> usize {
         model.id = self.next_model_id;
         self.next_model_id += 1;
         let id = model.id;
+
+        // Compute bbox before moving the model into self.models.
+        let auto_from_model = self.stock.auto_from_model;
+        let model_bbox = if auto_from_model {
+            model.mesh.as_ref().map(|mesh| mesh.bbox).or_else(|| {
+                model
+                    .polygons
+                    .as_ref()
+                    .and_then(|polys| polygons_bbox(polys))
+            })
+        } else {
+            None
+        };
+
         self.models.push(model);
+
+        if let Some(bbox) = model_bbox {
+            self.stock.update_from_bbox(&bbox);
+        }
+
         id
     }
 
