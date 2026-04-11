@@ -15,7 +15,9 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{
     BoundaryConfig, BoundaryContainment, BoundarySource, DressupConfig,
 };
+use rs_cam_core::compute::stock_config::AlignmentPin;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::session::{ProjectSession, SimulationOptions};
 
 // ── Parameter structs ─────────────────────────────────────────────────
@@ -1113,6 +1115,421 @@ impl CamServer {
             )),
             Err(e) => text(format!("Error: {e}")),
         }
+    }
+
+    // ── Inspection tools ─────────────────────────────────────────────
+
+    #[tool(
+        name = "inspect_model",
+        description = "Inspect all loaded models: kind, units, bbox, triangle count, polygon stats, BREP summary for STEP models."
+    )]
+    async fn inspect_model(&self) -> String {
+        let guard = self.session.lock().await;
+        let Some(session) = guard.as_ref() else {
+            return no_project_error();
+        };
+        let models = session.models();
+        if models.is_empty() {
+            return json_str(serde_json::json!([]));
+        }
+
+        let mut result = Vec::new();
+        for model in models {
+            let mut map = serde_json::Map::new();
+            map.insert("id".into(), serde_json::json!(model.id));
+            map.insert("name".into(), serde_json::json!(model.name));
+            map.insert(
+                "kind".into(),
+                serde_json::json!(model.kind.map(|k| format!("{k:?}").to_lowercase())),
+            );
+            map.insert(
+                "units".into(),
+                serde_json::json!(model.units.as_ref().map(|u| u.label())),
+            );
+            map.insert(
+                "path".into(),
+                serde_json::json!(model.path.display().to_string()),
+            );
+            map.insert("load_error".into(), serde_json::json!(model.load_error));
+
+            if let Some(ref mesh) = model.mesh {
+                let bbox = &mesh.bbox;
+                map.insert(
+                    "bbox".into(),
+                    serde_json::json!({
+                        "min": [bbox.min.x, bbox.min.y, bbox.min.z],
+                        "max": [bbox.max.x, bbox.max.y, bbox.max.z],
+                    }),
+                );
+                map.insert(
+                    "dimensions".into(),
+                    serde_json::json!({
+                        "x": bbox.max.x - bbox.min.x,
+                        "y": bbox.max.y - bbox.min.y,
+                        "z": bbox.max.z - bbox.min.z,
+                    }),
+                );
+                map.insert(
+                    "triangle_count".into(),
+                    serde_json::json!(mesh.triangles.len()),
+                );
+                map.insert(
+                    "vertex_count".into(),
+                    serde_json::json!(mesh.vertices.len()),
+                );
+            }
+
+            if let Some(winding) = model.winding_report {
+                map.insert(
+                    "winding_consistency".into(),
+                    serde_json::json!(1.0 - winding),
+                );
+            }
+
+            if let Some(ref em) = model.enriched_mesh {
+                let concave_count = em.edges.iter().filter(|e| e.is_concave).count();
+                map.insert(
+                    "brep".into(),
+                    serde_json::json!({
+                        "face_count": em.face_groups.len(),
+                        "edge_count": em.edges.len(),
+                        "concave_edge_count": concave_count,
+                    }),
+                );
+            }
+
+            if let Some(ref polys) = model.polygons {
+                let count = polys.len();
+                let total_area: f64 = polys.iter().map(|p| p.area()).sum();
+                let total_perimeter: f64 = polys.iter().map(|p| p.perimeter()).sum();
+                let hole_count: usize = polys.iter().map(|p| p.holes.len()).sum();
+                map.insert(
+                    "polygons".into(),
+                    serde_json::json!({
+                        "count": count,
+                        "total_area": total_area,
+                        "total_perimeter": total_perimeter,
+                        "hole_count": hole_count,
+                    }),
+                );
+            }
+
+            result.push(serde_json::Value::Object(map));
+        }
+
+        json_str(serde_json::json!(result))
+    }
+
+    #[tool(
+        name = "inspect_stock",
+        description = "Inspect stock configuration: dimensions, origin, material, padding, alignment pins, workholding rigidity."
+    )]
+    async fn inspect_stock(&self) -> String {
+        let guard = self.session.lock().await;
+        let Some(session) = guard.as_ref() else {
+            return no_project_error();
+        };
+        let stock = session.stock_config();
+        let pins: Vec<serde_json::Value> = stock
+            .alignment_pins
+            .iter()
+            .map(|p| {
+                serde_json::json!({
+                    "x": p.x,
+                    "y": p.y,
+                    "diameter": p.diameter,
+                })
+            })
+            .collect();
+        json_str(serde_json::json!({
+            "dimensions": { "x": stock.x, "y": stock.y, "z": stock.z },
+            "origin": { "x": stock.origin_x, "y": stock.origin_y, "z": stock.origin_z },
+            "material": stock.material.label(),
+            "padding": stock.padding,
+            "auto_from_model": stock.auto_from_model,
+            "workholding_rigidity": format!("{:?}", stock.workholding_rigidity),
+            "alignment_pins": pins,
+            "flip_axis": stock.flip_axis.map(|fa| fa.label()),
+        }))
+    }
+
+    #[tool(
+        name = "inspect_machine",
+        description = "Inspect machine profile: name, max feed, max shank, safety factor, spindle, power, rigidity factors."
+    )]
+    async fn inspect_machine(&self) -> String {
+        let guard = self.session.lock().await;
+        let Some(session) = guard.as_ref() else {
+            return no_project_error();
+        };
+        let machine = session.machine();
+
+        let spindle = match &machine.spindle {
+            rs_cam_core::machine::SpindleConfig::Variable { min_rpm, max_rpm } => {
+                serde_json::json!({ "type": "Variable", "min_rpm": min_rpm, "max_rpm": max_rpm })
+            }
+            rs_cam_core::machine::SpindleConfig::Discrete { speeds } => {
+                serde_json::json!({ "type": "Discrete", "speeds": speeds })
+            }
+        };
+        let power = match &machine.power {
+            rs_cam_core::machine::PowerModel::ConstantPower { power_kw } => {
+                serde_json::json!({ "type": "ConstantPower", "power_kw": power_kw })
+            }
+            rs_cam_core::machine::PowerModel::VfdConstantTorque {
+                rated_power_kw,
+                rated_rpm,
+            } => serde_json::json!({
+                "type": "VfdConstantTorque",
+                "rated_power_kw": rated_power_kw,
+                "rated_rpm": rated_rpm,
+            }),
+        };
+        let r = &machine.rigidity;
+        json_str(serde_json::json!({
+            "name": machine.name,
+            "max_feed_mm_min": machine.max_feed_mm_min,
+            "max_shank_mm": machine.max_shank_mm,
+            "safety_factor": machine.safety_factor,
+            "spindle": spindle,
+            "power": power,
+            "rigidity": {
+                "doc_roughing_factor": r.doc_roughing_factor,
+                "doc_finishing_factor": r.doc_finishing_factor,
+                "woc_roughing_factor": r.woc_roughing_factor,
+                "woc_roughing_max_mm": r.woc_roughing_max_mm,
+                "woc_finishing_mm": r.woc_finishing_mm,
+                "adaptive_doc_factor": r.adaptive_doc_factor,
+                "adaptive_woc_factor": r.adaptive_woc_factor,
+            },
+        }))
+    }
+
+    #[tool(
+        name = "inspect_brep_faces",
+        description = "Inspect BREP faces of a STEP model: surface types, bboxes, normals, radii, dihedral edges."
+    )]
+    async fn inspect_brep_faces(
+        &self,
+        Parameters(ModelIdParam { model_id }): Parameters<ModelIdParam>,
+    ) -> String {
+        let guard = self.session.lock().await;
+        let Some(session) = guard.as_ref() else {
+            return no_project_error();
+        };
+        let Some(model) = session.models().iter().find(|m| m.id == model_id) else {
+            return json_str(serde_json::json!({"error": format!("Model {model_id} not found")}));
+        };
+        let Some(ref em) = model.enriched_mesh else {
+            return json_str(serde_json::json!({
+                "error": format!("Model '{}' has no BREP data (not a STEP model)", model.name)
+            }));
+        };
+
+        let faces_json: Vec<serde_json::Value> = em
+            .face_groups
+            .iter()
+            .map(|fg| {
+                let mut map = serde_json::Map::new();
+                map.insert("id".into(), serde_json::json!(fg.id.0));
+                map.insert(
+                    "surface_type".into(),
+                    serde_json::json!(format!("{:?}", fg.surface_type)),
+                );
+                map.insert(
+                    "bbox".into(),
+                    serde_json::json!({
+                        "min": [fg.bbox.min.x, fg.bbox.min.y, fg.bbox.min.z],
+                        "max": [fg.bbox.max.x, fg.bbox.max.y, fg.bbox.max.z],
+                    }),
+                );
+                map.insert(
+                    "triangle_count".into(),
+                    serde_json::json!(fg.triangle_range.len()),
+                );
+                if let rs_cam_core::enriched_mesh::SurfaceParams::Plane { normal, .. } =
+                    &fg.surface_params
+                {
+                    map.insert(
+                        "normal".into(),
+                        serde_json::json!([normal.x, normal.y, normal.z]),
+                    );
+                }
+                serde_json::Value::Object(map)
+            })
+            .collect();
+
+        let edges_json: Vec<serde_json::Value> = em
+            .edges
+            .iter()
+            .map(|edge| {
+                serde_json::json!({
+                    "id": edge.id,
+                    "face_a": edge.face_a.0,
+                    "face_b": edge.face_b.0,
+                    "dihedral_angle_deg": edge.dihedral_angle.to_degrees(),
+                    "is_concave": edge.is_concave,
+                })
+            })
+            .collect();
+
+        json_str(serde_json::json!({
+            "model_id": model_id,
+            "face_count": em.face_groups.len(),
+            "faces": faces_json,
+            "edges": edges_json,
+        }))
+    }
+
+    // ── Setup management ─────────────────────────────────────────────
+
+    #[tool(
+        name = "add_setup",
+        description = "Add a new setup (workholding orientation). Returns the new setup index and ID."
+    )]
+    async fn add_setup(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(AddSetupParam { name }): Parameters<
+            AddSetupParam,
+        >,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return no_project_error();
+        };
+        let next_num = session.list_setups().len() + 1;
+        let name = name.unwrap_or_else(|| format!("Setup {next_num}"));
+        let idx = session.add_setup(name.clone(), FaceUp::Top);
+        let setup_id = session.list_setups().get(idx).map(|s| s.id).unwrap_or(0);
+        json_str(serde_json::json!({
+            "index": idx,
+            "id": setup_id,
+            "name": name,
+        }))
+    }
+
+    #[tool(
+        name = "set_setup_face",
+        description = "Change the face orientation of a setup: top, bottom, front, back, left, right."
+    )]
+    async fn set_setup_face(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(SetSetupFaceParam {
+            setup_index,
+            face_up,
+        }): Parameters<SetSetupFaceParam>,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return no_project_error();
+        };
+        let face = match face_up.to_lowercase().as_str() {
+            "top" => FaceUp::Top,
+            "bottom" => FaceUp::Bottom,
+            "front" => FaceUp::Front,
+            "back" => FaceUp::Back,
+            "left" => FaceUp::Left,
+            "right" => FaceUp::Right,
+            _ => {
+                return json_str(serde_json::json!({
+                    "error": format!("Unknown face '{face_up}'. Use: top, bottom, front, back, left, right")
+                }));
+            }
+        };
+        // Direct field mutation through setups_mut (no dedicated session method yet)
+        #[allow(deprecated)]
+        let result = session
+            .setups_mut()
+            .get_mut(setup_index)
+            .map(|s| s.face_up = face);
+        if result.is_none() {
+            return json_str(
+                serde_json::json!({"error": format!("Setup index {setup_index} not found")}),
+            );
+        }
+        // Changing face_up invalidates toolpath results in that setup
+        json_str(serde_json::json!({
+            "setup_index": setup_index,
+            "face_up": face_up.to_lowercase(),
+        }))
+    }
+
+    #[tool(
+        name = "move_toolpath_to_setup",
+        description = "Move a toolpath from its current setup to a different setup. Invalidates cached result."
+    )]
+    async fn move_toolpath_to_setup(
+        &self,
+        Parameters(MoveToolpathToSetupParam {
+            toolpath_index,
+            target_setup_index,
+        }): Parameters<MoveToolpathToSetupParam>,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return no_project_error();
+        };
+        match session.move_toolpath_to_setup(toolpath_index, target_setup_index) {
+            Ok(()) => json_str(serde_json::json!({
+                "toolpath_index": toolpath_index,
+                "target_setup_index": target_setup_index,
+                "message": format!("Moved toolpath {toolpath_index} to setup {target_setup_index}"),
+            })),
+            Err(e) => json_str(serde_json::json!({"error": e.to_string()})),
+        }
+    }
+
+    // ── Alignment pins ───────────────────────────────────────────────
+
+    #[tool(
+        name = "add_alignment_pin",
+        description = "Add a workholding alignment pin to the stock at (x, y) with given diameter."
+    )]
+    async fn add_alignment_pin(
+        &self,
+        Parameters(AddAlignmentPinParam { x, y, diameter }): Parameters<AddAlignmentPinParam>,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return no_project_error();
+        };
+        let mut stock = session.stock_config().clone();
+        stock.alignment_pins.push(AlignmentPin::new(x, y, diameter));
+        let pin_count = stock.alignment_pins.len();
+        session.set_stock_config(stock);
+        json_str(serde_json::json!({
+            "ok": true,
+            "message": format!("Added alignment pin at ({x:.1}, {y:.1}) dia {diameter:.1}mm"),
+            "pin_count": pin_count,
+        }))
+    }
+
+    #[tool(
+        name = "remove_alignment_pin",
+        description = "Remove an alignment pin by index (0-based)."
+    )]
+    async fn remove_alignment_pin(
+        &self,
+        Parameters(RemoveAlignmentPinParam { index }): Parameters<RemoveAlignmentPinParam>,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return no_project_error();
+        };
+        let mut stock = session.stock_config().clone();
+        if index >= stock.alignment_pins.len() {
+            return json_str(serde_json::json!({
+                "error": format!("Pin index {index} out of range (have {})", stock.alignment_pins.len())
+            }));
+        }
+        stock.alignment_pins.remove(index);
+        let pin_count = stock.alignment_pins.len();
+        session.set_stock_config(stock);
+        json_str(serde_json::json!({
+            "ok": true,
+            "message": format!("Removed alignment pin {index}"),
+            "pin_count": pin_count,
+        }))
     }
 
     #[tool(
