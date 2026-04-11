@@ -497,11 +497,11 @@ impl ProjectToolSection {
 impl ProjectModelSection {
     fn from_runtime(model: &LoadedModel, project_path: &Path) -> Self {
         Self {
-            id: Some(model.id),
+            id: Some(ModelId(model.id)),
             path: persist_model_path(project_path, &model.path),
             name: model.name.clone(),
-            kind: Some(model.kind),
-            units: Some(model.units),
+            kind: model.kind,
+            units: model.units,
         }
     }
 }
@@ -800,7 +800,7 @@ fn load_legacy_project(
         let model_id = if legacy_toolpath.input.is_empty() {
             job.models
                 .first()
-                .map(|model| model.id)
+                .map(|model| ModelId(model.id))
                 .unwrap_or(ModelId(0))
         } else {
             model_ids_by_path
@@ -809,7 +809,7 @@ fn load_legacy_project(
                 .unwrap_or_else(|| {
                     job.models
                         .first()
-                        .map(|model| model.id)
+                        .map(|model| ModelId(model.id))
                         .unwrap_or(ModelId(0))
                 })
         };
@@ -830,7 +830,7 @@ fn load_legacy_project(
                 tool_id,
             });
         }
-        if !job.models.is_empty() && !job.models.iter().any(|model| model.id == model_id) {
+        if !job.models.is_empty() && !job.models.iter().any(|model| model.id == model_id.0) {
             warnings.push(ProjectLoadWarning::MissingModelReference {
                 toolpath: toolpath.name.clone(),
                 model_id,
@@ -890,7 +890,7 @@ fn load_legacy_model(
             path: resolved_path.clone(),
         });
         return LoadedModel::placeholder(
-            id,
+            id.0,
             resolved_path,
             name,
             kind,
@@ -899,7 +899,7 @@ fn load_legacy_model(
         );
     }
 
-    match import::import_model(&resolved_path, id, kind, units) {
+    match import::import_model(&resolved_path, id.0, kind, units) {
         Ok(model) => model,
         Err(error) => {
             let error_str = error.to_string();
@@ -908,7 +908,7 @@ fn load_legacy_model(
                 path: resolved_path.clone(),
                 error: error_str.clone(),
             });
-            LoadedModel::placeholder(id, resolved_path, name, kind, units, error_str)
+            LoadedModel::placeholder(id.0, resolved_path, name, kind, units, error_str)
         }
     }
 }
@@ -936,7 +936,7 @@ fn load_model_section(
             model_id: id,
         });
         return LoadedModel::placeholder(
-            id,
+            id.0,
             PathBuf::new(),
             name,
             kind,
@@ -952,7 +952,7 @@ fn load_model_section(
             path: resolved_path.clone(),
         });
         return LoadedModel::placeholder(
-            id,
+            id.0,
             resolved_path,
             name,
             kind,
@@ -961,7 +961,7 @@ fn load_model_section(
         );
     }
 
-    match import::import_model(&resolved_path, id, kind, units) {
+    match import::import_model(&resolved_path, id.0, kind, units) {
         Ok(mut loaded) => {
             loaded.name = name;
             loaded
@@ -973,7 +973,7 @@ fn load_model_section(
                 path: resolved_path.clone(),
                 error: error_str.clone(),
             });
-            LoadedModel::placeholder(id, resolved_path, name, kind, units, error_str)
+            LoadedModel::placeholder(id.0, resolved_path, name, kind, units, error_str)
         }
     }
 }
@@ -1073,7 +1073,7 @@ fn restore_project_toolpath(
         .unwrap_or(ToolId(0));
     let model_id = section
         .model_id
-        .or_else(|| models.first().map(|model| model.id))
+        .or_else(|| models.first().map(|model| ModelId(model.id)))
         .unwrap_or(ModelId(0));
     let operation = section.operation.unwrap_or_else(|| {
         OperationConfig::new_default(section.op_type.unwrap_or(OperationType::Pocket))
@@ -1119,7 +1119,7 @@ fn restore_project_toolpath(
     if let Some(face_ids) = &init.face_selection {
         let face_count = models
             .iter()
-            .find(|m| m.id == model_id)
+            .find(|m| m.id == model_id.0)
             .and_then(|m| m.enriched_mesh.as_ref())
             .map(|e| e.face_groups.len())
             .unwrap_or(0);
@@ -1145,7 +1145,7 @@ fn restore_project_toolpath(
             tool_id,
         });
     }
-    if !models.iter().any(|model| model.id == model_id) {
+    if !models.iter().any(|model| model.id == model_id.0) {
         warnings.push(ProjectLoadWarning::MissingModelReference {
             toolpath: toolpath.name.clone(),
             model_id,
@@ -1451,7 +1451,7 @@ mod tests {
         let fixture_path = repo_root().join("fixtures/demo_star.svg");
         let model = import::import_model(
             &fixture_path,
-            ModelId(3),
+            3,
             ModelKind::Svg,
             ModelUnits::Millimeters,
         )
@@ -1467,7 +1467,7 @@ mod tests {
             ToolpathId(5),
             "Pocket A".to_owned(),
             job.tools[0].id,
-            job.models[0].id,
+            ModelId(job.models[0].id),
             OperationType::Pocket,
         );
         job.tools[0].tool_number = 23;
@@ -1529,7 +1529,7 @@ mod tests {
         let fixture_path = repo_root().join("fixtures/terrain_small.stl");
         let model = import::import_model(
             &fixture_path,
-            ModelId(8),
+            8,
             ModelKind::Stl,
             ModelUnits::Millimeters,
         )
@@ -1544,7 +1544,7 @@ mod tests {
             ToolpathId(12),
             "Roughing".to_owned(),
             job.tools[0].id,
-            job.models[0].id,
+            ModelId(job.models[0].id),
             OperationConfig::Adaptive3d(Adaptive3dConfig {
                 stock_to_leave_radial: 0.7,
                 stock_to_leave_axial: 0.4,
@@ -1581,7 +1581,7 @@ mod tests {
         let fixture_path = repo_root().join("fixtures/demo_star.svg");
         let model = import::import_model(
             &fixture_path,
-            ModelId(3),
+            3,
             ModelKind::Svg,
             ModelUnits::Millimeters,
         )
@@ -1638,7 +1638,7 @@ mod tests {
                 ToolpathId(5),
                 "Top Pocket".to_owned(),
                 job.tools[0].id,
-                job.models[0].id,
+                ModelId(job.models[0].id),
                 OperationType::Pocket,
             ),
         );
@@ -1648,7 +1648,7 @@ mod tests {
                 ToolpathId(6),
                 "Bottom Profile".to_owned(),
                 job.tools[0].id,
-                job.models[0].id,
+                ModelId(job.models[0].id),
                 OperationType::Profile,
             ),
         );
@@ -1748,7 +1748,7 @@ input = "{}"
         job.models.push(
             import::import_model(
                 &model_path,
-                ModelId(1),
+                1,
                 ModelKind::Svg,
                 ModelUnits::Millimeters,
             )
@@ -1758,7 +1758,7 @@ input = "{}"
             ToolpathId(1),
             "Pocket".to_owned(),
             job.tools[0].id,
-            job.models[0].id,
+            ModelId(job.models[0].id),
             OperationType::Pocket,
         ));
 

@@ -6,10 +6,10 @@ use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::svg_input::load_svg;
 
 use crate::error::VizError;
-use crate::state::job::{LoadedModel, ModelId, ModelKind, ModelUnits};
+use crate::state::job::{LoadedModel, ModelKind, ModelUnits};
 
 /// Import an STL file with a given scale factor.
-pub fn import_stl(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, VizError> {
+pub fn import_stl(path: &Path, id: usize, scale: f64) -> Result<LoadedModel, VizError> {
     let mesh = TriangleMesh::from_stl_scaled(path, scale)?;
 
     let name = path
@@ -31,11 +31,11 @@ pub fn import_stl(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, V
         id,
         path: path.to_path_buf(),
         name,
-        kind: ModelKind::Stl,
+        kind: Some(ModelKind::Stl),
         mesh: Some(Arc::new(mesh)),
         polygons: None,
         enriched_mesh: None,
-        units,
+        units: Some(units),
         winding_report: Some(winding_pct),
         load_error: None,
     })
@@ -44,7 +44,7 @@ pub fn import_stl(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, V
 /// Import an SVG file, returning a LoadedModel with polygons.
 ///
 /// `scale` multiplies all point coordinates after loading (1.0 = no change).
-pub fn import_svg(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, VizError> {
+pub fn import_svg(path: &Path, id: usize, scale: f64) -> Result<LoadedModel, VizError> {
     let mut polygons = load_svg(path, 0.1)?;
 
     if (scale - 1.0).abs() > 1e-9 {
@@ -77,11 +77,11 @@ pub fn import_svg(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, V
         id,
         path: path.to_path_buf(),
         name,
-        kind: ModelKind::Svg,
+        kind: Some(ModelKind::Svg),
         mesh: None,
         polygons: Some(Arc::new(polygons)),
         enriched_mesh: None,
-        units,
+        units: Some(units),
         winding_report: None,
         load_error: None,
     })
@@ -91,7 +91,7 @@ pub fn import_svg(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, V
 ///
 /// `scale` multiplies all point coordinates after loading (1.0 = no change).
 /// The `5.0` arc tolerance is for tessellation and is unrelated to scale.
-pub fn import_dxf(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, VizError> {
+pub fn import_dxf(path: &Path, id: usize, scale: f64) -> Result<LoadedModel, VizError> {
     let mut polygons = load_dxf(path, 5.0)?;
 
     if (scale - 1.0).abs() > 1e-9 {
@@ -124,11 +124,11 @@ pub fn import_dxf(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, V
         id,
         path: path.to_path_buf(),
         name,
-        kind: ModelKind::Dxf,
+        kind: Some(ModelKind::Dxf),
         mesh: None,
         polygons: Some(Arc::new(polygons)),
         enriched_mesh: None,
-        units,
+        units: Some(units),
         winding_report: None,
         load_error: None,
     })
@@ -137,7 +137,7 @@ pub fn import_dxf(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, V
 /// Import a STEP file, returning a LoadedModel with enriched mesh.
 ///
 /// `scale` uniformly scales all tessellated vertices (1.0 = mm as-is).
-pub fn import_step(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, VizError> {
+pub fn import_step(path: &Path, id: usize, scale: f64) -> Result<LoadedModel, VizError> {
     let mut enriched = rs_cam_core::step_input::load_step(path, 0.1)?;
 
     // Apply uniform scale to tessellated geometry if not 1:1.
@@ -155,11 +155,11 @@ pub fn import_step(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, 
         id,
         path: path.to_path_buf(),
         name,
-        kind: ModelKind::Step,
+        kind: Some(ModelKind::Step),
         mesh: Some(mesh_arc),
         polygons: None,
         enriched_mesh: Some(Arc::new(enriched)),
-        units: ModelUnits::Millimeters,
+        units: Some(ModelUnits::Millimeters),
         winding_report: None,
         load_error: None,
     })
@@ -168,7 +168,7 @@ pub fn import_step(path: &Path, id: ModelId, scale: f64) -> Result<LoadedModel, 
 /// Import a model using persisted kind/units metadata.
 pub fn import_model(
     path: &Path,
-    id: ModelId,
+    id: usize,
     kind: ModelKind,
     units: ModelUnits,
 ) -> Result<LoadedModel, VizError> {
@@ -179,6 +179,6 @@ pub fn import_model(
         ModelKind::Dxf => import_dxf(path, id, scale)?,
         ModelKind::Step => import_step(path, id, scale)?,
     };
-    model.units = units;
+    model.units = Some(units);
     Ok(model)
 }

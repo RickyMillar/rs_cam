@@ -14,26 +14,9 @@ use crate::state::simulation::SimulationState;
 
 use super::AppController;
 
-// ── Helper: convert viz LoadedModel → session LoadedModel ────────────
-fn viz_model_to_session(m: &crate::state::job::LoadedModel) -> rs_cam_core::session::LoadedModel {
-    rs_cam_core::session::LoadedModel {
-        id: m.id.0,
-        name: m.name.clone(),
-        mesh: m.mesh.clone(),
-        polygons: m.polygons.clone(),
-        path: m.path.clone(),
-        kind: Some(m.kind),
-        units: Some(m.units),
-        enriched_mesh: m.enriched_mesh.clone(),
-        winding_report: m.winding_report,
-        load_error: m.load_error.clone(),
-    }
-}
-
 impl<B: ComputeBackend> AppController<B> {
     pub fn import_stl_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
-        let id = ModelId(0); // placeholder — session assigns real ID
-        let model = import::import_stl(path, id, 1.0)?;
+        let model = import::import_stl(path, 0, 1.0)?; // ID reassigned by session
         let bbox = model.bbox();
         let auto_stock = self.state.session.stock_config().auto_from_model;
         if let Some(mesh) = &model.mesh
@@ -41,8 +24,7 @@ impl<B: ComputeBackend> AppController<B> {
         {
             self.state.session.stock_mut().update_from_bbox(&mesh.bbox);
         }
-        let sm = viz_model_to_session(&model);
-        let assigned_id = self.state.session.add_model(sm);
+        let assigned_id = self.state.session.add_model(model);
         self.state.selection = Selection::Model(ModelId(assigned_id));
         self.state.gui.mark_edited();
         self.pending_upload = true;
@@ -50,11 +32,9 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub fn import_svg_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
-        let id = ModelId(0);
-        let model = import::import_svg(path, id, 1.0)?;
+        let model = import::import_svg(path, 0, 1.0)?;
         let bbox = model.bbox();
-        let sm = viz_model_to_session(&model);
-        let assigned_id = self.state.session.add_model(sm);
+        let assigned_id = self.state.session.add_model(model);
         self.state.selection = Selection::Model(ModelId(assigned_id));
         self.state.gui.mark_edited();
         self.pending_upload = true;
@@ -62,11 +42,9 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub fn import_dxf_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
-        let id = ModelId(0);
-        let model = import::import_dxf(path, id, 1.0)?;
+        let model = import::import_dxf(path, 0, 1.0)?;
         let bbox = model.bbox();
-        let sm = viz_model_to_session(&model);
-        let assigned_id = self.state.session.add_model(sm);
+        let assigned_id = self.state.session.add_model(model);
         self.state.selection = Selection::Model(ModelId(assigned_id));
         self.state.gui.mark_edited();
         self.pending_upload = true;
@@ -74,8 +52,7 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub fn import_step_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
-        let id = ModelId(0);
-        let model = import::import_step(path, id, 1.0)?;
+        let model = import::import_step(path, 0, 1.0)?;
         let bbox = model.bbox();
         let auto_stock = self.state.session.stock_config().auto_from_model;
         if let Some(mesh) = &model.mesh
@@ -83,8 +60,7 @@ impl<B: ComputeBackend> AppController<B> {
         {
             self.state.session.stock_mut().update_from_bbox(&mesh.bbox);
         }
-        let sm = viz_model_to_session(&model);
-        let assigned_id = self.state.session.add_model(sm);
+        let assigned_id = self.state.session.add_model(model);
         self.state.selection = Selection::Model(ModelId(assigned_id));
         self.state.gui.mark_edited();
         self.pending_upload = true;
@@ -110,8 +86,7 @@ impl<B: ComputeBackend> AppController<B> {
         }
         let path = model.path.clone();
         let kind = model.kind.unwrap_or(ModelKind::Stl);
-        let placeholder_id = ModelId(model_id.0);
-        let new_model = import::import_model(&path, placeholder_id, kind, new_units)?;
+        let new_model = import::import_model(&path, model_id.0, kind, new_units)?;
         let bbox = new_model.bbox();
         let auto_stock = self.state.session.stock_config().auto_from_model;
         let mut stock_bbox_update: Option<rs_cam_core::geo::BoundingBox3> = None;
@@ -124,7 +99,7 @@ impl<B: ComputeBackend> AppController<B> {
         {
             model.mesh = new_model.mesh.clone();
             model.polygons = new_model.polygons.clone();
-            model.units = Some(new_model.units);
+            model.units = new_model.units;
             model.winding_report = new_model.winding_report;
             if auto_stock && let Some(mesh) = &model.mesh {
                 stock_bbox_update = Some(mesh.bbox);
@@ -153,8 +128,7 @@ impl<B: ComputeBackend> AppController<B> {
         let kind = model.kind.unwrap_or(ModelKind::Stl);
         let units = model.units.unwrap_or(ModelUnits::Millimeters);
 
-        let placeholder_id = ModelId(model_id.0);
-        let reloaded = import::import_model(&path, placeholder_id, kind, units)?;
+        let reloaded = import::import_model(&path, model_id.0, kind, units)?;
 
         if let Some(model) = self
             .state
@@ -428,11 +402,20 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
         });
     }
 
-    // Models
+    // Models — clone core's LoadedModel into the session, preserving existing IDs.
     for m in &job.models {
-        let sm = viz_model_to_session(m);
-        // Directly push to avoid re-assigning IDs
-        session.models_mut().push(sm);
+        session.models_mut().push(rs_cam_core::session::LoadedModel {
+            id: m.id,
+            name: m.name.clone(),
+            mesh: m.mesh.clone(),
+            polygons: m.polygons.clone(),
+            path: m.path.clone(),
+            kind: m.kind,
+            units: m.units,
+            enriched_mesh: m.enriched_mesh.clone(),
+            winding_report: m.winding_report,
+            load_error: m.load_error.clone(),
+        });
     }
 
     session.replace_setups_and_toolpaths(session_setups, session_tp_configs);

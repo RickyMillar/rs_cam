@@ -19,7 +19,7 @@ use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::debug_trace::ToolpathDebugRecorder;
 use crate::dexel_stock::StockCutDirection;
-use crate::geo::{BoundingBox3, P3};
+use crate::geo::BoundingBox3;
 use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces};
 use crate::simulation_cut::SimulationMetricOptions;
 
@@ -618,25 +618,15 @@ impl ProjectSession {
             }
 
             if !entries.is_empty() {
-                // Compute per-setup local stock bbox and transform info.
-                let z_rotation = setup.z_rotation;
-                let (eff_w, eff_d, eff_h) = {
-                    let (w, d, h) =
-                        setup
-                            .face_up
-                            .effective_stock(self.stock.x, self.stock.y, self.stock.z);
-                    z_rotation.effective_stock(w, d, h)
+                // Per-setup local stock bbox and transform info derived from
+                // the shared SetupTransformInfo helper (Phase E/D dedup).
+                let xform = self.setup_transform_info(setup.face_up, setup.z_rotation);
+                let local_stock_bbox = Some(xform.effective_stock_bbox());
+                let local_to_global = if xform.needs_transform() {
+                    Some(xform)
+                } else {
+                    None
                 };
-                let local_stock_bbox = Some(BoundingBox3 {
-                    min: P3::new(0.0, 0.0, 0.0),
-                    max: P3::new(eff_w, eff_d, eff_h),
-                });
-                let local_to_global =
-                    if setup.face_up != FaceUp::Top || z_rotation != ZRotation::Deg0 {
-                        Some(self.setup_transform_info(setup.face_up, z_rotation))
-                    } else {
-                        None
-                    };
 
                 groups.push(SimGroupEntry {
                     toolpaths: entries,
