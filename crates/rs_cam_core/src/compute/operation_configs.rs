@@ -36,8 +36,14 @@ pub enum RegionOrdering {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ClearingStrategy {
+    /// Fast contour-parallel offset clearing via EDT. Default.
     ContourParallel,
+    /// Curvature-adjusted adaptive clearing via variable-offset EDT.
     Adaptive,
+    /// Per-step direction search with preflight skip and widen-band
+    /// recovery. Slow to generate — reach for it when ContourParallel
+    /// and Adaptive leave uncut bands on difficult geometry.
+    AgentSearch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1234,5 +1240,34 @@ impl OperationParams for ProjectCurveConfig {
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    /// ClearingStrategy must serialize and deserialize all three variants.
+    /// Regression guard for the GUI/MCP exposure of AgentSearch —
+    /// adding a variant to the core ClearingStrategy3d enum is not
+    /// enough; this config-layer enum is the one serde sees from TOML
+    /// and the one the MCP's set_toolpath_param dispatches through.
+    #[test]
+    fn clearing_strategy_serde_round_trip() {
+        for variant in [
+            ClearingStrategy::ContourParallel,
+            ClearingStrategy::Adaptive,
+            ClearingStrategy::AgentSearch,
+        ] {
+            let json = serde_json::to_string(&variant).unwrap();
+            let round_trip: ClearingStrategy = serde_json::from_str(&json).unwrap();
+            assert_eq!(round_trip, variant);
+        }
+        // Also verify the snake_case wire format — agent_search, not AgentSearch.
+        let json = serde_json::to_string(&ClearingStrategy::AgentSearch).unwrap();
+        assert_eq!(json, "\"agent_search\"");
+        let from_wire: ClearingStrategy = serde_json::from_str("\"agent_search\"").unwrap();
+        assert_eq!(from_wire, ClearingStrategy::AgentSearch);
     }
 }

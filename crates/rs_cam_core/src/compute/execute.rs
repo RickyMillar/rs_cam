@@ -646,6 +646,9 @@ pub fn execute_operation_annotated(
                 crate::compute::operation_configs::ClearingStrategy::Adaptive => {
                     crate::adaptive3d::ClearingStrategy3d::Adaptive
                 }
+                crate::compute::operation_configs::ClearingStrategy::AgentSearch => {
+                    crate::adaptive3d::ClearingStrategy3d::AgentSearch
+                }
             };
             let params = crate::adaptive3d::Adaptive3dParams {
                 tool_radius,
