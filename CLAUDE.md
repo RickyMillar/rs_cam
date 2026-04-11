@@ -110,6 +110,15 @@ The GUI embeds an MCP server (`--mcp` flag) so Claude can control the live GUI i
 | Rapid collisions | 0 | 1-10 | > 10 |
 | Avg engagement | > 0.3 | 0.1-0.3 | < 0.1 |
 
+**Metric caveats** (April 2026 review — `planning/adaptive_review_2026-04.md`):
+
+- `rapid_collision_count` is the most reliable signal. Trust it as the primary "did anything bad happen" indicator regardless of operation type.
+- `average_engagement` is **cylinder-volume** engagement, not leading-edge engagement. For adaptive3d it typically reads ~10× lower than the algorithmic target (~3% observed vs ~30% target from `target_engagement_fraction`). Use it for **relative** comparison between parameter variants, not as an absolute pass/fail bar.
+- `average_engagement` is **unusable for 2D SVG operations** — always reports ~0 even when the stock is visibly cut. Known simulator issue with the polygon-to-dexel material initialization.
+- `air_cut_percentage` is similarly calibrated and inflates for 2D SVG ops. Treat as relative-only for 2D.
+- `peak_axial_doc_mm` measures total Z travel during contiguous feed moves, **not** axial engagement depth. On a 60mm stock it reports ~57mm; on 10mm stock it reports ~12mm. Do not use to verify `depth_per_pass` settings.
+- `issue_count` with thousands of `air_cut` entries per run is **emission noise**, not a signal. Every sample outside fresh material counts as an "issue". Look at `hotspots` and `rapid_collision_count` instead.
+
 ### Model types and what they need
 
 | Kind | Geometry | Typical operations |
