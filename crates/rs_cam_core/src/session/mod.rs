@@ -158,6 +158,73 @@ pub struct LoadedModel {
     pub load_error: Option<String>,
 }
 
+impl LoadedModel {
+    /// Construct a placeholder model for a file that failed to load.
+    ///
+    /// The path, name, kind, and units are preserved so the broken reference
+    /// can round-trip through save/load.
+    pub fn placeholder(
+        id: usize,
+        path: std::path::PathBuf,
+        name: String,
+        kind: ModelKind,
+        units: ModelUnits,
+        load_error: String,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            mesh: None,
+            polygons: None,
+            path,
+            kind: Some(kind),
+            units: Some(units),
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: Some(load_error),
+        }
+    }
+
+    /// Compute the bounding box of the model's geometry.
+    ///
+    /// For mesh models, returns the stored mesh bbox. For 2D polygon models,
+    /// computes the bbox from exterior + hole points at Z=0. Returns `None`
+    /// if no geometry is loaded.
+    pub fn bbox(&self) -> Option<BoundingBox3> {
+        if let Some(mesh) = &self.mesh {
+            return Some(mesh.bbox);
+        }
+
+        let polygons = self.polygons.as_deref()?;
+        let mut min_x = f64::INFINITY;
+        let mut min_y = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+
+        for polygon in polygons {
+            for point in polygon
+                .exterior
+                .iter()
+                .chain(polygon.holes.iter().flat_map(|hole| hole.iter()))
+            {
+                min_x = min_x.min(point.x);
+                min_y = min_y.min(point.y);
+                max_x = max_x.max(point.x);
+                max_y = max_y.max(point.y);
+            }
+        }
+
+        if !min_x.is_finite() {
+            return None;
+        }
+
+        Some(BoundingBox3 {
+            min: crate::geo::P3::new(min_x, min_y, 0.0),
+            max: crate::geo::P3::new(max_x, max_y, 0.0),
+        })
+    }
+}
+
 /// Kind of workholding fixture (compute-relevant subset of viz `FixtureKind`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
