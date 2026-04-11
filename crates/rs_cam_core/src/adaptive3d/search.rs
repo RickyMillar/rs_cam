@@ -10,7 +10,8 @@ use crate::slope::SurfaceHeightmap;
 use crate::tool::MillingCutter;
 use std::f64::consts::{PI, TAU};
 
-use super::{MaterialRegion, stock_has_material_above, stock_top_z_at};
+use super::clearing::MaterialRegion;
+use super::{stock_has_material_above, stock_top_z_at};
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct SearchDirection3dResult {
