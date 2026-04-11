@@ -1,4 +1,4 @@
-format_version = 1
+format_version = 3
 
 [job]
 name = "Missing Model Fixture"
@@ -15,9 +15,9 @@ name = "Missing"
 kind = "stl"
 units = { kind = "millimeters" }
 
-[[toolpaths]]
-id = 1
-name = "Adaptive 3D Fixture"
-type = "adaptive3d"
-tool_id = 1
-model_id = 1
+[[setups]]
+name = "Setup 1"
+
+# NOTE: no toolpaths defined. This fixture exists to exercise the
+# load-warning path when a referenced model file doesn't exist.
+# See tests/load_warning_window_can_be_shown_and_dismissed.

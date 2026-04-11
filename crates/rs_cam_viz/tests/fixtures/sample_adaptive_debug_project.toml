@@ -1,4 +1,4 @@
-format_version = 1
+format_version = 3
 
 [job]
 name = "Adaptive Debug Fixture"
@@ -15,11 +15,11 @@ name = "Square"
 kind = "svg"
 units = { kind = "millimeters" }
 
-[[toolpaths]]
-id = 1
-name = "Adaptive Debug"
-type = "adaptive"
-tool_id = 1
-model_id = 1
-boundary_enabled = true
-debug_options = { enabled = true }
+[[setups]]
+name = "Setup 1"
+
+# NOTE: no toolpaths defined here. This fixture is loaded as a stub
+# for manual GUI debugging of adaptive operation debug_options.
+# Add a toolpath via GUI after loading the project.
+# The ProjectSession loader silently drops toolpath sections without
+# an `[setups.toolpaths.operation]` sub-table (project_file.rs:745).

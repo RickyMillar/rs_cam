@@ -1,4 +1,4 @@
-format_version = 1
+format_version = 3
 
 [job]
 name = "Fixture 2D"
@@ -15,9 +15,11 @@ name = "Square"
 kind = "svg"
 units = { kind = "millimeters" }
 
-[[toolpaths]]
-id = 1
-name = "Pocket Fixture"
-type = "pocket"
-tool_id = 1
-model_id = 1
+[[setups]]
+name = "Setup 1"
+
+# NOTE: no toolpaths defined here. This fixture exists to exercise the
+# 2D model loader (see tests/fixture_projects_load_2d_and_3d_models).
+# Toolpaths should be added via `add_toolpath` MCP / GUI after load.
+# The ProjectSession loader silently drops toolpath sections without
+# an `[setups.toolpaths.operation]` sub-table (project_file.rs:745).
