@@ -1125,7 +1125,9 @@ impl CamServer {
     )]
     async fn import_model(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(ImportModelParam { path }): Parameters<ImportModelParam>,
+        #[allow(clippy::needless_pass_by_value)] Parameters(ImportModelParam { path }): Parameters<
+            ImportModelParam,
+        >,
     ) -> String {
         let mut guard = self.session.lock().await;
         let Some(session) = guard.as_mut() else {
@@ -1137,7 +1139,12 @@ impl CamServer {
                 "error": format!("Unsupported or missing extension for '{path}'. Supported: .stl, .svg, .dxf, .step, .stp")
             }));
         };
-        let next_id = session.models().iter().map(|m| m.id).max().map_or(0, |id| id + 1);
+        let next_id = session
+            .models()
+            .iter()
+            .map(|m| m.id)
+            .max()
+            .map_or(0, |id| id + 1);
         match rs_cam_core::io::load_model_file(
             path_buf,
             next_id,

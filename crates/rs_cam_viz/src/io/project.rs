@@ -1449,13 +1449,8 @@ mod tests {
         let temp_dir = unique_temp_dir();
         let project_path = temp_dir.join("job.toml");
         let fixture_path = repo_root().join("fixtures/demo_star.svg");
-        let model = import::import_model(
-            &fixture_path,
-            3,
-            ModelKind::Svg,
-            ModelUnits::Millimeters,
-        )
-        .unwrap();
+        let model = import::import_model(&fixture_path, 3, ModelKind::Svg, ModelUnits::Millimeters)
+            .unwrap();
 
         let mut job = JobState::new();
         job.name = "Round Trip 2D".to_owned();
@@ -1527,13 +1522,8 @@ mod tests {
         let temp_dir = unique_temp_dir();
         let project_path = temp_dir.join("job.toml");
         let fixture_path = repo_root().join("fixtures/terrain_small.stl");
-        let model = import::import_model(
-            &fixture_path,
-            8,
-            ModelKind::Stl,
-            ModelUnits::Millimeters,
-        )
-        .unwrap();
+        let model = import::import_model(&fixture_path, 8, ModelKind::Stl, ModelUnits::Millimeters)
+            .unwrap();
 
         let mut job = JobState::new();
         job.name = "Round Trip 3D".to_owned();
@@ -1579,13 +1569,8 @@ mod tests {
         let temp_dir = unique_temp_dir();
         let project_path = temp_dir.join("multi_setup.toml");
         let fixture_path = repo_root().join("fixtures/demo_star.svg");
-        let model = import::import_model(
-            &fixture_path,
-            3,
-            ModelKind::Svg,
-            ModelUnits::Millimeters,
-        )
-        .unwrap();
+        let model = import::import_model(&fixture_path, 3, ModelKind::Svg, ModelUnits::Millimeters)
+            .unwrap();
 
         let mut job = JobState::new();
         job.name = "Multi Setup".to_owned();
@@ -1746,13 +1731,7 @@ input = "{}"
         let mut job = JobState::new();
         job.tools.push(sample_tool());
         job.models.push(
-            import::import_model(
-                &model_path,
-                1,
-                ModelKind::Svg,
-                ModelUnits::Millimeters,
-            )
-            .unwrap(),
+            import::import_model(&model_path, 1, ModelKind::Svg, ModelUnits::Millimeters).unwrap(),
         );
         job.push_toolpath(ToolpathEntry::for_operation(
             ToolpathId(1),

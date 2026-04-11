@@ -404,18 +404,20 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
 
     // Models — clone core's LoadedModel into the session, preserving existing IDs.
     for m in &job.models {
-        session.models_mut().push(rs_cam_core::session::LoadedModel {
-            id: m.id,
-            name: m.name.clone(),
-            mesh: m.mesh.clone(),
-            polygons: m.polygons.clone(),
-            path: m.path.clone(),
-            kind: m.kind,
-            units: m.units,
-            enriched_mesh: m.enriched_mesh.clone(),
-            winding_report: m.winding_report,
-            load_error: m.load_error.clone(),
-        });
+        session
+            .models_mut()
+            .push(rs_cam_core::session::LoadedModel {
+                id: m.id,
+                name: m.name.clone(),
+                mesh: m.mesh.clone(),
+                polygons: m.polygons.clone(),
+                path: m.path.clone(),
+                kind: m.kind,
+                units: m.units,
+                enriched_mesh: m.enriched_mesh.clone(),
+                winding_report: m.winding_report,
+                load_error: m.load_error.clone(),
+            });
     }
 
     session.replace_setups_and_toolpaths(session_setups, session_tp_configs);

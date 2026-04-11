@@ -25,22 +25,26 @@ fn units_for_scale(scale: f64) -> ModelUnits {
 
 /// Import an STL file with a given scale factor.
 pub fn import_stl(path: &Path, id: usize, scale: f64) -> Result<LoadedModel, VizError> {
-    load_model_file(path, id, ModelKind::Stl, units_for_scale(scale)).map_err(|e| core_err_to_viz(&e))
+    load_model_file(path, id, ModelKind::Stl, units_for_scale(scale))
+        .map_err(|e| core_err_to_viz(&e))
 }
 
 /// Import an SVG file, returning a LoadedModel with polygons.
 pub fn import_svg(path: &Path, id: usize, scale: f64) -> Result<LoadedModel, VizError> {
-    load_model_file(path, id, ModelKind::Svg, units_for_scale(scale)).map_err(|e| core_err_to_viz(&e))
+    load_model_file(path, id, ModelKind::Svg, units_for_scale(scale))
+        .map_err(|e| core_err_to_viz(&e))
 }
 
 /// Import a DXF file, returning a LoadedModel with polygons.
 pub fn import_dxf(path: &Path, id: usize, scale: f64) -> Result<LoadedModel, VizError> {
-    load_model_file(path, id, ModelKind::Dxf, units_for_scale(scale)).map_err(|e| core_err_to_viz(&e))
+    load_model_file(path, id, ModelKind::Dxf, units_for_scale(scale))
+        .map_err(|e| core_err_to_viz(&e))
 }
 
 /// Import a STEP file, returning a LoadedModel with enriched mesh.
 pub fn import_step(path: &Path, id: usize, scale: f64) -> Result<LoadedModel, VizError> {
-    load_model_file(path, id, ModelKind::Step, units_for_scale(scale)).map_err(|e| core_err_to_viz(&e))
+    load_model_file(path, id, ModelKind::Step, units_for_scale(scale))
+        .map_err(|e| core_err_to_viz(&e))
 }
 
 /// Import a model using persisted kind/units metadata.

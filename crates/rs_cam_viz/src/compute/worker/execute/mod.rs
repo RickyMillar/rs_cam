@@ -765,8 +765,7 @@ mod tests {
         else {
             unreachable!();
         };
-        let mut req =
-            test_request_with_polygon(OperationConfig::Scallop(cfg), ToolType::EndMill);
+        let mut req = test_request_with_polygon(OperationConfig::Scallop(cfg), ToolType::EndMill);
         req.mesh = Some(Arc::new(rs_cam_core::mesh::make_test_flat(40.0)));
         let cancel = AtomicBool::new(false);
         let result = generate_via_core(&req, &cancel, None, None, None);
