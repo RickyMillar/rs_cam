@@ -1,10 +1,6 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 
-use rs_cam_core::enriched_mesh::EnrichedMesh;
 use rs_cam_core::geo::BoundingBox3;
-use rs_cam_core::mesh::TriangleMesh;
-use rs_cam_core::polygon::Polygon2;
 // Serialize/Deserialize not directly needed in this file any more
 // (GUI-local types like Corner don't derive Serialize)
 
@@ -18,79 +14,8 @@ pub use rs_cam_core::compute::tool_config::{
 };
 pub use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 
-/// A loaded geometry model.
-pub struct LoadedModel {
-    pub id: ModelId,
-    pub path: PathBuf,
-    pub name: String,
-    pub kind: ModelKind,
-    pub mesh: Option<Arc<TriangleMesh>>,
-    pub polygons: Option<Arc<Vec<Polygon2>>>,
-    pub enriched_mesh: Option<Arc<EnrichedMesh>>,
-    pub units: ModelUnits,
-    /// Percentage of inconsistent winding edges (from check_winding). None if not STL.
-    pub winding_report: Option<f64>,
-    /// Load/import failure preserved so broken references can round-trip.
-    pub load_error: Option<String>,
-}
-
-impl LoadedModel {
-    pub fn placeholder(
-        id: ModelId,
-        path: PathBuf,
-        name: String,
-        kind: ModelKind,
-        units: ModelUnits,
-        load_error: String,
-    ) -> Self {
-        Self {
-            id,
-            path,
-            name,
-            kind,
-            mesh: None,
-            polygons: None,
-            enriched_mesh: None,
-            units,
-            winding_report: None,
-            load_error: Some(load_error),
-        }
-    }
-
-    pub fn bbox(&self) -> Option<BoundingBox3> {
-        if let Some(mesh) = &self.mesh {
-            return Some(mesh.bbox);
-        }
-
-        let polygons = self.polygons.as_deref()?;
-        let mut min_x = f64::INFINITY;
-        let mut min_y = f64::INFINITY;
-        let mut max_x = f64::NEG_INFINITY;
-        let mut max_y = f64::NEG_INFINITY;
-
-        for polygon in polygons {
-            for point in polygon
-                .exterior
-                .iter()
-                .chain(polygon.holes.iter().flat_map(|hole| hole.iter()))
-            {
-                min_x = min_x.min(point.x);
-                min_y = min_y.min(point.y);
-                max_x = max_x.max(point.x);
-                max_y = max_y.max(point.y);
-            }
-        }
-
-        if !min_x.is_finite() {
-            return None;
-        }
-
-        Some(BoundingBox3 {
-            min: rs_cam_core::geo::P3::new(min_x, min_y, 0.0),
-            max: rs_cam_core::geo::P3::new(max_x, max_y, 0.0),
-        })
-    }
-}
+// LoadedModel is now the single core type — viz re-exports it directly.
+pub use rs_cam_core::session::LoadedModel;
 
 // ToolConfig, ToolType, ToolMaterial, BitCutDirection, PostConfig, PostFormat,
 // StockConfig, AlignmentPin, FlipAxis, ModelId, ToolId, SetupId, FixtureId,
@@ -448,7 +373,7 @@ impl Setup {
         } else {
             all_models
                 .iter()
-                .filter(|m| self.model_ids.contains(&m.id))
+                .filter(|m| self.model_ids.contains(&ModelId(m.id)))
                 .collect()
         }
     }
@@ -795,7 +720,7 @@ impl JobState {
         let mb = self
             .models
             .iter()
-            .find(|m| m.id == tp.model_id)
+            .find(|m| m.id == tp.model_id.0)
             .and_then(|m| m.bbox());
         super::toolpath::HeightContext {
             safe_z: self.post.safe_z,
@@ -966,7 +891,7 @@ impl JobState {
         self.next_model_id = self
             .models
             .iter()
-            .map(|m| m.id.0)
+            .map(|m| m.id)
             .max()
             .map_or(0, |id| id + 1);
         self.next_tool_id = self
