@@ -1117,6 +1117,45 @@ impl CamServer {
         }
     }
 
+    // ── Model import ─────────────────────────────────────────────────
+
+    #[tool(
+        name = "import_model",
+        description = "Import a model file (.stl, .svg, .dxf, .step/.stp) into the current project. Returns the assigned model id and kind."
+    )]
+    async fn import_model(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(ImportModelParam { path }): Parameters<ImportModelParam>,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return no_project_error();
+        };
+        let path_buf = Path::new(&path);
+        let Some(kind) = rs_cam_core::io::infer_kind_from_path(path_buf) else {
+            return json_str(serde_json::json!({
+                "error": format!("Unsupported or missing extension for '{path}'. Supported: .stl, .svg, .dxf, .step, .stp")
+            }));
+        };
+        let next_id = session.models().iter().map(|m| m.id).max().map_or(0, |id| id + 1);
+        match rs_cam_core::io::load_model_file(
+            path_buf,
+            next_id,
+            kind,
+            rs_cam_core::compute::stock_config::ModelUnits::Millimeters,
+        ) {
+            Ok(model) => {
+                let assigned_id = session.add_model(model);
+                json_str(serde_json::json!({
+                    "model_id": assigned_id,
+                    "kind": format!("{kind:?}").to_lowercase(),
+                    "path": path,
+                }))
+            }
+            Err(e) => json_str(serde_json::json!({"error": e.to_string()})),
+        }
+    }
+
     // ── Inspection tools ─────────────────────────────────────────────
 
     #[tool(
