@@ -16,7 +16,7 @@ use crate::compute::simulate::{
     SimGroupEntry, SimToolpathEntry, SimulationRequest, run_simulation,
 };
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use crate::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
+use crate::compute::transform::{FaceUp, ZRotation};
 use crate::debug_trace::ToolpathDebugRecorder;
 use crate::dexel_stock::StockCutDirection;
 use crate::geo::{BoundingBox3, P3};
@@ -364,9 +364,18 @@ impl ProjectSession {
             None
         };
 
+        // Clone operation so we can patch `setup_z_flipped` on ProjectCurve.
+        // This flag is #[serde(skip)] and set at compute time — single source of
+        // truth is the setup transform's `is_z_flipped()`.
+        let mut operation = tc.operation.clone();
+        if let crate::compute::OperationConfig::ProjectCurve(ref mut cfg) = operation {
+            let xform = self.setup_transform_info(face_up, z_rotation);
+            cfg.setup_z_flipped = needs_transform && xform.is_z_flipped();
+        }
+
         // Execute the operation via the shared compute::execute module (annotated variant)
         let tp_result = crate::compute::execute::execute_operation_annotated(
-            &tc.operation,
+            &operation,
             mesh.as_deref(),
             spatial_index.as_ref(),
             polygons.as_deref().map(|v| v.as_slice()),
@@ -624,13 +633,7 @@ impl ProjectSession {
                 });
                 let local_to_global =
                     if setup.face_up != FaceUp::Top || z_rotation != ZRotation::Deg0 {
-                        Some(SetupTransformInfo {
-                            face_up: setup.face_up,
-                            z_rotation,
-                            stock_x: self.stock.x,
-                            stock_y: self.stock.y,
-                            stock_z: self.stock.z,
-                        })
+                        Some(self.setup_transform_info(setup.face_up, z_rotation))
                     } else {
                         None
                     };

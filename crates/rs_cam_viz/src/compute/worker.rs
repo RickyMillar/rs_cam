@@ -27,7 +27,7 @@ use rs_cam_core::dressup::{
 };
 use rs_cam_core::feedopt::{FeedOptParams, optimize_feed_rates};
 use rs_cam_core::geo::BoundingBox3;
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::toolpath::{MoveType, Toolpath};

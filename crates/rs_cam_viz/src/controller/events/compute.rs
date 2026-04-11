@@ -95,12 +95,17 @@ impl<B: ComputeBackend> AppController<B> {
             _ => None,
         };
 
-        // Flag project_curve when the setup Z is already inverted (bottom-facing).
+        // Flag project_curve when the setup Z is already inverted. Single source
+        // of truth: `SetupTransformInfo::is_z_flipped()`.
         let needs_transform = transform_setup.is_some();
-        let setup_is_bottom = setup_data
-            .is_some_and(|s| s.face_up == rs_cam_core::compute::transform::FaceUp::Bottom);
+        let setup_is_z_flipped = setup_data.is_some_and(|s| {
+            self.state
+                .session
+                .setup_transform_info(s.face_up, s.z_rotation)
+                .is_z_flipped()
+        });
         if let OperationConfig::ProjectCurve(ref mut cfg) = operation {
-            cfg.setup_z_flipped = setup_is_bottom && needs_transform;
+            cfg.setup_z_flipped = setup_is_z_flipped && needs_transform;
         }
 
         let stock_snapshot = self.state.session.stock_config().clone();

@@ -1,8 +1,3 @@
-#[cfg(test)]
-mod operations_2d;
-#[cfg(test)]
-mod operations_3d;
-
 use super::helpers::{
     apply_dressups, build_simulation_cut_artifact, build_trace_artifact, debug_artifact_dir,
     effective_safe_z, simulation_metric_artifact_dir,
@@ -29,12 +24,6 @@ use rs_cam_core::geo::P3;
 #[cfg(test)]
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::semantic_trace::ToolpathSemanticKind;
-
-// Re-export items used by tests within this module
-#[cfg(test)]
-use operations_2d::{run_inlay, run_profile};
-#[cfg(test)]
-use operations_3d::run_scallop_annotated;
 
 pub(super) struct ComputeExecutionOutcome {
     pub result: Result<ToolpathResult, ComputeError>,
@@ -480,7 +469,7 @@ fn run_compute_with_phase_tracker(
 // etc.) were removed along with their only callers — the SemanticToolpathOp impls.
 // Dispatch now goes through rs_cam_core::compute::execute::execute_operation.
 
-// Remaining run_* helpers used only by tests live in operations_2d / operations_3d modules.
+// Tests dispatch directly through `generate_via_core` instead of bespoke run_* helpers.
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
@@ -565,7 +554,8 @@ mod tests {
         };
         let req =
             test_request_with_polygon(OperationConfig::Profile(cfg.clone()), ToolType::EndMill);
-        let tp = run_profile(&req, &cfg).unwrap();
+        let cancel = AtomicBool::new(false);
+        let tp = generate_via_core(&req, &cancel, None, None, None).unwrap();
 
         let final_z = -cfg.depth;
         let tab_z = final_z + cfg.tab_height;
@@ -689,7 +679,8 @@ mod tests {
         };
         let req =
             test_request_with_polygon(OperationConfig::Zigzag(cfg.clone()), ToolType::EndMill);
-        let tp = crate::compute::worker::execute::operations_2d::run_zigzag(&req, &cfg).unwrap();
+        let cancel = AtomicBool::new(false);
+        let tp = generate_via_core(&req, &cancel, None, None, None).unwrap();
 
         assert_eq!(
             dominant_cut_axis(&tp, cfg.feed_rate),
@@ -726,12 +717,12 @@ mod tests {
     #[test]
     fn inlay_output_contains_female_and_male_sections() {
         let cfg = InlayConfig::default();
-        let mut req =
-            test_request_with_polygon(OperationConfig::Inlay(cfg.clone()), ToolType::VBit);
+        let mut req = test_request_with_polygon(OperationConfig::Inlay(cfg), ToolType::VBit);
         req.polygons = Some(Arc::new(vec![Polygon2::rectangle(
             -10.0, -10.0, 10.0, 10.0,
         )]));
-        let tp = run_inlay(&req, &cfg).unwrap();
+        let cancel = AtomicBool::new(false);
+        let tp = generate_via_core(&req, &cancel, None, None, None).unwrap();
 
         assert!(!tp.moves.is_empty(), "Inlay should produce moves");
 
@@ -775,9 +766,10 @@ mod tests {
             unreachable!();
         };
         let mut req =
-            test_request_with_polygon(OperationConfig::Scallop(cfg.clone()), ToolType::EndMill);
+            test_request_with_polygon(OperationConfig::Scallop(cfg), ToolType::EndMill);
         req.mesh = Some(Arc::new(rs_cam_core::mesh::make_test_flat(40.0)));
-        let result = run_scallop_annotated(&req, &cfg, None, None);
+        let cancel = AtomicBool::new(false);
+        let result = generate_via_core(&req, &cancel, None, None, None);
         assert!(result.is_err());
         assert!(
             result.unwrap_err().to_string().contains("Ball Nose"),

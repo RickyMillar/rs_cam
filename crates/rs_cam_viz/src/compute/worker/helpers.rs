@@ -1,10 +1,9 @@
 use super::{
     AtomicBool, CollisionRequest, CollisionResult, ComputeError, ComputeRequest, DressupEntryStyle,
-    FeedOptParams, LinkMoveParams, MoveType, Polygon2, SimulationRequest, SpatialIndex, Toolpath,
-    TriangleMesh, apply_dogbones, apply_entry, apply_lead_in_out, apply_link_moves,
-    filter_air_cuts, fit_arcs, optimize_feed_rates,
+    FeedOptParams, LinkMoveParams, MoveType, SimulationRequest, Toolpath, apply_dogbones,
+    apply_entry, apply_lead_in_out, apply_link_moves, filter_air_cuts, fit_arcs,
+    optimize_feed_rates,
 };
-use crate::compute::OperationError;
 use serde_json::json;
 use std::path::PathBuf;
 
@@ -15,27 +14,6 @@ pub use rs_cam_core::compute::build_cutter;
 
 pub(super) fn effective_safe_z(req: &ComputeRequest) -> f64 {
     req.heights.retract_z
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-pub(super) fn require_polygons(req: &ComputeRequest) -> Result<&[Polygon2], OperationError> {
-    req.polygons.as_ref().map(|p| p.as_slice()).ok_or_else(|| {
-        OperationError::MissingGeometry(
-            "No 2D geometry (import SVG/DXF or select STEP faces)".to_owned(),
-        )
-    })
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-pub(super) fn require_mesh(
-    req: &ComputeRequest,
-) -> Result<(&TriangleMesh, SpatialIndex), OperationError> {
-    let mesh = req
-        .mesh
-        .as_ref()
-        .ok_or_else(|| OperationError::MissingGeometry("No mesh (import STL or STEP)".into()))?;
-    let index = SpatialIndex::build_auto(mesh);
-    Ok((mesh, index))
 }
 
 /// Identifiers for a traced dressup step.
