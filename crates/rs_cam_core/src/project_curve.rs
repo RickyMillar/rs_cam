@@ -171,10 +171,9 @@ pub fn project_curve_toolpath(
         ProjectDirection::FromBelow => {
             if params.setup_z_flipped {
                 // The mesh is already Z-inverted by a bottom-facing setup transform.
-                // The drop cutter will find the correct surface contact without an
-                // additional flip. Use z_flip=true so the depth goes upward (into
-                // the bottom surface).
-                project_curve_inner(polygon, mesh, index, cutter, params, true)
+                // The drop cutter finds correct surface contact without an additional
+                // flip. Depth goes below the surface in local frame (same as FromAbove).
+                project_curve_inner(polygon, mesh, index, cutter, params, false)
             } else {
                 // Standalone (no setup transform): flip the mesh Z so the bottom
                 // surface becomes the top for the drop cutter.

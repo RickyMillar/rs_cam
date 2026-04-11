@@ -1559,6 +1559,7 @@ fn multi_setup_top_bottom_simulation() {
                     stock_x: 50.0,
                     stock_y: 50.0,
                     stock_z: 20.0,
+                    ..Default::default()
                 }),
             },
         ],
@@ -1687,6 +1688,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                     stock_x: 30.0,
                     stock_y: 30.0,
                     stock_z: 10.0,
+                    ..Default::default()
                 }),
             },
         ],

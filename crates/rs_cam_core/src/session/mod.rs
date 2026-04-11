@@ -805,24 +805,24 @@ impl ProjectSession {
 
     // ── Geometry transforms for setup-local frame ────────────────
 
-    /// Transform a 3D point from global/world coordinates to setup-local frame.
-    ///
-    /// The transform chain is:
-    /// 1. Translate from world to stock-relative (origin at 0,0,0)
-    /// 2. Apply face-up flip on stock-relative coordinates
-    /// 3. Apply Z rotation
-    fn transform_point_to_setup(&self, p: P3, face_up: FaceUp, z_rotation: ZRotation) -> P3 {
-        // 1. Translate world -> stock-relative
-        let rel = P3::new(
-            p.x - self.stock.origin_x,
-            p.y - self.stock.origin_y,
-            p.z - self.stock.origin_z,
-        );
-        // 2. Apply FaceUp flip
-        let flipped = face_up.transform_point(rel, self.stock.x, self.stock.y, self.stock.z);
-        // 3. Apply ZRotation
-        let (eff_w, eff_d, _) = face_up.effective_stock(self.stock.x, self.stock.y, self.stock.z);
-        z_rotation.transform_point(flipped, eff_w, eff_d)
+    /// Build a [`SetupTransformInfo`] for this session's stock and the given
+    /// orientation. Callers that want to apply the transform themselves should
+    /// use the methods on `SetupTransformInfo`.
+    pub fn setup_transform_info(
+        &self,
+        face_up: FaceUp,
+        z_rotation: ZRotation,
+    ) -> crate::compute::transform::SetupTransformInfo {
+        crate::compute::transform::SetupTransformInfo {
+            face_up,
+            z_rotation,
+            stock_x: self.stock.x,
+            stock_y: self.stock.y,
+            stock_z: self.stock.z,
+            stock_origin_x: self.stock.origin_x,
+            stock_origin_y: self.stock.origin_y,
+            stock_origin_z: self.stock.origin_z,
+        }
     }
 
     /// Inverse transform: from setup-local frame back to global/world coordinates.
@@ -855,12 +855,8 @@ impl ProjectSession {
         face_up: FaceUp,
         z_rotation: ZRotation,
     ) -> TriangleMesh {
-        let new_verts: Vec<P3> = mesh
-            .vertices
-            .iter()
-            .map(|v| self.transform_point_to_setup(*v, face_up, z_rotation))
-            .collect();
-        TriangleMesh::from_raw(new_verts, mesh.triangles.clone())
+        self.setup_transform_info(face_up, z_rotation)
+            .apply_to_mesh(mesh)
     }
 
     /// Transform 2D polygons from global to setup-local XY coordinates.
@@ -870,41 +866,8 @@ impl ProjectSession {
         face_up: FaceUp,
         z_rotation: ZRotation,
     ) -> Vec<Polygon2> {
-        use crate::geo::P2;
-        polygons
-            .iter()
-            .map(|poly| {
-                let ext: Vec<P2> = poly
-                    .exterior
-                    .iter()
-                    .map(|p| {
-                        let p3 = self.transform_point_to_setup(
-                            P3::new(p.x, p.y, 0.0),
-                            face_up,
-                            z_rotation,
-                        );
-                        P2::new(p3.x, p3.y)
-                    })
-                    .collect();
-                let holes: Vec<Vec<P2>> = poly
-                    .holes
-                    .iter()
-                    .map(|hole| {
-                        hole.iter()
-                            .map(|p| {
-                                let p3 = self.transform_point_to_setup(
-                                    P3::new(p.x, p.y, 0.0),
-                                    face_up,
-                                    z_rotation,
-                                );
-                                P2::new(p3.x, p3.y)
-                            })
-                            .collect()
-                    })
-                    .collect();
-                Polygon2::with_holes(ext, holes)
-            })
-            .collect()
+        self.setup_transform_info(face_up, z_rotation)
+            .apply_to_polygons(polygons)
     }
 }
 

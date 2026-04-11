@@ -142,24 +142,13 @@ impl<B: ComputeBackend> AppController<B> {
             if !toolpaths.is_empty() {
                 all_toolpaths_flat.extend(toolpaths.clone());
 
-                let (eff_w, eff_d, eff_h) =
-                    setup.face_up.effective_stock(stock.x, stock.y, stock.z);
-                let (eff_w, eff_d, eff_h) = setup.z_rotation.effective_stock(eff_w, eff_d, eff_h);
-                let local_stock_bbox = BoundingBox3 {
-                    min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
-                    max: rs_cam_core::geo::P3::new(eff_w, eff_d, eff_h),
-                };
-
-                let needs_transform = setup.face_up != rs_cam_core::compute::transform::FaceUp::Top
-                    || setup.z_rotation != rs_cam_core::compute::transform::ZRotation::Deg0;
-                let local_to_global = if needs_transform {
-                    Some(crate::compute::SetupTransformInfo {
-                        face_up: setup.face_up,
-                        z_rotation: setup.z_rotation,
-                        stock_x: stock.x,
-                        stock_y: stock.y,
-                        stock_z: stock.z,
-                    })
+                let xform = self
+                    .state
+                    .session
+                    .setup_transform_info(setup.face_up, setup.z_rotation);
+                let local_stock_bbox = xform.effective_stock_bbox();
+                let local_to_global = if xform.needs_transform() {
+                    Some(xform)
                 } else {
                     None
                 };

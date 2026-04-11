@@ -607,6 +607,7 @@ mod tests {
                 stock_x: 50.0,
                 stock_y: 50.0,
                 stock_z: 20.0,
+                ..Default::default()
             }),
         };
 

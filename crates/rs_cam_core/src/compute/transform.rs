@@ -187,17 +187,28 @@ impl ZRotation {
 // ── SetupTransformInfo ────────────────────────────────────────────────
 
 use crate::dexel_stock::StockCutDirection;
+use crate::geo::P2;
+use crate::mesh::TriangleMesh;
+use crate::polygon::Polygon2;
 use crate::toolpath::{Move, MoveType, Toolpath};
 
 /// Information needed to transform a setup's local coordinates to the global
 /// stock frame (inverse of the setup transform).
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SetupTransformInfo {
     pub face_up: FaceUp,
     pub z_rotation: ZRotation,
     pub stock_x: f64,
     pub stock_y: f64,
     pub stock_z: f64,
+    /// Stock origin in world coordinates. Forward transforms (world → local)
+    /// subtract this before applying face/rotation. Inverse transforms
+    /// (`local_to_global`) operate in stock-relative coordinates and do not
+    /// re-add origin; callers that need true world coordinates should add it
+    /// themselves.
+    pub stock_origin_x: f64,
+    pub stock_origin_y: f64,
+    pub stock_origin_z: f64,
 }
 
 impl SetupTransformInfo {
@@ -209,6 +220,75 @@ impl SetupTransformInfo {
         let unrotated = self.z_rotation.inverse_transform_point(p, eff_w, eff_d);
         self.face_up
             .inverse_transform_point(unrotated, self.stock_x, self.stock_y, self.stock_z)
+    }
+
+    /// Transform a point from world coordinates to setup-local coordinates.
+    ///
+    /// Chain: 1) translate by `-stock_origin`, 2) face-up flip,
+    /// 3) Z-rotation.
+    pub fn world_to_local(&self, p: P3) -> P3 {
+        let rel = P3::new(
+            p.x - self.stock_origin_x,
+            p.y - self.stock_origin_y,
+            p.z - self.stock_origin_z,
+        );
+        let flipped = self
+            .face_up
+            .transform_point(rel, self.stock_x, self.stock_y, self.stock_z);
+        let (eff_w, eff_d, _) =
+            self.face_up
+                .effective_stock(self.stock_x, self.stock_y, self.stock_z);
+        self.z_rotation.transform_point(flipped, eff_w, eff_d)
+    }
+
+    /// Transform a triangle mesh from world coordinates to setup-local coordinates.
+    pub fn apply_to_mesh(&self, mesh: &TriangleMesh) -> TriangleMesh {
+        let new_verts: Vec<P3> = mesh.vertices.iter().map(|v| self.world_to_local(*v)).collect();
+        TriangleMesh::from_raw(new_verts, mesh.triangles.clone())
+    }
+
+    /// Transform 2D polygons from world coordinates to setup-local XY coordinates.
+    pub fn apply_to_polygons(&self, polygons: &[Polygon2]) -> Vec<Polygon2> {
+        polygons
+            .iter()
+            .map(|poly| {
+                let ext: Vec<P2> = poly
+                    .exterior
+                    .iter()
+                    .map(|p| {
+                        let p3 = self.world_to_local(P3::new(p.x, p.y, 0.0));
+                        P2::new(p3.x, p3.y)
+                    })
+                    .collect();
+                let holes: Vec<Vec<P2>> = poly
+                    .holes
+                    .iter()
+                    .map(|hole| {
+                        hole.iter()
+                            .map(|p| {
+                                let p3 = self.world_to_local(P3::new(p.x, p.y, 0.0));
+                                P2::new(p3.x, p3.y)
+                            })
+                            .collect()
+                    })
+                    .collect();
+                Polygon2::with_holes(ext, holes)
+            })
+            .collect()
+    }
+
+    /// Compute the effective stock bounding box in setup-local coordinates.
+    /// After the face-up + Z-rotation transform, stock occupies the axis-aligned
+    /// box from (0,0,0) to `(eff_w, eff_d, eff_h)`.
+    pub fn effective_stock_bbox(&self) -> crate::geo::BoundingBox3 {
+        let (w, d, h) =
+            self.face_up
+                .effective_stock(self.stock_x, self.stock_y, self.stock_z);
+        let (eff_w, eff_d, eff_h) = self.z_rotation.effective_stock(w, d, h);
+        crate::geo::BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(eff_w, eff_d, eff_h),
+        }
     }
 
     /// Derive the stock cut direction for this setup (used by playback).
@@ -226,6 +306,15 @@ impl SetupTransformInfo {
     /// Whether this setup requires a transform (non-identity orientation).
     pub fn needs_transform(&self) -> bool {
         self.face_up != FaceUp::Top || self.z_rotation != ZRotation::Deg0
+    }
+
+    /// Whether this setup inverts the Z axis (i.e. `FaceUp::Bottom`).
+    ///
+    /// This is the single source of truth for project_curve's `setup_z_flipped`
+    /// flag — if the setup transform has already Z-inverted the mesh, the
+    /// operation must not apply its own Z flip.
+    pub fn is_z_flipped(&self) -> bool {
+        matches!(self.face_up, FaceUp::Bottom)
     }
 
     /// Transform a toolpath from setup-local to global stock frame.
