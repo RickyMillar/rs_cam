@@ -507,7 +507,11 @@ mod tests {
             max_stay_down_dist: None,
             region_ordering: RegionOrdering::Global,
             initial_stock: None,
-            clearing_strategy: ClearingStrategy3d::AgentSearch,
+            // Matches the GUI/MCP default (ContourParallel) so the bulk of
+            // adaptive3d unit tests exercise the code path most users reach
+            // in production. Tests that specifically validate AgentSearch
+            // or Adaptive override this field explicitly.
+            clearing_strategy: ClearingStrategy3d::ContourParallel,
             z_blend: false,
         }
     }
@@ -1765,7 +1769,14 @@ mod tests {
     fn traced_adaptive3d_emits_spans_hotspots_and_annotations() {
         let (mesh, si) = make_hemisphere_mesh();
         let cutter = flat_cutter();
-        let params = default_params();
+        // This test validates AgentSearch's observability — z_level /
+        // adaptive_pass spans and adaptive3d_pass hotspots are only
+        // emitted by clear_z_level() (the AgentSearch path), not by
+        // clear_z_level_contour_parallel or clear_z_level_adaptive.
+        let params = Adaptive3dParams {
+            clearing_strategy: ClearingStrategy3d::AgentSearch,
+            ..default_params()
+        };
         let recorder = crate::debug_trace::ToolpathDebugRecorder::new("Adaptive 3D", "3D Rough");
         let ctx = recorder.root_context();
         let never_cancel = || false;
