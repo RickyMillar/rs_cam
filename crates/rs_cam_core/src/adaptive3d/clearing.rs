@@ -497,12 +497,25 @@ pub(super) fn clear_z_level_contour_parallel(
 
             // Emit entry (link or rapid) + cut segment
             if let Some(first) = path_3d.first() {
-                // Stay-down link if close to previous position, rapid otherwise
+                // Stay-down link if close to previous position AND the link
+                // path is clear of material. Without the is_clear_path_3d
+                // gate, z_blend=true produced Link moves that crossed
+                // uncut terrain between rings at different Z heights
+                // (F-5 in planning/adaptive_review_2026-04.md). The gate
+                // matches the one in clear_z_level (the AgentSearch path).
                 let link_dist = ctx.tool_radius * 3.0;
                 let should_link = last_pos.is_some_and(|lp| {
                     let dx = first.x - lp.x;
                     let dy = first.y - lp.y;
                     (dx * dx + dy * dy).sqrt() < link_dist
+                        && is_clear_path_3d(
+                            material_stock,
+                            surface_hm,
+                            lp,
+                            *first,
+                            z_level,
+                            ctx.stock_to_leave,
+                        )
                 });
                 if should_link {
                     segments.push(Adaptive3dSegment::Link(*first));
@@ -746,13 +759,22 @@ pub(super) fn clear_z_level_adaptive(
                 path_3d.push(P3::new(p.x, p.y, z));
             }
 
-            // Entry (link or rapid) + cut segment
+            // Entry (link or rapid) + cut segment. Matches the gate in
+            // clear_z_level_contour_parallel — see F-5 rationale there.
             if let Some(first) = path_3d.first() {
                 let link_dist = ctx.tool_radius * 3.0;
                 let should_link = last_pos.is_some_and(|lp| {
                     let dx = first.x - lp.x;
                     let dy = first.y - lp.y;
                     (dx * dx + dy * dy).sqrt() < link_dist
+                        && is_clear_path_3d(
+                            material_stock,
+                            surface_hm,
+                            lp,
+                            *first,
+                            z_level,
+                            ctx.stock_to_leave,
+                        )
                 });
                 if should_link {
                     segments.push(Adaptive3dSegment::Link(*first));
