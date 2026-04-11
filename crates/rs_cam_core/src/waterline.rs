@@ -88,6 +88,10 @@ pub fn waterline_contours(
 /// Z heights are generated from start_z down to final_z with the given step.
 // infallible: cancel closure always returns false, so Cancelled is unreachable
 #[allow(clippy::expect_used)]
+#[tracing::instrument(skip(mesh, index, cutter, params), fields(
+    start_z, final_z, z_step,
+    tri_count = mesh.triangles.len(),
+))]
 pub fn waterline_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,

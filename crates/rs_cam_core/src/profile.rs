@@ -45,6 +45,10 @@ pub struct ProfileParams {
 ///
 /// Returns an empty toolpath if the offset collapses (e.g., inside profile
 /// on a polygon smaller than the tool diameter).
+#[tracing::instrument(skip(polygon, params), fields(
+    tool_radius = params.tool_radius,
+    side = ?params.side,
+))]
 pub fn profile_toolpath(polygon: &Polygon2, params: &ProfileParams) -> Toolpath {
     if params.compensate_in_controller {
         // Controller handles the offset — toolpath follows the exact boundary.

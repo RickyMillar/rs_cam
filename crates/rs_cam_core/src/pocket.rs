@@ -35,6 +35,10 @@ pub struct PocketParams {
 ///
 /// Contours are cut from outermost to innermost (finish pass first).
 /// Returns an empty toolpath if the pocket is too small for the tool.
+#[tracing::instrument(skip(polygon, params), fields(
+    tool_radius = params.tool_radius,
+    stepover = params.stepover,
+))]
 pub fn pocket_toolpath(polygon: &Polygon2, params: &PocketParams) -> Toolpath {
     let contours = pocket_contours(polygon, params.tool_radius, params.stepover);
     contours_to_toolpath(&contours, params)

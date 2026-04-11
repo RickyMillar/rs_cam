@@ -33,6 +33,11 @@ pub struct ZigzagParams {
 /// (zigzag) to minimize rapids.
 ///
 /// For clean pocket walls, combine with a profile or contour finish pass.
+#[tracing::instrument(skip(polygon, params), fields(
+    tool_radius = params.tool_radius,
+    stepover = params.stepover,
+    angle = params.angle,
+))]
 pub fn zigzag_toolpath(polygon: &Polygon2, params: &ZigzagParams) -> Toolpath {
     let lines = zigzag_lines(polygon, params.tool_radius, params.stepover, params.angle);
     lines_to_toolpath(&lines, params)

@@ -52,6 +52,11 @@ fn point_in_any_polygon(p: &P2, polygons: &[Polygon2]) -> bool {
 ///
 /// If the small tool radius >= large tool radius, returns an empty toolpath.
 /// If the large tool can't fit at all, falls back to a full zigzag.
+#[tracing::instrument(skip(polygon, params), fields(
+    tool_radius = params.tool_radius,
+    prev_tool_radius = params.prev_tool_radius,
+    stepover = params.stepover,
+))]
 pub fn rest_machining_toolpath(polygon: &Polygon2, params: &RestParams) -> Toolpath {
     let mut tp = Toolpath::new();
 
