@@ -62,15 +62,31 @@ pub(super) fn adaptive_3d_segments(
     // Initialize tri-dexel material stock
     let mut material_stock = match &params.initial_stock {
         Some(stock) => stock.clone(),
-        None => TriDexelStock::from_stock(
-            origin_x,
-            origin_y,
-            extent_x,
-            extent_y,
-            bbox.min.z,
-            params.stock_top_z,
-            cell_size,
-        ),
+        None => {
+            // Stopgap validation: stock_top_z has no auto-derivation from
+            // stock or mesh, and its default (30.0) is arbitrary. Warn when
+            // it's clearly below the mesh — in that case the top of the
+            // model won't be cut and the user probably forgot to set it.
+            // See planning/adaptive_review_2026-04.md F-4.
+            if params.stock_top_z < bbox.max.z - 0.5 {
+                tracing::warn!(
+                    stock_top_z = params.stock_top_z,
+                    mesh_top_z = bbox.max.z,
+                    "stock_top_z is below mesh top by {:.1}mm — that band of material will \
+                     NOT be cut. Set stock_top_z to match your actual stock height.",
+                    bbox.max.z - params.stock_top_z
+                );
+            }
+            TriDexelStock::from_stock(
+                origin_x,
+                origin_y,
+                extent_x,
+                extent_y,
+                bbox.min.z,
+                params.stock_top_z,
+                cell_size,
+            )
+        }
     };
 
     // Precompute surface heightmap (rayon parallel drop-cutter)
