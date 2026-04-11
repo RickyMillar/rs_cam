@@ -104,10 +104,14 @@ impl ProjectSession {
                 // Serde ignores unknown fields by default, so a truly unknown param
                 // would deserialize successfully but be silently dropped.
                 if !existed {
-                    let check = serde_json::to_value(&new_op).ok();
+                    let check = serde_json::to_value(&new_op).map_err(|e| {
+                        tracing::error!(%e, "failed to re-serialize operation config for param verification");
+                        SessionError::InvalidParam(format!(
+                            "failed to verify param '{param}': {e}"
+                        ))
+                    })?;
                     let found = check
-                        .as_ref()
-                        .and_then(|v| v.get("params"))
+                        .get("params")
                         .and_then(|v| v.as_object())
                         .is_some_and(|obj| obj.contains_key(param));
                     if !found {

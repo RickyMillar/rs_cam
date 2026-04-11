@@ -1618,6 +1618,11 @@ fn runtime_annotations_to_labels(
 /// plunges, and feeds at the specified cut_depth.
 // infallible: cancel closure always returns false, so Cancelled is unreachable
 #[allow(clippy::expect_used)]
+#[tracing::instrument(skip(polygon, params), fields(
+    tool_radius = params.tool_radius,
+    stepover = params.stepover,
+    cut_depth = params.cut_depth,
+))]
 pub fn adaptive_toolpath(polygon: &Polygon2, params: &AdaptiveParams) -> Toolpath {
     let never_cancel = || false;
     adaptive_toolpath_with_cancel(polygon, params, &never_cancel)
