@@ -228,3 +228,217 @@ impl ProjectSession {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+    use crate::compute::catalog::OperationConfig;
+    use crate::compute::operation_configs::PocketConfig;
+    use crate::compute::stock_config::FixtureId;
+    use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use crate::compute::transform::FaceUp;
+    use crate::session::{Fixture, FixtureKind, KeepOutZone, ToolpathConfig};
+
+    fn make_tc(tool_id: usize, model_id: usize) -> ToolpathConfig {
+        use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
+        ToolpathConfig {
+            id: 0,
+            name: "Test Op".to_owned(),
+            enabled: true,
+            operation: OperationConfig::Pocket(PocketConfig::default()),
+            dressups: DressupConfig::default(),
+            heights: HeightsConfig::default(),
+            tool_id,
+            model_id,
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: BoundaryConfig::default(),
+            boundary_inherit: true,
+            stock_source: crate::session::StockSource::Fresh,
+            coolant: crate::gcode::CoolantMode::Off,
+            face_selection: None,
+            feeds_auto: crate::compute::config::FeedsAutoMode::default(),
+            debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+        }
+    }
+
+    /// Per-test temp directory so concurrent saves don't race on the shared
+    /// `.rs_cam_save_{pid}.tmp` temp filename that `save()` uses.
+    fn temp_path(name: &str) -> std::path::PathBuf {
+        let mut dir = std::env::temp_dir();
+        dir.push(format!("rs_cam_test_{}_{}", std::process::id(), name));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.push("project.toml");
+        dir
+    }
+
+    fn cleanup(path: &std::path::Path) {
+        let _ = std::fs::remove_file(path);
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::remove_dir(dir);
+        }
+    }
+
+    #[test]
+    fn empty_session_round_trip() {
+        let mut s = ProjectSession::new_empty();
+        s.set_name("Test Project".to_owned());
+
+        let path = temp_path("empty");
+        s.save(&path).unwrap();
+        let loaded = ProjectSession::load(&path).unwrap();
+
+        assert_eq!(loaded.name(), "Test Project");
+        assert_eq!(loaded.toolpath_count(), 0);
+        // Empty sessions may have 0 or 1 default setups after load
+        assert!(loaded.list_tools().is_empty());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn tool_round_trip() {
+        let mut s = ProjectSession::new_empty();
+        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::BallNose);
+        tool.name = "2mm Ball".to_owned();
+        tool.diameter = 2.0;
+        tool.flute_count = 2;
+        tool.stickout = 20.0;
+        s.add_tool(tool);
+
+        let path = temp_path("tool");
+        s.save(&path).unwrap();
+        let loaded = ProjectSession::load(&path).unwrap();
+
+        assert_eq!(loaded.tools().len(), 1);
+        let loaded_tool = &loaded.tools()[0];
+        assert_eq!(loaded_tool.name, "2mm Ball");
+        assert!((loaded_tool.diameter - 2.0).abs() < 1e-9);
+        assert_eq!(loaded_tool.flute_count, 2);
+        assert!((loaded_tool.stickout - 20.0).abs() < 1e-9);
+        assert!(matches!(loaded_tool.tool_type, ToolType::BallNose));
+        cleanup(&path);
+    }
+
+    #[test]
+    fn setup_with_fixture_and_keep_out_round_trip() {
+        let mut s = ProjectSession::new_empty();
+        let fixture = Fixture {
+            id: FixtureId(0),
+            name: "Clamp 1".to_owned(),
+            kind: FixtureKind::Clamp,
+            enabled: true,
+            origin_x: 10.0,
+            origin_y: 20.0,
+            origin_z: 0.0,
+            size_x: 30.0,
+            size_y: 15.0,
+            size_z: 20.0,
+            clearance: 3.0,
+        };
+        s.add_fixture(0, fixture).unwrap();
+
+        let zone = KeepOutZone {
+            id: crate::compute::stock_config::KeepOutId(0),
+            name: "Danger Zone".to_owned(),
+            enabled: true,
+            origin_x: 5.0,
+            origin_y: 5.0,
+            size_x: 15.0,
+            size_y: 25.0,
+        };
+        s.add_keep_out(0, zone).unwrap();
+
+        let path = temp_path("setup_fixture");
+        s.save(&path).unwrap();
+        let loaded = ProjectSession::load(&path).unwrap();
+
+        let setup = &loaded.list_setups()[0];
+        assert_eq!(setup.fixtures.len(), 1);
+        assert_eq!(setup.fixtures[0].name, "Clamp 1");
+        assert!((setup.fixtures[0].origin_x - 10.0).abs() < 1e-9);
+        assert!((setup.fixtures[0].clearance - 3.0).abs() < 1e-9);
+
+        assert_eq!(setup.keep_out_zones.len(), 1);
+        assert_eq!(setup.keep_out_zones[0].name, "Danger Zone");
+        assert!((setup.keep_out_zones[0].size_y - 25.0).abs() < 1e-9);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn toolpath_round_trip() {
+        let mut s = ProjectSession::new_empty();
+        s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+        let tool_id = s.tools()[0].id.0;
+
+        let mut tc = make_tc(tool_id, 0);
+        tc.name = "My Pocket".to_owned();
+        tc.enabled = false;
+        s.add_toolpath(0, tc).unwrap();
+
+        let path = temp_path("toolpath");
+        s.save(&path).unwrap();
+        let loaded = ProjectSession::load(&path).unwrap();
+
+        assert_eq!(loaded.toolpath_count(), 1);
+        let loaded_tc = &loaded.toolpath_configs()[0];
+        assert_eq!(loaded_tc.name, "My Pocket");
+        assert!(!loaded_tc.enabled);
+        assert!(matches!(loaded_tc.operation, OperationConfig::Pocket(_)));
+        cleanup(&path);
+    }
+
+    #[test]
+    fn stock_config_round_trip() {
+        let mut s = ProjectSession::new_empty();
+        let mut stock = s.stock_config().clone();
+        stock.x = 150.0;
+        stock.y = 200.0;
+        stock.z = 25.0;
+        stock.origin_x = -10.0;
+        stock.padding = 5.0;
+        s.set_stock_config(stock);
+
+        let path = temp_path("stock");
+        s.save(&path).unwrap();
+        let loaded = ProjectSession::load(&path).unwrap();
+
+        let loaded_stock = loaded.stock_config();
+        assert!((loaded_stock.x - 150.0).abs() < 1e-9);
+        assert!((loaded_stock.y - 200.0).abs() < 1e-9);
+        assert!((loaded_stock.z - 25.0).abs() < 1e-9);
+        assert!((loaded_stock.origin_x - (-10.0)).abs() < 1e-9);
+        assert!((loaded_stock.padding - 5.0).abs() < 1e-9);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn multi_setup_round_trip() {
+        let mut s = ProjectSession::new_empty();
+        s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+        let tool_id = s.tools()[0].id.0;
+
+        s.add_setup("Bottom Setup".to_owned(), FaceUp::Bottom);
+        assert_eq!(s.list_setups().len(), 2);
+
+        // One toolpath in each setup
+        s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        s.add_toolpath(1, make_tc(tool_id, 0)).unwrap();
+
+        let path = temp_path("multi_setup");
+        s.save(&path).unwrap();
+        let loaded = ProjectSession::load(&path).unwrap();
+
+        assert_eq!(loaded.list_setups().len(), 2);
+        assert_eq!(loaded.toolpath_count(), 2);
+        assert_eq!(loaded.list_setups()[0].toolpath_indices.len(), 1);
+        assert_eq!(loaded.list_setups()[1].toolpath_indices.len(), 1);
+        assert!(matches!(loaded.list_setups()[1].face_up, FaceUp::Bottom));
+        cleanup(&path);
+    }
+}
