@@ -918,3 +918,229 @@ fn auto_resolution_for_groups(groups: &[SimGroupEntry], stock_bbox: &BoundingBox
 
     from_tool.max(from_grid)
 }
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+    use crate::compute::catalog::OperationConfig;
+    use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
+    use crate::compute::operation_configs::PocketConfig;
+    use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use crate::debug_trace::ToolpathDebugOptions;
+    use crate::gcode::CoolantMode;
+    use crate::session::ToolpathConfig;
+    use serde_json::json;
+
+    fn make_session() -> ProjectSession {
+        let mut s = ProjectSession::new_empty();
+        let tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        s.add_tool(tool);
+        s
+    }
+
+    fn make_tc(tool_id: usize) -> ToolpathConfig {
+        ToolpathConfig {
+            id: 0,
+            name: "test".to_owned(),
+            enabled: true,
+            operation: OperationConfig::Pocket(PocketConfig::default()),
+            dressups: DressupConfig::default(),
+            heights: HeightsConfig::default(),
+            tool_id,
+            model_id: 0,
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: BoundaryConfig::default(),
+            boundary_inherit: true,
+            stock_source: crate::session::StockSource::Fresh,
+            coolant: CoolantMode::Off,
+            face_selection: None,
+            feeds_auto: crate::compute::config::FeedsAutoMode::default(),
+            debug_options: ToolpathDebugOptions::default(),
+        }
+    }
+
+    // ── set_toolpath_param ───────────────────────────────────────
+
+    #[test]
+    fn set_toolpath_param_feed_rate() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        s.set_toolpath_param(0, "feed_rate", json!(2000.0)).unwrap();
+        // Verify via OperationParams trait
+        match &s.toolpath_configs()[0].operation {
+            OperationConfig::Pocket(cfg) => assert!((cfg.feed_rate - 2000.0).abs() < 1e-9),
+            _ => panic!("expected Pocket"),
+        }
+    }
+
+    #[test]
+    fn set_toolpath_param_plunge_rate() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        s.set_toolpath_param(0, "plunge_rate", json!(500.0))
+            .unwrap();
+        match &s.toolpath_configs()[0].operation {
+            OperationConfig::Pocket(cfg) => assert!((cfg.plunge_rate - 500.0).abs() < 1e-9),
+            _ => panic!("expected Pocket"),
+        }
+    }
+
+    #[test]
+    fn set_toolpath_param_stepover() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        s.set_toolpath_param(0, "stepover", json!(0.5)).unwrap();
+        match &s.toolpath_configs()[0].operation {
+            OperationConfig::Pocket(cfg) => assert!((cfg.stepover - 0.5).abs() < 1e-9),
+            _ => panic!("expected Pocket"),
+        }
+    }
+
+    #[test]
+    fn set_toolpath_param_depth_per_pass() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        s.set_toolpath_param(0, "depth_per_pass", json!(1.5))
+            .unwrap();
+        match &s.toolpath_configs()[0].operation {
+            OperationConfig::Pocket(cfg) => assert!((cfg.depth_per_pass - 1.5).abs() < 1e-9),
+            _ => panic!("expected Pocket"),
+        }
+    }
+
+    #[test]
+    fn set_toolpath_param_wrong_type_errors() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        let result = s.set_toolpath_param(0, "feed_rate", json!("not a number"));
+        assert!(matches!(result, Err(SessionError::InvalidParam(_))));
+    }
+
+    #[test]
+    fn set_toolpath_param_unknown_param() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        let result = s.set_toolpath_param(0, "totally_fake_param", json!(42.0));
+        assert!(matches!(result, Err(SessionError::InvalidParam(_))));
+    }
+
+    #[test]
+    fn set_toolpath_param_invalid_index() {
+        let mut s = make_session();
+        let result = s.set_toolpath_param(99, "feed_rate", json!(100.0));
+        assert!(matches!(result, Err(SessionError::ToolpathNotFound(99))));
+    }
+
+    #[test]
+    fn set_toolpath_param_invalidates_result() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        s.results.insert(
+            0,
+            ToolpathComputeResult {
+                toolpath: Arc::new(crate::toolpath::Toolpath::new()),
+                stats: ToolpathStats::default(),
+                debug_trace: None,
+                semantic_trace: None,
+            },
+        );
+        s.set_toolpath_param(0, "feed_rate", json!(1000.0)).unwrap();
+        assert!(!s.results.contains_key(&0));
+    }
+
+    // ── set_tool_param ───────────────────────────────────────────
+
+    #[test]
+    fn set_tool_param_diameter() {
+        let mut s = make_session();
+        s.set_tool_param(0, "diameter", &json!(6.0)).unwrap();
+        assert!((s.tools()[0].diameter - 6.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn set_tool_param_flute_count() {
+        let mut s = make_session();
+        s.set_tool_param(0, "flute_count", &json!(4)).unwrap();
+        assert_eq!(s.tools()[0].flute_count, 4);
+    }
+
+    #[test]
+    fn set_tool_param_stickout() {
+        let mut s = make_session();
+        s.set_tool_param(0, "stickout", &json!(25.0)).unwrap();
+        assert!((s.tools()[0].stickout - 25.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn set_tool_param_corner_radius() {
+        let mut s = make_session();
+        s.set_tool_param(0, "corner_radius", &json!(0.5)).unwrap();
+        assert!((s.tools()[0].corner_radius - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn set_tool_param_cutting_length() {
+        let mut s = make_session();
+        s.set_tool_param(0, "cutting_length", &json!(20.0)).unwrap();
+        assert!((s.tools()[0].cutting_length - 20.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn set_tool_param_invalid_index() {
+        let mut s = make_session();
+        let result = s.set_tool_param(99, "diameter", &json!(6.0));
+        assert!(matches!(result, Err(SessionError::InvalidParam(_))));
+    }
+
+    #[test]
+    fn set_tool_param_wrong_type() {
+        let mut s = make_session();
+        let result = s.set_tool_param(0, "diameter", &json!("not a number"));
+        assert!(matches!(result, Err(SessionError::InvalidParam(_))));
+    }
+
+    #[test]
+    fn set_tool_param_invalidates_toolpath_results() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        s.results.insert(
+            0,
+            ToolpathComputeResult {
+                toolpath: Arc::new(crate::toolpath::Toolpath::new()),
+                stats: ToolpathStats::default(),
+                debug_trace: None,
+                semantic_trace: None,
+            },
+        );
+
+        s.set_tool_param(0, "diameter", &json!(8.0)).unwrap();
+        assert!(!s.results.contains_key(&0));
+    }
+
+    // ── generate_toolpath error paths ────────────────────────────
+
+    #[test]
+    fn generate_toolpath_not_found() {
+        let mut s = make_session();
+        let cancel = AtomicBool::new(false);
+        let result = s.generate_toolpath(99, &cancel);
+        assert!(matches!(result, Err(SessionError::ToolpathNotFound(99))));
+    }
+
+    // ── diagnostics ──────────────────────────────────────────────
+
+    #[test]
+    fn diagnostics_empty() {
+        let s = ProjectSession::new_empty();
+        let diag = s.diagnostics();
+        assert_eq!(diag.verdict, "OK");
+        assert!(diag.per_toolpath.is_empty());
+    }
+}
