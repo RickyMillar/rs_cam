@@ -135,6 +135,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                 .selected_text(match cfg.clearing_strategy {
                     ClearingStrategy::ContourParallel => "Contour Parallel",
                     ClearingStrategy::Adaptive => "Adaptive",
+                    ClearingStrategy::AgentSearch => "Agent Search",
                 })
                 .show_ui(ui, |ui| {
                     ui.selectable_value(
@@ -146,6 +147,16 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                         &mut cfg.clearing_strategy,
                         ClearingStrategy::Adaptive,
                         "Adaptive",
+                    );
+                    ui.selectable_value(
+                        &mut cfg.clearing_strategy,
+                        ClearingStrategy::AgentSearch,
+                        "Agent Search",
+                    )
+                    .on_hover_text(
+                        "Per-step direction search with preflight skip and widen-band \
+                         recovery. Slow to generate — use when Contour Parallel or \
+                         Adaptive leave uncut bands on difficult geometry.",
                     );
                 });
             ui.end_row();
