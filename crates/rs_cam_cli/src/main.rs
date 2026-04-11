@@ -697,6 +697,17 @@ enum Commands {
         #[arg(long, default_value = "global")]
         order_by: String,
 
+        /// Clearing strategy: contour_parallel (default, fast EDT),
+        /// adaptive (curvature-adjusted EDT),
+        /// agent_search (per-step direction search — slow, advanced)
+        #[arg(long, default_value = "contour_parallel")]
+        strategy: String,
+
+        /// Blend Z toward terrain surface across contour offsets
+        /// (best for terrain/relief; default false, best for pockets)
+        #[arg(long)]
+        z_blend: bool,
+
         /// Enable material removal simulation in viewer (requires --view)
         #[arg(long)]
         simulate: bool,
@@ -2529,6 +2540,8 @@ fn main() -> Result<()> {
             detect_flat_areas,
             max_stay_down_dist,
             order_by,
+            strategy,
+            z_blend,
             post,
             output,
             svg,
@@ -2567,6 +2580,24 @@ fn main() -> Result<()> {
                 _ => RegionOrdering::Global,
             };
 
+            // Mirrors the CLI `job` subcommand's strategy parser at
+            // crates/rs_cam_cli/src/job.rs so the `adaptive3d` subcommand
+            // and TOML job files accept the same vocabulary.
+            let clearing_strategy = match strategy.to_lowercase().as_str() {
+                "contour" | "contour_parallel" | "contour-parallel" => {
+                    rs_cam_core::adaptive3d::ClearingStrategy3d::ContourParallel
+                }
+                "adaptive" => rs_cam_core::adaptive3d::ClearingStrategy3d::Adaptive,
+                "agent" | "agent_search" | "agent-search" => {
+                    rs_cam_core::adaptive3d::ClearingStrategy3d::AgentSearch
+                }
+                other => {
+                    return Err(anyhow::anyhow!(
+                        "Unknown strategy '{other}'. Use contour_parallel, adaptive, or agent_search."
+                    ));
+                }
+            };
+
             let params = Adaptive3dParams {
                 tool_radius: cutter.radius(),
                 stepover,
@@ -2584,8 +2615,8 @@ fn main() -> Result<()> {
                 max_stay_down_dist,
                 region_ordering: region_ord,
                 initial_stock: None,
-                clearing_strategy: rs_cam_core::adaptive3d::ClearingStrategy3d::AgentSearch,
-                z_blend: false,
+                clearing_strategy,
+                z_blend,
             };
 
             let start = std::time::Instant::now();
