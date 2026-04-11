@@ -296,6 +296,14 @@ pub(super) fn adaptive_3d_segments(
                 regions = regions.len(),
                 "Detected material regions for by-area ordering"
             );
+            if regions.len() == 1 {
+                info!(
+                    "region_ordering=ByArea detected a single material region — \
+                     pass ordering matches Global. If you expected multiple \
+                     regions, check mesh for connected islands or adjust \
+                     min_cells detection threshold."
+                );
+            }
             if let Some(scope) = region_scope.as_ref() {
                 scope.set_counter("regions", regions.len() as f64);
             }
