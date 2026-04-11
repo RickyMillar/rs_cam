@@ -4,6 +4,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use tracing::instrument;
+
 use crate::compute::annotate::annotate_from_runtime_events;
 use crate::compute::collision_check::{
     CollisionCheckRequest, CollisionCheckResult, run_collision_check,
@@ -37,6 +39,7 @@ impl ProjectSession {
     /// all 23 operation variants are handled generically.
     ///
     /// Invalidates the cached compute result for this toolpath.
+    #[instrument(skip(self, value))]
     pub fn set_toolpath_param(
         &mut self,
         index: usize,
@@ -93,8 +96,8 @@ impl ProjectSession {
                 // surface_model_id on ProjectCurve).
                 let existed = params_obj.contains_key(param);
                 params_obj.insert(param.to_owned(), value);
-                let new_op: crate::compute::catalog::OperationConfig =
-                    serde_json::from_value(json).map_err(|e| {
+                let new_op: crate::compute::catalog::OperationConfig = serde_json::from_value(json)
+                    .map_err(|e| {
                         SessionError::InvalidParam(format!("invalid value for '{param}': {e}"))
                     })?;
                 // Verify the param was actually consumed: re-serialize and check.
@@ -132,6 +135,7 @@ impl ProjectSession {
     /// `shank_diameter`, `shank_length`, `holder_diameter`.
     ///
     /// Invalidates cached results for all toolpaths that reference this tool.
+    #[instrument(skip(self, value))]
     pub fn set_tool_param(
         &mut self,
         index: usize,
@@ -221,6 +225,7 @@ impl ProjectSession {
     // ── Compute ────────────────────────────────────────────────────
 
     /// Generate a single toolpath by index.
+    #[instrument(skip(self, cancel))]
     pub fn generate_toolpath(
         &mut self,
         index: usize,
@@ -511,6 +516,7 @@ impl ProjectSession {
     }
 
     /// Generate all enabled toolpaths, skipping those whose IDs are in `skip`.
+    #[instrument(skip(self, skip_ids, cancel))]
     pub fn generate_all(
         &mut self,
         skip_ids: &[usize],
@@ -548,6 +554,7 @@ impl ProjectSession {
     // ── Analysis ───────────────────────────────────────────────────
 
     /// Run tri-dexel stock simulation over all computed toolpaths.
+    #[instrument(skip(self, opts))]
     pub fn run_simulation(
         &mut self,
         opts: &SimulationOptions,
@@ -667,6 +674,7 @@ impl ProjectSession {
     }
 
     /// Run a collision check for a specific toolpath by index.
+    #[instrument(skip(self))]
     pub fn collision_check(
         &self,
         index: usize,
@@ -707,6 +715,7 @@ impl ProjectSession {
     /// against the actual remaining stock surface). If no simulation has
     /// been run, rapid collision counts are 0 — we don't fall back to the
     /// inaccurate original-bbox check.
+    #[instrument(skip(self))]
     pub fn diagnostics(&self) -> ProjectDiagnostics {
         let mut per_toolpath = Vec::new();
         let mut total_collision_count: usize = 0;
@@ -816,6 +825,7 @@ impl ProjectSession {
     // ── Export ──────────────────────────────────────────────────────
 
     /// Export G-code for all computed toolpaths.
+    #[instrument(skip(self))]
     pub fn export_gcode(&self, path: &Path, _setup_id: Option<usize>) -> Result<(), SessionError> {
         use crate::compute::{CompensationType, OperationConfig};
         use crate::gcode::{
@@ -870,6 +880,7 @@ impl ProjectSession {
     }
 
     /// Export diagnostics as JSON files to an output directory.
+    #[instrument(skip(self))]
     pub fn export_diagnostics_json(&self, output_dir: &Path) -> Result<(), SessionError> {
         std::fs::create_dir_all(output_dir)?;
         let diag = self.diagnostics();

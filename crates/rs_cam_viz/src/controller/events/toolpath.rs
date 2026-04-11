@@ -225,21 +225,19 @@ impl<B: ComputeBackend> AppController<B> {
         setup_id: crate::state::job::SetupId,
         _idx: usize,
     ) {
-        // Find the toolpath and remove from its current setup
         if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0) {
-            // Remove from source setup's toolpath_indices
-            for setup in self.state.session.setups_mut() {
-                setup.toolpath_indices.retain(|&i| i != tp_idx);
-            }
-            // Add to target setup's toolpath_indices
-            if let Some(target) = self
+            // Resolve the target setup's index from its ID
+            let target_idx = self
                 .state
                 .session
-                .setups_mut()
-                .iter_mut()
-                .find(|s| s.id == setup_id.0)
-            {
-                target.toolpath_indices.push(tp_idx);
+                .list_setups()
+                .iter()
+                .position(|s| s.id == setup_id.0);
+            if let Some(target_setup_idx) = target_idx {
+                let _ = self
+                    .state
+                    .session
+                    .move_toolpath_to_setup(tp_idx, target_setup_idx);
             }
             self.pending_upload = true;
             self.state.gui.mark_edited();

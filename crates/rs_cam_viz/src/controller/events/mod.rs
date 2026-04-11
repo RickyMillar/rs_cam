@@ -77,10 +77,8 @@ impl<B: ComputeBackend> AppController<B> {
                 self.handle_move_toolpath_to_setup(tp_id, setup_id, idx);
             }
             AppEvent::ToggleToolpathEnabled(tp_id) => {
-                if let Some((idx, _tc)) = self.state.session.find_toolpath_config_by_id(tp_id.0)
-                    && let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx)
-                {
-                    tc.enabled = !tc.enabled;
+                if let Some((idx, tc)) = self.state.session.find_toolpath_config_by_id(tp_id.0) {
+                    let _ = self.state.session.set_toolpath_enabled(idx, !tc.enabled);
                 }
             }
             AppEvent::RemoveToolpath(tp_id) => self.handle_remove_toolpath(tp_id),
@@ -122,19 +120,19 @@ impl<B: ComputeBackend> AppController<B> {
                 model_id: _,
                 face_id,
             } => {
-                if let Some((idx, _)) = self.state.session.find_toolpath_config_by_id(toolpath_id.0)
+                if let Some((idx, tc)) =
+                    self.state.session.find_toolpath_config_by_id(toolpath_id.0)
                 {
-                    if let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx) {
-                        let faces = tc.face_selection.get_or_insert_with(Vec::new);
-                        if let Some(pos) = faces.iter().position(|f| *f == face_id) {
-                            faces.remove(pos);
-                        } else {
-                            faces.push(face_id);
-                        }
-                        if faces.is_empty() {
-                            tc.face_selection = None;
-                        }
+                    // Compute new face selection by toggling the given face_id
+                    let mut faces = tc.face_selection.clone().unwrap_or_default();
+                    if let Some(pos) = faces.iter().position(|f| *f == face_id) {
+                        faces.remove(pos);
+                    } else {
+                        faces.push(face_id);
                     }
+                    let new_selection = if faces.is_empty() { None } else { Some(faces) };
+                    let _ = self.state.session.set_face_selection(idx, new_selection);
+
                     // Mark stale in GUI runtime
                     if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
                         rt.stale_since = Some(std::time::Instant::now());
@@ -155,6 +153,7 @@ impl<B: ComputeBackend> AppController<B> {
                 self.state.gui.mark_edited();
             }
             AppEvent::MachineChanged => {
+                self.state.session.invalidate_machine();
                 self.state.gui.mark_edited();
             }
 

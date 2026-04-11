@@ -286,9 +286,7 @@ impl EmbeddedCamServer {
             rs_cam_mcp::server::AddSetupParam,
         >,
     ) -> String {
-        Self::format_result(
-            self.send_request(McpRequestKind::AddSetup { name }).await,
-        )
+        Self::format_result(self.send_request(McpRequestKind::AddSetup { name }).await)
     }
 
     #[tool(
