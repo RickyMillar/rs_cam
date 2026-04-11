@@ -30,6 +30,7 @@ pub mod geo;
 pub mod horizontal_finish;
 pub mod inlay;
 pub mod interrupt;
+pub mod io;
 pub mod machine;
 pub mod material;
 pub mod mesh;
