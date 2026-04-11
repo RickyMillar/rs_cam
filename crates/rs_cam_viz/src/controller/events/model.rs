@@ -366,12 +366,17 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn handle_stock_changed(&mut self) {
         let auto_from_model = self.state.session.stock_config().auto_from_model;
         if auto_from_model
-            && let Some(bbox) = self
-                .state
-                .session
-                .models()
-                .iter()
-                .find_map(|m| m.mesh.as_ref().map(|mesh| mesh.bbox))
+            && let Some(bbox) = self.state.session.models().iter().find_map(|m| {
+                // Prefer mesh bbox for 3D models; fall back to the 2D
+                // polygon bbox (zero-height) for SVG/DXF. Without this
+                // fallback, attaching an SVG/DXF left the stock at the
+                // pre-attach size — see F-13 in the April review.
+                m.mesh.as_ref().map(|mesh| mesh.bbox).or_else(|| {
+                    crate::state::job::session_polygons_bbox(
+                        m.polygons.as_deref().map(|v| v.as_slice()),
+                    )
+                })
+            })
         {
             self.state.session.stock_mut().update_from_bbox(&bbox);
         }
