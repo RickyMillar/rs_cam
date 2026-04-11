@@ -42,13 +42,76 @@ pub struct SimulationCutSample {
 pub struct SimulationCutIssue {
     pub kind: SimulationCutIssueKind,
     pub toolpath_id: usize,
+    /// First move in the issue segment.
     pub move_index: usize,
+    /// First sample in the issue segment.
     pub sample_index: usize,
+    /// Cumulative time at the first sample in the segment (seconds).
     pub cumulative_time_s: f64,
+    /// Position at the first sample in the segment.
     pub position: [f64; 3],
+    /// Radial engagement at the first sample (always < 0.02 for AirCut,
+    /// < 0.10 for LowEngagement). For the worst engagement in the segment
+    /// use `min_radial_engagement`.
     pub radial_engagement: f64,
     pub semantic_item_id: Option<u64>,
     pub label: String,
+
+    /// Last move covered by the issue segment.
+    #[serde(default)]
+    pub end_move_index: usize,
+    /// Last sample covered by the issue segment.
+    #[serde(default)]
+    pub end_sample_index: usize,
+    /// Cumulative time at the last sample in the segment (seconds).
+    #[serde(default)]
+    pub end_cumulative_time_s: f64,
+    /// Position at the last sample in the segment.
+    #[serde(default)]
+    pub end_position: [f64; 3],
+    /// Total samples coalesced into this segment (≥ 1).
+    #[serde(default = "default_sample_count")]
+    pub sample_count: usize,
+    /// Duration from first to last sample in the segment (seconds).
+    #[serde(default)]
+    pub duration_s: f64,
+    /// Minimum radial engagement across all samples in the segment.
+    #[serde(default)]
+    pub min_radial_engagement: f64,
+}
+
+fn default_sample_count() -> usize {
+    1
+}
+
+/// Start a new issue segment from a sample known to be `is_cutting` and
+/// below the engagement threshold for the given `kind`.
+fn new_open_segment(
+    sample: &SimulationCutSample,
+    kind: SimulationCutIssueKind,
+) -> SimulationCutIssue {
+    let label = match kind {
+        SimulationCutIssueKind::AirCut => "Air cut".to_owned(),
+        SimulationCutIssueKind::LowEngagement => "Low engagement".to_owned(),
+    };
+    SimulationCutIssue {
+        kind,
+        toolpath_id: sample.toolpath_id,
+        move_index: sample.move_index,
+        sample_index: sample.sample_index,
+        cumulative_time_s: sample.cumulative_time_s,
+        position: sample.position,
+        radial_engagement: sample.radial_engagement,
+        semantic_item_id: sample.semantic_item_id,
+        label,
+        end_move_index: sample.move_index,
+        end_sample_index: sample.sample_index,
+        end_cumulative_time_s: sample.cumulative_time_s,
+        end_position: sample.position,
+        sample_count: 1,
+        duration_s: 0.0,
+        min_radial_engagement: sample.radial_engagement,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -205,6 +268,16 @@ impl SimulationCutTrace {
         let mut semantic_accs: BTreeMap<(usize, u64), SemanticSummaryAccumulator> = BTreeMap::new();
         let mut overall = SummaryAccumulator::default();
         let mut issues = Vec::new();
+        // Coalesce contiguous air-cut / low-engagement samples into a single
+        // issue per segment instead of one issue per sample. Before this
+        // coalescing, a 30K-move adaptive3d run emitted ~141K "air_cut"
+        // issues — most of a run's sample stream — drowning out any
+        // actionable signal. Tracked per-toolpath so interleaving of
+        // samples across toolpaths doesn't bleed one toolpath's segment
+        // into another's.
+        //
+        // See planning/adaptive_review_2026-04.md F-15.
+        let mut open_segments: BTreeMap<usize, SimulationCutIssue> = BTreeMap::new();
 
         for sample in &samples {
             overall.observe(sample);
@@ -223,31 +296,52 @@ impl SimulationCutTrace {
                     .observe(sample);
             }
 
-            if sample.is_cutting && sample.radial_engagement < 0.02 {
-                issues.push(SimulationCutIssue {
-                    kind: SimulationCutIssueKind::AirCut,
-                    toolpath_id: sample.toolpath_id,
-                    move_index: sample.move_index,
-                    sample_index: sample.sample_index,
-                    cumulative_time_s: sample.cumulative_time_s,
-                    position: sample.position,
-                    radial_engagement: sample.radial_engagement,
-                    semantic_item_id: sample.semantic_item_id,
-                    label: "Air cut".to_owned(),
-                });
-            } else if sample.is_cutting && sample.radial_engagement < 0.10 {
-                issues.push(SimulationCutIssue {
-                    kind: SimulationCutIssueKind::LowEngagement,
-                    toolpath_id: sample.toolpath_id,
-                    move_index: sample.move_index,
-                    sample_index: sample.sample_index,
-                    cumulative_time_s: sample.cumulative_time_s,
-                    position: sample.position,
-                    radial_engagement: sample.radial_engagement,
-                    semantic_item_id: sample.semantic_item_id,
-                    label: "Low engagement".to_owned(),
-                });
+            let kind = if !sample.is_cutting {
+                None
+            } else if sample.radial_engagement < 0.02 {
+                Some(SimulationCutIssueKind::AirCut)
+            } else if sample.radial_engagement < 0.10 {
+                Some(SimulationCutIssueKind::LowEngagement)
+            } else {
+                None
+            };
+
+            match (open_segments.get_mut(&sample.toolpath_id), kind) {
+                (Some(open), Some(k)) if open.kind == k => {
+                    // Same kind — extend the current segment.
+                    open.end_move_index = sample.move_index;
+                    open.end_sample_index = sample.sample_index;
+                    open.end_cumulative_time_s = sample.cumulative_time_s;
+                    open.end_position = sample.position;
+                    open.duration_s = sample.cumulative_time_s - open.cumulative_time_s;
+                    if sample.radial_engagement < open.min_radial_engagement {
+                        open.min_radial_engagement = sample.radial_engagement;
+                    }
+                    open.sample_count += 1;
+                }
+                (Some(_), Some(k)) => {
+                    // Kind changed — flush the old segment and open a new one.
+                    if let Some(old) = open_segments.remove(&sample.toolpath_id) {
+                        issues.push(old);
+                    }
+                    open_segments.insert(sample.toolpath_id, new_open_segment(sample, k));
+                }
+                (Some(_), None) => {
+                    // Issue ended (either rapid or good engagement).
+                    if let Some(old) = open_segments.remove(&sample.toolpath_id) {
+                        issues.push(old);
+                    }
+                }
+                (None, Some(k)) => {
+                    open_segments.insert(sample.toolpath_id, new_open_segment(sample, k));
+                }
+                (None, None) => {}
             }
+        }
+
+        // Flush any segments still open at the end of the sample stream.
+        for (_, open) in open_segments {
+            issues.push(open);
         }
 
         let toolpath_summaries: Vec<_> = toolpaths
@@ -577,7 +671,12 @@ fn sanitize_filename_component(input: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
     use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder};
@@ -918,6 +1017,230 @@ mod tests {
         // Air cut time = 0.1s, low engagement time = 0.1s
         assert!((trace.summary.air_cut_time_s - 0.1).abs() < 1e-9);
         assert!((trace.summary.low_engagement_time_s - 0.1).abs() < 1e-9);
+    }
+
+    #[test]
+    fn trace_coalesces_contiguous_air_cut_samples_into_one_issue() {
+        // Ten consecutive air-cut samples, then one good sample, then
+        // five more consecutive air-cut samples. Should produce exactly
+        // TWO issue segments (not fifteen). See F-15 in the April review.
+        let mut samples = Vec::new();
+        for i in 0..10 {
+            samples.push(SimulationCutSample {
+                toolpath_id: 0,
+                move_index: i,
+                sample_index: i,
+                position: [i as f64, 0.0, -1.0],
+                cumulative_time_s: 0.1 * (i as f64 + 1.0),
+                segment_time_s: 0.1,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 1.0,
+                radial_engagement: 0.005 + i as f64 * 0.001, // all below 0.02
+                chipload_mm_per_tooth: 0.01,
+                removed_volume_est_mm3: 0.0,
+                mrr_mm3_s: 0.0,
+                semantic_item_id: None,
+            });
+        }
+        // One good sample breaks the segment
+        samples.push(SimulationCutSample {
+            toolpath_id: 0,
+            move_index: 10,
+            sample_index: 10,
+            position: [10.0, 0.0, -1.0],
+            cumulative_time_s: 1.1,
+            segment_time_s: 0.1,
+            is_cutting: true,
+            feed_rate_mm_min: 600.0,
+            spindle_rpm: 18_000,
+            flute_count: 2,
+            axial_doc_mm: 2.0,
+            radial_engagement: 0.50,
+            chipload_mm_per_tooth: 0.02,
+            removed_volume_est_mm3: 1.0,
+            mrr_mm3_s: 10.0,
+            semantic_item_id: None,
+        });
+        for i in 0..5 {
+            samples.push(SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 11 + i,
+                sample_index: 11 + i,
+                position: [11.0 + i as f64, 0.0, -1.0],
+                cumulative_time_s: 1.2 + 0.1 * i as f64,
+                segment_time_s: 0.1,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 1.0,
+                radial_engagement: 0.01,
+                chipload_mm_per_tooth: 0.01,
+                removed_volume_est_mm3: 0.0,
+                mrr_mm3_s: 0.0,
+                semantic_item_id: None,
+            });
+        }
+
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+
+        // Two segments, not 15 issues-per-sample.
+        assert_eq!(
+            trace.issues.len(),
+            2,
+            "expected 2 coalesced segments, got {}",
+            trace.issues.len()
+        );
+        assert_eq!(trace.summary.issue_count, 2);
+
+        let first = &trace.issues[0];
+        assert_eq!(first.kind, SimulationCutIssueKind::AirCut);
+        assert_eq!(first.sample_count, 10);
+        assert_eq!(first.move_index, 0);
+        assert_eq!(first.end_move_index, 9);
+        // Duration from t=0.1 to t=1.0
+        assert!((first.duration_s - 0.9).abs() < 1e-9);
+        // Minimum engagement should be the first sample's 0.005
+        assert!((first.min_radial_engagement - 0.005).abs() < 1e-9);
+
+        let second = &trace.issues[1];
+        assert_eq!(second.kind, SimulationCutIssueKind::AirCut);
+        assert_eq!(second.sample_count, 5);
+        assert_eq!(second.move_index, 11);
+        assert_eq!(second.end_move_index, 15);
+
+        // Sample-level counters in the summary are still per-sample
+        // (not per-segment), so air_cut_time_s accumulates all 15
+        // air-cut sample times: 10 × 0.1 + 5 × 0.1 = 1.5s.
+        assert!((trace.summary.air_cut_time_s - 1.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn trace_flushes_open_segment_at_end_of_stream() {
+        // If the sample stream ends mid-segment (last samples are still
+        // air-cut), the open segment must be flushed, not lost.
+        let samples = vec![
+            SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 0,
+                sample_index: 0,
+                position: [0.0, 0.0, -1.0],
+                cumulative_time_s: 0.1,
+                segment_time_s: 0.1,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 1.0,
+                radial_engagement: 0.01,
+                chipload_mm_per_tooth: 0.01,
+                removed_volume_est_mm3: 0.0,
+                mrr_mm3_s: 0.0,
+                semantic_item_id: None,
+            },
+            SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 1,
+                sample_index: 1,
+                position: [1.0, 0.0, -1.0],
+                cumulative_time_s: 0.2,
+                segment_time_s: 0.1,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 1.0,
+                radial_engagement: 0.01,
+                chipload_mm_per_tooth: 0.01,
+                removed_volume_est_mm3: 0.0,
+                mrr_mm3_s: 0.0,
+                semantic_item_id: None,
+            },
+        ];
+
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+        assert_eq!(trace.issues.len(), 1);
+        let seg = &trace.issues[0];
+        assert_eq!(seg.kind, SimulationCutIssueKind::AirCut);
+        assert_eq!(seg.sample_count, 2);
+        assert_eq!(seg.end_move_index, 1);
+    }
+
+    #[test]
+    fn trace_tracks_open_segments_per_toolpath() {
+        // Interleaved samples from two toolpaths: each toolpath's
+        // air-cut run should produce its own segment, not bleed into
+        // the other's.
+        let samples = vec![
+            SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 0,
+                sample_index: 0,
+                position: [0.0, 0.0, -1.0],
+                cumulative_time_s: 0.1,
+                segment_time_s: 0.1,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 1.0,
+                radial_engagement: 0.01,
+                chipload_mm_per_tooth: 0.01,
+                removed_volume_est_mm3: 0.0,
+                mrr_mm3_s: 0.0,
+                semantic_item_id: None,
+            },
+            SimulationCutSample {
+                toolpath_id: 1,
+                move_index: 0,
+                sample_index: 0,
+                position: [10.0, 0.0, -1.0],
+                cumulative_time_s: 0.15,
+                segment_time_s: 0.1,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 1.0,
+                radial_engagement: 0.01,
+                chipload_mm_per_tooth: 0.01,
+                removed_volume_est_mm3: 0.0,
+                mrr_mm3_s: 0.0,
+                semantic_item_id: None,
+            },
+            SimulationCutSample {
+                toolpath_id: 0,
+                move_index: 1,
+                sample_index: 1,
+                position: [1.0, 0.0, -1.0],
+                cumulative_time_s: 0.2,
+                segment_time_s: 0.1,
+                is_cutting: true,
+                feed_rate_mm_min: 600.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 1.0,
+                radial_engagement: 0.01,
+                chipload_mm_per_tooth: 0.01,
+                removed_volume_est_mm3: 0.0,
+                mrr_mm3_s: 0.0,
+                semantic_item_id: None,
+            },
+        ];
+
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+        // Two segments — one per toolpath — not three per-sample issues
+        // and not one bleeding across toolpath boundaries.
+        assert_eq!(trace.issues.len(), 2);
+        let tp0_segs: Vec<_> = trace.issues.iter().filter(|i| i.toolpath_id == 0).collect();
+        let tp1_segs: Vec<_> = trace.issues.iter().filter(|i| i.toolpath_id == 1).collect();
+        assert_eq!(tp0_segs.len(), 1);
+        assert_eq!(tp1_segs.len(), 1);
+        assert_eq!(tp0_segs[0].sample_count, 2);
+        assert_eq!(tp1_segs[0].sample_count, 1);
     }
 
     // --- Peak metrics tracking ---
