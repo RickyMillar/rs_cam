@@ -1035,17 +1035,13 @@ mod tests {
         // Pocket default has climb=true; flip it via integer 0.
         s.set_toolpath_param(0, "climb", json!(0)).unwrap();
         match &s.toolpath_configs()[0].operation {
-            OperationConfig::Pocket(cfg) => {
-                assert!(!cfg.climb, "expected climb=false after integer 0")
-            }
+            OperationConfig::Pocket(cfg) => assert!(!cfg.climb),
             _ => panic!("expected Pocket"),
         }
         // Flip back with integer 1.
         s.set_toolpath_param(0, "climb", json!(1)).unwrap();
         match &s.toolpath_configs()[0].operation {
-            OperationConfig::Pocket(cfg) => {
-                assert!(cfg.climb, "expected climb=true after integer 1")
-            }
+            OperationConfig::Pocket(cfg) => assert!(cfg.climb),
             _ => panic!("expected Pocket"),
         }
         // Non-0/1 integers fall through to serde, which will reject them.
