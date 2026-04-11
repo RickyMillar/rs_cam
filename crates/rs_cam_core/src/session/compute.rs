@@ -95,6 +95,20 @@ impl ProjectSession {
                 // handles Optional fields that serde skips when None (e.g.
                 // surface_model_id on ProjectCurve).
                 let existed = params_obj.contains_key(param);
+                // Coerce 0/1 -> bool when the existing field is a boolean.
+                // Lets callers that can only produce JSON numbers (e.g. MCP
+                // clients that treat every value as numeric) drive boolean
+                // params like z_blend, detect_flat_areas, slot_clearing.
+                let value = match (params_obj.get(param), &value) {
+                    (Some(existing), serde_json::Value::Number(n)) if existing.is_boolean() => {
+                        match n.as_i64() {
+                            Some(0) => serde_json::Value::Bool(false),
+                            Some(1) => serde_json::Value::Bool(true),
+                            _ => value,
+                        }
+                    }
+                    _ => value,
+                };
                 params_obj.insert(param.to_owned(), value);
                 let new_op: crate::compute::catalog::OperationConfig = serde_json::from_value(json)
                     .map_err(|e| {
@@ -1008,6 +1022,39 @@ mod tests {
             .unwrap();
         match &s.toolpath_configs()[0].operation {
             OperationConfig::Pocket(cfg) => assert!((cfg.depth_per_pass - 1.5).abs() < 1e-9),
+            _ => panic!("expected Pocket"),
+        }
+    }
+
+    #[test]
+    fn set_toolpath_param_coerces_integer_to_bool() {
+        // MCP clients that can only produce JSON numbers should still be
+        // able to set boolean params like `climb`, `z_blend`, etc.
+        let mut s = make_session();
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        // Pocket default has climb=true; flip it via integer 0.
+        s.set_toolpath_param(0, "climb", json!(0)).unwrap();
+        match &s.toolpath_configs()[0].operation {
+            OperationConfig::Pocket(cfg) => {
+                assert!(!cfg.climb, "expected climb=false after integer 0")
+            }
+            _ => panic!("expected Pocket"),
+        }
+        // Flip back with integer 1.
+        s.set_toolpath_param(0, "climb", json!(1)).unwrap();
+        match &s.toolpath_configs()[0].operation {
+            OperationConfig::Pocket(cfg) => {
+                assert!(cfg.climb, "expected climb=true after integer 1")
+            }
+            _ => panic!("expected Pocket"),
+        }
+        // Non-0/1 integers fall through to serde, which will reject them.
+        let result = s.set_toolpath_param(0, "climb", json!(42));
+        assert!(matches!(result, Err(SessionError::InvalidParam(_))));
+        // Actual booleans still work.
+        s.set_toolpath_param(0, "climb", json!(false)).unwrap();
+        match &s.toolpath_configs()[0].operation {
+            OperationConfig::Pocket(cfg) => assert!(!cfg.climb),
             _ => panic!("expected Pocket"),
         }
     }
