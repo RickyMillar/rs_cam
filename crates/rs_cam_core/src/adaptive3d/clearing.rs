@@ -20,13 +20,14 @@ use std::f64::consts::TAU;
 use std::time::Instant;
 use tracing::debug;
 
+use super::path::Adaptive3dSegment;
 use super::search::{
     compute_engagement_3d, find_entry_3d, is_clear_path_3d, material_remaining_at_level,
     material_remaining_in_region, search_direction_3d_with_metrics,
 };
 use super::{
-    Adaptive3dRuntimeEvent, Adaptive3dSegment, ClearingStrategy3d, local_material_sum,
-    path_bounds_3d, stock_has_material_above,
+    Adaptive3dRuntimeEvent, ClearingStrategy3d, local_material_sum, path_bounds_3d,
+    stock_has_material_above,
 };
 
 // ── Region detection ──────────────────────────────────────────────────
