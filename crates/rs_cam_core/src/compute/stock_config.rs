@@ -179,11 +179,23 @@ impl StockConfig {
     /// Update stock dimensions from a model bounding box.
     ///
     /// XY dimensions always follow the bbox extent + padding.
-    /// Z is only updated when the bbox has non-zero Z extent;
-    /// for 2D models (SVG/DXF polygons with `min.z == max.z == 0`)
-    /// the current Z dimension and origin are preserved so the user's
-    /// default stock thickness isn't clobbered by attaching a 2D model.
-    /// See planning/adaptive_review_2026-04.md F-13.
+    ///
+    /// Z handling depends on whether the bbox is 3D or 2D:
+    /// - **3D** (mesh with non-zero Z extent): stock Z follows the bbox
+    ///   Z range + padding, and `origin_z` is set to `bbox.min.z`.
+    /// - **2D** (SVG/DXF polygon with `min.z == max.z`): the stock's
+    ///   existing Z dimension is preserved (the user's default
+    ///   thickness), but `origin_z` is set to `bbox.min.z − self.z`
+    ///   so the stock's **top** is at `bbox.min.z`. Pocket / adaptive /
+    ///   profile / trace / v-carve / chamfer / drill operations on 2D
+    ///   models cut at negative Z (cut_depth < 0 relative to the
+    ///   model's Z plane), so the stock must span `[bbox.min.z − z,
+    ///   bbox.min.z]` for the cuts to engage material. Without this
+    ///   shift, every cutting move was below the stock floor and the
+    ///   simulator reported 0 engagement (F-2 in the April review).
+    ///
+    /// See planning/adaptive_review_2026-04.md F-13 (XY auto-size) and
+    /// F-2 (2D Z frame).
     pub fn update_from_bbox(&mut self, bbox: &BoundingBox3) {
         self.x = bbox.max.x - bbox.min.x + 2.0 * self.padding;
         self.y = bbox.max.y - bbox.min.y + 2.0 * self.padding;
@@ -193,6 +205,10 @@ impl StockConfig {
         if bbox_z_range > 0.0 {
             self.z = bbox_z_range + self.padding;
             self.origin_z = bbox.min.z;
+        } else {
+            // 2D model: place stock so its TOP is at bbox.min.z (= 0 for
+            // SVG/DXF). Leaves self.z unchanged; only origin_z shifts.
+            self.origin_z = bbox.min.z - self.z;
         }
     }
 
@@ -239,10 +255,17 @@ mod tests {
         assert!((stock.y - 40.0).abs() < 1e-9);
         assert!((stock.origin_x - 0.0).abs() < 1e-9);
         assert!((stock.origin_y - 0.0).abs() < 1e-9);
-        // Z should be UNCHANGED from 25.0 — F-13 requires the user's
-        // default stock thickness survives attaching a 2D model.
+        // Z dimension should be UNCHANGED from 25.0 — F-13 requires the
+        // user's default stock thickness survives attaching a 2D model.
         assert!((stock.z - 25.0).abs() < 1e-9);
-        assert!((stock.origin_z - 0.0).abs() < 1e-9);
+        // Z origin shifts so the stock TOP is at bbox.min.z (= 0 for
+        // the SVG frame). Before F-2, origin_z stayed at 0 which put
+        // the stock entirely below the 2D pocket's cut range.
+        assert!(
+            (stock.origin_z - (-25.0)).abs() < 1e-9,
+            "expected 2D stock to have origin_z = -z (top at 0), got {}",
+            stock.origin_z
+        );
     }
 
     #[test]
