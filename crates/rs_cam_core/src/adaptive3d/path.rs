@@ -264,7 +264,20 @@ pub(super) fn adaptive_3d_segments(
 
     let target_frac = target_engagement_fraction(params.stepover, tool_radius);
     let step_len = cell_size * 1.5;
-    let max_link_dist = params.max_stay_down_dist.unwrap_or(tool_radius * 6.0);
+    // Maximum stay-down link distance. When a pass finishes and the next
+    // entry point is within this distance, the tool stays down and feeds
+    // between them (subject to is_clear_path_3d); otherwise it retracts
+    // to safe_z, rapids, and plunges. The previous formula was just
+    // `tool_radius * 6.0` — a magic constant that under-scaled when the
+    // user chose a coarse stepover, because inter-pass gaps grow with
+    // stepover while the tool radius is fixed. The stepover term below
+    // only takes effect when stepover exceeds tool_radius (i.e. the
+    // operator is choosing an unusually coarse step); for typical
+    // stepover ≤ radius the formula is unchanged. See
+    // planning/adaptive_review_2026-04.md F-6.
+    let max_link_dist = params
+        .max_stay_down_dist
+        .unwrap_or_else(|| (tool_radius * 6.0).max(params.stepover * 6.0));
 
     let bbox_x_min = origin_x + tool_radius;
     let bbox_x_max = extent_x - tool_radius;
