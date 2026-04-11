@@ -1,4 +1,4 @@
-format_version = 1
+format_version = 3
 
 [job]
 name = "Fixture 3D"
@@ -15,9 +15,9 @@ name = "Flat Plate"
 kind = "stl"
 units = { kind = "millimeters" }
 
-[[toolpaths]]
-id = 1
-name = "Finish Fixture"
-type = "drop_cutter"
-tool_id = 1
-model_id = 1
+[[setups]]
+name = "Setup 1"
+
+# NOTE: no toolpaths defined here. This fixture exists to exercise the
+# 3D model loader (see tests/fixture_projects_load_2d_and_3d_models).
+# Toolpaths should be added via `add_toolpath` MCP / GUI after load.

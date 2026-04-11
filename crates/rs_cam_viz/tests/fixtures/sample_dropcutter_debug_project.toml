@@ -1,4 +1,4 @@
-format_version = 1
+format_version = 3
 
 [job]
 name = "Drop Cutter Debug Fixture"
@@ -15,10 +15,9 @@ name = "Flat Plate"
 kind = "stl"
 units = { kind = "millimeters" }
 
-[[toolpaths]]
-id = 1
-name = "Drop Cutter Debug"
-type = "drop_cutter"
-tool_id = 1
-model_id = 1
-debug_options = { enabled = true }
+[[setups]]
+name = "Setup 1"
+
+# NOTE: no toolpaths defined here. This fixture is loaded as a stub
+# for manual GUI debugging of drop_cutter debug_options.
+# Add a toolpath via GUI after loading the project.
