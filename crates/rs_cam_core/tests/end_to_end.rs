@@ -23,6 +23,7 @@ use rs_cam_core::{
     toolpath::{MoveType, Toolpath, raster_toolpath_from_grid},
 };
 use std::path::Path;
+use std::sync::Arc;
 
 #[test]
 fn test_terrain_stl_to_gcode() {
@@ -472,4 +473,141 @@ fn tridexel_simulation_two_toolpaths_carry_forward() {
         "First slot should still be visible after second toolpath"
     );
     assert!(second_slot_cut, "Second slot should be cut");
+}
+
+/// Regression test for Phase 3 of the adaptive remediation series.
+///
+/// Before the Phase 3 fix (commit 3ab7605), `segments_to_toolpath`
+/// emitted every `Adaptive3dSegment::Rapid` as a single diagonal
+/// rapid from whatever cut-depth position the tool currently held
+/// to `(entry.xy, safe_z)`. That diagonal cuts through material
+/// between the cut and the safe plane — the simulator's
+/// `check_rapid_collisions_against_stock` caught it and
+/// `rapid_collision_count` stayed high on z_blend=true and
+/// stepover=3 runs even after Package F's is_clear_path_3d gate.
+///
+/// The Phase 3 fix is a lift-to-safe-z move at the current XY
+/// before any XY-at-safe-z traverse. After the fix, no rapid move
+/// should run diagonally from below safe_z to a different XY.
+///
+/// This test inspects every Rapid move in the generated toolpath
+/// for a z_blend=true adaptive3d run on terrain_small.stl and
+/// asserts: for every Rapid that changes XY, the preceding move
+/// must already have the tool at or above `safe_z`.
+#[test]
+fn test_adaptive3d_rapids_lift_before_xy_traverse() {
+    use rs_cam_core::adaptive3d::{
+        Adaptive3dParams, ClearingStrategy3d, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
+    };
+
+    let stl_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures")
+        .join("terrain_small.stl");
+
+    if !stl_path.exists() {
+        eprintln!("Skipping: fixture not found at {:?}", stl_path);
+        return;
+    }
+
+    let mesh = TriangleMesh::from_stl(&stl_path).expect("Failed to load STL");
+    let tool = FlatEndmill::new(6.35, 25.0);
+    let index = SpatialIndex::build(&mesh, tool.diameter() * 2.0);
+
+    // Match the Phase 2 probe: 6.35mm flat, stepover=2, z_blend=true,
+    // ContourParallel. Use stock_top_z just above the mesh top.
+    let params = Adaptive3dParams {
+        tool_radius: tool.radius(),
+        stepover: 2.0,
+        depth_per_pass: 3.0,
+        stock_to_leave: 0.5,
+        feed_rate: 1500.0,
+        plunge_rate: 500.0,
+        safe_z: 10.0,
+        tolerance: 0.1,
+        min_cutting_radius: 0.0,
+        stock_top_z: mesh.bbox.max.z + 5.0,
+        entry_style: EntryStyle3d::Plunge,
+        fine_stepdown: None,
+        detect_flat_areas: false,
+        max_stay_down_dist: None,
+        region_ordering: RegionOrdering::Global,
+        initial_stock: None,
+        clearing_strategy: ClearingStrategy3d::ContourParallel,
+        z_blend: true,
+    };
+
+    let tp = adaptive_3d_toolpath(&mesh, &index, &tool, &params);
+    assert!(!tp.moves.is_empty(), "adaptive3d should produce moves");
+
+    // Walk the move list and check every Rapid that changes XY relative
+    // to the previous move. Such a Rapid is a "traverse" rapid — it
+    // must start at or above safe_z, otherwise it's the old diagonal
+    // bug.
+    let safe_z = params.safe_z;
+    let epsilon = 1e-6;
+    let mut xy_traverse_rapids = 0usize;
+    let mut bad_traverse_rapids = 0usize;
+
+    for i in 1..tp.moves.len() {
+        let prev = &tp.moves[i - 1];
+        let curr = &tp.moves[i];
+        let is_rapid = matches!(curr.move_type, MoveType::Rapid);
+        if !is_rapid {
+            continue;
+        }
+        let dx = curr.target.x - prev.target.x;
+        let dy = curr.target.y - prev.target.y;
+        let xy_moved = dx * dx + dy * dy > epsilon;
+        if !xy_moved {
+            // Same-XY lift or drop — always safe.
+            continue;
+        }
+        xy_traverse_rapids += 1;
+        // This is an XY traverse rapid. Previous move's target Z must
+        // be at or above safe_z, otherwise the rapid line starts below
+        // the safe plane and can cross material.
+        if prev.target.z < safe_z - epsilon {
+            bad_traverse_rapids += 1;
+            if bad_traverse_rapids <= 3 {
+                eprintln!(
+                    "bad traverse rapid at move {}: prev=({:.2},{:.2},{:.2}) \
+                     → curr=({:.2},{:.2},{:.2}), safe_z={:.2}",
+                    i,
+                    prev.target.x,
+                    prev.target.y,
+                    prev.target.z,
+                    curr.target.x,
+                    curr.target.y,
+                    curr.target.z,
+                    safe_z
+                );
+            }
+        }
+    }
+
+    assert!(
+        xy_traverse_rapids > 0,
+        "expected at least one XY traverse rapid in a z_blend=true run"
+    );
+    assert_eq!(
+        bad_traverse_rapids, 0,
+        "{} of {} XY-traverse rapids start below safe_z — Phase 3 fix regressed",
+        bad_traverse_rapids, xy_traverse_rapids
+    );
+
+    // Sanity: also confirm the toolpath actually cuts material.
+    let mut cutting_move_count = 0usize;
+    for m in &tp.moves {
+        if matches!(m.move_type, MoveType::Linear { .. }) {
+            cutting_move_count += 1;
+        }
+    }
+    assert!(
+        cutting_move_count > 100,
+        "adaptive3d should emit many cutting moves, got {}",
+        cutting_move_count
+    );
+
+    // Touch Arc<TriangleMesh> via silent use to satisfy the `use std::sync::Arc` import.
+    let _ = Arc::new(mesh);
 }
