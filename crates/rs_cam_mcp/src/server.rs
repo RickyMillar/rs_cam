@@ -149,6 +149,26 @@ pub struct CutTraceParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct GenDebugTraceParam {
+    /// Toolpath index (0-based). Must have been generated first.
+    pub index: usize,
+    /// Optional filter: only include spans of this kind. Common values:
+    /// "z_level", "adaptive_pass", "entry_search", "preflight", "pre_stamp",
+    /// "widen_band", "waterline_cleanup". Omit to include all kinds.
+    pub span_kind: Option<String>,
+    /// Optional filter: only include spans whose exit_reason contains this
+    /// substring. Useful values for AgentSearch diagnosis:
+    /// "loop closed", "idle", "no entry", "preflight skip", "no viable direction".
+    pub exit_reason: Option<String>,
+    /// Optional filter: only include spans where the `yield_ratio` counter is
+    /// at most this value (e.g. 0.1 to see all low-yield passes). Spans without
+    /// a `yield_ratio` counter are skipped when this filter is set.
+    pub max_yield_ratio: Option<f64>,
+    /// Maximum span count in the response (default: 100). Set to 0 for unlimited.
+    pub max_spans: Option<usize>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct AddToolpathParam {
     /// Setup index (0-based) to add the toolpath into
     pub setup_index: usize,
@@ -864,6 +884,152 @@ impl CamServer {
             "hotspot_count": hotspot_count,
             "issue_count": issue_count,
             "issues": issues_val,
+        }))
+    }
+
+    /// Retrieve the generation-time debug trace for a toolpath.
+    ///
+    /// Unlike `get_cut_trace` (which reports simulation-time metrics),
+    /// this tool exposes the `ToolpathDebugTrace` captured by the
+    /// operation generator. For adaptive3d with clearing_strategy =
+    /// AgentSearch it's the primary diagnostic surface for wandering
+    /// and looping: every pass records its exit_reason, step_count,
+    /// idle_count, yield_ratio, and xy_bbox on the per-pass span.
+    ///
+    /// See planning/agent_search_diagnosis_plan.md (or Phase 3 of the
+    /// April 2026 adaptive remediation series) for the diagnostic
+    /// rubric.
+    #[tool(
+        name = "get_generation_debug_trace",
+        description = "Get the generation-time debug trace for a toolpath: per-pass spans with exit_reason, idle_count, yield_ratio, xy_bbox, plus a diagnostic summary. Primary surface for diagnosing adaptive3d AgentSearch wandering/looping. Run generate_toolpath first. Filter by span_kind, exit_reason, or max_yield_ratio to narrow the response."
+    )]
+    async fn get_generation_debug_trace(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(GenDebugTraceParam {
+            index,
+            span_kind,
+            exit_reason,
+            max_yield_ratio,
+            max_spans,
+        }): Parameters<GenDebugTraceParam>,
+    ) -> String {
+        let guard = self.session.lock().await;
+        let Some(session) = guard.as_ref() else {
+            return no_project_error();
+        };
+        let Some(result) = session.get_result(index) else {
+            return json_str(serde_json::json!({
+                "error": format!("Toolpath {index} not generated. Run generate_toolpath first.")
+            }));
+        };
+        let Some(trace) = result.debug_trace.as_ref() else {
+            return json_str(serde_json::json!({
+                "error": format!("Toolpath {index} has no debug trace — the operation generator didn't capture one.")
+            }));
+        };
+
+        // Apply filters.
+        let limit = max_spans.unwrap_or(100);
+        let filtered: Vec<_> = trace
+            .spans
+            .iter()
+            .filter(|s| span_kind.as_deref().is_none_or(|k| s.kind == k))
+            .filter(|s| {
+                exit_reason.as_deref().is_none_or(|needle| {
+                    s.exit_reason.as_deref().is_some_and(|r| r.contains(needle))
+                })
+            })
+            .filter(|s| {
+                max_yield_ratio
+                    .is_none_or(|max_y| s.counters.get("yield_ratio").is_some_and(|&y| y <= max_y))
+            })
+            .collect();
+        let total_matching = filtered.len();
+        let visible: Vec<_> = if limit == 0 {
+            filtered.clone()
+        } else {
+            filtered.iter().copied().take(limit).collect()
+        };
+
+        // Diagnostic summary: aggregate adaptive_pass spans by exit_reason
+        // and compute aggregate wandering/looping indicators.
+        let pass_spans: Vec<_> = trace
+            .spans
+            .iter()
+            .filter(|s| s.kind == "adaptive_pass")
+            .collect();
+        let mut passes_by_exit: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+        let mut yield_sum = 0.0f64;
+        let mut yield_count = 0usize;
+        let mut low_yield_passes = 0usize;
+        let mut looped_passes = 0usize;
+        let mut idle_passes = 0usize;
+        let mut worst: Vec<(f64, u64, &rs_cam_core::debug_trace::ToolpathDebugSpan)> = Vec::new();
+        for span in &pass_spans {
+            if let Some(reason) = span.exit_reason.as_deref() {
+                *passes_by_exit.entry(reason.to_owned()).or_insert(0) += 1;
+                if reason.contains("loop") {
+                    looped_passes += 1;
+                }
+                if reason.contains("idle") {
+                    idle_passes += 1;
+                }
+            }
+            if let Some(&y) = span.counters.get("yield_ratio") {
+                yield_sum += y;
+                yield_count += 1;
+                if y < 0.1 {
+                    low_yield_passes += 1;
+                }
+                let steps = span.counters.get("step_count").copied().unwrap_or(0.0) as u64;
+                worst.push((y, steps, span));
+            }
+        }
+        worst.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let worst_json: Vec<_> = worst
+            .iter()
+            .take(10)
+            .map(|(y, steps, span)| {
+                serde_json::json!({
+                    "id": span.id,
+                    "label": span.label,
+                    "exit_reason": span.exit_reason,
+                    "yield_ratio": y,
+                    "step_count": steps,
+                    "idle_count": span.counters.get("idle_count").copied().unwrap_or(0.0),
+                    "search_evaluations": span.counters.get("search_evaluations").copied().unwrap_or(0.0),
+                    "z_level": span.z_level,
+                    "xy_bbox": span.xy_bbox,
+                })
+            })
+            .collect();
+
+        json_str(serde_json::json!({
+            "summary": {
+                "schema_version": trace.schema_version,
+                "toolpath_name": trace.toolpath_name,
+                "operation_label": trace.operation_label,
+                "span_count": trace.spans.len(),
+                "hotspot_count": trace.hotspots.len(),
+                "annotation_count": trace.annotations.len(),
+                "dominant_span_kind": trace.summary.dominant_span_kind,
+                "dominant_span_elapsed_us": trace.summary.dominant_span_elapsed_us,
+            },
+            "diagnostics": {
+                "pass_count": pass_spans.len(),
+                "passes_by_exit_reason": passes_by_exit,
+                "low_yield_passes": low_yield_passes,
+                "looped_passes": looped_passes,
+                "idle_passes": idle_passes,
+                "avg_yield_ratio": if yield_count > 0 { yield_sum / yield_count as f64 } else { 0.0 },
+                "worst_yields": worst_json,
+            },
+            "spans_returned": visible.len(),
+            "spans_total_matching": total_matching,
+            "spans": visible,
+            "hotspots": trace.hotspots,
+            "annotations": trace.annotations,
         }))
     }
 
