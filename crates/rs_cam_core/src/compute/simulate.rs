@@ -533,6 +533,152 @@ mod tests {
         assert!(result.is_err());
     }
 
+    /// End-to-end validation for F-2 (April 2026 adaptive review):
+    /// a 2D polygon pocket operation must produce non-zero average
+    /// engagement and non-zero removed volume. Before Package N
+    /// (commit 12dca81), `StockConfig::update_from_bbox` placed the
+    /// stock above the 2D cut plane — the stock spanned [0, stock_z]
+    /// while the pocket cut at negative Z, so every cutting sample
+    /// fell below the stock floor and the simulator reported 0
+    /// engagement despite the stock being visibly cut.
+    ///
+    /// This test exercises the full chain:
+    ///   2D polygon bbox → update_from_bbox → stock at [−z, 0]
+    ///   → pocket_toolpath at cut_depth=−3 → run_simulation with
+    ///     metric_options.enabled → cut_trace → average_engagement > 0
+    ///
+    /// See planning/adaptive_review_2026-04.md F-2.
+    #[test]
+    fn two_d_pocket_simulation_reports_engagement() {
+        use crate::compute::stock_config::StockConfig;
+        use crate::pocket::{PocketParams, pocket_toolpath};
+        use crate::polygon::Polygon2;
+
+        // 30×30 mm square polygon at z=0 — the 2D pocket geometry.
+        let polygon = Polygon2 {
+            exterior: vec![
+                crate::geo::P2::new(0.0, 0.0),
+                crate::geo::P2::new(30.0, 0.0),
+                crate::geo::P2::new(30.0, 30.0),
+                crate::geo::P2::new(0.0, 30.0),
+            ],
+            holes: vec![],
+            closed: true,
+        };
+
+        // Auto-size stock from the polygon bbox via the same code path
+        // that the GUI and MCP use. This is what Package N fixed.
+        let mut stock = StockConfig {
+            x: 100.0, // pre-attach default
+            y: 100.0,
+            z: 10.0, // user's 10mm thick stock
+            origin_x: 0.0,
+            origin_y: 0.0,
+            origin_z: 0.0,
+            padding: 2.0,
+            ..StockConfig::default()
+        };
+        let poly_bbox = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(30.0, 30.0, 0.0),
+        };
+        stock.update_from_bbox(&poly_bbox);
+
+        // After the fix: stock spans [−10, 0] in Z so a pocket cutting
+        // at negative Z engages material at the top.
+        let stock_bbox = stock.bbox();
+        assert!(
+            (stock_bbox.max.z - 0.0).abs() < 1e-9,
+            "expected stock top at z=0, got {}",
+            stock_bbox.max.z
+        );
+        assert!(
+            (stock_bbox.min.z - (-10.0)).abs() < 1e-9,
+            "expected stock bottom at z=-10, got {}",
+            stock_bbox.min.z
+        );
+
+        // Generate a pocket toolpath. cut_depth is negative: the pocket
+        // cuts from z=0 down to z=-3, staying inside the stock.
+        let tp = pocket_toolpath(
+            &polygon,
+            &PocketParams {
+                tool_radius: 3.175,
+                stepover: 2.0,
+                cut_depth: -3.0,
+                feed_rate: 1500.0,
+                plunge_rate: 500.0,
+                safe_z: 10.0,
+                climb: true,
+            },
+        );
+        assert!(!tp.moves.is_empty(), "pocket toolpath should be non-empty");
+
+        let tool_def = ToolDefinition::new(
+            Box::new(crate::tool::FlatEndmill::new(6.35, 25.0)),
+            6.35,
+            20.0,
+            25.0,
+            45.0,
+            2,
+        );
+
+        let entry = SimToolpathEntry {
+            id: 1,
+            name: "Pocket F-2 validation".to_owned(),
+            toolpath: Arc::new(tp),
+            tool: tool_def,
+            flute_count: 2,
+            tool_summary: "6.35mm Flat".to_owned(),
+            semantic_trace: None,
+        };
+
+        let group = SimGroupEntry {
+            toolpaths: vec![entry],
+            direction: StockCutDirection::FromTop,
+            local_stock_bbox: None,
+            local_to_global: None,
+        };
+
+        let req = SimulationRequest {
+            groups: vec![group],
+            stock_bbox,
+            stock_top_z: stock_bbox.max.z,
+            resolution: 0.5,
+            metric_options: SimulationMetricOptions { enabled: true },
+            spindle_rpm: 18000,
+            rapid_feed_mm_min: 5000.0,
+            model_mesh: None,
+        };
+
+        let cancel = AtomicBool::new(false);
+        let result = run_simulation(&req, &cancel).expect("simulation should succeed");
+
+        let trace = result
+            .cut_trace
+            .as_ref()
+            .expect("metric_options.enabled=true should produce a cut_trace");
+
+        // Core F-2 assertion: the simulator SEES the tool engaging material.
+        // Before Package N these were all exactly 0.
+        assert!(
+            trace.summary.average_engagement > 0.0,
+            "expected non-zero average_engagement (F-2 closure), got {}",
+            trace.summary.average_engagement
+        );
+        assert!(
+            trace.summary.total_removed_volume_est_mm3 > 0.0,
+            "expected non-zero removed volume (F-2 closure), got {}",
+            trace.summary.total_removed_volume_est_mm3
+        );
+        // Sanity: peak chipload should be non-zero (the tool is cutting).
+        assert!(
+            trace.summary.peak_chipload_mm_per_tooth > 0.0,
+            "expected non-zero peak chipload, got {}",
+            trace.summary.peak_chipload_mm_per_tooth
+        );
+    }
+
     #[test]
     fn per_setup_multi_stock_simulation() {
         use crate::compute::transform::SetupTransformInfo;
