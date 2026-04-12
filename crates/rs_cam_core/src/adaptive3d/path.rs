@@ -520,6 +520,23 @@ pub(super) fn segments_to_toolpath(
     let mut tp = Toolpath::new();
     let mut annotations = Vec::new();
 
+    // Lift the tool to safe_z above its current XY before any
+    // traverse-then-plunge sequence. Without this, a Rapid segment
+    // emitted immediately after a Cut (which leaves the tool at cut
+    // depth) produces a single diagonal rapid from the cut-depth
+    // position to (entry.xy, safe_z) — and that diagonal can cross
+    // material the cutter would rather not run through at rapid
+    // feed. Skip the lift if the tool is already at or above
+    // safe_z. See planning/adaptive_remediation_phase2_probes_2026-04-12.md
+    // for the empirical regression this fixes (F-5, F-6).
+    let lift_to_safe_z = |tp: &mut Toolpath, safe_z: f64| {
+        if let Some(last) = tp.moves.last()
+            && last.target.z < safe_z
+        {
+            tp.rapid_to(P3::new(last.target.x, last.target.y, safe_z));
+        }
+    };
+
     for segment in segments {
         match segment {
             Adaptive3dSegment::Marker(event) => {
@@ -530,10 +547,12 @@ pub(super) fn segments_to_toolpath(
             }
             Adaptive3dSegment::Rapid(entry) => match params.entry_style {
                 EntryStyle3d::Plunge => {
+                    lift_to_safe_z(&mut tp, params.safe_z);
                     tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
                     tp.feed_to(*entry, params.plunge_rate);
                 }
                 EntryStyle3d::Helix { radius, pitch } => {
+                    lift_to_safe_z(&mut tp, params.safe_z);
                     tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
                     let helix_start = P3::new(entry.x, entry.y, params.safe_z);
                     crate::dressup::emit_helix(
@@ -546,6 +565,7 @@ pub(super) fn segments_to_toolpath(
                     );
                 }
                 EntryStyle3d::Ramp { max_angle_deg } => {
+                    lift_to_safe_z(&mut tp, params.safe_z);
                     tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
                     let ramp_start = P3::new(entry.x, entry.y, params.safe_z);
                     crate::dressup::emit_ramp(
@@ -588,4 +608,144 @@ pub(super) fn runtime_annotations_to_labels(
         .iter()
         .map(|annotation| (annotation.move_index, annotation.event.label()))
         .collect()
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+    use crate::toolpath::MoveType;
+
+    fn minimal_params() -> Adaptive3dParams {
+        Adaptive3dParams {
+            tool_radius: 3.175,
+            stepover: 2.0,
+            depth_per_pass: 3.0,
+            stock_to_leave: 0.5,
+            feed_rate: 1500.0,
+            plunge_rate: 500.0,
+            safe_z: 10.0,
+            tolerance: 0.1,
+            min_cutting_radius: 0.0,
+            stock_top_z: 5.0,
+            entry_style: EntryStyle3d::Plunge,
+            fine_stepdown: None,
+            detect_flat_areas: false,
+            max_stay_down_dist: None,
+            region_ordering: RegionOrdering::Global,
+            initial_stock: None,
+            clearing_strategy: ClearingStrategy3d::ContourParallel,
+            z_blend: false,
+        }
+    }
+
+    /// Closes the F-5/F-6 regression found during the April 2026 Phase 2
+    /// empirical probes: a Rapid segment emitted after a Cut must lift
+    /// to safe_z FIRST (at the current XY), THEN traverse XY at safe_z,
+    /// THEN plunge. Before this fix, `segments_to_toolpath` only emitted
+    /// the traverse — a single diagonal rapid from the cut depth to
+    /// (entry.xy, safe_z) — which can cut through material as a rapid.
+    ///
+    /// See planning/adaptive_remediation_phase2_probes_2026-04-12.md.
+    #[test]
+    fn rapid_segment_lifts_to_safe_z_before_traverse() {
+        let params = minimal_params();
+        // Cut path: end at (5, 5, -3) — tool is deep in material.
+        let cut1 = Adaptive3dSegment::Cut(vec![P3::new(0.0, 0.0, -3.0), P3::new(5.0, 5.0, -3.0)]);
+        // Rapid to a new entry point at (20, 20, -2). This is what
+        // Package F emits when is_clear_path_3d rejects a would-be Link.
+        let rapid = Adaptive3dSegment::Rapid(P3::new(20.0, 20.0, -2.0));
+        let cut2 =
+            Adaptive3dSegment::Cut(vec![P3::new(20.0, 20.0, -2.0), P3::new(25.0, 25.0, -2.0)]);
+
+        let (tp, _) = segments_to_toolpath(&[cut1, rapid, cut2], &params);
+
+        // Sanity: there should be moves.
+        assert!(!tp.moves.is_empty());
+
+        // Find the index just before the rapid_to(entry.xy, safe_z).
+        // The fix must have inserted a lift-to-safe-z rapid right after
+        // the cut1 segment ends. Specifically: after the move whose
+        // target is (5,5,-3), we expect a Rapid to (5,5,10) (same XY,
+        // lifted to safe_z), THEN a Rapid to (20,20,10) (traverse at
+        // safe_z), THEN a feed plunge to (20,20,-2).
+        let mut found_lift = false;
+        for window in tp.moves.windows(4) {
+            if (window[0].target.x - 5.0).abs() < 1e-9
+                && (window[0].target.y - 5.0).abs() < 1e-9
+                && (window[0].target.z - (-3.0)).abs() < 1e-9
+            {
+                // Next move should be a Rapid, same XY, z = safe_z
+                assert!(
+                    matches!(window[1].move_type, MoveType::Rapid),
+                    "expected lift to be a Rapid, got {:?}",
+                    window[1].move_type
+                );
+                assert!(
+                    (window[1].target.x - 5.0).abs() < 1e-9,
+                    "lift should preserve X, got {}",
+                    window[1].target.x
+                );
+                assert!(
+                    (window[1].target.y - 5.0).abs() < 1e-9,
+                    "lift should preserve Y, got {}",
+                    window[1].target.y
+                );
+                assert!(
+                    (window[1].target.z - params.safe_z).abs() < 1e-9,
+                    "lift should go to safe_z={}, got {}",
+                    params.safe_z,
+                    window[1].target.z
+                );
+                // Then traverse
+                assert!(matches!(window[2].move_type, MoveType::Rapid));
+                assert!((window[2].target.x - 20.0).abs() < 1e-9);
+                assert!((window[2].target.y - 20.0).abs() < 1e-9);
+                assert!((window[2].target.z - params.safe_z).abs() < 1e-9);
+                // Then plunge (feed_to, not rapid)
+                assert!(matches!(window[3].move_type, MoveType::Linear { .. }));
+                assert!((window[3].target.z - (-2.0)).abs() < 1e-9);
+                found_lift = true;
+                break;
+            }
+        }
+        assert!(
+            found_lift,
+            "expected a lift-to-safe-z move after cut1 (at 5,5,-3). Moves: {:?}",
+            tp.moves
+                .iter()
+                .map(|m| (m.target.x, m.target.y, m.target.z, m.move_type))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// The lift-to-safe-z move should only be emitted when the tool is
+    /// currently BELOW safe_z. If the previous move already left the
+    /// tool at or above safe_z, we shouldn't add a redundant rapid.
+    #[test]
+    fn rapid_segment_skips_redundant_lift_when_already_at_safe_z() {
+        let params = minimal_params();
+        // An empty tp (no previous moves): first Rapid shouldn't emit a
+        // spurious lift either.
+        let rapid = Adaptive3dSegment::Rapid(P3::new(20.0, 20.0, -2.0));
+        let (tp, _) = segments_to_toolpath(&[rapid], &params);
+        // Expect exactly: rapid_to(20,20,safe_z), feed_to(20,20,-2),
+        // then the final rapid_to(20,20,safe_z) retract. Three moves.
+        assert_eq!(
+            tp.moves.len(),
+            3,
+            "no previous position, no lift needed. Moves: {:?}",
+            tp.moves
+                .iter()
+                .map(|m| (m.target.x, m.target.y, m.target.z, m.move_type))
+                .collect::<Vec<_>>()
+        );
+        assert!(matches!(tp.moves[0].move_type, MoveType::Rapid));
+        assert!((tp.moves[0].target.z - params.safe_z).abs() < 1e-9);
+    }
 }
