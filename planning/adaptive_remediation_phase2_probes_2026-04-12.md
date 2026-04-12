@@ -240,6 +240,106 @@ safe_z-aware fix, OR land the safe_z fix before declaring F-5/F-6 done.
 
 ---
 
+## Phase 3 — Root cause found and fixed (post-probes)
+
+After the probes landed, investigation of `segments_to_toolpath` in
+`adaptive3d/path.rs:516` found the actual root cause of the F-5/F-6
+regression. It wasn't Package F introducing new collisions — Package F
+**exposed a latent bug** that was always present but rarely triggered
+pre-remediation.
+
+**Root cause**: `Adaptive3dSegment::Rapid(entry)` was emitted as a
+SINGLE rapid move from the tool's current position directly to
+`(entry.xy, safe_z)`:
+
+```rust
+tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+tp.feed_to(*entry, params.plunge_rate);
+```
+
+When the previous segment was a `Cut` (which leaves the tool at cut
+depth), this rapid is a **diagonal 3D line** from `(x1, y1, z1<0)` to
+`(entry.x, entry.y, safe_z)`. The diagonal crosses material that the
+simulator's `check_rapid_collisions_against_stock` then flags. The
+variant's own doc comment at `adaptive3d/path.rs:32` documented the
+intended behavior as "Retract to safe_z, rapid XY, plunge to entry" —
+the retract step was simply missing from the emission code.
+
+**Why it was dormant before Package F**: pre-Package-F, the Link
+decision in `clear_z_level_contour_parallel` / `clear_z_level_adaptive`
+used a distance-only check (no `is_clear_path_3d`), so most of the
+inter-pass transitions became Links (feed moves) that bypassed the
+Rapid emission path entirely. Package F made the link decision
+stricter by gating on `is_clear_path_3d`, which converted more Links
+to Rapids — and each newly-converted Rapid exposed the dormant
+diagonal-through-material bug.
+
+**The empirical measurement for this**: under the pre-Phase-3 code, a
+z_blend=true adaptive3d run on terrain_small.stl produces **137 out
+of 567 XY-traverse rapids (24%)** starting below safe_z. Example bad
+rapids (captured via a temporary revert of the Phase 3 fix):
+
+```
+bad traverse rapid at move 12239: prev=(66.15,18.79,8.41) → curr=(48.68,-1.59,10.00), safe_z=10.00
+bad traverse rapid at move 13640: prev=(64.03,52.12,9.84) → curr=(31.22,65.09,10.00), safe_z=10.00
+bad traverse rapid at move 15143: prev=(73.03,5.56,7.80) → curr=(74.88,23.28,10.00), safe_z=10.00
+```
+
+**Phase 3 fix** (commit `3ab7605`): add a `lift_to_safe_z` helper that
+emits a **Z-only** lift move (same XY, current z → safe_z) when the
+current position is below safe_z. Call it before every rapid-XY
+traverse in all three entry styles (Plunge, Helix, Ramp). The final
+retract at the end of the toolpath already did the same pattern, so
+only the mid-toolpath Rapid segments needed the fix.
+
+**Phase 3 verification**:
+
+1. **Unit tests** in `adaptive3d/path.rs::tests`:
+   - `rapid_segment_lifts_to_safe_z_before_traverse` — constructs
+     a minimal `Cut → Rapid → Cut` sequence and asserts the lift
+     move is emitted with preserved XY.
+   - `rapid_segment_skips_redundant_lift_when_already_at_safe_z` —
+     regression guard against spurious lifts when the tool is
+     already at or above safe_z.
+2. **Integration test** in `tests/end_to_end.rs`:
+   - `test_adaptive3d_rapids_lift_before_xy_traverse` — runs
+     `adaptive_3d_toolpath` on terrain_small.stl with z_blend=true
+     (the exact Phase 2 failing configuration), walks every move
+     in the generated toolpath, and asserts that for every
+     XY-traverse rapid, the preceding move's Z is at or above
+     safe_z. **Zero bad rapids after the fix, 137/567 before.**
+
+Both tests were verified to catch the regression by temporarily
+reverting the fix and observing the expected panic messages. After
+reverting the revert, both tests pass.
+
+**Param sweep fingerprint impact**: 30 fingerprint files differ from
+the pre-Phase-3 baseline — every sweep that contains a Cut → Rapid
+transition now has an extra lift move. This is the intended behavior
+change and a new baseline has been captured at
+`/tmp/adaptive_phase3_sweep_baseline`.
+
+**Remaining open item**: the live MCP re-probe of
+`rapid_collision_count` on the terrain fixture (expected to drop
+from 556 / 499 back toward ~232 / ~232) still requires an MCP server
+restart to rebuild the binary. The in-process empirical proof via
+the integration test is sufficient to consider F-5 and F-6 closed at
+the **cause-level**; the collision-count measurement is the
+confirmation step.
+
+| finding | status | closing evidence |
+|---|---|---|
+| **F-2** | ✅ CLOSED | MCP probe (Probe 1) + unit test + integration test |
+| **F-5** | ✅ CLOSED at cause level | integration test (137 → 0 bad rapids); MCP re-probe pending restart |
+| **F-6** | ✅ CLOSED at cause level | same integration test covers it (stepover is irrelevant to the safe_z lift pattern) |
+| **F-15** | ✅ CLOSED | MCP probe (Probe 1) + unit tests in simulation_cut |
+
+**Phase 3 commits**:
+- `3ab7605` — `adaptive3d: lift to safe_z before rapid XY traverse in segments_to_toolpath`
+- `b7a47f3` — `test: adaptive3d rapids must lift before XY traverse (F-5/F-6 closure)`
+
+---
+
 ## Raw MCP probe transcript
 
 See `/tmp/adaptive_review_notebook.md` for the original Phase 1 baselines
