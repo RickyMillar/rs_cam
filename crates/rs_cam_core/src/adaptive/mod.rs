@@ -19,7 +19,8 @@ mod path;
 mod search;
 
 pub(crate) use material_grid::MaterialGrid;
-use path::{adaptive_segments_with_debug, runtime_annotations_to_labels, segments_to_toolpath};
+pub(crate) use path::{AdaptiveSegment, adaptive_segments_with_debug};
+use path::{runtime_annotations_to_labels, segments_to_toolpath};
 
 pub(crate) use crate::adaptive_shared::{
     angle_diff, average_angles, blend_corners_to_moves, refine_angle_bracket,

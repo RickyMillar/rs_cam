@@ -12,10 +12,9 @@
 //! - Multi-level: Z levels from stock_top down to mesh surface
 //! - Boundary cleanup: waterline contours (not polygon offset contours)
 
-use crate::debug_trace::{ToolpathDebugBounds2, ToolpathDebugContext};
+use crate::debug_trace::ToolpathDebugContext;
 use crate::dexel::ray_top;
 use crate::dexel_stock::TriDexelStock;
-use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::MillingCutter;
@@ -27,11 +26,6 @@ mod clearing;
 mod path;
 mod search;
 use path::{adaptive_3d_segments, runtime_annotations_to_labels, segments_to_toolpath};
-
-pub(super) fn path_bounds_3d(path: &[P3]) -> Option<ToolpathDebugBounds2> {
-    let points: Vec<(f64, f64)> = path.iter().map(|point| (point.x, point.y)).collect();
-    ToolpathDebugBounds2::from_points(points.iter())
-}
 
 /// Region ordering strategy for 3D adaptive clearing.
 ///
@@ -146,34 +140,6 @@ pub(super) fn stock_has_material_above(
     let ray = stock.z_grid.ray(row, col);
     // Any segment whose exit > floor means material above floor.
     ray.iter().any(|seg| seg.exit as f64 > floor)
-}
-
-/// Sum of top-Z values in a local area around (cx, cy) within radius.
-/// Used for cheap O(local_cells) idle detection instead of summing entire grid.
-#[inline]
-pub(super) fn local_material_sum(stock: &TriDexelStock, cx: f64, cy: f64, radius: f64) -> f64 {
-    let grid = &stock.z_grid;
-    let cs = grid.cell_size;
-    let r = radius * 1.5; // Slightly wider to catch changes from the stamp
-    let col_min = ((cx - r - grid.origin_u) / cs).floor().max(0.0) as usize;
-    let col_max = ((cx + r - grid.origin_u) / cs)
-        .ceil()
-        .min((grid.cols - 1) as f64) as usize;
-    let row_min = ((cy - r - grid.origin_v) / cs).floor().max(0.0) as usize;
-    let row_max = ((cy + r - grid.origin_v) / cs)
-        .ceil()
-        .min((grid.rows - 1) as f64) as usize;
-
-    let bottom_z = stock.stock_bbox.min.z;
-    let mut sum = 0.0;
-    for row in row_min..=row_max {
-        for col in col_min..=col_max {
-            sum += ray_top(grid.ray(row, col))
-                .map(|z| z as f64)
-                .unwrap_or(bottom_z);
-        }
-    }
-    sum
 }
 
 // ── Segment types ─────────────────────────────────────────────────────
@@ -397,12 +363,11 @@ pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(
     clippy::indexing_slicing
 )]
 mod tests {
-    use super::clearing::{MaterialRegion, detect_material_regions, pre_stamp_thin_bands};
+    use super::clearing::{MaterialRegion, detect_material_regions};
     use super::path::Adaptive3dSegment;
-    use super::search::{
-        compute_engagement_3d, find_entry_3d, material_remaining_in_region, search_direction_3d,
-    };
+    use super::search::material_remaining_in_region;
     use super::*;
+    use crate::geo::P3;
     use crate::adaptive_shared::target_engagement_fraction;
     use crate::dexel::{DexelSegment, ray_subtract_above};
     use crate::dexel_stock::StockCutDirection;
@@ -571,226 +536,6 @@ mod tests {
             center_z,
             edge_z
         );
-    }
-
-    // ── Engagement tests ──────────────────────────────────────────────
-
-    #[test]
-    fn test_engagement_3d_full_material() {
-        let (mesh, si) = make_flat_mesh();
-        let cutter = flat_cutter();
-        let cell_size = 1.0;
-
-        let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
-        let surface_hm = SurfaceHeightmap::from_mesh(
-            &mesh,
-            &si,
-            &cutter,
-            material_stock.z_grid.origin_u,
-            material_stock.z_grid.origin_v,
-            material_stock.z_grid.rows,
-            material_stock.z_grid.cols,
-            cell_size,
-            -10.0,
-        );
-
-        // Stock at 20, surface near 0, z_level=10: everything above 10
-        let eng = compute_engagement_3d(&material_stock, &surface_hm, 0.0, 0.0, 3.175, 10.0, 0.5);
-        assert!(
-            eng > 0.9,
-            "Full material should give high engagement, got {:.2}",
-            eng
-        );
-    }
-
-    #[test]
-    fn test_engagement_3d_cleared() {
-        let (mesh, si) = make_flat_mesh();
-        let cutter = flat_cutter();
-        let cell_size = 1.0;
-
-        // Stock already at surface level
-        let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 0.5, cell_size);
-        let surface_hm = SurfaceHeightmap::from_mesh(
-            &mesh,
-            &si,
-            &cutter,
-            material_stock.z_grid.origin_u,
-            material_stock.z_grid.origin_v,
-            material_stock.z_grid.rows,
-            material_stock.z_grid.cols,
-            cell_size,
-            -10.0,
-        );
-
-        let eng = compute_engagement_3d(&material_stock, &surface_hm, 0.0, 0.0, 3.175, 0.0, 0.5);
-        assert!(
-            eng < 0.1,
-            "Cleared material should give low engagement, got {:.2}",
-            eng
-        );
-    }
-
-    #[test]
-    fn test_engagement_3d_partial() {
-        let (mesh, si) = make_flat_mesh();
-        let cutter = flat_cutter();
-        let cell_size = 1.0;
-
-        let mut material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
-        let surface_hm = SurfaceHeightmap::from_mesh(
-            &mesh,
-            &si,
-            &cutter,
-            material_stock.z_grid.origin_u,
-            material_stock.z_grid.origin_v,
-            material_stock.z_grid.rows,
-            material_stock.z_grid.cols,
-            cell_size,
-            -10.0,
-        );
-
-        // Stamp tool at (3, 0) to clear half the area near (0, 0)
-        let lut = RadialProfileLUT::from_cutter(&cutter, 256);
-        material_stock.stamp_tool_at(
-            &lut,
-            cutter.radius(),
-            3.0,
-            0.0,
-            10.0,
-            StockCutDirection::FromTop,
-        );
-
-        let eng = compute_engagement_3d(&material_stock, &surface_hm, 0.0, 0.0, 3.175, 10.0, 0.5);
-        assert!(
-            eng > 0.2 && eng < 0.9,
-            "Partial material should give mid engagement, got {:.2}",
-            eng
-        );
-    }
-
-    // ── Direction search tests ─────────────────────────────────────────
-
-    #[test]
-    fn test_direction_search_finds_material() {
-        let (mesh, si) = make_flat_mesh();
-        let cutter = flat_cutter();
-        let cell_size = 1.0;
-
-        let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
-        let surface_hm = SurfaceHeightmap::from_mesh(
-            &mesh,
-            &si,
-            &cutter,
-            material_stock.z_grid.origin_u,
-            material_stock.z_grid.origin_v,
-            material_stock.z_grid.rows,
-            material_stock.z_grid.cols,
-            cell_size,
-            -10.0,
-        );
-
-        let target = target_engagement_fraction(2.0, 3.175);
-        let result = search_direction_3d(
-            &material_stock,
-            &surface_hm,
-            0.0,
-            0.0,
-            3.175,
-            1.5,
-            target,
-            0.0,
-            10.0,
-            0.5,
-            -25.0,
-            25.0,
-            -25.0,
-            25.0,
-        );
-        assert!(
-            result.is_some(),
-            "Should find a direction with full material"
-        );
-    }
-
-    #[test]
-    fn test_direction_search_no_material() {
-        let (mesh, si) = make_flat_mesh();
-        let cutter = flat_cutter();
-        let cell_size = 1.0;
-
-        // Stock at surface level — nothing to cut
-        let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 0.5, cell_size);
-        let surface_hm = SurfaceHeightmap::from_mesh(
-            &mesh,
-            &si,
-            &cutter,
-            material_stock.z_grid.origin_u,
-            material_stock.z_grid.origin_v,
-            material_stock.z_grid.rows,
-            material_stock.z_grid.cols,
-            cell_size,
-            -10.0,
-        );
-
-        let target = target_engagement_fraction(2.0, 3.175);
-        let result = search_direction_3d(
-            &material_stock,
-            &surface_hm,
-            0.0,
-            0.0,
-            3.175,
-            1.5,
-            target,
-            0.0,
-            0.0,
-            0.5,
-            -25.0,
-            25.0,
-            -25.0,
-            25.0,
-        );
-        assert!(
-            result.is_none(),
-            "Should find no direction when all cleared"
-        );
-    }
-
-    // ── Entry point tests ───────────────────────────────────────────────
-
-    #[test]
-    fn test_entry_3d_finds_remaining() {
-        let (mesh, si) = make_flat_mesh();
-        let cutter = flat_cutter();
-        let cell_size = 1.0;
-
-        let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
-        let surface_hm = SurfaceHeightmap::from_mesh(
-            &mesh,
-            &si,
-            &cutter,
-            material_stock.z_grid.origin_u,
-            material_stock.z_grid.origin_v,
-            material_stock.z_grid.rows,
-            material_stock.z_grid.cols,
-            cell_size,
-            -10.0,
-        );
-
-        let result = find_entry_3d(
-            &material_stock,
-            &surface_hm,
-            &mesh,
-            &si,
-            &cutter,
-            10.0,
-            0.5,
-            None,
-            &[],
-            3.175,
-            None,
-        );
-        assert!(result.is_some(), "Should find entry with full material");
     }
 
     // ── Z level computation ─────────────────────────────────────────────
@@ -1325,64 +1070,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_find_entry_3d_with_bbox() {
-        let (mesh, si) = make_flat_mesh();
-        let cutter = flat_cutter();
-        let cell_size = 1.0;
-
-        let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
-        let surface_hm = SurfaceHeightmap::from_mesh(
-            &mesh,
-            &si,
-            &cutter,
-            material_stock.z_grid.origin_u,
-            material_stock.z_grid.origin_v,
-            material_stock.z_grid.rows,
-            material_stock.z_grid.cols,
-            cell_size,
-            -10.0,
-        );
-
-        // Restrict scan to a small bbox in the top-right quadrant
-        let half_rows = material_stock.z_grid.rows / 2;
-        let half_cols = material_stock.z_grid.cols / 2;
-        let scan_bbox = Some((
-            half_rows,
-            material_stock.z_grid.rows - 1,
-            half_cols,
-            material_stock.z_grid.cols - 1,
-        ));
-
-        let result = find_entry_3d(
-            &material_stock,
-            &surface_hm,
-            &mesh,
-            &si,
-            &cutter,
-            10.0,
-            0.5,
-            None,
-            &[],
-            3.175,
-            scan_bbox,
-        );
-        assert!(result.is_some(), "Should find entry within bbox constraint");
-
-        // Verify the entry point is within the bbox
-        let (entry_xy, _) = result.unwrap();
-        let (_, min_world_y) = material_stock.z_grid.cell_to_world(half_rows, half_cols);
-        let (min_world_x, _) = material_stock.z_grid.cell_to_world(half_rows, half_cols);
-        assert!(
-            entry_xy.x >= min_world_x - cell_size && entry_xy.y >= min_world_y - cell_size,
-            "Entry ({:.1}, {:.1}) should be within scan bbox (x>={:.1}, y>={:.1})",
-            entry_xy.x,
-            entry_xy.y,
-            min_world_x,
-            min_world_y
-        );
-    }
-
     // ── Integration: ByArea ordering ─────────────────────────────────────
 
     #[test]
@@ -1443,202 +1130,6 @@ mod tests {
             "ByArea should cut down to lower Z levels, min feed Z = {:.1}",
             min_z
         );
-    }
-
-    // ── Pre-stamp thin bands tests ──────────────────────────────────────
-
-    #[test]
-    fn test_pre_stamp_clears_thin_bands() {
-        use crate::slope::SlopeMap;
-        // Thin material (0.5mm) on steep walls should be pre-stamped;
-        // thick material (5mm) preserved.
-        let cell_size = 1.0;
-        let rows = 10;
-        let cols = 10;
-        let z_level = 7.0;
-        let stock_to_leave = 0.5;
-        let depth_per_pass = 3.0;
-
-        // Surface: rows 0-4 are a steep ramp (z increases steeply with col),
-        // rows 5-9 are flat at z=0. This makes rows 0-4 steep (>60°).
-        let mut z_values = vec![0.0; rows * cols];
-        for row in 0..5 {
-            for col in 0..cols {
-                z_values[row * cols + col] = col as f64 * 3.0; // dz/dx=3 → ~72° slope
-            }
-        }
-        let surface_hm = SurfaceHeightmap {
-            z_values: z_values.clone(),
-            rows,
-            cols,
-            origin_x: 0.0,
-            origin_y: 0.0,
-            cell_size,
-        };
-        let slope_map = SlopeMap::from_z_grid(&z_values, rows, cols, 0.0, 0.0, cell_size);
-
-        // Material at z=7.5 (thin: 0.5mm above floor) for steep cells (rows 0-4),
-        // z=12.0 (thick: 5mm above floor) for flat cells (rows 5-9).
-        let mut mat_cells = vec![7.5; rows * cols];
-        for row in 5..rows {
-            for col in 0..cols {
-                mat_cells[row * cols + col] = 12.0;
-            }
-        }
-        let mut material_stock =
-            make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
-
-        let stamped = pre_stamp_thin_bands(
-            &mut material_stock,
-            &surface_hm,
-            &slope_map,
-            z_level,
-            stock_to_leave,
-            depth_per_pass,
-            None,
-        );
-
-        // Only steep cells with thin bands should be stamped
-        assert!(
-            stamped > 0,
-            "Should pre-stamp thin steep cells, stamped {}",
-            stamped
-        );
-
-        // Thick cells should be unchanged
-        for row in 5..rows {
-            for col in 0..cols {
-                let z = stock_top_z_at(&material_stock, row, col);
-                assert!(
-                    (z - 12.0).abs() < 0.1,
-                    "Thick cell ({},{}) should be unchanged at 12.0, got {:.2}",
-                    row,
-                    col,
-                    z
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_pre_stamp_no_op_on_flat() {
-        use crate::slope::SlopeMap;
-        // Flat stock 5mm above surface — no cells should be pre-stamped
-        // (flat surface = not steep, so pre-stamp skips all).
-        let cell_size = 1.0;
-        let rows = 10;
-        let cols = 10;
-        let z_level = 15.0;
-        let stock_to_leave = 0.5;
-        let depth_per_pass = 3.0;
-
-        // Surface at z=0 → flat slope everywhere
-        let z_values = vec![0.0; rows * cols];
-        let surface_hm = SurfaceHeightmap {
-            z_values: z_values.clone(),
-            rows,
-            cols,
-            origin_x: 0.0,
-            origin_y: 0.0,
-            cell_size,
-        };
-        let slope_map = SlopeMap::from_z_grid(&z_values, rows, cols, 0.0, 0.0, cell_size);
-        let mut material_stock = make_stock_with_cells(
-            rows,
-            cols,
-            0.0,
-            0.0,
-            cell_size,
-            -10.0,
-            &vec![20.0; rows * cols],
-        );
-
-        let stamped = pre_stamp_thin_bands(
-            &mut material_stock,
-            &surface_hm,
-            &slope_map,
-            z_level,
-            stock_to_leave,
-            depth_per_pass,
-            None,
-        );
-
-        assert_eq!(
-            stamped, 0,
-            "Flat stock well above surface should not be pre-stamped"
-        );
-    }
-
-    #[test]
-    fn test_pre_stamp_steep_only() {
-        use crate::slope::SlopeMap;
-        // Mixed terrain: steep cells (rows 0-4) and shallow cells (rows 5-9).
-        // Both have thin bands, but only steep cells should be pre-stamped.
-        let cell_size = 1.0;
-        let rows = 10;
-        let cols = 10;
-        let z_level = 5.0;
-        let stock_to_leave = 0.0;
-        let depth_per_pass = 3.0;
-
-        // Surface: rows 0-4 steep ramp (dz/dx=3 → ~72°), rows 5-9 flat
-        let mut z_values = vec![0.0; rows * cols];
-        for row in 0..5 {
-            for col in 0..cols {
-                z_values[row * cols + col] = col as f64 * 3.0;
-            }
-        }
-        let surface_hm = SurfaceHeightmap {
-            z_values: z_values.clone(),
-            rows,
-            cols,
-            origin_x: 0.0,
-            origin_y: 0.0,
-            cell_size,
-        };
-        let slope_map = SlopeMap::from_z_grid(&z_values, rows, cols, 0.0, 0.0, cell_size);
-
-        // All cells have thin material (0.5mm above floor)
-        let mut mat_cells = vec![0.0; rows * cols];
-        for row in 0..rows {
-            for col in 0..cols {
-                let surf_z = z_values[row * cols + col];
-                let floor = (surf_z + stock_to_leave).max(z_level);
-                mat_cells[row * cols + col] = floor + 0.5; // 0.5mm thin band everywhere
-            }
-        }
-        let mut material_stock =
-            make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
-
-        let stamped = pre_stamp_thin_bands(
-            &mut material_stock,
-            &surface_hm,
-            &slope_map,
-            z_level,
-            stock_to_leave,
-            depth_per_pass,
-            None,
-        );
-
-        // Steep cells should be stamped, shallow cells should NOT
-        assert!(stamped > 0, "Should stamp some steep thin bands");
-
-        // Verify shallow cells (rows 7-9) are untouched (skip boundary rows 5-6
-        // where finite differences see the steep→flat transition as steep)
-        for row in 7..rows {
-            for col in 0..cols {
-                let original = mat_cells[row * cols + col];
-                let current = stock_top_z_at(&material_stock, row, col);
-                assert!(
-                    (current - original).abs() < 0.1,
-                    "Shallow cell ({},{}) should be untouched: was {:.2}, now {:.2}",
-                    row,
-                    col,
-                    original,
-                    current
-                );
-            }
-        }
     }
 
     // ── Widening coverage test ──────────────────────────────────────────
@@ -1808,12 +1299,16 @@ mod tests {
             trace.spans.iter().any(|span| span.kind == "adaptive_pass"),
             "trace should include adaptive pass spans"
         );
+        // Hotspot kind is "adaptive_pass" (emitted by the 2D adaptive
+        // which now drives AgentSearch slices) — the old 3D agent code
+        // emitted "adaptive3d_pass"; both are valid.
         assert!(
             trace
                 .hotspots
                 .iter()
-                .any(|hotspot| hotspot.kind == "adaptive3d_pass"),
-            "trace should record at least one adaptive 3D hotspot"
+                .any(|hotspot| hotspot.kind == "adaptive_pass"
+                    || hotspot.kind == "adaptive3d_pass"),
+            "trace should record at least one adaptive hotspot"
         );
         assert!(
             !trace.annotations.is_empty(),

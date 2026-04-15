@@ -210,6 +210,12 @@ level prematurely.
 
 ## Execution order
 
+0. **Log every run.** Append to `planning/agent_search_probe_log.md`
+   after each probe, and copy the debug trace JSON + both screenshots
+   into `planning/probe_artifacts/<date>_<nn>_<label>/`. This is the
+   only way to compare deltas across iterations — do not skip it,
+   even for runs that look uneventful.
+
 1. **Probe first, tune second.** The `get_generation_debug_trace`
    tool gives us the numbers before we change anything. The
    diagnostics summary tells us exactly which hypothesis is dominant.

@@ -76,6 +76,18 @@ impl ProjectSession {
                 })?;
                 tc.operation.set_depth_per_pass(v);
             }
+            "debug_enabled" => {
+                let v = match &value {
+                    serde_json::Value::Bool(b) => *b,
+                    serde_json::Value::Number(n) => n.as_i64().is_some_and(|i| i != 0),
+                    _ => {
+                        return Err(SessionError::InvalidParam(
+                            "debug_enabled must be a bool or 0/1".to_owned(),
+                        ));
+                    }
+                };
+                tc.debug_options.enabled = v;
+            }
             _ => {
                 // Config-specific param: serialize -> merge -> deserialize
                 let mut json = serde_json::to_value(&tc.operation).map_err(|e| {
@@ -329,9 +341,20 @@ impl ProjectSession {
 
         // Resolve heights — use the transformed mesh bbox so Z values are in the
         // setup-local frame.
+        //
+        // safe_z floor: the user-configured `post.safe_z` is a LEGACY
+        // 2D-friendly default (10mm above work Z=0). For 3D stock that
+        // extends to z=55, safe_z=10 sits INSIDE the stock and every
+        // rapid retract ends up in material. Enforce a minimum of
+        // `stock_top + SAFE_Z_CLEARANCE` so rapids clear the stock even
+        // when the project default is low.
+        const SAFE_Z_CLEARANCE_MM: f64 = 5.0;
+        let safe_z_floor = effective_stock_bbox.max.z + SAFE_Z_CLEARANCE_MM;
+        let effective_safe_z = self.post.safe_z.max(safe_z_floor);
+
         let model_bbox = mesh.as_ref().map(|m| &m.bbox);
         let height_ctx = HeightContext {
-            safe_z: self.post.safe_z,
+            safe_z: effective_safe_z,
             op_depth: tc.operation.default_depth_for_heights(),
             stock_top_z: effective_stock_bbox.max.z,
             stock_bottom_z: effective_stock_bbox.min.z,
