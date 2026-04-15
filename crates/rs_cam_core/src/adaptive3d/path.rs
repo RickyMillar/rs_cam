@@ -17,8 +17,8 @@ use std::time::Instant;
 use tracing::{debug, info};
 
 use super::clearing::{
-    ClearZLevelContext, clear_z_level, clear_z_level_adaptive, clear_z_level_contour_parallel,
-    detect_material_regions, waterline_cleanup,
+    ClearZLevelContext, clear_z_level_adaptive, clear_z_level_agent_2d_slice,
+    clear_z_level_contour_parallel, detect_material_regions, waterline_cleanup,
 };
 use super::search::blend_corners_3d;
 use super::{
@@ -396,7 +396,7 @@ pub(super) fn adaptive_3d_segments(
                             )?;
                         }
                         ClearingStrategy3d::AgentSearch => {
-                            clear_z_level(
+                            clear_z_level_agent_2d_slice(
                                 &ctx,
                                 &mut material_stock,
                                 &surface_hm,
@@ -469,7 +469,7 @@ pub(super) fn adaptive_3d_segments(
                         )?;
                     }
                     ClearingStrategy3d::AgentSearch => {
-                        clear_z_level(
+                        clear_z_level_agent_2d_slice(
                             &ctx,
                             &mut material_stock,
                             &surface_hm,

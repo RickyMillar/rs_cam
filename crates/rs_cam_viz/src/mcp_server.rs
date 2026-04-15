@@ -14,11 +14,11 @@ use crate::mcp_bridge::{McpRequest, McpRequestKind, ProgressUpdate};
 // Re-use parameter structs from the standalone MCP crate.
 use rs_cam_mcp::server::{
     AddAlignmentPinParam, AddToolParam, AddToolpathParam, CollisionCheckParam, CutTraceParam,
-    ExportParam, IndexParam, LoadProjectParam, ModelIdParam, RemoveAlignmentPinParam,
-    RemoveToolParam, RemoveToolpathParam, SaveProjectParam, ScreenshotSimParam,
-    ScreenshotToolpathParam, SetBoundaryConfigParam, SetDressupConfigParam, SetStockConfigParam,
-    SetToolParamInput, SetToolpathParamInput, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam,
-    SimScrubToolpathParam, SimulationParam,
+    ExportParam, GenDebugTraceParam, IndexParam, LoadProjectParam, ModelIdParam,
+    RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam, SaveProjectParam,
+    ScreenshotSimParam, ScreenshotToolpathParam, SetBoundaryConfigParam, SetDressupConfigParam,
+    SetStockConfigParam, SetToolParamInput, SetToolpathParamInput, SimJumpToMoveParam,
+    SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam,
 };
 
 /// Embedded MCP server that forwards requests to the GUI thread.
@@ -203,6 +203,32 @@ impl EmbeddedCamServer {
                 toolpath_id,
                 max_hotspots,
                 max_issues,
+            })
+            .await,
+        )
+    }
+
+    #[tool(
+        name = "get_generation_debug_trace",
+        description = "Get the generation-time debug trace for a toolpath: per-pass spans with exit_reason, idle_count, yield_ratio, xy_bbox, plus a diagnostic summary. Primary surface for diagnosing adaptive3d AgentSearch wandering/looping. Run generate_toolpath first. Filter by span_kind, exit_reason, or max_yield_ratio to narrow the response."
+    )]
+    async fn get_generation_debug_trace(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(GenDebugTraceParam {
+            index,
+            span_kind,
+            exit_reason,
+            max_yield_ratio,
+            max_spans,
+        }): Parameters<GenDebugTraceParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::GetGenerationDebugTrace {
+                index,
+                span_kind,
+                exit_reason,
+                max_yield_ratio,
+                max_spans,
             })
             .await,
         )

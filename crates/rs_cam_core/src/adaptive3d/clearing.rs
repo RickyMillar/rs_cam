@@ -2,10 +2,8 @@
 //! per-level contour-parallel and curvature-adaptive clearing,
 //! stamping, and waterline cleanup.
 
-use crate::adaptive_shared::average_angles;
 use crate::contour_extract::{edt_curvature_field, marching_squares_bool_grid, smooth_grid};
-use crate::debug_trace::{HotspotRecord, ToolpathDebugBounds2, ToolpathDebugContext};
-use crate::dexel::{ray_subtract_above, ray_top};
+use crate::debug_trace::ToolpathDebugContext;
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
@@ -15,24 +13,23 @@ use crate::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
 use crate::waterline::waterline_contours_with_cancel;
 use std::collections::VecDeque;
-use std::f64::consts::TAU;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use tracing::debug;
 
 use super::path::Adaptive3dSegment;
 use super::search::{
-    compute_engagement_3d, find_entry_3d, is_clear_path_3d, material_remaining_at_level,
-    material_remaining_in_region, search_direction_3d_with_metrics,
+    is_clear_path_3d, material_remaining_at_level,
+    material_remaining_in_region,
 };
 use super::{
-    Adaptive3dRuntimeEvent, ClearingStrategy3d, local_material_sum, path_bounds_3d,
-    stock_has_material_above,
+    ClearingStrategy3d, stock_has_material_above,
 };
 
 // ── Region detection ──────────────────────────────────────────────────
 
 /// A connected region of material detected by flood fill on the heightmap.
+#[allow(dead_code)] // Some fields are strategy-specific and only read by some strategies.
 pub(super) struct MaterialRegion {
     pub(super) row_min: usize,
     pub(super) row_max: usize,
@@ -164,6 +161,7 @@ pub(super) fn detect_material_regions(
 
 /// Parameters for a single Z-level clearing pass, extracted to avoid
 /// threading dozens of locals through the helper.
+#[allow(dead_code)] // Some fields are strategy-specific (ContourParallel, Adaptive, AgentSearch-2d).
 pub(super) struct ClearZLevelContext<'a> {
     pub(super) mesh: &'a TriangleMesh,
     pub(super) index: &'a SpatialIndex,
@@ -187,72 +185,6 @@ pub(super) struct ClearZLevelContext<'a> {
     pub(super) z_blend: bool,
 }
 
-/// Pre-stamp thin material bands that appear at each Z level on steep walls.
-///
-/// After cutting at a previous Z level, wall cells retain material_z equal to that
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-/// level. At the new (lower) Z level, these cells have a thin band of material
-/// (material_z - effective_floor) that is technically real but produces unproductive
-/// contour passes. This function directly cuts those thin bands at the cell level,
-/// leaving waterline cleanup to handle the actual wall boundaries.
-///
-/// Returns the number of cells pre-stamped.
-pub(super) fn pre_stamp_thin_bands(
-    material_stock: &mut TriDexelStock,
-    surface_hm: &SurfaceHeightmap,
-    slope_map: &SlopeMap,
-    z_level: f64,
-    stock_to_leave: f64,
-    depth_per_pass: f64,
-    region: Option<&MaterialRegion>,
-) -> u32 {
-    let thin_threshold = depth_per_pass * 0.3;
-    // Only pre-stamp on steep walls (>60°). Shallow areas have thin bands
-    // that represent real productive material worth clearing with the adaptive spiral.
-    let steep_threshold = 60.0_f64.to_radians();
-    let mut stamped = 0u32;
-
-    let grid = &material_stock.z_grid;
-    let cols = grid.cols;
-    let (row_min, row_max, col_min, col_max) = if let Some(r) = region {
-        (
-            r.row_min,
-            r.row_max.min(grid.rows - 1),
-            r.col_min,
-            r.col_max.min(grid.cols - 1),
-        )
-    } else {
-        (0, grid.rows - 1, 0, grid.cols - 1)
-    };
-
-    for row in row_min..=row_max {
-        let base = row * cols;
-        for col in col_min..=col_max {
-            let i = base + col;
-
-            // Skip shallow cells — only pre-stamp steep wall bands
-            if slope_map.angles[i] < steep_threshold {
-                continue;
-            }
-
-            let mat_z = ray_top(material_stock.z_grid.ray(row, col))
-                .map(|z| z as f64)
-                .unwrap_or(material_stock.stock_bbox.min.z);
-            let surf_z = surface_hm.z_values[i];
-            let effective_floor = (surf_z + stock_to_leave).max(z_level);
-            let thickness = mat_z - effective_floor;
-            if thickness > 0.01 && thickness < thin_threshold {
-                ray_subtract_above(
-                    material_stock.z_grid.ray_mut(row, col),
-                    effective_floor as f32,
-                );
-                stamped += 1;
-            }
-        }
-    }
-
-    stamped
-}
 
 // ── Contour-parallel clearing ─────────────────────────────────────────
 
@@ -801,631 +733,6 @@ pub(super) fn clear_z_level_adaptive(
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-/// Clear material at a single Z level, optionally restricted to a region.
-///
-/// When `region` is `Some`, entry point search and material-remaining checks
-/// are restricted to the region's bounding box, and direction search bbox
-/// is clamped to the region's world extent.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn clear_z_level(
-    ctx: &ClearZLevelContext<'_>,
-    material_stock: &mut TriDexelStock,
-    surface_hm: &SurfaceHeightmap,
-    z_level: f64,
-    segments: &mut Vec<Adaptive3dSegment>,
-    last_pos: &mut Option<P3>,
-    region: Option<&MaterialRegion>,
-    cancel: &dyn CancelCheck,
-) -> Result<(), Cancelled> {
-    let tool_radius = ctx.tool_radius;
-
-    let scan_bbox = region.map(|r| (r.row_min, r.row_max, r.col_min, r.col_max));
-
-    let dir_x_min = region.map_or(ctx.bbox_x_min, |r| r.world_x_min.max(ctx.bbox_x_min));
-    let dir_x_max = region.map_or(ctx.bbox_x_max, |r| r.world_x_max.min(ctx.bbox_x_max));
-    let dir_y_min = region.map_or(ctx.bbox_y_min, |r| r.world_y_min.max(ctx.bbox_y_min));
-    let dir_y_max = region.map_or(ctx.bbox_y_max, |r| r.world_y_max.min(ctx.bbox_y_max));
-
-    let remaining = if let Some(r) = region {
-        material_remaining_in_region(material_stock, surface_hm, z_level, ctx.stock_to_leave, r)
-    } else {
-        material_remaining_at_level(material_stock, surface_hm, z_level, ctx.stock_to_leave)
-    };
-    if remaining < 0.005 {
-        return Ok(());
-    }
-
-    let level_scope = ctx.debug.as_ref().map(|debug_ctx| {
-        let label = if let Some(region) = region {
-            format!(
-                "Z {:.3} region rows {}..{} cols {}..{}",
-                z_level, region.row_min, region.row_max, region.col_min, region.col_max
-            )
-        } else {
-            format!("Z {:.3}", z_level)
-        };
-        debug_ctx.start_span("z_level", label)
-    });
-    if let Some(scope) = level_scope.as_ref() {
-        scope.set_z_level(z_level);
-        scope.set_counter("remaining_before", remaining);
-    }
-    let level_ctx = level_scope.as_ref().map(|scope| scope.context());
-
-    // Pre-stamp thin bands on steep walls to avoid unproductive contour re-tracing.
-    let pre_stamp_scope = level_ctx
-        .as_ref()
-        .map(|debug_ctx| debug_ctx.start_span("pre_stamp", format!("Pre-stamp Z {:.3}", z_level)));
-    let pre_stamped = pre_stamp_thin_bands(
-        material_stock,
-        surface_hm,
-        ctx.slope_map,
-        z_level,
-        ctx.stock_to_leave,
-        ctx.depth_per_pass,
-        region,
-    );
-    if let Some(scope) = pre_stamp_scope.as_ref() {
-        scope.set_z_level(z_level);
-        scope.set_counter("cells", pre_stamped as f64);
-    }
-    if pre_stamped > 0 {
-        debug!(
-            cells = pre_stamped,
-            z = z_level,
-            "Pre-stamped thin wall bands"
-        );
-        // Re-check remaining after pre-stamp — skip level if negligible
-        let remaining_after = if let Some(r) = region {
-            material_remaining_in_region(material_stock, surface_hm, z_level, ctx.stock_to_leave, r)
-        } else {
-            material_remaining_at_level(material_stock, surface_hm, z_level, ctx.stock_to_leave)
-        };
-        if let Some(scope) = level_scope.as_ref() {
-            scope.set_counter("remaining_after_prestamp", remaining_after);
-        }
-        if remaining_after < 0.005 {
-            debug!(
-                z = z_level,
-                "Skipping Z level — thin bands consumed all remaining material"
-            );
-            if let Some(scope) = level_scope.as_ref() {
-                scope.set_exit_reason("pre-stamp exhausted");
-            }
-            return Ok(());
-        }
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    let t_level = Instant::now();
-    let mut pass_endpoints: Vec<P2> = Vec::new();
-    let max_passes = 500;
-    let mut pass_count = 0;
-    let mut short_pass_streak = 0u32;
-    let min_productive_steps = 8;
-    let warmup_passes = 50;
-    let mut total_steps = 0u64;
-    let mut long_passes = 0u32;
-    let mut short_passes = 0u32;
-    let mut skipped_preflight = 0u32;
-
-    loop {
-        check_cancel(cancel)?;
-        pass_count += 1;
-        if pass_count > max_passes {
-            break;
-        }
-        if pass_count > warmup_passes && short_pass_streak > 8 {
-            debug!(
-                short_passes = short_pass_streak,
-                z = z_level,
-                pass = pass_count,
-                "Bailing from Z level"
-            );
-            break;
-        }
-        if pass_count % 20 == 1 {
-            let rem = if let Some(r) = region {
-                material_remaining_in_region(
-                    material_stock,
-                    surface_hm,
-                    z_level,
-                    ctx.stock_to_leave,
-                    r,
-                )
-            } else {
-                material_remaining_at_level(material_stock, surface_hm, z_level, ctx.stock_to_leave)
-            };
-            if rem < 0.01 {
-                break;
-            }
-        }
-
-        let last_2d = last_pos.map(|p| P2::new(p.x, p.y));
-        let pass_started = Instant::now();
-        let pass_scope = level_ctx
-            .as_ref()
-            .map(|debug_ctx| debug_ctx.start_span("adaptive_pass", format!("Pass {pass_count}")));
-        if let Some(scope) = pass_scope.as_ref() {
-            scope.set_z_level(z_level);
-        }
-        let pass_ctx = pass_scope.as_ref().map(|scope| scope.context());
-        let entry_scope = pass_ctx
-            .as_ref()
-            .map(|debug_ctx| debug_ctx.start_span("entry_search", format!("Entry {pass_count}")));
-        let Some((entry_xy, entry_z)) = find_entry_3d(
-            material_stock,
-            surface_hm,
-            ctx.mesh,
-            ctx.index,
-            ctx.cutter,
-            z_level,
-            ctx.stock_to_leave,
-            last_2d,
-            &pass_endpoints,
-            tool_radius,
-            scan_bbox,
-        ) else {
-            if let Some(scope) = pass_scope.as_ref() {
-                scope.set_exit_reason("no entry");
-            }
-            break;
-        };
-        if let Some(scope) = entry_scope.as_ref() {
-            scope.set_xy_bbox(ToolpathDebugBounds2 {
-                min_x: entry_xy.x,
-                max_x: entry_xy.x,
-                min_y: entry_xy.y,
-                max_y: entry_xy.y,
-            });
-            scope.set_z_level(entry_z);
-        }
-
-        let entry_3d = P3::new(entry_xy.x, entry_xy.y, entry_z);
-
-        let preflight_scope = pass_ctx
-            .as_ref()
-            .map(|debug_ctx| debug_ctx.start_span("preflight", format!("Preflight {pass_count}")));
-        let preflight_dir = search_direction_3d_with_metrics(
-            material_stock,
-            surface_hm,
-            entry_xy.x,
-            entry_xy.y,
-            tool_radius,
-            ctx.step_len,
-            ctx.target_frac,
-            0.0,
-            z_level,
-            ctx.stock_to_leave,
-            dir_x_min,
-            dir_x_max,
-            dir_y_min,
-            dir_y_max,
-        );
-        if let Some(scope) = preflight_scope.as_ref() {
-            scope.set_z_level(z_level);
-            scope.set_counter(
-                "evaluations",
-                preflight_dir
-                    .as_ref()
-                    .map_or(0.0, |result| result.evaluations as f64),
-            );
-            if preflight_dir.is_none() {
-                scope.set_exit_reason("no viable direction");
-            }
-        }
-        if preflight_dir.is_none() {
-            material_stock.stamp_tool_at(
-                ctx.lut,
-                ctx.tool_radius,
-                entry_xy.x,
-                entry_xy.y,
-                entry_z,
-                StockCutDirection::FromTop,
-            );
-            for a in 0..8 {
-                let angle = (a as f64 / 8.0) * TAU;
-                let (sin_a, cos_a) = angle.sin_cos();
-                let px = entry_xy.x + tool_radius * 0.5 * cos_a;
-                let py = entry_xy.y + tool_radius * 0.5 * sin_a;
-                material_stock.stamp_tool_at(
-                    ctx.lut,
-                    ctx.tool_radius,
-                    px,
-                    py,
-                    entry_z,
-                    StockCutDirection::FromTop,
-                );
-            }
-            pass_endpoints.push(entry_xy);
-            short_pass_streak += 1;
-            skipped_preflight += 1;
-            segments.push(Adaptive3dSegment::Marker(
-                Adaptive3dRuntimeEvent::PassPreflightSkip {
-                    pass_index: pass_count,
-                },
-            ));
-            if let Some(scope) = pass_scope.as_ref() {
-                scope.set_exit_reason("preflight skip");
-                scope.set_counter("skipped_preflight", 1.0);
-            }
-            continue;
-        }
-
-        segments.push(Adaptive3dSegment::Marker(
-            Adaptive3dRuntimeEvent::PassEntry {
-                pass_index: pass_count,
-                entry_x: entry_xy.x,
-                entry_y: entry_xy.y,
-                entry_z,
-            },
-        ));
-
-        if let Some(last) = *last_pos {
-            let dx = entry_3d.x - last.x;
-            let dy = entry_3d.y - last.y;
-            let dist = (dx * dx + dy * dy).sqrt();
-            if dist < ctx.max_link_dist
-                && is_clear_path_3d(
-                    material_stock,
-                    surface_hm,
-                    last,
-                    entry_3d,
-                    z_level,
-                    ctx.stock_to_leave,
-                )
-            {
-                segments.push(Adaptive3dSegment::Link(entry_3d));
-            } else {
-                segments.push(Adaptive3dSegment::Rapid(entry_3d));
-            }
-        } else {
-            segments.push(Adaptive3dSegment::Rapid(entry_3d));
-        }
-
-        let mut path = vec![entry_3d];
-        let mut cx = entry_xy.x;
-        let mut cy = entry_xy.y;
-        let mut cz = entry_z;
-
-        let mut prev_angle = if let Some(last) = *last_pos {
-            (entry_xy.y - last.y).atan2(entry_xy.x - last.x)
-        } else {
-            0.0
-        };
-
-        material_stock.stamp_tool_at(
-            ctx.lut,
-            ctx.tool_radius,
-            cx,
-            cy,
-            cz,
-            StockCutDirection::FromTop,
-        );
-
-        const SMOOTH_BUF_LEN: usize = 3;
-        let mut angle_buf: Vec<f64> = Vec::with_capacity(SMOOTH_BUF_LEN);
-
-        let max_steps = 5000;
-        let mut idle_count = 0;
-        let mut step_count = 0u32;
-        let mut looped = false;
-        let mut pass_removal_sum = 0.0f64;
-        let mut search_evaluations = preflight_dir
-            .as_ref()
-            .map_or(0u32, |result| result.evaluations);
-
-        // Loop detection: after enough steps to form a meaningful loop,
-        // check if we've returned near the entry point. The minimum step
-        // threshold avoids false positives at the start of a pass.
-        let loop_min_steps = (tool_radius * 4.0 / ctx.step_len).ceil() as u32;
-        let loop_close_dist_sq = (tool_radius * 1.5) * (tool_radius * 1.5);
-        // Track the farthest we've been from entry — only trigger loop
-        // detection once we've actually moved away first.
-        let mut max_dist_from_entry_sq = 0.0f64;
-        let min_excursion_sq = (tool_radius * 4.0) * (tool_radius * 4.0);
-
-        for _ in 0..max_steps {
-            check_cancel(cancel)?;
-            let local_before = local_material_sum(material_stock, cx, cy, tool_radius);
-
-            let smoothed = if angle_buf.len() >= 2 {
-                average_angles(&angle_buf)
-            } else {
-                prev_angle
-            };
-
-            let Some(search_result) = search_direction_3d_with_metrics(
-                material_stock,
-                surface_hm,
-                cx,
-                cy,
-                tool_radius,
-                ctx.step_len,
-                ctx.target_frac,
-                smoothed,
-                z_level,
-                ctx.stock_to_leave,
-                dir_x_min,
-                dir_x_max,
-                dir_y_min,
-                dir_y_max,
-            ) else {
-                break;
-            };
-            search_evaluations += search_result.evaluations;
-            let angle = search_result.angle;
-            let z_next = search_result.z_next;
-
-            let (sin_a, cos_a) = angle.sin_cos();
-            cx += ctx.step_len * cos_a;
-            cy += ctx.step_len * sin_a;
-            let max_z_step = ctx.depth_per_pass;
-            cz = z_next.max(cz - max_z_step);
-            path.push(P3::new(cx, cy, cz));
-
-            material_stock.stamp_tool_at(
-                ctx.lut,
-                ctx.tool_radius,
-                cx,
-                cy,
-                cz,
-                StockCutDirection::FromTop,
-            );
-
-            if angle_buf.len() >= SMOOTH_BUF_LEN {
-                angle_buf.remove(0);
-            }
-            angle_buf.push(angle);
-            step_count += 1;
-
-            // Loop detection: have we returned near the entry after travelling far enough?
-            let dx_entry = cx - entry_xy.x;
-            let dy_entry = cy - entry_xy.y;
-            let dist_from_entry_sq = dx_entry * dx_entry + dy_entry * dy_entry;
-            if dist_from_entry_sq > max_dist_from_entry_sq {
-                max_dist_from_entry_sq = dist_from_entry_sq;
-            }
-            if step_count > loop_min_steps
-                && max_dist_from_entry_sq > min_excursion_sq
-                && dist_from_entry_sq < loop_close_dist_sq
-            {
-                looped = true;
-                break;
-            }
-
-            let local_after = local_material_sum(material_stock, cx, cy, tool_radius);
-            let local_delta = (local_before - local_after).abs();
-            pass_removal_sum += local_delta;
-            let engagement_here = compute_engagement_3d(
-                material_stock,
-                surface_hm,
-                cx,
-                cy,
-                tool_radius,
-                z_level,
-                ctx.stock_to_leave,
-            );
-            if local_delta < 0.001 && engagement_here < 0.05 {
-                idle_count += 1;
-                if idle_count > 20 {
-                    break;
-                }
-            } else {
-                idle_count = 0;
-            }
-
-            prev_angle = angle;
-        }
-
-        let was_idle = idle_count > 20;
-
-        let pass_steps = path.len();
-        // Keep a reference to the path for post-pass widening before moving it
-        let should_widen = (looped || pass_steps >= min_productive_steps) && pass_steps >= 4;
-        let widen_path: Vec<P3> = if should_widen {
-            // Denser sampling to avoid missing tight contours
-            let skip = 1.max(path.len() / 500);
-            path.iter().step_by(skip).copied().collect()
-        } else {
-            Vec::new()
-        };
-
-        let path_debug_bounds = path_bounds_3d(&path);
-
-        if pass_steps >= 2 {
-            // SAFETY: pass_steps >= 2 checked on line above
-            #[allow(clippy::expect_used)]
-            let endpoint = *path.last().expect("path is non-empty after loop");
-            *last_pos = Some(endpoint);
-            pass_endpoints.push(P2::new(endpoint.x, endpoint.y));
-            segments.push(Adaptive3dSegment::Cut(path));
-        } else {
-            *last_pos = Some(entry_3d);
-            pass_endpoints.push(entry_xy);
-        }
-
-        total_steps += pass_steps as u64;
-        let exit_reason = if looped {
-            "loop closed"
-        } else if was_idle {
-            "idle"
-        } else {
-            "no material"
-        };
-
-        // Low-yield detection: bail on passes that trace lots of steps but remove
-        // negligible material (typical of thin wall contour re-tracing).
-        let yield_ratio = if pass_steps > 1 {
-            let expected = pass_steps as f64
-                * ctx.stepover
-                * ctx.depth_per_pass
-                * material_stock.z_grid.cell_size;
-            if expected > 0.0 {
-                pass_removal_sum / expected
-            } else {
-                1.0
-            }
-        } else {
-            1.0
-        };
-        let is_low_yield = pass_steps < min_productive_steps || yield_ratio < 0.05;
-        if let Some(scope) = pass_scope.as_ref() {
-            scope.set_counter("step_count", pass_steps as f64);
-            scope.set_counter("idle_count", idle_count as f64);
-            scope.set_counter("search_evaluations", search_evaluations as f64);
-            scope.set_counter("yield_ratio", yield_ratio);
-            scope.set_counter("preflight_skipped", 0.0);
-            scope.set_exit_reason(exit_reason);
-            if let Some(bounds) = path_debug_bounds {
-                scope.set_xy_bbox(bounds);
-                let (center_x, center_y) = bounds.center();
-                if let Some(debug_ctx) = pass_ctx.as_ref() {
-                    debug_ctx.record_hotspot(&HotspotRecord {
-                        kind: "adaptive3d_pass".into(),
-                        center_x,
-                        center_y,
-                        z_level: Some(z_level),
-                        bucket_size_xy: tool_radius * 2.0,
-                        bucket_size_z: Some(ctx.tolerance.max(ctx.depth_per_pass * 0.5)),
-                        elapsed_us: pass_started.elapsed().as_micros() as u64,
-                        pass_count: 1,
-                        step_count: pass_steps as u64,
-                        low_yield_exit_count: u32::from(is_low_yield),
-                    });
-                }
-            }
-        }
-
-        if is_low_yield {
-            short_passes += 1;
-            short_pass_streak += 1;
-            segments.push(Adaptive3dSegment::Marker(
-                Adaptive3dRuntimeEvent::PassSummary {
-                    pass_index: pass_count,
-                    step_count: pass_steps,
-                    exit_reason: exit_reason.to_owned(),
-                    yield_ratio,
-                    short: true,
-                },
-            ));
-        } else {
-            long_passes += 1;
-            short_pass_streak = 0;
-            segments.push(Adaptive3dSegment::Marker(
-                Adaptive3dRuntimeEvent::PassSummary {
-                    pass_index: pass_count,
-                    step_count: pass_steps,
-                    exit_reason: exit_reason.to_owned(),
-                    yield_ratio,
-                    short: false,
-                },
-            ));
-        }
-
-        if was_idle {
-            material_stock.stamp_tool_at(
-                ctx.lut,
-                ctx.tool_radius,
-                cx,
-                cy,
-                cz,
-                StockCutDirection::FromTop,
-            );
-            for a in 0..8 {
-                let angle = (a as f64 / 8.0) * TAU;
-                let (sin_a, cos_a) = angle.sin_cos();
-                let px = cx + tool_radius * cos_a;
-                let py = cy + tool_radius * sin_a;
-                let surf_z = surface_hm.surface_z_at_world(px, py);
-                let pz = if surf_z == f64::NEG_INFINITY {
-                    cz
-                } else {
-                    (surf_z + ctx.stock_to_leave).max(z_level)
-                };
-                material_stock.stamp_tool_at(
-                    ctx.lut,
-                    ctx.tool_radius,
-                    px,
-                    py,
-                    pz,
-                    StockCutDirection::FromTop,
-                );
-            }
-        }
-
-        // Widen the cleared band after loop-close or long contour passes.
-        // Stamp perpendicular offsets at 1× and 2× stepover distance (double ring)
-        // so adjacent parallel contours are also marked as cleared.
-        if !widen_path.is_empty() {
-            let widen_scope = pass_ctx
-                .as_ref()
-                .map(|debug_ctx| debug_ctx.start_span("widen_band", format!("Widen {pass_count}")));
-            let widen_offset = ctx.stepover;
-            for i in 1..widen_path.len() {
-                let prev = &widen_path[i - 1];
-                let curr = &widen_path[i];
-                let dx = curr.x - prev.x;
-                let dy = curr.y - prev.y;
-                let seg_len = (dx * dx + dy * dy).sqrt();
-                if seg_len < 1e-10 {
-                    continue;
-                }
-                let nx = -dy / seg_len;
-                let ny = dx / seg_len;
-                for &mult in &[1.0f64, 2.0] {
-                    for &sign in &[1.0f64, -1.0] {
-                        let px = curr.x + sign * mult * widen_offset * nx;
-                        let py = curr.y + sign * mult * widen_offset * ny;
-                        let sz = surface_hm.surface_z_at_world(px, py);
-                        if sz != f64::NEG_INFINITY {
-                            let pz = (sz + ctx.stock_to_leave).max(z_level);
-                            material_stock.stamp_tool_at(
-                                ctx.lut,
-                                ctx.tool_radius,
-                                px,
-                                py,
-                                pz,
-                                StockCutDirection::FromTop,
-                            );
-                        }
-                    }
-                }
-            }
-            if let Some(scope) = widen_scope.as_ref() {
-                scope.set_z_level(z_level);
-                scope.set_counter("sample_points", widen_path.len() as f64);
-            }
-        }
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    let level_ms = t_level.elapsed().as_millis() as u64;
-    #[cfg(target_arch = "wasm32")]
-    let level_ms = 0u64;
-    debug!(
-        passes = pass_count,
-        long = long_passes,
-        short = short_passes,
-        skipped = skipped_preflight,
-        total_steps = total_steps,
-        z = z_level,
-        elapsed_ms = level_ms,
-        "Completed Z level"
-    );
-    if let Some(scope) = level_scope.as_ref() {
-        scope.set_counter("passes", pass_count as f64);
-        scope.set_counter("long_passes", long_passes as f64);
-        scope.set_counter("short_passes", short_passes as f64);
-        scope.set_counter("skipped_preflight", skipped_preflight as f64);
-        scope.set_counter("total_steps", total_steps as f64);
-        scope.set_z_level(z_level);
-    }
-
-    Ok(())
-}
-
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Run waterline boundary cleanup at a given Z level.
 ///
 /// When `slope_map` is provided, only traces contours through steep regions
@@ -1536,6 +843,201 @@ pub(super) fn waterline_cleanup(
         scope.set_z_level(z_level);
         scope.set_counter("contours", contours.len() as f64);
         scope.set_counter("traced", traced as f64);
+    }
+
+    Ok(())
+}
+
+// ── 2.5D slice adaptive (AgentSearch strategy) ─────────────────────────
+
+/// Signed polygon area via the shoelace formula. Positive = CCW.
+fn polygon_signed_area(points: &[P2]) -> f64 {
+    let n = points.len();
+    if n < 3 {
+        return 0.0;
+    }
+    let mut acc = 0.0;
+    for i in 0..n {
+        #[allow(clippy::indexing_slicing)] // SAFETY: i < n, (i+1) % n < n
+        let a = points[i];
+        #[allow(clippy::indexing_slicing)]
+        let b = points[(i + 1) % n];
+        acc += a.x * b.y - b.x * a.y;
+    }
+    0.5 * acc
+}
+
+/// AgentSearch via 2.5D slices: at each Z-level, extract the 2D
+/// material polygon via marching squares, then run the proven 2D
+/// `adaptive_segments_with_debug` on it. Lift the resulting 2D path
+/// back to 3D (Z clamped to `z_level` or surface+stock_to_leave) and
+/// stamp the dexel stock along it.
+///
+/// This replaces the ~700-line 3D agent-based search that struggled
+/// with surface-following, axial engagement, and boundary walking by
+/// delegating to the working 2D adaptive implementation. The trade-off
+/// is that the tool stays at a fixed Z within each slab (no per-step
+/// terrain follow) — acceptable for roughing; finish passes handle
+/// the staircase.
+#[allow(clippy::too_many_arguments, clippy::indexing_slicing)]
+pub(super) fn clear_z_level_agent_2d_slice(
+    ctx: &ClearZLevelContext<'_>,
+    material_stock: &mut TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    z_level: f64,
+    segments: &mut Vec<Adaptive3dSegment>,
+    last_pos: &mut Option<P3>,
+    region: Option<&MaterialRegion>,
+    cancel: &dyn CancelCheck,
+) -> Result<(), Cancelled> {
+    let remaining = if let Some(r) = region {
+        material_remaining_in_region(material_stock, surface_hm, z_level, ctx.stock_to_leave, r)
+    } else {
+        material_remaining_at_level(material_stock, surface_hm, z_level, ctx.stock_to_leave)
+    };
+    if remaining < 0.005 {
+        return Ok(());
+    }
+
+    let level_scope = ctx.debug.as_ref().map(|debug_ctx| {
+        let label = if let Some(r) = region {
+            format!(
+                "Z {:.3} region rows {}..{} cols {}..{}",
+                z_level, r.row_min, r.row_max, r.col_min, r.col_max
+            )
+        } else {
+            format!("Z {:.3}", z_level)
+        };
+        debug_ctx.start_span("z_level", label)
+    });
+    if let Some(scope) = level_scope.as_ref() {
+        scope.set_z_level(z_level);
+        scope.set_counter("remaining_before", remaining);
+    }
+    let level_ctx = level_scope.as_ref().map(|scope| scope.context());
+
+    // 1. Material boolean grid at this Z-level (includes 1-cell air padding).
+    let (material_grid, rows, cols, origin_x, origin_y, cell_size) =
+        build_material_bool_grid(material_stock, surface_hm, z_level, ctx.stock_to_leave, region);
+    if !material_grid.iter().any(|&b| b) {
+        return Ok(());
+    }
+
+    // 2. Marching squares → polygon contours. Exterior = largest by |area|,
+    //    others = holes (inside the exterior).
+    let contours =
+        crate::contour_extract::marching_squares_bool_grid(&material_grid, rows, cols, origin_x, origin_y, cell_size);
+    if contours.is_empty() {
+        return Ok(());
+    }
+    let mut ranked: Vec<(f64, Vec<P2>)> = contours
+        .into_iter()
+        .map(|pts| (polygon_signed_area(&pts).abs(), pts))
+        .filter(|(a, _)| *a > cell_size * cell_size) // discard sub-cell noise
+        .collect();
+    ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
+    if ranked.is_empty() {
+        return Ok(());
+    }
+    let exterior = ranked.remove(0).1;
+    let holes: Vec<Vec<P2>> = ranked.into_iter().map(|(_, p)| p).collect();
+    let polygon = crate::polygon::Polygon2 {
+        exterior,
+        holes,
+        closed: true,
+    };
+
+    // 3. Build 2D adaptive params from 3D context.
+    let params_2d = crate::adaptive::AdaptiveParams {
+        tool_radius: ctx.tool_radius,
+        stepover: ctx.stepover,
+        // cut_depth / feed_rate / plunge_rate / safe_z are unused by
+        // `adaptive_segments_with_debug`; only the final `segments_to_toolpath`
+        // consumes them. We're using segments directly here.
+        cut_depth: 0.0,
+        feed_rate: 0.0,
+        plunge_rate: 0.0,
+        safe_z: 0.0,
+        tolerance: ctx.tolerance,
+        slot_clearing: false,
+        min_cutting_radius: 0.0,
+        initial_stock: None,
+    };
+
+    // 4. Run 2D adaptive. Debug span nests under the z_level span.
+    let adaptive_scope = level_ctx
+        .as_ref()
+        .map(|debug_ctx| debug_ctx.start_span("agent2d_slice", format!("Adaptive 2D @ Z {z_level:.3}")));
+    let segs_2d = crate::adaptive::adaptive_segments_with_debug(
+        &polygon,
+        &params_2d,
+        cancel,
+        adaptive_scope.as_ref().map(|s| s.context()).as_ref(),
+    )?;
+
+    // 5. Lift 2D segments to 3D and stamp dexel stock.
+    //    Each cut point is placed at max(surface + stock_to_leave, z_level)
+    //    so the tool respects terrain peaks that rise above the Z-level.
+    let lift = |p: P2| -> P3 {
+        let surf_z = surface_hm.surface_z_at_world(p.x, p.y);
+        let z = if surf_z == f64::NEG_INFINITY {
+            z_level
+        } else {
+            (surf_z + ctx.stock_to_leave).max(z_level)
+        };
+        P3::new(p.x, p.y, z)
+    };
+
+    let mut cut_count = 0u32;
+    for seg in segs_2d {
+        match seg {
+            crate::adaptive::AdaptiveSegment::Cut(path_2d) => {
+                if path_2d.is_empty() {
+                    continue;
+                }
+                let path_3d: Vec<P3> = path_2d.iter().map(|&p| lift(p)).collect();
+                // Stamp along the path so the next Z-level sees the cleared stock.
+                for p in &path_3d {
+                    material_stock.stamp_tool_at(
+                        ctx.lut,
+                        ctx.tool_radius,
+                        p.x,
+                        p.y,
+                        p.z,
+                        StockCutDirection::FromTop,
+                    );
+                }
+                if let Some(last) = path_3d.last().copied() {
+                    *last_pos = Some(last);
+                }
+                segments.push(Adaptive3dSegment::Cut(path_3d));
+                cut_count += 1;
+            }
+            crate::adaptive::AdaptiveSegment::Rapid(p) => {
+                let p3 = lift(p);
+                *last_pos = Some(p3);
+                segments.push(Adaptive3dSegment::Rapid(p3));
+            }
+            crate::adaptive::AdaptiveSegment::Link(p) => {
+                // 2D Link = feed at cut depth assuming the path is
+                // clear in the 2D material grid. In 3D, the linear path
+                // between two link endpoints can collide with terrain
+                // peaks that rise between them, even though both
+                // endpoints are at safe Z. Treat as Rapid (retract to
+                // safe_z) to guarantee no material collision.
+                let p3 = lift(p);
+                *last_pos = Some(p3);
+                segments.push(Adaptive3dSegment::Rapid(p3));
+            }
+            crate::adaptive::AdaptiveSegment::Marker(_) => {
+                // 2D runtime events don't translate cleanly to 3D; swallow.
+                // The debug trace captured them already under agent2d_slice.
+            }
+        }
+    }
+
+    if let Some(scope) = level_scope.as_ref() {
+        scope.set_counter("cut_segments", cut_count as f64);
     }
 
     Ok(())

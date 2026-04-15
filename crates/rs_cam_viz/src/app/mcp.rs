@@ -92,6 +92,22 @@ impl super::RsCamApp {
                 let resp = self.mcp_get_cut_trace(toolpath_id, max_hotspots, max_issues);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::GetGenerationDebugTrace {
+                index,
+                span_kind,
+                exit_reason,
+                max_yield_ratio,
+                max_spans,
+            } => {
+                let resp = self.mcp_get_generation_debug_trace(
+                    index,
+                    span_kind.as_deref(),
+                    exit_reason.as_deref(),
+                    max_yield_ratio,
+                    max_spans,
+                );
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::InspectModel => {
                 let resp = self.mcp_inspect_model();
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
@@ -615,6 +631,219 @@ impl super::RsCamApp {
             "hotspot_count": hotspot_count,
             "issue_count": issue_count,
             "issues": issues_val,
+        }))
+    }
+
+    fn mcp_get_generation_debug_trace(
+        &self,
+        index: usize,
+        span_kind: Option<&str>,
+        exit_reason: Option<&str>,
+        max_yield_ratio: Option<f64>,
+        max_spans: Option<usize>,
+    ) -> String {
+        let state = self.controller.state();
+        let Some(tc) = state.session.get_toolpath_config(index) else {
+            return json_str(
+                serde_json::json!({"error": format!("Toolpath index {index} not found")}),
+            );
+        };
+        let Some(rt) = state.gui.toolpath_rt.get(&tc.id) else {
+            return json_str(serde_json::json!({
+                "error": format!("Toolpath {index} not generated. Run generate_toolpath first.")
+            }));
+        };
+        let Some(trace) = rt.debug_trace.as_ref() else {
+            return json_str(serde_json::json!({
+                "error": format!("Toolpath {index} has no debug trace — the operation generator didn't capture one.")
+            }));
+        };
+
+        let limit = max_spans.unwrap_or(100);
+        let filtered: Vec<_> = trace
+            .spans
+            .iter()
+            .filter(|s| span_kind.is_none_or(|k| s.kind == k))
+            .filter(|s| {
+                exit_reason.is_none_or(|needle| {
+                    s.exit_reason.as_deref().is_some_and(|r| r.contains(needle))
+                })
+            })
+            .filter(|s| {
+                max_yield_ratio
+                    .is_none_or(|max_y| s.counters.get("yield_ratio").is_some_and(|&y| y <= max_y))
+            })
+            .collect();
+        let total_matching = filtered.len();
+        let visible: Vec<_> = if limit == 0 {
+            filtered.clone()
+        } else {
+            filtered.iter().copied().take(limit).collect()
+        };
+
+        let pass_spans: Vec<_> = trace
+            .spans
+            .iter()
+            .filter(|s| s.kind == "adaptive_pass")
+            .collect();
+        let mut passes_by_exit: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+        let mut yield_sum = 0.0f64;
+        let mut yield_count = 0usize;
+        let mut low_yield_passes = 0usize;
+        let mut looped_passes = 0usize;
+        let mut idle_passes = 0usize;
+        // Arc-quality aggregates across all adaptive_pass spans:
+        let mut mean_delta_sum = 0.0f64;
+        let mut mean_delta_count = 0usize;
+        let mut sinuosity_sum = 0.0f64;
+        let mut sinuosity_count = 0usize;
+        let mut max_sinuosity = 0.0f64;
+        let mut max_sinuosity_span_id: Option<u64> = None;
+        let mut zigzag_passes = 0usize; // sign_flip_rate > 0.3
+        // Engagement aggregates
+        let mut engagement_sum = 0.0f64;
+        let mut engagement_count = 0usize;
+        let mut global_max_engagement = 0.0f64;
+        let mut high_engagement_passes = 0usize; // max_engagement > 0.5
+        let mut over_target_sum = 0.0f64;
+        let mut target_frac_first: Option<f64> = None;
+        let mut worst: Vec<(f64, u64, &rs_cam_core::debug_trace::ToolpathDebugSpan)> = Vec::new();
+        let mut worst_arc: Vec<(f64, &rs_cam_core::debug_trace::ToolpathDebugSpan)> = Vec::new();
+        for span in &pass_spans {
+            if let Some(reason) = span.exit_reason.as_deref() {
+                *passes_by_exit.entry(reason.to_owned()).or_insert(0) += 1;
+                if reason.contains("loop") {
+                    looped_passes += 1;
+                }
+                if reason.contains("idle") {
+                    idle_passes += 1;
+                }
+            }
+            if let Some(&y) = span.counters.get("yield_ratio") {
+                yield_sum += y;
+                yield_count += 1;
+                if y < 0.1 {
+                    low_yield_passes += 1;
+                }
+                let steps = span.counters.get("step_count").copied().unwrap_or(0.0) as u64;
+                worst.push((y, steps, span));
+            }
+            if let Some(&d) = span.counters.get("mean_angle_delta") {
+                mean_delta_sum += d;
+                mean_delta_count += 1;
+                worst_arc.push((d, span));
+            }
+            if let Some(&s) = span.counters.get("sinuosity") {
+                sinuosity_sum += s;
+                sinuosity_count += 1;
+                if s > max_sinuosity {
+                    max_sinuosity = s;
+                    max_sinuosity_span_id = Some(span.id);
+                }
+            }
+            if span.counters.get("sign_flip_rate").copied().unwrap_or(0.0) > 0.3 {
+                zigzag_passes += 1;
+            }
+            if let Some(&me) = span.counters.get("mean_engagement") {
+                engagement_sum += me;
+                engagement_count += 1;
+            }
+            if let Some(&mx) = span.counters.get("max_engagement") {
+                if mx > global_max_engagement {
+                    global_max_engagement = mx;
+                }
+                if mx > 0.5 {
+                    high_engagement_passes += 1;
+                }
+            }
+            if let Some(&ot) = span.counters.get("over_target_rate") {
+                over_target_sum += ot;
+            }
+            if target_frac_first.is_none()
+                && let Some(&tf) = span.counters.get("target_frac")
+            {
+                target_frac_first = Some(tf);
+            }
+        }
+        worst.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let worst_json: Vec<_> = worst
+            .iter()
+            .take(10)
+            .map(|(y, steps, span)| {
+                serde_json::json!({
+                    "id": span.id,
+                    "label": span.label,
+                    "exit_reason": span.exit_reason,
+                    "yield_ratio": y,
+                    "step_count": steps,
+                    "idle_count": span.counters.get("idle_count").copied().unwrap_or(0.0),
+                    "search_evaluations": span.counters.get("search_evaluations").copied().unwrap_or(0.0),
+                    "z_level": span.z_level,
+                    "xy_bbox": span.xy_bbox,
+                })
+            })
+            .collect();
+        worst_arc.sort_by(|a, b| b.0.total_cmp(&a.0)); // descending — worst first
+        let worst_arc_json: Vec<_> = worst_arc
+            .iter()
+            .take(10)
+            .map(|(d, span)| {
+                serde_json::json!({
+                    "id": span.id,
+                    "label": span.label,
+                    "exit_reason": span.exit_reason,
+                    "mean_angle_delta": d,
+                    "angle_delta_std": span.counters.get("angle_delta_std").copied().unwrap_or(0.0),
+                    "sign_flip_rate": span.counters.get("sign_flip_rate").copied().unwrap_or(0.0),
+                    "sinuosity": span.counters.get("sinuosity").copied().unwrap_or(0.0),
+                    "step_count": span.counters.get("step_count").copied().unwrap_or(0.0),
+                    "z_level": span.z_level,
+                    "xy_bbox": span.xy_bbox,
+                })
+            })
+            .collect();
+
+        json_str(serde_json::json!({
+            "summary": {
+                "schema_version": trace.schema_version,
+                "toolpath_name": trace.toolpath_name,
+                "operation_label": trace.operation_label,
+                "span_count": trace.spans.len(),
+                "hotspot_count": trace.hotspots.len(),
+                "annotation_count": trace.annotations.len(),
+                "dominant_span_kind": trace.summary.dominant_span_kind,
+                "dominant_span_elapsed_us": trace.summary.dominant_span_elapsed_us,
+            },
+            "diagnostics": {
+                "pass_count": pass_spans.len(),
+                "passes_by_exit_reason": passes_by_exit,
+                "low_yield_passes": low_yield_passes,
+                "looped_passes": looped_passes,
+                "idle_passes": idle_passes,
+                "avg_yield_ratio": if yield_count > 0 { yield_sum / yield_count as f64 } else { 0.0 },
+                "worst_yields": worst_json,
+                "arc_quality": {
+                    "avg_mean_angle_delta": if mean_delta_count > 0 { mean_delta_sum / mean_delta_count as f64 } else { 0.0 },
+                    "avg_sinuosity": if sinuosity_count > 0 { sinuosity_sum / sinuosity_count as f64 } else { 0.0 },
+                    "max_sinuosity": max_sinuosity,
+                    "max_sinuosity_span_id": max_sinuosity_span_id,
+                    "zigzag_passes": zigzag_passes,
+                    "worst_arc_passes": worst_arc_json,
+                },
+                "engagement": {
+                    "target_frac": target_frac_first,
+                    "avg_mean_engagement": if engagement_count > 0 { engagement_sum / engagement_count as f64 } else { 0.0 },
+                    "max_engagement": global_max_engagement,
+                    "high_engagement_passes": high_engagement_passes,
+                    "avg_over_target_rate": if engagement_count > 0 { over_target_sum / engagement_count as f64 } else { 0.0 },
+                },
+            },
+            "spans_returned": visible.len(),
+            "spans_total_matching": total_matching,
+            "spans": visible,
+            "hotspots": trace.hotspots,
+            "annotations": trace.annotations,
         }))
     }
 

@@ -66,7 +66,7 @@ pub(super) fn is_clear_path(
 // ── Main adaptive path generation ──────────────────────────────────────
 
 /// A segment of the adaptive path: cutting, rapid reposition, or link (tool-down reposition).
-pub(super) enum AdaptiveSegment {
+pub(crate) enum AdaptiveSegment {
     /// Cutting moves: a sequence of 2D points.
     Cut(Vec<P2>),
     /// Rapid reposition to a new entry point (retract → rapid → plunge).
@@ -104,7 +104,7 @@ pub(super) fn adaptive_segments(
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Generate 2D adaptive segments and optionally record detailed debug spans.
-pub(super) fn adaptive_segments_with_debug(
+pub(crate) fn adaptive_segments_with_debug(
     polygon: &Polygon2,
     params: &AdaptiveParams,
     cancel: &dyn CancelCheck,

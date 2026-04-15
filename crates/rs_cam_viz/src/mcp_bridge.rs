@@ -41,6 +41,13 @@ pub enum McpRequestKind {
         max_hotspots: Option<usize>,
         max_issues: Option<usize>,
     },
+    GetGenerationDebugTrace {
+        index: usize,
+        span_kind: Option<String>,
+        exit_reason: Option<String>,
+        max_yield_ratio: Option<f64>,
+        max_spans: Option<usize>,
+    },
 
     InspectModel,
     InspectStock,
