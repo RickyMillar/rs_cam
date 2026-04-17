@@ -340,21 +340,16 @@ impl ProjectSession {
         let effective_stock_bbox = self.effective_stock_bbox_with_rotation(face_up, z_rotation);
 
         // Resolve heights — use the transformed mesh bbox so Z values are in the
-        // setup-local frame.
-        //
-        // safe_z floor: the user-configured `post.safe_z` is a LEGACY
-        // 2D-friendly default (10mm above work Z=0). For 3D stock that
-        // extends to z=55, safe_z=10 sits INSIDE the stock and every
-        // rapid retract ends up in material. Enforce a minimum of
-        // `stock_top + SAFE_Z_CLEARANCE` so rapids clear the stock even
-        // when the project default is low.
-        const SAFE_Z_CLEARANCE_MM: f64 = 5.0;
-        let safe_z_floor = effective_stock_bbox.max.z + SAFE_Z_CLEARANCE_MM;
-        let effective_safe_z = self.post.safe_z.max(safe_z_floor);
+        // setup-local frame. `effective_safe_z` floors the user-configured
+        // `post.safe_z` at `stock_top + clearance` so rapids clear the stock.
+        let safe_z = crate::compute::config::effective_safe_z(
+            self.post.safe_z,
+            effective_stock_bbox.max.z,
+        );
 
         let model_bbox = mesh.as_ref().map(|m| &m.bbox);
         let height_ctx = HeightContext {
-            safe_z: effective_safe_z,
+            safe_z,
             op_depth: tc.operation.default_depth_for_heights(),
             stock_top_z: effective_stock_bbox.max.z,
             stock_bottom_z: effective_stock_bbox.min.z,

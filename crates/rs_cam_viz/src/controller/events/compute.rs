@@ -232,7 +232,7 @@ impl<B: ComputeBackend> AppController<B> {
         rt.semantic_trace = None;
         rt.debug_trace_path = None;
 
-        let safe_z = self.state.gui.post.safe_z;
+        let raw_safe_z = self.state.gui.post.safe_z;
 
         // Compute setup-local stock bbox FIRST so heights resolve in the correct frame.
         let stock_bbox = if let Some(transform_setup) = transform_setup.as_ref() {
@@ -244,6 +244,8 @@ impl<B: ComputeBackend> AppController<B> {
         } else {
             stock_snapshot.bbox()
         };
+
+        let safe_z = rs_cam_core::compute::config::effective_safe_z(raw_safe_z, stock_bbox.max.z);
 
         let model_bb = self
             .state

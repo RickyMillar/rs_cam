@@ -368,7 +368,6 @@ mod tests {
     use super::search::material_remaining_in_region;
     use super::*;
     use crate::geo::P3;
-    use crate::adaptive_shared::target_engagement_fraction;
     use crate::dexel::{DexelSegment, ray_subtract_above};
     use crate::dexel_stock::StockCutDirection;
     use crate::mesh::SpatialIndex;

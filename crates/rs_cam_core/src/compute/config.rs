@@ -30,6 +30,23 @@ pub struct ToolpathStats {
     pub rapid_distance: f64,
 }
 
+/// Minimum clearance (mm) between `safe_z` and the top of the stock.
+///
+/// Rapids at `safe_z` must clear the uncut stock surface. The user-configured
+/// `post.safe_z` is a legacy 2D-friendly default (often 10mm above work Z=0),
+/// which sits *inside* the stock for any 3D job with stock extending above
+/// that value. This clearance forces `safe_z` to at least `stock_top + 5mm`.
+pub const SAFE_Z_CLEARANCE_MM: f64 = 5.0;
+
+/// Apply the stock-clearance floor to a raw `post.safe_z` value.
+///
+/// Returns `max(raw_safe_z, stock_top + SAFE_Z_CLEARANCE_MM)`. Use this at the
+/// single point where a [`HeightContext`] is built so that every operation and
+/// downstream helper sees the same effective safe_z.
+pub fn effective_safe_z(raw_safe_z: f64, stock_top: f64) -> f64 {
+    raw_safe_z.max(stock_top + SAFE_Z_CLEARANCE_MM)
+}
+
 /// Named reference point for expressing heights relative to geometry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
