@@ -68,7 +68,7 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
         .num_columns(2)
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
-            dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, 0.1..=20.0);
+            dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, -20.0..=20.0);
             dv(
                 ui,
                 "Point Spacing:",
