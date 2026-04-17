@@ -439,6 +439,8 @@ impl Setup {
 // provide free functions here that mirror the viz-local equivalents.
 
 /// Build a [`HeightContext`] for a session toolpath config using session data.
+///
+/// `safe_z` is floored via [`effective_safe_z`] so rapids clear the stock.
 pub fn height_context_from_session(
     session: &rs_cam_core::session::ProjectSession,
     tc: &rs_cam_core::session::ToolpathConfig,
@@ -454,8 +456,12 @@ pub fn height_context_from_session(
                 .map(|mesh| mesh.bbox)
                 .or_else(|| session_polygons_bbox(m.polygons.as_deref().map(|v| v.as_slice())))
         });
+    let safe_z = rs_cam_core::compute::config::effective_safe_z(
+        session.post_config().safe_z,
+        sb.max.z,
+    );
     rs_cam_core::compute::config::HeightContext {
-        safe_z: session.post_config().safe_z,
+        safe_z,
         op_depth: tc.operation.default_depth_for_heights(),
         stock_top_z: sb.max.z,
         stock_bottom_z: sb.min.z,
