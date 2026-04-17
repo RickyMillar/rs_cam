@@ -95,6 +95,10 @@ pub struct SimulationResult {
     pub cut_trace: Option<Arc<SimulationCutTrace>>,
     /// True when the requested resolution was coarsened to fit within grid limits.
     pub resolution_clamped: bool,
+    /// Per-toolpath snapshots of the material stock *before* that toolpath
+    /// carves. Keyed by toolpath id. Used by the dressup air-cut filter and
+    /// rest-machining-aware generators.
+    pub prior_stocks: std::collections::HashMap<usize, Arc<TriDexelStock>>,
 }
 
 /// Error type for simulation failures.
@@ -209,6 +213,8 @@ where
     // *previous* operations.
     let mut rapid_collisions: Vec<RapidCollision> = Vec::new();
     let mut rapid_collision_move_indices: Vec<usize> = Vec::new();
+    let mut prior_stocks: std::collections::HashMap<usize, Arc<TriDexelStock>> =
+        std::collections::HashMap::new();
 
     for group in &request.groups {
         // Per-setup stock: use local bbox if available, else fall back to global.
@@ -227,6 +233,10 @@ where
             .map_or(StockCutDirection::FromTop, |info| info.cut_direction());
 
         for entry in &group.toolpaths {
+            // Snapshot the stock *before* this toolpath carves so the dressup
+            // air-cut filter and rest-machining-aware generators can use it.
+            prior_stocks.insert(entry.id, Arc::new(group_stock.clone()));
+
             // Check rapid collisions against the *current* stock state
             // (after all previous toolpaths, before this one carves).
             {
@@ -374,6 +384,7 @@ where
         rapid_collision_move_indices,
         cut_trace,
         resolution_clamped,
+        prior_stocks,
     })
 }
 
