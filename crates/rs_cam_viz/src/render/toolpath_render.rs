@@ -23,6 +23,11 @@ pub struct ToolpathGpuData {
     /// Entry path preview lines (ramp/helix/lead-in indicator) for selected toolpaths.
     pub entry_preview_buffer: Option<wgpu::Buffer>,
     pub entry_preview_count: u32,
+    /// Tool-profile preview lines — a ghost of the cutter silhouette at each
+    /// cutting endpoint, used to visualize what material the operation will
+    /// remove before running a simulation.
+    pub tool_profile_preview_buffer: Option<wgpu::Buffer>,
+    pub tool_profile_preview_count: u32,
 }
 
 impl ToolpathGpuData {
@@ -237,6 +242,8 @@ impl ToolpathGpuData {
             move_rapid_counts,
             entry_preview_buffer: None,
             entry_preview_count: 0,
+            tool_profile_preview_buffer: None,
+            tool_profile_preview_count: 0,
         }
     }
 
@@ -259,6 +266,31 @@ impl ToolpathGpuData {
             wgpu::BufferUsages::VERTEX,
         );
         self.entry_preview_count = if self.entry_preview_buffer.is_some() {
+            verts.len() as u32
+        } else {
+            0
+        };
+    }
+
+    /// Attach a tool-profile preview overlay (circle outlines of the cutter
+    /// silhouette sampled along the toolpath).
+    pub fn attach_tool_profile_preview(
+        &mut self,
+        device: &wgpu::Device,
+        limits: &GpuLimits,
+        verts: &[LineVertex],
+    ) {
+        if verts.is_empty() {
+            return;
+        }
+        self.tool_profile_preview_buffer = gpu_safety::try_create_buffer(
+            device,
+            limits,
+            "tool_profile_preview",
+            bytemuck::cast_slice(verts),
+            wgpu::BufferUsages::VERTEX,
+        );
+        self.tool_profile_preview_count = if self.tool_profile_preview_buffer.is_some() {
             verts.len() as u32
         } else {
             0
@@ -421,6 +453,8 @@ impl ToolpathGpuData {
             move_rapid_counts,
             entry_preview_buffer: None,
             entry_preview_count: 0,
+            tool_profile_preview_buffer: None,
+            tool_profile_preview_count: 0,
         }
     }
 }
@@ -709,4 +743,80 @@ pub fn entry_marker_vertices(tp: &Toolpath, palette_color: [f32; 3]) -> Vec<Line
             color: palette_color,
         },
     ]
+}
+
+/// Pale white-ish color for the tool-profile ghost overlay.
+const TOOL_PROFILE_COLOR: [f32; 3] = [0.85, 0.85, 1.0];
+
+/// Generate a "tool profile preview" overlay: circle outlines of the cutter
+/// silhouette stacked along the cutter's length, drawn at a sampled subset
+/// of cutting-move endpoints so the user can see the swept footprint before
+/// running a simulation.
+///
+/// Sampling is capped so the output stays below ~64k vertices even on long
+/// toolpaths; the stride is tuned from the cutting move count.
+///
+/// Each sample emits a fixed number of stacked circles (profile height
+/// levels) as line loops (16 segments each).
+pub fn tool_profile_preview_vertices(
+    tp: &Toolpath,
+    cutter: &dyn rs_cam_core::tool::MillingCutter,
+) -> Vec<LineVertex> {
+    const CIRCLE_SEGMENTS: usize = 16;
+    const PROFILE_LEVELS: usize = 6;
+    const TARGET_MAX_VERTS: usize = 64_000;
+
+    // Collect cutting endpoints only (skip rapids).
+    let cut_positions: Vec<rs_cam_core::geo::P3> = tp
+        .moves
+        .iter()
+        .filter(|m| !matches!(m.move_type, MoveType::Rapid))
+        .map(|m| m.target)
+        .collect();
+    if cut_positions.is_empty() {
+        return Vec::new();
+    }
+
+    let verts_per_sample = PROFILE_LEVELS * CIRCLE_SEGMENTS * 2;
+    let max_samples = (TARGET_MAX_VERTS / verts_per_sample).max(1);
+    let stride = cut_positions.len().div_ceil(max_samples).max(1);
+
+    // Sample the cutter profile at evenly-spaced heights between 0 and
+    // `cutter.cutting_length()` (or fall back to 2× radius if unknown).
+    let max_h = cutter.length().max(cutter.radius() * 2.0);
+    let heights: Vec<f64> = (0..PROFILE_LEVELS)
+        .map(|i| (i as f64 / (PROFILE_LEVELS - 1).max(1) as f64) * max_h)
+        .collect();
+
+    let mut verts = Vec::with_capacity(cut_positions.len() / stride * verts_per_sample);
+    for (i, pos) in cut_positions.iter().enumerate() {
+        if i % stride != 0 {
+            continue;
+        }
+        for &h in &heights {
+            let r = cutter.width_at_height(h).max(0.05);
+            // Circle in the XY plane at Z = pos.z + h, radius = r.
+            for seg in 0..CIRCLE_SEGMENTS {
+                let a0 = (seg as f64) / (CIRCLE_SEGMENTS as f64) * std::f64::consts::TAU;
+                let a1 = ((seg + 1) as f64) / (CIRCLE_SEGMENTS as f64) * std::f64::consts::TAU;
+                verts.push(LineVertex {
+                    position: [
+                        (pos.x + r * a0.cos()) as f32,
+                        (pos.y + r * a0.sin()) as f32,
+                        (pos.z + h) as f32,
+                    ],
+                    color: TOOL_PROFILE_COLOR,
+                });
+                verts.push(LineVertex {
+                    position: [
+                        (pos.x + r * a1.cos()) as f32,
+                        (pos.y + r * a1.sin()) as f32,
+                        (pos.z + h) as f32,
+                    ],
+                    color: TOOL_PROFILE_COLOR,
+                });
+            }
+        }
+    }
+    verts
 }

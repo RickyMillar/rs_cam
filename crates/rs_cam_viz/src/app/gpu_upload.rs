@@ -726,6 +726,28 @@ impl RsCamApp {
                             &resources.gpu_limits,
                             &preview_verts,
                         );
+
+                        // Tool-profile ghost overlay (optional).
+                        if self
+                            .controller
+                            .state()
+                            .viewport
+                            .show_tool_profile_preview
+                            && let Some(tool) =
+                                session.tools().iter().find(|t| t.id.0 == tc.tool_id)
+                        {
+                            let cutter = rs_cam_core::compute::build_cutter(tool);
+                            let profile_verts =
+                                toolpath_render::tool_profile_preview_vertices(
+                                    &result.toolpath,
+                                    &cutter,
+                                );
+                            gpu_data.attach_tool_profile_preview(
+                                &render_state.device,
+                                &resources.gpu_limits,
+                                &profile_verts,
+                            );
+                        }
                     }
 
                     resources.toolpath_data.push(gpu_data);
