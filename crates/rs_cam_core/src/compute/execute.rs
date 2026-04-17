@@ -479,7 +479,10 @@ pub fn execute_operation_annotated(
                 cycle,
                 feed_rate,
                 safe_z,
-                retract_z: cfg.retract_z,
+                retract_z: crate::compute::config::effective_safe_z(
+                    cfg.retract_z,
+                    stock_bbox.max.z,
+                ),
             };
             Ok(AnnotatedToolpath {
                 toolpath: crate::drill::drill_toolpath(&holes, &params),
@@ -542,7 +545,10 @@ pub fn execute_operation_annotated(
                 cycle,
                 feed_rate: cfg.feed_rate,
                 safe_z,
-                retract_z: cfg.retract_z,
+                retract_z: crate::compute::config::effective_safe_z(
+                    cfg.retract_z,
+                    stock_bbox.max.z,
+                ),
             };
             Ok(AnnotatedToolpath {
                 toolpath: crate::drill::drill_toolpath(&cfg.holes, &params),
