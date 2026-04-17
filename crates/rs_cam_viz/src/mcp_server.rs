@@ -17,7 +17,8 @@ use rs_cam_mcp::server::{
     ExportParam, GenDebugTraceParam, IndexParam, LoadProjectParam, ModelIdParam,
     RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam, SaveProjectParam,
     ScreenshotSimParam, ScreenshotToolpathParam, SetBoundaryConfigParam, SetDressupConfigParam,
-    SetStockConfigParam, SetToolParamInput, SetToolpathParamInput, SimJumpToMoveParam,
+    SetDressupFieldParam, SetStockConfigParam, SetStockSourceParam, SetToolParamInput,
+    SetToolpathEnabledParam, SetToolpathParamInput, SimJumpToMoveParam,
     SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam,
 };
 
@@ -585,6 +586,53 @@ impl EmbeddedCamServer {
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::SetDressupConfig { index, dressup })
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "set_dressup_field",
+        description = "Update a single dressup field on a toolpath (partial patch). Accepts any field name from the DressupConfig schema."
+    )]
+    async fn set_dressup_field(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(SetDressupFieldParam { index, key, value }): Parameters<SetDressupFieldParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::SetDressupField { index, key, value })
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "set_toolpath_enabled",
+        description = "Enable or disable a toolpath for generation and simulation."
+    )]
+    async fn set_toolpath_enabled(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(SetToolpathEnabledParam { index, enabled }): Parameters<
+            SetToolpathEnabledParam,
+        >,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::SetToolpathEnabled { index, enabled })
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "set_stock_source",
+        description = "Set stock_source for a toolpath: 'fresh' (default) or 'from_remaining_stock' (rest machining). Invalidates the toolpath result."
+    )]
+    async fn set_stock_source(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(SetStockSourceParam { index, source }): Parameters<SetStockSourceParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::SetStockSource { index, source })
                 .await,
         )
     }

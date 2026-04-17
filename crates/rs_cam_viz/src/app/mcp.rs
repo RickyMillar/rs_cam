@@ -359,6 +359,18 @@ impl super::RsCamApp {
                 let resp = self.mcp_set_dressup_config(index, dressup);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::SetDressupField { index, key, value } => {
+                let resp = self.mcp_set_dressup_field(index, &key, value);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::SetToolpathEnabled { index, enabled } => {
+                let resp = self.mcp_set_toolpath_enabled(index, enabled);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::SetStockSource { index, source } => {
+                let resp = self.mcp_set_stock_source(index, &source);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
 
             // ── Compute operations (async — store oneshot) ───────────
             McpRequestKind::GenerateToolpath { index } => {
@@ -1197,38 +1209,58 @@ impl super::RsCamApp {
     // ── Alignment pin implementations ───────────────────────────────
 
     fn mcp_add_alignment_pin(&mut self, x: f64, y: f64, diameter: f64) -> String {
-        use rs_cam_core::compute::stock_config::AlignmentPin;
-
-        let mut stock = self.controller.state().session.stock_config().clone();
-        stock.alignment_pins.push(AlignmentPin::new(x, y, diameter));
-        let pin_count = stock.alignment_pins.len();
-        self.controller.state_mut().session.set_stock_config(stock);
+        let added = self
+            .controller
+            .state_mut()
+            .session
+            .add_alignment_pin(x, y, diameter);
+        let pin_count = self
+            .controller
+            .state()
+            .session
+            .stock_config()
+            .alignment_pins
+            .len();
         self.controller.state_mut().gui.mark_edited();
         self.controller.set_pending_upload();
+        let message = if added {
+            format!("Added alignment pin at ({x:.1}, {y:.1}) dia {diameter:.1}mm")
+        } else {
+            format!("Pin already present at ({x:.1}, {y:.1}); skipped duplicate")
+        };
         json_str(serde_json::json!({
             "ok": true,
-            "message": format!("Added alignment pin at ({x:.1}, {y:.1}) dia {diameter:.1}mm"),
+            "added": added,
+            "message": message,
             "pin_count": pin_count,
         }))
     }
 
     fn mcp_remove_alignment_pin(&mut self, index: usize) -> String {
-        let mut stock = self.controller.state().session.stock_config().clone();
-        if index >= stock.alignment_pins.len() {
-            return json_str(serde_json::json!({
-                "error": format!("Pin index {index} out of range (have {})", stock.alignment_pins.len())
-            }));
+        let result = self
+            .controller
+            .state_mut()
+            .session
+            .remove_alignment_pin(index);
+        match result {
+            Ok(()) => {
+                self.controller.state_mut().gui.mark_edited();
+                self.controller.set_pending_upload();
+                let pin_count = self
+                    .controller
+                    .state()
+                    .session
+                    .stock_config()
+                    .alignment_pins
+                    .len();
+                json_str(serde_json::json!({
+                    "ok": true,
+                    "message": format!("Removed alignment pin {index}"),
+                    "pin_count": pin_count,
+                }))
+            }
+            Err(e) => json_str(serde_json::json!({ "error": e.to_string() })),
         }
-        stock.alignment_pins.remove(index);
-        let pin_count = stock.alignment_pins.len();
-        self.controller.state_mut().session.set_stock_config(stock);
-        self.controller.state_mut().gui.mark_edited();
-        self.controller.set_pending_upload();
-        json_str(serde_json::json!({
-            "ok": true,
-            "message": format!("Removed alignment pin {index}"),
-            "pin_count": pin_count,
-        }))
     }
 
     // ── Mutation implementations ─────────────────────────────────────
@@ -1512,13 +1544,14 @@ impl super::RsCamApp {
         let op_config = OperationConfig::new_default(op_type);
         let label = op_type.label();
         let tp_name = name.unwrap_or_else(|| label.to_owned());
+        let role = op_type.spec().ui_process_role;
 
         let config = rs_cam_core::session::ToolpathConfig {
             id: 0,
             name: tp_name,
             enabled: true,
             operation: op_config,
-            dressups: DressupConfig::default(),
+            dressups: DressupConfig::for_role(role),
             heights: rs_cam_core::compute::config::HeightsConfig::default(),
             tool_id: tool_raw_id,
             model_id,
@@ -1702,6 +1735,74 @@ impl super::RsCamApp {
                 self.controller.state_mut().gui.mark_edited();
                 text(format!(
                     "Dressup config set on toolpath {index}. Regenerate to apply."
+                ))
+            }
+            Err(e) => text(format!("Error: {e}")),
+        }
+    }
+
+    fn mcp_set_dressup_field(
+        &mut self,
+        index: usize,
+        key: &str,
+        value: serde_json::Value,
+    ) -> String {
+        match self
+            .controller
+            .state_mut()
+            .session
+            .set_dressup_field(index, key, value)
+        {
+            Ok(()) => {
+                self.controller.state_mut().gui.mark_edited();
+                text(format!(
+                    "Dressup field '{key}' set on toolpath {index}. Regenerate to apply."
+                ))
+            }
+            Err(e) => text(format!("Error: {e}")),
+        }
+    }
+
+    fn mcp_set_toolpath_enabled(&mut self, index: usize, enabled: bool) -> String {
+        match self
+            .controller
+            .state_mut()
+            .session
+            .set_toolpath_enabled(index, enabled)
+        {
+            Ok(()) => {
+                self.controller.state_mut().gui.mark_edited();
+                text(format!(
+                    "Toolpath {index} {}",
+                    if enabled { "enabled" } else { "disabled" }
+                ))
+            }
+            Err(e) => text(format!("Error: {e}")),
+        }
+    }
+
+    fn mcp_set_stock_source(&mut self, index: usize, source: &str) -> String {
+        let parsed = match source {
+            "fresh" => rs_cam_core::compute::config::StockSource::Fresh,
+            "from_remaining_stock" => {
+                rs_cam_core::compute::config::StockSource::FromRemainingStock
+            }
+            other => {
+                return text(format!(
+                    "Error: unknown stock_source '{other}'. Expected 'fresh' or 'from_remaining_stock'."
+                ));
+            }
+        };
+        match self
+            .controller
+            .state_mut()
+            .session
+            .set_stock_source(index, parsed)
+        {
+            Ok(()) => {
+                self.controller.state_mut().gui.mark_edited();
+                text(format!(
+                    "Stock source set to '{source}' on toolpath {index}. Regenerate to apply."
                 ))
             }
             Err(e) => text(format!("Error: {e}")),
