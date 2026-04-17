@@ -15,7 +15,6 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{
     BoundaryConfig, BoundaryContainment, BoundarySource, DressupConfig,
 };
-use rs_cam_core::compute::stock_config::AlignmentPin;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::session::{ProjectSession, SimulationOptions};
@@ -234,6 +233,32 @@ pub struct SetDressupConfigParam {
     pub index: usize,
     /// Dressup configuration as a JSON object (fields match DressupConfig)
     pub dressup: serde_json::Value,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SetDressupFieldParam {
+    /// Toolpath index (0-based)
+    pub index: usize,
+    /// Dressup field name (e.g. "link_moves", "arc_fitting", "retract_strategy")
+    pub key: String,
+    /// New value for the field (JSON)
+    pub value: serde_json::Value,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SetToolpathEnabledParam {
+    /// Toolpath index (0-based)
+    pub index: usize,
+    /// `true` to enable, `false` to disable
+    pub enabled: bool,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SetStockSourceParam {
+    /// Toolpath index (0-based)
+    pub index: usize,
+    /// Either "fresh" or "from_remaining_stock"
+    pub source: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -1073,13 +1098,14 @@ impl CamServer {
         let op_config = OperationConfig::new_default(op_type);
         let label = op_type.label();
         let tp_name = name.unwrap_or_else(|| label.to_owned());
+        let role = op_type.spec().ui_process_role;
 
         let config = rs_cam_core::session::ToolpathConfig {
             id: 0, // overwritten by add_toolpath
             name: tp_name,
             enabled: true,
             operation: op_config,
-            dressups: DressupConfig::default(),
+            dressups: DressupConfig::for_role(role),
             heights: rs_cam_core::compute::config::HeightsConfig::default(),
             tool_id: tool_raw_id,
             model_id,
@@ -1278,6 +1304,83 @@ impl CamServer {
         match session.set_dressup_config(index, dressup_config) {
             Ok(()) => text(format!(
                 "Dressup config set on toolpath {index}. Regenerate to apply."
+            )),
+            Err(e) => text(format!("Error: {e}")),
+        }
+    }
+
+    #[tool(
+        name = "set_dressup_field",
+        description = "Update a single dressup field on a toolpath (partial patch). Accepts any field name from the DressupConfig schema."
+    )]
+    async fn set_dressup_field(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(SetDressupFieldParam { index, key, value }): Parameters<SetDressupFieldParam>,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return no_project_error();
+        };
+        match session.set_dressup_field(index, &key, value) {
+            Ok(()) => text(format!(
+                "Dressup field '{key}' set on toolpath {index}. Regenerate to apply."
+            )),
+            Err(e) => text(format!("Error: {e}")),
+        }
+    }
+
+    #[tool(
+        name = "set_toolpath_enabled",
+        description = "Enable or disable a toolpath for generation and simulation."
+    )]
+    async fn set_toolpath_enabled(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(SetToolpathEnabledParam { index, enabled }): Parameters<
+            SetToolpathEnabledParam,
+        >,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return no_project_error();
+        };
+        match session.set_toolpath_enabled(index, enabled) {
+            Ok(()) => text(format!(
+                "Toolpath {index} {}",
+                if enabled { "enabled" } else { "disabled" }
+            )),
+            Err(e) => text(format!("Error: {e}")),
+        }
+    }
+
+    #[tool(
+        name = "set_stock_source",
+        description = "Set stock_source for a toolpath: 'fresh' (default) or 'from_remaining_stock' (rest machining). Invalidates the toolpath result."
+    )]
+    async fn set_stock_source(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(SetStockSourceParam { index, source }): Parameters<SetStockSourceParam>,
+    ) -> String {
+        let mut guard = self.session.lock().await;
+        let Some(session) = guard.as_mut() else {
+            return no_project_error();
+        };
+        let parsed = match source.as_str() {
+            "fresh" => rs_cam_core::compute::config::StockSource::Fresh,
+            "from_remaining_stock" => {
+                rs_cam_core::compute::config::StockSource::FromRemainingStock
+            }
+            other => {
+                return text(format!(
+                    "Error: unknown stock_source '{other}'. Expected 'fresh' or 'from_remaining_stock'."
+                ));
+            }
+        };
+        match session.set_stock_source(index, parsed) {
+            Ok(()) => text(format!(
+                "Stock source set to '{source}' on toolpath {index}. Regenerate to apply."
             )),
             Err(e) => text(format!("Error: {e}")),
         }
@@ -1705,13 +1808,17 @@ impl CamServer {
         let Some(session) = guard.as_mut() else {
             return no_project_error();
         };
-        let mut stock = session.stock_config().clone();
-        stock.alignment_pins.push(AlignmentPin::new(x, y, diameter));
-        let pin_count = stock.alignment_pins.len();
-        session.set_stock_config(stock);
+        let added = session.add_alignment_pin(x, y, diameter);
+        let pin_count = session.stock_config().alignment_pins.len();
+        let message = if added {
+            format!("Added alignment pin at ({x:.1}, {y:.1}) dia {diameter:.1}mm")
+        } else {
+            format!("Pin already present at ({x:.1}, {y:.1}); skipped duplicate")
+        };
         json_str(serde_json::json!({
             "ok": true,
-            "message": format!("Added alignment pin at ({x:.1}, {y:.1}) dia {diameter:.1}mm"),
+            "added": added,
+            "message": message,
             "pin_count": pin_count,
         }))
     }
@@ -1728,20 +1835,14 @@ impl CamServer {
         let Some(session) = guard.as_mut() else {
             return no_project_error();
         };
-        let mut stock = session.stock_config().clone();
-        if index >= stock.alignment_pins.len() {
-            return json_str(serde_json::json!({
-                "error": format!("Pin index {index} out of range (have {})", stock.alignment_pins.len())
-            }));
+        match session.remove_alignment_pin(index) {
+            Ok(()) => json_str(serde_json::json!({
+                "ok": true,
+                "message": format!("Removed alignment pin {index}"),
+                "pin_count": session.stock_config().alignment_pins.len(),
+            })),
+            Err(e) => json_str(serde_json::json!({ "error": e.to_string() })),
         }
-        stock.alignment_pins.remove(index);
-        let pin_count = stock.alignment_pins.len();
-        session.set_stock_config(stock);
-        json_str(serde_json::json!({
-            "ok": true,
-            "message": format!("Removed alignment pin {index}"),
-            "pin_count": pin_count,
-        }))
     }
 
     #[tool(

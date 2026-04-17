@@ -132,6 +132,19 @@ pub enum McpRequestKind {
         index: usize,
         dressup: serde_json::Value,
     },
+    SetDressupField {
+        index: usize,
+        key: String,
+        value: serde_json::Value,
+    },
+    SetToolpathEnabled {
+        index: usize,
+        enabled: bool,
+    },
+    SetStockSource {
+        index: usize,
+        source: String,
+    },
 
     // ── Compute (async — response sent when compute finishes) ────────
     GenerateToolpath {

@@ -205,6 +205,63 @@ impl ProjectSession {
         Ok(())
     }
 
+    /// Update a single dressup field by merging a JSON patch onto the existing
+    /// [`DressupConfig`]. Only the specified field is changed. Invalidates
+    /// the cached result.
+    #[instrument(skip(self, value))]
+    pub fn set_dressup_field(
+        &mut self,
+        index: usize,
+        key: &str,
+        value: serde_json::Value,
+    ) -> Result<(), SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get_mut(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        let mut merged = serde_json::to_value(&tc.dressups)
+            .map_err(|e| SessionError::InvalidParam(format!("dressup serialize: {e}")))?;
+        match merged.as_object_mut() {
+            Some(obj) => {
+                if !obj.contains_key(key) {
+                    return Err(SessionError::InvalidParam(format!(
+                        "unknown dressup field '{key}'"
+                    )));
+                }
+                obj.insert(key.to_owned(), value);
+            }
+            None => {
+                return Err(SessionError::InvalidParam(
+                    "dressup config is not an object".to_owned(),
+                ));
+            }
+        }
+        let new_cfg: DressupConfig = serde_json::from_value(merged)
+            .map_err(|e| SessionError::InvalidParam(format!("dressup patch: {e}")))?;
+        tc.dressups = new_cfg;
+        self.results.remove(&index);
+        self.simulation = None;
+        Ok(())
+    }
+
+    /// Set the stock_source for a toolpath (Fresh vs FromRemainingStock).
+    /// Invalidates the cached result.
+    #[instrument(skip(self))]
+    pub fn set_stock_source(
+        &mut self,
+        index: usize,
+        source: crate::compute::config::StockSource,
+    ) -> Result<(), SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get_mut(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        tc.stock_source = source;
+        self.results.remove(&index);
+        self.simulation = None;
+        Ok(())
+    }
+
     /// Replace the heights config for a toolpath, invalidating its cached result.
     #[instrument(skip(self, heights))]
     pub fn set_heights_config(
@@ -568,6 +625,43 @@ impl ProjectSession {
     pub fn set_stock_config(&mut self, stock: StockConfig) {
         self.stock = stock;
         self.simulation = None;
+    }
+
+    /// Add an alignment pin, deduping against existing pins within 0.01mm.
+    ///
+    /// Returns `true` if the pin was added, `false` if a duplicate was skipped.
+    #[instrument(skip(self))]
+    pub fn add_alignment_pin(&mut self, x: f64, y: f64, diameter: f64) -> bool {
+        const PIN_DEDUP_EPSILON_MM: f64 = 0.01;
+        let exists = self
+            .stock
+            .alignment_pins
+            .iter()
+            .any(|p| (p.x - x).abs() < PIN_DEDUP_EPSILON_MM && (p.y - y).abs() < PIN_DEDUP_EPSILON_MM);
+        if exists {
+            return false;
+        }
+        self.stock
+            .alignment_pins
+            .push(crate::compute::stock_config::AlignmentPin::new(
+                x, y, diameter,
+            ));
+        self.simulation = None;
+        true
+    }
+
+    /// Remove an alignment pin by index. Returns `Err` if out of bounds.
+    #[instrument(skip(self))]
+    pub fn remove_alignment_pin(&mut self, index: usize) -> Result<(), SessionError> {
+        if index >= self.stock.alignment_pins.len() {
+            return Err(SessionError::InvalidParam(format!(
+                "alignment pin index {index} out of range ({} pins)",
+                self.stock.alignment_pins.len()
+            )));
+        }
+        self.stock.alignment_pins.remove(index);
+        self.simulation = None;
+        Ok(())
     }
 
     /// Replace the post-processor configuration, invalidating simulation.
