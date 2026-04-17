@@ -280,6 +280,13 @@ impl RsCamApp {
                     ui.checkbox(&mut viewport.show_fixtures, "Fixtures");
                     ui.checkbox(&mut viewport.show_polygons, "Curves");
                     ui.checkbox(&mut viewport.show_collisions, "Collisions");
+                    ui.checkbox(
+                        &mut viewport.show_tool_profile_preview,
+                        "Tool ghost",
+                    )
+                    .on_hover_text(
+                        "Render a ghost of the cutter silhouette along the selected toolpath",
+                    );
                     ui.separator();
                     ui.label(
                         egui::RichText::new("Analysis:")

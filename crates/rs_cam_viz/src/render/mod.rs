@@ -940,6 +940,14 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                     pass.set_vertex_buffer(0, buf.slice(..));
                     pass.draw(0..tp_gpu.entry_preview_count, 0..1);
                 }
+
+                // Draw tool-profile preview overlay (cutter silhouette ghost)
+                if let Some(ref buf) = tp_gpu.tool_profile_preview_buffer
+                    && tp_gpu.tool_profile_preview_count > 1
+                {
+                    pass.set_vertex_buffer(0, buf.slice(..));
+                    pass.draw(0..tp_gpu.tool_profile_preview_count, 0..1);
+                }
             }
         } // render pass ends
 

@@ -10,6 +10,9 @@ pub struct ViewportState {
     pub show_cutting: bool,
     pub show_rapids: bool,
     pub show_collisions: bool,
+    /// Render a ghost of the cutter silhouette stacked along the selected
+    /// toolpath — visualizes swept material before running a simulation.
+    pub show_tool_profile_preview: bool,
     /// When set, only this toolpath is visible (isolation mode, toggle with I).
     pub isolate_toolpath: Option<ToolpathId>,
     /// Color mode for toolpath lines.
@@ -43,6 +46,7 @@ impl ViewportState {
             show_cutting: true,
             show_rapids: true,
             show_collisions: true,
+            show_tool_profile_preview: false,
             isolate_toolpath: None,
             toolpath_color_mode: ToolpathColorMode::Normal,
         }
