@@ -482,27 +482,29 @@ pub(super) fn adaptive_3d_segments(
                     }
                 }
 
-                let is_last_level = level_idx == z_levels.len() - 1;
-                if is_last_level {
-                    segments.push(Adaptive3dSegment::Marker(
-                        Adaptive3dRuntimeEvent::WaterlineCleanup,
-                    ));
-                    waterline_cleanup(
-                        mesh,
-                        index,
-                        cutter,
-                        &lut,
-                        &slope_map,
-                        &mut material_stock,
-                        z_level,
-                        tool_radius,
-                        cell_size,
-                        &mut segments,
-                        &mut last_pos,
-                        debug_ctx,
-                        cancel,
-                    )?;
-                }
+                // Waterline cleanup at every Z-level. Historically this only
+                // ran on `is_last_level`, which meant adaptive misses at upper
+                // levels stayed for the finish pass to deal with. Running it
+                // per-level trades some generation time for cleaner roughing
+                // output and reduces load on the subsequent finish.
+                segments.push(Adaptive3dSegment::Marker(
+                    Adaptive3dRuntimeEvent::WaterlineCleanup,
+                ));
+                waterline_cleanup(
+                    mesh,
+                    index,
+                    cutter,
+                    &lut,
+                    &slope_map,
+                    &mut material_stock,
+                    z_level,
+                    tool_radius,
+                    cell_size,
+                    &mut segments,
+                    &mut last_pos,
+                    debug_ctx,
+                    cancel,
+                )?;
             }
         }
     }
