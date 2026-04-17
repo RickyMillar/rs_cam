@@ -440,13 +440,20 @@ impl ProjectSession {
                 let child_ctx = op_scope.context();
                 annotate_from_runtime_events(&annotations, &toolpath, &child_ctx);
 
-                // Apply dressups
+                // Apply dressups. Pass `prior_stock` if a simulation has
+                // already produced a snapshot for this toolpath id (enables
+                // air-cut filter + rest-machining-aware dressups).
+                let prior_stock_arc = self
+                    .simulation
+                    .as_ref()
+                    .and_then(|sim| sim.prior_stocks.get(&tc.id).cloned());
+                let prior_stock_ref = prior_stock_arc.as_deref();
                 toolpath = crate::compute::execute::apply_dressups(
                     toolpath,
                     &tc.dressups,
                     tool.diameter,
                     heights.retract_z,
-                    None,
+                    prior_stock_ref,
                     None,
                     None,
                 );

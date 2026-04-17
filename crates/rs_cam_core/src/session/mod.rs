@@ -1249,6 +1249,7 @@ mod tests {
             rapid_collision_move_indices: Vec::new(),
             cut_trace: None,
             resolution_clamped: false,
+            prior_stocks: std::collections::HashMap::new(),
         });
         assert!(
             session.simulation_result().is_some(),
