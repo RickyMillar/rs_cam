@@ -334,10 +334,11 @@ pub fn raster_toolpath_from_grid(
                 segments.push((start, grid.cols - 1));
             }
 
-            // Merge segments with small gaps (clamped points between them)
-            let merged = merge_slope_segments(&segments, 3);
-
-            for &(seg_s, seg_e) in &merged {
+            // Do NOT merge across gaps: gap points are clamped at min_z, so
+            // cutting through them would plunge the tool to the floor. Each
+            // contiguous engaging run must be its own pass (retract-traverse-
+            // plunge between runs).
+            for &(seg_s, seg_e) in &segments {
                 let first_col = col_at(seg_s);
                 let first_pt = grid.get(row, first_col);
                 tp.rapid_to(P3::new(first_pt.x, first_pt.y, safe_z));
@@ -420,8 +421,12 @@ pub fn raster_toolpath_from_grid_with_slope_filter(
         // Phase 1: Find contiguous in-range segments for this row.
         // A point is "in-range" if its slope is within [slope_from, slope_to]
         // AND it is not clamped at min_z (i.e. it actually engages the surface).
+        // Track clamped cells separately — bridging across slope-only gaps is
+        // safe (the tool rides the surface through the gap), but bridging
+        // across clamped gaps dives the tool to the min_z floor.
         let mut segments: Vec<(usize, usize)> = Vec::new();
         let mut seg_start: Option<usize> = None;
+        let mut clamped = vec![false; grid.cols];
         for i in 0..grid.cols {
             let col = col_at(i);
             let idx = row * grid.cols + col;
@@ -429,6 +434,7 @@ pub fn raster_toolpath_from_grid_with_slope_filter(
                 .get(idx)
                 .is_none_or(|&angle| angle >= slope_from && angle <= slope_to);
             let z_ok = min_z.is_none_or(|clamp_z| grid.get(row, col).z > clamp_z + CLAMP_EPS);
+            clamped[i] = !z_ok;
             let in_range = slope_ok && z_ok;
             if in_range {
                 if seg_start.is_none() {
@@ -442,8 +448,10 @@ pub fn raster_toolpath_from_grid_with_slope_filter(
             segments.push((start, grid.cols - 1));
         }
 
-        // Phase 2: Merge segments separated by small gaps.
-        let merged = merge_slope_segments(&segments, MAX_BRIDGE_GAP);
+        // Phase 2: Merge segments separated by small *slope-only* gaps.
+        // Any gap containing a clamped point prevents the merge (cutting
+        // through it would plunge to the min_z floor).
+        let merged = merge_segments_skip_clamped(&segments, MAX_BRIDGE_GAP, &clamped);
 
         // Phase 3: Emit toolpath for each merged segment.
         for &(seg_s, seg_e) in &merged {
@@ -471,9 +479,15 @@ pub fn raster_toolpath_from_grid_with_slope_filter(
     tp
 }
 
-/// Merge segments that are separated by gaps of at most `max_gap` indices.
+/// Merge segments separated by short gaps, but never merge across a gap that
+/// contains any clamped point — cutting through clamped points would dive
+/// the tool to the min_z floor.
 #[allow(clippy::indexing_slicing)] // first element access guarded by is_empty check
-fn merge_slope_segments(segments: &[(usize, usize)], max_gap: usize) -> Vec<(usize, usize)> {
+fn merge_segments_skip_clamped(
+    segments: &[(usize, usize)],
+    max_gap: usize,
+    clamped: &[bool],
+) -> Vec<(usize, usize)> {
     if segments.is_empty() {
         return Vec::new();
     }
@@ -481,7 +495,8 @@ fn merge_slope_segments(segments: &[(usize, usize)], max_gap: usize) -> Vec<(usi
     let mut current = segments[0];
 
     for &(start, end) in segments.iter().skip(1) {
-        if start <= current.1 + max_gap + 1 {
+        let gap_clean = (current.1 + 1..start).all(|i| !clamped.get(i).copied().unwrap_or(true));
+        if start <= current.1 + max_gap + 1 && gap_clean {
             current.1 = end;
         } else {
             merged.push(current);
