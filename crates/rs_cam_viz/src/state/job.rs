@@ -438,15 +438,50 @@ impl Setup {
 // The core session `Fixture` and `KeepOutZone` lack bbox methods, so we
 // provide free functions here that mirror the viz-local equivalents.
 
+/// Transform an axis-aligned bbox through a setup transform by mapping all 8
+/// corners to the setup-local frame and taking min/max. face_up + z_rotation
+/// are 90° increments so the result remains axis-aligned.
+fn setup_local_bbox(
+    bbox: &BoundingBox3,
+    info: &rs_cam_core::compute::transform::SetupTransformInfo,
+) -> BoundingBox3 {
+    use rs_cam_core::geo::P3;
+    let corners = [
+        P3::new(bbox.min.x, bbox.min.y, bbox.min.z),
+        P3::new(bbox.max.x, bbox.min.y, bbox.min.z),
+        P3::new(bbox.min.x, bbox.max.y, bbox.min.z),
+        P3::new(bbox.max.x, bbox.max.y, bbox.min.z),
+        P3::new(bbox.min.x, bbox.min.y, bbox.max.z),
+        P3::new(bbox.max.x, bbox.min.y, bbox.max.z),
+        P3::new(bbox.min.x, bbox.max.y, bbox.max.z),
+        P3::new(bbox.max.x, bbox.max.y, bbox.max.z),
+    ];
+    let mut min = P3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY);
+    let mut max = P3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for c in corners {
+        let p = info.world_to_local(c);
+        min.x = min.x.min(p.x);
+        min.y = min.y.min(p.y);
+        min.z = min.z.min(p.z);
+        max.x = max.x.max(p.x);
+        max.y = max.y.max(p.y);
+        max.z = max.z.max(p.z);
+    }
+    BoundingBox3 { min, max }
+}
+
 /// Build a [`HeightContext`] for a session toolpath config using session data.
 ///
 /// `safe_z` is floored via [`effective_safe_z`] so rapids clear the stock.
+/// Model Z extents are reported in the setup-local frame (accounting for
+/// face-up flip, Z rotation, and stock origin translation) so the Heights tab
+/// references match the frame the toolpath is actually computed in.
 pub fn height_context_from_session(
     session: &rs_cam_core::session::ProjectSession,
     tc: &rs_cam_core::session::ToolpathConfig,
 ) -> rs_cam_core::compute::config::HeightContext {
     let sb = session.stock_config().bbox();
-    let mb = session
+    let raw_mb = session
         .models()
         .iter()
         .find(|m| m.id == tc.model_id)
@@ -456,6 +491,25 @@ pub fn height_context_from_session(
                 .map(|mesh| mesh.bbox)
                 .or_else(|| session_polygons_bbox(m.polygons.as_deref().map(|v| v.as_slice())))
         });
+    // Apply the setup transform that owns this toolpath so model_top/bottom_z
+    // are in the setup-local frame. The raw mesh bbox is in world coords.
+    let setup = session
+        .list_setups()
+        .iter()
+        .find(|s| s.toolpath_indices.iter().any(|&i| {
+            session
+                .toolpath_configs()
+                .get(i)
+                .is_some_and(|t| t.id == tc.id)
+        }));
+    let mb = match (raw_mb, setup) {
+        (Some(b), Some(s)) => {
+            let info = session.setup_transform_info(s.face_up, s.z_rotation);
+            Some(setup_local_bbox(&b, &info))
+        }
+        (Some(b), None) => Some(b),
+        _ => None,
+    };
     let safe_z = rs_cam_core::compute::config::effective_safe_z(
         session.post_config().safe_z,
         sb.max.z,
@@ -718,16 +772,42 @@ impl JobState {
     }
 
     /// Build a [`HeightContext`] for resolving a toolpath's heights from current stock/model state.
+    ///
+    /// Model Z extents are reported in the setup-local frame (accounting for
+    /// face-up flip, Z rotation, and stock origin translation).
     pub fn height_context_for(
         &self,
         tp: &super::toolpath::ToolpathEntry,
     ) -> super::toolpath::HeightContext {
         let sb = self.stock.bbox();
-        let mb = self
+        let raw_mb = self
             .models
             .iter()
             .find(|m| m.id == tp.model_id.0)
             .and_then(|m| m.bbox());
+        // Apply the owning setup's transform so model_top_z / model_bottom_z
+        // are in setup-local coordinates.
+        let setup = self
+            .setups
+            .iter()
+            .find(|s| s.toolpaths.iter().any(|t| t.id == tp.id));
+        let mb = match (raw_mb, setup) {
+            (Some(b), Some(s)) => {
+                let info = rs_cam_core::compute::transform::SetupTransformInfo {
+                    face_up: s.face_up,
+                    z_rotation: s.z_rotation,
+                    stock_x: self.stock.x,
+                    stock_y: self.stock.y,
+                    stock_z: self.stock.z,
+                    stock_origin_x: self.stock.origin_x,
+                    stock_origin_y: self.stock.origin_y,
+                    stock_origin_z: self.stock.origin_z,
+                };
+                Some(setup_local_bbox(&b, &info))
+            }
+            (Some(b), None) => Some(b),
+            _ => None,
+        };
         super::toolpath::HeightContext {
             safe_z: self.post.safe_z,
             op_depth: tp.operation.default_depth_for_heights(),

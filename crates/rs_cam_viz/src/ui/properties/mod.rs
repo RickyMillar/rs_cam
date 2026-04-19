@@ -358,26 +358,13 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .map(|m| m.enriched_mesh.is_some())
                 .unwrap_or(false);
 
-            // Snapshot height context before mutable borrow (needs stock + model bbox)
+            // Snapshot height context before mutable borrow. Use the shared
+            // helper so model_top/bottom_z are in the setup-local frame.
             let height_ctx = state
                 .session
                 .find_toolpath_config_by_id(id.0)
                 .map(|(_, tc)| {
-                    let sb = state.session.stock_config().bbox();
-                    let mb = state
-                        .session
-                        .models()
-                        .iter()
-                        .find(|m| m.id == tc.model_id)
-                        .and_then(|m| m.mesh.as_ref().map(|mesh| mesh.bbox));
-                    HeightContext {
-                        safe_z: state.gui.post.safe_z,
-                        op_depth: tc.operation.default_depth_for_heights(),
-                        stock_top_z: sb.max.z,
-                        stock_bottom_z: sb.min.z,
-                        model_top_z: mb.map(|b| b.max.z),
-                        model_bottom_z: mb.map(|b| b.min.z),
-                    }
+                    crate::state::job::height_context_from_session(&state.session, tc)
                 });
 
             // Snapshot operation and heights for stale_since detection
