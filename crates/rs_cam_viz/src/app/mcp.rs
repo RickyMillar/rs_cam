@@ -1544,14 +1544,13 @@ impl super::RsCamApp {
         let op_config = OperationConfig::new_default(op_type);
         let label = op_type.label();
         let tp_name = name.unwrap_or_else(|| label.to_owned());
-        let role = op_type.spec().ui_process_role;
 
         let config = rs_cam_core::session::ToolpathConfig {
             id: 0,
             name: tp_name,
             enabled: true,
             operation: op_config,
-            dressups: DressupConfig::for_role(role),
+            dressups: DressupConfig::for_op(op_type),
             heights: rs_cam_core::compute::config::HeightsConfig::default(),
             tool_id: tool_raw_id,
             model_id,

@@ -397,6 +397,21 @@ impl DressupConfig {
             },
         }
     }
+
+    /// Smart defaults based on the operation type. Uses `for_role` as a base
+    /// and overrides per-op where the role-level defaults don't fit.
+    pub fn for_op(op: super::catalog::OperationType) -> Self {
+        use super::catalog::OperationType;
+        let mut cfg = Self::for_role(op.spec().ui_process_role);
+        // ProjectCurve traces 2D rings projected onto a surface. Ramp entries
+        // would cut a straight diagonal across the surface next to each ring
+        // start — and there can be hundreds of tiny rings. Use a direct plunge.
+        if op == OperationType::ProjectCurve {
+            cfg.entry_style = DressupEntryStyle::None;
+            cfg.lead_in_out = false;
+        }
+        cfg
+    }
 }
 
 #[cfg(test)]
