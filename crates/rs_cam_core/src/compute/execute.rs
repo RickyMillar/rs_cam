@@ -562,11 +562,16 @@ pub fn execute_operation_annotated(
             let idx = index.ok_or_else(|| {
                 OperationError::Other("DropCutter requires a spatial index".into())
             })?;
-            // Clamp min_z so the drop-cutter grid never emits moves below
-            // the stock bottom.  The default (-50) would destroy the stock
-            // during simulation via ray_subtract_above.
-            let effective_min_z = cfg.min_z.max(stock_bbox.min.z - 1.0);
-            let grid = crate::dropcutter::batch_drop_cutter_with_cancel(
+            // Floor the drop-cutter min_z to the mesh bottom. A 3D finish
+            // should only tip-track the mesh surface — anything lower is either
+            // a non-contact clamp or the tool's taper forcing the tip below
+            // the real surface (which would gouge). We also enforce the
+            // stock-bottom floor as a safety check.
+            let effective_min_z = cfg
+                .min_z
+                .max(m.bbox.min.z - 0.1)
+                .max(stock_bbox.min.z - 1.0);
+            let mut grid = crate::dropcutter::batch_drop_cutter_with_cancel(
                 m,
                 idx,
                 tool_def,
@@ -576,13 +581,31 @@ pub fn execute_operation_annotated(
                 &(|| cancel.load(Ordering::SeqCst)),
             )
             .map_err(|_e| OperationError::Cancelled)?;
-            // Pass min_z to toolpath generation so zero-engagement passes
-            // (where the entire segment is clamped at min_z) are skipped.
-            let min_z_filter = if cfg.min_z > stock_bbox.min.z - 0.5 {
-                Some(effective_min_z)
-            } else {
-                None
-            };
+            // Restrict the cutting region to the mesh XY footprint. The
+            // drop-cutter grid extends by one cutter radius past the mesh so
+            // the tool body can still contact edge triangles, but those
+            // overhang cells produce cl.z values *below* the mesh surface
+            // (cone/taper catches the edge) and cut virgin stock that was
+            // never roughed. Clamp them to the floor so the filter skips them.
+            let mesh_bbox = &m.bbox;
+            for row in 0..grid.rows {
+                for col in 0..grid.cols {
+                    let i = row * grid.cols + col;
+                    #[allow(clippy::indexing_slicing)]
+                    let pt = &mut grid.points[i];
+                    if pt.x < mesh_bbox.min.x
+                        || pt.x > mesh_bbox.max.x
+                        || pt.y < mesh_bbox.min.y
+                        || pt.y > mesh_bbox.max.y
+                    {
+                        pt.z = effective_min_z;
+                    }
+                }
+            }
+            // Non-contacted grid points get clamped to effective_min_z (a floor
+            // near the stock bottom). Always filter those out as zero-engagement
+            // — otherwise the tool plunges through air outside the mesh footprint.
+            let min_z_filter = Some(effective_min_z);
             let slope_filter_active = cfg.slope_from > 0.01 || cfg.slope_to < 89.99;
             let tp = if slope_filter_active {
                 let slope_angles = crate::dropcutter::compute_grid_slopes(&grid);
