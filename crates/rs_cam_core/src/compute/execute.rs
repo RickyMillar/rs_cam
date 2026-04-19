@@ -581,22 +581,36 @@ pub fn execute_operation_annotated(
                 &(|| cancel.load(Ordering::SeqCst)),
             )
             .map_err(|_e| OperationError::Cancelled)?;
-            // Restrict the cutting region to the mesh XY footprint. The
-            // drop-cutter grid extends by one cutter radius past the mesh so
-            // the tool body can still contact edge triangles, but those
-            // overhang cells produce cl.z values *below* the mesh surface
-            // (cone/taper catches the edge) and cut virgin stock that was
-            // never roughed. Clamp them to the floor so the filter skips them.
-            let mesh_bbox = &m.bbox;
+            // Detect gouging: compare each cell's tool-tip Z against the mesh
+            // top Z at the same (x, y). If the tip is deeper than a threshold
+            // below the real surface, the tool's cone/taper is catching
+            // neighbouring geometry and driving the tip into virgin stock —
+            // clamp it to the floor so the min_z filter skips the cell.
+            //
+            // Cells with no mesh directly above (XY outside any triangle) also
+            // get clamped — the finish has nothing to cut there, and any
+            // non-zero cl.z came from an overhang contact on a nearby edge.
+            const GOUGE_TOLERANCE_MM: f64 = 0.5;
             for row in 0..grid.rows {
                 for col in 0..grid.cols {
                     let i = row * grid.cols + col;
                     #[allow(clippy::indexing_slicing)]
                     let pt = &mut grid.points[i];
-                    if pt.x < mesh_bbox.min.x
-                        || pt.x > mesh_bbox.max.x
-                        || pt.y < mesh_bbox.min.y
-                        || pt.y > mesh_bbox.max.y
+                    let tri_candidates = idx.query(pt.x, pt.y, 0.0);
+                    let mesh_top = tri_candidates
+                        .iter()
+                        .filter_map(|&ti| {
+                            #[allow(clippy::indexing_slicing)]
+                            let tri = &m.faces[ti];
+                            if tri.contains_point_xy(pt.x, pt.y) {
+                                tri.z_at_xy(pt.x, pt.y)
+                            } else {
+                                None
+                            }
+                        })
+                        .fold(f64::NEG_INFINITY, f64::max);
+                    if mesh_top == f64::NEG_INFINITY
+                        || pt.z < mesh_top - GOUGE_TOLERANCE_MM
                     {
                         pt.z = effective_min_z;
                     }
