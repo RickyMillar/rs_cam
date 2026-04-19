@@ -66,7 +66,6 @@ impl<B: ComputeBackend> AppController<B> {
             .map(|m| m.id)
             .unwrap_or(0);
 
-        let role = operation.op_type().spec().ui_process_role;
         let tc = rs_cam_core::session::ToolpathConfig {
             id: 0, // will be assigned by session
             name: format!(
@@ -76,7 +75,7 @@ impl<B: ComputeBackend> AppController<B> {
             ),
             enabled: true,
             operation,
-            dressups: crate::state::toolpath::DressupConfig::for_role(role),
+            dressups: crate::state::toolpath::DressupConfig::for_op(op_type),
             heights: crate::state::toolpath::HeightsConfig::default(),
             tool_id,
             model_id,

@@ -46,7 +46,7 @@ impl ToolpathEntryInit {
         model_id: ModelId,
         operation: OperationConfig,
     ) -> Self {
-        let role = operation.op_type().spec().ui_process_role;
+        let op_type = operation.op_type();
         Self {
             id,
             name,
@@ -56,7 +56,7 @@ impl ToolpathEntryInit {
             tool_id,
             model_id,
             operation,
-            dressups: DressupConfig::for_role(role),
+            dressups: DressupConfig::for_op(op_type),
             heights: HeightsConfig::default(),
             boundary: BoundaryConfig::default(),
             boundary_inherit: true,
