@@ -34,6 +34,46 @@ fn fixture_path(name: &str) -> PathBuf {
     p
 }
 
+/// Build a pyramid mesh with peak at (cx, cy, peak_z), base radius r at z=0.
+/// Triangulates as a fan from the peak to the base.
+fn pyramid_mesh(cx: f64, cy: f64, r: f64, peak_z: f64, segments: usize) -> TriangleMesh {
+    let mut verts = vec![P3::new(cx, cy, peak_z)]; // 0 = peak
+    for i in 0..segments {
+        let theta = 2.0 * std::f64::consts::PI * i as f64 / segments as f64;
+        verts.push(P3::new(cx + r * theta.cos(), cy + r * theta.sin(), 0.0));
+    }
+    let mut tris: Vec<[u32; 3]> = Vec::new();
+    for i in 0..segments {
+        let a = 1 + i as u32;
+        let b = 1 + ((i + 1) % segments) as u32;
+        tris.push([0, a, b]);
+    }
+    TriangleMesh::from_raw(verts, tris)
+}
+
+#[test]
+fn drop_cutter_over_peak_stays_at_peak_height() {
+    // Synthetic pyramid with a peak at (0, 0, 5) and a 10mm base radius.
+    // A 1mm ball + 6.35mm shaft tapered-ball tool can reach the peak (the
+    // pyramid is gentle: tan(slope) = 5 / 10 = 0.5, ~27° — well within
+    // the tool's taper half-angle). The tool CL at (0, 0) must be at z=5.
+    use rs_cam_core::tool::TaperedBallEndmill;
+    let mesh = pyramid_mesh(0.0, 0.0, 10.0, 5.0, 32);
+    let index = SpatialIndex::build_auto(&mesh);
+    let cutter = TaperedBallEndmill::new(1.0, 15.0, 6.35, 25.0);
+    let cl = rs_cam_core::dropcutter::point_drop_cutter(0.0, 0.0, &mesh, &index, &cutter);
+    println!(
+        "Peak CL: contacted={}, z={:.3} (expected 5.0)",
+        cl.contacted, cl.z
+    );
+    assert!(cl.contacted, "tool should contact at peak");
+    assert!(
+        (cl.z - 5.0).abs() < 0.05,
+        "tool tip should reach peak at z=5.0 (got {:.3})",
+        cl.z
+    );
+}
+
 /// True iff (x, y) lies inside the XY footprint of at least one triangle.
 fn point_over_mesh(x: f64, y: f64, mesh: &TriangleMesh, index: &SpatialIndex) -> bool {
     for &idx in &index.query(x, y, 0.0) {
