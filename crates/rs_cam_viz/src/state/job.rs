@@ -664,6 +664,9 @@ pub fn transform_polygons(
                 })
                 .collect();
             let mut result = rs_cam_core::polygon::Polygon2::with_holes(ext, holes);
+            // Preserve open/closed so project_curve doesn't phantom-close
+            // rivers after the setup transform.
+            result.closed = poly.closed;
             result.ensure_winding();
             result
         })

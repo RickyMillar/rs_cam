@@ -276,7 +276,13 @@ impl SetupTransformInfo {
                             .collect()
                     })
                     .collect();
-                Polygon2::with_holes(ext, holes)
+                // Preserve the open/closed flag: `Polygon2::with_holes` forces
+                // closed=true which would silently re-close open paths (rivers,
+                // traces) and make project_curve emit a phantom segment from
+                // the path's end back to its start.
+                let mut result = Polygon2::with_holes(ext, holes);
+                result.closed = poly.closed;
+                result
             })
             .collect()
     }
