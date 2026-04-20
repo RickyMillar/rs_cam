@@ -62,14 +62,11 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                 0.05,
                 0.0..=10.0,
             );
-            dv(
-                ui,
-                "Stock Top Z:",
-                &mut cfg.stock_top_z,
-                " mm",
-                0.5,
-                -100.0..=200.0,
-            );
+            // `stock_top_z` is auto-derived at compute time from the setup's
+            // stock bounding box (see compute/execute.rs Adaptive3d branch);
+            // exposing an editable field here was misleading — the stored
+            // value is never read. Kept in the config struct only for
+            // backward compatibility with saved projects.
             draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate);
             dv(
                 ui,
@@ -104,6 +101,38 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                     ui.selectable_value(&mut cfg.entry_style, Adaptive3dEntryStyle::Ramp, "Ramp");
                 });
             ui.end_row();
+            // Entry-style-specific parameters — only shown for the style in use.
+            match cfg.entry_style {
+                Adaptive3dEntryStyle::Plunge => {}
+                Adaptive3dEntryStyle::Ramp => {
+                    dv(
+                        ui,
+                        "Ramp Angle:",
+                        &mut cfg.ramp_angle_deg,
+                        " deg",
+                        0.5,
+                        0.5..=45.0,
+                    );
+                }
+                Adaptive3dEntryStyle::Helix => {
+                    dv(
+                        ui,
+                        "Helix Radius:",
+                        &mut cfg.helix_radius_factor,
+                        " × D",
+                        0.05,
+                        0.05..=0.5,
+                    );
+                    dv(
+                        ui,
+                        "Helix Pitch:",
+                        &mut cfg.helix_pitch,
+                        " mm",
+                        0.1,
+                        0.1..=10.0,
+                    );
+                }
+            }
             dv(
                 ui,
                 "Fine Stepdown:",
