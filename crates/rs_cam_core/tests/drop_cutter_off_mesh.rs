@@ -52,6 +52,71 @@ fn pyramid_mesh(cx: f64, cy: f64, r: f64, peak_z: f64, segments: usize) -> Trian
 }
 
 #[test]
+fn drop_cutter_reports_cl_deviation_vs_mesh() {
+    // Scan every accepted grid point from 3D Finish 8 and compare its
+    // CL z against the vertical-ray mesh height at the same (x, y).
+    // For a faithful 3D finish the CL tip z should be AT OR ABOVE the
+    // mesh ray z (ball tip touches the peak, or ball-side contact on
+    // slopes pushes tip slightly below the ray z by at most
+    // ball_radius * (1 - cos(slope)) ≈ 0.5 mm for a 1 mm ball at 60°).
+    // Anything significantly below the ray z is the tool digging into
+    // the mesh (the "flattening" symptom).
+    use rs_cam_core::tool::TaperedBallEndmill;
+
+    let mesh = TriangleMesh::from_stl_scaled(&fixture_path("terrain.stl"), 1.0)
+        .expect("stl loads");
+    let index = SpatialIndex::build_auto(&mesh);
+    let cutter = TaperedBallEndmill::new(1.0, 15.0, 6.35, 25.0);
+
+    // Sample the full grid at 2 mm resolution (fast).
+    let step = 2.0;
+    let mut below_count = 0usize;
+    let mut worst = (0.0f64, 0.0, 0.0, 0.0, 0.0);
+    let nx = ((mesh.bbox.max.x - mesh.bbox.min.x) / step) as usize;
+    let ny = ((mesh.bbox.max.y - mesh.bbox.min.y) / step) as usize;
+    for iy in 0..=ny {
+        let y = mesh.bbox.min.y + iy as f64 * step;
+        for ix in 0..=nx {
+            let x = mesh.bbox.min.x + ix as f64 * step;
+            // Skip if not over mesh
+            let mut ray_z: Option<f64> = None;
+            for &tri_idx in &index.query(x, y, 0.0) {
+                let tri = &mesh.faces[tri_idx];
+                if tri.contains_point_xy(x, y)
+                    && let Some(z) = tri.z_at_xy(x, y)
+                {
+                    ray_z = Some(ray_z.map_or(z, |prev| prev.max(z)));
+                }
+            }
+            let Some(ray_z) = ray_z else { continue };
+            let cl = rs_cam_core::dropcutter::point_drop_cutter(x, y, &mesh, &index, &cutter);
+            if !cl.contacted {
+                continue;
+            }
+            let dive = ray_z - cl.z;
+            if dive > 1.0 {
+                below_count += 1;
+                if dive > worst.0 {
+                    worst = (dive, x, y, cl.z, ray_z);
+                }
+            }
+        }
+    }
+    println!(
+        "{} grid points have CL z > 1 mm below vertical-ray mesh surface (flattening indicator)",
+        below_count
+    );
+    if below_count > 0 {
+        println!(
+            "  worst: dive={:.2}mm at ({:.2},{:.2})  cl.z={:.2}  ray_z={:.2}",
+            worst.0, worst.1, worst.2, worst.3, worst.4
+        );
+    }
+    // Not asserting yet — this is diagnostic data to see whether the
+    // "flattening" report is visible in the drop cutter itself.
+}
+
+#[test]
 fn drop_cutter_over_peak_stays_at_peak_height() {
     // Synthetic pyramid with a peak at (0, 0, 5) and a 10mm base radius.
     // A 1mm ball + 6.35mm shaft tapered-ball tool can reach the peak (the
