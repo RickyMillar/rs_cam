@@ -1088,7 +1088,19 @@ fn restore_project_toolpath(
     init.enabled = section.enabled;
     init.visible = section.visible;
     init.locked = section.locked;
-    init.dressups = section.dressups;
+    // One-shot migration: strip dressups that are geometrically
+    // incompatible with the operation. Same rationale as the rs_cam_core
+    // loader — a project saved with entry_style=Ramp on a ProjectCurve
+    // would silently produce phantom diagonal cuts.
+    let mut dressups = section.dressups;
+    if dressups.normalize_for_op(init.operation.op_type()) {
+        tracing::info!(
+            toolpath = %init.name,
+            op = ?init.operation.op_type(),
+            "Normalized incompatible dressups on GUI project load"
+        );
+    }
+    init.dressups = dressups;
     init.heights = section.heights;
     // Migrate from legacy fields if the new boundary config is at defaults
     // but old fields carry non-default values.

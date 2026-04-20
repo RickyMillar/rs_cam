@@ -193,12 +193,15 @@ impl ProjectSession {
     pub fn set_dressup_config(
         &mut self,
         index: usize,
-        dressups: DressupConfig,
+        mut dressups: DressupConfig,
     ) -> Result<(), SessionError> {
         let tc = self
             .toolpath_configs
             .get_mut(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
+        // Enforce the per-operation dressup invariant so incompatible
+        // combinations can't be introduced via this API.
+        dressups.normalize_for_op(tc.operation.op_type());
         tc.dressups = dressups;
         self.results.remove(&index);
         self.simulation = None;
@@ -236,8 +239,10 @@ impl ProjectSession {
                 ));
             }
         }
-        let new_cfg: DressupConfig = serde_json::from_value(merged)
+        let mut new_cfg: DressupConfig = serde_json::from_value(merged)
             .map_err(|e| SessionError::InvalidParam(format!("dressup patch: {e}")))?;
+        // Enforce the per-operation dressup invariant on every patch.
+        new_cfg.normalize_for_op(tc.operation.op_type());
         tc.dressups = new_cfg;
         self.results.remove(&index);
         self.simulation = None;

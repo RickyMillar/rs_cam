@@ -579,12 +579,26 @@ fn toolpath_config_from_section(
     tp_id: usize,
     operation: &OperationConfig,
 ) -> ToolpathConfig {
+    // One-shot migration: projects saved before operation-specific dressup
+    // restrictions shipped can have geometrically-invalid dressups (e.g.
+    // entry_style=Ramp on a ProjectCurve with hundreds of small rings,
+    // producing phantom diagonal cuts across the stock). Normalize on load
+    // so the UI state and compute behaviour stay in lockstep.
+    let mut dressups = tp.dressups.clone();
+    let op_type = operation.op_type();
+    if dressups.normalize_for_op(op_type) {
+        tracing::info!(
+            toolpath = %tp.name,
+            op = ?op_type,
+            "Normalized incompatible dressups on load"
+        );
+    }
     ToolpathConfig {
         id: tp_id,
         name: tp.name.clone(),
         enabled: tp.enabled,
         operation: operation.clone(),
-        dressups: tp.dressups.clone(),
+        dressups,
         heights: tp.heights.clone(),
         tool_id: tp.tool_id.unwrap_or(0),
         model_id: tp.model_id.unwrap_or(0),

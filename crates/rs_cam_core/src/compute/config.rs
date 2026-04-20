@@ -409,8 +409,42 @@ impl DressupConfig {
         if op == OperationType::ProjectCurve {
             cfg.entry_style = DressupEntryStyle::None;
             cfg.lead_in_out = false;
+            // Link moves bridge separate path fragments at cutting depth.
+            // For project_curve, fragments can be distant (different rings,
+            // or gaps where the path leaves the mesh footprint), and bridging
+            // them at depth carves phantom lines across the stock. Always
+            // rapid-retract between fragments.
+            cfg.link_moves = false;
         }
         cfg
+    }
+
+    /// Normalize an existing dressup config for the given operation type,
+    /// disabling any dressup that's geometrically incompatible with how the
+    /// operation emits toolpaths. Intended as a one-shot migration on
+    /// project load so the UI state and compute behaviour stay in lockstep.
+    /// Returns `true` if anything changed, `false` if the config was already
+    /// consistent.
+    pub fn normalize_for_op(&mut self, op: super::catalog::OperationType) -> bool {
+        use super::catalog::OperationType;
+        let mut changed = false;
+        if op == OperationType::ProjectCurve {
+            // Same rationale as `for_op`: entry ramps, lead-in/out, and link
+            // moves produce phantom lateral cuts on multi-ring DXFs.
+            if self.entry_style != DressupEntryStyle::None {
+                self.entry_style = DressupEntryStyle::None;
+                changed = true;
+            }
+            if self.lead_in_out {
+                self.lead_in_out = false;
+                changed = true;
+            }
+            if self.link_moves {
+                self.link_moves = false;
+                changed = true;
+            }
+        }
+        changed
     }
 }
 

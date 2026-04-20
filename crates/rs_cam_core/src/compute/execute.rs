@@ -571,7 +571,7 @@ pub fn execute_operation_annotated(
                 .min_z
                 .max(m.bbox.min.z - 0.1)
                 .max(stock_bbox.min.z - 1.0);
-            let mut grid = crate::dropcutter::batch_drop_cutter_with_cancel(
+            let grid = crate::dropcutter::batch_drop_cutter_with_cancel(
                 m,
                 idx,
                 tool_def,
@@ -581,44 +581,9 @@ pub fn execute_operation_annotated(
                 &(|| cancel.load(Ordering::SeqCst)),
             )
             .map_err(|_e| OperationError::Cancelled)?;
-            // Detect gouging: compare each cell's tool-tip Z against the mesh
-            // top Z at the same (x, y). If the tip is deeper than a threshold
-            // below the real surface, the tool's cone/taper is catching
-            // neighbouring geometry and driving the tip into virgin stock —
-            // clamp it to the floor so the min_z filter skips the cell.
-            //
-            // Cells with no mesh directly above (XY outside any triangle) also
-            // get clamped — the finish has nothing to cut there, and any
-            // non-zero cl.z came from an overhang contact on a nearby edge.
-            const GOUGE_TOLERANCE_MM: f64 = 0.5;
-            for row in 0..grid.rows {
-                for col in 0..grid.cols {
-                    let i = row * grid.cols + col;
-                    #[allow(clippy::indexing_slicing)]
-                    let pt = &mut grid.points[i];
-                    let tri_candidates = idx.query(pt.x, pt.y, 0.0);
-                    let mesh_top = tri_candidates
-                        .iter()
-                        .filter_map(|&ti| {
-                            #[allow(clippy::indexing_slicing)]
-                            let tri = &m.faces[ti];
-                            if tri.contains_point_xy(pt.x, pt.y) {
-                                tri.z_at_xy(pt.x, pt.y)
-                            } else {
-                                None
-                            }
-                        })
-                        .fold(f64::NEG_INFINITY, f64::max);
-                    if mesh_top == f64::NEG_INFINITY
-                        || pt.z < mesh_top - GOUGE_TOLERANCE_MM
-                    {
-                        pt.z = effective_min_z;
-                    }
-                }
-            }
-            // Non-contacted grid points get clamped to effective_min_z (a floor
-            // near the stock bottom). Always filter those out as zero-engagement
-            // — otherwise the tool plunges through air outside the mesh footprint.
+            // Non-contacted grid points get clamped to effective_min_z (floored
+            // at the mesh bottom). Filter them so the finish never cuts past
+            // the mesh boundary.
             let min_z_filter = Some(effective_min_z);
             let slope_filter_active = cfg.slope_from > 0.01 || cfg.slope_to < 89.99;
             let tp = if slope_filter_active {
@@ -653,24 +618,19 @@ pub fn execute_operation_annotated(
                 OperationError::Other("Adaptive3D requires a spatial index".into())
             })?;
 
-            // Constants matching the GUI defaults for entry style params
-            const HELIX_RADIUS_FACTOR: f64 = 0.3;
-            const HELIX_PITCH_MM: f64 = 2.0;
-            const RAMP_ANGLE_DEG: f64 = 10.0;
-
             let entry_style = match cfg.entry_style {
                 crate::compute::operation_configs::Adaptive3dEntryStyle::Plunge => {
                     crate::adaptive3d::EntryStyle3d::Plunge
                 }
                 crate::compute::operation_configs::Adaptive3dEntryStyle::Ramp => {
                     crate::adaptive3d::EntryStyle3d::Ramp {
-                        max_angle_deg: RAMP_ANGLE_DEG,
+                        max_angle_deg: cfg.ramp_angle_deg,
                     }
                 }
                 crate::compute::operation_configs::Adaptive3dEntryStyle::Helix => {
                     crate::adaptive3d::EntryStyle3d::Helix {
-                        radius: tool_cfg.diameter * HELIX_RADIUS_FACTOR,
-                        pitch: HELIX_PITCH_MM,
+                        radius: tool_def.diameter() * cfg.helix_radius_factor,
+                        pitch: cfg.helix_pitch,
                     }
                 }
             };

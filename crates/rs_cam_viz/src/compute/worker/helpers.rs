@@ -86,7 +86,7 @@ pub(super) fn apply_dressups(
     let safe_z = effective_safe_z(req);
 
     if let Some(core_entry) = cfg.entry_style.to_core(cfg) {
-        let tool_radius = tool.diameter / 2.0;
+        let tool_radius = tool.envelope_diameter() / 2.0;
         let ramp_angle = cfg.ramp_angle;
         let helix_radius = cfg.helix_radius;
         let helix_pitch = cfg.helix_pitch;
@@ -116,7 +116,7 @@ pub(super) fn apply_dressups(
         );
     }
     if cfg.dogbone {
-        let tool_radius = tool.diameter / 2.0;
+        let tool_radius = tool.envelope_diameter() / 2.0;
         let angle = cfg.dogbone_angle;
         tp = apply_dressup_with_tracing(
             tp,
@@ -201,7 +201,7 @@ pub(super) fn apply_dressups(
         );
     }
     if let Some(ref prior_stock) = req.prior_stock {
-        let tool_radius = tool.diameter / 2.0;
+        let tool_radius = tool.envelope_diameter() / 2.0;
         let sz = safe_z;
         tp = apply_dressup_with_tracing(
             tp,

@@ -19,7 +19,9 @@ use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::debug_trace::ToolpathDebugRecorder;
 use crate::dexel_stock::StockCutDirection;
-use crate::geo::BoundingBox3;
+use crate::geo::{BoundingBox3, P3};
+use crate::mesh::TriangleMesh;
+use crate::tool::MillingCutter;
 use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces};
 use crate::simulation_cut::SimulationMetricOptions;
 
@@ -27,6 +29,16 @@ use super::{
     ProjectDiagnostics, ProjectSession, SessionError, SimulationOptions, ToolpathComputeResult,
     ToolpathDiagnostic,
 };
+
+/// Translate a triangle mesh by (dx, dy, dz) and rebuild bbox/faces.
+fn translate_mesh(mesh: &TriangleMesh, dx: f64, dy: f64, dz: f64) -> TriangleMesh {
+    let verts: Vec<P3> = mesh
+        .vertices
+        .iter()
+        .map(|v| P3::new(v.x + dx, v.y + dy, v.z + dz))
+        .collect();
+    TriangleMesh::from_raw(verts, mesh.triangles.clone())
+}
 
 impl ProjectSession {
     // ── Mutation ──────────────────────────────────────────────────
@@ -276,6 +288,19 @@ impl ProjectSession {
         let mut mesh = model.and_then(|m| m.mesh.clone());
         let mut polygons = model.and_then(|m| m.polygons.clone());
 
+        // ProjectCurve optionally references a separate surface model for
+        // the mesh (so polygons can come from a DXF while the projection
+        // target is a terrain STL). Match the GUI compute path.
+        if let crate::compute::OperationConfig::ProjectCurve(ref cfg) = tc.operation
+            && let Some(surface_id) = cfg.surface_model_id
+        {
+            if let Some(surface) = self.find_model_by_raw_id(surface_id.0) {
+                if surface.mesh.is_some() {
+                    mesh = surface.mesh.clone();
+                }
+            }
+        }
+
         // Validate geometry requirements
         if tc.operation.is_3d() && mesh.is_none() {
             return Err(SessionError::MissingGeometry(
@@ -451,7 +476,7 @@ impl ProjectSession {
                 toolpath = crate::compute::execute::apply_dressups(
                     toolpath,
                     &tc.dressups,
-                    tool.diameter,
+                    tool_def.diameter(),
                     heights.retract_z,
                     prior_stock_ref,
                     None,
@@ -467,7 +492,7 @@ impl ProjectSession {
                         &boundary_config,
                         &effective_stock_bbox,
                         &keep_out_footprints,
-                        tool.diameter,
+                        tool_def.diameter(),
                         heights.retract_z,
                         &semantic_root,
                     );
@@ -699,7 +724,21 @@ impl ProjectSession {
             } else {
                 self.machine.max_feed_mm_min.max(1.0)
             },
-            model_mesh: self.models.iter().find_map(|m| m.mesh.clone()),
+            model_mesh: self.models.iter().find_map(|m| m.mesh.clone()).map(|m| {
+                // Deviation comparison happens in the simulation's
+                // stock-relative global frame (0..stock_size). Translate the
+                // world-space model mesh by -stock_origin so the two sides of
+                // the comparison live in the same frame. For any setup,
+                // local_to_global ∘ world_to_local collapses to this
+                // translation because face/rotation transforms cancel — so
+                // this single shift is correct for all setups.
+                Arc::new(translate_mesh(
+                    &m,
+                    -self.stock.origin_x,
+                    -self.stock.origin_y,
+                    -self.stock.origin_z,
+                ))
+            }),
         };
 
         let result = run_simulation(&request, cancel)?;
