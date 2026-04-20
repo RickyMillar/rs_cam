@@ -165,23 +165,27 @@ fn extract_polygons_flat(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<
             dxf::entities::EntityType::Spline(spline) => {
                 let pts = spline_to_points(spline, arc_step_rad);
                 if pts.len() >= 2 {
-                    let mut poly = Polygon2::new(pts);
-                    poly.ensure_winding();
-                    polygons.push(poly);
+                    // Detect closedness from geometry: splines don't carry an
+                    // is_closed flag the way LwPolyline does. Open rivers
+                    // imported as splines must stay open, otherwise
+                    // project_curve traces a phantom segment from end to
+                    // start across the stock.
+                    polygons.push(polygon_from_unknown_closure(pts));
                 }
             }
             _ => {}
         }
     }
 
-    // Chain-link Line segments into polygons.
+    // Chain-link Line segments into polygons. Respect open-vs-closed
+    // geometry: if the resulting chain doesn't close on itself it must be
+    // imported as an open path, otherwise project_curve will trace a
+    // phantom line spanning the whole chain.
     if !line_segments.is_empty() {
         let chains = chain_line_segments(&line_segments);
         for chain in chains {
             if chain.len() >= 2 {
-                let mut poly = Polygon2::new(chain);
-                poly.ensure_winding();
-                polygons.push(poly);
+                polygons.push(polygon_from_unknown_closure(chain));
             }
         }
     }
@@ -393,6 +397,33 @@ fn pts_near(a: P2, b: P2) -> bool {
     let dx = a.x - b.x;
     let dy = a.y - b.y;
     dx * dx + dy * dy < CHAIN_EPS * CHAIN_EPS
+}
+
+/// Wrap an ordered point list as either a closed polygon (if the head and
+/// tail coincide) or an open path. Use this when importing entities that
+/// don't have an explicit is_closed flag — Spline, chained Line segments —
+/// so we don't auto-close open paths and produce a phantom segment that
+/// spans the entire curve.
+#[allow(clippy::indexing_slicing)] // len >= 2 guarded below
+fn polygon_from_unknown_closure(pts: Vec<P2>) -> Polygon2 {
+    if pts.len() < 2 {
+        return Polygon2::open_path(pts);
+    }
+    let head = pts[0];
+    let tail = pts[pts.len() - 1];
+    // Use a looser tolerance than CHAIN_EPS: hand-drawn splines in CAD apps
+    // rarely snap to exact coincidence. 0.01 mm is well below the kerf of
+    // any CAM operation on this geometry.
+    let dx = head.x - tail.x;
+    let dy = head.y - tail.y;
+    const CLOSE_TOL_MM: f64 = 0.01;
+    if (dx * dx + dy * dy).sqrt() < CLOSE_TOL_MM && pts.len() >= 3 {
+        let mut poly = Polygon2::new(pts);
+        poly.ensure_winding();
+        poly
+    } else {
+        Polygon2::open_path(pts)
+    }
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code

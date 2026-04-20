@@ -128,6 +128,22 @@ fn polyline_length(points: &[P2]) -> f64 {
     len
 }
 
+/// Return true if the vertical ray from (x, y) passes through the 2D
+/// footprint of at least one triangle in the mesh. Used by project_curve to
+/// reject points that fall inside mesh holes — `point_drop_cutter` would
+/// otherwise happily report a contact on the hole's rim, producing a
+/// phantom cutting bridge across the hole.
+#[allow(clippy::indexing_slicing)]
+fn point_over_triangle(x: f64, y: f64, mesh: &TriangleMesh, index: &SpatialIndex) -> bool {
+    for &idx in &index.query(x, y, 0.0) {
+        let tri = &mesh.faces[idx];
+        if tri.contains_point_xy(x, y) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Close a ring by appending the first point if not already duplicated.
 fn close_ring(ring: &[P2]) -> Vec<P2> {
     if ring.len() < 2 {
@@ -205,21 +221,40 @@ fn project_curve_inner(
         rings.push(hole);
     }
 
-    for ring in rings {
+    for (ring_idx, ring) in rings.iter().enumerate() {
         if ring.len() < 2 {
             continue;
         }
 
-        // Close the ring so the resampled path returns to start
-        let closed = close_ring(ring);
-        let resampled = resample_polyline(&closed, params.point_spacing);
+        // Only close the ring for true polygon rings (holes always close, and
+        // the exterior closes when polygon.closed is true). Open paths
+        // (Polygon2::open_path — unclosed DXF polylines, SVG paths without Z)
+        // must stay open, otherwise we emit a phantom segment from the last
+        // point back to the first, which carves a straight line across the
+        // stock at cut depth.
+        let is_hole = ring_idx > 0;
+        let ring_points: Vec<P2> = if polygon.closed || is_hole {
+            close_ring(ring)
+        } else {
+            (*ring).clone()
+        };
+        let resampled = resample_polyline(&ring_points, params.point_spacing);
 
         // Project each 2D point onto the mesh
         let mut current_chain: Vec<P3> = Vec::new();
 
         for pt in &resampled {
             let cl = point_drop_cutter(pt.x, pt.y, mesh, index, cutter);
-            if cl.contacted {
+            // `point_drop_cutter` marks `contacted=true` whenever the cutter
+            // (which has radius) touches ANY nearby triangle — including the
+            // edge of a hole in the mesh. For project_curve we want to trace
+            // the surface *directly below* the 2D path, so reject any point
+            // whose vertical ray doesn't actually pass through a triangle.
+            // Otherwise the tool rides on the hole's rim and produces
+            // phantom bridges across the gap, visible as straight cuts
+            // crossing the stock.
+            let has_surface_below = cl.contacted && point_over_triangle(pt.x, pt.y, mesh, index);
+            if has_surface_below {
                 let z = if z_flip {
                     // Flip Z back to world space and go depth INTO the bottom surface (upward).
                     -cl.z + params.depth
@@ -228,7 +263,9 @@ fn project_curve_inner(
                 };
                 current_chain.push(P3::new(pt.x, pt.y, z));
             } else {
-                // Gap over air — flush any accumulated chain
+                // Gap over air (or over a mesh hole) — flush any
+                // accumulated chain so the next contiguous stretch starts
+                // fresh with a rapid-plunge rather than a feed bridging it.
                 if !current_chain.is_empty() {
                     tp.emit_path_segment(
                         &current_chain,

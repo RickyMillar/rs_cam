@@ -278,7 +278,10 @@ pub fn detect_containment(mut polygons: Vec<Polygon2>) -> Vec<Polygon2> {
     // Track holes to add to each polygon
     let mut holes_for: Vec<Vec<usize>> = vec![Vec::new(); n];
 
-    // For each polygon (smallest first), check if it's inside a larger one
+    // For each polygon (smallest first), check if it's inside a larger one.
+    // Only closed polygons participate — open paths (rivers, traces, engrave
+    // curves) must stay top-level or project_curve will close their "hole"
+    // rings and carve phantom lines between fragments.
     // Safety: i and j are bounded by n (polygon count). consumed and holes_for
     // are sized to n. All indices are valid by loop construction.
     #[allow(clippy::indexing_slicing)]
@@ -287,9 +290,15 @@ pub fn detect_containment(mut polygons: Vec<Polygon2>) -> Vec<Polygon2> {
             if consumed[i] {
                 continue;
             }
+            if !polygons[i].closed {
+                continue;
+            }
             // Check against all larger polygons
             for j in 0..i {
                 if consumed[j] {
+                    continue;
+                }
+                if !polygons[j].closed {
                     continue;
                 }
                 if polygon_contains_polygon(&polygons[j], &polygons[i]) {
