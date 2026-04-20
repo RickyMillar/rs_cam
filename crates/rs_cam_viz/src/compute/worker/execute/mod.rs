@@ -366,7 +366,8 @@ fn run_compute_with_phase_tracker(
                 crate::state::toolpath::BoundaryContainment::Inside => ToolContainment::Inside,
                 crate::state::toolpath::BoundaryContainment::Outside => ToolContainment::Outside,
             };
-            let boundaries = effective_boundary(&stock_poly, containment, req.tool.diameter / 2.0);
+            let boundaries =
+                effective_boundary(&stock_poly, containment, req.tool.envelope_diameter() / 2.0);
             if let Some(boundary) = boundaries.first() {
                 tp = clip_toolpath_to_boundary(&tp, boundary, effective_safe_z(req));
                 if let Some(root) = semantic_root.as_ref() {

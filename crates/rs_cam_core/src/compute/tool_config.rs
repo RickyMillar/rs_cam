@@ -146,6 +146,20 @@ impl ToolConfig {
         }
     }
 
+    /// Diameter of the cutter's widest cutting envelope.
+    ///
+    /// For most tools this equals `diameter`. For `TaperedBallNose`, `diameter`
+    /// is the ball tip diameter while the shaft (cone base) is larger — the
+    /// envelope is the shaft. Use this for boundary clipping, keep-out
+    /// offsets, helix-entry radius, or anywhere that cares about the tool's
+    /// outer cutting footprint rather than the tip.
+    pub fn envelope_diameter(&self) -> f64 {
+        match self.tool_type {
+            ToolType::TaperedBallNose => self.shaft_diameter.max(self.diameter),
+            _ => self.diameter,
+        }
+    }
+
     /// Short description for the project tree.
     pub fn summary(&self) -> String {
         match self.tool_type {
