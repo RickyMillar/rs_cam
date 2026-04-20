@@ -2832,12 +2832,17 @@ fn draw_dressup_params(
     height_ctx: Option<&HeightContext>,
 ) {
     // Some dressups are geometrically incompatible with specific operations
-    // (e.g. project_curve traces many small rings; a ramp entry / lead-in /
-    // link-move at each ring produces phantom cuts across the stock). Grey
+    // (project_curve traces many small rings; drop_cutter 3D finish emits
+    // hundreds of raster segments — a ramp entry / lead-in / link-move at
+    // each one produces diagonal trenches carving through the stock). Grey
     // those controls out so the UI reflects what compute actually does.
+    // Must match `DressupConfig::normalize_for_op` in rs_cam_core.
     let op_incompatible_msg: Option<&str> = match entry.operation {
         crate::state::toolpath::OperationConfig::ProjectCurve(_) => Some(
             "Incompatible with Project Curve: each ring would get a phantom diagonal cut.",
+        ),
+        crate::state::toolpath::OperationConfig::DropCutter(_) => Some(
+            "Incompatible with 3D Finish: each raster segment's ramp entry would carve a diagonal trench across the stock.",
         ),
         _ => None,
     };
