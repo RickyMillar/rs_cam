@@ -428,9 +428,20 @@ impl DressupConfig {
     pub fn normalize_for_op(&mut self, op: super::catalog::OperationType) -> bool {
         use super::catalog::OperationType;
         let mut changed = false;
-        if op == OperationType::ProjectCurve {
-            // Same rationale as `for_op`: entry ramps, lead-in/out, and link
-            // moves produce phantom lateral cuts on multi-ring DXFs.
+        // ProjectCurve: entry ramps, lead-in/out, and link moves produce
+        // phantom lateral cuts on multi-ring DXFs.
+        // DropCutter (3D finish): same dressups are also geometrically
+        // incompatible. Each raster segment that starts with a Ramp entry
+        // would cut a diagonal line from safe_z down to the mesh surface
+        // — there can be hundreds of those per 3D finish, covering the
+        // stock in angled trenches. Lead-in/out add arc transitions
+        // tangent to the segment start, which on a zigzag raster produce
+        // more diagonals.
+        let strip_entry = matches!(
+            op,
+            OperationType::ProjectCurve | OperationType::DropCutter
+        );
+        if strip_entry {
             if self.entry_style != DressupEntryStyle::None {
                 self.entry_style = DressupEntryStyle::None;
                 changed = true;

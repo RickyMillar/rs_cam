@@ -581,19 +581,16 @@ pub fn execute_operation_annotated(
                 &(|| cancel.load(Ordering::SeqCst)),
             )
             .map_err(|_e| OperationError::Cancelled)?;
-            // Drop grid points whose vertical ray misses every triangle in
-            // the mesh, AND drop points where the cutter's envelope can't
-            // reach the direct-ray surface (tool too wide for the feature
-            // between adjacent peaks). The second case is the "flattening"
-            // symptom: a tapered tool whose cone catches an adjacent peak
-            // has to sit at a lower tip z than the peak directly below,
-            // carving the peak flat. Leaving such cells uncut preserves
-            // the mountain rather than flattening it — the user can go
-            // back with a smaller tool.
-            //
+            // Drop grid points whose vertical ray misses every triangle
+            // in the mesh. `point_drop_cutter` marks `contacted = true`
+            // whenever the cutter (which has radius) touches ANY nearby
+            // triangle — including the rim of a mesh that doesn't cover
+            // that XY. Without this check the tool rides the edge and
+            // carves a trench around the part.
             for pt in &mut grid.points {
                 let mut over = false;
                 for &tri_idx in &idx.query(pt.x, pt.y, 0.0) {
+                    #[allow(clippy::indexing_slicing)]
                     let tri = &m.faces[tri_idx];
                     if tri.contains_point_xy(pt.x, pt.y) {
                         over = true;
