@@ -666,6 +666,10 @@ pub struct ViewportCallback {
     pub show_cutting: bool,
     pub show_rapids: bool,
     pub show_collisions: bool,
+    /// Per-toolpath move-type visibility (toolpath_id → (show_cut, show_rapid)).
+    /// AND'd with the global `show_cutting` / `show_rapids`. Missing entries
+    /// default to both-visible.
+    pub toolpath_move_visibility: std::collections::HashMap<usize, (bool, bool)>,
     pub show_tool_model: bool,
     /// If Some, only draw toolpath moves up to this index (sim scrubbing).
     pub toolpath_move_limit: Option<usize>,
@@ -924,11 +928,15 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 pass.set_pipeline(&resources.line_pipeline);
                 pass.set_bind_group(0, &resources.line_bind_group, &[]);
 
-                if self.show_cutting && max_cut > 1 {
+                let (tp_show_cut, tp_show_rapid) = tp_gpu
+                    .toolpath_id
+                    .and_then(|id| self.toolpath_move_visibility.get(&id).copied())
+                    .unwrap_or((true, true));
+                if self.show_cutting && tp_show_cut && max_cut > 1 {
                     pass.set_vertex_buffer(0, tp_gpu.cut_vertex_buffer.slice(..));
                     pass.draw(0..max_cut, 0..1);
                 }
-                if self.show_rapids && max_rapid > 1 {
+                if self.show_rapids && tp_show_rapid && max_rapid > 1 {
                     pass.set_vertex_buffer(0, tp_gpu.rapid_vertex_buffer.slice(..));
                     pass.draw(0..max_rapid, 0..1);
                 }

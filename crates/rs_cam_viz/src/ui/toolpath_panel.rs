@@ -10,10 +10,30 @@ use crate::state::selection::Selection;
 use crate::state::simulation::SimulationState;
 use crate::state::toolpath::{OperationType, ToolpathId};
 use crate::ui::theme;
-use rs_cam_core::session::ToolpathConfig;
+use rs_cam_core::compute::config::ToolpathStats;
+
+/// Minimal snapshot of a `ToolpathConfig` with just the fields the card reads.
+/// Cloning this releases the `state.session` borrow so `state.viewport` can be
+/// borrowed mutably inside the card body.
+struct CardInfo {
+    id: usize,
+    name: String,
+    enabled: bool,
+    tool_id: usize,
+    operation: crate::state::toolpath::OperationConfig,
+}
+
+/// Minimal snapshot of `ToolpathRuntime` fields the card needs.
+struct RuntimeSnapshot {
+    visible: bool,
+    auto_regen: bool,
+    status: ComputeStatus,
+    has_result: bool,
+    stats: Option<ToolpathStats>,
+}
 
 /// Left panel for the Toolpath workspace: operation queue with status chips.
-pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
+pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
     ui.heading("Operations");
     ui.separator();
 
@@ -26,25 +46,29 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
     ui.add_space(6.0);
 
-    let setups = state.session.list_setups();
-    let multi_setup = setups.len() > 1;
+    // Clone per-setup metadata up front so we can borrow `state.viewport`
+    // mutably inside the draw loop without fighting the borrow checker.
+    let setups_data: Vec<(SetupId, String, Vec<usize>)> = state
+        .session
+        .list_setups()
+        .iter()
+        .map(|s| (SetupId(s.id), s.name.clone(), s.toolpath_indices.clone()))
+        .collect();
+    let multi_setup = setups_data.len() > 1;
     let mut global_idx = 0usize;
 
-    for setup in setups {
-        let setup_id = SetupId(setup.id);
-
+    for (setup_id, setup_name, toolpath_indices) in setups_data {
         // Setup header (only if multi-setup)
         if multi_setup {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new(&setup.name)
+                    egui::RichText::new(&setup_name)
                         .strong()
                         .color(theme::TEXT_HEADING),
                 );
                 // Count ready/total
-                let ready = setup
-                    .toolpath_indices
+                let ready = toolpath_indices
                     .iter()
                     .filter(|&&idx| {
                         state
@@ -54,7 +78,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                             .is_some_and(|rt| matches!(rt.status, ComputeStatus::Done))
                     })
                     .count();
-                let total = setup.toolpath_indices.len();
+                let total = toolpath_indices.len();
                 ui.label(
                     egui::RichText::new(format!("{ready}/{total}"))
                         .small()
@@ -69,9 +93,9 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
         // Drop zone for this setup
         let drop_frame = egui::Frame::default().inner_margin(2.0);
-        let tp_count = setup.toolpath_indices.len();
+        let tp_count = toolpath_indices.len();
         let (inner_resp, dropped_payload) = ui.dnd_drop_zone::<ToolpathId, ()>(drop_frame, |ui| {
-            if setup.toolpath_indices.is_empty() {
+            if toolpath_indices.is_empty() {
                 ui.label(
                     egui::RichText::new("No toolpaths")
                         .italics()
@@ -79,13 +103,29 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 );
             }
 
-            for (local_idx, &tp_idx) in setup.toolpath_indices.iter().enumerate() {
+            for (local_idx, &tp_idx) in toolpath_indices.iter().enumerate() {
                 let i = global_idx;
                 global_idx += 1;
-                if let Some(tc) = state.session.get_toolpath_config(tp_idx) {
-                    let rt = state.gui.toolpath_rt.get(&tc.id);
-                    draw_toolpath_card(ui, state, events, tc, rt, i, local_idx);
-                }
+                // Snapshot just the fields the card reads, releasing the
+                // session/gui borrow before we re-enter `state` for viewport.
+                let Some(tc_src) = state.session.get_toolpath_config(tp_idx) else {
+                    continue;
+                };
+                let card = CardInfo {
+                    id: tc_src.id,
+                    name: tc_src.name.clone(),
+                    enabled: tc_src.enabled,
+                    tool_id: tc_src.tool_id,
+                    operation: tc_src.operation.clone(),
+                };
+                let rt_snap = state.gui.toolpath_rt.get(&card.id).map(|r| RuntimeSnapshot {
+                    visible: r.visible,
+                    auto_regen: r.auto_regen,
+                    status: r.status.clone(),
+                    has_result: r.result.is_some(),
+                    stats: r.result.as_ref().map(|res| res.stats.clone()),
+                });
+                draw_toolpath_card(ui, state, events, &card, rt_snap.as_ref(), i, local_idx);
             }
         });
 
@@ -119,9 +159,10 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     }
 
     // Single-setup: show "+ Add" below toolpath list
-    if !multi_setup && let Some(setup) = setups.first() {
+    if !multi_setup && let Some(setup) = state.session.list_setups().first() {
+        let sid = SetupId(setup.id);
         ui.add_space(4.0);
-        add_toolpath_menu(ui, SetupId(setup.id), state, events);
+        add_toolpath_menu(ui, sid, state, events);
     }
 
     // Tool library (compact, collapsed by default)
@@ -150,10 +191,10 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 /// Draw a single toolpath card, wrapped in a drag source.
 fn draw_toolpath_card(
     ui: &mut egui::Ui,
-    state: &AppState,
+    state: &mut AppState,
     events: &mut Vec<AppEvent>,
-    tc: &ToolpathConfig,
-    rt: Option<&crate::state::runtime::ToolpathRuntime>,
+    tc: &CardInfo,
+    rt: Option<&RuntimeSnapshot>,
     global_idx: usize,
     _local_idx: usize,
 ) {
@@ -162,7 +203,8 @@ fn draw_toolpath_card(
     let visible = rt.is_none_or(|r| r.visible);
     let auto_regen = rt.is_none_or(|r| r.auto_regen);
     let status = rt.map_or(&ComputeStatus::Pending, |r| &r.status);
-    let result = rt.and_then(|r| r.result.as_ref());
+    let has_result = rt.is_some_and(|r| r.has_result);
+    let stats = rt.and_then(|r| r.stats.as_ref());
     let dim = !tc.enabled || !visible;
 
     let pc = palette_color(global_idx);
@@ -318,7 +360,7 @@ fn draw_toolpath_card(
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if result.is_some()
+                    if has_result
                         && ui
                             .small_button("Sim")
                             .on_hover_text("Inspect in Simulation")
@@ -340,8 +382,7 @@ fn draw_toolpath_card(
             });
 
             // Row 3: stats (only when computed)
-            if let Some(result) = result {
-                let stats = &result.stats;
+            if let Some(stats) = stats {
                 let feed = tc.operation.feed_rate();
                 let cut_time_min = if feed > 0.0 {
                     stats.cutting_distance / feed
@@ -370,14 +411,40 @@ fn draw_toolpath_card(
                 );
             }
 
+            // Row 4: shared per-toolpath row controls (eye / C / R / isolate).
+            ui.horizontal(|ui| {
+                crate::ui::toolpath_row_controls::draw(
+                    ui,
+                    tp_id,
+                    visible,
+                    &mut state.viewport,
+                    events,
+                );
+            });
+
             // Context menu
             card_resp.context_menu(|ui| {
                 if ui.button("Generate").clicked() {
                     events.push(AppEvent::GenerateToolpath(tp_id));
                     ui.close_menu();
                 }
-                if result.is_some() && ui.button("Inspect in Simulation").clicked() {
+                if has_result && ui.button("Inspect in Simulation").clicked() {
                     events.push(AppEvent::InspectToolpathInSimulation(tp_id));
+                    ui.close_menu();
+                }
+                let is_isolated = state.viewport.isolate_toolpath == Some(tp_id);
+                let iso_label = if is_isolated {
+                    "Clear isolation"
+                } else {
+                    "Isolate this toolpath"
+                };
+                if ui.button(iso_label).clicked() {
+                    if is_isolated {
+                        events.push(AppEvent::ClearIsolation);
+                    } else {
+                        events.push(AppEvent::Select(Selection::Toolpath(tp_id)));
+                        events.push(AppEvent::ToggleIsolateToolpath);
+                    }
                     ui.close_menu();
                 }
                 let vis_label = if visible { "Hide" } else { "Show" };

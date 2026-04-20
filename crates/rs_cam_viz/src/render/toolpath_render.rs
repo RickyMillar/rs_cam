@@ -9,6 +9,10 @@ pub use super::colors::{TOOLPATH_PALETTE, palette_color};
 /// Toolpath line data uploaded to GPU.
 /// Vertices are in move-sequence order so partial drawing works for simulation scrubbing.
 pub struct ToolpathGpuData {
+    /// Identifies which toolpath this GPU buffer came from, so the render
+    /// loop can apply per-toolpath visibility overrides. `None` only during
+    /// transient states where the id isn't known.
+    pub toolpath_id: Option<usize>,
     /// Cutting move vertices (line list, 2 verts per segment).
     pub cut_vertex_buffer: wgpu::Buffer,
     pub cut_vertex_count: u32,
@@ -234,6 +238,7 @@ impl ToolpathGpuData {
         });
 
         Self {
+            toolpath_id: None,
             cut_vertex_buffer,
             cut_vertex_count,
             rapid_vertex_buffer,
@@ -445,6 +450,7 @@ impl ToolpathGpuData {
         });
 
         Self {
+            toolpath_id: None,
             cut_vertex_buffer,
             cut_vertex_count,
             rapid_vertex_buffer,

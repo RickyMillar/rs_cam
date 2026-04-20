@@ -200,93 +200,122 @@ impl RsCamApp {
             }
         }
 
-        // Upload polygon/DXF/SVG line data
+        // Upload polygon/DXF/SVG line data.
+        //
+        // Each model's polygons are drawn using the transform of whichever
+        // setup actually references the model via a toolpath. This matters
+        // for multi-setup projects: a DXF used by a face=Bottom setup must
+        // flip onto the bottom in the sim view even when the top setup is
+        // selected (or nothing is selected in Simulation mode). Falls back
+        // to the selection-based `active_setup_ref` for unowned models.
         {
             use crate::render::{LineVertex, PolygonGpuData};
             use egui_wgpu::wgpu::util::DeviceExt;
             resources.polygon_data.clear();
             let color = crate::render::colors::POLYGON_OUTLINE;
-            // Slightly above stock top to avoid z-fighting with mesh.
-            let poly_z = if use_local_frame {
-                // SAFETY: use_local_frame iff active_setup_ref.is_some()
-                #[allow(clippy::unwrap_used)]
-                let setup = active_setup_ref.as_ref().unwrap();
-                let (_, _, h) = setup.effective_stock(&stock);
-                h as f32 + 0.05
-            } else {
-                (stock.origin_z + stock.z) as f32 + 0.05
+
+            let setup_for_model = |model_id: usize| -> Option<Setup> {
+                let state = self.controller.state();
+                let tc = state
+                    .session
+                    .toolpath_configs()
+                    .iter()
+                    .find(|tc| tc.model_id == model_id)?;
+                let setup_idx = state.session.setup_of_toolpath_id(tc.id)?;
+                let sd = state.session.list_setups().get(setup_idx)?;
+                Some(Setup::for_transforms(
+                    SetupId(sd.id),
+                    sd.face_up,
+                    sd.z_rotation,
+                ))
             };
-            // Convert a 2D ring to line-list vertices.
-            // `close`: if true, adds closing edge from last→first vertex.
-            let ring_to_lines =
-                |ring: &[rs_cam_core::geo::P2], close: bool, verts: &mut Vec<LineVertex>| {
-                    if ring.len() < 2 {
-                        return;
-                    }
-                    let transform_pt = |p: &rs_cam_core::geo::P2| -> (f64, f64) {
-                        if use_local_frame {
-                            // SAFETY: use_local_frame iff active_setup_ref.is_some()
-                            #[allow(clippy::unwrap_used)]
-                            let setup = active_setup_ref.as_ref().unwrap();
-                            let tp = setup
-                                .transform_point(rs_cam_core::geo::P3::new(p.x, p.y, 0.0), &stock);
-                            (tp.x, tp.y)
-                        } else {
-                            (p.x, p.y)
-                        }
-                    };
-                    // Consecutive edges
-                    for pair in ring.windows(2) {
-                        // SAFETY: windows(2) guarantees exactly 2 elements per slice.
-                        #[allow(clippy::indexing_slicing)]
-                        let (a, b) = (&pair[0], &pair[1]);
-                        let (ax, ay) = transform_pt(a);
-                        let (bx, by) = transform_pt(b);
-                        verts.push(LineVertex {
-                            position: [ax as f32, ay as f32, poly_z],
-                            color,
-                        });
-                        verts.push(LineVertex {
-                            position: [bx as f32, by as f32, poly_z],
-                            color,
-                        });
-                    }
-                    // Close the ring: last → first (only for closed polygons)
-                    if close && let (Some(last), Some(first)) = (ring.last(), ring.first()) {
-                        let (ax, ay) = transform_pt(last);
-                        let (bx, by) = transform_pt(first);
-                        verts.push(LineVertex {
-                            position: [ax as f32, ay as f32, poly_z],
-                            color,
-                        });
-                        verts.push(LineVertex {
-                            position: [bx as f32, by as f32, poly_z],
-                            color,
-                        });
+
+            let ring_to_lines = |ring: &[rs_cam_core::geo::P2],
+                                 close: bool,
+                                 setup_opt: Option<&Setup>,
+                                 poly_z: f32,
+                                 verts: &mut Vec<LineVertex>| {
+                if ring.len() < 2 {
+                    return;
+                }
+                let transform_pt = |p: &rs_cam_core::geo::P2| -> (f64, f64) {
+                    if let Some(setup) = setup_opt {
+                        let tp = setup
+                            .transform_point(rs_cam_core::geo::P3::new(p.x, p.y, 0.0), &stock);
+                        (tp.x, tp.y)
+                    } else {
+                        (p.x, p.y)
                     }
                 };
+                for pair in ring.windows(2) {
+                    // SAFETY: windows(2) guarantees exactly 2 elements per slice.
+                    #[allow(clippy::indexing_slicing)]
+                    let (a, b) = (&pair[0], &pair[1]);
+                    let (ax, ay) = transform_pt(a);
+                    let (bx, by) = transform_pt(b);
+                    verts.push(LineVertex {
+                        position: [ax as f32, ay as f32, poly_z],
+                        color,
+                    });
+                    verts.push(LineVertex {
+                        position: [bx as f32, by as f32, poly_z],
+                        color,
+                    });
+                }
+                if close && let (Some(last), Some(first)) = (ring.last(), ring.first()) {
+                    let (ax, ay) = transform_pt(last);
+                    let (bx, by) = transform_pt(first);
+                    verts.push(LineVertex {
+                        position: [ax as f32, ay as f32, poly_z],
+                        color,
+                    });
+                    verts.push(LineVertex {
+                        position: [bx as f32, by as f32, poly_z],
+                        color,
+                    });
+                }
+            };
+
             for model in self.controller.state().session.models() {
-                if let Some(polys) = &model.polygons {
-                    let mut verts = Vec::new();
-                    for poly in polys.iter() {
-                        ring_to_lines(&poly.exterior, poly.closed, &mut verts);
-                        for hole in &poly.holes {
-                            ring_to_lines(hole, true, &mut verts);
-                        }
+                let Some(polys) = &model.polygons else {
+                    continue;
+                };
+                // Prefer the setup that actually uses this model; fall back to
+                // the current active/selected setup.
+                let model_setup = setup_for_model(model.id).or_else(|| {
+                    active_setup_ref.as_ref().map(|s| {
+                        Setup::for_transforms(s.id, s.face_up, s.z_rotation)
+                    })
+                });
+                // Draw slightly above the setup's local stock top to avoid
+                // z-fighting. When no setup is known, fall back to world-frame
+                // stock top.
+                let poly_z = if let Some(ref setup) = model_setup {
+                    let (_, _, h) = setup.effective_stock(&stock);
+                    h as f32 + 0.05
+                } else {
+                    (stock.origin_z + stock.z) as f32 + 0.05
+                };
+                let setup_ref = model_setup.as_ref();
+                let mut verts = Vec::new();
+                for poly in polys.iter() {
+                    ring_to_lines(&poly.exterior, poly.closed, setup_ref, poly_z, &mut verts);
+                    for hole in &poly.holes {
+                        ring_to_lines(hole, true, setup_ref, poly_z, &mut verts);
                     }
-                    if !verts.is_empty() {
-                        let buffer = render_state.device.create_buffer_init(
-                            &egui_wgpu::wgpu::util::BufferInitDescriptor {
-                                label: Some("polygon_lines"),
-                                contents: bytemuck::cast_slice(&verts),
-                                usage: egui_wgpu::wgpu::BufferUsages::VERTEX,
-                            },
-                        );
-                        resources.polygon_data.push(PolygonGpuData {
-                            vertex_buffer: buffer,
-                            vertex_count: verts.len() as u32,
-                        });
-                    }
+                }
+                if !verts.is_empty() {
+                    let buffer = render_state.device.create_buffer_init(
+                        &egui_wgpu::wgpu::util::BufferInitDescriptor {
+                            label: Some("polygon_lines"),
+                            contents: bytemuck::cast_slice(&verts),
+                            usage: egui_wgpu::wgpu::BufferUsages::VERTEX,
+                        },
+                    );
+                    resources.polygon_data.push(PolygonGpuData {
+                        vertex_buffer: buffer,
+                        vertex_count: verts.len() as u32,
+                    });
                 }
             }
         }
@@ -698,6 +727,7 @@ impl RsCamApp {
                             selected,
                         )
                     };
+                    gpu_data.toolpath_id = Some(tc.id);
 
                     // Generate entry path preview for selected toolpaths with a non-None entry style
                     if selected {

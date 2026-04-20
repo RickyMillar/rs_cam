@@ -172,12 +172,26 @@ impl RsCamApp {
         let lane_snapshots = self.controller.lane_snapshots();
         let workspace = self.controller.state().workspace;
         let sim_active = self.controller.state().simulation.has_results();
+        let projection = self.camera.projection;
+        let isolated_name = {
+            let state = self.controller.state();
+            state.viewport.isolate_toolpath.and_then(|tp_id| {
+                state
+                    .session
+                    .toolpath_configs()
+                    .iter()
+                    .find(|tc| tc.id == tp_id.0)
+                    .map(|tc| tc.name.clone())
+            })
+        };
         {
             let (state, events) = self.controller.state_and_events_mut();
             crate::ui::viewport_overlay::draw(
                 ui,
                 workspace,
                 sim_active,
+                projection,
+                isolated_name.as_deref(),
                 &mut state.viewport,
                 &lane_snapshots,
                 events,
@@ -306,6 +320,12 @@ impl RsCamApp {
             show_cutting: state.viewport.show_cutting,
             show_rapids: state.viewport.show_rapids,
             show_collisions: state.viewport.show_collisions,
+            toolpath_move_visibility: state
+                .viewport
+                .toolpath_move_visibility
+                .iter()
+                .map(|(id, v)| (id.0, (v.show_cutting, v.show_rapids)))
+                .collect(),
             show_tool_model: state.workspace == Workspace::Simulation
                 && state.simulation.has_results()
                 && state.simulation.playback.tool_position.is_some(),

@@ -14,6 +14,7 @@ pub mod sim_timeline;
 pub mod status_bar;
 pub mod theme;
 pub mod toolpath_panel;
+pub mod toolpath_row_controls;
 pub mod viewport_overlay;
 pub mod workspace_bar;
 
@@ -46,6 +47,8 @@ pub enum AppEvent {
     // Selection / view
     Select(crate::state::selection::Selection),
     SetViewPreset(ViewPreset),
+    ToggleProjection,
+    ClearIsolation,
     PreviewOrientation(FaceUp),
     ResetView,
 
