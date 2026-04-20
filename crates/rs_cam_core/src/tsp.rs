@@ -135,6 +135,21 @@ pub fn optimize_rapid_order(toolpath: &Toolpath, safe_z: f64) -> Toolpath {
     }
 
     // --- 2-opt improvement ---
+    // 2-opt is O(N²) per sweep and each reverse is O(N), so a full pass is
+    // O(N³). With 100 iterations and N > ~500, this can hang the app for
+    // hours. On very fragmented toolpaths (project_curve over many DXF
+    // rings, adaptive with many tiny pockets) the nearest-neighbor pass
+    // from step 1 is already a strong solution — skip 2-opt beyond this
+    // threshold and accept the NN order. A future improvement could use
+    // a spatial index (kd-tree) for local 2-opt swaps.
+    const MAX_2OPT_SEGMENTS: usize = 500;
+    if n > MAX_2OPT_SEGMENTS {
+        tracing::info!(
+            segments = n,
+            "Skipping 2-opt pass: segment count exceeds safe threshold; nearest-neighbor order used"
+        );
+        return rebuild_toolpath_from_order(&segments, &order, safe_z);
+    }
     let max_iterations = 100;
     for _ in 0..max_iterations {
         let mut improved = false;
@@ -170,30 +185,29 @@ pub fn optimize_rapid_order(toolpath: &Toolpath, safe_z: f64) -> Toolpath {
         }
     }
 
-    // --- Reassemble toolpath ---
+    rebuild_toolpath_from_order(&segments, &order, safe_z)
+}
+
+#[allow(clippy::indexing_slicing)]
+fn rebuild_toolpath_from_order(segments: &[Segment], order: &[usize], safe_z: f64) -> Toolpath {
     let mut result = Toolpath::new();
 
     for (idx, &seg_idx) in order.iter().enumerate() {
         let seg = &segments[seg_idx];
 
-        // Insert rapid travel: retract + move to next segment start.
         if idx == 0 {
-            // Rapid to above the first segment's start.
             result.rapid_to(P3::new(seg.start.x, seg.start.y, safe_z));
         } else {
-            // Retract from previous segment end, then rapid to this segment start.
             let prev_seg = &segments[order[idx - 1]];
             result.rapid_to(P3::new(prev_seg.end.x, prev_seg.end.y, safe_z));
             result.rapid_to(P3::new(seg.start.x, seg.start.y, safe_z));
         }
 
-        // Emit all cutting moves in this segment.
         for m in &seg.moves {
             result.moves.push(m.clone());
         }
     }
 
-    // Final retract after the last segment.
     if let Some(last_seg_idx) = order.last() {
         let last_seg = &segments[*last_seg_idx];
         result.rapid_to(P3::new(last_seg.end.x, last_seg.end.y, safe_z));
