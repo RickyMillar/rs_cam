@@ -571,7 +571,7 @@ pub fn execute_operation_annotated(
                 .min_z
                 .max(m.bbox.min.z - 0.1)
                 .max(stock_bbox.min.z - 1.0);
-            let grid = crate::dropcutter::batch_drop_cutter_with_cancel(
+            let mut grid = crate::dropcutter::batch_drop_cutter_with_cancel(
                 m,
                 idx,
                 tool_def,
@@ -581,6 +581,27 @@ pub fn execute_operation_annotated(
                 &(|| cancel.load(Ordering::SeqCst)),
             )
             .map_err(|_e| OperationError::Cancelled)?;
+            // Drop grid points whose vertical ray misses every triangle in
+            // the mesh. `point_drop_cutter` marks `contacted=true` whenever
+            // the cutter (which has radius) touches any nearby triangle,
+            // including the rim of a mesh that doesn't cover that XY — the
+            // tool then rides the edge and carves a trench around the part.
+            // Clamp such points to `effective_min_z` so the min_z_filter
+            // below drops them.
+            for pt in &mut grid.points {
+                let mut over = false;
+                for &tri_idx in &idx.query(pt.x, pt.y, 0.0) {
+                    let tri = &m.faces[tri_idx];
+                    if tri.contains_point_xy(pt.x, pt.y) {
+                        over = true;
+                        break;
+                    }
+                }
+                if !over {
+                    pt.z = effective_min_z;
+                    pt.contacted = false;
+                }
+            }
             // Non-contacted grid points get clamped to effective_min_z (floored
             // at the mesh bottom). Filter them so the finish never cuts past
             // the mesh boundary.
