@@ -128,6 +128,67 @@ fn drop_cutter_does_not_cut_outside_mesh_footprint() {
 }
 
 #[test]
+fn rapids_should_be_at_safe_z() {
+    // User observation: with only rapids shown in the sim viewer, the
+    // 3D Finish toolpath makes "weird moves" — wide bands of rapids
+    // near the stock edges. That would be OK if they're all at safe_z
+    // (high above stock). Scan the actual rapids and report any that
+    // dwell at a lower z for significant XY distance.
+    let path = fixture_path("test_job.toml");
+    let mut session = ProjectSession::load(&path).expect("project loads");
+    let (finish_idx, _) = session
+        .toolpath_configs()
+        .iter()
+        .enumerate()
+        .find(|(_, tc)| tc.id == 17)
+        .expect("3D Finish 8 exists");
+    let cancel = AtomicBool::new(false);
+    let result = session
+        .generate_toolpath(finish_idx, &cancel)
+        .expect("generates");
+    let tp = &result.toolpath;
+
+    // Safe-z floor: project post.safe_z = 10 mm, stock_top = 10 (Top
+    // face with stock_origin_z=-15, stock_z=25 → top at z=10).
+    // effective_safe_z = stock_top + 5 = 15 in global frame.
+    // But the 3D Finish toolpath is in world frame (setup face=Top, no
+    // transform). safe_z in that frame is 15 mm.
+    const EXPECTED_SAFE_Z: f64 = 15.0;
+    let mut long_low_rapids: Vec<(f64, P3, P3)> = Vec::new();
+    let mut prev: Option<P3> = None;
+    for mv in &tp.moves {
+        let target = mv.target;
+        if matches!(mv.move_type, MoveType::Rapid)
+            && let Some(p) = prev
+        {
+            let dxy = ((target.x - p.x).powi(2) + (target.y - p.y).powi(2)).sqrt();
+            if dxy > 1.0 && (p.z < EXPECTED_SAFE_Z - 1.0 || target.z < EXPECTED_SAFE_Z - 1.0)
+            {
+                long_low_rapids.push((dxy, p, target));
+            }
+        }
+        prev = Some(target);
+    }
+    long_low_rapids.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    println!(
+        "Rapids > 1 mm XY that dwell below safe_z ({} mm): {} total",
+        EXPECTED_SAFE_Z,
+        long_low_rapids.len()
+    );
+    for (d, p, t) in long_low_rapids.iter().take(10) {
+        println!(
+            "  dxy={:>6.2}  ({:>6.2},{:>6.2},{:>5.2}) → ({:>6.2},{:>6.2},{:>5.2})",
+            d, p.x, p.y, p.z, t.x, t.y, t.z
+        );
+    }
+    assert!(
+        long_low_rapids.is_empty(),
+        "Found {} rapids > 1 mm XY below safe_z — tool travels across the stock without retracting",
+        long_low_rapids.len()
+    );
+}
+
+#[test]
 fn drop_cutter_over_peak_stays_at_peak_height() {
     use rs_cam_core::tool::TaperedBallEndmill;
     let mesh = pyramid_mesh(0.0, 0.0, 10.0, 5.0, 32);
@@ -143,7 +204,7 @@ fn drop_cutter_over_peak_stays_at_peak_height() {
 }
 
 #[test]
-#[ignore = "known-failing: drop_cutter lateral stamping carves ridges next to valleys — tracked as the '3D Finish flattening' bug"]
+#[ignore = "known-failing: residual ~260 dive columns (<1.9mm) are tool-size limits, not a code bug — main ~2200-dive bug fixed by DressupConfig::normalize_for_op DropCutter case"]
 fn drop_cutter_toolpath_stamp_no_dive_below_mesh() {
     use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
     use rs_cam_core::geo::BoundingBox3;
@@ -158,6 +219,10 @@ fn drop_cutter_toolpath_stamp_no_dive_below_mesh() {
         .find(|(_, tc)| tc.id == 17)
         .expect("3D Finish 8 exists");
 
+    // DressupConfig::normalize_for_op runs on load for DropCutter and
+    // strips entry_style=Ramp / lead_in_out=true from the saved config —
+    // without that migration, the 3D Finish would emit ~2400 dive bands
+    // from the ramp entries at every raster-segment start.
     let cancel = AtomicBool::new(false);
     let tp = std::sync::Arc::clone(
         &session
@@ -221,9 +286,47 @@ fn drop_cutter_toolpath_stamp_no_dive_below_mesh() {
         }
     }
     println!(
-        "3D Finish stock dive columns > {:.1}mm below mesh: {} (worst dive={:.2}mm at ({:.2},{:.2}) carved={:.2} mesh={:.2})",
+        "3D Finish stock dive columns > {:.1}mm below mesh: {} (worst dive={:.3}mm at ({:.4},{:.4}) carved={:.3} mesh={:.3})",
         MAX_DIVE_MM, dives, worst.0, worst.1, worst.2, worst.3, worst.4
     );
+    // Find moves near the worst column with full-precision coords.
+    let (wx, wy) = (worst.1, worst.2);
+    let mut lowest: Vec<(f64, P3, P3)> = Vec::new();
+    let mut prev_m: Option<P3> = None;
+    for mv in &tp.moves {
+        let t = mv.target;
+        if matches!(mv.move_type, MoveType::Linear { .. })
+            && let Some(p) = prev_m
+        {
+            let dxy = ((t.x - p.x).powi(2) + (t.y - p.y).powi(2)).sqrt();
+            // Sample closest point on segment
+            let dx = t.x - p.x;
+            let dy = t.y - p.y;
+            let len2 = dx * dx + dy * dy;
+            let tt = if len2 > 1e-12 {
+                (((wx - p.x) * dx + (wy - p.y) * dy) / len2).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let cx = p.x + tt * dx;
+            let cy = p.y + tt * dy;
+            let d = ((cx - wx).powi(2) + (cy - wy).powi(2)).sqrt();
+            if d < 3.175 {
+                let zmid = p.z + tt * (t.z - p.z);
+                lowest.push((zmid, p, t));
+            }
+            let _ = dxy;
+        }
+        prev_m = Some(t);
+    }
+    lowest.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    println!("Lowest-z Linear moves within 3.175 mm of ({:.4},{:.4}):", wx, wy);
+    for (z, p, t) in lowest.iter().take(5) {
+        println!(
+            "  z@closest={:.4}  ({:.4},{:.4},{:.4}) → ({:.4},{:.4},{:.4})",
+            z, p.x, p.y, p.z, t.x, t.y, t.z
+        );
+    }
     assert_eq!(
         dives, 0,
         "drop_cutter stamp carves stock >{MAX_DIVE_MM} mm below the mesh surface at {} columns",
