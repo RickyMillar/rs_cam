@@ -226,7 +226,7 @@ impl RsCamApp {
             .resizable(true)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    let (state, events) = self.controller.state_ref_and_events_mut();
+                    let (state, events) = self.controller.state_and_events_mut();
                     crate::ui::toolpath_panel::draw(ui, state, events);
                 });
             });
@@ -264,60 +264,29 @@ impl RsCamApp {
     }
 
     fn draw_simulation_layout(&mut self, ctx: &egui::Context) {
-        // Sim action bar: display toggles + re-run/reset
-        egui::TopBottomPanel::top("sim_top_bar").show(ctx, |ui| {
+        // Sim-only analysis row: Debug / Metrics / Highlight. Visibility +
+        // Re-run/Reset live on the main viewport toolbar (viewport_overlay.rs)
+        // so the two workspaces share one consistent control surface.
+        egui::TopBottomPanel::top("sim_analysis_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                {
-                    let (simulation, viewport, _) =
-                        self.controller.simulation_viewport_and_events_mut();
-                    ui.label(
-                        egui::RichText::new("View:")
-                            .small()
-                            .color(egui::Color32::from_rgb(130, 130, 145)),
-                    );
-                    ui.checkbox(&mut viewport.show_cutting, "Paths");
-                    ui.checkbox(&mut viewport.show_stock, "Stock");
-                    ui.checkbox(&mut viewport.show_fixtures, "Fixtures");
-                    ui.checkbox(&mut viewport.show_polygons, "Curves");
-                    ui.checkbox(&mut viewport.show_collisions, "Collisions");
-                    ui.checkbox(
-                        &mut viewport.show_tool_profile_preview,
-                        "Tool ghost",
-                    )
-                    .on_hover_text(
-                        "Render a ghost of the cutter silhouette along the selected toolpath",
-                    );
-                    ui.separator();
-                    ui.label(
-                        egui::RichText::new("Analysis:")
-                            .small()
-                            .color(egui::Color32::from_rgb(130, 130, 145)),
-                    );
-                    let debug_changed = ui
-                        .checkbox(&mut simulation.debug.enabled, "Debug")
-                        .changed();
-                    if debug_changed && simulation.debug.enabled {
-                        simulation.debug.drawer_open = true;
-                    }
-                    ui.checkbox(&mut simulation.metric_options.enabled, "Metrics")
-                        .on_hover_text("Capture simulation-time cutting metrics on the next run.");
-                    if simulation.debug.enabled {
-                        ui.checkbox(&mut simulation.debug.highlight_active_item, "Highlight");
-                    }
+                let (simulation, _viewport, _) =
+                    self.controller.simulation_viewport_and_events_mut();
+                ui.label(
+                    egui::RichText::new("Analysis:")
+                        .small()
+                        .color(egui::Color32::from_rgb(130, 130, 145)),
+                );
+                let debug_changed = ui
+                    .checkbox(&mut simulation.debug.enabled, "Debug")
+                    .changed();
+                if debug_changed && simulation.debug.enabled {
+                    simulation.debug.drawer_open = true;
                 }
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Re-run").clicked() {
-                        self.controller
-                            .events_mut()
-                            .push(crate::ui::AppEvent::RunSimulation);
-                    }
-                    if ui.button("Reset").clicked() {
-                        self.controller
-                            .events_mut()
-                            .push(crate::ui::AppEvent::ResetSimulation);
-                    }
-                });
+                ui.checkbox(&mut simulation.metric_options.enabled, "Metrics")
+                    .on_hover_text("Capture simulation-time cutting metrics on the next run.");
+                if simulation.debug.enabled {
+                    ui.checkbox(&mut simulation.debug.highlight_active_item, "Highlight");
+                }
             });
         });
 
@@ -347,6 +316,7 @@ impl RsCamApp {
                         &mut state.simulation,
                         &state.session,
                         &state.gui,
+                        &mut state.viewport,
                         events,
                     );
                 });

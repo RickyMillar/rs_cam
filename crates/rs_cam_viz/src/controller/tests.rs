@@ -279,6 +279,8 @@ fn render_snapshot(
                 ui,
                 controller.state.workspace,
                 controller.state.simulation.has_results(),
+                crate::render::camera::ProjectionMode::Perspective,
+                None,
                 &mut controller.state.viewport,
                 &lanes,
                 events,

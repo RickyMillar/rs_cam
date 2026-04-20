@@ -5,6 +5,7 @@ use crate::state::job::SetupId;
 use crate::state::runtime::GuiState;
 use crate::state::simulation::SimulationState;
 use crate::state::toolpath::ToolpathId;
+use crate::state::viewport::ViewportState;
 use crate::ui::theme;
 use rs_cam_core::session::ProjectSession;
 
@@ -14,6 +15,7 @@ pub fn draw(
     sim: &mut SimulationState,
     session: &ProjectSession,
     gui: &GuiState,
+    viewport: &mut ViewportState,
     events: &mut Vec<AppEvent>,
 ) {
     let max_feed = session.machine().max_feed_mm_min;
@@ -211,6 +213,22 @@ pub fn draw(
                         );
                     });
                 }
+            });
+
+            // Per-toolpath visibility controls: eye / cut / rapid / isolate.
+            // Shared with the Toolpaths-workspace panel for a consistent row.
+            let overall_visible = gui
+                .toolpath_rt
+                .get(&boundary.id.0)
+                .is_none_or(|rt| rt.visible);
+            ui.horizontal(|ui| {
+                crate::ui::toolpath_row_controls::draw(
+                    ui,
+                    boundary.id,
+                    overall_visible,
+                    viewport,
+                    events,
+                );
             });
 
             // Progress bar

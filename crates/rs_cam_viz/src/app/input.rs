@@ -38,6 +38,7 @@ impl RsCamApp {
                     }
                 }
                 AppEvent::SetViewPreset(preset) => self.camera.set_preset(preset),
+                AppEvent::ToggleProjection => self.camera.toggle_projection(),
                 AppEvent::PreviewOrientation(face_up) => {
                     use crate::state::job::FaceUp;
                     match face_up {

@@ -9,6 +9,13 @@ pub enum ViewPreset {
     Isometric,
 }
 
+/// Camera projection mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectionMode {
+    Perspective,
+    Orthographic,
+}
+
 /// Orbit camera for the 3D viewport.
 pub struct OrbitCamera {
     pub target: Point3<f32>,
@@ -18,6 +25,7 @@ pub struct OrbitCamera {
     pub fov: f32,
     pub near: f32,
     pub far: f32,
+    pub projection: ProjectionMode,
 }
 
 impl OrbitCamera {
@@ -30,7 +38,16 @@ impl OrbitCamera {
             fov: 45.0_f32.to_radians(),
             near: 0.1,
             far: 10000.0,
+            projection: ProjectionMode::Perspective,
         }
+    }
+
+    /// Toggle between perspective and orthographic projection.
+    pub fn toggle_projection(&mut self) {
+        self.projection = match self.projection {
+            ProjectionMode::Perspective => ProjectionMode::Orthographic,
+            ProjectionMode::Orthographic => ProjectionMode::Perspective,
+        };
     }
 
     /// Camera position in world space.
@@ -50,7 +67,20 @@ impl OrbitCamera {
 
     /// Projection matrix (camera -> clip).
     pub fn projection_matrix(&self, aspect: f32) -> Matrix4<f32> {
-        Matrix4::new_perspective(aspect, self.fov, self.near, self.far)
+        match self.projection {
+            ProjectionMode::Perspective => {
+                Matrix4::new_perspective(aspect, self.fov, self.near, self.far)
+            }
+            ProjectionMode::Orthographic => {
+                // Match the perspective frustum's visible half-height at the
+                // orbit target so toggling feels like a "flatten" rather than
+                // a jump. Near/far must allow content on both sides of the
+                // target since the origin is clamped by the orbit distance.
+                let half_h = self.distance * (self.fov * 0.5).tan();
+                let half_w = half_h * aspect;
+                Matrix4::new_orthographic(-half_w, half_w, -half_h, half_h, -self.far, self.far)
+            }
+        }
     }
 
     /// Combined view-projection matrix.

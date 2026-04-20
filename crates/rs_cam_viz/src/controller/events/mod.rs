@@ -91,6 +91,10 @@ impl<B: ComputeBackend> AppController<B> {
                 }
             }
             AppEvent::ToggleIsolateToolpath => self.handle_toggle_isolate_toolpath(),
+            AppEvent::ClearIsolation => {
+                self.state.viewport.isolate_toolpath = None;
+                self.pending_upload = true;
+            }
             AppEvent::InspectToolpathInSimulation(tp_id) => {
                 self.handle_inspect_toolpath_in_simulation(tp_id);
             }
@@ -167,6 +171,7 @@ impl<B: ComputeBackend> AppController<B> {
             | AppEvent::SaveJob
             | AppEvent::OpenJob
             | AppEvent::SetViewPreset(_)
+            | AppEvent::ToggleProjection
             | AppEvent::PreviewOrientation(_)
             | AppEvent::ResetView
             | AppEvent::SwitchWorkspace(_)

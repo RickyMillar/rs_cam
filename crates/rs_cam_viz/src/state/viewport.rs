@@ -1,4 +1,21 @@
 use super::toolpath::ToolpathId;
+use std::collections::HashMap;
+
+/// Per-toolpath move-type visibility. Defaults to both-visible.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ToolpathMoveVisibility {
+    pub show_cutting: bool,
+    pub show_rapids: bool,
+}
+
+impl Default for ToolpathMoveVisibility {
+    fn default() -> Self {
+        Self {
+            show_cutting: true,
+            show_rapids: true,
+        }
+    }
+}
 
 /// Viewport rendering state.
 pub struct ViewportState {
@@ -17,6 +34,9 @@ pub struct ViewportState {
     pub isolate_toolpath: Option<ToolpathId>,
     /// Color mode for toolpath lines.
     pub toolpath_color_mode: ToolpathColorMode,
+    /// Per-toolpath move-type visibility overlay — AND'd with the global
+    /// `show_cutting` / `show_rapids` flags. Missing entries default to visible.
+    pub toolpath_move_visibility: HashMap<ToolpathId, ToolpathMoveVisibility>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +69,7 @@ impl ViewportState {
             show_tool_profile_preview: false,
             isolate_toolpath: None,
             toolpath_color_mode: ToolpathColorMode::Normal,
+            toolpath_move_visibility: HashMap::new(),
         }
     }
 }
