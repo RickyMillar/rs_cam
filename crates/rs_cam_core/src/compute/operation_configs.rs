@@ -412,8 +412,23 @@ pub struct Adaptive3dConfig {
     pub plunge_rate: f64,
     pub tolerance: f64,
     pub min_cutting_radius: f64,
+    /// Legacy/no-op. Auto-derived from the setup's stock bounding box at
+    /// compute time; the stored value is never read. Kept only for
+    /// serialization compat with pre-migration projects.
+    #[serde(default = "default_stock_top_z_placeholder")]
     pub stock_top_z: f64,
     pub entry_style: Adaptive3dEntryStyle,
+    /// Ramp entry: maximum descent angle in degrees. Only honored when
+    /// `entry_style == Ramp`.
+    #[serde(default = "default_adaptive3d_ramp_angle")]
+    pub ramp_angle_deg: f64,
+    /// Helix entry: helix radius as a fraction of the tool's envelope
+    /// diameter. Only honored when `entry_style == Helix`.
+    #[serde(default = "default_adaptive3d_helix_radius_factor")]
+    pub helix_radius_factor: f64,
+    /// Helix entry: vertical pitch in mm. Only honored when `entry_style == Helix`.
+    #[serde(default = "default_adaptive3d_helix_pitch")]
+    pub helix_pitch: f64,
     pub fine_stepdown: f64,
     pub detect_flat_areas: bool,
     pub region_ordering: RegionOrdering,
@@ -436,6 +451,9 @@ impl Default for Adaptive3dConfig {
             min_cutting_radius: 0.0,
             stock_top_z: 30.0,
             entry_style: Adaptive3dEntryStyle::Plunge,
+            ramp_angle_deg: default_adaptive3d_ramp_angle(),
+            helix_radius_factor: default_adaptive3d_helix_radius_factor(),
+            helix_pitch: default_adaptive3d_helix_pitch(),
             fine_stepdown: 0.0,
             detect_flat_areas: false,
             region_ordering: RegionOrdering::Global,
@@ -447,6 +465,23 @@ impl Default for Adaptive3dConfig {
 
 fn default_clearing_strategy() -> ClearingStrategy {
     ClearingStrategy::ContourParallel
+}
+
+fn default_stock_top_z_placeholder() -> f64 {
+    // Sentinel only — ignored at compute time in favor of the setup's stock bbox.
+    0.0
+}
+
+fn default_adaptive3d_ramp_angle() -> f64 {
+    10.0
+}
+
+fn default_adaptive3d_helix_radius_factor() -> f64 {
+    0.3
+}
+
+fn default_adaptive3d_helix_pitch() -> f64 {
+    2.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

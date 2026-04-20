@@ -211,7 +211,9 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             if state.history.post_snapshot.is_none() {
                 state.history.post_snapshot = Some(state.gui.post.clone());
             }
-            post::draw(ui, &mut state.gui.post);
+            let stock_top = state.session.stock_config().origin_z
+                + state.session.stock_config().z;
+            post::draw(ui, &mut state.gui.post, stock_top);
         }
         Selection::Machine => {
             // Capture snapshot for undo before editing
@@ -698,6 +700,20 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, _events: &mut 
                     .small()
                     .color(egui::Color32::from_rgb(130, 130, 140)),
             );
+        });
+
+        // Per-move-type visibility checkboxes for this toolpath.
+        let entry = state
+            .viewport
+            .toolpath_move_visibility
+            .entry(*id)
+            .or_default();
+        ui.horizontal(|ui| {
+            ui.add_space(14.0);
+            ui.checkbox(&mut entry.show_cutting, "Cut")
+                .on_hover_text("Show cutting/feed moves for this toolpath");
+            ui.checkbox(&mut entry.show_rapids, "Rapid")
+                .on_hover_text("Show rapid moves for this toolpath");
         });
 
         // Progress bar for this toolpath
@@ -2815,6 +2831,16 @@ fn draw_dressup_params(
     entry: &mut ToolpathEntry,
     height_ctx: Option<&HeightContext>,
 ) {
+    // Some dressups are geometrically incompatible with specific operations
+    // (e.g. project_curve traces many small rings; a ramp entry / lead-in /
+    // link-move at each ring produces phantom cuts across the stock). Grey
+    // those controls out so the UI reflects what compute actually does.
+    let op_incompatible_msg: Option<&str> = match entry.operation {
+        crate::state::toolpath::OperationConfig::ProjectCurve(_) => Some(
+            "Incompatible with Project Curve: each ring would get a phantom diagonal cut.",
+        ),
+        _ => None,
+    };
     let cfg = &mut entry.dressups;
     let section_color = egui::Color32::from_rgb(150, 155, 170);
 
@@ -2828,20 +2854,25 @@ fn draw_dressup_params(
 
     ui.horizontal(|ui| {
         ui.label("Entry Style:");
-        egui::ComboBox::from_id_salt("dressup_entry")
-            .selected_text(match cfg.entry_style {
-                DressupEntryStyle::None => "None",
-                DressupEntryStyle::Ramp => "Ramp",
-                DressupEntryStyle::Helix => "Helix",
-            })
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::None, "None")
-                    .on_hover_text("Plunge straight down. Fast but can burn in hard materials.");
-                ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::Ramp, "Ramp")
-                    .on_hover_text("Angled descent into material. Prevents plunge burns. Recommended for most operations.");
-                ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::Helix, "Helix")
-                    .on_hover_text("Spiral descent. Best for deep pockets and hard materials. Spreads heat and load evenly.");
-            });
+        ui.add_enabled_ui(op_incompatible_msg.is_none(), |ui| {
+            let combo = egui::ComboBox::from_id_salt("dressup_entry")
+                .selected_text(match cfg.entry_style {
+                    DressupEntryStyle::None => "None",
+                    DressupEntryStyle::Ramp => "Ramp",
+                    DressupEntryStyle::Helix => "Helix",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::None, "None")
+                        .on_hover_text("Plunge straight down. Fast but can burn in hard materials.");
+                    ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::Ramp, "Ramp")
+                        .on_hover_text("Angled descent into material. Prevents plunge burns. Recommended for most operations.");
+                    ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::Helix, "Helix")
+                        .on_hover_text("Spiral descent. Best for deep pockets and hard materials. Spreads heat and load evenly.");
+                });
+            if let Some(msg) = op_incompatible_msg {
+                combo.response.on_hover_text(msg);
+            }
+        });
     });
     match cfg.entry_style {
         DressupEntryStyle::Ramp => {
@@ -2884,9 +2915,15 @@ fn draw_dressup_params(
         draw_entry_preview_diagram(ui, cfg, ctx, &entry.heights);
     }
 
-    ui.checkbox(&mut cfg.lead_in_out, "Lead-in / lead-out")
-        .on_hover_text("Add smooth arc transitions at cut start and end. Prevents tool marks at entry/exit points. Best for finishing and profile cuts.");
-    if cfg.lead_in_out {
+    ui.add_enabled_ui(op_incompatible_msg.is_none(), |ui| {
+        let resp = ui
+            .checkbox(&mut cfg.lead_in_out, "Lead-in / lead-out")
+            .on_hover_text("Add smooth arc transitions at cut start and end. Prevents tool marks at entry/exit points. Best for finishing and profile cuts.");
+        if let Some(msg) = op_incompatible_msg {
+            resp.on_hover_text(msg);
+        }
+    });
+    if cfg.lead_in_out && op_incompatible_msg.is_none() {
         egui::Grid::new("lead_p")
             .num_columns(2)
             .spacing([8.0, 4.0])
@@ -2960,9 +2997,15 @@ fn draw_dressup_params(
             .color(section_color),
     );
 
-    ui.checkbox(&mut cfg.link_moves, "Link moves (keep tool down)")
-        .on_hover_text("Replace short retract-rapid-plunge sequences with slow linear feeds. Major time saver for operations with many small regions. Keeps the tool in the material instead of retracting.");
-    if cfg.link_moves {
+    ui.add_enabled_ui(op_incompatible_msg.is_none(), |ui| {
+        let resp = ui
+            .checkbox(&mut cfg.link_moves, "Link moves (keep tool down)")
+            .on_hover_text("Replace short retract-rapid-plunge sequences with slow linear feeds. Major time saver for operations with many small regions. Keeps the tool in the material instead of retracting.");
+        if let Some(msg) = op_incompatible_msg {
+            resp.on_hover_text(msg);
+        }
+    });
+    if cfg.link_moves && op_incompatible_msg.is_none() {
         egui::Grid::new("link_p")
             .num_columns(2)
             .spacing([8.0, 4.0])
