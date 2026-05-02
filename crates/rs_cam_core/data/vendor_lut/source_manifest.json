@@ -6,7 +6,7 @@
       "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
       "accessed_on": "2026-03-10",
-      "coverage_notes": "Flat/compression wood tooling feed and chipload chart"
+      "coverage_notes": "Flat/compression wood tooling feed and chipload chart. Smallest diameters: 1/32\" (0.794mm), 1.5mm. Chart covers Wood/Plywood and MDF/Laminate columns; does NOT cover ball nose or tapered ball nose tools (these are flat/compression spirals only). Chart does NOT separate softwood from hardwood."
     },
     {
       "source_id": "amana_ball_nose_v7",
@@ -14,7 +14,7 @@
       "source_title": "Amana Spiral Ball Nose Speed Chart v7",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/Spiral-Ball-Nose-Speed-Chart-v7.pdf",
       "accessed_on": "2026-03-10",
-      "coverage_notes": "Ball nose chart rows for wood, MDF, plastic, and aluminum"
+      "coverage_notes": "Ball nose chart rows for wood, MDF, plastic, and aluminum. Smallest diameter covered: 1/16\" (1.587mm). Chart values are calibrated for 1xD-depth slot/peripheral cutting, NOT 3D parallel finishing — using these CPT values as 3D-finish bounds would be aggressive. Existing 3.175mm and 6mm rows in this file are derived (reduced) for 3D-finish use; sub-1mm rows from this chart are NOT transcribed for the same reason. Coverage gap: no sub-1mm 3D-finish-calibrated ball nose rows; use amana_zrn_3d_profiling instead."
     },
     {
       "source_id": "amana_zrn_3d_profiling",
@@ -22,7 +22,7 @@
       "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf",
       "accessed_on": "2026-03-10",
-      "coverage_notes": "Ball/tapered-ball/flat profiling guidance"
+      "coverage_notes": "Ball/tapered-ball/flat profiling guidance. Diameters covered: 1/32\" (0.794mm), 1mm, 1.5mm, 1/16\" (1.587mm), 1/8\" (3.175mm), 3/16\" (4.762mm), 6mm, 1/4\", 3/8\", 1/2\". COVERAGE GAP: chart conflates softwood/hardwood/MDF/sign-foam under one 'Wood, MDF, Sign-Foam' row — does NOT separate softwood from hardwood at any diameter. Sub-1mm rows added 2026-05-02 (1mm 2-flute, 1/16\" 2-flute, 1/32\" 3-flute, 1.5mm 4-flute) are emitted as softwood and MDF only; HARDWOOD AT SUB-1MM IS A DOCUMENTED GAP — vendor's wood data is not split, and per refusal-first we do not invent reduced-CPT hardwood rows. The chart's printed CPT for 2-flute 1/16\" Wood (0.003-0.005 inch) is INCONSISTENT with the printed IPM (55-90 IPM at 18000 RPM 2-flute → 0.00153-0.0025 inch); the 1/16\" 2-flute row in observations uses the IPM-derived value and is marked row_kind='derived'."
     },
     {
       "source_id": "amana_insert_v_groove_v16",
@@ -46,7 +46,7 @@
       "source_title": "Onsrud Cutting Data Recommendations",
       "source_url": "https://www.onsrud.com/Forms/Cutting-Data-Recommendations.asp",
       "accessed_on": "2026-03-10",
-      "coverage_notes": "Router guidance across wood/plastic/aluminum families"
+      "coverage_notes": "Router guidance across wood/plastic/aluminum families. Per-material PDFs (Hard Wood, Soft Wood, MDF) reviewed 2026-05-02. Smallest diameter in any of those PDFs is 1/16\" (1.587mm) and only on series 64-000/65-000 (downcut spiral / compression spiral — flat-end, NOT ball nose). COVERAGE GAP: Onsrud cutting data PDFs do NOT include any ball nose or tapered ball nose entries at any diameter, sub-1mm or otherwise. For ball/tapered-ball sub-1mm coverage, Amana ZrN 3D Profiling is the only public vendor source we have."
     },
     {
       "source_id": "harvey_speeds_and_feeds_library",
