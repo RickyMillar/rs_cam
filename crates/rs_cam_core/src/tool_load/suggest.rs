@@ -77,7 +77,34 @@ pub enum RefuseReason {
     /// The matched row's RPM bracket has no overlap with the machine's
     /// spindle range. Different cutter would be needed.
     RpmBracketEmpty,
+    /// Every must-match LUT row was rejected by the diameter-extrapolation
+    /// gate (score below `MIN_DIAMETER_MATCH_SCORE`). The vendor data
+    /// exists for this tool family + material + operation but only at
+    /// diameters far enough off this tool's diameter that a recommendation
+    /// would be a guess against extrapolated bounds. Distinct from
+    /// `NoVendorData` (no must-match row at all) — this means rows
+    /// existed but none was close enough to trust.
+    DiameterExtrapolationTooPoor,
 }
+
+/// Minimum acceptable `diameter_match_score` (0-200) for a vendor LUT
+/// row to be used as a suggestion source. The score is
+/// `(1 - log2_ratio) * 200` where
+/// `log2_ratio = ln(d_query / d_obs).abs() / ln(2)`. A score of 60
+/// corresponds to `log2_ratio ≈ 0.7`, i.e. the tool/row diameter ratio
+/// is within roughly `2^0.7 ≈ 1.62x` (or 0.62x). Rows below this
+/// threshold would have to extrapolate the row's calibrated chipload
+/// window to a tool diameter that's wildly off — refusing is honest;
+/// recommending a feed against extrapolated bounds is not.
+///
+/// Threshold was lowered from the originally-considered 100 (≈30% off)
+/// to admit the wanaka 1mm-tapered-ball case: a 1mm tool against the
+/// 1.587mm 2-flute ZrN row scores ~66 (ratio 0.63, log2 0.667). That
+/// case is the real-world driver — Phase B3 of
+/// `cheerful-popping-spring.md` calls it out as the precedent. The
+/// gate's intent is preserved: refuse rows that are wildly off (ratio
+/// well outside 0.62-1.62x), not rows that merely miss the nominal.
+const MIN_DIAMETER_MATCH_SCORE: i64 = 60;
 
 /// How aggressively to recommend within the feasible range.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -305,24 +332,17 @@ pub fn evaluate(
             } => {
                 let mid = 0.5 * (feed_lo + feed_hi);
                 let mrr = mid * stats.peak_axial_doc * stats.peak_radial_width;
-                // Weight the optimisation objective by diameter-fit so a
-                // row that wins narrowly on RPM/MRR doesn't beat a row
-                // with a much closer diameter match. The chipload window
-                // calibration is most meaningful at the row's nominal
-                // diameter; a poor diameter fit means the bounds extrapolate
-                // less reliably. Floor at 0.1 so a terrible match still
-                // beats refusal — we keep the row visible in
-                // considered_rows even if it's a fallback.
-                let diam_weight =
-                    (row.diameter_match_score as f64 / 200.0).max(0.1);
-                let raw_objective = if is_finish_pass {
+                // Diameter-extrapolation gate in `evaluate_row` already
+                // refused rows whose diameter is wildly off — every row
+                // that reached here is calibrated to a usable diameter.
+                // Rank on the raw objective without weighting.
+                let objective = if is_finish_pass {
                     // Surface speed proxy for finish: π · D · rpm; D fixed
                     // for the toolpath, so rank on rpm alone.
                     rpm
                 } else {
                     mrr
                 };
-                let objective = raw_objective * diam_weight;
                 evaluations.push(RowEvaluation {
                     observation_id: row.observation_id.clone(),
                     diameter_match_score: row.diameter_match_score,
@@ -388,12 +408,26 @@ pub fn evaluate(
         ..
     }) = best
     else {
-        // Every row was rejected. Pick the dominant reason: if any row
-        // hit RpmBracketEmpty, prefer that; otherwise NoFeasibleRow.
+        // Every row was rejected. Pick the dominant reason in priority
+        // order:
+        //  1. If every rejection was the diameter-extrapolation gate,
+        //     report DiameterExtrapolationTooPoor — vendor rows exist
+        //     but none is close enough to trust.
+        //  2. Otherwise, if any row hit RpmBracketEmpty, prefer that
+        //     (different cutter would be needed).
+        //  3. Otherwise, NoFeasibleRow.
+        let all_extrapolation = !evaluations.is_empty()
+            && evaluations.iter().all(|e| {
+                e.rejected
+                    .as_deref()
+                    .is_some_and(|r| r.contains("diameter extrapolation too poor"))
+            });
         let any_rpm_empty = evaluations
             .iter()
             .any(|e| e.rejected.as_deref() == Some("rpm bracket empty"));
-        let reason = if any_rpm_empty {
+        let reason = if all_extrapolation {
+            RefuseReason::DiameterExtrapolationTooPoor
+        } else if any_rpm_empty {
             RefuseReason::RpmBracketEmpty
         } else {
             RefuseReason::NoFeasibleRow
@@ -538,6 +572,20 @@ fn evaluate_row(
     row: &MatchedRow,
     machine: &MachineProfile,
 ) -> RowOutcome {
+    // Diameter-extrapolation gate: refuse rows whose calibrated diameter
+    // is wildly off the tool's. Recommending feeds against a row whose
+    // chipload bounds extrapolate that far is a guess, not vendor-grounded.
+    if row.diameter_match_score < MIN_DIAMETER_MATCH_SCORE {
+        return RowOutcome::Rejected(format!(
+            "diameter extrapolation too poor (score {}/200 < {} minimum); \
+             row's calibrated diameter is too far off the tool's diameter \
+             ({:.3} mm) to trust the chipload bounds",
+            row.diameter_match_score,
+            MIN_DIAMETER_MATCH_SCORE,
+            ctx.tool.diameter()
+        ));
+    }
+
     let (machine_min_rpm, machine_max_rpm) = machine.rpm_range();
 
     // Pick an RPM in the row's bracket clamped to the machine bracket.
@@ -1098,6 +1146,119 @@ mod tests {
             result.rationale.iter().any(|r| r.contains("stepover varies")),
             "rationale should mention stepover variation: {:?}",
             result.rationale
+        );
+    }
+
+    #[test]
+    fn refuses_when_only_extrapolation_rows_available() {
+        // Regression guard for B3: a 3.5mm flat tool against the LUT's
+        // hardwood-pocket-roughing rows. The 6mm rows pass the must-match
+        // ratio gate (3.5/6 = 0.583 ∈ [0.5, 2.0]) but score below the
+        // MIN_DIAMETER_MATCH_SCORE threshold:
+        //   log2_ratio = |ln(3.5/6)| / ln(2) = 0.539 / 0.693 = 0.778
+        //   diam_score = (1 - 0.778) × 200 ≈ 44
+        // 44 < 60 (the threshold), so every row should be rejected on
+        // the extrapolation gate and the suggestion should refuse with
+        // DiameterExtrapolationTooPoor — distinct from NoVendorData.
+        let tool_3p5_flat = ToolDefinition::new(
+            Box::new(FlatEndmill::new(3.5, 18.0)),
+            6.35,
+            30.0,
+            20.0,
+            55.0,
+            2,
+            crate::compute::tool_config::ToolMaterial::Carbide,
+        );
+        let samples: Vec<SimulationCutSample> = (0..5)
+            .map(|i| cutting_sample(i, 1500.0, 18000, 1.5, std::f64::consts::FRAC_PI_2))
+            .collect();
+        let t = trace(samples);
+        let mat = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let machine = machine();
+        let ctx = SuggestContext {
+            toolpath_id: 0,
+            tool: &tool_3p5_flat,
+            material: &mat,
+            machine: &machine,
+            operation_family: LutOperationFamily::Pocket,
+            pass_role: LutPassRole::Roughing,
+            operation_kind: OperationType::Pocket,
+            current_feed_mm_min: 1500.0,
+        };
+        let result = evaluate(&ctx, Some(&t));
+        assert!(
+            matches!(result.suggested, Err(RefuseReason::DiameterExtrapolationTooPoor)),
+            "expected DiameterExtrapolationTooPoor for 3.5mm tool against 6mm-only LUT \
+             rows, got {:?} — considered_rows: {:?}",
+            result.suggested,
+            result
+                .considered_rows
+                .iter()
+                .map(|r| (r.observation_id.clone(), r.diameter_match_score, r.rejected.clone()))
+                .collect::<Vec<_>>()
+        );
+        // Every considered row should carry the extrapolation rejection
+        // reason, not some other rejection (rpm bracket, chipload, etc).
+        assert!(
+            !result.considered_rows.is_empty(),
+            "considered_rows should retain the rejected rows for transparency"
+        );
+        assert!(
+            result.considered_rows.iter().all(|r| r
+                .rejected
+                .as_deref()
+                .is_some_and(|s| s.contains("diameter extrapolation too poor"))),
+            "every row should be rejected by the extrapolation gate, got: {:?}",
+            result
+                .considered_rows
+                .iter()
+                .map(|r| r.rejected.clone())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn admits_row_at_threshold_boundary() {
+        // Counterpart to refuses_when_only_extrapolation_rows_available:
+        // the 6mm flat tool itself should pass the gate against the same
+        // 6mm LUT rows it was calibrated against (score = 200), and
+        // produce a real suggestion. This guards against the gate being
+        // accidentally tightened to where exact matches fail.
+        let samples: Vec<SimulationCutSample> = (0..5)
+            .map(|i| cutting_sample(i, 1500.0, 18000, 2.0, std::f64::consts::FRAC_PI_2))
+            .collect();
+        let t = trace(samples);
+        let tool = tool_6mm_flat();
+        let mat = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let machine = machine();
+        let ctx = SuggestContext {
+            toolpath_id: 0,
+            tool: &tool,
+            material: &mat,
+            machine: &machine,
+            operation_family: LutOperationFamily::Pocket,
+            pass_role: LutPassRole::Roughing,
+            operation_kind: OperationType::Pocket,
+            current_feed_mm_min: 1500.0,
+        };
+        let result = evaluate(&ctx, Some(&t));
+        let suggested = result.suggested.expect("6mm exact match should succeed");
+        // Confirm the chosen row scored well above the extrapolation
+        // threshold — i.e. the gate is the right side of "let it through".
+        let chosen = result
+            .considered_rows
+            .iter()
+            .find(|r| r.observation_id == suggested.matched_row_id)
+            .expect("chosen row must appear in considered_rows");
+        assert!(
+            chosen.diameter_match_score >= MIN_DIAMETER_MATCH_SCORE,
+            "chosen row's diameter_match_score {} should be at or above the threshold {}",
+            chosen.diameter_match_score,
+            MIN_DIAMETER_MATCH_SCORE
         );
     }
 }
