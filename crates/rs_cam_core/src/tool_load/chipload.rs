@@ -186,18 +186,25 @@ pub fn evaluate(
     let mut peak_below: Option<(f64, usize)> = None; // (deviation, sample_index)
     let mut peak_above: Option<(f64, usize)> = None;
     let mut peak_in_range: f64 = 0.0;
+    let mut valid_count: usize = 0;
+    let mut missing_arc_count: usize = 0;
+    let mut chip_geometry_unsupported_count: usize = 0;
 
     for (i, s) in steady_samples {
+        // Samples whose chip-thickness model didn't produce a value (e.g.
+        // axial_doc = 0 transients on a 3D toolpath, or arc not captured)
+        // are skipped, not fatal. Refuse only if zero steady samples
+        // produced a usable chip thickness — that's a real "we can't
+        // model this op" rather than a single noisy sample.
         let Some(cl) = s.effective_chip_thickness_mm else {
-            let reason = if s.arc_engagement_radians.is_none() {
-                UnmodeledReason::ArcEngagementNotCaptured
+            if s.arc_engagement_radians.is_none() {
+                missing_arc_count += 1;
             } else {
-                UnmodeledReason::CutterModeUnsupported(
-                    "chip geometry unsupported for sampled cutter engagement".to_owned(),
-                )
-            };
-            return Verdict::Unmodeled { reason };
+                chip_geometry_unsupported_count += 1;
+            }
+            continue;
         };
+        valid_count += 1;
         if let Some(min) = min
             && cl < min
         {
@@ -213,6 +220,19 @@ pub fn evaluate(
         } else if cl > peak_in_range {
             peak_in_range = cl;
         }
+    }
+
+    if valid_count == 0 {
+        // All steady-state samples failed the chip-thickness model. Pick
+        // the dominant failure reason for the verdict.
+        let reason = if missing_arc_count >= chip_geometry_unsupported_count {
+            UnmodeledReason::ArcEngagementNotCaptured
+        } else {
+            UnmodeledReason::CutterModeUnsupported(
+                "chip geometry unsupported for sampled cutter engagement".to_owned(),
+            )
+        };
+        return Verdict::Unmodeled { reason };
     }
 
     // 6. Build verdict. Above-max takes priority over below-min: breakage is more
@@ -716,6 +736,75 @@ mod tests {
         assert!(
             matches!(v, Verdict::Within { .. }),
             "exactly-95% sample must be kept, got {v:?}"
+        );
+    }
+
+    /// Sub-segments where the simulator measures `axial_doc_mm = 0` (e.g.
+    /// the cutter just kissing the surface on a 3D toolpath, or transient
+    /// dexel-grid edge cases on project_curve) cause the chip-thickness
+    /// model to return `OutOfRange`, which the simulator surfaces as
+    /// `effective_chip_thickness_mm = None`. A single such sample mixed
+    /// in with otherwise-valid steady-state samples must NOT abort the
+    /// verdict — only refuse when zero valid samples remain.
+    #[test]
+    fn missing_chip_thickness_samples_are_skipped_not_fatal() {
+        // 2 valid samples + 1 sample with effective_chip_thickness_mm = None.
+        let valid_a = sample(0, 0, 0.04, 0.5);
+        let valid_b = sample(0, 1, 0.04, 0.5);
+        let mut noise = sample(0, 2, 0.04, 0.5);
+        noise.effective_chip_thickness_mm = None;
+        // arc_engagement is still Some — simulating a chip_geometry Err
+        // case rather than a missing-arc case.
+        let t = trace(vec![valid_a, valid_b, noise]);
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            LutOperationFamily::Pocket,
+            LutPassRole::Roughing,
+            1000.0,
+            OperationType::Pocket,
+        );
+        assert!(
+            matches!(v, Verdict::Within { .. }),
+            "one None sample must be skipped, not abort the verdict, got {v:?}"
+        );
+    }
+
+    /// Counterpart to the above: if EVERY steady-state sample has a
+    /// missing chip thickness, the verdict refuses with the dominant
+    /// failure reason (preserving refusal-first when the model genuinely
+    /// can't see the cut).
+    #[test]
+    fn all_missing_chip_thickness_refuses() {
+        let mut s0 = sample(0, 0, 0.04, 0.5);
+        s0.effective_chip_thickness_mm = None;
+        let mut s1 = sample(0, 1, 0.04, 0.5);
+        s1.effective_chip_thickness_mm = None;
+        let t = trace(vec![s0, s1]);
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            LutOperationFamily::Pocket,
+            LutPassRole::Roughing,
+            1000.0,
+            OperationType::Pocket,
+        );
+        assert!(
+            matches!(
+                v,
+                Verdict::Unmodeled {
+                    reason: UnmodeledReason::CutterModeUnsupported(_)
+                }
+            ),
+            "all-None samples must refuse with CutterModeUnsupported, got {v:?}"
         );
     }
 
