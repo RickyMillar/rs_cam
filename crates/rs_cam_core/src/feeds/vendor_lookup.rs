@@ -44,6 +44,11 @@ pub struct LookupResult {
     pub observation_id: String,
     pub source_vendor: String,
     pub score: i64,
+    /// Diameter-proximity component of the composite score (0–200).
+    /// 200 = exact diameter match; lower = more derated. Surfaced so
+    /// downstream consumers (e.g. the F&S suggest module) can flag a
+    /// match that won on tie-breakers despite a poor diameter fit.
+    pub diameter_match_score: i64,
 }
 
 pub fn find_best_row(lut: &VendorLut, criteria: &LookupCriteria) -> Option<MatchedRow> {
@@ -52,7 +57,7 @@ pub fn find_best_row(lut: &VendorLut, criteria: &LookupCriteria) -> Option<Match
 
 /// Find the best matching observation for a query.
 pub fn lookup_best(lut: &VendorLut, query: &LookupQuery) -> Option<LookupResult> {
-    let mut best: Option<(i64, usize)> = None;
+    let mut best: Option<(i64, i64, usize)> = None;
 
     for (i, obs) in lut.observations.iter().enumerate() {
         // --- Must-match filter ---
@@ -124,16 +129,16 @@ pub fn lookup_best(lut: &VendorLut, query: &LookupQuery) -> Option<LookupResult>
             score -= 25;
         }
 
-        if let Some((best_score, _)) = best {
+        if let Some((best_score, _, _)) = best {
             if score > best_score {
-                best = Some((score, i));
+                best = Some((score, diam_score, i));
             }
         } else {
-            best = Some((score, i));
+            best = Some((score, diam_score, i));
         }
     }
 
-    best.map(|(score, i)| {
+    best.map(|(score, diameter_match_score, i)| {
         // SAFETY: `i` was stored from a valid iteration over `lut.observations`
         #[allow(clippy::indexing_slicing)]
         let obs = &lut.observations[i];
@@ -152,6 +157,7 @@ pub fn lookup_best(lut: &VendorLut, query: &LookupQuery) -> Option<LookupResult>
             observation_id: obs.observation_id.clone(),
             source_vendor: format!("{:?}", obs.source_vendor),
             score,
+            diameter_match_score,
         }
     })
 }
