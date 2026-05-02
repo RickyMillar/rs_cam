@@ -138,6 +138,11 @@ pub struct VendorObservation {
     pub ae_rule: Option<String>,
     #[allow(dead_code)]
     pub machine_assumption: Option<String>,
+    /// Page number or row label in the source PDF for audit traceability.
+    /// Optional; older observations did not record this and may be backfilled.
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub source_page: Option<String>,
 }
 
 /// Operation family as used in vendor LUT JSON (separate from feeds::OperationFamily for serde).
@@ -223,8 +228,8 @@ mod tests {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            61,
-            "expected 61 embedded observations"
+            67,
+            "expected 67 embedded observations"
         );
     }
 
