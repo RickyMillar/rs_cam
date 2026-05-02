@@ -662,6 +662,24 @@ impl CamServer {
     }
 
     #[tool(
+        name = "suggest_feeds_speeds",
+        description = "Per-toolpath feed/RPM suggestion backed by vendor LUT and bounded by the machine's available power. Run simulation first. Returns either a SuggestedFeeds (with rpm, feed_mm_min, chipload_envelope, matched row id, rationale) or a typed RefuseReason (e.g. SimulationRequired, BipolarEngagement, NoVendorData). Each entry also carries the considered_rows for transparency."
+    )]
+    async fn suggest_feeds_speeds(&self) -> String {
+        let guard = self.session.lock().await;
+        let Some(session) = guard.as_ref() else {
+            return no_project_error();
+        };
+        let suggestions = session.suggest_feeds_speeds();
+        match serde_json::to_value(&suggestions) {
+            Ok(v) => json_str(v),
+            Err(e) => json_str(serde_json::json!({
+                "error": format!("Failed to serialize feed suggestions: {e}")
+            })),
+        }
+    }
+
+    #[tool(
         name = "set_toolpath_param",
         description = "Set a toolpath parameter. Common params: feed_rate, plunge_rate, stepover, depth_per_pass. Config-specific params vary by operation type. Marks the toolpath as stale — regenerate to apply."
     )]

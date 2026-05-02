@@ -433,6 +433,14 @@ impl EmbeddedCamServer {
     }
 
     #[tool(
+        name = "suggest_feeds_speeds",
+        description = "Per-toolpath feed/RPM suggestion backed by vendor LUT and bounded by the machine's available power. Run simulation first. Returns either a SuggestedFeeds (rpm, feed_mm_min, chipload_envelope, matched row id, rationale) or a typed RefuseReason (e.g. SimulationRequired, BipolarEngagement, NoVendorData). Each entry also carries the considered_rows for transparency."
+    )]
+    async fn suggest_feeds_speeds(&self) -> String {
+        Self::format_result(self.send_request(McpRequestKind::SuggestFeedsSpeeds).await)
+    }
+
+    #[tool(
         name = "set_toolpath_param",
         description = "Set a toolpath parameter. Common params: feed_rate, plunge_rate, stepover, depth_per_pass. Config-specific params vary by operation type. Marks the toolpath as stale — regenerate to apply."
     )]
