@@ -142,7 +142,24 @@ fn draw_recommendation(
             ui.end_row();
 
             ui.label(egui::RichText::new("RPM").small());
-            ui.label(egui::RichText::new(format!("{:.0}", suggested.rpm)).strong());
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(format!("{:.0}", suggested.rpm)).strong());
+                if let Some(current_rpm) = s.current_rpm {
+                    let rpm_delta = suggested.rpm - current_rpm;
+                    let rpm_delta_color = if rpm_delta.abs() < 1.0 {
+                        theme::TEXT_DIM
+                    } else if rpm_delta > 0.0 {
+                        theme::SUCCESS
+                    } else {
+                        theme::WARNING
+                    };
+                    ui.label(
+                        egui::RichText::new(format!("({rpm_delta:+.0})"))
+                            .small()
+                            .color(rpm_delta_color),
+                    );
+                }
+            });
             ui.end_row();
 
             ui.label(egui::RichText::new("Chipload window").small());
@@ -174,6 +191,7 @@ fn draw_recommendation(
             events.push(AppEvent::ApplySuggestedFeed {
                 toolpath_id: ToolpathId(s.toolpath_id),
                 feed_mm_min: suggested.feed_mm_min,
+                spindle_rpm: Some(suggested.rpm.round() as u32),
             });
         }
         if ui.button("Cancel").clicked() {

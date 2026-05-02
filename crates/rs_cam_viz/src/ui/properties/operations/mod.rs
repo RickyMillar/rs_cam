@@ -30,9 +30,17 @@ use crate::state::toolpath::{
 
 use super::dv;
 
-/// Draw the standard "Feed Rate" + "Plunge Rate" parameter pair used by
-/// most cutting operations.
-pub(super) fn draw_feed_params(ui: &mut egui::Ui, feed_rate: &mut f64, plunge_rate: &mut f64) {
+/// Draw the standard "Feed Rate" + "Plunge Rate" + "Spindle RPM" parameter
+/// triple used by most cutting operations.
+///
+/// `spindle_rpm` is the per-operation override: `None` means "use the project
+/// default" (rendered as an unchecked checkbox with the DragValue disabled).
+pub(super) fn draw_feed_params(
+    ui: &mut egui::Ui,
+    feed_rate: &mut f64,
+    plunge_rate: &mut f64,
+    spindle_rpm: &mut Option<u32>,
+) {
     dv(ui, "Feed Rate:", feed_rate, " mm/min", 50.0, 1.0..=50000.0);
     dv(
         ui,
@@ -42,6 +50,57 @@ pub(super) fn draw_feed_params(ui: &mut egui::Ui, feed_rate: &mut f64, plunge_ra
         10.0,
         1.0..=10000.0,
     );
+    draw_spindle_rpm_row(ui, spindle_rpm);
+}
+
+/// Per-operation spindle RPM override: checkbox + DragValue.
+///
+/// Unchecked → `None` (the project default applies).
+/// Checked → `Some(rpm)`. The DragValue is disabled while unchecked, and a
+/// dim "uses project default" hint is shown beside it.
+fn draw_spindle_rpm_row(ui: &mut egui::Ui, spindle_rpm: &mut Option<u32>) {
+    const DEFAULT_RPM: u32 = 18_000;
+
+    let mut override_active = spindle_rpm.is_some();
+    let mut rpm_value: u32 = spindle_rpm.unwrap_or(DEFAULT_RPM);
+
+    let toggled = ui
+        .checkbox(&mut override_active, "Spindle RPM:")
+        .on_hover_text(
+            "Override the project default spindle speed for this operation. \
+             Leave unchecked to follow the post-config spindle speed.",
+        )
+        .changed();
+
+    ui.horizontal(|ui| {
+        let dragged = ui
+            .add_enabled(
+                override_active,
+                egui::DragValue::new(&mut rpm_value)
+                    .suffix(" RPM")
+                    .speed(100.0)
+                    .range(1_000..=60_000),
+            )
+            .changed();
+
+        if !override_active {
+            ui.label(
+                egui::RichText::new("(uses project default)")
+                    .small()
+                    .color(egui::Color32::from_rgb(120, 120, 135)),
+            );
+        }
+
+        if toggled || dragged {
+            *spindle_rpm = if override_active {
+                Some(rpm_value)
+            } else {
+                None
+            };
+        }
+    });
+
+    ui.end_row();
 }
 
 // ── Heights panel ────────────────────────────────────────────────────────

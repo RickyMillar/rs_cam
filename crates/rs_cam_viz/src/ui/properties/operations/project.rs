@@ -93,6 +93,6 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
                 0.1,
                 0.1..=5.0,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate);
+            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
         });
 }

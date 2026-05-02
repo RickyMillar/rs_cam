@@ -125,9 +125,13 @@ pub enum AppEvent {
     /// Apply a feed/RPM suggestion to the named toolpath. Marks the
     /// toolpath stale so the user regenerates to get the new feed/RPM
     /// reflected in the toolpath.
+    ///
+    /// `spindle_rpm = None` means "do not touch the per-op RPM override";
+    /// `Some(rpm)` writes the override and the toast reflects both values.
     ApplySuggestedFeed {
         toolpath_id: ToolpathId,
         feed_mm_min: f64,
+        spindle_rpm: Option<u32>,
     },
 
     // Collision
