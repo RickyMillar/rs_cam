@@ -171,9 +171,11 @@ pub fn evaluate(
         };
     };
 
-    // 5. Bounds: refuse if the LUT row didn't carry both min and max.
+    // 5. Bounds: upper bound is required. A missing lower bound means
+    // burn/rubbing cannot be modeled for this row, not that we invent one.
     let (min, max) = match (result.chip_load_min_mm, result.chip_load_max_mm) {
-        (Some(lo), Some(hi)) if lo > 0.0 && hi >= lo => (lo, hi),
+        (Some(lo), Some(hi)) if lo > 0.0 && hi >= lo => (Some(lo), hi),
+        (None, Some(hi)) if hi > 0.0 => (None, hi),
         _ => {
             return Verdict::Unmodeled {
                 reason: UnmodeledReason::NoVendorData,
@@ -196,7 +198,9 @@ pub fn evaluate(
             };
             return Verdict::Unmodeled { reason };
         };
-        if cl < min {
+        if let Some(min) = min
+            && cl < min
+        {
             let dev = min - cl;
             if peak_below.is_none_or(|(prev, _)| dev > prev) {
                 peak_below = Some((dev, i));
@@ -223,7 +227,7 @@ pub fn evaluate(
     }
     if let Some((dev, idx)) = peak_below {
         return Verdict::Exceeds {
-            peak: (min - dev).max(0.0),
+            peak: min.map(|min| min - dev).unwrap_or_default().max(0.0),
             sample_range: idx..(idx + 1),
             reason: ExceedsReason::ChiploadBurnRisk,
             confidence: Confidence::Validated,
