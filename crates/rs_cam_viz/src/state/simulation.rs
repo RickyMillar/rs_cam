@@ -298,6 +298,12 @@ pub struct SimulationState {
     pub saved_viewport: SavedViewportState,
     /// Runtime-only debugger state and semantic lookup cache.
     pub debug: SimulationDebugState,
+    /// Cumulative time (s) under the cursor in the bottom signal spine.
+    /// Set when the user hovers any signal track; consumed by every other
+    /// track so they all show a vertical crosshair at the same time.
+    /// One frame of lag is intentional: tracks read this on the same frame
+    /// they may overwrite it, so the value reflects last frame's pointer.
+    pub hovered_time_s: Option<f64>,
 }
 
 impl SimulationState {
@@ -346,6 +352,7 @@ impl SimulationState {
                 semantic_indexes: HashMap::new(),
                 runtime_profiles: HashMap::new(),
             },
+            hovered_time_s: None,
         }
     }
 
@@ -588,6 +595,17 @@ impl SimulationState {
         });
         items.truncate(limit);
         items
+    }
+
+    /// Resolve the hotspot referenced by `debug.focused_hotspot`, if any.
+    /// Returns `None` if no hotspot is focused or the index is stale (e.g.
+    /// after a re-run produced a different `trace.hotspots`).
+    pub fn focused_hotspot_data(&self) -> Option<&SimulationCutHotspot> {
+        let (_, hotspot_index) = self.debug.focused_hotspot?;
+        self.results
+            .as_ref()
+            .and_then(|r| r.cut_trace.as_ref())
+            .and_then(|trace| trace.hotspots.get(hotspot_index))
     }
 
     pub fn cut_hotspots(&self, toolpath_id: ToolpathId, limit: usize) -> Vec<SimulationCutHotspot> {

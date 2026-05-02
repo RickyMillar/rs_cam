@@ -45,16 +45,41 @@ fn draw_verdict_hud(
     max_feed: f64,
     events: &mut Vec<AppEvent>,
 ) {
-    let sim_trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
-    let report = rs_cam_core::gcode::project_load_report(session, sim_trace);
-    let (ok, warn, bad, unmodeled) = verdict_counts(&report);
-    let collision_count = sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
+    // sim.issues() takes &mut self, so call it first before taking any
+    // immutable borrows on sim.results below.
     let issue_count = sim.issues(gui, max_feed).len();
-    let trace_count = gui
-        .toolpath_rt
-        .values()
-        .filter(|rt| rt.debug_trace.is_some() || rt.semantic_trace.is_some())
-        .count();
+
+    let (ok, warn, bad, unmodeled, collision_count, trace_count, unmodeled_target, exceeded_target, collision_target) = {
+        let sim_trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
+        let report = rs_cam_core::gcode::project_load_report(session, sim_trace);
+        let counts = verdict_counts(&report);
+        let collision_count =
+            sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
+        let trace_count = gui
+            .toolpath_rt
+            .values()
+            .filter(|rt| rt.debug_trace.is_some() || rt.semantic_trace.is_some())
+            .count();
+        let unmodeled_target = first_unmodeled_move(sim, &report);
+        let exceeded_target = first_exceeded_overall(sim, sim_trace, &report);
+        let collision_target = sim.checks.rapid_collision_move_indices.first().copied();
+        (
+            counts.0,
+            counts.1,
+            counts.2,
+            counts.3,
+            collision_count,
+            trace_count,
+            unmodeled_target,
+            exceeded_target,
+            collision_target,
+        )
+    };
+
+    let mut click_unmodeled = false;
+    let mut click_exceeds = false;
+    let mut click_collision = false;
+    let mut click_issues = false;
 
     egui::Frame::default()
         .fill(egui::Color32::from_rgb(30, 32, 42))
@@ -68,47 +93,44 @@ fn draw_verdict_hud(
                     egui::Color32::from_rgb(85, 180, 110),
                     "Toolpaths within modeled load limits",
                 );
-                verdict_pill(
+                click_unmodeled = verdict_pill(
                     ui,
                     format!("⚠ unmodeled {unmodeled}"),
                     egui::Color32::from_rgb(210, 170, 80),
-                    "Load could not be modeled honestly; inspect before export",
-                );
-                verdict_pill(
+                    "Load could not be modeled honestly; click to jump to the first unmodeled toolpath",
+                )
+                .clicked();
+                click_exceeds = verdict_pill(
                     ui,
                     format!("✕ exceeds {bad}"),
                     egui::Color32::from_rgb(220, 90, 90),
-                    "Known load limit exceedances",
-                );
+                    "Known load-limit exceedances; click to jump to the first one",
+                )
+                .clicked();
                 verdict_pill(
                     ui,
                     format!("~ approx {warn}"),
                     egui::Color32::from_rgb(120, 150, 220),
                     "Approximate or advisory verdicts",
                 );
-                let collision_response = ui.add(
-                    egui::Button::new(
-                        egui::RichText::new(format!("collisions {collision_count}"))
-                            .small()
-                            .color(if collision_count == 0 {
-                                egui::Color32::from_rgb(120, 210, 140)
-                            } else {
-                                egui::Color32::from_rgb(255, 120, 110)
-                            }),
-                    )
-                    .fill(egui::Color32::from_rgb(42, 44, 56)),
-                );
-                if collision_response.clicked()
-                    && let Some(first) = sim.checks.rapid_collision_move_indices.first()
-                {
-                    events.push(AppEvent::SimJumpToMove(*first));
-                }
-                verdict_pill(
+                click_collision = verdict_pill(
+                    ui,
+                    format!("collisions {collision_count}"),
+                    if collision_count == 0 {
+                        egui::Color32::from_rgb(120, 210, 140)
+                    } else {
+                        egui::Color32::from_rgb(255, 120, 110)
+                    },
+                    "Rapid/holder collisions; click to jump to the first one",
+                )
+                .clicked();
+                click_issues = verdict_pill(
                     ui,
                     format!("issues {issue_count}"),
                     egui::Color32::from_rgb(230, 190, 90),
-                    "Clickable issue navigation remains in the Inspector",
-                );
+                    "Air cuts / low-engagement clusters; click to step through",
+                )
+                .clicked();
                 verdict_pill(
                     ui,
                     format!("trace artifacts {trace_count}"),
@@ -117,6 +139,45 @@ fn draw_verdict_hud(
                 );
             });
         });
+
+    if click_unmodeled && let Some(t) = unmodeled_target {
+        events.push(AppEvent::SimJumpToMove(t));
+    }
+    if click_exceeds && let Some(t) = exceeded_target {
+        events.push(AppEvent::SimJumpToMove(t));
+    }
+    if click_collision && let Some(t) = collision_target {
+        events.push(AppEvent::SimJumpToMove(t));
+    }
+    if click_issues
+        && let Some(target) = sim.focus_issue_delta(gui, max_feed, 1)
+    {
+        events.push(AppEvent::SimJumpToMove(target.move_index));
+    }
+}
+
+fn first_unmodeled_move(sim: &SimulationState, report: &ToolLoadReport) -> Option<usize> {
+    let tp = report.per_toolpath.iter().find(|tp| {
+        matches!(tp.chipload, Verdict::Unmodeled { .. })
+            || matches!(tp.power, Verdict::Unmodeled { .. })
+            || matches!(tp.deflection, Verdict::Unmodeled { .. })
+    })?;
+    sim.boundaries()
+        .iter()
+        .find(|b| b.id.0 == tp.toolpath_id)
+        .map(|b| b.start_move)
+}
+
+fn first_exceeded_overall(
+    sim: &SimulationState,
+    trace: Option<&rs_cam_core::simulation_cut::SimulationCutTrace>,
+    report: &ToolLoadReport,
+) -> Option<usize> {
+    let trace = trace?;
+    report
+        .per_toolpath
+        .iter()
+        .find_map(|verdict| first_exceeded_tool_load_move(sim, trace, verdict))
 }
 
 fn verdict_counts(report: &ToolLoadReport) -> (usize, usize, usize, usize) {
@@ -152,12 +213,17 @@ fn verdict_is_approximate(verdict: &Verdict) -> bool {
     )
 }
 
-fn verdict_pill(ui: &mut egui::Ui, text: String, color: egui::Color32, hover: &str) {
+fn verdict_pill(
+    ui: &mut egui::Ui,
+    text: String,
+    color: egui::Color32,
+    hover: &str,
+) -> egui::Response {
     ui.add(
         egui::Button::new(egui::RichText::new(text).small().color(color))
             .fill(egui::Color32::from_rgb(42, 44, 56)),
     )
-    .on_hover_text(hover);
+    .on_hover_text(hover)
 }
 
 fn draw_signal_spine(
@@ -193,70 +259,110 @@ fn draw_signal_spine(
     let envelope = sim
         .current_boundary()
         .and_then(|b| chipload_envelope_for_toolpath(session, Some(trace), b.id));
-    draw_signal_track(
-        ui,
-        "chipload",
-        &cutting,
-        |s| s.effective_chip_thickness_mm,
-        egui::Color32::from_rgb(230, 200, 60),
-        active_time,
-        sim,
-        events,
-    );
-    if let Some((lo, hi)) = envelope {
-        ui.label(
-            egui::RichText::new(format!(
-                "chipload envelope for active toolpath: {:.4}–{:.4} mm/tooth",
-                lo, hi
-            ))
-            .small()
-            .color(egui::Color32::from_rgb(150, 150, 165)),
+
+    // Build hotspot markers once per frame: time, index in trace.hotspots,
+    // and the global move to scrub to on click. Dots render on every track
+    // and clicking near one focuses the hotspot in the Inspector.
+    let hotspots: Vec<HotspotMarker> = trace
+        .hotspots
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, hs)| {
+            let sample = trace.samples.get(hs.sample_index_start)?;
+            let global_move = sim
+                .global_move_for_local(
+                    crate::state::toolpath::ToolpathId(hs.toolpath_id),
+                    hs.move_start,
+                )
+                .unwrap_or(hs.move_start);
+            Some(HotspotMarker {
+                time: sample.cumulative_time_s,
+                index: idx,
+                global_move,
+            })
+        })
+        .collect();
+
+    // Linked crosshair: read last frame's hovered time for display, accumulate
+    // this frame's pointer into a fresh local, then write back at the end.
+    // One-frame lag is intentional and imperceptible.
+    let display_time = sim.hovered_time_s;
+    let mut new_hovered: Option<f64> = None;
+    let mut clicked_hotspot: Option<(usize, usize)> = None;
+
+    let tracks: [(&str, fn(&SimulationCutSample) -> Option<f64>, egui::Color32, Option<(f64, f64)>); 5] = [
+        (
+            "chipload",
+            |s| s.effective_chip_thickness_mm,
+            egui::Color32::from_rgb(230, 200, 60),
+            envelope,
+        ),
+        (
+            "arc engagement",
+            |s| s.arc_engagement_radians,
+            egui::Color32::from_rgb(80, 200, 120),
+            None,
+        ),
+        (
+            "axial DOC",
+            |s| (s.axial_doc_mm > 0.0).then_some(s.axial_doc_mm),
+            egui::Color32::from_rgb(110, 150, 230),
+            None,
+        ),
+        (
+            "MRR",
+            |s| (s.mrr_mm3_s > 0.0).then_some(s.mrr_mm3_s),
+            egui::Color32::from_rgb(210, 130, 230),
+            None,
+        ),
+        (
+            "feed",
+            |s| Some(s.feed_rate_mm_min),
+            egui::Color32::from_rgb(150, 190, 230),
+            None,
+        ),
+    ];
+
+    for (label, value_fn, color, env) in tracks {
+        draw_signal_track(
+            ui,
+            label,
+            &cutting,
+            value_fn,
+            color,
+            active_time,
+            display_time,
+            &mut new_hovered,
+            env,
+            &hotspots,
+            &mut clicked_hotspot,
+            sim,
+            events,
         );
     }
-    draw_signal_track(
-        ui,
-        "arc engagement",
-        &cutting,
-        |s| s.arc_engagement_radians,
-        egui::Color32::from_rgb(80, 200, 120),
-        active_time,
-        sim,
-        events,
-    );
-    draw_signal_track(
-        ui,
-        "axial DOC",
-        &cutting,
-        |s| (s.axial_doc_mm > 0.0).then_some(s.axial_doc_mm),
-        egui::Color32::from_rgb(110, 150, 230),
-        active_time,
-        sim,
-        events,
-    );
-    draw_signal_track(
-        ui,
-        "MRR",
-        &cutting,
-        |s| (s.mrr_mm3_s > 0.0).then_some(s.mrr_mm3_s),
-        egui::Color32::from_rgb(210, 130, 230),
-        active_time,
-        sim,
-        events,
-    );
-    draw_signal_track(
-        ui,
-        "feed",
-        &cutting,
-        |s| Some(s.feed_rate_mm_min),
-        egui::Color32::from_rgb(150, 190, 230),
-        active_time,
-        sim,
-        events,
-    );
+
+    sim.hovered_time_s = new_hovered;
+    if let Some((hotspot_index, global_move)) = clicked_hotspot {
+        if let Some(hs) = trace.hotspots.get(hotspot_index) {
+            sim.debug.focused_hotspot = Some((
+                crate::state::toolpath::ToolpathId(hs.toolpath_id),
+                hotspot_index,
+            ));
+        }
+        events.push(AppEvent::SimJumpToMove(global_move));
+    }
+}
+
+#[derive(Clone, Copy)]
+struct HotspotMarker {
+    time: f64,
+    index: usize,
+    global_move: usize,
 }
 
 const SIGNAL_MAX_POINTS: usize = 1600;
 
+#[allow(clippy::too_many_arguments)]
 fn draw_signal_track(
     ui: &mut egui::Ui,
     label: &str,
@@ -264,6 +370,11 @@ fn draw_signal_track(
     value_fn: impl Fn(&SimulationCutSample) -> Option<f64>,
     color: egui::Color32,
     active_time: Option<f64>,
+    display_time: Option<f64>,
+    new_hovered: &mut Option<f64>,
+    envelope: Option<(f64, f64)>,
+    hotspots: &[HotspotMarker],
+    clicked_hotspot: &mut Option<(usize, usize)>,
     sim: &SimulationState,
     events: &mut Vec<AppEvent>,
 ) {
@@ -288,6 +399,15 @@ fn draw_signal_track(
         .iter()
         .map(|p| p[1])
         .fold(f64::NEG_INFINITY, f64::max);
+    let x_min = points
+        .first()
+        .map(|p| p[0])
+        .unwrap_or(0.0);
+    let x_max = points
+        .last()
+        .map(|p| p[0])
+        .unwrap_or(x_min);
+
     let response = Plot::new(format!("signal_track_{label}"))
         .height(46.0)
         .allow_zoom([true, false])
@@ -295,24 +415,83 @@ fn draw_signal_track(
         .show_axes([false, false])
         .show(ui, |plot_ui| {
             plot_ui.line(Line::new(PlotPoints::from(points)).name(label).color(color));
+
+            if let Some((cl_min, cl_max)) = envelope {
+                let band_color = egui::Color32::from_rgb(220, 90, 90);
+                plot_ui.line(
+                    Line::new(PlotPoints::from(vec![[x_min, cl_min], [x_max, cl_min]]))
+                        .color(band_color)
+                        .style(egui_plot::LineStyle::Dashed { length: 6.0 })
+                        .name("cl_min"),
+                );
+                plot_ui.line(
+                    Line::new(PlotPoints::from(vec![[x_min, cl_max], [x_max, cl_max]]))
+                        .color(band_color)
+                        .style(egui_plot::LineStyle::Dashed { length: 6.0 })
+                        .name("cl_max"),
+                );
+            }
+
             if let Some(t) = active_time {
                 plot_ui.line(
                     Line::new(PlotPoints::from(vec![[t, min_y], [t, max_y]]))
-                        .color(egui::Color32::from_rgb(245, 245, 245)),
+                        .color(egui::Color32::from_rgb(245, 245, 245))
+                        .name("playback"),
                 );
             }
-            if let Some(pointer) = plot_ui.pointer_coordinate() {
-                let nearest = point_samples.iter().min_by(|left, right| {
-                    (left.1[0] - pointer.x)
-                        .abs()
-                        .total_cmp(&(right.1[0] - pointer.x).abs())
-                });
-                if let Some((sample, point)) = nearest {
+
+            // Linked hover crosshair from last frame — every track shows it
+            // at the same time, regardless of which track the pointer is over.
+            if let Some(t) = display_time {
+                plot_ui.line(
+                    Line::new(PlotPoints::from(vec![[t, min_y], [t, max_y]]))
+                        .color(egui::Color32::from_rgb(200, 240, 100))
+                        .style(egui_plot::LineStyle::Dashed { length: 4.0 }),
+                );
+                if let Some((_, point)) = nearest_point_to_time(t, &point_samples) {
                     plot_ui.text(egui_plot::Text::new(
                         egui_plot::PlotPoint::new(point[0], point[1]),
                         format!("{label}: {:.3} @ {:.2}s", point[1], point[0]),
                     ));
-                    if plot_ui.response().clicked()
+                }
+            }
+
+            // Hotspot dots: position each at the y-value of the nearest data
+            // point on this track so the dot sits visually on the line.
+            if !hotspots.is_empty() {
+                let hotspot_pts: Vec<[f64; 2]> = hotspots
+                    .iter()
+                    .filter_map(|hs| {
+                        nearest_point_to_time(hs.time, &point_samples).map(|(_, pt)| pt)
+                    })
+                    .collect();
+                if !hotspot_pts.is_empty() {
+                    plot_ui.points(
+                        egui_plot::Points::new(PlotPoints::from(hotspot_pts))
+                            .color(egui::Color32::from_rgb(255, 145, 70))
+                            .radius(4.0)
+                            .name("hotspots"),
+                    );
+                }
+            }
+
+            if let Some(pointer) = plot_ui.pointer_coordinate() {
+                *new_hovered = Some(pointer.x);
+                if plot_ui.response().clicked() {
+                    // Prefer hotspot click when the pointer is within tolerance
+                    // (5% of the visible x range, or 0.25s, whichever is larger).
+                    let tolerance = ((x_max - x_min).abs() * 0.05).max(0.25);
+                    let nearest_hotspot = hotspots.iter().min_by(|a, b| {
+                        (a.time - pointer.x)
+                            .abs()
+                            .total_cmp(&(b.time - pointer.x).abs())
+                    });
+                    if let Some(hs) = nearest_hotspot
+                        && (hs.time - pointer.x).abs() <= tolerance
+                    {
+                        *clicked_hotspot = Some((hs.index, hs.global_move));
+                    } else if let Some((sample, _)) =
+                        nearest_point_to_time(pointer.x, &point_samples)
                         && let Some(global_move) = sim.global_move_for_local(
                             crate::state::toolpath::ToolpathId(sample.toolpath_id),
                             sample.move_index,
@@ -325,7 +504,17 @@ fn draw_signal_track(
         });
     response
         .response
-        .on_hover_text("Hover to read the signal. Click to scrub to nearest sample.");
+        .on_hover_text("Hover any track to read all five at the same time. Click to scrub.");
+}
+
+fn nearest_point_to_time<'a>(
+    t: f64,
+    point_samples: &'a [(&'a SimulationCutSample, [f64; 2])],
+) -> Option<(&'a SimulationCutSample, [f64; 2])> {
+    point_samples
+        .iter()
+        .min_by(|left, right| (left.1[0] - t).abs().total_cmp(&(right.1[0] - t).abs()))
+        .copied()
 }
 
 fn chipload_envelope_for_toolpath(
