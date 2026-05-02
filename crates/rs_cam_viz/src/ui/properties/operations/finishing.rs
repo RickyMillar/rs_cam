@@ -51,7 +51,7 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
             ui.label("Bottom Up:");
             ui.checkbox(&mut cfg.order_bottom_up, "");
             ui.end_row();
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate);
+            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
             dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
             dv(
                 ui,
@@ -100,7 +100,7 @@ pub(in crate::ui::properties) fn draw_spiral_finish_params(
                     );
                 });
             ui.end_row();
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate);
+            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
             dv(
                 ui,
                 "Stock to Leave:",
@@ -136,7 +136,7 @@ pub(in crate::ui::properties) fn draw_radial_finish_params(
                 0.1,
                 0.1..=5.0,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate);
+            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
             dv(
                 ui,
                 "Stock to Leave:",
@@ -165,7 +165,7 @@ pub(in crate::ui::properties) fn draw_horizontal_finish_params(
                 1.0..=30.0,
             );
             dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=20.0);
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate);
+            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
             dv(
                 ui,
                 "Stock to Leave:",

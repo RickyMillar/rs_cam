@@ -171,6 +171,7 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::ApplySuggestedFeed {
                 toolpath_id,
                 feed_mm_min,
+                spindle_rpm,
             } => {
                 let index = self
                     .state
@@ -179,22 +180,38 @@ impl<B: ComputeBackend> AppController<B> {
                     .iter()
                     .position(|tc| tc.id == toolpath_id.0);
                 if let Some(idx) = index {
+                    let mut errors: Vec<String> = Vec::new();
                     if let Err(e) = self.state.session.set_toolpath_param(
                         idx,
                         "feed_rate",
                         serde_json::json!(feed_mm_min),
                     ) {
+                        errors.push(format!("feed_rate: {e}"));
+                    }
+                    if let Some(rpm) = spindle_rpm {
+                        if let Err(e) = self.state.session.set_toolpath_param(
+                            idx,
+                            "spindle_rpm",
+                            serde_json::json!(rpm),
+                        ) {
+                            errors.push(format!("spindle_rpm: {e}"));
+                        }
+                    }
+                    if !errors.is_empty() {
                         self.push_notification(
-                            format!("Apply failed: {e}"),
+                            format!("Apply failed: {}", errors.join(", ")),
                             crate::controller::Severity::Error,
                         );
                     } else {
                         self.state.gui.mark_edited();
                         self.state.suggest_modal_for = None;
+                        let rpm_text = spindle_rpm
+                            .map_or_else(String::new, |r| format!(" @ {r} RPM"));
                         self.push_notification(
                             format!(
-                                "Applied {:.0} mm/min to toolpath {}. Regenerate to apply.",
-                                feed_mm_min, toolpath_id.0
+                                "Applied {feed_mm_min:.0} mm/min{rpm_text} to toolpath {}. \
+                                 Regenerate to apply.",
+                                toolpath_id.0
                             ),
                             crate::controller::Severity::Info,
                         );
