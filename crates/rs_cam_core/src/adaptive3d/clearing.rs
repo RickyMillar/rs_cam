@@ -471,7 +471,7 @@ pub(super) fn clear_z_level_contour_parallel(
                 // uncut terrain between rings at different Z heights
                 // (F-5 in planning/adaptive_review_2026-04.md). The gate
                 // matches the one in clear_z_level (the AgentSearch path).
-                let link_dist = ctx.tool_radius * 3.0;
+                let link_dist = ctx.max_link_dist;
                 let should_link = last_pos.is_some_and(|lp| {
                     let dx = first.x - lp.x;
                     let dy = first.y - lp.y;
@@ -730,7 +730,7 @@ pub(super) fn clear_z_level_adaptive(
             // Entry (link or rapid) + cut segment. Matches the gate in
             // clear_z_level_contour_parallel — see F-5 rationale there.
             if let Some(first) = path_3d.first() {
-                let link_dist = ctx.tool_radius * 3.0;
+                let link_dist = ctx.max_link_dist;
                 let should_link = last_pos.is_some_and(|lp| {
                     let dx = first.x - lp.x;
                     let dy = first.y - lp.y;
