@@ -3,12 +3,15 @@ use super::sim_debug::{
     debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
 };
 use crate::state::runtime::GuiState;
+use crate::state::selection::Selection;
 use crate::state::simulation::{
     SimulationAnalyticsTab, SimulationIssueKind, SimulationState, StockVizMode,
 };
+use crate::state::toolpath::ToolpathId;
 use crate::ui::theme;
+use egui_plot::{Legend, Line, Plot, PlotPoints};
 use rs_cam_core::session::ProjectSession;
-use rs_cam_core::simulation_cut::CutKinematics;
+use rs_cam_core::simulation_cut::{CutKinematics, SimulationCutSample, SimulationCutTrace};
 use rs_cam_core::tool_load::{
     Confidence, ExceedsReason, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason, Verdict,
 };
@@ -19,6 +22,7 @@ pub fn draw(
     sim: &mut SimulationState,
     session: &ProjectSession,
     gui: &GuiState,
+    selection: &Selection,
     events: &mut Vec<AppEvent>,
 ) {
     let max_feed = session.machine().max_feed_mm_min;
@@ -493,6 +497,15 @@ pub fn draw(
                 );
             }
         });
+
+        ui.add_space(4.0);
+
+        // --- Cut signals over time ---
+        egui::CollapsingHeader::new("Cut signals over time")
+            .default_open(false)
+            .show(ui, |ui| {
+                draw_timeseries_panel(ui, sim, session, selection);
+            });
     }
 
     ui.add_space(4.0);
@@ -1415,6 +1428,175 @@ fn aggregate_stats(
     }
 
     (total_cutting, total_rapid, total_time_min)
+}
+
+/// Resolve the toolpath whose signals to plot. Prefers an explicit
+/// toolpath selection in the project tree, falls back to the playback
+/// head's current toolpath. Returns `None` when neither is available.
+fn active_timeseries_toolpath(sim: &SimulationState, selection: &Selection) -> Option<ToolpathId> {
+    if let Selection::Toolpath(id) = selection {
+        return Some(*id);
+    }
+    sim.current_boundary().map(|b| b.id)
+}
+
+/// Maximum points kept per series before stride-skipping. Keeps the
+/// plot interactive on traces with tens of thousands of samples.
+const TIMESERIES_MAX_POINTS: usize = 2000;
+
+fn collect_series<F>(samples: &[&SimulationCutSample], extract: F) -> Vec<[f64; 2]>
+where
+    F: Fn(&SimulationCutSample) -> Option<f64>,
+{
+    let mut points: Vec<[f64; 2]> = samples
+        .iter()
+        .filter_map(|s| extract(s).map(|y| [s.cumulative_time_s, y]))
+        .collect();
+    if points.len() > TIMESERIES_MAX_POINTS {
+        let stride = points.len().div_ceil(TIMESERIES_MAX_POINTS);
+        points = points
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, p)| if i % stride == 0 { Some(p) } else { None })
+            .collect();
+    }
+    points
+}
+
+fn draw_timeseries_panel(
+    ui: &mut egui::Ui,
+    sim: &SimulationState,
+    session: &ProjectSession,
+    selection: &Selection,
+) {
+    let Some(toolpath_id) = active_timeseries_toolpath(sim, selection) else {
+        ui.label(
+            egui::RichText::new("Select a toolpath to see signals over time")
+                .small()
+                .italics()
+                .color(theme::TEXT_DIM),
+        );
+        return;
+    };
+
+    let Some(trace) = sim
+        .results
+        .as_ref()
+        .and_then(|r| r.cut_trace.as_deref())
+    else {
+        ui.label(
+            egui::RichText::new("Run a simulation with Cut Metrics enabled")
+                .small()
+                .italics()
+                .color(theme::TEXT_DIM),
+        );
+        return;
+    };
+
+    let samples: Vec<&SimulationCutSample> = trace
+        .samples
+        .iter()
+        .filter(|s| s.toolpath_id == toolpath_id.0 && s.is_cutting)
+        .collect();
+    if samples.is_empty() {
+        ui.label(
+            egui::RichText::new("No cutting samples for this toolpath")
+                .small()
+                .italics()
+                .color(theme::TEXT_DIM),
+        );
+        return;
+    }
+
+    let chipload_pts = collect_series(&samples, |s| s.effective_chip_thickness_mm);
+    let arc_pts = collect_series(&samples, |s| s.arc_engagement_radians);
+    let doc_pts = collect_series(&samples, |s| {
+        if s.axial_doc_mm > 0.0 {
+            Some(s.axial_doc_mm)
+        } else {
+            None
+        }
+    });
+
+    // Pull chipload envelope from the suggest module when available.
+    let envelope = chipload_envelope_for_toolpath(session, Some(trace), toolpath_id);
+
+    Plot::new("cut_signals_timeseries")
+        .legend(Legend::default())
+        .height(200.0)
+        .allow_zoom([true, false])
+        .allow_drag([true, false])
+        .show(ui, |plot_ui| {
+            if !chipload_pts.is_empty() {
+                plot_ui.line(
+                    Line::new(PlotPoints::from(chipload_pts))
+                        .name("chipload (mm/tooth)")
+                        .color(egui::Color32::from_rgb(230, 200, 60)),
+                );
+            }
+            if !arc_pts.is_empty() {
+                plot_ui.line(
+                    Line::new(PlotPoints::from(arc_pts))
+                        .name("arc engagement (rad)")
+                        .color(egui::Color32::from_rgb(80, 200, 120)),
+                );
+            }
+            if !doc_pts.is_empty() {
+                plot_ui.line(
+                    Line::new(PlotPoints::from(doc_pts))
+                        .name("axial DOC (mm)")
+                        .color(egui::Color32::from_rgb(110, 150, 230)),
+                );
+            }
+            if let Some((cl_min, cl_max)) = envelope {
+                let t0 = samples
+                    .first()
+                    .map(|s| s.cumulative_time_s)
+                    .unwrap_or(0.0);
+                let t1 = samples
+                    .last()
+                    .map(|s| s.cumulative_time_s)
+                    .unwrap_or(t0);
+                plot_ui.line(
+                    Line::new(PlotPoints::from(vec![[t0, cl_min], [t1, cl_min]]))
+                        .name("cl_min")
+                        .color(egui::Color32::from_rgb(200, 80, 80))
+                        .style(egui_plot::LineStyle::dashed_loose()),
+                );
+                plot_ui.line(
+                    Line::new(PlotPoints::from(vec![[t0, cl_max], [t1, cl_max]]))
+                        .name("cl_max")
+                        .color(egui::Color32::from_rgb(200, 80, 80))
+                        .style(egui_plot::LineStyle::dashed_loose()),
+                );
+            }
+        });
+
+    if envelope.is_none() {
+        ui.label(
+            egui::RichText::new("No vendor envelope for this toolpath — bounds not shown")
+                .small()
+                .italics()
+                .color(theme::TEXT_DIM),
+        );
+    }
+}
+
+/// Look up the matched LUT row's chipload window for one toolpath via
+/// the suggest module. Returns `None` when the toolpath has no model-able
+/// envelope (custom material, no vendor data, etc.).
+fn chipload_envelope_for_toolpath(
+    session: &ProjectSession,
+    sim_trace: Option<&SimulationCutTrace>,
+    toolpath_id: ToolpathId,
+) -> Option<(f64, f64)> {
+    let suggestions =
+        rs_cam_core::tool_load::suggest::project_suggestions(session, sim_trace);
+    let s = suggestions
+        .into_iter()
+        .find(|s| s.toolpath_id == toolpath_id.0)?;
+    let suggested = s.suggested.ok()?;
+    Some((suggested.chipload_envelope.start, suggested.chipload_envelope.end))
 }
 
 #[cfg(test)]
