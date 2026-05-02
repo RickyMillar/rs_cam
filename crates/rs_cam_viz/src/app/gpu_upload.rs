@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::ops::Range;
 use std::sync::Arc;
 
 use crate::render::RenderResources;
@@ -678,6 +680,29 @@ impl RsCamApp {
             let state = self.controller.state();
             let session = &state.session;
             let gui = &state.gui;
+
+            // For Chipload color mode: build per-toolpath envelope + per-move
+            // chipload maps once before the per-toolpath loop. Both maps are
+            // keyed by toolpath_id (the simulator-side `usize`).
+            let chipload_inputs: Option<(
+                HashMap<usize, Range<f64>>,
+                HashMap<usize, HashMap<usize, f64>>,
+            )> = if matches!(
+                state.viewport.toolpath_color_mode,
+                crate::state::viewport::ToolpathColorMode::Chipload
+            ) {
+                let sim_trace = state
+                    .simulation
+                    .results
+                    .as_ref()
+                    .and_then(|r| r.cut_trace.as_deref());
+                let envelopes = build_chipload_envelopes(session, sim_trace);
+                let per_move = build_chipload_per_move(sim_trace);
+                Some((envelopes, per_move))
+            } else {
+                None
+            };
+
             for (i, tc) in session.toolpath_configs().iter().enumerate() {
                 // Find which setup owns this toolpath
                 let tp_setup_id = session
@@ -708,24 +733,41 @@ impl RsCamApp {
                     let render_tp = result.toolpath.as_ref();
 
                     let color_mode = state.viewport.toolpath_color_mode;
-                    let mut gpu_data = if matches!(
-                        color_mode,
-                        crate::state::viewport::ToolpathColorMode::Engagement
-                    ) {
-                        ToolpathGpuData::from_toolpath_engagement(
-                            &render_state.device,
-                            &resources.gpu_limits,
-                            render_tp,
-                            tc.operation.feed_rate(),
-                        )
-                    } else {
-                        ToolpathGpuData::from_toolpath(
-                            &render_state.device,
-                            &resources.gpu_limits,
-                            render_tp,
-                            i,
-                            selected,
-                        )
+                    let mut gpu_data = match color_mode {
+                        crate::state::viewport::ToolpathColorMode::Engagement => {
+                            ToolpathGpuData::from_toolpath_engagement(
+                                &render_state.device,
+                                &resources.gpu_limits,
+                                render_tp,
+                                tc.operation.feed_rate(),
+                            )
+                        }
+                        crate::state::viewport::ToolpathColorMode::Chipload => {
+                            let envelope = chipload_inputs
+                                .as_ref()
+                                .and_then(|(env, _)| env.get(&tc.id).cloned());
+                            let empty: HashMap<usize, f64> = HashMap::new();
+                            let per_move = chipload_inputs
+                                .as_ref()
+                                .and_then(|(_, m)| m.get(&tc.id))
+                                .unwrap_or(&empty);
+                            ToolpathGpuData::from_toolpath_chipload(
+                                &render_state.device,
+                                &resources.gpu_limits,
+                                render_tp,
+                                envelope,
+                                per_move,
+                            )
+                        }
+                        crate::state::viewport::ToolpathColorMode::Normal => {
+                            ToolpathGpuData::from_toolpath(
+                                &render_state.device,
+                                &resources.gpu_limits,
+                                render_tp,
+                                i,
+                                selected,
+                            )
+                        }
                     };
                     gpu_data.toolpath_id = Some(tc.id);
 
@@ -807,4 +849,53 @@ impl RsCamApp {
             resources.height_planes_data = None;
         }
     }
+}
+
+/// Build a `toolpath_id -> [cl_min, cl_max]` map from the suggest module's
+/// matched LUT row per toolpath. Toolpaths whose suggestion refused (no
+/// vendor data, custom material, simulation required, etc.) are absent
+/// from the map; the renderer falls back to grey.
+fn build_chipload_envelopes(
+    session: &rs_cam_core::session::ProjectSession,
+    sim_trace: Option<&rs_cam_core::simulation_cut::SimulationCutTrace>,
+) -> HashMap<usize, Range<f64>> {
+    let suggestions = rs_cam_core::tool_load::suggest::project_suggestions(session, sim_trace);
+    let mut map = HashMap::with_capacity(suggestions.len());
+    for s in suggestions {
+        if let Ok(sg) = s.suggested {
+            map.insert(s.toolpath_id, sg.chipload_envelope);
+        }
+    }
+    map
+}
+
+/// Build a `toolpath_id -> { move_index -> max(effective_chip_thickness_mm) }`
+/// nested map from the simulation cut trace. Worst-case-per-move is the
+/// right signal for "did this segment violate the envelope?". Samples
+/// without an effective chip thickness (rapids, transients) are skipped.
+fn build_chipload_per_move(
+    sim_trace: Option<&rs_cam_core::simulation_cut::SimulationCutTrace>,
+) -> HashMap<usize, HashMap<usize, f64>> {
+    let mut map: HashMap<usize, HashMap<usize, f64>> = HashMap::new();
+    let Some(trace) = sim_trace else {
+        return map;
+    };
+    for s in &trace.samples {
+        if !s.is_cutting {
+            continue;
+        }
+        let Some(ct) = s.effective_chip_thickness_mm else {
+            continue;
+        };
+        let inner = map.entry(s.toolpath_id).or_default();
+        inner
+            .entry(s.move_index)
+            .and_modify(|prev| {
+                if ct > *prev {
+                    *prev = ct;
+                }
+            })
+            .or_insert(ct);
+    }
+    map
 }
