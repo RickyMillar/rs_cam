@@ -21,6 +21,9 @@ pub struct LookupQuery {
     pub pass_role: LutPassRole,
 }
 
+pub type LookupCriteria = LookupQuery;
+pub type MatchedRow = LookupResult;
+
 /// Result of a successful LUT lookup.
 #[derive(Debug, Clone)]
 pub struct LookupResult {
@@ -41,6 +44,10 @@ pub struct LookupResult {
     pub observation_id: String,
     pub source_vendor: String,
     pub score: i64,
+}
+
+pub fn find_best_row(lut: &VendorLut, criteria: &LookupCriteria) -> Option<MatchedRow> {
+    lookup_best(lut, criteria)
 }
 
 /// Find the best matching observation for a query.
@@ -212,6 +219,25 @@ mod tests {
     }
 
     #[test]
+    fn find_best_row_matches_legacy_lookup_best() {
+        let lut = embedded_lut();
+        let query = LookupQuery {
+            tool_family: ToolFamily::FlatEnd,
+            tool_subfamily: Some("upcut".to_string()),
+            diameter_mm: 6.0,
+            flute_count: 2,
+            material_family: MaterialFamily::Softwood,
+            hardness_kind: Some(HardnessKind::Janka),
+            hardness_value: Some(600.0),
+            operation_family: LutOperationFamily::Adaptive,
+            pass_role: LutPassRole::Roughing,
+        };
+        let via_canonical = find_best_row(&lut, &query).expect("canonical row");
+        let via_legacy = lookup_best(&lut, &query).expect("legacy row");
+        assert_eq!(via_canonical.observation_id, via_legacy.observation_id);
+    }
+
+    #[test]
     fn test_exact_match_6mm_2f_flat_softwood_adaptive() {
         let lut = embedded_lut();
         let query = LookupQuery {
@@ -334,8 +360,9 @@ mod tests {
             operation_family: LutOperationFamily::Parallel,
             pass_role: LutPassRole::Finish,
         };
-        let result = lookup_best(&lut, &query)
-            .expect("1mm tapered ball + softwood + parallel/finish should match a sub-1mm ball-nose row");
+        let result = lookup_best(&lut, &query).expect(
+            "1mm tapered ball + softwood + parallel/finish should match a sub-1mm ball-nose row",
+        );
         // Should match one of the new ZrN sub-1mm rows.
         assert!(
             result.observation_id.contains("zrn"),
