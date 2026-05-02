@@ -186,7 +186,16 @@ pub fn evaluate(
     let mut peak_in_range: f64 = 0.0;
 
     for (i, s) in steady_samples {
-        let cl = s.chipload_mm_per_tooth;
+        let Some(cl) = s.effective_chip_thickness_mm else {
+            let reason = if s.arc_engagement_radians.is_none() {
+                UnmodeledReason::ArcEngagementNotCaptured
+            } else {
+                UnmodeledReason::CutterModeUnsupported(
+                    "chip geometry unsupported for sampled cutter engagement".to_owned(),
+                )
+            };
+            return Verdict::Unmodeled { reason };
+        };
         if cl < min {
             let dev = min - cl;
             if peak_below.is_none_or(|(prev, _)| dev > prev) {
@@ -311,6 +320,7 @@ mod tests {
             radial_engagement: engagement,
             arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),
             chipload_mm_per_tooth: chipload,
+            effective_chip_thickness_mm: Some(chipload),
             removed_volume_est_mm3: 0.1,
             mrr_mm3_s: 1.0,
             semantic_item_id: None,

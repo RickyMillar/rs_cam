@@ -351,6 +351,7 @@ where
                     .simulate_toolpath_with_lut_metrics_cancel(
                         &entry.toolpath,
                         &lut,
+                        &entry.tool,
                         radius,
                         direction,
                         entry.id,

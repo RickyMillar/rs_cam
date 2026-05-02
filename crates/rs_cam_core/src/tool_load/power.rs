@@ -125,8 +125,7 @@ pub fn evaluate(
         )
     } else {
         Confidence::Approximate(
-            "isotropic Kc with 2.5× anisotropy multiplier; no helix/grain decomposition"
-                .to_owned(),
+            "isotropic Kc with 2.5× anisotropy multiplier; no helix/grain decomposition".to_owned(),
         )
     };
 
@@ -194,6 +193,7 @@ mod tests {
             radial_engagement: 0.5,
             arc_engagement_radians: Some(arc_rad),
             chipload_mm_per_tooth: feed_mmpm / (18_000.0 * 2.0),
+            effective_chip_thickness_mm: Some(feed_mmpm / (18_000.0 * 2.0)),
             removed_volume_est_mm3: 0.1,
             mrr_mm3_s: 1.0,
             semantic_item_id: None,
@@ -342,12 +342,7 @@ mod tests {
         // Makita × safety = 0.71 × 0.8 = 0.568 kW. Still below.
         // DOC=20, feed=6000: P = 70 × 20 × 6.35 × 6000 / 60e6 = 0.889 kW.
         // > 0.568, exceeds.
-        let trace = trace_with(vec![cutting_sample(
-            0,
-            20.0,
-            std::f64::consts::PI,
-            6000.0,
-        )]);
+        let trace = trace_with(vec![cutting_sample(0, 20.0, std::f64::consts::PI, 6000.0)]);
         let v = evaluate(
             0,
             &tool(),
@@ -368,12 +363,7 @@ mod tests {
 
     #[test]
     fn slot_annotates_approximate() {
-        let trace = trace_with(vec![cutting_sample(
-            0,
-            1.0,
-            std::f64::consts::PI,
-            1000.0,
-        )]);
+        let trace = trace_with(vec![cutting_sample(0, 1.0, std::f64::consts::PI, 1000.0)]);
         let v = evaluate(
             0,
             &tool(),
