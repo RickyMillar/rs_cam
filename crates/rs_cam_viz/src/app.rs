@@ -276,12 +276,7 @@ impl RsCamApp {
                         .small()
                         .color(egui::Color32::from_rgb(130, 130, 145)),
                 );
-                let debug_changed = ui
-                    .checkbox(&mut simulation.debug.enabled, "Debug")
-                    .changed();
-                if debug_changed && simulation.debug.enabled {
-                    simulation.debug.drawer_open = true;
-                }
+                ui.checkbox(&mut simulation.debug.enabled, "Debug");
                 let metrics_changed = ui
                     .checkbox(&mut simulation.metric_options.enabled, "Cut Metrics")
                     .on_hover_text(
@@ -311,12 +306,18 @@ impl RsCamApp {
                         tc.debug_options.enabled = capture_all;
                     }
                 }
-                ui.collapsing("Trace options", |ui| {
+                ui.collapsing("Per-toolpath", |ui| {
                     ui.label(
-                        egui::RichText::new("Advanced per-toolpath overrides still live in toolpath properties.")
-                            .small()
-                            .color(egui::Color32::from_rgb(130, 130, 145)),
+                        egui::RichText::new(
+                            "Override per toolpath. Re-generate that toolpath to apply.",
+                        )
+                        .small()
+                        .color(egui::Color32::from_rgb(130, 130, 145)),
                     );
+                    let configs = state.session.toolpath_configs_mut();
+                    for tc in configs {
+                        ui.checkbox(&mut tc.debug_options.enabled, &tc.name);
+                    }
                 });
             });
         });
@@ -365,7 +366,6 @@ impl RsCamApp {
                         &mut state.simulation,
                         &state.session,
                         &state.gui,
-                        &state.selection,
                         events,
                     );
                 });
