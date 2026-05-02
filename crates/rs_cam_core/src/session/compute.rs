@@ -88,6 +88,25 @@ impl ProjectSession {
                 })?;
                 tc.operation.set_depth_per_pass(v);
             }
+            "spindle_rpm" => {
+                let rpm = match &value {
+                    serde_json::Value::Null => None,
+                    serde_json::Value::Number(n) => {
+                        let u = n.as_u64().ok_or_else(|| {
+                            SessionError::InvalidParam(
+                                "spindle_rpm must be a non-negative integer".to_owned(),
+                            )
+                        })?;
+                        Some(u as u32)
+                    }
+                    _ => {
+                        return Err(SessionError::InvalidParam(
+                            "spindle_rpm must be a u32 or null".to_owned(),
+                        ));
+                    }
+                };
+                tc.operation.set_spindle_rpm(rpm);
+            }
             "debug_enabled" => {
                 let v = match &value {
                     serde_json::Value::Bool(b) => *b,
@@ -721,6 +740,7 @@ impl ProjectSession {
                         flute_count,
                         tool_summary,
                         semantic_trace: result.semantic_trace.as_ref().map(|t| Arc::new(t.clone())),
+                        spindle_rpm: tc.operation.spindle_rpm(),
                     });
                 }
             }
@@ -1191,6 +1211,45 @@ mod tests {
         let mut s = make_session();
         let result = s.set_toolpath_param(99, "feed_rate", json!(100.0));
         assert!(matches!(result, Err(SessionError::ToolpathNotFound(99))));
+    }
+
+    #[test]
+    fn set_toolpath_param_spindle_rpm() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        // Default is None.
+        assert_eq!(s.toolpath_configs()[0].operation.spindle_rpm(), None);
+        s.set_toolpath_param(0, "spindle_rpm", json!(15000)).unwrap();
+        assert_eq!(
+            s.toolpath_configs()[0].operation.spindle_rpm(),
+            Some(15000)
+        );
+    }
+
+    #[test]
+    fn set_toolpath_param_spindle_rpm_null_clears() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        s.set_toolpath_param(0, "spindle_rpm", json!(20_000))
+            .unwrap();
+        assert_eq!(
+            s.toolpath_configs()[0].operation.spindle_rpm(),
+            Some(20_000)
+        );
+        s.set_toolpath_param(0, "spindle_rpm", serde_json::Value::Null)
+            .unwrap();
+        assert_eq!(s.toolpath_configs()[0].operation.spindle_rpm(), None);
+    }
+
+    #[test]
+    fn set_toolpath_param_spindle_rpm_invalid_type() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        let result = s.set_toolpath_param(0, "spindle_rpm", json!("not a number"));
+        assert!(matches!(result, Err(SessionError::InvalidParam(_))));
+        // Negative numbers fail u64 conversion.
+        let result = s.set_toolpath_param(0, "spindle_rpm", json!(-1));
+        assert!(matches!(result, Err(SessionError::InvalidParam(_))));
     }
 
     #[test]

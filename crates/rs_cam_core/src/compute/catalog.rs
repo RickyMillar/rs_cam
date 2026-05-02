@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use crate::feeds::{OperationFamily as FeedsOperationFamily, PassRole};
 
 use super::config::StockSource;
-use super::stock_config::PostConfig;
 use super::operation_configs::{
     Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig, DrillConfig,
     DropCutterConfig, FaceConfig, HorizontalFinishConfig, InlayConfig, PencilConfig, PocketConfig,
@@ -744,14 +743,17 @@ impl OperationConfig {
 }
 
 /// Resolve the spindle RPM for an operation, falling back to the project
-/// default (`PostConfig.spindle_speed`) when the operation has no override.
+/// default (`PostConfig.spindle_speed` / `ProjectPostConfig.spindle_speed`)
+/// when the operation has no override.
 ///
 /// This is the single source of truth for "what RPM should this toolpath
 /// run at"; consumers that emit G-code, drive the simulator, or compute
 /// chip load must call this rather than reading `post.spindle_speed`
-/// directly so that per-toolpath overrides are honored.
-pub fn effective_spindle_rpm(op: &OperationConfig, post: &PostConfig) -> u32 {
-    op.spindle_rpm().unwrap_or(post.spindle_speed)
+/// directly so that per-toolpath overrides are honored. Callers pass the
+/// project-level default RPM as a plain `u32` so this helper does not need
+/// to know about the multiple `PostConfig` types in the workspace.
+pub fn effective_spindle_rpm(op: &OperationConfig, project_default_rpm: u32) -> u32 {
+    op.spindle_rpm().unwrap_or(project_default_rpm)
 }
 
 pub fn feed_optimization_unavailable_reason(

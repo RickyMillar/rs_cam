@@ -4,6 +4,7 @@
 //! Writing to `String` is infallible (only fails on OOM, which panics regardless),
 //! so discarding the `Result` with `let _ =` is safe.
 
+use crate::compute::catalog::effective_spindle_rpm;
 use crate::session::ProjectSession;
 use crate::simulation_cut::SimulationCutTrace;
 use crate::toolpath::{MoveType, Toolpath};
@@ -535,7 +536,10 @@ pub fn export_gcode_checked(
             let result = project.get_result(idx)?;
             Some(GcodePhase {
                 toolpath: &result.toolpath,
-                spindle_rpm: project.post_config().spindle_speed,
+                spindle_rpm: effective_spindle_rpm(
+                    &tc.operation,
+                    project.post_config().spindle_speed,
+                ),
                 label: &tc.name,
                 tool_number: None,
                 coolant: CoolantMode::Off,
@@ -1231,6 +1235,62 @@ mod tests {
         assert_eq!(
             m3_count, 2,
             "Different spindle speeds should emit M3 for each"
+        );
+    }
+
+    #[test]
+    fn per_op_spindle_rpm_drives_phase_emission() {
+        // End-to-end: building each `GcodePhase`'s `spindle_rpm` via
+        // `effective_spindle_rpm` should emit per-toolpath M3 S<rpm>
+        // commands in the resulting G-code. TP0 carries an override of
+        // 12000; TP1 falls back to the project default of 18000.
+        use crate::compute::catalog::{OperationConfig, effective_spindle_rpm};
+        use crate::compute::operation_configs::PocketConfig;
+
+        let mut op_override = OperationConfig::Pocket(PocketConfig::default());
+        op_override.set_spindle_rpm(Some(12_000));
+        let op_default = OperationConfig::Pocket(PocketConfig::default());
+        let project_default_rpm: u32 = 18_000;
+
+        let mut tp1 = Toolpath::new();
+        tp1.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp1.feed_to(P3::new(10.0, 0.0, 0.0), 1000.0);
+
+        let mut tp2 = Toolpath::new();
+        tp2.rapid_to(P3::new(20.0, 0.0, 10.0));
+        tp2.feed_to(P3::new(30.0, 0.0, 0.0), 800.0);
+
+        let phases = vec![
+            GcodePhase {
+                toolpath: &tp1,
+                spindle_rpm: effective_spindle_rpm(&op_override, project_default_rpm),
+                label: "TP0 — override",
+                pre_gcode: None,
+                post_gcode: None,
+                tool_number: None,
+                coolant: CoolantMode::Off,
+                controller_compensation: None,
+            },
+            GcodePhase {
+                toolpath: &tp2,
+                spindle_rpm: effective_spindle_rpm(&op_default, project_default_rpm),
+                label: "TP1 — default",
+                pre_gcode: None,
+                post_gcode: None,
+                tool_number: None,
+                coolant: CoolantMode::Off,
+                controller_compensation: None,
+            },
+        ];
+        let gcode = emit_gcode_phased(&phases, &GrblPost);
+
+        assert!(
+            gcode.contains("M3 S12000"),
+            "TP0's override should produce M3 S12000:\n{gcode}"
+        );
+        assert!(
+            gcode.contains("M3 S18000"),
+            "TP1 should fall back to project default 18000:\n{gcode}"
         );
     }
 
