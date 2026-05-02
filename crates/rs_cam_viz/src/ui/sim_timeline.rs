@@ -9,6 +9,8 @@ use crate::state::simulation::{
 };
 use egui_plot::{Bar, BarChart, Legend, Line, Plot, PlotPoints};
 use rs_cam_core::session::ProjectSession;
+use rs_cam_core::simulation_cut::SimulationCutSample;
+use rs_cam_core::tool_load::{Confidence, ToolLoadReport, Verdict};
 
 /// Bottom panel in simulation workspace: transport controls, timeline scrubber, speed control.
 pub fn draw(
@@ -24,6 +26,7 @@ pub fn draw(
     let current_boundary = sim.current_boundary().cloned();
 
     draw_transport_and_scrubber(ui, sim, session, gui, events);
+    draw_verdict_hud(ui, sim, session, gui, max_feed, events);
     draw_boundary_timeline(
         ui,
         sim,
@@ -34,9 +37,10 @@ pub fn draw(
         &active_semantic,
         events,
     );
+    draw_signal_spine(ui, sim, session, events);
     draw_speed_controls(ui, sim);
 
-    if sim.debug.enabled {
+    if sim.debug.enabled && sim.debug.drawer_open {
         ui.add_space(6.0);
         ui.separator();
         ui.horizontal(|ui| {
@@ -114,6 +118,314 @@ pub fn draw(
             }
         }
     }
+}
+
+fn draw_verdict_hud(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    session: &ProjectSession,
+    gui: &GuiState,
+    max_feed: f64,
+    events: &mut Vec<AppEvent>,
+) {
+    let sim_trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
+    let report = rs_cam_core::gcode::project_load_report(session, sim_trace);
+    let (ok, warn, bad, unmodeled) = verdict_counts(&report);
+    let collision_count = sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
+    let issue_count = sim.issues(gui, max_feed).len();
+    let trace_count = gui
+        .toolpath_rt
+        .values()
+        .filter(|rt| rt.debug_trace.is_some() || rt.semantic_trace.is_some())
+        .count();
+
+    egui::Frame::default()
+        .fill(egui::Color32::from_rgb(30, 32, 42))
+        .inner_margin(egui::Margin::symmetric(6.0, 4.0))
+        .rounding(4.0)
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                verdict_pill(
+                    ui,
+                    format!("✓ load {ok}"),
+                    egui::Color32::from_rgb(85, 180, 110),
+                    "Toolpaths within modeled load limits",
+                );
+                verdict_pill(
+                    ui,
+                    format!("⚠ unmodeled {unmodeled}"),
+                    egui::Color32::from_rgb(210, 170, 80),
+                    "Load could not be modeled honestly; inspect before export",
+                );
+                verdict_pill(
+                    ui,
+                    format!("✕ exceeds {bad}"),
+                    egui::Color32::from_rgb(220, 90, 90),
+                    "Known load limit exceedances",
+                );
+                verdict_pill(
+                    ui,
+                    format!("~ approx {warn}"),
+                    egui::Color32::from_rgb(120, 150, 220),
+                    "Approximate or advisory verdicts",
+                );
+                let collision_response = ui.add(
+                    egui::Button::new(
+                        egui::RichText::new(format!("collisions {collision_count}"))
+                            .small()
+                            .color(if collision_count == 0 {
+                                egui::Color32::from_rgb(120, 210, 140)
+                            } else {
+                                egui::Color32::from_rgb(255, 120, 110)
+                            }),
+                    )
+                    .fill(egui::Color32::from_rgb(42, 44, 56)),
+                );
+                if collision_response.clicked()
+                    && let Some(first) = sim.checks.rapid_collision_move_indices.first()
+                {
+                    events.push(AppEvent::SimJumpToMove(*first));
+                }
+                verdict_pill(
+                    ui,
+                    format!("issues {issue_count}"),
+                    egui::Color32::from_rgb(230, 190, 90),
+                    "Clickable issue navigation remains in the Inspector",
+                );
+                verdict_pill(
+                    ui,
+                    format!("trace artifacts {trace_count}"),
+                    egui::Color32::from_rgb(150, 170, 230),
+                    "Recorded semantic/performance traces",
+                );
+            });
+        });
+}
+
+fn verdict_counts(report: &ToolLoadReport) -> (usize, usize, usize, usize) {
+    let mut ok = 0;
+    let mut warn = 0;
+    let mut bad = 0;
+    let mut unmodeled = 0;
+    for tp in &report.per_toolpath {
+        for verdict in [&tp.chipload, &tp.power, &tp.deflection] {
+            match verdict {
+                Verdict::Within { .. } => ok += 1,
+                Verdict::Unmodeled { .. } => unmodeled += 1,
+                Verdict::Exceeds { .. } => bad += 1,
+            }
+            if verdict_is_approximate(verdict) {
+                warn += 1;
+            }
+        }
+    }
+    (ok, warn, bad, unmodeled)
+}
+
+fn verdict_is_approximate(verdict: &Verdict) -> bool {
+    matches!(
+        verdict,
+        Verdict::Within {
+            confidence: Confidence::Approximate(_),
+            ..
+        } | Verdict::Exceeds {
+            confidence: Confidence::Approximate(_),
+            ..
+        }
+    )
+}
+
+fn verdict_pill(ui: &mut egui::Ui, text: String, color: egui::Color32, hover: &str) {
+    ui.add(
+        egui::Button::new(egui::RichText::new(text).small().color(color))
+            .fill(egui::Color32::from_rgb(42, 44, 56)),
+    )
+    .on_hover_text(hover);
+}
+
+fn draw_signal_spine(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    session: &ProjectSession,
+    events: &mut Vec<AppEvent>,
+) {
+    let Some(trace) = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref()) else {
+        ui.label(
+            egui::RichText::new("Run simulation with Cut Metrics to see chipload, engagement, DOC, MRR, and feed tracks.")
+                .small()
+                .italics()
+                .color(egui::Color32::from_rgb(130, 130, 145)),
+        );
+        return;
+    };
+    let cutting: Vec<&SimulationCutSample> =
+        trace.samples.iter().filter(|s| s.is_cutting).collect();
+    if cutting.is_empty() {
+        ui.label(
+            egui::RichText::new("No cutting samples captured.")
+                .small()
+                .italics(),
+        );
+        return;
+    }
+
+    ui.add_space(4.0);
+    let active_time = sim
+        .current_cut_sample()
+        .map(|sample| sample.sample.cumulative_time_s);
+    let envelope = sim
+        .current_boundary()
+        .and_then(|b| chipload_envelope_for_toolpath(session, Some(trace), b.id));
+    draw_signal_track(
+        ui,
+        "chipload",
+        &cutting,
+        |s| s.effective_chip_thickness_mm,
+        egui::Color32::from_rgb(230, 200, 60),
+        active_time,
+        sim,
+        events,
+    );
+    if let Some((lo, hi)) = envelope {
+        ui.label(
+            egui::RichText::new(format!(
+                "chipload envelope for active toolpath: {:.4}–{:.4} mm/tooth",
+                lo, hi
+            ))
+            .small()
+            .color(egui::Color32::from_rgb(150, 150, 165)),
+        );
+    }
+    draw_signal_track(
+        ui,
+        "arc engagement",
+        &cutting,
+        |s| s.arc_engagement_radians,
+        egui::Color32::from_rgb(80, 200, 120),
+        active_time,
+        sim,
+        events,
+    );
+    draw_signal_track(
+        ui,
+        "axial DOC",
+        &cutting,
+        |s| (s.axial_doc_mm > 0.0).then_some(s.axial_doc_mm),
+        egui::Color32::from_rgb(110, 150, 230),
+        active_time,
+        sim,
+        events,
+    );
+    draw_signal_track(
+        ui,
+        "MRR",
+        &cutting,
+        |s| (s.mrr_mm3_s > 0.0).then_some(s.mrr_mm3_s),
+        egui::Color32::from_rgb(210, 130, 230),
+        active_time,
+        sim,
+        events,
+    );
+    draw_signal_track(
+        ui,
+        "feed",
+        &cutting,
+        |s| Some(s.feed_rate_mm_min),
+        egui::Color32::from_rgb(150, 190, 230),
+        active_time,
+        sim,
+        events,
+    );
+}
+
+const SIGNAL_MAX_POINTS: usize = 1600;
+
+fn draw_signal_track(
+    ui: &mut egui::Ui,
+    label: &str,
+    samples: &[&SimulationCutSample],
+    value_fn: impl Fn(&SimulationCutSample) -> Option<f64>,
+    color: egui::Color32,
+    active_time: Option<f64>,
+    sim: &SimulationState,
+    events: &mut Vec<AppEvent>,
+) {
+    let mut point_samples: Vec<(&SimulationCutSample, [f64; 2])> = samples
+        .iter()
+        .filter_map(|sample| value_fn(sample).map(|y| (*sample, [sample.cumulative_time_s, y])))
+        .collect();
+    if point_samples.is_empty() {
+        return;
+    }
+    if point_samples.len() > SIGNAL_MAX_POINTS {
+        let stride = point_samples.len().div_ceil(SIGNAL_MAX_POINTS);
+        point_samples = point_samples
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, point)| (i % stride == 0).then_some(point))
+            .collect();
+    }
+    let points: Vec<[f64; 2]> = point_samples.iter().map(|(_, point)| *point).collect();
+    let min_y = points.iter().map(|p| p[1]).fold(f64::INFINITY, f64::min);
+    let max_y = points
+        .iter()
+        .map(|p| p[1])
+        .fold(f64::NEG_INFINITY, f64::max);
+    let response = Plot::new(format!("signal_track_{label}"))
+        .height(46.0)
+        .allow_zoom([true, false])
+        .allow_drag([true, false])
+        .show_axes([false, false])
+        .show(ui, |plot_ui| {
+            plot_ui.line(Line::new(PlotPoints::from(points)).name(label).color(color));
+            if let Some(t) = active_time {
+                plot_ui.line(
+                    Line::new(PlotPoints::from(vec![[t, min_y], [t, max_y]]))
+                        .color(egui::Color32::from_rgb(245, 245, 245)),
+                );
+            }
+            if let Some(pointer) = plot_ui.pointer_coordinate() {
+                let nearest = point_samples.iter().min_by(|left, right| {
+                    (left.1[0] - pointer.x)
+                        .abs()
+                        .total_cmp(&(right.1[0] - pointer.x).abs())
+                });
+                if let Some((sample, point)) = nearest {
+                    plot_ui.text(egui_plot::Text::new(
+                        egui_plot::PlotPoint::new(point[0], point[1]),
+                        format!("{label}: {:.3} @ {:.2}s", point[1], point[0]),
+                    ));
+                    if plot_ui.response().clicked()
+                        && let Some(global_move) = sim.global_move_for_local(
+                            crate::state::toolpath::ToolpathId(sample.toolpath_id),
+                            sample.move_index,
+                        )
+                    {
+                        events.push(AppEvent::SimJumpToMove(global_move));
+                    }
+                }
+            }
+        });
+    response
+        .response
+        .on_hover_text("Hover to read the signal. Click to scrub to nearest sample.");
+}
+
+fn chipload_envelope_for_toolpath(
+    session: &ProjectSession,
+    sim_trace: Option<&rs_cam_core::simulation_cut::SimulationCutTrace>,
+    toolpath_id: crate::state::toolpath::ToolpathId,
+) -> Option<(f64, f64)> {
+    let suggestions = rs_cam_core::tool_load::suggest::project_suggestions(session, sim_trace);
+    let suggested = suggestions
+        .into_iter()
+        .find(|s| s.toolpath_id == toolpath_id.0)?
+        .suggested
+        .ok()?;
+    Some((
+        suggested.chipload_envelope.start,
+        suggested.chipload_envelope.end,
+    ))
 }
 
 /// Row 1: Transport buttons, timeline scrubber slider, and time display.

@@ -26,7 +26,7 @@ pub fn draw(
     events: &mut Vec<AppEvent>,
 ) {
     let max_feed = session.machine().max_feed_mm_min;
-    ui.heading("Diagnostics");
+    ui.heading("Inspector");
     ui.separator();
     draw_analytics_tabs(ui, &mut sim.analytics_tab);
     ui.add_space(4.0);
@@ -92,6 +92,9 @@ pub fn draw(
     let active_semantic = sim.active_semantic_item(gui, max_feed);
     let linked_span = sim.active_debug_span(gui, max_feed);
     let current_boundary_id = sim.current_boundary().map(|boundary| boundary.id);
+
+    draw_reactive_inspector(ui, sim, gui, max_feed, &load_report, events);
+    ui.separator();
 
     if matches!(active_tab, SimulationAnalyticsTab::RunStatus) {
         draw_run_status_snapshot(ui, sim, gui, &load_report);
@@ -994,6 +997,142 @@ fn draw_run_status_snapshot(
         });
 }
 
+fn draw_reactive_inspector(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    gui: &GuiState,
+    max_feed: f64,
+    load_report: &ToolLoadReport,
+    events: &mut Vec<AppEvent>,
+) {
+    ui.label(
+        egui::RichText::new("Inspector")
+            .small()
+            .strong()
+            .color(theme::TEXT_STRONG),
+    );
+    if sim.results.is_none() {
+        ui.label(
+            egui::RichText::new(
+                "Run simulation, then select a timeline point, issue, hotspot, or toolpath.",
+            )
+            .small()
+            .italics()
+            .color(theme::TEXT_DIM),
+        );
+        return;
+    }
+
+    if let Some(issue) = sim.current_issue(gui, max_feed) {
+        egui::Frame::default()
+            .fill(egui::Color32::from_rgb(42, 36, 28))
+            .inner_margin(6.0)
+            .rounding(4.0)
+            .show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{}: {}",
+                        issue_kind_label(issue.kind),
+                        issue.label
+                    ))
+                    .strong()
+                    .color(theme::WARNING_TEXT),
+                );
+                ui.label(format!("Move {}", issue.move_index));
+                ui.horizontal(|ui| {
+                    if ui.small_button("Jump").clicked() {
+                        events.push(AppEvent::SimJumpToMove(issue.move_index));
+                    }
+                    if let Some(toolpath_id) = issue.toolpath_id
+                        && ui.small_button("Suggest").clicked()
+                    {
+                        events.push(AppEvent::OpenSuggestModal(toolpath_id));
+                    }
+                });
+            });
+        ui.add_space(4.0);
+    }
+
+    if let Some(active) = sim.current_cut_sample() {
+        ui.label(egui::RichText::new("Sample").small().strong());
+        egui::Grid::new("reactive_sample_grid")
+            .num_columns(2)
+            .spacing([8.0, 2.0])
+            .show(ui, |ui| {
+                ui.label("toolpath");
+                ui.label(format!("{}", active.toolpath_id.0 + 1));
+                ui.end_row();
+                ui.label("time");
+                ui.label(format!("{:.2}s", active.sample.cumulative_time_s));
+                ui.end_row();
+                ui.label("feed");
+                ui.label(format!("{:.0} mm/min", active.sample.feed_rate_mm_min));
+                ui.end_row();
+                ui.label("chip thickness");
+                ui.label(
+                    active
+                        .sample
+                        .effective_chip_thickness_mm
+                        .map(|v| format!("{v:.4} mm"))
+                        .unwrap_or_else(|| "unmodeled".to_owned()),
+                );
+                ui.end_row();
+                ui.label("arc engagement");
+                ui.label(format_arc_engagement(active.sample.arc_engagement_radians));
+                ui.end_row();
+                ui.label("axial DOC");
+                ui.label(format!("{:.3} mm", active.sample.axial_doc_mm));
+                ui.end_row();
+                ui.label("MRR");
+                ui.label(format!("{:.1} mm³/s", active.sample.mrr_mm3_s));
+                ui.end_row();
+            });
+        ui.add_space(4.0);
+    }
+
+    if let Some(boundary) = sim.current_boundary() {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(&boundary.name).strong());
+            if ui.small_button("Suggest").clicked() {
+                events.push(AppEvent::OpenSuggestModal(boundary.id));
+            }
+            if ui.small_button("Jump start").clicked() {
+                events.push(AppEvent::SimJumpToMove(boundary.start_move));
+            }
+        });
+        if let Some(tp) = load_report
+            .per_toolpath
+            .iter()
+            .find(|tp| tp.toolpath_id == boundary.id.0)
+        {
+            draw_tool_load_badges(ui, tp);
+            ui.label(verdict_label(&tp.chipload));
+            ui.label(verdict_label(&tp.power));
+            ui.label(verdict_label(&tp.deflection));
+        }
+        if let Some(summary) = sim.toolpath_cut_summary(boundary.id) {
+            ui.label(
+                egui::RichText::new(format!(
+                    "cut {:.1}s · air {:.1}s · low-engage {:.1}s · peak chip {:.4}",
+                    summary.cutting_runtime_s,
+                    summary.air_cut_time_s,
+                    summary.low_engagement_time_s,
+                    summary.peak_chipload_mm_per_tooth
+                ))
+                .small()
+                .color(theme::TEXT_MUTED),
+            );
+        }
+    } else {
+        ui.label(
+            egui::RichText::new("Select a toolpath segment, signal peak, issue, or hotspot.")
+                .small()
+                .italics()
+                .color(theme::TEXT_DIM),
+        );
+    }
+}
+
 fn draw_analytics_tabs(ui: &mut egui::Ui, active_tab: &mut SimulationAnalyticsTab) {
     ui.horizontal_wrapped(|ui| {
         ui.selectable_value(active_tab, SimulationAnalyticsTab::RunStatus, "Run Status")
@@ -1327,6 +1466,14 @@ fn draw_tool_load_badges(ui: &mut egui::Ui, verdict: &ToolpathLoadVerdict) {
     });
 }
 
+fn verdict_label(verdict: &Verdict) -> String {
+    match verdict {
+        Verdict::Within { peak, .. } => format!("within · peak {peak:.4}"),
+        Verdict::Exceeds { peak, reason, .. } => format!("exceeds · {reason:?} · peak {peak:.4}"),
+        Verdict::Unmodeled { reason } => format!("unmodeled · {reason:?}"),
+    }
+}
+
 fn verdict_badge(ui: &mut egui::Ui, label: &str, verdict: &Verdict) {
     let (color, status) = match verdict {
         Verdict::Within {
@@ -1479,11 +1626,7 @@ fn draw_timeseries_panel(
         return;
     };
 
-    let Some(trace) = sim
-        .results
-        .as_ref()
-        .and_then(|r| r.cut_trace.as_deref())
-    else {
+    let Some(trace) = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref()) else {
         ui.label(
             egui::RichText::new("Run a simulation with Cut Metrics enabled")
                 .small()
@@ -1549,14 +1692,8 @@ fn draw_timeseries_panel(
                 );
             }
             if let Some((cl_min, cl_max)) = envelope {
-                let t0 = samples
-                    .first()
-                    .map(|s| s.cumulative_time_s)
-                    .unwrap_or(0.0);
-                let t1 = samples
-                    .last()
-                    .map(|s| s.cumulative_time_s)
-                    .unwrap_or(t0);
+                let t0 = samples.first().map(|s| s.cumulative_time_s).unwrap_or(0.0);
+                let t1 = samples.last().map(|s| s.cumulative_time_s).unwrap_or(t0);
                 plot_ui.line(
                     Line::new(PlotPoints::from(vec![[t0, cl_min], [t1, cl_min]]))
                         .name("cl_min")
@@ -1590,13 +1727,15 @@ fn chipload_envelope_for_toolpath(
     sim_trace: Option<&SimulationCutTrace>,
     toolpath_id: ToolpathId,
 ) -> Option<(f64, f64)> {
-    let suggestions =
-        rs_cam_core::tool_load::suggest::project_suggestions(session, sim_trace);
+    let suggestions = rs_cam_core::tool_load::suggest::project_suggestions(session, sim_trace);
     let s = suggestions
         .into_iter()
         .find(|s| s.toolpath_id == toolpath_id.0)?;
     let suggested = s.suggested.ok()?;
-    Some((suggested.chipload_envelope.start, suggested.chipload_envelope.end))
+    Some((
+        suggested.chipload_envelope.start,
+        suggested.chipload_envelope.end,
+    ))
 }
 
 #[cfg(test)]
