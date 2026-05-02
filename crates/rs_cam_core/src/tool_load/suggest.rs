@@ -198,7 +198,8 @@ pub fn evaluate(
 
     // Pull current state from the trace. Walk steady-state samples (per
     // Item C: feed >= 0.95 × commanded feed, in-cut, not rapid).
-    let stats = collect_steady_state_stats(trace, ctx.toolpath_id, ctx.current_feed_mm_min);
+    let stats =
+        collect_steady_state_stats(trace, ctx.toolpath_id, ctx.current_feed_mm_min, ctx.tool);
 
     let current_rpm = stats.median_rpm;
     let current_peak_chipload = stats.peak_chipload;
@@ -672,6 +673,7 @@ fn collect_steady_state_stats(
     trace: &SimulationCutTrace,
     toolpath_id: usize,
     operation_feed_mm_min: f64,
+    tool: &ToolDefinition,
 ) -> SteadyStateStats {
     const STEADY_STATE_FEED_FRACTION: f64 = 0.95;
     let threshold = STEADY_STATE_FEED_FRACTION * operation_feed_mm_min;
@@ -706,11 +708,16 @@ fn collect_steady_state_stats(
             peak_chipload = Some(peak_chipload.map_or(cl, |p| p.max(cl)));
         }
         peak_axial_doc = peak_axial_doc.max(s.axial_doc_mm);
-        // Arc-equivalent radial slab width. The simulator already gives
-        // us `radial_engagement` (the fraction of the engaged width).
-        // Combine with the arc-fraction to get a per-sample WOC proxy
-        // consistent with the power guardrail's slab convention.
-        let woc = s.radial_engagement * (arc / std::f64::consts::PI);
+        // Arc-equivalent radial slab width — same formula as
+        // `power.rs::eval_power_per_sample`:
+        //   radial_width = (arc / π) × engagement_radius × 2
+        // Yields mm-scaled width: half-engagement (arc = π/2) gives
+        // `engagement_radius`, slot (arc = π) gives the full diameter.
+        // Multiplying by `radial_engagement` (a unitless fraction) — as
+        // an earlier draft did — produced a slab width inflated by
+        // ~1/diameter, making the power cap essentially never binding.
+        let engagement_radius = tool.engagement_radius(s.axial_doc_mm).max(0.0);
+        let woc = (arc / std::f64::consts::PI) * engagement_radius * 2.0;
         peak_radial_width = peak_radial_width.max(woc);
     }
 
@@ -902,6 +909,115 @@ mod tests {
             result.suggested,
             Err(RefuseReason::SteadyStateSamplesNotPresent)
         ));
+    }
+
+    #[test]
+    fn slab_width_is_mm_scaled_not_unitless() {
+        // Regression guard for B1: the steady-state slab width MUST be
+        // scaled by `engagement_radius × 2` (i.e. mm), not by the unitless
+        // `radial_engagement` fraction. With a 6mm flat tool, arc = π/2,
+        // engagement_radius = 3.0 mm:
+        //   woc = (π/2 / π) × 3.0 × 2.0 = 3.0 mm
+        // The pre-fix formula `radial_engagement × (arc/π)` would have
+        // returned 0.5 × 0.5 = 0.25 — a fraction, not millimetres.
+        let samples: Vec<SimulationCutSample> = (0..3)
+            .map(|i| cutting_sample(i, 1500.0, 18000, 4.0, std::f64::consts::FRAC_PI_2))
+            .collect();
+        let t = trace(samples);
+        let tool = tool_6mm_flat();
+        let stats =
+            collect_steady_state_stats(&t, 0, 1500.0, &tool);
+        assert_eq!(stats.valid_count, 3);
+        // arc = π/2, engagement_radius = 3.0 → expected woc = 3.0 mm.
+        assert!(
+            (stats.peak_radial_width - 3.0).abs() < 1e-9,
+            "peak_radial_width should be 3.0 mm (engagement_radius × 2 ×
+             arc/π), got {}",
+            stats.peak_radial_width
+        );
+        // Sanity: `radial_engagement` (0.5) × arc/π (0.5) = 0.25. The
+        // post-fix value is 12× that — the fix is doing the right thing.
+        assert!(
+            stats.peak_radial_width > 1.0,
+            "peak_radial_width must be in mm range, not unitless fraction"
+        );
+    }
+
+    #[test]
+    fn power_cap_can_be_binding() {
+        // Regression guard for B1: with a deliberately under-powered
+        // machine plus a high-Kc material and meaningful axial DOC, the
+        // power cap should bind the upper feed bound — i.e. feed_pwr_max
+        // < feed_hi_chip — so the suggestion reports `power_cap_kw =
+        // Some(_)`. Pre-fix, the inflated woc made the cap essentially
+        // unreachable and this would always be `None`.
+        //
+        // 6mm flat tool, hard maple, slot (arc = π) so woc = 6.0 mm,
+        // axial = 4 mm. Synthetic 20W machine, safety 0.80 → 16 W power
+        // cap. kc_eff = 15 × 2.5 = 37.5 N/mm². At rpm = 15000 (the row's
+        // nominal), feed_pwr_max ≈ 16e-3 × 60e6 / (37.5 × 4 × 6) ≈ 1067
+        // mm/min, comfortably below the row's chipload-max feed (≈ 1650).
+        let samples: Vec<SimulationCutSample> = (0..5)
+            .map(|i| {
+                let mut s = cutting_sample(i, 1500.0, 15000, 4.0, std::f64::consts::PI);
+                s.radial_engagement = 1.0;
+                s
+            })
+            .collect();
+        let t = trace(samples);
+        let tool = tool_6mm_flat();
+        let mat = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        // Synthetic under-powered machine: 20 W constant power. Realistic
+        // shapeoko_vfd / shapeoko_makita don't bind on wood Kc + LUT
+        // chipload-max feeds, so we construct a deliberate one here.
+        let machine = MachineProfile {
+            name: "Tiny test rig".to_owned(),
+            spindle: crate::machine::SpindleConfig::Variable {
+                min_rpm: 6000.0,
+                max_rpm: 24000.0,
+            },
+            power: crate::machine::PowerModel::ConstantPower { power_kw: 0.020 },
+            chip_load: crate::machine::ChipLoadFormula::default(),
+            max_feed_mm_min: 5000.0,
+            max_shank_mm: 7.0,
+            rigidity: crate::machine::RigidityProfile::default(),
+            safety_factor: 0.80,
+        };
+        let ctx = SuggestContext {
+            toolpath_id: 0,
+            tool: &tool,
+            material: &mat,
+            machine: &machine,
+            operation_family: LutOperationFamily::Pocket,
+            pass_role: LutPassRole::Roughing,
+            operation_kind: OperationType::Pocket,
+            current_feed_mm_min: 1500.0,
+        };
+        let result = evaluate(&ctx, Some(&t));
+        let suggested = result.suggested.expect("should produce a suggestion");
+        assert!(
+            suggested.power_cap_kw.is_some(),
+            "power cap should bind feed_hi at this engagement: \
+             feed_mm_min={}, rationale={:?}",
+            suggested.feed_mm_min,
+            result.rationale
+        );
+        // The reported cap should match the machine's nominal at the
+        // chosen rpm × safety factor. ConstantPower → 0.020 × 0.80 = 0.016 kW.
+        let cap = suggested.power_cap_kw.expect("just asserted Some");
+        assert!(
+            (cap - 0.016).abs() < 1e-6,
+            "expected power cap ≈ 0.016 kW (0.020 × 0.80), got {}",
+            cap
+        );
+        // Rationale should mention the power cap.
+        assert!(
+            result.rationale.iter().any(|r| r.contains("power cap")),
+            "rationale should mention the binding power cap: {:?}",
+            result.rationale
+        );
     }
 
     #[test]
