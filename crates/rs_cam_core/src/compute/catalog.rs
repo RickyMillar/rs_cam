@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::feeds::{OperationFamily as FeedsOperationFamily, PassRole};
 
 use super::config::StockSource;
+use super::stock_config::PostConfig;
 use super::operation_configs::{
     Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig, DrillConfig,
     DropCutterConfig, FaceConfig, HorizontalFinishConfig, InlayConfig, PencilConfig, PocketConfig,
@@ -432,6 +433,12 @@ pub trait OperationParams {
     fn set_depth_per_pass(&mut self, _value: f64) {}
 
     fn depth_semantics(&self) -> DepthSemantics;
+
+    /// Per-toolpath spindle speed override. `None` means "use the project
+    /// default" (`PostConfig.spindle_speed`); resolve via
+    /// [`effective_spindle_rpm`].
+    fn spindle_rpm(&self) -> Option<u32>;
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>);
 }
 
 /// Operation-specific configuration.
@@ -628,6 +635,16 @@ impl OperationConfig {
         self.as_params().depth_semantics()
     }
 
+    /// Per-toolpath spindle override. `None` means "use the project default".
+    /// Resolve through [`effective_spindle_rpm`] to apply the fallback.
+    pub fn spindle_rpm(&self) -> Option<u32> {
+        self.as_params().spindle_rpm()
+    }
+
+    pub fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.as_params_mut().set_spindle_rpm(rpm);
+    }
+
     pub fn default_depth_for_heights(&self) -> f64 {
         match self.depth_semantics() {
             DepthSemantics::Explicit(value) | DepthSemantics::DerivedStockTop(value) => value.abs(),
@@ -724,6 +741,17 @@ impl OperationConfig {
             _ => vec![],
         }
     }
+}
+
+/// Resolve the spindle RPM for an operation, falling back to the project
+/// default (`PostConfig.spindle_speed`) when the operation has no override.
+///
+/// This is the single source of truth for "what RPM should this toolpath
+/// run at"; consumers that emit G-code, drive the simulator, or compute
+/// chip load must call this rather than reading `post.spindle_speed`
+/// directly so that per-toolpath overrides are honored.
+pub fn effective_spindle_rpm(op: &OperationConfig, post: &PostConfig) -> u32 {
+    op.spindle_rpm().unwrap_or(post.spindle_speed)
 }
 
 pub fn feed_optimization_unavailable_reason(
