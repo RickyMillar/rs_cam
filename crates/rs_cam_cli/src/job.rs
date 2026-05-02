@@ -307,6 +307,7 @@ fn build_tool(def: &ToolDef) -> Result<rs_cam_core::tool::ToolDefinition> {
         def.holder_diameter.unwrap_or(d * 2.0),
         def.shank_length.unwrap_or(0.0) + cl + 20.0, // default stickout
         def.flute_count.unwrap_or(2),
+        rs_cam_core::compute::ToolMaterial::Carbide,
     ))
 }
 
@@ -629,6 +630,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
 
                 let params = Adaptive3dParams {
                     tool_radius,
+                    envelope_radius: tool_radius,
                     stepover,
                     depth_per_pass: depth_pp,
                     stock_to_leave: stl,

@@ -113,6 +113,7 @@ mod tests {
             25.0,
             45.0,
             2,
+            crate::compute::tool_config::ToolMaterial::Carbide,
         );
 
         let req = CollisionCheckRequest {
@@ -140,6 +141,7 @@ mod tests {
             25.0,
             45.0,
             2,
+            crate::compute::tool_config::ToolMaterial::Carbide,
         );
 
         let req = CollisionCheckRequest {

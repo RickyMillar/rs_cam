@@ -28,6 +28,10 @@ pub enum DrillCycle {
 pub struct DrillParams {
     /// Total drill depth below the surface (positive value).
     pub depth: f64,
+    /// Top of the workpiece in setup-local Z. The drill plunges from
+    /// `retract_z` down to `top_z - depth`. Default 0.0 corresponds to the
+    /// pure G-code convention "Z=0 at workpiece top".
+    pub top_z: f64,
     /// Drill cycle type.
     pub cycle: DrillCycle,
     /// Plunge feed rate (mm/min).
@@ -52,7 +56,7 @@ pub fn drill_toolpath(holes: &[[f64; 2]], params: &DrillParams) -> Toolpath {
         // 2. Rapid down to retract_z (R-plane)
         tp.rapid_to(P3::new(x, y, params.retract_z));
 
-        let bottom_z = -params.depth;
+        let bottom_z = params.top_z - params.depth;
 
         match params.cycle {
             DrillCycle::Simple | DrillCycle::Dwell(_) => {
@@ -154,6 +158,7 @@ mod tests {
     fn default_params(cycle: DrillCycle) -> DrillParams {
         DrillParams {
             depth: 10.0,
+            top_z: 0.0,
             cycle,
             feed_rate: 200.0,
             safe_z: 25.0,

@@ -93,6 +93,10 @@ pub struct ToolConfig {
     pub tool_type: ToolType,
     pub diameter: f64,
     pub cutting_length: f64,
+    #[serde(default = "default_helix_deg")]
+    pub helix_deg: f64,
+    #[serde(default)]
+    pub corner_radius_mm: f64,
     // Bull Nose
     pub corner_radius: f64,
     // V-Bit (included angle in degrees)
@@ -114,6 +118,10 @@ pub struct ToolConfig {
     pub product_id: String,
 }
 
+fn default_helix_deg() -> f64 {
+    30.0
+}
+
 impl ToolConfig {
     pub fn new_default(id: ToolId, tool_type: ToolType) -> Self {
         let (name, diameter) = match tool_type {
@@ -130,6 +138,8 @@ impl ToolConfig {
             tool_type,
             diameter,
             cutting_length: 25.0,
+            helix_deg: default_helix_deg(),
+            corner_radius_mm: 0.0,
             corner_radius: 2.0,
             included_angle: 90.0,
             taper_half_angle: 15.0,
@@ -186,5 +196,54 @@ impl ToolConfig {
                 )
             }
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn toml_round_trip_preserves_helix_corner_radius_and_material() {
+        let mut tool = ToolConfig::new_default(ToolId(7), ToolType::EndMill);
+        tool.helix_deg = 45.0;
+        tool.corner_radius_mm = 0.1;
+        tool.tool_material = ToolMaterial::Hss;
+        let toml = toml::to_string(&tool).expect("serialize tool config");
+        let decoded: ToolConfig = toml::from_str(&toml).expect("deserialize tool config");
+        assert_eq!(decoded.helix_deg, 45.0);
+        assert_eq!(decoded.corner_radius_mm, 0.1);
+        assert_eq!(decoded.tool_material, ToolMaterial::Hss);
+    }
+
+    #[test]
+    fn old_toml_defaults_new_tool_fields() {
+        let decoded: ToolConfig = toml::from_str(
+            r#"
+id = 0
+name = "Old"
+tool_number = 1
+tool_type = "end_mill"
+diameter = 6.0
+cutting_length = 20.0
+corner_radius = 2.0
+included_angle = 90.0
+taper_half_angle = 15.0
+shaft_diameter = 6.0
+holder_diameter = 20.0
+shank_diameter = 6.0
+shank_length = 20.0
+stickout = 40.0
+flute_count = 2
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+"#,
+        )
+        .expect("old tool config deserializes");
+        assert_eq!(decoded.helix_deg, 30.0);
+        assert_eq!(decoded.corner_radius_mm, 0.0);
     }
 }

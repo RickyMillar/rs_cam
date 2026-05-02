@@ -240,8 +240,8 @@ impl RsCamApp {
                 }
                 let transform_pt = |p: &rs_cam_core::geo::P2| -> (f64, f64) {
                     if let Some(setup) = setup_opt {
-                        let tp = setup
-                            .transform_point(rs_cam_core::geo::P3::new(p.x, p.y, 0.0), &stock);
+                        let tp =
+                            setup.transform_point(rs_cam_core::geo::P3::new(p.x, p.y, 0.0), &stock);
                         (tp.x, tp.y)
                     } else {
                         (p.x, p.y)
@@ -283,9 +283,9 @@ impl RsCamApp {
                 // Prefer the setup that actually uses this model; fall back to
                 // the current active/selected setup.
                 let model_setup = setup_for_model(model.id).or_else(|| {
-                    active_setup_ref.as_ref().map(|s| {
-                        Setup::for_transforms(s.id, s.face_up, s.z_rotation)
-                    })
+                    active_setup_ref
+                        .as_ref()
+                        .map(|s| Setup::for_transforms(s.id, s.face_up, s.z_rotation))
                 });
                 // Draw slightly above the setup's local stock top to avoid
                 // z-fighting. When no setup is known, fall back to world-frame
@@ -758,20 +758,15 @@ impl RsCamApp {
                         );
 
                         // Tool-profile ghost overlay (optional).
-                        if self
-                            .controller
-                            .state()
-                            .viewport
-                            .show_tool_profile_preview
+                        if self.controller.state().viewport.show_tool_profile_preview
                             && let Some(tool) =
                                 session.tools().iter().find(|t| t.id.0 == tc.tool_id)
                         {
                             let cutter = rs_cam_core::compute::build_cutter(tool);
-                            let profile_verts =
-                                toolpath_render::tool_profile_preview_vertices(
-                                    &result.toolpath,
-                                    &cutter,
-                                );
+                            let profile_verts = toolpath_render::tool_profile_preview_vertices(
+                                &result.toolpath,
+                                &cutter,
+                            );
                             gpu_data.attach_tool_profile_preview(
                                 &render_state.device,
                                 &resources.gpu_limits,

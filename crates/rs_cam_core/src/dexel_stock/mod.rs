@@ -826,6 +826,7 @@ mod tests {
                 5000.0,
                 1.0,
                 None,
+                true,
                 &never_cancel,
             )
             .unwrap();
@@ -872,6 +873,7 @@ mod tests {
                 5000.0,
                 1.0,
                 None,
+                true,
                 &never_cancel,
             )
             .unwrap();
@@ -905,6 +907,7 @@ mod tests {
                 5000.0,
                 1.0,
                 None,
+                true,
                 &never_cancel,
             )
             .unwrap();

@@ -279,10 +279,14 @@ pub(super) fn adaptive_3d_segments(
         .max_stay_down_dist
         .unwrap_or_else(|| (tool_radius * 6.0).max(params.stepover * 6.0));
 
-    let bbox_x_min = origin_x + tool_radius;
-    let bbox_x_max = extent_x - tool_radius;
-    let bbox_y_min = origin_y + tool_radius;
-    let bbox_y_max = extent_y - tool_radius;
+    // Bbox margins use the envelope radius (full shank for tapered tools) so
+    // the tool body can't overrun the working footprint. Engagement-related
+    // computations below use tool_radius (effective contact radius at DOC).
+    let envelope_radius = params.envelope_radius;
+    let bbox_x_min = origin_x + envelope_radius;
+    let bbox_x_max = extent_x - envelope_radius;
+    let bbox_y_min = origin_y + envelope_radius;
+    let bbox_y_max = extent_y - envelope_radius;
 
     let lut = RadialProfileLUT::from_cutter(cutter, 256);
     let ctx = ClearZLevelContext {
@@ -551,6 +555,28 @@ pub(super) fn segments_to_toolpath(
                 EntryStyle3d::Plunge => {
                     lift_to_safe_z(&mut tp, params.safe_z);
                     tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                    // Peck the descent so a single plunge never bites more
+                    // than `depth_per_pass` of fresh material. Without this,
+                    // entries chosen at fresh-stock XYs on deep Z levels
+                    // carve a column from safe_z down through full stock
+                    // thickness in one shot ("punched hole" symptom).
+                    // Each peck steps down by depth_per_pass and retracts
+                    // a small clearance between pecks for chip break.
+                    const PECK_CLEARANCE_MM: f64 = 0.5;
+                    let dpp = params.depth_per_pass.max(0.1);
+                    let mut current_z = params.safe_z;
+                    while current_z - entry.z > dpp + 1e-6 {
+                        let next_z = current_z - dpp;
+                        tp.feed_to(
+                            P3::new(entry.x, entry.y, next_z),
+                            params.plunge_rate,
+                        );
+                        // Retract slightly for chip break before next peck.
+                        let retract_z = next_z + PECK_CLEARANCE_MM;
+                        tp.rapid_to(P3::new(entry.x, entry.y, retract_z));
+                        current_z = retract_z;
+                    }
+                    // Final feed to entry depth.
                     tp.feed_to(*entry, params.plunge_rate);
                 }
                 EntryStyle3d::Helix { radius, pitch } => {
@@ -626,6 +652,7 @@ mod tests {
     fn minimal_params() -> Adaptive3dParams {
         Adaptive3dParams {
             tool_radius: 3.175,
+            envelope_radius: 3.175,
             stepover: 2.0,
             depth_per_pass: 3.0,
             stock_to_leave: 0.5,

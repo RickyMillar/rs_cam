@@ -266,7 +266,11 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub fn export_gcode(&self) -> Result<String, VizError> {
-        crate::io::export::export_gcode_from_session(&self.state.session, &self.state.gui)
+        crate::io::export::export_gcode_from_session(
+            &self.state.session,
+            &self.state.gui,
+            &self.state.simulation,
+        )
     }
 
     pub fn export_svg_preview(&self) -> Result<String, VizError> {

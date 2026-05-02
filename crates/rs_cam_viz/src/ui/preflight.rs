@@ -1,6 +1,7 @@
 use super::AppEvent;
 use crate::state::AppState;
 use crate::ui::theme;
+use rs_cam_core::tool_load::{ToolLoadReport, ToolpathLoadVerdict};
 
 /// Draw the pre-flight checklist modal. Returns true if still open.
 pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -> bool {
@@ -141,6 +142,35 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 &mut still_open,
             );
 
+            // --- Tool load model ---
+            // Trace is in viz sim state, not session.simulation.
+            let load_report = {
+                let sim_trace = state
+                    .simulation
+                    .results
+                    .as_ref()
+                    .and_then(|r| r.cut_trace.as_deref());
+                rs_cam_core::gcode::project_load_report(&state.session, sim_trace)
+            };
+            let tool_load_status = if load_report.any_exceeded() {
+                CheckStatus::Fail
+            } else if load_report.any_unmodeled() || load_report.per_toolpath.is_empty() {
+                CheckStatus::Warning
+            } else {
+                CheckStatus::Pass
+            };
+            let tool_load_detail = tool_load_summary_detail(&load_report);
+            check_card(
+                ui,
+                tool_load_status,
+                "Tool load model",
+                &tool_load_detail,
+                "",
+                None,
+                events,
+                &mut still_open,
+            );
+
             // --- Cycle time (info only) ---
             let total_time = estimate_total_time(state);
             let m = (total_time / 60.0).floor() as u32;
@@ -160,6 +190,14 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             ui.add_space(8.0);
             ui.separator();
             ui.add_space(4.0);
+
+            // --- Tool-load override checkboxes (two distinct flags) ───────
+            let load_blocked_unmodeled = load_report.any_unmodeled();
+            let load_blocked_exceeded = load_report.any_exceeded();
+            if load_blocked_unmodeled || load_blocked_exceeded {
+                draw_tool_load_overrides(ui, state, &load_report, events);
+                ui.add_space(4.0);
+            }
 
             let has_failures =
                 sim.checks.holder_collision_count > 0 || !sim.checks.rapid_collisions.is_empty();
@@ -189,6 +227,12 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 ui.add_space(4.0);
             }
 
+            // The export gate would refuse with the current overrides:
+            // (Exceeds without `accept_exceeded`) or (Unmodeled without `accept_unmodeled`).
+            let overrides = state.gui.tool_load_overrides;
+            let load_gate_blocks = (load_blocked_exceeded && !overrides.accept_exceeded)
+                || (load_blocked_unmodeled && !overrides.accept_unmodeled);
+
             ui.horizontal(|ui| {
                 if has_failures {
                     let confirm_id = egui::Id::new("preflight_export_confirm");
@@ -199,13 +243,27 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                         } else {
                             egui::Color32::from_rgb(80, 40, 40)
                         });
-                    if ui.add_enabled(confirmed, btn).clicked() {
+                    if ui
+                        .add_enabled(confirmed && !load_gate_blocks, btn)
+                        .clicked()
+                    {
                         events.push(AppEvent::ExportGcodeConfirmed);
                         still_open = false;
                     }
-                } else if ui.button("Export G-code").clicked() {
-                    events.push(AppEvent::ExportGcodeConfirmed);
-                    still_open = false;
+                } else {
+                    let btn = egui::Button::new("Export G-code");
+                    if ui.add_enabled(!load_gate_blocks, btn).clicked() {
+                        events.push(AppEvent::ExportGcodeConfirmed);
+                        still_open = false;
+                    }
+                }
+
+                if load_gate_blocks {
+                    ui.label(
+                        egui::RichText::new("Tool-load gate blocks export")
+                            .small()
+                            .color(theme::ERROR),
+                    );
                 }
 
                 if ui.button("Cancel").clicked() {
@@ -299,4 +357,142 @@ fn count_tool_changes(state: &AppState) -> usize {
         last_tool = Some(tc.tool_id);
     }
     count
+}
+
+fn tool_load_summary_detail(report: &ToolLoadReport) -> String {
+    let total = report.per_toolpath.len();
+    if total == 0 {
+        return "No toolpaths to evaluate".to_owned();
+    }
+    let exceeded: Vec<&ToolpathLoadVerdict> = report
+        .per_toolpath
+        .iter()
+        .filter(|v| v.any_exceeded())
+        .collect();
+    let unmodeled = report
+        .per_toolpath
+        .iter()
+        .filter(|v| v.any_unmodeled())
+        .count();
+    if !exceeded.is_empty() {
+        format!(
+            "{} of {} toolpath(s) EXCEED bounds; {unmodeled} have unmodeled criteria",
+            exceeded.len(),
+            total
+        )
+    } else if unmodeled > 0 {
+        format!("{unmodeled} of {total} toolpath(s) have unmodeled criteria")
+    } else {
+        format!("{total} toolpath(s) within all modeled bounds")
+    }
+}
+
+/// Render the tool-load override panel: per-criterion summary and the two
+/// distinct override checkboxes. Each checkbox bypasses a single class of
+/// refusal — they are deliberately not collapsed into a single "I accept the
+/// risk" toggle, because `Unmodeled` (we don't know) and `Exceeds` (we know
+/// it's bad) are different classes of acceptance.
+fn draw_tool_load_overrides(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    report: &ToolLoadReport,
+    events: &mut Vec<AppEvent>,
+) {
+    let any_exceeded = report.any_exceeded();
+    let any_unmodeled = report.any_unmodeled();
+    let frame_color = if any_exceeded {
+        egui::Color32::from_rgb(60, 25, 25)
+    } else {
+        egui::Color32::from_rgb(50, 45, 25)
+    };
+    let stroke_color = if any_exceeded {
+        theme::ERROR
+    } else {
+        theme::WARNING
+    };
+    egui::Frame::default()
+        .fill(frame_color)
+        .stroke(egui::Stroke::new(1.5, stroke_color))
+        .inner_margin(8.0)
+        .rounding(4.0)
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new("Safety / Tool Load gate")
+                    .strong()
+                    .color(stroke_color),
+            );
+            ui.add_space(2.0);
+
+            for verdict in &report.per_toolpath {
+                if !verdict.any_exceeded() && !verdict.any_unmodeled() {
+                    continue;
+                }
+                let line = format_verdict_line(verdict);
+                ui.label(egui::RichText::new(line).small().color(theme::TEXT_MUTED));
+            }
+            ui.add_space(4.0);
+
+            let mut overrides = state.gui.tool_load_overrides;
+            let mut changed = false;
+
+            if any_unmodeled {
+                let resp = ui.checkbox(
+                    &mut overrides.accept_unmodeled,
+                    "Accept unmodeled criteria (criterion could not be evaluated)",
+                );
+                if resp.changed() {
+                    changed = true;
+                }
+            }
+            if any_exceeded {
+                let resp = ui.checkbox(
+                    &mut overrides.accept_exceeded,
+                    "Accept EXCEEDED criteria (predicted to break tool / exceed power)",
+                );
+                if resp.changed() {
+                    changed = true;
+                }
+            }
+            if changed {
+                events.push(AppEvent::SetToolLoadOverride {
+                    accept_unmodeled: overrides.accept_unmodeled,
+                    accept_exceeded: overrides.accept_exceeded,
+                });
+            }
+        });
+}
+
+fn unmodeled_reason_label(reason: &rs_cam_core::tool_load::UnmodeledReason) -> &'static str {
+    use rs_cam_core::tool_load::UnmodeledReason;
+    match reason {
+        UnmodeledReason::SimulationRequired => "run simulation first",
+        UnmodeledReason::StaleSimulation => "re-run stale simulation",
+        UnmodeledReason::ArcEngagementNotCaptured => "enable Cut Metrics and re-run",
+        UnmodeledReason::NoVendorData => "no vendor data",
+        UnmodeledReason::SteadyStateSamplesNotPresent => "no steady-state cutting samples",
+        UnmodeledReason::MaterialUnvalidated => "material not validated",
+        UnmodeledReason::CutterModeUnsupported(_) => "cutter mode unsupported",
+        UnmodeledReason::NotImplemented(_) => "not implemented",
+    }
+}
+
+fn format_verdict_line(verdict: &ToolpathLoadVerdict) -> String {
+    use rs_cam_core::tool_load::Verdict;
+    let mut parts: Vec<String> = Vec::new();
+    let push = |parts: &mut Vec<String>, label: &str, v: &Verdict| match v {
+        Verdict::Exceeds { reason, .. } => {
+            parts.push(format!("{label}: EXCEEDS ({reason:?})"));
+        }
+        Verdict::Unmodeled { reason } => {
+            parts.push(format!(
+                "{label}: unmodeled ({})",
+                unmodeled_reason_label(reason)
+            ));
+        }
+        Verdict::Within { .. } => {}
+    };
+    push(&mut parts, "chipload", &verdict.chipload);
+    push(&mut parts, "power", &verdict.power);
+    push(&mut parts, "deflection", &verdict.deflection);
+    format!("TP {}: {}", verdict.toolpath_id, parts.join(" \u{00B7} "))
 }

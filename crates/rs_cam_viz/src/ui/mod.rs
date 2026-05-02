@@ -106,6 +106,13 @@ pub enum AppEvent {
 
     // Pre-flight / Export
     ExportGcodeConfirmed,
+    /// Set the tool-load export-gate override flags. The two flags are
+    /// independent — `accept_unmodeled` only bypasses `Unmodeled` verdicts,
+    /// `accept_exceeded` only bypasses `Exceeds` verdicts.
+    SetToolLoadOverride {
+        accept_unmodeled: bool,
+        accept_exceeded: bool,
+    },
     /// Re-upload simulation mesh with new viz colors.
     SimVizModeChanged,
 

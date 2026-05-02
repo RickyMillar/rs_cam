@@ -1,6 +1,8 @@
 //! Core simulation orchestration -- runs tri-dexel stock simulation over
 //! one or more setup groups without any GUI dependencies.
 
+use std::collections::BTreeMap;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -13,7 +15,10 @@ use crate::interrupt::Cancelled;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::radial_profile::RadialProfileLUT;
 use crate::semantic_trace::ToolpathSemanticTrace;
-use crate::simulation_cut::{SimulationCutSample, SimulationCutTrace, SimulationMetricOptions};
+use crate::simulation_cut::{
+    SIMULATION_CUT_TRACE_SCHEMA_VERSION, SimulationCutSample, SimulationCutTrace,
+    SimulationMetricOptions, SimulationProvenance,
+};
 use crate::stock_mesh::StockMesh;
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
@@ -117,6 +122,94 @@ impl std::fmt::Display for SimulationError {
 }
 
 impl std::error::Error for SimulationError {}
+
+fn hash_with<F>(write: F) -> u64
+where
+    F: FnOnce(&mut std::collections::hash_map::DefaultHasher),
+{
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    write(&mut hasher);
+    hasher.finish()
+}
+
+fn hash_f64(hasher: &mut std::collections::hash_map::DefaultHasher, value: f64) {
+    value.to_bits().hash(hasher);
+}
+
+fn hash_toolpath(toolpath: &Toolpath) -> u64 {
+    hash_with(|hasher| {
+        toolpath.moves.len().hash(hasher);
+        for motion in &toolpath.moves {
+            hash_f64(hasher, motion.target.x);
+            hash_f64(hasher, motion.target.y);
+            hash_f64(hasher, motion.target.z);
+            match motion.move_type {
+                crate::toolpath::MoveType::Rapid => {
+                    0_u8.hash(hasher);
+                }
+                crate::toolpath::MoveType::Linear { feed_rate } => {
+                    1_u8.hash(hasher);
+                    hash_f64(hasher, feed_rate);
+                }
+                crate::toolpath::MoveType::ArcCW { i, j, feed_rate } => {
+                    2_u8.hash(hasher);
+                    hash_f64(hasher, i);
+                    hash_f64(hasher, j);
+                    hash_f64(hasher, feed_rate);
+                }
+                crate::toolpath::MoveType::ArcCCW { i, j, feed_rate } => {
+                    3_u8.hash(hasher);
+                    hash_f64(hasher, i);
+                    hash_f64(hasher, j);
+                    hash_f64(hasher, feed_rate);
+                }
+            }
+        }
+    })
+}
+fn build_simulation_provenance(request: &SimulationRequest) -> SimulationProvenance {
+    let mut toolpath_hashes = BTreeMap::new();
+    let mut tool_hashes = BTreeMap::new();
+    for group in &request.groups {
+        for entry in &group.toolpaths {
+            toolpath_hashes.insert(entry.id, hash_toolpath(entry.toolpath.as_ref()));
+            tool_hashes.insert(
+                entry.id,
+                hash_with(|hasher| {
+                    hash_f64(hasher, entry.tool.diameter());
+                    hash_f64(hasher, entry.tool.length());
+                    hash_f64(hasher, entry.tool.shank_diameter);
+                    hash_f64(hasher, entry.tool.shank_length);
+                    hash_f64(hasher, entry.tool.holder_diameter);
+                    hash_f64(hasher, entry.tool.stickout);
+                    entry.tool.flute_count.hash(hasher);
+                }),
+            );
+        }
+    }
+    let stock_hash = hash_with(|hasher| {
+        hash_f64(hasher, request.stock_bbox.min.x);
+        hash_f64(hasher, request.stock_bbox.min.y);
+        hash_f64(hasher, request.stock_bbox.min.z);
+        hash_f64(hasher, request.stock_bbox.max.x);
+        hash_f64(hasher, request.stock_bbox.max.y);
+        hash_f64(hasher, request.stock_bbox.max.z);
+        hash_f64(hasher, request.stock_top_z);
+        hash_f64(hasher, request.resolution);
+    });
+    let machine_hash = hash_with(|hasher| {
+        request.spindle_rpm.hash(hasher);
+        hash_f64(hasher, request.rapid_feed_mm_min);
+    });
+    SimulationProvenance {
+        trace_schema_version: SIMULATION_CUT_TRACE_SCHEMA_VERSION,
+        captured_arc_engagement: request.metric_options.capture_arc_engagement,
+        toolpath_hashes,
+        tool_hashes,
+        stock_hash,
+        machine_hash,
+    }
+}
 
 impl From<Cancelled> for SimulationError {
     fn from(_: Cancelled) -> Self {
@@ -266,6 +359,7 @@ where
                         request.rapid_feed_mm_min,
                         sample_step_mm,
                         entry.semantic_trace.as_deref(),
+                        request.metric_options.capture_arc_engagement,
                         &|| cancel.load(Ordering::SeqCst),
                     )
                     .map_err(|_cancelled| SimulationError::Cancelled)?;
@@ -350,11 +444,12 @@ where
                 })
             })
             .collect();
-        let trace = SimulationCutTrace::from_samples_with_semantics(
+        let mut trace = SimulationCutTrace::from_samples_with_semantics(
             sample_step_mm,
             cut_samples,
             semantic_traces,
         );
+        trace.provenance = Some(build_simulation_provenance(request));
         Some(Arc::new(trace))
     } else {
         None
@@ -492,6 +587,7 @@ mod tests {
             25.0,
             45.0,
             2,
+            crate::compute::tool_config::ToolMaterial::Carbide,
         );
 
         let entry = SimToolpathEntry {
@@ -632,6 +728,7 @@ mod tests {
             25.0,
             45.0,
             2,
+            crate::compute::tool_config::ToolMaterial::Carbide,
         );
 
         let entry = SimToolpathEntry {
@@ -656,7 +753,10 @@ mod tests {
             stock_bbox,
             stock_top_z: stock_bbox.max.z,
             resolution: 0.5,
-            metric_options: SimulationMetricOptions { enabled: true },
+            metric_options: SimulationMetricOptions {
+                enabled: true,
+                capture_arc_engagement: true,
+            },
             spindle_rpm: 18000,
             rapid_feed_mm_min: 5000.0,
             model_mesh: None,
@@ -702,6 +802,7 @@ mod tests {
                 25.0,
                 45.0,
                 2,
+                crate::compute::tool_config::ToolMaterial::Carbide,
             )
         };
 

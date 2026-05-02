@@ -10,7 +10,10 @@
 //!
 //! Edge contact uses the offset-ellipse / Brent's method approach from OpenCAMLib.
 
-use super::{CLPoint, MillingCutter};
+use super::{
+    CLPoint, ChipGeometry, EngagementError, EngagementMode, MillingCutter,
+    flat_chip_geometry_for_radius,
+};
 use crate::geo::P3;
 
 #[derive(Debug, Clone)]
@@ -18,6 +21,7 @@ pub struct BullNoseEndmill {
     pub diameter: f64,
     pub corner_radius: f64,
     pub cutting_length: f64,
+    pub helix_deg: f64,
 }
 
 impl BullNoseEndmill {
@@ -33,6 +37,7 @@ impl BullNoseEndmill {
             diameter,
             corner_radius,
             cutting_length,
+            helix_deg: 30.0,
         }
     }
 
@@ -53,6 +58,34 @@ impl MillingCutter for BullNoseEndmill {
     }
     fn length(&self) -> f64 {
         self.cutting_length
+    }
+    fn helix_deg(&self) -> f64 {
+        self.helix_deg
+    }
+    fn corner_radius_mm(&self) -> f64 {
+        self.corner_radius
+    }
+    fn chip_geometry(
+        &self,
+        axial_doc_mm: f64,
+        arc_engagement_radians: f64,
+        feed_per_tooth_mm: f64,
+        flute_count: u32,
+        _mode: EngagementMode,
+    ) -> Result<ChipGeometry, EngagementError> {
+        if axial_doc_mm <= self.corner_radius {
+            return Err(EngagementError::Unsupported {
+                reason: "toroidal engagement at corner not modeled".to_owned(),
+            });
+        }
+        flat_chip_geometry_for_radius(
+            self.radius(),
+            self.helix_deg,
+            axial_doc_mm - self.corner_radius,
+            arc_engagement_radians,
+            feed_per_tooth_mm,
+            flute_count,
+        )
     }
     fn geometry_hint(&self) -> crate::feeds::ToolGeometryHint {
         crate::feeds::ToolGeometryHint::Bull {

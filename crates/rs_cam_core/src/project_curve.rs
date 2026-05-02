@@ -7,7 +7,7 @@
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::polygon::Polygon2;
+use crate::polygon::{Polygon2, offset_polygon};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -18,6 +18,18 @@ pub enum ProjectDirection {
     FromAbove,
     /// Project from below (Z-up). Tool contacts the bottom surface.
     FromBelow,
+}
+
+/// Tool-radius compensation side for closed rings. Open rings ignore this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProjectSide {
+    /// Tool centerline rides exactly on the curve.
+    #[default]
+    Center,
+    /// Offset inward by tool radius (closed rings only).
+    Inside,
+    /// Offset outward by tool radius (closed rings only).
+    Outside,
 }
 
 /// Parameters for the project-curve-on-surface operation.
@@ -34,6 +46,10 @@ pub struct ProjectCurveParams {
     pub point_spacing: f64,
     /// Which side of the mesh to project onto.
     pub direction: ProjectDirection,
+    /// Tool radius for compensation (used when `side != Center`).
+    pub tool_radius: f64,
+    /// Compensation side. Closed rings only.
+    pub side: ProjectSide,
     /// When true, the mesh has already been Z-inverted by a bottom-facing setup
     /// transform. `FromBelow` should NOT apply its own Z-flip in this case
     /// (it would double-flip, cancelling the setup transform).
@@ -49,6 +65,8 @@ impl Default for ProjectCurveParams {
             safe_z: 10.0,
             point_spacing: 0.5,
             direction: ProjectDirection::FromAbove,
+            tool_radius: 0.0,
+            side: ProjectSide::Center,
             setup_z_flipped: false,
         }
     }
@@ -214,6 +232,44 @@ fn project_curve_inner(
 ) -> Toolpath {
     let mut tp = Toolpath::new();
 
+    // Apply tool-radius compensation for closed polygons. Open polygons cannot
+    // be meaningfully offset (no inside/outside) — fall back to Center.
+    // Sign convention in offset_polygon: distance > 0 = inward (shrink),
+    // distance < 0 = outward (grow).
+    let offset_polys: Vec<Polygon2> = if polygon.closed && params.side != ProjectSide::Center {
+        let distance = match params.side {
+            ProjectSide::Inside => params.tool_radius,
+            ProjectSide::Outside => -params.tool_radius,
+            ProjectSide::Center => 0.0,
+        };
+        offset_polygon(polygon, distance)
+    } else {
+        Vec::new()
+    };
+    let polys_iter: Vec<&Polygon2> = if offset_polys.is_empty() {
+        // Either Center, open ring, or offset collapsed → use original.
+        vec![polygon]
+    } else {
+        offset_polys.iter().collect()
+    };
+
+    for poly in polys_iter {
+        project_polygon_rings(poly, mesh, index, cutter, params, z_flip, &mut tp);
+    }
+
+    tp.final_retract(params.safe_z);
+    tp
+}
+
+fn project_polygon_rings(
+    polygon: &Polygon2,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &ProjectCurveParams,
+    z_flip: bool,
+    tp: &mut Toolpath,
+) {
     // Collect all rings: exterior first, then holes
     let mut rings: Vec<&Vec<P2>> = Vec::with_capacity(1 + polygon.holes.len());
     rings.push(&polygon.exterior);
@@ -288,9 +344,6 @@ fn project_curve_inner(
             );
         }
     }
-
-    tp.final_retract(params.safe_z);
-    tp
 }
 
 #[cfg(test)]

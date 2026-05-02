@@ -5,13 +5,17 @@
 //!
 //! Parameters: center_height=R, normal_length=R, xy_normal_length=0
 
-use super::{CLPoint, MillingCutter};
+use super::{
+    CLPoint, ChipGeometry, EngagementError, EngagementMode, MillingCutter,
+    flat_chip_geometry_for_radius,
+};
 use crate::geo::P3;
 
 #[derive(Debug, Clone)]
 pub struct BallEndmill {
     pub diameter: f64,
     pub cutting_length: f64,
+    pub helix_deg: f64,
 }
 
 impl BallEndmill {
@@ -19,6 +23,7 @@ impl BallEndmill {
         Self {
             diameter,
             cutting_length,
+            helix_deg: 30.0,
         }
     }
 }
@@ -29,6 +34,31 @@ impl MillingCutter for BallEndmill {
     }
     fn length(&self) -> f64 {
         self.cutting_length
+    }
+    fn helix_deg(&self) -> f64 {
+        self.helix_deg
+    }
+    fn chip_geometry(
+        &self,
+        axial_doc_mm: f64,
+        arc_engagement_radians: f64,
+        feed_per_tooth_mm: f64,
+        flute_count: u32,
+        _mode: EngagementMode,
+    ) -> Result<ChipGeometry, EngagementError> {
+        if axial_doc_mm >= self.radius() {
+            return Err(EngagementError::Unsupported {
+                reason: "engagement past hemisphere pole — chip thickness varies along the engaged arc and is not modeled".to_owned(),
+            });
+        }
+        flat_chip_geometry_for_radius(
+            self.engagement_radius(axial_doc_mm),
+            self.helix_deg,
+            axial_doc_mm,
+            arc_engagement_radians,
+            feed_per_tooth_mm,
+            flute_count,
+        )
     }
     fn geometry_hint(&self) -> crate::feeds::ToolGeometryHint {
         crate::feeds::ToolGeometryHint::Ball
@@ -162,10 +192,41 @@ impl MillingCutter for BallEndmill {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::geo::{P3, Triangle};
+
+    #[test]
+    fn chip_geometry_uses_chord_radius_before_pole() {
+        let tool = BallEndmill::new(6.0, 25.0);
+        let geom = tool
+            .chip_geometry(
+                1.0,
+                std::f64::consts::FRAC_PI_2,
+                0.03,
+                2,
+                EngagementMode::Climb,
+            )
+            .expect("ball geometry supported before pole");
+        assert!(geom.max_chip_thickness_mm > 0.0);
+        assert!((tool.engagement_radius(1.0) - 5.0_f64.sqrt()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn chip_geometry_rejects_hemisphere_pole() {
+        let tool = BallEndmill::new(6.0, 25.0);
+        assert!(matches!(
+            tool.chip_geometry(
+                3.0,
+                std::f64::consts::FRAC_PI_2,
+                0.03,
+                2,
+                EngagementMode::Climb
+            ),
+            Err(EngagementError::Unsupported { .. })
+        ));
+    }
 
     #[test]
     fn test_ball_profile() {

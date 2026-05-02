@@ -4,9 +4,40 @@
 //! Writing to `String` is infallible (only fails on OOM, which panics regardless),
 //! so discarding the `Result` with `let _ =` is safe.
 
+use crate::session::ProjectSession;
+use crate::simulation_cut::SimulationCutTrace;
 use crate::toolpath::{MoveType, Toolpath};
 use serde::{Deserialize, Serialize};
-use std::fmt::Write;
+use std::fmt::{Display, Write};
+
+/// Policy knobs reserved for tool-load-aware export checks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ToolLoadExportPolicy {
+    pub accept_unmodeled: bool,
+    pub accept_exceeded: bool,
+}
+
+/// Error returned by checked G-code export.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportError {
+    message: String,
+}
+
+impl ExportError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl Display for ExportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ExportError {}
 
 /// Direction for G41/G42 controller cutter compensation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -302,7 +333,7 @@ pub struct GcodePhase<'a> {
 
 /// Emit G-code from multiple phases, inserting tool changes, spindle speed
 /// changes, and coolant commands between operations as needed.
-pub fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &dyn PostProcessor) -> String {
+pub(crate) fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &dyn PostProcessor) -> String {
     if phases.is_empty() {
         return String::new();
     }
@@ -476,14 +507,217 @@ pub fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &dyn PostProcessor) ->
     output
 }
 
+/// Emit checked G-code from a project session.
+pub fn export_gcode_checked(
+    project: &ProjectSession,
+    sim_trace: Option<&SimulationCutTrace>,
+    policy: ToolLoadExportPolicy,
+) -> Result<String, ExportError> {
+    // Run the project-level tool-load report and gate on policy. Phase 1a
+    // ships the deflection criterion (purely geometric L/D); chipload and
+    // power are stubs returning `Unmodeled(NotImplemented)` and are therefore
+    // gated behind `policy.accept_unmodeled`.
+    let report = project_load_report(project, sim_trace);
+    enforce_load_policy(&report, &policy)?;
+
+    let post_format = match project.post_config().format.to_ascii_lowercase().as_str() {
+        "linuxcnc" | "linux_cnc" => PostFormat::LinuxCnc,
+        "mach3" => PostFormat::Mach3,
+        _ => PostFormat::Grbl,
+    };
+    let post = post_format.post_processor();
+
+    let phases: Vec<GcodePhase<'_>> = project
+        .toolpath_configs()
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, tc)| {
+            let result = project.get_result(idx)?;
+            Some(GcodePhase {
+                toolpath: &result.toolpath,
+                spindle_rpm: project.post_config().spindle_speed,
+                label: &tc.name,
+                tool_number: None,
+                coolant: CoolantMode::Off,
+                pre_gcode: tc.pre_gcode.as_deref(),
+                post_gcode: tc.post_gcode.as_deref(),
+                controller_compensation: controller_comp_for_project_toolpath(tc),
+            })
+        })
+        .collect();
+
+    // Phase-level checked emit is currently a no-op enforcer (the project
+    // gate above is the source of truth); pass policy through unchanged.
+    export_gcode_phases_checked(&phases, post.as_ref(), sim_trace, policy)
+}
+
+/// Build a `ToolLoadReport` from a `ProjectSession`. Phase 1a wires
+/// `chipload` (per-sample vs vendor LUT, requires `sim_trace`) and
+/// `deflection` (geometric L/D, sample-independent). The `power`
+/// criterion is stubbed `Unmodeled(NotImplemented)` until Phase 1b's
+/// arc-engagement-driven power calc lands.
+pub fn project_load_report(
+    project: &ProjectSession,
+    sim_trace: Option<&SimulationCutTrace>,
+) -> crate::tool_load::ToolLoadReport {
+    use crate::feeds::{OperationFamily, PassRole};
+    use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
+
+    let material = &project.stock_config().material;
+    let mut per_toolpath = Vec::new();
+    for tc in project.toolpath_configs() {
+        if !tc.enabled {
+            continue;
+        }
+        let Some(tool_cfg) =
+            project.get_tool(crate::compute::tool_config::ToolId(tc.tool_id))
+        else {
+            // Toolpath references a tool that's been removed — skip rather
+            // than fabricate a verdict.
+            continue;
+        };
+        let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
+        let spec = tc.operation.spec();
+        let lut_op = match spec.feeds_family {
+            OperationFamily::Adaptive => LutOperationFamily::Adaptive,
+            OperationFamily::Pocket => LutOperationFamily::Pocket,
+            OperationFamily::Contour => LutOperationFamily::Contour,
+            OperationFamily::Parallel => LutOperationFamily::Parallel,
+            OperationFamily::Scallop => LutOperationFamily::Scallop,
+            OperationFamily::Trace => LutOperationFamily::Trace,
+            OperationFamily::Face => LutOperationFamily::Face,
+        };
+        let lut_pass = match spec.feeds_pass_role {
+            PassRole::Roughing => LutPassRole::Roughing,
+            PassRole::SemiFinish => LutPassRole::SemiFinish,
+            PassRole::Finish => LutPassRole::Finish,
+        };
+        let machine = project.machine();
+        // Item C: pass the operation's commanded feed rate so the
+        // chipload guardrail can filter out transient (plunge/ramp/entry)
+        // samples and only measure steady-state cutting against the LUT.
+        let operation_feed_rate_mm_min = tc.operation.feed_rate();
+        per_toolpath.push(crate::tool_load::ToolpathLoadVerdict {
+            toolpath_id: tc.id,
+            chipload: crate::tool_load::chipload::evaluate(
+                tc.id,
+                &tool_def,
+                material,
+                sim_trace,
+                lut_op,
+                lut_pass,
+                operation_feed_rate_mm_min,
+            ),
+            power: crate::tool_load::power::evaluate(
+                tc.id, &tool_def, material, machine, sim_trace,
+            ),
+            deflection: crate::tool_load::deflection::evaluate(&tool_def),
+        });
+    }
+    crate::tool_load::ToolLoadReport { per_toolpath }
+}
+
+/// Enforce a `ToolLoadExportPolicy` against a report. Returns a structured
+/// error message naming each offending toolpath and criterion so the user
+/// (or UI) sees exactly what to override.
+pub fn enforce_load_policy(
+    report: &crate::tool_load::ToolLoadReport,
+    policy: &ToolLoadExportPolicy,
+) -> Result<(), ExportError> {
+    if !policy.accept_exceeded {
+        let exceeded = report.exceeded_toolpaths();
+        if !exceeded.is_empty() {
+            let mut msg =
+                String::from("G-code export refused: tool load exceeded on toolpath(s):\n");
+            for (id, reasons) in &exceeded {
+                let reason_list: Vec<String> = reasons
+                    .iter()
+                    .map(|(crit, why)| format!("{crit}={why:?}"))
+                    .collect();
+                let _ = writeln!(msg, "  toolpath {id}: {}", reason_list.join(", "));
+            }
+            msg.push_str(
+                "Pass `accept_exceeded=true` to override (this is a known-dangerous override).",
+            );
+            return Err(ExportError::new(msg));
+        }
+    }
+    if !policy.accept_unmodeled && report.any_unmodeled() {
+        let mut msg =
+            String::from("G-code export refused: tool load not fully modeled for toolpath(s):\n");
+        for v in &report.per_toolpath {
+            if v.any_unmodeled() {
+                let mut crits = Vec::new();
+                if let crate::tool_load::Verdict::Unmodeled { reason } = &v.chipload {
+                    crits.push(format!("chipload={reason:?}"));
+                }
+                if let crate::tool_load::Verdict::Unmodeled { reason } = &v.power {
+                    crits.push(format!("power={reason:?}"));
+                }
+                if let crate::tool_load::Verdict::Unmodeled { reason } = &v.deflection {
+                    crits.push(format!("deflection={reason:?}"));
+                }
+                let _ = writeln!(msg, "  toolpath {}: {}", v.toolpath_id, crits.join(", "));
+            }
+        }
+        msg.push_str("Pass `accept_unmodeled=true` to acknowledge unmodeled criteria.");
+        return Err(ExportError::new(msg));
+    }
+    Ok(())
+}
+
+/// Emit checked G-code from pre-built phases.
+pub fn export_gcode_phases_checked(
+    phases: &[GcodePhase<'_>],
+    post: &dyn PostProcessor,
+    _sim_trace: Option<&SimulationCutTrace>,
+    _policy: ToolLoadExportPolicy,
+) -> Result<String, ExportError> {
+    // TODO: enforced in tool_load follow-up. The policy and simulation trace
+    // are intentionally accepted but ignored in this refactor.
+    Ok(emit_gcode_phased(phases, post))
+}
+
+fn controller_comp_for_project_toolpath(
+    tc: &crate::session::ToolpathConfig,
+) -> Option<ControllerCompensation> {
+    use crate::compute::{CompensationType, OperationConfig};
+    use crate::profile::ProfileSide;
+
+    if let OperationConfig::Profile(ref cfg) = tc.operation
+        && cfg.compensation == CompensationType::InControl
+    {
+        return Some(match (cfg.side, cfg.climb) {
+            (ProfileSide::Outside, true) => ControllerCompensation::Right,
+            (ProfileSide::Outside, false) => ControllerCompensation::Left,
+            (ProfileSide::Inside, true) => ControllerCompensation::Left,
+            (ProfileSide::Inside, false) => ControllerCompensation::Right,
+        });
+    }
+    None
+}
+
 /// A group of toolpath phases belonging to one setup.
 pub struct GcodeSetupPhase<'a> {
     pub setup_label: &'a str,
     pub phases: Vec<GcodePhase<'a>>,
 }
 
+/// Emit checked G-code for multiple setups with M0 pauses between them.
+pub fn export_gcode_multi_setup_checked(
+    setups: &[GcodeSetupPhase<'_>],
+    post: &dyn PostProcessor,
+    safe_z: f64,
+    _sim_trace: Option<&SimulationCutTrace>,
+    _policy: ToolLoadExportPolicy,
+) -> Result<String, ExportError> {
+    // TODO: enforced in tool_load follow-up. The policy and simulation trace
+    // are intentionally accepted but ignored in this refactor.
+    Ok(emit_gcode_multi_setup(setups, post, safe_z))
+}
+
 /// Emit G-code for multiple setups with M0 pauses between them.
-pub fn emit_gcode_multi_setup(
+pub(crate) fn emit_gcode_multi_setup(
     setups: &[GcodeSetupPhase<'_>],
     post: &dyn PostProcessor,
     safe_z: f64,
@@ -764,6 +998,99 @@ mod tests {
     use super::*;
     use crate::geo::P3;
     use crate::toolpath::Toolpath;
+
+    #[test]
+    fn checked_phased_export_is_byte_identical_to_legacy_emitter() {
+        let mut tp1 = Toolpath::new();
+        tp1.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp1.feed_to(P3::new(10.0, 0.0, 0.0), 1000.0);
+
+        let mut tp2 = Toolpath::new();
+        tp2.rapid_to(P3::new(20.0, 0.0, 10.0));
+        tp2.feed_to(P3::new(30.0, 0.0, 0.0), 800.0);
+
+        let phases = vec![
+            GcodePhase {
+                toolpath: &tp1,
+                spindle_rpm: 18_000,
+                label: "Op 0 — pocket",
+                pre_gcode: Some("M8"),
+                post_gcode: Some("M9"),
+                tool_number: Some(1),
+                coolant: CoolantMode::Mist,
+                controller_compensation: None,
+            },
+            GcodePhase {
+                toolpath: &tp2,
+                spindle_rpm: 16_000,
+                label: "Op 1 — profile",
+                pre_gcode: None,
+                post_gcode: None,
+                tool_number: Some(2),
+                coolant: CoolantMode::Off,
+                controller_compensation: None,
+            },
+        ];
+
+        let legacy = emit_gcode_phased(&phases, &GrblPost);
+        let checked =
+            export_gcode_phases_checked(&phases, &GrblPost, None, ToolLoadExportPolicy::default())
+                .expect("checked export should succeed");
+
+        assert_eq!(checked, legacy);
+    }
+
+    #[test]
+    fn checked_multi_setup_export_is_byte_identical_to_legacy_emitter() {
+        let mut tp1 = Toolpath::new();
+        tp1.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp1.feed_to(P3::new(10.0, 0.0, 0.0), 1000.0);
+
+        let mut tp2 = Toolpath::new();
+        tp2.rapid_to(P3::new(20.0, 0.0, 10.0));
+        tp2.feed_to(P3::new(30.0, 0.0, 0.0), 800.0);
+
+        let setups = vec![
+            GcodeSetupPhase {
+                setup_label: "Top",
+                phases: vec![GcodePhase {
+                    toolpath: &tp1,
+                    spindle_rpm: 18_000,
+                    label: "Top pocket",
+                    pre_gcode: None,
+                    post_gcode: None,
+                    tool_number: Some(1),
+                    coolant: CoolantMode::Off,
+                    controller_compensation: None,
+                }],
+            },
+            GcodeSetupPhase {
+                setup_label: "Bottom",
+                phases: vec![GcodePhase {
+                    toolpath: &tp2,
+                    spindle_rpm: 16_000,
+                    label: "Bottom profile",
+                    pre_gcode: None,
+                    post_gcode: None,
+                    tool_number: Some(2),
+                    coolant: CoolantMode::Flood,
+                    controller_compensation: None,
+                }],
+            },
+        ];
+
+        let legacy = emit_gcode_multi_setup(&setups, &GrblPost, 15.0);
+        let checked = export_gcode_multi_setup_checked(
+            &setups,
+            &GrblPost,
+            15.0,
+            None,
+            ToolLoadExportPolicy::default(),
+        )
+        .expect("checked export should succeed");
+
+        assert_eq!(checked, legacy);
+    }
 
     #[test]
     fn test_grbl_gcode() {
@@ -1287,5 +1614,173 @@ mod tests {
             m9_pos < m6_pos,
             "M9 should precede M6 (coolant off before tool change)"
         );
+    }
+
+    // ----- enforce_load_policy negative tests -----
+
+    use crate::tool_load::{
+        Confidence, ExceedsReason, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason, Verdict,
+    };
+
+    fn report_with(chipload: Verdict, power: Verdict, deflection: Verdict) -> ToolLoadReport {
+        ToolLoadReport {
+            per_toolpath: vec![ToolpathLoadVerdict {
+                toolpath_id: 4,
+                chipload,
+                power,
+                deflection,
+            }],
+        }
+    }
+
+    #[test]
+    fn enforce_blocks_exceeded_by_default() {
+        let report = report_with(
+            Verdict::Within {
+                peak: 0.05,
+                confidence: Confidence::Validated,
+            },
+            Verdict::not_implemented("phase 1b"),
+            Verdict::Exceeds {
+                peak: 10.0,
+                sample_range: 0..0,
+                reason: ExceedsReason::LongToolStiffnessUnsafe,
+                confidence: Confidence::Validated,
+            },
+        );
+        let policy = ToolLoadExportPolicy::default();
+        let err = enforce_load_policy(&report, &policy)
+            .expect_err("default policy must block Exceeds");
+        let msg = err.to_string();
+        assert!(msg.contains("toolpath 4"), "error names the toolpath: {msg}");
+        assert!(
+            msg.contains("deflection"),
+            "error names the criterion: {msg}"
+        );
+        assert!(
+            msg.contains("LongToolStiffnessUnsafe"),
+            "error names the reason: {msg}"
+        );
+    }
+
+    #[test]
+    fn enforce_lets_exceeded_through_only_with_explicit_flag() {
+        // Same scenario, but with accept_exceeded=true. Note unmodeled is
+        // also true — if it weren't, the report's unmodeled chipload/power
+        // criteria would still block. Verify the two flags are distinct.
+        let report = report_with(
+            Verdict::Within {
+                peak: 0.05,
+                confidence: Confidence::Validated,
+            },
+            Verdict::not_implemented("phase 1b"),
+            Verdict::Exceeds {
+                peak: 10.0,
+                sample_range: 0..0,
+                reason: ExceedsReason::LongToolStiffnessUnsafe,
+                confidence: Confidence::Validated,
+            },
+        );
+
+        // accept_unmodeled alone is NOT enough — Exceeds still blocks.
+        let policy_u = ToolLoadExportPolicy {
+            accept_unmodeled: true,
+            accept_exceeded: false,
+        };
+        assert!(
+            enforce_load_policy(&report, &policy_u).is_err(),
+            "accept_unmodeled alone must not bypass Exceeds"
+        );
+
+        // accept_exceeded alone bypasses Exceeds, but unmodeled still blocks
+        // (chipload+power are NotImplemented).
+        let policy_e = ToolLoadExportPolicy {
+            accept_unmodeled: false,
+            accept_exceeded: true,
+        };
+        assert!(
+            enforce_load_policy(&report, &policy_e).is_err(),
+            "Exceeds bypassed but Unmodeled still blocks"
+        );
+
+        // Both flags accept everything.
+        let policy_both = ToolLoadExportPolicy {
+            accept_unmodeled: true,
+            accept_exceeded: true,
+        };
+        assert!(enforce_load_policy(&report, &policy_both).is_ok());
+    }
+
+    #[test]
+    fn enforce_blocks_unmodeled_by_default() {
+        let report = report_with(
+            Verdict::not_implemented("phase 5"),
+            Verdict::not_implemented("phase 1b"),
+            Verdict::Within {
+                peak: 3.0,
+                confidence: Confidence::Validated,
+            },
+        );
+        let err = enforce_load_policy(&report, &ToolLoadExportPolicy::default())
+            .expect_err("Unmodeled must block by default");
+        let msg = err.to_string();
+        assert!(msg.contains("toolpath 4"), "names toolpath: {msg}");
+        assert!(msg.contains("chipload"), "names unmodeled criterion: {msg}");
+    }
+
+    #[test]
+    fn enforce_passes_when_all_within() {
+        let report = report_with(
+            Verdict::Within {
+                peak: 0.05,
+                confidence: Confidence::Validated,
+            },
+            Verdict::Within {
+                peak: 0.5,
+                confidence: Confidence::Approximate("isotropic Kc only".into()),
+            },
+            Verdict::Within {
+                peak: 3.5,
+                confidence: Confidence::Validated,
+            },
+        );
+        assert!(
+            enforce_load_policy(&report, &ToolLoadExportPolicy::default()).is_ok(),
+            "all-Within report must pass"
+        );
+    }
+
+    #[test]
+    fn enforce_distinguishes_unmodeled_reasons() {
+        // Different `Unmodeled` reasons produce different error messages so
+        // the user knows whether to "run sim" vs "this material has no LUT".
+        let r1 = report_with(
+            Verdict::Unmodeled {
+                reason: UnmodeledReason::SimulationRequired,
+            },
+            Verdict::not_implemented("phase 1b"),
+            Verdict::Within {
+                peak: 3.0,
+                confidence: Confidence::Validated,
+            },
+        );
+        let r2 = report_with(
+            Verdict::Unmodeled {
+                reason: UnmodeledReason::NoVendorData,
+            },
+            Verdict::not_implemented("phase 1b"),
+            Verdict::Within {
+                peak: 3.0,
+                confidence: Confidence::Validated,
+            },
+        );
+        let m1 = enforce_load_policy(&r1, &ToolLoadExportPolicy::default())
+            .expect_err("blocks")
+            .to_string();
+        let m2 = enforce_load_policy(&r2, &ToolLoadExportPolicy::default())
+            .expect_err("blocks")
+            .to_string();
+        assert!(m1.contains("SimulationRequired"));
+        assert!(m2.contains("NoVendorData"));
     }
 }

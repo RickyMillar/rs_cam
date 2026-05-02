@@ -58,6 +58,7 @@ pub mod step_input;
 pub mod stock_mesh;
 pub mod svg_input;
 pub mod tool;
+pub mod tool_load;
 pub mod toolpath;
 pub mod trace;
 pub mod tsp;

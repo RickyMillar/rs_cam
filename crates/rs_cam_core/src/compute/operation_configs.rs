@@ -412,11 +412,6 @@ pub struct Adaptive3dConfig {
     pub plunge_rate: f64,
     pub tolerance: f64,
     pub min_cutting_radius: f64,
-    /// Legacy/no-op. Auto-derived from the setup's stock bounding box at
-    /// compute time; the stored value is never read. Kept only for
-    /// serialization compat with pre-migration projects.
-    #[serde(default = "default_stock_top_z_placeholder")]
-    pub stock_top_z: f64,
     pub entry_style: Adaptive3dEntryStyle,
     /// Ramp entry: maximum descent angle in degrees. Only honored when
     /// `entry_style == Ramp`.
@@ -449,7 +444,6 @@ impl Default for Adaptive3dConfig {
             plunge_rate: 500.0,
             tolerance: 0.1,
             min_cutting_radius: 0.0,
-            stock_top_z: 30.0,
             entry_style: Adaptive3dEntryStyle::Plunge,
             ramp_angle_deg: default_adaptive3d_ramp_angle(),
             helix_radius_factor: default_adaptive3d_helix_radius_factor(),
@@ -465,11 +459,6 @@ impl Default for Adaptive3dConfig {
 
 fn default_clearing_strategy() -> ClearingStrategy {
     ClearingStrategy::ContourParallel
-}
-
-fn default_stock_top_z_placeholder() -> f64 {
-    // Sentinel only — ignored at compute time in favor of the setup's stock bbox.
-    0.0
 }
 
 fn default_adaptive3d_ramp_angle() -> f64 {
@@ -710,6 +699,30 @@ impl ProjectCurveDirection {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectCurveSide {
+    /// Tool centerline rides exactly on the curve.
+    #[default]
+    Center,
+    /// Closed rings only — offset inward by tool radius before projecting.
+    /// Open rings fall back to Center.
+    Inside,
+    /// Closed rings only — offset outward by tool radius before projecting.
+    /// Open rings fall back to Center.
+    Outside,
+}
+
+impl ProjectCurveSide {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Center => "On Line",
+            Self::Inside => "Inside",
+            Self::Outside => "Outside",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectCurveConfig {
     pub depth: f64,
@@ -722,6 +735,9 @@ pub struct ProjectCurveConfig {
     /// Project from above (Z-down, default) or below (Z-up).
     #[serde(default)]
     pub direction: ProjectCurveDirection,
+    /// Tool radius compensation side. Closed rings only; open rings ignore it.
+    #[serde(default)]
+    pub side: ProjectCurveSide,
     /// Set by the compute pipeline when the mesh has already been Z-inverted
     /// by a bottom-facing setup transform. Not persisted.
     #[serde(skip)]
@@ -737,6 +753,7 @@ impl Default for ProjectCurveConfig {
             plunge_rate: 400.0,
             surface_model_id: None,
             direction: ProjectCurveDirection::FromAbove,
+            side: ProjectCurveSide::Center,
             setup_z_flipped: false,
         }
     }
@@ -1094,7 +1111,7 @@ impl OperationParams for Adaptive3dConfig {
         self.depth_per_pass = value;
     }
     fn depth_semantics(&self) -> DepthSemantics {
-        DepthSemantics::DerivedStockTop(self.stock_top_z.abs())
+        DepthSemantics::None
     }
 }
 

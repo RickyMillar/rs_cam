@@ -199,7 +199,6 @@ fn adaptive3d_request(id: usize) -> ComputeRequest {
         unreachable!("default op kind mismatch");
     };
     cfg.depth_per_pass = 2.0;
-    cfg.stock_top_z = 6.0;
     cfg.detect_flat_areas = true;
     cfg.region_ordering = crate::state::toolpath::RegionOrdering::ByArea;
     ComputeRequest {
@@ -631,7 +630,7 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
         stock_bbox,
         stock_top_z: 10.0,
         resolution: 0.5,
-        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions { enabled },
+        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions { enabled, capture_arc_engagement: enabled },
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,

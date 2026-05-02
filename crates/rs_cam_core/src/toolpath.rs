@@ -668,49 +668,6 @@ mod tests {
         assert!((tp.total_cutting_distance() - 20.0).abs() < 1e-10);
     }
 
-    // --- merge_slope_segments unit tests ---
-
-    #[test]
-    fn test_merge_slope_segments_empty() {
-        let result = merge_slope_segments(&[], 3);
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_merge_slope_segments_single() {
-        let segs = vec![(2, 8)];
-        let result = merge_slope_segments(&segs, 3);
-        assert_eq!(result, vec![(2, 8)]);
-    }
-
-    #[test]
-    fn test_merge_slope_segments_small_gap() {
-        // Two segments separated by gap of 2 (within max_gap=3)
-        let segs = vec![(0, 5), (8, 12)];
-        let result = merge_slope_segments(&segs, 3);
-        assert_eq!(result, vec![(0, 12)], "Gap of 2 should be merged");
-    }
-
-    #[test]
-    fn test_merge_slope_segments_large_gap() {
-        // Two segments separated by gap of 10 (exceeds max_gap=3)
-        let segs = vec![(0, 5), (16, 20)];
-        let result = merge_slope_segments(&segs, 3);
-        assert_eq!(
-            result,
-            vec![(0, 5), (16, 20)],
-            "Gap of 10 should NOT be merged"
-        );
-    }
-
-    #[test]
-    fn test_merge_slope_segments_mixed() {
-        // Three segments: first two close, third far
-        let segs = vec![(0, 3), (5, 8), (20, 25)];
-        let result = merge_slope_segments(&segs, 3);
-        assert_eq!(result, vec![(0, 8), (20, 25)]);
-    }
-
     // --- slope-filtered raster toolpath tests ---
 
     fn make_test_grid(

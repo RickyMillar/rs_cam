@@ -144,28 +144,16 @@ impl ProjectSession {
             return Ok(());
         }
 
-        // Swap in the flat vec
-        self.toolpath_configs.swap(from_index, to_index);
-
-        // Update setup indices to reflect the swap
+        // Swap only the display order within the setup that owns both
+        // toolpaths. `toolpath_configs` and the results cache are keyed by
+        // stable global indices and must not move.
         for setup in &mut self.setups {
-            for idx in &mut setup.toolpath_indices {
-                if *idx == from_index {
-                    *idx = to_index;
-                } else if *idx == to_index {
-                    *idx = from_index;
-                }
+            let pos_from = setup.toolpath_indices.iter().position(|&i| i == from_index);
+            let pos_to = setup.toolpath_indices.iter().position(|&i| i == to_index);
+            if let (Some(pf), Some(pt)) = (pos_from, pos_to) {
+                setup.toolpath_indices.swap(pf, pt);
+                break;
             }
-        }
-
-        // Swap cached results
-        let r_from = self.results.remove(&from_index);
-        let r_to = self.results.remove(&to_index);
-        if let Some(r) = r_from {
-            self.results.insert(to_index, r);
-        }
-        if let Some(r) = r_to {
-            self.results.insert(from_index, r);
         }
 
         self.simulation = None;
@@ -882,8 +870,10 @@ mod tests {
         let id_1 = s.toolpath_configs()[1].id;
 
         s.reorder_toolpath(0, 1).unwrap();
-        assert_eq!(s.toolpath_configs()[0].id, id_1);
-        assert_eq!(s.toolpath_configs()[1].id, id_0);
+        // Global config order is stable; only the setup's display order swaps.
+        assert_eq!(s.toolpath_configs()[0].id, id_0);
+        assert_eq!(s.toolpath_configs()[1].id, id_1);
+        assert_eq!(s.list_setups()[0].toolpath_indices, vec![1, 0]);
     }
 
     #[test]

@@ -60,6 +60,26 @@ pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
             }
             ui.end_row();
 
+            ui.label("Helix:");
+            ui.add(
+                egui::DragValue::new(&mut tool.helix_deg)
+                    .suffix(" deg")
+                    .speed(1.0)
+                    .range(0.0..=60.0),
+            );
+            ui.end_row();
+
+            if matches!(tool.tool_type, ToolType::EndMill) {
+                ui.label("Corner Radius:");
+                ui.add(
+                    egui::DragValue::new(&mut tool.corner_radius_mm)
+                        .suffix(" mm")
+                        .speed(0.01)
+                        .range(0.0..=tool.diameter / 2.0),
+                );
+                ui.end_row();
+            }
+
             // Tool material
             ui.label("Material:");
             egui::ComboBox::from_id_salt("tool_material")

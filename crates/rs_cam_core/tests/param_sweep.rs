@@ -1195,6 +1195,7 @@ fn drill_holes() -> Vec<[f64; 2]> {
 fn default_drill_params() -> DrillParams {
     DrillParams {
         depth: 10.0,
+        top_z: 0.0,
         cycle: DrillCycle::Peck(3.0),
         feed_rate: 300.0,
         safe_z: 10.0,
@@ -1422,6 +1423,7 @@ fn sweep_rest_prev_tool_radius() {
 fn default_adaptive3d_params() -> Adaptive3dParams {
     Adaptive3dParams {
         tool_radius: 3.175,
+        envelope_radius: 3.175,
         stepover: 2.0,
         depth_per_pass: 3.0,
         stock_to_leave: 0.0,
@@ -2025,6 +2027,8 @@ fn default_project_curve_params() -> ProjectCurveParams {
         safe_z: 30.0,
         point_spacing: 0.5,
         direction: rs_cam_core::project_curve::ProjectDirection::FromAbove,
+        tool_radius: 0.0,
+        side: rs_cam_core::project_curve::ProjectSide::Center,
         setup_z_flipped: false,
     }
 }

@@ -36,6 +36,7 @@ pub enum McpRequestKind {
         index: usize,
     },
     GetDiagnostics,
+    GetToolLoadReport,
     GetCutTrace {
         toolpath_id: Option<usize>,
         max_hotspots: Option<usize>,
@@ -87,6 +88,8 @@ pub enum McpRequestKind {
     },
     ExportGcode {
         path: String,
+        accept_unmodeled_tool_load: bool,
+        accept_exceeded_tool_load: bool,
     },
     SetToolpathParam {
         index: usize,

@@ -75,6 +75,17 @@ pub struct SimulationParam {
 pub struct ExportParam {
     /// Output file path for G-code
     pub path: String,
+    /// Bypass the tool-load gate for criteria that returned `Unmodeled`
+    /// (e.g. no simulation run, no vendor data). Default false.
+    #[serde(default)]
+    pub accept_unmodeled_tool_load: bool,
+    /// Bypass the tool-load gate for criteria that returned `Exceeds`
+    /// (the toolpath is predicted to break or burn the tool). Default
+    /// false. Set this knowingly; it is the "I accept that this toolpath
+    /// will damage tooling" override and is recorded separately from
+    /// `accept_unmodeled_tool_load`.
+    #[serde(default)]
+    pub accept_exceeded_tool_load: bool,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -606,18 +617,47 @@ impl CamServer {
         json_str(serde_json::to_value(session.diagnostics()).unwrap_or_default())
     }
 
-    #[tool(name = "export_gcode", description = "Export G-code to a file path")]
+    #[tool(
+        name = "export_gcode",
+        description = "Export G-code to a file path. Refuses if any toolpath has tool-load Exceeds or Unmodeled verdicts unless the corresponding accept flag is set."
+    )]
     async fn export_gcode(
         &self,
-        Parameters(ExportParam { path }): Parameters<ExportParam>,
+        Parameters(ExportParam {
+            path,
+            accept_unmodeled_tool_load,
+            accept_exceeded_tool_load,
+        }): Parameters<ExportParam>,
     ) -> String {
         let guard = self.session.lock().await;
         let Some(session) = guard.as_ref() else {
             return no_project_error();
         };
-        match session.export_gcode(Path::new(&path), None) {
+        let policy = rs_cam_core::gcode::ToolLoadExportPolicy {
+            accept_unmodeled: accept_unmodeled_tool_load,
+            accept_exceeded: accept_exceeded_tool_load,
+        };
+        match session.export_gcode_with_policy(Path::new(&path), None, policy) {
             Ok(()) => text(format!("G-code exported to {path}")),
             Err(e) => text(format!("Export failed: {e}")),
+        }
+    }
+
+    #[tool(
+        name = "get_tool_load_report",
+        description = "Per-toolpath tool-load report: chipload, power, deflection verdicts. Each criterion is independent (no scalar load %). Verdicts are Within/Exceeds/Unmodeled with typed reasons."
+    )]
+    async fn get_tool_load_report(&self) -> String {
+        let guard = self.session.lock().await;
+        let Some(session) = guard.as_ref() else {
+            return no_project_error();
+        };
+        let report = session.tool_load_report();
+        match serde_json::to_value(&report) {
+            Ok(v) => json_str(v),
+            Err(e) => json_str(serde_json::json!({
+                "error": format!("Failed to serialize tool load report: {e}")
+            })),
         }
     }
 

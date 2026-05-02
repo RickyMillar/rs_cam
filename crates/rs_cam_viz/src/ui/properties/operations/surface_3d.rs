@@ -62,11 +62,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                 0.05,
                 0.0..=10.0,
             );
-            // `stock_top_z` is auto-derived at compute time from the setup's
-            // stock bounding box (see compute/execute.rs Adaptive3d branch);
-            // exposing an editable field here was misleading — the stored
-            // value is never read. Kept in the config struct only for
-            // backward compatibility with saved projects.
             draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate);
             dv(
                 ui,

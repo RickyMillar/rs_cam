@@ -15,7 +15,7 @@ use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::radial_profile::RadialProfileLUT;
 use crate::semantic_trace::ToolpathSemanticTrace;
-use crate::simulation_cut::SimulationCutSample;
+use crate::simulation_cut::{CutKinematics, SimulationCutSample};
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveType, Toolpath};
 
@@ -104,6 +104,7 @@ impl TriDexelStock {
         rapid_feed_mm_min: f64,
         sample_step_mm: f64,
         semantic_trace: Option<&ToolpathSemanticTrace>,
+        capture_arc_engagement: bool,
         cancel: &dyn CancelCheck,
     ) -> Result<Vec<SimulationCutSample>, Cancelled> {
         let lut = RadialProfileLUT::from_cutter(cutter, 256);
@@ -118,6 +119,7 @@ impl TriDexelStock {
             rapid_feed_mm_min,
             sample_step_mm,
             semantic_trace,
+            capture_arc_engagement,
             cancel,
         )
     }
@@ -137,6 +139,7 @@ impl TriDexelStock {
         rapid_feed_mm_min: f64,
         sample_step_mm: f64,
         semantic_trace: Option<&ToolpathSemanticTrace>,
+        capture_arc_engagement: bool,
         cancel: &dyn CancelCheck,
     ) -> Result<Vec<SimulationCutSample>, Cancelled> {
         if toolpath.moves.len() < 2 {
@@ -167,6 +170,7 @@ impl TriDexelStock {
                             sample_step_mm,
                             feed_rate_mm_min: rapid_feed_mm_min.max(1.0),
                             is_cutting: false,
+                            cut_kinematics: CutKinematics::Rapid,
                             spindle_rpm,
                             flute_count,
                             semantic_item_id,
@@ -191,6 +195,8 @@ impl TriDexelStock {
                             flute_count,
                             semantic_item_id,
                             sample_step_mm,
+                            cut_kinematics: classify_cut_kinematics(start, end, false),
+                            capture_arc_engagement,
                         },
                         cancel,
                         &mut cumulative_time_s,
@@ -216,6 +222,8 @@ impl TriDexelStock {
                                 flute_count,
                                 semantic_item_id,
                                 sample_step_mm,
+                                cut_kinematics: CutKinematics::Arc,
+                                capture_arc_engagement,
                             },
                             cancel,
                             &mut cumulative_time_s,
@@ -250,6 +258,8 @@ impl TriDexelStock {
                                 flute_count,
                                 semantic_item_id,
                                 sample_step_mm,
+                                cut_kinematics: CutKinematics::Arc,
+                                capture_arc_engagement,
                             },
                             cancel,
                             &mut cumulative_time_s,
@@ -361,9 +371,15 @@ impl TriDexelStock {
                 continue;
             }
             let segment_time_s = (segment_len / params.feed_rate_mm_min.max(1.0)) * 60.0;
-            let (axial_doc_mm, radial_engagement, removed_volume_est_mm3) = self
-                .estimate_and_stamp_cutting_subsegment(
-                    lut, radius, seg_start, seg_end, midpoint, direction,
+            let (axial_doc_mm, radial_engagement, arc_engagement_radians, removed_volume_est_mm3) =
+                self.estimate_and_stamp_cutting_subsegment(
+                    lut,
+                    radius,
+                    seg_start,
+                    seg_end,
+                    midpoint,
+                    direction,
+                    params.capture_arc_engagement,
                 );
 
             *cumulative_time_s += segment_time_s;
@@ -375,11 +391,13 @@ impl TriDexelStock {
                 cumulative_time_s: *cumulative_time_s,
                 segment_time_s,
                 is_cutting: true,
+                cut_kinematics: params.cut_kinematics,
                 feed_rate_mm_min: params.feed_rate_mm_min,
                 spindle_rpm: params.spindle_rpm,
                 flute_count: params.flute_count,
                 axial_doc_mm,
                 radial_engagement,
+                arc_engagement_radians,
                 chipload_mm_per_tooth: chipload_mm_per_tooth(
                     params.feed_rate_mm_min,
                     params.spindle_rpm,
@@ -398,6 +416,7 @@ impl TriDexelStock {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn estimate_and_stamp_cutting_subsegment(
         &mut self,
         lut: &RadialProfileLUT,
@@ -406,7 +425,8 @@ impl TriDexelStock {
         seg_end: P3,
         midpoint: P3,
         direction: StockCutDirection,
-    ) -> (f64, f64, f64) {
+        capture_arc_engagement: bool,
+    ) -> (f64, f64, Option<f64>, f64) {
         let (su, sv, sd) = direction.decompose(seg_start.x, seg_start.y, seg_start.z);
         let (eu, ev, ed) = direction.decompose(seg_end.x, seg_end.y, seg_end.z);
         let (mu, mv, md) = direction.decompose(midpoint.x, midpoint.y, midpoint.z);
@@ -422,6 +442,149 @@ impl TriDexelStock {
             mv,
             md,
             from_high,
+            capture_arc_engagement,
         )
+    }
+}
+
+fn classify_cut_kinematics(start: P3, end: P3, is_arc: bool) -> CutKinematics {
+    if is_arc {
+        return CutKinematics::Arc;
+    }
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
+    let dz = end.z - start.z;
+    let xy_len_sq = dx * dx + dy * dy;
+    if xy_len_sq < 1e-18 && dz.abs() > 1e-9 {
+        CutKinematics::Plunge
+    } else if xy_len_sq > 1e-18 && dz.abs() > 1e-9 {
+        CutKinematics::Helix
+    } else {
+        CutKinematics::Linear
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+    use crate::geo::BoundingBox3;
+    use crate::tool::FlatEndmill;
+
+    fn simulate_line(
+        stock_y_min: f64,
+        stock_y_max: f64,
+        start: P3,
+        end: P3,
+    ) -> Vec<SimulationCutSample> {
+        let bbox = BoundingBox3 {
+            min: P3::new(-20.0, stock_y_min, -5.0),
+            max: P3::new(20.0, stock_y_max, 5.0),
+        };
+        let mut stock = TriDexelStock::from_bounds(&bbox, 0.25);
+        let cutter = FlatEndmill::new(10.0, 20.0);
+        let mut toolpath = Toolpath::new();
+        toolpath.rapid_to(start);
+        toolpath.feed_to(end, 600.0);
+        let never_cancel = || false;
+        stock
+            .simulate_toolpath_with_metrics_with_cancel(
+                &toolpath,
+                &cutter,
+                StockCutDirection::FromTop,
+                0,
+                12_000,
+                2,
+                3000.0,
+                2.0,
+                None,
+                true,
+                &never_cancel,
+            )
+            .expect("simulation succeeds")
+    }
+
+    #[test]
+    fn half_width_linear_cut_captures_quarter_turn_arc() {
+        let samples = simulate_line(
+            0.0,
+            20.0,
+            P3::new(-10.0, 0.0, -1.0),
+            P3::new(10.0, 0.0, -1.0),
+        );
+        let sample = samples
+            .iter()
+            .find(|sample| sample.arc_engagement_radians.is_some())
+            .expect("arc sample");
+        let arc = sample.arc_engagement_radians.expect("arc captured");
+        assert_eq!(sample.cut_kinematics, CutKinematics::Linear);
+        assert!(
+            (arc - std::f64::consts::FRAC_PI_2).abs() <= 0.12,
+            "arc={arc}"
+        );
+    }
+
+    #[test]
+    fn full_slot_linear_cut_captures_half_turn_arc() {
+        let samples = simulate_line(
+            -20.0,
+            20.0,
+            P3::new(-10.0, 0.0, -1.0),
+            P3::new(10.0, 0.0, -1.0),
+        );
+        let sample = samples
+            .iter()
+            .find(|sample| sample.arc_engagement_radians.is_some())
+            .expect("arc sample");
+        let arc = sample.arc_engagement_radians.expect("arc captured");
+        assert_eq!(sample.cut_kinematics, CutKinematics::Linear);
+        assert!((arc - std::f64::consts::PI).abs() <= 0.12, "arc={arc}");
+    }
+
+    #[test]
+    fn rapid_and_plunge_kinematics_do_not_capture_arc() {
+        let bbox = BoundingBox3 {
+            min: P3::new(-5.0, -5.0, -5.0),
+            max: P3::new(5.0, 5.0, 5.0),
+        };
+        let mut stock = TriDexelStock::from_bounds(&bbox, 0.5);
+        let cutter = FlatEndmill::new(3.0, 10.0);
+        let mut toolpath = Toolpath::new();
+        toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
+        toolpath.rapid_to(P3::new(1.0, 0.0, 5.0));
+        toolpath.feed_to(P3::new(1.0, 0.0, -1.0), 100.0);
+        let never_cancel = || false;
+        let samples = stock
+            .simulate_toolpath_with_metrics_with_cancel(
+                &toolpath,
+                &cutter,
+                StockCutDirection::FromTop,
+                0,
+                12_000,
+                2,
+                3000.0,
+                1.0,
+                None,
+                true,
+                &never_cancel,
+            )
+            .expect("simulation succeeds");
+        assert!(
+            samples
+                .iter()
+                .any(|sample| sample.cut_kinematics == CutKinematics::Rapid
+                    && sample.arc_engagement_radians.is_none())
+        );
+        assert!(
+            samples
+                .iter()
+                .any(|sample| sample.cut_kinematics == CutKinematics::Plunge
+                    && sample.arc_engagement_radians.is_none())
+        );
     }
 }

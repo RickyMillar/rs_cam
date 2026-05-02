@@ -138,6 +138,23 @@ pub fn ray_bottom(ray: &DexelRay) -> Option<f32> {
     ray.first().map(|s| s.enter)
 }
 
+/// Total material length above a given Z value along this ray.
+///
+/// Used by simulation metrics to estimate volume removed when a cutter
+/// subtracts material above a surface. Each segment contributes
+/// `max(0, exit - max(z, enter))`.
+pub fn ray_material_length_above(ray: &DexelRay, z: f32) -> f32 {
+    let mut sum = 0.0;
+    for seg in ray.iter() {
+        if seg.exit <= z {
+            continue;
+        }
+        let lower = seg.enter.max(z);
+        sum += seg.exit - lower;
+    }
+    sum
+}
+
 // ── Grid axis ───────────────────────────────────────────────────────────
 
 /// Which world axis the rays of a [`DexelGrid`] run along.

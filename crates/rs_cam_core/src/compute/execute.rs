@@ -476,6 +476,7 @@ pub fn execute_operation_annotated(
             let cycle = cfg.cycle.to_core(cfg);
             let params = crate::drill::DrillParams {
                 depth: cfg.depth,
+                top_z: stock_bbox.max.z,
                 cycle,
                 feed_rate,
                 safe_z,
@@ -542,6 +543,7 @@ pub fn execute_operation_annotated(
             };
             let params = crate::drill::DrillParams {
                 depth,
+                top_z: stock_bbox.max.z,
                 cycle,
                 feed_rate: cfg.feed_rate,
                 safe_z,
@@ -674,8 +676,14 @@ pub fn execute_operation_annotated(
                     crate::adaptive3d::ClearingStrategy3d::AgentSearch
                 }
             };
+            // Adaptive3d spaces passes by the tool's *engagement* radius at
+            // the depth-of-cut, not the envelope radius — for tapered tools
+            // these differ a lot. Floor at 0.01mm to keep stepover math safe
+            // for degenerate (zero-tip) geometry.
+            let engagement_radius = tool_def.engagement_radius(cfg.depth_per_pass).max(0.01);
             let params = crate::adaptive3d::Adaptive3dParams {
-                tool_radius,
+                tool_radius: engagement_radius,
+                envelope_radius: tool_radius,
                 stepover: cfg.stepover,
                 depth_per_pass: cfg.depth_per_pass,
                 stock_to_leave: cfg.stock_to_leave_axial.max(cfg.stock_to_leave_radial),
@@ -918,6 +926,17 @@ pub fn execute_operation_annotated(
                     crate::project_curve::ProjectDirection::FromBelow
                 }
             };
+            let side = match cfg.side {
+                crate::compute::operation_configs::ProjectCurveSide::Center => {
+                    crate::project_curve::ProjectSide::Center
+                }
+                crate::compute::operation_configs::ProjectCurveSide::Inside => {
+                    crate::project_curve::ProjectSide::Inside
+                }
+                crate::compute::operation_configs::ProjectCurveSide::Outside => {
+                    crate::project_curve::ProjectSide::Outside
+                }
+            };
             let params = crate::project_curve::ProjectCurveParams {
                 depth: cfg.depth,
                 point_spacing: cfg.point_spacing,
@@ -925,6 +944,8 @@ pub fn execute_operation_annotated(
                 plunge_rate,
                 safe_z,
                 direction,
+                tool_radius,
+                side,
                 setup_z_flipped: cfg.setup_z_flipped,
             };
             let mut combined = Toolpath::new();

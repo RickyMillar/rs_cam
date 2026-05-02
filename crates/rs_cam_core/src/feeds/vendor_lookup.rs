@@ -25,6 +25,12 @@ pub struct LookupQuery {
 #[derive(Debug, Clone)]
 pub struct LookupResult {
     pub chip_load_mm: f64,
+    /// Lower bound of the observation's chipload range, if reported.
+    /// Below this is rubbing/burning territory.
+    pub chip_load_min_mm: Option<f64>,
+    /// Upper bound of the observation's chipload range, if reported.
+    /// Above this is breakage territory.
+    pub chip_load_max_mm: Option<f64>,
     pub rpm_nominal: Option<f64>,
     pub rpm_min: Option<f64>,
     pub rpm_max: Option<f64>,
@@ -127,6 +133,8 @@ pub fn lookup_best(lut: &VendorLut, query: &LookupQuery) -> Option<LookupResult>
         let chip_load = chipload_midpoint(obs);
         LookupResult {
             chip_load_mm: chip_load,
+            chip_load_min_mm: obs.chipload_min_mm_tooth,
+            chip_load_max_mm: obs.chipload_max_mm_tooth,
             rpm_nominal: obs.rpm_nominal,
             rpm_min: obs.rpm_min,
             rpm_max: obs.rpm_max,
@@ -307,6 +315,77 @@ mod tests {
         let result =
             lookup_best(&lut, &query).expect("bull nose should fallback to flat/bull rows");
         assert!(result.chip_load_mm > 0.03);
+    }
+
+    #[test]
+    fn test_sub_1mm_tapered_ball_softwood_finish_matches() {
+        // Item E coverage gain: a 1mm tapered ball + parallel + finish + softwood
+        // must match at least one row after sub-1mm coverage was added (2026-05-02).
+        // Source: Amana ZrN 3D Profiling chart sub-1mm rows.
+        let lut = embedded_lut();
+        let query = LookupQuery {
+            tool_family: ToolFamily::TaperedBallNose,
+            tool_subfamily: None,
+            diameter_mm: 1.0,
+            flute_count: 2,
+            material_family: MaterialFamily::Softwood,
+            hardness_kind: Some(HardnessKind::Janka),
+            hardness_value: Some(600.0),
+            operation_family: LutOperationFamily::Parallel,
+            pass_role: LutPassRole::Finish,
+        };
+        let result = lookup_best(&lut, &query)
+            .expect("1mm tapered ball + softwood + parallel/finish should match a sub-1mm ball-nose row");
+        // Should match one of the new ZrN sub-1mm rows.
+        assert!(
+            result.observation_id.contains("zrn"),
+            "expected match against ZrN sub-1mm row, got {}",
+            result.observation_id
+        );
+        // The 2-flute 1mm ball-nose row should win on the (TaperedBallNose -> BallNose)
+        // family fallback at exact diameter and exact flute count.
+        assert_eq!(
+            result.observation_id, "amana-ball-softwood-parallel-1000-2f-zrn",
+            "expected the 1mm 2-flute ZrN row to win for a 1mm 2-flute query"
+        );
+        // Chipload midpoint should match the published values: midpoint(0.01905, 0.0508).
+        let expected_mid = (0.01905 + 0.0508) / 2.0;
+        assert!(
+            (result.chip_load_mm - expected_mid).abs() < 1e-4,
+            "expected chipload midpoint ~{expected_mid}, got {}",
+            result.chip_load_mm
+        );
+    }
+
+    #[test]
+    fn test_sub_1mm_tapered_ball_hardwood_finish_documented_gap() {
+        // Item E refusal-first: the Amana ZrN 3D Profiling chart conflates
+        // softwood/hardwood under one "Wood" row, and we deliberately did NOT
+        // emit hardwood rows from that source for sub-1mm tools. This test
+        // documents the gap: a 1mm tapered ball + hardwood + parallel/finish
+        // should NOT match any sub-1mm row (it can only match larger 3.175mm+
+        // rows that are out of the 0.5x-2x ratio for a 1mm query).
+        // If this test starts failing because someone added a hardwood row,
+        // verify the source PDF actually distinguishes hardwood from softwood.
+        let lut = embedded_lut();
+        let query = LookupQuery {
+            tool_family: ToolFamily::TaperedBallNose,
+            tool_subfamily: None,
+            diameter_mm: 1.0,
+            flute_count: 2,
+            material_family: MaterialFamily::Hardwood,
+            hardness_kind: Some(HardnessKind::Janka),
+            hardness_value: Some(1450.0),
+            operation_family: LutOperationFamily::Parallel,
+            pass_role: LutPassRole::Finish,
+        };
+        // No match expected — coverage gap is real.
+        assert!(
+            lookup_best(&lut, &query).is_none(),
+            "no hardwood-specific sub-1mm ball/tapered-ball rows exist; \
+             if a match was found, verify the new row's source PDF distinguishes \
+             hardwood from softwood, not just lumps them as 'wood'"
+        );
     }
 
     #[test]

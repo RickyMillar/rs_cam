@@ -1,5 +1,5 @@
 use crate::state::job::ModelId;
-use crate::state::toolpath::{ProjectCurveConfig, ProjectCurveDirection};
+use crate::state::toolpath::{ProjectCurveConfig, ProjectCurveDirection, ProjectCurveSide};
 
 use super::super::dv;
 use super::draw_feed_params;
@@ -61,6 +61,22 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
                     "From Below",
                 )
                 .on_hover_text("Project from below (Z-up). Engraves the bottom surface.");
+            });
+    });
+
+    // Tool radius compensation side (closed rings only)
+    ui.horizontal(|ui| {
+        ui.label("Side:")
+            .on_hover_text("Closed rings only. Open paths always trace on the line.");
+        egui::ComboBox::from_id_salt("proj_side")
+            .selected_text(cfg.side.label())
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut cfg.side, ProjectCurveSide::Center, "On Line")
+                    .on_hover_text("Tool centerline rides exactly on the curve.");
+                ui.selectable_value(&mut cfg.side, ProjectCurveSide::Inside, "Inside")
+                    .on_hover_text("Offset inward by tool radius. Cut stays inside the line.");
+                ui.selectable_value(&mut cfg.side, ProjectCurveSide::Outside, "Outside")
+                    .on_hover_text("Offset outward by tool radius. Cut stays outside the line.");
             });
     });
 

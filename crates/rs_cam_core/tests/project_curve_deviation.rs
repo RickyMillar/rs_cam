@@ -321,6 +321,8 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         safe_z: 10.0,
         point_spacing: 0.5,
         direction: ProjectDirection::FromAbove,
+        tool_radius: 0.0,
+        side: rs_cam_core::project_curve::ProjectSide::Center,
         setup_z_flipped: false,
     };
 

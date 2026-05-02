@@ -9,7 +9,10 @@
 //!
 //! Edge contact uses the hyperbola intersection approach from OpenCAMLib.
 
-use super::{CLPoint, MillingCutter};
+use super::{
+    CLPoint, ChipGeometry, EngagementError, EngagementMode, MillingCutter,
+    flat_chip_geometry_for_radius,
+};
 use crate::geo::P3;
 
 #[derive(Debug, Clone)]
@@ -18,6 +21,7 @@ pub struct VBitEndmill {
     /// Full included angle in degrees (e.g., 90° V-bit has half_angle = 45°)
     pub included_angle_deg: f64,
     pub cutting_length: f64,
+    pub helix_deg: f64,
     // Precomputed trig values
     half_angle_rad: f64,
     tan_half_angle: f64,
@@ -36,6 +40,7 @@ impl VBitEndmill {
             diameter,
             included_angle_deg,
             cutting_length,
+            helix_deg: 30.0,
             half_angle_rad,
             tan_half_angle,
         }
@@ -58,6 +63,32 @@ impl MillingCutter for VBitEndmill {
     }
     fn length(&self) -> f64 {
         self.cutting_length
+    }
+    fn helix_deg(&self) -> f64 {
+        self.helix_deg
+    }
+    fn chip_geometry(
+        &self,
+        axial_doc_mm: f64,
+        arc_engagement_radians: f64,
+        feed_per_tooth_mm: f64,
+        flute_count: u32,
+        _mode: EngagementMode,
+    ) -> Result<ChipGeometry, EngagementError> {
+        if axial_doc_mm < 0.05 {
+            return Err(EngagementError::Unsupported {
+                reason: "tip-only engagement — chip area undefined at single-point contact"
+                    .to_owned(),
+            });
+        }
+        flat_chip_geometry_for_radius(
+            axial_doc_mm * self.tan_half_angle,
+            self.helix_deg,
+            axial_doc_mm,
+            arc_engagement_radians,
+            feed_per_tooth_mm,
+            flute_count,
+        )
     }
     fn geometry_hint(&self) -> crate::feeds::ToolGeometryHint {
         crate::feeds::ToolGeometryHint::VBit {
@@ -284,7 +315,7 @@ impl MillingCutter for VBitEndmill {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::geo::{P3, Triangle};
@@ -302,6 +333,37 @@ mod tests {
     #[should_panic(expected = "Included angle")]
     fn test_vbit_invalid_angle() {
         VBitEndmill::new(10.0, 0.0, 25.0);
+    }
+
+    #[test]
+    fn chip_geometry_rejects_tip_only_engagement() {
+        let tool = VBitEndmill::new(12.0, 90.0, 25.0);
+        assert!(matches!(
+            tool.chip_geometry(
+                0.01,
+                std::f64::consts::FRAC_PI_2,
+                0.03,
+                2,
+                EngagementMode::Climb
+            ),
+            Err(EngagementError::Unsupported { .. })
+        ));
+    }
+
+    #[test]
+    fn chip_geometry_accepts_conical_surface() {
+        let tool = VBitEndmill::new(12.0, 90.0, 25.0);
+        let geom = tool
+            .chip_geometry(
+                2.0,
+                std::f64::consts::FRAC_PI_2,
+                0.03,
+                2,
+                EngagementMode::Climb,
+            )
+            .expect("v-bit cone geometry supported");
+        assert!(geom.max_chip_thickness_mm > 0.0);
+        assert!((2.0 * tool.half_angle().tan() - 2.0).abs() < 1e-9);
     }
 
     #[test]

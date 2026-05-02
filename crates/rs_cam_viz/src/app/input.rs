@@ -149,10 +149,19 @@ impl RsCamApp {
                 AppEvent::ExportGcodeConfirmed => {
                     self.export_gcode_with_summary();
                 }
+                AppEvent::SetToolLoadOverride {
+                    accept_unmodeled,
+                    accept_exceeded,
+                } => {
+                    let gui = &mut self.controller.state_mut().gui;
+                    gui.tool_load_overrides.accept_unmodeled = accept_unmodeled;
+                    gui.tool_load_overrides.accept_exceeded = accept_exceeded;
+                }
                 AppEvent::ExportCombinedGcode => {
                     match crate::io::export::export_combined_gcode_from_session(
                         &self.controller.state().session,
                         &self.controller.state().gui,
+                        &self.controller.state().simulation,
                     ) {
                         Ok(gcode) => {
                             let default_name =
@@ -197,6 +206,7 @@ impl RsCamApp {
                     match crate::io::export::export_setup_gcode_from_session(
                         &self.controller.state().session,
                         &self.controller.state().gui,
+                        &self.controller.state().simulation,
                         setup_id,
                     ) {
                         Ok(gcode) => {

@@ -23,7 +23,7 @@ use super::search::{
     material_remaining_in_region,
 };
 use super::{
-    ClearingStrategy3d, stock_has_material_above,
+    ClearingStrategy3d, stock_has_material_above, stock_top_z_at,
 };
 
 // ── Region detection ──────────────────────────────────────────────────
@@ -425,6 +425,42 @@ pub(super) fn clear_z_level_contour_parallel(
                 // Clamp so we never cut below the next Z level's floor.
                 let z = (z_level + blend * (target_z - z_level)).max(target_z);
                 path_3d.push(P3::new(p.x, p.y, z));
+            }
+
+            // Pick the entry point that requires the shallowest plunge
+            // through fresh material. The natural starting point of the
+            // marching-squares contour is wherever the algorithm's pixel
+            // walk happened to begin, which can land on full-height stock
+            // for a deeper Z-level pass — leading to a deep vertical
+            // plunge through material from safe_z down to z_level.
+            //
+            // Rotating the closed loop so the point with the *lowest
+            // current stock_top* is first means the plunge passes through
+            // mostly already-cleared air, then bites only the depth-of-cut
+            // worth of material at the bottom. Same total cut area, same
+            // contour shape — just a kinder entry XY for closed loops.
+            //
+            // Only applies to closed contour loops (>= 3 pts); open
+            // single-segment cleanup paths are left alone.
+            if path_3d.len() >= 3 {
+                let stock_top_at_path_idx = |idx: usize| -> f64 {
+                    #[allow(clippy::indexing_slicing)] // idx < path_3d.len() by construction
+                    let p = &path_3d[idx];
+                    match material_stock.z_grid.world_to_cell(p.x, p.y) {
+                        Some((row, col)) => stock_top_z_at(material_stock, row, col),
+                        None => f64::INFINITY,
+                    }
+                };
+                let best = (0..path_3d.len()).min_by(|&a, &b| {
+                    let ta = stock_top_at_path_idx(a);
+                    let tb = stock_top_at_path_idx(b);
+                    ta.partial_cmp(&tb).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                if let Some(idx) = best
+                    && idx > 0
+                {
+                    path_3d.rotate_left(idx);
+                }
             }
 
             // Emit entry (link or rapid) + cut segment

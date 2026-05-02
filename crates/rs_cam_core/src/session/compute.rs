@@ -491,6 +491,7 @@ impl ProjectSession {
                         toolpath,
                         &boundary_config,
                         &effective_stock_bbox,
+                        mesh.as_deref(),
                         &keep_out_footprints,
                         tool_def.diameter(),
                         heights.retract_z,
@@ -535,6 +536,7 @@ impl ProjectSession {
         toolpath: crate::toolpath::Toolpath,
         boundary_config: &crate::compute::config::BoundaryConfig,
         stock_bbox: &BoundingBox3,
+        mesh: Option<&crate::mesh::TriangleMesh>,
         keep_out_footprints: &[crate::polygon::Polygon2],
         tool_diameter: f64,
         safe_z: f64,
@@ -543,18 +545,60 @@ impl ProjectSession {
         use crate::boundary::{
             ToolContainment, clip_toolpath_to_boundary, effective_boundary, subtract_keepouts,
         };
+        use crate::compute::config::BoundarySource;
 
-        // Build the boundary polygon from stock bbox (setup-local coordinates).
-        let mut stock_poly = crate::polygon::Polygon2::rectangle(
-            stock_bbox.min.x,
-            stock_bbox.min.y,
-            stock_bbox.max.x,
-            stock_bbox.max.y,
-        );
+        // Resolve the source polygon for the boundary. ModelSilhouette and
+        // FaceSelection fall back to the stock rectangle when the required
+        // geometry isn't available.
+        let mut stock_poly = match &boundary_config.source {
+            BoundarySource::ModelSilhouette if mesh.is_some() => {
+                // SAFETY: matched `mesh.is_some()` in the pattern guard.
+                #[allow(clippy::unwrap_used)]
+                let m = mesh.unwrap();
+                crate::boundary::model_silhouette(m, None)
+                    .into_iter()
+                    .max_by(|a, b| {
+                        a.area()
+                            .partial_cmp(&b.area())
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .unwrap_or_else(|| {
+                        crate::polygon::Polygon2::rectangle(
+                            stock_bbox.min.x,
+                            stock_bbox.min.y,
+                            stock_bbox.max.x,
+                            stock_bbox.max.y,
+                        )
+                    })
+            }
+            _ => crate::polygon::Polygon2::rectangle(
+                stock_bbox.min.x,
+                stock_bbox.min.y,
+                stock_bbox.max.x,
+                stock_bbox.max.y,
+            ),
+        };
 
         // Subtract keep-out footprints (fixtures + keep-out zones).
         if !keep_out_footprints.is_empty() {
             stock_poly = subtract_keepouts(&stock_poly, keep_out_footprints);
+        }
+
+        // Apply user-configured offset (positive = expand boundary outward,
+        // negative = shrink). cavalier_contours convention: positive distance
+        // is INWARD shrink, so flip the sign.
+        if boundary_config.offset.abs() > 1e-9 {
+            let offset_polys = crate::polygon::offset_polygon(&stock_poly, -boundary_config.offset);
+            if let Some(largest) = offset_polys.into_iter().max_by(|a, b| {
+                a.area()
+                    .partial_cmp(&b.area())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }) {
+                stock_poly = largest;
+            }
+            // If the offset collapsed the polygon, fall through with the
+            // unmodified stock_poly — the containment offset below may still
+            // collapse it, in which case the toolpath is returned uncut.
         }
 
         // Map BoundaryContainment -> ToolContainment.
@@ -717,6 +761,7 @@ impl ProjectSession {
             resolution,
             metric_options: SimulationMetricOptions {
                 enabled: opts.metrics_enabled,
+                capture_arc_engagement: opts.metrics_enabled,
             },
             spindle_rpm: self.post.spindle_speed,
             rapid_feed_mm_min: if self.post.high_feedrate_mode {
@@ -899,59 +944,51 @@ impl ProjectSession {
 
     // ── Export ──────────────────────────────────────────────────────
 
-    /// Export G-code for all computed toolpaths.
+    /// Export G-code for all computed toolpaths under the default tool-load
+    /// policy (refuse on Exceeds or Unmodeled). For an override-capable
+    /// variant see [`export_gcode_with_policy`].
     #[instrument(skip(self))]
     pub fn export_gcode(&self, path: &Path, _setup_id: Option<usize>) -> Result<(), SessionError> {
-        use crate::compute::{CompensationType, OperationConfig};
-        use crate::gcode::{
-            ControllerCompensation, CoolantMode, GcodePhase, PostFormat, emit_gcode_phased,
-        };
-        use crate::profile::ProfileSide;
+        self.export_gcode_with_policy(
+            path,
+            _setup_id,
+            crate::gcode::ToolLoadExportPolicy::default(),
+        )
+    }
 
-        let post_format = match self.post.format.to_ascii_lowercase().as_str() {
-            "linuxcnc" | "linux_cnc" => PostFormat::LinuxCnc,
-            "mach3" => PostFormat::Mach3,
-            _ => PostFormat::Grbl,
-        };
-        let post = post_format.post_processor();
-
-        // Collect all computed toolpaths as phases
-        let mut phases: Vec<GcodePhase<'_>> = Vec::new();
-        for (idx, tc) in self.toolpath_configs.iter().enumerate() {
-            if let Some(result) = self.results.get(&idx) {
-                // Determine controller compensation for profile operations
-                let controller_compensation =
-                    if let OperationConfig::Profile(ref cfg) = tc.operation {
-                        if cfg.compensation == CompensationType::InControl {
-                            Some(match (cfg.side, cfg.climb) {
-                                (ProfileSide::Outside, true) => ControllerCompensation::Right,
-                                (ProfileSide::Outside, false) => ControllerCompensation::Left,
-                                (ProfileSide::Inside, true) => ControllerCompensation::Left,
-                                (ProfileSide::Inside, false) => ControllerCompensation::Right,
-                            })
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-                phases.push(GcodePhase {
-                    toolpath: &result.toolpath,
-                    spindle_rpm: self.post.spindle_speed,
-                    label: &tc.name,
-                    tool_number: None,
-                    coolant: CoolantMode::Off,
-                    pre_gcode: tc.pre_gcode.as_deref(),
-                    post_gcode: tc.post_gcode.as_deref(),
-                    controller_compensation,
-                });
-            }
-        }
-
-        let gcode = emit_gcode_phased(&phases, post.as_ref());
+    /// Export G-code with an explicit tool-load policy. Used by callers that
+    /// want to override `Exceeds` or `Unmodeled` verdicts (UI checkbox,
+    /// `--accept-…` CLI flag, MCP parameter).
+    #[instrument(skip(self))]
+    pub fn export_gcode_with_policy(
+        &self,
+        path: &Path,
+        _setup_id: Option<usize>,
+        policy: crate::gcode::ToolLoadExportPolicy,
+    ) -> Result<(), SessionError> {
+        let gcode = crate::gcode::export_gcode_checked(
+            self,
+            self.simulation
+                .as_ref()
+                .and_then(|simulation| simulation.cut_trace.as_deref()),
+            policy,
+        )
+        .map_err(|e| SessionError::Export(e.to_string()))?;
         std::fs::write(path, gcode).map_err(|e| {
             SessionError::Export(format!("Failed to write G-code to {}: {e}", path.display()))
         })
+    }
+
+    /// Compute the per-toolpath tool-load report against current state. Used
+    /// by `get_tool_load_report` (MCP) and the export gate. Returns deflection
+    /// + chipload populated; power is `Unmodeled(NotImplemented)` until
+    /// Phase 1b lands the arc-engagement-driven power criterion.
+    pub fn tool_load_report(&self) -> crate::tool_load::ToolLoadReport {
+        let sim_trace = self
+            .simulation
+            .as_ref()
+            .and_then(|simulation| simulation.cut_trace.as_deref());
+        crate::gcode::project_load_report(self, sim_trace)
     }
 
     /// Export diagnostics as JSON files to an output directory.
