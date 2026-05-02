@@ -39,6 +39,11 @@ pub struct SimToolpathEntry {
     pub tool_summary: String,
     /// Optional semantic trace for metric enrichment.
     pub semantic_trace: Option<Arc<ToolpathSemanticTrace>>,
+    /// Per-toolpath spindle RPM override. When `None`, falls back to
+    /// `SimulationRequest.spindle_rpm`. Set this from
+    /// `effective_spindle_rpm(&tc.operation, &post)` so that per-op
+    /// overrides propagate into `SimulationCutSample.spindle_rpm`.
+    pub spindle_rpm: Option<u32>,
 }
 
 /// A group of toolpaths from one setup, sharing a cut direction.
@@ -347,6 +352,7 @@ where
             let start_move = total_moves;
 
             if request.metric_options.enabled {
+                let entry_rpm = entry.spindle_rpm.unwrap_or(request.spindle_rpm);
                 let mut samples = group_stock
                     .simulate_toolpath_with_lut_metrics_cancel(
                         &entry.toolpath,
@@ -355,7 +361,7 @@ where
                         radius,
                         direction,
                         entry.id,
-                        request.spindle_rpm,
+                        entry_rpm,
                         entry.flute_count,
                         request.rapid_feed_mm_min,
                         sample_step_mm,
@@ -599,6 +605,7 @@ mod tests {
             flute_count: 2,
             tool_summary: "6mm Flat".to_owned(),
             semantic_trace: None,
+            spindle_rpm: None,
         };
 
         let group = SimGroupEntry {
@@ -631,6 +638,59 @@ mod tests {
         assert!(!result.mesh.vertices.is_empty());
         assert_eq!(result.boundaries.len(), 1);
         assert_eq!(result.checkpoints.len(), 1);
+    }
+
+    #[test]
+    fn per_entry_spindle_rpm_overrides_request_default() {
+        // When `SimToolpathEntry.spindle_rpm` is `Some(X)`, every cut sample
+        // for that entry should report `X` for `spindle_rpm`, regardless of
+        // the request-level default. When `None`, the request-level default
+        // is used.
+        let mut req = simple_request();
+        req.metric_options = SimulationMetricOptions {
+            enabled: true,
+            capture_arc_engagement: false,
+        };
+        // Request default is 18_000 (set in `simple_request`); override the
+        // single entry to 12_000.
+        req.groups[0].toolpaths[0].spindle_rpm = Some(12_000);
+
+        let cancel = AtomicBool::new(false);
+        let result = run_simulation(&req, &cancel).unwrap();
+        let trace = result
+            .cut_trace
+            .as_ref()
+            .expect("metric trace should be present");
+        assert!(
+            !trace.samples.is_empty(),
+            "trace should contain at least one sample"
+        );
+        for sample in &trace.samples {
+            assert_eq!(
+                sample.spindle_rpm, 12_000,
+                "per-entry override should drive the sample's spindle_rpm"
+            );
+        }
+
+        // And the inverse: with `None`, samples report the request default.
+        let mut req = simple_request();
+        req.metric_options = SimulationMetricOptions {
+            enabled: true,
+            capture_arc_engagement: false,
+        };
+        req.groups[0].toolpaths[0].spindle_rpm = None;
+        let cancel = AtomicBool::new(false);
+        let result = run_simulation(&req, &cancel).unwrap();
+        let trace = result
+            .cut_trace
+            .as_ref()
+            .expect("metric trace should be present");
+        for sample in &trace.samples {
+            assert_eq!(
+                sample.spindle_rpm, 18_000,
+                "no per-entry override should fall back to request default"
+            );
+        }
     }
 
     #[test]
@@ -740,6 +800,7 @@ mod tests {
             flute_count: 2,
             tool_summary: "6.35mm Flat".to_owned(),
             semantic_trace: None,
+            spindle_rpm: None,
         };
 
         let group = SimGroupEntry {
@@ -839,6 +900,7 @@ mod tests {
                 flute_count: 2,
                 tool_summary: "6mm Flat".into(),
                 semantic_trace: None,
+                spindle_rpm: None,
             }],
             direction: StockCutDirection::FromTop,
             local_stock_bbox: Some(stock_bbox),
@@ -854,6 +916,7 @@ mod tests {
                 flute_count: 2,
                 tool_summary: "6mm Flat".into(),
                 semantic_trace: None,
+                spindle_rpm: None,
             }],
             direction: StockCutDirection::FromBottom,
             local_stock_bbox: Some(BoundingBox3 {
