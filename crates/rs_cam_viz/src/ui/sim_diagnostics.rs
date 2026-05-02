@@ -3,9 +3,15 @@ use super::sim_debug::{
     debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
 };
 use crate::state::runtime::GuiState;
-use crate::state::simulation::{SimulationIssueKind, SimulationState, StockVizMode};
+use crate::state::simulation::{
+    SimulationAnalyticsTab, SimulationIssueKind, SimulationState, StockVizMode,
+};
 use crate::ui::theme;
 use rs_cam_core::session::ProjectSession;
+use rs_cam_core::simulation_cut::CutKinematics;
+use rs_cam_core::tool_load::{
+    Confidence, ExceedsReason, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason, Verdict,
+};
 
 /// Right panel in simulation workspace: current state, warnings, and summary stats.
 pub fn draw(
@@ -18,6 +24,15 @@ pub fn draw(
     let max_feed = session.machine().max_feed_mm_min;
     ui.heading("Diagnostics");
     ui.separator();
+    draw_analytics_tabs(ui, &mut sim.analytics_tab);
+    ui.add_space(4.0);
+
+    let active_tab = sim.analytics_tab;
+
+    let load_report = {
+        let sim_trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
+        rs_cam_core::gcode::project_load_report(session, sim_trace)
+    };
 
     // ── Summary card (go/no-go at a glance) ─────────────────
     if sim.results.is_some() {
@@ -65,6 +80,7 @@ pub fn draw(
                         );
                     }
                 });
+                draw_tool_load_summary_line(ui, &load_report);
             });
         ui.add_space(4.0);
     }
@@ -72,6 +88,11 @@ pub fn draw(
     let active_semantic = sim.active_semantic_item(gui, max_feed);
     let linked_span = sim.active_debug_span(gui, max_feed);
     let current_boundary_id = sim.current_boundary().map(|boundary| boundary.id);
+
+    if matches!(active_tab, SimulationAnalyticsTab::RunStatus) {
+        draw_run_status_snapshot(ui, sim, gui, &load_report);
+        ui.add_space(4.0);
+    }
 
     if sim.debug.enabled {
         ui.horizontal_wrapped(|ui| {
@@ -111,7 +132,8 @@ pub fn draw(
     }
 
     // --- Stock Display ---
-    egui::CollapsingHeader::new("Stock Display")
+    if matches!(active_tab, SimulationAnalyticsTab::RunStatus) {
+        egui::CollapsingHeader::new("Stock Display")
         .default_open(true)
         .show(ui, |ui| {
             let prev_mode = sim.stock_viz_mode;
@@ -198,175 +220,193 @@ pub fn draw(
                 // (Large meshes are now auto-chunked for GPU upload — no blank-screen warning needed.)
             }
         });
+    }
 
     ui.add_space(4.0);
 
     // --- Semantic Context ---
-    egui::CollapsingHeader::new("Semantic Context")
-        .default_open(false)
-        .show(ui, |ui| {
-            if let Some(active) = active_semantic.as_ref() {
-                let color = semantic_kind_color(&active.item.kind);
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(
-                        egui::RichText::new(&active.item.label)
-                            .strong()
-                            .color(color),
-                    );
-                    if sim.debug.pinned_semantic_item == Some((active.toolpath_id, active.item.id))
-                    {
+    if matches!(active_tab, SimulationAnalyticsTab::DebugTrace) {
+        egui::CollapsingHeader::new("Semantic Context")
+            .default_open(false)
+            .show(ui, |ui| {
+                if let Some(active) = active_semantic.as_ref() {
+                    let color = semantic_kind_color(&active.item.kind);
+                    ui.horizontal_wrapped(|ui| {
                         ui.label(
-                            egui::RichText::new("Pinned")
-                                .small()
-                                .color(theme::WARNING_TEXT),
+                            egui::RichText::new(&active.item.label)
+                                .strong()
+                                .color(color),
                         );
-                    }
-                    if ui.small_button("Start").clicked()
-                        && let Some(target) = sim.trace_target_for_item(
-                            gui,
-                            max_feed,
-                            active.toolpath_id,
-                            active.item.id,
-                            false,
-                        )
+                        if sim.debug.pinned_semantic_item
+                            == Some((active.toolpath_id, active.item.id))
+                        {
+                            ui.label(
+                                egui::RichText::new("Pinned")
+                                    .small()
+                                    .color(theme::WARNING_TEXT),
+                            );
+                        }
+                        if ui.small_button("Start").clicked()
+                            && let Some(target) = sim.trace_target_for_item(
+                                gui,
+                                max_feed,
+                                active.toolpath_id,
+                                active.item.id,
+                                false,
+                            )
+                        {
+                            events.push(AppEvent::SimJumpToMove(target.move_index));
+                        }
+                        if ui.small_button("End").clicked()
+                            && let Some(target) = sim.trace_target_for_item(
+                                gui,
+                                max_feed,
+                                active.toolpath_id,
+                                active.item.id,
+                                true,
+                            )
+                        {
+                            events.push(AppEvent::SimJumpToMove(target.move_index));
+                        }
+                    });
+                    ui.label(
+                        egui::RichText::new(semantic_kind_label(&active.item.kind))
+                            .small()
+                            .color(theme::TEXT_MUTED),
+                    );
+                    if let (Some(move_start), Some(move_end)) =
+                        (active.item.move_start, active.item.move_end)
                     {
-                        events.push(AppEvent::SimJumpToMove(target.move_index));
+                        ui.label(format!("Moves: {move_start}..{move_end}"));
                     }
-                    if ui.small_button("End").clicked()
-                        && let Some(target) = sim.trace_target_for_item(
-                            gui,
-                            max_feed,
-                            active.toolpath_id,
-                            active.item.id,
-                            true,
-                        )
-                    {
-                        events.push(AppEvent::SimJumpToMove(target.move_index));
+                    if let Some(bounds) = active.item.xy_bbox {
+                        ui.label(format!(
+                            "XY: {:.2}, {:.2} → {:.2}, {:.2}",
+                            bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y
+                        ));
                     }
-                });
-                ui.label(
-                    egui::RichText::new(semantic_kind_label(&active.item.kind))
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                );
-                if let (Some(move_start), Some(move_end)) =
-                    (active.item.move_start, active.item.move_end)
-                {
-                    ui.label(format!("Moves: {move_start}..{move_end}"));
-                }
-                if let Some(bounds) = active.item.xy_bbox {
-                    ui.label(format!(
-                        "XY: {:.2}, {:.2} → {:.2}, {:.2}",
-                        bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y
-                    ));
-                }
-                if let (Some(z_min), Some(z_max)) = (active.item.z_min, active.item.z_max) {
-                    ui.label(format!("Z: {:.3} → {:.3}", z_min, z_max));
-                }
-                if let Some(metrics) =
-                    sim.semantic_runtime_metrics(gui, max_feed, active.toolpath_id, active.item.id)
-                {
-                    ui.label(format!(
-                        "Runtime: {:.2}s total | {:.2}s cutting | {:.2}s rapid",
-                        metrics.total_seconds, metrics.cutting_seconds, metrics.rapid_seconds
-                    ));
-                }
-                if !active.item.params.values.is_empty() {
-                    ui.add_space(4.0);
-                    egui::Grid::new("sim_semantic_context_grid")
-                        .num_columns(2)
-                        .spacing([8.0, 2.0])
-                        .show(ui, |ui| {
-                            for (idx, (key, value)) in active.item.params.values.iter().enumerate()
-                            {
-                                if idx >= 6 {
-                                    break;
+                    if let (Some(z_min), Some(z_max)) = (active.item.z_min, active.item.z_max) {
+                        ui.label(format!("Z: {:.3} → {:.3}", z_min, z_max));
+                    }
+                    if let Some(metrics) = sim.semantic_runtime_metrics(
+                        gui,
+                        max_feed,
+                        active.toolpath_id,
+                        active.item.id,
+                    ) {
+                        ui.label(format!(
+                            "Runtime: {:.2}s total | {:.2}s cutting | {:.2}s rapid",
+                            metrics.total_seconds, metrics.cutting_seconds, metrics.rapid_seconds
+                        ));
+                    }
+                    if !active.item.params.values.is_empty() {
+                        ui.add_space(4.0);
+                        egui::Grid::new("sim_semantic_context_grid")
+                            .num_columns(2)
+                            .spacing([8.0, 2.0])
+                            .show(ui, |ui| {
+                                for (idx, (key, value)) in
+                                    active.item.params.values.iter().enumerate()
+                                {
+                                    if idx >= 6 {
+                                        break;
+                                    }
+                                    ui.label(
+                                        egui::RichText::new(key).small().color(theme::TEXT_MUTED),
+                                    );
+                                    ui.label(egui::RichText::new(format_json_value(value)).small());
+                                    ui.end_row();
                                 }
-                                ui.label(egui::RichText::new(key).small().color(theme::TEXT_MUTED));
-                                ui.label(egui::RichText::new(format_json_value(value)).small());
-                                ui.end_row();
-                            }
-                        });
+                            });
+                    }
+                } else {
+                    ui.label(
+                        egui::RichText::new("No semantic item at the current move")
+                            .small()
+                            .italics()
+                            .color(theme::TEXT_DIM),
+                    );
                 }
-            } else {
-                ui.label(
-                    egui::RichText::new("No semantic item at the current move")
-                        .small()
-                        .italics()
-                        .color(theme::TEXT_DIM),
-                );
-            }
-        });
+            });
+    }
 
     ui.add_space(4.0);
 
     // --- Generation Metrics ---
-    egui::CollapsingHeader::new("Generation Metrics")
-        .default_open(true)
-        .show(ui, |ui| {
-            let debug_trace = current_boundary_id
-                .and_then(|toolpath_id| gui.toolpath_rt.get(&toolpath_id.0))
-                .and_then(|rt| rt.debug_trace.as_ref());
+    if matches!(active_tab, SimulationAnalyticsTab::DebugTrace) {
+        egui::CollapsingHeader::new("Generation Metrics")
+            .default_open(true)
+            .show(ui, |ui| {
+                let debug_trace = current_boundary_id
+                    .and_then(|toolpath_id| gui.toolpath_rt.get(&toolpath_id.0))
+                    .and_then(|rt| rt.debug_trace.as_ref());
 
-            if let Some(trace) = debug_trace {
-                ui.label(format!(
-                    "Total: {:.1} ms",
-                    trace.summary.total_elapsed_us as f64 / 1000.0
-                ));
-                if let Some(label) = &trace.summary.dominant_span_label {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Dominant: {} ({:.1} ms)",
-                            label,
-                            trace.summary.dominant_span_elapsed_us.unwrap_or_default() as f64
-                                / 1000.0
-                        ))
-                        .small()
-                        .color(theme::INFO),
-                    );
-                }
-                ui.label(format!("Hotspots: {}", trace.hotspots.len()));
-                if let Some((toolpath_id, span)) = linked_span.as_ref()
-                    && Some(*toolpath_id) == current_boundary_id
-                {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Linked span: {} ({:.1} ms)",
-                            span.label,
-                            span.elapsed_us as f64 / 1000.0
-                        ))
-                        .small()
-                        .color(theme::INFO),
-                    );
-                    if let Some(summary) = debug_span_math_summary(&span.kind) {
+                if let Some(trace) = debug_trace {
+                    ui.label(format!(
+                        "Total: {:.1} ms",
+                        trace.summary.total_elapsed_us as f64 / 1000.0
+                    ));
+                    if let Some(label) = &trace.summary.dominant_span_label {
                         ui.label(
-                            egui::RichText::new(summary)
-                                .small()
-                                .color(theme::TEXT_MUTED),
+                            egui::RichText::new(format!(
+                                "Dominant: {} ({:.1} ms)",
+                                label,
+                                trace.summary.dominant_span_elapsed_us.unwrap_or_default() as f64
+                                    / 1000.0
+                            ))
+                            .small()
+                            .color(theme::INFO),
                         );
                     }
-                }
-                if let Some((_, annotation)) = sim.current_debug_annotation(gui) {
-                    ui.label(
-                        egui::RichText::new(format!("Annotation: {}", annotation.label))
+                    ui.label(format!("Hotspots: {}", trace.hotspots.len()));
+                    if let Some((toolpath_id, span)) = linked_span.as_ref()
+                        && Some(*toolpath_id) == current_boundary_id
+                    {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Linked span: {} ({:.1} ms)",
+                                span.label,
+                                span.elapsed_us as f64 / 1000.0
+                            ))
                             .small()
-                            .color(theme::WARNING_TEXT),
+                            .color(theme::INFO),
+                        );
+                        if let Some(summary) = debug_span_math_summary(&span.kind) {
+                            ui.label(
+                                egui::RichText::new(summary)
+                                    .small()
+                                    .color(theme::TEXT_MUTED),
+                            );
+                        }
+                    }
+                    if let Some((_, annotation)) = sim.current_debug_annotation(gui) {
+                        ui.label(
+                            egui::RichText::new(format!("Annotation: {}", annotation.label))
+                                .small()
+                                .color(theme::WARNING_TEXT),
+                        );
+                    }
+                } else {
+                    ui.label(
+                        egui::RichText::new("No performance trace available")
+                            .small()
+                            .italics()
+                            .color(theme::TEXT_DIM),
                     );
                 }
-            } else {
-                ui.label(
-                    egui::RichText::new("No performance trace available")
-                        .small()
-                        .italics()
-                        .color(theme::TEXT_DIM),
-                );
-            }
-        });
+            });
+    }
+
+    if matches!(active_tab, SimulationAnalyticsTab::DebugTrace) {
+        draw_trace_provenance(ui, sim, gui, current_boundary_id);
+        ui.add_space(4.0);
+    }
 
     ui.add_space(4.0);
 
     // --- Cutting Metrics ---
-    egui::CollapsingHeader::new("Cutting Metrics")
+    if matches!(active_tab, SimulationAnalyticsTab::CutQuality) {
+        egui::CollapsingHeader::new("Cutting Metrics")
         .default_open(true)
         .show(ui, |ui| {
             let current_boundary = sim.current_boundary().map(|boundary| boundary.id);
@@ -397,11 +437,14 @@ pub fn draw(
                 {
                     ui.label(
                         egui::RichText::new(format!(
-                            "Sample: move {} | {:.1}% engage | {:.3} mm DOC | {:.4} chipload",
+                            "Sample: move {} | {} | arc {} | {:.1}% engage | {:.3} mm DOC | {:.4} chipload | MRR {:.1}",
                             active_sample.sample.move_index,
+                            cut_kinematics_label(active_sample.sample.cut_kinematics),
+                            format_arc_engagement(active_sample.sample.arc_engagement_radians),
                             active_sample.sample.radial_engagement * 100.0,
                             active_sample.sample.axial_doc_mm,
-                            active_sample.sample.chipload_mm_per_tooth
+                            active_sample.sample.chipload_mm_per_tooth,
+                            active_sample.sample.mrr_mm3_s
                         ))
                         .small()
                         .color(theme::SUCCESS),
@@ -409,6 +452,14 @@ pub fn draw(
                 }
                 let hotspot_count = sim.cut_hotspots(toolpath_id, 5).len();
                 ui.label(format!("Runtime hotspots: {}", hotspot_count));
+                draw_cut_quality_findings(ui, sim, toolpath_id, events);
+                if let Some(verdict) = load_report
+                    .per_toolpath
+                    .iter()
+                    .find(|v| v.toolpath_id == toolpath_id.0)
+                {
+                    draw_tool_load_badges(ui, verdict);
+                }
                 if let Some(active) = active_semantic.as_ref()
                     && active.toolpath_id == toolpath_id
                     && let Some(item_summary) =
@@ -428,7 +479,7 @@ pub fn draw(
                 }
             } else if cut_trace.is_none() {
                 ui.label(
-                    egui::RichText::new("Enable Capture Metrics and re-run simulation")
+                    egui::RichText::new("Enable Cut Metrics and re-run simulation")
                         .small()
                         .italics()
                         .color(theme::TEXT_DIM),
@@ -442,222 +493,699 @@ pub fn draw(
                 );
             }
         });
+    }
 
     ui.add_space(4.0);
 
     // --- Current State ---
-    egui::CollapsingHeader::new("Current State")
-        .default_open(true)
-        .show(ui, |ui| {
-            if let Some(pos) = sim.playback.tool_position {
-                ui.horizontal(|ui| {
-                    ui.label("Position:");
+    if matches!(active_tab, SimulationAnalyticsTab::RunStatus) {
+        egui::CollapsingHeader::new("Current State")
+            .default_open(true)
+            .show(ui, |ui| {
+                if let Some(pos) = sim.playback.tool_position {
+                    ui.horizontal(|ui| {
+                        ui.label("Position:");
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "X{:.2} Y{:.2} Z{:.2}",
+                                pos[0], pos[1], pos[2]
+                            ))
+                            .color(egui::Color32::from_rgb(180, 180, 100))
+                            .monospace(),
+                        );
+                    });
+                } else {
                     ui.label(
-                        egui::RichText::new(format!(
-                            "X{:.2} Y{:.2} Z{:.2}",
-                            pos[0], pos[1], pos[2]
-                        ))
-                        .color(egui::Color32::from_rgb(180, 180, 100))
-                        .monospace(),
+                        egui::RichText::new("No tool position")
+                            .italics()
+                            .color(theme::TEXT_DIM),
                     );
-                });
-            } else {
-                ui.label(
-                    egui::RichText::new("No tool position")
-                        .italics()
-                        .color(theme::TEXT_DIM),
-                );
-            }
+                }
 
-            if let Some(boundary) = sim.current_boundary() {
-                ui.horizontal(|ui| {
-                    ui.label("Operation:");
-                    ui.label(egui::RichText::new(&boundary.name).strong());
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Tool:");
-                    ui.label(&boundary.tool_name);
-                });
-            }
+                if let Some(boundary) = sim.current_boundary() {
+                    ui.horizontal(|ui| {
+                        ui.label("Operation:");
+                        ui.label(egui::RichText::new(&boundary.name).strong());
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Tool:");
+                        ui.label(&boundary.tool_name);
+                    });
+                }
 
-            // Move type from current move index
-            let move_info = current_move_info(sim, session, gui);
-            ui.horizontal(|ui| {
-                ui.label("Move:");
-                ui.label(format!(
-                    "{} / {}",
-                    sim.playback.current_move,
-                    sim.total_moves()
-                ));
-                if let Some((mt, _feed)) = &move_info {
-                    ui.label(egui::RichText::new(format!("({})", mt)).small().color(
-                        match mt.as_str() {
-                            "Rapid" => egui::Color32::from_rgb(200, 200, 80),
-                            "Linear" => theme::SUCCESS,
-                            "Arc CW" | "Arc CCW" => egui::Color32::from_rgb(100, 140, 200),
-                            _ => egui::Color32::from_rgb(150, 150, 150),
-                        },
+                // Move type from current move index
+                let move_info = current_move_info(sim, session, gui);
+                ui.horizontal(|ui| {
+                    ui.label("Move:");
+                    ui.label(format!(
+                        "{} / {}",
+                        sim.playback.current_move,
+                        sim.total_moves()
                     ));
+                    if let Some((mt, _feed)) = &move_info {
+                        ui.label(egui::RichText::new(format!("({})", mt)).small().color(
+                            match mt.as_str() {
+                                "Rapid" => egui::Color32::from_rgb(200, 200, 80),
+                                "Linear" => theme::SUCCESS,
+                                "Arc CW" | "Arc CCW" => egui::Color32::from_rgb(100, 140, 200),
+                                _ => egui::Color32::from_rgb(150, 150, 150),
+                            },
+                        ));
+                    }
+                });
+                if let Some((_, Some(feed))) = &move_info {
+                    ui.horizontal(|ui| {
+                        ui.label("Feed rate:");
+                        ui.label(format!("{:.0} mm/min", feed));
+                    });
+                }
+
+                if !sim.playback.tool_type_label.is_empty() {
+                    ui.horizontal(|ui| {
+                        ui.label("Tool type:");
+                        ui.label(&sim.playback.tool_type_label);
+                    });
                 }
             });
-            if let Some((_, Some(feed))) = &move_info {
-                ui.horizontal(|ui| {
-                    ui.label("Feed rate:");
-                    ui.label(format!("{:.0} mm/min", feed));
-                });
-            }
-
-            if !sim.playback.tool_type_label.is_empty() {
-                ui.horizontal(|ui| {
-                    ui.label("Tool type:");
-                    ui.label(&sim.playback.tool_type_label);
-                });
-            }
-        });
+    }
 
     ui.add_space(4.0);
 
     // --- Warnings & Flags ---
-    egui::CollapsingHeader::new("Warnings & Flags")
-        .default_open(true)
-        .show(ui, |ui| {
-            // Holder clearance (first path only)
-            if sim.checks.holder_collision_count == 0 && sim.checks.min_safe_stickout.is_some() {
-                ui.label(
-                    egui::RichText::new("\u{2705} Holder clearance: Clear").color(theme::SUCCESS),
-                );
-            } else if sim.checks.holder_collision_count > 0 {
-                ui.label(
-                    egui::RichText::new(format!(
-                        "\u{274C} Holder clearance: {} issues",
-                        sim.checks.holder_collision_count
-                    ))
-                    .color(theme::ERROR),
-                );
-                if let Some(stickout) = sim.checks.min_safe_stickout {
+    if matches!(active_tab, SimulationAnalyticsTab::Safety) {
+        egui::CollapsingHeader::new("Warnings & Flags")
+            .default_open(true)
+            .show(ui, |ui| {
+                // Holder clearance (first path only)
+                if sim.checks.holder_collision_count == 0 && sim.checks.min_safe_stickout.is_some()
+                {
                     ui.label(
-                        egui::RichText::new(format!("   Min safe stickout: {:.1} mm", stickout))
+                        egui::RichText::new("\u{2705} Holder clearance: Clear")
+                            .color(theme::SUCCESS),
+                    );
+                } else if sim.checks.holder_collision_count > 0 {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "\u{274C} Holder clearance: {} issues",
+                            sim.checks.holder_collision_count
+                        ))
+                        .color(theme::ERROR),
+                    );
+                    if let Some(stickout) = sim.checks.min_safe_stickout {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "   Min safe stickout: {:.1} mm",
+                                stickout
+                            ))
                             .small()
+                            .color(theme::WARNING),
+                        );
+                    }
+                } else {
+                    ui.label(
+                        egui::RichText::new("\u{26A0} Holder clearance: Not checked")
                             .color(theme::WARNING),
                     );
                 }
-            } else {
-                ui.label(
-                    egui::RichText::new("\u{26A0} Holder clearance: Not checked")
-                        .color(theme::WARNING),
-                );
-            }
 
-            // Rapid collisions
-            if sim.checks.rapid_collisions.is_empty() {
-                ui.label(
-                    egui::RichText::new("\u{2705} Rapid collisions: None").color(theme::SUCCESS),
-                );
-            } else {
-                ui.label(
-                    egui::RichText::new(format!(
-                        "\u{274C} Rapid collisions: {}",
-                        sim.checks.rapid_collisions.len()
-                    ))
-                    .color(theme::ERROR),
-                );
-            }
+                // Rapid collisions
+                if sim.checks.rapid_collisions.is_empty() {
+                    ui.label(
+                        egui::RichText::new("\u{2705} Rapid collisions: None")
+                            .color(theme::SUCCESS),
+                    );
+                } else {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "\u{274C} Rapid collisions: {}",
+                            sim.checks.rapid_collisions.len()
+                        ))
+                        .color(theme::ERROR),
+                    );
+                    if ui.small_button("Jump to first rapid collision").clicked() {
+                        let target = sim
+                            .checks
+                            .rapid_collision_move_indices
+                            .first()
+                            .copied()
+                            .or_else(|| {
+                                sim.checks
+                                    .rapid_collisions
+                                    .first()
+                                    .map(|collision| collision.move_index)
+                            });
+                        if let Some(move_index) = target {
+                            events.push(AppEvent::SimJumpToMove(move_index));
+                        }
+                    }
+                }
 
-            // Stale results warning
-            if sim.is_stale(gui.edit_counter) {
-                ui.label(
-                    egui::RichText::new("\u{26A0} Results stale (params changed)")
-                        .color(theme::WARNING),
-                );
-            }
+                // Stale results warning
+                if sim.is_stale(gui.edit_counter) {
+                    ui.label(
+                        egui::RichText::new("\u{26A0} Results stale (params changed)")
+                            .color(theme::WARNING),
+                    );
+                }
 
-            // Run collision check button
-            if sim.checks.holder_collision_count == 0
-                && sim.checks.min_safe_stickout.is_none()
-                && ui.small_button("Check Holder Clearance").clicked()
-            {
-                events.push(AppEvent::RunCollisionCheck);
-            }
-        });
+                // Run collision check button
+                if sim.checks.holder_collision_count == 0
+                    && sim.checks.min_safe_stickout.is_none()
+                    && ui.small_button("Check Holder Clearance").clicked()
+                {
+                    events.push(AppEvent::RunCollisionCheck);
+                }
+
+                ui.separator();
+                draw_tool_load_table(ui, sim, &load_report, events);
+            });
+    }
 
     ui.add_space(4.0);
 
     // --- Summary Stats (detailed breakdown; key info in summary card above) ---
-    egui::CollapsingHeader::new("Summary Stats")
-        .default_open(false)
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Total moves:");
-                ui.label(format!("{}", sim.total_moves()));
-            });
-            ui.horizontal(|ui| {
-                ui.label("Operations:");
-                ui.label(format!("{}", sim.boundaries().len()));
-            });
+    if matches!(active_tab, SimulationAnalyticsTab::RunStatus) {
+        egui::CollapsingHeader::new("Summary Stats")
+            .default_open(false)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Total moves:");
+                    ui.label(format!("{}", sim.total_moves()));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Operations:");
+                    ui.label(format!("{}", sim.boundaries().len()));
+                });
 
-            // Aggregate stats from job toolpaths
-            let (total_cutting, total_rapid, total_time_min) = aggregate_stats(sim, session, gui);
+                // Aggregate stats from job toolpaths
+                let (total_cutting, total_rapid, total_time_min) =
+                    aggregate_stats(sim, session, gui);
 
-            ui.horizontal(|ui| {
-                ui.label("Cutting dist:");
-                ui.label(format!("{:.0} mm", total_cutting));
-            });
-            ui.horizontal(|ui| {
-                ui.label("Rapid dist:");
-                ui.label(format!("{:.0} mm", total_rapid));
-            });
+                ui.horizontal(|ui| {
+                    ui.label("Cutting dist:");
+                    ui.label(format!("{:.0} mm", total_cutting));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Rapid dist:");
+                    ui.label(format!("{:.0} mm", total_rapid));
+                });
 
-            let total_min = total_time_min.floor() as u32;
-            let total_sec = ((total_time_min - total_min as f64) * 60.0) as u32;
+                let total_min = total_time_min.floor() as u32;
+                let total_sec = ((total_time_min - total_min as f64) * 60.0) as u32;
+                ui.horizontal(|ui| {
+                    ui.label("Est. cycle time:");
+                    ui.label(
+                        egui::RichText::new(format!("{}:{:02} min", total_min, total_sec))
+                            .strong()
+                            .color(theme::INFO),
+                    );
+                });
+
+                // Per-op breakdown table
+                if sim.boundaries().len() > 1 {
+                    ui.add_space(4.0);
+                    ui.label(egui::RichText::new("Per-operation:").small().strong());
+
+                    egui::Grid::new("op_stats_grid")
+                        .num_columns(3)
+                        .spacing([8.0, 2.0])
+                        .show(ui, |ui| {
+                            ui.label(egui::RichText::new("Name").small().strong());
+                            ui.label(egui::RichText::new("Cut").small().strong());
+                            ui.label(egui::RichText::new("Time").small().strong());
+                            ui.end_row();
+
+                            for boundary in sim.boundaries() {
+                                if let Some(rt) = gui.toolpath_rt.get(&boundary.id.0)
+                                    && let Some(result) = &rt.result
+                                    && let Some((_, tc)) =
+                                        session.find_toolpath_config_by_id(boundary.id.0)
+                                {
+                                    let feed = tc.operation.feed_rate();
+                                    let time_min = result.stats.cutting_distance / feed;
+                                    let m = time_min.floor() as u32;
+                                    let s = ((time_min - m as f64) * 60.0) as u32;
+
+                                    ui.label(egui::RichText::new(&boundary.name).small());
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "{:.0}",
+                                            result.stats.cutting_distance
+                                        ))
+                                        .small(),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!("{}:{:02}", m, s)).small(),
+                                    );
+                                    ui.end_row();
+                                }
+                            }
+                        });
+                }
+            });
+    }
+}
+
+fn draw_cut_quality_findings(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    toolpath_id: crate::state::toolpath::ToolpathId,
+    events: &mut Vec<AppEvent>,
+) {
+    let Some(boundary) = sim
+        .boundaries()
+        .iter()
+        .find(|boundary| boundary.id == toolpath_id)
+    else {
+        return;
+    };
+
+    let cut_hotspots = sim.cut_hotspots(toolpath_id, 3);
+    if !cut_hotspots.is_empty() {
+        ui.separator();
+        ui.label(
+            egui::RichText::new("Worst runtime hotspots")
+                .small()
+                .strong(),
+        );
+        for hotspot in cut_hotspots {
             ui.horizontal(|ui| {
-                ui.label("Est. cycle time:");
+                if ui.small_button("Jump").clicked() {
+                    events.push(AppEvent::SimJumpToMove(
+                        boundary.start_move + hotspot.move_start,
+                    ));
+                }
                 ui.label(
-                    egui::RichText::new(format!("{}:{:02} min", total_min, total_sec))
-                        .strong()
-                        .color(theme::INFO),
+                    egui::RichText::new(format!(
+                        "wasted {:.2}s | air {:.2}s | low {:.2}s | MRR {:.1}",
+                        hotspot.wasted_runtime_s,
+                        hotspot.air_cut_time_s,
+                        hotspot.low_engagement_time_s,
+                        hotspot.average_mrr_mm3_s
+                    ))
+                    .small()
+                    .color(theme::TEXT_MUTED),
                 );
             });
+        }
+    }
 
-            // Per-op breakdown table
-            if sim.boundaries().len() > 1 {
-                ui.add_space(4.0);
-                ui.label(egui::RichText::new("Per-operation:").small().strong());
+    let Some(trace) = sim
+        .results
+        .as_ref()
+        .and_then(|results| results.cut_trace.as_ref())
+    else {
+        return;
+    };
+    let issues: Vec<_> = trace
+        .issues
+        .iter()
+        .filter(|issue| issue.toolpath_id == toolpath_id.0)
+        .take(4)
+        .cloned()
+        .collect();
+    if !issues.is_empty() {
+        ui.separator();
+        ui.label(
+            egui::RichText::new("Cutting issue segments")
+                .small()
+                .strong(),
+        );
+        for issue in issues {
+            ui.horizontal(|ui| {
+                if ui.small_button("Jump").clicked()
+                    && let Some(target) = sim.trace_target_for_cut_issue(&issue)
+                {
+                    events.push(AppEvent::SimJumpToMove(target.move_index));
+                }
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} {:.2}s | moves {}–{} | min engage {:.1}%",
+                        issue.label,
+                        issue.duration_s,
+                        issue.move_index,
+                        issue.end_move_index,
+                        issue.min_radial_engagement * 100.0
+                    ))
+                    .small()
+                    .color(theme::TEXT_MUTED),
+                );
+            });
+        }
+    }
+}
 
-                egui::Grid::new("op_stats_grid")
-                    .num_columns(3)
-                    .spacing([8.0, 2.0])
-                    .show(ui, |ui| {
-                        ui.label(egui::RichText::new("Name").small().strong());
-                        ui.label(egui::RichText::new("Cut").small().strong());
-                        ui.label(egui::RichText::new("Time").small().strong());
-                        ui.end_row();
+fn draw_run_status_snapshot(
+    ui: &mut egui::Ui,
+    sim: &SimulationState,
+    gui: &GuiState,
+    report: &ToolLoadReport,
+) {
+    egui::CollapsingHeader::new("Run Status")
+        .default_open(true)
+        .show(ui, |ui| {
+            if sim.results.is_some() {
+                let stale = sim.is_stale(gui.edit_counter);
+                ui.label(
+                    egui::RichText::new(if stale {
+                        "⚠ Results stale"
+                    } else {
+                        "✅ Results fresh"
+                    })
+                    .color(if stale {
+                        theme::WARNING
+                    } else {
+                        theme::SUCCESS
+                    }),
+                );
+                ui.label(format!("Resolution: {:.3} mm", sim.resolution));
 
-                        for boundary in sim.boundaries() {
-                            if let Some(rt) = gui.toolpath_rt.get(&boundary.id.0)
-                                && let Some(result) = &rt.result
-                                && let Some((_, tc)) =
-                                    session.find_toolpath_config_by_id(boundary.id.0)
-                            {
-                                let feed = tc.operation.feed_rate();
-                                let time_min = result.stats.cutting_distance / feed;
-                                let m = time_min.floor() as u32;
-                                let s = ((time_min - m as f64) * 60.0) as u32;
+                if let Some(trace) = sim
+                    .results
+                    .as_ref()
+                    .and_then(|results| results.cut_trace.as_ref())
+                {
+                    let captured_arc = trace
+                        .provenance
+                        .as_ref()
+                        .map(|provenance| provenance.captured_arc_engagement)
+                        .unwrap_or_else(|| {
+                            trace
+                                .samples
+                                .iter()
+                                .any(|sample| sample.arc_engagement_radians.is_some())
+                        });
+                    ui.label(egui::RichText::new("✅ Cut metrics captured").color(theme::SUCCESS));
+                    ui.label(
+                        egui::RichText::new(if captured_arc {
+                            "✅ Arc engagement captured"
+                        } else {
+                            "⚠ Arc engagement not captured — power may be unmodeled"
+                        })
+                        .color(if captured_arc {
+                            theme::SUCCESS
+                        } else {
+                            theme::WARNING
+                        }),
+                    );
+                    if let Some(provenance) = &trace.provenance {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Schema v{} | {} toolpath hashes",
+                                provenance.trace_schema_version,
+                                provenance.toolpath_hashes.len()
+                            ))
+                            .small()
+                            .color(theme::TEXT_MUTED),
+                        );
+                    }
+                } else {
+                    ui.label(
+                        egui::RichText::new("⚠ Cut metrics not captured").color(theme::WARNING),
+                    );
+                }
 
-                                ui.label(egui::RichText::new(&boundary.name).small());
-                                ui.label(
-                                    egui::RichText::new(format!(
-                                        "{:.0}",
-                                        result.stats.cutting_distance
-                                    ))
-                                    .small(),
-                                );
-                                ui.label(egui::RichText::new(format!("{}:{:02}", m, s)).small());
-                                ui.end_row();
-                            }
-                        }
-                    });
+                ui.separator();
+                ui.label(egui::RichText::new("Top findings").small().strong());
+                let mut has_findings = false;
+                if !sim.checks.rapid_collisions.is_empty() {
+                    has_findings = true;
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "❌ {} rapid collisions",
+                            sim.checks.rapid_collisions.len()
+                        ))
+                        .color(theme::ERROR),
+                    );
+                }
+                if sim.checks.holder_collision_count > 0 {
+                    has_findings = true;
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "❌ {} holder clearance issues",
+                            sim.checks.holder_collision_count
+                        ))
+                        .color(theme::ERROR),
+                    );
+                }
+                if report.any_exceeded() {
+                    has_findings = true;
+                    ui.label(
+                        egui::RichText::new("❌ Tool-load criterion exceeded").color(theme::ERROR),
+                    );
+                }
+                if report.any_unmodeled() {
+                    has_findings = true;
+                    ui.label(
+                        egui::RichText::new("⚠ Some tool-load criteria are unmodeled")
+                            .color(theme::WARNING),
+                    );
+                }
+                if let Some(summary) = sim
+                    .results
+                    .as_ref()
+                    .and_then(|results| results.cut_trace.as_ref())
+                    .map(|trace| &trace.summary)
+                {
+                    if summary.air_cut_time_s > 0.0 {
+                        has_findings = true;
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "⚠ {:.2}s air cutting",
+                                summary.air_cut_time_s
+                            ))
+                            .color(theme::WARNING_MILD),
+                        );
+                    }
+                    if summary.low_engagement_time_s > 0.0 {
+                        has_findings = true;
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "⚠ {:.2}s low engagement",
+                                summary.low_engagement_time_s
+                            ))
+                            .color(theme::WARNING_MILD),
+                        );
+                    }
+                }
+                if !has_findings {
+                    ui.label(egui::RichText::new("No major findings.").color(theme::SUCCESS));
+                }
+            } else {
+                ui.label(
+                    egui::RichText::new("Run simulation to populate analytics.")
+                        .italics()
+                        .color(theme::TEXT_DIM),
+                );
             }
         });
+}
+
+fn draw_analytics_tabs(ui: &mut egui::Ui, active_tab: &mut SimulationAnalyticsTab) {
+    ui.horizontal_wrapped(|ui| {
+        ui.selectable_value(active_tab, SimulationAnalyticsTab::RunStatus, "Run Status")
+            .on_hover_text("Freshness, capture status, runtime, and top findings.");
+        ui.selectable_value(
+            active_tab,
+            SimulationAnalyticsTab::Safety,
+            "Safety / Tool Load",
+        )
+        .on_hover_text("Collisions, holder clearance, chipload, power, and deflection.");
+        ui.selectable_value(
+            active_tab,
+            SimulationAnalyticsTab::CutQuality,
+            "Cut Quality",
+        )
+        .on_hover_text("Air cutting, engagement, MRR, issues, hotspots, and active sample.");
+        ui.selectable_value(
+            active_tab,
+            SimulationAnalyticsTab::DebugTrace,
+            "Debug / Trace",
+        )
+        .on_hover_text("Generation spans, semantic/debug internals, artifacts, and provenance.");
+    });
+}
+
+fn draw_trace_provenance(
+    ui: &mut egui::Ui,
+    sim: &SimulationState,
+    gui: &GuiState,
+    current_boundary_id: Option<crate::state::toolpath::ToolpathId>,
+) {
+    egui::CollapsingHeader::new("Trace Artifacts & Provenance")
+        .default_open(true)
+        .show(ui, |ui| {
+            if let Some(toolpath_id) = current_boundary_id
+                && let Some(rt) = gui.toolpath_rt.get(&toolpath_id.0)
+            {
+                if let Some(path) = &rt.debug_trace_path {
+                    ui.label("Generation trace:");
+                    ui.label(
+                        egui::RichText::new(path.display().to_string())
+                            .small()
+                            .monospace()
+                            .color(theme::INFO),
+                    );
+                }
+                if let Some(trace) = &rt.semantic_trace {
+                    ui.label(format!(
+                        "Semantic items: {} (move-linked {})",
+                        trace.summary.item_count, trace.summary.move_linked_item_count
+                    ));
+                }
+                if let Some(trace) = &rt.debug_trace {
+                    ui.label(format!(
+                        "Generation spans: {} | annotations: {}",
+                        trace.spans.len(),
+                        trace.annotations.len()
+                    ));
+                }
+            }
+
+            if let Some(results) = sim.results.as_ref() {
+                if let Some(path) = &results.cut_trace_path {
+                    ui.label("Cut trace:");
+                    ui.label(
+                        egui::RichText::new(path.display().to_string())
+                            .small()
+                            .monospace()
+                            .color(theme::SUCCESS),
+                    );
+                }
+                if let Some(trace) = results.cut_trace.as_ref() {
+                    ui.label(format!(
+                        "Cut samples: {} | issues: {} | hotspots: {}",
+                        trace.samples.len(),
+                        trace.issues.len(),
+                        trace.hotspots.len()
+                    ));
+                    if let Some(provenance) = &trace.provenance {
+                        ui.label(format!(
+                            "Schema v{} | stock hash {:016x} | machine hash {:016x}",
+                            provenance.trace_schema_version,
+                            provenance.stock_hash,
+                            provenance.machine_hash
+                        ));
+                    }
+                }
+            }
+        });
+}
+
+fn draw_tool_load_table(
+    ui: &mut egui::Ui,
+    sim: &SimulationState,
+    report: &ToolLoadReport,
+    events: &mut Vec<AppEvent>,
+) {
+    ui.label(egui::RichText::new("Tool-load guardrails").small().strong());
+    if report.per_toolpath.is_empty() {
+        ui.label(
+            egui::RichText::new("No tool-load data available.")
+                .small()
+                .italics()
+                .color(theme::TEXT_DIM),
+        );
+        return;
+    }
+
+    egui::Grid::new("simulation_tool_load_table")
+        .num_columns(5)
+        .spacing([8.0, 3.0])
+        .striped(true)
+        .show(ui, |ui| {
+            ui.label(egui::RichText::new("Operation").small().strong());
+            ui.label(egui::RichText::new("Chipload").small().strong());
+            ui.label(egui::RichText::new("Power").small().strong());
+            ui.label(egui::RichText::new("Deflection").small().strong());
+            ui.label(egui::RichText::new("Action").small().strong());
+            ui.end_row();
+
+            for verdict in &report.per_toolpath {
+                let name = sim
+                    .boundaries()
+                    .iter()
+                    .find(|boundary| boundary.id.0 == verdict.toolpath_id)
+                    .map(|boundary| boundary.name.as_str())
+                    .unwrap_or("Toolpath");
+                ui.label(egui::RichText::new(name).small());
+                compact_verdict_cell(ui, &verdict.chipload);
+                compact_verdict_cell(ui, &verdict.power);
+                compact_verdict_cell(ui, &verdict.deflection);
+                if let Some(move_index) = first_exceeded_move(sim, verdict) {
+                    if ui.small_button("Jump").clicked() {
+                        events.push(AppEvent::SimJumpToMove(move_index));
+                    }
+                } else {
+                    ui.label(egui::RichText::new("—").small().color(theme::TEXT_DIM));
+                }
+                ui.end_row();
+            }
+        });
+}
+
+fn first_exceeded_move(sim: &SimulationState, verdict: &ToolpathLoadVerdict) -> Option<usize> {
+    let sample_index = [&verdict.chipload, &verdict.power, &verdict.deflection]
+        .iter()
+        .find_map(|criterion| match criterion {
+            Verdict::Exceeds { sample_range, .. } => Some(sample_range.start),
+            Verdict::Within { .. } | Verdict::Unmodeled { .. } => None,
+        })?;
+    let sample = sim
+        .results
+        .as_ref()?
+        .cut_trace
+        .as_ref()?
+        .samples
+        .get(sample_index)?;
+    let boundary_start = sim
+        .boundaries()
+        .iter()
+        .find(|boundary| boundary.id.0 == sample.toolpath_id)
+        .map(|boundary| boundary.start_move)
+        .unwrap_or_default();
+    Some(boundary_start + sample.move_index)
+}
+
+fn compact_verdict_cell(ui: &mut egui::Ui, verdict: &Verdict) {
+    let (text, color) = match verdict {
+        Verdict::Within {
+            confidence: Confidence::Validated,
+            ..
+        } => ("✅ Within", theme::SUCCESS),
+        Verdict::Within {
+            confidence: Confidence::Approximate(_),
+            ..
+        } => ("⚠ Within≈", theme::WARNING_MILD),
+        Verdict::Exceeds { .. } => ("❌ Exceeds", theme::ERROR),
+        Verdict::Unmodeled { .. } => ("⚠ Unmodeled", theme::WARNING),
+    };
+    ui.label(egui::RichText::new(text).small().color(color))
+        .on_hover_text(verdict_tooltip(verdict));
+}
+
+fn cut_kinematics_label(kind: CutKinematics) -> &'static str {
+    match kind {
+        CutKinematics::Linear => "linear",
+        CutKinematics::Plunge => "plunge",
+        CutKinematics::Helix => "helix",
+        CutKinematics::Arc => "arc",
+        CutKinematics::Rapid => "rapid",
+    }
+}
+
+fn format_arc_engagement(arc: Option<f64>) -> String {
+    match arc {
+        Some(radians) => {
+            let degrees = radians.to_degrees();
+            if (degrees - 180.0).abs() <= 5.0 {
+                "180° slot".to_owned()
+            } else {
+                format!("{degrees:.0}°")
+            }
+        }
+        None => "not captured".to_owned(),
+    }
 }
 
 fn issue_kind_label(kind: SimulationIssueKind) -> &'static str {
@@ -713,6 +1241,151 @@ fn current_move_info(
     None
 }
 
+/// Render a single short summary line in the project summary card showing how
+/// many toolpaths have each guardrail criterion modeled, plus a flag if any
+/// criterion is `Exceeds`. No scalar load %; deliberately keeps the three
+/// criteria visible separately.
+fn draw_tool_load_summary_line(ui: &mut egui::Ui, report: &ToolLoadReport) {
+    let total = report.per_toolpath.len();
+    if total == 0 {
+        return;
+    }
+    let chip_modeled = report
+        .per_toolpath
+        .iter()
+        .filter(|v| !v.chipload.is_unmodeled())
+        .count();
+    let power_modeled = report
+        .per_toolpath
+        .iter()
+        .filter(|v| !v.power.is_unmodeled())
+        .count();
+    let defl_modeled = report
+        .per_toolpath
+        .iter()
+        .filter(|v| !v.deflection.is_unmodeled())
+        .count();
+    ui.horizontal_wrapped(|ui| {
+        ui.label(
+            egui::RichText::new("Load:")
+                .strong()
+                .color(theme::TEXT_STRONG),
+        );
+        ui.label(
+            egui::RichText::new(format!("chipload {chip_modeled}/{total}"))
+                .color(theme::TEXT_MUTED),
+        );
+        ui.label(
+            egui::RichText::new(format!("\u{00B7} power {power_modeled}/{total}"))
+                .color(theme::TEXT_MUTED),
+        );
+        ui.label(
+            egui::RichText::new(format!("\u{00B7} deflection {defl_modeled}/{total}"))
+                .color(theme::TEXT_MUTED),
+        );
+        if report.any_exceeded() {
+            ui.label(
+                egui::RichText::new("\u{00B7} EXCEEDED")
+                    .strong()
+                    .color(theme::ERROR),
+            );
+        }
+    });
+}
+
+/// Render three independent badges (chipload | power | deflection) for the
+/// active toolpath. **Never** combine into a single load %.
+fn draw_tool_load_badges(ui: &mut egui::Ui, verdict: &ToolpathLoadVerdict) {
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new("Tool load:")
+                .small()
+                .color(theme::TEXT_STRONG),
+        );
+        verdict_badge(ui, "chipload", &verdict.chipload);
+        verdict_badge(ui, "power", &verdict.power);
+        verdict_badge(ui, "deflection", &verdict.deflection);
+    });
+}
+
+fn verdict_badge(ui: &mut egui::Ui, label: &str, verdict: &Verdict) {
+    let (color, status) = match verdict {
+        Verdict::Within {
+            confidence: Confidence::Validated,
+            ..
+        } => (theme::SUCCESS, "OK"),
+        Verdict::Within {
+            confidence: Confidence::Approximate(_),
+            ..
+        } => (theme::WARNING_MILD, "OK\u{2248}"),
+        Verdict::Exceeds { .. } => (theme::ERROR, "FAIL"),
+        Verdict::Unmodeled { .. } => (theme::TEXT_DIM, "—"),
+    };
+    let text = format!("{label} {status}");
+    ui.label(egui::RichText::new(text).small().color(color))
+        .on_hover_text(verdict_tooltip(verdict));
+}
+
+fn verdict_tooltip(verdict: &Verdict) -> String {
+    match verdict {
+        Verdict::Within { peak, confidence } => match confidence {
+            Confidence::Validated => format!("Within bounds (peak {peak:.3}) — validated"),
+            Confidence::Approximate(why) => {
+                format!("Within bounds (peak {peak:.3}) — approximate: {why}")
+            }
+        },
+        Verdict::Exceeds {
+            peak,
+            reason,
+            confidence,
+            ..
+        } => {
+            let reason_str = match reason {
+                ExceedsReason::ChiploadBurnRisk => {
+                    "chipload below vendor min — rubbing/burning risk"
+                }
+                ExceedsReason::ChiploadBreakageRisk => "chipload above vendor max — breakage risk",
+                ExceedsReason::LongToolStiffnessUnsafe => "L/D > 6 — tool stickout too long",
+                ExceedsReason::SpindlePowerExceeded => {
+                    "predicted spindle power exceeds machine limit"
+                }
+            };
+            let conf = match confidence {
+                Confidence::Validated => "validated".to_owned(),
+                Confidence::Approximate(why) => format!("approximate: {why}"),
+            };
+            format!("EXCEEDS: {reason_str} (peak {peak:.3}, {conf})")
+        }
+        Verdict::Unmodeled { reason } => match reason {
+            UnmodeledReason::SimulationRequired => {
+                "Unmodeled: simulation has not been run".to_owned()
+            }
+            UnmodeledReason::StaleSimulation => {
+                "Unmodeled: simulation trace is stale — re-run simulation".to_owned()
+            }
+            UnmodeledReason::ArcEngagementNotCaptured => {
+                "Unmodeled: arc-engagement metric not captured — enable Cut Metrics and re-run"
+                    .to_owned()
+            }
+            UnmodeledReason::NoVendorData => {
+                "Unmodeled: no vendor LUT row for this tool/material combination".to_owned()
+            }
+            UnmodeledReason::SteadyStateSamplesNotPresent => {
+                "Unmodeled: no steady-state cutting samples — toolpath runs entirely on transient (plunge/ramp) feeds".to_owned()
+            }
+            UnmodeledReason::MaterialUnvalidated => {
+                "Unmodeled: material is Custom without a validated Kc value".to_owned()
+            }
+            UnmodeledReason::CutterModeUnsupported(why) => {
+                format!("Unmodeled: cutter mode unsupported — {why}")
+            }
+            UnmodeledReason::NotImplemented(phase) => {
+                format!("Unmodeled: not implemented yet — {phase}")
+            }
+        },
+    }
+}
+
 /// Aggregate cutting distance, rapid distance, and estimated time across all boundaries.
 fn aggregate_stats(
     sim: &SimulationState,
@@ -736,4 +1409,36 @@ fn aggregate_stats(
     }
 
     (total_cutting, total_rapid, total_time_min)
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats_arc_engagement_for_readability() {
+        assert_eq!(format_arc_engagement(None), "not captured");
+        assert_eq!(
+            format_arc_engagement(Some(std::f64::consts::FRAC_PI_2)),
+            "90°"
+        );
+        assert_eq!(
+            format_arc_engagement(Some(std::f64::consts::PI)),
+            "180° slot"
+        );
+    }
+
+    #[test]
+    fn arc_engagement_unmodeled_tooltip_points_to_cut_metrics() {
+        let tooltip = verdict_tooltip(&Verdict::Unmodeled {
+            reason: UnmodeledReason::ArcEngagementNotCaptured,
+        });
+        assert!(tooltip.contains("Cut Metrics"));
+    }
 }

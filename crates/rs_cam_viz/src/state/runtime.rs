@@ -236,6 +236,29 @@ pub struct ToolpathView<'a> {
 
 // ── Project-level GUI state ───────────────────────────────────────────
 
+/// User-controlled overrides for the tool-load export gate. Each flag bypasses
+/// a *distinct* class of refusal — they are deliberately not collapsed into a
+/// single "I accept the risk" toggle. Default is the strict policy: refuse on
+/// either Exceeds or Unmodeled.
+#[derive(Default, Debug, Clone, Copy)]
+pub struct ToolLoadOverrides {
+    /// Bypass `Unmodeled` refusals (criterion couldn't be evaluated honestly).
+    pub accept_unmodeled: bool,
+    /// Bypass `Exceeds` refusals (criterion was modeled and predicted to break
+    /// the tool, exceed power, or have unsafe stickout).
+    pub accept_exceeded: bool,
+}
+
+impl ToolLoadOverrides {
+    /// Translate to the core policy struct consumed by `export_gcode_checked`.
+    pub fn as_policy(&self) -> rs_cam_core::gcode::ToolLoadExportPolicy {
+        rs_cam_core::gcode::ToolLoadExportPolicy {
+            accept_unmodeled: self.accept_unmodeled,
+            accept_exceeded: self.accept_exceeded,
+        }
+    }
+}
+
 /// GUI-only project-level state.
 pub struct GuiState {
     pub file_path: Option<PathBuf>,
@@ -247,6 +270,8 @@ pub struct GuiState {
     pub toolpath_rt: HashMap<usize, ToolpathRuntime>,
     /// Per-setup GUI runtime state, keyed by setup semantic ID.
     pub setup_rt: HashMap<usize, SetupRuntime>,
+    /// User-toggled overrides for the tool-load export gate. Reset on project load.
+    pub tool_load_overrides: ToolLoadOverrides,
     /// Recently changed parameters from MCP, with timestamp for fade-out.
     /// Key: "toolpath_{id}_{param}" or "tool_{id}_{param}" or "stock_{param}"
     #[cfg(feature = "mcp")]
@@ -262,6 +287,7 @@ impl GuiState {
             post: PostConfig::default(),
             toolpath_rt: HashMap::new(),
             setup_rt: HashMap::new(),
+            tool_load_overrides: ToolLoadOverrides::default(),
             #[cfg(feature = "mcp")]
             mcp_highlights: HashMap::new(),
         }

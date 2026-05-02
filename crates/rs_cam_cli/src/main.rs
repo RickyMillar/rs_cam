@@ -18,7 +18,10 @@ use rs_cam_core::{
         LinkMoveParams, apply_dogbones, apply_entry, apply_link_moves, apply_tabs, even_tabs,
     },
     dropcutter::batch_drop_cutter,
-    gcode::{GcodePhase, emit_gcode, emit_gcode_phased, get_post_processor},
+    gcode::{
+        GcodePhase, ToolLoadExportPolicy, emit_gcode, export_gcode_phases_checked,
+        get_post_processor,
+    },
     geo::BoundingBox3,
     inlay::{InlayParams, inlay_toolpaths},
     mesh::{SpatialIndex, TriangleMesh},
@@ -1650,7 +1653,12 @@ fn main() -> Result<()> {
                             ))
                         });
 
-                    let gcode = emit_gcode_phased(&setup_phases, post_proc.as_ref());
+                    let gcode = export_gcode_phases_checked(
+                        &setup_phases,
+                        post_proc.as_ref(),
+                        None,
+                        ToolLoadExportPolicy::default(),
+                    )?;
                     std::fs::write(&setup_output, &gcode)
                         .context("Failed to write setup output file")?;
                     info!(
@@ -1676,7 +1684,12 @@ fn main() -> Result<()> {
                     })
                     .collect();
                 info!("Emitting G-code ({})...", post_proc.name());
-                let gcode = emit_gcode_phased(&phases, post_proc.as_ref());
+                let gcode = export_gcode_phases_checked(
+                    &phases,
+                    post_proc.as_ref(),
+                    None,
+                    ToolLoadExportPolicy::default(),
+                )?;
                 std::fs::write(&output, &gcode).context("Failed to write output file")?;
                 info!(bytes = gcode.len(), path = %output.display(), "Wrote G-code");
             }
@@ -1834,6 +1847,7 @@ fn main() -> Result<()> {
                         rapid_feed,
                         sample_step,
                         None,
+                        true,
                         &never_cancel,
                     ) {
                         Ok(samples) => all_samples.extend(samples),
@@ -2600,6 +2614,7 @@ fn main() -> Result<()> {
 
             let params = Adaptive3dParams {
                 tool_radius: cutter.radius(),
+                envelope_radius: cutter.radius(),
                 stepover,
                 depth_per_pass,
                 stock_to_leave,

@@ -48,7 +48,7 @@ pub fn to_lookup_query(input: &FeedsInput) -> LookupQuery {
     }
 }
 
-fn material_to_lut(material: &Material) -> (MaterialFamily, HardnessKind, f64) {
+pub(crate) fn material_to_lut(material: &Material) -> (MaterialFamily, HardnessKind, f64) {
     match material {
         Material::SolidWood { species } => {
             let janka = species.janka_lbf();

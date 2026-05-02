@@ -13,7 +13,8 @@ pub use configs::{
     ClearingStrategy, CompensationType, CutDirection, DrillConfig, DrillCycleType,
     DropCutterConfig, FaceConfig, FaceDirection, HorizontalFinishConfig, InlayConfig, PencilConfig,
     PocketConfig, PocketPattern, ProfileConfig, ProfileSide, ProjectCurveConfig,
-    ProjectCurveDirection, RadialFinishConfig, RampFinishConfig, RegionOrdering, RestConfig,
+    ProjectCurveDirection, ProjectCurveSide, RadialFinishConfig, RampFinishConfig, RegionOrdering,
+    RestConfig,
     ScallopConfig, ScallopDirection, SpiralDirection, SpiralFinishConfig, SteepShallowConfig,
     TraceCompensation, TraceConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
 };

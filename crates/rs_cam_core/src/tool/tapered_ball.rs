@@ -14,7 +14,10 @@
 //!   h_contact = R_ball * (1 - sin(alpha))  (junction height)
 //!   cone_offset = h_contact - r_contact / tan(alpha)  (Z shift for cone continuity)
 
-use super::{CLPoint, MillingCutter};
+use super::{
+    CLPoint, ChipGeometry, EngagementError, EngagementMode, MillingCutter,
+    flat_chip_geometry_for_radius,
+};
 use crate::geo::P3;
 
 #[derive(Debug, Clone)]
@@ -26,6 +29,7 @@ pub struct TaperedBallEndmill {
     /// Taper half-angle in degrees (from the tool axis)
     pub taper_half_angle_deg: f64,
     pub cutting_length: f64,
+    pub helix_deg: f64,
     // Precomputed trig values
     alpha_rad: f64,
     tan_alpha: f64,
@@ -59,6 +63,7 @@ impl TaperedBallEndmill {
             shaft_diameter,
             taper_half_angle_deg,
             cutting_length,
+            helix_deg: 30.0,
             alpha_rad,
             tan_alpha,
             sin_alpha,
@@ -106,6 +111,37 @@ impl MillingCutter for TaperedBallEndmill {
     }
     fn length(&self) -> f64 {
         self.cutting_length
+    }
+    fn helix_deg(&self) -> f64 {
+        self.helix_deg
+    }
+    fn chip_geometry(
+        &self,
+        axial_doc_mm: f64,
+        arc_engagement_radians: f64,
+        feed_per_tooth_mm: f64,
+        flute_count: u32,
+        _mode: EngagementMode,
+    ) -> Result<ChipGeometry, EngagementError> {
+        let transition = self.h_contact();
+        if (axial_doc_mm - transition).abs() <= 0.05 {
+            return Err(EngagementError::Unsupported {
+                reason: "ball/cone transition zone".to_owned(),
+            });
+        }
+        let effective_radius = if axial_doc_mm < transition {
+            self.engagement_radius(axial_doc_mm)
+        } else {
+            (axial_doc_mm - self.cone_offset()) * self.tan_alpha
+        };
+        flat_chip_geometry_for_radius(
+            effective_radius.min(self.shaft_radius()),
+            self.helix_deg,
+            axial_doc_mm,
+            arc_engagement_radians,
+            feed_per_tooth_mm,
+            flute_count,
+        )
     }
 
     fn height_at_radius(&self, r: f64) -> Option<f64> {

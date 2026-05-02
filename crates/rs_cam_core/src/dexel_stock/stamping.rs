@@ -10,12 +10,13 @@
 //! the crate.
 
 use crate::dexel::{
-    DexelGrid, ray_bottom, ray_material_length, ray_subtract_above, ray_subtract_below, ray_top,
+    DexelGrid, ray_bottom, ray_material_length, ray_material_length_above, ray_subtract_above,
+    ray_subtract_below, ray_top,
 };
 use crate::geo::P3;
 use crate::radial_profile::RadialProfileLUT;
 use crate::semantic_trace::ToolpathSemanticTrace;
-use crate::simulation_cut::SimulationCutSample;
+use crate::simulation_cut::{CutKinematics, SimulationCutSample};
 
 #[derive(Clone, Copy)]
 pub(super) struct CuttingCaptureParams {
@@ -26,6 +27,8 @@ pub(super) struct CuttingCaptureParams {
     pub(super) flute_count: u32,
     pub(super) semantic_item_id: Option<u64>,
     pub(super) sample_step_mm: f64,
+    pub(super) cut_kinematics: CutKinematics,
+    pub(super) capture_arc_engagement: bool,
 }
 
 // ── Grid-generic stamp helpers ───────────────────────────────────────────
@@ -165,7 +168,7 @@ pub(super) fn stamp_segment_on_grid(
 /// Fuses the work of `stamp_segment_on_grid`, `estimate_disk_cut_metrics`, and
 /// two calls to `window_material_volume_for_segment` into one row/col loop.
 ///
-/// Returns `(axial_doc_mm, radial_engagement, volume_removed_mm3)`.
+/// Returns `(axial_doc_mm, radial_engagement, arc_engagement_radians, volume_removed_mm3)`.
 pub(super) fn stamp_segment_with_metrics(
     grid: &mut DexelGrid,
     lut: &RadialProfileLUT,
@@ -176,7 +179,8 @@ pub(super) fn stamp_segment_with_metrics(
     mid_v: f64,
     mid_d: f64,
     from_high: bool,
-) -> (f64, f64, f64) {
+    capture_arc_engagement: bool,
+) -> (f64, f64, Option<f64>, f64) {
     let (su, sv, sd) = start;
     let (eu, ev, ed) = end;
     let seg_du = eu - su;
@@ -184,11 +188,64 @@ pub(super) fn stamp_segment_with_metrics(
     let seg_dd = ed - sd;
     let seg_len_sq = seg_du * seg_du + seg_dv * seg_dv;
 
-    // Degenerate segment — fall back to point stamp with no metrics.
+    // Degenerate segment (pure-vertical, e.g. drill plunge): planar offset is
+    // zero, so the metric formulas below would divide by zero. Stamp at the
+    // segment's bottom and compute volume by measuring the ray-by-ray drop
+    // in material height. axial_doc is the Z descent; radial_engagement is
+    // 1.0 when material is actually being removed (drill bites full-flute).
     if seg_len_sq < 1e-20 {
         let d = sd.min(ed);
-        stamp_point_on_grid(grid, lut, radius, su, sv, d, from_high);
-        return (0.0, 0.0, 0.0);
+        let descent = (sd - ed).abs();
+
+        let cs = grid.cell_size;
+        let cell_area = cs * cs;
+        let r_sq = lut.radius_sq();
+
+        let col_min = ((su - radius - grid.origin_u) / cs).floor() as isize;
+        let col_max = ((su + radius - grid.origin_u) / cs).ceil() as isize;
+        let row_min = ((sv - radius - grid.origin_v) / cs).floor() as isize;
+        let row_max = ((sv + radius - grid.origin_v) / cs).ceil() as isize;
+        let col_lo = col_min.max(0) as usize;
+        let col_hi = (col_max as usize).min(grid.cols.saturating_sub(1));
+        let row_lo = row_min.max(0) as usize;
+        let row_hi = (row_max as usize).min(grid.rows.saturating_sub(1));
+
+        let mut removed_volume = 0.0_f64;
+
+        for row in row_lo..=row_hi {
+            let cell_v = grid.origin_v + row as f64 * cs;
+            let dv = cell_v - sv;
+            let dv_sq = dv * dv;
+            if dv_sq > r_sq {
+                continue;
+            }
+            for col in col_lo..=col_hi {
+                let cell_u = grid.origin_u + col as f64 * cs;
+                let du = cell_u - su;
+                let dist_sq = du * du + dv_sq;
+                if let Some(h) = lut.height_at_dist_sq(dist_sq) {
+                    let ray = &mut grid.rays[row * grid.cols + col];
+                    if from_high {
+                        let surface = (d + h) as f32;
+                        let above = ray_material_length_above(ray, surface) as f64;
+                        ray_subtract_above(ray, surface);
+                        removed_volume += above * cell_area;
+                    } else {
+                        // Mirror: count material below `surface` then subtract.
+                        // For an axis flipped this direction, the same area
+                        // arithmetic applies.
+                        let surface = (d - h) as f32;
+                        let total_before = ray_material_length(ray) as f64;
+                        ray_subtract_below(ray, surface);
+                        let total_after = ray_material_length(ray) as f64;
+                        removed_volume += (total_before - total_after) * cell_area;
+                    }
+                }
+            }
+        }
+
+        let radial = if removed_volume > 1e-9 { 1.0 } else { 0.0 };
+        return (descent, radial, None, removed_volume);
     }
 
     let inv_seg_len_sq = 1.0 / seg_len_sq;
@@ -213,6 +270,9 @@ pub(super) fn stamp_segment_with_metrics(
     let mut engaged_area = 0.0f64;
     let mut total_area = 0.0f64;
     let mut max_penetration = 0.0f64;
+    const ARC_BINS: usize = 36;
+    let mut arc_bins = [false; ARC_BINS];
+    let move_bearing = seg_dv.atan2(seg_du);
 
     for row in row_lo..=row_hi {
         let cell_v = grid.origin_v + row as f64 * cs;
@@ -262,6 +322,21 @@ pub(super) fn stamp_segment_with_metrics(
                     if penetration > 1e-6 {
                         engaged_area += cell_area;
                         max_penetration = max_penetration.max(penetration);
+                        let forward = (cell_u - mid_u) * seg_du + (cell_v - mid_v) * seg_dv;
+                        if capture_arc_engagement && forward > 1e-9 {
+                            let mut bearing = (cell_v - mid_v).atan2(cell_u - mid_u) - move_bearing;
+                            while bearing <= -std::f64::consts::PI {
+                                bearing += std::f64::consts::TAU;
+                            }
+                            while bearing > std::f64::consts::PI {
+                                bearing -= std::f64::consts::TAU;
+                            }
+                            let normalized =
+                                (bearing + std::f64::consts::PI) / std::f64::consts::TAU;
+                            let bin = ((normalized * ARC_BINS as f64).floor() as usize)
+                                .min(ARC_BINS.saturating_sub(1));
+                            arc_bins[bin] = true;
+                        }
                     }
                 }
 
@@ -286,9 +361,19 @@ pub(super) fn stamp_segment_with_metrics(
     } else {
         (engaged_area / total_area).clamp(0.0, 1.0)
     };
+    let arc_engagement_radians = if capture_arc_engagement {
+        let occupied = arc_bins.iter().filter(|&&occupied| occupied).count();
+        Some(
+            (occupied as f64 * std::f64::consts::TAU / ARC_BINS as f64)
+                .clamp(0.0, std::f64::consts::TAU),
+        )
+    } else {
+        None
+    };
     (
         max_penetration.max(0.0),
         radial_engagement,
+        arc_engagement_radians,
         (pre_volume - post_volume).max(0.0),
     )
 }
@@ -300,6 +385,7 @@ pub(super) struct SegmentSampleParams {
     pub(super) sample_step_mm: f64,
     pub(super) feed_rate_mm_min: f64,
     pub(super) is_cutting: bool,
+    pub(super) cut_kinematics: CutKinematics,
     pub(super) spindle_rpm: u32,
     pub(super) flute_count: u32,
     pub(super) semantic_item_id: Option<u64>,
@@ -339,11 +425,13 @@ pub(super) fn sample_segment_runtime(
             cumulative_time_s: *cumulative_time_s,
             segment_time_s,
             is_cutting: params.is_cutting,
+            cut_kinematics: params.cut_kinematics,
             feed_rate_mm_min: params.feed_rate_mm_min,
             spindle_rpm: params.spindle_rpm,
             flute_count: params.flute_count,
             axial_doc_mm: 0.0,
             radial_engagement: 0.0,
+            arc_engagement_radians: None,
             chipload_mm_per_tooth: 0.0,
             removed_volume_est_mm3: 0.0,
             mrr_mm3_s: 0.0,

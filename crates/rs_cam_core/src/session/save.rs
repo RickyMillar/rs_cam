@@ -111,6 +111,8 @@ impl ProjectSession {
                 tool_type: tool_type_to_key(t.tool_type),
                 diameter: t.diameter,
                 cutting_length: t.cutting_length,
+                helix_deg: t.helix_deg,
+                corner_radius_mm: t.corner_radius_mm,
                 corner_radius: t.corner_radius,
                 included_angle: t.included_angle,
                 taper_half_angle: t.taper_half_angle,

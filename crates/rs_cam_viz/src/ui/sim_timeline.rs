@@ -4,7 +4,9 @@ use super::sim_debug::{
 };
 use crate::render::toolpath_render::palette_color;
 use crate::state::runtime::GuiState;
-use crate::state::simulation::{ActiveSemanticItem, SimulationDebugTab, SimulationState};
+use crate::state::simulation::{
+    ActiveSemanticItem, SimulationAnalyticsTab, SimulationDebugTab, SimulationState,
+};
 use egui_plot::{Bar, BarChart, Legend, Line, Plot, PlotPoints};
 use rs_cam_core::session::ProjectSession;
 
@@ -26,6 +28,7 @@ pub fn draw(
         ui,
         sim,
         gui,
+        session,
         max_feed,
         &current_boundary,
         &active_semantic,
@@ -229,6 +232,7 @@ fn draw_boundary_timeline(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
     gui: &GuiState,
+    session: &ProjectSession,
     max_feed: f64,
     current_boundary: &Option<crate::state::simulation::ToolpathBoundary>,
     active_semantic: &Option<ActiveSemanticItem>,
@@ -311,6 +315,8 @@ fn draw_boundary_timeline(
             );
         }
 
+        draw_tool_load_timeline_markers(&painter, rect, total_moves, total_width, sim, session);
+
         // Playhead line
         let pos_x = rect.min.x + (sim.playback.current_move as f32 / total_moves) * total_width;
         painter.line_segment(
@@ -336,13 +342,24 @@ fn draw_boundary_timeline(
             egui::Stroke::NONE,
         ));
 
-        // Click or drag to seek
+        // Click or drag to seek. If the pointer is near an actionable safety
+        // marker, focus the Safety tab and jump to that finding instead.
         if (response.dragged() || response.clicked())
             && let Some(pos) = response.interact_pointer_pos()
         {
-            let frac = ((pos.x - rect.min.x) / total_width).clamp(0.0, 1.0);
-            sim.playback.current_move = (frac * total_moves) as usize;
-            sim.playback.playing = false;
+            if response.clicked()
+                && let Some(target) =
+                    nearest_safety_marker_move(pos.x, rect, total_moves, total_width, sim, session)
+            {
+                sim.analytics_tab = SimulationAnalyticsTab::Safety;
+                sim.playback.current_move = target;
+                sim.playback.playing = false;
+                events.push(AppEvent::SimJumpToMove(target));
+            } else {
+                let frac = ((pos.x - rect.min.x) / total_width).clamp(0.0, 1.0);
+                sim.playback.current_move = (frac * total_moves) as usize;
+                sim.playback.playing = false;
+            }
         }
     }
 
@@ -359,6 +376,106 @@ fn draw_boundary_timeline(
             events,
         );
     }
+}
+
+fn nearest_safety_marker_move(
+    pointer_x: f32,
+    rect: egui::Rect,
+    total_moves: f32,
+    total_width: f32,
+    sim: &SimulationState,
+    session: &ProjectSession,
+) -> Option<usize> {
+    let rapid = sim.checks.rapid_collision_move_indices.iter().copied();
+    let tool_load = tool_load_marker_moves(sim, session);
+    rapid
+        .chain(tool_load)
+        .map(|move_index| {
+            let x = rect.min.x + (move_index as f32 / total_moves) * total_width;
+            (move_index, (pointer_x - x).abs())
+        })
+        .filter(|(_, distance)| *distance <= 7.0)
+        .min_by(|left, right| left.1.total_cmp(&right.1))
+        .map(|(move_index, _)| move_index)
+}
+
+fn tool_load_marker_moves(sim: &SimulationState, session: &ProjectSession) -> Vec<usize> {
+    let sim_trace = sim
+        .results
+        .as_ref()
+        .and_then(|results| results.cut_trace.as_deref());
+    let report = rs_cam_core::gcode::project_load_report(session, sim_trace);
+    let Some(trace) = sim_trace else {
+        return Vec::new();
+    };
+    report
+        .per_toolpath
+        .iter()
+        .filter_map(|verdict| first_exceeded_tool_load_move(sim, trace, verdict))
+        .collect()
+}
+
+fn draw_tool_load_timeline_markers(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    total_moves: f32,
+    total_width: f32,
+    sim: &SimulationState,
+    session: &ProjectSession,
+) {
+    let sim_trace = sim
+        .results
+        .as_ref()
+        .and_then(|results| results.cut_trace.as_deref());
+    let report = rs_cam_core::gcode::project_load_report(session, sim_trace);
+    let Some(trace) = sim_trace else {
+        return;
+    };
+
+    for verdict in report.per_toolpath {
+        if let Some(global_move) = first_exceeded_tool_load_move(sim, trace, &verdict) {
+            let x = rect.min.x + (global_move as f32 / total_moves) * total_width;
+            painter.line_segment(
+                [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
+                egui::Stroke::new(2.0, egui::Color32::from_rgb(230, 60, 70)),
+            );
+        } else if verdict.any_unmodeled()
+            && let Some(boundary) = sim
+                .boundaries()
+                .iter()
+                .find(|boundary| boundary.id.0 == verdict.toolpath_id)
+        {
+            let x = rect.min.x + (boundary.start_move as f32 / total_moves) * total_width;
+            painter.line_segment(
+                [egui::pos2(x, rect.min.y), egui::pos2(x, rect.center().y)],
+                egui::Stroke::new(1.5, egui::Color32::from_rgb(250, 200, 80)),
+            );
+        }
+    }
+}
+
+fn first_exceeded_tool_load_move(
+    sim: &SimulationState,
+    trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
+    verdict: &rs_cam_core::tool_load::ToolpathLoadVerdict,
+) -> Option<usize> {
+    let sample_index = [&verdict.chipload, &verdict.power, &verdict.deflection]
+        .iter()
+        .find_map(|criterion| match criterion {
+            rs_cam_core::tool_load::Verdict::Exceeds { sample_range, .. } => {
+                Some(sample_range.start)
+            }
+            rs_cam_core::tool_load::Verdict::Within { .. }
+            | rs_cam_core::tool_load::Verdict::Unmodeled { .. } => None,
+        })?;
+    let sample = trace.samples.get(sample_index)?;
+    let boundary_start = sim
+        .boundaries()
+        .iter()
+        .find(|boundary| boundary.id.0 == sample.toolpath_id)
+        .map(|boundary| boundary.start_move)
+        .unwrap_or_default();
+    Some(boundary_start + sample.move_index)
 }
 
 /// Row 3: Playback speed slider and preset buttons.
@@ -559,6 +676,7 @@ fn draw_semantic_band(
             {
                 sim.debug.focused_issue_index = None;
                 sim.debug.focused_hotspot = None;
+                sim.analytics_tab = SimulationAnalyticsTab::DebugTrace;
                 sim.clear_pinned_semantic_item();
                 let _ = annotation_index;
                 events.push(AppEvent::SimJumpToMove(target.move_index));
@@ -590,6 +708,7 @@ fn draw_semantic_band(
                 }
                 sim.debug.focused_issue_index = None;
                 sim.debug.focused_hotspot = None;
+                sim.analytics_tab = SimulationAnalyticsTab::CutQuality;
                 events.push(AppEvent::SimJumpToMove(target.move_index));
                 return;
             }
@@ -1014,7 +1133,7 @@ fn draw_cutting_drawer(
         .as_ref()
         .and_then(|results| results.cut_trace.clone())
     else {
-        ui.label("Enable Capture Metrics and re-run simulation to collect cutting metrics.");
+        ui.label("Enable Cut Metrics and re-run simulation to collect cutting metrics.");
         return;
     };
 

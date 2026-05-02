@@ -517,6 +517,7 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
     // ContourParallel. Use stock_top_z just above the mesh top.
     let params = Adaptive3dParams {
         tool_radius: tool.radius(),
+        envelope_radius: tool.radius(),
         stepover: 2.0,
         depth_per_pass: 3.0,
         stock_to_leave: 0.5,

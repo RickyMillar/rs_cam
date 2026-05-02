@@ -29,6 +29,15 @@ pub enum SimulationDebugTab {
     Trace,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SimulationAnalyticsTab {
+    #[default]
+    RunStatus,
+    Safety,
+    CutQuality,
+    DebugTrace,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolpathTraceAvailability {
     None,
@@ -290,6 +299,8 @@ pub struct SimulationState {
     pub auto_resolution: bool,
     /// Runtime-only capture options for simulation cutting metrics.
     pub metric_options: SimulationMetricOptions,
+    /// Active right-panel simulation analytics section.
+    pub analytics_tab: SimulationAnalyticsTab,
     /// Stock visualization mode.
     pub stock_viz_mode: StockVizMode,
     /// Stock opacity (0.0 = transparent, 1.0 = solid).
@@ -327,6 +338,7 @@ impl SimulationState {
             resolution: 0.25,
             auto_resolution: true,
             metric_options: SimulationMetricOptions::default(),
+            analytics_tab: SimulationAnalyticsTab::default(),
             stock_viz_mode: StockVizMode::Solid,
             stock_opacity: 1.0,
             saved_viewport: SavedViewportState {
@@ -1805,11 +1817,13 @@ mod tests {
                     cumulative_time_s: 0.2,
                     segment_time_s: 0.2,
                     is_cutting: true,
+                    cut_kinematics: rs_cam_core::simulation_cut::CutKinematics::Linear,
                     feed_rate_mm_min: 300.0,
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 1.0,
                     radial_engagement: 0.01,
+                    arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),
                     chipload_mm_per_tooth: 0.0083,
                     removed_volume_est_mm3: 0.1,
                     mrr_mm3_s: 0.5,
@@ -1823,11 +1837,13 @@ mod tests {
                     cumulative_time_s: 0.6,
                     segment_time_s: 0.4,
                     is_cutting: true,
+                    cut_kinematics: rs_cam_core::simulation_cut::CutKinematics::Linear,
                     feed_rate_mm_min: 1000.0,
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 0.4,
                     radial_engagement: 0.08,
+                    arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),
                     chipload_mm_per_tooth: 0.0277,
                     removed_volume_est_mm3: 2.0,
                     mrr_mm3_s: 5.0,

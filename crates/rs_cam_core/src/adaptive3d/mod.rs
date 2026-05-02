@@ -84,7 +84,15 @@ pub enum EntryStyle3d {
 
 /// Parameters for 3D adaptive clearing.
 pub struct Adaptive3dParams {
+    /// Engagement radius — the cutter's actual contact radius at `depth_per_pass`
+    /// below the tip. Used for stepover, region detection, and material clearing
+    /// modeling. For flat/ball cutters this equals the nominal radius; for
+    /// tapered cutters it's narrower than the shank radius.
     pub tool_radius: f64,
+    /// Envelope radius — the widest extent of the cutter at any height (shank
+    /// radius for tapered tools). Used only for keep-out / bbox margins so the
+    /// tool's shank doesn't overrun the workpiece footprint.
+    pub envelope_radius: f64,
     pub stepover: f64,
     pub depth_per_pass: f64,
     pub stock_to_leave: f64,
@@ -456,6 +464,7 @@ mod tests {
     fn default_params() -> Adaptive3dParams {
         Adaptive3dParams {
             tool_radius: 3.175,
+            envelope_radius: 3.175,
             stepover: 2.0,
             depth_per_pass: 3.0,
             stock_to_leave: 0.5,

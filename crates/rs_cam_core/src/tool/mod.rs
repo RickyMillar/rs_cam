@@ -19,6 +19,7 @@ pub use tapered_ball::TaperedBallEndmill;
 pub use vbit::VBitEndmill;
 // Re-export ToolDefinition (defined below the trait in this file)
 
+use crate::compute::tool_config::ToolMaterial;
 use crate::geo::{P3, Triangle};
 
 /// Contact point from a drop-cutter test.
@@ -81,12 +82,91 @@ impl CLPoint {
 /// Follows OpenCAMLib's template-method pattern: the drop-cutter algorithm
 /// calls vertex_drop/facet_drop/edge_drop, and each cutter type implements
 /// them according to its geometry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EngagementMode {
+    Climb,
+    Conventional,
+    Slot,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ChipGeometry {
+    pub max_chip_thickness_mm: f64,
+    pub mean_chip_thickness_mm: f64,
+    pub edge_engagement_length_mm: f64,
+    pub instantaneous_flutes_in_cut: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EngagementError {
+    Unsupported { reason: String },
+    OutOfRange { reason: String },
+}
+
+pub(crate) fn flat_chip_geometry_for_radius(
+    radius: f64,
+    helix_deg: f64,
+    axial_doc_mm: f64,
+    arc_engagement_radians: f64,
+    feed_per_tooth_mm: f64,
+    flute_count: u32,
+) -> Result<ChipGeometry, EngagementError> {
+    if radius <= 0.0
+        || axial_doc_mm <= 0.0
+        || arc_engagement_radians <= 0.0
+        || feed_per_tooth_mm < 0.0
+        || flute_count == 0
+    {
+        return Err(EngagementError::OutOfRange {
+            reason: "non-positive engagement inputs".to_owned(),
+        });
+    }
+    let arc = arc_engagement_radians.clamp(0.0, std::f64::consts::PI);
+    let h_max = if arc >= std::f64::consts::PI {
+        feed_per_tooth_mm
+    } else {
+        feed_per_tooth_mm * arc.sin().abs()
+    };
+    let mean = if arc > 1e-9 {
+        (2.0 * h_max / arc) * (1.0 - (arc * 0.5).cos())
+    } else {
+        0.0
+    };
+    let helix_rad = helix_deg.to_radians();
+    let edge_engagement_length_mm = axial_doc_mm / helix_rad.cos().abs().max(1e-6);
+    let flute_pitch = std::f64::consts::TAU / flute_count as f64;
+    let helix_wrap = axial_doc_mm * helix_rad.tan().abs() / radius;
+    let instantaneous_flutes_in_cut =
+        ((arc_engagement_radians + helix_wrap) / flute_pitch).clamp(0.0, flute_count as f64);
+    Ok(ChipGeometry {
+        max_chip_thickness_mm: h_max,
+        mean_chip_thickness_mm: mean,
+        edge_engagement_length_mm,
+        instantaneous_flutes_in_cut,
+    })
+}
+
 pub trait MillingCutter: Send + Sync {
     fn diameter(&self) -> f64;
     fn radius(&self) -> f64 {
         self.diameter() / 2.0
     }
     fn length(&self) -> f64;
+    fn helix_deg(&self) -> f64 {
+        30.0
+    }
+    fn corner_radius_mm(&self) -> f64 {
+        0.0
+    }
+
+    fn chip_geometry(
+        &self,
+        axial_doc_mm: f64,
+        arc_engagement_radians: f64,
+        feed_per_tooth_mm: f64,
+        flute_count: u32,
+        mode: EngagementMode,
+    ) -> Result<ChipGeometry, EngagementError>;
 
     /// Profile height at radial distance r from tool axis.
     /// Returns the Z offset from the tool tip to the cutter surface at radius r.
@@ -94,6 +174,25 @@ pub trait MillingCutter: Send + Sync {
 
     /// Profile radius at height h above tool tip.
     fn width_at_height(&self, h: f64) -> f64;
+
+    /// Effective cutting radius at a given depth of cut below the tool tip.
+    ///
+    /// This is the cutter's actual contact width when engaging material to
+    /// depth `depth_of_cut`. For flat endmills it equals `radius()` for any
+    /// non-trivial depth; for ball/tapered/v-bit it varies with depth as the
+    /// profile widens.
+    ///
+    /// Use this for stepover sizing, region detection, or any computation
+    /// that asks "how wide is the cut at this engagement depth". Use
+    /// `radius()` for the full envelope (keep-out, bbox margins, collision).
+    ///
+    /// The default implementation calls `width_at_height(depth_of_cut)`,
+    /// which is the right behavior for all current cutter shapes. Returns 0
+    /// when `depth_of_cut <= 0` for ball-tipped tools (only the tip touches);
+    /// callers that need a non-zero floor should clamp.
+    fn engagement_radius(&self, depth_of_cut: f64) -> f64 {
+        self.width_at_height(depth_of_cut)
+    }
 
     /// Key parameters for the generalized facet contact formula:
     /// radiusvector = xy_normal_length * xyNormal + normal_length * surfaceNormal
@@ -216,6 +315,8 @@ pub struct ToolDefinition {
     pub stickout: f64,
     /// Number of cutting flutes.
     pub flute_count: u32,
+    /// Cutter substrate material.
+    pub tool_material: ToolMaterial,
 }
 
 impl ToolDefinition {
@@ -226,6 +327,7 @@ impl ToolDefinition {
         holder_diameter: f64,
         stickout: f64,
         flute_count: u32,
+        tool_material: ToolMaterial,
     ) -> Self {
         Self {
             cutter,
@@ -234,6 +336,7 @@ impl ToolDefinition {
             holder_diameter,
             stickout,
             flute_count,
+            tool_material,
         }
     }
 
@@ -271,11 +374,36 @@ impl MillingCutter for ToolDefinition {
     fn length(&self) -> f64 {
         self.cutter.length()
     }
+    fn helix_deg(&self) -> f64 {
+        self.cutter.helix_deg()
+    }
+    fn corner_radius_mm(&self) -> f64 {
+        self.cutter.corner_radius_mm()
+    }
+    fn chip_geometry(
+        &self,
+        axial_doc_mm: f64,
+        arc_engagement_radians: f64,
+        feed_per_tooth_mm: f64,
+        flute_count: u32,
+        mode: EngagementMode,
+    ) -> Result<ChipGeometry, EngagementError> {
+        self.cutter.chip_geometry(
+            axial_doc_mm,
+            arc_engagement_radians,
+            feed_per_tooth_mm,
+            flute_count,
+            mode,
+        )
+    }
     fn height_at_radius(&self, r: f64) -> Option<f64> {
         self.cutter.height_at_radius(r)
     }
     fn width_at_height(&self, h: f64) -> f64 {
         self.cutter.width_at_height(h)
+    }
+    fn engagement_radius(&self, depth_of_cut: f64) -> f64 {
+        self.cutter.engagement_radius(depth_of_cut)
     }
     fn center_height(&self) -> f64 {
         self.cutter.center_height()
@@ -315,6 +443,36 @@ impl MillingCutter for ToolDefinition {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn engagement_radius_matches_shape() {
+        // Flat: full radius at any depth >= 0.
+        let flat = FlatEndmill::new(6.0, 25.0);
+        assert!((flat.engagement_radius(0.0) - 3.0).abs() < 1e-10);
+        assert!((flat.engagement_radius(1.5) - 3.0).abs() < 1e-10);
+
+        // Ball: 0 at the tip, full radius once depth >= ball_radius.
+        let ball = crate::tool::BallEndmill::new(6.0, 25.0);
+        assert!(ball.engagement_radius(0.0).abs() < 1e-10);
+        assert!((ball.engagement_radius(3.0) - 3.0).abs() < 1e-10);
+        // Mid-depth: chord through the sphere.
+        let mid = ball.engagement_radius(1.0); // sqrt(2*3*1 - 1) = sqrt(5)
+        assert!((mid - 5.0_f64.sqrt()).abs() < 1e-10);
+
+        // Tapered ball: cone-widened above the ball region.
+        let tapered = crate::tool::TaperedBallEndmill::new(2.0, 7.0, 6.0, 25.0);
+        // At ball tip — zero engagement.
+        assert!(tapered.engagement_radius(0.0).abs() < 1e-10);
+        // At depth_per_pass=1.5, well into the cone.
+        // Tip ball radius = 1.0, so at 1.5 above tip we're past the ball
+        // and into the cone. Cone radius < shank/2 = 3.0.
+        let r_at_dpp = tapered.engagement_radius(1.5);
+        assert!(
+            r_at_dpp > 1.0 && r_at_dpp < 3.0,
+            "tapered ball engagement at 1.5mm should be tip<r<shank, got {}",
+            r_at_dpp
+        );
+    }
 
     #[test]
     fn test_cl_point() {
@@ -441,7 +599,7 @@ mod tests {
     #[test]
     fn test_tool_definition_delegates() {
         let cutter = Box::new(BallEndmill::new(10.0, 25.0));
-        let td = ToolDefinition::new(cutter, 6.35, 20.0, 25.0, 45.0, 2);
+        let td = ToolDefinition::new(cutter, 6.35, 20.0, 25.0, 45.0, 2, ToolMaterial::Carbide);
         // Trait methods delegate correctly
         assert!((td.diameter() - 10.0).abs() < 1e-10);
         assert!((td.radius() - 5.0).abs() < 1e-10);
@@ -455,7 +613,7 @@ mod tests {
     #[test]
     fn test_tool_definition_assembly_flat() {
         let cutter = Box::new(FlatEndmill::new(10.0, 25.0));
-        let td = ToolDefinition::new(cutter, 6.35, 20.0, 25.0, 50.0, 2);
+        let td = ToolDefinition::new(cutter, 6.35, 20.0, 25.0, 50.0, 2, ToolMaterial::Carbide);
         let asm = td.to_assembly();
         assert!((asm.cutter_radius - 5.0).abs() < 1e-10);
         assert!((asm.cutter_length - 25.0).abs() < 1e-10);
@@ -469,7 +627,7 @@ mod tests {
     fn test_tool_definition_assembly_tapered_ball_uses_shaft_radius() {
         // This is the bug regression: collision must use shaft_radius, not ball_radius
         let cutter = Box::new(TaperedBallEndmill::new(3.175, 15.0, 6.35, 25.0));
-        let td = ToolDefinition::new(cutter, 6.35, 20.0, 25.0, 50.0, 2);
+        let td = ToolDefinition::new(cutter, 6.35, 20.0, 25.0, 50.0, 2, ToolMaterial::Carbide);
         let asm = td.to_assembly();
         // cutter_radius must be shaft_diameter/2 = 3.175, NOT ball_diameter/2 = 1.5875
         assert!(
@@ -483,7 +641,7 @@ mod tests {
     #[test]
     fn test_tool_definition_geometry_hint() {
         let cutter = Box::new(BullNoseEndmill::new(10.0, 2.0, 25.0));
-        let td = ToolDefinition::new(cutter, 6.35, 20.0, 25.0, 50.0, 2);
+        let td = ToolDefinition::new(cutter, 6.35, 20.0, 25.0, 50.0, 2, ToolMaterial::Carbide);
         match td.to_geometry_hint() {
             crate::feeds::ToolGeometryHint::Bull { corner_radius } => {
                 assert!((corner_radius - 2.0).abs() < 1e-10);
@@ -495,7 +653,7 @@ mod tests {
     #[test]
     fn test_tool_definition_holder_length() {
         let cutter = Box::new(FlatEndmill::new(10.0, 25.0));
-        let td = ToolDefinition::new(cutter, 6.35, 20.0, 25.0, 50.0, 2);
+        let td = ToolDefinition::new(cutter, 6.35, 20.0, 25.0, 50.0, 2, ToolMaterial::Carbide);
         assert!((td.holder_length() - 5.0).abs() < 1e-10);
         // Clamps to 0 if stickout is short
         let td2 = ToolDefinition::new(
@@ -505,6 +663,7 @@ mod tests {
             25.0,
             30.0, // 30 - 25 - 20 = -15 -> clamped to 0
             2,
+            ToolMaterial::Carbide,
         );
         assert!((td2.holder_length()).abs() < 1e-10);
     }

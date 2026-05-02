@@ -177,6 +177,7 @@ impl<B: ComputeBackend> AppController<B> {
             | AppEvent::SwitchWorkspace(_)
             | AppEvent::SimVizModeChanged
             | AppEvent::ShowShortcuts
+            | AppEvent::SetToolLoadOverride { .. }
             | AppEvent::Quit => {}
         }
     }

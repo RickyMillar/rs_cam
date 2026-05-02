@@ -191,6 +191,10 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .find_map(|m| m.mesh.clone());
 
+        if self.state.simulation.metric_options.enabled {
+            self.state.simulation.metric_options.capture_arc_engagement = true;
+        }
+
         self.compute.submit_simulation(SimulationRequest {
             groups,
             stock_bbox,

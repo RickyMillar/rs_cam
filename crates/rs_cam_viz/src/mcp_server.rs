@@ -402,15 +402,34 @@ impl EmbeddedCamServer {
         )
     }
 
-    #[tool(name = "export_gcode", description = "Export G-code to a file path")]
+    #[tool(
+        name = "export_gcode",
+        description = "Export G-code to a file path. Refuses if any toolpath has tool-load Exceeds or Unmodeled verdicts unless the corresponding accept flag is set."
+    )]
     async fn export_gcode(
         &self,
-        Parameters(ExportParam { path }): Parameters<ExportParam>,
+        Parameters(ExportParam {
+            path,
+            accept_unmodeled_tool_load,
+            accept_exceeded_tool_load,
+        }): Parameters<ExportParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::ExportGcode { path })
-                .await,
+            self.send_request(McpRequestKind::ExportGcode {
+                path,
+                accept_unmodeled_tool_load,
+                accept_exceeded_tool_load,
+            })
+            .await,
         )
+    }
+
+    #[tool(
+        name = "get_tool_load_report",
+        description = "Per-toolpath tool-load report: chipload, power, deflection verdicts. Each criterion is independent (no scalar load %). Verdicts are Within/Exceeds/Unmodeled with typed reasons."
+    )]
+    async fn get_tool_load_report(&self) -> String {
+        Self::format_result(self.send_request(McpRequestKind::GetToolLoadReport).await)
     }
 
     #[tool(

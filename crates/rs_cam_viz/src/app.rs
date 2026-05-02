@@ -282,8 +282,15 @@ impl RsCamApp {
                 if debug_changed && simulation.debug.enabled {
                     simulation.debug.drawer_open = true;
                 }
-                ui.checkbox(&mut simulation.metric_options.enabled, "Metrics")
-                    .on_hover_text("Capture simulation-time cutting metrics on the next run.");
+                let metrics_changed = ui
+                    .checkbox(&mut simulation.metric_options.enabled, "Cut Metrics")
+                    .on_hover_text(
+                        "Capture simulation-time cutting metrics on the next run. Includes arc engagement for power analysis.",
+                    )
+                    .changed();
+                if metrics_changed && simulation.metric_options.enabled {
+                    simulation.metric_options.capture_arc_engagement = true;
+                }
                 if simulation.debug.enabled {
                     ui.checkbox(&mut simulation.debug.highlight_active_item, "Highlight");
                 }

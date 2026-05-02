@@ -173,6 +173,10 @@ pub struct ProjectToolSection {
     pub diameter: f64,
     #[serde(default = "default_cutting_length")]
     pub cutting_length: f64,
+    #[serde(default = "default_helix_deg")]
+    pub helix_deg: f64,
+    #[serde(default)]
+    pub corner_radius_mm: f64,
     #[serde(default = "default_corner_radius")]
     pub corner_radius: f64,
     #[serde(default = "default_included_angle")]
@@ -214,6 +218,9 @@ fn default_tool_diameter() -> f64 {
 }
 fn default_cutting_length() -> f64 {
     25.0
+}
+fn default_helix_deg() -> f64 {
+    30.0
 }
 fn default_corner_radius() -> f64 {
     2.0
@@ -453,6 +460,8 @@ pub(crate) fn tool_from_project_section(ts: &ProjectToolSection, idx: usize) -> 
         tool_type: parse_tool_type(&ts.tool_type),
         diameter: ts.diameter,
         cutting_length: ts.cutting_length,
+        helix_deg: ts.helix_deg,
+        corner_radius_mm: ts.corner_radius_mm,
         corner_radius: ts.corner_radius,
         included_angle: ts.included_angle,
         taper_half_angle: ts.taper_half_angle,

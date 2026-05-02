@@ -1,11 +1,12 @@
 use rs_cam_core::gcode::{
-    ControllerCompensation, GcodePhase, GcodeSetupPhase, emit_gcode_multi_setup, emit_gcode_phased,
-    replace_rapids_with_feed,
+    ControllerCompensation, GcodePhase, GcodeSetupPhase, export_gcode_multi_setup_checked,
+    export_gcode_phases_checked, replace_rapids_with_feed,
 };
 use rs_cam_core::session::ProjectSession;
 
 use crate::state::job::ToolConfig;
 use crate::state::runtime::GuiState;
+use crate::state::simulation::SimulationState;
 use crate::state::toolpath::{CompensationType, OperationConfig, ProfileSide};
 
 fn tool_number_for_export(tool: &ToolConfig) -> u32 {
@@ -50,10 +51,20 @@ fn controller_comp_for_session_toolpath(
     None
 }
 
+/// The cut trace lives on viz `SimulationState`, not on `session.simulation`.
+/// Pull from there so the export gate evaluates chipload/power against the
+/// active simulation run.
+fn viz_sim_trace(
+    sim: &SimulationState,
+) -> Option<&rs_cam_core::simulation_cut::SimulationCutTrace> {
+    sim.results.as_ref().and_then(|r| r.cut_trace.as_deref())
+}
+
 /// Export all enabled toolpaths as a single G-code file (session-based).
 pub fn export_gcode_from_session(
     session: &ProjectSession,
     gui: &GuiState,
+    sim: &SimulationState,
 ) -> Result<String, crate::error::VizError> {
     let post = gui.post.format.post_processor();
 
@@ -70,7 +81,13 @@ pub fn export_gcode_from_session(
         ));
     }
 
-    let mut gcode = emit_gcode_phased(&phases, post.as_ref());
+    let mut gcode = export_gcode_phases_checked(
+        &phases,
+        post.as_ref(),
+        viz_sim_trace(sim),
+        gui.tool_load_overrides.as_policy(),
+    )
+    .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate);
@@ -83,6 +100,7 @@ pub fn export_gcode_from_session(
 pub fn export_combined_gcode_from_session(
     session: &ProjectSession,
     gui: &GuiState,
+    sim: &SimulationState,
 ) -> Result<String, crate::error::VizError> {
     let post = gui.post.format.post_processor();
 
@@ -114,7 +132,14 @@ pub fn export_combined_gcode_from_session(
         ));
     }
 
-    let mut gcode = emit_gcode_multi_setup(&setup_phases, post.as_ref(), gui.post.safe_z);
+    let mut gcode = export_gcode_multi_setup_checked(
+        &setup_phases,
+        post.as_ref(),
+        gui.post.safe_z,
+        viz_sim_trace(sim),
+        gui.tool_load_overrides.as_policy(),
+    )
+    .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate);
@@ -127,6 +152,7 @@ pub fn export_combined_gcode_from_session(
 pub fn export_setup_gcode_from_session(
     session: &ProjectSession,
     gui: &GuiState,
+    sim: &SimulationState,
     setup_id: crate::state::job::SetupId,
 ) -> Result<String, crate::error::VizError> {
     let setup = session
@@ -152,7 +178,13 @@ pub fn export_setup_gcode_from_session(
         )));
     }
 
-    let mut gcode = emit_gcode_phased(&phases, post.as_ref());
+    let mut gcode = export_gcode_phases_checked(
+        &phases,
+        post.as_ref(),
+        viz_sim_trace(sim),
+        gui.tool_load_overrides.as_policy(),
+    )
+    .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate);

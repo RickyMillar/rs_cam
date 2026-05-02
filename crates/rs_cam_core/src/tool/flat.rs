@@ -5,13 +5,18 @@
 //!
 //! Parameters: center_height=0, normal_length=0, xy_normal_length=R
 
-use super::{CLPoint, MillingCutter};
+use super::{
+    CLPoint, ChipGeometry, EngagementError, EngagementMode, MillingCutter,
+    flat_chip_geometry_for_radius,
+};
 use crate::geo::P3;
 
 #[derive(Debug, Clone)]
 pub struct FlatEndmill {
     pub diameter: f64,
     pub cutting_length: f64,
+    pub helix_deg: f64,
+    pub corner_radius_mm: f64,
 }
 
 impl FlatEndmill {
@@ -19,6 +24,8 @@ impl FlatEndmill {
         Self {
             diameter,
             cutting_length,
+            helix_deg: 30.0,
+            corner_radius_mm: 0.0,
         }
     }
 }
@@ -29,6 +36,29 @@ impl MillingCutter for FlatEndmill {
     }
     fn length(&self) -> f64 {
         self.cutting_length
+    }
+    fn helix_deg(&self) -> f64 {
+        self.helix_deg
+    }
+    fn corner_radius_mm(&self) -> f64 {
+        self.corner_radius_mm
+    }
+    fn chip_geometry(
+        &self,
+        axial_doc_mm: f64,
+        arc_engagement_radians: f64,
+        feed_per_tooth_mm: f64,
+        flute_count: u32,
+        _mode: EngagementMode,
+    ) -> Result<ChipGeometry, EngagementError> {
+        flat_chip_geometry_for_radius(
+            self.radius(),
+            self.helix_deg,
+            axial_doc_mm,
+            arc_engagement_radians,
+            feed_per_tooth_mm,
+            flute_count,
+        )
     }
     fn geometry_hint(&self) -> crate::feeds::ToolGeometryHint {
         crate::feeds::ToolGeometryHint::Flat
@@ -108,10 +138,26 @@ impl MillingCutter for FlatEndmill {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::geo::{P3, Triangle};
+
+    #[test]
+    fn chip_geometry_half_engagement_matches_expected_values() {
+        let tool = FlatEndmill::new(6.0, 25.0);
+        let geom = tool
+            .chip_geometry(
+                2.0,
+                std::f64::consts::FRAC_PI_2,
+                0.05,
+                2,
+                EngagementMode::Climb,
+            )
+            .expect("flat geometry supported");
+        assert!((geom.max_chip_thickness_mm - 0.05).abs() < 1e-9);
+        assert!((geom.edge_engagement_length_mm - 2.3094).abs() < 0.01);
+    }
 
     #[test]
     fn test_flat_profile() {

@@ -198,8 +198,20 @@ impl super::RsCamApp {
                 let resp = self.mcp_save_project(&path);
                 let _ = response_tx.send(resp);
             }
-            McpRequestKind::ExportGcode { path } => {
-                let resp = self.mcp_export_gcode(&path);
+            McpRequestKind::ExportGcode {
+                path,
+                accept_unmodeled_tool_load,
+                accept_exceeded_tool_load,
+            } => {
+                let resp = self.mcp_export_gcode(
+                    &path,
+                    accept_unmodeled_tool_load,
+                    accept_exceeded_tool_load,
+                );
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::GetToolLoadReport => {
+                let resp = self.mcp_get_tool_load_report();
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::SetToolpathParam {
@@ -1465,11 +1477,39 @@ impl super::RsCamApp {
         }
     }
 
-    fn mcp_export_gcode(&self, path: &str) -> String {
+    fn mcp_export_gcode(
+        &self,
+        path: &str,
+        accept_unmodeled_tool_load: bool,
+        accept_exceeded_tool_load: bool,
+    ) -> String {
         let session = &self.controller.state().session;
-        match session.export_gcode(Path::new(path), None) {
+        let policy = rs_cam_core::gcode::ToolLoadExportPolicy {
+            accept_unmodeled: accept_unmodeled_tool_load,
+            accept_exceeded: accept_exceeded_tool_load,
+        };
+        match session.export_gcode_with_policy(Path::new(path), None, policy) {
             Ok(()) => text(format!("G-code exported to {path}")),
             Err(e) => text(format!("Export failed: {e}")),
+        }
+    }
+
+    fn mcp_get_tool_load_report(&self) -> String {
+        let state = self.controller.state();
+        // The cut trace is held in viz simulation state, not in
+        // `session.simulation`. Pull it from there so chipload/power can be
+        // evaluated against the active simulation run.
+        let sim_trace = state
+            .simulation
+            .results
+            .as_ref()
+            .and_then(|r| r.cut_trace.as_deref());
+        let report = rs_cam_core::gcode::project_load_report(&state.session, sim_trace);
+        match serde_json::to_value(&report) {
+            Ok(v) => json_str(v),
+            Err(e) => json_str(serde_json::json!({
+                "error": format!("Failed to serialize tool load report: {e}")
+            })),
         }
     }
 
@@ -1783,9 +1823,7 @@ impl super::RsCamApp {
     fn mcp_set_stock_source(&mut self, index: usize, source: &str) -> String {
         let parsed = match source {
             "fresh" => rs_cam_core::compute::config::StockSource::Fresh,
-            "from_remaining_stock" => {
-                rs_cam_core::compute::config::StockSource::FromRemainingStock
-            }
+            "from_remaining_stock" => rs_cam_core::compute::config::StockSource::FromRemainingStock,
             other => {
                 return text(format!(
                     "Error: unknown stock_source '{other}'. Expected 'fresh' or 'from_remaining_stock'."
@@ -1910,11 +1948,11 @@ impl super::RsCamApp {
 
         // Always enable metrics when MCP triggers simulation — the standalone
         // MCP server hardcodes this, and diagnostics/cut_trace require it.
-        self.controller
-            .state_mut()
-            .simulation
-            .metric_options
-            .enabled = true;
+        // `capture_arc_engagement` is also forced on so the tool-load `power`
+        // criterion can evaluate against the run.
+        let metric_options = &mut self.controller.state_mut().simulation.metric_options;
+        metric_options.enabled = true;
+        metric_options.capture_arc_engagement = true;
 
         // Push the simulation event
         self.controller

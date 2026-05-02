@@ -995,6 +995,8 @@ mod tests {
                 tool_type: "end_mill".to_owned(),
                 diameter: 6.35,
                 cutting_length: 25.0,
+                helix_deg: 30.0,
+                corner_radius_mm: 0.0,
                 corner_radius: 2.0,
                 included_angle: 90.0,
                 taper_half_angle: 15.0,
