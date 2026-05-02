@@ -6,6 +6,7 @@ use crate::state::runtime::GuiState;
 use crate::state::simulation::{
     SimulationAnalyticsTab, SimulationIssueKind, SimulationState, StockVizMode,
 };
+use crate::state::toolpath::ToolpathId;
 use crate::ui::theme;
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::simulation_cut::CutKinematics;
@@ -693,6 +694,84 @@ fn draw_reactive_inspector(
             .color(theme::TEXT_DIM),
         );
         return;
+    }
+
+    // Hotspot card: a viewport pin or future track-dot click sets focused_hotspot.
+    // Snapshot the data we need before mutating sim via the buttons below.
+    let hotspot_snapshot = sim.focused_hotspot_data().map(|h| {
+        (
+            h.toolpath_id,
+            h.move_start,
+            h.move_end,
+            h.sample_index_end - h.sample_index_start,
+            h.wasted_runtime_s,
+            h.peak_chipload_mm_per_tooth,
+            h.peak_axial_doc_mm,
+            h.average_engagement,
+            h.representative_position,
+        )
+    });
+    if let Some((tp_id, move_start, move_end, sample_count, wasted, peak_chip, peak_doc, avg_eng, pos)) =
+        hotspot_snapshot
+    {
+        let toolpath_id = ToolpathId(tp_id);
+        let global_start = sim
+            .global_move_for_local(toolpath_id, move_start)
+            .unwrap_or(move_start);
+        egui::Frame::default()
+            .fill(egui::Color32::from_rgb(50, 38, 28))
+            .inner_margin(6.0)
+            .rounding(4.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("Hotspot")
+                            .strong()
+                            .color(egui::Color32::from_rgb(255, 170, 90)),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("TP {}", tp_id + 1))
+                            .small()
+                            .color(theme::TEXT_MUTED),
+                    );
+                });
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Moves {move_start}–{move_end} · {sample_count} samples"
+                    ))
+                    .small()
+                    .color(theme::TEXT_MUTED),
+                );
+                ui.label(
+                    egui::RichText::new(format!(
+                        "wasted {wasted:.2}s · peak chip {peak_chip:.4} · peak DOC {peak_doc:.2} · avg engage {:.0}%",
+                        avg_eng * 100.0
+                    ))
+                    .small()
+                    .color(theme::TEXT_MUTED),
+                );
+                ui.label(
+                    egui::RichText::new(format!(
+                        "X{:.1} Y{:.1} Z{:.2}",
+                        pos[0], pos[1], pos[2]
+                    ))
+                    .small()
+                    .monospace()
+                    .color(theme::TEXT_DIM),
+                );
+                ui.horizontal(|ui| {
+                    if ui.small_button("Jump").clicked() {
+                        events.push(AppEvent::SimJumpToMove(global_start));
+                    }
+                    if ui.small_button("Suggest").clicked() {
+                        events.push(AppEvent::OpenSuggestModal(toolpath_id));
+                    }
+                    if ui.small_button("Clear").clicked() {
+                        sim.debug.focused_hotspot = None;
+                    }
+                });
+            });
+        ui.add_space(4.0);
     }
 
     if let Some(issue) = sim.current_issue(gui, max_feed) {
