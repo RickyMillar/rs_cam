@@ -289,41 +289,6 @@ pub fn evaluate(
         };
     }
 
-    // Bipolar engagement: are SOME current samples below the best
-    // matching row's cl_min while OTHERS run above its cl_max? If so,
-    // no single feed fixes both — we'd flip one verdict to fix the
-    // other. Refuse with a stepover-variation hint instead.
-    if let Some(top) = rows.first()
-        && let (Some(cl_min), Some(cl_max)) = (top.chip_load_min_mm, top.chip_load_max_mm)
-        && stats.peak_below_chipload(cl_min)
-        && stats.peak_above_chipload(cl_max)
-    {
-        return FeedSuggestion {
-            toolpath_id: ctx.toolpath_id,
-            current_feed_mm_min: ctx.current_feed_mm_min,
-            current_rpm,
-            current_peak_chipload_mm: current_peak_chipload,
-            current_peak_kw,
-            suggested: Err(RefuseReason::BipolarEngagement),
-            considered_rows: rows
-                .iter()
-                .map(|r| RowEvaluation {
-                    observation_id: r.observation_id.clone(),
-                    diameter_match_score: r.diameter_match_score,
-                    rpm: r.rpm_nominal,
-                    feasible_feed_range: None,
-                    mrr_mm3_min: None,
-                    rejected: Some("bipolar engagement detected".to_owned()),
-                })
-                .collect(),
-            rationale: vec![
-                "stepover varies — some samples below cl_min while others above cl_max. \
-                 No single feed fixes both. Reduce stepover variation rather than feed."
-                    .to_owned(),
-            ],
-        };
-    }
-
     // Evaluate each row, build feasible feed ranges, score, pick best.
     let style = SuggestionStyle::default();
     let mut evaluations: Vec<RowEvaluation> = Vec::with_capacity(rows.len());
@@ -388,6 +353,31 @@ pub fn evaluate(
                 });
             }
         }
+    }
+
+    // Bipolar engagement on the selected row: if some samples below
+    // cl_min and others above cl_max in the same toolpath, no single
+    // feed fixes both. Refuse with a stepover-variation hint.
+    if let Some(BestPick { row, .. }) = best.as_ref()
+        && let (Some(cl_min), Some(cl_max)) = (row.chip_load_min_mm, row.chip_load_max_mm)
+        && stats.any_chipload_below(cl_min)
+        && stats.any_chipload_above(cl_max)
+    {
+        return FeedSuggestion {
+            toolpath_id: ctx.toolpath_id,
+            current_feed_mm_min: ctx.current_feed_mm_min,
+            current_rpm,
+            current_peak_chipload_mm: current_peak_chipload,
+            current_peak_kw,
+            suggested: Err(RefuseReason::BipolarEngagement),
+            considered_rows: evaluations,
+            rationale: vec![
+                "stepover varies — some samples below cl_min while others above cl_max \
+                 on the chosen row. No single feed fixes both. Reduce stepover variation \
+                 rather than feed."
+                    .to_owned(),
+            ],
+        };
     }
 
     let Some(BestPick {
@@ -639,10 +629,10 @@ struct SteadyStateStats {
 }
 
 impl SteadyStateStats {
-    fn peak_below_chipload(&self, cl_min: f64) -> bool {
+    fn any_chipload_below(&self, cl_min: f64) -> bool {
         self.chiploads.iter().any(|&c| c < cl_min)
     }
-    fn peak_above_chipload(&self, cl_max: f64) -> bool {
+    fn any_chipload_above(&self, cl_max: f64) -> bool {
         self.chiploads.iter().any(|&c| c > cl_max)
     }
     /// Estimate of peak power-kW at the current feed/engagement. None
@@ -1053,6 +1043,60 @@ mod tests {
         assert!(
             result.rationale.iter().any(|r| r.contains("matched row")),
             "rationale should explain the match: {:?}",
+            result.rationale
+        );
+    }
+
+    #[test]
+    fn bipolar_engagement_refuses_after_row_selection() {
+        // Hardwood pocket-rough 6mm 2-flute: cl_min ≈ 0.032, cl_max ≈ 0.055
+        // (amana-flat-hardwood-pocket-6000-2f). Build a trace where
+        // half the samples sit at chipload 0.005 (well below any matching
+        // row's cl_min) and the other half at 0.10 (well above any
+        // matching row's cl_max). No single feed can fix both — must
+        // refuse with BipolarEngagement after the selected row is picked.
+        let mut samples: Vec<SimulationCutSample> = Vec::new();
+        for i in 0..3 {
+            let mut s = cutting_sample(i, 1500.0, 18000, 2.0, std::f64::consts::FRAC_PI_2);
+            s.effective_chip_thickness_mm = Some(0.005);
+            s.chipload_mm_per_tooth = 0.005;
+            samples.push(s);
+        }
+        for i in 3..6 {
+            let mut s = cutting_sample(i, 1500.0, 18000, 2.0, std::f64::consts::FRAC_PI_2);
+            s.effective_chip_thickness_mm = Some(0.10);
+            s.chipload_mm_per_tooth = 0.10;
+            samples.push(s);
+        }
+        let t = trace(samples);
+        let tool = tool_6mm_flat();
+        let mat = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let machine = machine();
+        let ctx = SuggestContext {
+            toolpath_id: 0,
+            tool: &tool,
+            material: &mat,
+            machine: &machine,
+            operation_family: LutOperationFamily::Pocket,
+            pass_role: LutPassRole::Roughing,
+            operation_kind: OperationType::Pocket,
+            current_feed_mm_min: 1500.0,
+        };
+        let result = evaluate(&ctx, Some(&t));
+        assert!(
+            matches!(result.suggested, Err(RefuseReason::BipolarEngagement)),
+            "expected BipolarEngagement, got {:?}",
+            result.suggested
+        );
+        assert!(
+            !result.considered_rows.is_empty(),
+            "considered_rows should retain the evaluated rows for transparency"
+        );
+        assert!(
+            result.rationale.iter().any(|r| r.contains("stepover varies")),
+            "rationale should mention stepover variation: {:?}",
             result.rationale
         );
     }
