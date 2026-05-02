@@ -194,6 +194,11 @@ pub trait MillingCutter: Send + Sync {
         self.width_at_height(depth_of_cut)
     }
 
+    fn lookup_diameter_at(&self, axial_doc_mm: f64) -> f64 {
+        let _ = axial_doc_mm;
+        self.diameter()
+    }
+
     /// Key parameters for the generalized facet contact formula:
     /// radiusvector = xy_normal_length * xyNormal + normal_length * surfaceNormal
     fn center_height(&self) -> f64;
@@ -405,6 +410,9 @@ impl MillingCutter for ToolDefinition {
     fn engagement_radius(&self, depth_of_cut: f64) -> f64 {
         self.cutter.engagement_radius(depth_of_cut)
     }
+    fn lookup_diameter_at(&self, axial_doc_mm: f64) -> f64 {
+        self.cutter.lookup_diameter_at(axial_doc_mm)
+    }
     fn center_height(&self) -> f64 {
         self.cutter.center_height()
     }
@@ -472,6 +480,22 @@ mod tests {
             "tapered ball engagement at 1.5mm should be tip<r<shank, got {}",
             r_at_dpp
         );
+    }
+
+    #[test]
+    fn lookup_diameter_uses_shape_specific_engagement() {
+        let flat = FlatEndmill::new(6.0, 25.0);
+        assert!((flat.lookup_diameter_at(0.2) - 6.0).abs() < 1e-10);
+
+        let ball = crate::tool::BallEndmill::new(6.0, 25.0);
+        assert!((ball.lookup_diameter_at(0.2) - 6.0).abs() < 1e-10);
+
+        let tapered = crate::tool::TaperedBallEndmill::new(2.0, 7.0, 6.0, 25.0);
+        let tapered_lookup = tapered.lookup_diameter_at(1.5);
+        assert!((tapered_lookup - 2.0 * tapered.engagement_radius(1.5)).abs() < 1e-10);
+
+        let vbit = crate::tool::VBitEndmill::new(6.0, 90.0, 10.0);
+        assert!((vbit.lookup_diameter_at(1.0) - 2.0).abs() < 1e-10);
     }
 
     #[test]
