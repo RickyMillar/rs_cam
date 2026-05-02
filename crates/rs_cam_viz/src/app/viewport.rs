@@ -364,6 +364,7 @@ impl RsCamApp {
         self.draw_orientation_gizmo(ui, rect);
 
         if workspace == Workspace::Simulation {
+            self.draw_simulation_hotspot_pins(ui, rect, aspect);
             let active_overlay = {
                 let state = self.controller.state_mut();
                 if state.simulation.debug.enabled && state.simulation.debug.highlight_active_item {
@@ -388,6 +389,99 @@ impl RsCamApp {
             if let Some((label, bbox)) = active_overlay.as_ref() {
                 self.draw_semantic_item_overlay(ui, rect, label, bbox);
             }
+        }
+    }
+
+    fn draw_simulation_hotspot_pins(
+        &mut self,
+        ui: &mut egui::Ui,
+        viewport_rect: egui::Rect,
+        aspect: f32,
+    ) {
+        let pins = {
+            let state = self.controller.state();
+            let Some(trace) = state
+                .simulation
+                .results
+                .as_ref()
+                .and_then(|r| r.cut_trace.as_ref())
+            else {
+                return;
+            };
+            trace
+                .hotspots
+                .iter()
+                .enumerate()
+                .filter_map(|(hotspot_index, hotspot)| {
+                    let toolpath_id = crate::state::toolpath::ToolpathId(hotspot.toolpath_id);
+                    let global_move = state
+                        .simulation
+                        .global_move_for_local(toolpath_id, hotspot.move_start)?;
+                    let screen = self.camera.project_to_screen(
+                        [
+                            hotspot.representative_position[0] as f32,
+                            hotspot.representative_position[1] as f32,
+                            hotspot.representative_position[2] as f32,
+                        ],
+                        aspect,
+                        viewport_rect.width(),
+                        viewport_rect.height(),
+                    )?;
+                    Some((
+                        egui::pos2(
+                            viewport_rect.min.x + screen[0],
+                            viewport_rect.min.y + screen[1],
+                        ),
+                        toolpath_id,
+                        hotspot_index,
+                        global_move,
+                        hotspot.wasted_runtime_s,
+                    ))
+                })
+                .take(24)
+                .collect::<Vec<_>>()
+        };
+
+        let mut clicked: Option<(crate::state::toolpath::ToolpathId, usize, usize)> = None;
+        for (screen_pos, toolpath_id, hotspot_index, global_move, wasted_runtime_s) in pins {
+            if !viewport_rect.contains(screen_pos) {
+                continue;
+            }
+            let radius = 6.0;
+            let rect =
+                egui::Rect::from_center_size(screen_pos, egui::vec2(radius * 2.0, radius * 2.0));
+            let id = ui
+                .id()
+                .with(("sim_hotspot_pin", toolpath_id.0, hotspot_index));
+            let response = ui.interact(rect, id, egui::Sense::click());
+            let fill = if response.hovered() {
+                egui::Color32::from_rgb(255, 220, 90)
+            } else {
+                egui::Color32::from_rgb(255, 145, 70)
+            };
+            ui.painter().circle_filled(screen_pos, radius, fill);
+            ui.painter().circle_stroke(
+                screen_pos,
+                radius + 1.0,
+                egui::Stroke::new(1.0, egui::Color32::BLACK),
+            );
+            response.clone().on_hover_text(format!(
+                "Runtime hotspot #{}, wasted {:.2}s — click to inspect",
+                hotspot_index + 1,
+                wasted_runtime_s
+            ));
+            if response.clicked() {
+                clicked = Some((toolpath_id, hotspot_index, global_move));
+            }
+        }
+
+        if let Some((toolpath_id, hotspot_index, global_move)) = clicked {
+            let state = self.controller.state_mut();
+            state.simulation.debug.focused_hotspot = Some((toolpath_id, hotspot_index));
+            state.simulation.debug.focused_issue_index = None;
+            state.simulation.playback.current_move = global_move;
+            state.simulation.playback.playing = false;
+            self.pending_checkpoint_load = true;
         }
     }
 
