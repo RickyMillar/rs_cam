@@ -85,6 +85,8 @@ pub struct FaceConfig {
     pub plunge_rate: f64,
     pub stock_offset: f64,
     pub direction: FaceDirection,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for FaceConfig {
@@ -97,7 +99,8 @@ impl Default for FaceConfig {
             plunge_rate: 500.0,
             stock_offset: 5.0,
             direction: FaceDirection::Zigzag,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -108,6 +111,8 @@ pub struct TraceConfig {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub compensation: TraceCompensation,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for TraceConfig {
@@ -118,7 +123,8 @@ impl Default for TraceConfig {
             feed_rate: 800.0,
             plunge_rate: 400.0,
             compensation: TraceCompensation::None,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -131,6 +137,8 @@ pub struct DrillConfig {
     pub retract_amount: f64,
     pub feed_rate: f64,
     pub retract_z: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for DrillConfig {
@@ -143,7 +151,8 @@ impl Default for DrillConfig {
             retract_amount: 0.5,
             feed_rate: 300.0,
             retract_z: 2.0,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -158,6 +167,8 @@ pub struct AlignmentPinDrillConfig {
     pub peck_depth: f64,
     pub feed_rate: f64,
     pub retract_z: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for AlignmentPinDrillConfig {
@@ -169,7 +180,8 @@ impl Default for AlignmentPinDrillConfig {
             peck_depth: 3.0,
             feed_rate: 300.0,
             retract_z: 2.0,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -179,6 +191,8 @@ pub struct ChamferConfig {
     pub tip_offset: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for ChamferConfig {
@@ -188,7 +202,8 @@ impl Default for ChamferConfig {
             tip_offset: 0.1,
             feed_rate: 800.0,
             plunge_rate: 400.0,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -203,6 +218,8 @@ pub struct PocketConfig {
     pub pattern: PocketPattern,
     pub angle: f64,
     pub finishing_passes: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for PocketConfig {
@@ -217,7 +234,8 @@ impl Default for PocketConfig {
             pattern: PocketPattern::Contour,
             angle: 0.0,
             finishing_passes: 0,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -234,6 +252,8 @@ pub struct ProfileConfig {
     pub tab_height: f64,
     pub finishing_passes: usize,
     pub compensation: CompensationType,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for ProfileConfig {
@@ -250,7 +270,8 @@ impl Default for ProfileConfig {
             tab_height: 2.0,
             finishing_passes: 0,
             compensation: CompensationType::InComputer,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -264,6 +285,8 @@ pub struct AdaptiveConfig {
     pub tolerance: f64,
     pub slot_clearing: bool,
     pub min_cutting_radius: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for AdaptiveConfig {
@@ -277,7 +300,8 @@ impl Default for AdaptiveConfig {
             tolerance: 0.1,
             slot_clearing: true,
             min_cutting_radius: 0.0,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -288,6 +312,8 @@ pub struct VCarveConfig {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub tolerance: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for VCarveConfig {
@@ -298,7 +324,8 @@ impl Default for VCarveConfig {
             feed_rate: 800.0,
             plunge_rate: 400.0,
             tolerance: 0.05,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -311,6 +338,8 @@ pub struct RestConfig {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub angle: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for RestConfig {
@@ -323,7 +352,8 @@ impl Default for RestConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             angle: 0.0,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -338,6 +368,8 @@ pub struct InlayConfig {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub tolerance: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for InlayConfig {
@@ -352,7 +384,8 @@ impl Default for InlayConfig {
             feed_rate: 800.0,
             plunge_rate: 400.0,
             tolerance: 0.05,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -364,6 +397,8 @@ pub struct ZigzagConfig {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub angle: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for ZigzagConfig {
@@ -375,7 +410,8 @@ impl Default for ZigzagConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             angle: 0.0,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -387,6 +423,8 @@ pub struct DropCutterConfig {
     pub min_z: f64,
     pub slope_from: f64,
     pub slope_to: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for DropCutterConfig {
@@ -398,7 +436,8 @@ impl Default for DropCutterConfig {
             min_z: -50.0,
             slope_from: 0.0,
             slope_to: 90.0,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -431,6 +470,8 @@ pub struct Adaptive3dConfig {
     pub clearing_strategy: ClearingStrategy,
     #[serde(default)]
     pub z_blend: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for Adaptive3dConfig {
@@ -453,7 +494,8 @@ impl Default for Adaptive3dConfig {
             region_ordering: RegionOrdering::Global,
             clearing_strategy: ClearingStrategy::ContourParallel,
             z_blend: false,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -480,6 +522,8 @@ pub struct WaterlineConfig {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub continuous: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for WaterlineConfig {
@@ -490,7 +534,8 @@ impl Default for WaterlineConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             continuous: false,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -505,6 +550,8 @@ pub struct PencilConfig {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub stock_to_leave: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for PencilConfig {
@@ -519,7 +566,8 @@ impl Default for PencilConfig {
             feed_rate: 800.0,
             plunge_rate: 400.0,
             stock_to_leave: 0.0,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -534,6 +582,8 @@ pub struct ScallopConfig {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub stock_to_leave: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for ScallopConfig {
@@ -548,7 +598,8 @@ impl Default for ScallopConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             stock_to_leave: 0.0,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -565,6 +616,8 @@ pub struct SteepShallowConfig {
     pub sampling: f64,
     pub stock_to_leave: f64,
     pub tolerance: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for SteepShallowConfig {
@@ -581,7 +634,8 @@ impl Default for SteepShallowConfig {
             sampling: 0.5,
             stock_to_leave: 0.0,
             tolerance: 0.05,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -597,6 +651,8 @@ pub struct RampFinishConfig {
     pub sampling: f64,
     pub stock_to_leave: f64,
     pub tolerance: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for RampFinishConfig {
@@ -612,7 +668,8 @@ impl Default for RampFinishConfig {
             sampling: 0.5,
             stock_to_leave: 0.0,
             tolerance: 0.05,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -623,6 +680,8 @@ pub struct SpiralFinishConfig {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub stock_to_leave: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for SpiralFinishConfig {
@@ -633,7 +692,8 @@ impl Default for SpiralFinishConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             stock_to_leave: 0.0,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -644,6 +704,8 @@ pub struct RadialFinishConfig {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub stock_to_leave: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for RadialFinishConfig {
@@ -654,7 +716,8 @@ impl Default for RadialFinishConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             stock_to_leave: 0.0,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -665,6 +728,8 @@ pub struct HorizontalFinishConfig {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub stock_to_leave: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for HorizontalFinishConfig {
@@ -675,7 +740,8 @@ impl Default for HorizontalFinishConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             stock_to_leave: 0.0,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -742,6 +808,8 @@ pub struct ProjectCurveConfig {
     /// by a bottom-facing setup transform. Not persisted.
     #[serde(skip)]
     pub setup_z_flipped: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
 }
 
 impl Default for ProjectCurveConfig {
@@ -755,7 +823,8 @@ impl Default for ProjectCurveConfig {
             direction: ProjectCurveDirection::FromAbove,
             side: ProjectCurveSide::Center,
             setup_z_flipped: false,
-        }
+                    spindle_rpm: None,
+}
     }
 }
 
@@ -791,6 +860,12 @@ impl OperationParams for FaceConfig {
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
     }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
+    }
 }
 
 impl OperationParams for PocketConfig {
@@ -821,6 +896,12 @@ impl OperationParams for PocketConfig {
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
     }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
+    }
 }
 
 impl OperationParams for ProfileConfig {
@@ -844,6 +925,12 @@ impl OperationParams for ProfileConfig {
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
+    }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
     }
 }
 
@@ -875,6 +962,12 @@ impl OperationParams for AdaptiveConfig {
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
     }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
+    }
 }
 
 impl OperationParams for VCarveConfig {
@@ -898,6 +991,12 @@ impl OperationParams for VCarveConfig {
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.max_depth)
+    }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
     }
 }
 
@@ -929,6 +1028,12 @@ impl OperationParams for RestConfig {
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
     }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
+    }
 }
 
 impl OperationParams for InlayConfig {
@@ -952,6 +1057,12 @@ impl OperationParams for InlayConfig {
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.pocket_depth)
+    }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
     }
 }
 
@@ -983,6 +1094,12 @@ impl OperationParams for ZigzagConfig {
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
     }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
+    }
 }
 
 impl OperationParams for TraceConfig {
@@ -1007,6 +1124,12 @@ impl OperationParams for TraceConfig {
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
     }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
+    }
 }
 
 impl OperationParams for DrillConfig {
@@ -1023,6 +1146,12 @@ impl OperationParams for DrillConfig {
     fn set_plunge_rate(&mut self, _value: f64) {}
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
+    }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
     }
 }
 
@@ -1041,6 +1170,12 @@ impl OperationParams for AlignmentPinDrillConfig {
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.spoilboard_penetration)
     }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
+    }
 }
 
 impl OperationParams for ChamferConfig {
@@ -1058,6 +1193,12 @@ impl OperationParams for ChamferConfig {
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.chamfer_width)
+    }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
     }
 }
 
@@ -1082,6 +1223,12 @@ impl OperationParams for DropCutterConfig {
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::DerivedStockTop(self.min_z.abs())
+    }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
     }
 }
 
@@ -1113,6 +1260,12 @@ impl OperationParams for Adaptive3dConfig {
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
     }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
+    }
 }
 
 impl OperationParams for WaterlineConfig {
@@ -1130,6 +1283,12 @@ impl OperationParams for WaterlineConfig {
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
+    }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
     }
 }
 
@@ -1149,6 +1308,12 @@ impl OperationParams for PencilConfig {
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
     }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
+    }
 }
 
 impl OperationParams for ScallopConfig {
@@ -1166,6 +1331,12 @@ impl OperationParams for ScallopConfig {
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
+    }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
     }
 }
 
@@ -1191,6 +1362,12 @@ impl OperationParams for SteepShallowConfig {
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
     }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
+    }
 }
 
 impl OperationParams for RampFinishConfig {
@@ -1208,6 +1385,12 @@ impl OperationParams for RampFinishConfig {
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
+    }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
     }
 }
 
@@ -1233,6 +1416,12 @@ impl OperationParams for SpiralFinishConfig {
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
     }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
+    }
 }
 
 impl OperationParams for RadialFinishConfig {
@@ -1250,6 +1439,12 @@ impl OperationParams for RadialFinishConfig {
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
+    }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
     }
 }
 
@@ -1275,6 +1470,12 @@ impl OperationParams for HorizontalFinishConfig {
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
     }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
+    }
 }
 
 impl OperationParams for ProjectCurveConfig {
@@ -1292,6 +1493,12 @@ impl OperationParams for ProjectCurveConfig {
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
+    }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
     }
 }
 

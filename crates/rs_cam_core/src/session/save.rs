@@ -443,4 +443,72 @@ mod tests {
         assert!(matches!(loaded.list_setups()[1].face_up, FaceUp::Bottom));
         cleanup(&path);
     }
+
+    /// A toolpath without a spindle_rpm override saves WITHOUT the
+    /// `spindle_rpm` key (skip_serializing_if = "Option::is_none") and
+    /// loads back as `None`. Old project files (which never had the
+    /// field) therefore round-trip unchanged via #[serde(default)].
+    #[test]
+    fn toolpath_without_spindle_rpm_round_trip() {
+        let mut s = ProjectSession::new_empty();
+        s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+        let tool_id = s.tools()[0].id.0;
+
+        let tc = make_tc(tool_id, 0);
+        // sanity: default PocketConfig has no override
+        assert!(matches!(
+            &tc.operation,
+            OperationConfig::Pocket(p) if p.spindle_rpm.is_none()
+        ));
+        s.add_toolpath(0, tc).unwrap();
+
+        let path = temp_path("spindle_rpm_unset");
+        s.save(&path).unwrap();
+
+        // The serialized TOML should not mention spindle_rpm at all.
+        let serialized = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !serialized.contains("spindle_rpm"),
+            "TOML for a default operation must not include spindle_rpm; got:\n{serialized}"
+        );
+
+        let loaded = ProjectSession::load(&path).unwrap();
+        assert_eq!(loaded.toolpath_count(), 1);
+        let op = &loaded.toolpath_configs()[0].operation;
+        assert_eq!(op.spindle_rpm(), None);
+        cleanup(&path);
+    }
+
+    /// A toolpath with `spindle_rpm = Some(12000)` serializes the field
+    /// and loads back to the same value.
+    #[test]
+    fn toolpath_with_spindle_rpm_round_trip() {
+        let mut s = ProjectSession::new_empty();
+        s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+        let tool_id = s.tools()[0].id.0;
+
+        let mut tc = make_tc(tool_id, 0);
+        if let OperationConfig::Pocket(p) = &mut tc.operation {
+            p.spindle_rpm = Some(12_000);
+        }
+        s.add_toolpath(0, tc).unwrap();
+
+        let path = temp_path("spindle_rpm_set");
+        s.save(&path).unwrap();
+
+        let serialized = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            serialized.contains("spindle_rpm"),
+            "TOML must include spindle_rpm when override is set; got:\n{serialized}"
+        );
+        assert!(
+            serialized.contains("12000"),
+            "TOML must contain the override value; got:\n{serialized}"
+        );
+
+        let loaded = ProjectSession::load(&path).unwrap();
+        let op = &loaded.toolpath_configs()[0].operation;
+        assert_eq!(op.spindle_rpm(), Some(12_000));
+        cleanup(&path);
+    }
 }
