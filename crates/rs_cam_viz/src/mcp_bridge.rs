@@ -37,6 +37,7 @@ pub enum McpRequestKind {
     },
     GetDiagnostics,
     GetToolLoadReport,
+    SuggestFeedsSpeeds,
     GetCutTrace {
         toolpath_id: Option<usize>,
         max_hotspots: Option<usize>,

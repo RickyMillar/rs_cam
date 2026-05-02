@@ -214,6 +214,10 @@ impl super::RsCamApp {
                 let resp = self.mcp_get_tool_load_report();
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::SuggestFeedsSpeeds => {
+                let resp = self.mcp_suggest_feeds_speeds();
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::SetToolpathParam {
                 index,
                 param,
@@ -1509,6 +1513,23 @@ impl super::RsCamApp {
             Ok(v) => json_str(v),
             Err(e) => json_str(serde_json::json!({
                 "error": format!("Failed to serialize tool load report: {e}")
+            })),
+        }
+    }
+
+    fn mcp_suggest_feeds_speeds(&self) -> String {
+        let state = self.controller.state();
+        let sim_trace = state
+            .simulation
+            .results
+            .as_ref()
+            .and_then(|r| r.cut_trace.as_deref());
+        let suggestions =
+            rs_cam_core::tool_load::suggest::project_suggestions(&state.session, sim_trace);
+        match serde_json::to_value(&suggestions) {
+            Ok(v) => json_str(v),
+            Err(e) => json_str(serde_json::json!({
+                "error": format!("Failed to serialize feed suggestions: {e}")
             })),
         }
     }

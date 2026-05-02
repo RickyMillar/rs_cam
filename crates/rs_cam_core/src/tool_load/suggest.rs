@@ -463,6 +463,60 @@ struct BestPick {
     power_cap_kw: Option<f64>,
 }
 
+/// Walk every enabled toolpath in a project and produce a suggestion
+/// per toolpath. Mirrors `gcode::project_load_report`'s structure so
+/// the embedded GUI MCP and the standalone MCP can share a single
+/// entry point that takes the sim trace explicitly (the GUI holds
+/// the trace in viz simulation state, not in `session.simulation`).
+pub fn project_suggestions(
+    project: &crate::session::ProjectSession,
+    sim_trace: Option<&SimulationCutTrace>,
+) -> Vec<FeedSuggestion> {
+    use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
+    use crate::feeds::{OperationFamily, PassRole};
+
+    let material = &project.stock_config().material;
+    let machine = project.machine();
+    let mut out = Vec::new();
+    for tc in project.toolpath_configs() {
+        if !tc.enabled {
+            continue;
+        }
+        let Some(tool_cfg) = project.get_tool(crate::compute::tool_config::ToolId(tc.tool_id))
+        else {
+            continue;
+        };
+        let tool = crate::compute::cutter::build_cutter(tool_cfg);
+        let spec = tc.operation.spec();
+        let lut_op = match spec.feeds_family {
+            OperationFamily::Adaptive => LutOperationFamily::Adaptive,
+            OperationFamily::Pocket => LutOperationFamily::Pocket,
+            OperationFamily::Contour => LutOperationFamily::Contour,
+            OperationFamily::Parallel => LutOperationFamily::Parallel,
+            OperationFamily::Scallop => LutOperationFamily::Scallop,
+            OperationFamily::Trace => LutOperationFamily::Trace,
+            OperationFamily::Face => LutOperationFamily::Face,
+        };
+        let lut_pass = match spec.feeds_pass_role {
+            PassRole::Roughing => LutPassRole::Roughing,
+            PassRole::SemiFinish => LutPassRole::SemiFinish,
+            PassRole::Finish => LutPassRole::Finish,
+        };
+        let ctx = SuggestContext {
+            toolpath_id: tc.id,
+            tool: &tool,
+            material,
+            machine,
+            operation_family: lut_op,
+            pass_role: lut_pass,
+            operation_kind: tc.operation.op_type(),
+            current_feed_mm_min: tc.operation.feed_rate(),
+        };
+        out.push(evaluate(&ctx, sim_trace));
+    }
+    out
+}
+
 enum RowOutcome {
     Feasible {
         rpm: f64,
