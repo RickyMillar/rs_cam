@@ -1,5 +1,5 @@
 use super::AppEvent;
-use super::sim_debug::{draw_trace_badge, semantic_kind_color, semantic_kind_label};
+use super::sim_debug::{semantic_kind_color, semantic_kind_label};
 use crate::render::toolpath_render::palette_color;
 use crate::state::job::SetupId;
 use crate::state::runtime::GuiState;
@@ -9,7 +9,7 @@ use crate::state::viewport::ViewportState;
 use crate::ui::theme;
 use rs_cam_core::session::ProjectSession;
 
-/// Left panel in simulation workspace: operation list with checkboxes, progress bars, and jump buttons.
+/// Left panel in simulation workspace: slim operation list with visibility and jump controls.
 pub fn draw(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
@@ -186,34 +186,13 @@ pub fn draw(
                     name_text
                 };
                 ui.label(name_text);
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    draw_trace_badge(
-                        ui,
-                        SimulationState::trace_availability_for_toolpath(gui, boundary.id),
-                    );
-                });
             });
 
-            // Tool name + time estimate on same row
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(&boundary.tool_name)
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                );
-
-                // Estimated time from job toolpaths
-                if let Some(est) = estimate_op_time(session, gui, boundary.id) {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(
-                            egui::RichText::new(est)
-                                .small()
-                                .color(egui::Color32::from_rgb(100, 140, 100)),
-                        );
-                    });
-                }
-            });
+            ui.label(
+                egui::RichText::new(&boundary.tool_name)
+                    .small()
+                    .color(theme::TEXT_MUTED),
+            );
 
             // Per-toolpath visibility controls: eye / cut / rapid / isolate.
             // Shared with the Toolpaths-workspace panel for a consistent row.
@@ -231,58 +210,16 @@ pub fn draw(
                 );
             });
 
-            // Progress bar
-            let op_moves = boundary.end_move.saturating_sub(boundary.start_move);
-            let progress = if op_moves == 0 {
-                0.0
-            } else if sim.playback.current_move >= boundary.end_move {
-                1.0
-            } else if sim.playback.current_move <= boundary.start_move {
-                0.0
-            } else {
-                (sim.playback.current_move - boundary.start_move) as f32 / op_moves as f32
-            };
-
-            let bar_height = 4.0;
-            let bar_width = ui.available_width();
-            let (bar_rect, _) =
-                ui.allocate_exact_size(egui::vec2(bar_width, bar_height), egui::Sense::hover());
-            let dim_color = egui::Color32::from_rgb(
-                (pc[0] * 60.0) as u8,
-                (pc[1] * 60.0) as u8,
-                (pc[2] * 60.0) as u8,
-            );
-            ui.painter().rect_filled(bar_rect, 2.0, dim_color);
-            let filled = egui::Rect::from_min_size(
-                bar_rect.min,
-                egui::vec2(bar_width * progress, bar_height),
-            );
-            ui.painter().rect_filled(filled, 2.0, color);
-
-            // Jump buttons + move info
             ui.horizontal(|ui| {
                 if ui
-                    .small_button("|◄")
+                    .small_button("Jump start")
                     .on_hover_text("Jump to op start")
                     .clicked()
                 {
                     events.push(AppEvent::SimJumpToOpStart(i));
                 }
-                let move_info = format!(
-                    "{} / {}",
-                    sim.playback
-                        .current_move
-                        .saturating_sub(boundary.start_move)
-                        .min(op_moves),
-                    op_moves,
-                );
-                ui.label(
-                    egui::RichText::new(move_info)
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                );
                 if ui
-                    .small_button("►|")
+                    .small_button("Jump end")
                     .on_hover_text("Jump to op end")
                     .clicked()
                 {
@@ -477,16 +414,4 @@ pub fn draw(
             }
         }
     }
-}
-
-/// Estimate operation time as a formatted string.
-fn estimate_op_time(session: &ProjectSession, gui: &GuiState, tp_id: ToolpathId) -> Option<String> {
-    let rt = gui.toolpath_rt.get(&tp_id.0)?;
-    let result = rt.result.as_ref()?;
-    let (_, tc) = session.find_toolpath_config_by_id(tp_id.0)?;
-    let feed = tc.operation.feed_rate();
-    let est_secs = (result.stats.cutting_distance / feed) * 60.0;
-    let est_min = (est_secs / 60.0).floor() as u32;
-    let est_sec = (est_secs % 60.0) as u32;
-    Some(format!("~{}:{:02}", est_min, est_sec))
 }
