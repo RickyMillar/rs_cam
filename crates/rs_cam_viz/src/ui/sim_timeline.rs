@@ -241,9 +241,47 @@ fn draw_signal_spine(
         );
         return;
     };
-    let cutting: Vec<&SimulationCutSample> =
-        trace.samples.iter().filter(|s| s.is_cutting).collect();
-    if cutting.is_empty() {
+    let total_moves = sim.total_moves();
+    if total_moves == 0 {
+        return;
+    }
+
+    // Group cutting samples by toolpath and convert their X coordinate to the
+    // global move index that the boundary timeline uses. Each toolpath becomes
+    // its own Line so transitions between toolpaths render as visible gaps.
+    let boundaries: Vec<(crate::state::toolpath::ToolpathId, usize, egui::Color32)> = sim
+        .boundaries()
+        .iter()
+        .enumerate()
+        .map(|(i, b)| {
+            let pc = palette_color(i);
+            let color = egui::Color32::from_rgb(
+                (pc[0] * 255.0) as u8,
+                (pc[1] * 255.0) as u8,
+                (pc[2] * 255.0) as u8,
+            );
+            (b.id, b.start_move, color)
+        })
+        .collect();
+
+    let mut groups: Vec<ToolpathGroup> = boundaries
+        .iter()
+        .map(|(id, start, color)| ToolpathGroup {
+            toolpath_id: *id,
+            start_move: *start,
+            color: *color,
+            samples: Vec::new(),
+        })
+        .collect();
+    for sample in trace.samples.iter().filter(|s| s.is_cutting) {
+        if let Some(group) = groups
+            .iter_mut()
+            .find(|g| g.toolpath_id.0 == sample.toolpath_id)
+        {
+            group.samples.push(sample);
+        }
+    }
+    if groups.iter().all(|g| g.samples.is_empty()) {
         ui.label(
             egui::RichText::new("No cutting samples captured.")
                 .small()
@@ -253,22 +291,16 @@ fn draw_signal_spine(
     }
 
     ui.add_space(4.0);
-    let active_time = sim
-        .current_cut_sample()
-        .map(|sample| sample.sample.cumulative_time_s);
+    let active_x = Some(sim.playback.current_move as f64);
     let envelope = sim
         .current_boundary()
         .and_then(|b| chipload_envelope_for_toolpath(session, Some(trace), b.id));
 
-    // Build hotspot markers once per frame: time, index in trace.hotspots,
-    // and the global move to scrub to on click. Dots render on every track
-    // and clicking near one focuses the hotspot in the Inspector.
     let hotspots: Vec<HotspotMarker> = trace
         .hotspots
         .iter()
         .enumerate()
         .filter_map(|(idx, hs)| {
-            let sample = trace.samples.get(hs.sample_index_start)?;
             let global_move = sim
                 .global_move_for_local(
                     crate::state::toolpath::ToolpathId(hs.toolpath_id),
@@ -276,19 +308,16 @@ fn draw_signal_spine(
                 )
                 .unwrap_or(hs.move_start);
             Some(HotspotMarker {
-                time: sample.cumulative_time_s,
                 index: idx,
                 global_move,
             })
         })
         .collect();
 
-    // Linked crosshair: read last frame's hovered time for display, accumulate
-    // this frame's pointer into a fresh local, then write back at the end.
-    // One-frame lag is intentional and imperceptible.
-    let display_time = sim.hovered_time_s;
+    let display_x = sim.hovered_x;
     let mut new_hovered: Option<f64> = None;
     let mut clicked_hotspot: Option<(usize, usize)> = None;
+    let total_moves_f = total_moves as f64;
 
     let tracks: [(&str, fn(&SimulationCutSample) -> Option<f64>, egui::Color32, Option<(f64, f64)>); 5] = [
         (
@@ -327,21 +356,21 @@ fn draw_signal_spine(
         draw_signal_track(
             ui,
             label,
-            &cutting,
+            &groups,
             value_fn,
             color,
-            active_time,
-            display_time,
+            active_x,
+            display_x,
             &mut new_hovered,
             env,
             &hotspots,
+            total_moves_f,
             &mut clicked_hotspot,
-            sim,
             events,
         );
     }
 
-    sim.hovered_time_s = new_hovered;
+    sim.hovered_x = new_hovered;
     if let Some((hotspot_index, global_move)) = clicked_hotspot {
         if let Some(hs) = trace.hotspots.get(hotspot_index) {
             sim.debug.focused_hotspot = Some((
@@ -353,9 +382,15 @@ fn draw_signal_spine(
     }
 }
 
+struct ToolpathGroup<'a> {
+    toolpath_id: crate::state::toolpath::ToolpathId,
+    start_move: usize,
+    color: egui::Color32,
+    samples: Vec<&'a SimulationCutSample>,
+}
+
 #[derive(Clone, Copy)]
 struct HotspotMarker {
-    time: f64,
     index: usize,
     global_move: usize,
 }
@@ -366,103 +401,124 @@ const SIGNAL_MAX_POINTS: usize = 1600;
 fn draw_signal_track(
     ui: &mut egui::Ui,
     label: &str,
-    samples: &[&SimulationCutSample],
+    groups: &[ToolpathGroup<'_>],
     value_fn: impl Fn(&SimulationCutSample) -> Option<f64>,
     color: egui::Color32,
-    active_time: Option<f64>,
-    display_time: Option<f64>,
+    active_x: Option<f64>,
+    display_x: Option<f64>,
     new_hovered: &mut Option<f64>,
     envelope: Option<(f64, f64)>,
     hotspots: &[HotspotMarker],
+    total_moves: f64,
     clicked_hotspot: &mut Option<(usize, usize)>,
-    sim: &SimulationState,
     events: &mut Vec<AppEvent>,
 ) {
-    let mut point_samples: Vec<(&SimulationCutSample, [f64; 2])> = samples
+    // Build per-toolpath point lists in global-move space, decimating each
+    // independently so the global cap applies fairly across toolpaths.
+    let per_group_cap = (SIGNAL_MAX_POINTS / groups.len().max(1)).max(64);
+    let group_points: Vec<(egui::Color32, Vec<(usize, [f64; 2])>)> = groups
         .iter()
-        .filter_map(|sample| value_fn(sample).map(|y| (*sample, [sample.cumulative_time_s, y])))
+        .filter_map(|group| {
+            let mut pts: Vec<(usize, [f64; 2])> = group
+                .samples
+                .iter()
+                .filter_map(|s| {
+                    let global_move = group.start_move + s.move_index;
+                    value_fn(s).map(|y| (global_move, [global_move as f64, y]))
+                })
+                .collect();
+            if pts.is_empty() {
+                return None;
+            }
+            if pts.len() > per_group_cap {
+                let stride = pts.len().div_ceil(per_group_cap);
+                pts = pts
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(i, p)| (i % stride == 0).then_some(p))
+                    .collect();
+            }
+            Some((group.color, pts))
+        })
         .collect();
-    if point_samples.is_empty() {
+    if group_points.is_empty() {
         return;
     }
-    if point_samples.len() > SIGNAL_MAX_POINTS {
-        let stride = point_samples.len().div_ceil(SIGNAL_MAX_POINTS);
-        point_samples = point_samples
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, point)| (i % stride == 0).then_some(point))
-            .collect();
-    }
-    let points: Vec<[f64; 2]> = point_samples.iter().map(|(_, point)| *point).collect();
-    let min_y = points.iter().map(|p| p[1]).fold(f64::INFINITY, f64::min);
-    let max_y = points
+
+    let min_y = group_points
         .iter()
-        .map(|p| p[1])
+        .flat_map(|(_, pts)| pts.iter().map(|(_, p)| p[1]))
+        .fold(f64::INFINITY, f64::min);
+    let max_y = group_points
+        .iter()
+        .flat_map(|(_, pts)| pts.iter().map(|(_, p)| p[1]))
         .fold(f64::NEG_INFINITY, f64::max);
-    let x_min = points
-        .first()
-        .map(|p| p[0])
-        .unwrap_or(0.0);
-    let x_max = points
-        .last()
-        .map(|p| p[0])
-        .unwrap_or(x_min);
 
     let response = Plot::new(format!("signal_track_{label}"))
         .height(46.0)
-        .allow_zoom([true, false])
-        .allow_drag([true, false])
+        // Lock zoom/drag so the X axis stays glued to the boundary timeline above.
+        .allow_zoom([false, false])
+        .allow_drag([false, false])
+        .allow_scroll([false, false])
+        .allow_boxed_zoom(false)
         .show_axes([false, false])
+        .show_grid([false, false])
+        .include_x(0.0)
+        .include_x(total_moves)
         .show(ui, |plot_ui| {
-            plot_ui.line(Line::new(PlotPoints::from(points)).name(label).color(color));
+            // One Line per toolpath. Each line is drawn in the metric's color
+            // but with a subtle background tint at the start using the toolpath
+            // palette would clutter; instead the gap between lines visually
+            // separates toolpaths, and the X position lines up with the
+            // boundary timeline segment above.
+            for (_tp_color, pts) in &group_points {
+                let xy: Vec<[f64; 2]> = pts.iter().map(|(_, p)| *p).collect();
+                plot_ui.line(Line::new(PlotPoints::from(xy)).name(label).color(color));
+            }
 
             if let Some((cl_min, cl_max)) = envelope {
                 let band_color = egui::Color32::from_rgb(220, 90, 90);
                 plot_ui.line(
-                    Line::new(PlotPoints::from(vec![[x_min, cl_min], [x_max, cl_min]]))
+                    Line::new(PlotPoints::from(vec![[0.0, cl_min], [total_moves, cl_min]]))
                         .color(band_color)
                         .style(egui_plot::LineStyle::Dashed { length: 6.0 })
                         .name("cl_min"),
                 );
                 plot_ui.line(
-                    Line::new(PlotPoints::from(vec![[x_min, cl_max], [x_max, cl_max]]))
+                    Line::new(PlotPoints::from(vec![[0.0, cl_max], [total_moves, cl_max]]))
                         .color(band_color)
                         .style(egui_plot::LineStyle::Dashed { length: 6.0 })
                         .name("cl_max"),
                 );
             }
 
-            if let Some(t) = active_time {
+            if let Some(x) = active_x {
                 plot_ui.line(
-                    Line::new(PlotPoints::from(vec![[t, min_y], [t, max_y]]))
+                    Line::new(PlotPoints::from(vec![[x, min_y], [x, max_y]]))
                         .color(egui::Color32::from_rgb(245, 245, 245))
                         .name("playback"),
                 );
             }
 
-            // Linked hover crosshair from last frame — every track shows it
-            // at the same time, regardless of which track the pointer is over.
-            if let Some(t) = display_time {
+            if let Some(x) = display_x {
                 plot_ui.line(
-                    Line::new(PlotPoints::from(vec![[t, min_y], [t, max_y]]))
+                    Line::new(PlotPoints::from(vec![[x, min_y], [x, max_y]]))
                         .color(egui::Color32::from_rgb(200, 240, 100))
                         .style(egui_plot::LineStyle::Dashed { length: 4.0 }),
                 );
-                if let Some((_, point)) = nearest_point_to_time(t, &point_samples) {
+                if let Some((_, point)) = nearest_in_groups(x, &group_points) {
                     plot_ui.text(egui_plot::Text::new(
                         egui_plot::PlotPoint::new(point[0], point[1]),
-                        format!("{label}: {:.3} @ {:.2}s", point[1], point[0]),
+                        format!("{label}: {:.3} @ move {}", point[1], point[0] as usize),
                     ));
                 }
             }
 
-            // Hotspot dots: position each at the y-value of the nearest data
-            // point on this track so the dot sits visually on the line.
             if !hotspots.is_empty() {
                 let hotspot_pts: Vec<[f64; 2]> = hotspots
                     .iter()
                     .filter_map(|hs| {
-                        nearest_point_to_time(hs.time, &point_samples).map(|(_, pt)| pt)
+                        nearest_in_groups(hs.global_move as f64, &group_points).map(|(_, pt)| pt)
                     })
                     .collect();
                 if !hotspot_pts.is_empty() {
@@ -478,42 +534,43 @@ fn draw_signal_track(
             if let Some(pointer) = plot_ui.pointer_coordinate() {
                 *new_hovered = Some(pointer.x);
                 if plot_ui.response().clicked() {
-                    // Prefer hotspot click when the pointer is within tolerance
-                    // (5% of the visible x range, or 0.25s, whichever is larger).
-                    let tolerance = ((x_max - x_min).abs() * 0.05).max(0.25);
+                    // Tolerance is in moves, scaled to total range so behavior
+                    // is consistent across short and long projects.
+                    let tolerance = (total_moves * 0.02).max(5.0);
                     let nearest_hotspot = hotspots.iter().min_by(|a, b| {
-                        (a.time - pointer.x)
+                        (a.global_move as f64 - pointer.x)
                             .abs()
-                            .total_cmp(&(b.time - pointer.x).abs())
+                            .total_cmp(&(b.global_move as f64 - pointer.x).abs())
                     });
                     if let Some(hs) = nearest_hotspot
-                        && (hs.time - pointer.x).abs() <= tolerance
+                        && (hs.global_move as f64 - pointer.x).abs() <= tolerance
                     {
                         *clicked_hotspot = Some((hs.index, hs.global_move));
-                    } else if let Some((sample, _)) =
-                        nearest_point_to_time(pointer.x, &point_samples)
-                        && let Some(global_move) = sim.global_move_for_local(
-                            crate::state::toolpath::ToolpathId(sample.toolpath_id),
-                            sample.move_index,
-                        )
-                    {
+                    } else if let Some((global_move, _)) = nearest_in_groups(pointer.x, &group_points) {
                         events.push(AppEvent::SimJumpToMove(global_move));
                     }
                 }
             }
         });
-    response
-        .response
-        .on_hover_text("Hover any track to read all five at the same time. Click to scrub.");
+    response.response.on_hover_text(
+        "Hover any track to read all five at the same X. Click to scrub. Each toolpath renders as its own line segment.",
+    );
 }
 
-fn nearest_point_to_time<'a>(
-    t: f64,
-    point_samples: &'a [(&'a SimulationCutSample, [f64; 2])],
-) -> Option<(&'a SimulationCutSample, [f64; 2])> {
-    point_samples
+/// Find the global-move sample (across all toolpath groups) whose X is
+/// closest to the target. Returns `(global_move, [x, y])`.
+fn nearest_in_groups(
+    target_x: f64,
+    group_points: &[(egui::Color32, Vec<(usize, [f64; 2])>)],
+) -> Option<(usize, [f64; 2])> {
+    group_points
         .iter()
-        .min_by(|left, right| (left.1[0] - t).abs().total_cmp(&(right.1[0] - t).abs()))
+        .flat_map(|(_, pts)| pts.iter())
+        .min_by(|a, b| {
+            (a.1[0] - target_x)
+                .abs()
+                .total_cmp(&(b.1[0] - target_x).abs())
+        })
         .copied()
 }
 

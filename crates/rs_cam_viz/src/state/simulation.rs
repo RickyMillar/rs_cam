@@ -298,12 +298,12 @@ pub struct SimulationState {
     pub saved_viewport: SavedViewportState,
     /// Runtime-only debugger state and semantic lookup cache.
     pub debug: SimulationDebugState,
-    /// Cumulative time (s) under the cursor in the bottom signal spine.
-    /// Set when the user hovers any signal track; consumed by every other
-    /// track so they all show a vertical crosshair at the same time.
-    /// One frame of lag is intentional: tracks read this on the same frame
-    /// they may overwrite it, so the value reflects last frame's pointer.
-    pub hovered_time_s: Option<f64>,
+    /// Global move index (as f64 for sub-move pointer precision) under the
+    /// cursor in the bottom signal spine. Set when the user hovers any signal
+    /// track; consumed by every other track so they all show a vertical
+    /// crosshair at the same X. One frame of lag is intentional: tracks read
+    /// this on the same frame they may overwrite it.
+    pub hovered_x: Option<f64>,
 }
 
 impl SimulationState {
@@ -352,7 +352,7 @@ impl SimulationState {
                 semantic_indexes: HashMap::new(),
                 runtime_profiles: HashMap::new(),
             },
-            hovered_time_s: None,
+            hovered_x: None,
         }
     }
 
