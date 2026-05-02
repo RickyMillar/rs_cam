@@ -45,11 +45,29 @@ fn draw_verdict_hud(
     max_feed: f64,
     events: &mut Vec<AppEvent>,
 ) {
-    // sim.issues() takes &mut self, so call it first before taking any
-    // immutable borrows on sim.results below.
-    let issue_count = sim.issues(gui, max_feed).len();
+    // sim.issues() takes &mut self, so build the issue-move list first.
+    let issue_targets: Vec<usize> = {
+        let mut moves: Vec<usize> = sim
+            .issues(gui, max_feed)
+            .iter()
+            .map(|issue| issue.move_index)
+            .collect();
+        moves.sort_unstable();
+        moves.dedup();
+        moves
+    };
 
-    let (ok, warn, bad, unmodeled, collision_count, trace_count, unmodeled_target, exceeded_target, collision_target) = {
+    let (
+        ok,
+        warn,
+        bad,
+        unmodeled,
+        collision_count,
+        trace_count,
+        unmodeled_targets,
+        exceeded_targets,
+        collision_targets,
+    ) = {
         let sim_trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
         let report = rs_cam_core::gcode::project_load_report(session, sim_trace);
         let counts = verdict_counts(&report);
@@ -60,9 +78,12 @@ fn draw_verdict_hud(
             .values()
             .filter(|rt| rt.debug_trace.is_some() || rt.semantic_trace.is_some())
             .count();
-        let unmodeled_target = first_unmodeled_move(sim, &report);
-        let exceeded_target = first_exceeded_overall(sim, sim_trace, &report);
-        let collision_target = sim.checks.rapid_collision_move_indices.first().copied();
+        let unmodeled_targets = collect_unmodeled_moves(sim, &report);
+        let exceeded_targets = collect_exceeded_moves(sim, sim_trace, &report);
+        let mut collision_targets: Vec<usize> =
+            sim.checks.rapid_collision_move_indices.iter().copied().collect();
+        collision_targets.sort_unstable();
+        collision_targets.dedup();
         (
             counts.0,
             counts.1,
@@ -70,16 +91,14 @@ fn draw_verdict_hud(
             counts.3,
             collision_count,
             trace_count,
-            unmodeled_target,
-            exceeded_target,
-            collision_target,
+            unmodeled_targets,
+            exceeded_targets,
+            collision_targets,
         )
     };
 
-    let mut click_unmodeled = false;
-    let mut click_exceeds = false;
-    let mut click_collision = false;
-    let mut click_issues = false;
+    let current_move = sim.playback.current_move;
+    let mut jump_target: Option<usize> = None;
 
     egui::Frame::default()
         .fill(egui::Color32::from_rgb(30, 32, 42))
@@ -87,51 +106,68 @@ fn draw_verdict_hud(
         .rounding(4.0)
         .show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                verdict_pill(
+                info_pill(
                     ui,
                     format!("✓ load {ok}"),
                     egui::Color32::from_rgb(85, 180, 110),
                     "Toolpaths within modeled load limits",
                 );
-                click_unmodeled = verdict_pill(
+                if action_pill(
                     ui,
                     format!("⚠ unmodeled {unmodeled}"),
                     egui::Color32::from_rgb(210, 170, 80),
-                    "Load could not be modeled honestly; click to jump to the first unmodeled toolpath",
+                    cycle_hover("unmodeled toolpath", &unmodeled_targets, current_move),
+                    &unmodeled_targets,
                 )
-                .clicked();
-                click_exceeds = verdict_pill(
+                .clicked()
+                {
+                    jump_target = next_after(&unmodeled_targets, current_move);
+                }
+                if action_pill(
                     ui,
                     format!("✕ exceeds {bad}"),
                     egui::Color32::from_rgb(220, 90, 90),
-                    "Known load-limit exceedances; click to jump to the first one",
+                    cycle_hover("exceedance", &exceeded_targets, current_move),
+                    &exceeded_targets,
                 )
-                .clicked();
-                verdict_pill(
+                .clicked()
+                {
+                    jump_target = next_after(&exceeded_targets, current_move);
+                }
+                info_pill(
                     ui,
                     format!("~ approx {warn}"),
                     egui::Color32::from_rgb(120, 150, 220),
                     "Approximate or advisory verdicts",
                 );
-                click_collision = verdict_pill(
+                let collision_color = if collision_count == 0 {
+                    egui::Color32::from_rgb(120, 210, 140)
+                } else {
+                    egui::Color32::from_rgb(255, 120, 110)
+                };
+                if action_pill(
                     ui,
                     format!("collisions {collision_count}"),
-                    if collision_count == 0 {
-                        egui::Color32::from_rgb(120, 210, 140)
-                    } else {
-                        egui::Color32::from_rgb(255, 120, 110)
-                    },
-                    "Rapid/holder collisions; click to jump to the first one",
+                    collision_color,
+                    cycle_hover("collision", &collision_targets, current_move),
+                    &collision_targets,
                 )
-                .clicked();
-                click_issues = verdict_pill(
+                .clicked()
+                {
+                    jump_target = next_after(&collision_targets, current_move);
+                }
+                if action_pill(
                     ui,
-                    format!("issues {issue_count}"),
+                    format!("issues {}", issue_targets.len()),
                     egui::Color32::from_rgb(230, 190, 90),
-                    "Air cuts / low-engagement clusters; click to step through",
+                    cycle_hover("issue", &issue_targets, current_move),
+                    &issue_targets,
                 )
-                .clicked();
-                verdict_pill(
+                .clicked()
+                {
+                    jump_target = next_after(&issue_targets, current_move);
+                }
+                info_pill(
                     ui,
                     format!("trace artifacts {trace_count}"),
                     egui::Color32::from_rgb(150, 170, 230),
@@ -140,44 +176,74 @@ fn draw_verdict_hud(
             });
         });
 
-    if click_unmodeled && let Some(t) = unmodeled_target {
-        events.push(AppEvent::SimJumpToMove(t));
-    }
-    if click_exceeds && let Some(t) = exceeded_target {
-        events.push(AppEvent::SimJumpToMove(t));
-    }
-    if click_collision && let Some(t) = collision_target {
-        events.push(AppEvent::SimJumpToMove(t));
-    }
-    if click_issues
-        && let Some(target) = sim.focus_issue_delta(gui, max_feed, 1)
-    {
-        events.push(AppEvent::SimJumpToMove(target.move_index));
+    if let Some(target) = jump_target {
+        events.push(AppEvent::SimJumpToMove(target));
     }
 }
 
-fn first_unmodeled_move(sim: &SimulationState, report: &ToolLoadReport) -> Option<usize> {
-    let tp = report.per_toolpath.iter().find(|tp| {
-        matches!(tp.chipload, Verdict::Unmodeled { .. })
-            || matches!(tp.power, Verdict::Unmodeled { .. })
-            || matches!(tp.deflection, Verdict::Unmodeled { .. })
-    })?;
-    sim.boundaries()
+/// Step to the first target strictly after `current`. Wraps to the first
+/// target if none qualify, so repeated clicks cycle through the list.
+fn next_after(targets: &[usize], current: usize) -> Option<usize> {
+    targets
         .iter()
-        .find(|b| b.id.0 == tp.toolpath_id)
-        .map(|b| b.start_move)
+        .copied()
+        .find(|&m| m > current)
+        .or_else(|| targets.first().copied())
 }
 
-fn first_exceeded_overall(
+fn cycle_hover(noun: &str, targets: &[usize], current: usize) -> String {
+    let total = targets.len();
+    if total == 0 {
+        return format!("No {noun}s");
+    }
+    let idx_of_next = targets
+        .iter()
+        .position(|&m| m > current)
+        .unwrap_or(0);
+    format!(
+        "{total} {noun}{plural} · click to jump to next ({}/{total})",
+        idx_of_next + 1,
+        plural = if total == 1 { "" } else { "s" }
+    )
+}
+
+fn collect_unmodeled_moves(sim: &SimulationState, report: &ToolLoadReport) -> Vec<usize> {
+    let mut moves: Vec<usize> = report
+        .per_toolpath
+        .iter()
+        .filter(|tp| {
+            matches!(tp.chipload, Verdict::Unmodeled { .. })
+                || matches!(tp.power, Verdict::Unmodeled { .. })
+                || matches!(tp.deflection, Verdict::Unmodeled { .. })
+        })
+        .filter_map(|tp| {
+            sim.boundaries()
+                .iter()
+                .find(|b| b.id.0 == tp.toolpath_id)
+                .map(|b| b.start_move)
+        })
+        .collect();
+    moves.sort_unstable();
+    moves.dedup();
+    moves
+}
+
+fn collect_exceeded_moves(
     sim: &SimulationState,
     trace: Option<&rs_cam_core::simulation_cut::SimulationCutTrace>,
     report: &ToolLoadReport,
-) -> Option<usize> {
-    let trace = trace?;
-    report
+) -> Vec<usize> {
+    let Some(trace) = trace else {
+        return Vec::new();
+    };
+    let mut moves: Vec<usize> = report
         .per_toolpath
         .iter()
-        .find_map(|verdict| first_exceeded_tool_load_move(sim, trace, verdict))
+        .filter_map(|verdict| first_exceeded_tool_load_move(sim, trace, verdict))
+        .collect();
+    moves.sort_unstable();
+    moves.dedup();
+    moves
 }
 
 fn verdict_counts(report: &ToolLoadReport) -> (usize, usize, usize, usize) {
@@ -213,17 +279,39 @@ fn verdict_is_approximate(verdict: &Verdict) -> bool {
     )
 }
 
-fn verdict_pill(
+/// Informational pill: passive label, no hover/click affordance. Use for
+/// counters that don't drive navigation (✓ load, ~ approx, trace artifacts).
+fn info_pill(ui: &mut egui::Ui, text: String, color: egui::Color32, hover: &str) {
+    ui.label(egui::RichText::new(text).small().color(color))
+        .on_hover_text(hover);
+}
+
+/// Action pill: button-styled, cycles through `targets` on click. Disabled
+/// (dimmed, non-clickable) when `targets` is empty.
+fn action_pill(
     ui: &mut egui::Ui,
     text: String,
     color: egui::Color32,
-    hover: &str,
+    hover: String,
+    targets: &[usize],
 ) -> egui::Response {
-    ui.add(
-        egui::Button::new(egui::RichText::new(text).small().color(color))
-            .fill(egui::Color32::from_rgb(42, 44, 56)),
-    )
-    .on_hover_text(hover)
+    let enabled = !targets.is_empty();
+    let display_color = if enabled {
+        color
+    } else {
+        egui::Color32::from_rgb(80, 80, 90)
+    };
+    let button = egui::Button::new(egui::RichText::new(text).small().color(display_color))
+        .fill(egui::Color32::from_rgb(48, 52, 68))
+        .stroke(egui::Stroke::new(
+            1.0,
+            if enabled {
+                color.linear_multiply(0.5)
+            } else {
+                egui::Color32::TRANSPARENT
+            },
+        ));
+    ui.add_enabled(enabled, button).on_hover_text(hover)
 }
 
 fn draw_signal_spine(
