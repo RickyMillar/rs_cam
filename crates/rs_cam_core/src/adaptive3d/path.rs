@@ -697,60 +697,55 @@ mod tests {
         // Sanity: there should be moves.
         assert!(!tp.moves.is_empty());
 
-        // Find the index just before the rapid_to(entry.xy, safe_z).
-        // The fix must have inserted a lift-to-safe-z rapid right after
-        // the cut1 segment ends. Specifically: after the move whose
-        // target is (5,5,-3), we expect a Rapid to (5,5,10) (same XY,
-        // lifted to safe_z), THEN a Rapid to (20,20,10) (traverse at
-        // safe_z), THEN a feed plunge to (20,20,-2).
-        let mut found_lift = false;
-        for window in tp.moves.windows(4) {
-            if (window[0].target.x - 5.0).abs() < 1e-9
-                && (window[0].target.y - 5.0).abs() < 1e-9
-                && (window[0].target.z - (-3.0)).abs() < 1e-9
-            {
-                // Next move should be a Rapid, same XY, z = safe_z
-                assert!(
-                    matches!(window[1].move_type, MoveType::Rapid),
-                    "expected lift to be a Rapid, got {:?}",
-                    window[1].move_type
-                );
-                assert!(
-                    (window[1].target.x - 5.0).abs() < 1e-9,
-                    "lift should preserve X, got {}",
-                    window[1].target.x
-                );
-                assert!(
-                    (window[1].target.y - 5.0).abs() < 1e-9,
-                    "lift should preserve Y, got {}",
-                    window[1].target.y
-                );
-                assert!(
-                    (window[1].target.z - params.safe_z).abs() < 1e-9,
-                    "lift should go to safe_z={}, got {}",
-                    params.safe_z,
-                    window[1].target.z
-                );
-                // Then traverse
-                assert!(matches!(window[2].move_type, MoveType::Rapid));
-                assert!((window[2].target.x - 20.0).abs() < 1e-9);
-                assert!((window[2].target.y - 20.0).abs() < 1e-9);
-                assert!((window[2].target.z - params.safe_z).abs() < 1e-9);
-                // Then plunge (feed_to, not rapid)
-                assert!(matches!(window[3].move_type, MoveType::Linear { .. }));
-                assert!((window[3].target.z - (-2.0)).abs() < 1e-9);
-                found_lift = true;
-                break;
-            }
-        }
+        // After cut1 ends at (5,5,-3), expect:
+        //   - Rapid to (5,5,safe_z)        — lift in place
+        //   - Rapid to (20,20,safe_z)      — traverse at safe_z
+        //   - One or more peck feeds at (20,20,...) descending toward
+        //     entry.z = -2 (peck behaviour added 2026-05-02 to avoid
+        //     punched-hole plunges; see segments_to_toolpath).
+        //   - Feed to (20,20,-2)            — final plunge
+        let cut1_end = tp.moves.iter().position(|m| {
+            (m.target.x - 5.0).abs() < 1e-9
+                && (m.target.y - 5.0).abs() < 1e-9
+                && (m.target.z - (-3.0)).abs() < 1e-9
+        });
+        let i = cut1_end.expect("cut1 endpoint not found");
         assert!(
-            found_lift,
-            "expected a lift-to-safe-z move after cut1 (at 5,5,-3). Moves: {:?}",
-            tp.moves
-                .iter()
-                .map(|m| (m.target.x, m.target.y, m.target.z, m.move_type))
-                .collect::<Vec<_>>()
+            matches!(tp.moves[i + 1].move_type, MoveType::Rapid)
+                && (tp.moves[i + 1].target.x - 5.0).abs() < 1e-9
+                && (tp.moves[i + 1].target.y - 5.0).abs() < 1e-9
+                && (tp.moves[i + 1].target.z - params.safe_z).abs() < 1e-9,
+            "expected lift in place to safe_z, got {:?}",
+            tp.moves[i + 1]
         );
+        assert!(
+            matches!(tp.moves[i + 2].move_type, MoveType::Rapid)
+                && (tp.moves[i + 2].target.x - 20.0).abs() < 1e-9
+                && (tp.moves[i + 2].target.y - 20.0).abs() < 1e-9
+                && (tp.moves[i + 2].target.z - params.safe_z).abs() < 1e-9,
+            "expected traverse to (20,20,safe_z), got {:?}",
+            tp.moves[i + 2]
+        );
+        // Walk past peck moves (all at XY = 20,20) until we land at z = -2.
+        let final_plunge_idx = tp.moves[i + 3..]
+            .iter()
+            .position(|m| {
+                matches!(m.move_type, MoveType::Linear { .. })
+                    && (m.target.x - 20.0).abs() < 1e-9
+                    && (m.target.y - 20.0).abs() < 1e-9
+                    && (m.target.z - (-2.0)).abs() < 1e-9
+            })
+            .map(|p| p + i + 3)
+            .expect("final plunge to entry.z = -2 not found after lift+traverse");
+        // All moves between traverse and final plunge must be at the
+        // entry XY (peck phase doesn't drift in XY).
+        for m in &tp.moves[i + 3..final_plunge_idx] {
+            assert!(
+                (m.target.x - 20.0).abs() < 1e-9 && (m.target.y - 20.0).abs() < 1e-9,
+                "peck move drifted off entry XY: {:?}",
+                m
+            );
+        }
     }
 
     /// The lift-to-safe-z move should only be emitted when the tool is
@@ -760,21 +755,24 @@ mod tests {
     fn rapid_segment_skips_redundant_lift_when_already_at_safe_z() {
         let params = minimal_params();
         // An empty tp (no previous moves): first Rapid shouldn't emit a
-        // spurious lift either.
+        // spurious lift either. With peck-plunge, the move sequence is
+        // rapid_to(safe_z) → peck feeds/retracts → final feed → final
+        // retract. The "no spurious lift" property is verified by
+        // checking that the first move IS the lateral approach rapid
+        // to safe_z, not a redundant in-place lift before it.
         let rapid = Adaptive3dSegment::Rapid(P3::new(20.0, 20.0, -2.0));
         let (tp, _) = segments_to_toolpath(&[rapid], &params);
-        // Expect exactly: rapid_to(20,20,safe_z), feed_to(20,20,-2),
-        // then the final rapid_to(20,20,safe_z) retract. Three moves.
-        assert_eq!(
-            tp.moves.len(),
-            3,
-            "no previous position, no lift needed. Moves: {:?}",
-            tp.moves
-                .iter()
-                .map(|m| (m.target.x, m.target.y, m.target.z, m.move_type))
-                .collect::<Vec<_>>()
+        assert!(
+            matches!(tp.moves[0].move_type, MoveType::Rapid),
+            "first move should be Rapid, got {:?}",
+            tp.moves[0]
         );
-        assert!(matches!(tp.moves[0].move_type, MoveType::Rapid));
-        assert!((tp.moves[0].target.z - params.safe_z).abs() < 1e-9);
+        assert!(
+            (tp.moves[0].target.x - 20.0).abs() < 1e-9
+                && (tp.moves[0].target.y - 20.0).abs() < 1e-9
+                && (tp.moves[0].target.z - params.safe_z).abs() < 1e-9,
+            "first move should be the approach rapid to (entry.xy, safe_z), got {:?}",
+            tp.moves[0]
+        );
     }
 }
