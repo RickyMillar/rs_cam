@@ -971,6 +971,55 @@ mod tests {
     }
 
     #[test]
+    fn toolpath_missing_operation_falls_back_to_default() {
+        use crate::compute::catalog::{OperationConfig, OperationType};
+
+        let project = ProjectFile {
+            format_version: 3,
+            job: ProjectJobSection::default(),
+            tools: Vec::new(),
+            models: Vec::new(),
+            setups: vec![ProjectSetupSection {
+                id: Some(0),
+                name: "Setup 1".to_owned(),
+                face_up: "top".to_owned(),
+                z_rotation: String::new(),
+                fixtures: Vec::new(),
+                keep_out_zones: Vec::new(),
+                toolpaths: vec![ProjectToolpathSection {
+                    id: Some(0),
+                    name: "Bare".to_owned(),
+                    op_type: Some(OperationType::Profile),
+                    operation: None,
+                    enabled: true,
+                    tool_id: None,
+                    model_id: None,
+                    dressups: crate::compute::config::DressupConfig::default(),
+                    heights: crate::compute::config::HeightsConfig::default(),
+                    pre_gcode: None,
+                    post_gcode: None,
+                    boundary: crate::compute::config::BoundaryConfig::default(),
+                    boundary_inherit: true,
+                    stock_source: crate::compute::config::StockSource::default(),
+                    coolant: crate::gcode::CoolantMode::default(),
+                    face_selection: None,
+                    feeds_auto: crate::compute::config::FeedsAutoMode::default(),
+                    debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+                }],
+            }],
+            toolpaths: Vec::new(),
+        };
+
+        let session = ProjectSession::from_project_file(project, Path::new(".")).unwrap();
+        assert_eq!(session.setup_count(), 1);
+        assert_eq!(session.toolpath_count(), 1);
+        let tp = &session.toolpath_configs[0];
+        assert_eq!(tp.operation.op_type(), OperationType::Profile);
+        let expected = OperationConfig::new_default(OperationType::Profile);
+        assert_eq!(tp.operation.op_type(), expected.op_type());
+    }
+
+    #[test]
     fn tool_type_parsing() {
         assert!(matches!(parse_tool_type("end_mill"), ToolType::EndMill));
         assert!(matches!(parse_tool_type("ball_nose"), ToolType::BallNose));
@@ -1023,6 +1072,7 @@ mod tests {
                 toolpaths: vec![ProjectToolpathSection {
                     id: Some(0),
                     name: "Test Pocket".to_owned(),
+                    op_type: Some(crate::compute::catalog::OperationType::Pocket),
                     operation: Some(OperationConfig::new_default(
                         crate::compute::catalog::OperationType::Pocket,
                     )),

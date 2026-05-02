@@ -9,7 +9,7 @@ use super::{
     Fixture, FixtureKind, KeepOutZone, LoadedGeometry, LoadedModel, SessionError, SetupData,
     ToolpathConfig,
 };
-use crate::compute::catalog::OperationConfig;
+use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::config::{
     BoundaryConfig, DressupConfig, FeedsAutoMode, HeightsConfig, StockSource,
 };
@@ -376,6 +376,8 @@ pub struct ProjectToolpathSection {
     pub id: Option<usize>,
     #[serde(default)]
     pub name: String,
+    #[serde(rename = "type", default)]
+    pub op_type: Option<OperationType>,
     #[serde(default)]
     pub operation: Option<OperationConfig>,
     #[serde(default = "default_true")]
@@ -765,11 +767,20 @@ pub(super) fn build_session_from_project(
             for tp_section in &setup_section.toolpaths {
                 let tp_idx = toolpath_configs.len();
                 let tp_id = tp_section.id.unwrap_or(tp_idx);
-                if let Some(operation) = &tp_section.operation {
-                    toolpath_configs
-                        .push(toolpath_config_from_section(tp_section, tp_id, operation));
-                    tp_indices.push(tp_idx);
-                }
+                let operation = match &tp_section.operation {
+                    Some(op) => op.clone(),
+                    None => {
+                        let op_type = tp_section.op_type.unwrap_or(OperationType::Pocket);
+                        tracing::warn!(
+                            toolpath_id = tp_id,
+                            ?op_type,
+                            "loaded toolpath with default operation; TOML was missing [setups.toolpaths.operation]"
+                        );
+                        OperationConfig::new_default(op_type)
+                    }
+                };
+                toolpath_configs.push(toolpath_config_from_section(tp_section, tp_id, &operation));
+                tp_indices.push(tp_idx);
             }
 
             let fixtures = build_fixtures(&setup_section.fixtures);
@@ -791,10 +802,20 @@ pub(super) fn build_session_from_project(
         for tp_section in &project.toolpaths {
             let tp_idx = toolpath_configs.len();
             let tp_id = tp_section.id.unwrap_or(tp_idx);
-            if let Some(operation) = &tp_section.operation {
-                toolpath_configs.push(toolpath_config_from_section(tp_section, tp_id, operation));
-                tp_indices.push(tp_idx);
-            }
+            let operation = match &tp_section.operation {
+                Some(op) => op.clone(),
+                None => {
+                    let op_type = tp_section.op_type.unwrap_or(OperationType::Pocket);
+                    tracing::warn!(
+                        toolpath_id = tp_id,
+                        ?op_type,
+                        "loaded toolpath with default operation; TOML was missing [setups.toolpaths.operation]"
+                    );
+                    OperationConfig::new_default(op_type)
+                }
+            };
+            toolpath_configs.push(toolpath_config_from_section(tp_section, tp_id, &operation));
+            tp_indices.push(tp_idx);
         }
         if !tp_indices.is_empty() {
             setups.push(SetupData {

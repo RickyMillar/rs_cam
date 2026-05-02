@@ -155,6 +155,7 @@ impl ProjectSession {
                     .map(|tc| ProjectToolpathSection {
                         id: Some(tc.id),
                         name: tc.name.clone(),
+                        op_type: Some(tc.operation.op_type()),
                         operation: Some(tc.operation.clone()),
                         enabled: tc.enabled,
                         tool_id: Some(tc.tool_id),
