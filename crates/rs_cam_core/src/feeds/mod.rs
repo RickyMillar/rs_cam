@@ -172,7 +172,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let (chip_load, vendor_rpm, vendor_source, chipload_source) =
         if let Some(lut) = input.vendor_lut {
             let query = vendor_normalize::to_lookup_query(input);
-            if let Some(result) = vendor_lookup::lookup_best(lut, &query) {
+            if let Some(result) = vendor_lookup::find_best_row(lut, &query) {
                 let observation_id = result.observation_id;
                 (
                     result.chip_load_mm,

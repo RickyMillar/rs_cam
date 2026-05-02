@@ -35,7 +35,7 @@ use std::sync::OnceLock;
 
 use crate::compute::catalog::OperationType;
 use crate::feeds::ToolGeometryHint;
-use crate::feeds::vendor_lookup::{LookupQuery, lookup_best};
+use crate::feeds::vendor_lookup::{LookupQuery, find_best_row};
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily, VendorLut};
 use crate::feeds::vendor_normalize::material_to_lut;
 use crate::material::Material;
@@ -165,7 +165,7 @@ pub fn evaluate(
         operation_family,
         pass_role,
     };
-    let Some(result) = lookup_best(lut, &query) else {
+    let Some(result) = find_best_row(lut, &query) else {
         return Verdict::Unmodeled {
             reason: UnmodeledReason::NoVendorData,
         };
