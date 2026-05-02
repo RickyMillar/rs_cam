@@ -16,7 +16,7 @@ use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::radial_profile::RadialProfileLUT;
 use crate::semantic_trace::ToolpathSemanticTrace;
 use crate::simulation_cut::{CutKinematics, SimulationCutSample};
-use crate::tool::MillingCutter;
+use crate::tool::{EngagementMode, MillingCutter};
 use crate::toolpath::{MoveType, Toolpath};
 
 impl TriDexelStock {
@@ -111,6 +111,7 @@ impl TriDexelStock {
         self.simulate_toolpath_with_lut_metrics_cancel(
             toolpath,
             &lut,
+            cutter,
             cutter.radius(),
             direction,
             toolpath_id,
@@ -131,6 +132,7 @@ impl TriDexelStock {
         &mut self,
         toolpath: &Toolpath,
         lut: &RadialProfileLUT,
+        cutter: &dyn MillingCutter,
         radius: f64,
         direction: StockCutDirection,
         toolpath_id: usize,
@@ -183,6 +185,7 @@ impl TriDexelStock {
                 MoveType::Linear { feed_rate } => {
                     self.capture_cutting_segment(
                         lut,
+                        cutter,
                         radius,
                         start,
                         end,
@@ -210,6 +213,7 @@ impl TriDexelStock {
                         check_cancel(cancel)?;
                         self.capture_cutting_segment(
                             lut,
+                            cutter,
                             radius,
                             window[0],
                             window[1],
@@ -246,6 +250,7 @@ impl TriDexelStock {
                         check_cancel(cancel)?;
                         self.capture_cutting_segment(
                             lut,
+                            cutter,
                             radius,
                             window[0],
                             window[1],
@@ -343,6 +348,7 @@ impl TriDexelStock {
     fn capture_cutting_segment(
         &mut self,
         lut: &RadialProfileLUT,
+        cutter: &dyn MillingCutter,
         radius: f64,
         start: P3,
         end: P3,
@@ -383,6 +389,18 @@ impl TriDexelStock {
                 );
 
             *cumulative_time_s += segment_time_s;
+            let chipload_mm_per_tooth = chipload_mm_per_tooth(
+                params.feed_rate_mm_min,
+                params.spindle_rpm,
+                params.flute_count,
+            );
+            let effective_chip_thickness_mm = effective_chip_thickness_mm(
+                cutter,
+                axial_doc_mm,
+                arc_engagement_radians,
+                chipload_mm_per_tooth,
+                params.flute_count,
+            );
             samples.push(SimulationCutSample {
                 toolpath_id: params.toolpath_id,
                 move_index: params.move_index,
@@ -398,11 +416,8 @@ impl TriDexelStock {
                 axial_doc_mm,
                 radial_engagement,
                 arc_engagement_radians,
-                chipload_mm_per_tooth: chipload_mm_per_tooth(
-                    params.feed_rate_mm_min,
-                    params.spindle_rpm,
-                    params.flute_count,
-                ),
+                chipload_mm_per_tooth,
+                effective_chip_thickness_mm,
                 removed_volume_est_mm3,
                 mrr_mm3_s: if segment_time_s <= 1e-9 {
                     0.0
@@ -445,6 +460,26 @@ impl TriDexelStock {
             capture_arc_engagement,
         )
     }
+}
+
+fn effective_chip_thickness_mm(
+    cutter: &dyn MillingCutter,
+    axial_doc_mm: f64,
+    arc_engagement_radians: Option<f64>,
+    feed_per_tooth_mm: f64,
+    flute_count: u32,
+) -> Option<f64> {
+    let arc = arc_engagement_radians?;
+    cutter
+        .chip_geometry(
+            axial_doc_mm,
+            arc,
+            feed_per_tooth_mm,
+            flute_count,
+            EngagementMode::Slot,
+        )
+        .ok()
+        .map(|geometry| geometry.max_chip_thickness_mm)
 }
 
 fn classify_cut_kinematics(start: P3, end: P3, is_arc: bool) -> CutKinematics {
