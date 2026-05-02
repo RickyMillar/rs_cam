@@ -792,7 +792,7 @@ mod tests {
     use crate::simulation_cut::{
         CutKinematics, SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
     };
-    use crate::tool::FlatEndmill;
+    use crate::tool::{FlatEndmill, VBitEndmill};
 
     fn tool_6mm_flat() -> ToolDefinition {
         ToolDefinition::new(
@@ -1259,6 +1259,221 @@ mod tests {
             "chosen row's diameter_match_score {} should be at or above the threshold {}",
             chosen.diameter_match_score,
             MIN_DIAMETER_MATCH_SCORE
+        );
+    }
+
+    /// Construct a synthetic machine with custom RPM and feed limits for
+    /// rejection-path tests. MachineProfile fields are all `pub`, so this
+    /// helper just centralises the boilerplate.
+    fn synthetic_machine(min_rpm: f64, max_rpm: f64, max_feed_mm_min: f64) -> MachineProfile {
+        MachineProfile {
+            name: "Synthetic test rig".to_owned(),
+            spindle: crate::machine::SpindleConfig::Variable { min_rpm, max_rpm },
+            power: crate::machine::PowerModel::ConstantPower { power_kw: 1.5 },
+            chip_load: crate::machine::ChipLoadFormula::default(),
+            max_feed_mm_min,
+            max_shank_mm: 7.0,
+            rigidity: crate::machine::RigidityProfile::default(),
+            safety_factor: 0.80,
+        }
+    }
+
+    #[test]
+    fn no_feasible_row_when_chipload_lo_exceeds_machine_max_feed() {
+        // 6mm flat hardwood pocket-rough: cl_min ≈ 0.025, RPM ≥ 14000,
+        // 2 flutes → row's lower-bound feed ≈ 700+ mm/min. With a
+        // synthetic machine capped at 50 mm/min, every feasible row's
+        // chipload-min × rpm × flutes blows past the machine's max
+        // feed and `evaluate_row` returns the typed
+        // "row's lower-bound feed ... exceeds machine max feed ..."
+        // rejection. Outer `evaluate` then refuses with NoFeasibleRow.
+        let samples: Vec<SimulationCutSample> = (0..5)
+            .map(|i| cutting_sample(i, 1500.0, 18000, 2.0, std::f64::consts::FRAC_PI_2))
+            .collect();
+        let t = trace(samples);
+        let tool = tool_6mm_flat();
+        let mat = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let machine = synthetic_machine(6000.0, 24000.0, 50.0);
+        let ctx = SuggestContext {
+            toolpath_id: 0,
+            tool: &tool,
+            material: &mat,
+            machine: &machine,
+            operation_family: LutOperationFamily::Pocket,
+            pass_role: LutPassRole::Roughing,
+            operation_kind: OperationType::Pocket,
+            current_feed_mm_min: 1500.0,
+        };
+        let result = evaluate(&ctx, Some(&t));
+        assert!(
+            matches!(result.suggested, Err(RefuseReason::NoFeasibleRow)),
+            "expected NoFeasibleRow, got {:?}",
+            result.suggested
+        );
+        assert!(
+            !result.considered_rows.is_empty(),
+            "considered_rows should retain the evaluated rows for transparency"
+        );
+        // At least one row should carry the "exceeds machine max feed"
+        // rejection — that's the bound this test is exercising.
+        assert!(
+            result.considered_rows.iter().any(|r| r
+                .rejected
+                .as_deref()
+                .is_some_and(|s| s.contains("exceeds machine max feed"))),
+            "at least one row should be rejected for exceeding machine max feed: {:?}",
+            result
+                .considered_rows
+                .iter()
+                .map(|r| r.rejected.clone())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn rpm_bracket_empty_when_machine_excludes_row_rpm() {
+        // 6mm flat hardwood pocket-rough rows specify rpm_min ≥ 14000.
+        // A synthetic machine that maxes out at 8000 RPM excludes the
+        // entire row bracket, so `evaluate_row` returns the typed
+        // "rpm bracket empty" rejection. With every must-match row
+        // failing on this rejection, outer `evaluate` refuses with
+        // RpmBracketEmpty (priority over NoFeasibleRow per the
+        // dominant-reason ladder in evaluate()).
+        let samples: Vec<SimulationCutSample> = (0..5)
+            .map(|i| cutting_sample(i, 1500.0, 18000, 2.0, std::f64::consts::FRAC_PI_2))
+            .collect();
+        let t = trace(samples);
+        let tool = tool_6mm_flat();
+        let mat = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        // Cap RPM well below any pocket-rough row's rpm_min. Leave max
+        // feed generous so the chipload-feed bound isn't what trips.
+        let machine = synthetic_machine(4000.0, 8000.0, 5000.0);
+        let ctx = SuggestContext {
+            toolpath_id: 0,
+            tool: &tool,
+            material: &mat,
+            machine: &machine,
+            operation_family: LutOperationFamily::Pocket,
+            pass_role: LutPassRole::Roughing,
+            operation_kind: OperationType::Pocket,
+            current_feed_mm_min: 1500.0,
+        };
+        let result = evaluate(&ctx, Some(&t));
+        assert!(
+            matches!(result.suggested, Err(RefuseReason::RpmBracketEmpty)),
+            "expected RpmBracketEmpty, got {:?}",
+            result.suggested
+        );
+        assert!(
+            !result.considered_rows.is_empty(),
+            "considered_rows should retain the evaluated rows for transparency"
+        );
+        assert!(
+            result.considered_rows.iter().any(|r| r
+                .rejected
+                .as_deref()
+                == Some("rpm bracket empty")),
+            "at least one row should carry the typed 'rpm bracket empty' rejection: {:?}",
+            result
+                .considered_rows
+                .iter()
+                .map(|r| r.rejected.clone())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn project_curve_flat_routes_through_suggest() {
+        // Mirror chipload's `project_curve_flat_routes_to_contour_finish`
+        // for the suggest module. A flat tool on a ProjectCurve
+        // operation should route through `routed_lookup_family` to
+        // (Contour, Finish), find a real LUT row, and produce a
+        // suggestion with a non-empty `matched_row_id`.
+        //
+        // The hardwood flat contour-finish LUT row is calibrated at
+        // 3.175 mm, so use a 3.175 mm flat tool to clear the suggest
+        // module's diameter-extrapolation gate (the chipload module's
+        // counterpart test uses 6.35 mm because chipload has no
+        // extrapolation gate; suggest does).
+        let samples: Vec<SimulationCutSample> = (0..5)
+            .map(|i| cutting_sample(i, 1500.0, 18000, 1.0, std::f64::consts::FRAC_PI_2))
+            .collect();
+        let t = trace(samples);
+        let tool = ToolDefinition::new(
+            Box::new(FlatEndmill::new(3.175, 18.0)),
+            6.35,
+            30.0,
+            20.0,
+            55.0,
+            2,
+            crate::compute::tool_config::ToolMaterial::Carbide,
+        );
+        let mat = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let machine = machine();
+        let ctx = SuggestContext {
+            toolpath_id: 0,
+            tool: &tool,
+            material: &mat,
+            machine: &machine,
+            // Caller-side hint — `routed_lookup_family` overrides this
+            // for ProjectCurve+FlatEnd to (Contour, Finish).
+            operation_family: LutOperationFamily::Trace,
+            pass_role: LutPassRole::Finish,
+            operation_kind: OperationType::ProjectCurve,
+            current_feed_mm_min: 1500.0,
+        };
+        let result = evaluate(&ctx, Some(&t));
+        let suggested = result.suggested.expect(
+            "ProjectCurve+FlatEnd should route to Contour-Finish and find a vendor row",
+        );
+        assert!(!suggested.matched_row_id.is_empty());
+    }
+
+    #[test]
+    fn project_curve_vbit_refuses_no_vendor_data() {
+        // Counterpart to `project_curve_flat_routes_through_suggest`:
+        // ProjectCurve + ChamferVbit has no LUT routing target, so
+        // `routed_lookup_family` returns None and suggest refuses with
+        // NoVendorData. Mirrors chipload's
+        // `project_curve_vbit_stays_unmodeled` test.
+        let samples: Vec<SimulationCutSample> = (0..5)
+            .map(|i| cutting_sample(i, 1500.0, 18000, 1.0, std::f64::consts::FRAC_PI_2))
+            .collect();
+        let t = trace(samples);
+        let vbit_tool = ToolDefinition::new(
+            Box::new(VBitEndmill::new(6.35, 90.0, 20.0)),
+            6.35,
+            30.0,
+            20.0,
+            55.0,
+            2,
+            crate::compute::tool_config::ToolMaterial::Carbide,
+        );
+        let mat = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let machine = machine();
+        let ctx = SuggestContext {
+            toolpath_id: 0,
+            tool: &vbit_tool,
+            material: &mat,
+            machine: &machine,
+            operation_family: LutOperationFamily::Trace,
+            pass_role: LutPassRole::Finish,
+            operation_kind: OperationType::ProjectCurve,
+            current_feed_mm_min: 1500.0,
+        };
+        let result = evaluate(&ctx, Some(&t));
+        assert!(
+            matches!(result.suggested, Err(RefuseReason::NoVendorData)),
+            "expected NoVendorData for ProjectCurve+VBit, got {:?}",
+            result.suggested
         );
     }
 }
