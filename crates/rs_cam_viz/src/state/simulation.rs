@@ -21,15 +21,6 @@ use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum SimulationDebugTab {
-    #[default]
-    Semantic,
-    Generation,
-    Cutting,
-    Trace,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SimulationAnalyticsTab {
     #[default]
     RunStatus,
@@ -138,8 +129,6 @@ pub struct ActiveCutSample {
 #[derive(Default)]
 pub struct SimulationDebugState {
     pub enabled: bool,
-    pub drawer_open: bool,
-    pub active_tab: SimulationDebugTab,
     pub expanded_toolpaths: HashSet<ToolpathId>,
     pub focused_hotspot: Option<(ToolpathId, usize)>,
     pub pinned_semantic_item: Option<(ToolpathId, u64)>,
@@ -348,8 +337,6 @@ impl SimulationState {
             },
             debug: SimulationDebugState {
                 enabled: false,
-                drawer_open: false,
-                active_tab: SimulationDebugTab::Semantic,
                 expanded_toolpaths: HashSet::new(),
                 focused_hotspot: None,
                 pinned_semantic_item: None,

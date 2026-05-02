@@ -2678,21 +2678,6 @@ fn draw_toolpath_panel(
                 }
             }
 
-            ui.add_space(8.0);
-            ui.collapsing("Debugging", |ui| {
-                ui.checkbox(&mut entry.debug_options.enabled, "Capture debug trace")
-                    .on_hover_text(
-                        "Record semantic and performance trace data for the Simulation debugger. Re-generate to apply changes.",
-                    );
-                if entry.debug_options.enabled {
-                    ui.label(
-                        egui::RichText::new("Re-generate this toolpath to refresh trace data.")
-                            .small()
-                            .color(egui::Color32::from_rgb(140, 170, 230)),
-                    );
-                }
-            });
-
             // Manual G-code fields (pre_gcode, post_gcode) kept in state
             // for future export wiring — UI removed until export is implemented.
         }
