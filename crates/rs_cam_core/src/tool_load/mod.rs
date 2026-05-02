@@ -83,6 +83,7 @@ pub fn evaluate_toolpath(
             ctx.operation_family,
             ctx.pass_role,
             ctx.operation_feed_rate_mm_min,
+            ctx.operation_kind,
         ),
         power,
         deflection: deflection::evaluate(ctx.tool),

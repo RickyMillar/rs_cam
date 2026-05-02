@@ -33,6 +33,7 @@
 
 use std::sync::OnceLock;
 
+use crate::compute::catalog::OperationType;
 use crate::feeds::ToolGeometryHint;
 use crate::feeds::vendor_lookup::{LookupQuery, lookup_best};
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily, VendorLut};
@@ -87,6 +88,7 @@ pub fn evaluate(
     operation_family: LutOperationFamily,
     pass_role: LutPassRole,
     operation_feed_rate_mm_min: f64,
+    operation_kind: OperationType,
 ) -> Verdict {
     // 1. Provenance gate.
     let Some(trace) = sim_trace else {
@@ -99,6 +101,13 @@ pub fn evaluate(
     let lut = embedded_lut();
     let geometry_hint = tool.to_geometry_hint();
     let tool_family = tool_family_for(geometry_hint);
+    let Some((operation_family, pass_role)) =
+        routed_lookup_family(operation_kind, tool_family, operation_family, pass_role)
+    else {
+        return Verdict::Unmodeled {
+            reason: UnmodeledReason::NoVendorData,
+        };
+    };
     let (material_family, hardness_kind, hardness_value) = material_to_lut(material);
     let query = LookupQuery {
         tool_family,
@@ -223,6 +232,24 @@ pub fn evaluate(
 /// Map a cutter geometry hint to a vendor-LUT tool family. Mirrors
 /// `feeds::vendor_normalize::to_lookup_query` so the same routing logic
 /// runs for the chipload guardrail as for the F&S calculator.
+fn routed_lookup_family(
+    operation_kind: OperationType,
+    tool_family: ToolFamily,
+    operation_family: LutOperationFamily,
+    pass_role: LutPassRole,
+) -> Option<(LutOperationFamily, LutPassRole)> {
+    if operation_kind != OperationType::ProjectCurve {
+        return Some((operation_family, pass_role));
+    }
+    match tool_family {
+        ToolFamily::BallNose | ToolFamily::TaperedBallNose => {
+            Some((LutOperationFamily::Parallel, LutPassRole::Finish))
+        }
+        ToolFamily::FlatEnd => Some((LutOperationFamily::Contour, LutPassRole::Finish)),
+        ToolFamily::BullNose | ToolFamily::ChamferVbit | ToolFamily::FacingBit => None,
+    }
+}
+
 fn tool_family_for(hint: ToolGeometryHint) -> ToolFamily {
     match hint {
         ToolGeometryHint::Flat => ToolFamily::FlatEnd,
@@ -243,14 +270,24 @@ fn tool_family_for(hint: ToolGeometryHint) -> ToolFamily {
 mod tests {
     use super::*;
     use crate::material::WoodSpecies;
-    use crate::simulation_cut::{
-        SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
-    };
-    use crate::tool::FlatEndmill;
+    use crate::simulation_cut::{SimulationCutSample, SimulationCutSummary, SimulationCutTrace};
+    use crate::tool::{FlatEndmill, VBitEndmill};
 
     fn tool() -> ToolDefinition {
         ToolDefinition::new(
             Box::new(FlatEndmill::new(6.35, 20.0)),
+            6.35,
+            30.0,
+            20.0,
+            30.0,
+            2,
+            crate::compute::tool_config::ToolMaterial::Carbide,
+        )
+    }
+
+    fn vbit_tool() -> ToolDefinition {
+        ToolDefinition::new(
+            Box::new(VBitEndmill::new(6.35, 90.0, 20.0)),
             6.35,
             30.0,
             20.0,
@@ -313,6 +350,47 @@ mod tests {
     }
 
     #[test]
+    fn project_curve_flat_routes_to_contour_finish() {
+        let t = trace(vec![sample(0, 0, 0.02, 0.5)]);
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            LutOperationFamily::Trace,
+            LutPassRole::Finish,
+            1000.0,
+            OperationType::ProjectCurve,
+        );
+        assert!(matches!(v, Verdict::Within { .. }), "got {v:?}");
+    }
+
+    #[test]
+    fn project_curve_vbit_stays_unmodeled() {
+        let t = trace(vec![sample(0, 0, 0.02, 0.5)]);
+        let v = evaluate(
+            0,
+            &vbit_tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            LutOperationFamily::Trace,
+            LutPassRole::Finish,
+            1000.0,
+            OperationType::ProjectCurve,
+        );
+        assert!(matches!(
+            v,
+            Verdict::Unmodeled {
+                reason: UnmodeledReason::NoVendorData
+            }
+        ));
+    }
+
+    #[test]
     fn no_trace_returns_simulation_required() {
         let v = evaluate(
             0,
@@ -324,6 +402,7 @@ mod tests {
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
+            OperationType::Pocket,
         );
         match v {
             Verdict::Unmodeled {
@@ -349,6 +428,7 @@ mod tests {
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
+            OperationType::Pocket,
         );
         assert!(matches!(
             v,
@@ -373,6 +453,7 @@ mod tests {
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
+            OperationType::Pocket,
         );
         assert!(
             matches!(
@@ -400,6 +481,7 @@ mod tests {
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
+            OperationType::Pocket,
         );
         match v {
             Verdict::Exceeds {
@@ -424,6 +506,7 @@ mod tests {
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
+            OperationType::Pocket,
         );
         match v {
             Verdict::Exceeds {
@@ -449,6 +532,7 @@ mod tests {
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
+            OperationType::Pocket,
         );
         assert!(matches!(v, Verdict::Within { .. }));
     }
@@ -468,6 +552,7 @@ mod tests {
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
+            OperationType::Pocket,
         );
         assert!(matches!(v, Verdict::Within { .. }));
     }
@@ -501,14 +586,13 @@ mod tests {
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
+            OperationType::Pocket,
         );
         match v {
             Verdict::Unmodeled {
                 reason: UnmodeledReason::SteadyStateSamplesNotPresent,
             } => {}
-            other => panic!(
-                "expected Unmodeled(SteadyStateSamplesNotPresent), got {other:?}"
-            ),
+            other => panic!("expected Unmodeled(SteadyStateSamplesNotPresent), got {other:?}"),
         }
     }
 
@@ -542,6 +626,7 @@ mod tests {
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1500.0,
+            OperationType::Pocket,
         );
         assert!(
             matches!(
@@ -583,6 +668,7 @@ mod tests {
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1500.0,
+            OperationType::Pocket,
         );
         match v {
             Verdict::Exceeds {
@@ -614,6 +700,7 @@ mod tests {
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
+            OperationType::Pocket,
         );
         assert!(
             matches!(v, Verdict::Within { .. }),
@@ -643,6 +730,7 @@ mod tests {
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
+            OperationType::Pocket,
         );
         assert!(matches!(
             v,

@@ -560,8 +560,8 @@ pub fn project_load_report(
     project: &ProjectSession,
     sim_trace: Option<&SimulationCutTrace>,
 ) -> crate::tool_load::ToolLoadReport {
-    use crate::feeds::{OperationFamily, PassRole};
     use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
+    use crate::feeds::{OperationFamily, PassRole};
 
     let material = &project.stock_config().material;
     let mut per_toolpath = Vec::new();
@@ -569,8 +569,7 @@ pub fn project_load_report(
         if !tc.enabled {
             continue;
         }
-        let Some(tool_cfg) =
-            project.get_tool(crate::compute::tool_config::ToolId(tc.tool_id))
+        let Some(tool_cfg) = project.get_tool(crate::compute::tool_config::ToolId(tc.tool_id))
         else {
             // Toolpath references a tool that's been removed — skip rather
             // than fabricate a verdict.
@@ -607,6 +606,7 @@ pub fn project_load_report(
                 lut_op,
                 lut_pass,
                 operation_feed_rate_mm_min,
+                tc.operation.op_type(),
             ),
             power: crate::tool_load::power::evaluate(
                 tc.id, &tool_def, material, machine, sim_trace,
@@ -1649,10 +1649,13 @@ mod tests {
             },
         );
         let policy = ToolLoadExportPolicy::default();
-        let err = enforce_load_policy(&report, &policy)
-            .expect_err("default policy must block Exceeds");
+        let err =
+            enforce_load_policy(&report, &policy).expect_err("default policy must block Exceeds");
         let msg = err.to_string();
-        assert!(msg.contains("toolpath 4"), "error names the toolpath: {msg}");
+        assert!(
+            msg.contains("toolpath 4"),
+            "error names the toolpath: {msg}"
+        );
         assert!(
             msg.contains("deflection"),
             "error names the criterion: {msg}"
