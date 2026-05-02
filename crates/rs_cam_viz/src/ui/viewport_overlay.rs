@@ -108,19 +108,39 @@ pub fn draw(
             ui.checkbox(&mut viewport.show_collisions, "Collisions");
             ui.separator();
             ui.checkbox(&mut viewport.show_tool_profile_preview, "Tool-profile ghost");
-            let engagement_on = viewport.toolpath_color_mode == ToolpathColorMode::Engagement;
-            let mut engagement_checked = engagement_on;
-            ui.checkbox(&mut engagement_checked, "Engagement colors")
-                .on_hover_text(
-                    "Color cutting moves by feed rate: green→yellow→red for light→heavy load",
-                );
-            if engagement_checked != engagement_on {
-                viewport.toolpath_color_mode = if engagement_checked {
-                    ToolpathColorMode::Engagement
-                } else {
-                    ToolpathColorMode::Normal
-                };
-            }
+            ui.horizontal(|ui| {
+                ui.label("Toolpath color:");
+                egui::ComboBox::from_id_salt("toolpath_color_mode")
+                    .selected_text(match viewport.toolpath_color_mode {
+                        ToolpathColorMode::Normal => "Palette",
+                        ToolpathColorMode::Engagement => "Engagement",
+                        ToolpathColorMode::Chipload => "Chipload",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut viewport.toolpath_color_mode,
+                            ToolpathColorMode::Normal,
+                            "Palette",
+                        )
+                        .on_hover_text("Per-toolpath palette color with Z-depth blending");
+                        ui.selectable_value(
+                            &mut viewport.toolpath_color_mode,
+                            ToolpathColorMode::Engagement,
+                            "Engagement",
+                        )
+                        .on_hover_text(
+                            "Color cutting moves by feed rate: green→yellow→red for light→heavy load",
+                        );
+                        ui.selectable_value(
+                            &mut viewport.toolpath_color_mode,
+                            ToolpathColorMode::Chipload,
+                            "Chipload",
+                        )
+                        .on_hover_text(
+                            "Color each segment by per-sample chipload vs the matched vendor row's window",
+                        );
+                    });
+            });
         });
 
         // ── Isolate button ──────────────────────────────────────
