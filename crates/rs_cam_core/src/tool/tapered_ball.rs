@@ -163,6 +163,10 @@ impl MillingCutter for TaperedBallEndmill {
         }
     }
 
+    fn lookup_diameter_at(&self, axial_doc_mm: f64) -> f64 {
+        (2.0 * self.engagement_radius(axial_doc_mm)).clamp(0.0, self.diameter())
+    }
+
     fn width_at_height(&self, h: f64) -> f64 {
         let r_ball = self.ball_radius();
         let hc = self.h_contact();

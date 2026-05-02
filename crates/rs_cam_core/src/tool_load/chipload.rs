@@ -97,7 +97,52 @@ pub fn evaluate(
         };
     };
 
-    // 2. Look up the vendor envelope. If no row matches, refuse.
+    // 2. Build the steady-state sample set before LUT lookup. The same
+    // set gives us the operation's engaged lookup diameter.
+    //
+    // Skip rapids (`!is_cutting`) and air-cut samples (`radial_engagement
+    // < 0.02` — same threshold as `SimulationCutIssueKind::AirCut` per
+    // `simulation_cut.rs`). Air cuts have no real chip and produce
+    // misleading chipload readings.
+    //
+    // Steady-state filter (Item C): only count samples whose feed rate
+    // matches the commanded operation feed. Transient samples (plunge,
+    // ramp, lead-in) at lower feeds get a separate non-decision rather
+    // than being measured against the steady-state LUT envelope.
+    let feed_threshold = STEADY_STATE_FEED_FRACTION * operation_feed_rate_mm_min;
+    let mut any_in_cut_for_toolpath = false;
+    let steady_samples: Vec<(usize, &crate::simulation_cut::SimulationCutSample)> = trace
+        .samples
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| {
+            if s.toolpath_id != toolpath_id || !s.is_cutting || s.radial_engagement < 0.02 {
+                return None;
+            }
+            any_in_cut_for_toolpath = true;
+            (s.feed_rate_mm_min >= feed_threshold).then_some((i, s))
+        })
+        .collect();
+
+    // 3. Build verdicts for no usable sample data before attempting a LUT
+    // lookup. This preserves the distinction between missing samples and
+    // missing vendor data.
+    if !any_in_cut_for_toolpath {
+        return Verdict::Unmodeled {
+            reason: UnmodeledReason::SimulationRequired,
+        };
+    }
+    if steady_samples.is_empty() {
+        return Verdict::Unmodeled {
+            reason: UnmodeledReason::SteadyStateSamplesNotPresent,
+        };
+    }
+
+    // 4. Look up the vendor envelope. If no row matches, refuse.
+    let lookup_axial_doc_mm = steady_samples
+        .iter()
+        .map(|(_, s)| s.axial_doc_mm.max(0.0))
+        .fold(0.0_f64, f64::max);
     let lut = embedded_lut();
     let geometry_hint = tool.to_geometry_hint();
     let tool_family = tool_family_for(geometry_hint);
@@ -112,7 +157,7 @@ pub fn evaluate(
     let query = LookupQuery {
         tool_family,
         tool_subfamily: None,
-        diameter_mm: tool.diameter(),
+        diameter_mm: tool.lookup_diameter_at(lookup_axial_doc_mm),
         flute_count: tool.flute_count,
         material_family,
         hardness_kind: Some(hardness_kind),
@@ -126,7 +171,7 @@ pub fn evaluate(
         };
     };
 
-    // 3. Bounds: refuse if the LUT row didn't carry both min and max.
+    // 5. Bounds: refuse if the LUT row didn't carry both min and max.
     let (min, max) = match (result.chip_load_min_mm, result.chip_load_max_mm) {
         (Some(lo), Some(hi)) if lo > 0.0 && hi >= lo => (lo, hi),
         _ => {
@@ -136,39 +181,11 @@ pub fn evaluate(
         }
     };
 
-    // 4. Walk the cutting samples for this toolpath.
-    //
-    // Skip rapids (`!is_cutting`) and air-cut samples (`radial_engagement
-    // < 0.02` — same threshold as `SimulationCutIssueKind::AirCut` per
-    // `simulation_cut.rs`). Air cuts have no real chip and produce
-    // misleading chipload readings.
-    //
-    // Steady-state filter (Item C): only count samples whose feed rate
-    // matches the commanded operation feed. Transient samples (plunge,
-    // ramp, lead-in) at lower feeds get a separate non-decision rather
-    // than being measured against the steady-state LUT envelope.
-    let feed_threshold = STEADY_STATE_FEED_FRACTION * operation_feed_rate_mm_min;
     let mut peak_below: Option<(f64, usize)> = None; // (deviation, sample_index)
     let mut peak_above: Option<(f64, usize)> = None;
     let mut peak_in_range: f64 = 0.0;
-    let mut any_in_cut_for_toolpath = false;
-    let mut any_steady_state = false;
 
-    for (i, s) in trace.samples.iter().enumerate() {
-        if s.toolpath_id != toolpath_id {
-            continue;
-        }
-        if !s.is_cutting {
-            continue;
-        }
-        if s.radial_engagement < 0.02 {
-            continue;
-        }
-        any_in_cut_for_toolpath = true;
-        if s.feed_rate_mm_min < feed_threshold {
-            continue;
-        }
-        any_steady_state = true;
+    for (i, s) in steady_samples {
         let cl = s.chipload_mm_per_tooth;
         if cl < min {
             let dev = min - cl;
@@ -185,27 +202,7 @@ pub fn evaluate(
         }
     }
 
-    // 5. Build verdict.
-    if !any_in_cut_for_toolpath {
-        // Trace exists but had no in-cut samples for this toolpath — e.g.
-        // a pure-air toolpath. Distinct from "every sample is a plunge"
-        // (handled below as SteadyStateSamplesNotPresent).
-        return Verdict::Unmodeled {
-            reason: UnmodeledReason::SimulationRequired,
-        };
-    }
-    if !any_steady_state {
-        // In-cut samples exist for this toolpath, but none of them ran at
-        // the commanded operation feed — typical for an all-plunge drill
-        // cycle, or a toolpath whose entire cutting span is a ramp/entry
-        // at a different feed. Refuse rather than measure transient
-        // chipload against the steady-state LUT calibration.
-        return Verdict::Unmodeled {
-            reason: UnmodeledReason::SteadyStateSamplesNotPresent,
-        };
-    }
-
-    // Above-max takes priority over below-min: breakage is more
+    // 6. Build verdict. Above-max takes priority over below-min: breakage is more
     // catastrophic than burn risk and we want it surfaced.
     if let Some((dev, idx)) = peak_above {
         return Verdict::Exceeds {

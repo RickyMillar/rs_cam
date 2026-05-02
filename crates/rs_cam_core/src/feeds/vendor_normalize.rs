@@ -38,13 +38,49 @@ pub fn to_lookup_query(input: &FeedsInput) -> LookupQuery {
     LookupQuery {
         tool_family,
         tool_subfamily: None,
-        diameter_mm: input.tool_diameter,
+        diameter_mm: lookup_diameter_for_input(input),
         flute_count: input.flute_count,
         material_family,
         hardness_kind: Some(hardness_kind),
         hardness_value: Some(hardness_value),
         operation_family,
         pass_role,
+    }
+}
+
+fn lookup_diameter_for_input(input: &FeedsInput<'_>) -> f64 {
+    let axial_doc = input.axial_depth_mm.unwrap_or(input.tool_diameter).max(0.0);
+    match input.tool_geometry {
+        ToolGeometryHint::TaperedBall {
+            tip_radius,
+            taper_angle_deg,
+        } => {
+            let alpha = taper_angle_deg.to_radians();
+            let sin_alpha = alpha.sin();
+            let cos_alpha = alpha.cos();
+            let tan_alpha = alpha.tan();
+            if tip_radius <= 0.0 || tan_alpha <= 0.0 {
+                return input.tool_diameter;
+            }
+            let h_contact = tip_radius * (1.0 - sin_alpha);
+            let r_contact = tip_radius * cos_alpha;
+            let cone_offset = h_contact - r_contact / tan_alpha;
+            let radius = if axial_doc <= h_contact {
+                (2.0 * tip_radius * axial_doc - axial_doc * axial_doc)
+                    .max(0.0)
+                    .sqrt()
+            } else {
+                (axial_doc - cone_offset) * tan_alpha
+            };
+            (2.0 * radius).clamp(0.0, input.shank_diameter.unwrap_or(input.tool_diameter))
+        }
+        ToolGeometryHint::VBit { included_angle, .. } => {
+            let half = (included_angle * 0.5).to_radians();
+            (2.0 * axial_doc * half.tan()).clamp(0.0, input.tool_diameter)
+        }
+        ToolGeometryHint::Flat | ToolGeometryHint::Ball | ToolGeometryHint::Bull { .. } => {
+            input.tool_diameter
+        }
     }
 }
 

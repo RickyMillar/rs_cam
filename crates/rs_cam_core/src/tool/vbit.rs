@@ -106,6 +106,10 @@ impl MillingCutter for VBitEndmill {
         }
     }
 
+    fn lookup_diameter_at(&self, axial_doc_mm: f64) -> f64 {
+        (2.0 * self.engagement_radius(axial_doc_mm)).clamp(0.0, self.diameter())
+    }
+
     fn width_at_height(&self, h: f64) -> f64 {
         let big_r = self.radius();
         let w = h * self.tan_half_angle;
