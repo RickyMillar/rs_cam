@@ -666,6 +666,38 @@ fn build_keep_out_zones(sections: &[ProjectKeepOutSection]) -> Vec<KeepOutZone> 
         .collect()
 }
 
+/// Reject TOML that parses but contains no recognizable CAM content. Without
+/// this guard, `serde(default)` on every top-level field happily produces an
+/// empty session from any well-formed TOML file (or a CSV opened by mistake),
+/// and the user just sees an empty workspace with no error.
+pub(super) fn validate_looks_like_cam_project(
+    project: &ProjectFile,
+    path: Option<&Path>,
+) -> Result<(), SessionError> {
+    // `[job]` field has #[serde(default)], so an absent table yields
+    // ProjectJobSection::default() with an empty name; an empty `[job]` table
+    // yields the field-level default (`default_job_name()`). Treat both as
+    // "user did not supply a job name".
+    let job_is_default =
+        project.job.name.is_empty() || project.job.name == default_job_name();
+    let nothing_loaded = project.setups.is_empty()
+        && project.toolpaths.is_empty()
+        && project.models.is_empty()
+        && project.tools.is_empty();
+    if job_is_default && nothing_loaded {
+        let detail = match path {
+            Some(p) => format!(
+                "file '{}' does not look like an rs_cam project (no [job], setups, toolpaths, models, or tools)",
+                p.display()
+            ),
+            None => "file does not look like an rs_cam project (no [job], setups, toolpaths, models, or tools)"
+                .to_owned(),
+        };
+        return Err(SessionError::NotACamProject(detail));
+    }
+    Ok(())
+}
+
 /// Build a [`ProjectSession`](super::ProjectSession) from a parsed [`ProjectFile`].
 ///
 /// This is the core of `ProjectSession::from_project_file` but lives here so
@@ -674,6 +706,8 @@ pub(super) fn build_session_from_project(
     project: ProjectFile,
     base_dir: &Path,
 ) -> Result<super::ProjectSession, SessionError> {
+    validate_looks_like_cam_project(&project, None)?;
+
     let stock = stock_from_project(&project.job.stock);
 
     // Load tools

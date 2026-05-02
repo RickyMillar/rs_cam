@@ -82,6 +82,8 @@ pub enum SessionError {
     Export(String),
     /// Invalid parameter name or value.
     InvalidParam(String),
+    /// Parsed TOML doesn't look like an rs_cam project.
+    NotACamProject(String),
 }
 
 impl std::fmt::Display for SessionError {
@@ -106,6 +108,7 @@ impl std::fmt::Display for SessionError {
             Self::CollisionCheck(e) => write!(f, "Collision check error: {e}"),
             Self::Export(msg) => write!(f, "Export error: {msg}"),
             Self::InvalidParam(msg) => write!(f, "Invalid parameter: {msg}"),
+            Self::NotACamProject(detail) => write!(f, "Not an rs_cam project: {detail}"),
         }
     }
 }
@@ -523,6 +526,7 @@ impl ProjectSession {
         let content = std::fs::read_to_string(path)?;
         let project: ProjectFile =
             toml::from_str(&content).map_err(|e| SessionError::TomlParse(e.to_string()))?;
+        project_file::validate_looks_like_cam_project(&project, Some(path))?;
         let base_dir = path.parent().unwrap_or(Path::new("."));
         Self::from_project_file(project, base_dir)
     }
@@ -918,19 +922,25 @@ mod tests {
     use super::project_file::parse_tool_type;
     use super::*;
 
+    fn named_empty_job() -> ProjectJobSection {
+        ProjectJobSection {
+            name: "Test Job".to_owned(),
+            ..ProjectJobSection::default()
+        }
+    }
+
     #[test]
     fn empty_project_loads() {
         let project = ProjectFile {
             format_version: 3,
-            job: ProjectJobSection::default(),
+            job: named_empty_job(),
             tools: Vec::new(),
             models: Vec::new(),
             setups: Vec::new(),
             toolpaths: Vec::new(),
         };
         let session = ProjectSession::from_project_file(project, Path::new(".")).unwrap();
-        // Default derives empty string; "Untitled" only comes from serde deserialization
-        assert!(session.name().is_empty());
+        assert_eq!(session.name(), "Test Job");
         assert_eq!(session.toolpath_count(), 0);
         assert_eq!(session.setup_count(), 0);
         assert!(session.list_toolpaths().is_empty());
@@ -941,7 +951,7 @@ mod tests {
     fn stock_bbox_from_defaults() {
         let project = ProjectFile {
             format_version: 3,
-            job: ProjectJobSection::default(),
+            job: named_empty_job(),
             tools: Vec::new(),
             models: Vec::new(),
             setups: Vec::new(),
@@ -958,7 +968,7 @@ mod tests {
     fn diagnostics_empty_session() {
         let project = ProjectFile {
             format_version: 3,
-            job: ProjectJobSection::default(),
+            job: named_empty_job(),
             tools: Vec::new(),
             models: Vec::new(),
             setups: Vec::new(),
@@ -1017,6 +1027,23 @@ mod tests {
         assert_eq!(tp.operation.op_type(), OperationType::Profile);
         let expected = OperationConfig::new_default(OperationType::Profile);
         assert_eq!(tp.operation.op_type(), expected.op_type());
+    }
+
+    #[test]
+    fn rejects_toml_without_cam_content() {
+        let toml_str = "format_version = 3\n";
+        let project: ProjectFile = toml::from_str(toml_str).unwrap();
+        let result = ProjectSession::from_project_file(project, Path::new("."));
+        match result {
+            Err(SessionError::NotACamProject(detail)) => {
+                assert!(
+                    detail.contains("does not look like an rs_cam project"),
+                    "unexpected detail: {detail}"
+                );
+            }
+            Err(other) => panic!("expected NotACamProject, got {other:?}"),
+            Ok(_) => panic!("loader should reject empty TOML"),
+        }
     }
 
     #[test]
