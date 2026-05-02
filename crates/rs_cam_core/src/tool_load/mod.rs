@@ -22,6 +22,7 @@
 pub mod chipload;
 pub mod deflection;
 pub mod power;
+pub mod suggest;
 pub mod verdict;
 
 use crate::compute::catalog::OperationType;

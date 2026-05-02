@@ -47,7 +47,7 @@ use crate::tool::{MillingCutter, ToolDefinition};
 /// that once.
 static EMBEDDED_LUT: OnceLock<VendorLut> = OnceLock::new();
 
-fn embedded_lut() -> &'static VendorLut {
+pub(super) fn embedded_lut() -> &'static VendorLut {
     EMBEDDED_LUT.get_or_init(VendorLut::embedded)
 }
 
@@ -262,7 +262,7 @@ pub fn evaluate(
 /// Map a cutter geometry hint to a vendor-LUT tool family. Mirrors
 /// `feeds::vendor_normalize::to_lookup_query` so the same routing logic
 /// runs for the chipload guardrail as for the F&S calculator.
-fn routed_lookup_family(
+pub(crate) fn routed_lookup_family(
     operation_kind: OperationType,
     tool_family: ToolFamily,
     operation_family: LutOperationFamily,
@@ -280,7 +280,7 @@ fn routed_lookup_family(
     }
 }
 
-fn tool_family_for(hint: ToolGeometryHint) -> ToolFamily {
+pub(crate) fn tool_family_for(hint: ToolGeometryHint) -> ToolFamily {
     match hint {
         ToolGeometryHint::Flat => ToolFamily::FlatEnd,
         ToolGeometryHint::Ball => ToolFamily::BallNose,

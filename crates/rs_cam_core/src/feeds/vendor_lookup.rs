@@ -55,80 +55,56 @@ pub fn find_best_row(lut: &VendorLut, criteria: &LookupCriteria) -> Option<Match
     lookup_best(lut, criteria)
 }
 
+/// All compatible rows for the given criteria, sorted by composite score
+/// descending. Used by the F&S suggest module to enumerate alternatives —
+/// the gate only needs the best, the suggest module needs to consider
+/// trade-offs across rows whose RPM falls inside the machine spindle.
+pub fn enumerate_matching_rows(lut: &VendorLut, criteria: &LookupCriteria) -> Vec<MatchedRow> {
+    let mut all: Vec<(i64, MatchedRow)> = Vec::new();
+    for (i, obs) in lut.observations.iter().enumerate() {
+        if !passes_must_match(criteria, obs) {
+            continue;
+        }
+        let (score, diam_score) = score_observation(criteria, obs);
+        all.push((score, build_result(obs, score, diam_score, i)));
+    }
+    all.sort_by_key(|(score, _)| -*score);
+    all.into_iter().map(|(_, row)| row).collect()
+}
+
+fn build_result(
+    obs: &VendorObservation,
+    score: i64,
+    diameter_match_score: i64,
+    _idx: usize,
+) -> LookupResult {
+    LookupResult {
+        chip_load_mm: chipload_midpoint(obs),
+        chip_load_min_mm: obs.chipload_min_mm_tooth,
+        chip_load_max_mm: obs.chipload_max_mm_tooth,
+        rpm_nominal: obs.rpm_nominal,
+        rpm_min: obs.rpm_min,
+        rpm_max: obs.rpm_max,
+        ap_min_mm: obs.ap_min_mm,
+        ap_max_mm: obs.ap_max_mm,
+        ae_min_mm: obs.ae_min_mm,
+        ae_max_mm: obs.ae_max_mm,
+        observation_id: obs.observation_id.clone(),
+        source_vendor: format!("{:?}", obs.source_vendor),
+        score,
+        diameter_match_score,
+    }
+}
+
 /// Find the best matching observation for a query.
 pub fn lookup_best(lut: &VendorLut, query: &LookupQuery) -> Option<LookupResult> {
     let mut best: Option<(i64, i64, usize)> = None;
 
     for (i, obs) in lut.observations.iter().enumerate() {
-        // --- Must-match filter ---
-        if obs.operation_family != query.operation_family {
+        if !passes_must_match(query, obs) {
             continue;
         }
-        if obs.material_family != query.material_family {
-            continue;
-        }
-        if !tool_family_compatible(query.tool_family, obs.tool_family) {
-            continue;
-        }
-        // Diameter ratio must be within 0.5x to 2.0x
-        let ratio = query.diameter_mm / obs.diameter_mm;
-        if !(0.5..=2.0).contains(&ratio) {
-            continue;
-        }
-
-        // --- Score components ---
-        let mut score: i64 = 1000;
-
-        // Tool family match
-        score += tool_family_score(query.tool_family, obs.tool_family);
-
-        // Row kind
-        score += obs.row_kind.score();
-
-        // Evidence grade
-        score += obs.evidence_grade.score();
-
-        // Flute count
-        let flute_diff = (query.flute_count as i64 - obs.flute_count as i64).unsigned_abs();
-        score += match flute_diff {
-            0 => 80,
-            1 => 30,
-            _ => -20,
-        };
-
-        // Diameter proximity (0-200, log-distance, closer = higher)
-        let log_ratio = (query.diameter_mm / obs.diameter_mm).ln().abs();
-        let diam_score = ((1.0 - log_ratio / 2.0_f64.ln()) * 200.0).clamp(0.0, 200.0) as i64;
-        score += diam_score;
-
-        // Hardness proximity (0-80)
-        if let (Some(qk), Some(qv), Some(ok), Some(ov)) = (
-            query.hardness_kind,
-            query.hardness_value,
-            obs.hardness_kind,
-            obs.hardness_value,
-        ) && qk == ok
-            && ov > 0.0
-        {
-            let rel_diff = ((qv - ov) / ov).abs();
-            let h_score = ((1.0 - rel_diff) * 80.0).clamp(0.0, 80.0) as i64;
-            score += h_score;
-        }
-
-        // Subfamily match
-        if let (Some(qs), Some(os)) = (&query.tool_subfamily, &obs.tool_subfamily)
-            && qs == os
-        {
-            score += 50;
-        }
-
-        // Pass role
-        if query.pass_role == obs.pass_role {
-            score += 45;
-        } else {
-            score -= 25;
-        }
-
+        let (score, diam_score) = score_observation(query, obs);
         if let Some((best_score, _, _)) = best {
             if score > best_score {
                 best = Some((score, diam_score, i));
@@ -142,24 +118,70 @@ pub fn lookup_best(lut: &VendorLut, query: &LookupQuery) -> Option<LookupResult>
         // SAFETY: `i` was stored from a valid iteration over `lut.observations`
         #[allow(clippy::indexing_slicing)]
         let obs = &lut.observations[i];
-        let chip_load = chipload_midpoint(obs);
-        LookupResult {
-            chip_load_mm: chip_load,
-            chip_load_min_mm: obs.chipload_min_mm_tooth,
-            chip_load_max_mm: obs.chipload_max_mm_tooth,
-            rpm_nominal: obs.rpm_nominal,
-            rpm_min: obs.rpm_min,
-            rpm_max: obs.rpm_max,
-            ap_min_mm: obs.ap_min_mm,
-            ap_max_mm: obs.ap_max_mm,
-            ae_min_mm: obs.ae_min_mm,
-            ae_max_mm: obs.ae_max_mm,
-            observation_id: obs.observation_id.clone(),
-            source_vendor: format!("{:?}", obs.source_vendor),
-            score,
-            diameter_match_score,
-        }
+        build_result(obs, score, diameter_match_score, i)
     })
+}
+
+fn passes_must_match(query: &LookupQuery, obs: &VendorObservation) -> bool {
+    if obs.operation_family != query.operation_family {
+        return false;
+    }
+    if obs.material_family != query.material_family {
+        return false;
+    }
+    if !tool_family_compatible(query.tool_family, obs.tool_family) {
+        return false;
+    }
+    let ratio = query.diameter_mm / obs.diameter_mm;
+    if !(0.5..=2.0).contains(&ratio) {
+        return false;
+    }
+    true
+}
+
+fn score_observation(query: &LookupQuery, obs: &VendorObservation) -> (i64, i64) {
+    let mut score: i64 = 1000;
+    score += tool_family_score(query.tool_family, obs.tool_family);
+    score += obs.row_kind.score();
+    score += obs.evidence_grade.score();
+
+    let flute_diff = (query.flute_count as i64 - obs.flute_count as i64).unsigned_abs();
+    score += match flute_diff {
+        0 => 80,
+        1 => 30,
+        _ => -20,
+    };
+
+    let log_ratio = (query.diameter_mm / obs.diameter_mm).ln().abs();
+    let diam_score = ((1.0 - log_ratio / 2.0_f64.ln()) * 200.0).clamp(0.0, 200.0) as i64;
+    score += diam_score;
+
+    if let (Some(qk), Some(qv), Some(ok), Some(ov)) = (
+        query.hardness_kind,
+        query.hardness_value,
+        obs.hardness_kind,
+        obs.hardness_value,
+    ) && qk == ok
+        && ov > 0.0
+    {
+        let rel_diff = ((qv - ov) / ov).abs();
+        let h_score = ((1.0 - rel_diff) * 80.0).clamp(0.0, 80.0) as i64;
+        score += h_score;
+    }
+
+    if let (Some(qs), Some(os)) = (&query.tool_subfamily, &obs.tool_subfamily)
+        && qs == os
+    {
+        score += 50;
+    }
+
+    if query.pass_role == obs.pass_role {
+        score += 45;
+    } else {
+        score -= 25;
+    }
+
+    (score, diam_score)
 }
 
 /// Check if a query tool family is compatible with an observation tool family.
