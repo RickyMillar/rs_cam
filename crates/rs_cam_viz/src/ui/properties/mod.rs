@@ -211,8 +211,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             if state.history.post_snapshot.is_none() {
                 state.history.post_snapshot = Some(state.gui.post.clone());
             }
-            let stock_top = state.session.stock_config().origin_z
-                + state.session.stock_config().z;
+            let stock_top = state.session.stock_config().origin_z + state.session.stock_config().z;
             post::draw(ui, &mut state.gui.post, stock_top);
         }
         Selection::Machine => {
@@ -365,9 +364,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             let height_ctx = state
                 .session
                 .find_toolpath_config_by_id(id.0)
-                .map(|(_, tc)| {
-                    crate::state::job::height_context_from_session(&state.session, tc)
-                });
+                .map(|(_, tc)| crate::state::job::height_context_from_session(&state.session, tc));
 
             // Snapshot operation and heights for stale_since detection
             let op_before = state
@@ -1083,12 +1080,32 @@ fn draw_feeds_card(ui: &mut egui::Ui, entry: &ToolpathEntry) {
                 });
 
             // Vendor source
-            if let Some(src) = &result.vendor_source {
-                ui.label(
-                    egui::RichText::new(format!("Source: {src}"))
+            match &result.chipload_source {
+                rs_cam_core::feeds::ChiploadSource::VendorLut { observation_id } => {
+                    ui.label(
+                        egui::RichText::new(format!("Source: {observation_id}"))
+                            .small()
+                            .color(egui::Color32::from_rgb(100, 160, 200)),
+                    );
+                }
+                rs_cam_core::feeds::ChiploadSource::FormulaFallback => {
+                    ui.label(
+                        egui::RichText::new(
+                            "No vendor row matched; using formula approximation — verify against vendor data.",
+                        )
                         .small()
-                        .color(egui::Color32::from_rgb(100, 160, 200)),
-                );
+                        .color(egui::Color32::from_rgb(220, 180, 60)),
+                    );
+                }
+                rs_cam_core::feeds::ChiploadSource::EdgeRadiusFloor => {
+                    ui.label(
+                        egui::RichText::new(
+                            "Using edge-radius chipload floor — verify against vendor data.",
+                        )
+                        .small()
+                        .color(egui::Color32::from_rgb(220, 180, 60)),
+                    );
+                }
             }
 
             // Warnings
@@ -2838,9 +2855,9 @@ fn draw_dressup_params(
     // those controls out so the UI reflects what compute actually does.
     // Must match `DressupConfig::normalize_for_op` in rs_cam_core.
     let op_incompatible_msg: Option<&str> = match entry.operation {
-        crate::state::toolpath::OperationConfig::ProjectCurve(_) => Some(
-            "Incompatible with Project Curve: each ring would get a phantom diagonal cut.",
-        ),
+        crate::state::toolpath::OperationConfig::ProjectCurve(_) => {
+            Some("Incompatible with Project Curve: each ring would get a phantom diagonal cut.")
+        }
         crate::state::toolpath::OperationConfig::DropCutter(_) => Some(
             "Incompatible with 3D Finish: each raster segment's ramp entry would carve a diagonal trench across the stock.",
         ),
