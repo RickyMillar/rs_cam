@@ -620,6 +620,18 @@ impl ProjectSession {
         self.simulation = None;
     }
 
+    /// Update stock dimensions from a bounding box (used by `auto_from_model`
+    /// to size the stock around imported geometry). Invalidates simulation.
+    ///
+    /// For 2D polygon bboxes (zero Z extent), [`StockConfig::update_from_bbox`]
+    /// preserves the existing Z so attaching an SVG/DXF doesn't collapse stock
+    /// thickness — see F-13 in the April 2026 review.
+    #[instrument(skip(self))]
+    pub fn update_stock_from_bbox(&mut self, bbox: &BoundingBox3) {
+        self.stock.update_from_bbox(bbox);
+        self.simulation = None;
+    }
+
     /// Add an alignment pin, deduping against existing pins within 0.01mm.
     ///
     /// Returns `true` if the pin was added, `false` if a duplicate was skipped.
@@ -694,6 +706,32 @@ impl ProjectSession {
             .get_mut(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
         *slot = config;
+        self.results.remove(&index);
+        self.simulation = None;
+        Ok(())
+    }
+
+    /// Apply an undo/redo snapshot of toolpath parameters to a toolpath at
+    /// `index`. Restores the operation config, dressup config, and BREP face
+    /// selection in one shot, invalidating the cached result and simulation.
+    ///
+    /// This is the session-API path used by the GUI undo stack to roll a
+    /// toolpath back to a prior parameter state.
+    #[instrument(skip(self, operation, dressups, face_selection))]
+    pub fn apply_toolpath_param_snapshot(
+        &mut self,
+        index: usize,
+        operation: OperationConfig,
+        dressups: DressupConfig,
+        face_selection: Option<Vec<FaceGroupId>>,
+    ) -> Result<(), SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get_mut(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        tc.operation = operation;
+        tc.dressups = dressups;
+        tc.face_selection = face_selection;
         self.results.remove(&index);
         self.simulation = None;
         Ok(())
@@ -1273,5 +1311,66 @@ mod tests {
         s.replace_toolpath_config(0, new_tc).unwrap();
 
         assert!(!s.results.contains_key(&0));
+    }
+
+    #[test]
+    fn update_stock_from_bbox_invalidates_sim() {
+        let mut s = make_session();
+        let pad = s.stock_config().padding;
+        let bbox = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(120.0, 80.0, 25.0),
+        };
+        s.update_stock_from_bbox(&bbox);
+
+        // Stock grew to fit bbox + padding (XY) and exact bbox + padding (Z).
+        assert!((s.stock_config().x - (120.0 + 2.0 * pad)).abs() < 1e-6);
+        assert!((s.stock_config().y - (80.0 + 2.0 * pad)).abs() < 1e-6);
+        assert!((s.stock_config().z - (25.0 + pad)).abs() < 1e-6);
+        // Simulation cache is cleared (mirrors the pattern in
+        // set_toolpath_enabled_invalidates_sim).
+        assert!(s.simulation.is_none());
+    }
+
+    #[test]
+    fn apply_toolpath_param_snapshot_invalidates() {
+        let mut s = make_session();
+        s.add_tool(make_tool());
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
+        s.results.insert(0, fake_result());
+
+        // Snapshot of "prior" state we want to restore.
+        let snapshot_op =
+            OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default());
+        let snapshot_dress = DressupConfig::default();
+        let snapshot_faces = Some(vec![crate::enriched_mesh::FaceGroupId(7)]);
+
+        s.apply_toolpath_param_snapshot(
+            0,
+            snapshot_op,
+            snapshot_dress,
+            snapshot_faces.clone(),
+        )
+        .unwrap();
+
+        match &s.toolpath_configs()[0].operation {
+            OperationConfig::AlignmentPinDrill(_) => {}
+            _ => panic!("operation snapshot not applied"),
+        }
+        assert_eq!(s.toolpath_configs()[0].face_selection, snapshot_faces);
+        assert!(!s.results.contains_key(&0));
+        assert!(s.simulation.is_none());
+    }
+
+    #[test]
+    fn apply_toolpath_param_snapshot_not_found() {
+        let mut s = make_session();
+        let result = s.apply_toolpath_param_snapshot(
+            99,
+            OperationConfig::Pocket(PocketConfig::default()),
+            DressupConfig::default(),
+            None,
+        );
+        assert!(matches!(result, Err(SessionError::ToolpathNotFound(99))));
     }
 }

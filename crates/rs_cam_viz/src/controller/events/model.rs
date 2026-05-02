@@ -378,9 +378,12 @@ impl<B: ComputeBackend> AppController<B> {
                 })
             })
         {
-            self.state.session.stock_mut().update_from_bbox(&bbox);
+            self.state.session.update_stock_from_bbox(&bbox);
+        } else {
+            // No bbox to apply, but stock fields may still have been mutated
+            // upstream — clear stale simulation just in case.
+            self.state.session.invalidate_stock();
         }
-        self.state.session.invalidate_stock();
         self.pending_upload = true;
         self.state.gui.mark_edited();
         self.sync_alignment_pin_drill();
