@@ -2,6 +2,8 @@ use super::LineVertex;
 use super::gpu_safety::{self, GpuLimits};
 use egui_wgpu::wgpu;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
+use std::collections::HashMap;
+use std::ops::Range;
 
 // Re-export palette from centralized colors module for backward compatibility.
 pub use super::colors::{TOOLPATH_PALETTE, palette_color};
@@ -463,6 +465,187 @@ impl ToolpathGpuData {
             tool_profile_preview_count: 0,
         }
     }
+
+    /// Build GPU data colored by per-segment effective chip thickness vs the
+    /// matched LUT row's chipload window.
+    ///
+    /// `envelope`: `[cl_min, cl_max]` from the suggest module's matched
+    /// vendor row. `None` when the toolpath has no model-able envelope
+    /// (custom material, no vendor data, etc.) — every cut segment is
+    /// then rendered grey.
+    ///
+    /// `move_chipload`: per-move effective chip thickness (worst-case
+    /// across samples sharing the same `move_index`). Moves missing from
+    /// the map (rapids, transients, all-`None` samples) render dim grey.
+    #[allow(clippy::indexing_slicing)]
+    pub fn from_toolpath_chipload(
+        device: &wgpu::Device,
+        limits: &GpuLimits,
+        tp: &Toolpath,
+        envelope: Option<Range<f64>>,
+        move_chipload: &HashMap<usize, f64>,
+    ) -> Self {
+        use wgpu::util::DeviceExt;
+
+        let max_buffer_bytes: usize = (limits.max_buffer_size as f64 * 0.94) as usize;
+        let vertex_size: usize = std::mem::size_of::<LineVertex>();
+        let max_verts: usize = max_buffer_bytes / vertex_size;
+        let total_moves = tp.moves.len().saturating_sub(1);
+        let stride = if total_moves * 2 > max_verts {
+            (total_moves * 2 / max_verts) + 1
+        } else {
+            1
+        };
+
+        let chipload_color =
+            |move_idx: usize| -> [f32; 3] { chipload_segment_color(envelope.as_ref(), move_chipload.get(&move_idx).copied()) };
+
+        let rapid_color: [f32; 3] = [0.15, 0.15, 0.2];
+        let mut cut_verts = Vec::new();
+        let mut rapid_verts = Vec::new();
+        let mut move_cut_counts = Vec::new();
+        let mut move_rapid_counts = Vec::new();
+
+        for i in 1..tp.moves.len() {
+            let keep = stride == 1
+                || i % stride == 0
+                || i == 1
+                || i == tp.moves.len() - 1
+                || tp.moves[i].move_type == MoveType::Rapid;
+
+            if keep {
+                let from = tp.moves[i - 1].target;
+                let to = tp.moves[i].target;
+                let p0 = [from.x as f32, from.y as f32, from.z as f32];
+                let p1 = [to.x as f32, to.y as f32, to.z as f32];
+
+                match tp.moves[i].move_type {
+                    MoveType::Rapid => {
+                        rapid_verts.push(LineVertex {
+                            position: p0,
+                            color: rapid_color,
+                        });
+                        rapid_verts.push(LineVertex {
+                            position: p1,
+                            color: rapid_color,
+                        });
+                    }
+                    _ => {
+                        let c = chipload_color(i);
+                        cut_verts.push(LineVertex {
+                            position: p0,
+                            color: c,
+                        });
+                        cut_verts.push(LineVertex {
+                            position: p1,
+                            color: c,
+                        });
+                    }
+                }
+            }
+
+            move_cut_counts.push(cut_verts.len() as u32);
+            move_rapid_counts.push(rapid_verts.len() as u32);
+        }
+
+        if cut_verts.is_empty() {
+            cut_verts.push(LineVertex {
+                position: [0.0; 3],
+                color: [0.0; 3],
+            });
+        }
+        if rapid_verts.is_empty() {
+            rapid_verts.push(LineVertex {
+                position: [0.0; 3],
+                color: [0.0; 3],
+            });
+        }
+
+        let cut_vertex_count = cut_verts.len() as u32;
+        let rapid_vertex_count = rapid_verts.len() as u32;
+
+        let cut_vertex_buffer = gpu_safety::try_create_buffer(
+            device,
+            limits,
+            "tp_chipload_cut",
+            bytemuck::cast_slice(&cut_verts),
+            wgpu::BufferUsages::VERTEX,
+        )
+        .unwrap_or_else(|| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("tp_chipload_cut_placeholder"),
+                contents: bytemuck::cast_slice(&[LineVertex {
+                    position: [0.0; 3],
+                    color: [0.0; 3],
+                }]),
+                usage: wgpu::BufferUsages::VERTEX,
+            })
+        });
+
+        let rapid_vertex_buffer = gpu_safety::try_create_buffer(
+            device,
+            limits,
+            "tp_chipload_rapid",
+            bytemuck::cast_slice(&rapid_verts),
+            wgpu::BufferUsages::VERTEX,
+        )
+        .unwrap_or_else(|| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("tp_chipload_rapid_placeholder"),
+                contents: bytemuck::cast_slice(&[LineVertex {
+                    position: [0.0; 3],
+                    color: [0.0; 3],
+                }]),
+                usage: wgpu::BufferUsages::VERTEX,
+            })
+        });
+
+        Self {
+            toolpath_id: None,
+            cut_vertex_buffer,
+            cut_vertex_count,
+            rapid_vertex_buffer,
+            rapid_vertex_count,
+            move_cut_counts,
+            move_rapid_counts,
+            entry_preview_buffer: None,
+            entry_preview_count: 0,
+            tool_profile_preview_buffer: None,
+            tool_profile_preview_count: 0,
+        }
+    }
+}
+
+/// Map a per-move effective chip thickness against an LUT envelope to a
+/// segment colour. Pure function — no GPU state — kept free-standing so
+/// it's unit-testable without a wgpu device.
+fn chipload_segment_color(envelope: Option<&Range<f64>>, ct: Option<f64>) -> [f32; 3] {
+    let Some(env) = envelope else {
+        return [0.40, 0.40, 0.40];
+    };
+    let Some(ct) = ct else {
+        return [0.25, 0.25, 0.30];
+    };
+    let cl_min = env.start;
+    let cl_max = env.end;
+    if ct < cl_min {
+        // Under-engaged — rubbing risk.
+        [0.20, 0.40, 0.90]
+    } else if ct < cl_min * 1.1 {
+        // Just above cl_min: blend blue → green.
+        let t = ((ct - cl_min) / (cl_min * 0.1).max(1e-9)).clamp(0.0, 1.0) as f32;
+        [
+            0.20 + (0.00 - 0.20) * t,
+            0.40 + (0.85 - 0.40) * t,
+            0.90 + (0.30 - 0.90) * t,
+        ]
+    } else if ct < cl_max * 0.9 {
+        [0.20, 0.85, 0.30]
+    } else if ct <= cl_max {
+        [1.00, 0.60, 0.10]
+    } else {
+        [0.95, 0.20, 0.20]
+    }
 }
 
 /// Entry/exit style configuration passed from the toolpath dressup settings.
@@ -825,4 +1008,56 @@ pub fn tool_profile_preview_vertices(
         }
     }
     verts
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chipload_color_no_envelope_is_grey() {
+        let c = chipload_segment_color(None, Some(0.05));
+        assert_eq!(c, [0.40, 0.40, 0.40]);
+    }
+
+    #[test]
+    fn chipload_color_no_sample_is_dim_grey() {
+        let env = 0.05..0.10;
+        let c = chipload_segment_color(Some(&env), None);
+        assert_eq!(c, [0.25, 0.25, 0.30]);
+    }
+
+    #[test]
+    fn chipload_color_below_min_is_blue() {
+        let env = 0.05..0.10;
+        let c = chipload_segment_color(Some(&env), Some(0.04));
+        assert_eq!(c, [0.20, 0.40, 0.90]);
+    }
+
+    #[test]
+    fn chipload_color_within_band_is_green() {
+        let env = 0.05..0.10;
+        let c = chipload_segment_color(Some(&env), Some(0.075));
+        assert_eq!(c, [0.20, 0.85, 0.30]);
+    }
+
+    #[test]
+    fn chipload_color_near_max_is_orange() {
+        let env = 0.05..0.10;
+        let c = chipload_segment_color(Some(&env), Some(0.095));
+        assert_eq!(c, [1.00, 0.60, 0.10]);
+    }
+
+    #[test]
+    fn chipload_color_above_max_is_red() {
+        let env = 0.05..0.10;
+        let c = chipload_segment_color(Some(&env), Some(0.12));
+        assert_eq!(c, [0.95, 0.20, 0.20]);
+    }
 }
