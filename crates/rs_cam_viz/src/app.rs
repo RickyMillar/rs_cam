@@ -269,8 +269,8 @@ impl RsCamApp {
         // so the two workspaces share one consistent control surface.
         egui::TopBottomPanel::top("sim_analysis_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                let (simulation, _viewport, _) =
-                    self.controller.simulation_viewport_and_events_mut();
+                let (state, _events) = self.controller.state_and_events_mut();
+                let simulation = &mut state.simulation;
                 ui.label(
                     egui::RichText::new("Analysis:")
                         .small()
@@ -294,6 +294,30 @@ impl RsCamApp {
                 if simulation.debug.enabled {
                     ui.checkbox(&mut simulation.debug.highlight_active_item, "Highlight");
                 }
+                ui.separator();
+                let mut capture_all = state
+                    .session
+                    .toolpath_configs()
+                    .iter()
+                    .any(|tc| tc.debug_options.enabled);
+                if ui
+                    .checkbox(&mut capture_all, "Record trace")
+                    .on_hover_text(
+                        "Record semantic/performance traces for generated toolpaths. Re-generate to apply changes.",
+                    )
+                    .changed()
+                {
+                    for tc in state.session.toolpath_configs_mut() {
+                        tc.debug_options.enabled = capture_all;
+                    }
+                }
+                ui.collapsing("Trace options", |ui| {
+                    ui.label(
+                        egui::RichText::new("Advanced per-toolpath overrides still live in toolpath properties.")
+                            .small()
+                            .color(egui::Color32::from_rgb(130, 130, 145)),
+                    );
+                });
             });
         });
 
