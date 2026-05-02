@@ -221,6 +221,10 @@ fn refusal_description(reason: &RefuseReason) -> &'static str {
             "Every compatible LUT row's RPM bracket falls outside the machine spindle \
              bracket. Consider a different cutter."
         }
+        RefuseReason::DiameterExtrapolationTooPoor => {
+            "All compatible vendor rows are calibrated for diameters too far off this \
+             tool's. A recommendation would be extrapolation, not vendor-grounded — refused."
+        }
     }
 }
 
