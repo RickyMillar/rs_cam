@@ -110,6 +110,13 @@ pub struct FeedsInput<'a> {
     pub setup: SetupContext,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChiploadSource {
+    VendorLut { observation_id: String },
+    FormulaFallback,
+    EdgeRadiusFloor,
+}
+
 /// Result of the feeds calculation.
 #[derive(Debug, Clone)]
 pub struct FeedsResult {
@@ -127,6 +134,7 @@ pub struct FeedsResult {
     pub warnings: Vec<FeedsWarning>,
     /// Observation ID if vendor LUT was used for chipload.
     pub vendor_source: Option<String>,
+    pub chipload_source: ChiploadSource,
 }
 
 /// Warnings generated during calculation.
@@ -161,20 +169,33 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let cl = &machine.chip_load;
     let formula_chipload = cl.k0 * d.powf(cl.p) * (1.0 / hardness).powf(cl.q);
 
-    let (chip_load, vendor_rpm, vendor_source) = if let Some(lut) = input.vendor_lut {
-        let query = vendor_normalize::to_lookup_query(input);
-        if let Some(result) = vendor_lookup::lookup_best(lut, &query) {
-            (
-                result.chip_load_mm,
-                result.rpm_nominal,
-                Some(result.observation_id),
-            )
+    let (chip_load, vendor_rpm, vendor_source, chipload_source) =
+        if let Some(lut) = input.vendor_lut {
+            let query = vendor_normalize::to_lookup_query(input);
+            if let Some(result) = vendor_lookup::lookup_best(lut, &query) {
+                let observation_id = result.observation_id;
+                (
+                    result.chip_load_mm,
+                    result.rpm_nominal,
+                    Some(observation_id.clone()),
+                    ChiploadSource::VendorLut { observation_id },
+                )
+            } else {
+                (
+                    formula_chipload,
+                    None,
+                    None,
+                    ChiploadSource::FormulaFallback,
+                )
+            }
         } else {
-            (formula_chipload, None, None)
-        }
-    } else {
-        (formula_chipload, None, None)
-    };
+            (
+                formula_chipload,
+                None,
+                None,
+                ChiploadSource::FormulaFallback,
+            )
+        };
 
     // Override RPM if vendor provided one within machine range
     if let Some(v_rpm) = vendor_rpm {
@@ -361,6 +382,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         mrr_mm3_min: mrr,
         warnings,
         vendor_source,
+        chipload_source,
     }
 }
 
@@ -1059,7 +1081,12 @@ mod tests {
             without_lut.chip_load_mm
         );
         assert!(with_lut.vendor_source.is_some());
+        assert!(matches!(
+            with_lut.chipload_source,
+            ChiploadSource::VendorLut { .. }
+        ));
         assert!(without_lut.vendor_source.is_none());
+        assert_eq!(without_lut.chipload_source, ChiploadSource::FormulaFallback);
     }
 
     #[test]
@@ -1120,6 +1147,7 @@ mod tests {
         });
 
         assert!(result.vendor_source.is_none());
+        assert_eq!(result.chipload_source, ChiploadSource::FormulaFallback);
         assert!(result.rpm > 6000.0 && result.rpm < 24000.0);
         assert!(result.feed_rate_mm_min > 500.0);
         assert!(result.chip_load_mm > 0.05 && result.chip_load_mm < 0.12);
