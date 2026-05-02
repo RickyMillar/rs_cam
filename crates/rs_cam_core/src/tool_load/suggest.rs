@@ -339,10 +339,24 @@ pub fn evaluate(
             } => {
                 let mid = 0.5 * (feed_lo + feed_hi);
                 let mrr = mid * stats.peak_axial_doc * stats.peak_radial_width;
-                // Surface speed proxy for finish: π · D · rpm. Diameter
-                // is fixed across rows in the same toolpath, so rank on
-                // rpm directly. For rough, maximise MRR.
-                let objective = if is_finish_pass { rpm } else { mrr };
+                // Weight the optimisation objective by diameter-fit so a
+                // row that wins narrowly on RPM/MRR doesn't beat a row
+                // with a much closer diameter match. The chipload window
+                // calibration is most meaningful at the row's nominal
+                // diameter; a poor diameter fit means the bounds extrapolate
+                // less reliably. Floor at 0.1 so a terrible match still
+                // beats refusal — we keep the row visible in
+                // considered_rows even if it's a fallback.
+                let diam_weight =
+                    (row.diameter_match_score as f64 / 200.0).max(0.1);
+                let raw_objective = if is_finish_pass {
+                    // Surface speed proxy for finish: π · D · rpm; D fixed
+                    // for the toolpath, so rank on rpm alone.
+                    rpm
+                } else {
+                    mrr
+                };
+                let objective = raw_objective * diam_weight;
                 evaluations.push(RowEvaluation {
                     observation_id: row.observation_id.clone(),
                     diameter_match_score: row.diameter_match_score,
