@@ -592,16 +592,19 @@ impl ProjectSession {
     // ensure the cache is properly cleared after the edit completes.
 
     /// Invalidate cached simulation after stock config was mutated in-place.
+    #[instrument(skip(self))]
     pub fn invalidate_stock(&mut self) {
         self.simulation = None;
     }
 
     /// Invalidate cached simulation after machine profile was mutated in-place.
+    #[instrument(skip(self))]
     pub fn invalidate_machine(&mut self) {
         self.simulation = None;
     }
 
     /// Invalidate cached results for all toolpaths that reference a given tool.
+    #[instrument(skip(self))]
     pub fn invalidate_tool(&mut self, tool_id: usize) {
         for (idx, tc) in self.toolpath_configs.iter().enumerate() {
             if tc.tool_id == tool_id {
