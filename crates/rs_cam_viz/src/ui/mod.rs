@@ -12,6 +12,7 @@ pub mod sim_diagnostics;
 pub mod sim_op_list;
 pub mod sim_timeline;
 pub mod status_bar;
+pub mod suggest_modal;
 pub mod theme;
 pub mod toolpath_panel;
 pub mod toolpath_row_controls;
@@ -115,6 +116,19 @@ pub enum AppEvent {
     },
     /// Re-upload simulation mesh with new viz colors.
     SimVizModeChanged,
+
+    // F&S suggest
+    /// Open the F&S suggest modal for a specific toolpath.
+    OpenSuggestModal(ToolpathId),
+    /// Close the F&S suggest modal.
+    CloseSuggestModal,
+    /// Apply a feed/RPM suggestion to the named toolpath. Marks the
+    /// toolpath stale so the user regenerates to get the new feed/RPM
+    /// reflected in the toolpath.
+    ApplySuggestedFeed {
+        toolpath_id: ToolpathId,
+        feed_mm_min: f64,
+    },
 
     // Collision
     RunCollisionCheck,

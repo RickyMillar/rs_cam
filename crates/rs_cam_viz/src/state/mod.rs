@@ -38,6 +38,10 @@ pub struct AppState {
     pub show_preflight: bool,
     /// Show keyboard shortcuts reference window.
     pub show_shortcuts: bool,
+    /// Toolpath ID whose feed-suggestion modal is open. `None` when
+    /// closed. The modal recomputes the suggestion from the current
+    /// session + simulation each frame, so this is just the open-flag.
+    pub suggest_modal_for: Option<usize>,
 }
 
 impl AppState {
@@ -52,6 +56,7 @@ impl AppState {
             history: UndoHistory::new(),
             show_preflight: false,
             show_shortcuts: false,
+            suggest_modal_for: None,
         }
     }
 }

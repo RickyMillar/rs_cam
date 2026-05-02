@@ -161,6 +161,52 @@ impl<B: ComputeBackend> AppController<B> {
                 self.state.gui.mark_edited();
             }
 
+            // --- F&S suggest modal ---
+            AppEvent::OpenSuggestModal(toolpath_id) => {
+                self.state.suggest_modal_for = Some(toolpath_id.0);
+            }
+            AppEvent::CloseSuggestModal => {
+                self.state.suggest_modal_for = None;
+            }
+            AppEvent::ApplySuggestedFeed {
+                toolpath_id,
+                feed_mm_min,
+            } => {
+                let index = self
+                    .state
+                    .session
+                    .toolpath_configs()
+                    .iter()
+                    .position(|tc| tc.id == toolpath_id.0);
+                if let Some(idx) = index {
+                    if let Err(e) = self.state.session.set_toolpath_param(
+                        idx,
+                        "feed_rate",
+                        serde_json::json!(feed_mm_min),
+                    ) {
+                        self.push_notification(
+                            format!("Apply failed: {e}"),
+                            crate::controller::Severity::Error,
+                        );
+                    } else {
+                        self.state.gui.mark_edited();
+                        self.state.suggest_modal_for = None;
+                        self.push_notification(
+                            format!(
+                                "Applied {:.0} mm/min to toolpath {}. Regenerate to apply.",
+                                feed_mm_min, toolpath_id.0
+                            ),
+                            crate::controller::Severity::Info,
+                        );
+                    }
+                } else {
+                    self.push_notification(
+                        format!("Apply failed: toolpath id {} not found", toolpath_id.0),
+                        crate::controller::Severity::Error,
+                    );
+                }
+            }
+
             // --- Pass-through events handled elsewhere ---
             AppEvent::ExportGcode
             | AppEvent::ExportCombinedGcode

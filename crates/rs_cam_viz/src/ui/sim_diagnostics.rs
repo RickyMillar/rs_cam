@@ -1090,7 +1090,7 @@ fn draw_tool_load_table(
     }
 
     egui::Grid::new("simulation_tool_load_table")
-        .num_columns(5)
+        .num_columns(6)
         .spacing([8.0, 3.0])
         .striped(true)
         .show(ui, |ui| {
@@ -1098,7 +1098,8 @@ fn draw_tool_load_table(
             ui.label(egui::RichText::new("Chipload").small().strong());
             ui.label(egui::RichText::new("Power").small().strong());
             ui.label(egui::RichText::new("Deflection").small().strong());
-            ui.label(egui::RichText::new("Action").small().strong());
+            ui.label(egui::RichText::new("Jump").small().strong());
+            ui.label(egui::RichText::new("Suggest").small().strong());
             ui.end_row();
 
             for verdict in &report.per_toolpath {
@@ -1118,6 +1119,11 @@ fn draw_tool_load_table(
                     }
                 } else {
                     ui.label(egui::RichText::new("—").small().color(theme::TEXT_DIM));
+                }
+                if ui.small_button("Suggest").clicked() {
+                    events.push(AppEvent::OpenSuggestModal(
+                        crate::state::toolpath::ToolpathId(verdict.toolpath_id),
+                    ));
                 }
                 ui.end_row();
             }
