@@ -454,13 +454,19 @@ fn draw_signal_track(
         .flat_map(|(_, pts)| pts.iter().map(|(_, p)| p[1]))
         .fold(f64::NEG_INFINITY, f64::max);
 
+    // All five tracks share this link group so X-zoom/pan happens in lockstep.
+    // Y is independent (each metric has its own scale).
+    let link_group = ui.id().with("signal_spine_x_link");
     let response = Plot::new(format!("signal_track_{label}"))
         .height(46.0)
-        // Lock zoom/drag so the X axis stays glued to the boundary timeline above.
-        .allow_zoom([false, false])
-        .allow_drag([false, false])
+        // Allow horizontal zoom (mouse wheel) and pan (drag); never vertical
+        // — Y is fitted to the metric and not user-draggable.
+        .allow_zoom([true, false])
+        .allow_drag([true, false])
         .allow_scroll([false, false])
         .allow_boxed_zoom(false)
+        .link_axis(link_group, [true, false])
+        .link_cursor(link_group, [true, false].into())
         .show_axes([false, false])
         .show_grid([false, false])
         .include_x(0.0)
@@ -531,11 +537,19 @@ fn draw_signal_track(
                 }
             }
 
-            if let Some(pointer) = plot_ui.pointer_coordinate() {
+            // Only react when the pointer is actually over the plot rect AND
+            // within the data X range. This prevents the playhead jumping when
+            // the user moves the mouse past the left/right edges of the plot
+            // (which still reports a valid pointer_coordinate well outside the
+            // data bounds).
+            let pointer_in_rect = plot_ui.response().hovered();
+            if pointer_in_rect
+                && let Some(pointer) = plot_ui.pointer_coordinate()
+                && pointer.x >= 0.0
+                && pointer.x <= total_moves
+            {
                 *new_hovered = Some(pointer.x);
                 if plot_ui.response().clicked() {
-                    // Tolerance is in moves, scaled to total range so behavior
-                    // is consistent across short and long projects.
                     let tolerance = (total_moves * 0.02).max(5.0);
                     let nearest_hotspot = hotspots.iter().min_by(|a, b| {
                         (a.global_move as f64 - pointer.x)
@@ -546,14 +560,16 @@ fn draw_signal_track(
                         && (hs.global_move as f64 - pointer.x).abs() <= tolerance
                     {
                         *clicked_hotspot = Some((hs.index, hs.global_move));
-                    } else if let Some((global_move, _)) = nearest_in_groups(pointer.x, &group_points) {
+                    } else if let Some((global_move, _)) =
+                        nearest_in_groups(pointer.x, &group_points)
+                    {
                         events.push(AppEvent::SimJumpToMove(global_move));
                     }
                 }
             }
         });
     response.response.on_hover_text(
-        "Hover any track to read all five at the same X. Click to scrub. Each toolpath renders as its own line segment.",
+        "Hover to read all five tracks at the same X. Click to scrub. Scroll to zoom; drag to pan. Each toolpath renders as its own line segment.",
     );
 }
 
