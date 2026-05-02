@@ -53,6 +53,11 @@ pub enum ToolpathColorMode {
     Normal,
     /// Color by feed rate: green = nominal, yellow = reduced, red = heavily loaded.
     Engagement,
+    /// Color each segment by per-sample effective chip thickness vs the
+    /// matched LUT row's chipload window. Blue = under-engaged, green =
+    /// within bounds, orange/red = approaching or exceeding cl_max,
+    /// grey = no envelope or no sample.
+    Chipload,
 }
 
 impl ViewportState {
