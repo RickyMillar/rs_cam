@@ -381,6 +381,18 @@ plus manual MCP smoke test on wanaka.
 **Status as of 2026-05-03:** U1, U2, U3, U4 all shipped. See commits
 `fc15d40..952178d` for the build-up.
 
+**Post-ship addendum (same day):** Stage 1 was extended from a 1D
+DOC sweep to a joint DOC × stepover sweep — the original plan
+collapsed to 1D (line 240) on the assumption stepover would covary
+with DOC at constant chipload. Live wanaka use showed adaptive3d
+roughs returning "no improvement" because the optimal trade is
+typically larger stepover at smaller DOC, which the 1D sweep
+couldn't reach. Joint sweep evaluates 3×3 = 9 (or 4×3 = 12 for
+Pocket/Adaptive) per geometry op; Stage 1 budget roughly triples.
+Engineering Default 6 (Exceeds-baseline → also vary stepover) is
+satisfied by the joint sweep applying to every baseline, not just
+Exceeds.
+
 | Phase | What | Why first | Files | LOC |
 |---|---|---|---|---|
 | **U1 — `optimize_toolpath` service** | Function: takes session + baseline trace + toolpath idx + cancel, returns `OptimizeOutcome`. **Stage 0** (analytical, instant): solve max RPM/feed scale factor `k` from machine + tool + LUT-row limits; produce the headroom point. **Stage 1** (1mm sim): for the 5 geometry ops, vary DOC per Engineering Default 9 anchored at the headroom point; for others, skip. **Stage 2** (0.5mm sim): top 3 by cycle time at full res. Cancellation between stages and between candidates. As part of this work, delete suggest's now-redundant chipload bipolar/peak logic — the gate's verdict over each candidate's sim is the single source of truth. **Restore the baseline params on every exit path** (Ok, NoSafeImprovement, Skipped, cancelled, panicked candidate) so `optimize_toolpath` is a pure read of the search; the GUI keeps showing the original `OperationConfig` until the user explicitly Applies. See Engineering Default 10. | Engine for everything below. Stage 0 alone delivers the headline "scale RPM and feed up to machine limits" win at zero sim cost. | New `crates/rs_cam_core/src/tool_load/optimize.rs`; trim `tool_load/suggest.rs` (or retire it) | ~800 |

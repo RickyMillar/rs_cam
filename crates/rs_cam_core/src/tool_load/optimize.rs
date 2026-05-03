@@ -393,8 +393,13 @@ pub fn optimize_toolpath(
         return finalize_partial(baseline_candidate, all_candidates);
     }
 
-    // 8. Stage 1: DOC variant grid for ops with DOC knobs. Anchored at
-    //    the headroom-point op when available, baseline op otherwise.
+    // 8. Stage 1: joint DOC × stepover variant grid for ops with both
+    //    knobs. Anchored at the headroom-point op when available,
+    //    baseline op otherwise. The two axes are coupled in
+    //    practice — lower DOC tolerates higher stepover at constant
+    //    chipload — so we sweep them jointly rather than as separate
+    //    1D passes. 3×3 = 9 candidates per geometry op (4×3 = 12 for
+    //    Pocket/Adaptive), Stage 2 keeps the top 3 by cycle time.
     if has_doc_knob(ctx.operation_kind) {
         let anchor_op = all_candidates
             .first()
@@ -403,32 +408,45 @@ pub fn optimize_toolpath(
         let anchor_doc = anchor_op
             .depth_per_pass()
             .unwrap_or_else(|| baseline_op.depth_per_pass().unwrap_or(1.5));
+        let anchor_stepover = anchor_op
+            .stepover()
+            .unwrap_or_else(|| baseline_op.stepover().unwrap_or(1.0));
         let doc_variants = build_doc_variants(
             anchor_doc,
             matched_lut_row.as_ref(),
             ctx.operation_kind,
         );
-        for &doc in &doc_variants {
-            if cancel.load(Ordering::SeqCst) {
-                break;
-            }
-            // Skip if this DOC matches the anchor — no point re-simming
-            // the same params.
-            if (doc - anchor_doc).abs() < DOC_DEDUP_TOLERANCE_MM {
-                continue;
-            }
-            let candidate_op = apply_doc_to_op(&anchor_op, doc);
-            let delta = delta_against_baseline(&baseline_op, &candidate_op);
-            if let Ok(candidate) = evaluate_candidate(
-                &mut guard,
-                &ctx,
-                candidate_op,
-                delta,
-                SearchStage::Coarse,
-                STAGE1_RESOLUTION_MM,
-                cancel,
-            ) {
-                all_candidates.push(candidate);
+        let stepover_variants = build_stepover_variants(
+            anchor_stepover,
+            matched_lut_row.as_ref(),
+            ctx.operation_kind,
+        );
+        'outer: for &doc in &doc_variants {
+            for &stepover in &stepover_variants {
+                if cancel.load(Ordering::SeqCst) {
+                    break 'outer;
+                }
+                // Skip the anchor combo — it's already represented
+                // by the headroom-point candidate (or the baseline).
+                if (doc - anchor_doc).abs() < DOC_DEDUP_TOLERANCE_MM
+                    && (stepover - anchor_stepover).abs() < STEPOVER_DEDUP_TOLERANCE_MM
+                {
+                    continue;
+                }
+                let candidate_op =
+                    apply_stepover_to_op(&apply_doc_to_op(&anchor_op, doc), stepover);
+                let delta = delta_against_baseline(&baseline_op, &candidate_op);
+                if let Ok(candidate) = evaluate_candidate(
+                    &mut guard,
+                    &ctx,
+                    candidate_op,
+                    delta,
+                    SearchStage::Coarse,
+                    STAGE1_RESOLUTION_MM,
+                    cancel,
+                ) {
+                    all_candidates.push(candidate);
+                }
             }
         }
     }
@@ -813,6 +831,16 @@ const DOC_HARD_FLOOR_MM: f64 = 0.05;
 /// apart.
 const DOC_DEDUP_TOLERANCE_MM: f64 = 0.005;
 
+/// Hard floor on stepover. Same reasoning as `DOC_HARD_FLOOR_MM` —
+/// the optimizer is calibrated for the 5 roughing/clearing ops where
+/// sub-50µm stepover is finishing territory and outside the LUT
+/// envelope.
+const STEPOVER_HARD_FLOOR_MM: f64 = 0.05;
+
+/// Dedup tolerance for stepover variants. Same rationale as
+/// `DOC_DEDUP_TOLERANCE_MM`.
+const STEPOVER_DEDUP_TOLERANCE_MM: f64 = 0.005;
+
 /// Build the DOC candidate grid for a Stage-1 sweep. Always includes
 /// the baseline (`baseline_doc_mm`) as a control candidate; the lo and
 /// hi endpoints come from the LUT row's calibrated bounds (clamped by
@@ -877,6 +905,66 @@ pub(crate) fn build_doc_variants(
 pub(crate) fn apply_doc_to_op(baseline_op: &OperationConfig, doc_mm: f64) -> OperationConfig {
     let mut variant = baseline_op.clone();
     variant.set_depth_per_pass(doc_mm);
+    variant
+}
+
+/// Build the stepover candidate grid for a Stage-1 sweep. Same shape
+/// as `build_doc_variants` but anchored to the LUT row's
+/// `ae_min_mm`/`ae_max_mm` (radial engagement) bounds instead of
+/// `ap_*`. Always includes the baseline (`baseline_stepover_mm`).
+///
+/// 4-variant ops (Pocket, Adaptive) get `[lo, baseline, mid, hi]` so
+/// the search has more granularity on the dominant clearing
+/// strategies; 3-variant ops (Adaptive3d, Rest, Face) get
+/// `[lo, baseline, hi]`. Returns variants sorted ascending. May
+/// return fewer than the nominal entries when adjacent values dedupe.
+pub(crate) fn build_stepover_variants(
+    baseline_stepover_mm: f64,
+    lut_row: Option<&MatchedRow>,
+    op_type: OperationType,
+) -> Vec<f64> {
+    let baseline = baseline_stepover_mm.max(STEPOVER_HARD_FLOOR_MM);
+    let four_variant = matches!(op_type, OperationType::Pocket | OperationType::Adaptive);
+
+    let mult_lo = 0.7 * baseline;
+    let mult_hi = if four_variant {
+        1.4 * baseline
+    } else {
+        1.3 * baseline
+    };
+
+    let (lo, hi) = match lut_row {
+        Some(row) => {
+            let ae_min = row.ae_min_mm.unwrap_or(mult_lo);
+            let ae_max = row.ae_max_mm.unwrap_or(mult_hi);
+            (ae_min.max(mult_lo), ae_max.min(mult_hi))
+        }
+        None => (mult_lo, mult_hi),
+    };
+
+    let lo = lo.max(STEPOVER_HARD_FLOOR_MM);
+    let hi = hi.max(baseline).max(STEPOVER_HARD_FLOOR_MM);
+
+    let mut variants = vec![lo, baseline];
+    if four_variant {
+        variants.push((baseline + hi) * 0.5);
+    }
+    variants.push(hi);
+
+    variants.sort_by(f64::total_cmp);
+    variants.dedup_by(|a, b| (*a - *b).abs() < STEPOVER_DEDUP_TOLERANCE_MM);
+    variants
+}
+
+/// Apply a candidate stepover value to a baseline op. The op must be
+/// one of the 5 families that exposes `stepover` via the
+/// `OperationParams` trait.
+pub(crate) fn apply_stepover_to_op(
+    baseline_op: &OperationConfig,
+    stepover_mm: f64,
+) -> OperationConfig {
+    let mut variant = baseline_op.clone();
+    variant.set_stepover(stepover_mm);
     variant
 }
 
@@ -2834,6 +2922,103 @@ mod stage1_grid_tests {
         assert!((candidate.feed_rate() - 1500.0).abs() < 1e-9);
         assert_eq!(candidate.stepover(), Some(2.0));
         assert_eq!(candidate.spindle_rpm(), Some(18_000));
+    }
+
+    fn synthetic_lut_row_with_ae(
+        ae_min: Option<f64>,
+        ae_max: Option<f64>,
+    ) -> MatchedRow {
+        let mut row = synthetic_lut_row(None, None);
+        row.ae_min_mm = ae_min;
+        row.ae_max_mm = ae_max;
+        row
+    }
+
+    #[test]
+    fn stepover_three_variant_op_with_no_lut_row() {
+        // Adaptive3d with baseline 0.8mm and no LUT bounds.
+        // Expected: [0.7×0.8, 0.8, 1.3×0.8] = [0.56, 0.8, 1.04]
+        let variants = build_stepover_variants(0.8, None, OperationType::Adaptive3d);
+        assert_eq!(variants.len(), 3, "got {variants:?}");
+        assert!((variants[0] - 0.56).abs() < 1e-6);
+        assert!((variants[1] - 0.8).abs() < 1e-6);
+        assert!((variants[2] - 1.04).abs() < 1e-6);
+    }
+
+    #[test]
+    fn stepover_four_variant_op_with_no_lut_row() {
+        // Pocket with baseline 2.0mm and no LUT bounds.
+        // Expected: [0.7×2.0, 2.0, mid(2.0, 2.8), 2.8] = [1.4, 2.0, 2.4, 2.8]
+        let variants = build_stepover_variants(2.0, None, OperationType::Pocket);
+        assert_eq!(variants.len(), 4, "got {variants:?}");
+        assert!((variants[0] - 1.4).abs() < 1e-6);
+        assert!((variants[1] - 2.0).abs() < 1e-6);
+        assert!((variants[2] - 2.4).abs() < 1e-6);
+        assert!((variants[3] - 2.8).abs() < 1e-6);
+    }
+
+    #[test]
+    fn stepover_lut_row_clamps_to_ae_bounds() {
+        // Baseline 1.0mm, LUT ae_min 0.8mm, ae_max 1.2mm. Multiplier
+        // would give [0.7, 1.0, 1.3] — LUT clamps to [0.8, 1.0, 1.2].
+        let row = synthetic_lut_row_with_ae(Some(0.8), Some(1.2));
+        let variants =
+            build_stepover_variants(1.0, Some(&row), OperationType::Adaptive3d);
+        assert!((variants[0] - 0.8).abs() < 1e-6, "got {variants:?}");
+        assert!((variants[2] - 1.2).abs() < 1e-6, "got {variants:?}");
+    }
+
+    #[test]
+    fn stepover_floors_at_hard_minimum() {
+        let variants = build_stepover_variants(0.01, None, OperationType::Pocket);
+        for v in &variants {
+            assert!(*v >= STEPOVER_HARD_FLOOR_MM - 1e-9, "got {variants:?}");
+        }
+    }
+
+    #[test]
+    fn stepover_always_includes_baseline() {
+        // Tight LUT bounds — baseline must still survive the dedup.
+        let row = synthetic_lut_row_with_ae(Some(0.99), Some(1.01));
+        let variants =
+            build_stepover_variants(1.0, Some(&row), OperationType::Adaptive3d);
+        assert!(
+            variants.iter().any(|v| (v - 1.0).abs() < 1e-6),
+            "baseline must be present: got {variants:?}"
+        );
+    }
+
+    #[test]
+    fn apply_stepover_writes_only_stepover() {
+        let baseline = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 1500.0,
+            stepover: 2.0,
+            depth_per_pass: 1.5,
+            spindle_rpm: Some(18_000),
+            ..PocketConfig::default()
+        });
+        let candidate = apply_stepover_to_op(&baseline, 2.5);
+        assert_eq!(candidate.stepover(), Some(2.5));
+        // Other fields unchanged.
+        assert!((candidate.feed_rate() - 1500.0).abs() < 1e-9);
+        assert_eq!(candidate.depth_per_pass(), Some(1.5));
+        assert_eq!(candidate.spindle_rpm(), Some(18_000));
+    }
+
+    #[test]
+    fn joint_apply_doc_then_stepover_preserves_both() {
+        // The Stage 1 sweep applies DOC first, then stepover. Verify
+        // the second apply doesn't clobber the first.
+        let baseline = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 1500.0,
+            stepover: 2.0,
+            depth_per_pass: 1.5,
+            ..PocketConfig::default()
+        });
+        let with_doc = apply_doc_to_op(&baseline, 2.5);
+        let with_both = apply_stepover_to_op(&with_doc, 2.5);
+        assert_eq!(with_both.depth_per_pass(), Some(2.5));
+        assert_eq!(with_both.stepover(), Some(2.5));
     }
 }
 
