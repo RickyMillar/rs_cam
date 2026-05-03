@@ -134,6 +134,26 @@ pub enum AppEvent {
         spindle_rpm: Option<u32>,
     },
 
+    // Optimize (U2 of OPTIMIZER_UX_PLAN.md)
+    /// Open the Optimize modal for a specific toolpath. Triggers
+    /// optimize_toolpath synchronously and stashes the outcome on
+    /// `AppState::optimize_modal`. Long-running — the GUI freezes
+    /// until U3's worker-thread integration lands.
+    OpenOptimizeModal(ToolpathId),
+    /// Close the Optimize modal.
+    CloseOptimizeModal,
+    /// Apply a candidate from the Optimize modal. Carries the candidate
+    /// index into `OptimizeOutcome::Ranked(..)` so the controller can
+    /// look up the params + delta from the cached outcome rather than
+    /// shipping the full `OperationConfig` through an event.
+    ApplyOptimizeCandidate {
+        toolpath_id: ToolpathId,
+        /// Index into the cached `Ranked` candidates list. Index 0 is
+        /// the baseline (apply does nothing); index ≥ 1 selects a
+        /// non-baseline candidate.
+        candidate_index: usize,
+    },
+
     // Collision
     RunCollisionCheck,
 
