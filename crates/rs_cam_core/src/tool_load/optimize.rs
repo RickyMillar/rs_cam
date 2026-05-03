@@ -890,7 +890,10 @@ pub(crate) fn delta_against_baseline(
 /// mid-sim if the user happens to be on the Feeds tab. After Apply,
 /// the same flags persist, which is what we want — the user's chosen
 /// candidate should not be silently overwritten.
-pub(crate) fn feeds_auto_for_candidate(
+///
+/// Public because the GUI's Apply handler in viz needs the same
+/// translation when committing the user's selection.
+pub fn feeds_auto_for_candidate(
     baseline: &FeedsAutoMode,
     delta: &ParamDelta,
 ) -> FeedsAutoMode {

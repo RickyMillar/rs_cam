@@ -173,63 +173,21 @@ impl<B: ComputeBackend> AppController<B> {
                 feed_mm_min,
                 spindle_rpm,
             } => {
-                let index = self
-                    .state
-                    .session
-                    .toolpath_configs()
-                    .iter()
-                    .position(|tc| tc.id == toolpath_id.0);
-                if let Some(idx) = index {
-                    let mut errors: Vec<String> = Vec::new();
-                    if let Err(e) = self.state.session.set_toolpath_param(
-                        idx,
-                        "feed_rate",
-                        serde_json::json!(feed_mm_min),
-                    ) {
-                        errors.push(format!("feed_rate: {e}"));
-                    }
-                    if let Some(rpm) = spindle_rpm {
-                        if let Err(e) = self.state.session.set_toolpath_param(
-                            idx,
-                            "spindle_rpm",
-                            serde_json::json!(rpm),
-                        ) {
-                            errors.push(format!("spindle_rpm: {e}"));
-                        }
-                    }
-                    if !errors.is_empty() {
-                        self.push_notification(
-                            format!("Apply failed: {}", errors.join(", ")),
-                            crate::controller::Severity::Error,
-                        );
-                    } else {
-                        self.state.gui.mark_edited();
-                        self.state.suggest_modal_for = None;
-                        let rpm_text = spindle_rpm
-                            .map_or_else(String::new, |r| format!(" @ {r} RPM"));
-                        self.push_notification(
-                            format!(
-                                "Applied {feed_mm_min:.0} mm/min{rpm_text} to toolpath {}. \
-                                 Regenerate to apply.",
-                                toolpath_id.0
-                            ),
-                            crate::controller::Severity::Info,
-                        );
-                    }
-                } else {
-                    self.push_notification(
-                        format!("Apply failed: toolpath id {} not found", toolpath_id.0),
-                        crate::controller::Severity::Error,
-                    );
-                }
+                self.apply_suggested_feed(toolpath_id, feed_mm_min, spindle_rpm);
             }
 
-            // --- Optimize modal (U2 stub — handlers land in #16) ---
-            AppEvent::OpenOptimizeModal(_)
-            | AppEvent::CloseOptimizeModal
-            | AppEvent::ApplyOptimizeCandidate { .. } => {
-                // Stubbed for #14. Real handlers land alongside the
-                // modal UI in the next commit pair.
+            // --- Optimize modal (U2) ---
+            AppEvent::OpenOptimizeModal(toolpath_id) => {
+                self.open_optimize_modal(toolpath_id);
+            }
+            AppEvent::CloseOptimizeModal => {
+                self.state.optimize_modal = None;
+            }
+            AppEvent::ApplyOptimizeCandidate {
+                toolpath_id,
+                candidate_index,
+            } => {
+                self.apply_optimize_candidate(toolpath_id, candidate_index);
             }
 
             // --- Pass-through events handled elsewhere ---
@@ -251,5 +209,241 @@ impl<B: ComputeBackend> AppController<B> {
             | AppEvent::SetToolLoadOverride { .. }
             | AppEvent::Quit => {}
         }
+    }
+
+    /// Apply a feed/RPM suggestion via the extended snapshot mutation.
+    /// Routes through `apply_toolpath_param_snapshot` (Engineering
+    /// Default 7) so the relevant `feeds_auto.*` flags are flipped to
+    /// `false` transactionally with the operation write — closes the
+    /// silent-LUT-overwrite bug the older `set_toolpath_param`-cascade
+    /// path had.
+    fn apply_suggested_feed(
+        &mut self,
+        toolpath_id: crate::state::toolpath::ToolpathId,
+        feed_mm_min: f64,
+        spindle_rpm: Option<u32>,
+    ) {
+        let index = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .position(|tc| tc.id == toolpath_id.0);
+        let Some(idx) = index else {
+            self.push_notification(
+                format!("Apply failed: toolpath id {} not found", toolpath_id.0),
+                crate::controller::Severity::Error,
+            );
+            return;
+        };
+
+        // Snapshot the fields we need from the current config, then
+        // mutate the operation and feeds_auto for the candidate apply.
+        let Some(tc) = self.state.session.get_toolpath_config(idx) else {
+            self.push_notification(
+                format!("Apply failed: toolpath {} disappeared", toolpath_id.0),
+                crate::controller::Severity::Error,
+            );
+            return;
+        };
+        let mut new_op = tc.operation.clone();
+        let dressups = tc.dressups.clone();
+        let face_selection = tc.face_selection.clone();
+        let mut feeds_auto = tc.feeds_auto.clone();
+
+        // Always changing feed.
+        new_op.set_feed_rate(feed_mm_min);
+        feeds_auto.feed_rate = false;
+        // RPM only if Some.
+        if let Some(rpm) = spindle_rpm {
+            new_op.set_spindle_rpm(Some(rpm));
+            feeds_auto.spindle_speed = false;
+        }
+
+        if let Err(e) = self.state.session.apply_toolpath_param_snapshot(
+            idx,
+            new_op,
+            dressups,
+            face_selection,
+            feeds_auto,
+        ) {
+            self.push_notification(
+                format!("Apply failed: {e}"),
+                crate::controller::Severity::Error,
+            );
+            return;
+        }
+
+        self.state.gui.mark_edited();
+        self.state.suggest_modal_for = None;
+        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
+            rt.stale_since = Some(std::time::Instant::now());
+        }
+        let rpm_text = spindle_rpm.map_or_else(String::new, |r| format!(" @ {r} RPM"));
+        self.push_notification(
+            format!(
+                "Applied {feed_mm_min:.0} mm/min{rpm_text} to toolpath {}. \
+                 Regenerate to apply.",
+                toolpath_id.0
+            ),
+            crate::controller::Severity::Info,
+        );
+    }
+
+    /// Open the per-toolpath Optimize modal. Runs `optimize_toolpath`
+    /// synchronously and stashes the resulting outcome on
+    /// `AppState::optimize_modal`. Synchronous = the GUI freezes for
+    /// the duration; the worker-thread integration in U3 will move
+    /// this off the main thread with a Loading state.
+    fn open_optimize_modal(&mut self, toolpath_id: crate::state::toolpath::ToolpathId) {
+        use rs_cam_core::tool_load::optimize::{OptimizeOutcome, optimize_toolpath};
+        use rs_cam_core::tool_load::suggest::RefuseReason;
+        use std::sync::atomic::AtomicBool;
+
+        let Some(idx) = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .position(|tc| tc.id == toolpath_id.0)
+        else {
+            self.push_notification(
+                format!("Optimize failed: toolpath id {} not found", toolpath_id.0),
+                crate::controller::Severity::Error,
+            );
+            return;
+        };
+
+        // Need a baseline trace. Without one the optimizer can't
+        // score; surface a typed Skipped so the modal can render
+        // a clear "run sim first" message.
+        let trace_clone = self
+            .state
+            .simulation
+            .results
+            .as_ref()
+            .and_then(|r| r.cut_trace.clone());
+        let Some(trace) = trace_clone else {
+            self.state.optimize_modal = Some(crate::state::OptimizeModalState {
+                toolpath_id: toolpath_id.0,
+                status: crate::state::OptimizeRunStatus::Ready(
+                    OptimizeOutcome::Skipped {
+                        reason: RefuseReason::SimulationRequired,
+                    },
+                ),
+            });
+            return;
+        };
+
+        // Synchronous run. The OS-level cancel flag is unused for U2
+        // (the modal blocks until this returns); U3 wires it.
+        let cancel = AtomicBool::new(false);
+        let outcome = optimize_toolpath(&mut self.state.session, &trace, idx, &cancel);
+        self.state.optimize_modal = Some(crate::state::OptimizeModalState {
+            toolpath_id: toolpath_id.0,
+            status: crate::state::OptimizeRunStatus::Ready(outcome),
+        });
+    }
+
+    /// Apply a candidate from the cached Optimize outcome. Index 0 is
+    /// the baseline (no-op); higher indexes select a non-baseline
+    /// candidate. Routes through `apply_toolpath_param_snapshot` with
+    /// the candidate's params + a `feeds_auto` whose flags are flipped
+    /// per the candidate's `ParamDelta` (Resolution 7's mapping).
+    fn apply_optimize_candidate(
+        &mut self,
+        toolpath_id: crate::state::toolpath::ToolpathId,
+        candidate_index: usize,
+    ) {
+        use rs_cam_core::tool_load::optimize::{
+            OptimizeOutcome, feeds_auto_for_candidate,
+        };
+
+        // Lookup phase: extract everything we need from the cached
+        // outcome and the toolpath config, then drop the borrow before
+        // any mutation. The session call needs &mut; the optimize_modal
+        // read needs &.
+        let Some(modal) = self.state.optimize_modal.as_ref() else {
+            self.push_notification(
+                "Apply failed: Optimize modal not open".to_owned(),
+                crate::controller::Severity::Error,
+            );
+            return;
+        };
+        let crate::state::OptimizeRunStatus::Ready(OptimizeOutcome::Ranked(candidates)) =
+            &modal.status
+        else {
+            self.push_notification(
+                "Apply failed: Optimize has no candidates to apply".to_owned(),
+                crate::controller::Severity::Error,
+            );
+            return;
+        };
+        let Some(candidate) = candidates.get(candidate_index) else {
+            self.push_notification(
+                format!("Apply failed: candidate index {candidate_index} out of range"),
+                crate::controller::Severity::Error,
+            );
+            return;
+        };
+        if candidate_index == 0 {
+            // Index 0 is the baseline — nothing to do.
+            self.state.optimize_modal = None;
+            return;
+        }
+        let candidate_op = candidate.params.clone();
+        let candidate_delta = candidate.delta.clone();
+
+        let Some(idx) = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .position(|tc| tc.id == toolpath_id.0)
+        else {
+            self.push_notification(
+                format!("Apply failed: toolpath id {} not found", toolpath_id.0),
+                crate::controller::Severity::Error,
+            );
+            return;
+        };
+        let Some(tc) = self.state.session.get_toolpath_config(idx) else {
+            self.push_notification(
+                format!("Apply failed: toolpath {} disappeared", toolpath_id.0),
+                crate::controller::Severity::Error,
+            );
+            return;
+        };
+        let dressups = tc.dressups.clone();
+        let face_selection = tc.face_selection.clone();
+        let baseline_feeds_auto = tc.feeds_auto.clone();
+        let feeds_auto = feeds_auto_for_candidate(&baseline_feeds_auto, &candidate_delta);
+
+        if let Err(e) = self.state.session.apply_toolpath_param_snapshot(
+            idx,
+            candidate_op,
+            dressups,
+            face_selection,
+            feeds_auto,
+        ) {
+            self.push_notification(
+                format!("Apply failed: {e}"),
+                crate::controller::Severity::Error,
+            );
+            return;
+        }
+
+        self.state.gui.mark_edited();
+        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
+            rt.stale_since = Some(std::time::Instant::now());
+        }
+        self.state.optimize_modal = None;
+        self.push_notification(
+            format!(
+                "Applied optimize candidate to toolpath {}. Regenerate to apply.",
+                toolpath_id.0
+            ),
+            crate::controller::Severity::Info,
+        );
     }
 }
