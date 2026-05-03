@@ -136,16 +136,36 @@ pub enum OptimizeOutcome {
 
 impl OptimizeOutcome {
     /// Recommended candidate: the first non-baseline candidate that
-    /// passes the gate (no `Exceeds` verdict on any criterion). Returns
-    /// `None` for `Skipped` / `NoSafeImprovement` outcomes, or for
-    /// `Ranked` outcomes where every non-baseline candidate Exceeds.
+    /// (a) passes the gate (no `Exceeds` verdict on any criterion)
+    /// AND (b) is faster than baseline by more than
+    /// `RECOMMENDATION_CYCLE_DELTA_S`. Returns `None` for `Skipped` /
+    /// `NoSafeImprovement` outcomes, and for `Ranked` outcomes where
+    /// no candidate clears both bars.
+    ///
+    /// Why faster-than-baseline matters: `Ranked` may surface
+    /// candidates the user can override to (per the modal's table),
+    /// but the *recommendation* — the ⭐ row in the modal — should be
+    /// a candidate that actually wins on cycle time. An equally-fast
+    /// or slower safe candidate is information, not a recommendation.
     pub fn first_safe(&self) -> Option<&OptimizeCandidate> {
         let OptimizeOutcome::Ranked(candidates) = self else {
             return None;
         };
-        candidates.iter().skip(1).find(|c| candidate_is_safe(c))
+        let baseline = candidates.first()?;
+        candidates.iter().skip(1).find(|c| {
+            candidate_is_safe(c)
+                && c.cycle_time_s + RECOMMENDATION_CYCLE_DELTA_S < baseline.cycle_time_s
+        })
     }
 }
+
+/// Minimum cycle-time improvement (in seconds) for a candidate to
+/// count as a recommendation. Below this delta, the candidate is
+/// indistinguishable from baseline given simulator and gate-noise
+/// uncertainty — surfacing it as ⭐ would be misleading. 0.5 s is
+/// well below any user-perceptible cycle time and well above
+/// floating-point noise on small sub-second toolpaths.
+pub(crate) const RECOMMENDATION_CYCLE_DELTA_S: f64 = 0.5;
 
 /// True if every criterion is non-`Exceeds`. `Within` and `Unmodeled`
 /// both pass; `Unmodeled` is the gate's honest "I don't know" and
@@ -749,6 +769,129 @@ pub(crate) fn evaluate_candidate(
     })
 }
 
+// ── Stage 2 + outcome dispatch ────────────────────────────────────────
+//
+// Stage 2 takes the top-3 by Stage-1 cycle time (per ED 2 — ranking
+// ignores verdict) and re-evaluates them at 0.5mm dexel. The reported
+// numbers on the rollup are always Stage-2 numbers. Outcome dispatch
+// then folds Stage 2 + the baseline candidate into one of the three
+// `OptimizeOutcome` variants per ED 8.
+
+/// How many Stage-1 candidates survive into Stage 2 by default. Per
+/// ED 2: top 3 by cycle time, ignoring verdict.
+pub(crate) const STAGE2_SURVIVOR_COUNT: usize = 3;
+
+/// Default Stage-1 dexel resolution per ED 1: 1.0mm. Calibrated
+/// 2026-05-03 on wanaka to keep verdict-kinds stable vs. 0.5mm.
+pub(crate) const STAGE1_RESOLUTION_MM: f64 = 1.0;
+
+/// Default Stage-2 / Refined dexel resolution. Matches the GUI's
+/// default sim resolution; the rollup quotes Stage-2 numbers verbatim.
+pub(crate) const STAGE2_RESOLUTION_MM: f64 = 0.5;
+
+/// Sort `stage1_winners` by ascending cycle time and keep the top
+/// `n` (lowest-cycle-time) entries. Per ED 2 we pick by cycle time
+/// alone — Stage 2 re-applies the gate verdict at full resolution.
+pub(crate) fn select_stage2_candidates(
+    mut stage1_winners: Vec<OptimizeCandidate>,
+    n: usize,
+) -> Vec<OptimizeCandidate> {
+    stage1_winners.sort_by(|a, b| a.cycle_time_s.total_cmp(&b.cycle_time_s));
+    stage1_winners.truncate(n);
+    stage1_winners
+}
+
+/// Re-evaluate each Stage-1 winner at Stage-2 resolution. Returns the
+/// list of refined candidates in the same order as the input. Each
+/// re-evaluation goes through `evaluate_candidate` so the Stage-2
+/// numbers come from the same simulator and gate as Stage 1 — there
+/// is no second model anywhere.
+pub(crate) fn refine_stage2(
+    guard: &mut BaselineRestoreGuard<'_>,
+    ctx: &EvaluationContext<'_>,
+    stage1_winners: Vec<OptimizeCandidate>,
+    cancel: &AtomicBool,
+) -> Result<Vec<OptimizeCandidate>, SessionError> {
+    use std::sync::atomic::Ordering;
+    let mut refined = Vec::with_capacity(stage1_winners.len());
+    for c in stage1_winners {
+        if cancel.load(Ordering::SeqCst) {
+            break;
+        }
+        let candidate = evaluate_candidate(
+            guard,
+            ctx,
+            c.params,
+            c.delta,
+            SearchStage::Refined,
+            STAGE2_RESOLUTION_MM,
+            cancel,
+        )?;
+        refined.push(candidate);
+    }
+    Ok(refined)
+}
+
+/// Build an `OptimizeOutcome` from a baseline candidate and the
+/// Stage-2 refined candidates. Per ED 8:
+///   - Empty `candidates` (no candidates produced at all) →
+///     `NoSafeImprovement` with the "no improvement found" narrative.
+///   - All candidates `Exceeds` or all slower than baseline →
+///     `NoSafeImprovement`.
+///   - At least one safe-and-faster candidate → `Ranked`, with
+///     baseline at index 0 and the rest sorted ascending by cycle
+///     time.
+pub(crate) fn build_outcome(
+    baseline: OptimizeCandidate,
+    candidates: Vec<OptimizeCandidate>,
+) -> OptimizeOutcome {
+    if candidates.is_empty() {
+        return OptimizeOutcome::NoSafeImprovement {
+            reason: RefuseReason::NoImprovementFound,
+            explanation: format!(
+                "{}: no candidates were produced — operation has no geometry knobs and feed/RPM are at machine limits",
+                RefuseReason::NoImprovementFound.explanation_for_optimize()
+            ),
+        };
+    }
+
+    let baseline_cycle = baseline.cycle_time_s;
+    let any_safe_and_faster = candidates.iter().any(|c| {
+        candidate_is_safe(c)
+            && c.cycle_time_s + RECOMMENDATION_CYCLE_DELTA_S < baseline_cycle
+    });
+
+    if !any_safe_and_faster {
+        let all_unsafe = candidates.iter().all(|c| !candidate_is_safe(c));
+        let explanation = if all_unsafe {
+            format!(
+                "{}: every candidate hit a gate limit (chipload, power, or deflection)",
+                RefuseReason::NoImprovementFound.explanation_for_optimize()
+            )
+        } else {
+            format!(
+                "{}: no candidate beat the baseline cycle time by more than {:.1}s",
+                RefuseReason::NoImprovementFound.explanation_for_optimize(),
+                RECOMMENDATION_CYCLE_DELTA_S
+            )
+        };
+        return OptimizeOutcome::NoSafeImprovement {
+            reason: RefuseReason::NoImprovementFound,
+            explanation,
+        };
+    }
+
+    // Build the ranked list: baseline at index 0, then candidates
+    // sorted by ascending cycle time. The recommendation is whichever
+    // first_safe() returns.
+    let mut sorted = candidates;
+    sorted.sort_by(|a, b| a.cycle_time_s.total_cmp(&b.cycle_time_s));
+    let mut ranked = Vec::with_capacity(sorted.len() + 1);
+    ranked.push(baseline);
+    ranked.extend(sorted);
+    OptimizeOutcome::Ranked(ranked)
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -1273,6 +1416,222 @@ mod tests {
             explanation: "test".to_owned(),
         };
         assert!(nsi.first_safe().is_none());
+    }
+
+    fn synthetic_candidate(
+        feed: f64,
+        cycle_time: f64,
+        verdict: ToolpathLoadVerdict,
+    ) -> OptimizeCandidate {
+        use crate::compute::operation_configs::PocketConfig;
+        OptimizeCandidate {
+            params: OperationConfig::Pocket(PocketConfig {
+                feed_rate: feed,
+                ..PocketConfig::default()
+            }),
+            delta: ParamDelta {
+                feed_mm_min: Some(feed),
+                ..Default::default()
+            },
+            cycle_time_s: cycle_time,
+            verdict,
+            stage: SearchStage::Refined,
+            reconciled_cycle_time_s: None,
+            reconciled_verdict: None,
+        }
+    }
+
+    fn within_verdict() -> ToolpathLoadVerdict {
+        use super::super::verdict::Confidence;
+        ToolpathLoadVerdict {
+            toolpath_id: 0,
+            chipload: Verdict::Within {
+                peak: 0.04,
+                confidence: Confidence::Validated,
+            },
+            power: Verdict::Within {
+                peak: 0.5,
+                confidence: Confidence::Validated,
+            },
+            deflection: Verdict::Within {
+                peak: 5.0,
+                confidence: Confidence::Validated,
+            },
+        }
+    }
+
+    fn exceeds_chipload_verdict() -> ToolpathLoadVerdict {
+        use super::super::verdict::{Confidence, ExceedsReason};
+        ToolpathLoadVerdict {
+            toolpath_id: 0,
+            chipload: Verdict::Exceeds {
+                peak: 0.08,
+                sample_range: 0..1,
+                reason: ExceedsReason::ChiploadBreakageRisk,
+                confidence: Confidence::Validated,
+            },
+            power: Verdict::Within {
+                peak: 0.5,
+                confidence: Confidence::Validated,
+            },
+            deflection: Verdict::Within {
+                peak: 5.0,
+                confidence: Confidence::Validated,
+            },
+        }
+    }
+
+    #[test]
+    fn first_safe_finds_faster_safe_candidate() {
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let faster_safe = synthetic_candidate(2100.0, 70.0, within_verdict());
+        let outcome = OptimizeOutcome::Ranked(vec![baseline, faster_safe.clone()]);
+        let recommended = outcome.first_safe().expect("should recommend");
+        assert!((recommended.cycle_time_s - 70.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn first_safe_skips_unsafe_candidates() {
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let faster_unsafe = synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict());
+        let faster_safe = synthetic_candidate(2100.0, 70.0, within_verdict());
+        // Unsafe is faster but is not safe; recommendation is the safe one.
+        let outcome = OptimizeOutcome::Ranked(vec![baseline, faster_unsafe, faster_safe]);
+        let recommended = outcome.first_safe().expect("should recommend");
+        assert!((recommended.cycle_time_s - 70.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn first_safe_returns_none_when_only_slower_candidates() {
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let slower_safe = synthetic_candidate(1200.0, 110.0, within_verdict());
+        let outcome = OptimizeOutcome::Ranked(vec![baseline, slower_safe]);
+        assert!(outcome.first_safe().is_none());
+    }
+
+    #[test]
+    fn first_safe_returns_none_when_all_candidates_unsafe() {
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let faster_unsafe = synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict());
+        let outcome = OptimizeOutcome::Ranked(vec![baseline, faster_unsafe]);
+        assert!(outcome.first_safe().is_none());
+    }
+
+    #[test]
+    fn select_stage2_keeps_top_n_by_cycle_time() {
+        let candidates = vec![
+            synthetic_candidate(2000.0, 80.0, within_verdict()),
+            synthetic_candidate(2100.0, 70.0, within_verdict()),
+            synthetic_candidate(1900.0, 90.0, within_verdict()),
+            synthetic_candidate(2200.0, 60.0, exceeds_chipload_verdict()),
+            synthetic_candidate(1800.0, 100.0, within_verdict()),
+        ];
+        let top3 = select_stage2_candidates(candidates, 3);
+        assert_eq!(top3.len(), 3);
+        // Sorted ascending: 60, 70, 80.
+        assert!((top3[0].cycle_time_s - 60.0).abs() < 1e-9);
+        assert!((top3[1].cycle_time_s - 70.0).abs() < 1e-9);
+        assert!((top3[2].cycle_time_s - 80.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn select_stage2_does_not_panic_when_fewer_candidates_than_n() {
+        let candidates = vec![synthetic_candidate(2000.0, 80.0, within_verdict())];
+        let result = select_stage2_candidates(candidates, 3);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn build_outcome_empty_candidates_yields_no_safe_improvement() {
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let outcome = build_outcome(baseline, Vec::new());
+        match outcome {
+            OptimizeOutcome::NoSafeImprovement { reason, explanation } => {
+                assert!(matches!(reason, RefuseReason::NoImprovementFound));
+                assert!(
+                    explanation.contains("no candidates"),
+                    "explanation should say no candidates were produced: {explanation}"
+                );
+            }
+            other => panic!("expected NoSafeImprovement, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_outcome_all_slower_yields_no_safe_improvement() {
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let candidates = vec![
+            synthetic_candidate(1300.0, 105.0, within_verdict()),
+            synthetic_candidate(1200.0, 110.0, within_verdict()),
+        ];
+        let outcome = build_outcome(baseline, candidates);
+        match outcome {
+            OptimizeOutcome::NoSafeImprovement { explanation, .. } => {
+                assert!(
+                    explanation.contains("no candidate beat the baseline"),
+                    "explanation should mention slower-than-baseline: {explanation}"
+                );
+            }
+            other => panic!("expected NoSafeImprovement, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_outcome_all_unsafe_yields_no_safe_improvement() {
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let candidates = vec![
+            synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict()),
+            synthetic_candidate(2300.0, 65.0, exceeds_chipload_verdict()),
+        ];
+        let outcome = build_outcome(baseline, candidates);
+        match outcome {
+            OptimizeOutcome::NoSafeImprovement { explanation, .. } => {
+                assert!(
+                    explanation.contains("gate limit"),
+                    "explanation should mention gate limit: {explanation}"
+                );
+            }
+            other => panic!("expected NoSafeImprovement, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_outcome_with_safe_faster_candidate_yields_ranked() {
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let faster_safe = synthetic_candidate(2100.0, 70.0, within_verdict());
+        let faster_unsafe = synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict());
+        let candidates = vec![faster_unsafe, faster_safe];
+        let outcome = build_outcome(baseline, candidates);
+        let OptimizeOutcome::Ranked(ranked) = outcome else {
+            panic!("expected Ranked");
+        };
+        // Baseline at index 0.
+        assert!((ranked[0].cycle_time_s - 100.0).abs() < 1e-9);
+        // Sorted ascending after baseline: 60.0 (unsafe), 70.0 (safe).
+        assert!((ranked[1].cycle_time_s - 60.0).abs() < 1e-9);
+        assert!((ranked[2].cycle_time_s - 70.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn refuse_reason_explanations_cover_every_variant() {
+        // Smoke test: every variant gives a non-empty explanation. If
+        // someone adds a variant without an explanation arm, this fails.
+        let variants = [
+            RefuseReason::SimulationRequired,
+            RefuseReason::ArcEngagementNotCaptured,
+            RefuseReason::MaterialUnvalidated,
+            RefuseReason::NoVendorData,
+            RefuseReason::SteadyStateSamplesNotPresent,
+            RefuseReason::BipolarEngagement,
+            RefuseReason::NoFeasibleRow,
+            RefuseReason::RpmBracketEmpty,
+            RefuseReason::DiameterExtrapolationTooPoor,
+            RefuseReason::NoImprovementFound,
+        ];
+        for v in variants {
+            let s = v.explanation_for_optimize();
+            assert!(!s.is_empty(), "variant {v:?} returned empty explanation");
+        }
     }
 }
 
