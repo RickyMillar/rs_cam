@@ -715,18 +715,27 @@ impl ProjectSession {
     }
 
     /// Apply an undo/redo snapshot of toolpath parameters to a toolpath at
-    /// `index`. Restores the operation config, dressup config, and BREP face
-    /// selection in one shot, invalidating the cached result and simulation.
+    /// `index`. Restores the operation config, dressup config, BREP face
+    /// selection, and `feeds_auto` override flags in one shot, invalidating
+    /// the cached result and simulation.
     ///
-    /// This is the session-API path used by the GUI undo stack to roll a
-    /// toolpath back to a prior parameter state.
-    #[instrument(skip(self, operation, dressups, face_selection))]
+    /// `feeds_auto` is part of the snapshot because the GUI's properties
+    /// panel auto-overwrites `entry.operation.{feed_rate, stepover,
+    /// depth_per_pass, plunge_rate}` from the LUT every frame for any
+    /// `feeds_auto.*` flag that's still `true`. A snapshot that doesn't
+    /// carry the override flags can't faithfully restore the operation
+    /// config — the next render frame would silently undo it.
+    ///
+    /// This is the session-API path used by the GUI undo stack and by
+    /// the optimizer's candidate-apply path.
+    #[instrument(skip(self, operation, dressups, face_selection, feeds_auto))]
     pub fn apply_toolpath_param_snapshot(
         &mut self,
         index: usize,
         operation: OperationConfig,
         dressups: DressupConfig,
         face_selection: Option<Vec<FaceGroupId>>,
+        feeds_auto: crate::compute::config::FeedsAutoMode,
     ) -> Result<(), SessionError> {
         let tc = self
             .toolpath_configs
@@ -735,6 +744,7 @@ impl ProjectSession {
         tc.operation = operation;
         tc.dressups = dressups;
         tc.face_selection = face_selection;
+        tc.feeds_auto = feeds_auto;
         self.results.remove(&index);
         self.simulation = None;
         Ok(())
@@ -1342,17 +1352,28 @@ mod tests {
         s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
         s.results.insert(0, fake_result());
 
-        // Snapshot of "prior" state we want to restore.
+        // Snapshot of "prior" state we want to restore. feeds_auto with
+        // feed_rate=false models a user-overridden value the snapshot
+        // must restore (otherwise the GUI's LUT auto-write would clobber
+        // the operation field on the next render frame).
         let snapshot_op =
             OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default());
         let snapshot_dress = DressupConfig::default();
         let snapshot_faces = Some(vec![crate::enriched_mesh::FaceGroupId(7)]);
+        let snapshot_feeds_auto = crate::compute::config::FeedsAutoMode {
+            feed_rate: false,
+            plunge_rate: true,
+            stepover: true,
+            depth_per_pass: true,
+            spindle_speed: false,
+        };
 
         s.apply_toolpath_param_snapshot(
             0,
             snapshot_op,
             snapshot_dress,
             snapshot_faces.clone(),
+            snapshot_feeds_auto.clone(),
         )
         .unwrap();
 
@@ -1361,6 +1382,7 @@ mod tests {
             _ => panic!("operation snapshot not applied"),
         }
         assert_eq!(s.toolpath_configs()[0].face_selection, snapshot_faces);
+        assert_eq!(s.toolpath_configs()[0].feeds_auto, snapshot_feeds_auto);
         assert!(!s.results.contains_key(&0));
         assert!(s.simulation.is_none());
     }
@@ -1373,6 +1395,7 @@ mod tests {
             OperationConfig::Pocket(PocketConfig::default()),
             DressupConfig::default(),
             None,
+            crate::compute::config::FeedsAutoMode::default(),
         );
         assert!(matches!(result, Err(SessionError::ToolpathNotFound(99))));
     }
