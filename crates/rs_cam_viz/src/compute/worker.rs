@@ -158,6 +158,51 @@ pub struct CollisionResult {
     pub positions: Vec<[f32; 3]>,
 }
 
+/// Request to the Optimize worker lane. Both variants own a
+/// `ProjectSession` for the duration of the run — the main thread
+/// `mem::replace`s its session into the request; the worker mutates
+/// freely; the session comes back on [`OptimizeResult::session`].
+#[allow(clippy::large_enum_variant)]
+pub enum OptimizeRequest {
+    /// Run `optimize_toolpath` on a single toolpath. Surfaces in the
+    /// per-toolpath modal (U2's worker-thread retrofit).
+    Toolpath {
+        session: rs_cam_core::session::ProjectSession,
+        baseline_trace: Arc<rs_cam_core::simulation_cut::SimulationCutTrace>,
+        toolpath_index: usize,
+        /// Stable id from the toolpath config — pass-through so the
+        /// main thread can match the result to the open modal even if
+        /// indices have shifted.
+        toolpath_id: usize,
+    },
+    /// Run `optimize_project` over every enabled toolpath. Surfaces in
+    /// the U3 rollup view.
+    Project {
+        session: rs_cam_core::session::ProjectSession,
+        baseline_trace: Arc<rs_cam_core::simulation_cut::SimulationCutTrace>,
+    },
+}
+
+/// Result from the Optimize worker. Always carries the session back
+/// for the main thread to swap into `AppState::session`. Cancellation
+/// surfaces inside `OptimizeResultKind` (the inner outcome carries a
+/// "cancelled" narrative), not as an `Err`, so the session never gets
+/// dropped on the floor.
+pub struct OptimizeResult {
+    pub session: rs_cam_core::session::ProjectSession,
+    pub kind: OptimizeResultKind,
+}
+
+pub enum OptimizeResultKind {
+    Toolpath {
+        toolpath_id: usize,
+        outcome: rs_cam_core::tool_load::optimize::OptimizeOutcome,
+    },
+    Project {
+        report: rs_cam_core::tool_load::optimize::ProjectOptimizeReport,
+    },
+}
+
 #[allow(clippy::large_enum_variant)]
 enum AnalysisRequest {
     Simulation(SimulationRequest),
@@ -280,26 +325,32 @@ impl Drop for ToolpathPhaseScope {
 pub struct ThreadedComputeBackend {
     toolpath_lane: Arc<LaneQueue<ComputeRequest>>,
     analysis_lane: Arc<LaneQueue<AnalysisRequest>>,
+    optimize_lane: Arc<LaneQueue<OptimizeRequest>>,
     result_rx: mpsc::Receiver<ComputeMessage>,
     toolpath_handle: Option<std::thread::JoinHandle<()>>,
     analysis_handle: Option<std::thread::JoinHandle<()>>,
+    optimize_handle: Option<std::thread::JoinHandle<()>>,
 }
 
 impl ThreadedComputeBackend {
     pub fn new() -> Self {
         let toolpath_lane = LaneQueue::new(ComputeLane::Toolpath);
         let analysis_lane = LaneQueue::new(ComputeLane::Analysis);
+        let optimize_lane = LaneQueue::new(ComputeLane::Optimize);
         let (result_tx, result_rx) = mpsc::sync_channel::<ComputeMessage>(64);
 
         let toolpath_handle = spawn_toolpath_lane(Arc::clone(&toolpath_lane), result_tx.clone());
-        let analysis_handle = spawn_analysis_lane(Arc::clone(&analysis_lane), result_tx);
+        let analysis_handle = spawn_analysis_lane(Arc::clone(&analysis_lane), result_tx.clone());
+        let optimize_handle = spawn_optimize_lane(Arc::clone(&optimize_lane), result_tx);
 
         Self {
             toolpath_lane,
             analysis_lane,
+            optimize_lane,
             result_rx,
             toolpath_handle: Some(toolpath_handle),
             analysis_handle: Some(analysis_handle),
+            optimize_handle: Some(optimize_handle),
         }
     }
 }
@@ -308,12 +359,17 @@ impl Drop for ThreadedComputeBackend {
     fn drop(&mut self) {
         self.toolpath_lane.shutdown.store(true, Ordering::SeqCst);
         self.analysis_lane.shutdown.store(true, Ordering::SeqCst);
+        self.optimize_lane.shutdown.store(true, Ordering::SeqCst);
         self.toolpath_lane.wake.notify_all();
         self.analysis_lane.wake.notify_all();
+        self.optimize_lane.wake.notify_all();
         if let Some(h) = self.toolpath_handle.take() {
             let _ = h.join();
         }
         if let Some(h) = self.analysis_handle.take() {
+            let _ = h.join();
+        }
+        if let Some(h) = self.optimize_handle.take() {
             let _ = h.join();
         }
     }
@@ -358,6 +414,28 @@ impl ComputeBackend for ThreadedComputeBackend {
         self.submit_analysis(AnalysisRequest::Collision(request));
     }
 
+    fn submit_optimize(&mut self, request: OptimizeRequest) {
+        let mut inner = self
+            .optimize_lane
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        // The Optimize lane only ever runs one job at a time — a new
+        // submit replaces any queued job (the modal closes the previous
+        // run before opening a new one) and cancels any in-flight job.
+        inner.queue.clear();
+        inner.queue.push_back(request);
+        if inner.started_at.is_some() {
+            self.optimize_lane.cancel.store(true, Ordering::SeqCst);
+            inner.state = LaneState::Cancelling;
+        } else {
+            inner.state = LaneState::Queued;
+            inner.current_job = inner.queue.front().map(optimize_job_label);
+            inner.current_phase = None;
+        }
+        self.optimize_lane.wake.notify_one();
+    }
+
     fn cancel_lane(&mut self, lane: ComputeLane) {
         match lane {
             ComputeLane::Toolpath => {
@@ -382,6 +460,17 @@ impl ComputeBackend for ThreadedComputeBackend {
                     inner.state = LaneState::Cancelling;
                 }
             }
+            ComputeLane::Optimize => {
+                let mut inner = self
+                    .optimize_lane
+                    .inner
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                if inner.started_at.is_some() {
+                    self.optimize_lane.cancel.store(true, Ordering::SeqCst);
+                    inner.state = LaneState::Cancelling;
+                }
+            }
         }
     }
 
@@ -397,6 +486,7 @@ impl ComputeBackend for ThreadedComputeBackend {
         match lane {
             ComputeLane::Toolpath => self.toolpath_lane.snapshot(),
             ComputeLane::Analysis => self.analysis_lane.snapshot(),
+            ComputeLane::Optimize => self.optimize_lane.snapshot(),
         }
     }
 }
@@ -433,6 +523,29 @@ fn analysis_job_label(request: &AnalysisRequest) -> String {
             format!("Simulation ({count} toolpaths)")
         }
         AnalysisRequest::Collision(_) => "Collision check".to_owned(),
+    }
+}
+
+fn optimize_job_label(request: &OptimizeRequest) -> String {
+    match request {
+        OptimizeRequest::Toolpath { toolpath_index, .. } => {
+            format!("Optimize toolpath #{toolpath_index}")
+        }
+        OptimizeRequest::Project { .. } => "Optimize project".to_owned(),
+    }
+}
+
+/// Bridge that lets the optimizer's `ProgressReporter` updates land
+/// in the lane's `current_phase` field. The modal reads the phase
+/// through `lane_snapshot()` once per frame.
+struct LaneProgressBridge {
+    lane: Arc<LaneQueue<OptimizeRequest>>,
+}
+
+impl rs_cam_core::tool_load::optimize::ProgressReporter for LaneProgressBridge {
+    fn report(&self, _completed: usize, _total: usize, label: &str) {
+        let mut inner = self.lane.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.current_phase = Some(label.to_owned());
     }
 }
 
@@ -650,6 +763,130 @@ fn spawn_analysis_lane(
                     inner.current_job = inner.queue.front().map(analysis_job_label);
                 }
             }
+        }
+    })
+}
+
+fn spawn_optimize_lane(
+    lane: Arc<LaneQueue<OptimizeRequest>>,
+    result_tx: mpsc::SyncSender<ComputeMessage>,
+) -> std::thread::JoinHandle<()> {
+    use rs_cam_core::tool_load::optimize::{
+        OptimizeOutcome, ProjectOptimizeReport, optimize_project, optimize_toolpath,
+    };
+    use rs_cam_core::tool_load::suggest::RefuseReason;
+
+    std::thread::spawn(move || {
+        loop {
+            let request = {
+                let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
+                while inner.queue.is_empty() {
+                    if lane.shutdown.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    inner.state = LaneState::Idle;
+                    inner.current_job = None;
+                    inner.current_phase = None;
+                    inner.started_at = None;
+                    inner.active_toolpath_id = None;
+                    inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
+                }
+                if lane.shutdown.load(Ordering::SeqCst) {
+                    return;
+                }
+                // SAFETY: loop condition guarantees queue is non-empty
+                #[allow(clippy::expect_used)]
+                let request = inner.queue.pop_front().expect("queue checked");
+                lane.cancel.store(false, Ordering::SeqCst);
+                inner.state = LaneState::Running;
+                inner.current_job = Some(optimize_job_label(&request));
+                inner.current_phase = None;
+                inner.started_at = Some(Instant::now());
+                request
+            };
+
+            if lane.shutdown.load(Ordering::SeqCst) {
+                return;
+            }
+
+            // The optimizer carries the session through the request
+            // and produces an OptimizeResult that returns it. We do
+            // NOT wrap this in catch_unwind: a panic mid-optimize
+            // would lose the session, which is worse than killing
+            // the worker thread (the user can restart). Optimizer is
+            // covered by 70+ unit tests; panic risk is low.
+            let progress = LaneProgressBridge {
+                lane: Arc::clone(&lane),
+            };
+            let result = match request {
+                OptimizeRequest::Toolpath {
+                    mut session,
+                    baseline_trace,
+                    toolpath_index,
+                    toolpath_id,
+                } => {
+                    let outcome = optimize_toolpath(
+                        &mut session,
+                        &baseline_trace,
+                        toolpath_index,
+                        &lane.cancel,
+                    );
+                    // If the cancel flag was set, surface the
+                    // partial outcome with a "cancelled" narrative —
+                    // optimize_toolpath itself produces this when it
+                    // observes the cancel between candidates.
+                    let outcome = if lane.cancel.load(Ordering::SeqCst) {
+                        match outcome {
+                            OptimizeOutcome::Ranked(_) | OptimizeOutcome::NoSafeImprovement { .. } => outcome,
+                            OptimizeOutcome::Skipped { .. } => OptimizeOutcome::NoSafeImprovement {
+                                reason: RefuseReason::NoImprovementFound,
+                                explanation: "cancelled before optimization could run".to_owned(),
+                            },
+                        }
+                    } else {
+                        outcome
+                    };
+                    OptimizeResult {
+                        session,
+                        kind: OptimizeResultKind::Toolpath {
+                            toolpath_id,
+                            outcome,
+                        },
+                    }
+                }
+                OptimizeRequest::Project {
+                    mut session,
+                    baseline_trace,
+                } => {
+                    let report: ProjectOptimizeReport = optimize_project(
+                        &mut session,
+                        &baseline_trace,
+                        &progress,
+                        &lane.cancel,
+                    );
+                    OptimizeResult {
+                        session,
+                        kind: OptimizeResultKind::Project { report },
+                    }
+                }
+            };
+
+            // Reset lane state before sending so a follow-up submit
+            // doesn't see Running.
+            {
+                let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
+                inner.started_at = None;
+                inner.current_phase = None;
+                if inner.queue.is_empty() {
+                    inner.state = LaneState::Idle;
+                    inner.current_job = None;
+                } else {
+                    inner.state = LaneState::Queued;
+                    inner.current_job = inner.queue.front().map(optimize_job_label);
+                }
+            }
+
+            let _ = result_tx.send(ComputeMessage::Optimize(result));
         }
     })
 }

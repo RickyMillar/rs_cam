@@ -11,7 +11,9 @@ use rs_cam_core::enriched_mesh::{EnrichedMesh, FaceGroupId, SurfaceType};
 use rs_cam_core::step_input::load_step;
 
 use super::*;
-use crate::compute::{CollisionRequest, ComputeMessage, LaneState, SimulationRequest};
+use crate::compute::{
+    CollisionRequest, ComputeMessage, LaneState, OptimizeRequest, SimulationRequest,
+};
 use crate::state::job::{ModelId, ToolConfig, ToolId, ToolType};
 use crate::state::runtime::ToolpathRuntime;
 use crate::state::selection::Selection;
@@ -25,6 +27,7 @@ use rs_cam_core::session::{LoadedModel, ToolpathConfig};
 struct ScriptedBackend {
     toolpath_lane: LaneSnapshot,
     analysis_lane: LaneSnapshot,
+    optimize_lane: LaneSnapshot,
     drained: Vec<ComputeMessage>,
 }
 
@@ -33,6 +36,7 @@ impl ScriptedBackend {
         Self {
             toolpath_lane: LaneSnapshot::idle(ComputeLane::Toolpath),
             analysis_lane: LaneSnapshot::idle(ComputeLane::Analysis),
+            optimize_lane: LaneSnapshot::idle(ComputeLane::Optimize),
             drained: Vec::new(),
         }
     }
@@ -42,11 +46,13 @@ impl ComputeBackend for ScriptedBackend {
     fn submit_toolpath(&mut self, _request: crate::compute::ComputeRequest) {}
     fn submit_simulation(&mut self, _request: SimulationRequest) {}
     fn submit_collision(&mut self, _request: CollisionRequest) {}
+    fn submit_optimize(&mut self, _request: OptimizeRequest) {}
 
     fn cancel_lane(&mut self, lane: ComputeLane) {
         match lane {
             ComputeLane::Toolpath => self.toolpath_lane.state = LaneState::Cancelling,
             ComputeLane::Analysis => self.analysis_lane.state = LaneState::Cancelling,
+            ComputeLane::Optimize => self.optimize_lane.state = LaneState::Cancelling,
         }
     }
 
@@ -58,6 +64,7 @@ impl ComputeBackend for ScriptedBackend {
         match lane {
             ComputeLane::Toolpath => self.toolpath_lane.clone(),
             ComputeLane::Analysis => self.analysis_lane.clone(),
+            ComputeLane::Optimize => self.optimize_lane.clone(),
         }
     }
 }

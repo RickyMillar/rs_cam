@@ -5,15 +5,20 @@ pub mod worker;
 use std::time::{Duration, Instant};
 
 pub use worker::{
-    CollisionRequest, CollisionResult, ComputeRequest, ComputeResult, SetupSimGroup,
-    SetupSimToolpath, SetupTransformInfo, SimulationRequest, SimulationResult,
-    ThreadedComputeBackend,
+    CollisionRequest, CollisionResult, ComputeRequest, ComputeResult, OptimizeRequest,
+    OptimizeResult, OptimizeResultKind, SetupSimGroup, SetupSimToolpath, SetupTransformInfo,
+    SimulationRequest, SimulationResult, ThreadedComputeBackend,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ComputeLane {
     Toolpath,
     Analysis,
+    /// Worker for the per-toolpath / project Optimize search. Each
+    /// request takes ownership of the `ProjectSession` for the run; the
+    /// session is returned attached to the result so the main thread
+    /// can swap it back.
+    Optimize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,12 +98,21 @@ pub enum ComputeMessage {
     Toolpath(ComputeResult),
     Simulation(Result<SimulationResult, ComputeError>),
     Collision(Result<CollisionResult, ComputeError>),
+    /// Optimize lane completion. Always carries a session for the main
+    /// thread to swap back; cancellation produces a `Cancelled` outcome
+    /// inside `OptimizeResultKind` rather than an `Err`, so we never
+    /// drop the session on the floor.
+    Optimize(OptimizeResult),
 }
 
 pub trait ComputeBackend: Send {
     fn submit_toolpath(&mut self, request: ComputeRequest);
     fn submit_simulation(&mut self, request: SimulationRequest);
     fn submit_collision(&mut self, request: CollisionRequest);
+    /// Submit an Optimize request. The request takes ownership of the
+    /// `ProjectSession`; the worker returns it on the [`ComputeMessage::Optimize`]
+    /// reply so the main thread can put it back on `AppState::session`.
+    fn submit_optimize(&mut self, request: OptimizeRequest);
     fn cancel_lane(&mut self, lane: ComputeLane);
     fn drain_results(&mut self) -> Vec<ComputeMessage>;
     fn lane_snapshot(&self, lane: ComputeLane) -> LaneSnapshot;
@@ -106,12 +120,14 @@ pub trait ComputeBackend: Send {
     fn cancel_all(&mut self) {
         self.cancel_lane(ComputeLane::Toolpath);
         self.cancel_lane(ComputeLane::Analysis);
+        self.cancel_lane(ComputeLane::Optimize);
     }
 
-    fn lane_snapshots(&self) -> [LaneSnapshot; 2] {
+    fn lane_snapshots(&self) -> [LaneSnapshot; 3] {
         [
             self.lane_snapshot(ComputeLane::Toolpath),
             self.lane_snapshot(ComputeLane::Analysis),
+            self.lane_snapshot(ComputeLane::Optimize),
         ]
     }
 }
