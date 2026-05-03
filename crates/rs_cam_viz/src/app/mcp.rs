@@ -218,6 +218,10 @@ impl super::RsCamApp {
                 let resp = self.mcp_suggest_feeds_speeds();
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::OptimizeToolpath { index } => {
+                let resp = self.mcp_optimize_toolpath(index);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::SetToolpathParam {
                 index,
                 param,
@@ -1530,6 +1534,38 @@ impl super::RsCamApp {
             Ok(v) => json_str(v),
             Err(e) => json_str(serde_json::json!({
                 "error": format!("Failed to serialize feed suggestions: {e}")
+            })),
+        }
+    }
+
+    /// Run the optimizer on a single toolpath synchronously and
+    /// return the OptimizeOutcome as JSON. The GUI thread blocks
+    /// for the duration of the search (~1-2 min). MCP automation
+    /// expects this — the LLM/agent waits on the response.
+    fn mcp_optimize_toolpath(&mut self, index: usize) -> String {
+        let trace_clone = self
+            .controller
+            .state()
+            .simulation
+            .results
+            .as_ref()
+            .and_then(|r| r.cut_trace.clone());
+        let Some(trace) = trace_clone else {
+            return json_str(serde_json::json!({
+                "error": "Run a simulation first — optimize_toolpath needs a baseline trace.",
+            }));
+        };
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let outcome = rs_cam_core::tool_load::optimize::optimize_toolpath(
+            &mut self.controller.state_mut().session,
+            &trace,
+            index,
+            &cancel,
+        );
+        match serde_json::to_value(&outcome) {
+            Ok(v) => json_str(v),
+            Err(e) => json_str(serde_json::json!({
+                "error": format!("Failed to serialize optimize outcome: {e}")
             })),
         }
     }

@@ -38,6 +38,12 @@ pub enum McpRequestKind {
     GetDiagnostics,
     GetToolLoadReport,
     SuggestFeedsSpeeds,
+    /// Run the optimizer on a single toolpath and return the
+    /// OptimizeOutcome as JSON. Long-running (~1-2 min for a typical
+    /// 3D op); the GUI thread is blocked for the duration.
+    OptimizeToolpath {
+        index: usize,
+    },
     GetCutTrace {
         toolpath_id: Option<usize>,
         max_hotspots: Option<usize>,
