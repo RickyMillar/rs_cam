@@ -161,21 +161,6 @@ impl<B: ComputeBackend> AppController<B> {
                 self.state.gui.mark_edited();
             }
 
-            // --- F&S suggest modal ---
-            AppEvent::OpenSuggestModal(toolpath_id) => {
-                self.state.suggest_modal_for = Some(toolpath_id.0);
-            }
-            AppEvent::CloseSuggestModal => {
-                self.state.suggest_modal_for = None;
-            }
-            AppEvent::ApplySuggestedFeed {
-                toolpath_id,
-                feed_mm_min,
-                spindle_rpm,
-            } => {
-                self.apply_suggested_feed(toolpath_id, feed_mm_min, spindle_rpm);
-            }
-
             // --- Optimize modal (U2) ---
             AppEvent::OpenOptimizeModal(toolpath_id) => {
                 self.open_optimize_modal(toolpath_id);
@@ -209,85 +194,6 @@ impl<B: ComputeBackend> AppController<B> {
             | AppEvent::SetToolLoadOverride { .. }
             | AppEvent::Quit => {}
         }
-    }
-
-    /// Apply a feed/RPM suggestion via the extended snapshot mutation.
-    /// Routes through `apply_toolpath_param_snapshot` (Engineering
-    /// Default 7) so the relevant `feeds_auto.*` flags are flipped to
-    /// `false` transactionally with the operation write — closes the
-    /// silent-LUT-overwrite bug the older `set_toolpath_param`-cascade
-    /// path had.
-    fn apply_suggested_feed(
-        &mut self,
-        toolpath_id: crate::state::toolpath::ToolpathId,
-        feed_mm_min: f64,
-        spindle_rpm: Option<u32>,
-    ) {
-        let index = self
-            .state
-            .session
-            .toolpath_configs()
-            .iter()
-            .position(|tc| tc.id == toolpath_id.0);
-        let Some(idx) = index else {
-            self.push_notification(
-                format!("Apply failed: toolpath id {} not found", toolpath_id.0),
-                crate::controller::Severity::Error,
-            );
-            return;
-        };
-
-        // Snapshot the fields we need from the current config, then
-        // mutate the operation and feeds_auto for the candidate apply.
-        let Some(tc) = self.state.session.get_toolpath_config(idx) else {
-            self.push_notification(
-                format!("Apply failed: toolpath {} disappeared", toolpath_id.0),
-                crate::controller::Severity::Error,
-            );
-            return;
-        };
-        let mut new_op = tc.operation.clone();
-        let dressups = tc.dressups.clone();
-        let face_selection = tc.face_selection.clone();
-        let mut feeds_auto = tc.feeds_auto.clone();
-
-        // Always changing feed.
-        new_op.set_feed_rate(feed_mm_min);
-        feeds_auto.feed_rate = false;
-        // RPM only if Some.
-        if let Some(rpm) = spindle_rpm {
-            new_op.set_spindle_rpm(Some(rpm));
-            feeds_auto.spindle_speed = false;
-        }
-
-        if let Err(e) = self.state.session.apply_toolpath_param_snapshot(
-            idx,
-            new_op,
-            dressups,
-            face_selection,
-            feeds_auto,
-        ) {
-            self.push_notification(
-                format!("Apply failed: {e}"),
-                crate::controller::Severity::Error,
-            );
-            return;
-        }
-
-        self.state.gui.mark_edited();
-        self.state.suggest_modal_for = None;
-        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
-            rt.stale_since = Some(std::time::Instant::now());
-        }
-        let rpm_text = spindle_rpm.map_or_else(String::new, |r| format!(" @ {r} RPM"));
-        self.push_notification(
-            format!(
-                "Applied {feed_mm_min:.0} mm/min{rpm_text} to toolpath {}. \
-                 Regenerate to apply.",
-                toolpath_id.0
-            ),
-            crate::controller::Severity::Info,
-        );
     }
 
     /// Open the per-toolpath Optimize modal. Runs `optimize_toolpath`

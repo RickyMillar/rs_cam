@@ -13,7 +13,6 @@ pub mod sim_op_list;
 pub mod optimize_modal;
 pub mod sim_timeline;
 pub mod status_bar;
-pub mod suggest_modal;
 pub mod theme;
 pub mod toolpath_panel;
 pub mod toolpath_row_controls;
@@ -117,23 +116,6 @@ pub enum AppEvent {
     },
     /// Re-upload simulation mesh with new viz colors.
     SimVizModeChanged,
-
-    // F&S suggest
-    /// Open the F&S suggest modal for a specific toolpath.
-    OpenSuggestModal(ToolpathId),
-    /// Close the F&S suggest modal.
-    CloseSuggestModal,
-    /// Apply a feed/RPM suggestion to the named toolpath. Marks the
-    /// toolpath stale so the user regenerates to get the new feed/RPM
-    /// reflected in the toolpath.
-    ///
-    /// `spindle_rpm = None` means "do not touch the per-op RPM override";
-    /// `Some(rpm)` writes the override and the toast reflects both values.
-    ApplySuggestedFeed {
-        toolpath_id: ToolpathId,
-        feed_mm_min: f64,
-        spindle_rpm: Option<u32>,
-    },
 
     // Optimize (U2 of OPTIMIZER_UX_PLAN.md)
     /// Open the Optimize modal for a specific toolpath. Triggers
