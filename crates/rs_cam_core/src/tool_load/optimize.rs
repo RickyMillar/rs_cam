@@ -121,13 +121,21 @@ pub enum OptimizeOutcome {
     Ranked(Vec<OptimizeCandidate>),
     /// Every non-baseline candidate either failed the gate (Exceeds on
     /// some criterion) or was slower than baseline. The rollup row
-    /// surfaces this with the binding-limit narrative.
+    /// surfaces this with the binding-limit narrative. The
+    /// `attempted` list lets the user see what the optimizer tried
+    /// — without it, "no improvement found" is opaque.
     NoSafeImprovement {
         reason: RefuseReason,
         /// Narrative composed at outcome time via
         /// `RefuseReason::explanation_for_optimize` (Engineering
         /// Default 4). Free-form English for the modal.
         explanation: String,
+        /// Every candidate that made it to Stage 2 evaluation,
+        /// including the baseline at index 0. Stage-1 candidates that
+        /// didn't survive into Stage 2 are not included (they're
+        /// intermediate). Empty when the search bailed before any
+        /// candidate could be evaluated (e.g. cancel-up-front).
+        attempted: Vec<OptimizeCandidate>,
     },
     /// The optimizer can't model this toolpath at all — drill cycles,
     /// project_curve with no steady-state samples, custom materials.
@@ -324,6 +332,7 @@ pub fn optimize_toolpath(
         return OptimizeOutcome::NoSafeImprovement {
             reason: RefuseReason::NoImprovementFound,
             explanation: "cancelled before any candidates were generated".to_owned(),
+            attempted: vec![baseline_candidate],
         };
     }
 
@@ -440,6 +449,7 @@ pub fn optimize_toolpath(
                 explanation:
                     "candidate evaluation failed at full resolution — partial result returned"
                         .to_owned(),
+                attempted: vec![baseline_candidate],
             };
         }
     };
@@ -555,6 +565,7 @@ fn finalize_partial(
         return OptimizeOutcome::NoSafeImprovement {
             reason: RefuseReason::NoImprovementFound,
             explanation: "cancelled before any candidates were evaluated".to_owned(),
+            attempted: vec![baseline],
         };
     }
     build_outcome(baseline, candidates)
@@ -1194,6 +1205,7 @@ pub(crate) fn build_outcome(
                 "{}: no candidates were produced — operation has no geometry knobs and feed/RPM are at machine limits",
                 RefuseReason::NoImprovementFound.explanation_for_optimize()
             ),
+            attempted: vec![baseline],
         };
     }
 
@@ -1217,9 +1229,18 @@ pub(crate) fn build_outcome(
                 RECOMMENDATION_CYCLE_DELTA_S
             )
         };
+        // Build the attempted list the same way Ranked does — baseline
+        // at index 0, then candidates sorted by ascending cycle time.
+        // The user can see what was tried and how each fell short.
+        let mut sorted = candidates;
+        sorted.sort_by(|a, b| a.cycle_time_s.total_cmp(&b.cycle_time_s));
+        let mut attempted = Vec::with_capacity(sorted.len() + 1);
+        attempted.push(baseline);
+        attempted.extend(sorted);
         return OptimizeOutcome::NoSafeImprovement {
             reason: RefuseReason::NoImprovementFound,
             explanation,
+            attempted,
         };
     }
 
@@ -2401,6 +2422,7 @@ mod tests {
         let nsi = OptimizeOutcome::NoSafeImprovement {
             reason: RefuseReason::NoFeasibleRow,
             explanation: "test".to_owned(),
+            attempted: Vec::new(),
         };
         assert!(nsi.first_safe().is_none());
     }
@@ -2558,12 +2580,19 @@ mod tests {
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let outcome = build_outcome(baseline, Vec::new());
         match outcome {
-            OptimizeOutcome::NoSafeImprovement { reason, explanation } => {
+            OptimizeOutcome::NoSafeImprovement {
+                reason,
+                explanation,
+                attempted,
+            } => {
                 assert!(matches!(reason, RefuseReason::NoImprovementFound));
                 assert!(
                     explanation.contains("no candidates"),
                     "explanation should say no candidates were produced: {explanation}"
                 );
+                // Even with no candidates, the baseline is preserved
+                // so the modal/rollup can show "this is what you had".
+                assert_eq!(attempted.len(), 1);
             }
             other => panic!("expected NoSafeImprovement, got {other:?}"),
         }
@@ -2578,10 +2607,20 @@ mod tests {
         ];
         let outcome = build_outcome(baseline, candidates);
         match outcome {
-            OptimizeOutcome::NoSafeImprovement { explanation, .. } => {
+            OptimizeOutcome::NoSafeImprovement {
+                explanation,
+                attempted,
+                ..
+            } => {
                 assert!(
                     explanation.contains("no candidate beat the baseline"),
                     "explanation should mention slower-than-baseline: {explanation}"
+                );
+                // Baseline at index 0 + the two attempted candidates.
+                assert_eq!(
+                    attempted.len(),
+                    3,
+                    "attempted must include baseline + 2 candidates"
                 );
             }
             other => panic!("expected NoSafeImprovement, got {other:?}"),
@@ -2597,11 +2636,19 @@ mod tests {
         ];
         let outcome = build_outcome(baseline, candidates);
         match outcome {
-            OptimizeOutcome::NoSafeImprovement { explanation, .. } => {
+            OptimizeOutcome::NoSafeImprovement {
+                explanation,
+                attempted,
+                ..
+            } => {
                 assert!(
                     explanation.contains("gate limit"),
                     "explanation should mention gate limit: {explanation}"
                 );
+                assert_eq!(attempted.len(), 3);
+                // Sorted by ascending cycle time means index 1 has
+                // the lower cycle (60s), index 2 the higher (65s).
+                assert!(attempted[1].cycle_time_s <= attempted[2].cycle_time_s);
             }
             other => panic!("expected NoSafeImprovement, got {other:?}"),
         }
