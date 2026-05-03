@@ -45,10 +45,11 @@ pub struct AppState {
     /// open and rendered every frame from this cache.
     pub optimize_modal: Option<OptimizeModalState>,
     /// Cached project-level Optimize rollup (U3). `None` until the
-    /// user clicks the toolbar Optimize-project button and the worker
-    /// returns. Populated end-to-end from
-    /// `compute::OptimizeRequest::Project` -> `ComputeMessage::Optimize`.
-    pub optimize_project: Option<rs_cam_core::tool_load::optimize::ProjectOptimizeReport>,
+    /// user clicks the toolbar Optimize-project button. While the
+    /// worker is running, status is `Loading`; once the result lands,
+    /// the rollup view renders the report. Mirrors the per-toolpath
+    /// modal's lifecycle so the UI shapes stay consistent.
+    pub optimize_project: Option<OptimizeProjectState>,
     /// `true` while the Optimize worker thread holds the session.
     /// During this window the main thread renders an empty placeholder
     /// session — every panel that reads `state.session` should check
@@ -66,20 +67,42 @@ pub struct OptimizeModalState {
     pub status: OptimizeRunStatus,
 }
 
-/// Lifecycle of one Optimize run as the modal sees it. U2 only ever
-/// observes `Ready` (the controller runs `optimize_toolpath` to
-/// completion synchronously before pushing this state); `Loading` and
-/// `Failed` are wired in for U3's worker-thread integration so the
-/// modal layout doesn't have to change again.
+/// Lifecycle of one Optimize run as the modal sees it. The lane
+/// driver moves `Loading -> Ready` (or `Failed`) as the worker
+/// completes; the modal renders the right view per status.
 #[derive(Debug, Clone)]
 pub enum OptimizeRunStatus {
-    /// Optimizer is running on a worker thread (U3+). The modal shows
-    /// a progress strip and a Cancel button.
+    /// Optimizer is running on a worker thread. The modal shows a
+    /// progress strip and a Cancel button.
     Loading,
     /// Optimizer finished. The outcome is the source of truth for
     /// every row in the modal's candidate table.
     Ready(rs_cam_core::tool_load::optimize::OptimizeOutcome),
     /// Optimizer errored out. String is the diagnostic for the user.
+    Failed(String),
+}
+
+/// Persistent state for the project-level Optimize rollup (U3).
+/// Mirrors `OptimizeModalState`'s lifecycle but without a single
+/// toolpath_id — the rollup spans every enabled toolpath.
+#[derive(Debug, Clone)]
+pub struct OptimizeProjectState {
+    pub status: OptimizeProjectStatus,
+    /// Per-row checkbox state for batch Apply. Index aligned with
+    /// `ProjectOptimizeReport::per_toolpath`. Defaults to true on the
+    /// rows whose outcome has a recommended candidate; the user can
+    /// flip individual rows before clicking Apply selected.
+    pub row_selected: Vec<bool>,
+}
+
+#[derive(Debug, Clone)]
+pub enum OptimizeProjectStatus {
+    /// Worker is running. Rollup view shows progress + cancel.
+    Loading,
+    /// Worker finished. Render the rollup with bottleneck callout
+    /// and the per-toolpath rows.
+    Ready(rs_cam_core::tool_load::optimize::ProjectOptimizeReport),
+    /// Worker failed. String is the diagnostic for the user.
     Failed(String),
 }
 

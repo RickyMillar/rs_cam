@@ -11,6 +11,7 @@ pub mod sim_debug;
 pub mod sim_diagnostics;
 pub mod sim_op_list;
 pub mod optimize_modal;
+pub mod optimize_project;
 pub mod sim_timeline;
 pub mod status_bar;
 pub mod theme;
@@ -136,6 +137,23 @@ pub enum AppEvent {
         /// non-baseline candidate.
         candidate_index: usize,
     },
+
+    // Optimize project (U3 of OPTIMIZER_UX_PLAN.md)
+    /// Open the project-level Optimize rollup. Submits an
+    /// `OptimizeRequest::Project` to the worker lane, which walks
+    /// every enabled toolpath. The view opens in `Loading` state
+    /// immediately; the rollup populates when the worker returns.
+    OpenOptimizeProject,
+    /// Close the rollup view. Cancels the worker lane if it's still
+    /// running and discards any in-flight result.
+    CloseOptimizeProject,
+    /// Toggle the row checkbox for batch Apply. The controller flips
+    /// the bool at the given index in `optimize_project.row_selected`.
+    ToggleOptimizeProjectRow(usize),
+    /// Apply every row whose checkbox is currently true. Each
+    /// applied candidate is the first-safe recommendation from that
+    /// row's outcome. Routes through `apply_toolpath_param_snapshot`.
+    ApplyOptimizeProject,
 
     // Collision
     RunCollisionCheck,

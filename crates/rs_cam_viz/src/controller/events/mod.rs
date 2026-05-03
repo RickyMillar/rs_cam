@@ -183,6 +183,27 @@ impl<B: ComputeBackend> AppController<B> {
                 self.apply_optimize_candidate(toolpath_id, candidate_index);
             }
 
+            // --- Optimize project (U3) ---
+            AppEvent::OpenOptimizeProject => {
+                self.open_optimize_project();
+            }
+            AppEvent::CloseOptimizeProject => {
+                if self.state.is_optimizing {
+                    self.compute.cancel_lane(crate::compute::ComputeLane::Optimize);
+                }
+                self.state.optimize_project = None;
+            }
+            AppEvent::ToggleOptimizeProjectRow(idx) => {
+                if let Some(view) = self.state.optimize_project.as_mut() {
+                    if let Some(slot) = view.row_selected.get_mut(idx) {
+                        *slot = !*slot;
+                    }
+                }
+            }
+            AppEvent::ApplyOptimizeProject => {
+                self.apply_optimize_project();
+            }
+
             // --- Pass-through events handled elsewhere ---
             AppEvent::ExportGcode
             | AppEvent::ExportCombinedGcode
@@ -382,6 +403,143 @@ impl<B: ComputeBackend> AppController<B> {
                 toolpath_id.0
             ),
             crate::controller::Severity::Info,
+        );
+    }
+
+    /// Open the project-level Optimize rollup. Submits an
+    /// `OptimizeRequest::Project` to the worker lane, taking
+    /// ownership of the session for the duration of the walk.
+    /// The view opens in `Loading` immediately and the rollup
+    /// populates when the worker returns.
+    fn open_optimize_project(&mut self) {
+        // Pre-flight: needs a baseline trace.
+        let trace_clone = self
+            .state
+            .simulation
+            .results
+            .as_ref()
+            .and_then(|r| r.cut_trace.clone());
+        let Some(trace) = trace_clone else {
+            self.push_notification(
+                "Run a simulation first — Optimize needs a baseline trace.".to_owned(),
+                crate::controller::Severity::Warning,
+            );
+            return;
+        };
+
+        if self.state.is_optimizing {
+            tracing::warn!("Ignored OpenOptimizeProject — Optimize lane already running");
+            return;
+        }
+
+        let session = std::mem::replace(
+            &mut self.state.session,
+            rs_cam_core::session::ProjectSession::new_empty(),
+        );
+        self.state.is_optimizing = true;
+        self.state.optimize_project = Some(crate::state::OptimizeProjectState {
+            status: crate::state::OptimizeProjectStatus::Loading,
+            row_selected: Vec::new(),
+        });
+        self.compute.submit_optimize(crate::compute::OptimizeRequest::Project {
+            session,
+            baseline_trace: trace,
+        });
+    }
+
+    /// Apply every selected row from the project rollup. Each row's
+    /// candidate is the first-safe recommendation from that row's
+    /// outcome. Routes through `apply_toolpath_param_snapshot` for
+    /// each toolpath; closes the rollup and marks every touched
+    /// toolpath stale so auto-regen kicks in.
+    fn apply_optimize_project(&mut self) {
+        use rs_cam_core::tool_load::optimize::{
+            OptimizeOutcome, feeds_auto_for_candidate,
+        };
+
+        // Lookup phase: pull out (toolpath_id, params, delta) tuples
+        // from the cached state. Drop the borrow before any mutation.
+        let Some(view) = self.state.optimize_project.as_ref() else {
+            return;
+        };
+        let crate::state::OptimizeProjectStatus::Ready(report) = &view.status else {
+            return;
+        };
+        let mut targets: Vec<(usize, rs_cam_core::compute::catalog::OperationConfig, rs_cam_core::tool_load::optimize::ParamDelta)> = Vec::new();
+        for (idx, ((toolpath_index, outcome), selected)) in report
+            .per_toolpath
+            .iter()
+            .zip(view.row_selected.iter())
+            .enumerate()
+        {
+            if !selected {
+                continue;
+            }
+            let OptimizeOutcome::Ranked(_) = outcome else {
+                continue;
+            };
+            let Some(candidate) = outcome.first_safe() else {
+                tracing::debug!("Skipping row {idx}: no first_safe candidate");
+                continue;
+            };
+            targets.push((*toolpath_index, candidate.params.clone(), candidate.delta.clone()));
+        }
+
+        if targets.is_empty() {
+            self.push_notification(
+                "No applicable rows selected.".to_owned(),
+                crate::controller::Severity::Info,
+            );
+            return;
+        }
+
+        let mut applied: usize = 0;
+        let mut failed: Vec<String> = Vec::new();
+        for (toolpath_index, params, delta) in targets {
+            let Some(tc) = self.state.session.get_toolpath_config(toolpath_index) else {
+                failed.push(format!("toolpath idx {toolpath_index} disappeared"));
+                continue;
+            };
+            let dressups = tc.dressups.clone();
+            let face_selection = tc.face_selection.clone();
+            let baseline_feeds_auto = tc.feeds_auto.clone();
+            let toolpath_id_raw = tc.id;
+            let feeds_auto = feeds_auto_for_candidate(&baseline_feeds_auto, &delta);
+
+            if let Err(e) = self.state.session.apply_toolpath_param_snapshot(
+                toolpath_index,
+                params,
+                dressups,
+                face_selection,
+                feeds_auto,
+            ) {
+                failed.push(format!("toolpath idx {toolpath_index}: {e}"));
+                continue;
+            }
+            // Mark stale so auto-regen picks it up.
+            if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id_raw) {
+                rt.stale_since = Some(std::time::Instant::now());
+            }
+            applied += 1;
+        }
+
+        self.state.gui.mark_edited();
+        self.state.optimize_project = None;
+        self.push_notification(
+            if failed.is_empty() {
+                format!("Applied {applied} optimize candidate(s). Regenerate to apply.")
+            } else {
+                format!(
+                    "Applied {applied} candidates; {failed_count} failed: {first}",
+                    failed_count = failed.len(),
+                    first = failed.first().cloned().unwrap_or_default()
+                )
+            },
+            if failed.is_empty() {
+                crate::controller::Severity::Info
+            } else {
+                crate::controller::Severity::Warning
+            },
         );
     }
 }

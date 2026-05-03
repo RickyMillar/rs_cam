@@ -138,6 +138,17 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                     ui.close_menu();
                     events.push(AppEvent::GenerateAll);
                 }
+                let optimize_enabled = state.simulation.has_results() && !state.is_optimizing;
+                if ui
+                    .add_enabled(
+                        optimize_enabled,
+                        egui::Button::new("Optimize project…"),
+                    )
+                    .clicked()
+                {
+                    ui.close_menu();
+                    events.push(AppEvent::OpenOptimizeProject);
+                }
             });
 
             ui.menu_button("Workspace", |ui| {
