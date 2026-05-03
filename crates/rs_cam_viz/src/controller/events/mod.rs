@@ -524,10 +524,30 @@ impl<B: ComputeBackend> AppController<B> {
         }
 
         self.state.gui.mark_edited();
-        self.state.optimize_project = None;
+        // Keep the rollup open. The drain handler will transition
+        // Reconciling -> Reconciled when the project sim completes.
+        // The intervening regen is async via the GUI's auto-regen
+        // path: each touched toolpath is marked stale; the regen
+        // results land on `gui.toolpath_rt`, and we kick the sim
+        // once they all complete (see `maybe_kick_reconciliation_sim`).
+        let touched_ids: Vec<usize> = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .map(|tc| tc.id)
+            .collect();
+        if let Some(view) = self.state.optimize_project.as_mut() {
+            if let crate::state::OptimizeProjectStatus::Ready(report) = &view.status {
+                view.status = crate::state::OptimizeProjectStatus::Reconciling(report.clone());
+            }
+        }
+        self.state.pending_reconciliation_for_ids = touched_ids;
         self.push_notification(
             if failed.is_empty() {
-                format!("Applied {applied} optimize candidate(s). Regenerate to apply.")
+                format!(
+                    "Applied {applied} candidate(s). Regenerating + running reconciliation sim…"
+                )
             } else {
                 format!(
                     "Applied {applied} candidates; {failed_count} failed: {first}",
@@ -541,5 +561,20 @@ impl<B: ComputeBackend> AppController<B> {
                 crate::controller::Severity::Warning
             },
         );
+
+        // Submit regen for every enabled toolpath (worker lane). The
+        // toolpath-drain handler watches `pending_reconciliation_for_ids`
+        // and kicks the sim once they're all done.
+        let enabled_ids: Vec<crate::state::toolpath::ToolpathId> = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .filter(|tc| tc.enabled)
+            .map(|tc| crate::state::toolpath::ToolpathId(tc.id))
+            .collect();
+        for id in enabled_ids {
+            self.submit_toolpath_compute(id);
+        }
     }
 }
