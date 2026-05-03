@@ -160,7 +160,7 @@ impl<B: ComputeBackend> AppController<B> {
         self.compute.lane_snapshot(lane)
     }
 
-    pub fn lane_snapshots(&self) -> [LaneSnapshot; 2] {
+    pub fn lane_snapshots(&self) -> [LaneSnapshot; 3] {
         self.compute.lane_snapshots()
     }
 

@@ -12,7 +12,7 @@ pub fn draw(
     projection: ProjectionMode,
     isolated_name: Option<&str>,
     viewport: &mut ViewportState,
-    lanes: &[LaneSnapshot; 2],
+    lanes: &[LaneSnapshot; 3],
     events: &mut Vec<AppEvent>,
 ) {
     ui.horizontal_wrapped(|ui| {

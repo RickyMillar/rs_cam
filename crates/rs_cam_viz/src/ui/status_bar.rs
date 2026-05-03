@@ -8,7 +8,7 @@ pub fn draw(
     ui: &mut egui::Ui,
     state: &AppState,
     collision_count: usize,
-    lanes: &[LaneSnapshot; 2],
+    lanes: &[LaneSnapshot; 3],
 ) {
     ui.horizontal(|ui| {
         let model_count = state.session.models().len();
@@ -49,6 +49,7 @@ pub fn draw(
             let tooltip = match lane.lane {
                 ComputeLane::Toolpath => "Toolpath compute lane",
                 ComputeLane::Analysis => "Analysis compute lane",
+                ComputeLane::Optimize => "Optimize compute lane",
             };
             let response = ui
                 .label(egui::RichText::new(&label).color(match lane.state {
@@ -63,6 +64,7 @@ pub fn draw(
                 match lane.lane {
                     ComputeLane::Toolpath => "status_lane_toolpath",
                     ComputeLane::Analysis => "status_lane_analysis",
+                    ComputeLane::Optimize => "status_lane_optimize",
                 },
                 &response,
                 &label,
@@ -98,6 +100,7 @@ fn lane_chip_label(lane: &LaneSnapshot) -> String {
     let prefix = match lane.lane {
         ComputeLane::Toolpath => "TP",
         ComputeLane::Analysis => "AN",
+        ComputeLane::Optimize => "OPT",
     };
     let state = match lane.state {
         LaneState::Idle => "idle",

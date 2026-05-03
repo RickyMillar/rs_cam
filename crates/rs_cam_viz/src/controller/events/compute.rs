@@ -566,6 +566,48 @@ impl<B: ComputeBackend> AppController<B> {
                         self.notify_mcp_collision_error(&error);
                     }
                 },
+                ComputeMessage::Optimize(result) => {
+                    self.handle_optimize_result(result);
+                }
+            }
+        }
+    }
+
+    /// Restore the session moved into the Optimize lane and stash the
+    /// outcome on `AppState`. The per-toolpath modal (U2 retrofit) and
+    /// the project rollup (U3) hook off the cached state from here.
+    fn handle_optimize_result(&mut self, result: crate::compute::OptimizeResult) {
+        use crate::compute::OptimizeResultKind;
+
+        // Restore the session first — every other update reads it.
+        self.state.session = result.session;
+        self.state.is_optimizing = false;
+
+        match result.kind {
+            OptimizeResultKind::Toolpath {
+                toolpath_id,
+                outcome,
+            } => {
+                if let Some(modal) = self.state.optimize_modal.as_mut() {
+                    if modal.toolpath_id == toolpath_id {
+                        modal.status = crate::state::OptimizeRunStatus::Ready(outcome);
+                    } else {
+                        // The modal was reopened on a different
+                        // toolpath while the worker was running —
+                        // discard the stale result.
+                        tracing::debug!(
+                            "Optimize result for tp {toolpath_id} dropped — modal now open on tp {}",
+                            modal.toolpath_id
+                        );
+                    }
+                } else {
+                    tracing::debug!(
+                        "Optimize result for tp {toolpath_id} arrived after modal was closed — discarded"
+                    );
+                }
+            }
+            OptimizeResultKind::Project { report } => {
+                self.state.optimize_project = Some(report);
             }
         }
     }

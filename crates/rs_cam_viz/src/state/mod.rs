@@ -44,6 +44,17 @@ pub struct AppState {
     /// cannot recompute every frame — the outcome is captured here on
     /// open and rendered every frame from this cache.
     pub optimize_modal: Option<OptimizeModalState>,
+    /// Cached project-level Optimize rollup (U3). `None` until the
+    /// user clicks the toolbar Optimize-project button and the worker
+    /// returns. Populated end-to-end from
+    /// `compute::OptimizeRequest::Project` -> `ComputeMessage::Optimize`.
+    pub optimize_project: Option<rs_cam_core::tool_load::optimize::ProjectOptimizeReport>,
+    /// `true` while the Optimize worker thread holds the session.
+    /// During this window the main thread renders an empty placeholder
+    /// session — every panel that reads `state.session` should check
+    /// this flag and short-circuit to a "Optimize running…" view, with
+    /// the modal as the only interactive surface.
+    pub is_optimizing: bool,
 }
 
 /// Persistent state for the per-toolpath Optimize modal. Carries the
@@ -85,6 +96,8 @@ impl AppState {
             show_preflight: false,
             show_shortcuts: false,
             optimize_modal: None,
+            optimize_project: None,
+            is_optimizing: false,
         }
     }
 }
