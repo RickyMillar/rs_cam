@@ -511,6 +511,12 @@ impl eframe::App for RsCamApp {
             crate::ui::suggest_modal::draw(ctx, state, events);
         }
 
+        // Optimize modal (per-toolpath)
+        if self.controller.state().optimize_modal.is_some() {
+            let (state, events) = self.controller.state_ref_and_events_mut();
+            crate::ui::optimize_modal::draw(ctx, state, events);
+        }
+
         // Keyboard shortcuts reference window
         if self.controller.state().show_shortcuts {
             let mut show = true;
