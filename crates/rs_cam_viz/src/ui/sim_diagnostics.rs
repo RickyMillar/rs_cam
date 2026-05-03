@@ -763,8 +763,8 @@ fn draw_reactive_inspector(
                     if ui.small_button("Jump").clicked() {
                         events.push(AppEvent::SimJumpToMove(global_start));
                     }
-                    if ui.small_button("Suggest").clicked() {
-                        events.push(AppEvent::OpenSuggestModal(toolpath_id));
+                    if ui.small_button("Optimize").clicked() {
+                        events.push(AppEvent::OpenOptimizeModal(toolpath_id));
                     }
                     if ui.small_button("Clear").clicked() {
                         sim.debug.focused_hotspot = None;
@@ -805,9 +805,9 @@ fn draw_reactive_inspector(
                         events.push(AppEvent::SimJumpToMove(issue.move_index));
                     }
                     if let Some(toolpath_id) = issue.toolpath_id
-                        && ui.small_button("Suggest").clicked()
+                        && ui.small_button("Optimize").clicked()
                     {
-                        events.push(AppEvent::OpenSuggestModal(toolpath_id));
+                        events.push(AppEvent::OpenOptimizeModal(toolpath_id));
                     }
                 });
             });
@@ -854,8 +854,8 @@ fn draw_reactive_inspector(
     if let Some(boundary) = sim.current_boundary() {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(&boundary.name).strong());
-            if ui.small_button("Suggest").clicked() {
-                events.push(AppEvent::OpenSuggestModal(boundary.id));
+            if ui.small_button("Optimize").clicked() {
+                events.push(AppEvent::OpenOptimizeModal(boundary.id));
             }
             if ui.small_button("Jump start").clicked() {
                 events.push(AppEvent::SimJumpToMove(boundary.start_move));
