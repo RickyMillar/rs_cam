@@ -490,11 +490,39 @@ impl eframe::App for RsCamApp {
                 crate::ui::workspace_bar::draw(ui, state, events);
             });
 
-        // Draw workspace-specific layout
-        match self.controller.state().workspace {
-            Workspace::Setup => self.draw_setup_layout(ctx),
-            Workspace::Toolpaths => self.draw_toolpath_layout(ctx),
-            Workspace::Simulation => self.draw_simulation_layout(ctx),
+        // Draw workspace-specific layout. While the Optimize lane
+        // owns the session (mem::replace pulled it into the worker
+        // request), the panels would render against an empty
+        // placeholder — confusing for the user. Show a centred
+        // "Optimize running…" placeholder instead and let the
+        // modal/rollup window be the only interactive surface.
+        if self.controller.state().is_optimizing {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(80.0);
+                    ui.spinner();
+                    ui.add_space(8.0);
+                    ui.label(
+                        egui::RichText::new("Optimize is running…")
+                            .heading()
+                            .color(crate::ui::theme::TEXT_MUTED),
+                    );
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(
+                            "Use the Optimize window to cancel or wait for the result.",
+                        )
+                        .small()
+                        .color(crate::ui::theme::TEXT_DIM),
+                    );
+                });
+            });
+        } else {
+            match self.controller.state().workspace {
+                Workspace::Setup => self.draw_setup_layout(ctx),
+                Workspace::Toolpaths => self.draw_toolpath_layout(ctx),
+                Workspace::Simulation => self.draw_simulation_layout(ctx),
+            }
         }
 
         // Pre-flight checklist modal (shown on top of either layout)
