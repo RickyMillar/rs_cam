@@ -350,6 +350,22 @@ impl<B: ComputeBackend> AppController<B> {
                     }
                     self.pending_upload = true;
 
+                    // U4 reconciliation: clear this toolpath from the
+                    // pending list. When the list empties we kick the
+                    // reconciliation sim — this fires once, after the
+                    // last applied toolpath finishes regenerating.
+                    self.state
+                        .pending_reconciliation_for_ids
+                        .retain(|id| *id != tp_id.0);
+                    if self.state.pending_reconciliation_for_ids.is_empty()
+                        && matches!(
+                            self.state.optimize_project.as_ref().map(|v| &v.status),
+                            Some(crate::state::OptimizeProjectStatus::Reconciling(_))
+                        )
+                    {
+                        self.run_simulation_with_all();
+                    }
+
                     // Notify pending MCP request for this toolpath
                     #[cfg(feature = "mcp")]
                     self.notify_mcp_toolpath_complete(tp_id);
@@ -491,6 +507,12 @@ impl<B: ComputeBackend> AppController<B> {
 
                         self.pending_upload = true;
 
+                        // U4 reconciliation: if the rollup is in
+                        // Reconciling state, populate per-row
+                        // reconciled values from the new trace and
+                        // transition to Reconciled.
+                        self.maybe_finalize_reconciliation();
+
                         // Notify pending MCP simulation request
                         #[cfg(feature = "mcp")]
                         self.notify_mcp_simulation_complete();
@@ -626,6 +648,82 @@ impl<B: ComputeBackend> AppController<B> {
                     );
                 }
             }
+        }
+    }
+
+    /// U4: if the rollup is in `Reconciling` state and the latest sim
+    /// result just landed, populate `reconciled_cycle_time_s` /
+    /// `reconciled_verdict` per applied row and transition to
+    /// `Reconciled`. Each row's reconciled values come from running
+    /// the existing project load report against the new trace and
+    /// reading per-toolpath cycle times directly off the trace.
+    pub(crate) fn maybe_finalize_reconciliation(&mut self) {
+        use rs_cam_core::tool_load::optimize::{OptimizeOutcome, ProjectOptimizeReport};
+
+        let Some(view) = self.state.optimize_project.as_ref() else {
+            return;
+        };
+        let crate::state::OptimizeProjectStatus::Reconciling(report) = &view.status else {
+            return;
+        };
+        let Some(sim_results) = self.state.simulation.results.as_ref() else {
+            return;
+        };
+        let Some(trace) = sim_results.cut_trace.as_deref() else {
+            return;
+        };
+
+        // Compute per-toolpath verdicts off the new trace.
+        let load_report = rs_cam_core::gcode::project_load_report(
+            &self.state.session,
+            Some(trace),
+        );
+        // Map toolpath_id -> verdict for fast lookup. Index by id
+        // (not toolpath_index) because the report uses ids.
+        let mut verdict_by_id: std::collections::HashMap<usize, &rs_cam_core::tool_load::ToolpathLoadVerdict> =
+            std::collections::HashMap::new();
+        for v in &load_report.per_toolpath {
+            verdict_by_id.insert(v.toolpath_id, v);
+        }
+
+        // Walk the report and populate the first_safe candidate's
+        // reconciled values for each row that has one.
+        let mut updated_report = report.clone();
+        for (tp_index, outcome) in updated_report.per_toolpath.iter_mut() {
+            let toolpath_id = self
+                .state
+                .session
+                .toolpath_configs()
+                .get(*tp_index)
+                .map(|tc| tc.id);
+            let Some(toolpath_id) = toolpath_id else {
+                continue;
+            };
+            let cycle = trace
+                .toolpath_summaries
+                .iter()
+                .find(|s| s.toolpath_id == toolpath_id)
+                .map(|s| s.total_runtime_s);
+            let verdict = verdict_by_id.get(&toolpath_id).cloned().cloned();
+            if let OptimizeOutcome::Ranked(candidates) = outcome {
+                // The applied candidate is `first_safe` per the rollup
+                // Apply path. Find its index by re-running the same
+                // selector, then update that candidate. We fall back
+                // to candidate index 1 if the rollup logic disagrees
+                // (e.g. the candidate set changed mid-flight, which
+                // shouldn't happen since the report is immutable).
+                let idx = ProjectOptimizeReport::first_safe_index(candidates).unwrap_or(0);
+                if idx > 0 {
+                    if let Some(c) = candidates.get_mut(idx) {
+                        c.reconciled_cycle_time_s = cycle;
+                        c.reconciled_verdict = verdict;
+                    }
+                }
+            }
+        }
+
+        if let Some(view) = self.state.optimize_project.as_mut() {
+            view.status = crate::state::OptimizeProjectStatus::Reconciled(updated_report);
         }
     }
 

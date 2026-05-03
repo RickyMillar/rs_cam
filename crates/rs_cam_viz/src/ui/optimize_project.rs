@@ -47,6 +47,12 @@ fn draw_view(
         OptimizeProjectStatus::Ready(report) => {
             draw_ready(ui, state, report, &view.row_selected, events);
         }
+        OptimizeProjectStatus::Reconciling(report) => {
+            draw_reconciling(ui, state, report, events);
+        }
+        OptimizeProjectStatus::Reconciled(report) => {
+            draw_reconciled(ui, state, report, events);
+        }
     }
 }
 
@@ -380,6 +386,209 @@ fn format_cycle(seconds: f64) -> String {
         format!("{minutes:.0}:{secs:04.1}")
     } else {
         format!("{seconds:.1}s")
+    }
+}
+
+/// Reconciling: rollup is visible but dimmed; spinner indicates the
+/// post-Apply project sim is in flight. Cancel is a no-op for the
+/// sim (the analysis lane runs to completion); Close drops the view.
+fn draw_reconciling(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    report: &ProjectOptimizeReport,
+    events: &mut Vec<AppEvent>,
+) {
+    ui.horizontal(|ui| {
+        ui.spinner();
+        ui.label(
+            egui::RichText::new("Applying selected candidates and running reconciliation sim…")
+                .strong(),
+        );
+    });
+    ui.add_space(6.0);
+    ui.label(
+        egui::RichText::new(
+            "End-to-end project sim with the new params. The rollup will refresh \
+             with reconciled cycle times and verdicts when the sim completes.",
+        )
+        .small()
+        .color(theme::TEXT_MUTED),
+    );
+    ui.add_space(8.0);
+    ui.separator();
+    ui.add_space(6.0);
+
+    // Show the report dimmed so the user has context while the sim runs.
+    let prev_visuals = ui.visuals().clone();
+    let mut dim = prev_visuals.clone();
+    dim.override_text_color = Some(theme::TEXT_MUTED);
+    ui.ctx().set_visuals(dim);
+    draw_report_table_readonly(ui, state, report, false /* show_reconciled */);
+    ui.ctx().set_visuals(prev_visuals);
+
+    ui.add_space(8.0);
+    if ui.button("Close").clicked() {
+        events.push(AppEvent::CloseOptimizeProject);
+    }
+}
+
+/// Reconciled: post-Apply project sim has finished. Show the report
+/// with both candidate-isolated and reconciled cycle times per row;
+/// flag rows where the reconciled verdict disagrees with the
+/// candidate verdict (cross-TP interaction).
+fn draw_reconciled(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    report: &ProjectOptimizeReport,
+    events: &mut Vec<AppEvent>,
+) {
+    ui.label(egui::RichText::new("Optimize applied — reconciled").strong());
+    ui.add_space(6.0);
+    ui.label(
+        egui::RichText::new(
+            "Reconciled values come from a project end-to-end sim with the new \
+             params. Rows where reconciled disagrees with candidate-isolated indicate \
+             cross-toolpath interactions — the upstream params changed downstream stock state.",
+        )
+        .small()
+        .color(theme::TEXT_MUTED),
+    );
+    ui.add_space(8.0);
+    ui.separator();
+    ui.add_space(6.0);
+
+    draw_report_table_readonly(ui, state, report, true /* show_reconciled */);
+
+    ui.add_space(8.0);
+    if ui.button("Close").clicked() {
+        events.push(AppEvent::CloseOptimizeProject);
+    }
+}
+
+/// Read-only table view of a report — no checkboxes, no Apply
+/// buttons. When `show_reconciled` is true, an extra column shows the
+/// reconciled cycle time and a delta vs candidate-isolated.
+fn draw_report_table_readonly(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    report: &ProjectOptimizeReport,
+    show_reconciled: bool,
+) {
+    egui::ScrollArea::vertical()
+        .max_height(360.0)
+        .show(ui, |ui| {
+            let cols = if show_reconciled { 5 } else { 4 };
+            egui::Grid::new("optimize_project_readonly_grid")
+                .num_columns(cols)
+                .spacing([8.0, 6.0])
+                .striped(true)
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new("toolpath").small().strong());
+                    ui.label(egui::RichText::new("Δ").small().strong());
+                    ui.label(egui::RichText::new("cycle saving").small().strong());
+                    ui.label(egui::RichText::new("verdict").small().strong());
+                    if show_reconciled {
+                        ui.label(egui::RichText::new("reconciled").small().strong());
+                    }
+                    ui.end_row();
+
+                    for (tp_index, outcome) in &report.per_toolpath {
+                        draw_readonly_row(ui, state, *tp_index, outcome, show_reconciled);
+                        ui.end_row();
+                    }
+                });
+        });
+}
+
+fn draw_readonly_row(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    toolpath_index: usize,
+    outcome: &OptimizeOutcome,
+    show_reconciled: bool,
+) {
+    let name = state
+        .session
+        .toolpath_configs()
+        .get(toolpath_index)
+        .map_or_else(|| format!("idx {toolpath_index}"), |tc| tc.name.clone());
+    match outcome {
+        OptimizeOutcome::Ranked(candidates) => {
+            let baseline = candidates.first();
+            let recommended = outcome.first_safe();
+            ui.label(egui::RichText::new(name).small());
+            if let (Some(b), Some(rec)) = (baseline, recommended) {
+                ui.label(egui::RichText::new(format_delta(&rec.delta)).small());
+                let saving = b.cycle_time_s - rec.cycle_time_s;
+                ui.label(
+                    egui::RichText::new(format!("-{}", format_cycle(saving)))
+                        .small()
+                        .color(theme::SUCCESS),
+                );
+                draw_compact_verdict(ui, rec);
+                if show_reconciled {
+                    let reconciled = rec.reconciled_cycle_time_s;
+                    let label = match reconciled {
+                        Some(c) => {
+                            let candidate_cycle = rec.cycle_time_s;
+                            let delta = c - candidate_cycle;
+                            let mismatch = delta.abs() > 1.0;
+                            let color = if mismatch { theme::WARNING } else { theme::TEXT_MUTED };
+                            egui::RichText::new(format!(
+                                "{} ({:+.1}s)",
+                                format_cycle(c),
+                                delta
+                            ))
+                            .small()
+                            .color(color)
+                        }
+                        None => {
+                            egui::RichText::new("—")
+                                .small()
+                                .color(theme::TEXT_DIM)
+                        }
+                    };
+                    ui.label(label);
+                }
+            } else {
+                ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
+                ui.label(
+                    egui::RichText::new("no improvement found")
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+                ui.label("");
+                if show_reconciled {
+                    ui.label("");
+                }
+            }
+        }
+        OptimizeOutcome::NoSafeImprovement { explanation, .. } => {
+            ui.label(egui::RichText::new(name).small());
+            ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
+            ui.label(
+                egui::RichText::new(truncate(explanation, 60))
+                    .small()
+                    .color(theme::WARNING),
+            );
+            ui.label("");
+            if show_reconciled {
+                ui.label("");
+            }
+        }
+        OptimizeOutcome::Skipped { reason } => {
+            ui.label(egui::RichText::new(name).small());
+            ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
+            ui.label(
+                egui::RichText::new(reason.explanation_for_optimize().to_owned())
+                    .small()
+                    .color(theme::TEXT_DIM),
+            );
+            ui.label("");
+            if show_reconciled {
+                ui.label("");
+            }
+        }
     }
 }
 

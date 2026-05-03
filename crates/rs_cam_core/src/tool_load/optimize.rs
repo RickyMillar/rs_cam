@@ -193,6 +193,29 @@ pub struct ProjectOptimizeReport {
     pub per_toolpath: Vec<(usize, OptimizeOutcome)>,
 }
 
+impl ProjectOptimizeReport {
+    /// Index of the first non-baseline candidate that's safe (no
+    /// `Exceeds` verdict on any criterion) and faster than baseline
+    /// by more than `RECOMMENDATION_CYCLE_DELTA_S`. Returns `None`
+    /// if no such candidate exists. This is the index version of
+    /// [`OptimizeOutcome::first_safe`] so callers can mutate the
+    /// candidate in place (e.g. populate reconciled values during
+    /// U4 reconciliation).
+    pub fn first_safe_index(candidates: &[OptimizeCandidate]) -> Option<usize> {
+        let baseline = candidates.first()?;
+        candidates
+            .iter()
+            .enumerate()
+            .skip(1)
+            .find(|(_, c)| {
+                candidate_is_safe(c)
+                    && c.cycle_time_s + RECOMMENDATION_CYCLE_DELTA_S
+                        < baseline.cycle_time_s
+            })
+            .map(|(i, _)| i)
+    }
+}
+
 /// Optimize one toolpath and return the search outcome.
 ///
 /// **Mutation note.** `session` is mutated transiently — each candidate
@@ -2479,6 +2502,31 @@ mod tests {
         let faster_unsafe = synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict());
         let outcome = OptimizeOutcome::Ranked(vec![baseline, faster_unsafe]);
         assert!(outcome.first_safe().is_none());
+    }
+
+    #[test]
+    fn first_safe_index_returns_position_of_recommended() {
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let faster_unsafe = synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict());
+        let faster_safe = synthetic_candidate(2100.0, 70.0, within_verdict());
+        let candidates = vec![baseline, faster_unsafe, faster_safe];
+        // Index 1 is unsafe, so the recommendation is index 2.
+        assert_eq!(ProjectOptimizeReport::first_safe_index(&candidates), Some(2));
+    }
+
+    #[test]
+    fn first_safe_index_returns_none_when_no_recommendation() {
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let slower_safe = synthetic_candidate(1200.0, 110.0, within_verdict());
+        let candidates = vec![baseline, slower_safe];
+        assert_eq!(ProjectOptimizeReport::first_safe_index(&candidates), None);
+    }
+
+    #[test]
+    fn first_safe_index_returns_none_when_only_baseline() {
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let candidates = vec![baseline];
+        assert_eq!(ProjectOptimizeReport::first_safe_index(&candidates), None);
     }
 
     #[test]

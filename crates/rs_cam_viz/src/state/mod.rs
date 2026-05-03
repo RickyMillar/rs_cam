@@ -56,6 +56,10 @@ pub struct AppState {
     /// this flag and short-circuit to a "Optimize running…" view, with
     /// the modal as the only interactive surface.
     pub is_optimizing: bool,
+    /// Set after the user clicks Apply selected on the Optimize-project
+    /// rollup. Holds the toolpath ids that need to finish regenerating
+    /// before we kick the reconciliation sim. Empty otherwise.
+    pub pending_reconciliation_for_ids: Vec<usize>,
 }
 
 /// Persistent state for the per-toolpath Optimize modal. Carries the
@@ -102,6 +106,15 @@ pub enum OptimizeProjectStatus {
     /// Worker finished. Render the rollup with bottleneck callout
     /// and the per-toolpath rows.
     Ready(rs_cam_core::tool_load::optimize::ProjectOptimizeReport),
+    /// User clicked Apply selected; the project sim is now running
+    /// end-to-end with the applied params. Rollup stays visible with
+    /// the candidate-isolated values dimmed; reconciled column lights
+    /// up when the sim completes.
+    Reconciling(rs_cam_core::tool_load::optimize::ProjectOptimizeReport),
+    /// Project sim completed; per-row `reconciled_cycle_time_s` /
+    /// `reconciled_verdict` are populated. Rows whose reconciled
+    /// values disagree with candidate-isolated values are flagged.
+    Reconciled(rs_cam_core::tool_load::optimize::ProjectOptimizeReport),
     /// Worker failed. String is the diagnostic for the user.
     Failed(String),
 }
@@ -121,6 +134,7 @@ impl AppState {
             optimize_modal: None,
             optimize_project: None,
             is_optimizing: false,
+            pending_reconciliation_for_ids: Vec::new(),
         }
     }
 }
