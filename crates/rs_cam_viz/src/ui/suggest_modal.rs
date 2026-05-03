@@ -243,6 +243,11 @@ fn refusal_description(reason: &RefuseReason) -> &'static str {
             "All compatible vendor rows are calibrated for diameters too far off this \
              tool's. A recommendation would be extrapolation, not vendor-grounded — refused."
         }
+        RefuseReason::NoImprovementFound => {
+            // Optimizer-only variant — never surfaced by the suggest
+            // module, but covered here so the match stays exhaustive.
+            "No candidate was both faster than baseline and within the gate's safe envelope."
+        }
     }
 }
 

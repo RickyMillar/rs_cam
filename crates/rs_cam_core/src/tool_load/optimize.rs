@@ -32,6 +32,7 @@ use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use crate::feeds::{OperationFamily, PassRole};
 use crate::machine::{MachineProfile, PowerModel};
 use crate::session::{ProjectSession, SessionError, SimulationOptions};
+use crate::tool::MillingCutter;
 use crate::simulation_cut::SimulationCutTrace;
 
 use super::suggest::RefuseReason;
@@ -213,15 +214,327 @@ pub struct ProjectOptimizeReport {
 /// candidate at index 0 of `Ranked` outcomes is scored against this
 /// trace directly (no re-sim of baseline).
 pub fn optimize_toolpath(
-    _session: &mut ProjectSession,
-    _baseline_trace: &SimulationCutTrace,
-    _toolpath_index: usize,
-    _cancel: &AtomicBool,
+    session: &mut ProjectSession,
+    baseline_trace: &SimulationCutTrace,
+    toolpath_index: usize,
+    cancel: &AtomicBool,
 ) -> OptimizeOutcome {
-    // U1 skeleton — Stages 0/1/2 land in follow-up commits.
-    OptimizeOutcome::Skipped {
-        reason: RefuseReason::SimulationRequired,
+    use std::sync::atomic::Ordering;
+
+    // 1. Build the evaluation context. Skip cleanly if the toolpath or
+    //    its tool is missing.
+    let Some(ctx) = EvaluationContext::from_session(session, toolpath_index) else {
+        return OptimizeOutcome::Skipped {
+            reason: RefuseReason::SimulationRequired,
+        };
+    };
+
+    // 2. Skip op kinds the gate can't model. Drill cycles are pure
+    //    plunge — no chipload measurement to compare against.
+    if matches!(
+        ctx.operation_kind,
+        OperationType::Drill | OperationType::AlignmentPinDrill
+    ) {
+        return OptimizeOutcome::Skipped {
+            reason: RefuseReason::SteadyStateSamplesNotPresent,
+        };
     }
+
+    // 3. Skip Custom material — Kc is unvalidated, power model
+    //    unreliable.
+    if matches!(
+        ctx.material,
+        crate::material::Material::Custom { .. }
+    ) {
+        return OptimizeOutcome::Skipped {
+            reason: RefuseReason::MaterialUnvalidated,
+        };
+    }
+
+    // 4. Build the baseline candidate from the existing trace. Score
+    //    via the same gate that diagnostics already used so the
+    //    rollup's index-0 row matches what the user already sees.
+    let baseline_op = match session.get_toolpath_config(toolpath_index) {
+        Some(tc) => tc.operation.clone(),
+        None => {
+            return OptimizeOutcome::Skipped {
+                reason: RefuseReason::SimulationRequired,
+            };
+        }
+    };
+    let baseline_load_ctx = ToolpathLoadContext {
+        toolpath_id: ctx.toolpath_id,
+        tool: &ctx.tool,
+        material: &ctx.material,
+        operation_family: ctx.lut_op_family,
+        pass_role: ctx.lut_pass_role,
+        operation_feed_rate_mm_min: baseline_op.feed_rate(),
+        operation_kind: ctx.operation_kind,
+    };
+    let machine = session.machine().clone();
+    let baseline_verdict =
+        evaluate_toolpath(&baseline_load_ctx, Some(baseline_trace), Some(&machine));
+    let baseline_cycle_s = match cycle_time_from_trace(baseline_trace, ctx.toolpath_id) {
+        Some(t) if t > 0.0 => t,
+        _ => {
+            return OptimizeOutcome::Skipped {
+                reason: RefuseReason::SteadyStateSamplesNotPresent,
+            };
+        }
+    };
+    let baseline_candidate = OptimizeCandidate {
+        params: baseline_op.clone(),
+        delta: ParamDelta::default(),
+        cycle_time_s: baseline_cycle_s,
+        verdict: baseline_verdict.clone(),
+        stage: SearchStage::Baseline,
+        reconciled_cycle_time_s: None,
+        reconciled_verdict: None,
+    };
+
+    // 5. Look up the matched LUT row. Used by Stage 0's `k_lut` bound
+    //    and Stage 1's DOC-grid endpoint clamping.
+    let matched_lut_row = find_matched_lut_row(&ctx.tool, &ctx.material, &ctx);
+
+    // Cancel check before any sims.
+    if cancel.load(Ordering::SeqCst) {
+        return OptimizeOutcome::NoSafeImprovement {
+            reason: RefuseReason::NoImprovementFound,
+            explanation: "cancelled before any candidates were generated".to_owned(),
+        };
+    }
+
+    // 6. From here on the session is mutated per-candidate. The
+    //    BaselineRestoreGuard restores `(operation, dressups,
+    //    face_selection, feeds_auto)` on drop, regardless of how
+    //    we exit (early return, Err, panic).
+    let mut guard = match BaselineRestoreGuard::new(session, toolpath_index) {
+        Ok(g) => g,
+        Err(_) => {
+            return OptimizeOutcome::Skipped {
+                reason: RefuseReason::SimulationRequired,
+            };
+        }
+    };
+
+    let baseline_rpm = baseline_rpm_from_trace(
+        baseline_trace,
+        ctx.toolpath_id,
+        baseline_op.spindle_rpm(),
+        &machine,
+    );
+
+    // 7. Stage 0: closed-form analytical RPM/feed scaling. Skipped
+    //    when the baseline already fails the chipload gate
+    //    (proportional scaling preserves chipload — can't fix Exceeds).
+    let baseline_chipload_exceeds =
+        matches!(baseline_verdict.chipload, Verdict::Exceeds { .. });
+    let mut all_candidates: Vec<OptimizeCandidate> = Vec::new();
+    if !baseline_chipload_exceeds {
+        let stage0_inputs = Stage0Inputs {
+            rpm_baseline: baseline_rpm,
+            feed_baseline_mm_min: baseline_op.feed_rate(),
+            peak_power_baseline_kw: baseline_peak_power_kw(&baseline_verdict),
+            machine: &machine,
+            lut_row: matched_lut_row.as_ref(),
+        };
+        let k = solve_headroom_scale(&stage0_inputs);
+        if k > 1.0 + 1e-6 {
+            let scaled_op = apply_scale_to_op(&baseline_op, baseline_rpm, k, &machine);
+            let delta = delta_against_baseline(&baseline_op, &scaled_op);
+            if let Ok(candidate) = evaluate_candidate(
+                &mut guard,
+                &ctx,
+                scaled_op,
+                delta,
+                SearchStage::Coarse,
+                STAGE1_RESOLUTION_MM,
+                cancel,
+            ) {
+                all_candidates.push(candidate);
+            }
+        }
+    }
+
+    if cancel.load(Ordering::SeqCst) {
+        drop(guard);
+        return finalize_partial(baseline_candidate, all_candidates);
+    }
+
+    // 8. Stage 1: DOC variant grid for ops with DOC knobs. Anchored at
+    //    the headroom-point op when available, baseline op otherwise.
+    if has_doc_knob(ctx.operation_kind) {
+        let anchor_op = all_candidates
+            .first()
+            .map(|c| c.params.clone())
+            .unwrap_or_else(|| baseline_op.clone());
+        let anchor_doc = anchor_op
+            .depth_per_pass()
+            .unwrap_or_else(|| baseline_op.depth_per_pass().unwrap_or(1.5));
+        let doc_variants = build_doc_variants(
+            anchor_doc,
+            matched_lut_row.as_ref(),
+            ctx.operation_kind,
+        );
+        for &doc in &doc_variants {
+            if cancel.load(Ordering::SeqCst) {
+                break;
+            }
+            // Skip if this DOC matches the anchor — no point re-simming
+            // the same params.
+            if (doc - anchor_doc).abs() < DOC_DEDUP_TOLERANCE_MM {
+                continue;
+            }
+            let candidate_op = apply_doc_to_op(&anchor_op, doc);
+            let delta = delta_against_baseline(&baseline_op, &candidate_op);
+            if let Ok(candidate) = evaluate_candidate(
+                &mut guard,
+                &ctx,
+                candidate_op,
+                delta,
+                SearchStage::Coarse,
+                STAGE1_RESOLUTION_MM,
+                cancel,
+            ) {
+                all_candidates.push(candidate);
+            }
+        }
+    }
+
+    if cancel.load(Ordering::SeqCst) {
+        drop(guard);
+        return finalize_partial(baseline_candidate, all_candidates);
+    }
+
+    // 9. Stage 2: top-3 by cycle time, re-eval at full resolution.
+    let stage2_seeds = select_stage2_candidates(all_candidates, STAGE2_SURVIVOR_COUNT);
+    let stage2_candidates = match refine_stage2(&mut guard, &ctx, stage2_seeds, cancel) {
+        Ok(c) => c,
+        Err(_) => {
+            drop(guard);
+            return OptimizeOutcome::NoSafeImprovement {
+                reason: RefuseReason::NoImprovementFound,
+                explanation:
+                    "candidate evaluation failed at full resolution — partial result returned"
+                        .to_owned(),
+            };
+        }
+    };
+
+    // 10. Drop the guard explicitly so the baseline is restored before
+    //     building the outcome (which references the candidates,
+    //     not the session). The outcome is returned to the caller; the
+    //     caller's view of `session` is now back at the baseline.
+    drop(guard);
+    build_outcome(baseline_candidate, stage2_candidates)
+}
+
+/// Operation kinds with a `depth_per_pass` knob that Stage 1 sweeps.
+/// Per Engineering Default 9 + the 5 ops the plan explicitly calls
+/// out (Adaptive3d, Pocket, Adaptive, Rest, Face).
+fn has_doc_knob(op_kind: OperationType) -> bool {
+    matches!(
+        op_kind,
+        OperationType::Adaptive3d
+            | OperationType::Pocket
+            | OperationType::Adaptive
+            | OperationType::Rest
+            | OperationType::Face
+    )
+}
+
+/// Extract peak power from the gate's verdict. `None` for `Unmodeled`.
+fn baseline_peak_power_kw(verdict: &ToolpathLoadVerdict) -> Option<f64> {
+    match verdict.power {
+        Verdict::Within { peak, .. } => Some(peak),
+        Verdict::Exceeds { peak, .. } => Some(peak),
+        Verdict::Unmodeled { .. } => None,
+    }
+}
+
+/// Determine baseline RPM from the trace's actual samples for this
+/// toolpath. Falls back to the operation's `spindle_rpm` field, then
+/// to the machine's minimum RPM. The trace's median is preferred over
+/// the commanded RPM because feed-override settings or spindle
+/// dynamics may have run the toolpath at a slightly different speed
+/// than the commanded value.
+fn baseline_rpm_from_trace(
+    trace: &SimulationCutTrace,
+    toolpath_id: usize,
+    op_rpm: Option<u32>,
+    machine: &MachineProfile,
+) -> f64 {
+    let mut samples_rpm: Vec<f64> = trace
+        .samples
+        .iter()
+        .filter(|s| s.toolpath_id == toolpath_id && s.is_cutting)
+        .map(|s| f64::from(s.spindle_rpm))
+        .collect();
+    samples_rpm.sort_by(f64::total_cmp);
+    if !samples_rpm.is_empty() {
+        return samples_rpm[samples_rpm.len() / 2];
+    }
+    op_rpm
+        .map(f64::from)
+        .unwrap_or_else(|| machine.rpm_range().0)
+}
+
+/// Look up the best-matching LUT row for the toolpath's tool /
+/// material / operation combination. Mirrors `suggest::evaluate`'s
+/// LUT plumbing so the optimizer reads from the same calibration data
+/// the gate does. Returns `None` for ProjectCurve+VBit/BullNose etc.
+/// where `routed_lookup_family` has no target, or for `Custom`
+/// material.
+fn find_matched_lut_row(
+    tool: &crate::tool::ToolDefinition,
+    material: &crate::material::Material,
+    ctx: &EvaluationContext,
+) -> Option<MatchedRow> {
+    let tool_family = super::chipload::tool_family_for(tool.to_geometry_hint());
+    let (lut_op_family, lut_pass_role) = super::chipload::routed_lookup_family(
+        ctx.operation_kind,
+        tool_family,
+        ctx.lut_op_family,
+        ctx.lut_pass_role,
+    )?;
+    if matches!(material, crate::material::Material::Custom { .. }) {
+        return None;
+    }
+    let (material_family, hardness_kind, hardness_value) =
+        crate::feeds::vendor_normalize::material_to_lut(material);
+    let criteria = crate::feeds::vendor_lookup::LookupCriteria {
+        tool_family,
+        tool_subfamily: None,
+        diameter_mm: tool.diameter(),
+        flute_count: tool.flute_count,
+        material_family,
+        hardness_kind: Some(hardness_kind),
+        hardness_value: Some(hardness_value),
+        operation_family: lut_op_family,
+        pass_role: lut_pass_role,
+    };
+    let lut = super::chipload::embedded_lut();
+    crate::feeds::vendor_lookup::enumerate_matching_rows(lut, &criteria)
+        .into_iter()
+        .next()
+}
+
+/// Build a partial `OptimizeOutcome` after cancellation. If we have
+/// no candidates yet, surface NoSafeImprovement; otherwise dispatch
+/// the candidates we managed to evaluate. The user sees a partial
+/// rollup rather than nothing — open-and-walk-away cancellation
+/// shouldn't lose the work done before they hit Cancel.
+fn finalize_partial(
+    baseline: OptimizeCandidate,
+    candidates: Vec<OptimizeCandidate>,
+) -> OptimizeOutcome {
+    if candidates.is_empty() {
+        return OptimizeOutcome::NoSafeImprovement {
+            reason: RefuseReason::NoImprovementFound,
+            explanation: "cancelled before any candidates were evaluated".to_owned(),
+        };
+    }
+    build_outcome(baseline, candidates)
 }
 
 // ── Baseline-restore guard (Engineering Default 10) ───────────────────
@@ -637,13 +950,16 @@ fn cycle_time_from_trace(trace: &SimulationCutTrace, toolpath_id: usize) -> Opti
 /// Resources the candidate evaluation needs that are constant across
 /// all candidates for a given toolpath. Built once at the top of
 /// `optimize_toolpath`, passed to each `evaluate_candidate` call.
-pub(crate) struct EvaluationContext<'a> {
+///
+/// All fields are owned — the context outlives any mutable borrow of
+/// the session held by the restore guard.
+pub(crate) struct EvaluationContext {
     /// The toolpath's index in `session.toolpath_configs`.
     pub toolpath_index: usize,
     /// The toolpath's stable id (matches `SimulationCutSample::toolpath_id`).
     pub toolpath_id: usize,
-    /// Operation kind — used for the gate's LUT routing and (later)
-    /// for skipping ops the optimizer can't model.
+    /// Operation kind — used for the gate's LUT routing and for
+    /// skipping ops the optimizer can't model.
     pub operation_kind: OperationType,
     /// LUT family from the op's `feeds_family`.
     pub lut_op_family: LutOperationFamily,
@@ -651,16 +967,16 @@ pub(crate) struct EvaluationContext<'a> {
     pub lut_pass_role: LutPassRole,
     /// Built tool definition (`build_cutter` over the tool config).
     pub tool: crate::tool::ToolDefinition,
-    /// Reference into the session's stock material.
-    pub material: &'a crate::material::Material,
+    /// Owned clone of the session's stock material.
+    pub material: crate::material::Material,
 }
 
-impl<'a> EvaluationContext<'a> {
+impl EvaluationContext {
     /// Build the evaluation context from the session for the given
     /// toolpath index. Returns `None` if the toolpath or its tool is
     /// missing — caller should `Skipped` in that case.
     pub(crate) fn from_session(
-        session: &'a ProjectSession,
+        session: &ProjectSession,
         toolpath_index: usize,
     ) -> Option<Self> {
         let tc = session.get_toolpath_config(toolpath_index)?;
@@ -674,7 +990,7 @@ impl<'a> EvaluationContext<'a> {
             lut_op_family: lut_op_family_from(spec.feeds_family),
             lut_pass_role: lut_pass_role_from(spec.feeds_pass_role),
             tool,
-            material: &session.stock_config().material,
+            material: session.stock_config().material.clone(),
         })
     }
 }
@@ -695,7 +1011,7 @@ impl<'a> EvaluationContext<'a> {
 /// `SessionError::Simulation(SimulationError::Cancelled)`.
 pub(crate) fn evaluate_candidate(
     guard: &mut BaselineRestoreGuard<'_>,
-    ctx: &EvaluationContext<'_>,
+    ctx: &EvaluationContext,
     candidate_op: OperationConfig,
     delta: ParamDelta,
     stage: SearchStage,
@@ -747,7 +1063,7 @@ pub(crate) fn evaluate_candidate(
     let load_ctx = ToolpathLoadContext {
         toolpath_id: ctx.toolpath_id,
         tool: &ctx.tool,
-        material: ctx.material,
+        material: &ctx.material,
         operation_family: ctx.lut_op_family,
         pass_role: ctx.lut_pass_role,
         operation_feed_rate_mm_min: candidate_op.feed_rate(),
@@ -808,7 +1124,7 @@ pub(crate) fn select_stage2_candidates(
 /// is no second model anywhere.
 pub(crate) fn refine_stage2(
     guard: &mut BaselineRestoreGuard<'_>,
-    ctx: &EvaluationContext<'_>,
+    ctx: &EvaluationContext,
     stage1_winners: Vec<OptimizeCandidate>,
     cancel: &AtomicBool,
 ) -> Result<Vec<OptimizeCandidate>, SessionError> {
@@ -1371,6 +1687,185 @@ mod restore_guard_tests {
         let mut session = session_with_one_pocket();
         let result = BaselineRestoreGuard::new(&mut session, 99);
         assert!(matches!(result, Err(SessionError::ToolpathNotFound(99))));
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod orchestration_skip_tests {
+    //! Tests for `optimize_toolpath`'s early-skip paths — the cases
+    //! that don't require running a real sim. End-to-end tests with
+    //! actual sims are deferred to integration tests in
+    //! `tests/optimize_smoke.rs` (slow path).
+
+    use super::*;
+    use crate::compute::catalog::OperationConfig;
+    use crate::compute::operation_configs::{AlignmentPinDrillConfig, DrillConfig, PocketConfig};
+    use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use crate::session::ToolpathConfig;
+    use crate::simulation_cut::{SimulationCutSummary, SimulationCutTrace};
+
+    fn make_tool() -> ToolConfig {
+        ToolConfig::new_default(ToolId(0), ToolType::EndMill)
+    }
+
+    fn empty_trace() -> SimulationCutTrace {
+        SimulationCutTrace {
+            schema_version: 1,
+            sample_step_mm: 1.0,
+            summary: SimulationCutSummary::default(),
+            samples: Vec::new(),
+            toolpath_summaries: Vec::new(),
+            semantic_summaries: Vec::new(),
+            hotspots: Vec::new(),
+            issues: Vec::new(),
+            provenance: None,
+        }
+    }
+
+    fn make_tc(operation: OperationConfig, tool_id: usize) -> ToolpathConfig {
+        ToolpathConfig {
+            id: 0,
+            name: "test".to_owned(),
+            enabled: true,
+            operation,
+            dressups: DressupConfig::default(),
+            heights: crate::compute::config::HeightsConfig::default(),
+            tool_id,
+            model_id: 0,
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: crate::compute::config::BoundaryConfig::default(),
+            boundary_inherit: true,
+            stock_source: crate::compute::config::StockSource::Fresh,
+            coolant: crate::gcode::CoolantMode::Off,
+            face_selection: None,
+            feeds_auto: FeedsAutoMode::default(),
+            debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+        }
+    }
+
+    fn session_with_op(operation: OperationConfig) -> ProjectSession {
+        let mut s = ProjectSession::new_empty();
+        s.add_tool(make_tool());
+        s.add_toolpath(0, make_tc(operation, s.tools()[0].id.0)).unwrap();
+        s
+    }
+
+    #[test]
+    fn drill_op_yields_skipped() {
+        let mut session = session_with_op(OperationConfig::Drill(DrillConfig::default()));
+        let trace = empty_trace();
+        let cancel = AtomicBool::new(false);
+        let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
+        assert!(matches!(
+            outcome,
+            OptimizeOutcome::Skipped {
+                reason: RefuseReason::SteadyStateSamplesNotPresent
+            }
+        ), "got {outcome:?}");
+    }
+
+    #[test]
+    fn alignment_pin_drill_yields_skipped() {
+        let mut session = session_with_op(OperationConfig::AlignmentPinDrill(
+            AlignmentPinDrillConfig::default(),
+        ));
+        let trace = empty_trace();
+        let cancel = AtomicBool::new(false);
+        let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
+        assert!(matches!(
+            outcome,
+            OptimizeOutcome::Skipped {
+                reason: RefuseReason::SteadyStateSamplesNotPresent
+            }
+        ));
+    }
+
+    #[test]
+    fn custom_material_yields_skipped() {
+        use crate::compute::stock_config::StockConfig;
+        let mut session = session_with_op(OperationConfig::Pocket(PocketConfig::default()));
+        let mut stock = session.stock_config().clone();
+        stock.material = crate::material::Material::Custom {
+            name: "test".to_owned(),
+            hardness_index: 1.0,
+            kc: 30.0,
+        };
+        session.set_stock_config(stock);
+        let _ = StockConfig::default(); // silence unused-import false positive
+
+        let trace = empty_trace();
+        let cancel = AtomicBool::new(false);
+        let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
+        assert!(matches!(
+            outcome,
+            OptimizeOutcome::Skipped {
+                reason: RefuseReason::MaterialUnvalidated
+            }
+        ));
+    }
+
+    #[test]
+    fn invalid_toolpath_index_yields_skipped() {
+        let mut session = session_with_op(OperationConfig::Pocket(PocketConfig::default()));
+        let trace = empty_trace();
+        let cancel = AtomicBool::new(false);
+        let outcome = optimize_toolpath(&mut session, &trace, 99, &cancel);
+        assert!(matches!(outcome, OptimizeOutcome::Skipped { .. }));
+    }
+
+    #[test]
+    fn empty_trace_yields_skipped() {
+        // Pocket op (supported), but trace has no samples for the
+        // toolpath — Skipped per "no steady-state samples".
+        let mut session = session_with_op(OperationConfig::Pocket(PocketConfig::default()));
+        let trace = empty_trace();
+        let cancel = AtomicBool::new(false);
+        let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
+        assert!(matches!(
+            outcome,
+            OptimizeOutcome::Skipped {
+                reason: RefuseReason::SteadyStateSamplesNotPresent
+            }
+        ));
+    }
+
+    #[test]
+    fn cancel_before_run_yields_no_safe_improvement() {
+        // Trace has a baseline samples for this toolpath_id, so the
+        // early skip paths don't trigger; cancel flag is set before
+        // any candidates are evaluated.
+        use crate::simulation_cut::SimulationToolpathCutSummary;
+        let mut trace = empty_trace();
+        trace.toolpath_summaries.push(SimulationToolpathCutSummary {
+            toolpath_id: 0,
+            sample_count: 100,
+            total_runtime_s: 60.0,
+            cutting_runtime_s: 50.0,
+            rapid_runtime_s: 10.0,
+            air_cut_time_s: 0.0,
+            low_engagement_time_s: 0.0,
+            average_engagement: 0.5,
+            peak_chipload_mm_per_tooth: 0.04,
+            peak_axial_doc_mm: 2.0,
+            total_removed_volume_est_mm3: 100.0,
+            average_mrr_mm3_s: 2.0,
+        });
+
+        let mut session = session_with_op(OperationConfig::Pocket(PocketConfig::default()));
+        let cancel = AtomicBool::new(true); // cancelled up-front
+        let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
+        // Cancel-up-front should not produce a Ranked outcome.
+        assert!(
+            !matches!(outcome, OptimizeOutcome::Ranked(_)),
+            "cancelled run should not produce Ranked, got {outcome:?}"
+        );
     }
 }
 
