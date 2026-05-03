@@ -10,6 +10,7 @@ pub mod shortcuts_window;
 pub mod sim_debug;
 pub mod sim_diagnostics;
 pub mod sim_op_list;
+pub mod optimize_modal;
 pub mod sim_timeline;
 pub mod status_bar;
 pub mod suggest_modal;
