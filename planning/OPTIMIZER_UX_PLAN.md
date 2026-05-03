@@ -2,7 +2,18 @@
 
 ## Status
 
-Backlog. Drafted 2026-05-03 after a live MCP run on `wanaka_full.toml`
+**U1, U2, U3, U4 shipped 2026-05-03.** The full optimizer UX
+end-to-end is in place: per-toolpath modal, project rollup with
+bottleneck callout, batch Apply, post-Apply reconciliation. The
+worker-thread integration uses a third compute lane that takes
+ownership of the session for the duration of the run; the GUI
+renders an "Optimize running" placeholder during. Remaining
+backlog: end-to-end smoke test (`crates/rs_cam_core/tests/optimize_smoke.rs`),
+MCP migration of `suggest_feeds_speeds` -> `optimize_toolpath`,
+and final retirement of `tool_load/suggest.rs` (only RefuseReason +
+explanation_for_optimize need preserving).
+
+Drafted 2026-05-03 after a live MCP run on `wanaka_full.toml`
 exposed three failure modes in the per-toolpath Suggest flow. Replaces
 the never-shipped "Tier 2 deep suggest" sketch with a single unified
 verb spanning feed/RPM and geometry knobs.
@@ -366,6 +377,9 @@ single function diagnostics already uses.
 
 After each phase: `cargo build -p rs_cam_core && cargo test -p rs_cam_core`
 plus manual MCP smoke test on wanaka.
+
+**Status as of 2026-05-03:** U1, U2, U3, U4 all shipped. See commits
+`fc15d40..952178d` for the build-up.
 
 | Phase | What | Why first | Files | LOC |
 |---|---|---|---|---|
