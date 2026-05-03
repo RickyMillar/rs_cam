@@ -168,7 +168,7 @@ impl Default for HeightsConfig {
 }
 
 /// Tracks which feed parameters are auto-calculated vs user-overridden.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeedsAutoMode {
     pub feed_rate: bool,
     pub plunge_rate: bool,

@@ -1,5 +1,5 @@
 use super::job::{PostConfig, StockConfig, ToolConfig, ToolId};
-use super::toolpath::{DressupConfig, OperationConfig, ToolpathId};
+use super::toolpath::{DressupConfig, FeedsAutoMode, OperationConfig, ToolpathId};
 use rs_cam_core::enriched_mesh::FaceGroupId;
 use rs_cam_core::machine::MachineProfile;
 
@@ -27,6 +27,8 @@ pub enum UndoAction {
         new_dressups: DressupConfig,
         old_face_selection: Option<Vec<FaceGroupId>>,
         new_face_selection: Option<Vec<FaceGroupId>>,
+        old_feeds_auto: FeedsAutoMode,
+        new_feeds_auto: FeedsAutoMode,
     },
     MachineChange {
         old: rs_cam_core::machine::MachineProfile,
@@ -46,12 +48,15 @@ pub struct UndoHistory {
     pub post_snapshot: Option<PostConfig>,
     /// Snapshot of machine config before current edit.
     pub machine_snapshot: Option<MachineProfile>,
-    /// Snapshot of toolpath params before current edit.
+    /// Snapshot of toolpath params before current edit. Includes
+    /// `feeds_auto` so the snapshot is lossless against the GUI's
+    /// LUT auto-overwrite (see ProjectSession::apply_toolpath_param_snapshot).
     pub toolpath_snapshot: Option<(
         ToolpathId,
         OperationConfig,
         DressupConfig,
         Option<Vec<FaceGroupId>>,
+        FeedsAutoMode,
     )>,
 }
 

@@ -116,7 +116,9 @@ fn flush_machine_snapshot(state: &mut AppState) {
 
 /// Flush toolpath params undo snapshot if the user navigated away from a toolpath.
 fn flush_toolpath_snapshot(state: &mut AppState) {
-    if let Some((tp_id, old_op, old_dressups, old_faces)) = state.history.toolpath_snapshot.take() {
+    if let Some((tp_id, old_op, old_dressups, old_faces, old_feeds_auto)) =
+        state.history.toolpath_snapshot.take()
+    {
         if !matches!(state.selection, crate::state::selection::Selection::Toolpath(id) if id == tp_id)
         {
             if let Some((_, tc)) = state.session.find_toolpath_config_by_id(tp_id.0) {
@@ -130,11 +132,14 @@ fn flush_toolpath_snapshot(state: &mut AppState) {
                         new_dressups: tc.dressups.clone(),
                         old_face_selection: old_faces,
                         new_face_selection: tc.face_selection.clone(),
+                        old_feeds_auto,
+                        new_feeds_auto: tc.feeds_auto.clone(),
                     });
                 state.gui.mark_edited();
             }
         } else {
-            state.history.toolpath_snapshot = Some((tp_id, old_op, old_dressups, old_faces));
+            state.history.toolpath_snapshot =
+                Some((tp_id, old_op, old_dressups, old_faces, old_feeds_auto));
         }
     }
 }
@@ -321,6 +326,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     tc.operation.clone(),
                     tc.dressups.clone(),
                     tc.face_selection.clone(),
+                    tc.feeds_auto.clone(),
                 ));
             }
             // Snapshot tool/model lists to avoid borrow conflict with toolpaths
