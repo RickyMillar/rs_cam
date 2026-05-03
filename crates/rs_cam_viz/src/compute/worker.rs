@@ -841,6 +841,7 @@ fn spawn_optimize_lane(
                             OptimizeOutcome::Skipped { .. } => OptimizeOutcome::NoSafeImprovement {
                                 reason: RefuseReason::NoImprovementFound,
                                 explanation: "cancelled before optimization could run".to_owned(),
+                                attempted: Vec::new(),
                             },
                         }
                     } else {

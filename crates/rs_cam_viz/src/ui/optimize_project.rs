@@ -317,12 +317,25 @@ fn draw_row(
                 ui.label("");
             }
         }
-        OptimizeOutcome::NoSafeImprovement { explanation, .. } => {
+        OptimizeOutcome::NoSafeImprovement {
+            explanation,
+            attempted,
+            ..
+        } => {
             ui.label(""); // checkbox column blank
             ui.label(egui::RichText::new(name).small());
             ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
+            // Refused row narrative + a count of candidates tried so
+            // the user can see "no improvement" wasn't a black box.
+            // Subtract 1 to exclude the baseline at index 0.
+            let tried = attempted.len().saturating_sub(1);
+            let suffix = if tried > 0 {
+                format!(" — tried {tried}")
+            } else {
+                String::new()
+            };
             ui.label(
-                egui::RichText::new(truncate(explanation, 80))
+                egui::RichText::new(format!("{}{}", truncate(explanation, 70), suffix))
                     .small()
                     .color(theme::WARNING),
             );
@@ -563,11 +576,21 @@ fn draw_readonly_row(
                 }
             }
         }
-        OptimizeOutcome::NoSafeImprovement { explanation, .. } => {
+        OptimizeOutcome::NoSafeImprovement {
+            explanation,
+            attempted,
+            ..
+        } => {
             ui.label(egui::RichText::new(name).small());
             ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
+            let tried = attempted.len().saturating_sub(1);
+            let suffix = if tried > 0 {
+                format!(" — tried {tried}")
+            } else {
+                String::new()
+            };
             ui.label(
-                egui::RichText::new(truncate(explanation, 60))
+                egui::RichText::new(format!("{}{}", truncate(explanation, 50), suffix))
                     .small()
                     .color(theme::WARNING),
             );

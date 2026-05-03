@@ -106,16 +106,145 @@ fn draw_outcome(
             reason.explanation_for_optimize(),
             events,
         ),
-        OptimizeOutcome::NoSafeImprovement { explanation, .. } => draw_refusal_section(
-            ui,
-            "No improvement found",
+        OptimizeOutcome::NoSafeImprovement {
             explanation,
-            events,
-        ),
+            attempted,
+            ..
+        } => {
+            // Show the explanation banner first, then the attempted
+            // candidates so the user can see what was tried and why
+            // each row fell short. Without the table the refusal is
+            // a black box.
+            ui.label(
+                egui::RichText::new("No improvement found")
+                    .strong()
+                    .color(theme::WARNING),
+            );
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(explanation).small());
+            ui.add_space(8.0);
+            if attempted.len() <= 1 {
+                // No non-baseline candidates ran (early refuse). Just
+                // close — there's nothing to show.
+                if ui.button("Close").clicked() {
+                    events.push(AppEvent::CloseOptimizeModal);
+                }
+            } else {
+                ui.separator();
+                ui.add_space(4.0);
+                draw_attempted(ui, attempted, events);
+            }
+        }
         OptimizeOutcome::Ranked(candidates) => {
             draw_ranked(ui, candidates, outcome.first_safe(), toolpath_id, events);
         }
     }
+}
+
+/// Render the attempted-candidates table for `NoSafeImprovement`
+/// outcomes. Same shape as Ranked's table but without the ⭐ marker
+/// or Apply buttons — none of these candidates is recommended. The
+/// goal is purely diagnostic: show what was tried, the cycle delta,
+/// and the verdict per row.
+fn draw_attempted(
+    ui: &mut egui::Ui,
+    candidates: &[OptimizeCandidate],
+    events: &mut Vec<AppEvent>,
+) {
+    let Some((baseline, rest)) = candidates.split_first() else {
+        return;
+    };
+    draw_baseline_card(ui, baseline);
+    ui.add_space(8.0);
+    ui.separator();
+    ui.add_space(8.0);
+
+    if rest.is_empty() {
+        ui.label(
+            egui::RichText::new("No non-baseline candidates were evaluated.")
+                .small()
+                .color(theme::TEXT_MUTED),
+        );
+        ui.add_space(8.0);
+        if ui.button("Close").clicked() {
+            events.push(AppEvent::CloseOptimizeModal);
+        }
+        return;
+    }
+
+    ui.label(
+        egui::RichText::new("Candidates evaluated (none beat baseline)")
+            .small()
+            .strong(),
+    );
+    ui.add_space(4.0);
+
+    egui::Grid::new("optimize_attempted_grid")
+        .num_columns(4)
+        .spacing([8.0, 6.0])
+        .striped(true)
+        .show(ui, |ui| {
+            ui.label(egui::RichText::new("Δ").small().strong());
+            ui.label(egui::RichText::new("cycle").small().strong());
+            ui.label(egui::RichText::new("verdict").small().strong());
+            ui.label(egui::RichText::new("status").small().strong());
+            ui.end_row();
+
+            for candidate in rest {
+                draw_attempted_row(ui, candidate, baseline);
+                ui.end_row();
+            }
+        });
+
+    ui.add_space(8.0);
+    if ui.button("Close").clicked() {
+        events.push(AppEvent::CloseOptimizeModal);
+    }
+}
+
+fn draw_attempted_row(
+    ui: &mut egui::Ui,
+    candidate: &OptimizeCandidate,
+    baseline: &OptimizeCandidate,
+) {
+    use rs_cam_core::tool_load::verdict::Verdict;
+
+    ui.label(egui::RichText::new(format_delta(&candidate.delta)).small());
+
+    let cycle_delta = candidate.cycle_time_s - baseline.cycle_time_s;
+    let cycle_color = if cycle_delta < -0.5 {
+        theme::SUCCESS
+    } else if cycle_delta > 0.5 {
+        theme::ERROR
+    } else {
+        theme::TEXT_MUTED
+    };
+    ui.label(
+        egui::RichText::new(format!(
+            "{} ({:+.1}s)",
+            format_cycle(candidate.cycle_time_s),
+            cycle_delta
+        ))
+        .small()
+        .color(cycle_color),
+    );
+
+    draw_verdict_badges(ui, &candidate.verdict);
+
+    // Status: why isn't this candidate the recommendation?
+    let status = if matches!(candidate.verdict.chipload, Verdict::Exceeds { .. })
+        || matches!(candidate.verdict.power, Verdict::Exceeds { .. })
+        || matches!(candidate.verdict.deflection, Verdict::Exceeds { .. })
+    {
+        ("gate", theme::ERROR)
+    } else if cycle_delta >= -0.5 {
+        ("slower", theme::WARNING)
+    } else {
+        // Safe and faster but somehow not first_safe — shouldn't
+        // happen in NoSafeImprovement outcomes, but render defensively.
+        ("ok", theme::TEXT_MUTED)
+    };
+    ui.label(egui::RichText::new(status.0).small().color(status.1));
 }
 
 fn draw_refusal_section(
