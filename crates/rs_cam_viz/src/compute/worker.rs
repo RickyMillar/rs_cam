@@ -774,7 +774,7 @@ fn spawn_optimize_lane(
     use rs_cam_core::tool_load::optimize::{
         OptimizeOutcome, ProjectOptimizeReport, optimize_project, optimize_toolpath,
     };
-    use rs_cam_core::tool_load::suggest::RefuseReason;
+    use rs_cam_core::tool_load::RefuseReason;
 
     std::thread::spawn(move || {
         loop {

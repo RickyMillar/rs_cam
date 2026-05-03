@@ -433,14 +433,6 @@ impl EmbeddedCamServer {
     }
 
     #[tool(
-        name = "suggest_feeds_speeds",
-        description = "Per-toolpath feed/RPM suggestion backed by vendor LUT and bounded by the machine's available power. Run simulation first. Returns either a SuggestedFeeds (rpm, feed_mm_min, chipload_envelope, matched row id, rationale) or a typed RefuseReason (e.g. SimulationRequired, BipolarEngagement, NoVendorData). Each entry also carries the considered_rows for transparency. DEPRECATED — prefer optimize_toolpath, which simulates each candidate and ranks by measured cycle time."
-    )]
-    async fn suggest_feeds_speeds(&self) -> String {
-        Self::format_result(self.send_request(McpRequestKind::SuggestFeedsSpeeds).await)
-    }
-
-    #[tool(
         name = "optimize_toolpath",
         description = "Run the optimizer on one toolpath. Searches across feed/RPM (analytical Stage 0) and DOC variants (Stage 1/2 sims). Each candidate is sim-verified end-to-end. Returns OptimizeOutcome JSON: Ranked(candidates) with cycle time + verdict per row, NoSafeImprovement(narrative), or Skipped(reason). Long-running — the GUI thread blocks for the duration (~1-2 min for a 3D op). Run simulation first; the optimizer scores candidates against the existing baseline trace."
     )]

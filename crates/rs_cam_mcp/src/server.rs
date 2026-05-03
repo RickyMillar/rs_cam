@@ -668,24 +668,6 @@ impl CamServer {
     }
 
     #[tool(
-        name = "suggest_feeds_speeds",
-        description = "Per-toolpath feed/RPM suggestion backed by vendor LUT and bounded by the machine's available power. Run simulation first. Returns either a SuggestedFeeds (with rpm, feed_mm_min, chipload_envelope, matched row id, rationale) or a typed RefuseReason (e.g. SimulationRequired, BipolarEngagement, NoVendorData). Each entry also carries the considered_rows for transparency. DEPRECATED — prefer optimize_toolpath, which simulates each candidate and ranks by measured cycle time."
-    )]
-    async fn suggest_feeds_speeds(&self) -> String {
-        let guard = self.session.lock().await;
-        let Some(session) = guard.as_ref() else {
-            return no_project_error();
-        };
-        let suggestions = session.suggest_feeds_speeds();
-        match serde_json::to_value(&suggestions) {
-            Ok(v) => json_str(v),
-            Err(e) => json_str(serde_json::json!({
-                "error": format!("Failed to serialize feed suggestions: {e}")
-            })),
-        }
-    }
-
-    #[tool(
         name = "optimize_toolpath",
         description = "Run the optimizer on one toolpath. Searches across feed/RPM (analytical Stage 0) and DOC variants (Stage 1/2 sims). Each candidate is sim-verified end-to-end. Returns OptimizeOutcome JSON: Ranked(candidates) with cycle time + verdict per row, NoSafeImprovement(narrative), or Skipped(reason). Long-running — the call blocks until the search completes (~1-2 min for a 3D op, faster for 2D). Run simulation first; the optimizer scores candidates against the existing baseline trace."
     )]

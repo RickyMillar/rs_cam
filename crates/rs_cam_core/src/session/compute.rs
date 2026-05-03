@@ -1011,20 +1011,6 @@ impl ProjectSession {
         crate::gcode::project_load_report(self, sim_trace)
     }
 
-    /// Per-toolpath F&S suggestions. Phase 3 of the tool-load fidelity
-    /// plan. Each entry has either a feed/RPM recommendation backed by
-    /// a vendor LUT row and bounded by the machine's available power,
-    /// or a typed `RefuseReason`. The MCP tool `suggest_feeds_speeds`
-    /// returns this directly; the GUI's diagnostics panel surfaces it
-    /// behind a per-toolpath "Suggest" button.
-    pub fn suggest_feeds_speeds(&self) -> Vec<crate::tool_load::suggest::FeedSuggestion> {
-        let sim_trace = self
-            .simulation
-            .as_ref()
-            .and_then(|simulation| simulation.cut_trace.as_deref());
-        crate::tool_load::suggest::project_suggestions(self, sim_trace)
-    }
-
     /// Export diagnostics as JSON files to an output directory.
     #[instrument(skip(self))]
     pub fn export_diagnostics_json(&self, output_dir: &Path) -> Result<(), SessionError> {
