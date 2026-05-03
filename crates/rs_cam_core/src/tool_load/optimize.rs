@@ -1211,6 +1211,153 @@ pub(crate) fn build_outcome(
     OptimizeOutcome::Ranked(ranked)
 }
 
+// ── Project-level rollup (U3) ─────────────────────────────────────────
+//
+// `optimize_project` walks every enabled toolpath in order and runs
+// `optimize_toolpath` for each, producing a `ProjectOptimizeReport`
+// for the U3 rollup view. The walk is sequential — `optimize_toolpath`
+// holds `&mut session` and runs full project sims internally; rayon
+// would need each worker to clone the whole session, which we
+// deliberately avoid (`ToolpathConfig` is not `Clone`, and a Cloneable
+// session would require a wide-touch refactor we don't want to do for
+// this).
+//
+// **Stock-state hygiene between toolpaths.** `optimize_toolpath`'s
+// `BaselineRestoreGuard` restores the toolpath's params on drop via
+// `apply_toolpath_param_snapshot`, which invalidates that toolpath's
+// cached `result`. After each call, the project's per-toolpath stock
+// state would be incomplete (the just-optimized TP has no result, so
+// subsequent project sims would skip it). We re-generate the toolpath
+// at baseline params after each `optimize_toolpath` call to keep the
+// project's results map populated for the rest of the walk.
+
+/// Threshold above which a toolpath is flagged as the project's
+/// bottleneck. A toolpath whose baseline cycle time is at least this
+/// fraction of the project's total runtime gets the "Bottleneck:"
+/// callout in the U3 rollup. 30% is calibrated against wanaka — TP 6
+/// (the 3D finish at 61% of project time) trips it; smaller setups
+/// like the project_curves at ~5% don't. If multiple toolpaths trip
+/// it, the largest wins (only one bottleneck callout per rollup).
+pub const BOTTLENECK_FRACTION: f64 = 0.30;
+
+/// Progress callback for `optimize_project`. The worker-thread lane
+/// implements this to mirror progress into `LaneSnapshot::current_phase`
+/// for the modal's progress strip; tests use [`NoProgress`].
+///
+/// `report` is called once per toolpath at the start of its
+/// optimization. `completed` is the count of toolpaths fully done
+/// **before** this one; `total` is the count of toolpaths the run will
+/// touch (skipped toolpaths counted). `label` is a human-readable hint
+/// like `"TP 3 / 7 — Lakes back"`.
+pub trait ProgressReporter: Send + Sync {
+    fn report(&self, completed: usize, total: usize, label: &str);
+}
+
+/// No-op progress reporter for tests and CLI flows that don't need the
+/// progress strip.
+pub struct NoProgress;
+
+impl ProgressReporter for NoProgress {
+    fn report(&self, _completed: usize, _total: usize, _label: &str) {}
+}
+
+/// Optimize every enabled toolpath in the project and return a rollup.
+///
+/// **Sequential.** Each toolpath's `optimize_toolpath` call is run
+/// in order — they share `&mut session` and run full project sims
+/// internally. After each call, the just-optimized toolpath is
+/// re-generated at baseline params so subsequent toolpaths see a
+/// fully-populated project stock state.
+///
+/// **Cancellation.** `cancel` is checked between toolpaths and is
+/// also forwarded to each `optimize_toolpath` call (which polls it
+/// between candidates). A cancel mid-walk produces a partial report
+/// containing every toolpath that completed before the cancel.
+///
+/// **Baseline cycle time** comes from `baseline_trace.toolpath_summaries`
+/// — the same trace the gate read from. The bottleneck index is the
+/// toolpath whose baseline cycle exceeds [`BOTTLENECK_FRACTION`] of the
+/// project total, breaking ties by the largest cycle (so only one row
+/// gets the callout).
+pub fn optimize_project(
+    session: &mut ProjectSession,
+    baseline_trace: &SimulationCutTrace,
+    progress: &dyn ProgressReporter,
+    cancel: &AtomicBool,
+) -> ProjectOptimizeReport {
+    use std::sync::atomic::Ordering;
+
+    // 1. Build the list of (toolpath_index, toolpath_id, name) triples
+    //    for every enabled toolpath. We need ids to look up each
+    //    toolpath's baseline cycle from the trace, names for the
+    //    progress label, and indices for `optimize_toolpath`.
+    let enabled: Vec<(usize, usize, String)> = session
+        .toolpath_configs()
+        .iter()
+        .enumerate()
+        .filter(|(_, tc)| tc.enabled)
+        .map(|(idx, tc)| (idx, tc.id, tc.name.clone()))
+        .collect();
+    let total = enabled.len();
+
+    // 2. Compute baseline cycle times per toolpath from the trace.
+    //    Pre-compute the project total so we can derive the bottleneck
+    //    callout without walking the report after the loop.
+    let baseline_cycles: Vec<(usize, f64)> = enabled
+        .iter()
+        .map(|(_, id, _)| {
+            let cycle = cycle_time_from_trace(baseline_trace, *id).unwrap_or(0.0);
+            (*id, cycle)
+        })
+        .collect();
+    let baseline_cycle_time_s: f64 = baseline_cycles.iter().map(|(_, c)| *c).sum();
+
+    // 3. Walk the enabled toolpaths sequentially.
+    let mut per_toolpath: Vec<(usize, OptimizeOutcome)> = Vec::with_capacity(total);
+    for (completed, (idx, _id, name)) in enabled.iter().enumerate() {
+        if cancel.load(Ordering::SeqCst) {
+            break;
+        }
+        progress.report(
+            completed,
+            total,
+            &format!("TP {} / {} — {}", completed + 1, total, name),
+        );
+
+        let outcome = optimize_toolpath(session, baseline_trace, *idx, cancel);
+        per_toolpath.push((*idx, outcome));
+
+        // The BaselineRestoreGuard inside `optimize_toolpath` cleared
+        // this toolpath's cached result on drop. Re-generate at baseline
+        // params so the next toolpath's project sim sees correct stock
+        // state. Best-effort — a regen failure here doesn't invalidate
+        // the per-toolpath outcome we already collected.
+        let _ = session.generate_toolpath(*idx, cancel);
+    }
+
+    // 4. Pick the bottleneck: the largest-cycle toolpath whose baseline
+    //    cycle is ≥ BOTTLENECK_FRACTION of the project total. Walk the
+    //    `enabled` list (not `per_toolpath`, which may be partial under
+    //    cancel) so the bottleneck is stable regardless of how far the
+    //    optimization run got.
+    let bottleneck_index = if baseline_cycle_time_s > 0.0 {
+        enabled
+            .iter()
+            .zip(baseline_cycles.iter())
+            .filter(|(_, (_, cycle))| *cycle / baseline_cycle_time_s >= BOTTLENECK_FRACTION)
+            .max_by(|(_, (_, a)), (_, (_, b))| a.total_cmp(b))
+            .map(|((idx, _, _), _)| *idx)
+    } else {
+        None
+    };
+
+    ProjectOptimizeReport {
+        baseline_cycle_time_s,
+        bottleneck_index,
+        per_toolpath,
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -1869,6 +2016,325 @@ mod orchestration_skip_tests {
             !matches!(outcome, OptimizeOutcome::Ranked(_)),
             "cancelled run should not produce Ranked, got {outcome:?}"
         );
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod project_rollup_tests {
+    //! Tests for `optimize_project` orchestration. We lean on Drill
+    //! and AlignmentPinDrill ops because `optimize_toolpath` returns
+    //! `Skipped` for them without running any sim — so the rollup
+    //! walks several toolpaths without needing actual generation /
+    //! simulation infrastructure. Bottleneck-detection and progress
+    //! sequencing are observable from the outcomes alone.
+
+    use super::*;
+    use crate::compute::catalog::OperationConfig;
+    use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
+    use crate::compute::operation_configs::{AlignmentPinDrillConfig, DrillConfig, PocketConfig};
+    use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use crate::debug_trace::ToolpathDebugOptions;
+    use crate::gcode::CoolantMode;
+    use crate::session::ToolpathConfig;
+    use crate::simulation_cut::{
+        SimulationCutSummary, SimulationCutTrace, SimulationToolpathCutSummary,
+    };
+    use std::sync::Mutex;
+
+    fn make_tool() -> ToolConfig {
+        ToolConfig::new_default(ToolId(0), ToolType::EndMill)
+    }
+
+    fn empty_trace() -> SimulationCutTrace {
+        SimulationCutTrace {
+            schema_version: 1,
+            sample_step_mm: 1.0,
+            summary: SimulationCutSummary::default(),
+            samples: Vec::new(),
+            toolpath_summaries: Vec::new(),
+            semantic_summaries: Vec::new(),
+            hotspots: Vec::new(),
+            issues: Vec::new(),
+            provenance: None,
+        }
+    }
+
+    fn summary_for(toolpath_id: usize, runtime_s: f64) -> SimulationToolpathCutSummary {
+        SimulationToolpathCutSummary {
+            toolpath_id,
+            sample_count: 100,
+            total_runtime_s: runtime_s,
+            cutting_runtime_s: runtime_s,
+            rapid_runtime_s: 0.0,
+            air_cut_time_s: 0.0,
+            low_engagement_time_s: 0.0,
+            average_engagement: 0.5,
+            peak_chipload_mm_per_tooth: 0.04,
+            peak_axial_doc_mm: 2.0,
+            total_removed_volume_est_mm3: 100.0,
+            average_mrr_mm3_s: 2.0,
+        }
+    }
+
+    fn make_tc(name: &str, operation: OperationConfig, tool_id: usize, enabled: bool) -> ToolpathConfig {
+        ToolpathConfig {
+            id: 0,
+            name: name.to_owned(),
+            enabled,
+            operation,
+            dressups: DressupConfig::default(),
+            heights: HeightsConfig::default(),
+            tool_id,
+            model_id: 0,
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: BoundaryConfig::default(),
+            boundary_inherit: true,
+            stock_source: StockSource::Fresh,
+            coolant: CoolantMode::Off,
+            face_selection: None,
+            feeds_auto: FeedsAutoMode::default(),
+            debug_options: ToolpathDebugOptions::default(),
+        }
+    }
+
+    /// Build a session with N drill toolpaths. Each drill triggers
+    /// `optimize_toolpath`'s `Skipped` early-exit (no sim required),
+    /// keeping these tests fast.
+    fn session_with_n_drills(names_and_enabled: &[(&str, bool)]) -> ProjectSession {
+        let mut s = ProjectSession::new_empty();
+        s.add_tool(make_tool());
+        let tool_id = s.tools()[0].id.0;
+        for (name, enabled) in names_and_enabled {
+            s.add_toolpath(
+                0,
+                make_tc(name, OperationConfig::Drill(DrillConfig::default()), tool_id, *enabled),
+            )
+            .unwrap();
+        }
+        s
+    }
+
+    /// Progress reporter that records every (completed, total, label)
+    /// invocation. Used to verify call sequencing.
+    struct RecordingProgress {
+        calls: Mutex<Vec<(usize, usize, String)>>,
+    }
+
+    impl RecordingProgress {
+        fn new() -> Self {
+            Self {
+                calls: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn into_calls(self) -> Vec<(usize, usize, String)> {
+            self.calls.into_inner().unwrap()
+        }
+    }
+
+    impl ProgressReporter for RecordingProgress {
+        fn report(&self, completed: usize, total: usize, label: &str) {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((completed, total, label.to_owned()));
+        }
+    }
+
+    #[test]
+    fn empty_project_returns_empty_report() {
+        let mut session = ProjectSession::new_empty();
+        let trace = empty_trace();
+        let cancel = AtomicBool::new(false);
+        let report = optimize_project(&mut session, &trace, &NoProgress, &cancel);
+        assert_eq!(report.baseline_cycle_time_s, 0.0);
+        assert_eq!(report.bottleneck_index, None);
+        assert!(report.per_toolpath.is_empty());
+    }
+
+    #[test]
+    fn disabled_toolpaths_excluded_from_walk() {
+        // 3 toolpaths, only the middle one is enabled. Progress should
+        // see total=1 and the per_toolpath should have one entry.
+        let mut session =
+            session_with_n_drills(&[("a", false), ("b", true), ("c", false)]);
+        let trace = empty_trace();
+        let cancel = AtomicBool::new(false);
+        let progress = RecordingProgress::new();
+        let report = optimize_project(&mut session, &trace, &progress, &cancel);
+        assert_eq!(report.per_toolpath.len(), 1);
+        assert_eq!(report.per_toolpath[0].0, 1, "the enabled TP is at index 1");
+
+        let calls = progress.into_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, 0); // completed before this one
+        assert_eq!(calls[0].1, 1); // total enabled
+        assert!(calls[0].2.contains("b"), "label should name the toolpath: {}", calls[0].2);
+    }
+
+    #[test]
+    fn drill_toolpaths_all_yield_skipped() {
+        let mut session = session_with_n_drills(&[("d1", true), ("d2", true), ("d3", true)]);
+        let trace = empty_trace();
+        let cancel = AtomicBool::new(false);
+        let report = optimize_project(&mut session, &trace, &NoProgress, &cancel);
+        assert_eq!(report.per_toolpath.len(), 3);
+        for (_, outcome) in &report.per_toolpath {
+            assert!(matches!(outcome, OptimizeOutcome::Skipped { .. }));
+        }
+    }
+
+    #[test]
+    fn bottleneck_picks_dominant_toolpath() {
+        // 3 toolpaths with cycles [10s, 60s, 30s]. Total = 100s.
+        // TP 1 at 60% trips the 30% threshold; TP 2 at 30% also trips
+        // (≥). Bottleneck is the largest, so TP 1 wins.
+        let mut session = session_with_n_drills(&[("a", true), ("b", true), ("c", true)]);
+        // Pull the assigned ids out of the session (add_toolpath
+        // increments next_toolpath_id, so they're stable: 0, 1, 2).
+        let ids: Vec<usize> = session.toolpath_configs().iter().map(|tc| tc.id).collect();
+        let mut trace = empty_trace();
+        trace.toolpath_summaries.push(summary_for(ids[0], 10.0));
+        trace.toolpath_summaries.push(summary_for(ids[1], 60.0));
+        trace.toolpath_summaries.push(summary_for(ids[2], 30.0));
+
+        let cancel = AtomicBool::new(false);
+        let report = optimize_project(&mut session, &trace, &NoProgress, &cancel);
+        assert_eq!(report.baseline_cycle_time_s, 100.0);
+        // TP at session index 1 (id=1) has the largest cycle.
+        assert_eq!(report.bottleneck_index, Some(1));
+    }
+
+    #[test]
+    fn no_bottleneck_when_runtime_evenly_split() {
+        // 4 toolpaths at 25% each — none exceeds 30%, so bottleneck
+        // is None. The rollup view will show "no single bottleneck".
+        let mut session = session_with_n_drills(&[
+            ("a", true),
+            ("b", true),
+            ("c", true),
+            ("d", true),
+        ]);
+        let ids: Vec<usize> = session.toolpath_configs().iter().map(|tc| tc.id).collect();
+        let mut trace = empty_trace();
+        for &id in &ids {
+            trace.toolpath_summaries.push(summary_for(id, 10.0));
+        }
+        let cancel = AtomicBool::new(false);
+        let report = optimize_project(&mut session, &trace, &NoProgress, &cancel);
+        assert_eq!(report.baseline_cycle_time_s, 40.0);
+        assert_eq!(report.bottleneck_index, None);
+    }
+
+    #[test]
+    fn no_bottleneck_when_total_runtime_zero() {
+        // Trace has no per-toolpath cycle data — the bottleneck calc
+        // would divide by zero, so we short-circuit to None.
+        let mut session = session_with_n_drills(&[("a", true), ("b", true)]);
+        let trace = empty_trace();
+        let cancel = AtomicBool::new(false);
+        let report = optimize_project(&mut session, &trace, &NoProgress, &cancel);
+        assert_eq!(report.baseline_cycle_time_s, 0.0);
+        assert_eq!(report.bottleneck_index, None);
+        assert_eq!(report.per_toolpath.len(), 2);
+    }
+
+    #[test]
+    fn cancel_before_any_walk_yields_partial_report() {
+        // Cancel set before the loop runs. per_toolpath empty;
+        // baseline metrics still populated from the trace.
+        let mut session = session_with_n_drills(&[("a", true), ("b", true)]);
+        let ids: Vec<usize> = session.toolpath_configs().iter().map(|tc| tc.id).collect();
+        let mut trace = empty_trace();
+        trace.toolpath_summaries.push(summary_for(ids[0], 50.0));
+        trace.toolpath_summaries.push(summary_for(ids[1], 50.0));
+        let cancel = AtomicBool::new(true);
+        let report = optimize_project(&mut session, &trace, &NoProgress, &cancel);
+        assert!(report.per_toolpath.is_empty());
+        assert_eq!(report.baseline_cycle_time_s, 100.0);
+        // Both TPs are at 50% > 30% threshold; bottleneck still
+        // computes from the baseline trace, not the per_toolpath
+        // result. Tie-break by largest cycle — both equal, so the
+        // first one wins (max_by stable).
+        assert!(report.bottleneck_index.is_some());
+    }
+
+    #[test]
+    fn progress_reports_in_order_for_each_enabled_toolpath() {
+        let mut session = session_with_n_drills(&[("a", true), ("b", true), ("c", true)]);
+        let trace = empty_trace();
+        let cancel = AtomicBool::new(false);
+        let progress = RecordingProgress::new();
+        let _report = optimize_project(&mut session, &trace, &progress, &cancel);
+        let calls = progress.into_calls();
+        assert_eq!(calls.len(), 3);
+        // Completed counts increase 0, 1, 2; total stays at 3.
+        for (i, (completed, total, _)) in calls.iter().enumerate() {
+            assert_eq!(*completed, i);
+            assert_eq!(*total, 3);
+        }
+    }
+
+    #[test]
+    fn bottleneck_threshold_constant_is_thirty_percent() {
+        // Lock the constant in place so a future tweak to the
+        // threshold gets a deliberate test update.
+        assert!((BOTTLENECK_FRACTION - 0.30).abs() < 1e-9);
+    }
+
+    #[test]
+    fn no_progress_implements_trait() {
+        // Smoke test that NoProgress satisfies ProgressReporter and
+        // can be passed where a `&dyn ProgressReporter` is expected.
+        let p: &dyn ProgressReporter = &NoProgress;
+        p.report(0, 1, "ignored");
+    }
+
+    #[test]
+    fn pocket_op_with_empty_trace_yields_skipped_in_walk() {
+        // Pocket trips a different skip path inside optimize_toolpath
+        // (no steady-state samples for the toolpath_id in the trace).
+        // Verify the walk surfaces it as a Skipped row in per_toolpath.
+        let mut session = ProjectSession::new_empty();
+        session.add_tool(make_tool());
+        let tool_id = session.tools()[0].id.0;
+        session
+            .add_toolpath(
+                0,
+                make_tc("p", OperationConfig::Pocket(PocketConfig::default()), tool_id, true),
+            )
+            .unwrap();
+        // Add an alignment-pin drill to mix in the second skip path.
+        session
+            .add_toolpath(
+                0,
+                make_tc(
+                    "ap",
+                    OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default()),
+                    tool_id,
+                    true,
+                ),
+            )
+            .unwrap();
+        let trace = empty_trace();
+        let cancel = AtomicBool::new(false);
+        let report = optimize_project(&mut session, &trace, &NoProgress, &cancel);
+        assert_eq!(report.per_toolpath.len(), 2);
+        assert!(matches!(
+            report.per_toolpath[0].1,
+            OptimizeOutcome::Skipped { .. }
+        ));
+        assert!(matches!(
+            report.per_toolpath[1].1,
+            OptimizeOutcome::Skipped { .. }
+        ));
     }
 }
 
