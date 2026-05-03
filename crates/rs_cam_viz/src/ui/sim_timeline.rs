@@ -683,16 +683,10 @@ fn chipload_envelope_for_toolpath(
     sim_trace: Option<&rs_cam_core::simulation_cut::SimulationCutTrace>,
     toolpath_id: crate::state::toolpath::ToolpathId,
 ) -> Option<(f64, f64)> {
-    let suggestions = rs_cam_core::tool_load::suggest::project_suggestions(session, sim_trace);
-    let suggested = suggestions
-        .into_iter()
-        .find(|s| s.toolpath_id == toolpath_id.0)?
-        .suggested
-        .ok()?;
-    Some((
-        suggested.chipload_envelope.start,
-        suggested.chipload_envelope.end,
-    ))
+    let envelopes =
+        rs_cam_core::tool_load::chipload_envelopes_for_session(session, sim_trace);
+    let env = envelopes.get(&toolpath_id.0)?;
+    Some((env.start, env.end))
 }
 
 /// Row 1: Transport buttons, timeline scrubber slider, and time display.

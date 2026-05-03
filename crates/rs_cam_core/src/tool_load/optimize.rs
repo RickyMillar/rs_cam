@@ -35,7 +35,7 @@ use crate::session::{ProjectSession, SessionError, SimulationOptions};
 use crate::tool::MillingCutter;
 use crate::simulation_cut::SimulationCutTrace;
 
-use super::suggest::RefuseReason;
+use super::RefuseReason;
 use super::verdict::{ToolpathLoadVerdict, Verdict};
 use super::{ToolpathLoadContext, evaluate_toolpath};
 

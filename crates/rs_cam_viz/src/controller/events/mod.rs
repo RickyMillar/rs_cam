@@ -238,7 +238,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// against.
     fn open_optimize_modal(&mut self, toolpath_id: crate::state::toolpath::ToolpathId) {
         use rs_cam_core::tool_load::optimize::OptimizeOutcome;
-        use rs_cam_core::tool_load::suggest::RefuseReason;
+        use rs_cam_core::tool_load::RefuseReason;
 
         let Some(idx) = self
             .state

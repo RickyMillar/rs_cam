@@ -852,21 +852,14 @@ impl RsCamApp {
 }
 
 /// Build a `toolpath_id -> [cl_min, cl_max]` map from the suggest module's
-/// matched LUT row per toolpath. Toolpaths whose suggestion refused (no
-/// vendor data, custom material, simulation required, etc.) are absent
+/// matched LUT row per toolpath. Toolpaths with no LUT match (custom
+/// material, no vendor data for the tool/op family, etc.) are absent
 /// from the map; the renderer falls back to grey.
 fn build_chipload_envelopes(
     session: &rs_cam_core::session::ProjectSession,
     sim_trace: Option<&rs_cam_core::simulation_cut::SimulationCutTrace>,
 ) -> HashMap<usize, Range<f64>> {
-    let suggestions = rs_cam_core::tool_load::suggest::project_suggestions(session, sim_trace);
-    let mut map = HashMap::with_capacity(suggestions.len());
-    for s in suggestions {
-        if let Ok(sg) = s.suggested {
-            map.insert(s.toolpath_id, sg.chipload_envelope);
-        }
-    }
-    map
+    rs_cam_core::tool_load::chipload_envelopes_for_session(session, sim_trace)
 }
 
 /// Build a `toolpath_id -> { move_index -> max(effective_chip_thickness_mm) }`
