@@ -25,9 +25,11 @@ use std::sync::atomic::AtomicBool;
 use serde::{Deserialize, Serialize};
 
 use crate::compute::catalog::OperationConfig;
+use crate::compute::config::{DressupConfig, FeedsAutoMode};
+use crate::enriched_mesh::FaceGroupId;
 use crate::feeds::vendor_lookup::MatchedRow;
 use crate::machine::{MachineProfile, PowerModel};
-use crate::session::ProjectSession;
+use crate::session::{ProjectSession, SessionError};
 use crate::simulation_cut::SimulationCutTrace;
 
 use super::suggest::RefuseReason;
@@ -196,6 +198,108 @@ pub fn optimize_toolpath(
     // U1 skeleton — Stages 0/1/2 land in follow-up commits.
     OptimizeOutcome::Skipped {
         reason: RefuseReason::SimulationRequired,
+    }
+}
+
+// ── Baseline-restore guard (Engineering Default 10) ───────────────────
+//
+// Each candidate evaluation in the optimizer mutates
+// `session.toolpath_configs[idx].operation` (via
+// `apply_toolpath_param_snapshot`), regenerates, and runs a fresh sim.
+// Without explicit cleanup, the session is left holding the last
+// candidate's params when the optimizer returns — a silent state leak
+// of the same flavour as the `feeds_auto` LUT-overwrite issue.
+//
+// `BaselineRestoreGuard` snapshots `(operation, dressups,
+// face_selection, feeds_auto)` at construction and re-applies them in
+// `Drop`, regardless of how the optimizer exits (Ok, refusal, cancel,
+// or panic in `execute_operation`). Apply remains a separate
+// user-initiated mutation; the optimizer's internal candidate writes
+// never persist past `optimize_toolpath` returning.
+
+/// Snapshot of the four toolpath fields the optimizer mutates per
+/// candidate. Captured up-front and re-applied via
+/// `apply_toolpath_param_snapshot` on drop.
+#[derive(Debug, Clone)]
+pub(crate) struct ToolpathParamsSnapshot {
+    pub operation: OperationConfig,
+    pub dressups: DressupConfig,
+    pub face_selection: Option<Vec<FaceGroupId>>,
+    pub feeds_auto: FeedsAutoMode,
+}
+
+impl ToolpathParamsSnapshot {
+    fn capture(
+        session: &ProjectSession,
+        toolpath_index: usize,
+    ) -> Result<Self, SessionError> {
+        let tc = session
+            .get_toolpath_config(toolpath_index)
+            .ok_or(SessionError::ToolpathNotFound(toolpath_index))?;
+        Ok(Self {
+            operation: tc.operation.clone(),
+            dressups: tc.dressups.clone(),
+            face_selection: tc.face_selection.clone(),
+            feeds_auto: tc.feeds_auto.clone(),
+        })
+    }
+}
+
+/// RAII guard that restores the toolpath's params to a captured
+/// baseline on drop. Construct with [`Self::new`], use
+/// [`Self::session_mut`] for any mid-search session mutations, and let
+/// the value go out of scope to trigger restoration.
+///
+/// The guard holds the only `&mut ProjectSession` in flight while it
+/// lives; access the session via `session_mut()` so the borrow chain
+/// stays through the guard. Drop calls
+/// `apply_toolpath_param_snapshot` and ignores its `Result` —
+/// restoration failure can only happen if the toolpath was removed
+/// mid-search, which would already be a programming error.
+pub(crate) struct BaselineRestoreGuard<'a> {
+    session: &'a mut ProjectSession,
+    toolpath_index: usize,
+    snapshot: ToolpathParamsSnapshot,
+}
+
+impl<'a> BaselineRestoreGuard<'a> {
+    /// Capture the current params and wrap the session. Returns
+    /// `ToolpathNotFound` if `toolpath_index` is out of range.
+    pub(crate) fn new(
+        session: &'a mut ProjectSession,
+        toolpath_index: usize,
+    ) -> Result<Self, SessionError> {
+        let snapshot = ToolpathParamsSnapshot::capture(session, toolpath_index)?;
+        Ok(Self {
+            session,
+            toolpath_index,
+            snapshot,
+        })
+    }
+
+    /// Mutable session reference for in-search mutations. The borrow
+    /// stays through the guard so restoration on drop sees a valid
+    /// session.
+    pub(crate) fn session_mut(&mut self) -> &mut ProjectSession {
+        self.session
+    }
+
+    /// Read-only snapshot of the captured baseline. Useful for
+    /// computing `ParamDelta` against the original params.
+    pub(crate) fn baseline(&self) -> &ToolpathParamsSnapshot {
+        &self.snapshot
+    }
+}
+
+impl Drop for BaselineRestoreGuard<'_> {
+    fn drop(&mut self) {
+        let _ = self.session.apply_toolpath_param_snapshot(
+            self.toolpath_index,
+            self.snapshot.operation.clone(),
+            self.snapshot.dressups.clone(),
+            self.snapshot.face_selection.clone(),
+            self.snapshot.feeds_auto.clone(),
+        );
     }
 }
 
@@ -619,6 +723,176 @@ mod stage0_tests {
         });
         let scaled = apply_scale_to_op(&baseline, 12_000.0, 2.0, &machine);
         assert_eq!(scaled.spindle_rpm(), Some(18_000));
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod restore_guard_tests {
+    use super::*;
+    use crate::compute::catalog::OperationConfig;
+    use crate::compute::operation_configs::PocketConfig;
+    use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use crate::session::ToolpathConfig;
+
+    fn make_tool() -> ToolConfig {
+        ToolConfig::new_default(ToolId(0), ToolType::EndMill)
+    }
+
+    fn make_tc(tool_id: usize) -> ToolpathConfig {
+        ToolpathConfig {
+            id: 0,
+            name: "test".to_owned(),
+            enabled: true,
+            operation: OperationConfig::Pocket(PocketConfig {
+                feed_rate: 1500.0,
+                stepover: 2.0,
+                depth_per_pass: 1.5,
+                spindle_rpm: Some(18_000),
+                ..PocketConfig::default()
+            }),
+            dressups: DressupConfig::default(),
+            heights: crate::compute::config::HeightsConfig::default(),
+            tool_id,
+            model_id: 0,
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: crate::compute::config::BoundaryConfig::default(),
+            boundary_inherit: true,
+            stock_source: crate::compute::config::StockSource::Fresh,
+            coolant: crate::gcode::CoolantMode::Off,
+            face_selection: None,
+            feeds_auto: FeedsAutoMode::default(),
+            debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+        }
+    }
+
+    fn session_with_one_pocket() -> ProjectSession {
+        let mut s = ProjectSession::new_empty();
+        s.add_tool(make_tool());
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        s
+    }
+
+    #[test]
+    fn drop_with_no_changes_is_a_noop() {
+        let mut session = session_with_one_pocket();
+        let baseline_feed = session.toolpath_configs()[0].operation.feed_rate();
+        {
+            let _guard = BaselineRestoreGuard::new(&mut session, 0).unwrap();
+            // No mutations.
+        }
+        // Session unchanged.
+        assert!(
+            (session.toolpath_configs()[0].operation.feed_rate() - baseline_feed).abs() < 1e-9
+        );
+    }
+
+    #[test]
+    fn drop_restores_after_mutation() {
+        let mut session = session_with_one_pocket();
+        {
+            let mut guard = BaselineRestoreGuard::new(&mut session, 0).unwrap();
+            // Mutate via the guard.
+            let mut new_op = guard.baseline().operation.clone();
+            new_op.set_feed_rate(2999.0);
+            let new_op_clone = new_op.clone();
+            let dressups = guard.baseline().dressups.clone();
+            let face_sel = guard.baseline().face_selection.clone();
+            // Use a feeds_auto with a flipped flag to verify restoration
+            // covers the feeds_auto override too.
+            let mut tweaked = guard.baseline().feeds_auto.clone();
+            tweaked.feed_rate = false;
+            guard
+                .session_mut()
+                .apply_toolpath_param_snapshot(0, new_op_clone, dressups, face_sel, tweaked)
+                .unwrap();
+            // While the guard lives, the session reflects the candidate.
+            assert!(
+                (guard.session_mut().toolpath_configs()[0]
+                    .operation
+                    .feed_rate()
+                    - 2999.0)
+                    .abs()
+                    < 1e-6
+            );
+            assert!(!guard.session_mut().toolpath_configs()[0].feeds_auto.feed_rate);
+            // Mutation also bridges into the snapshot — but only for
+            // copies; the captured snapshot is immutable.
+            assert!(
+                (guard.baseline().operation.feed_rate() - 1500.0).abs() < 1e-6,
+                "snapshot should remain at baseline 1500 mm/min"
+            );
+            // Verify mutating new_op outside the guard didn't touch the
+            // snapshot — defends against accidental shared mutation.
+            new_op.set_feed_rate(0.0);
+            let _ = new_op;
+            assert!(
+                (guard.baseline().operation.feed_rate() - 1500.0).abs() < 1e-6,
+                "snapshot must be detached from the candidate's params"
+            );
+        }
+        // After drop, session restored to baseline.
+        let tc = &session.toolpath_configs()[0];
+        assert!((tc.operation.feed_rate() - 1500.0).abs() < 1e-6);
+        assert!(tc.feeds_auto.feed_rate, "feeds_auto.feed_rate restored");
+    }
+
+    #[test]
+    fn drop_restores_on_panic() {
+        let mut session = session_with_one_pocket();
+
+        // Trigger a panic inside a guard's scope and confirm Drop still
+        // restored the baseline. AssertUnwindSafe is needed because
+        // &mut ProjectSession is not UnwindSafe by default — that's
+        // fine, the contract here is "panic-safe", not "safe to
+        // continue using session after a panic in the body". We only
+        // inspect immutable state on the way out.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut guard = BaselineRestoreGuard::new(&mut session, 0).unwrap();
+            // Mutate to a non-baseline state.
+            let dressups = guard.baseline().dressups.clone();
+            let face_sel = guard.baseline().face_selection.clone();
+            let feeds_auto = guard.baseline().feeds_auto.clone();
+            let mut new_op = guard.baseline().operation.clone();
+            new_op.set_feed_rate(9999.0);
+            guard
+                .session_mut()
+                .apply_toolpath_param_snapshot(0, new_op, dressups, face_sel, feeds_auto)
+                .unwrap();
+            // Confirm we're in the mutated state.
+            assert!(
+                (guard.session_mut().toolpath_configs()[0]
+                    .operation
+                    .feed_rate()
+                    - 9999.0)
+                    .abs()
+                    < 1e-6
+            );
+            // Now panic. Drop fires unwinding through this frame.
+            panic!("simulated panic during candidate eval");
+        }));
+
+        assert!(result.is_err(), "the panic must propagate as expected");
+        // After the panic + drop, session is back to baseline.
+        let tc = &session.toolpath_configs()[0];
+        assert!(
+            (tc.operation.feed_rate() - 1500.0).abs() < 1e-6,
+            "baseline feed must be restored after a panic; got {}",
+            tc.operation.feed_rate()
+        );
+    }
+
+    #[test]
+    fn new_returns_not_found_for_invalid_index() {
+        let mut session = session_with_one_pocket();
+        let result = BaselineRestoreGuard::new(&mut session, 99);
+        assert!(matches!(result, Err(SessionError::ToolpathNotFound(99))));
     }
 }
 
