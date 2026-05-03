@@ -24,7 +24,7 @@ use std::sync::atomic::AtomicBool;
 
 use serde::{Deserialize, Serialize};
 
-use crate::compute::catalog::OperationConfig;
+use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::config::{DressupConfig, FeedsAutoMode};
 use crate::enriched_mesh::FaceGroupId;
 use crate::feeds::vendor_lookup::MatchedRow;
@@ -412,6 +412,102 @@ pub(crate) fn apply_scale_to_op(
     let scaled_rpm = machine.clamp_rpm(rpm_baseline * k).round() as u32;
     scaled.set_spindle_rpm(Some(scaled_rpm));
     scaled
+}
+
+// ── Stage 1: DOC candidate generation (Engineering Default 9) ─────────
+//
+// Five geometry-bearing ops carry a `depth_per_pass`; the optimizer
+// sweeps DOC at the headroom point (baseline `depth_per_pass`) and
+// scores each variant via the gate over a fresh sim.
+//
+// Grid construction prefers the matched LUT row's calibrated bounds
+// (`ap_min_mm`, `ap_max_mm`) where available, clamping a multiplier
+// envelope (0.7×–1.4× of baseline) inside them. When the LUT row
+// doesn't carry bounds, the multiplier envelope is the grid directly.
+//
+// 3-variant ops (Adaptive3d, Rest, Face): `[lo, base, hi]`.
+// 4-variant ops (Pocket, Adaptive): `[lo, base, mid(base, hi), hi]`.
+
+/// Hard floor on any DOC value the optimizer proposes. Real router
+/// toolpaths can pass values smaller than this for finishing operations,
+/// but Stage 1's job is the rougher 5 ops where ~50µm is a reasonable
+/// minimum. ED 9 calls this out as "use 0.05 mm as a hard floor".
+const DOC_HARD_FLOOR_MM: f64 = 0.05;
+
+/// Equality threshold for deduping near-identical DOC values produced
+/// by the LUT-anchored grid (e.g. when `ap_min`/`ap_max` happen to
+/// land microns from the multiplier endpoints). 5 µm is well below
+/// any simulator-distinguishable resolution; deliberately tight so
+/// the spec'd `[0.7×, 1.0×, 1.3×]` grid survives intact even when
+/// floating-point arithmetic puts adjacent values 0.0500000001 mm
+/// apart.
+const DOC_DEDUP_TOLERANCE_MM: f64 = 0.005;
+
+/// Build the DOC candidate grid for a Stage-1 sweep. Always includes
+/// the baseline (`baseline_doc_mm`) as a control candidate; the lo and
+/// hi endpoints come from the LUT row's calibrated bounds (clamped by
+/// the multiplier envelope) or fall back to the multiplier envelope
+/// alone.
+///
+/// Returns variants sorted ascending. May return fewer than the
+/// nominal 3 or 4 entries when adjacent values dedupe (e.g. an LUT
+/// row whose `ap_max` lies inside `1.4 × baseline` ends up with the
+/// hi endpoint very close to baseline). Always contains at least the
+/// baseline value.
+pub(crate) fn build_doc_variants(
+    baseline_doc_mm: f64,
+    lut_row: Option<&MatchedRow>,
+    op_type: OperationType,
+) -> Vec<f64> {
+    let baseline = baseline_doc_mm.max(DOC_HARD_FLOOR_MM);
+    let four_variant = matches!(op_type, OperationType::Pocket | OperationType::Adaptive);
+
+    // Multiplier envelope. ED 9: 0.7× to 1.3× for 3-variant; 0.7× to
+    // 1.4× for 4-variant (so the midpoint between base and hi lands at
+    // 1.2× — a useful intermediate step).
+    let mult_lo = 0.7 * baseline;
+    let mult_hi = if four_variant {
+        1.4 * baseline
+    } else {
+        1.3 * baseline
+    };
+
+    // Clamp inside LUT-row calibrated bounds if available. The
+    // `max(ap_min, mult_lo)` choice mirrors ED 9 directly — never go
+    // below the calibrated floor *or* below 0.7× baseline.
+    let (lo, hi) = match lut_row {
+        Some(row) => {
+            let ap_min = row.ap_min_mm.unwrap_or(mult_lo);
+            let ap_max = row.ap_max_mm.unwrap_or(mult_hi);
+            (ap_min.max(mult_lo), ap_max.min(mult_hi))
+        }
+        None => (mult_lo, mult_hi),
+    };
+
+    // Floor every value at the hard minimum, and ensure the high
+    // endpoint isn't accidentally smaller than baseline (degenerate
+    // case where the LUT row is very tight).
+    let lo = lo.max(DOC_HARD_FLOOR_MM);
+    let hi = hi.max(baseline).max(DOC_HARD_FLOOR_MM);
+
+    let mut variants = vec![lo, baseline];
+    if four_variant {
+        variants.push((baseline + hi) * 0.5);
+    }
+    variants.push(hi);
+
+    variants.sort_by(f64::total_cmp);
+    variants.dedup_by(|a, b| (*a - *b).abs() < DOC_DEDUP_TOLERANCE_MM);
+    variants
+}
+
+/// Apply a candidate DOC value to a baseline op, leaving every other
+/// field unchanged. The op must be one of the 5 families that exposes
+/// `depth_per_pass` via the `OperationParams` trait.
+pub(crate) fn apply_doc_to_op(baseline_op: &OperationConfig, doc_mm: f64) -> OperationConfig {
+    let mut variant = baseline_op.clone();
+    variant.set_depth_per_pass(doc_mm);
+    variant
 }
 
 #[cfg(test)]
@@ -938,5 +1034,148 @@ mod tests {
             explanation: "test".to_owned(),
         };
         assert!(nsi.first_safe().is_none());
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod stage1_grid_tests {
+    use super::*;
+    use crate::compute::operation_configs::PocketConfig;
+
+    fn synthetic_lut_row(ap_min: Option<f64>, ap_max: Option<f64>) -> MatchedRow {
+        MatchedRow {
+            chip_load_mm: 0.04,
+            chip_load_min_mm: Some(0.025),
+            chip_load_max_mm: Some(0.055),
+            rpm_nominal: Some(15_000.0),
+            rpm_min: Some(14_000.0),
+            rpm_max: Some(16_000.0),
+            ap_min_mm: ap_min,
+            ap_max_mm: ap_max,
+            ae_min_mm: None,
+            ae_max_mm: None,
+            observation_id: "synthetic".to_owned(),
+            source_vendor: "Test".to_owned(),
+            score: 100,
+            diameter_match_score: 200,
+        }
+    }
+
+    #[test]
+    fn three_variant_op_with_no_lut_row() {
+        // Adaptive3d with baseline 3.0mm and no LUT bounds.
+        // Expected: [0.7×3.0, 3.0, 1.3×3.0] = [2.1, 3.0, 3.9]
+        let variants = build_doc_variants(3.0, None, OperationType::Adaptive3d);
+        assert_eq!(variants.len(), 3, "got {variants:?}");
+        assert!((variants[0] - 2.1).abs() < 1e-6);
+        assert!((variants[1] - 3.0).abs() < 1e-6);
+        assert!((variants[2] - 3.9).abs() < 1e-6);
+    }
+
+    #[test]
+    fn four_variant_op_with_no_lut_row() {
+        // Pocket with baseline 1.5mm and no LUT bounds.
+        // Expected: [0.7×1.5, 1.5, mid(1.5, 2.1), 2.1] = [1.05, 1.5, 1.8, 2.1]
+        let variants = build_doc_variants(1.5, None, OperationType::Pocket);
+        assert_eq!(variants.len(), 4, "got {variants:?}");
+        assert!((variants[0] - 1.05).abs() < 1e-6);
+        assert!((variants[1] - 1.5).abs() < 1e-6);
+        assert!((variants[2] - 1.8).abs() < 1e-6);
+        assert!((variants[3] - 2.1).abs() < 1e-6);
+    }
+
+    #[test]
+    fn lut_row_clamps_lo_to_ap_min() {
+        // Baseline 3.0mm, LUT ap_min = 2.5mm (above 0.7×3.0 = 2.1).
+        // Lo should be ap_min = 2.5, not 2.1.
+        let row = synthetic_lut_row(Some(2.5), Some(5.0));
+        let variants = build_doc_variants(3.0, Some(&row), OperationType::Adaptive3d);
+        assert!((variants[0] - 2.5).abs() < 1e-6, "got {variants:?}");
+    }
+
+    #[test]
+    fn lut_row_clamps_hi_to_ap_max() {
+        // Baseline 3.0mm, LUT ap_max = 3.5mm (below 1.3×3.0 = 3.9).
+        // Hi should be ap_max = 3.5, not 3.9.
+        let row = synthetic_lut_row(Some(1.0), Some(3.5));
+        let variants = build_doc_variants(3.0, Some(&row), OperationType::Adaptive3d);
+        let last = *variants.last().unwrap();
+        assert!((last - 3.5).abs() < 1e-6, "got {variants:?}");
+    }
+
+    #[test]
+    fn always_includes_baseline() {
+        // Even when LUT bounds shrink the envelope to almost nothing,
+        // baseline always survives.
+        let row = synthetic_lut_row(Some(2.95), Some(3.05));
+        let variants = build_doc_variants(3.0, Some(&row), OperationType::Adaptive3d);
+        assert!(
+            variants.iter().any(|v| (v - 3.0).abs() < 1e-6),
+            "baseline must be present: got {variants:?}"
+        );
+    }
+
+    #[test]
+    fn deduplicates_when_lut_bounds_collapse_envelope() {
+        // LUT row tight to within microns of baseline → lo, base, hi
+        // all within the dedupe tolerance (5 µm) → collapse.
+        let row = synthetic_lut_row(Some(2.9999), Some(3.0001));
+        let variants = build_doc_variants(3.0, Some(&row), OperationType::Adaptive3d);
+        assert!(
+            variants.len() <= 2,
+            "expected dedupe to collapse near-identical values, got {variants:?}"
+        );
+    }
+
+    #[test]
+    fn floors_at_hard_minimum_for_tiny_baseline() {
+        // Baseline 0.01mm — below the hard floor. Floor brings it up.
+        let variants = build_doc_variants(0.01, None, OperationType::Pocket);
+        // Every variant respects the floor (0.05mm).
+        for v in &variants {
+            assert!(*v >= DOC_HARD_FLOOR_MM - 1e-9, "got {variants:?}");
+        }
+    }
+
+    #[test]
+    fn lut_row_with_ap_min_above_baseline_does_not_crash() {
+        // Degenerate case: LUT row's ap_min > baseline. The user's
+        // baseline is below the calibrated range. Grid should sort and
+        // dedupe sanely without crashing.
+        let row = synthetic_lut_row(Some(5.0), Some(8.0));
+        let variants = build_doc_variants(2.0, Some(&row), OperationType::Adaptive3d);
+        // Variants are sorted ascending.
+        for w in variants.windows(2) {
+            assert!(
+                w[0] <= w[1] + 1e-9,
+                "variants must be sorted: got {variants:?}"
+            );
+        }
+        // Baseline survives.
+        assert!(variants.iter().any(|v| (v - 2.0).abs() < 1e-6));
+    }
+
+    #[test]
+    fn apply_doc_writes_only_depth_per_pass() {
+        let baseline = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 1500.0,
+            stepover: 2.0,
+            depth_per_pass: 1.5,
+            spindle_rpm: Some(18_000),
+            ..PocketConfig::default()
+        });
+        let candidate = apply_doc_to_op(&baseline, 2.5);
+        // depth_per_pass changed.
+        assert_eq!(candidate.depth_per_pass(), Some(2.5));
+        // Other fields unchanged.
+        assert!((candidate.feed_rate() - 1500.0).abs() < 1e-9);
+        assert_eq!(candidate.stepover(), Some(2.0));
+        assert_eq!(candidate.spindle_rpm(), Some(18_000));
     }
 }
