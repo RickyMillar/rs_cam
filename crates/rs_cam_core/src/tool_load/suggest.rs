@@ -85,6 +85,55 @@ pub enum RefuseReason {
     /// `NoVendorData` (no must-match row at all) — this means rows
     /// existed but none was close enough to trust.
     DiameterExtrapolationTooPoor,
+    /// Optimizer-specific: every Stage-1/Stage-2 candidate was either
+    /// slower than baseline or failed the gate. Used by
+    /// `OptimizeOutcome::NoSafeImprovement`. The narrative is composed
+    /// at display time via `RefuseReason::explanation_for_optimize`,
+    /// using the optimizer's own context (the gate verdict on the
+    /// closest candidate, etc).
+    NoImprovementFound,
+}
+
+impl RefuseReason {
+    /// One-line user-facing explanation for use in the optimizer
+    /// rollup or per-toolpath modal. Matches Engineering Default 4 in
+    /// `planning/OPTIMIZER_UX_PLAN.md`. Generic shape — the optimizer
+    /// orchestrator can append a more specific narrative ("gate-limited
+    /// at chipload 0.0072") for cases where peak values are available.
+    pub fn explanation_for_optimize(&self) -> &'static str {
+        match self {
+            Self::SimulationRequired => {
+                "no simulation has been run yet — Optimize needs a baseline sim to score against"
+            }
+            Self::ArcEngagementNotCaptured => {
+                "simulation trace lacks per-sample arc engagement — re-run sim with metrics enabled"
+            }
+            Self::MaterialUnvalidated => {
+                "stock material has no validated Kc — Optimize cannot model power against an unknown material"
+            }
+            Self::NoVendorData => {
+                "no vendor LUT row matches this tool, material, and operation — no calibrated chipload envelope to optimise against"
+            }
+            Self::SteadyStateSamplesNotPresent => {
+                "no steady-state cutting samples — typically a drill cycle or all-ramp toolpath, which Optimize cannot tune"
+            }
+            Self::BipolarEngagement => {
+                "stepover varies wildly across the toolpath — no single feed/RPM fixes both extremes; reduce stepover variation"
+            }
+            Self::NoFeasibleRow => {
+                "every compatible LUT row falls outside the machine's feed or RPM range"
+            }
+            Self::RpmBracketEmpty => {
+                "the matched LUT row's RPM bracket has no overlap with the machine's spindle range — a different cutter is needed"
+            }
+            Self::DiameterExtrapolationTooPoor => {
+                "no LUT row is calibrated close enough to this tool's diameter to give a trustworthy recommendation"
+            }
+            Self::NoImprovementFound => {
+                "no candidate was both faster than baseline and within the gate's safe envelope"
+            }
+        }
+    }
 }
 
 /// Minimum acceptable `diameter_match_score` (0-200) for a vendor LUT
