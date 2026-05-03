@@ -166,6 +166,14 @@ impl<B: ComputeBackend> AppController<B> {
                 self.open_optimize_modal(toolpath_id);
             }
             AppEvent::CloseOptimizeModal => {
+                // If a worker is still running, cancel it. The result
+                // will arrive on the next drain; the drain handler
+                // sees the modal is None and discards the outcome but
+                // still restores the session — `is_optimizing` flips
+                // back to false there.
+                if self.state.is_optimizing {
+                    self.compute.cancel_lane(crate::compute::ComputeLane::Optimize);
+                }
                 self.state.optimize_modal = None;
             }
             AppEvent::ApplyOptimizeCandidate {
@@ -196,15 +204,20 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    /// Open the per-toolpath Optimize modal. Runs `optimize_toolpath`
-    /// synchronously and stashes the resulting outcome on
-    /// `AppState::optimize_modal`. Synchronous = the GUI freezes for
-    /// the duration; the worker-thread integration in U3 will move
-    /// this off the main thread with a Loading state.
+    /// Open the per-toolpath Optimize modal. Submits an
+    /// `OptimizeRequest::Toolpath` to the Optimize compute lane,
+    /// taking ownership of the session for the run. The modal opens
+    /// in `Loading` state immediately; the result lands via
+    /// `ComputeMessage::Optimize` on the next drain, which transitions
+    /// the modal to `Ready` and restores the session.
+    ///
+    /// Pre-flight skip: if there's no baseline trace yet, the modal
+    /// opens directly to `Ready(Skipped { SimulationRequired })`
+    /// without touching the worker — there's nothing to optimize
+    /// against.
     fn open_optimize_modal(&mut self, toolpath_id: crate::state::toolpath::ToolpathId) {
-        use rs_cam_core::tool_load::optimize::{OptimizeOutcome, optimize_toolpath};
+        use rs_cam_core::tool_load::optimize::OptimizeOutcome;
         use rs_cam_core::tool_load::suggest::RefuseReason;
-        use std::sync::atomic::AtomicBool;
 
         let Some(idx) = self
             .state
@@ -241,13 +254,32 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         };
 
-        // Synchronous run. The OS-level cancel flag is unused for U2
-        // (the modal blocks until this returns); U3 wires it.
-        let cancel = AtomicBool::new(false);
-        let outcome = optimize_toolpath(&mut self.state.session, &trace, idx, &cancel);
+        // Refuse to start a second Optimize run while one is already
+        // in flight. The button that fires this event is hidden by
+        // the GUI lockout, but a stray automation hit could still
+        // reach here.
+        if self.state.is_optimizing {
+            tracing::warn!("Ignored OpenOptimizeModal — Optimize lane already running");
+            return;
+        }
+
+        // Move the session into the request. Main thread holds an
+        // empty placeholder until the worker returns. Open the modal
+        // in Loading state immediately so the user sees "running…".
+        let session = std::mem::replace(
+            &mut self.state.session,
+            rs_cam_core::session::ProjectSession::new_empty(),
+        );
+        self.state.is_optimizing = true;
         self.state.optimize_modal = Some(crate::state::OptimizeModalState {
             toolpath_id: toolpath_id.0,
-            status: crate::state::OptimizeRunStatus::Ready(outcome),
+            status: crate::state::OptimizeRunStatus::Loading,
+        });
+        self.compute.submit_optimize(crate::compute::OptimizeRequest::Toolpath {
+            session,
+            baseline_trace: trace,
+            toolpath_index: idx,
+            toolpath_id: toolpath_id.0,
         });
     }
 
