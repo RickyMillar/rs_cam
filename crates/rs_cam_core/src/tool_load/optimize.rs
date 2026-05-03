@@ -28,12 +28,15 @@ use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::config::{DressupConfig, FeedsAutoMode};
 use crate::enriched_mesh::FaceGroupId;
 use crate::feeds::vendor_lookup::MatchedRow;
+use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
+use crate::feeds::{OperationFamily, PassRole};
 use crate::machine::{MachineProfile, PowerModel};
-use crate::session::{ProjectSession, SessionError};
+use crate::session::{ProjectSession, SessionError, SimulationOptions};
 use crate::simulation_cut::SimulationCutTrace;
 
 use super::suggest::RefuseReason;
 use super::verdict::{ToolpathLoadVerdict, Verdict};
+use super::{ToolpathLoadContext, evaluate_toolpath};
 
 /// Which search stage produced a candidate. The reported `cycle_time_s`
 /// and `verdict` on every candidate the optimizer surfaces come from
@@ -508,6 +511,242 @@ pub(crate) fn apply_doc_to_op(baseline_op: &OperationConfig, doc_mm: f64) -> Ope
     let mut variant = baseline_op.clone();
     variant.set_depth_per_pass(doc_mm);
     variant
+}
+
+// ── Candidate evaluation: apply → regen → sim → gate ──────────────────
+//
+// The single per-candidate driver. Apply the candidate's params via the
+// restore guard, regen the toolpath, run a project sim at the
+// requested resolution, and produce an `OptimizeCandidate` with
+// sim-measured cycle time and gate verdict. Every Stage-1 and Stage-2
+// candidate goes through this function — there is no second sim or
+// second gate anywhere.
+
+/// Build the param-delta describing how a candidate differs from the
+/// baseline op. Used both for display in the modal and to drive the
+/// `feeds_auto.*` flag clearing on apply.
+pub(crate) fn delta_against_baseline(
+    baseline: &OperationConfig,
+    candidate: &OperationConfig,
+) -> ParamDelta {
+    let mut delta = ParamDelta::default();
+    if (baseline.feed_rate() - candidate.feed_rate()).abs() > 0.5 {
+        delta.feed_mm_min = Some(candidate.feed_rate());
+    }
+    if baseline.spindle_rpm() != candidate.spindle_rpm() {
+        delta.spindle_rpm = candidate.spindle_rpm();
+    }
+    if baseline.stepover() != candidate.stepover()
+        && let Some(s) = candidate.stepover()
+    {
+        delta.stepover_mm = Some(s);
+    }
+    if baseline.depth_per_pass() != candidate.depth_per_pass()
+        && let Some(d) = candidate.depth_per_pass()
+    {
+        delta.depth_per_pass_mm = Some(d);
+    }
+    delta
+}
+
+/// Compose a `feeds_auto` for the candidate apply: clone the baseline
+/// flags, then flip `false` for any field the candidate is changing.
+/// During eval the candidate's params are ephemeral (the restore guard
+/// puts the baseline back on drop), but flipping these flags here
+/// prevents the GUI's LUT auto-write from clobbering the candidate
+/// mid-sim if the user happens to be on the Feeds tab. After Apply,
+/// the same flags persist, which is what we want — the user's chosen
+/// candidate should not be silently overwritten.
+pub(crate) fn feeds_auto_for_candidate(
+    baseline: &FeedsAutoMode,
+    delta: &ParamDelta,
+) -> FeedsAutoMode {
+    let mut out = baseline.clone();
+    if delta.feed_mm_min.is_some() {
+        out.feed_rate = false;
+    }
+    if delta.spindle_rpm.is_some() {
+        out.spindle_speed = false;
+    }
+    if delta.stepover_mm.is_some() {
+        out.stepover = false;
+    }
+    if delta.depth_per_pass_mm.is_some() {
+        out.depth_per_pass = false;
+    }
+    out
+}
+
+/// Map the operation's `feeds_family` (used by the F&S calculator) to
+/// the `LutOperationFamily` (used by the chipload/power gate's LUT
+/// lookup). Same mapping the suggest module applied — kept as a
+/// shared helper so optimize and suggest can't drift apart.
+fn lut_op_family_from(family: OperationFamily) -> LutOperationFamily {
+    match family {
+        OperationFamily::Adaptive => LutOperationFamily::Adaptive,
+        OperationFamily::Pocket => LutOperationFamily::Pocket,
+        OperationFamily::Contour => LutOperationFamily::Contour,
+        OperationFamily::Parallel => LutOperationFamily::Parallel,
+        OperationFamily::Scallop => LutOperationFamily::Scallop,
+        OperationFamily::Trace => LutOperationFamily::Trace,
+        OperationFamily::Face => LutOperationFamily::Face,
+    }
+}
+
+/// Map the operation's `feeds_pass_role` to the LUT's pass-role enum.
+fn lut_pass_role_from(role: PassRole) -> LutPassRole {
+    match role {
+        PassRole::Roughing => LutPassRole::Roughing,
+        PassRole::SemiFinish => LutPassRole::SemiFinish,
+        PassRole::Finish => LutPassRole::Finish,
+    }
+}
+
+/// Look up this toolpath's per-toolpath cycle time from the trace's
+/// per-toolpath summary. Returns `None` if the toolpath isn't
+/// represented in the trace (no samples for that id — happens when
+/// the toolpath was disabled or skipped).
+fn cycle_time_from_trace(trace: &SimulationCutTrace, toolpath_id: usize) -> Option<f64> {
+    trace
+        .toolpath_summaries
+        .iter()
+        .find(|s| s.toolpath_id == toolpath_id)
+        .map(|s| s.total_runtime_s)
+}
+
+/// Resources the candidate evaluation needs that are constant across
+/// all candidates for a given toolpath. Built once at the top of
+/// `optimize_toolpath`, passed to each `evaluate_candidate` call.
+pub(crate) struct EvaluationContext<'a> {
+    /// The toolpath's index in `session.toolpath_configs`.
+    pub toolpath_index: usize,
+    /// The toolpath's stable id (matches `SimulationCutSample::toolpath_id`).
+    pub toolpath_id: usize,
+    /// Operation kind — used for the gate's LUT routing and (later)
+    /// for skipping ops the optimizer can't model.
+    pub operation_kind: OperationType,
+    /// LUT family from the op's `feeds_family`.
+    pub lut_op_family: LutOperationFamily,
+    /// LUT pass role from the op's `feeds_pass_role`.
+    pub lut_pass_role: LutPassRole,
+    /// Built tool definition (`build_cutter` over the tool config).
+    pub tool: crate::tool::ToolDefinition,
+    /// Reference into the session's stock material.
+    pub material: &'a crate::material::Material,
+}
+
+impl<'a> EvaluationContext<'a> {
+    /// Build the evaluation context from the session for the given
+    /// toolpath index. Returns `None` if the toolpath or its tool is
+    /// missing — caller should `Skipped` in that case.
+    pub(crate) fn from_session(
+        session: &'a ProjectSession,
+        toolpath_index: usize,
+    ) -> Option<Self> {
+        let tc = session.get_toolpath_config(toolpath_index)?;
+        let tool_cfg = session.get_tool(crate::compute::tool_config::ToolId(tc.tool_id))?;
+        let tool = crate::compute::cutter::build_cutter(tool_cfg);
+        let spec = tc.operation.spec();
+        Some(Self {
+            toolpath_index,
+            toolpath_id: tc.id,
+            operation_kind: tc.operation.op_type(),
+            lut_op_family: lut_op_family_from(spec.feeds_family),
+            lut_pass_role: lut_pass_role_from(spec.feeds_pass_role),
+            tool,
+            material: &session.stock_config().material,
+        })
+    }
+}
+
+/// Evaluate one candidate end-to-end:
+///   1. Apply candidate params via the restore guard (transactional
+///      mutation that also clears the relevant `feeds_auto.*` flags).
+///   2. Regenerate the toolpath at the new params.
+///   3. Run a fresh project sim at `sim_resolution_mm` dexel.
+///   4. Score via the gate (`tool_load::evaluate_toolpath`).
+///   5. Read per-toolpath cycle time from the trace.
+///   6. Build the `OptimizeCandidate`.
+///
+/// Errors propagate as `SessionError` — the orchestrator decides
+/// whether to surface a `Skipped` outcome or skip just this candidate.
+/// Cancellation (`cancel.load(Ordering::SeqCst) == true`) is honoured
+/// by the underlying generate/sim functions and surfaces here as
+/// `SessionError::Simulation(SimulationError::Cancelled)`.
+pub(crate) fn evaluate_candidate(
+    guard: &mut BaselineRestoreGuard<'_>,
+    ctx: &EvaluationContext<'_>,
+    candidate_op: OperationConfig,
+    delta: ParamDelta,
+    stage: SearchStage,
+    sim_resolution_mm: f64,
+    cancel: &AtomicBool,
+) -> Result<OptimizeCandidate, SessionError> {
+    // Clone the unchanged-by-optimize fields from the captured
+    // baseline so the apply mutation is one transactional write.
+    let baseline = guard.baseline();
+    let dressups = baseline.dressups.clone();
+    let face_selection = baseline.face_selection.clone();
+    let feeds_auto = feeds_auto_for_candidate(&baseline.feeds_auto, &delta);
+    let toolpath_index = ctx.toolpath_index;
+
+    // Apply.
+    guard.session_mut().apply_toolpath_param_snapshot(
+        toolpath_index,
+        candidate_op.clone(),
+        dressups,
+        face_selection,
+        feeds_auto,
+    )?;
+
+    // Regen — writes session.results[idx], leaves other entries intact.
+    guard
+        .session_mut()
+        .generate_toolpath(toolpath_index, cancel)?;
+
+    // Sim — full project sim at the requested resolution. Other
+    // toolpaths' cached results from baseline still apply because
+    // generate_toolpath only touched index `toolpath_index`.
+    let sim_opts = SimulationOptions {
+        resolution: sim_resolution_mm,
+        skip_ids: Vec::new(),
+        metrics_enabled: true,
+        auto_resolution: false,
+    };
+    guard.session_mut().run_simulation(&sim_opts, cancel)?;
+
+    // Pull the trace out (Arc<SimulationCutTrace>) and score via the
+    // gate. The sim result lives on `session.simulation` after
+    // `run_simulation` succeeds.
+    let session_ref = &*guard.session_mut();
+    let sim_result = session_ref.simulation_result().ok_or_else(|| {
+        SessionError::Simulation(crate::compute::simulate::SimulationError::Cancelled)
+    })?;
+    let trace = sim_result.cut_trace.as_deref();
+
+    let load_ctx = ToolpathLoadContext {
+        toolpath_id: ctx.toolpath_id,
+        tool: &ctx.tool,
+        material: ctx.material,
+        operation_family: ctx.lut_op_family,
+        pass_role: ctx.lut_pass_role,
+        operation_feed_rate_mm_min: candidate_op.feed_rate(),
+        operation_kind: ctx.operation_kind,
+    };
+    let verdict = evaluate_toolpath(&load_ctx, trace, Some(session_ref.machine()));
+    let cycle_time_s = trace
+        .and_then(|t| cycle_time_from_trace(t, ctx.toolpath_id))
+        .unwrap_or(f64::INFINITY);
+
+    Ok(OptimizeCandidate {
+        params: candidate_op,
+        delta,
+        cycle_time_s,
+        verdict,
+        stage,
+        reconciled_cycle_time_s: None,
+        reconciled_verdict: None,
+    })
 }
 
 #[cfg(test)]
@@ -1177,5 +1416,151 @@ mod stage1_grid_tests {
         assert!((candidate.feed_rate() - 1500.0).abs() < 1e-9);
         assert_eq!(candidate.stepover(), Some(2.0));
         assert_eq!(candidate.spindle_rpm(), Some(18_000));
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod candidate_eval_tests {
+    use super::*;
+    use crate::compute::operation_configs::PocketConfig;
+
+    fn baseline_op() -> OperationConfig {
+        OperationConfig::Pocket(PocketConfig {
+            feed_rate: 1500.0,
+            stepover: 2.0,
+            depth_per_pass: 1.5,
+            spindle_rpm: Some(18_000),
+            ..PocketConfig::default()
+        })
+    }
+
+    #[test]
+    fn delta_against_baseline_detects_only_changed_fields() {
+        let base = baseline_op();
+        let mut candidate = base.clone();
+        candidate.set_feed_rate(2100.0);
+        let delta = delta_against_baseline(&base, &candidate);
+        assert_eq!(delta.feed_mm_min, Some(2100.0));
+        assert!(delta.spindle_rpm.is_none());
+        assert!(delta.stepover_mm.is_none());
+        assert!(delta.depth_per_pass_mm.is_none());
+    }
+
+    #[test]
+    fn delta_against_baseline_picks_up_doc_change() {
+        let base = baseline_op();
+        let mut candidate = base.clone();
+        candidate.set_depth_per_pass(2.5);
+        candidate.set_stepover(2.4);
+        let delta = delta_against_baseline(&base, &candidate);
+        assert_eq!(delta.depth_per_pass_mm, Some(2.5));
+        assert_eq!(delta.stepover_mm, Some(2.4));
+        // Feed and rpm unchanged.
+        assert!(delta.feed_mm_min.is_none());
+        assert!(delta.spindle_rpm.is_none());
+    }
+
+    #[test]
+    fn delta_against_baseline_ignores_subhalf_feed_drift() {
+        // Tiny floating-point drift (under 0.5 mm/min) should NOT be
+        // reported as a change. The 0.5-mm/min floor matches typical
+        // CNC controller granularity.
+        let base = baseline_op();
+        let mut candidate = base.clone();
+        candidate.set_feed_rate(1500.000001);
+        let delta = delta_against_baseline(&base, &candidate);
+        assert!(delta.feed_mm_min.is_none(), "got {delta:?}");
+    }
+
+    #[test]
+    fn feeds_auto_for_candidate_flips_only_changed_fields() {
+        let baseline = FeedsAutoMode::default(); // all true
+        let delta = ParamDelta {
+            feed_mm_min: Some(2100.0),
+            spindle_rpm: None,
+            stepover_mm: None,
+            depth_per_pass_mm: Some(2.5),
+        };
+        let result = feeds_auto_for_candidate(&baseline, &delta);
+        assert!(!result.feed_rate, "feed_rate should be flipped to false");
+        assert!(!result.depth_per_pass, "depth_per_pass should be flipped");
+        // Untouched flags remain true.
+        assert!(result.plunge_rate);
+        assert!(result.stepover);
+        assert!(result.spindle_speed);
+    }
+
+    #[test]
+    fn feeds_auto_for_candidate_preserves_existing_user_overrides() {
+        // User had already manually overridden stepover (false) before
+        // Optimize ran. The optimizer is changing feed but not
+        // stepover. The stepover override must survive.
+        let baseline = FeedsAutoMode {
+            feed_rate: true,
+            plunge_rate: true,
+            stepover: false, // user override
+            depth_per_pass: true,
+            spindle_speed: true,
+        };
+        let delta = ParamDelta {
+            feed_mm_min: Some(2100.0),
+            ..Default::default()
+        };
+        let result = feeds_auto_for_candidate(&baseline, &delta);
+        assert!(!result.feed_rate, "optimize flipped feed_rate");
+        assert!(!result.stepover, "user's stepover override preserved");
+    }
+
+    #[test]
+    fn lut_op_family_mapping_covers_all_variants() {
+        // Cover every variant so the match arms can't drift apart from
+        // the suggest module's mapping.
+        assert_eq!(
+            lut_op_family_from(OperationFamily::Adaptive),
+            LutOperationFamily::Adaptive
+        );
+        assert_eq!(
+            lut_op_family_from(OperationFamily::Pocket),
+            LutOperationFamily::Pocket
+        );
+        assert_eq!(
+            lut_op_family_from(OperationFamily::Contour),
+            LutOperationFamily::Contour
+        );
+        assert_eq!(
+            lut_op_family_from(OperationFamily::Parallel),
+            LutOperationFamily::Parallel
+        );
+        assert_eq!(
+            lut_op_family_from(OperationFamily::Scallop),
+            LutOperationFamily::Scallop
+        );
+        assert_eq!(
+            lut_op_family_from(OperationFamily::Trace),
+            LutOperationFamily::Trace
+        );
+        assert_eq!(
+            lut_op_family_from(OperationFamily::Face),
+            LutOperationFamily::Face
+        );
+    }
+
+    #[test]
+    fn lut_pass_role_mapping_covers_all_variants() {
+        assert_eq!(
+            lut_pass_role_from(PassRole::Roughing),
+            LutPassRole::Roughing
+        );
+        assert_eq!(
+            lut_pass_role_from(PassRole::SemiFinish),
+            LutPassRole::SemiFinish
+        );
+        assert_eq!(lut_pass_role_from(PassRole::Finish), LutPassRole::Finish);
     }
 }
