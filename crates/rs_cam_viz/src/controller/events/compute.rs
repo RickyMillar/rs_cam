@@ -607,7 +607,24 @@ impl<B: ComputeBackend> AppController<B> {
                 }
             }
             OptimizeResultKind::Project { report } => {
-                self.state.optimize_project = Some(report);
+                // Default-select every row that has a recommended
+                // candidate. The user can flip individual rows before
+                // clicking Apply selected.
+                let row_selected: Vec<bool> = report
+                    .per_toolpath
+                    .iter()
+                    .map(|(_, outcome)| outcome.first_safe().is_some())
+                    .collect();
+                if let Some(view) = self.state.optimize_project.as_mut() {
+                    view.status = crate::state::OptimizeProjectStatus::Ready(report);
+                    view.row_selected = row_selected;
+                } else {
+                    // Worker returned a result for a view that was
+                    // already closed (cancelled) — discard.
+                    tracing::debug!(
+                        "Project optimize result arrived after view was closed — discarded"
+                    );
+                }
             }
         }
     }
