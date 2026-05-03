@@ -42,6 +42,38 @@ pub struct AppState {
     /// closed. The modal recomputes the suggestion from the current
     /// session + simulation each frame, so this is just the open-flag.
     pub suggest_modal_for: Option<usize>,
+    /// Cached state of the per-toolpath Optimize modal. `None` when
+    /// closed. The optimizer is expensive (~1-2 min per toolpath at
+    /// the Stage 0/1/2 settings), so unlike the suggest modal we
+    /// cannot recompute every frame — the outcome is captured here on
+    /// open and rendered every frame from this cache.
+    pub optimize_modal: Option<OptimizeModalState>,
+}
+
+/// Persistent state for the per-toolpath Optimize modal. Carries the
+/// toolpath being optimized plus the cached outcome (or its Loading /
+/// Failed states for the worker-thread integration that lands in U3).
+#[derive(Debug, Clone)]
+pub struct OptimizeModalState {
+    pub toolpath_id: usize,
+    pub status: OptimizeRunStatus,
+}
+
+/// Lifecycle of one Optimize run as the modal sees it. U2 only ever
+/// observes `Ready` (the controller runs `optimize_toolpath` to
+/// completion synchronously before pushing this state); `Loading` and
+/// `Failed` are wired in for U3's worker-thread integration so the
+/// modal layout doesn't have to change again.
+#[derive(Debug, Clone)]
+pub enum OptimizeRunStatus {
+    /// Optimizer is running on a worker thread (U3+). The modal shows
+    /// a progress strip and a Cancel button.
+    Loading,
+    /// Optimizer finished. The outcome is the source of truth for
+    /// every row in the modal's candidate table.
+    Ready(rs_cam_core::tool_load::optimize::OptimizeOutcome),
+    /// Optimizer errored out. String is the diagnostic for the user.
+    Failed(String),
 }
 
 impl AppState {
@@ -57,6 +89,7 @@ impl AppState {
             show_preflight: false,
             show_shortcuts: false,
             suggest_modal_for: None,
+            optimize_modal: None,
         }
     }
 }

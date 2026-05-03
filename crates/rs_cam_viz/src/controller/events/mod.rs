@@ -224,6 +224,14 @@ impl<B: ComputeBackend> AppController<B> {
                 }
             }
 
+            // --- Optimize modal (U2 stub — handlers land in #16) ---
+            AppEvent::OpenOptimizeModal(_)
+            | AppEvent::CloseOptimizeModal
+            | AppEvent::ApplyOptimizeCandidate { .. } => {
+                // Stubbed for #14. Real handlers land alongside the
+                // modal UI in the next commit pair.
+            }
+
             // --- Pass-through events handled elsewhere ---
             AppEvent::ExportGcode
             | AppEvent::ExportCombinedGcode
