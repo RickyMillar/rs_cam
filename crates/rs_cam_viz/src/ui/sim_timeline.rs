@@ -540,14 +540,42 @@ fn draw_signal_track(
         .include_x(x_min)
         .include_x(x_max)
         .show(ui, |plot_ui| {
-            // One Line per toolpath. Each line is drawn in the metric's color
-            // but with a subtle background tint at the start using the toolpath
-            // palette would clutter; instead the gap between lines visually
-            // separates toolpaths, and the X position lines up with the
-            // boundary timeline segment above.
+            // One Line per toolpath, further split into contiguous runs
+            // wherever consecutive surviving samples have a sample-index
+            // gap > MAX_LINE_BRIDGE_GAP. A gap means the value_fn returned
+            // None for the in-between samples (e.g. air-cut on chipload,
+            // or zero-DOC on axial DOC) — drawing one Line across the gap
+            // bridges those samples with a misleading diagonal segment.
+            // Splitting at the gap makes air-cut sections render as
+            // explicit blanks, matching the user's mental model: "samples
+            // with no signal don't have a line".
+            //
+            // Threshold > 1 (not > 0) absorbs decimation-induced gaps:
+            // when the per-bucket-max decimator picks one point per
+            // bucket, surviving consecutive points are bucket_size apart
+            // even with no air cuts. Use a slightly looser threshold to
+            // accommodate that without bridging real air-cut runs.
+            const MAX_LINE_BRIDGE_GAP: usize = 16;
             for (_tp_color, pts) in &group_points {
-                let xy: Vec<[f64; 2]> = pts.iter().map(|(_, p)| *p).collect();
-                plot_ui.line(Line::new(PlotPoints::from(xy)).name(label).color(color));
+                let mut run_start = 0usize;
+                for i in 1..pts.len() {
+                    let prev_move = pts[i - 1].0;
+                    let cur_move = pts[i].0;
+                    if cur_move.saturating_sub(prev_move) > MAX_LINE_BRIDGE_GAP {
+                        let xy: Vec<[f64; 2]> =
+                            pts[run_start..i].iter().map(|(_, p)| *p).collect();
+                        if xy.len() >= 2 {
+                            plot_ui.line(
+                                Line::new(PlotPoints::from(xy)).name(label).color(color),
+                            );
+                        }
+                        run_start = i;
+                    }
+                }
+                let xy: Vec<[f64; 2]> = pts[run_start..].iter().map(|(_, p)| *p).collect();
+                if xy.len() >= 2 {
+                    plot_ui.line(Line::new(PlotPoints::from(xy)).name(label).color(color));
+                }
             }
 
             if let Some((cl_min, cl_max)) = envelope {
