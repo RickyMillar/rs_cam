@@ -3,7 +3,7 @@ use super::sim_debug::semantic_kind_color;
 use crate::render::toolpath_render::palette_color;
 use crate::state::runtime::GuiState;
 use crate::state::simulation::{ActiveSemanticItem, SimulationAnalyticsTab, SimulationState};
-use egui_plot::{Line, Plot, PlotPoints};
+use egui_plot::{Line, Plot, PlotPoints, Polygon};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::simulation_cut::SimulationCutSample;
 use rs_cam_core::tool_load::{Confidence, ToolLoadReport, Verdict};
@@ -21,56 +21,52 @@ pub fn draw(
     let active_semantic = sim.active_semantic_item(gui, max_feed);
     let current_boundary = sim.current_boundary().cloned();
 
+    // Compute the project tool-load report once for this frame and pass
+    // it to every sub-draw that needs it. Without this memo the report is
+    // built 3-4× per frame: once for the verdict HUD, once for the
+    // boundary-timeline markers, once for the safety-marker click hit
+    // test, and once more on each hover for the marker tooltip. On a
+    // wanaka-sized job (8 TPs, ~600k samples) that's the worst hot path
+    // in the bottom panel. Right panel (sim_diagnostics) already memoes
+    // per its own draw.
+    let load_report = {
+        let sim_trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
+        rs_cam_core::gcode::project_load_report(session, sim_trace)
+    };
+
+    // Boundary timeline always shows the whole project — user wants the
+    // full picture (Pin Drill, Back Rough, ...) at a glance regardless
+    // of which TP is focused below. The signal-spine graphs scope to
+    // the focused TP independently. The two widgets use different X
+    // coordinate spaces; markers on each are accurate within their own
+    // widget but won't visually align with the other.
     draw_transport_and_scrubber(ui, sim, session, gui, events);
-    draw_verdict_hud(ui, sim, session, gui, max_feed, events);
+    draw_verdict_hud(ui, sim, gui, max_feed, &load_report, events);
     draw_boundary_timeline(
         ui,
         sim,
         gui,
-        session,
         max_feed,
+        &load_report,
         &current_boundary,
         &active_semantic,
         events,
     );
     draw_signal_spine(ui, sim, session, events);
-    draw_speed_controls(ui, sim);
 }
 
 fn draw_verdict_hud(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
-    session: &ProjectSession,
     gui: &GuiState,
     max_feed: f64,
-    events: &mut Vec<AppEvent>,
+    load_report: &ToolLoadReport,
+    _events: &mut Vec<AppEvent>,
 ) {
-    // sim.issues() takes &mut self, so build the issue-move list first.
-    let issue_targets: Vec<usize> = {
-        let mut moves: Vec<usize> = sim
-            .issues(gui, max_feed)
-            .iter()
-            .map(|issue| issue.move_index)
-            .collect();
-        moves.sort_unstable();
-        moves.dedup();
-        moves
-    };
+    let issue_count = sim.issues(gui, max_feed).len();
 
-    let (
-        ok,
-        warn,
-        bad,
-        unmodeled,
-        collision_count,
-        trace_count,
-        unmodeled_targets,
-        exceeded_targets,
-        collision_targets,
-    ) = {
-        let sim_trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
-        let report = rs_cam_core::gcode::project_load_report(session, sim_trace);
-        let counts = verdict_counts(&report);
+    let (ok, warn, bad, unmodeled, collision_count, trace_count) = {
+        let counts = verdict_counts(load_report);
         let collision_count =
             sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
         let trace_count = gui
@@ -78,27 +74,8 @@ fn draw_verdict_hud(
             .values()
             .filter(|rt| rt.debug_trace.is_some() || rt.semantic_trace.is_some())
             .count();
-        let unmodeled_targets = collect_unmodeled_moves(sim, &report);
-        let exceeded_targets = collect_exceeded_moves(sim, sim_trace, &report);
-        let mut collision_targets: Vec<usize> =
-            sim.checks.rapid_collision_move_indices.iter().copied().collect();
-        collision_targets.sort_unstable();
-        collision_targets.dedup();
-        (
-            counts.0,
-            counts.1,
-            counts.2,
-            counts.3,
-            collision_count,
-            trace_count,
-            unmodeled_targets,
-            exceeded_targets,
-            collision_targets,
-        )
+        (counts.0, counts.1, counts.2, counts.3, collision_count, trace_count)
     };
-
-    let current_move = sim.playback.current_move;
-    let mut jump_target: Option<usize> = None;
 
     egui::Frame::default()
         .fill(egui::Color32::from_rgb(30, 32, 42))
@@ -110,140 +87,51 @@ fn draw_verdict_hud(
                     ui,
                     format!("✓ load {ok}"),
                     egui::Color32::from_rgb(85, 180, 110),
-                    "Toolpaths within modeled load limits",
+                    "Toolpaths within modeled load limits.",
                 );
-                if action_pill(
+                info_pill(
                     ui,
                     format!("⚠ unmodeled {unmodeled}"),
                     egui::Color32::from_rgb(210, 170, 80),
-                    cycle_hover("unmodeled toolpath", &unmodeled_targets, current_move),
-                    &unmodeled_targets,
-                )
-                .clicked()
-                {
-                    jump_target = next_after(&unmodeled_targets, current_move);
-                }
-                if action_pill(
+                    "Load criteria the gate could not model (drill cycles, no vendor data, etc.).",
+                );
+                info_pill(
                     ui,
                     format!("✕ exceeds {bad}"),
                     egui::Color32::from_rgb(220, 90, 90),
-                    cycle_hover("exceedance", &exceeded_targets, current_move),
-                    &exceeded_targets,
-                )
-                .clicked()
-                {
-                    jump_target = next_after(&exceeded_targets, current_move);
-                }
+                    "Load-limit exceedances. Click the red lines on the boundary timeline below to navigate.",
+                );
                 info_pill(
                     ui,
                     format!("~ approx {warn}"),
                     egui::Color32::from_rgb(120, 150, 220),
-                    "Approximate or advisory verdicts",
+                    "Approximate or advisory verdicts.",
                 );
                 let collision_color = if collision_count == 0 {
                     egui::Color32::from_rgb(120, 210, 140)
                 } else {
                     egui::Color32::from_rgb(255, 120, 110)
                 };
-                if action_pill(
+                info_pill(
                     ui,
                     format!("collisions {collision_count}"),
                     collision_color,
-                    cycle_hover("collision", &collision_targets, current_move),
-                    &collision_targets,
-                )
-                .clicked()
-                {
-                    jump_target = next_after(&collision_targets, current_move);
-                }
-                if action_pill(
-                    ui,
-                    format!("issues {}", issue_targets.len()),
-                    egui::Color32::from_rgb(230, 190, 90),
-                    cycle_hover("issue", &issue_targets, current_move),
-                    &issue_targets,
-                )
-                .clicked()
-                {
-                    jump_target = next_after(&issue_targets, current_move);
-                }
+                    "Rapid/holder collisions. Click the red lines on the boundary timeline below to navigate.",
+                );
                 info_pill(
                     ui,
-                    format!("trace artifacts {trace_count}"),
+                    format!("issues {issue_count}"),
+                    egui::Color32::from_rgb(230, 190, 90),
+                    "Air cuts and low-engagement clusters detected during simulation.",
+                );
+                info_pill(
+                    ui,
+                    format!("traces {trace_count}"),
                     egui::Color32::from_rgb(150, 170, 230),
-                    "Recorded semantic/performance traces",
+                    "Generator traces recorded for inspection.",
                 );
             });
         });
-
-    if let Some(target) = jump_target {
-        events.push(AppEvent::SimJumpToMove(target));
-    }
-}
-
-/// Step to the first target strictly after `current`. Wraps to the first
-/// target if none qualify, so repeated clicks cycle through the list.
-fn next_after(targets: &[usize], current: usize) -> Option<usize> {
-    targets
-        .iter()
-        .copied()
-        .find(|&m| m > current)
-        .or_else(|| targets.first().copied())
-}
-
-fn cycle_hover(noun: &str, targets: &[usize], current: usize) -> String {
-    let total = targets.len();
-    if total == 0 {
-        return format!("No {noun}s");
-    }
-    let idx_of_next = targets
-        .iter()
-        .position(|&m| m > current)
-        .unwrap_or(0);
-    format!(
-        "{total} {noun}{plural} · click to jump to next ({}/{total})",
-        idx_of_next + 1,
-        plural = if total == 1 { "" } else { "s" }
-    )
-}
-
-fn collect_unmodeled_moves(sim: &SimulationState, report: &ToolLoadReport) -> Vec<usize> {
-    let mut moves: Vec<usize> = report
-        .per_toolpath
-        .iter()
-        .filter(|tp| {
-            matches!(tp.chipload, Verdict::Unmodeled { .. })
-                || matches!(tp.power, Verdict::Unmodeled { .. })
-                || matches!(tp.deflection, Verdict::Unmodeled { .. })
-        })
-        .filter_map(|tp| {
-            sim.boundaries()
-                .iter()
-                .find(|b| b.id.0 == tp.toolpath_id)
-                .map(|b| b.start_move)
-        })
-        .collect();
-    moves.sort_unstable();
-    moves.dedup();
-    moves
-}
-
-fn collect_exceeded_moves(
-    sim: &SimulationState,
-    trace: Option<&rs_cam_core::simulation_cut::SimulationCutTrace>,
-    report: &ToolLoadReport,
-) -> Vec<usize> {
-    let Some(trace) = trace else {
-        return Vec::new();
-    };
-    let mut moves: Vec<usize> = report
-        .per_toolpath
-        .iter()
-        .filter_map(|verdict| first_exceeded_tool_load_move(sim, trace, verdict))
-        .collect();
-    moves.sort_unstable();
-    moves.dedup();
-    moves
 }
 
 fn verdict_counts(report: &ToolLoadReport) -> (usize, usize, usize, usize) {
@@ -279,39 +167,9 @@ fn verdict_is_approximate(verdict: &Verdict) -> bool {
     )
 }
 
-/// Informational pill: passive label, no hover/click affordance. Use for
-/// counters that don't drive navigation (✓ load, ~ approx, trace artifacts).
 fn info_pill(ui: &mut egui::Ui, text: String, color: egui::Color32, hover: &str) {
     ui.label(egui::RichText::new(text).small().color(color))
         .on_hover_text(hover);
-}
-
-/// Action pill: button-styled, cycles through `targets` on click. Disabled
-/// (dimmed, non-clickable) when `targets` is empty.
-fn action_pill(
-    ui: &mut egui::Ui,
-    text: String,
-    color: egui::Color32,
-    hover: String,
-    targets: &[usize],
-) -> egui::Response {
-    let enabled = !targets.is_empty();
-    let display_color = if enabled {
-        color
-    } else {
-        egui::Color32::from_rgb(80, 80, 90)
-    };
-    let button = egui::Button::new(egui::RichText::new(text).small().color(display_color))
-        .fill(egui::Color32::from_rgb(48, 52, 68))
-        .stroke(egui::Stroke::new(
-            1.0,
-            if enabled {
-                color.linear_multiply(0.5)
-            } else {
-                egui::Color32::TRANSPARENT
-            },
-        ));
-    ui.add_enabled(enabled, button).on_hover_text(hover)
 }
 
 fn draw_signal_spine(
@@ -320,13 +178,11 @@ fn draw_signal_spine(
     session: &ProjectSession,
     events: &mut Vec<AppEvent>,
 ) {
+    // Signal graphs only render when cut-metric capture was on for the
+    // last sim run. If there's no trace, hide this section entirely —
+    // the user enables capture from the left panel's "Setup & run" and
+    // re-runs to populate it.
     let Some(trace) = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref()) else {
-        ui.label(
-            egui::RichText::new("Run simulation with Cut Metrics to see chipload, engagement, DOC, MRR, and feed tracks.")
-                .small()
-                .italics()
-                .color(egui::Color32::from_rgb(130, 130, 145)),
-        );
         return;
     };
     let total_moves = sim.total_moves();
@@ -369,6 +225,15 @@ fn draw_signal_spine(
             group.samples.push(sample);
         }
     }
+
+    // Inspector pin / playback-derived focus filters the per-TP groups so
+    // graphs show only the selected toolpath when one is focused. The
+    // boundary timeline above stays project-wide regardless.
+    let focused_id = sim.focused_toolpath();
+    if let Some(id) = focused_id {
+        groups.retain(|g| g.toolpath_id == id);
+    }
+
     if groups.iter().all(|g| g.samples.is_empty()) {
         ui.label(
             egui::RichText::new("No cutting samples captured.")
@@ -380,15 +245,22 @@ fn draw_signal_spine(
 
     ui.add_space(4.0);
     let active_x = Some(sim.playback.current_move as f64);
-    let envelope = sim
-        .current_boundary()
-        .and_then(|b| chipload_envelope_for_toolpath(session, Some(trace), b.id));
+    let envelope = focused_id
+        .and_then(|id| chipload_envelope_for_toolpath(session, Some(trace), id));
 
-    let hotspots: Vec<HotspotMarker> = trace
+    let mut hotspots: Vec<HotspotMarker> = trace
         .hotspots
         .iter()
         .enumerate()
         .filter_map(|(idx, hs)| {
+            // Filter hotspot markers to the focused toolpath (if any) — same
+            // rule as the per-TP graph filtering, so dots line up with the
+            // visible track.
+            if let Some(focus) = focused_id
+                && focus.0 != hs.toolpath_id
+            {
+                return None;
+            }
             let global_move = sim
                 .global_move_for_local(
                     crate::state::toolpath::ToolpathId(hs.toolpath_id),
@@ -402,10 +274,41 @@ fn draw_signal_spine(
         })
         .collect();
 
+    // Add tool-load gate markers — one dot per Exceeds verdict at the
+    // gate's actual worst-sample move (not the hotspot's region start).
+    // The simulator's hotspot data is one big "this whole toolpath has
+    // issues" region indexed by `move_start = 0/5`, which lands the dot
+    // at the very start of the graph regardless of where the chipload
+    // actually peaks. The gate's `sample_range.start` is the real worst
+    // sample. Index offset of 10000 keeps these distinct from cut-trace
+    // hotspots when the user clicks one.
+    let load_report_for_markers = rs_cam_core::gcode::project_load_report(session, Some(trace));
+    for (i, verdict) in load_report_for_markers.per_toolpath.iter().enumerate() {
+        if let Some(focus) = focused_id
+            && verdict.toolpath_id != focus.0
+        {
+            continue;
+        }
+        if let Some(global_move) = first_exceeded_tool_load_move(sim, trace, verdict) {
+            hotspots.push(HotspotMarker {
+                index: 10000 + i,
+                global_move,
+            });
+        }
+    }
+
     let display_x = sim.hovered_x;
     let mut new_hovered: Option<f64> = None;
     let mut clicked_hotspot: Option<(usize, usize)> = None;
     let total_moves_f = total_moves as f64;
+
+    // X-axis range for the tracks. When a TP is focused, zoom the X axis to
+    // just that TP's move range so the data fills the plot width. The
+    // boundary timeline above stays whole-project regardless.
+    let x_range: (f64, f64) = focused_id
+        .and_then(|id| sim.boundaries().iter().find(|b| b.id == id))
+        .map(|b| (b.start_move as f64, b.end_move as f64))
+        .unwrap_or((0.0, total_moves_f));
 
     let tracks: [(&str, fn(&SimulationCutSample) -> Option<f64>, egui::Color32, Option<(f64, f64)>); 5] = [
         (
@@ -440,23 +343,51 @@ fn draw_signal_spine(
         ),
     ];
 
-    for (label, value_fn, color, env) in tracks {
-        draw_signal_track(
-            ui,
-            label,
-            &groups,
-            value_fn,
-            color,
-            active_x,
-            display_x,
-            &mut new_hovered,
-            env,
-            &hotspots,
-            total_moves_f,
-            &mut clicked_hotspot,
-            events,
-        );
+    // Header row showing what's currently in focus. Focus follows the
+    // playing toolpath — clicking a row in the left panel jumps playback
+    // there, and the focus naturally moves with playback.
+    if let Some(id) = focused_id {
+        let focus_name = sim
+            .boundaries()
+            .iter()
+            .find(|b| b.id == id)
+            .map_or_else(|| format!("TP {}", id.0 + 1), |b| b.name.clone());
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("Playing: ")
+                    .small()
+                    .color(egui::Color32::from_rgb(140, 140, 155)),
+            );
+            ui.label(egui::RichText::new(&focus_name).small().strong());
+        });
     }
+
+    // Stacked scroll area: each track is taller (90 px) and gets vertical
+    // separation, so the user can read 2–3 at once and scroll to the rest
+    // without losing their X-axis lock.
+    egui::ScrollArea::vertical()
+        .id_salt("signal_spine_scroll")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            for (label, value_fn, color, env) in tracks {
+                draw_signal_track(
+                    ui,
+                    label,
+                    &groups,
+                    value_fn,
+                    color,
+                    active_x,
+                    display_x,
+                    &mut new_hovered,
+                    env,
+                    &hotspots,
+                    x_range,
+                    &mut clicked_hotspot,
+                    events,
+                );
+                ui.add_space(8.0);
+            }
+        });
 
     sim.hovered_x = new_hovered;
     if let Some((hotspot_index, global_move)) = clicked_hotspot {
@@ -497,17 +428,25 @@ fn draw_signal_track(
     new_hovered: &mut Option<f64>,
     envelope: Option<(f64, f64)>,
     hotspots: &[HotspotMarker],
-    total_moves: f64,
+    x_range: (f64, f64),
     clicked_hotspot: &mut Option<(usize, usize)>,
     events: &mut Vec<AppEvent>,
 ) {
+    let (x_min, x_max) = x_range;
+    let x_span = (x_max - x_min).max(1.0);
     // Build per-toolpath point lists in global-move space, decimating each
     // independently so the global cap applies fairly across toolpaths.
     let per_group_cap = (SIGNAL_MAX_POINTS / groups.len().max(1)).max(64);
+    // Decimate by **max-per-bucket** rather than stride sampling. Stride
+    // sampling drops single-sample spikes (the chipload trace's full-slot
+    // peaks at every region entry), making the gate's reported peak
+    // invisible on the graph. Max-per-bucket preserves the worst-case
+    // sample per X-bucket, so a single-sample chipload spike at sample
+    // 86603 actually appears as a vertical bar in the rendered line.
     let group_points: Vec<(egui::Color32, Vec<(usize, [f64; 2])>)> = groups
         .iter()
         .filter_map(|group| {
-            let mut pts: Vec<(usize, [f64; 2])> = group
+            let pts: Vec<(usize, [f64; 2])> = group
                 .samples
                 .iter()
                 .filter_map(|s| {
@@ -518,15 +457,25 @@ fn draw_signal_track(
             if pts.is_empty() {
                 return None;
             }
-            if pts.len() > per_group_cap {
-                let stride = pts.len().div_ceil(per_group_cap);
-                pts = pts
-                    .into_iter()
-                    .enumerate()
-                    .filter_map(|(i, p)| (i % stride == 0).then_some(p))
-                    .collect();
+            if pts.len() <= per_group_cap {
+                return Some((group.color, pts));
             }
-            Some((group.color, pts))
+            // Bucket the points and keep the max-Y point per bucket.
+            // Buckets are equal-width in sample-index space (which maps
+            // 1-to-1 to X position in the plot for this group). Result
+            // size is ≤ per_group_cap by construction.
+            let bucket_size = pts.len().div_ceil(per_group_cap);
+            let mut decimated: Vec<(usize, [f64; 2])> = Vec::with_capacity(per_group_cap + 1);
+            let mut chunk_iter = pts.chunks(bucket_size);
+            for chunk in chunk_iter.by_ref() {
+                if let Some(peak) = chunk
+                    .iter()
+                    .max_by(|a, b| a.1[1].partial_cmp(&b.1[1]).unwrap_or(std::cmp::Ordering::Equal))
+                {
+                    decimated.push(*peak);
+                }
+            }
+            Some((group.color, decimated))
         })
         .collect();
     if group_points.is_empty() {
@@ -544,21 +493,39 @@ fn draw_signal_track(
 
     // All five tracks share this link group so X-zoom/pan happens in lockstep.
     // Y is independent (each metric has its own scale).
-    let link_group = ui.id().with("signal_spine_x_link");
+    // Track label above the plot — the embedded plot legend isn't very
+    // visible at this size, and a leading label is more scannable when
+    // tracks are stacked vertically in a scroll area.
+    ui.label(
+        egui::RichText::new(label)
+            .small()
+            .strong()
+            .color(color),
+    );
+
+    // The link group ID encodes the X range, so changing focus (which
+    // changes x_range) creates a *fresh* link group. Without this, egui_plot
+    // persists the previous wider X range across frames and `include_x` only
+    // expands — so small TPs would render squished inside the stale range.
+    let link_group = ui
+        .id()
+        .with(("signal_spine_x_link", x_min.to_bits(), x_max.to_bits()));
     let response = Plot::new(format!("signal_track_{label}"))
-        .height(46.0)
-        // Allow horizontal zoom (mouse wheel) and pan (drag); never vertical
-        // — Y is fitted to the metric and not user-draggable.
+        .height(90.0)
+        // Wheel zooms horizontally; drag is *not* used by the plot — we
+        // intercept it below as a scrub gesture instead so dragging across
+        // a track scrubs playback rather than panning the graph (the prior
+        // behaviour confused users since "drag" looked like a scrub).
         .allow_zoom([true, false])
-        .allow_drag([true, false])
+        .allow_drag([false, false])
         .allow_scroll([false, false])
         .allow_boxed_zoom(false)
         .link_axis(link_group, [true, false])
         .link_cursor(link_group, [true, false].into())
-        .show_axes([false, false])
-        .show_grid([false, false])
-        .include_x(0.0)
-        .include_x(total_moves)
+        .show_axes([true, true])
+        .show_grid([true, true])
+        .include_x(x_min)
+        .include_x(x_max)
         .show(ui, |plot_ui| {
             // One Line per toolpath. Each line is drawn in the metric's color
             // but with a subtle background tint at the start using the toolpath
@@ -571,15 +538,56 @@ fn draw_signal_track(
             }
 
             if let Some((cl_min, cl_max)) = envelope {
+                // Shade the out-of-bounds zones so users can see at a
+                // glance which segments are breaking the envelope.
+                // Above-max → red (breakage). Below-min → amber (burn).
+                // The clear band between cl_min and cl_max is the safe
+                // chipload zone. Stroke is transparent — fill only.
+                let transparent =
+                    egui::Stroke::new(0.0, egui::Color32::TRANSPARENT);
+                if cl_max < max_y {
+                    let breakage_top = max_y.max(cl_max);
+                    plot_ui.polygon(
+                        Polygon::new(PlotPoints::from(vec![
+                            [x_min, cl_max],
+                            [x_max, cl_max],
+                            [x_max, breakage_top],
+                            [x_min, breakage_top],
+                        ]))
+                        .fill_color(egui::Color32::from_rgba_premultiplied(
+                            70, 18, 18, 90,
+                        ))
+                        .stroke(transparent)
+                        .allow_hover(false)
+                        .name("breakage zone"),
+                    );
+                }
+                if cl_min > min_y {
+                    let burn_bottom = min_y.min(cl_min);
+                    plot_ui.polygon(
+                        Polygon::new(PlotPoints::from(vec![
+                            [x_min, burn_bottom],
+                            [x_max, burn_bottom],
+                            [x_max, cl_min],
+                            [x_min, cl_min],
+                        ]))
+                        .fill_color(egui::Color32::from_rgba_premultiplied(
+                            90, 60, 12, 80,
+                        ))
+                        .stroke(transparent)
+                        .allow_hover(false)
+                        .name("burn zone"),
+                    );
+                }
                 let band_color = egui::Color32::from_rgb(220, 90, 90);
                 plot_ui.line(
-                    Line::new(PlotPoints::from(vec![[0.0, cl_min], [total_moves, cl_min]]))
+                    Line::new(PlotPoints::from(vec![[x_min, cl_min], [x_max, cl_min]]))
                         .color(band_color)
                         .style(egui_plot::LineStyle::Dashed { length: 6.0 })
                         .name("cl_min"),
                 );
                 plot_ui.line(
-                    Line::new(PlotPoints::from(vec![[0.0, cl_max], [total_moves, cl_max]]))
+                    Line::new(PlotPoints::from(vec![[x_min, cl_max], [x_max, cl_max]]))
                         .color(band_color)
                         .style(egui_plot::LineStyle::Dashed { length: 6.0 })
                         .name("cl_max"),
@@ -631,14 +639,18 @@ fn draw_signal_track(
             // (which still reports a valid pointer_coordinate well outside the
             // data bounds).
             let pointer_in_rect = plot_ui.response().hovered();
-            if pointer_in_rect
+            let dragged = plot_ui.response().dragged();
+            if (pointer_in_rect || dragged)
                 && let Some(pointer) = plot_ui.pointer_coordinate()
-                && pointer.x >= 0.0
-                && pointer.x <= total_moves
+                && pointer.x >= x_min
+                && pointer.x <= x_max
             {
                 *new_hovered = Some(pointer.x);
+                // Click: hotspot-snap if the pointer is close to one,
+                // otherwise jump to the position. Drag: pure positional
+                // scrub (no hotspot snapping — feels janky on drag).
                 if plot_ui.response().clicked() {
-                    let tolerance = (total_moves * 0.02).max(5.0);
+                    let tolerance = (x_span * 0.02).max(5.0);
                     let nearest_hotspot = hotspots.iter().min_by(|a, b| {
                         (a.global_move as f64 - pointer.x)
                             .abs()
@@ -653,11 +665,16 @@ fn draw_signal_track(
                     {
                         events.push(AppEvent::SimJumpToMove(global_move));
                     }
+                } else if dragged
+                    && let Some((global_move, _)) =
+                        nearest_in_groups(pointer.x, &group_points)
+                {
+                    events.push(AppEvent::SimJumpToMove(global_move));
                 }
             }
         });
     response.response.on_hover_text(
-        "Hover to read all five tracks at the same X. Click to scrub. Scroll to zoom; drag to pan. Each toolpath renders as its own line segment.",
+        "Hover to read all five tracks at the same X. Click or drag to scrub. Scroll to zoom. Each toolpath renders as its own line segment.",
     );
 }
 
@@ -700,15 +717,8 @@ fn draw_transport_and_scrubber(
     ui.horizontal(|ui| {
         let btn_size = egui::vec2(32.0, 24.0);
         if ui
-            .add(egui::Button::new("|◄").min_size(btn_size))
-            .on_hover_text("Jump to start (Home)")
-            .clicked()
-        {
-            events.push(AppEvent::SimJumpToStart);
-        }
-        if ui
             .add(egui::Button::new("◄").min_size(btn_size))
-            .on_hover_text("Step back (Left)")
+            .on_hover_text("Step back (Left arrow)")
             .clicked()
         {
             events.push(AppEvent::SimStepBackward);
@@ -732,17 +742,10 @@ fn draw_transport_and_scrubber(
         }
         if ui
             .add(egui::Button::new("►").min_size(btn_size))
-            .on_hover_text("Step forward (Right)")
+            .on_hover_text("Step forward (Right arrow)")
             .clicked()
         {
             events.push(AppEvent::SimStepForward);
-        }
-        if ui
-            .add(egui::Button::new("►|").min_size(btn_size))
-            .on_hover_text("Jump to end (End)")
-            .clicked()
-        {
-            events.push(AppEvent::SimJumpToEnd);
         }
 
         if sim.total_moves() > 0 {
@@ -756,57 +759,58 @@ fn draw_transport_and_scrubber(
                     .monospace()
                     .color(egui::Color32::from_rgb(160, 200, 240)),
             );
+
+            ui.separator();
+
+            // Playback speed as a multiplier (×) where 1× = real-time
+            // playback for *this* project. The baseline is derived from the
+            // project's actual move rate (total_moves / total_time_s) so
+            // wanaka's ~200 mv/s real-time and a small project's ~50 mv/s
+            // real-time both map to "1× = real time".
+            //
+            // Internally `playback.speed` stays in moves-per-second.
+            let real_time_mv_s = if total_time > 0.0 {
+                (sim.total_moves() as f64 / total_time) as f32
+            } else {
+                100.0
+            };
+            let real_time_mv_s = real_time_mv_s.max(1.0);
+            let mut multiplier = sim.playback.speed / real_time_mv_s;
+            ui.label(
+                egui::RichText::new("Speed:")
+                    .small()
+                    .color(egui::Color32::from_rgb(140, 140, 150)),
+            )
+            .on_hover_text(format!(
+                "Playback speed multiplier. 1× = real-time playback for this project ({:.0} moves/sec). [ and ] keys to adjust.",
+                real_time_mv_s
+            ));
+            let resp = ui.add(
+                egui::Slider::new(&mut multiplier, 0.1..=1000.0)
+                    .logarithmic(true)
+                    .suffix("×")
+                    .show_value(true),
+            );
+            if resp.changed() {
+                sim.playback.speed = (multiplier * real_time_mv_s).max(1.0);
+            }
         }
     });
 
-    if sim.setup_boundaries().len() > 1 {
-        let setups: Vec<_> = sim
-            .setup_boundaries()
-            .iter()
-            .map(|s| (s.setup_name.clone(), s.start_move))
-            .collect();
-        let total = sim.total_moves();
-        ui.horizontal_wrapped(|ui| {
-            ui.label(
-                egui::RichText::new("Setups:")
-                    .small()
-                    .color(egui::Color32::from_rgb(140, 140, 150)),
-            );
-            for (name, start_move) in &setups {
-                let is_current = sim.playback.current_move >= *start_move;
-                let color = if is_current {
-                    egui::Color32::from_rgb(160, 170, 200)
-                } else {
-                    egui::Color32::from_rgb(110, 110, 120)
-                };
-                let pct = if total > 0 {
-                    *start_move as f32 / total as f32 * 100.0
-                } else {
-                    0.0
-                };
-                let button = egui::Button::new(
-                    egui::RichText::new(format!("{} {:.0}%", name, pct))
-                        .small()
-                        .color(color),
-                )
-                .selected(is_current);
-                if ui.add(button).clicked() {
-                    sim.playback.current_move = *start_move;
-                    sim.playback.playing = false;
-                }
-            }
-        });
-    }
 }
 
 /// Row 2: Custom-painted per-op timeline bar with collision markers and
-/// optional semantic annotation band.
+/// optional semantic annotation band. Always project-wide — segments,
+/// markers, and the playhead all live in the global move space across
+/// every toolpath in the project, regardless of which TP is focused
+/// in the panel below.
+#[allow(clippy::too_many_arguments)]
 fn draw_boundary_timeline(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
     gui: &GuiState,
-    session: &ProjectSession,
     max_feed: f64,
+    load_report: &ToolLoadReport,
     current_boundary: &Option<crate::state::simulation::ToolpathBoundary>,
     active_semantic: &Option<ActiveSemanticItem>,
     events: &mut Vec<AppEvent>,
@@ -868,9 +872,27 @@ fn draw_boundary_timeline(
             painter.rect_filled(fill_rect, rounding, color);
         }
 
+        // Inspector focus filters all markers on the boundary timeline. When
+        // a TP is focused, only its markers are drawn; otherwise all are
+        // shown. The boundary segments themselves (above) stay project-wide.
+        let focused_id = sim.focused_toolpath();
+        let in_focus = |move_idx: usize| -> bool {
+            let Some(focus) = focused_id else {
+                return true;
+            };
+            sim.boundaries()
+                .iter()
+                .find(|b| move_idx >= b.start_move && move_idx <= b.end_move)
+                .map(|b| b.id == focus)
+                .unwrap_or(false)
+        };
+
         if let Some(ref report) = sim.checks.collision_report {
             let holder_color = egui::Color32::from_rgb(255, 50, 50);
             for col in &report.collisions {
+                if !in_focus(col.move_idx) {
+                    continue;
+                }
                 let x = rect.min.x + (col.move_idx as f32 / total_moves) * total_width;
                 painter.line_segment(
                     [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
@@ -881,6 +903,9 @@ fn draw_boundary_timeline(
 
         let rapid_color = egui::Color32::from_rgb(255, 160, 40);
         for &idx in &sim.checks.rapid_collision_move_indices {
+            if !in_focus(idx) {
+                continue;
+            }
             let x = rect.min.x + (idx as f32 / total_moves) * total_width;
             painter.line_segment(
                 [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
@@ -888,7 +913,41 @@ fn draw_boundary_timeline(
             );
         }
 
-        draw_tool_load_timeline_markers(&painter, rect, total_moves, total_width, sim, session);
+        draw_tool_load_timeline_markers(
+            &painter,
+            rect,
+            total_moves,
+            total_width,
+            sim,
+            load_report,
+            focused_id,
+        );
+
+        // Hover tooltip: when the pointer is near a timeline marker, show
+        // what the marker is. Uses a single tooltip per hover frame, picking
+        // the closest visible marker within ~6 px.
+        if response.hovered()
+            && let Some(pos) = response.hover_pos()
+        {
+            if let Some(tip) = nearest_marker_tooltip(
+                pos.x,
+                rect,
+                total_moves,
+                total_width,
+                sim,
+                load_report,
+                focused_id,
+            ) {
+                egui::show_tooltip_at_pointer(
+                    ui.ctx(),
+                    ui.layer_id(),
+                    egui::Id::new("sim_timeline_marker_tip"),
+                    |ui| {
+                        ui.label(tip);
+                    },
+                );
+            }
+        }
 
         // Playhead line
         let pos_x = rect.min.x + (sim.playback.current_move as f32 / total_moves) * total_width;
@@ -921,8 +980,9 @@ fn draw_boundary_timeline(
             && let Some(pos) = response.interact_pointer_pos()
         {
             if response.clicked()
-                && let Some(target) =
-                    nearest_safety_marker_move(pos.x, rect, total_moves, total_width, sim, session)
+                && let Some(target) = nearest_safety_marker_move(
+                    pos.x, rect, total_moves, total_width, sim, load_report,
+                )
             {
                 sim.analytics_tab = SimulationAnalyticsTab::Safety;
                 sim.playback.current_move = target;
@@ -957,10 +1017,10 @@ fn nearest_safety_marker_move(
     total_moves: f32,
     total_width: f32,
     sim: &SimulationState,
-    session: &ProjectSession,
+    load_report: &ToolLoadReport,
 ) -> Option<usize> {
     let rapid = sim.checks.rapid_collision_move_indices.iter().copied();
-    let tool_load = tool_load_marker_moves(sim, session);
+    let tool_load = tool_load_marker_moves(sim, load_report);
     rapid
         .chain(tool_load)
         .map(|move_index| {
@@ -972,16 +1032,15 @@ fn nearest_safety_marker_move(
         .map(|(move_index, _)| move_index)
 }
 
-fn tool_load_marker_moves(sim: &SimulationState, session: &ProjectSession) -> Vec<usize> {
-    let sim_trace = sim
+fn tool_load_marker_moves(sim: &SimulationState, load_report: &ToolLoadReport) -> Vec<usize> {
+    let Some(trace) = sim
         .results
         .as_ref()
-        .and_then(|results| results.cut_trace.as_deref());
-    let report = rs_cam_core::gcode::project_load_report(session, sim_trace);
-    let Some(trace) = sim_trace else {
+        .and_then(|results| results.cut_trace.as_deref())
+    else {
         return Vec::new();
     };
-    report
+    load_report
         .per_toolpath
         .iter()
         .filter_map(|verdict| first_exceeded_tool_load_move(sim, trace, verdict))
@@ -994,19 +1053,24 @@ fn draw_tool_load_timeline_markers(
     total_moves: f32,
     total_width: f32,
     sim: &SimulationState,
-    session: &ProjectSession,
+    load_report: &ToolLoadReport,
+    focused_id: Option<crate::state::toolpath::ToolpathId>,
 ) {
-    let sim_trace = sim
+    let Some(trace) = sim
         .results
         .as_ref()
-        .and_then(|results| results.cut_trace.as_deref());
-    let report = rs_cam_core::gcode::project_load_report(session, sim_trace);
-    let Some(trace) = sim_trace else {
+        .and_then(|results| results.cut_trace.as_deref())
+    else {
         return;
     };
 
-    for verdict in report.per_toolpath {
-        if let Some(global_move) = first_exceeded_tool_load_move(sim, trace, &verdict) {
+    for verdict in &load_report.per_toolpath {
+        if let Some(focus) = focused_id
+            && verdict.toolpath_id != focus.0
+        {
+            continue;
+        }
+        if let Some(global_move) = first_exceeded_tool_load_move(sim, trace, verdict) {
             let x = rect.min.x + (global_move as f32 / total_moves) * total_width;
             painter.line_segment(
                 [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
@@ -1025,6 +1089,121 @@ fn draw_tool_load_timeline_markers(
             );
         }
     }
+}
+
+/// Find the marker closest to the pointer (within ~6 px) and compose a
+/// human-readable tooltip. Honors `focused_id` so the tooltip only fires
+/// for markers that are actually drawn under the current focus filter.
+fn nearest_marker_tooltip(
+    pointer_x: f32,
+    rect: egui::Rect,
+    total_moves: f32,
+    total_width: f32,
+    sim: &SimulationState,
+    load_report: &ToolLoadReport,
+    focused_id: Option<crate::state::toolpath::ToolpathId>,
+) -> Option<String> {
+    const HOVER_PX: f32 = 6.0;
+    let in_focus = |move_idx: usize| -> bool {
+        let Some(focus) = focused_id else {
+            return true;
+        };
+        sim.boundaries()
+            .iter()
+            .find(|b| move_idx >= b.start_move && move_idx <= b.end_move)
+            .map(|b| b.id == focus)
+            .unwrap_or(false)
+    };
+    let tp_name_for_move = |move_idx: usize| -> String {
+        sim.boundaries()
+            .iter()
+            .find(|b| move_idx >= b.start_move && move_idx <= b.end_move)
+            .map_or_else(|| "(no toolpath)".to_owned(), |b| b.name.clone())
+    };
+    let x_for_move = |move_idx: usize| -> f32 {
+        rect.min.x + (move_idx as f32 / total_moves) * total_width
+    };
+
+    let mut best: Option<(f32, String)> = None;
+    let mut consider = |move_idx: usize, label: String| {
+        let dx = (x_for_move(move_idx) - pointer_x).abs();
+        if dx <= HOVER_PX && best.as_ref().is_none_or(|(prev, _)| dx < *prev) {
+            best = Some((dx, label));
+        }
+    };
+
+    // Holder collisions
+    if let Some(report) = sim.checks.collision_report.as_ref() {
+        for col in &report.collisions {
+            if !in_focus(col.move_idx) {
+                continue;
+            }
+            consider(
+                col.move_idx,
+                format!(
+                    "{}: holder collision at move {} — click to navigate",
+                    tp_name_for_move(col.move_idx),
+                    col.move_idx
+                ),
+            );
+        }
+    }
+
+    // Rapid collisions
+    for &idx in &sim.checks.rapid_collision_move_indices {
+        if !in_focus(idx) {
+            continue;
+        }
+        consider(
+            idx,
+            format!(
+                "{}: rapid collision at move {} — click to navigate",
+                tp_name_for_move(idx),
+                idx
+            ),
+        );
+    }
+
+    // Tool-load exceedance markers
+    let sim_trace = sim
+        .results
+        .as_ref()
+        .and_then(|r| r.cut_trace.as_deref());
+    if let Some(trace) = sim_trace {
+        for verdict in &load_report.per_toolpath {
+            if let Some(focus) = focused_id
+                && verdict.toolpath_id != focus.0
+            {
+                continue;
+            }
+            if let Some(move_idx) = first_exceeded_tool_load_move(sim, trace, verdict) {
+                let reason = match (&verdict.chipload, &verdict.power, &verdict.deflection)
+                {
+                    (rs_cam_core::tool_load::Verdict::Exceeds { reason, peak, .. }, _, _) => {
+                        format!("chipload {reason:?} peak {peak:.4}")
+                    }
+                    (_, rs_cam_core::tool_load::Verdict::Exceeds { reason, peak, .. }, _) => {
+                        format!("power {reason:?} peak {peak:.3} kW")
+                    }
+                    (_, _, rs_cam_core::tool_load::Verdict::Exceeds { reason, peak, .. }) => {
+                        format!("deflection {reason:?} peak {peak:.2} L/D")
+                    }
+                    _ => "tool-load exceeds".to_owned(),
+                };
+                consider(
+                    move_idx,
+                    format!(
+                        "{}: {} at move {} — click to navigate",
+                        tp_name_for_move(move_idx),
+                        reason,
+                        move_idx
+                    ),
+                );
+            }
+        }
+    }
+
+    best.map(|(_, label)| label)
 }
 
 fn first_exceeded_tool_load_move(
@@ -1052,43 +1231,6 @@ fn first_exceeded_tool_load_move(
 }
 
 /// Row 3: Playback speed slider and preset buttons.
-fn draw_speed_controls(ui: &mut egui::Ui, sim: &mut SimulationState) {
-    ui.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new("Speed:")
-                .small()
-                .color(egui::Color32::from_rgb(130, 130, 145)),
-        )
-        .on_hover_text(
-            "Keyboard: [ and ] to change speed, Space to play/pause, Left/Right to step, Home/End to jump.",
-        );
-
-        for &(label, speed) in &[
-            ("100", 100.0),
-            ("500", 500.0),
-            ("1k", 1000.0),
-            ("5k", 5000.0),
-            ("10k", 10000.0),
-            ("Max", 50000.0),
-        ] {
-            let is_selected = (sim.playback.speed - speed).abs() < 1.0;
-            let btn = egui::Button::new(egui::RichText::new(label).small()).selected(is_selected);
-            if ui.add(btn).clicked() {
-                sim.playback.speed = speed;
-            }
-        }
-
-        ui.separator();
-        ui.add(
-            egui::DragValue::new(&mut sim.playback.speed)
-                .range(10.0..=50000.0)
-                .speed(50.0)
-                .suffix(" mv/s"),
-        )
-        .on_hover_text("Playback speed in moves per second.\n[ and ] to decrease/increase.");
-    });
-}
-
 /// Estimate elapsed and total time (in seconds) based on feed rates.
 fn estimate_times(sim: &SimulationState, session: &ProjectSession, gui: &GuiState) -> (f64, f64) {
     let mut total_secs = 0.0;

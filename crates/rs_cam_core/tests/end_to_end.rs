@@ -535,6 +535,7 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::ContourParallel,
         z_blend: true,
+        boundary: None,
     };
 
     let tp = adaptive_3d_toolpath(&mesh, &index, &tool, &params);

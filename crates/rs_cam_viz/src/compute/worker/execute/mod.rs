@@ -67,6 +67,59 @@ fn generate_via_core(
         scope.set_debug_span_id(span_id);
     }
 
+    // Pre-resolve containment polygon (silhouette/stock + keep-outs + offset)
+    // for adaptive3d's internal stock pre-clip. The post-generation boundary
+    // clip (later in this function) does its own tool-radius inset for cutter
+    // CENTER gating — but for pre-clip we want the silhouette itself, so the
+    // cutter footprint can validly stamp cells in the band [silhouette -
+    // tool_radius, silhouette]. Mirrors session/compute.rs::resolve_containment_polygon.
+    let pre_boundary: Option<rs_cam_core::polygon::Polygon2> = if req.boundary.enabled {
+        use rs_cam_core::boundary::{model_silhouette, subtract_keepouts};
+        use rs_cam_core::compute::config::BoundarySource;
+        let stock_rect = || {
+            Some(rs_cam_core::polygon::Polygon2::rectangle(
+                stock_bbox.min.x, stock_bbox.min.y, stock_bbox.max.x, stock_bbox.max.y,
+            ))
+        };
+        let mut poly = if let (Some(face_ids), Some(enriched)) =
+            (&req.face_selection, &req.enriched_mesh)
+        {
+            enriched
+                .faces_boundary_as_polygon(face_ids)
+                .or_else(stock_rect)
+        } else if matches!(req.boundary.source, BoundarySource::ModelSilhouette)
+            && let Some(mesh) = req.mesh.as_deref()
+        {
+            model_silhouette(mesh, None).into_iter().max_by(|a, b| {
+                a.area()
+                    .partial_cmp(&b.area())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+        } else {
+            stock_rect()
+        };
+        if let Some(p) = poly.as_mut()
+            && !req.keep_out_footprints.is_empty()
+        {
+            *p = subtract_keepouts(p, &req.keep_out_footprints);
+        }
+        if let Some(p) = poly.as_mut()
+            && req.boundary.offset.abs() > 1e-9
+        {
+            let offset_polys = rs_cam_core::polygon::offset_polygon(p, -req.boundary.offset);
+            if let Some(largest) = offset_polys.into_iter().max_by(|a, b| {
+                a.area()
+                    .partial_cmp(&b.area())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }) {
+                *p = largest;
+            }
+        }
+        poly
+    } else {
+        None
+    };
+
     let result = execute_operation_annotated(
         &req.operation,
         mesh_ref,
@@ -81,6 +134,7 @@ fn generate_via_core(
         debug_ctx,
         cancel,
         req.prior_stock.as_ref(),
+        pre_boundary.as_ref(),
     )
     .map_err(ComputeError::from)?;
 
@@ -344,26 +398,60 @@ fn run_compute_with_phase_tracker(
                 .map(|ctx| ctx.start_span("boundary_clip", "Clip to boundary"));
             let boundary_span_id = boundary_scope.as_ref().map(|scope| scope.id());
             use rs_cam_core::boundary::{
-                ToolContainment, clip_toolpath_to_boundary, effective_boundary, subtract_keepouts,
+                ToolContainment, clip_toolpath_to_boundary, effective_boundary, model_silhouette,
+                subtract_keepouts,
             };
-            // Use face-derived boundary when face_selection is set, otherwise stock bbox.
+            use rs_cam_core::compute::config::BoundarySource;
+            // Resolve the source polygon. Order:
+            // 1. FaceSelection (when configured + enriched mesh available)
+            // 2. ModelSilhouette (when configured + mesh available) — was missing,
+            //    causing model-silhouette boundaries to silently fall through to
+            //    the stock-bbox rectangle (= no effective clipping). Mirrors
+            //    session/compute.rs::apply_boundary_clip.
+            // 3. Stock-bbox rectangle as fallback for stock-source or when the
+            //    requested source's geometry isn't available.
+            let stock_rect = || {
+                rs_cam_core::polygon::Polygon2::rectangle(
+                    bbox.min.x, bbox.min.y, bbox.max.x, bbox.max.y,
+                )
+            };
             let mut stock_poly = if let (Some(face_ids), Some(enriched)) =
                 (&req.face_selection, &req.enriched_mesh)
             {
                 enriched
                     .faces_boundary_as_polygon(face_ids)
-                    .unwrap_or_else(|| {
-                        rs_cam_core::polygon::Polygon2::rectangle(
-                            bbox.min.x, bbox.min.y, bbox.max.x, bbox.max.y,
-                        )
+                    .unwrap_or_else(stock_rect)
+            } else if matches!(req.boundary.source, BoundarySource::ModelSilhouette)
+                && let Some(mesh) = req.mesh.as_deref()
+            {
+                model_silhouette(mesh, None)
+                    .into_iter()
+                    .max_by(|a, b| {
+                        a.area()
+                            .partial_cmp(&b.area())
+                            .unwrap_or(std::cmp::Ordering::Equal)
                     })
+                    .unwrap_or_else(stock_rect)
             } else {
-                rs_cam_core::polygon::Polygon2::rectangle(
-                    bbox.min.x, bbox.min.y, bbox.max.x, bbox.max.y,
-                )
+                stock_rect()
             };
             if !req.keep_out_footprints.is_empty() {
                 stock_poly = subtract_keepouts(&stock_poly, &req.keep_out_footprints);
+            }
+            // Apply user-configured boundary offset (positive = expand outward,
+            // negative = shrink). Mirrors session/compute.rs apply_boundary_clip.
+            // cavalier_contours convention: positive distance is INWARD shrink,
+            // so flip the sign to match the user-facing convention.
+            if req.boundary.offset.abs() > 1e-9 {
+                let offset_polys =
+                    rs_cam_core::polygon::offset_polygon(&stock_poly, -req.boundary.offset);
+                if let Some(largest) = offset_polys.into_iter().max_by(|a, b| {
+                    a.area()
+                        .partial_cmp(&b.area())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                }) {
+                    stock_poly = largest;
+                }
             }
             let containment = match req.boundary.containment {
                 crate::state::toolpath::BoundaryContainment::Center => ToolContainment::Center,

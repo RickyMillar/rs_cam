@@ -1441,6 +1441,7 @@ fn default_adaptive3d_params() -> Adaptive3dParams {
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::ContourParallel,
         z_blend: false,
+        boundary: None,
     }
 }
 

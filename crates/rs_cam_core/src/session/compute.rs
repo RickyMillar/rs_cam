@@ -449,6 +449,22 @@ impl ProjectSession {
             cfg.setup_z_flipped = needs_transform && xform.is_z_flipped();
         }
 
+        // Pre-resolve the effective boundary polygon so adaptive3d can
+        // pre-clip its internal stock (mirrors apply_boundary_clip's
+        // computation at line ~570). Doing this before generation rather
+        // than after avoids the "cut moves outside boundary become rapids"
+        // failure mode that left dexel cells unstamped in deep passes.
+        let pre_boundary: Option<crate::polygon::Polygon2> = if boundary_config.enabled {
+            Self::resolve_containment_polygon(
+                &boundary_config,
+                &effective_stock_bbox,
+                mesh.as_deref(),
+                &keep_out_footprints,
+            )
+        } else {
+            None
+        };
+
         // Execute the operation via the shared compute::execute module (annotated variant)
         let tp_result = crate::compute::execute::execute_operation_annotated(
             &operation,
@@ -464,6 +480,7 @@ impl ProjectSession {
             Some(&core_ctx),
             cancel,
             None, // no initial_stock for session path
+            pre_boundary.as_ref(),
         );
 
         match tp_result {
@@ -548,6 +565,68 @@ impl ProjectSession {
                 Err(SessionError::OperationFailed(e.to_string()))
             }
         }
+    }
+
+    /// Resolve the boundary "containment polygon" — the polygon the cutter's
+    /// footprint must stay inside (Containment=Inside) or outside (Outside).
+    /// For ModelSilhouette source this returns the silhouette itself
+    /// (after keep-outs and user offset). The downstream toolpath clip
+    /// (`clip_toolpath_to_boundary`) does its own tool-radius inset to gate
+    /// CUTTER CENTER positions — but for adaptive3d's internal-stock
+    /// pre-clip we want the silhouette itself, since the cutter footprint
+    /// (when its center is at silhouette - tool_radius) reaches the
+    /// silhouette boundary and validly stamps cells in that band.
+    pub(crate) fn resolve_containment_polygon(
+        boundary_config: &crate::compute::config::BoundaryConfig,
+        stock_bbox: &BoundingBox3,
+        mesh: Option<&crate::mesh::TriangleMesh>,
+        keep_out_footprints: &[crate::polygon::Polygon2],
+    ) -> Option<crate::polygon::Polygon2> {
+        use crate::boundary::subtract_keepouts;
+        use crate::compute::config::BoundarySource;
+
+        let mut stock_poly = match &boundary_config.source {
+            BoundarySource::ModelSilhouette if mesh.is_some() => {
+                #[allow(clippy::unwrap_used)]
+                let m = mesh.unwrap();
+                crate::boundary::model_silhouette(m, None)
+                    .into_iter()
+                    .max_by(|a, b| {
+                        a.area()
+                            .partial_cmp(&b.area())
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .unwrap_or_else(|| {
+                        crate::polygon::Polygon2::rectangle(
+                            stock_bbox.min.x,
+                            stock_bbox.min.y,
+                            stock_bbox.max.x,
+                            stock_bbox.max.y,
+                        )
+                    })
+            }
+            _ => crate::polygon::Polygon2::rectangle(
+                stock_bbox.min.x,
+                stock_bbox.min.y,
+                stock_bbox.max.x,
+                stock_bbox.max.y,
+            ),
+        };
+        if !keep_out_footprints.is_empty() {
+            stock_poly = subtract_keepouts(&stock_poly, keep_out_footprints);
+        }
+        if boundary_config.offset.abs() > 1e-9 {
+            let offset_polys =
+                crate::polygon::offset_polygon(&stock_poly, -boundary_config.offset);
+            if let Some(largest) = offset_polys.into_iter().max_by(|a, b| {
+                a.area()
+                    .partial_cmp(&b.area())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }) {
+                stock_poly = largest;
+            }
+        }
+        Some(stock_poly)
     }
 
     /// Apply boundary clipping to a toolpath, subtracting keep-out footprints.

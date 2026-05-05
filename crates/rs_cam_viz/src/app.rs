@@ -264,67 +264,21 @@ impl RsCamApp {
     }
 
     fn draw_simulation_layout(&mut self, ctx: &egui::Context) {
-        // Sim-only analysis row: Debug / Metrics / Highlight. Visibility +
-        // Re-run/Reset live on the main viewport toolbar (viewport_overlay.rs)
-        // so the two workspaces share one consistent control surface.
-        egui::TopBottomPanel::top("sim_analysis_bar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                let (state, _events) = self.controller.state_and_events_mut();
-                let simulation = &mut state.simulation;
-                ui.label(
-                    egui::RichText::new("Analysis:")
-                        .small()
-                        .color(egui::Color32::from_rgb(130, 130, 145)),
-                );
-                ui.checkbox(&mut simulation.debug.enabled, "Debug");
-                let metrics_changed = ui
-                    .checkbox(&mut simulation.metric_options.enabled, "Cut Metrics")
-                    .on_hover_text(
-                        "Capture simulation-time cutting metrics on the next run. Includes arc engagement for power analysis.",
-                    )
-                    .changed();
-                if metrics_changed && simulation.metric_options.enabled {
-                    simulation.metric_options.capture_arc_engagement = true;
-                }
-                if simulation.debug.enabled {
-                    ui.checkbox(&mut simulation.debug.highlight_active_item, "Highlight");
-                }
-                ui.separator();
-                let mut capture_all = state
-                    .session
-                    .toolpath_configs()
-                    .iter()
-                    .any(|tc| tc.debug_options.enabled);
-                if ui
-                    .checkbox(&mut capture_all, "Record trace")
-                    .on_hover_text(
-                        "Record semantic/performance traces for generated toolpaths. Re-generate to apply changes.",
-                    )
-                    .changed()
-                {
-                    for tc in state.session.toolpath_configs_mut() {
-                        tc.debug_options.enabled = capture_all;
-                    }
-                }
-                ui.collapsing("Per-toolpath", |ui| {
-                    ui.label(
-                        egui::RichText::new(
-                            "Override per toolpath. Re-generate that toolpath to apply.",
-                        )
-                        .small()
-                        .color(egui::Color32::from_rgb(130, 130, 145)),
-                    );
-                    let configs = state.session.toolpath_configs_mut();
-                    for tc in configs {
-                        ui.checkbox(&mut tc.debug_options.enabled, &tc.name);
-                    }
-                });
-            });
-        });
+        // (The old `sim_analysis_bar` top strip — Debug / Cut Metrics /
+        // Highlight / Record trace — was consolidated into the right-panel
+        // Inspector's "View" section. One place for all display settings.)
 
         // Bottom panel: timeline
+        // `max_height` is required because the signal-spine ScrollArea inside
+        // uses `auto_shrink([false, false])` — without a panel cap the two
+        // form a feedback loop where the panel sizes to the ScrollArea's
+        // requested max height, the ScrollArea then sees more space and
+        // requests more, and so on until the panel takes the whole window.
         egui::TopBottomPanel::bottom("sim_timeline")
             .min_height(60.0)
+            .max_height(480.0)
+            .resizable(true)
+            .default_height(360.0)
             .show(ctx, |ui| {
                 let (state, events) = self.controller.state_and_events_mut();
                 crate::ui::sim_timeline::draw(
@@ -366,6 +320,7 @@ impl RsCamApp {
                         &mut state.simulation,
                         &state.session,
                         &state.gui,
+                        &mut state.viewport,
                         events,
                     );
                 });

@@ -3,13 +3,10 @@ use super::sim_debug::{
     debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
 };
 use crate::state::runtime::GuiState;
-use crate::state::simulation::{
-    SimulationAnalyticsTab, SimulationIssueKind, SimulationState, StockVizMode,
-};
+use crate::state::simulation::{SimulationIssueKind, SimulationState, StockVizMode};
 use crate::state::toolpath::ToolpathId;
 use crate::ui::theme;
 use rs_cam_core::session::ProjectSession;
-use rs_cam_core::simulation_cut::CutKinematics;
 use rs_cam_core::tool_load::{
     Confidence, ExceedsReason, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason, Verdict,
 };
@@ -19,15 +16,12 @@ pub fn draw(
     sim: &mut SimulationState,
     session: &ProjectSession,
     gui: &GuiState,
+    viewport: &mut crate::state::viewport::ViewportState,
     events: &mut Vec<AppEvent>,
 ) {
     let max_feed = session.machine().max_feed_mm_min;
     ui.heading("Inspector");
     ui.separator();
-    draw_analytics_tabs(ui, &mut sim.analytics_tab);
-    ui.add_space(4.0);
-
-    let active_tab = sim.analytics_tab;
 
     let load_report = {
         let sim_trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
@@ -38,17 +32,75 @@ pub fn draw(
     let linked_span = sim.active_debug_span(gui, max_feed);
     let current_boundary_id = sim.current_boundary().map(|boundary| boundary.id);
 
-    draw_reactive_inspector(ui, sim, gui, max_feed, &load_report, events);
+    draw_reactive_inspector(
+        ui,
+        sim,
+        session,
+        gui,
+        max_feed,
+        &load_report,
+        events,
+    );
     ui.separator();
 
-    // --- Stock Display ---
-    if matches!(active_tab, SimulationAnalyticsTab::RunStatus) {
-        egui::CollapsingHeader::new("Stock Display")
+    // --- View ---
+    // Display-only settings: how things look in the workspace. Capture
+    // toggles live in the left-panel "Setup & run" section instead, next
+    // to the simulation Run button.
+    let any_traces_recorded = gui
+        .toolpath_rt
+        .values()
+        .any(|rt| rt.debug_trace.is_some() || rt.semantic_trace.is_some());
+
+    egui::CollapsingHeader::new("View")
         .default_open(true)
         .show(ui, |ui| {
+            // Stock visibility — basic show/hide and opacity. Color modes
+            // (Deviation, By Height) live under "Analysis" below.
+            ui.label(
+                egui::RichText::new("Stock")
+                    .small()
+                    .strong()
+                    .color(theme::TEXT_HEADING),
+            );
+            ui.checkbox(&mut viewport.show_stock, "Show stock")
+                .on_hover_text("Show the simulated stock mesh in the 3D viewport.");
+            ui.horizontal(|ui| {
+                ui.label("Opacity:");
+                ui.add(egui::Slider::new(&mut sim.stock_opacity, 0.0..=1.0).show_value(true));
+            });
+
+            ui.add_space(8.0);
+
+            // Toolpath visibility — project-wide show/hide for cutting and
+            // rapid moves. Per-toolpath overrides remain on each row's
+            // toolpath_row_controls below.
+            ui.label(
+                egui::RichText::new("Toolpaths")
+                    .small()
+                    .strong()
+                    .color(theme::TEXT_HEADING),
+            );
+            ui.checkbox(&mut viewport.show_cutting, "Show cutting moves")
+                .on_hover_text("Show green cutting-feed lines in the 3D viewport.");
+            ui.checkbox(&mut viewport.show_rapids, "Show rapid moves")
+                .on_hover_text("Show orange rapid-traverse lines in the 3D viewport.");
+
+            ui.add_space(8.0);
+
+            // Analysis — coloring and overlays that surface analysis data
+            // on top of the basic visibility above. Stock color modes
+            // (Deviation, By Height) live here, plus the generator-step
+            // overlay when traces are recorded.
+            ui.label(
+                egui::RichText::new("Analysis")
+                    .small()
+                    .strong()
+                    .color(theme::TEXT_HEADING),
+            );
             let prev_mode = sim.stock_viz_mode;
             ui.horizontal(|ui| {
-                ui.label("Color mode:");
+                ui.label("Stock color:");
                 egui::ComboBox::from_id_salt("stock_viz_mode")
                     .selected_text(match sim.stock_viz_mode {
                         StockVizMode::Solid => "Solid",
@@ -57,18 +109,22 @@ pub fn draw(
                         StockVizMode::ByHeight => "By Height",
                     })
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut sim.stock_viz_mode, StockVizMode::Solid, "Solid");
+                        ui.selectable_value(&mut sim.stock_viz_mode, StockVizMode::Solid, "Solid")
+                            .on_hover_text("Default wood-tone gradient. No analysis coloring.");
                         ui.selectable_value(
                             &mut sim.stock_viz_mode,
                             StockVizMode::Deviation,
                             "Deviation",
                         )
-                        .on_hover_text("Color by surface deviation: blue = material remaining, green = on target, red = over-cut");
+                        .on_hover_text(
+                            "Color by surface deviation: blue = material remaining, green = on target, red = over-cut.",
+                        );
                         ui.selectable_value(
                             &mut sim.stock_viz_mode,
                             StockVizMode::ByHeight,
                             "By Height",
-                        );
+                        )
+                        .on_hover_text("Color by Z height: low = blue, high = red.");
                     });
             });
             if sim.stock_viz_mode != prev_mode {
@@ -78,64 +134,36 @@ pub fn draw(
                 && sim.playback.display_deviations.is_none()
             {
                 ui.label(
-                    egui::RichText::new("No deviation data \u{2014} re-run simulation to compute")
+                    egui::RichText::new("No deviation data — re-run simulation to compute")
                         .small()
                         .color(theme::WARNING),
                 );
             }
 
-            ui.horizontal(|ui| {
-                ui.label("Opacity:");
-                ui.add(egui::Slider::new(&mut sim.stock_opacity, 0.0..=1.0).show_value(true));
-            });
-
-            ui.horizontal(|ui| {
-                ui.label("Resolution:");
-                if sim.auto_resolution {
-                    ui.label(format!("{:.3} mm (auto)", sim.resolution));
-                } else {
-                    ui.add(
-                        egui::Slider::new(&mut sim.resolution, 0.02..=1.0)
-                            .suffix(" mm")
-                            .logarithmic(true)
-                            .show_value(true),
+            // Generator overlay — only meaningful when traces are recorded.
+            // Capture from the left-panel "Setup & run" section and re-
+            // generate to populate.
+            if any_traces_recorded {
+                ui.checkbox(&mut sim.debug.enabled, "Show generator steps")
+                    .on_hover_text(
+                        "Add a semantic timeline band on the boundary timeline and a per-toolpath outline of generator steps.",
+                    );
+                if sim.debug.enabled {
+                    ui.checkbox(
+                        &mut sim.debug.highlight_active_item,
+                        "Highlight active step",
+                    )
+                    .on_hover_text(
+                        "When playback is inside a generator step, highlight that step's geometry in the 3D viewport.",
                     );
                 }
-            });
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut sim.auto_resolution, "Auto from tool size");
-                if !sim.auto_resolution {
-                    ui.label(
-                        egui::RichText::new("(re-run to apply)")
-                            .small()
-                            .color(theme::WARNING),
-                    );
-                }
-            });
-            // Warn when the current resolution would exceed the dexel grid cap
-            // or when the resulting mesh would be too large for the GPU.
-            {
-                let sx = session.stock_config().x;
-                let sy = session.stock_config().y;
-                let res = sim.resolution;
-                if !sim.auto_resolution
-                    && rs_cam_core::dexel::DexelGrid::would_exceed_grid(res, sx, sy).is_some()
-                {
-                    ui.label(
-                        egui::RichText::new("Grid too large — resolution will be coarsened")
-                            .small()
-                            .color(theme::WARNING),
-                    );
-                }
-                // (Large meshes are now auto-chunked for GPU upload — no blank-screen warning needed.)
             }
         });
-    }
 
     ui.add_space(4.0);
 
     // --- Semantic Context ---
-    if matches!(active_tab, SimulationAnalyticsTab::DebugTrace) {
+    {
         egui::CollapsingHeader::new("Semantic Context")
             .default_open(false)
             .show(ui, |ui| {
@@ -243,9 +271,9 @@ pub fn draw(
     ui.add_space(4.0);
 
     // --- Generation Metrics ---
-    if matches!(active_tab, SimulationAnalyticsTab::DebugTrace) {
+    {
         egui::CollapsingHeader::new("Generation Metrics")
-            .default_open(true)
+            .default_open(false)
             .show(ui, |ui| {
                 let debug_trace = current_boundary_id
                     .and_then(|toolpath_id| gui.toolpath_rt.get(&toolpath_id.0))
@@ -307,617 +335,369 @@ pub fn draw(
             });
     }
 
-    if matches!(active_tab, SimulationAnalyticsTab::DebugTrace) {
+    {
         draw_trace_provenance(ui, sim, gui, current_boundary_id);
         ui.add_space(4.0);
-    }
-
-    ui.add_space(4.0);
-
-    // --- Cutting Metrics ---
-    if matches!(active_tab, SimulationAnalyticsTab::CutQuality) {
-        egui::CollapsingHeader::new("Cutting Metrics")
-        .default_open(true)
-        .show(ui, |ui| {
-            let current_boundary = sim.current_boundary().map(|boundary| boundary.id);
-            let cut_trace = sim
-                .results
-                .as_ref()
-                .and_then(|results| results.cut_trace.as_ref());
-
-            if let Some(toolpath_id) = current_boundary
-                && let Some(summary) = sim.toolpath_cut_summary(toolpath_id)
-            {
-                ui.label(format!("Runtime: {:.2}s", summary.total_runtime_s));
-                ui.label(format!(
-                    "Cut {:.2}s | rapid {:.2}s",
-                    summary.cutting_runtime_s, summary.rapid_runtime_s
-                ));
-                ui.label(format!(
-                    "Air {:.2}s | low engage {:.2}s",
-                    summary.air_cut_time_s, summary.low_engagement_time_s
-                ));
-                ui.label(format!(
-                    "Avg engagement {:.1}% | avg MRR {:.1} mm^3/s",
-                    summary.average_engagement * 100.0,
-                    summary.average_mrr_mm3_s
-                ));
-                if let Some(active_sample) = sim.current_cut_sample()
-                    && active_sample.toolpath_id == toolpath_id
-                {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Sample: move {} | {} | arc {} | {:.1}% engage | {:.3} mm DOC | {:.4} chipload | MRR {:.1}",
-                            active_sample.sample.move_index,
-                            cut_kinematics_label(active_sample.sample.cut_kinematics),
-                            format_arc_engagement(active_sample.sample.arc_engagement_radians),
-                            active_sample.sample.radial_engagement * 100.0,
-                            active_sample.sample.axial_doc_mm,
-                            active_sample.sample.chipload_mm_per_tooth,
-                            active_sample.sample.mrr_mm3_s
-                        ))
-                        .small()
-                        .color(theme::SUCCESS),
-                    );
-                }
-                let hotspot_count = sim.cut_hotspots(toolpath_id, 5).len();
-                ui.label(format!("Runtime hotspots: {}", hotspot_count));
-                draw_cut_quality_findings(ui, sim, toolpath_id, events);
-                if let Some(verdict) = load_report
-                    .per_toolpath
-                    .iter()
-                    .find(|v| v.toolpath_id == toolpath_id.0)
-                {
-                    draw_tool_load_badges(ui, verdict);
-                }
-                if let Some(active) = active_semantic.as_ref()
-                    && active.toolpath_id == toolpath_id
-                    && let Some(item_summary) =
-                        sim.semantic_cut_summary(toolpath_id, active.item.id)
-                {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Item: {} | wasted {:.2}s | avg engage {:.1}% | avg MRR {:.1}",
-                            active.item.label,
-                            item_summary.wasted_runtime_s,
-                            item_summary.average_engagement * 100.0,
-                            item_summary.average_mrr_mm3_s
-                        ))
-                        .small()
-                        .color(theme::SUCCESS),
-                    );
-                }
-            } else if cut_trace.is_none() {
-                ui.label(
-                    egui::RichText::new("Enable Cut Metrics and re-run simulation")
-                        .small()
-                        .italics()
-                        .color(theme::TEXT_DIM),
-                );
-            } else {
-                ui.label(
-                    egui::RichText::new("No cutting metrics for the current toolpath")
-                        .small()
-                        .italics()
-                        .color(theme::TEXT_DIM),
-                );
-            }
-        });
-
-    }
-
-    ui.add_space(4.0);
-
-    // --- Warnings & Flags ---
-    if matches!(active_tab, SimulationAnalyticsTab::Safety) {
-        egui::CollapsingHeader::new("Warnings & Flags")
-            .default_open(true)
-            .show(ui, |ui| {
-                // Holder clearance (first path only)
-                if sim.checks.holder_collision_count == 0 && sim.checks.min_safe_stickout.is_some()
-                {
-                    ui.label(
-                        egui::RichText::new("\u{2705} Holder clearance: Clear")
-                            .color(theme::SUCCESS),
-                    );
-                } else if sim.checks.holder_collision_count > 0 {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "\u{274C} Holder clearance: {} issues",
-                            sim.checks.holder_collision_count
-                        ))
-                        .color(theme::ERROR),
-                    );
-                    if let Some(stickout) = sim.checks.min_safe_stickout {
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "   Min safe stickout: {:.1} mm",
-                                stickout
-                            ))
-                            .small()
-                            .color(theme::WARNING),
-                        );
-                    }
-                } else {
-                    ui.label(
-                        egui::RichText::new("\u{26A0} Holder clearance: Not checked")
-                            .color(theme::WARNING),
-                    );
-                }
-
-                // Rapid collisions
-                if sim.checks.rapid_collisions.is_empty() {
-                    ui.label(
-                        egui::RichText::new("\u{2705} Rapid collisions: None")
-                            .color(theme::SUCCESS),
-                    );
-                } else {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "\u{274C} Rapid collisions: {}",
-                            sim.checks.rapid_collisions.len()
-                        ))
-                        .color(theme::ERROR),
-                    );
-                    if ui.small_button("Jump to first rapid collision").clicked() {
-                        let target = sim
-                            .checks
-                            .rapid_collision_move_indices
-                            .first()
-                            .copied()
-                            .or_else(|| {
-                                sim.checks
-                                    .rapid_collisions
-                                    .first()
-                                    .map(|collision| collision.move_index)
-                            });
-                        if let Some(move_index) = target {
-                            events.push(AppEvent::SimJumpToMove(move_index));
-                        }
-                    }
-                }
-
-                // Stale results warning
-                if sim.is_stale(gui.edit_counter) {
-                    ui.label(
-                        egui::RichText::new("\u{26A0} Results stale (params changed)")
-                            .color(theme::WARNING),
-                    );
-                }
-
-                // Run collision check button
-                if sim.checks.holder_collision_count == 0
-                    && sim.checks.min_safe_stickout.is_none()
-                    && ui.small_button("Check Holder Clearance").clicked()
-                {
-                    events.push(AppEvent::RunCollisionCheck);
-                }
-
-            });
-    }
-
-    ui.add_space(4.0);
-
-    // --- Summary Stats (detailed breakdown; key info in summary card above) ---
-    if matches!(active_tab, SimulationAnalyticsTab::RunStatus) {
-        egui::CollapsingHeader::new("Summary Stats")
-            .default_open(false)
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Total moves:");
-                    ui.label(format!("{}", sim.total_moves()));
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Operations:");
-                    ui.label(format!("{}", sim.boundaries().len()));
-                });
-
-                // Aggregate stats from job toolpaths
-                let (total_cutting, total_rapid, total_time_min) =
-                    aggregate_stats(sim, session, gui);
-
-                ui.horizontal(|ui| {
-                    ui.label("Cutting dist:");
-                    ui.label(format!("{:.0} mm", total_cutting));
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Rapid dist:");
-                    ui.label(format!("{:.0} mm", total_rapid));
-                });
-
-                let total_min = total_time_min.floor() as u32;
-                let total_sec = ((total_time_min - total_min as f64) * 60.0) as u32;
-                ui.horizontal(|ui| {
-                    ui.label("Est. cycle time:");
-                    ui.label(
-                        egui::RichText::new(format!("{}:{:02} min", total_min, total_sec))
-                            .strong()
-                            .color(theme::INFO),
-                    );
-                });
-
-                // Per-op breakdown table
-                if sim.boundaries().len() > 1 {
-                    ui.add_space(4.0);
-                    ui.label(egui::RichText::new("Per-operation:").small().strong());
-
-                    egui::Grid::new("op_stats_grid")
-                        .num_columns(3)
-                        .spacing([8.0, 2.0])
-                        .show(ui, |ui| {
-                            ui.label(egui::RichText::new("Name").small().strong());
-                            ui.label(egui::RichText::new("Cut").small().strong());
-                            ui.label(egui::RichText::new("Time").small().strong());
-                            ui.end_row();
-
-                            for boundary in sim.boundaries() {
-                                if let Some(rt) = gui.toolpath_rt.get(&boundary.id.0)
-                                    && let Some(result) = &rt.result
-                                    && let Some((_, tc)) =
-                                        session.find_toolpath_config_by_id(boundary.id.0)
-                                {
-                                    let feed = tc.operation.feed_rate();
-                                    let time_min = result.stats.cutting_distance / feed;
-                                    let m = time_min.floor() as u32;
-                                    let s = ((time_min - m as f64) * 60.0) as u32;
-
-                                    ui.label(egui::RichText::new(&boundary.name).small());
-                                    ui.label(
-                                        egui::RichText::new(format!(
-                                            "{:.0}",
-                                            result.stats.cutting_distance
-                                        ))
-                                        .small(),
-                                    );
-                                    ui.label(
-                                        egui::RichText::new(format!("{}:{:02}", m, s)).small(),
-                                    );
-                                    ui.end_row();
-                                }
-                            }
-                        });
-                }
-            });
-    }
-}
-
-fn draw_cut_quality_findings(
-    ui: &mut egui::Ui,
-    sim: &mut SimulationState,
-    toolpath_id: crate::state::toolpath::ToolpathId,
-    events: &mut Vec<AppEvent>,
-) {
-    let Some(boundary) = sim
-        .boundaries()
-        .iter()
-        .find(|boundary| boundary.id == toolpath_id)
-    else {
-        return;
-    };
-
-    let cut_hotspots = sim.cut_hotspots(toolpath_id, 3);
-    if !cut_hotspots.is_empty() {
-        ui.separator();
-        ui.label(
-            egui::RichText::new("Worst runtime hotspots")
-                .small()
-                .strong(),
-        );
-        for hotspot in cut_hotspots {
-            ui.horizontal(|ui| {
-                if ui.small_button("Jump").clicked() {
-                    events.push(AppEvent::SimJumpToMove(
-                        boundary.start_move + hotspot.move_start,
-                    ));
-                }
-                ui.label(
-                    egui::RichText::new(format!(
-                        "wasted {:.2}s | air {:.2}s | low {:.2}s | MRR {:.1}",
-                        hotspot.wasted_runtime_s,
-                        hotspot.air_cut_time_s,
-                        hotspot.low_engagement_time_s,
-                        hotspot.average_mrr_mm3_s
-                    ))
-                    .small()
-                    .color(theme::TEXT_MUTED),
-                );
-            });
-        }
-    }
-
-    let Some(trace) = sim
-        .results
-        .as_ref()
-        .and_then(|results| results.cut_trace.as_ref())
-    else {
-        return;
-    };
-    let issues: Vec<_> = trace
-        .issues
-        .iter()
-        .filter(|issue| issue.toolpath_id == toolpath_id.0)
-        .take(4)
-        .cloned()
-        .collect();
-    if !issues.is_empty() {
-        ui.separator();
-        ui.label(
-            egui::RichText::new("Cutting issue segments")
-                .small()
-                .strong(),
-        );
-        for issue in issues {
-            ui.horizontal(|ui| {
-                if ui.small_button("Jump").clicked()
-                    && let Some(target) = sim.trace_target_for_cut_issue(&issue)
-                {
-                    events.push(AppEvent::SimJumpToMove(target.move_index));
-                }
-                ui.label(
-                    egui::RichText::new(format!(
-                        "{} {:.2}s | moves {}–{} | min engage {:.1}%",
-                        issue.label,
-                        issue.duration_s,
-                        issue.move_index,
-                        issue.end_move_index,
-                        issue.min_radial_engagement * 100.0
-                    ))
-                    .small()
-                    .color(theme::TEXT_MUTED),
-                );
-            });
-        }
     }
 }
 
 fn draw_reactive_inspector(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
+    session: &ProjectSession,
     gui: &GuiState,
     max_feed: f64,
     load_report: &ToolLoadReport,
     events: &mut Vec<AppEvent>,
 ) {
-    ui.label(
-        egui::RichText::new("Inspector")
-            .small()
-            .strong()
-            .color(theme::TEXT_STRONG),
-    );
     if sim.results.is_none() {
         ui.label(
-            egui::RichText::new(
-                "Run simulation, then select a timeline point, issue, hotspot, or toolpath.",
-            )
-            .small()
-            .italics()
-            .color(theme::TEXT_DIM),
-        );
-        return;
-    }
-
-    // Hotspot card: a viewport pin or future track-dot click sets focused_hotspot.
-    // Snapshot the data we need before mutating sim via the buttons below.
-    let hotspot_snapshot = sim.focused_hotspot_data().map(|h| {
-        (
-            h.toolpath_id,
-            h.move_start,
-            h.move_end,
-            h.sample_index_end - h.sample_index_start,
-            h.wasted_runtime_s,
-            h.peak_chipload_mm_per_tooth,
-            h.peak_axial_doc_mm,
-            h.average_engagement,
-            h.representative_position,
-        )
-    });
-    if let Some((tp_id, move_start, move_end, sample_count, wasted, peak_chip, peak_doc, avg_eng, pos)) =
-        hotspot_snapshot
-    {
-        let toolpath_id = ToolpathId(tp_id);
-        let global_start = sim
-            .global_move_for_local(toolpath_id, move_start)
-            .unwrap_or(move_start);
-        egui::Frame::default()
-            .fill(egui::Color32::from_rgb(50, 38, 28))
-            .inner_margin(6.0)
-            .rounding(4.0)
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new("Hotspot")
-                            .strong()
-                            .color(egui::Color32::from_rgb(255, 170, 90)),
-                    );
-                    ui.label(
-                        egui::RichText::new(format!("TP {}", tp_id + 1))
-                            .small()
-                            .color(theme::TEXT_MUTED),
-                    );
-                });
-                ui.label(
-                    egui::RichText::new(format!(
-                        "Moves {move_start}–{move_end} · {sample_count} samples"
-                    ))
-                    .small()
-                    .color(theme::TEXT_MUTED),
-                );
-                ui.label(
-                    egui::RichText::new(format!(
-                        "wasted {wasted:.2}s · peak chip {peak_chip:.4} · peak DOC {peak_doc:.2} · avg engage {:.0}%",
-                        avg_eng * 100.0
-                    ))
-                    .small()
-                    .color(theme::TEXT_MUTED),
-                );
-                ui.label(
-                    egui::RichText::new(format!(
-                        "X{:.1} Y{:.1} Z{:.2}",
-                        pos[0], pos[1], pos[2]
-                    ))
-                    .small()
-                    .monospace()
-                    .color(theme::TEXT_DIM),
-                );
-                ui.horizontal(|ui| {
-                    if ui.small_button("Jump").clicked() {
-                        events.push(AppEvent::SimJumpToMove(global_start));
-                    }
-                    if ui.small_button("Optimize").clicked() {
-                        events.push(AppEvent::OpenOptimizeModal(toolpath_id));
-                    }
-                    if ui.small_button("Clear").clicked() {
-                        sim.debug.focused_hotspot = None;
-                    }
-                });
-            });
-        ui.add_space(4.0);
-    }
-
-    if let Some(issue) = sim.current_issue(gui, max_feed) {
-        egui::Frame::default()
-            .fill(egui::Color32::from_rgb(42, 36, 28))
-            .inner_margin(6.0)
-            .rounding(4.0)
-            .show(ui, |ui| {
-                ui.label(
-                    egui::RichText::new(format!(
-                        "{}: {}",
-                        issue_kind_label(issue.kind),
-                        issue.label
-                    ))
-                    .strong()
-                    .color(theme::WARNING_TEXT),
-                );
-                ui.label(format!("Move {}", issue.move_index));
-                ui.horizontal(|ui| {
-                    if ui.small_button("◀ Prev").clicked()
-                        && let Some(target) = sim.focus_issue_delta(gui, max_feed, -1)
-                    {
-                        events.push(AppEvent::SimJumpToMove(target.move_index));
-                    }
-                    if ui.small_button("Next ▶").clicked()
-                        && let Some(target) = sim.focus_issue_delta(gui, max_feed, 1)
-                    {
-                        events.push(AppEvent::SimJumpToMove(target.move_index));
-                    }
-                    if ui.small_button("Jump").clicked() {
-                        events.push(AppEvent::SimJumpToMove(issue.move_index));
-                    }
-                    if let Some(toolpath_id) = issue.toolpath_id
-                        && ui.small_button("Optimize").clicked()
-                    {
-                        events.push(AppEvent::OpenOptimizeModal(toolpath_id));
-                    }
-                });
-            });
-        ui.add_space(4.0);
-    }
-
-    if let Some(active) = sim.current_cut_sample() {
-        ui.label(egui::RichText::new("Sample").small().strong());
-        egui::Grid::new("reactive_sample_grid")
-            .num_columns(2)
-            .spacing([8.0, 2.0])
-            .show(ui, |ui| {
-                ui.label("toolpath");
-                ui.label(format!("{}", active.toolpath_id.0 + 1));
-                ui.end_row();
-                ui.label("time");
-                ui.label(format!("{:.2}s", active.sample.cumulative_time_s));
-                ui.end_row();
-                ui.label("feed");
-                ui.label(format!("{:.0} mm/min", active.sample.feed_rate_mm_min));
-                ui.end_row();
-                ui.label("chip thickness");
-                ui.label(
-                    active
-                        .sample
-                        .effective_chip_thickness_mm
-                        .map(|v| format!("{v:.4} mm"))
-                        .unwrap_or_else(|| "unmodeled".to_owned()),
-                );
-                ui.end_row();
-                ui.label("arc engagement");
-                ui.label(format_arc_engagement(active.sample.arc_engagement_radians));
-                ui.end_row();
-                ui.label("axial DOC");
-                ui.label(format!("{:.3} mm", active.sample.axial_doc_mm));
-                ui.end_row();
-                ui.label("MRR");
-                ui.label(format!("{:.1} mm³/s", active.sample.mrr_mm3_s));
-                ui.end_row();
-            });
-        ui.add_space(4.0);
-    }
-
-    if let Some(boundary) = sim.current_boundary() {
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(&boundary.name).strong());
-            if ui.small_button("Optimize").clicked() {
-                events.push(AppEvent::OpenOptimizeModal(boundary.id));
-            }
-            if ui.small_button("Jump start").clicked() {
-                events.push(AppEvent::SimJumpToMove(boundary.start_move));
-            }
-        });
-        if let Some(tp) = load_report
-            .per_toolpath
-            .iter()
-            .find(|tp| tp.toolpath_id == boundary.id.0)
-        {
-            draw_tool_load_badges(ui, tp);
-            ui.label(verdict_label(&tp.chipload));
-            ui.label(verdict_label(&tp.power));
-            ui.label(verdict_label(&tp.deflection));
-        }
-        if let Some(summary) = sim.toolpath_cut_summary(boundary.id) {
-            ui.label(
-                egui::RichText::new(format!(
-                    "cut {:.1}s · air {:.1}s · low-engage {:.1}s · peak chip {:.4}",
-                    summary.cutting_runtime_s,
-                    summary.air_cut_time_s,
-                    summary.low_engagement_time_s,
-                    summary.peak_chipload_mm_per_tooth
-                ))
-                .small()
-                .color(theme::TEXT_MUTED),
-            );
-        }
-    } else {
-        ui.label(
-            egui::RichText::new("Select a toolpath segment, signal peak, issue, or hotspot.")
+            egui::RichText::new("Run simulation to see the cut overview here.")
                 .small()
                 .italics()
                 .color(theme::TEXT_DIM),
         );
+        return;
+    }
+
+    // Priority order for what to display:
+    // 1. Focused hotspot card (user clicked a 3D-viewport pin or graph dot).
+    // 2. Issue card (an air-cut / low-engagement issue at the current move).
+    // 3. Project overview (the default — cut totals + counts).
+    //
+    // We deliberately don't stack these; showing the overview *and* a
+    // hotspot card together is what the user called out as too much info.
+
+    if let Some(()) = draw_focused_hotspot_card(ui, sim, events) {
+        return;
+    }
+    if let Some(()) = draw_focused_issue_card(ui, sim, gui, max_feed, events) {
+        return;
+    }
+
+    draw_project_overview(ui, sim, session, gui, max_feed, load_report, events);
+}
+
+/// Hotspot card. Returns `Some(())` when drawn so the caller can early-return.
+fn draw_focused_hotspot_card(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    events: &mut Vec<AppEvent>,
+) -> Option<()> {
+    let h = sim.focused_hotspot_data()?;
+    let tp_id = h.toolpath_id;
+    let move_start = h.move_start;
+    let move_end = h.move_end;
+    let sample_count = h.sample_index_end - h.sample_index_start;
+    let wasted = h.wasted_runtime_s;
+    let peak_chip = h.peak_chipload_mm_per_tooth;
+    let peak_doc = h.peak_axial_doc_mm;
+    let avg_eng = h.average_engagement;
+    let pos = h.representative_position;
+    let toolpath_id = ToolpathId(tp_id);
+    let global_start = sim
+        .global_move_for_local(toolpath_id, move_start)
+        .unwrap_or(move_start);
+
+    egui::Frame::default()
+        .fill(egui::Color32::from_rgb(50, 38, 28))
+        .inner_margin(6.0)
+        .rounding(4.0)
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("Hotspot")
+                        .strong()
+                        .color(egui::Color32::from_rgb(255, 170, 90)),
+                );
+                ui.label(
+                    egui::RichText::new(format!("TP {}", tp_id + 1))
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+            });
+            ui.label(
+                egui::RichText::new(format!(
+                    "Moves {move_start}–{move_end} · {sample_count} samples"
+                ))
+                .small()
+                .color(theme::TEXT_MUTED),
+            );
+            ui.label(
+                egui::RichText::new(format!(
+                    "wasted {wasted:.2}s · peak chip {peak_chip:.4} · peak DOC {peak_doc:.2} · avg engage {:.0}%",
+                    avg_eng * 100.0
+                ))
+                .small()
+                .color(theme::TEXT_MUTED),
+            );
+            ui.label(
+                egui::RichText::new(format!("X{:.1} Y{:.1} Z{:.2}", pos[0], pos[1], pos[2]))
+                    .small()
+                    .monospace()
+                    .color(theme::TEXT_DIM),
+            );
+            ui.horizontal(|ui| {
+                if ui.small_button("Jump").clicked() {
+                    events.push(AppEvent::SimJumpToMove(global_start));
+                }
+                if ui.small_button("Optimize").clicked() {
+                    events.push(AppEvent::OpenOptimizeModal(toolpath_id));
+                }
+                if ui.small_button("Clear").clicked() {
+                    sim.debug.focused_hotspot = None;
+                }
+            });
+        });
+    Some(())
+}
+
+/// Issue card. Returns `Some(())` when drawn so the caller can early-return.
+fn draw_focused_issue_card(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    gui: &GuiState,
+    max_feed: f64,
+    events: &mut Vec<AppEvent>,
+) -> Option<()> {
+    let issue = sim.current_issue(gui, max_feed)?;
+    egui::Frame::default()
+        .fill(egui::Color32::from_rgb(42, 36, 28))
+        .inner_margin(6.0)
+        .rounding(4.0)
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new(format!(
+                    "{}: {}",
+                    issue_kind_label(issue.kind),
+                    issue.label
+                ))
+                .strong()
+                .color(theme::WARNING_TEXT),
+            );
+            ui.label(format!("Move {}", issue.move_index));
+            ui.horizontal(|ui| {
+                if ui.small_button("◀ Prev").clicked()
+                    && let Some(target) = sim.focus_issue_delta(gui, max_feed, -1)
+                {
+                    events.push(AppEvent::SimJumpToMove(target.move_index));
+                }
+                if ui.small_button("Next ▶").clicked()
+                    && let Some(target) = sim.focus_issue_delta(gui, max_feed, 1)
+                {
+                    events.push(AppEvent::SimJumpToMove(target.move_index));
+                }
+                if ui.small_button("Jump").clicked() {
+                    events.push(AppEvent::SimJumpToMove(issue.move_index));
+                }
+                if let Some(toolpath_id) = issue.toolpath_id
+                    && ui.small_button("Optimize").clicked()
+                {
+                    events.push(AppEvent::OpenOptimizeModal(toolpath_id));
+                }
+            });
+        });
+    Some(())
+}
+
+/// Default state: a single-screen overview of the whole cut. Cycle time
+/// + total moves/ops at the top, issue/safety counts in a key-value grid
+/// below, then a slim "Now playing: TP X" strip with verdict badges when
+/// playback is inside a toolpath. Replaces the previous Cutting Metrics,
+/// Warnings & Flags, and Summary Stats sections in the right panel.
+#[allow(clippy::too_many_arguments)]
+fn draw_project_overview(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    session: &ProjectSession,
+    gui: &GuiState,
+    max_feed: f64,
+    load_report: &ToolLoadReport,
+    events: &mut Vec<AppEvent>,
+) {
+    let (total_cutting, total_rapid, total_time_min) = aggregate_stats(sim, session, gui);
+    let total_min = total_time_min.floor() as u32;
+    let total_sec = ((total_time_min - total_min as f64) * 60.0) as u32;
+
+    let (ok, _warn, bad, unmodeled) = verdict_counts_local(load_report);
+    let collision_count =
+        sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
+    let issue_count = sim.issues(gui, max_feed).len();
+    let hotspot_count = sim
+        .results
+        .as_ref()
+        .and_then(|r| r.cut_trace.as_ref())
+        .map(|t| t.hotspots.len())
+        .unwrap_or(0);
+
+    // Big cycle-time line.
+    ui.label(
+        egui::RichText::new(format!("Cycle: {}:{:02} min", total_min, total_sec))
+            .strong()
+            .color(theme::INFO),
+    );
+
+    egui::Grid::new("cut_overview_grid")
+        .num_columns(2)
+        .spacing([8.0, 2.0])
+        .show(ui, |ui| {
+            ui.label(egui::RichText::new("Moves").small().color(theme::TEXT_MUTED));
+            ui.label(egui::RichText::new(format!("{}", sim.total_moves())).small());
+            ui.end_row();
+            ui.label(
+                egui::RichText::new("Operations").small().color(theme::TEXT_MUTED),
+            );
+            ui.label(egui::RichText::new(format!("{}", sim.boundaries().len())).small());
+            ui.end_row();
+            ui.label(
+                egui::RichText::new("Cut distance").small().color(theme::TEXT_MUTED),
+            );
+            ui.label(egui::RichText::new(format!("{:.0} mm", total_cutting)).small());
+            ui.end_row();
+            ui.label(
+                egui::RichText::new("Rapid distance").small().color(theme::TEXT_MUTED),
+            );
+            ui.label(egui::RichText::new(format!("{:.0} mm", total_rapid)).small());
+            ui.end_row();
+        });
+
+    ui.add_space(4.0);
+    ui.separator();
+
+    // Issue counts row — colored to match the bottom-panel HUD pills, but
+    // here as a single horizontal summary.
+    ui.label(egui::RichText::new("Findings").small().strong());
+    egui::Grid::new("cut_overview_findings")
+        .num_columns(2)
+        .spacing([8.0, 2.0])
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new("Within bounds")
+                    .small()
+                    .color(egui::Color32::from_rgb(120, 200, 130)),
+            );
+            ui.label(egui::RichText::new(format!("{ok}")).small());
+            ui.end_row();
+            ui.label(
+                egui::RichText::new("Exceedances")
+                    .small()
+                    .color(egui::Color32::from_rgb(220, 90, 90)),
+            );
+            ui.label(egui::RichText::new(format!("{bad}")).small());
+            ui.end_row();
+            ui.label(
+                egui::RichText::new("Unmodeled")
+                    .small()
+                    .color(egui::Color32::from_rgb(210, 170, 80)),
+            );
+            ui.label(egui::RichText::new(format!("{unmodeled}")).small());
+            ui.end_row();
+            let collision_color = if collision_count == 0 {
+                theme::SUCCESS
+            } else {
+                theme::ERROR
+            };
+            ui.label(egui::RichText::new("Collisions").small().color(collision_color));
+            ui.label(egui::RichText::new(format!("{collision_count}")).small());
+            ui.end_row();
+            ui.label(egui::RichText::new("Issues").small().color(theme::TEXT_MUTED));
+            ui.label(egui::RichText::new(format!("{issue_count}")).small());
+            ui.end_row();
+            ui.label(egui::RichText::new("Hotspots").small().color(theme::TEXT_MUTED));
+            ui.label(egui::RichText::new(format!("{hotspot_count}")).small());
+            ui.end_row();
+        });
+
+    if sim.is_stale(gui.edit_counter) {
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new("⚠ Results stale (params changed) — re-run sim")
+                .small()
+                .color(theme::WARNING),
+        );
+    }
+
+    // Slim "Now playing: TP X" strip when playback is inside a TP.
+    if let Some(boundary) = sim.current_boundary() {
+        let boundary_id = boundary.id;
+        let boundary_name = boundary.name.clone();
+        let boundary_start = boundary.start_move;
+        ui.add_space(6.0);
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("Now playing:")
+                    .small()
+                    .color(theme::TEXT_MUTED),
+            );
+            ui.label(egui::RichText::new(&boundary_name).small().strong());
+        });
+        if let Some(tp) = load_report
+            .per_toolpath
+            .iter()
+            .find(|tp| tp.toolpath_id == boundary_id.0)
+        {
+            // Cap context for "% of cap" readout: chipload from the
+            // matched LUT row, power from machine cap × safety factor,
+            // deflection from the safe L/D threshold (4.0). Each is
+            // optional — the badge falls back to a non-numeric display
+            // when the cap is missing.
+            let sim_trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
+            let chipload_envelopes =
+                rs_cam_core::tool_load::chipload_envelopes_for_session(session, sim_trace);
+            let chipload_cap = chipload_envelopes.get(&boundary_id.0).map(|range| range.end);
+            let machine = session.machine();
+            let max_power_kw = match machine.power {
+                rs_cam_core::machine::PowerModel::ConstantPower { power_kw } => power_kw,
+                rs_cam_core::machine::PowerModel::VfdConstantTorque {
+                    rated_power_kw, ..
+                } => rated_power_kw,
+            };
+            let power_cap_kw = (max_power_kw * machine.safety_factor > 0.0)
+                .then_some(max_power_kw * machine.safety_factor);
+            let deflection_cap = Some(DEFLECTION_SAFE_LD_RATIO);
+            draw_tool_load_badges(ui, tp, chipload_cap, power_cap_kw, deflection_cap);
+        }
+        ui.horizontal(|ui| {
+            if ui.small_button("Optimize").clicked() {
+                events.push(AppEvent::OpenOptimizeModal(boundary_id));
+            }
+            if ui.small_button("Jump to start").clicked() {
+                events.push(AppEvent::SimJumpToMove(boundary_start));
+            }
+        });
     }
 }
 
-fn draw_analytics_tabs(ui: &mut egui::Ui, active_tab: &mut SimulationAnalyticsTab) {
-    ui.horizontal_wrapped(|ui| {
-        ui.selectable_value(active_tab, SimulationAnalyticsTab::RunStatus, "Run Status")
-            .on_hover_text("Freshness, capture status, runtime, and top findings.");
-        ui.selectable_value(
-            active_tab,
-            SimulationAnalyticsTab::Safety,
-            "Safety / Tool Load",
-        )
-        .on_hover_text("Collisions, holder clearance, chipload, power, and deflection.");
-        ui.selectable_value(
-            active_tab,
-            SimulationAnalyticsTab::CutQuality,
-            "Cut Quality",
-        )
-        .on_hover_text("Air cutting, engagement, MRR, issues, hotspots, and active sample.");
-        ui.selectable_value(
-            active_tab,
-            SimulationAnalyticsTab::DebugTrace,
-            "Debug / Trace",
-        )
-        .on_hover_text("Generation spans, semantic/debug internals, artifacts, and provenance.");
-    });
+fn verdict_counts_local(report: &ToolLoadReport) -> (usize, usize, usize, usize) {
+    let mut ok = 0;
+    let mut warn = 0;
+    let mut bad = 0;
+    let mut unmodeled = 0;
+    for tp in &report.per_toolpath {
+        for verdict in [&tp.chipload, &tp.power, &tp.deflection] {
+            match verdict {
+                Verdict::Within { .. } => ok += 1,
+                Verdict::Unmodeled { .. } => unmodeled += 1,
+                Verdict::Exceeds { .. } => bad += 1,
+            }
+            if matches!(
+                verdict,
+                Verdict::Within {
+                    confidence: Confidence::Approximate(_),
+                    ..
+                } | Verdict::Exceeds {
+                    confidence: Confidence::Approximate(_),
+                    ..
+                }
+            ) {
+                warn += 1;
+            }
+        }
+    }
+    (ok, warn, bad, unmodeled)
 }
+
 
 fn draw_trace_provenance(
     ui: &mut egui::Ui,
@@ -985,30 +765,6 @@ fn draw_trace_provenance(
         });
 }
 
-fn cut_kinematics_label(kind: CutKinematics) -> &'static str {
-    match kind {
-        CutKinematics::Linear => "linear",
-        CutKinematics::Plunge => "plunge",
-        CutKinematics::Helix => "helix",
-        CutKinematics::Arc => "arc",
-        CutKinematics::Rapid => "rapid",
-    }
-}
-
-fn format_arc_engagement(arc: Option<f64>) -> String {
-    match arc {
-        Some(radians) => {
-            let degrees = radians.to_degrees();
-            if (degrees - 180.0).abs() <= 5.0 {
-                "180° slot".to_owned()
-            } else {
-                format!("{degrees:.0}°")
-            }
-        }
-        None => "not captured".to_owned(),
-    }
-}
-
 fn issue_kind_label(kind: SimulationIssueKind) -> &'static str {
     match kind {
         SimulationIssueKind::Hotspot => "Hotspot",
@@ -1027,51 +783,96 @@ fn issue_kind_label(kind: SimulationIssueKind) -> &'static str {
 /// Render a single short summary line in the project summary card showing how
 /// Render three independent badges (chipload | power | deflection) for the
 /// active toolpath. **Never** combine into a single load %.
-fn draw_tool_load_badges(ui: &mut egui::Ui, verdict: &ToolpathLoadVerdict) {
+fn draw_tool_load_badges(
+    ui: &mut egui::Ui,
+    verdict: &ToolpathLoadVerdict,
+    chipload_cap: Option<f64>,
+    power_cap_kw: Option<f64>,
+    deflection_cap: Option<f64>,
+) {
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new("Tool load:")
                 .small()
                 .color(theme::TEXT_STRONG),
         );
-        verdict_badge(ui, "chipload", &verdict.chipload);
-        verdict_badge(ui, "power", &verdict.power);
-        verdict_badge(ui, "deflection", &verdict.deflection);
+        verdict_badge(ui, "chipload", &verdict.chipload, chipload_cap);
+        verdict_badge(ui, "power", &verdict.power, power_cap_kw);
+        verdict_badge(ui, "L/D", &verdict.deflection, deflection_cap);
     });
 }
 
-fn verdict_label(verdict: &Verdict) -> String {
-    match verdict {
-        Verdict::Within { peak, .. } => format!("within · peak {peak:.4}"),
-        Verdict::Exceeds { peak, reason, .. } => format!("exceeds · {reason:?} · peak {peak:.4}"),
-        Verdict::Unmodeled { reason } => format!("unmodeled · {reason:?}"),
+/// Default L/D safe threshold for the deflection gate's `% of cap`
+/// readout. Above this is the "long tool" warning band; the gate
+/// flags `LongToolStiffnessUnsafe` further past it. Matches the
+/// constant used by `feeds::calculate` for the L/D feed derate.
+const DEFLECTION_SAFE_LD_RATIO: f64 = 4.0;
+
+/// Format the peak as a percentage of the cap. Returns `None` when
+/// the cap is unavailable or non-positive — caller falls back to a
+/// non-numeric badge.
+fn pct_of_cap(peak: f64, cap: Option<f64>) -> Option<i32> {
+    let c = cap.filter(|c| *c > 0.0)?;
+    let pct = (peak / c * 100.0).round();
+    if !pct.is_finite() {
+        return None;
     }
+    Some(pct as i32)
 }
 
-fn verdict_badge(ui: &mut egui::Ui, label: &str, verdict: &Verdict) {
+fn verdict_badge(ui: &mut egui::Ui, label: &str, verdict: &Verdict, cap: Option<f64>) {
+    // For chipload BurnRisk the peak is *below* the floor, not above the
+    // cap — `% of cap` is misleading there. Skip the % branch and fall
+    // back to a non-numeric badge.
+    let burn_risk = matches!(
+        verdict,
+        Verdict::Exceeds {
+            reason: ExceedsReason::ChiploadBurnRisk,
+            ..
+        }
+    );
     let (color, status) = match verdict {
         Verdict::Within {
+            peak,
             confidence: Confidence::Validated,
-            ..
-        } => (theme::SUCCESS, "OK"),
+        } => match pct_of_cap(*peak, cap) {
+            Some(pct) => (theme::SUCCESS, format!("{pct}%")),
+            None => (theme::SUCCESS, "OK".to_owned()),
+        },
         Verdict::Within {
+            peak,
             confidence: Confidence::Approximate(_),
-            ..
-        } => (theme::WARNING_MILD, "OK\u{2248}"),
-        Verdict::Exceeds { .. } => (theme::ERROR, "FAIL"),
-        Verdict::Unmodeled { .. } => (theme::TEXT_DIM, "—"),
+        } => match pct_of_cap(*peak, cap) {
+            Some(pct) => (theme::WARNING_MILD, format!("{pct}%\u{2248}")),
+            None => (theme::WARNING_MILD, "OK\u{2248}".to_owned()),
+        },
+        Verdict::Exceeds { peak, .. } if !burn_risk => match pct_of_cap(*peak, cap) {
+            Some(pct) => (theme::ERROR, format!("{pct}%")),
+            None => (theme::ERROR, "FAIL".to_owned()),
+        },
+        Verdict::Exceeds { .. } => (theme::ERROR, "BURN".to_owned()),
+        Verdict::Unmodeled { .. } => (theme::TEXT_DIM, "—".to_owned()),
     };
     let text = format!("{label} {status}");
     ui.label(egui::RichText::new(text).small().color(color))
-        .on_hover_text(verdict_tooltip(verdict));
+        .on_hover_text(verdict_tooltip(verdict, cap));
 }
 
-fn verdict_tooltip(verdict: &Verdict) -> String {
+fn verdict_tooltip(verdict: &Verdict, cap: Option<f64>) -> String {
+    let format_peak = |peak: f64| -> String {
+        match cap.filter(|c| *c > 0.0) {
+            Some(c) => {
+                let pct = (peak / c * 100.0).round() as i32;
+                format!("peak {peak:.4} / cap {c:.4} ({pct}%)")
+            }
+            None => format!("peak {peak:.4}"),
+        }
+    };
     match verdict {
         Verdict::Within { peak, confidence } => match confidence {
-            Confidence::Validated => format!("Within bounds (peak {peak:.3}) — validated"),
+            Confidence::Validated => format!("Within bounds ({}) — validated", format_peak(*peak)),
             Confidence::Approximate(why) => {
-                format!("Within bounds (peak {peak:.3}) — approximate: {why}")
+                format!("Within bounds ({}) — approximate: {why}", format_peak(*peak))
             }
         },
         Verdict::Exceeds {
@@ -1094,7 +895,7 @@ fn verdict_tooltip(verdict: &Verdict) -> String {
                 Confidence::Validated => "validated".to_owned(),
                 Confidence::Approximate(why) => format!("approximate: {why}"),
             };
-            format!("EXCEEDS: {reason_str} (peak {peak:.3}, {conf})")
+            format!("EXCEEDS: {reason_str} ({}, {conf})", format_peak(*peak))
         }
         Verdict::Unmodeled { reason } => match reason {
             UnmodeledReason::SimulationRequired => {
@@ -1163,23 +964,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn formats_arc_engagement_for_readability() {
-        assert_eq!(format_arc_engagement(None), "not captured");
-        assert_eq!(
-            format_arc_engagement(Some(std::f64::consts::FRAC_PI_2)),
-            "90°"
-        );
-        assert_eq!(
-            format_arc_engagement(Some(std::f64::consts::PI)),
-            "180° slot"
-        );
-    }
-
-    #[test]
     fn arc_engagement_unmodeled_tooltip_points_to_cut_metrics() {
-        let tooltip = verdict_tooltip(&Verdict::Unmodeled {
-            reason: UnmodeledReason::ArcEngagementNotCaptured,
-        });
+        let tooltip = verdict_tooltip(
+            &Verdict::Unmodeled {
+                reason: UnmodeledReason::ArcEngagementNotCaptured,
+            },
+            None,
+        );
         assert!(tooltip.contains("Cut Metrics"));
     }
 }

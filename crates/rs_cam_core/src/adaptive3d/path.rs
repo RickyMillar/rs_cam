@@ -26,11 +26,51 @@ use super::{
     EntryStyle3d, RegionOrdering,
 };
 
+/// Peck the descent from `start_z` down to `entry.z` at constant XY.
+/// Each peck steps down by `params.depth_per_pass` and rapid-retracts a
+/// small clearance for chip break before the next peck. Final feed
+/// completes the descent to exactly `entry.z`. No-op if `start_z <=
+/// entry.z` (already at or below the target).
+///
+/// Without this, entries chosen at fresh-stock XYs on deep Z levels
+/// would carve a column from `start_z` down through full stock
+/// thickness in one shot ("punched hole" symptom).
+fn emit_peck_plunge(
+    tp: &mut Toolpath,
+    entry: &P3,
+    start_z: f64,
+    params: &Adaptive3dParams,
+) {
+    const PECK_CLEARANCE_MM: f64 = 0.5;
+    let dpp = params.depth_per_pass.max(0.1);
+    let mut current_z = start_z;
+    while current_z - entry.z > dpp + 1e-6 {
+        let next_z = current_z - dpp;
+        tp.feed_to(P3::new(entry.x, entry.y, next_z), params.plunge_rate);
+        let retract_z = next_z + PECK_CLEARANCE_MM;
+        tp.rapid_to(P3::new(entry.x, entry.y, retract_z));
+        current_z = retract_z;
+    }
+    tp.feed_to(*entry, params.plunge_rate);
+}
+
 pub(super) enum Adaptive3dSegment {
     /// 3D cutting path with variable Z
     Cut(Vec<P3>),
-    /// Retract to safe_z, rapid XY, plunge to entry
+    /// Retract to safe_z, rapid XY, peck-plunge from safe_z to entry.
     Rapid(P3),
+    /// Retract to safe_z, rapid XY, **rapid Z-descent through cleared
+    /// air down to `rapid_floor_z`**, then peck-plunge from there to
+    /// entry. Used when the clearing function knows the previous Z
+    /// level already cleared above this XY — turning what would be a
+    /// long peck-feed through cleared air into a fast rapid descent
+    /// followed by a short peck through the remaining fresh material.
+    /// Falls back to plain `Rapid` semantics when `rapid_floor_z >=
+    /// safe_z` (no air gap to skip).
+    RapidWithFloor {
+        entry: P3,
+        rapid_floor_z: f64,
+    },
     /// Feed directly at cutting depth (no retract)
     Link(P3),
     /// Structured runtime marker at the current point in the toolpath
@@ -161,6 +201,40 @@ pub(super) fn adaptive_3d_segments(
     }
     if let Some(scope) = border_scope.as_ref() {
         scope.set_counter("cells", border_cleared as f64);
+    }
+
+    // Boundary clip on the internal stock. When a 2D boundary polygon is
+    // provided (e.g. the model silhouette inset by tool_radius), clear
+    // cells whose center is outside the boundary. This forces the bool-grid
+    // polygon at every z-level to respect the boundary, so cuts emitted by
+    // AgentSearch and ContourParallel/Adaptive stay inside it. Without this,
+    // toolpath generation produces cuts across the full stock, the
+    // post-generation toolpath clip then converts outside-boundary cuts to
+    // rapids, and the dexel for those cells is left unstamped — deeper
+    // z-levels then bite through fresh stock with full-depth axial DOC.
+    // See planning/AGENTSEARCH_INVESTIGATION_LOG.md O5b for repro details.
+    if let Some(ref boundary) = params.boundary {
+        let mut boundary_cleared = 0u32;
+        for row in 0..material_stock.z_grid.rows {
+            if row % 16 == 0 {
+                check_cancel(cancel)?;
+            }
+            for col in 0..material_stock.z_grid.cols {
+                let (x, y) = material_stock.z_grid.cell_to_world(row, col);
+                if !boundary.contains_point(&crate::geo::P2::new(x, y)) {
+                    let i = row * material_stock.z_grid.cols + col;
+                    let clear_z = surface_hm.z_values[i] as f32;
+                    ray_subtract_above(material_stock.z_grid.ray_mut(row, col), clear_z);
+                    boundary_cleared += 1;
+                }
+            }
+        }
+        if boundary_cleared > 0 {
+            debug!(
+                cells = boundary_cleared,
+                "Cleared cells outside boundary polygon"
+            );
+        }
     }
 
     // Compute Z levels: stock_top down to surface bottom + stock_to_leave
@@ -555,30 +629,66 @@ pub(super) fn segments_to_toolpath(
                 EntryStyle3d::Plunge => {
                     lift_to_safe_z(&mut tp, params.safe_z);
                     tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
-                    // Peck the descent so a single plunge never bites more
-                    // than `depth_per_pass` of fresh material. Without this,
-                    // entries chosen at fresh-stock XYs on deep Z levels
-                    // carve a column from safe_z down through full stock
-                    // thickness in one shot ("punched hole" symptom).
-                    // Each peck steps down by depth_per_pass and retracts
-                    // a small clearance between pecks for chip break.
-                    const PECK_CLEARANCE_MM: f64 = 0.5;
-                    let dpp = params.depth_per_pass.max(0.1);
-                    let mut current_z = params.safe_z;
-                    while current_z - entry.z > dpp + 1e-6 {
-                        let next_z = current_z - dpp;
-                        tp.feed_to(
-                            P3::new(entry.x, entry.y, next_z),
-                            params.plunge_rate,
-                        );
-                        // Retract slightly for chip break before next peck.
-                        let retract_z = next_z + PECK_CLEARANCE_MM;
-                        tp.rapid_to(P3::new(entry.x, entry.y, retract_z));
-                        current_z = retract_z;
-                    }
-                    // Final feed to entry depth.
-                    tp.feed_to(*entry, params.plunge_rate);
+                    emit_peck_plunge(&mut tp, entry, params.safe_z, params);
                 }
+                EntryStyle3d::Helix { radius, pitch } => {
+                    lift_to_safe_z(&mut tp, params.safe_z);
+                    tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                    let helix_start = P3::new(entry.x, entry.y, params.safe_z);
+                    crate::dressup::emit_helix(
+                        &mut tp,
+                        &helix_start,
+                        entry,
+                        radius,
+                        pitch,
+                        params.plunge_rate,
+                    );
+                }
+                EntryStyle3d::Ramp { max_angle_deg } => {
+                    lift_to_safe_z(&mut tp, params.safe_z);
+                    tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                    let ramp_start = P3::new(entry.x, entry.y, params.safe_z);
+                    crate::dressup::emit_ramp(
+                        &mut tp,
+                        &ramp_start,
+                        entry,
+                        (1.0, 0.0),
+                        max_angle_deg,
+                        params.plunge_rate,
+                    );
+                }
+            },
+            Adaptive3dSegment::RapidWithFloor {
+                entry,
+                rapid_floor_z,
+            } => match params.entry_style {
+                EntryStyle3d::Plunge => {
+                    // Skip the peck-feed through cleared air. The clearing
+                    // function sampled stock_top at this XY and tells us
+                    // there's nothing solid down to `rapid_floor_z` —
+                    // rapid through it, then peck only the remaining
+                    // fresh-material descent.
+                    //
+                    // Buffer above the sampled stock_top in case the dexel
+                    // sample under-reports by a fraction of a cell height
+                    // (sub-mm safety margin keeps the plunge from biting
+                    // material at rapid speed if the sample was slightly
+                    // off).
+                    const RAPID_DESCENT_BUFFER_MM: f64 = 0.5;
+                    lift_to_safe_z(&mut tp, params.safe_z);
+                    tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                    let descent_floor =
+                        (*rapid_floor_z + RAPID_DESCENT_BUFFER_MM)
+                            .min(params.safe_z)
+                            .max(entry.z);
+                    if descent_floor < params.safe_z - 1e-6 {
+                        tp.rapid_to(P3::new(entry.x, entry.y, descent_floor));
+                    }
+                    emit_peck_plunge(&mut tp, entry, descent_floor, params);
+                }
+                // Helix and Ramp entries already self-pace their descent;
+                // the rapid-floor optimisation doesn't apply (the helix /
+                // ramp's whole point is to descend at a controlled rate).
                 EntryStyle3d::Helix { radius, pitch } => {
                     lift_to_safe_z(&mut tp, params.safe_z);
                     tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
@@ -668,6 +778,7 @@ mod tests {
             max_stay_down_dist: None,
             region_ordering: RegionOrdering::Global,
             initial_stock: None,
+            boundary: None,
             clearing_strategy: ClearingStrategy3d::ContourParallel,
             z_blend: false,
         }
