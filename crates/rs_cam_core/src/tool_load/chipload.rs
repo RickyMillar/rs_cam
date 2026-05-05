@@ -8,8 +8,13 @@
 //! for the flute geometry to clear and the tooth breaks.
 //!
 //! This criterion samples the live simulation: each sample's
-//! `chipload_mm_per_tooth` is checked against the LUT bounds. The peak
-//! deviation drives the verdict.
+//! `effective_chip_thickness_mm` (the per-sample chip thickness exposed
+//! by `dexel_stock::effective_chip_thickness_mm`, calibrated as the
+//! arc-AVERAGE chip thickness across the engagement arc) is checked
+//! against the LUT bounds. The peak deviation drives the verdict.
+//! Both sides of the comparison must use the arc-average convention;
+//! exposing peak instantaneous chip thickness overstates by ~2.6× at
+//! half immersion and trips the breakage-risk gate on healthy cuts.
 //!
 //! **Steady-state filter (Item C).** Vendor LUT bounds are calibrated
 //! against steady-state cutting at the operation's commanded feed.
@@ -257,114 +262,6 @@ pub fn evaluate(
         peak: peak_in_range,
         confidence: Confidence::Validated,
     }
-}
-
-/// Minimum number of steady-state samples on each side of the LUT
-/// chipload band before we declare a trace bipolar. Below this
-/// threshold one or two noisy samples on the "wrong" tail would
-/// mis-trigger; above it the variance is real engagement spread, not
-/// sim noise. Calibrated by hand on wanaka traces.
-const BIPOLAR_MIN_SAMPLES_PER_SIDE: usize = 3;
-
-/// Detect the bipolar engagement condition: ≥3 steady-state samples
-/// fall **below** the LUT row's `cl_min` AND ≥3 fall **above** `cl_max`
-/// in the same toolpath. No single nominal `(feed, RPM)` can land all
-/// of them inside the band — it's a generator-level engagement-
-/// variance problem, not a feeds problem.
-///
-/// Returns `false` (not bipolar) for traces that don't have a matched
-/// LUT row, lack steady-state samples, or are missing one of the
-/// chipload bounds. The optimizer's pre-check (decision flow node F0)
-/// uses this to short-circuit Stage 0 with a typed `BipolarEngagement`
-/// refusal — letting Stage 0 run on a bipolar baseline produces a
-/// candidate that fixes one tail and breaks the other.
-///
-/// Mirrors `evaluate`'s steady-state filter and LUT lookup, but
-/// returns counts rather than picking one peak. Could be folded into
-/// `evaluate` later to share the iteration; kept separate for now to
-/// keep the gate's verdict signature unchanged.
-pub fn detect_bipolar(
-    toolpath_id: usize,
-    tool: &ToolDefinition,
-    material: &Material,
-    sim_trace: Option<&SimulationCutTrace>,
-    operation_family: LutOperationFamily,
-    pass_role: LutPassRole,
-    operation_feed_rate_mm_min: f64,
-    operation_kind: OperationType,
-) -> bool {
-    let Some(trace) = sim_trace else {
-        return false;
-    };
-    let feed_threshold = STEADY_STATE_FEED_FRACTION * operation_feed_rate_mm_min;
-    let steady_samples: Vec<&crate::simulation_cut::SimulationCutSample> = trace
-        .samples
-        .iter()
-        .filter(|s| {
-            s.toolpath_id == toolpath_id
-                && s.is_cutting
-                && s.radial_engagement >= 0.02
-                && s.feed_rate_mm_min >= feed_threshold
-        })
-        .collect();
-    if steady_samples.is_empty() {
-        return false;
-    }
-
-    let lookup_axial_doc_mm = steady_samples
-        .iter()
-        .map(|s| s.axial_doc_mm.max(0.0))
-        .fold(0.0_f64, f64::max);
-    let lut = embedded_lut();
-    let geometry_hint = tool.to_geometry_hint();
-    let tool_family = tool_family_for(geometry_hint);
-    let Some((op_family, role)) =
-        routed_lookup_family(operation_kind, tool_family, operation_family, pass_role)
-    else {
-        return false;
-    };
-    let (material_family, hardness_kind, hardness_value) = material_to_lut(material);
-    let query = LookupQuery {
-        tool_family,
-        tool_subfamily: None,
-        diameter_mm: tool.lookup_diameter_at(lookup_axial_doc_mm),
-        flute_count: tool.flute_count,
-        material_family,
-        hardness_kind: Some(hardness_kind),
-        hardness_value: Some(hardness_value),
-        operation_family: op_family,
-        pass_role: role,
-    };
-    let Some(row) = find_best_row(lut, &query) else {
-        return false;
-    };
-    // Bipolar requires both bounds — without `cl_min` we can't define
-    // "below the floor" and the case is moot.
-    let (Some(cl_min), Some(cl_max)) = (row.chip_load_min_mm, row.chip_load_max_mm) else {
-        return false;
-    };
-    if cl_min <= 0.0 || cl_max <= cl_min {
-        return false;
-    }
-
-    let mut count_below = 0_usize;
-    let mut count_above = 0_usize;
-    for s in &steady_samples {
-        let Some(cl) = s.effective_chip_thickness_mm else {
-            continue;
-        };
-        if cl < cl_min {
-            count_below += 1;
-        } else if cl > cl_max {
-            count_above += 1;
-        }
-        if count_below >= BIPOLAR_MIN_SAMPLES_PER_SIDE
-            && count_above >= BIPOLAR_MIN_SAMPLES_PER_SIDE
-        {
-            return true;
-        }
-    }
-    false
 }
 
 /// Map a cutter geometry hint to a vendor-LUT tool family. Mirrors
@@ -945,117 +842,6 @@ mod tests {
             Verdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired
             }
-        ));
-    }
-
-    /// Helper: build a trace with `n_below` samples below cl_min,
-    /// `n_above` samples above cl_max, and `n_within` in the safe
-    /// band — chiploads chosen to be safely outside any reasonable
-    /// hardwood adaptive LUT row.
-    fn bipolar_trace(n_below: usize, n_above: usize, n_within: usize) -> SimulationCutTrace {
-        let mut samples = Vec::new();
-        let mut idx = 0;
-        for _ in 0..n_below {
-            samples.push(sample(0, idx, 0.005, 0.5)); // far below any cl_min
-            idx += 1;
-        }
-        for _ in 0..n_above {
-            samples.push(sample(0, idx, 0.5, 0.5)); // far above any cl_max
-            idx += 1;
-        }
-        for _ in 0..n_within {
-            samples.push(sample(0, idx, 0.05, 0.5)); // in-band for hardwood adaptive
-            idx += 1;
-        }
-        trace(samples)
-    }
-
-    #[test]
-    fn detect_bipolar_true_when_both_tails_have_three_plus_samples() {
-        let t = bipolar_trace(3, 3, 0);
-        assert!(detect_bipolar(
-            0,
-            &tool(),
-            &Material::SolidWood {
-                species: WoodSpecies::HardMaple,
-            },
-            Some(&t),
-            LutOperationFamily::Adaptive,
-            LutPassRole::Roughing,
-            1000.0,
-            OperationType::Adaptive,
-        ));
-    }
-
-    #[test]
-    fn detect_bipolar_false_when_only_one_tail() {
-        // 5 samples below cl_min, 0 above → not bipolar (just burn).
-        let t = bipolar_trace(5, 0, 0);
-        assert!(!detect_bipolar(
-            0,
-            &tool(),
-            &Material::SolidWood {
-                species: WoodSpecies::HardMaple,
-            },
-            Some(&t),
-            LutOperationFamily::Adaptive,
-            LutPassRole::Roughing,
-            1000.0,
-            OperationType::Adaptive,
-        ));
-    }
-
-    #[test]
-    fn detect_bipolar_false_when_below_threshold() {
-        // 2 samples below + 2 above + 5 within → variance present
-        // but below the 3-per-side threshold. Treated as sim noise.
-        let t = bipolar_trace(2, 2, 5);
-        assert!(!detect_bipolar(
-            0,
-            &tool(),
-            &Material::SolidWood {
-                species: WoodSpecies::HardMaple,
-            },
-            Some(&t),
-            LutOperationFamily::Adaptive,
-            LutPassRole::Roughing,
-            1000.0,
-            OperationType::Adaptive,
-        ));
-    }
-
-    #[test]
-    fn detect_bipolar_false_when_no_trace() {
-        assert!(!detect_bipolar(
-            0,
-            &tool(),
-            &Material::SolidWood {
-                species: WoodSpecies::HardMaple,
-            },
-            None,
-            LutOperationFamily::Adaptive,
-            LutPassRole::Roughing,
-            1000.0,
-            OperationType::Adaptive,
-        ));
-    }
-
-    #[test]
-    fn detect_bipolar_false_when_no_lut_match() {
-        // V-bit project_curve has no matching LUT row → not bipolar
-        // (we don't know what the bounds are).
-        let t = bipolar_trace(5, 5, 0);
-        assert!(!detect_bipolar(
-            0,
-            &vbit_tool(),
-            &Material::SolidWood {
-                species: WoodSpecies::HardMaple,
-            },
-            Some(&t),
-            LutOperationFamily::Trace,
-            LutPassRole::Finish,
-            1000.0,
-            OperationType::ProjectCurve,
         ));
     }
 }

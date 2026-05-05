@@ -444,7 +444,7 @@ impl TriDexelStock {
     ) -> (f64, f64, Option<f64>, f64) {
         let (su, sv, sd) = direction.decompose(seg_start.x, seg_start.y, seg_start.z);
         let (eu, ev, ed) = direction.decompose(seg_end.x, seg_end.y, seg_end.z);
-        let (mu, mv, md) = direction.decompose(midpoint.x, midpoint.y, midpoint.z);
+        let (mu, mv, _md) = direction.decompose(midpoint.x, midpoint.y, midpoint.z);
         let from_high = direction.cuts_from_high_side();
         let grid = self.ensure_grid(direction);
         stamp_segment_with_metrics(
@@ -455,14 +455,25 @@ impl TriDexelStock {
             (eu, ev, ed),
             mu,
             mv,
-            md,
             from_high,
             capture_arc_engagement,
         )
     }
 }
 
-fn effective_chip_thickness_mm(
+/// Per-sample chip thickness exposed to the chipload gate as
+/// `SimulationCutSample::effective_chip_thickness_mm`. The gate
+/// compares this value against the vendor LUT's `chip_load_max_mm`.
+///
+/// Convention: AVERAGE chip thickness across the engagement arc
+/// (`geometry.mean_chip_thickness_mm`). Vendor LUT chip-load bounds
+/// are authored against the average chip a flute sees over its
+/// engagement arc, not the peak instantaneous value at the most
+/// favorable angle. Returning the peak (`geometry.max_chip_thickness_mm`)
+/// overstates by ~2.6× at half immersion (`arc = π/2`) and trips the
+/// breakage-risk gate on otherwise-healthy cuts. See
+/// `tests/chipload_formula_calibration.rs`.
+pub fn effective_chip_thickness_mm(
     cutter: &dyn MillingCutter,
     axial_doc_mm: f64,
     arc_engagement_radians: Option<f64>,
@@ -479,7 +490,7 @@ fn effective_chip_thickness_mm(
             EngagementMode::Slot,
         )
         .ok()
-        .map(|geometry| geometry.max_chip_thickness_mm)
+        .map(|geometry| geometry.mean_chip_thickness_mm)
 }
 
 fn classify_cut_kinematics(start: P3, end: P3, is_arc: bool) -> CutKinematics {

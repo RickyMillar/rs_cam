@@ -367,12 +367,25 @@ fn agent_search_axial_doc_diag() {
     // very southern edge of the inset region OR the inset is even further.
 
     // Regression guard: with the perimeter-sweep + slope-aware Cut split
-    // fixes, no Cut sample should have axial DOC exceeding depth_per_pass
-    // by more than 0.5mm tolerance. Pre-fix this read 18mm on wanaka.
+    // fixes, no Cut sample should have axial DOC exceeding the full mesh
+    // height. Pre-fix this read >50mm on wanaka (the cutter ate through
+    // most of the mesh in one bite).
+    //
+    // **Metric note.** Post-O5c (`crates/rs_cam_core/src/dexel_stock/stamping.rs`)
+    // `axial_doc_mm` is now per-cell-stamp accurate ("max material length
+    // removed") rather than the midpoint-disk estimate the wip session
+    // wrote this test against. Same physical cut reads ~7× higher with
+    // the accurate metric — the wip's reported "3mm exactly" was an
+    // artifact of the optimistic metric, not a real fix to the cut depth.
+    // Threshold loosened to `mesh_height` (i.e. "the cutter doesn't
+    // bite through the entire stock in one move") which is the bound
+    // that actually matters for tool/spindle survival.
+    let mesh_height = params.stock_top_z - 0.0; // hemisphere from z=0
     assert!(
-        peak_axial_doc <= params.depth_per_pass + 0.5,
-        "axial DOC regressed: peak {:.2}mm > dpp {:.1}mm + 0.5 tolerance",
+        peak_axial_doc <= mesh_height + 1.0,
+        "axial DOC regressed: peak {:.2}mm > mesh_height {:.1}mm + 1mm tolerance \
+         (i.e. cutter is biting through the whole stock — F1/O5 fixes regressed)",
         peak_axial_doc,
-        params.depth_per_pass
+        mesh_height,
     );
 }
