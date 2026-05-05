@@ -106,6 +106,7 @@ pub fn execute_operation(
         debug_ctx,
         cancel,
         initial_stock,
+        None,
     )
     .map(|at| at.toolpath)
 }
@@ -130,6 +131,15 @@ pub fn execute_operation_annotated(
     debug_ctx: Option<&ToolpathDebugContext>,
     cancel: &AtomicBool,
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    // `boundary`: effective machining boundary polygon (model silhouette inset
+    // by tool_radius for containment=Inside). When provided, AgentSearch /
+    // ContourParallel / Adaptive pre-clear cells outside this boundary in
+    // their internal stock so the bool-grid polygon at every z-level reflects
+    // the boundary. Without this, generation produces cuts across the full
+    // stock that the post-generation toolpath clip then converts to rapids —
+    // leaving stock unstamped and deeper z-levels biting through fresh
+    // material with full-depth axial DOC.
+    boundary: Option<&Polygon2>,
 ) -> Result<AnnotatedToolpath, OperationError> {
     let tool_radius = tool_def.radius();
     let safe_z = heights.retract_z;
@@ -705,6 +715,7 @@ pub fn execute_operation_annotated(
                 safe_z,
                 clearing_strategy,
                 z_blend: cfg.z_blend,
+                boundary: boundary.cloned(),
             };
             let (tp, annotations) =
                 crate::adaptive3d::adaptive_3d_toolpath_structured_annotated_traced_with_cancel(

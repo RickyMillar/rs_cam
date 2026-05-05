@@ -338,7 +338,8 @@ fn draw_row(
                 egui::RichText::new(format!("{}{}", truncate(explanation, 70), suffix))
                     .small()
                     .color(theme::WARNING),
-            );
+            )
+            .on_hover_text(explanation.as_str());
             ui.label("");
         }
         OptimizeOutcome::Skipped { reason } => {

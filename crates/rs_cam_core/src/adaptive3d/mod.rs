@@ -122,6 +122,16 @@ pub struct Adaptive3dParams {
     /// progressively descend toward the surface. Best for terrain/relief.
     /// When false (default), all contours cut at z_level. Best for pockets.
     pub z_blend: bool,
+    /// Optional 2D boundary polygon (e.g. model silhouette) the cutter
+    /// center must stay inside. Cells outside this boundary are pre-cleared
+    /// in the internal material stock so the bool-grid polygon at every
+    /// z-level reflects the boundary, not just the stock bbox. Without this,
+    /// AgentSearch's polygon at top z-levels covers the full stock; the
+    /// downstream toolpath clip then converts the outside-boundary cuts to
+    /// rapids, leaving stock unstamped, and deeper z-levels then bite
+    /// through fresh stock with full-depth axial DOC. See investigation
+    /// log O5b for the wanaka repro.
+    pub boundary: Option<crate::polygon::Polygon2>,
 }
 
 // SurfaceHeightmap is now in crate::slope (shared across finishing strategies)
@@ -486,6 +496,7 @@ mod tests {
             // or Adaptive override this field explicitly.
             clearing_strategy: ClearingStrategy3d::ContourParallel,
             z_blend: false,
+            boundary: None,
         }
     }
 
@@ -656,6 +667,95 @@ mod tests {
             min_z < 15.0,
             "Should cut down to lower Z levels, min feed Z = {:.1}",
             min_z
+        );
+    }
+
+    /// DIAGNOSTIC: dump per-Cut-segment Z statistics for AgentSearch on a
+    /// hemisphere. Used to verify that the Z-drop split fix in
+    /// `clear_z_level_agent_2d_slice` is working — and to detect cases
+    /// the threshold misses (e.g., cumulative descent across many small
+    /// dz steps).
+    ///
+    /// Prints to stdout via `println!` (test-mode only; not subject to
+    /// the production-code `print_stdout` lint). Run with:
+    ///   cargo test -p rs_cam_core --lib agent_search_z_drop_diag -- --nocapture
+    #[test]
+    fn agent_search_z_drop_diag() {
+        let (mesh, si) = make_hemisphere_mesh();
+        let cutter = flat_cutter();
+        let params = Adaptive3dParams {
+            stock_top_z: 25.0,
+            depth_per_pass: 3.0,
+            stock_to_leave: 0.5,
+            tolerance: 0.5,
+            stepover: 1.0,
+            clearing_strategy: ClearingStrategy3d::AgentSearch,
+            ..default_params()
+        };
+
+        let never_cancel = || false;
+        let segments = adaptive_3d_segments(&mesh, &si, &cutter, &params, None, &never_cancel)
+            .expect("segments");
+
+        let mut max_per_step_dz = 0.0f64;
+        let mut max_path_total_descent = 0.0f64;
+        let mut paths_with_descent_gt_dpp = 0usize;
+        let mut total_cut_paths = 0usize;
+        let mut largest_path_len = 0usize;
+        let mut largest_path_descent_summary = String::new();
+
+        for seg in &segments {
+            if let Adaptive3dSegment::Cut(path) = seg {
+                if path.len() < 2 {
+                    continue;
+                }
+                total_cut_paths += 1;
+                let mut path_max_dz = 0.0f64;
+                let mut path_total_descent = 0.0f64;
+                let mut path_max_contig_descent = 0.0f64;
+                let mut current_descent = 0.0f64;
+                for w in path.windows(2) {
+                    let dz = w[1].z - w[0].z;
+                    path_max_dz = path_max_dz.max(dz.abs());
+                    if dz < 0.0 {
+                        path_total_descent += -dz;
+                        current_descent += -dz;
+                        path_max_contig_descent = path_max_contig_descent.max(current_descent);
+                    } else {
+                        current_descent = 0.0;
+                    }
+                }
+                max_per_step_dz = max_per_step_dz.max(path_max_dz);
+                if path_total_descent > max_path_total_descent {
+                    max_path_total_descent = path_total_descent;
+                    largest_path_len = path.len();
+                    largest_path_descent_summary = format!(
+                        "len={} max_step_dz={:.3} total_descent={:.3} max_contig={:.3}",
+                        path.len(),
+                        path_max_dz,
+                        path_total_descent,
+                        path_max_contig_descent
+                    );
+                }
+                if path_total_descent > params.depth_per_pass {
+                    paths_with_descent_gt_dpp += 1;
+                }
+            }
+        }
+
+        println!("\n=== AgentSearch Z-drop diagnostics (hemisphere) ===");
+        println!("total Cut paths: {}", total_cut_paths);
+        println!("max per-step |dz|: {:.3} mm", max_per_step_dz);
+        println!("max path total descent: {:.3} mm (over {} pts)", max_path_total_descent, largest_path_len);
+        println!("paths with total descent > depth_per_pass ({:.1}): {}", params.depth_per_pass, paths_with_descent_gt_dpp);
+        println!("worst path: {}", largest_path_descent_summary);
+
+        // The split fix should keep per-step |dz| under depth_per_pass × 1.1.
+        let threshold = params.depth_per_pass * 1.1;
+        assert!(
+            max_per_step_dz <= threshold + 0.01,
+            "split fix failed: max per-step |dz| = {:.3} mm exceeds threshold {:.3} mm",
+            max_per_step_dz, threshold
         );
     }
 

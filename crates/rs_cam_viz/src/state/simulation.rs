@@ -426,19 +426,38 @@ impl SimulationState {
         true
     }
 
-    /// Find which toolpath boundary contains the current move.
+    /// Find which toolpath boundary contains the current move. Boundaries
+    /// touch at a point (one's `end_move` equals the next's `start_move`),
+    /// so we scan in reverse and pick the **later** boundary on a tie. That
+    /// way, jumping to a boundary's `start_move` lands focus on that
+    /// boundary rather than the one that just ended.
     pub fn current_boundary(&self) -> Option<&ToolpathBoundary> {
         let current = self.playback.current_move;
         self.boundaries()
             .iter()
+            .rev()
             .find(|b| current >= b.start_move && current <= b.end_move)
     }
 
+    /// The toolpath in focus for graph filtering and viewport-marker
+    /// filtering. Tracks the playback position — focus follows whatever TP
+    /// is currently playing. Selection in the left panel jumps playback to
+    /// the chosen TP, which then becomes the focus via this getter; there's
+    /// no separate sticky pin.
+    pub fn focused_toolpath(&self) -> Option<ToolpathId> {
+        self.current_boundary().map(|b| b.id)
+    }
+
     pub fn current_boundary_index(&self) -> Option<usize> {
+        // Same tie-breaking as `current_boundary`: prefer the later boundary
+        // when `current_move` lands on a boundary point.
         let current = self.playback.current_move;
+        let count = self.boundaries().len();
         self.boundaries()
             .iter()
+            .rev()
             .position(|b| current >= b.start_move && current <= b.end_move)
+            .map(|rev_idx| count - 1 - rev_idx)
     }
 
     #[allow(clippy::indexing_slicing)] // boundary_index from position() is always in bounds
@@ -446,9 +465,17 @@ impl SimulationState {
         &self,
         move_idx: usize,
     ) -> Option<(usize, ToolpathId, usize)> {
-        let boundary_index = self.boundaries().iter().position(|boundary| {
-            move_idx >= boundary.start_move && move_idx <= boundary.end_move
-        })?;
+        // Same tie-breaking as `current_boundary`: at a boundary point
+        // (where one ends and the next begins) prefer the *later* boundary.
+        let count = self.boundaries().len();
+        let boundary_index = self
+            .boundaries()
+            .iter()
+            .rev()
+            .position(|boundary| {
+                move_idx >= boundary.start_move && move_idx <= boundary.end_move
+            })
+            .map(|rev_idx| count - 1 - rev_idx)?;
         let boundary = &self.boundaries()[boundary_index];
         let local_move = move_idx.saturating_sub(boundary.start_move);
         Some((boundary_index, boundary.id, local_move))

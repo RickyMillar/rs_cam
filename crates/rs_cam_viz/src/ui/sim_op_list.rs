@@ -22,6 +22,98 @@ pub fn draw(
     ui.heading("Verification");
     ui.separator();
 
+    // --- Setup & run ---
+    // Capture toggles + Run button live together: these are the "what
+    // should the next sim record?" controls. Display-only toggles (stock
+    // coloring, generator overlay) live in the right-panel View section.
+    let any_compute = session.toolpath_configs().iter().any(|tc| tc.enabled);
+    if any_compute {
+        let mut capture_trace_all = session
+            .toolpath_configs()
+            .iter()
+            .any(|tc| tc.debug_options.enabled);
+        ui.label(
+            egui::RichText::new("Setup & run")
+                .small()
+                .strong()
+                .color(theme::TEXT_HEADING),
+        );
+        ui.checkbox(
+            &mut sim.metric_options.enabled,
+            "Capture cutting metrics",
+        )
+        .on_hover_text(
+            "Records per-sample chipload, engagement, MRR during simulation. Required for the bottom-panel signal graphs to show data. Re-run simulation to apply.",
+        );
+        if ui
+            .checkbox(&mut capture_trace_all, "Record generator trace")
+            .on_hover_text(
+                "Captures the toolpath generator's step-by-step output, used to inspect how a toolpath was built. Re-generate the toolpaths to apply.",
+            )
+            .changed()
+        {
+            events.push(AppEvent::SetGeneratorTraceCaptureAll(capture_trace_all));
+        }
+        if sim.metric_options.enabled {
+            sim.metric_options.capture_arc_engagement = true;
+        }
+
+        // Resolution: defines how detailed the dexel grid records material
+        // removal. Belongs with the capture toggles since it's a recording
+        // setting, not a display setting.
+        ui.horizontal(|ui| {
+            ui.label("Resolution:");
+            if sim.auto_resolution {
+                ui.label(format!("{:.3} mm (auto)", sim.resolution));
+            } else {
+                ui.add(
+                    egui::Slider::new(&mut sim.resolution, 0.02..=1.0)
+                        .suffix(" mm")
+                        .logarithmic(true)
+                        .show_value(true),
+                );
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut sim.auto_resolution, "Auto from tool size");
+            if !sim.auto_resolution {
+                ui.label(
+                    egui::RichText::new("(re-run to apply)")
+                        .small()
+                        .color(theme::WARNING),
+                );
+            }
+        });
+        {
+            let sx = session.stock_config().x;
+            let sy = session.stock_config().y;
+            let res = sim.resolution;
+            if !sim.auto_resolution
+                && rs_cam_core::dexel::DexelGrid::would_exceed_grid(res, sx, sy).is_some()
+            {
+                ui.label(
+                    egui::RichText::new("Grid too large — resolution will be coarsened")
+                        .small()
+                        .color(theme::WARNING),
+                );
+            }
+        }
+
+        ui.add_space(4.0);
+        let run_label = if sim.boundaries().is_empty() {
+            "Run Simulation"
+        } else {
+            "Re-run Simulation"
+        };
+        let btn = egui::Button::new(egui::RichText::new(run_label).strong())
+            .min_size(egui::vec2(ui.available_width(), 28.0));
+        if ui.add(btn).clicked() {
+            events.push(AppEvent::RunSimulation);
+        }
+        ui.add_space(4.0);
+        ui.separator();
+    }
+
     // Empty state: no results yet
     if sim.boundaries().is_empty() {
         let has_computed = session.toolpath_configs().iter().any(|tc| {
@@ -47,15 +139,11 @@ pub fn draw(
                     ui.add_space(4.0);
                     ui.label(
                         egui::RichText::new(
-                            "Run simulation to verify toolpaths, check collisions, and review stock removal.",
+                            "Use Run Simulation above to verify toolpaths, check collisions, and review stock removal.",
                         )
                         .small()
                         .color(theme::TEXT_MUTED),
                     );
-                    ui.add_space(8.0);
-                    if ui.button("Run Simulation").clicked() {
-                        events.push(AppEvent::RunSimulation);
-                    }
                 } else {
                     ui.label(
                         egui::RichText::new("No toolpaths computed")
@@ -146,7 +234,7 @@ pub fn draw(
             );
             ui.add_space(2.0);
         }
-        let is_current = sim.current_boundary().map(|b| b.id) == Some(boundary.id);
+        let is_focused = sim.focused_toolpath() == Some(boundary.id);
         let pc = palette_color(i);
         let color = egui::Color32::from_rgb(
             (pc[0] * 255.0) as u8,
@@ -154,8 +242,9 @@ pub fn draw(
             (pc[2] * 255.0) as u8,
         );
 
-        // Frame current operation with accent border
-        let frame = if is_current {
+        // Frame the focused (currently-playing) operation with an accent
+        // border so the row visibly tracks playback.
+        let frame = if is_focused {
             egui::Frame::default()
                 .fill(theme::CARD_FILL_SELECTED)
                 .stroke(egui::Stroke::new(1.0, color))
@@ -165,7 +254,7 @@ pub fn draw(
             egui::Frame::default().inner_margin(4.0)
         };
 
-        frame.show(ui, |ui| {
+        let inner = frame.show(ui, |ui| {
             ui.horizontal(|ui| {
                 // Checkbox for including in simulation
                 let mut checked = all_selected || selected_set.contains(&boundary.id);
@@ -178,9 +267,10 @@ pub fn draw(
                     ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
                 ui.painter().rect_filled(swatch_rect, 2.0, color);
 
-                // Operation name (bold if current)
+                // Operation name — visual focus indicator only; the click
+                // target is the whole card (handled below the frame).
                 let name_text = egui::RichText::new(&boundary.name).small();
-                let name_text = if is_current {
+                let name_text = if is_focused {
                     name_text.strong()
                 } else {
                     name_text
@@ -210,30 +300,13 @@ pub fn draw(
                 );
             });
 
-            ui.horizontal(|ui| {
-                if ui
-                    .small_button("Jump start")
-                    .on_hover_text("Jump to op start")
-                    .clicked()
-                {
-                    events.push(AppEvent::SimJumpToOpStart(i));
-                }
-                if ui
-                    .small_button("Jump end")
-                    .on_hover_text("Jump to op end")
-                    .clicked()
-                {
-                    events.push(AppEvent::SimJumpToOpEnd(i));
-                }
-            });
-
             if sim.debug.enabled {
                 let has_semantic = gui
                     .toolpath_rt
                     .get(&boundary.id.0)
                     .and_then(|rt| rt.semantic_trace.as_ref())
                     .is_some();
-                if is_current && has_semantic {
+                if is_focused && has_semantic {
                     sim.debug.set_toolpath_expanded(boundary.id, true);
                 }
 
@@ -259,6 +332,20 @@ pub fn draw(
                 }
             }
         });
+
+        // Whole-card click → jump playback to this TP's start. Inner widgets
+        // (checkbox, visibility eyes, "Show semantics") consume their own
+        // clicks first; only clicks on empty card real-estate fall through
+        // here. We give the card a discrete `Id` so the response doesn't
+        // collide with neighbours.
+        let card_resp = ui
+            .interact(inner.response.rect, ui.id().with(("sim_card", boundary.id.0)), egui::Sense::click())
+            .on_hover_text(
+                "Click anywhere on this card to jump playback to the toolpath's start.",
+            );
+        if card_resp.clicked() {
+            events.push(AppEvent::SimJumpToOpStart(i));
+        }
 
         if i + 1 < boundaries.len() {
             ui.add_space(2.0);

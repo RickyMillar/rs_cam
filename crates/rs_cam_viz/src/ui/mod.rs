@@ -45,6 +45,9 @@ pub enum AppEvent {
     ExportSvgPreview,
     SaveJob,
     OpenJob,
+    /// Toggle generator-trace capture on every toolpath (sets
+    /// `debug_options.enabled` across the whole project).
+    SetGeneratorTraceCaptureAll(bool),
 
     // Selection / view
     Select(crate::state::selection::Selection),

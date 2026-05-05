@@ -130,10 +130,17 @@ impl RsCamApp {
                         .get(boundary_idx)
                         .map(|b| b.start_move)
                     {
+                        let previous = self.controller.state().simulation.playback.current_move;
                         let pb = &mut self.controller.state_mut().simulation.playback;
                         pb.playing = false;
                         pb.current_move = start;
-                        self.pending_checkpoint_load = true;
+                        // Only force a checkpoint reload when jumping backward;
+                        // forward jumps stream from current state (matches the
+                        // SimJumpToMove logic). This is what makes "click TP 0
+                        // (rough) from TP 6 (finish)" the slow path that spawned
+                        // the loading-overlay UX, while clicks down the list
+                        // stay fast.
+                        self.pending_checkpoint_load = pb.current_move < previous;
                     }
                 }
 

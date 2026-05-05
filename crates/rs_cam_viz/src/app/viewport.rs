@@ -364,6 +364,39 @@ impl RsCamApp {
         self.draw_orientation_gizmo(ui, rect);
 
         if workspace == Workspace::Simulation {
+            // Pending-checkpoint indicator: when a backward jump is in
+            // flight, the dexel mesh hasn't been rebuilt yet. Float a
+            // pill at the top centre showing an animated spinner alongside
+            // a "Loading next state…" label so the click is acknowledged
+            // even though the viewport contents haven't changed yet.
+            if self.pending_checkpoint_load {
+                egui::Area::new(egui::Id::new("sim_loading_pill"))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(egui::pos2(rect.center().x - 90.0, rect.min.y + 8.0))
+                    .show(ui.ctx(), |ui| {
+                        egui::Frame::default()
+                            .fill(egui::Color32::from_rgba_premultiplied(40, 50, 70, 220))
+                            .stroke(egui::Stroke::new(
+                                1.0,
+                                egui::Color32::from_rgb(110, 140, 200),
+                            ))
+                            .rounding(6.0)
+                            .inner_margin(egui::Margin::symmetric(10.0, 4.0))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.add(egui::Spinner::new().size(14.0));
+                                    ui.label(
+                                        egui::RichText::new("Loading next state…")
+                                            .color(egui::Color32::WHITE),
+                                    );
+                                });
+                            });
+                    });
+                // Force a redraw next frame so the spinner animates and so
+                // the overlay disappears promptly once the load completes.
+                ui.ctx().request_repaint();
+            }
+
             self.draw_simulation_hotspot_pins(ui, rect, aspect);
             let active_overlay = {
                 let state = self.controller.state_mut();
@@ -408,15 +441,30 @@ impl RsCamApp {
             else {
                 return;
             };
+            // Inspector focus filters viewport hotspot pins to the focused
+            // toolpath only. When `focused_toolpath()` is `None` (no sim, no
+            // boundary at playback), fall through and show all pins.
+            let focus = state.simulation.focused_toolpath();
             trace
                 .hotspots
                 .iter()
                 .enumerate()
                 .filter_map(|(hotspot_index, hotspot)| {
                     let toolpath_id = crate::state::toolpath::ToolpathId(hotspot.toolpath_id);
+                    if let Some(focus_id) = focus
+                        && toolpath_id != focus_id
+                    {
+                        return None;
+                    }
                     let global_move = state
                         .simulation
                         .global_move_for_local(toolpath_id, hotspot.move_start)?;
+                    let tp_name = state
+                        .simulation
+                        .boundaries()
+                        .iter()
+                        .find(|b| b.id == toolpath_id)
+                        .map_or_else(|| format!("TP {}", toolpath_id.0 + 1), |b| b.name.clone());
                     let screen = self.camera.project_to_screen(
                         [
                             hotspot.representative_position[0] as f32,
@@ -436,6 +484,7 @@ impl RsCamApp {
                         hotspot_index,
                         global_move,
                         hotspot.wasted_runtime_s,
+                        tp_name,
                     ))
                 })
                 .take(24)
@@ -443,7 +492,7 @@ impl RsCamApp {
         };
 
         let mut clicked: Option<(crate::state::toolpath::ToolpathId, usize, usize)> = None;
-        for (screen_pos, toolpath_id, hotspot_index, global_move, wasted_runtime_s) in pins {
+        for (screen_pos, toolpath_id, hotspot_index, global_move, wasted_runtime_s, tp_name) in pins {
             if !viewport_rect.contains(screen_pos) {
                 continue;
             }
@@ -466,7 +515,8 @@ impl RsCamApp {
                 egui::Stroke::new(1.0, egui::Color32::BLACK),
             );
             response.clone().on_hover_text(format!(
-                "Runtime hotspot #{}, wasted {:.2}s — click to inspect",
+                "{}: runtime hotspot #{}, wasted {:.2}s — click to inspect",
+                tp_name,
                 hotspot_index + 1,
                 wasted_runtime_s
             ));

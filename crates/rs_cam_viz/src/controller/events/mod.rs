@@ -203,6 +203,11 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::ApplyOptimizeProject => {
                 self.apply_optimize_project();
             }
+            AppEvent::SetGeneratorTraceCaptureAll(enabled) => {
+                for tc in self.state.session.toolpath_configs_mut() {
+                    tc.debug_options.enabled = enabled;
+                }
+            }
 
             // --- Pass-through events handled elsewhere ---
             AppEvent::ExportGcode
