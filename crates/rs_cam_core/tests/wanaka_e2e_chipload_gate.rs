@@ -108,6 +108,84 @@ fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
 
     println!("Back Rough chipload verdict: {:?}", back_rough_verdict.chipload);
 
+    // Diagnostic: peak axial DOC + air-cut/low-engagement breakdown
+    {
+        let cut_trace = session
+            .simulation_result()
+            .and_then(|s| s.cut_trace.as_ref())
+            .expect("cut trace");
+        let peak = cut_trace
+            .samples
+            .iter()
+            .filter(|s| s.toolpath_id == back_rough_id && s.is_cutting)
+            .map(|s| s.axial_doc_mm)
+            .fold(0.0_f64, f64::max);
+        let mut all: Vec<f64> = cut_trace
+            .samples
+            .iter()
+            .filter(|s| s.toolpath_id == back_rough_id && s.is_cutting)
+            .map(|s| s.axial_doc_mm)
+            .collect();
+        all.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let p_at = |q: f64| -> f64 {
+            let i = ((all.len() as f64) * q) as usize;
+            all.get(i.min(all.len() - 1)).copied().unwrap_or(0.0)
+        };
+        println!(
+            "  Back Rough axial DOC: peak={peak:.3} p99={:.3} p95={:.3} p50={:.3} \
+             (n_cutting_samples={})",
+            p_at(0.99), p_at(0.95), p_at(0.50), all.len()
+        );
+
+        // Find the peak-axial-DOC sample for context
+        if let Some(peak_sample) = cut_trace
+            .samples
+            .iter()
+            .filter(|s| s.toolpath_id == back_rough_id && s.is_cutting)
+            .max_by(|a, b| a.axial_doc_mm.partial_cmp(&b.axial_doc_mm).unwrap_or(std::cmp::Ordering::Equal))
+        {
+            println!(
+                "  peak-axial sample idx {}: kinematics={:?}, position=({:.2},{:.2},{:.2}), \
+                 axial_doc={:.3}, radial_eng={:.4}, arc={:?}, removed_vol={:.3}, mrr={:.2}",
+                peak_sample.sample_index,
+                peak_sample.cut_kinematics,
+                peak_sample.position[0], peak_sample.position[1], peak_sample.position[2],
+                peak_sample.axial_doc_mm,
+                peak_sample.radial_engagement,
+                peak_sample.arc_engagement_radians,
+                peak_sample.removed_volume_est_mm3,
+                peak_sample.mrr_mm3_s,
+            );
+        }
+
+        // Count air-cut and low-engagement samples
+        let mut air_cut = 0_usize;
+        let mut low_eng = 0_usize;
+        let mut full_eng = 0_usize;
+        for s in &cut_trace.samples {
+            if s.toolpath_id != back_rough_id || !s.is_cutting {
+                continue;
+            }
+            if s.radial_engagement < 0.02 {
+                air_cut += 1;
+            } else if s.radial_engagement < 0.10 {
+                low_eng += 1;
+            } else {
+                full_eng += 1;
+            }
+        }
+        let total = air_cut + low_eng + full_eng;
+        if total > 0 {
+            println!(
+                "  Sample breakdown: air-cut(<2% radial)={air_cut} ({:.1}%), \
+                 low-eng(2-10%)={low_eng} ({:.1}%), normal(>10%)={full_eng} ({:.1}%)",
+                100.0 * air_cut as f64 / total as f64,
+                100.0 * low_eng as f64 / total as f64,
+                100.0 * full_eng as f64 / total as f64,
+            );
+        }
+    }
+
     // Diagnostic: dump the sample at the verdict's `sample_range` start
     // so we can see whether a Burn/Breakage flag came from a real
     // overload or from a near-air edge sample.
