@@ -36,7 +36,7 @@ use crate::tool::MillingCutter;
 use crate::simulation_cut::SimulationCutTrace;
 
 use super::RefuseReason;
-use super::verdict::{ExceedsReason, ToolpathLoadVerdict, Verdict};
+use super::verdict::{ToolpathLoadVerdict, Verdict};
 use super::{ToolpathLoadContext, evaluate_toolpath};
 
 /// Which search stage produced a candidate. The reported `cycle_time_s`
@@ -185,135 +185,6 @@ pub(crate) fn candidate_is_safe(candidate: &OptimizeCandidate) -> bool {
         && !matches!(candidate.verdict.deflection, Verdict::Exceeds { .. })
 }
 
-/// Which gate dominated all unsafe candidates in a NoSafeImprovement
-/// outcome. Drives the prescription string in the explanation.
-///
-/// Used internally by [`build_outcome`] to turn "every candidate hit a
-/// gate" into a specific recommendation. Not surfaced as a public type
-/// to keep the `OptimizeOutcome` shape stable — the explanation string
-/// is the public contract.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DominantGate {
-    ChiploadBreakage,
-    ChiploadBurn,
-    Power,
-    Deflection,
-    /// Mixed gate failures across candidates — no single fix.
-    Mixed,
-}
-
-impl DominantGate {
-    /// Single-line prescription. Action-first.
-    fn prescription(self) -> &'static str {
-        match self {
-            Self::ChiploadBreakage => {
-                "every candidate exceeded the chipload gate (above LUT cap). \
-                 Chipload = feed ÷ (rpm × flutes), invariant to DOC and stepover, \
-                 so Stage 1 can't fix it — reduce feed or raise RPM"
-            }
-            Self::ChiploadBurn => {
-                "every candidate ran below the chipload floor (rubbing risk). \
-                 Increase feed or reduce RPM"
-            }
-            Self::Power => {
-                "every candidate exceeded the spindle power cap. \
-                 Reduce DOC, stepover, or feed; or use a stiffer machine"
-            }
-            Self::Deflection => {
-                "every candidate exceeded the safe deflection ratio. \
-                 Reduce stickout or use a shorter / larger-diameter tool"
-            }
-            Self::Mixed => {
-                "candidates hit different gate limits — no single knob change \
-                 fixes all of them; manual tuning required"
-            }
-        }
-    }
-}
-
-/// Op-aware prescription string for `BipolarEngagement` refusals
-/// (decision flow node F0). Branches on `OperationType` so the lever
-/// the user is told to turn is one they actually have.
-///
-/// Two arms:
-/// - **Adaptive-family** (ops with both `depth_per_pass` and `stepover`
-///   knobs — same set as [`has_doc_knob`]): the user can change
-///   stepover, stock-to-leave, or smooth the input geometry to flatten
-///   engagement variance.
-/// - **Geometry-fixed** (everything else — finishing strategies, drill,
-///   trace, project_curve, etc.): engagement is set by the cutter and
-///   the geometry, not by a knob. The honest advice is to switch op
-///   type or accept the warning.
-///
-/// Keep in sync with [`has_doc_knob`] — they partition the same set of
-/// `OperationType` variants. (The principle "ops with the levers that
-/// change engagement" is the same set as "ops where Stage 1's DOC ×
-/// stepover sweep is meaningful".)
-pub(crate) fn prescription_for_bipolar(op_kind: OperationType) -> &'static str {
-    if has_doc_knob(op_kind) {
-        "engagement varies too widely for a single feed/RPM to fit \
-         the chipload band. Reduce variance via stepover, \
-         stock-to-leave, or smoothing the input geometry"
-    } else {
-        "engagement is determined by geometry for this op type and \
-         exceeds what the LUT can model with a single feed/RPM. \
-         Switch to adaptive3d for variable-engagement geometry, or \
-         accept the gate warning"
-    }
-}
-
-/// Inspect candidates' verdicts and return which gate dominated.
-/// `None` when `candidates` is empty or any candidate is safe (the
-/// caller should then build a "Ranked" or "all-slower" outcome rather
-/// than an "all-unsafe" one).
-///
-/// Dominance threshold is 80% — if 4 of 5 candidates exceed the same
-/// gate, that gate is the prescription target. Otherwise we report
-/// `Mixed` so the user knows there's no single fix.
-fn dominant_gate(candidates: &[OptimizeCandidate]) -> Option<DominantGate> {
-    if candidates.is_empty() {
-        return None;
-    }
-    let mut chipload_breakage = 0_usize;
-    let mut chipload_burn = 0_usize;
-    let mut power = 0_usize;
-    let mut deflection = 0_usize;
-    for c in candidates {
-        // Priority order matches `evaluate_toolpath`'s default surfacing:
-        // chipload first (catastrophic), then power, then deflection.
-        // A candidate may exceed multiple gates; we credit the first.
-        if let Verdict::Exceeds { reason, .. } = &c.verdict.chipload {
-            match reason {
-                ExceedsReason::ChiploadBreakageRisk => chipload_breakage += 1,
-                ExceedsReason::ChiploadBurnRisk => chipload_burn += 1,
-                _ => {}
-            }
-        } else if matches!(c.verdict.power, Verdict::Exceeds { .. }) {
-            power += 1;
-        } else if matches!(c.verdict.deflection, Verdict::Exceeds { .. }) {
-            deflection += 1;
-        }
-    }
-    let total = chipload_breakage + chipload_burn + power + deflection;
-    if total == 0 {
-        return None;
-    }
-    // 80% dominance: 4 of 5 candidates voting the same gate means
-    // that's the target. Below that, report Mixed.
-    let threshold = (total * 4).div_ceil(5);
-    if chipload_breakage >= threshold {
-        Some(DominantGate::ChiploadBreakage)
-    } else if chipload_burn >= threshold {
-        Some(DominantGate::ChiploadBurn)
-    } else if power >= threshold {
-        Some(DominantGate::Power)
-    } else if deflection >= threshold {
-        Some(DominantGate::Deflection)
-    } else {
-        Some(DominantGate::Mixed)
-    }
-}
-
 /// Project-level rollup over every enabled toolpath. Surfaced by U3's
 /// Optimize-project view.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -456,34 +327,6 @@ pub fn optimize_toolpath(
     //    and Stage 1's DOC-grid endpoint clamping.
     let matched_lut_row = find_matched_lut_row(&ctx.tool, &ctx.material, &ctx);
 
-    // 5a. F0 — bipolar engagement pre-check. If the trace has ≥3
-    //     samples below `cl_min` AND ≥3 above `cl_max`, no single
-    //     nominal `(feed, RPM)` lands the whole engagement
-    //     distribution inside the LUT band. Refuse upfront with a
-    //     typed prescription rather than burn a sim on a candidate
-    //     that fixes one tail and breaks the other. See
-    //     `planning/OPTIMIZER_LOGIC.md` node F0.
-    if super::chipload::detect_bipolar(
-        ctx.toolpath_id,
-        &ctx.tool,
-        &ctx.material,
-        Some(baseline_trace),
-        ctx.lut_op_family,
-        ctx.lut_pass_role,
-        baseline_op.feed_rate(),
-        ctx.operation_kind,
-    ) {
-        return OptimizeOutcome::NoSafeImprovement {
-            reason: RefuseReason::BipolarEngagement,
-            explanation: format!(
-                "{}: {}",
-                RefuseReason::BipolarEngagement.explanation_for_optimize(),
-                prescription_for_bipolar(ctx.operation_kind),
-            ),
-            attempted: vec![baseline_candidate],
-        };
-    }
-
     // Cancel check before any sims.
     if cancel.load(Ordering::SeqCst) {
         return OptimizeOutcome::NoSafeImprovement {
@@ -513,39 +356,13 @@ pub fn optimize_toolpath(
         &machine,
     );
 
-    // 7. Stage 0: closed-form (RPM, feed) candidate. Two modes:
-    //    - Baseline `Within`: scale UP via `solve_headroom_scale` to
-    //      land at machine/LUT/power caps. Chipload is invariant under
-    //      proportional scaling, so this preserves the safe verdict.
-    //    - Baseline chipload `Exceeds`: scale DOWN/RE-RATIO via
-    //      `solve_chipload_retarget` to land nominal chipload at the
-    //      LUT row's midpoint. Breaks the proportional invariant —
-    //      that's the whole point. Without this branch the optimizer
-    //      can never fix chipload (Stage 1's DOC×stepover knobs are
-    //      invariant to chipload too).
+    // 7. Stage 0: closed-form analytical RPM/feed scaling. Skipped
+    //    when the baseline already fails the chipload gate
+    //    (proportional scaling preserves chipload — can't fix Exceeds).
     let baseline_chipload_exceeds =
         matches!(baseline_verdict.chipload, Verdict::Exceeds { .. });
     let mut all_candidates: Vec<OptimizeCandidate> = Vec::new();
-    let stage0_op = if baseline_chipload_exceeds {
-        matched_lut_row.as_ref().and_then(|row| {
-            // Anchor RCTF on commanded stepover. Operations without a
-            // stepover knob (e.g. drill cycles) wouldn't reach here
-            // anyway since they don't produce chipload-Exceeds; use 0
-            // as the floor (RCTF clamps to ≥1.0).
-            let stepover_mm = baseline_op.stepover().unwrap_or(0.0);
-            let tool_diameter_mm = ctx.tool.diameter();
-            solve_chipload_retarget(
-                row,
-                stepover_mm,
-                tool_diameter_mm,
-                ctx.tool.flute_count,
-                &machine,
-            )
-            .map(|(feed, rpm)| {
-                apply_retarget_to_op(&baseline_op, feed, rpm, &machine, &ctx.material)
-            })
-        })
-    } else {
+    if !baseline_chipload_exceeds {
         let stage0_inputs = Stage0Inputs {
             rpm_baseline: baseline_rpm,
             feed_baseline_mm_min: baseline_op.feed_rate(),
@@ -554,20 +371,20 @@ pub fn optimize_toolpath(
             lut_row: matched_lut_row.as_ref(),
         };
         let k = solve_headroom_scale(&stage0_inputs);
-        (k > 1.0 + 1e-6).then(|| apply_scale_to_op(&baseline_op, baseline_rpm, k, &machine))
-    };
-    if let Some(scaled_op) = stage0_op {
-        let delta = delta_against_baseline(&baseline_op, &scaled_op);
-        if let Ok(candidate) = evaluate_candidate(
-            &mut guard,
-            &ctx,
-            scaled_op,
-            delta,
-            SearchStage::Coarse,
-            STAGE1_RESOLUTION_MM,
-            cancel,
-        ) {
-            all_candidates.push(candidate);
+        if k > 1.0 + 1e-6 {
+            let scaled_op = apply_scale_to_op(&baseline_op, baseline_rpm, k, &machine);
+            let delta = delta_against_baseline(&baseline_op, &scaled_op);
+            if let Ok(candidate) = evaluate_candidate(
+                &mut guard,
+                &ctx,
+                scaled_op,
+                delta,
+                SearchStage::Coarse,
+                STAGE1_RESOLUTION_MM,
+                cancel,
+            ) {
+                all_candidates.push(candidate);
+            }
         }
     }
 
@@ -583,13 +400,7 @@ pub fn optimize_toolpath(
     //    chipload — so we sweep them jointly rather than as separate
     //    1D passes. 3×3 = 9 candidates per geometry op (4×3 = 12 for
     //    Pocket/Adaptive), Stage 2 keeps the top 3 by cycle time.
-    //
-    //    Skipped when chipload is the binding gate: chipload is
-    //    `feed ÷ (rpm × flutes)`, invariant to DOC and stepover, so
-    //    every Stage-1 candidate would inherit the baseline's Exceeds
-    //    verdict. The Stage-0 re-target candidate (if produced) is
-    //    the only candidate that can actually clear the gate.
-    if has_doc_knob(ctx.operation_kind) && !baseline_chipload_exceeds {
+    if has_doc_knob(ctx.operation_kind) {
         let anchor_op = all_candidates
             .first()
             .map(|c| c.params.clone())
@@ -610,7 +421,6 @@ pub fn optimize_toolpath(
             matched_lut_row.as_ref(),
             ctx.operation_kind,
         );
-        let tool_diameter = ctx.tool.diameter();
         'outer: for &doc in &doc_variants {
             for &stepover in &stepover_variants {
                 if cancel.load(Ordering::SeqCst) {
@@ -621,12 +431,6 @@ pub fn optimize_toolpath(
                 if (doc - anchor_doc).abs() < DOC_DEDUP_TOLERANCE_MM
                     && (stepover - anchor_stepover).abs() < STEPOVER_DEDUP_TOLERANCE_MM
                 {
-                    continue;
-                }
-                // Slotting filter (decision flow node L): skip
-                // variants where stepover > 0.85 × D — see
-                // [`is_slotting_variant`].
-                if is_slotting_variant(stepover, tool_diameter) {
                     continue;
                 }
                 let candidate_op =
@@ -668,86 +472,12 @@ pub fn optimize_toolpath(
         }
     };
 
-    // 9a. K_soft — soft bipolar trip after Stage 2. If a candidate
-    //     flipped from baseline's chipload-Exceeds direction (Burn →
-    //     Breakage or Breakage → Burn), the underlying engagement
-    //     variance was hidden from F0's pre-check (e.g., baseline
-    //     was only one-tail, but the re-target's higher feed pushed
-    //     slot moments into Breakage). Surface as `BipolarEngagement`
-    //     rather than the regular dominant-gate prescription.
-    //     See OPTIMIZER_LOGIC.md node K_soft.
-    if soft_bipolar_detected(&baseline_verdict, &stage2_candidates) {
-        drop(guard);
-        let mut attempted = Vec::with_capacity(stage2_candidates.len() + 1);
-        attempted.push(baseline_candidate);
-        attempted.extend(stage2_candidates);
-        return OptimizeOutcome::NoSafeImprovement {
-            reason: RefuseReason::BipolarEngagement,
-            explanation: format!(
-                "{}: {}",
-                RefuseReason::BipolarEngagement.explanation_for_optimize(),
-                prescription_for_bipolar(ctx.operation_kind),
-            ),
-            attempted,
-        };
-    }
-
     // 10. Drop the guard explicitly so the baseline is restored before
     //     building the outcome (which references the candidates,
     //     not the session). The outcome is returned to the caller; the
     //     caller's view of `session` is now back at the baseline.
     drop(guard);
     build_outcome(baseline_candidate, stage2_candidates)
-}
-
-/// True when at least one Stage-2 candidate's chipload Exceeds is in
-/// the **opposite** direction from the baseline's. Indicates hidden
-/// engagement variance that F0's pre-check missed — Stage-0b's
-/// re-target fixed one tail and the candidate now trips the other.
-///
-/// Returns `false` if the baseline didn't have a chipload-Exceeds
-/// verdict (no direction to flip from), or if no candidate flipped.
-fn soft_bipolar_detected(
-    baseline_verdict: &ToolpathLoadVerdict,
-    candidates: &[OptimizeCandidate],
-) -> bool {
-    let baseline_was_burn = match &baseline_verdict.chipload {
-        Verdict::Exceeds {
-            reason: ExceedsReason::ChiploadBurnRisk,
-            ..
-        } => true,
-        Verdict::Exceeds {
-            reason: ExceedsReason::ChiploadBreakageRisk,
-            ..
-        } => false,
-        _ => return false,
-    };
-    candidates.iter().any(|c| match &c.verdict.chipload {
-        Verdict::Exceeds {
-            reason: ExceedsReason::ChiploadBurnRisk,
-            ..
-        } => !baseline_was_burn,
-        Verdict::Exceeds {
-            reason: ExceedsReason::ChiploadBreakageRisk,
-            ..
-        } => baseline_was_burn,
-        _ => false,
-    })
-}
-
-/// True when the given `(stepover, tool_diameter)` pair would force
-/// the toolpath into slotting territory. Mirrors the reference's
-/// auto-feeds calculator (`feeds/mod.rs:262`): when stepover ≥ 0.85·D
-/// the cutter is in (effectively) full slot engagement, and the
-/// calculator forces DOC down to a slot-safe ratio. Stage 1's grid
-/// assumes (DOC, stepover) are independent — slotting variants break
-/// that assumption, so the optimizer skips them rather than burn a
-/// sim on a candidate whose actual DOC would silently differ from
-/// the variant requested.
-///
-/// Returns `false` for non-positive `tool_diameter` (defensive).
-pub(crate) fn is_slotting_variant(stepover_mm: f64, tool_diameter_mm: f64) -> bool {
-    tool_diameter_mm > 0.0 && stepover_mm > 0.85 * tool_diameter_mm
 }
 
 /// Operation kinds with a `depth_per_pass` knob that Stage 1 sweeps.
@@ -1069,152 +799,6 @@ pub(crate) fn apply_scale_to_op(
     scaled.set_feed_rate(baseline_op.feed_rate() * k);
     let scaled_rpm = machine.clamp_rpm(rpm_baseline * k).round() as u32;
     scaled.set_spindle_rpm(Some(scaled_rpm));
-    scaled
-}
-
-/// Stage-0 re-target target for chipload-Exceeds baselines: pick a
-/// `(feed, rpm)` pair that lands the **effective** chipload at the
-/// matched LUT row's calibrated midpoint, **at the operation's
-/// commanded radial engagement**. Returns `None` when no feasible
-/// pair fits (no LUT match, empty RPM bracket, or the machine feed-
-/// floor crowds out the target).
-///
-/// **Effective vs nominal chipload (decision flow node I):** the LUT
-/// `[cl_min, cl_max]` band bounds **effective** leading-edge chip
-/// thickness — what the simulator measures as
-/// `effective_chip_thickness_mm`. The optimizer commands **nominal**
-/// chipload via `(feed, RPM, flutes)`. The bridge is the radial chip
-/// thinning factor (RCTF):
-///
-/// ```text
-/// effective ≈ nominal / RCTF(ae, D)
-/// ```
-///
-/// To land effective at the LUT midpoint, we solve for nominal:
-///
-/// ```text
-/// nominal = midpoint × RCTF(ae, D)
-/// ```
-///
-/// Anchoring `ae` on the operation's commanded stepover (not on the
-/// trace's observed engagement) matches what the auto-feeds calculator
-/// did when generating defaults (`feeds/mod.rs:300`) and keeps the
-/// optimizer's recommendation independent of prior sim quality.
-///
-/// **RPM policy: maximise.** Highest RPM allowed by the LUT row's
-/// bracket and the machine's spindle range, capped only by what would
-/// push feed past the machine's feed limit. Once we're already
-/// changing params, take the productivity that comes with higher RPM.
-pub(crate) fn solve_chipload_retarget(
-    matched_row: &MatchedRow,
-    stepover_mm: f64,
-    tool_diameter_mm: f64,
-    flute_count: u32,
-    machine: &MachineProfile,
-) -> Option<(f64, f64)> {
-    // Pick the effective-chipload target with a safety margin when only
-    // one bound is published. Sitting on `cl_max` exactly is the
-    // breakage cliff — sim noise + LUT calibration uncertainty +
-    // engagement variance can each push past it. 70% of cap (or 130%
-    // of floor for the symmetric case) gives real margin while staying
-    // well above formula-fallback values.
-    //
-    // See OPTIMIZER_LOGIC.md, decision flow node I, single-bound
-    // fallback resolution.
-    let target_chipload_eff =
-        match (matched_row.chip_load_min_mm, matched_row.chip_load_max_mm) {
-            (Some(lo), Some(hi)) if lo > 0.0 && hi > lo => (lo + hi) / 2.0,
-            (None, Some(hi)) if hi > 0.0 => hi * 0.7,
-            (Some(lo), None) if lo > 0.0 => lo * 1.3,
-            _ => return None,
-        };
-    if target_chipload_eff <= 0.0 || flute_count == 0 || tool_diameter_mm <= 0.0 {
-        return None;
-    }
-    // RCTF compensation: the LUT band bounds *effective* leading-edge
-    // chipload, but `(feed, RPM, flutes)` set *nominal*. At commanded
-    // stepover, effective = nominal / RCTF, so we boost nominal by
-    // RCTF to land effective at the midpoint. RCTF clamps to ≥ 1.0 in
-    // `feeds::geometry`, so this never reduces the target.
-    let rctf = crate::feeds::geometry::radial_chip_thinning_factor(
-        stepover_mm.max(0.0),
-        tool_diameter_mm,
-    );
-    let target_chipload_nom = target_chipload_eff * rctf;
-
-    let (machine_min_rpm, machine_max_rpm) = machine.rpm_range();
-    let row_rpm_min = matched_row.rpm_min.unwrap_or(machine_min_rpm);
-    let row_rpm_max = matched_row
-        .rpm_max
-        .or_else(|| matched_row.rpm_nominal.map(|n| n * 1.2))
-        .unwrap_or(machine_max_rpm);
-    let lo = row_rpm_min.max(machine_min_rpm);
-    let hi = row_rpm_max.min(machine_max_rpm);
-    if lo > hi {
-        return None;
-    }
-    // Highest RPM that doesn't push `chipload × rpm × flutes` past the
-    // machine's feed cap. Above this point feed would clamp and the
-    // actual chipload would dip below target — wasted RPM and we'd
-    // risk burn-risk on the lower bound. Floor at `lo` so we still
-    // emit a candidate when the LUT row's bracket starts above that
-    // cap.
-    let max_rpm_for_target_feed =
-        machine.max_feed_mm_min / (target_chipload_nom * f64::from(flute_count));
-    let target_rpm = hi.min(max_rpm_for_target_feed).max(lo);
-    let target_feed = (target_chipload_nom * target_rpm * f64::from(flute_count))
-        .min(machine.max_feed_mm_min);
-    if target_feed < 1.0 {
-        return None;
-    }
-    Some((target_feed, target_rpm))
-}
-
-/// Threshold for "the feed change is big enough that plunge rate
-/// should track it." Below 10%, plunge stays at the baseline value to
-/// avoid disturbing manually-tuned settings the user is happy with.
-const PLUNGE_TRACK_FEED_DELTA_FRACTION: f64 = 0.10;
-
-/// Build the re-target `OperationConfig` from the `(feed, rpm)` pair
-/// returned by [`solve_chipload_retarget`]. Mirrors
-/// [`apply_scale_to_op`] but takes absolute values rather than a
-/// scale factor.
-///
-/// When the feed change exceeds 10% of baseline, plunge rate is
-/// scaled proportionally so the feed/plunge ratio the user authored
-/// is preserved (capped at the material's safe plunge rate × the
-/// machine's safety factor). Decision flow node I, "plunge tracks
-/// feed" principle.
-pub(crate) fn apply_retarget_to_op(
-    baseline_op: &OperationConfig,
-    target_feed_mm_min: f64,
-    target_rpm: f64,
-    machine: &MachineProfile,
-    material: &crate::material::Material,
-) -> OperationConfig {
-    let mut scaled = baseline_op.clone();
-    let baseline_feed = baseline_op.feed_rate();
-    scaled.set_feed_rate(target_feed_mm_min);
-    let scaled_rpm = machine.clamp_rpm(target_rpm).round() as u32;
-    scaled.set_spindle_rpm(Some(scaled_rpm));
-
-    // Plunge rate update: only when the feed change is significant.
-    // Preserves the baseline feed/plunge ratio (the user's tuning) but
-    // caps plunge at the material's safe ceiling.
-    if baseline_feed > 0.0 {
-        let feed_delta_frac = (target_feed_mm_min - baseline_feed).abs() / baseline_feed;
-        if feed_delta_frac > PLUNGE_TRACK_FEED_DELTA_FRACTION {
-            let baseline_plunge = baseline_op.plunge_rate();
-            if baseline_plunge > 0.0 {
-                let plunge_ratio = baseline_plunge / baseline_feed;
-                let plunge_ceiling = material.plunge_rate_base() * machine.safety_factor;
-                let scaled_plunge = (target_feed_mm_min * plunge_ratio).min(plunge_ceiling);
-                if scaled_plunge > 0.0 {
-                    scaled.set_plunge_rate(scaled_plunge);
-                }
-            }
-        }
-    }
     scaled
 }
 
@@ -1722,16 +1306,9 @@ pub(crate) fn build_outcome(
     if !any_safe_and_faster {
         let all_unsafe = candidates.iter().all(|c| !candidate_is_safe(c));
         let explanation = if all_unsafe {
-            // Identify which gate dominated and emit a prescription
-            // rather than the generic "hit a gate limit" line. The user
-            // sees the actionable next step instead of a black box.
-            let prescription = dominant_gate(&candidates)
-                .map(DominantGate::prescription)
-                .unwrap_or("every candidate hit a gate limit (chipload, power, or deflection)");
             format!(
-                "{}: {}",
-                RefuseReason::NoImprovementFound.explanation_for_optimize(),
-                prescription
+                "{}: every candidate hit a gate limit (chipload, power, or deflection)",
+                RefuseReason::NoImprovementFound.explanation_for_optimize()
             )
         } else {
             format!(
@@ -2222,371 +1799,6 @@ mod stage0_tests {
         });
         let scaled = apply_scale_to_op(&baseline, 12_000.0, 2.0, &machine);
         assert_eq!(scaled.spindle_rpm(), Some(18_000));
-    }
-
-    fn synthetic_lut_row(midpoint: f64, rpm_min: f64, rpm_max: f64) -> MatchedRow {
-        MatchedRow {
-            chip_load_mm: midpoint,
-            chip_load_min_mm: Some(midpoint * 0.6),
-            chip_load_max_mm: Some(midpoint * 1.4),
-            rpm_nominal: Some((rpm_min + rpm_max) / 2.0),
-            rpm_min: Some(rpm_min),
-            rpm_max: Some(rpm_max),
-            ap_min_mm: None,
-            ap_max_mm: None,
-            ae_min_mm: None,
-            ae_max_mm: None,
-            observation_id: "test-row".to_owned(),
-            source_vendor: "Test".to_owned(),
-            score: 100,
-            diameter_match_score: 200,
-        }
-    }
-
-    #[test]
-    fn retarget_at_slot_engagement_targets_midpoint_directly() {
-        // Slot cut: stepover = D, RCTF = 1.0, so nominal target =
-        // effective target = midpoint. At max RPM in the bracket,
-        // feed = 0.05 × 24k × 2 = 2400.
-        let machine = synthetic_machine(
-            24_000.0,
-            4_000.0,
-            PowerModel::ConstantPower { power_kw: 0.8 },
-            0.75,
-        );
-        let row = synthetic_lut_row(0.05, 8_000.0, 24_000.0);
-        let stepover = 6.0; // = tool diameter → slot
-        let diameter = 6.0;
-        let (feed, rpm) = solve_chipload_retarget(&row, stepover, diameter, 2, &machine)
-            .expect("retarget should succeed");
-        assert!(
-            (rpm - 24_000.0).abs() < 1e-6,
-            "rpm should rise to LUT/machine max 24000, got {rpm}"
-        );
-        assert!(
-            (feed - 2_400.0).abs() < 1e-6,
-            "feed should be 2400 (0.05 × 24000 × 2) at slot, got {feed}"
-        );
-    }
-
-    #[test]
-    fn retarget_with_partial_engagement_compensates_via_rctf() {
-        // Wanaka case: 6mm 2-flute, stepover 0.84mm (14% of D),
-        // RCTF ≈ 1.443. Nominal target = midpoint × RCTF, so feed
-        // climbs from the slot baseline.
-        let machine = synthetic_machine(
-            24_000.0,
-            4_000.0,
-            PowerModel::ConstantPower { power_kw: 0.8 },
-            0.75,
-        );
-        let row = synthetic_lut_row(0.05, 8_000.0, 24_000.0);
-        let stepover = 0.84;
-        let diameter = 6.0;
-        let rctf = crate::feeds::geometry::radial_chip_thinning_factor(stepover, diameter);
-        let expected_feed = 0.05 * rctf * 24_000.0 * 2.0;
-        let (feed, rpm) = solve_chipload_retarget(&row, stepover, diameter, 2, &machine)
-            .expect("retarget should succeed");
-        assert!(
-            (rpm - 24_000.0).abs() < 1e-6,
-            "rpm should rise to LUT/machine max 24000, got {rpm}"
-        );
-        assert!(
-            (feed - expected_feed).abs() < 1.0,
-            "feed should be {:.1} (RCTF {:.3} × midpoint × rpm × flutes), got {}",
-            expected_feed,
-            rctf,
-            feed
-        );
-        // Sanity: with RCTF compensation the feed is meaningfully
-        // higher than the slot-equivalent.
-        assert!(
-            feed > 3000.0,
-            "RCTF should boost feed above slot-equivalent 2400, got {feed}"
-        );
-    }
-
-    #[test]
-    fn retarget_caps_rpm_so_feed_stays_under_machine_max() {
-        // High target chipload + 4-flute would push feed past the
-        // machine cap if we ran at full RPM. Algorithm should pick a
-        // lower RPM such that feed exactly meets the machine cap and
-        // chipload stays on target — never let feed clamp. Slot
-        // engagement so RCTF = 1.0.
-        let machine = synthetic_machine(
-            24_000.0,
-            2_000.0, // tight cap
-            PowerModel::ConstantPower { power_kw: 0.8 },
-            0.75,
-        );
-        let row = synthetic_lut_row(0.10, 8_000.0, 24_000.0);
-        let (feed, rpm) = solve_chipload_retarget(&row, 6.0, 6.0, 2, &machine)
-            .expect("retarget should succeed");
-        // chipload × rpm × flutes = feed; with feed ≤ 2000 and chipload 0.10:
-        //   rpm ≤ 2000 / (0.10 × 2) = 10000
-        // → rpm = 10000, feed = 2000.
-        assert!(
-            (rpm - 10_000.0).abs() < 1e-6,
-            "rpm should cap at 10000 to keep feed at machine max, got {rpm}"
-        );
-        assert!(
-            (feed - 2_000.0).abs() < 1e-6,
-            "feed should be exactly machine max 2000, got {feed}"
-        );
-    }
-
-    #[test]
-    fn retarget_uses_lut_max_when_below_machine_max() {
-        // LUT row caps RPM lower than machine max; the LUT cap binds.
-        let machine = synthetic_machine(
-            30_000.0,
-            10_000.0,
-            PowerModel::ConstantPower { power_kw: 5.0 },
-            0.8,
-        );
-        let row = synthetic_lut_row(0.04, 12_000.0, 22_000.0);
-        let (_feed, rpm) = solve_chipload_retarget(&row, 6.0, 6.0, 2, &machine)
-            .expect("retarget should succeed");
-        assert!(
-            (rpm - 22_000.0).abs() < 1e-6,
-            "rpm should rise to LUT max 22000 (under machine max), got {rpm}"
-        );
-    }
-
-    #[test]
-    fn retarget_refuses_when_lut_bracket_excludes_machine() {
-        // LUT row demands 30k–35k RPM; machine maxes at 24k. Empty
-        // overlap → no candidate.
-        let machine = synthetic_machine(
-            24_000.0,
-            10_000.0,
-            PowerModel::ConstantPower { power_kw: 5.0 },
-            0.8,
-        );
-        let row = synthetic_lut_row(0.04, 30_000.0, 35_000.0);
-        assert!(
-            solve_chipload_retarget(&row, 6.0, 6.0, 2, &machine).is_none(),
-            "should refuse when LUT bracket has no machine overlap"
-        );
-    }
-
-    #[test]
-    fn retarget_refuses_on_zero_flutes() {
-        let machine = synthetic_machine(
-            24_000.0,
-            4_000.0,
-            PowerModel::ConstantPower { power_kw: 0.8 },
-            0.75,
-        );
-        let row = synthetic_lut_row(0.05, 8_000.0, 24_000.0);
-        assert!(solve_chipload_retarget(&row, 6.0, 6.0, 0, &machine).is_none());
-    }
-
-    #[test]
-    fn retarget_targets_midpoint_when_both_bounds_published() {
-        // Slot engagement so RCTF = 1.0 — target_eff = midpoint.
-        // [cl_min=0.03, cl_max=0.07] → midpoint 0.05.
-        let machine = synthetic_machine(
-            24_000.0,
-            8_000.0,
-            PowerModel::ConstantPower { power_kw: 1.0 },
-            0.8,
-        );
-        let mut row = synthetic_lut_row(0.05, 8_000.0, 24_000.0);
-        row.chip_load_min_mm = Some(0.03);
-        row.chip_load_max_mm = Some(0.07);
-        let (feed, _rpm) = solve_chipload_retarget(&row, 6.0, 6.0, 2, &machine)
-            .expect("retarget should succeed");
-        // feed = 0.05 × 24000 × 2 = 2400 (rpm is not capped — feed
-        // 2400 ≤ machine cap 8000).
-        assert!(
-            (feed - 2_400.0).abs() < 1e-6,
-            "feed should be 2400 (midpoint × max_rpm × flutes), got {feed}"
-        );
-    }
-
-    #[test]
-    fn retarget_targets_70pct_of_max_when_only_upper_bound_published() {
-        // No `cl_min`. target_eff = 0.07 × 0.7 = 0.049.
-        let machine = synthetic_machine(
-            24_000.0,
-            8_000.0,
-            PowerModel::ConstantPower { power_kw: 1.0 },
-            0.8,
-        );
-        let mut row = synthetic_lut_row(0.07, 8_000.0, 24_000.0);
-        row.chip_load_min_mm = None;
-        row.chip_load_max_mm = Some(0.07);
-        let (feed, _rpm) = solve_chipload_retarget(&row, 6.0, 6.0, 2, &machine)
-            .expect("retarget should succeed");
-        let expected = 0.07 * 0.7 * 24_000.0 * 2.0;
-        assert!(
-            (feed - expected).abs() < 1.0,
-            "feed should be {expected:.1} (0.7 × cl_max × max_rpm × flutes), got {feed}"
-        );
-    }
-
-    #[test]
-    fn retarget_targets_130pct_of_min_when_only_lower_bound_published() {
-        // Symmetric case. target_eff = 0.03 × 1.3 = 0.039.
-        let machine = synthetic_machine(
-            24_000.0,
-            8_000.0,
-            PowerModel::ConstantPower { power_kw: 1.0 },
-            0.8,
-        );
-        let mut row = synthetic_lut_row(0.03, 8_000.0, 24_000.0);
-        row.chip_load_min_mm = Some(0.03);
-        row.chip_load_max_mm = None;
-        let (feed, _rpm) = solve_chipload_retarget(&row, 6.0, 6.0, 2, &machine)
-            .expect("retarget should succeed");
-        let expected = 0.03 * 1.3 * 24_000.0 * 2.0;
-        assert!(
-            (feed - expected).abs() < 1.0,
-            "feed should be {expected:.1} (1.3 × cl_min × max_rpm × flutes), got {feed}"
-        );
-    }
-
-    #[test]
-    fn retarget_refuses_when_neither_bound_published() {
-        let machine = synthetic_machine(
-            24_000.0,
-            8_000.0,
-            PowerModel::ConstantPower { power_kw: 1.0 },
-            0.8,
-        );
-        let mut row = synthetic_lut_row(0.05, 8_000.0, 24_000.0);
-        row.chip_load_min_mm = None;
-        row.chip_load_max_mm = None;
-        assert!(solve_chipload_retarget(&row, 6.0, 6.0, 2, &machine).is_none());
-    }
-
-    #[test]
-    fn retarget_refuses_on_zero_diameter() {
-        let machine = synthetic_machine(
-            24_000.0,
-            4_000.0,
-            PowerModel::ConstantPower { power_kw: 0.8 },
-            0.75,
-        );
-        let row = synthetic_lut_row(0.05, 8_000.0, 24_000.0);
-        assert!(solve_chipload_retarget(&row, 6.0, 0.0, 2, &machine).is_none());
-    }
-
-    fn synthetic_material() -> crate::material::Material {
-        crate::material::Material::SolidWood {
-            species: crate::material::WoodSpecies::HardMaple,
-        }
-    }
-
-    #[test]
-    fn apply_retarget_writes_feed_and_rpm() {
-        use crate::compute::catalog::OperationConfig;
-        use crate::compute::operation_configs::PocketConfig;
-        let machine = synthetic_machine(
-            24_000.0,
-            4_000.0,
-            PowerModel::ConstantPower { power_kw: 0.8 },
-            0.75,
-        );
-        let baseline = OperationConfig::Pocket(PocketConfig {
-            feed_rate: 3150.0,
-            spindle_rpm: Some(18_000),
-            plunge_rate: 750.0,
-            ..PocketConfig::default()
-        });
-        let scaled =
-            apply_retarget_to_op(&baseline, 1_800.0, 18_000.0, &machine, &synthetic_material());
-        assert!((scaled.feed_rate() - 1_800.0).abs() < 1e-6);
-        assert_eq!(scaled.spindle_rpm(), Some(18_000));
-    }
-
-    #[test]
-    fn apply_retarget_scales_plunge_when_feed_drops_significantly() {
-        use crate::compute::catalog::OperationConfig;
-        use crate::compute::operation_configs::PocketConfig;
-        let machine = synthetic_machine(
-            24_000.0,
-            4_000.0,
-            PowerModel::ConstantPower { power_kw: 0.8 },
-            0.75,
-        );
-        let baseline = OperationConfig::Pocket(PocketConfig {
-            feed_rate: 3150.0,
-            spindle_rpm: Some(18_000),
-            plunge_rate: 750.0,
-            ..PocketConfig::default()
-        });
-        // Feed drops 43% → plunge should scale to ~428 mm/min
-        // (preserving the 750/3150 ≈ 0.238 ratio).
-        let scaled =
-            apply_retarget_to_op(&baseline, 1_800.0, 18_000.0, &machine, &synthetic_material());
-        let expected_ratio: f64 = 750.0 / 3150.0;
-        let expected_plunge: f64 =
-            (1_800.0_f64 * expected_ratio).min(synthetic_material().plunge_rate_base() * 0.75);
-        assert!(
-            (scaled.plunge_rate() - expected_plunge).abs() < 1.0,
-            "plunge should scale to {expected_plunge:.1} (ratio preserved or capped at material safe rate), got {}",
-            scaled.plunge_rate()
-        );
-    }
-
-    #[test]
-    fn apply_retarget_preserves_plunge_when_feed_change_is_small() {
-        use crate::compute::catalog::OperationConfig;
-        use crate::compute::operation_configs::PocketConfig;
-        let machine = synthetic_machine(
-            24_000.0,
-            4_000.0,
-            PowerModel::ConstantPower { power_kw: 0.8 },
-            0.75,
-        );
-        let baseline = OperationConfig::Pocket(PocketConfig {
-            feed_rate: 3150.0,
-            spindle_rpm: Some(18_000),
-            plunge_rate: 750.0,
-            ..PocketConfig::default()
-        });
-        // Feed drops 5% (under the 10% threshold) → plunge unchanged.
-        let scaled =
-            apply_retarget_to_op(&baseline, 3_000.0, 18_000.0, &machine, &synthetic_material());
-        assert!(
-            (scaled.plunge_rate() - 750.0).abs() < 1e-6,
-            "plunge should be untouched for sub-threshold feed change, got {}",
-            scaled.plunge_rate()
-        );
-    }
-
-    #[test]
-    fn apply_retarget_caps_plunge_at_material_safe_rate() {
-        use crate::compute::catalog::OperationConfig;
-        use crate::compute::operation_configs::PocketConfig;
-        let machine = synthetic_machine(
-            24_000.0,
-            10_000.0,
-            PowerModel::ConstantPower { power_kw: 0.8 },
-            0.75,
-        );
-        // Pathological baseline ratio: plunge equal to feed (1.0). After
-        // a sub-half feed change, the proportional scaling would put
-        // plunge at the new feed too — but the material's plunge ceiling
-        // should clamp it.
-        let baseline = OperationConfig::Pocket(PocketConfig {
-            feed_rate: 3150.0,
-            spindle_rpm: Some(18_000),
-            plunge_rate: 3150.0,
-            ..PocketConfig::default()
-        });
-        let scaled =
-            apply_retarget_to_op(&baseline, 1_500.0, 18_000.0, &machine, &synthetic_material());
-        let ceiling = synthetic_material().plunge_rate_base() * 0.75;
-        // 1500 × (3150/3150) = 1500, but ceiling is much lower for
-        // hardwood (~125 mm/min). Plunge should clamp.
-        assert!(
-            scaled.plunge_rate() <= ceiling + 1e-6,
-            "plunge should cap at material ceiling {ceiling}, got {}",
-            scaled.plunge_rate()
-        );
     }
 }
 
@@ -3366,261 +2578,6 @@ mod tests {
         }
     }
 
-    fn exceeds_chipload_burn_verdict() -> ToolpathLoadVerdict {
-        use super::super::verdict::{Confidence, ExceedsReason};
-        ToolpathLoadVerdict {
-            toolpath_id: 0,
-            chipload: Verdict::Exceeds {
-                peak: 0.005,
-                sample_range: 0..1,
-                reason: ExceedsReason::ChiploadBurnRisk,
-                confidence: Confidence::Validated,
-            },
-            power: Verdict::Within {
-                peak: 0.5,
-                confidence: Confidence::Validated,
-            },
-            deflection: Verdict::Within {
-                peak: 5.0,
-                confidence: Confidence::Validated,
-            },
-        }
-    }
-
-    fn exceeds_power_verdict() -> ToolpathLoadVerdict {
-        use super::super::verdict::{Confidence, ExceedsReason};
-        ToolpathLoadVerdict {
-            toolpath_id: 0,
-            chipload: Verdict::Within {
-                peak: 0.04,
-                confidence: Confidence::Validated,
-            },
-            power: Verdict::Exceeds {
-                peak: 1.5,
-                sample_range: 0..1,
-                reason: ExceedsReason::SpindlePowerExceeded,
-                confidence: Confidence::Validated,
-            },
-            deflection: Verdict::Within {
-                peak: 5.0,
-                confidence: Confidence::Validated,
-            },
-        }
-    }
-
-    fn exceeds_deflection_verdict() -> ToolpathLoadVerdict {
-        use super::super::verdict::{Confidence, ExceedsReason};
-        ToolpathLoadVerdict {
-            toolpath_id: 0,
-            chipload: Verdict::Within {
-                peak: 0.04,
-                confidence: Confidence::Validated,
-            },
-            power: Verdict::Within {
-                peak: 0.5,
-                confidence: Confidence::Validated,
-            },
-            deflection: Verdict::Exceeds {
-                peak: 7.5,
-                sample_range: 0..1,
-                reason: ExceedsReason::LongToolStiffnessUnsafe,
-                confidence: Confidence::Validated,
-            },
-        }
-    }
-
-    #[test]
-    fn dominant_gate_picks_chipload_breakage_when_unanimous() {
-        let candidates = vec![
-            synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict()),
-            synthetic_candidate(2400.0, 65.0, exceeds_chipload_verdict()),
-            synthetic_candidate(2300.0, 70.0, exceeds_chipload_verdict()),
-        ];
-        assert_eq!(
-            dominant_gate(&candidates),
-            Some(DominantGate::ChiploadBreakage)
-        );
-    }
-
-    #[test]
-    fn dominant_gate_picks_chipload_burn_when_unanimous() {
-        let candidates = vec![
-            synthetic_candidate(800.0, 80.0, exceeds_chipload_burn_verdict()),
-            synthetic_candidate(900.0, 85.0, exceeds_chipload_burn_verdict()),
-        ];
-        assert_eq!(dominant_gate(&candidates), Some(DominantGate::ChiploadBurn));
-    }
-
-    #[test]
-    fn dominant_gate_picks_power_when_unanimous() {
-        let candidates = vec![
-            synthetic_candidate(2500.0, 60.0, exceeds_power_verdict()),
-            synthetic_candidate(2400.0, 65.0, exceeds_power_verdict()),
-        ];
-        assert_eq!(dominant_gate(&candidates), Some(DominantGate::Power));
-    }
-
-    #[test]
-    fn dominant_gate_picks_deflection_when_unanimous() {
-        let candidates = vec![
-            synthetic_candidate(1500.0, 80.0, exceeds_deflection_verdict()),
-            synthetic_candidate(1400.0, 85.0, exceeds_deflection_verdict()),
-        ];
-        assert_eq!(dominant_gate(&candidates), Some(DominantGate::Deflection));
-    }
-
-    #[test]
-    fn dominant_gate_returns_mixed_when_split() {
-        // 50/50 chipload vs power → no 80% dominator → Mixed.
-        let candidates = vec![
-            synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict()),
-            synthetic_candidate(2400.0, 65.0, exceeds_power_verdict()),
-        ];
-        assert_eq!(dominant_gate(&candidates), Some(DominantGate::Mixed));
-    }
-
-    #[test]
-    fn dominant_gate_returns_none_for_empty() {
-        assert_eq!(dominant_gate(&[]), None);
-    }
-
-    #[test]
-    fn dominant_gate_returns_none_when_no_exceedance() {
-        let candidates = vec![synthetic_candidate(1500.0, 80.0, within_verdict())];
-        assert_eq!(dominant_gate(&candidates), None);
-    }
-
-    #[test]
-    fn prescription_for_bipolar_routes_adaptive_family_to_lever_advice() {
-        for op in [
-            OperationType::Adaptive3d,
-            OperationType::Pocket,
-            OperationType::Adaptive,
-            OperationType::Rest,
-            OperationType::Face,
-        ] {
-            let s = prescription_for_bipolar(op);
-            assert!(
-                s.contains("stepover") || s.contains("stock-to-leave"),
-                "{op:?}: expected adaptive-family prescription with engagement levers, got: {s}"
-            );
-        }
-    }
-
-    #[test]
-    fn prescription_for_bipolar_routes_geometry_fixed_ops_to_switch_advice() {
-        for op in [
-            OperationType::ProjectCurve,
-            OperationType::Drill,
-            OperationType::Scallop,
-            OperationType::Trace,
-            OperationType::DropCutter,
-            OperationType::VCarve,
-            OperationType::AlignmentPinDrill,
-        ] {
-            let s = prescription_for_bipolar(op);
-            assert!(
-                s.contains("Switch") || s.contains("accept the gate"),
-                "{op:?}: expected geometry-fixed prescription with switch/accept advice, got: {s}"
-            );
-            assert!(
-                !s.contains("stepover"),
-                "{op:?}: prescription should not name a lever the user doesn't have, got: {s}"
-            );
-        }
-    }
-
-    #[test]
-    fn prescription_for_bipolar_partitions_all_op_types() {
-        // Sanity: every OperationType produces some non-empty prescription
-        // (no panics, no empty strings). Catches drift if a new op type
-        // is added but the helper isn't updated.
-        for op in OperationType::ALL {
-            let s = prescription_for_bipolar(*op);
-            assert!(!s.is_empty(), "{op:?} produced empty prescription");
-        }
-    }
-
-    #[test]
-    fn slotting_filter_trips_when_stepover_exceeds_85pct_diameter() {
-        // 6mm cutter with 5.5mm stepover (~92%) → slotting.
-        assert!(is_slotting_variant(5.5, 6.0));
-        // Right on the threshold (85% exactly) is not slotting (uses `>`).
-        assert!(!is_slotting_variant(5.1, 6.0));
-        // Conservative stepover of 50% → safe.
-        assert!(!is_slotting_variant(3.0, 6.0));
-        // Very small stepover → safe.
-        assert!(!is_slotting_variant(0.84, 6.0));
-    }
-
-    #[test]
-    fn slotting_filter_returns_false_for_invalid_diameter() {
-        assert!(!is_slotting_variant(5.0, 0.0));
-        assert!(!is_slotting_variant(5.0, -1.0));
-    }
-
-    #[test]
-    fn soft_bipolar_trips_when_candidate_flips_baseline_direction() {
-        // Baseline was Burn; refined candidate landed Breakage → soft
-        // bipolar. Hidden engagement variance.
-        let baseline_v = exceeds_chipload_burn_verdict();
-        let candidates = vec![
-            synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict()), // Breakage
-        ];
-        assert!(soft_bipolar_detected(&baseline_v, &candidates));
-    }
-
-    #[test]
-    fn soft_bipolar_does_not_trip_when_candidate_stays_same_direction() {
-        // Baseline was Breakage; candidate also Breakage → not bipolar,
-        // just unfixed. dominant_gate handles this case.
-        let baseline_v = exceeds_chipload_verdict();
-        let candidates = vec![
-            synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict()),
-        ];
-        assert!(!soft_bipolar_detected(&baseline_v, &candidates));
-    }
-
-    #[test]
-    fn soft_bipolar_does_not_trip_when_baseline_was_within() {
-        let baseline_v = within_verdict();
-        let candidates = vec![
-            synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict()),
-        ];
-        assert!(!soft_bipolar_detected(&baseline_v, &candidates));
-    }
-
-    #[test]
-    fn soft_bipolar_does_not_trip_on_safe_candidates() {
-        // Baseline was Burn; candidates are all Within → fix worked.
-        let baseline_v = exceeds_chipload_burn_verdict();
-        let candidates = vec![synthetic_candidate(2500.0, 60.0, within_verdict())];
-        assert!(!soft_bipolar_detected(&baseline_v, &candidates));
-    }
-
-    #[test]
-    fn build_outcome_chipload_breakage_emits_actionable_explanation() {
-        // Sanity: end-to-end the explanation should carry the prescription.
-        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
-        let candidates = vec![
-            synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict()),
-            synthetic_candidate(2400.0, 65.0, exceeds_chipload_verdict()),
-        ];
-        match build_outcome(baseline, candidates) {
-            OptimizeOutcome::NoSafeImprovement { explanation, .. } => {
-                assert!(
-                    explanation.contains("reduce feed") || explanation.contains("raise RPM"),
-                    "expected feed/RPM prescription, got: {explanation}"
-                );
-                assert!(
-                    !explanation.contains("Stage 1") || explanation.contains("invariant"),
-                    "explanation should explain why Stage 1 can't help: {explanation}"
-                );
-            }
-            other => panic!("expected NoSafeImprovement, got {other:?}"),
-        }
-    }
-
     #[test]
     fn first_safe_finds_faster_safe_candidate() {
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
@@ -3773,12 +2730,8 @@ mod tests {
                 ..
             } => {
                 assert!(
-                    explanation.contains("chipload"),
-                    "dominant-gate prescription should mention chipload: {explanation}"
-                );
-                assert!(
-                    explanation.contains("reduce feed") || explanation.contains("raise RPM"),
-                    "prescription should suggest the lever: {explanation}"
+                    explanation.contains("gate limit"),
+                    "explanation should mention gate limit: {explanation}"
                 );
                 assert_eq!(attempted.len(), 3);
                 // Sorted by ascending cycle time means index 1 has

@@ -243,6 +243,40 @@ pub fn simplify_path_3d(points: &[P3], tolerance: f64) -> Vec<P3> {
         let seg_len = (dx * dx + dy * dy + dz * dz).sqrt();
 
         if seg_len < 1e-10 {
+            // Closed-loop case: first ≈ last, so the line first→last is
+            // degenerate and RDP's perpendicular-distance metric is
+            // undefined. Continuing here would mean the loop's interior
+            // points are never even considered for keeping — collapsing
+            // any closed perimeter path to just its endpoints (a no-op
+            // feed). This was a real bug for callers like the AgentSearch
+            // perimeter sweep where the input is a closed offset polygon.
+            //
+            // Recovery: pick the point furthest from `first` by raw
+            // Euclidean distance, keep it, and recurse on each half.
+            // Each half then has a non-degenerate baseline so RDP works
+            // normally.
+            let mut max_eu = 0.0;
+            let mut max_idx = start;
+            for (i, p) in points
+                .iter()
+                .enumerate()
+                .skip(start + 1)
+                .take(end - start - 1)
+            {
+                let vx = p.x - first.x;
+                let vy = p.y - first.y;
+                let vz = p.z - first.z;
+                let d = (vx * vx + vy * vy + vz * vz).sqrt();
+                if d > max_eu {
+                    max_eu = d;
+                    max_idx = i;
+                }
+            }
+            if max_eu > tolerance {
+                keep[max_idx] = true;
+                stack.push((start, max_idx));
+                stack.push((max_idx, end));
+            }
             continue;
         }
 
@@ -604,6 +638,66 @@ mod tests {
         ];
         let simplified = simplify_path_3d(&path, 0.01);
         assert_eq!(simplified.len(), 3, "Corner should be preserved");
+    }
+
+    /// Closed-loop input (e.g. a closed perimeter from `parallel_offset`)
+    /// must NOT collapse to its endpoints. The original RDP bailed out
+    /// when first==last because the perpendicular-distance metric is
+    /// undefined for a zero-length baseline; that meant any closed input
+    /// became a 2-point no-op feed. This test guards the recovery: the
+    /// function picks the furthest-by-Euclidean-distance interior point,
+    /// splits the loop, and recurses normally on each half.
+    #[test]
+    fn test_simplify_path_3d_closed_loop_keeps_corners() {
+        // Square traced CCW, returning to start (closed loop).
+        let path = vec![
+            P3::new(0.0, 0.0, 0.0),
+            P3::new(10.0, 0.0, 0.0),
+            P3::new(10.0, 10.0, 0.0),
+            P3::new(0.0, 10.0, 0.0),
+            P3::new(0.0, 0.0, 0.0), // close the loop
+        ];
+        let simplified = simplify_path_3d(&path, 0.01);
+        // Pre-fix this returned 2 points (just first==last). After the fix:
+        // the four corners must be kept (plus the closing duplicate). Some
+        // corners may be a hair further than others depending on the split
+        // point chosen; assert at least 4 (the corners) are preserved.
+        assert!(
+            simplified.len() >= 4,
+            "Closed-loop simplify should keep corners, got {} points: {:?}",
+            simplified.len(),
+            simplified
+        );
+        // Specifically: the far corner (10, 10) — the point with maximum
+        // Euclidean distance from the start — must be in the kept set.
+        let has_far_corner = simplified
+            .iter()
+            .any(|p| (p.x - 10.0).abs() < 1e-9 && (p.y - 10.0).abs() < 1e-9);
+        assert!(
+            has_far_corner,
+            "Far corner (10,10) must be preserved in closed-loop simplify"
+        );
+    }
+
+    /// A near-closed loop (start and end nearly coincident, separated by
+    /// `< tolerance`) was already handled correctly by RDP — included here
+    /// for symmetry with the closed-loop case so future regressions in
+    /// either branch are caught.
+    #[test]
+    fn test_simplify_path_3d_near_closed_keeps_corners() {
+        let path = vec![
+            P3::new(0.0, 0.0, 0.0),
+            P3::new(10.0, 0.0, 0.0),
+            P3::new(10.0, 10.0, 0.0),
+            P3::new(0.0, 10.0, 0.0),
+            P3::new(0.0, 0.05, 0.0), // 0.05mm gap — RDP works normally
+        ];
+        let simplified = simplify_path_3d(&path, 0.01);
+        assert!(
+            simplified.len() >= 4,
+            "Near-closed simplify should keep corners, got {} points",
+            simplified.len()
+        );
     }
 
     #[test]

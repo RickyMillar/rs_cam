@@ -648,6 +648,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                     initial_stock: None,
                     clearing_strategy,
                     z_blend: op.z_blend.unwrap_or(false),
+                    boundary: None,
                 };
 
                 if debug_trace {

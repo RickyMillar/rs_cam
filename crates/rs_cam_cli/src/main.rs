@@ -2632,6 +2632,7 @@ fn main() -> Result<()> {
                 initial_stock: None,
                 clearing_strategy,
                 z_blend,
+                boundary: None,
             };
 
             let start = std::time::Instant::now();

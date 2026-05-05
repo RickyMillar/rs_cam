@@ -10,8 +10,8 @@
 //! the crate.
 
 use crate::dexel::{
-    DexelGrid, ray_bottom, ray_material_length, ray_material_length_above, ray_subtract_above,
-    ray_subtract_below, ray_top,
+    DexelGrid, ray_material_length, ray_material_length_above, ray_subtract_above,
+    ray_subtract_below,
 };
 use crate::geo::P3;
 use crate::radial_profile::RadialProfileLUT;
@@ -168,7 +168,17 @@ pub(super) fn stamp_segment_on_grid(
 /// Fuses the work of `stamp_segment_on_grid`, `estimate_disk_cut_metrics`, and
 /// two calls to `window_material_volume_for_segment` into one row/col loop.
 ///
-/// Returns `(axial_doc_mm, radial_engagement, arc_engagement_radians, volume_removed_mm3)`.
+/// Engagement metrics are derived from the per-cell stamp result: a cell only
+/// counts as engaged if the stamp at that cell actually removed material from
+/// the dexel ray. This keeps `arc_engagement_radians` and
+/// `volume_removed_mm3` in agreement on a per-sample basis (a sample reports
+/// nonzero arc engagement iff its stamp removed material). The midpoint
+/// position `(mid_u, mid_v)` is still used as the reference for binning the
+/// engaged cells around the cutter axis.
+///
+/// Returns `(axial_doc_mm, radial_engagement, arc_engagement_radians, volume_removed_mm3)`,
+/// where `axial_doc_mm` is the maximum per-cell material length removed by
+/// this stamp.
 pub(super) fn stamp_segment_with_metrics(
     grid: &mut DexelGrid,
     lut: &RadialProfileLUT,
@@ -177,7 +187,6 @@ pub(super) fn stamp_segment_with_metrics(
     end: (f64, f64, f64),
     mid_u: f64,
     mid_v: f64,
-    mid_d: f64,
     from_high: bool,
     capture_arc_engagement: bool,
 ) -> (f64, f64, Option<f64>, f64) {
@@ -294,34 +303,49 @@ pub(super) fn stamp_segment_with_metrics(
             if let Some(h) = lut.height_at_dist_sq(dist_sq) {
                 let ray = &mut grid.rays[row * grid.cols + col];
 
-                // 1. Pre-stamp volume (read before mutation).
-                pre_volume += ray_material_length(ray) as f64 * cell_area;
+                // 1. Pre-stamp material height (read before mutation). Used
+                //    both for the volume delta (pre - post) and to derive
+                //    engagement from the actual stamp's effect.
+                let pre_len = ray_material_length(ray) as f64;
+                pre_volume += pre_len * cell_area;
 
-                // 2. Engagement metrics: check if cell is within disk at midpoint.
+                // 2. Apply the stamp using per-cell t-projected depth and
+                //    per-cell h. This is the geometry that determines what
+                //    material the cutter ACTUALLY removed at this cell.
+                let depth = sd + t * seg_dd;
+                let cell_tool_surface = if from_high {
+                    depth + h
+                } else {
+                    depth - h
+                };
+                if from_high {
+                    ray_subtract_above(ray, cell_tool_surface as f32);
+                } else {
+                    ray_subtract_below(ray, cell_tool_surface as f32);
+                }
+
+                // 3. Post-stamp material height (read after mutation).
+                let post_len = ray_material_length(ray) as f64;
+                post_volume += post_len * cell_area;
+
+                // 4. Engagement metrics derived from THIS cell's stamp result,
+                //    not a midpoint snapshot. The midpoint disk is still used
+                //    to define the engagement-arc reference frame (which side
+                //    of the cutter is engaged, for radial bin classification),
+                //    but the engagement count itself is gated on the stamp
+                //    actually removing material at this cell. This keeps the
+                //    sample's `arc_engagement_radians` and
+                //    `removed_volume_est_mm3` in agreement: a sample reports
+                //    nonzero engagement iff the stamp actually bit material.
                 let dm_u = cell_u - mid_u;
                 let dm_v = cell_v - mid_v;
                 let mid_dist_sq = dm_u * dm_u + dm_v * dm_v;
-                if mid_dist_sq <= radius_sq
-                    && let Some(mid_h) = lut.height_at_dist_sq(mid_dist_sq)
-                {
+                if mid_dist_sq <= radius_sq && lut.height_at_dist_sq(mid_dist_sq).is_some() {
                     total_area += cell_area;
-                    let tool_surface = if from_high {
-                        mid_d + mid_h
-                    } else {
-                        mid_d - mid_h
-                    };
-                    let penetration = if from_high {
-                        ray_top(ray)
-                            .map(|top| (top as f64 - tool_surface).max(0.0))
-                            .unwrap_or(0.0)
-                    } else {
-                        ray_bottom(ray)
-                            .map(|bottom| (tool_surface - bottom as f64).max(0.0))
-                            .unwrap_or(0.0)
-                    };
-                    if penetration > 1e-6 {
+                    let removed_here = (pre_len - post_len).max(0.0);
+                    if removed_here > 1e-6 {
                         engaged_area += cell_area;
-                        max_penetration = max_penetration.max(penetration);
+                        max_penetration = max_penetration.max(removed_here);
                         let forward = (cell_u - mid_u) * seg_du + (cell_v - mid_v) * seg_dv;
                         if capture_arc_engagement && forward > 1e-9 {
                             let mut bearing = (cell_v - mid_v).atan2(cell_u - mid_u) - move_bearing;
@@ -339,19 +363,6 @@ pub(super) fn stamp_segment_with_metrics(
                         }
                     }
                 }
-
-                // 3. Apply the stamp.
-                let depth = sd + t * seg_dd;
-                if from_high {
-                    let surface = (depth + h) as f32;
-                    ray_subtract_above(ray, surface);
-                } else {
-                    let surface = (depth - h) as f32;
-                    ray_subtract_below(ray, surface);
-                }
-
-                // 4. Post-stamp volume (read after mutation).
-                post_volume += ray_material_length(ray) as f64 * cell_area;
             }
         }
     }
