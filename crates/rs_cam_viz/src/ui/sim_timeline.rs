@@ -313,7 +313,20 @@ fn draw_signal_spine(
     let tracks: [(&str, fn(&SimulationCutSample) -> Option<f64>, egui::Color32, Option<(f64, f64)>); 5] = [
         (
             "chipload",
-            |s| s.effective_chip_thickness_mm,
+            // Filter air-cut samples (radial_engagement < 0.02) from the
+            // chipload track. Same threshold the gate's verdict uses
+            // (`tool_load::chipload::evaluate`). Plotting them shows a
+            // near-zero static line that reads as "static chipload during
+            // air" — visually misleading because air cuts have no real
+            // chip. Drawing only meaningful samples lets the eye focus on
+            // the engaged-cut chipload distribution.
+            |s| {
+                if s.radial_engagement < 0.02 {
+                    None
+                } else {
+                    s.effective_chip_thickness_mm
+                }
+            },
             egui::Color32::from_rgb(230, 200, 60),
             envelope,
         ),

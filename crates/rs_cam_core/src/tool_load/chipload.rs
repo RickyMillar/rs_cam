@@ -67,6 +67,25 @@ use super::verdict::{Confidence, ExceedsReason, UnmodeledReason, Verdict};
 /// feed) and plunge feeds (typically 10–30%).
 const STEADY_STATE_FEED_FRACTION: f64 = 0.95;
 
+/// Burn-risk verdict semantics.
+///
+/// Per-sample arc-average chip thickness collapses by definition at low
+/// arc engagement (`mean = (2·feed/arc)·(1 - cos(arc/2)) → 0` as
+/// `arc → 0`). On a real toolpath there are always *some* low-arc
+/// transient samples (corner brushes, offset-ring entries, the first
+/// cell of an arc-fit segment), and their effective_chip drops well
+/// below the LUT min — but they aren't *rubbing* in the burn-risk
+/// sense, they're just briefly at the edge of a cut.
+///
+/// Vendor LUT chip-load minima describe SUSTAINED cutting condition:
+/// "the average chip a flute sees over its engaged time." The right
+/// per-toolpath aggregate to compare to that is the **median** of
+/// in-cut sample chip thicknesses. Using the median (rather than the
+/// minimum) makes the verdict robust to ~50% transient samples without
+/// missing a genuine "running too slow" condition where the cut is
+/// SUSTAINED below min. BreakageRisk (above-max) stays per-sample peak
+/// since a single overload bite is enough to break a tooth.
+
 /// Evaluate the chipload criterion for a single toolpath.
 ///
 /// `toolpath_id` matches `SimulationCutSample::toolpath_id` (the stable
@@ -188,12 +207,14 @@ pub fn evaluate(
         }
     };
 
-    let mut peak_below: Option<(f64, usize)> = None; // (deviation, sample_index)
     let mut peak_above: Option<(f64, usize)> = None;
     let mut peak_in_range: f64 = 0.0;
     let mut valid_count: usize = 0;
     let mut missing_arc_count: usize = 0;
     let mut chip_geometry_unsupported_count: usize = 0;
+    // Per-sample chip thicknesses for the per-toolpath median used by
+    // the burn-risk verdict. See `Burn-risk verdict semantics` above.
+    let mut burn_samples: Vec<(f64, usize)> = Vec::new();
 
     for (i, s) in steady_samples {
         // Samples whose chip-thickness model didn't produce a value (e.g.
@@ -210,14 +231,8 @@ pub fn evaluate(
             continue;
         };
         valid_count += 1;
-        if let Some(min) = min
-            && cl < min
-        {
-            let dev = min - cl;
-            if peak_below.is_none_or(|(prev, _)| dev > prev) {
-                peak_below = Some((dev, i));
-            }
-        } else if cl > max {
+        burn_samples.push((cl, i));
+        if cl > max {
             let dev = cl - max;
             if peak_above.is_none_or(|(prev, _)| dev > prev) {
                 peak_above = Some((dev, i));
@@ -226,6 +241,23 @@ pub fn evaluate(
             peak_in_range = cl;
         }
     }
+
+    // Burn-risk: median of per-sample chip thickness vs LUT min.
+    let peak_below: Option<(f64, usize)> = if let Some(min) = min
+        && !burn_samples.is_empty()
+    {
+        burn_samples.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        let median_idx = burn_samples.len() / 2;
+        #[allow(clippy::indexing_slicing)] // SAFETY: median_idx < len() by construction
+        let (median_cl, median_sample_idx) = burn_samples[median_idx];
+        if median_cl < min {
+            Some((min - median_cl, median_sample_idx))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     if valid_count == 0 {
         // All steady-state samples failed the chip-thickness model. Pick
