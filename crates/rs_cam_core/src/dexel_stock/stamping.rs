@@ -288,9 +288,6 @@ pub(super) fn stamp_segment_with_metrics(
     // way that is independent of sample density.
     let mut perp_min = f64::INFINITY;
     let mut perp_max = f64::NEG_INFINITY;
-    const ARC_BINS: usize = 36;
-    let mut arc_bins = [false; ARC_BINS];
-    let move_bearing = seg_dv.atan2(seg_du);
     let seg_len = seg_len_sq.sqrt();
     let inv_seg_len = if seg_len > 1e-9 { 1.0 / seg_len } else { 0.0 };
     // Threshold for "fresh material exists above the cutter at this cell".
@@ -368,26 +365,11 @@ pub(super) fn stamp_segment_with_metrics(
                         if perp > perp_max {
                             perp_max = perp;
                         }
-                        // Arc bin for the chipload formula. Bearing of the
-                        // cell relative to motion direction, restricted to
-                        // the leading half (forward of midpoint perpendicular)
-                        // so we count the engagement arc on the side that's
-                        // actively biting fresh material this instant.
-                        let forward = dm_u * seg_du + dm_v * seg_dv;
-                        if capture_arc_engagement && forward > 1e-9 {
-                            let mut bearing = dm_v.atan2(dm_u) - move_bearing;
-                            while bearing <= -std::f64::consts::PI {
-                                bearing += std::f64::consts::TAU;
-                            }
-                            while bearing > std::f64::consts::PI {
-                                bearing -= std::f64::consts::TAU;
-                            }
-                            let normalized =
-                                (bearing + std::f64::consts::PI) / std::f64::consts::TAU;
-                            let bin = ((normalized * ARC_BINS as f64).floor() as usize)
-                                .min(ARC_BINS.saturating_sub(1));
-                            arc_bins[bin] = true;
-                        }
+                        // Arc engagement is derived geometrically from the
+                        // perp extent below; no per-cell bearing binning is
+                        // needed (the per-cell scan suffers from the same
+                        // dense-sample lune artifact that motivated the
+                        // perp-extent metric in the first place).
                     }
                     let removed_here = (pre_len - post_len).max(0.0);
                     if removed_here > 1e-6 {
@@ -404,15 +386,28 @@ pub(super) fn stamp_segment_with_metrics(
     } else {
         0.0
     };
+    // Engagement arc derived geometrically from radial engagement (the
+    // conventional CAM relationship: arc = 2·arccos(1 − W/R) for a circular
+    // segment of width W = 2R · radial_engagement). Computing this from
+    // radial rather than per-cell bearing binning avoids the dense-sample
+    // lune artifact: a per-cell scan over engaged cells in the midpoint
+    // disk only sees the thin sliver of fresh material between consecutive
+    // overlapping samples, and its bearing extent is much smaller than the
+    // steady-state engagement arc the chipload formula expects. The radial
+    // measurement (perp extent of fresh cells) is more robust because the
+    // bite zone has nontrivial perp extent even when the sliver is thin.
     let arc_engagement_radians = if capture_arc_engagement {
-        let occupied = arc_bins.iter().filter(|&&occupied| occupied).count();
-        Some(
-            (occupied as f64 * std::f64::consts::TAU / ARC_BINS as f64)
-                .clamp(0.0, std::f64::consts::TAU),
-        )
+        let arc = if radial_engagement > 0.0 {
+            let one_minus_w_over_r = 1.0 - 2.0 * radial_engagement;
+            2.0 * one_minus_w_over_r.clamp(-1.0, 1.0).acos()
+        } else {
+            0.0
+        };
+        Some(arc.clamp(0.0, std::f64::consts::TAU))
     } else {
         None
     };
+
     (
         max_penetration.max(0.0),
         radial_engagement,
