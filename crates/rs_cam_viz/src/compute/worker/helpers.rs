@@ -210,13 +210,14 @@ pub(super) fn apply_dressups(
             },
             |tp| {
                 apply_link_moves(
-                    tp,
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
                     &LinkMoveParams {
                         max_link_distance: max_dist,
                         link_feed_rate: link_feed,
                         safe_z_threshold: sz * 0.9,
                     },
                 )
+                .toolpath
             },
         );
     }

@@ -9,6 +9,7 @@
 use crate::dexel_stock::TriDexelStock;
 use crate::geo::P3;
 use crate::toolpath::{Move, MoveType, Toolpath};
+use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
 
 // ---------------------------------------------------------------------------
 // Ramp / Helix entry
@@ -658,43 +659,80 @@ pub struct LinkMoveParams {
 /// Replace short retract→rapid→plunge sequences with direct feed moves.
 ///
 /// Detects 3-move windows of (retract to safe_z, rapid reposition, plunge to cut_z)
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// where the XY distance is short, and replaces them with a single feed move.
 ///
 /// Safety rules:
 /// - Never links the first entry (tool hasn't cut yet)
 /// - Only links when cut Z before and after are within 0.1mm (same depth level)
 /// - max_link_distance caps risk
-pub fn apply_link_moves(toolpath: Toolpath, params: &LinkMoveParams) -> Toolpath {
+/// - **Never links across a `RapidOrderBarrier` or `DepthPass` boundary** — the
+///   wanaka safety guarantee. If the linked window would erase a barrier, the
+///   3-move sequence is preserved as-is.
+///
+/// Spans on the input are remapped through the transform, and a `LinkBridge`
+/// span is appended for each inserted bridge. `spans_valid` is preserved.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub fn apply_link_moves(
+    annotated: AnnotatedToolpath,
+    params: &LinkMoveParams,
+) -> AnnotatedToolpath {
+    let AnnotatedToolpath {
+        toolpath,
+        spans,
+        spans_valid,
+    } = annotated;
     let moves = &toolpath.moves;
     if moves.len() < 4 {
-        return toolpath;
+        return AnnotatedToolpath {
+            toolpath,
+            spans,
+            spans_valid,
+        };
     }
 
+    // Barriers we must not collapse across. A barrier at index `b` sits before
+    // moves[b]; collapsing the window (i, i+1, i+2) into one bridge erases the
+    // gap between i and i+3 — so any barrier at i+1 or i+2 must block the link.
+    // (A barrier at i is *before* the link and is preserved by the remap.)
+    let barriers: std::collections::BTreeSet<usize> = if spans_valid {
+        spans
+            .iter()
+            .filter_map(|s| match s.kind {
+                SpanKind::RapidOrderBarrier | SpanKind::DepthPass => Some(s.start_move),
+                _ => None,
+            })
+            .collect()
+    } else {
+        std::collections::BTreeSet::new()
+    };
+
     let mut result = Toolpath::new();
+    let mut old_to_new: Vec<Option<std::ops::Range<usize>>> = Vec::with_capacity(moves.len());
+    let mut bridge_positions: Vec<usize> = Vec::new();
+
     let mut i = 0;
-    let mut has_cut = false; // Track whether we've done any cutting yet
+    let mut has_cut = false;
 
     while i < moves.len() {
         let m = &moves[i];
 
-        // Track first cut — never link before the tool has engaged material
         if !has_cut {
             if matches!(m.move_type, MoveType::Linear { .. })
                 && m.target.z < params.safe_z_threshold - 1.0
             {
                 has_cut = true;
             }
+            let new_idx = result.moves.len();
             result.moves.push(m.clone());
+            old_to_new.push(Some(new_idx..new_idx + 1));
             i += 1;
             continue;
         }
 
-        // Look for retract→rapid→plunge pattern:
-        // moves[i]   = Rapid to (x1, y1, safe_z)      — retract
-        // moves[i+1] = Rapid to (x2, y2, safe_z)      — reposition
-        // moves[i+2] = Linear to (x2, y2, cut_z)      — plunge
-        if i + 2 < moves.len()
+        let blocked_by_barrier = barriers.contains(&(i + 1)) || barriers.contains(&(i + 2));
+
+        if !blocked_by_barrier
+            && i + 2 < moves.len()
             && m.move_type == MoveType::Rapid
             && m.target.z >= params.safe_z_threshold - 0.1
             && moves[i + 1].move_type == MoveType::Rapid
@@ -704,7 +742,6 @@ pub fn apply_link_moves(toolpath: Toolpath, params: &LinkMoveParams) -> Toolpath
         {
             let plunge_target = moves[i + 2].target;
 
-            // Get the Z of the last cut move before this retract
             let prev_cut_z = result
                 .moves
                 .iter()
@@ -715,32 +752,69 @@ pub fn apply_link_moves(toolpath: Toolpath, params: &LinkMoveParams) -> Toolpath
                 })
                 .map(|mv| mv.target.z);
 
-            if let Some(prev_z) = prev_cut_z {
-                // Check same depth level (within 0.1mm)
-                if (prev_z - plunge_target.z).abs() < 0.1 {
-                    // Check XY distance
-                    let prev_pos = result.moves.last().map(|mv| &mv.target);
-                    if let Some(prev) = prev_pos {
-                        let dx = moves[i + 1].target.x - prev.x;
-                        let dy = moves[i + 1].target.y - prev.y;
-                        let dist = (dx * dx + dy * dy).sqrt();
+            if let Some(prev_z) = prev_cut_z
+                && (prev_z - plunge_target.z).abs() < 0.1
+                && let Some(prev) = result.moves.last().map(|mv| mv.target)
+            {
+                let dx = moves[i + 1].target.x - prev.x;
+                let dy = moves[i + 1].target.y - prev.y;
+                let dist = (dx * dx + dy * dy).sqrt();
 
-                        if dist < params.max_link_distance {
-                            // Replace: skip retract and rapid, emit direct feed to plunge target
-                            result.feed_to(plunge_target, params.link_feed_rate);
-                            i += 3; // Skip retract, rapid, plunge
-                            continue;
-                        }
-                    }
+                if dist < params.max_link_distance {
+                    let bridge_idx = result.moves.len();
+                    result.feed_to(plunge_target, params.link_feed_rate);
+                    bridge_positions.push(bridge_idx);
+                    let r = bridge_idx..bridge_idx + 1;
+                    old_to_new.push(Some(r.clone()));
+                    old_to_new.push(Some(r.clone()));
+                    old_to_new.push(Some(r));
+                    i += 3;
+                    continue;
                 }
             }
         }
 
+        let new_idx = result.moves.len();
         result.moves.push(m.clone());
+        old_to_new.push(Some(new_idx..new_idx + 1));
         i += 1;
     }
 
-    result
+    let new_n_moves = result.moves.len();
+    let new_spans = if spans_valid {
+        let remap = MoveRemap { old_to_new };
+        let mut remapped: Vec<Span> = spans
+            .into_iter()
+            .filter_map(|s| {
+                let payload = s.payload.clone();
+                let label = s.label.clone();
+                let mut new_span = if s.is_boundary() {
+                    let new_pos = remap.remap_boundary(s.start_move, new_n_moves);
+                    Span::new(new_pos, new_pos, s.kind)
+                } else {
+                    let r = remap.remap_range(s.start_move, s.end_move)?;
+                    Span::new(r.start, r.end, s.kind)
+                }
+                .with_label(label);
+                if let Some(p) = payload {
+                    new_span = new_span.with_payload(p);
+                }
+                Some(new_span)
+            })
+            .collect();
+        for pos in bridge_positions {
+            remapped.push(Span::new(pos, pos + 1, SpanKind::LinkBridge));
+        }
+        remapped
+    } else {
+        spans
+    };
+
+    AnnotatedToolpath {
+        toolpath: result,
+        spans: new_spans,
+        spans_valid,
+    }
 }
 
 /// Generate evenly-spaced tabs around a perimeter.
@@ -1345,7 +1419,7 @@ mod tests {
         // 2mm gap between passes — should be linked
         let tp = two_pass_toolpath(2.0);
         let params = default_link_params();
-        let result = apply_link_moves(tp.clone(), &params);
+        let result = apply_link_moves(AnnotatedToolpath::new(tp.clone()), &params).toolpath;
 
         // Should have fewer moves (retract+rapid+plunge replaced with feed)
         assert!(
@@ -1369,7 +1443,7 @@ mod tests {
         // 25mm gap — exceeds max_link_distance of 18mm
         let tp = two_pass_toolpath(25.0);
         let params = default_link_params();
-        let result = apply_link_moves(tp.clone(), &params);
+        let result = apply_link_moves(AnnotatedToolpath::new(tp.clone()), &params).toolpath;
 
         // Should be unchanged (gap too large)
         assert_eq!(
@@ -1390,7 +1464,7 @@ mod tests {
         tp.rapid_to(P3::new(20.0, 0.0, 10.0));
 
         let params = default_link_params();
-        let result = apply_link_moves(tp.clone(), &params);
+        let result = apply_link_moves(AnnotatedToolpath::new(tp.clone()), &params).toolpath;
 
         // First entry should not be linked — all moves preserved
         assert_eq!(
@@ -1417,7 +1491,7 @@ mod tests {
         tp.rapid_to(P3::new(40.0, 0.0, 10.0));
 
         let params = default_link_params();
-        let result = apply_link_moves(tp.clone(), &params);
+        let result = apply_link_moves(AnnotatedToolpath::new(tp.clone()), &params).toolpath;
 
         // Different Z levels — should not be linked
         assert_eq!(
@@ -1431,7 +1505,7 @@ mod tests {
     fn test_link_reduces_rapid_distance() {
         let tp = two_pass_toolpath(5.0);
         let params = default_link_params();
-        let result = apply_link_moves(tp.clone(), &params);
+        let result = apply_link_moves(AnnotatedToolpath::new(tp.clone()), &params).toolpath;
 
         let orig_rapid = tp.total_rapid_distance();
         let linked_rapid = result.total_rapid_distance();
@@ -1441,6 +1515,105 @@ mod tests {
             orig_rapid,
             linked_rapid
         );
+    }
+
+    // ── Span-aware behavior (#53) ─────────────────────────────────────────
+
+    #[test]
+    fn test_link_honors_depth_pass_barrier() {
+        // Two adjacent passes that the link logic *would* merge by XY distance,
+        // but a DepthPass boundary sits between them. Link must be skipped.
+        let tp = two_pass_toolpath(2.0);
+        // two_pass_toolpath layout (8 moves):
+        //  0: Rapid (0,0,10)
+        //  1: Linear plunge to (0,0,-3)
+        //  2: Linear feed to (20,0,-3)
+        //  3: Rapid (20,0,10)            ← retract
+        //  4: Rapid (22,0,10)            ← reposition  ─ link window starts at 3
+        //  5: Linear plunge to (22,0,-3) ← plunge
+        //  6: Linear feed to (40,0,-3)
+        //  7: Rapid (40+gap,0,10)
+        // A barrier at index 4 means moves[4..] is a separate pass — collapsing
+        // (3,4,5) into one bridge would erase the barrier. Must be skipped.
+        let n = tp.moves.len();
+        let spans = vec![
+            Span::new(0, n, SpanKind::Operation),
+            Span::new(0, 4, SpanKind::DepthPass),
+            Span::new(4, n, SpanKind::DepthPass),
+            Span::boundary(4, SpanKind::RapidOrderBarrier),
+        ];
+        let annotated = AnnotatedToolpath::with_spans(tp.clone(), spans);
+        let params = default_link_params();
+        let result = apply_link_moves(annotated, &params);
+
+        assert_eq!(
+            result.toolpath.moves.len(),
+            tp.moves.len(),
+            "Link must not collapse across DepthPass / barrier"
+        );
+        assert!(
+            result.spans.iter().all(|s| s.kind != SpanKind::LinkBridge),
+            "no LinkBridge should be inserted when blocked"
+        );
+        // Spans round-trip unchanged when no remap occurs.
+        assert!(result.spans_valid);
+        result
+            .check_invariants()
+            .expect("blocked link preserves invariants");
+    }
+
+    #[test]
+    fn test_link_remaps_spans_and_tags_bridge() {
+        // No barriers between the two passes — the link should fire and the
+        // outer Operation span / DepthPass span must shrink to match the new
+        // move count, plus a LinkBridge span tags the inserted feed.
+        let tp = two_pass_toolpath(2.0);
+        let n_in = tp.moves.len();
+        let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
+        let annotated = AnnotatedToolpath::with_spans(tp.clone(), spans);
+        let params = default_link_params();
+        let result = apply_link_moves(annotated, &params);
+
+        let n_out = result.toolpath.moves.len();
+        assert!(n_out < n_in, "link should have fired");
+
+        let op = result
+            .spans
+            .iter()
+            .find(|s| s.kind == SpanKind::Operation)
+            .expect("Operation span survives");
+        assert_eq!(op.start_move, 0);
+        assert_eq!(op.end_move, n_out, "Operation span tracks new move count");
+
+        let bridges: Vec<&Span> = result
+            .spans
+            .iter()
+            .filter(|s| s.kind == SpanKind::LinkBridge)
+            .collect();
+        assert_eq!(bridges.len(), 1, "exactly one LinkBridge for the one link");
+        assert!(bridges[0].end_move <= n_out);
+        result
+            .check_invariants()
+            .expect("post-link spans pass invariants");
+        assert!(result.spans_valid);
+    }
+
+    #[test]
+    fn test_link_preserves_invalid_spans_flag() {
+        // If input spans are flagged invalid, we don't try to remap and we
+        // don't compute barriers from them either — behavior matches the
+        // legacy unconditional link.
+        let tp = two_pass_toolpath(2.0);
+        let mut annotated = AnnotatedToolpath::new(tp.clone());
+        annotated.spans_valid = false;
+        annotated.spans = vec![Span::new(0, 1, SpanKind::Operation)]; // garbage
+        let params = default_link_params();
+        let result = apply_link_moves(annotated, &params);
+
+        assert!(result.toolpath.moves.len() < tp.moves.len(), "link fires");
+        assert!(!result.spans_valid, "invalid stays invalid");
+        // The garbage span vector should be returned untouched, not remapped.
+        assert_eq!(result.spans, vec![Span::new(0, 1, SpanKind::Operation)]);
     }
 
     // --- Air-cut filter tests ---
