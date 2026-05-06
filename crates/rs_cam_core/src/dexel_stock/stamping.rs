@@ -168,16 +168,18 @@ pub(super) fn stamp_segment_on_grid(
 /// Fuses the work of `stamp_segment_on_grid`, `estimate_disk_cut_metrics`, and
 /// two calls to `window_material_volume_for_segment` into one row/col loop.
 ///
-/// `arc_engagement_radians` is gated on actual removal at the cell (a sample
-/// reports nonzero arc engagement iff its stamp bit material). This preserves
-/// the invariant tested by `tests/sim_chipload_invariant.rs`.
-///
 /// `radial_engagement` is the conventional CAM "radial width of cut over tool
 /// diameter" — measured as the perpendicular extent of cells that contained
 /// fresh material above the cutter surface BEFORE the stamp. This is
 /// independent of sample density: dense overlapping samples in already-cleared
 /// territory don't double-count, but a leading-edge bite of stepover σ
 /// reads σ/(2R) regardless of how finely we sample the toolpath.
+///
+/// `arc_engagement_radians` uses the same pre-stamp-fresh-material gate
+/// (binned by bearing relative to motion, restricted to the leading half).
+/// The chipload formula consumes this value, so the same density-independence
+/// matters: dense samples on adaptive cuts must not collapse arc engagement
+/// to a thin sliver.
 ///
 /// Returns `(axial_doc_mm, radial_engagement, arc_engagement_radians, volume_removed_mm3)`,
 /// where `axial_doc_mm` is the maximum per-cell material length removed by
@@ -346,12 +348,13 @@ pub(super) fn stamp_segment_with_metrics(
 
                 // 4. Engagement metrics. The midpoint disk defines the
                 //    reference footprint for both arc binning and the
-                //    width-of-cut measurement. arc_engagement and
-                //    max_penetration (axial DOC) gate on actual removal at
-                //    this cell — preserves the invariant tested in
-                //    tests/sim_chipload_invariant.rs. radial_engagement gates
-                //    on pre-stamp fresh material (independent of how densely
-                //    we sampled the path).
+                //    width-of-cut measurement. radial_engagement and
+                //    arc_engagement_radians both gate on pre-stamp fresh
+                //    material above the cutter surface (independent of
+                //    sample density). max_penetration (axial DOC) still
+                //    gates on actual removal — it's the per-cell removed
+                //    height, which is well-defined per stamp regardless of
+                //    overlap with prior stamps.
                 let dm_u = cell_u - mid_u;
                 let dm_v = cell_v - mid_v;
                 let mid_dist_sq = dm_u * dm_u + dm_v * dm_v;
@@ -365,13 +368,14 @@ pub(super) fn stamp_segment_with_metrics(
                         if perp > perp_max {
                             perp_max = perp;
                         }
-                    }
-                    let removed_here = (pre_len - post_len).max(0.0);
-                    if removed_here > 1e-6 {
-                        max_penetration = max_penetration.max(removed_here);
-                        let forward = (cell_u - mid_u) * seg_du + (cell_v - mid_v) * seg_dv;
+                        // Arc bin for the chipload formula. Bearing of the
+                        // cell relative to motion direction, restricted to
+                        // the leading half (forward of midpoint perpendicular)
+                        // so we count the engagement arc on the side that's
+                        // actively biting fresh material this instant.
+                        let forward = dm_u * seg_du + dm_v * seg_dv;
                         if capture_arc_engagement && forward > 1e-9 {
-                            let mut bearing = (cell_v - mid_v).atan2(cell_u - mid_u) - move_bearing;
+                            let mut bearing = dm_v.atan2(dm_u) - move_bearing;
                             while bearing <= -std::f64::consts::PI {
                                 bearing += std::f64::consts::TAU;
                             }
@@ -384,6 +388,10 @@ pub(super) fn stamp_segment_with_metrics(
                                 .min(ARC_BINS.saturating_sub(1));
                             arc_bins[bin] = true;
                         }
+                    }
+                    let removed_here = (pre_len - post_len).max(0.0);
+                    if removed_here > 1e-6 {
+                        max_penetration = max_penetration.max(removed_here);
                     }
                 }
             }

@@ -1,17 +1,13 @@
-//! Invariant: the simulator's per-sample `arc_engagement_radians` must agree
-//! with what the same sample's stamp actually removed from the dexel stock.
+//! Invariant: `arc_engagement_radians` and `radial_engagement` agree
+//! per-sample, because both gate on the same per-cell predicate
+//! ("pre-stamp material above the cutter surface in the midpoint disk").
 //!
-//! Repro from the AGENTSEARCH_NEXT_SESSION worktree O5c plan: a "second pass"
-//! through previously-cleared stock should not report nonzero arc engagement
-//! when the per-cell stamps remove no material (and vice versa). The two
-//! metrics are computed in the same loop in
-//! `dexel_stock::stamping::stamp_segment_with_metrics`, but until this fix
-//! they used DIFFERENT geometries:
-//!   - engagement check: midpoint disk against pre-stamp ray top
-//!   - per-cell stamp:   per-cell t-projected depth + per-cell radial profile
-//! For sloped segments and non-flat tools the two geometries disagree at
-//! off-axis cells, leaking phantom engagement into samples that removed no
-//! material (or hiding real engagement when stamps did remove material).
+//! Originally an O5c regression test for a pre-fix geometry mismatch
+//! between the midpoint engagement check and the per-cell stamp; now both
+//! metrics use the consistent pre-stamp-fresh-material gate, so the
+//! invariant tightens: arc and radial engagement co-fire (or neither
+//! does), and `removed_volume` is no longer involved (it sums across the
+//! full segment-sweep bbox, a different footprint than the midpoint disk).
 
 #![allow(
     clippy::unwrap_used,
@@ -37,29 +33,41 @@ fn build_stock_50x50x10() -> TriDexelStock {
     TriDexelStock::from_bounds(&bbox, 0.25)
 }
 
-fn assert_arc_and_removal_agree<'a>(
+fn assert_arc_and_radial_agree<'a>(
     samples: impl Iterator<Item = &'a rs_cam_core::simulation_cut::SimulationCutSample>,
     label: &str,
 ) {
+    // Both `arc_engagement_radians` and `radial_engagement` gate on the
+    // same per-cell predicate inside the midpoint disk: "pre-stamp material
+    // above the cutter surface > FRESH_MATERIAL_THRESHOLD_MM". So if any
+    // cell engages, both register; if none engage, both read zero. This is
+    // a tighter invariant than the original "arc vs removal" check (which
+    // was specific to the pre-O5c geometry-mismatch bug and no longer
+    // applies — see commit history of dexel_stock/stamping.rs).
     let mut violations = Vec::new();
     for sample in samples.filter(|sample| sample.is_cutting) {
-        let arc = sample.arc_engagement_radians.unwrap_or(0.0);
-        let removed = sample.removed_volume_est_mm3;
-        let arc_says_engaged = arc > 0.05;
-        let stamp_removed = removed > 0.0;
-        if arc_says_engaged != stamp_removed {
-            violations.push((sample.sample_index, sample.position, arc, removed));
+        let arc_engaged = sample.arc_engagement_radians.unwrap_or(0.0) > 0.0;
+        let radial_engaged = sample.radial_engagement > 0.0;
+        if arc_engaged != radial_engaged {
+            violations.push((
+                sample.sample_index,
+                sample.position,
+                sample.arc_engagement_radians.unwrap_or(0.0),
+                sample.radial_engagement,
+                sample.removed_volume_est_mm3,
+            ));
         }
     }
 
     if !violations.is_empty() {
         eprintln!(
-            "{label}: {} sample(s) disagree (arc_engagement vs stamp removal):",
+            "{label}: {} sample(s) disagree (arc_engagement vs radial_engagement):",
             violations.len()
         );
-        for (idx, pos, arc, removed) in violations.iter().take(20) {
+        for (idx, pos, arc, radial, removed) in violations.iter().take(20) {
             eprintln!(
-                "  sample {idx}: pos=({:.3},{:.3},{:.3}) arc={arc:.4} rad, removed={removed:.6} mm^3",
+                "  sample {idx}: pos=({:.3},{:.3},{:.3}) arc={arc:.4} rad, \
+                 radial={radial:.4}, removed={removed:.6} mm^3",
                 pos[0], pos[1], pos[2],
             );
         }
@@ -115,7 +123,7 @@ fn flat_endmill_second_pass_through_cleared_strip_agrees() {
     );
 
     // The invariant on the second pass through the cleared trail.
-    assert_arc_and_removal_agree(
+    assert_arc_and_radial_agree(
         samples
             .iter()
             .filter(|sample| sample.move_index >= first_pass_end_index),
@@ -179,7 +187,7 @@ fn ball_endmill_sloped_second_pass_through_cleared_strip_agrees() {
         )
         .expect("second pass succeeds");
 
-    assert_arc_and_removal_agree(samples.iter(), "ball-endmill sloped second pass");
+    assert_arc_and_radial_agree(samples.iter(), "ball-endmill sloped second pass");
 }
 
 #[test]
@@ -214,7 +222,7 @@ fn flat_endmill_adjacent_stepover_pass_agrees() {
         )
         .expect("simulation succeeds");
 
-    assert_arc_and_removal_agree(
+    assert_arc_and_radial_agree(
         samples
             .iter()
             .filter(|sample| sample.move_index >= first_pass_end_index),
