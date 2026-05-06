@@ -61,6 +61,47 @@ pub struct OperationSpec {
     pub feeds_pass_role: PassRole,
 }
 
+/// Safety metadata for dressups that can alter topology or move order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationTransformCapabilities {
+    /// Cutting segments can be globally reordered by XY proximity without
+    /// violating depth/material assumptions.
+    pub allows_global_rapid_reorder: bool,
+    /// The emitted toolpath must maintain its depth-pass ordering.
+    pub requires_depth_order: bool,
+    /// The operation encodes a continuous trace/finish path where reordering
+    /// or stay-down linking can change the intended cut.
+    pub continuous_path_required: bool,
+}
+
+impl OperationTransformCapabilities {
+    pub const fn new(
+        allows_global_rapid_reorder: bool,
+        requires_depth_order: bool,
+        continuous_path_required: bool,
+    ) -> Self {
+        Self {
+            allows_global_rapid_reorder,
+            requires_depth_order,
+            continuous_path_required,
+        }
+    }
+
+    pub fn allows_barriered_rapid_reorder(self) -> bool {
+        !self.continuous_path_required
+    }
+
+    pub fn allows_unbarriered_rapid_reorder(self) -> bool {
+        self.allows_global_rapid_reorder
+            && !self.requires_depth_order
+            && !self.continuous_path_required
+    }
+
+    pub fn allows_link_moves(self) -> bool {
+        !self.requires_depth_order && !self.continuous_path_required
+    }
+}
+
 /// Operation type for creating new toolpaths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -407,6 +448,40 @@ impl OperationType {
     pub fn label(self) -> &'static str {
         self.spec().label
     }
+
+    pub fn transform_capabilities(self) -> OperationTransformCapabilities {
+        use OperationType::{
+            Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
+            HorizontalFinish, Inlay, Pencil, Pocket, Profile, ProjectCurve, RadialFinish,
+            RampFinish, Rest, Scallop, SpiralFinish, SteepShallow, Trace, VCarve, Waterline,
+            Zigzag,
+        };
+
+        match self {
+            // XY-independent ops: TSP can reorder by proximity safely.
+            // Drill/AlignmentPinDrill: each hole is fully completed (peck cycle is intra-hole) before
+            // moving to the next, so XY visit order has no material-state effect.
+            DropCutter | Drill | AlignmentPinDrill => {
+                OperationTransformCapabilities::new(true, false, false)
+            }
+            // HorizontalFinish: generator sorts regions high-to-low Z for collision-avoidance
+            // (horizontal_finish.rs:170 "machine top shelves first to avoid collisions"); TSP
+            // would override that safety ordering.
+            // Face/Chamfer/Inlay/VCarve/Pencil/RadialFinish: no cross-segment material dependency,
+            // segments are retract-separated, so link moves and (eventually) barriered TSP are safe.
+            HorizontalFinish | Face | Chamfer | Inlay | VCarve | Pencil | RadialFinish => {
+                OperationTransformCapabilities::new(false, false, false)
+            }
+            // Trace: multi-pass depth stepping; depth order is the constraint, not continuity.
+            Pocket | Profile | Adaptive | Rest | Zigzag | Adaptive3d | Waterline | Trace => {
+                OperationTransformCapabilities::new(false, true, false)
+            }
+            // Genuinely continuous traces: helical/spiral/projected paths.
+            Scallop | SteepShallow | RampFinish | SpiralFinish | ProjectCurve => {
+                OperationTransformCapabilities::new(false, false, true)
+            }
+        }
+    }
 }
 
 /// Common parameter accessors for all operation configs.
@@ -526,6 +601,10 @@ impl OperationConfig {
     pub fn feeds_style(&self) -> (FeedsOperationFamily, PassRole) {
         let spec = self.spec();
         (spec.feeds_family, spec.feeds_pass_role)
+    }
+
+    pub fn transform_capabilities(&self) -> OperationTransformCapabilities {
+        self.op_type().transform_capabilities()
     }
 
     pub fn is_3d(&self) -> bool {
@@ -810,6 +889,36 @@ mod tests {
         assert!(
             system_only > 0,
             "Expected at least AlignmentPinDrill as system-only"
+        );
+    }
+
+    #[test]
+    fn operation_transform_capabilities_are_explicit() {
+        for &op_type in OperationType::ALL {
+            let caps = op_type.transform_capabilities();
+            assert!(
+                !(caps.allows_global_rapid_reorder && caps.requires_depth_order),
+                "{op_type:?} cannot globally reorder while requiring depth order"
+            );
+            assert!(
+                !(caps.allows_global_rapid_reorder && caps.continuous_path_required),
+                "{op_type:?} cannot globally reorder a continuous path"
+            );
+        }
+        assert!(
+            OperationType::Adaptive3d
+                .transform_capabilities()
+                .requires_depth_order
+        );
+        assert!(
+            OperationType::DropCutter
+                .transform_capabilities()
+                .allows_global_rapid_reorder
+        );
+        assert!(
+            OperationType::ProjectCurve
+                .transform_capabilities()
+                .continuous_path_required
         );
     }
 

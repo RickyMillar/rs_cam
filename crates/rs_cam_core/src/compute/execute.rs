@@ -5,7 +5,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::compute::catalog::OperationConfig;
+use crate::compute::catalog::{OperationConfig, OperationTransformCapabilities};
 use crate::compute::config::{DressupConfig, DressupEntryStyle, ResolvedHeights};
 use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::{ToolConfig, ToolType};
@@ -1005,6 +1005,7 @@ pub fn execute_operation_annotated(
 ///
 /// Steps: entry style → dogbones → lead in/out → link moves → arc fitting
 /// → rapid order optimization → air-cut filter → feed rate optimization.
+/// Move-order/link transforms are gated by operation capabilities.
 ///
 /// The last two steps are optional and require additional context:
 /// - Air-cut filter needs `prior_stock` (the stock state before this toolpath).
@@ -1019,6 +1020,7 @@ pub fn apply_dressups(
     feed_opt_stock: Option<&mut crate::dexel_stock::TriDexelStock>,
     cutter: Option<&dyn MillingCutter>,
     rapid_order_barriers: &[usize],
+    transform_capabilities: OperationTransformCapabilities,
 ) -> Toolpath {
     use crate::dressup::{
         EntryStyle, LinkMoveParams, apply_dogbones, apply_entry, apply_lead_in_out,
@@ -1027,7 +1029,10 @@ pub fn apply_dressups(
 
     let tool_radius = tool_diameter / 2.0;
 
-    if cfg.optimize_rapid_order && !rapid_order_barriers.is_empty() {
+    if cfg.optimize_rapid_order
+        && !rapid_order_barriers.is_empty()
+        && transform_capabilities.allows_barriered_rapid_reorder()
+    {
         tp = crate::tsp::optimize_rapid_order_with_barriers(&tp, safe_z, rapid_order_barriers);
     }
 
@@ -1076,7 +1081,7 @@ pub fn apply_dressups(
     }
 
     // 4. Link moves
-    if cfg.link_moves {
+    if cfg.link_moves && transform_capabilities.allows_link_moves() {
         tp = apply_link_moves(
             tp,
             &LinkMoveParams {
@@ -1093,7 +1098,10 @@ pub fn apply_dressups(
     }
 
     // 6. Rapid order optimization
-    if cfg.optimize_rapid_order && rapid_order_barriers.is_empty() {
+    if cfg.optimize_rapid_order
+        && rapid_order_barriers.is_empty()
+        && transform_capabilities.allows_unbarriered_rapid_reorder()
+    {
         tp = crate::tsp::optimize_rapid_order(&tp, safe_z);
     }
 
@@ -1412,7 +1420,17 @@ mod tests {
         tp.rapid_to(P3::new(50.0, 50.0, 30.0));
 
         let cfg = DressupConfig::default();
-        let result = apply_dressups(tp, &cfg, 6.35, 30.0, None, None, None, &[]);
+        let result = apply_dressups(
+            tp,
+            &cfg,
+            6.35,
+            30.0,
+            None,
+            None,
+            None,
+            &[],
+            OperationType::DropCutter.transform_capabilities(),
+        );
 
         assert!(
             !result.moves.is_empty(),

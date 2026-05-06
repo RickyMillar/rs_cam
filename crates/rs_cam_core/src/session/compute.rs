@@ -312,12 +312,10 @@ impl ProjectSession {
         // target is a terrain STL). Match the GUI compute path.
         if let crate::compute::OperationConfig::ProjectCurve(ref cfg) = tc.operation
             && let Some(surface_id) = cfg.surface_model_id
+            && let Some(surface) = self.find_model_by_raw_id(surface_id.0)
+            && surface.mesh.is_some()
         {
-            if let Some(surface) = self.find_model_by_raw_id(surface_id.0) {
-                if surface.mesh.is_some() {
-                    mesh = surface.mesh.clone();
-                }
-            }
+            mesh = surface.mesh.clone();
         }
 
         // Validate geometry requirements
@@ -517,6 +515,7 @@ impl ProjectSession {
                     None,
                     None,
                     &rapid_order_barriers,
+                    tc.operation.transform_capabilities(),
                 );
 
                 // ── Boundary clipping ─────────────────────────────────
@@ -629,6 +628,7 @@ impl ProjectSession {
     }
 
     /// Apply boundary clipping to a toolpath, subtracting keep-out footprints.
+    #[allow(clippy::too_many_arguments)]
     fn apply_boundary_clip(
         toolpath: crate::toolpath::Toolpath,
         boundary_config: &crate::compute::config::BoundaryConfig,
@@ -1125,6 +1125,7 @@ impl ProjectSession {
     /// Compute the per-toolpath tool-load report against current state. Used
     /// by `get_tool_load_report` (MCP) and the export gate. Returns deflection
     /// + chipload populated; power is `Unmodeled(NotImplemented)` until
+    ///
     /// Phase 1b lands the arc-engagement-driven power criterion.
     pub fn tool_load_report(&self) -> crate::tool_load::ToolLoadReport {
         let sim_trace = self
