@@ -15,19 +15,25 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    clippy::print_stdout,
+    clippy::collapsible_if,
+    clippy::field_reassign_with_default,
+    clippy::let_unit_value,
+    dead_code
 )]
 
 use std::path::PathBuf;
 
-use rs_cam_core::boundary::{clip_toolpath_to_boundary, effective_boundary, ToolContainment};
+use rs_cam_core::boundary::{ToolContainment, clip_toolpath_to_boundary, effective_boundary};
+use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 use rs_cam_core::compute::execute::apply_dressups;
 use rs_cam_core::dxf_input::load_dxf;
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::project_curve::{project_curve_toolpath, ProjectCurveParams, ProjectDirection};
+use rs_cam_core::project_curve::{ProjectCurveParams, ProjectDirection, project_curve_toolpath};
 use rs_cam_core::tool::{FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 
@@ -390,6 +396,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         None,
         None,
         &[],
+        OperationType::ProjectCurve.transform_capabilities(),
     );
     report("project_curve + link_moves", &tp_with_links, &polygons);
 
@@ -403,6 +410,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         None,
         None,
         &[],
+        OperationType::ProjectCurve.transform_capabilities(),
     );
     let (offenders, total, worst) = report("project_curve (no links)", &tp_no_links, &polygons);
 
@@ -423,6 +431,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         None,
         None,
         &[],
+        OperationType::ProjectCurve.transform_capabilities(),
     );
     report("+ finish defaults", &tp_finish, &polygons);
 
@@ -439,6 +448,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         None,
         None,
         &[],
+        OperationType::ProjectCurve.transform_capabilities(),
     );
     report("+ ramp entry only", &tp_ramp, &polygons);
 

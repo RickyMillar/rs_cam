@@ -85,8 +85,12 @@ pub(super) fn apply_dressups(
     let cfg = &req.dressups;
     let tool = &req.tool;
     let safe_z = effective_safe_z(req);
+    let transform_capabilities = req.operation.transform_capabilities();
 
-    if cfg.optimize_rapid_order && !rapid_order_barriers.is_empty() {
+    if cfg.optimize_rapid_order
+        && !rapid_order_barriers.is_empty()
+        && transform_capabilities.allows_barriered_rapid_reorder()
+    {
         let sz = safe_z;
         tp = apply_dressup_with_tracing(
             tp,
@@ -102,11 +106,9 @@ pub(super) fn apply_dressups(
                 scope.set_param("safe_z", sz);
                 scope.set_param("barrier_count", rapid_order_barriers.len());
             },
-            |tp| rs_cam_core::tsp::optimize_rapid_order_with_barriers(
-                &tp,
-                sz,
-                rapid_order_barriers,
-            ),
+            |tp| {
+                rs_cam_core::tsp::optimize_rapid_order_with_barriers(&tp, sz, rapid_order_barriers)
+            },
         );
     }
 
@@ -177,7 +179,7 @@ pub(super) fn apply_dressups(
             |tp| apply_lead_in_out(tp, radius),
         );
     }
-    if cfg.link_moves {
+    if cfg.link_moves && transform_capabilities.allows_link_moves() {
         let max_dist = cfg.link_max_distance;
         let link_feed = cfg.link_feed_rate;
         let sz = safe_z;
@@ -297,7 +299,10 @@ pub(super) fn apply_dressups(
             scope.set_move_range(0, tp.moves.len() - 1);
         }
     }
-    if cfg.optimize_rapid_order && rapid_order_barriers.is_empty() {
+    if cfg.optimize_rapid_order
+        && rapid_order_barriers.is_empty()
+        && transform_capabilities.allows_unbarriered_rapid_reorder()
+    {
         let sz = safe_z;
         tp = apply_dressup_with_tracing(
             tp,
