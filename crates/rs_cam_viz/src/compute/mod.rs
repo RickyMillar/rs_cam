@@ -102,7 +102,7 @@ pub enum ComputeMessage {
     /// thread to swap back; cancellation produces a `Cancelled` outcome
     /// inside `OptimizeResultKind` rather than an `Err`, so we never
     /// drop the session on the floor.
-    Optimize(OptimizeResult),
+    Optimize(Box<OptimizeResult>),
 }
 
 pub trait ComputeBackend: Send {

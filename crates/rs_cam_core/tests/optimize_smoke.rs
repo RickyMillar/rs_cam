@@ -14,7 +14,9 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    clippy::print_stderr,
+    clippy::clone_on_ref_ptr
 )]
 
 use std::path::Path;

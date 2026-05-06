@@ -482,7 +482,7 @@ impl ToolpathGpuData {
         device: &wgpu::Device,
         limits: &GpuLimits,
         tp: &Toolpath,
-        envelope: Option<Range<f64>>,
+        envelope: Option<&Range<f64>>,
         move_chipload: &HashMap<usize, f64>,
     ) -> Self {
         use wgpu::util::DeviceExt;
@@ -498,7 +498,7 @@ impl ToolpathGpuData {
         };
 
         let chipload_color = |move_idx: usize| -> [f32; 3] {
-            chipload_segment_color(envelope.as_ref(), move_chipload.get(&move_idx).copied())
+            chipload_segment_color(envelope, move_chipload.get(&move_idx).copied())
         };
 
         let rapid_color: [f32; 3] = [0.15, 0.15, 0.2];

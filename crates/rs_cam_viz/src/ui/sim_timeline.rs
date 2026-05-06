@@ -8,6 +8,19 @@ use rs_cam_core::session::ProjectSession;
 use rs_cam_core::simulation_cut::SimulationCutSample;
 use rs_cam_core::tool_load::{Confidence, ToolLoadReport, Verdict};
 
+/// Per-toolpath line in the signal plot: a colour plus a sequence of
+/// `(global_move_index, [x, y])` points decimated for the current X span.
+type GroupPoints = Vec<(egui::Color32, Vec<(usize, [f64; 2])>)>;
+
+/// One signal plot track: label, value extractor over `SimulationCutSample`,
+/// stroke colour, and an optional `(min, max)` envelope for shading.
+type SignalTrack = (
+    &'static str,
+    fn(&SimulationCutSample) -> Option<f64>,
+    egui::Color32,
+    Option<(f64, f64)>,
+);
+
 /// Bottom panel in simulation workspace: transport controls, timeline scrubber, speed control.
 pub fn draw(
     ui: &mut egui::Ui,
@@ -316,12 +329,7 @@ fn draw_signal_spine(
         .map(|b| (b.start_move as f64, b.end_move as f64))
         .unwrap_or((0.0, total_moves_f));
 
-    let tracks: [(
-        &str,
-        fn(&SimulationCutSample) -> Option<f64>,
-        egui::Color32,
-        Option<(f64, f64)>,
-    ); 5] = [
+    let tracks: [SignalTrack; 5] = [
         (
             "chipload",
             // Filter air-cut samples (radial_engagement < 0.02) from the
@@ -467,7 +475,7 @@ fn draw_signal_track(
     // invisible on the graph. Max-per-bucket preserves the worst-case
     // sample per X-bucket, so a single-sample chipload spike at sample
     // 86603 actually appears as a vertical bar in the rendered line.
-    let group_points: Vec<(egui::Color32, Vec<(usize, [f64; 2])>)> = groups
+    let group_points: GroupPoints = groups
         .iter()
         .filter_map(|group| {
             let pts: Vec<(usize, [f64; 2])> = group
@@ -565,17 +573,28 @@ fn draw_signal_track(
             const MAX_LINE_BRIDGE_GAP: usize = 16;
             for (_tp_color, pts) in &group_points {
                 let mut run_start = 0usize;
-                for i in 1..pts.len() {
-                    let prev_move = pts[i - 1].0;
-                    let cur_move = pts[i].0;
+                for (i, pair) in pts.windows(2).enumerate() {
+                    // SAFETY: windows(2) guarantees len == 2
+                    #[allow(clippy::indexing_slicing)]
+                    let (prev_move, cur_move) = (pair[0].0, pair[1].0);
                     if cur_move.saturating_sub(prev_move) > MAX_LINE_BRIDGE_GAP {
-                        let xy: Vec<[f64; 2]> = pts[run_start..i].iter().map(|(_, p)| *p).collect();
+                        // i is the index of pair[0]; the break is between i and i+1.
+                        let end = i + 1;
+                        // SAFETY: end <= pts.len() because windows(2) yields
+                        // indices i in 0..pts.len()-1.
+                        #[allow(clippy::indexing_slicing)]
+                        let xy: Vec<[f64; 2]> =
+                            pts[run_start..end].iter().map(|(_, p)| *p).collect();
                         if xy.len() >= 2 {
                             plot_ui.line(Line::new(PlotPoints::from(xy)).name(label).color(color));
                         }
-                        run_start = i;
+                        run_start = end;
                     }
                 }
+                // SAFETY: run_start is monotonically advanced by the loop
+                // above using indices bounded by pts.len(), so the suffix
+                // slice is always in range.
+                #[allow(clippy::indexing_slicing)]
                 let xy: Vec<[f64; 2]> = pts[run_start..].iter().map(|(_, p)| *p).collect();
                 if xy.len() >= 2 {
                     plot_ui.line(Line::new(PlotPoints::from(xy)).name(label).color(color));
@@ -719,10 +738,7 @@ fn draw_signal_track(
 
 /// Find the global-move sample (across all toolpath groups) whose X is
 /// closest to the target. Returns `(global_move, [x, y])`.
-fn nearest_in_groups(
-    target_x: f64,
-    group_points: &[(egui::Color32, Vec<(usize, [f64; 2])>)],
-) -> Option<(usize, [f64; 2])> {
+fn nearest_in_groups(target_x: f64, group_points: &GroupPoints) -> Option<(usize, [f64; 2])> {
     group_points
         .iter()
         .flat_map(|(_, pts)| pts.iter())
@@ -965,8 +981,7 @@ fn draw_boundary_timeline(
         // the closest visible marker within ~6 px.
         if response.hovered()
             && let Some(pos) = response.hover_pos()
-        {
-            if let Some(tip) = nearest_marker_tooltip(
+            && let Some(tip) = nearest_marker_tooltip(
                 pos.x,
                 rect,
                 total_moves,
@@ -974,16 +989,16 @@ fn draw_boundary_timeline(
                 sim,
                 load_report,
                 focused_id,
-            ) {
-                egui::show_tooltip_at_pointer(
-                    ui.ctx(),
-                    ui.layer_id(),
-                    egui::Id::new("sim_timeline_marker_tip"),
-                    |ui| {
-                        ui.label(tip);
-                    },
-                );
-            }
+            )
+        {
+            egui::show_tooltip_at_pointer(
+                ui.ctx(),
+                ui.layer_id(),
+                egui::Id::new("sim_timeline_marker_tip"),
+                |ui| {
+                    ui.label(tip);
+                },
+            );
         }
 
         // Playhead line

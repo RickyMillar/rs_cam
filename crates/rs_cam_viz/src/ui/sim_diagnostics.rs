@@ -490,9 +490,9 @@ fn draw_focused_issue_card(
 
 /// Default state: a single-screen overview of the whole cut. Cycle time
 /// + total moves/ops at the top, issue/safety counts in a key-value grid
-/// below, then a slim "Now playing: TP X" strip with verdict badges when
-/// playback is inside a toolpath. Replaces the previous Cutting Metrics,
-/// Warnings & Flags, and Summary Stats sections in the right panel.
+///   below, then a slim "Now playing: TP X" strip with verdict badges when
+///   playback is inside a toolpath. Replaces the previous Cutting Metrics,
+///   Warnings & Flags, and Summary Stats sections in the right panel.
 #[allow(clippy::too_many_arguments)]
 fn draw_project_overview(
     ui: &mut egui::Ui,
@@ -785,10 +785,6 @@ fn issue_kind_label(kind: SimulationIssueKind) -> &'static str {
         SimulationIssueKind::HolderCollision => "Holder collision",
     }
 }
-
-/// Determine the move type and feed rate at the current move index.
-// SAFETY: local_idx bounds-checked against moves.len() before indexing
-#[allow(clippy::indexing_slicing)]
 
 /// Render a single short summary line in the project summary card showing how
 /// Render three independent badges (chipload | power | deflection) for the

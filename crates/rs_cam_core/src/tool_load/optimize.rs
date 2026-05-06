@@ -336,13 +336,10 @@ pub fn optimize_toolpath(
     //    BaselineRestoreGuard restores `(operation, dressups,
     //    face_selection, feeds_auto)` on drop, regardless of how
     //    we exit (early return, Err, panic).
-    let mut guard = match BaselineRestoreGuard::new(session, toolpath_index) {
-        Ok(g) => g,
-        Err(_) => {
-            return OptimizeOutcome::Skipped {
-                reason: RefuseReason::SimulationRequired,
-            };
-        }
+    let Ok(mut guard) = BaselineRestoreGuard::new(session, toolpath_index) else {
+        return OptimizeOutcome::Skipped {
+            reason: RefuseReason::SimulationRequired,
+        };
     };
 
     let baseline_rpm = baseline_rpm_from_trace(
@@ -450,18 +447,14 @@ pub fn optimize_toolpath(
 
     // 9. Stage 2: top-3 by cycle time, re-eval at full resolution.
     let stage2_seeds = select_stage2_candidates(all_candidates, STAGE2_SURVIVOR_COUNT);
-    let stage2_candidates = match refine_stage2(&mut guard, &ctx, stage2_seeds, cancel) {
-        Ok(c) => c,
-        Err(_) => {
-            drop(guard);
-            return OptimizeOutcome::NoSafeImprovement {
-                reason: RefuseReason::NoImprovementFound,
-                explanation:
-                    "candidate evaluation failed at full resolution — partial result returned"
-                        .to_owned(),
-                attempted: vec![baseline_candidate],
-            };
-        }
+    let Ok(stage2_candidates) = refine_stage2(&mut guard, &ctx, stage2_seeds, cancel) else {
+        drop(guard);
+        return OptimizeOutcome::NoSafeImprovement {
+            reason: RefuseReason::NoImprovementFound,
+            explanation: "candidate evaluation failed at full resolution — partial result returned"
+                .to_owned(),
+            attempted: vec![baseline_candidate],
+        };
     };
 
     // 10. Drop the guard explicitly so the baseline is restored before
@@ -514,8 +507,8 @@ fn baseline_rpm_from_trace(
         .map(|s| f64::from(s.spindle_rpm))
         .collect();
     samples_rpm.sort_by(f64::total_cmp);
-    if !samples_rpm.is_empty() {
-        return samples_rpm[samples_rpm.len() / 2];
+    if let Some(rpm) = samples_rpm.get(samples_rpm.len() / 2).copied() {
+        return rpm;
     }
     op_rpm
         .map(f64::from)
@@ -1163,9 +1156,11 @@ pub(crate) fn evaluate_candidate(
     // gate. The sim result lives on `session.simulation` after
     // `run_simulation` succeeds.
     let session_ref = &*guard.session_mut();
-    let sim_result = session_ref.simulation_result().ok_or_else(|| {
-        SessionError::Simulation(crate::compute::simulate::SimulationError::Cancelled)
-    })?;
+    let sim_result = session_ref
+        .simulation_result()
+        .ok_or(SessionError::Simulation(
+            crate::compute::simulate::SimulationError::Cancelled,
+        ))?;
     let trace = sim_result.cut_trace.as_deref();
 
     let load_ctx = ToolpathLoadContext {
@@ -2586,7 +2581,7 @@ mod tests {
     fn first_safe_finds_faster_safe_candidate() {
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let faster_safe = synthetic_candidate(2100.0, 70.0, within_verdict());
-        let outcome = OptimizeOutcome::Ranked(vec![baseline, faster_safe.clone()]);
+        let outcome = OptimizeOutcome::Ranked(vec![baseline, faster_safe]);
         let recommended = outcome.first_safe().expect("should recommend");
         assert!((recommended.cycle_time_s - 70.0).abs() < 1e-9);
     }

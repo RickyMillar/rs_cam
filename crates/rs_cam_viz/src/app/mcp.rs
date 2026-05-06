@@ -635,11 +635,8 @@ impl super::RsCamApp {
         let semantic_trace = rt
             .semantic_trace
             .as_deref()
-            .or_else(|| result.semantic_trace.as_deref());
-        let debug_trace = rt
-            .debug_trace
-            .as_deref()
-            .or_else(|| result.debug_trace.as_deref());
+            .or(result.semantic_trace.as_deref());
+        let debug_trace = rt.debug_trace.as_deref().or(result.debug_trace.as_deref());
         let context = rs_cam_core::narrate::ToolpathNarrationContext {
             toolpath_id: Some(tc.id),
             toolpath_name: Some(tc.name.as_str()),

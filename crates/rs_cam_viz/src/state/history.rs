@@ -36,6 +36,17 @@ pub enum UndoAction {
     },
 }
 
+/// Snapshot of toolpath state captured before a parameter edit drag.
+/// Includes id, operation+dressup configs, optional face selection, and the
+/// feeds-auto mode so the snapshot is lossless against LUT auto-overwrite.
+pub type ToolpathSnapshot = (
+    ToolpathId,
+    OperationConfig,
+    DressupConfig,
+    Option<Vec<FaceGroupId>>,
+    FeedsAutoMode,
+);
+
 /// Simple undo/redo stack.
 pub struct UndoHistory {
     undo_stack: Vec<UndoAction>,
@@ -51,13 +62,7 @@ pub struct UndoHistory {
     /// Snapshot of toolpath params before current edit. Includes
     /// `feeds_auto` so the snapshot is lossless against the GUI's
     /// LUT auto-overwrite (see ProjectSession::apply_toolpath_param_snapshot).
-    pub toolpath_snapshot: Option<(
-        ToolpathId,
-        OperationConfig,
-        DressupConfig,
-        Option<Vec<FaceGroupId>>,
-        FeedsAutoMode,
-    )>,
+    pub toolpath_snapshot: Option<ToolpathSnapshot>,
 }
 
 impl UndoHistory {

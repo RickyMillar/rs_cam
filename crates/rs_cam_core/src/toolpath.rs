@@ -461,14 +461,14 @@ pub fn raster_toolpath_from_grid_with_slope_filter(
         let mut segments: Vec<(usize, usize)> = Vec::new();
         let mut seg_start: Option<usize> = None;
         let mut clamped = vec![false; grid.cols];
-        for i in 0..grid.cols {
+        for (i, is_clamped) in clamped.iter_mut().enumerate().take(grid.cols) {
             let col = col_at(i);
             let idx = row * grid.cols + col;
             let slope_ok = slope_angles
                 .get(idx)
                 .is_none_or(|&angle| angle >= slope_from && angle <= slope_to);
             let z_ok = min_z.is_none_or(|clamp_z| grid.get(row, col).z > clamp_z + CLAMP_EPS);
-            clamped[i] = !z_ok;
+            *is_clamped = !z_ok;
             let in_range = slope_ok && z_ok;
             if in_range {
                 if seg_start.is_none() {

@@ -684,6 +684,10 @@ impl RsCamApp {
             // For Chipload color mode: build per-toolpath envelope + per-move
             // chipload maps once before the per-toolpath loop. Both maps are
             // keyed by toolpath_id (the simulator-side `usize`).
+            // SAFETY: complex tuple type used only as a local binding in
+            // this function; aliasing it project-wide would obscure the
+            // (envelope, per-move) pairing.
+            #[allow(clippy::type_complexity)]
             let chipload_inputs: Option<(
                 HashMap<usize, Range<f64>>,
                 HashMap<usize, HashMap<usize, f64>>,
@@ -755,7 +759,7 @@ impl RsCamApp {
                                 &render_state.device,
                                 &resources.gpu_limits,
                                 render_tp,
-                                envelope,
+                                envelope.as_ref(),
                                 per_move,
                             )
                         }
