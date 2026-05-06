@@ -3,6 +3,7 @@ use rs_cam_core::compute::config::{DressupConfig, RetractStrategy};
 use rs_cam_core::compute::execute::apply_dressups;
 use rs_cam_core::geo::P3;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
+use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
 
 #[allow(
     clippy::unwrap_used,
@@ -64,19 +65,22 @@ mod tests {
             retract_strategy: RetractStrategy::Full,
             ..DressupConfig::default()
         };
+        let spans = vec![
+            Span::boundary(0, SpanKind::RapidOrderBarrier),
+            Span::boundary(z7_barrier, SpanKind::RapidOrderBarrier),
+        ];
         let optimized = apply_dressups(
-            raw,
+            AnnotatedToolpath::with_spans(raw, spans),
             &cfg,
             6.0,
             safe_z,
             None,
             None,
             None,
-            &[0, z7_barrier],
             OperationType::Adaptive3d.transform_capabilities(),
         );
 
-        let cutting_z = cutting_z_values(&optimized);
+        let cutting_z = cutting_z_values(&optimized.toolpath);
 
         assert_eq!(&cutting_z[0..4], &[22.0, 22.0, 22.0, 22.0]);
         assert_eq!(&cutting_z[4..], &[7.0, 7.0, 7.0, 7.0]);
@@ -106,17 +110,16 @@ mod tests {
             ..DressupConfig::default()
         };
         let optimized = apply_dressups(
-            raw,
+            AnnotatedToolpath::new(raw),
             &cfg,
             6.0,
             safe_z,
             None,
             None,
             None,
-            &[],
             OperationType::Adaptive3d.transform_capabilities(),
         );
 
-        assert_eq!(cutting_z_values(&optimized), raw_cutting_z);
+        assert_eq!(cutting_z_values(&optimized.toolpath), raw_cutting_z);
     }
 }

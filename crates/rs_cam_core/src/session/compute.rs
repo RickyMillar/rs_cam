@@ -496,7 +496,6 @@ impl ProjectSession {
                 }
                 let child_ctx = op_scope.context();
                 annotate_from_runtime_events(&annotations, &toolpath, &child_ctx);
-                let rapid_order_barriers = annotations.rapid_order_barriers();
 
                 // Apply dressups. Pass `prior_stock` if a simulation has
                 // already produced a snapshot for this toolpath id (enables
@@ -506,17 +505,19 @@ impl ProjectSession {
                     .as_ref()
                     .and_then(|sim| sim.prior_stocks.get(&tc.id).cloned());
                 let prior_stock_ref = prior_stock_arc.as_deref();
-                toolpath = crate::compute::execute::apply_dressups(
-                    toolpath,
+                let spans =
+                    crate::compute::spans_from_annotations(&annotations, toolpath.moves.len());
+                let dressed = crate::compute::execute::apply_dressups(
+                    crate::toolpath_spans::AnnotatedToolpath::with_spans(toolpath, spans),
                     &tc.dressups,
                     tool_def.diameter(),
                     heights.retract_z,
                     prior_stock_ref,
                     None,
                     None,
-                    &rapid_order_barriers,
                     tc.operation.transform_capabilities(),
                 );
+                toolpath = dressed.toolpath;
 
                 // ── Boundary clipping ─────────────────────────────────
                 // After dressups, clip the toolpath to the machining boundary

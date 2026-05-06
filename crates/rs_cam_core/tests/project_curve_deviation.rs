@@ -36,6 +36,7 @@ use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::project_curve::{ProjectCurveParams, ProjectDirection, project_curve_toolpath};
 use rs_cam_core::tool::{FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::{MoveType, Toolpath};
+use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 
 /// A flat square mesh covering xy in [x0, x1] × [y0, y1] at z = 0.
 fn flat_mesh(x0: f64, x1: f64, y0: f64, y1: f64) -> TriangleMesh {
@@ -388,30 +389,30 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     with_links.link_moves = true;
     with_links.link_max_distance = 10.0;
     let tp_with_links = apply_dressups(
-        all_moves.clone(),
+        AnnotatedToolpath::new(all_moves.clone()),
         &with_links,
         1.0,
         10.0,
         None,
         None,
         None,
-        &[],
         OperationType::ProjectCurve.transform_capabilities(),
-    );
+    )
+    .toolpath;
     report("project_curve + link_moves", &tp_with_links, &polygons);
 
     // And without link_moves — the fixed default.
     let tp_no_links = apply_dressups(
-        all_moves.clone(),
+        AnnotatedToolpath::new(all_moves.clone()),
         &DressupConfig::default(),
         1.0,
         10.0,
         None,
         None,
         None,
-        &[],
         OperationType::ProjectCurve.transform_capabilities(),
-    );
+    )
+    .toolpath;
     let (offenders, total, worst) = report("project_curve (no links)", &tp_no_links, &polygons);
 
     // PC6's dressup defaults *come from* `for_role(Finish)`, which enables
@@ -423,16 +424,16 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     finish_defaults.lead_in_out = true;
     finish_defaults.lead_radius = 2.0;
     let tp_finish = apply_dressups(
-        all_moves.clone(),
+        AnnotatedToolpath::new(all_moves.clone()),
         &finish_defaults,
         1.0,
         10.0,
         None,
         None,
         None,
-        &[],
         OperationType::ProjectCurve.transform_capabilities(),
-    );
+    )
+    .toolpath;
     report("+ finish defaults", &tp_finish, &polygons);
 
     // Same but ramp only (no lead-in/out).
@@ -440,16 +441,16 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     ramp_only.entry_style = DressupEntryStyle::Ramp;
     ramp_only.ramp_angle = 3.0;
     let tp_ramp = apply_dressups(
-        all_moves.clone(),
+        AnnotatedToolpath::new(all_moves.clone()),
         &ramp_only,
         1.0,
         10.0,
         None,
         None,
         None,
-        &[],
         OperationType::ProjectCurve.transform_capabilities(),
-    );
+    )
+    .toolpath;
     report("+ ramp entry only", &tp_ramp, &polygons);
 
     // Dump the longest feed-at-cut-depth moves in each variant so we can
