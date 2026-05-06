@@ -164,6 +164,34 @@ fn try_fit_arc(points: &[&P3], tolerance: f64) -> Option<ArcParams> {
         }
     }
 
+    // Also check chord-arc deviation per segment. The point-only test
+    // above passes for any set of points that lie on a circle — even
+    // 4 corners of a rectangle sit on the circumscribing circle. But
+    // the original toolpath is the LINE SEGMENTS between consecutive
+    // points; the arc replacing them deviates from those lines by the
+    // sagitta `r - √(r² - (chord/2)²)`. For a 100×100 square's corner
+    // points (radius ~70.7, chord 100), the sagitta is ~20.7 mm — the
+    // arc-fit would silently produce arcs that bow ~20mm outside the
+    // original cut path. Visible on wanaka as "circular arc cuts
+    // outside boundary" at the perimeter sweep.
+    for i in 0..points.len() - 1 {
+        let p_a = points[i];
+        let p_b = points[i + 1];
+        let dx = p_b.x - p_a.x;
+        let dy = p_b.y - p_a.y;
+        let chord_sq = dx * dx + dy * dy;
+        let half_chord_sq = chord_sq * 0.25;
+        if half_chord_sq >= radius * radius {
+            // Chord longer than diameter — geometrically impossible for
+            // both endpoints to lie on the same circle of this radius.
+            return None;
+        }
+        let sagitta = radius - (radius * radius - half_chord_sq).sqrt();
+        if sagitta > tolerance {
+            return None;
+        }
+    }
+
     // Determine CW vs CCW using the cross product of the first two segments
     let p_first = points[0];
     let p_mid = points[points.len() / 2];
@@ -314,11 +342,14 @@ mod tests {
 
     #[test]
     fn test_fit_arc_basic() {
-        // Generate points on a circle
-        let pts = make_circle_points(0.0, 0.0, 10.0, 16, 5.0, true);
+        // 64-segment circle keeps per-segment sagitta (~0.012mm at r=10)
+        // within the 0.05mm tolerance. The previous version of this test
+        // used 16 segments with 0.01mm tolerance — sagitta 0.19mm — which
+        // only passed because the old code skipped chord-deviation check.
+        let pts = make_circle_points(0.0, 0.0, 10.0, 64, 5.0, true);
         let refs: Vec<&P3> = pts.iter().collect();
 
-        let arc = try_fit_arc(&refs[0..5], 0.01).unwrap();
+        let arc = try_fit_arc(&refs[0..5], 0.05).unwrap();
         assert!((arc.cx - 0.0).abs() < 0.1);
         assert!((arc.cy - 0.0).abs() < 0.1);
         assert!(!arc.clockwise); // CCW
@@ -326,11 +357,35 @@ mod tests {
 
     #[test]
     fn test_fit_arc_cw() {
-        let pts = make_circle_points(0.0, 0.0, 10.0, 16, 5.0, false); // CW
+        let pts = make_circle_points(0.0, 0.0, 10.0, 64, 5.0, false); // CW
         let refs: Vec<&P3> = pts.iter().collect();
 
-        let arc = try_fit_arc(&refs[0..5], 0.01).unwrap();
+        let arc = try_fit_arc(&refs[0..5], 0.05).unwrap();
         assert!(arc.clockwise);
+    }
+
+    /// Regression: arc-fit must not fit a circumscribing-circle arc to
+    /// 4 corners of a rectangle. The corners DO lie on a circle, so the
+    /// point-only tolerance check passes — but the chords (= original
+    /// cut path) deviate from the arc by the sagitta (~21mm for a
+    /// 100×100 square). Wanaka exhibited this as "perimeter sweep arc
+    /// cuts way outside the boundary".
+    #[test]
+    fn test_fit_arc_rejects_rectangle_corners() {
+        let corners = [
+            P3::new(0.0, 0.0, 0.0),
+            P3::new(100.0, 0.0, 0.0),
+            P3::new(100.0, 100.0, 0.0),
+            P3::new(0.0, 100.0, 0.0),
+        ];
+        let refs: Vec<&P3> = corners.iter().collect();
+        // Even with a generous 1mm tolerance, the 21mm sagitta should
+        // cause this to fail.
+        assert!(
+            try_fit_arc(&refs, 1.0).is_none(),
+            "arc-fit must reject rectangle-corner inputs (sagitta would \
+             far exceed tolerance)"
+        );
     }
 
     #[test]
