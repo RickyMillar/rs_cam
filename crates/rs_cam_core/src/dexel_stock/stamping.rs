@@ -168,13 +168,16 @@ pub(super) fn stamp_segment_on_grid(
 /// Fuses the work of `stamp_segment_on_grid`, `estimate_disk_cut_metrics`, and
 /// two calls to `window_material_volume_for_segment` into one row/col loop.
 ///
-/// Engagement metrics are derived from the per-cell stamp result: a cell only
-/// counts as engaged if the stamp at that cell actually removed material from
-/// the dexel ray. This keeps `arc_engagement_radians` and
-/// `volume_removed_mm3` in agreement on a per-sample basis (a sample reports
-/// nonzero arc engagement iff its stamp removed material). The midpoint
-/// position `(mid_u, mid_v)` is still used as the reference for binning the
-/// engaged cells around the cutter axis.
+/// `arc_engagement_radians` is gated on actual removal at the cell (a sample
+/// reports nonzero arc engagement iff its stamp bit material). This preserves
+/// the invariant tested by `tests/sim_chipload_invariant.rs`.
+///
+/// `radial_engagement` is the conventional CAM "radial width of cut over tool
+/// diameter" — measured as the perpendicular extent of cells that contained
+/// fresh material above the cutter surface BEFORE the stamp. This is
+/// independent of sample density: dense overlapping samples in already-cleared
+/// territory don't double-count, but a leading-edge bite of stepover σ
+/// reads σ/(2R) regardless of how finely we sample the toolpath.
 ///
 /// Returns `(axial_doc_mm, radial_engagement, arc_engagement_radians, volume_removed_mm3)`,
 /// where `axial_doc_mm` is the maximum per-cell material length removed by
@@ -276,12 +279,23 @@ pub(super) fn stamp_segment_with_metrics(
     // Metrics accumulators.
     let mut pre_volume = 0.0f64;
     let mut post_volume = 0.0f64;
-    let mut engaged_area = 0.0f64;
-    let mut total_area = 0.0f64;
     let mut max_penetration = 0.0f64;
+    // Perpendicular-to-bearing extent of cells that contained fresh material
+    // above the cutter surface before the stamp. Used to derive the
+    // conventional "radial width of cut / diameter" engagement metric in a
+    // way that is independent of sample density.
+    let mut perp_min = f64::INFINITY;
+    let mut perp_max = f64::NEG_INFINITY;
     const ARC_BINS: usize = 36;
     let mut arc_bins = [false; ARC_BINS];
     let move_bearing = seg_dv.atan2(seg_du);
+    let seg_len = seg_len_sq.sqrt();
+    let inv_seg_len = if seg_len > 1e-9 { 1.0 / seg_len } else { 0.0 };
+    // Threshold for "fresh material exists above the cutter at this cell".
+    // 0.05 mm filters out near-flush dexel artifacts where the previous stamp
+    // left material fractionally above the cutter surface due to floating
+    // point. Real bites are mm-scale.
+    const FRESH_MATERIAL_THRESHOLD_MM: f64 = 0.05;
 
     for row in row_lo..=row_hi {
         let cell_v = grid.origin_v + row as f64 * cs;
@@ -303,17 +317,23 @@ pub(super) fn stamp_segment_with_metrics(
             if let Some(h) = lut.height_at_dist_sq(dist_sq) {
                 let ray = &mut grid.rays[row * grid.cols + col];
 
-                // 1. Pre-stamp material height (read before mutation). Used
-                //    both for the volume delta (pre - post) and to derive
-                //    engagement from the actual stamp's effect.
+                // 1. Pre-stamp material totals (read before mutation). pre_len
+                //    is total material height; pre_fresh is material above the
+                //    cutter surface at this cell — i.e. material this stamp
+                //    will (or already would have) removed. pre_fresh drives
+                //    the radial engagement metric: it is independent of
+                //    sample density because dense overlapping samples in
+                //    already-cleared territory see pre_fresh ≈ 0.
                 let pre_len = ray_material_length(ray) as f64;
                 pre_volume += pre_len * cell_area;
+                let depth = sd + t * seg_dd;
+                let cell_tool_surface = if from_high { depth + h } else { depth - h };
+                let above = ray_material_length_above(ray, cell_tool_surface as f32) as f64;
+                let pre_fresh = if from_high { above } else { pre_len - above };
 
                 // 2. Apply the stamp using per-cell t-projected depth and
                 //    per-cell h. This is the geometry that determines what
                 //    material the cutter ACTUALLY removed at this cell.
-                let depth = sd + t * seg_dd;
-                let cell_tool_surface = if from_high { depth + h } else { depth - h };
                 if from_high {
                     ray_subtract_above(ray, cell_tool_surface as f32);
                 } else {
@@ -324,23 +344,30 @@ pub(super) fn stamp_segment_with_metrics(
                 let post_len = ray_material_length(ray) as f64;
                 post_volume += post_len * cell_area;
 
-                // 4. Engagement metrics derived from THIS cell's stamp result,
-                //    not a midpoint snapshot. The midpoint disk is still used
-                //    to define the engagement-arc reference frame (which side
-                //    of the cutter is engaged, for radial bin classification),
-                //    but the engagement count itself is gated on the stamp
-                //    actually removing material at this cell. This keeps the
-                //    sample's `arc_engagement_radians` and
-                //    `removed_volume_est_mm3` in agreement: a sample reports
-                //    nonzero engagement iff the stamp actually bit material.
+                // 4. Engagement metrics. The midpoint disk defines the
+                //    reference footprint for both arc binning and the
+                //    width-of-cut measurement. arc_engagement and
+                //    max_penetration (axial DOC) gate on actual removal at
+                //    this cell — preserves the invariant tested in
+                //    tests/sim_chipload_invariant.rs. radial_engagement gates
+                //    on pre-stamp fresh material (independent of how densely
+                //    we sampled the path).
                 let dm_u = cell_u - mid_u;
                 let dm_v = cell_v - mid_v;
                 let mid_dist_sq = dm_u * dm_u + dm_v * dm_v;
                 if mid_dist_sq <= radius_sq && lut.height_at_dist_sq(mid_dist_sq).is_some() {
-                    total_area += cell_area;
+                    if pre_fresh > FRESH_MATERIAL_THRESHOLD_MM {
+                        // Perpendicular projection (signed) for width-of-cut.
+                        let perp = (-seg_dv * dm_u + seg_du * dm_v) * inv_seg_len;
+                        if perp < perp_min {
+                            perp_min = perp;
+                        }
+                        if perp > perp_max {
+                            perp_max = perp;
+                        }
+                    }
                     let removed_here = (pre_len - post_len).max(0.0);
                     if removed_here > 1e-6 {
-                        engaged_area += cell_area;
                         max_penetration = max_penetration.max(removed_here);
                         let forward = (cell_u - mid_u) * seg_du + (cell_v - mid_v) * seg_dv;
                         if capture_arc_engagement && forward > 1e-9 {
@@ -363,10 +390,11 @@ pub(super) fn stamp_segment_with_metrics(
         }
     }
 
-    let radial_engagement = if total_area <= 1e-9 {
-        0.0
+    // Width of cut perpendicular to motion / tool diameter.
+    let radial_engagement = if perp_max > perp_min {
+        ((perp_max - perp_min) / (2.0 * radius)).clamp(0.0, 1.0)
     } else {
-        (engaged_area / total_area).clamp(0.0, 1.0)
+        0.0
     };
     let arc_engagement_radians = if capture_arc_engagement {
         let occupied = arc_bins.iter().filter(|&&occupied| occupied).count();
