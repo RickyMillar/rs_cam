@@ -20,14 +20,14 @@
 
 use std::path::PathBuf;
 
-use rs_cam_core::boundary::{ToolContainment, clip_toolpath_to_boundary, effective_boundary};
+use rs_cam_core::boundary::{clip_toolpath_to_boundary, effective_boundary, ToolContainment};
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 use rs_cam_core::compute::execute::apply_dressups;
 use rs_cam_core::dxf_input::load_dxf;
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::project_curve::{ProjectCurveParams, ProjectDirection, project_curve_toolpath};
+use rs_cam_core::project_curve::{project_curve_toolpath, ProjectCurveParams, ProjectDirection};
 use rs_cam_core::tool::{FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 
@@ -381,7 +381,16 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let mut with_links = DressupConfig::default();
     with_links.link_moves = true;
     with_links.link_max_distance = 10.0;
-    let tp_with_links = apply_dressups(all_moves.clone(), &with_links, 1.0, 10.0, None, None, None);
+    let tp_with_links = apply_dressups(
+        all_moves.clone(),
+        &with_links,
+        1.0,
+        10.0,
+        None,
+        None,
+        None,
+        &[],
+    );
     report("project_curve + link_moves", &tp_with_links, &polygons);
 
     // And without link_moves — the fixed default.
@@ -393,6 +402,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         None,
         None,
         None,
+        &[],
     );
     let (offenders, total, worst) = report("project_curve (no links)", &tp_no_links, &polygons);
 
@@ -412,6 +422,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         None,
         None,
         None,
+        &[],
     );
     report("+ finish defaults", &tp_finish, &polygons);
 
@@ -419,7 +430,16 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let mut ramp_only = DressupConfig::default();
     ramp_only.entry_style = DressupEntryStyle::Ramp;
     ramp_only.ramp_angle = 3.0;
-    let tp_ramp = apply_dressups(all_moves.clone(), &ramp_only, 1.0, 10.0, None, None, None);
+    let tp_ramp = apply_dressups(
+        all_moves.clone(),
+        &ramp_only,
+        1.0,
+        10.0,
+        None,
+        None,
+        None,
+        &[],
+    );
     report("+ ramp entry only", &tp_ramp, &polygons);
 
     // Dump the longest feed-at-cut-depth moves in each variant so we can

@@ -98,7 +98,7 @@ The GUI embeds an MCP server (`--mcp` flag) so Claude can control the live GUI i
 3. **Review**: `list_toolpaths`, `get_toolpath_params` for each index
 4. **Generate**: `generate_all` or `generate_toolpath` per index
 5. **Simulate**: `run_simulation` (always collects metrics)
-6. **Diagnose**: prefer `narrate_toolpath(index)` first for agent-readable Z-level structure, suspicious arcs, peak axial DOC, and air-cut %. Use `get_cut_trace` only when drilling into raw metrics.
+6. **Diagnose**: prefer `narrate_toolpath(index)` first for agent-readable Z-level structure, cut runs vs marching-squares regions, engagement histogram, suspicious arcs, peak axial DOC, and air-cut %. Use `get_cut_trace` only when drilling into raw metrics.
 7. **Visualize**: `screenshot_simulation` / `screenshot_toolpath` to `.png` then Read the image
 8. **Iterate**: `set_toolpath_param`, `set_tool_param`, regenerate, re-simulate
 

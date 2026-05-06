@@ -11,6 +11,69 @@ use super::{stock_has_material_above, stock_top_z_at};
 
 // ── 3D engagement ─────────────────────────────────────────────────────
 
+/// Per-Z floor and material diagnostics. Returned by
+/// [`material_remaining_at_level_diag`] for debug-trace consumers; the
+/// scalar [`material_remaining_at_level`] keeps its existing signature
+/// for the planner's cheap exit check.
+///
+/// Cell-bucket semantics (matches the planner's `floor` calc
+/// `(surf_z + stock_to_leave).max(z_level)`):
+/// - `cells_total`: every cell in the grid (or region bbox).
+/// - `cells_at_z`: cells where the effective floor IS z_level — the
+///   planner can cut down to z_level here.
+/// - `cells_surf_above`: cells where `surf+stock_to_leave > z_level` — the
+///   planner CANNOT cut to z_level here; the surface (or its
+///   stock-to-leave offset) sits above the cut plane.
+/// - `cells_with_material`: cells where material remains above the
+///   effective floor. Subset of `cells_at_z`.
+///
+/// `fraction = cells_with_material / cells_at_z` (matches the legacy
+/// scalar reading; equals 0 when `cells_at_z == 0`).
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct MaterialFloorDiagnostic {
+    pub fraction: f64,
+    pub cells_total: u64,
+    pub cells_at_z: u64,
+    pub cells_surf_above: u64,
+    pub cells_with_material: u64,
+}
+
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+/// Diagnostic counterpart to [`material_remaining_at_level`]. Only call
+/// when a debug span is open — this is the slightly-more-expensive path
+/// that records the floor-cell histogram.
+pub(super) fn material_remaining_at_level_diag(
+    material_stock: &TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    z_level: f64,
+    stock_to_leave: f64,
+) -> MaterialFloorDiagnostic {
+    let grid = &material_stock.z_grid;
+    let mut diag = MaterialFloorDiagnostic::default();
+    for row in 0..grid.rows {
+        for col in 0..grid.cols {
+            let i = row * grid.cols + col;
+            let surf_z = surface_hm.z_values[i];
+            let floor = (surf_z + stock_to_leave).max(z_level);
+            diag.cells_total += 1;
+            if surf_z + stock_to_leave <= z_level + 0.01 {
+                diag.cells_at_z += 1;
+                if stock_has_material_above(material_stock, row, col, floor + 0.01) {
+                    diag.cells_with_material += 1;
+                }
+            } else {
+                diag.cells_surf_above += 1;
+            }
+        }
+    }
+    diag.fraction = if diag.cells_at_z == 0 {
+        0.0
+    } else {
+        diag.cells_with_material as f64 / diag.cells_at_z as f64
+    };
+    diag
+}
+
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Fraction of grid cells where material remains above the effective floor
 /// at a given z_level. Used to decide when a level is done.
@@ -28,8 +91,6 @@ pub(super) fn material_remaining_at_level(
             let i = row * grid.cols + col;
             let surf_z = surface_hm.z_values[i];
             let floor = (surf_z + stock_to_leave).max(z_level);
-            // Only count cells where the surface is actually below the current level
-            // (cells where surface is above z_level were handled at higher levels)
             if surf_z + stock_to_leave <= z_level + 0.01 {
                 total += 1;
                 if stock_has_material_above(material_stock, row, col, floor + 0.01) {

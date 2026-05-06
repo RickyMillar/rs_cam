@@ -498,6 +498,7 @@ impl ProjectSession {
                 }
                 let child_ctx = op_scope.context();
                 annotate_from_runtime_events(&annotations, &toolpath, &child_ctx);
+                let rapid_order_barriers = annotations.rapid_order_barriers();
 
                 // Apply dressups. Pass `prior_stock` if a simulation has
                 // already produced a snapshot for this toolpath id (enables
@@ -515,6 +516,7 @@ impl ProjectSession {
                     prior_stock_ref,
                     None,
                     None,
+                    &rapid_order_barriers,
                 );
 
                 // ── Boundary clipping ─────────────────────────────────
@@ -949,6 +951,15 @@ impl ProjectSession {
             toolpath_name: Some(tc.name.as_str()),
             operation_label: Some(tc.operation.label()),
             depth_per_pass_mm: tc.operation.depth_per_pass(),
+            stepover_mm: tc.operation.stepover(),
+            tool_diameter_mm: Some(tool.diameter),
+            feed_rate_mm_min: Some(tc.operation.feed_rate()),
+            spindle_rpm: Some(
+                tc.operation
+                    .spindle_rpm()
+                    .unwrap_or(self.post.spindle_speed),
+            ),
+            flute_count: Some(tool.flute_count),
         };
 
         Ok(crate::narrate::narrate_toolpath_with_context(

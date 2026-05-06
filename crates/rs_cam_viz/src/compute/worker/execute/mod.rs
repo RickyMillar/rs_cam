@@ -32,6 +32,11 @@ pub(super) struct ComputeExecutionOutcome {
     pub debug_trace_path: Option<std::path::PathBuf>,
 }
 
+struct GeneratedToolpath {
+    toolpath: Toolpath,
+    rapid_order_barriers: Vec<usize>,
+}
+
 /// Bridge function: delegates toolpath generation to core's `execute_operation`.
 ///
 /// Builds the spatial index on-demand (only for 3D mesh operations), adds a
@@ -42,7 +47,7 @@ fn generate_via_core(
     debug_ctx: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
     semantic_root: Option<&rs_cam_core::semantic_trace::ToolpathSemanticContext>,
     core_debug_span_id: Option<u64>,
-) -> Result<Toolpath, ComputeError> {
+) -> Result<GeneratedToolpath, ComputeError> {
     let tool_def = build_cutter(&req.tool);
     let mesh_ref = req.mesh.as_deref();
     let index = mesh_ref.map(rs_cam_core::mesh::SpatialIndex::build_auto);
@@ -151,7 +156,10 @@ fn generate_via_core(
         annotate_from_runtime_events(&result.annotations, &result.toolpath, &child_ctx);
     }
 
-    Ok(result.toolpath)
+    Ok(GeneratedToolpath {
+        rapid_order_barriers: result.annotations.rapid_order_barriers(),
+        toolpath: result.toolpath,
+    })
 }
 
 /// Convert viz `SimulationRequest` into a core `SimulationRequest` so the
@@ -359,7 +367,7 @@ fn run_compute_with_phase_tracker(
         .map(|recorder| recorder.root_context());
 
     let result = (|| -> Result<ToolpathResult, ComputeError> {
-        let mut tp = {
+        let tp = {
             let _phase_scope =
                 phase_tracker.map(|tracker| tracker.start_phase(req.operation.label()));
             let core_scope = debug_root
@@ -367,7 +375,7 @@ fn run_compute_with_phase_tracker(
                 .map(|ctx| ctx.start_span("core_generate", req.operation.label()));
             let core_ctx = core_scope.as_ref().map(|scope| scope.context());
             let core_debug_span_id = core_scope.as_ref().map(|scope| scope.id());
-            let tp = generate_via_core(
+            let generated = generate_via_core(
                 req,
                 cancel,
                 core_ctx.as_ref(),
@@ -375,12 +383,15 @@ fn run_compute_with_phase_tracker(
                 core_debug_span_id,
             )?;
             if let Some(scope) = core_scope.as_ref()
-                && !tp.moves.is_empty()
+                && !generated.toolpath.moves.is_empty()
             {
-                scope.set_move_range(0, tp.moves.len() - 1);
+                scope.set_move_range(0, generated.toolpath.moves.len() - 1);
             }
-            tp
+            generated
         };
+
+        let rapid_order_barriers = tp.rapid_order_barriers;
+        let mut tp = tp.toolpath;
 
         {
             let _phase_scope = phase_tracker.map(|tracker| tracker.start_phase("Apply dressups"));
@@ -388,7 +399,13 @@ fn run_compute_with_phase_tracker(
                 .as_ref()
                 .map(|ctx| ctx.start_span("dressups", "Apply dressups"));
             let dressup_ctx = dressup_scope.as_ref().map(|scope| scope.context());
-            tp = apply_dressups(tp, req, dressup_ctx.as_ref(), semantic_root.as_ref());
+            tp = apply_dressups(
+                tp,
+                req,
+                dressup_ctx.as_ref(),
+                semantic_root.as_ref(),
+                &rapid_order_barriers,
+            );
         }
 
         if req.boundary.enabled
