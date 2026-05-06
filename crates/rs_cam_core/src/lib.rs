@@ -61,6 +61,7 @@ pub mod svg_input;
 pub mod tool;
 pub mod tool_load;
 pub mod toolpath;
+pub mod toolpath_spans;
 pub mod trace;
 pub mod tsp;
 pub mod vcarve;
