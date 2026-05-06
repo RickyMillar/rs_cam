@@ -386,20 +386,25 @@ pub(super) fn stamp_segment_with_metrics(
     } else {
         0.0
     };
-    // Engagement arc derived geometrically from radial engagement (the
-    // conventional CAM relationship: arc = 2·arccos(1 − W/R) for a circular
-    // segment of width W = 2R · radial_engagement). Computing this from
-    // radial rather than per-cell bearing binning avoids the dense-sample
-    // lune artifact: a per-cell scan over engaged cells in the midpoint
-    // disk only sees the thin sliver of fresh material between consecutive
-    // overlapping samples, and its bearing extent is much smaller than the
-    // steady-state engagement arc the chipload formula expects. The radial
-    // measurement (perp extent of fresh cells) is more robust because the
-    // bite zone has nontrivial perp extent even when the sliver is thin.
+    // Engagement arc derived geometrically from radial engagement. The
+    // conventional CAM relationship (one-sided side bite of width W = D ·
+    // radial_engagement on a cutter of diameter D): arc = arccos(1 − 2 ·
+    // radial). Reads π/2 at half-immersion (RWoC=0.5) and π at full slot
+    // (RWoC=1.0) — matching the tooth-load arc convention the chipload
+    // formula expects.
+    //
+    // Computing this from radial rather than per-cell bearing binning
+    // avoids the dense-sample lune artifact: a per-cell scan over engaged
+    // cells in the midpoint disk only sees the thin sliver of fresh
+    // material between consecutive overlapping samples, and its bearing
+    // extent is much smaller than the steady-state engagement arc the
+    // chipload formula expects. The radial measurement (perp extent of
+    // fresh cells) is more robust because the bite zone has nontrivial
+    // perp extent even when the sliver is thin.
     let arc_engagement_radians = if capture_arc_engagement {
         let arc = if radial_engagement > 0.0 {
-            let one_minus_w_over_r = 1.0 - 2.0 * radial_engagement;
-            2.0 * one_minus_w_over_r.clamp(-1.0, 1.0).acos()
+            let one_minus_two_w_over_d = 1.0 - 2.0 * radial_engagement;
+            one_minus_two_w_over_d.clamp(-1.0, 1.0).acos()
         } else {
             0.0
         };
