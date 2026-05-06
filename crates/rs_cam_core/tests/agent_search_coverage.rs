@@ -28,7 +28,8 @@
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    clippy::manual_range_contains
 )]
 
 use rs_cam_core::{

@@ -407,7 +407,9 @@ pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    clippy::print_stdout,
+    clippy::print_stderr
 )]
 mod tests {
     use super::clearing::{MaterialRegion, detect_material_regions};
@@ -1746,25 +1748,13 @@ mod tests {
     // to localize the bug.
 
     /// (divergent, total, interior, max_dz, violations[(row, col, planner_top, sim_top, surface, dz)])
-    type ParityResult = (
-        u64,
-        u64,
-        u64,
-        f64,
-        Vec<(usize, usize, f64, f64, f64, f64)>,
-    );
+    type ParityResult = (u64, u64, u64, f64, Vec<(usize, usize, f64, f64, f64, f64)>);
 
-    fn run_planner_sim_parity(
-        strategy: ClearingStrategy3d,
-        label: &str,
-    ) -> ParityResult {
+    fn run_planner_sim_parity(strategy: ClearingStrategy3d, label: &str) -> ParityResult {
         run_planner_sim_parity_with_mesh(strategy, label, make_hemisphere_mesh())
     }
 
-    fn run_planner_sim_parity_flat(
-        strategy: ClearingStrategy3d,
-        label: &str,
-    ) -> ParityResult {
+    fn run_planner_sim_parity_flat(strategy: ClearingStrategy3d, label: &str) -> ParityResult {
         run_planner_sim_parity_with_mesh(strategy, label, make_flat_mesh())
     }
 
@@ -2083,12 +2073,12 @@ mod tests {
     fn segments_to_cut_only_toolpath(segments: &[Adaptive3dSegment]) -> Toolpath {
         let mut tp = Toolpath::new();
         for seg in segments {
-            if let Adaptive3dSegment::Cut(path) = seg {
-                if let Some(first) = path.first() {
-                    tp.rapid_to(*first);
-                    for p in path.iter().skip(1) {
-                        tp.feed_to(*p, 1000.0);
-                    }
+            if let Adaptive3dSegment::Cut(path) = seg
+                && let Some(first) = path.first()
+            {
+                tp.rapid_to(*first);
+                for p in path.iter().skip(1) {
+                    tp.feed_to(*p, 1000.0);
                 }
             }
         }

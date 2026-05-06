@@ -1525,8 +1525,10 @@ pub(super) fn clear_z_level_agent_2d_slice(
                                 run_len_mm += (dx * dx + dy * dy).sqrt();
                             }
                             if run_len_mm < MIN_AIR_RUN_MM {
-                                for k in run_start..=run_end {
-                                    engaged[k] = true;
+                                for is_engaged in
+                                    engaged.iter_mut().take(run_end + 1).skip(run_start)
+                                {
+                                    *is_engaged = true;
                                 }
                             }
                             i = run_end + 1;

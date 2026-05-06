@@ -589,7 +589,7 @@ impl<B: ComputeBackend> AppController<B> {
                     }
                 },
                 ComputeMessage::Optimize(result) => {
-                    self.handle_optimize_result(result);
+                    self.handle_optimize_result(*result);
                 }
             }
         }
@@ -712,11 +712,11 @@ impl<B: ComputeBackend> AppController<B> {
                 // (e.g. the candidate set changed mid-flight, which
                 // shouldn't happen since the report is immutable).
                 let idx = ProjectOptimizeReport::first_safe_index(candidates).unwrap_or(0);
-                if idx > 0 {
-                    if let Some(c) = candidates.get_mut(idx) {
-                        c.reconciled_cycle_time_s = cycle;
-                        c.reconciled_verdict = verdict;
-                    }
+                if idx > 0
+                    && let Some(c) = candidates.get_mut(idx)
+                {
+                    c.reconciled_cycle_time_s = cycle;
+                    c.reconciled_verdict = verdict;
                 }
             }
         }

@@ -7,7 +7,8 @@
     clippy::panic,
     clippy::indexing_slicing,
     clippy::print_stderr,
-    clippy::print_stdout
+    clippy::print_stdout,
+    clippy::redundant_clone
 )]
 
 use rs_cam_core::adaptive3d::{

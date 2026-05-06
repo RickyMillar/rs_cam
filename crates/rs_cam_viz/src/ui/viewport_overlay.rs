@@ -5,6 +5,11 @@ use crate::state::Workspace;
 use crate::state::viewport::{RenderMode, ToolpathColorMode, ViewportState};
 use crate::ui::theme;
 
+// SAFETY: viewport overlay needs the full UI context (workspace, sim flag,
+// projection, isolation label, mutable viewport state, lane snapshots, and
+// event sink). Bundling them into a struct would just rename the same data
+// for one call site.
+#[allow(clippy::too_many_arguments)]
 pub fn draw(
     ui: &mut egui::Ui,
     workspace: Workspace,

@@ -196,10 +196,10 @@ impl<B: ComputeBackend> AppController<B> {
                 self.state.optimize_project = None;
             }
             AppEvent::ToggleOptimizeProjectRow(idx) => {
-                if let Some(view) = self.state.optimize_project.as_mut() {
-                    if let Some(slot) = view.row_selected.get_mut(idx) {
-                        *slot = !*slot;
-                    }
+                if let Some(view) = self.state.optimize_project.as_mut()
+                    && let Some(slot) = view.row_selected.get_mut(idx)
+                {
+                    *slot = !*slot;
                 }
             }
             AppEvent::ApplyOptimizeProject => {
@@ -548,10 +548,10 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .map(|tc| tc.id)
             .collect();
-        if let Some(view) = self.state.optimize_project.as_mut() {
-            if let crate::state::OptimizeProjectStatus::Ready(report) = &view.status {
-                view.status = crate::state::OptimizeProjectStatus::Reconciling(report.clone());
-            }
+        if let Some(view) = self.state.optimize_project.as_mut()
+            && let crate::state::OptimizeProjectStatus::Ready(report) = &view.status
+        {
+            view.status = crate::state::OptimizeProjectStatus::Reconciling(report.clone());
         }
         self.state.pending_reconciliation_for_ids = touched_ids;
         self.push_notification(

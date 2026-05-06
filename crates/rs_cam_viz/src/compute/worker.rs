@@ -884,7 +884,7 @@ fn spawn_optimize_lane(
                 }
             }
 
-            let _ = result_tx.send(ComputeMessage::Optimize(result));
+            let _ = result_tx.send(ComputeMessage::Optimize(Box::new(result)));
         }
     })
 }

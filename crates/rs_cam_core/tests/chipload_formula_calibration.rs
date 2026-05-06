@@ -23,6 +23,8 @@
 //! formula is the integral-average of `feed × sin(φ)` over the arc and
 //! is what vendor LUT chip-load bounds are calibrated against.
 
+#![allow(clippy::expect_used, clippy::panic)]
+
 use std::f64::consts::FRAC_PI_2;
 
 use rs_cam_core::compute::catalog::OperationType;

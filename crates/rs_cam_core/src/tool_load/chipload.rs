@@ -85,7 +85,7 @@ const STEADY_STATE_FEED_FRACTION: f64 = 0.95;
 /// missing a genuine "running too slow" condition where the cut is
 /// SUSTAINED below min. BreakageRisk (above-max) stays per-sample peak
 /// since a single overload bite is enough to break a tooth.
-
+///
 /// Evaluate the chipload criterion for a single toolpath.
 ///
 /// `toolpath_id` matches `SimulationCutSample::toolpath_id` (the stable
@@ -104,6 +104,7 @@ const STEADY_STATE_FEED_FRACTION: f64 = 0.95;
 /// for flat tools to (Contour, Finish). V-bit and bull-nose
 /// project_curve toolpaths leave the lookup unrouted and return
 /// `Unmodeled(NoVendorData)` (Item D of the tool-load fidelity plan).
+#[allow(clippy::too_many_arguments)]
 pub fn evaluate(
     toolpath_id: usize,
     tool: &ToolDefinition,

@@ -215,10 +215,11 @@ pub fn chipload_envelopes_for_session(
             continue;
         };
         // Keep envelope rows where both bounds exist and are sane.
-        if let (Some(lo), Some(hi)) = (matched.chip_load_min_mm, matched.chip_load_max_mm) {
-            if lo > 0.0 && hi >= lo {
-                out.insert(tc.id, lo..hi);
-            }
+        if let (Some(lo), Some(hi)) = (matched.chip_load_min_mm, matched.chip_load_max_mm)
+            && lo > 0.0
+            && hi >= lo
+        {
+            out.insert(tc.id, lo..hi);
         }
     }
     out

@@ -18,7 +18,11 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    clippy::print_stdout,
+    clippy::let_unit_value,
+    clippy::redundant_clone,
+    noop_method_call
 )]
 
 use std::path::PathBuf;
