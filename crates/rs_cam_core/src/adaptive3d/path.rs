@@ -35,12 +35,7 @@ use super::{
 /// Without this, entries chosen at fresh-stock XYs on deep Z levels
 /// would carve a column from `start_z` down through full stock
 /// thickness in one shot ("punched hole" symptom).
-fn emit_peck_plunge(
-    tp: &mut Toolpath,
-    entry: &P3,
-    start_z: f64,
-    params: &Adaptive3dParams,
-) {
+fn emit_peck_plunge(tp: &mut Toolpath, entry: &P3, start_z: f64, params: &Adaptive3dParams) {
     const PECK_CLEARANCE_MM: f64 = 0.5;
     let dpp = params.depth_per_pass.max(0.1);
     let mut current_z = start_z;
@@ -67,10 +62,7 @@ pub(super) enum Adaptive3dSegment {
     /// followed by a short peck through the remaining fresh material.
     /// Falls back to plain `Rapid` semantics when `rapid_floor_z >=
     /// safe_z` (no air gap to skip).
-    RapidWithFloor {
-        entry: P3,
-        rapid_floor_z: f64,
-    },
+    RapidWithFloor { entry: P3, rapid_floor_z: f64 },
     /// Feed directly at cutting depth (no retract)
     Link(P3),
     /// Structured runtime marker at the current point in the toolpath
@@ -677,10 +669,9 @@ pub(super) fn segments_to_toolpath(
                     const RAPID_DESCENT_BUFFER_MM: f64 = 0.5;
                     lift_to_safe_z(&mut tp, params.safe_z);
                     tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
-                    let descent_floor =
-                        (*rapid_floor_z + RAPID_DESCENT_BUFFER_MM)
-                            .min(params.safe_z)
-                            .max(entry.z);
+                    let descent_floor = (*rapid_floor_z + RAPID_DESCENT_BUFFER_MM)
+                        .min(params.safe_z)
+                        .max(entry.z);
                     if descent_floor < params.safe_z - 1e-6 {
                         tp.rapid_to(P3::new(entry.x, entry.y, descent_floor));
                     }

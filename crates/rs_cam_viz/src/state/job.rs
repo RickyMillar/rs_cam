@@ -493,15 +493,14 @@ pub fn height_context_from_session(
         });
     // Apply the setup transform that owns this toolpath so model_top/bottom_z
     // are in the setup-local frame. The raw mesh bbox is in world coords.
-    let setup = session
-        .list_setups()
-        .iter()
-        .find(|s| s.toolpath_indices.iter().any(|&i| {
+    let setup = session.list_setups().iter().find(|s| {
+        s.toolpath_indices.iter().any(|&i| {
             session
                 .toolpath_configs()
                 .get(i)
                 .is_some_and(|t| t.id == tc.id)
-        }));
+        })
+    });
     let mb = match (raw_mb, setup) {
         (Some(b), Some(s)) => {
             let info = session.setup_transform_info(s.face_up, s.z_rotation);
@@ -510,10 +509,8 @@ pub fn height_context_from_session(
         (Some(b), None) => Some(b),
         _ => None,
     };
-    let safe_z = rs_cam_core::compute::config::effective_safe_z(
-        session.post_config().safe_z,
-        sb.max.z,
-    );
+    let safe_z =
+        rs_cam_core::compute::config::effective_safe_z(session.post_config().safe_z, sb.max.z);
     rs_cam_core::compute::config::HeightContext {
         safe_z,
         op_depth: tc.operation.default_depth_for_heights(),

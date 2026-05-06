@@ -34,6 +34,7 @@ pub mod io;
 pub mod machine;
 pub mod material;
 pub mod mesh;
+pub mod narrate;
 pub mod pencil;
 pub mod pocket;
 pub mod polygon;

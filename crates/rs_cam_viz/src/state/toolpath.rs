@@ -14,9 +14,9 @@ pub use configs::{
     DropCutterConfig, FaceConfig, FaceDirection, HorizontalFinishConfig, InlayConfig, PencilConfig,
     PocketConfig, PocketPattern, ProfileConfig, ProfileSide, ProjectCurveConfig,
     ProjectCurveDirection, ProjectCurveSide, RadialFinishConfig, RampFinishConfig, RegionOrdering,
-    RestConfig,
-    ScallopConfig, ScallopDirection, SpiralDirection, SpiralFinishConfig, SteepShallowConfig,
-    TraceCompensation, TraceConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
+    RestConfig, ScallopConfig, ScallopDirection, SpiralDirection, SpiralFinishConfig,
+    SteepShallowConfig, TraceCompensation, TraceConfig, VCarveConfig, WaterlineConfig,
+    ZigzagConfig,
 };
 pub use entry::{ToolpathEntry, ToolpathEntryInit, ToolpathResult};
 pub use support::{

@@ -157,8 +157,7 @@ pub fn chipload_envelopes_for_session(
         if !tc.enabled {
             continue;
         }
-        let Some(tool_cfg) =
-            session.get_tool(crate::compute::tool_config::ToolId(tc.tool_id))
+        let Some(tool_cfg) = session.get_tool(crate::compute::tool_config::ToolId(tc.tool_id))
         else {
             continue;
         };
@@ -212,14 +211,11 @@ pub fn chipload_envelopes_for_session(
             pass_role,
         };
         let lut = chipload::embedded_lut();
-        let Some(matched) = enumerate_matching_rows(lut, &criteria).into_iter().next()
-        else {
+        let Some(matched) = enumerate_matching_rows(lut, &criteria).into_iter().next() else {
             continue;
         };
         // Keep envelope rows where both bounds exist and are sane.
-        if let (Some(lo), Some(hi)) =
-            (matched.chip_load_min_mm, matched.chip_load_max_mm)
-        {
+        if let (Some(lo), Some(hi)) = (matched.chip_load_min_mm, matched.chip_load_max_mm) {
             if lo > 0.0 && hi >= lo {
                 out.insert(tc.id, lo..hi);
             }

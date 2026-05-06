@@ -339,10 +339,12 @@ pub fn draw(
         // here. We give the card a discrete `Id` so the response doesn't
         // collide with neighbours.
         let card_resp = ui
-            .interact(inner.response.rect, ui.id().with(("sim_card", boundary.id.0)), egui::Sense::click())
-            .on_hover_text(
-                "Click anywhere on this card to jump playback to the toolpath's start.",
-            );
+            .interact(
+                inner.response.rect,
+                ui.id().with(("sim_card", boundary.id.0)),
+                egui::Sense::click(),
+            )
+            .on_hover_text("Click anywhere on this card to jump playback to the toolpath's start.");
         if card_resp.clicked() {
             events.push(AppEvent::SimJumpToOpStart(i));
         }

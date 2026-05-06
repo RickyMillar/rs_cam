@@ -8,9 +8,7 @@
 //! toolpath). The controller's `OpenOptimizeModal` handler runs
 //! `optimize_toolpath` synchronously and stashes the outcome here.
 
-use rs_cam_core::tool_load::optimize::{
-    OptimizeCandidate, OptimizeOutcome, ParamDelta,
-};
+use rs_cam_core::tool_load::optimize::{OptimizeCandidate, OptimizeOutcome, ParamDelta};
 use rs_cam_core::tool_load::verdict::{ToolpathLoadVerdict, Verdict};
 
 use super::{AppEvent, theme};
@@ -146,11 +144,7 @@ fn draw_outcome(
 /// or Apply buttons — none of these candidates is recommended. The
 /// goal is purely diagnostic: show what was tried, the cycle delta,
 /// and the verdict per row.
-fn draw_attempted(
-    ui: &mut egui::Ui,
-    candidates: &[OptimizeCandidate],
-    events: &mut Vec<AppEvent>,
-) {
+fn draw_attempted(ui: &mut egui::Ui, candidates: &[OptimizeCandidate], events: &mut Vec<AppEvent>) {
     let Some((baseline, rest)) = candidates.split_first() else {
         return;
     };
@@ -253,11 +247,7 @@ fn draw_refusal_section(
     explanation: &str,
     events: &mut Vec<AppEvent>,
 ) {
-    ui.label(
-        egui::RichText::new(heading)
-            .strong()
-            .color(theme::WARNING),
-    );
+    ui.label(egui::RichText::new(heading).strong().color(theme::WARNING));
     ui.add_space(4.0);
     ui.label(egui::RichText::new(explanation).small());
     ui.add_space(8.0);
@@ -303,11 +293,8 @@ fn draw_ranked(
     );
     ui.add_space(4.0);
 
-    let recommended_index = recommended.and_then(|r| {
-        candidates
-            .iter()
-            .position(|c| std::ptr::eq(c, r))
-    });
+    let recommended_index =
+        recommended.and_then(|r| candidates.iter().position(|c| std::ptr::eq(c, r)));
 
     egui::Grid::new("optimize_candidates_grid")
         .num_columns(5)
@@ -355,7 +342,9 @@ fn draw_baseline_card(ui: &mut egui::Ui, baseline: &OptimizeCandidate) {
             ui.label(egui::RichText::new(cycle_min).small());
             ui.end_row();
             ui.label(egui::RichText::new("Feed:").small());
-            ui.label(egui::RichText::new(format!("{:.0} mm/min", baseline.params.feed_rate())).small());
+            ui.label(
+                egui::RichText::new(format!("{:.0} mm/min", baseline.params.feed_rate())).small(),
+            );
             ui.end_row();
             if let Some(rpm) = baseline.params.spindle_rpm() {
                 ui.label(egui::RichText::new("RPM:").small());
@@ -526,5 +515,4 @@ mod tests {
     fn format_cycle_handles_inf() {
         assert_eq!(format_cycle(f64::INFINITY), "—");
     }
-
 }

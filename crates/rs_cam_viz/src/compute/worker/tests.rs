@@ -630,7 +630,10 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
         stock_bbox,
         stock_top_z: 10.0,
         resolution: 0.5,
-        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions { enabled, capture_arc_engagement: enabled },
+        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions {
+            enabled,
+            capture_arc_engagement: enabled,
+        },
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,

@@ -313,11 +313,7 @@ pub(super) fn stamp_segment_with_metrics(
                 //    per-cell h. This is the geometry that determines what
                 //    material the cutter ACTUALLY removed at this cell.
                 let depth = sd + t * seg_dd;
-                let cell_tool_surface = if from_high {
-                    depth + h
-                } else {
-                    depth - h
-                };
+                let cell_tool_surface = if from_high { depth + h } else { depth - h };
                 if from_high {
                     ray_subtract_above(ray, cell_tool_surface as f32);
                 } else {

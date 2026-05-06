@@ -18,7 +18,11 @@ pub fn draw(
     events: &mut Vec<AppEvent>,
 ) {
     // Overall visibility (eye). Off if the runtime's `visible` flag is off.
-    let eye = if overall_visible { "\u{1F441}" } else { "\u{2298}" };
+    let eye = if overall_visible {
+        "\u{1F441}"
+    } else {
+        "\u{2298}"
+    };
     if ui
         .small_button(eye)
         .on_hover_text(if overall_visible {
@@ -35,15 +39,13 @@ pub fn draw(
     let entry = viewport.toolpath_move_visibility.entry(tp_id).or_default();
 
     let cut_text = "C";
-    let cut_btn = egui::Button::new(
-        egui::RichText::new(cut_text)
-            .small()
-            .color(if entry.show_cutting {
-                theme::TEXT_HEADING
-            } else {
-                theme::TEXT_DIM
-            }),
-    )
+    let cut_btn = egui::Button::new(egui::RichText::new(cut_text).small().color(
+        if entry.show_cutting {
+            theme::TEXT_HEADING
+        } else {
+            theme::TEXT_DIM
+        },
+    ))
     .min_size(egui::vec2(18.0, 16.0));
     if ui
         .add(cut_btn)
@@ -54,15 +56,13 @@ pub fn draw(
     }
 
     let rapid_text = "R";
-    let rapid_btn = egui::Button::new(
-        egui::RichText::new(rapid_text)
-            .small()
-            .color(if entry.show_rapids {
-                theme::TEXT_HEADING
-            } else {
-                theme::TEXT_DIM
-            }),
-    )
+    let rapid_btn = egui::Button::new(egui::RichText::new(rapid_text).small().color(
+        if entry.show_rapids {
+            theme::TEXT_HEADING
+        } else {
+            theme::TEXT_DIM
+        },
+    ))
     .min_size(egui::vec2(18.0, 16.0));
     if ui
         .add(rapid_btn)
@@ -74,13 +74,13 @@ pub fn draw(
 
     // Isolate (only-show-this) toggle. Target \u{25CE} = bullseye.
     let is_isolated = viewport.isolate_toolpath == Some(tp_id);
-    let iso_btn = egui::Button::new(
-        egui::RichText::new("\u{25CE}").small().color(if is_isolated {
+    let iso_btn = egui::Button::new(egui::RichText::new("\u{25CE}").small().color(
+        if is_isolated {
             theme::WARNING
         } else {
             theme::TEXT_HEADING
-        }),
-    )
+        },
+    ))
     .min_size(egui::vec2(18.0, 16.0));
     if ui
         .add(iso_btn)

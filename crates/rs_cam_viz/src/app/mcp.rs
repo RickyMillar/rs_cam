@@ -108,6 +108,10 @@ impl super::RsCamApp {
                 );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::NarrateToolpath { index } => {
+                let resp = self.mcp_narrate_toolpath(index);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::InspectModel => {
                 let resp = self.mcp_inspect_model();
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
@@ -599,6 +603,58 @@ impl super::RsCamApp {
 
     fn mcp_get_diagnostics(&self) -> String {
         json_str(self.controller.build_mcp_diagnostics())
+    }
+
+    fn mcp_narrate_toolpath(&self, index: usize) -> String {
+        let state = self.controller.state();
+        let Some(tc) = state.session.get_toolpath_config(index) else {
+            return format!("Error: Toolpath index {index} not found");
+        };
+        let Some(rt) = state.gui.toolpath_rt.get(&tc.id) else {
+            return format!("Error: Toolpath {index} not generated. Run generate_toolpath first.");
+        };
+        let Some(result) = rt.result.as_ref() else {
+            return format!("Error: Toolpath {index} not generated. Run generate_toolpath first.");
+        };
+        let Some(tool_config) = state
+            .session
+            .tools()
+            .iter()
+            .find(|tool| tool.id.0 == tc.tool_id)
+            .or_else(|| state.session.tools().first())
+        else {
+            return "Error: no tools are configured for this project".to_owned();
+        };
+
+        let tool = rs_cam_core::compute::build_cutter(tool_config);
+        let cut_trace = state
+            .simulation
+            .results
+            .as_ref()
+            .and_then(|sim| sim.cut_trace.as_deref());
+        let semantic_trace = rt
+            .semantic_trace
+            .as_deref()
+            .or_else(|| result.semantic_trace.as_deref());
+        let debug_trace = rt
+            .debug_trace
+            .as_deref()
+            .or_else(|| result.debug_trace.as_deref());
+        let context = rs_cam_core::narrate::ToolpathNarrationContext {
+            toolpath_id: Some(tc.id),
+            toolpath_name: Some(tc.name.as_str()),
+            operation_label: Some(tc.operation.label()),
+            depth_per_pass_mm: tc.operation.depth_per_pass(),
+        };
+
+        rs_cam_core::narrate::narrate_toolpath_with_context(
+            &result.toolpath,
+            semantic_trace,
+            cut_trace,
+            debug_trace,
+            &tool,
+            &context,
+        )
     }
 
     fn mcp_get_cut_trace(

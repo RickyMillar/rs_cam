@@ -129,19 +129,17 @@ fn wanaka_back_rough_cuts_outside_silhouette() {
             cymax = cymax.max(m.target.y);
         }
     }
-    println!(
-        "cut moves bbox: [{cxmin:.2}..{cxmax:.2}] x [{cymin:.2}..{cymax:.2}]"
-    );
+    println!("cut moves bbox: [{cxmin:.2}..{cxmax:.2}] x [{cymin:.2}..{cymax:.2}]");
 
     // What's the setup transform for Back Rough?
     let setups = session.list_setups();
     for (i, s) in setups.iter().enumerate() {
-        println!("setup {i}: name={:?} face_up={:?} tp_indices={:?}",
-            s.name, s.face_up, s.toolpath_indices);
+        println!(
+            "setup {i}: name={:?} face_up={:?} tp_indices={:?}",
+            s.name, s.face_up, s.toolpath_indices
+        );
     }
-    println!(
-        "stock bbox (project file): x=[-20..120], y=[-25..125], z=[-20..5] (140x150x25)"
-    );
+    println!("stock bbox (project file): x=[-20..120], y=[-25..125], z=[-20..5] (140x150x25)");
     println!("first 20 outside moves (idx, x, y, z):");
     for (i, x, y, z) in &sample_outside {
         println!("  {i}: ({x:.2}, {y:.2}, {z:.2})");

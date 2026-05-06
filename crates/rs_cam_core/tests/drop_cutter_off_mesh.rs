@@ -78,8 +78,7 @@ fn drop_cutter_does_not_cut_outside_mesh_footprint() {
         .generate_toolpath(finish_idx, &cancel)
         .expect("3D Finish generates");
 
-    let mesh =
-        TriangleMesh::from_stl_scaled(&fixture_path("terrain.stl"), 1.0).expect("stl loads");
+    let mesh = TriangleMesh::from_stl_scaled(&fixture_path("terrain.stl"), 1.0).expect("stl loads");
     let index = SpatialIndex::build_auto(&mesh);
 
     let final_tp: &Toolpath = &result.toolpath;
@@ -162,8 +161,7 @@ fn rapids_should_be_at_safe_z() {
             && let Some(p) = prev
         {
             let dxy = ((target.x - p.x).powi(2) + (target.y - p.y).powi(2)).sqrt();
-            if dxy > 1.0 && (p.z < EXPECTED_SAFE_Z - 1.0 || target.z < EXPECTED_SAFE_Z - 1.0)
-            {
+            if dxy > 1.0 && (p.z < EXPECTED_SAFE_Z - 1.0 || target.z < EXPECTED_SAFE_Z - 1.0) {
                 long_low_rapids.push((dxy, p, target));
             }
         }
@@ -231,8 +229,8 @@ fn drop_cutter_toolpath_stamp_no_dive_below_mesh() {
             .toolpath,
     );
 
-    let world_mesh = TriangleMesh::from_stl_scaled(&fixture_path("terrain.stl"), 1.0)
-        .expect("stl loads");
+    let world_mesh =
+        TriangleMesh::from_stl_scaled(&fixture_path("terrain.stl"), 1.0).expect("stl loads");
     let setup = session
         .list_setups()
         .iter()
@@ -263,7 +261,9 @@ fn drop_cutter_toolpath_stamp_no_dive_below_mesh() {
     let mut worst = (0.0f64, 0.0, 0.0, 0.0, 0.0);
     for row in 0..grid.rows {
         for col in 0..grid.cols {
-            let Some(carved_top) = grid.top_z_at(row, col) else { continue };
+            let Some(carved_top) = grid.top_z_at(row, col) else {
+                continue;
+            };
             let x = grid.origin_u + col as f64 * grid.cell_size + grid.cell_size * 0.5;
             let y = grid.origin_v + row as f64 * grid.cell_size + grid.cell_size * 0.5;
             let mut ray_z: Option<f64> = None;
@@ -320,7 +320,10 @@ fn drop_cutter_toolpath_stamp_no_dive_below_mesh() {
         prev_m = Some(t);
     }
     lowest.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-    println!("Lowest-z Linear moves within 3.175 mm of ({:.4},{:.4}):", wx, wy);
+    println!(
+        "Lowest-z Linear moves within 3.175 mm of ({:.4},{:.4}):",
+        wx, wy
+    );
     for (z, p, t) in lowest.iter().take(5) {
         println!(
             "  z@closest={:.4}  ({:.4},{:.4},{:.4}) → ({:.4},{:.4},{:.4})",

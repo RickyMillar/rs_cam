@@ -37,10 +37,15 @@ fn agent_search_axial_doc_diag() {
     println!("using mesh: {:?}", stl_path);
 
     let mesh_world = TriangleMesh::from_stl(&stl_path).expect("stl load");
-    println!("mesh world bbox: x [{:.2},{:.2}] y [{:.2},{:.2}] z [{:.2},{:.2}]",
-        mesh_world.bbox.min.x, mesh_world.bbox.max.x,
-        mesh_world.bbox.min.y, mesh_world.bbox.max.y,
-        mesh_world.bbox.min.z, mesh_world.bbox.max.z);
+    println!(
+        "mesh world bbox: x [{:.2},{:.2}] y [{:.2},{:.2}] z [{:.2},{:.2}]",
+        mesh_world.bbox.min.x,
+        mesh_world.bbox.max.x,
+        mesh_world.bbox.min.y,
+        mesh_world.bbox.max.y,
+        mesh_world.bbox.min.z,
+        mesh_world.bbox.max.z
+    );
 
     // Apply wanaka_full_tuned.toml's setup: face_up=bottom + stock origin (-20,-25,-20).
     // Stock dims: x=140, y=150, z=25.
@@ -69,8 +74,10 @@ fn agent_search_axial_doc_diag() {
     let index = SpatialIndex::build(&mesh, 6.0);
 
     let bbox = &mesh.bbox;
-    println!("mesh setup-local bbox: x [{:.2},{:.2}] y [{:.2},{:.2}] z [{:.2},{:.2}]",
-        bbox.min.x, bbox.max.x, bbox.min.y, bbox.max.y, bbox.min.z, bbox.max.z);
+    println!(
+        "mesh setup-local bbox: x [{:.2},{:.2}] y [{:.2},{:.2}] z [{:.2},{:.2}]",
+        bbox.min.x, bbox.max.x, bbox.min.y, bbox.max.y, bbox.min.z, bbox.max.z
+    );
 
     let cutter = FlatEndmill::new(6.0, 25.0);
     // Setup-local stock_top = effective_stock_bbox.max.z = stock_z = 25.
@@ -99,8 +106,12 @@ fn agent_search_axial_doc_diag() {
     };
 
     let tp = adaptive_3d_toolpath(&mesh, &index, &cutter, &params);
-    println!("toolpath: {} moves, cutting {:.0}mm, rapid {:.0}mm",
-        tp.moves.len(), tp.total_cutting_distance(), tp.total_rapid_distance());
+    println!(
+        "toolpath: {} moves, cutting {:.0}mm, rapid {:.0}mm",
+        tp.moves.len(),
+        tp.total_cutting_distance(),
+        tp.total_rapid_distance()
+    );
 
     // Setup-local stock bbox: (0,0,0) to (eff_w, eff_d, eff_h) — same as
     // what the GUI passes to the simulator via effective_stock_bbox().
@@ -109,8 +120,10 @@ fn agent_search_axial_doc_diag() {
         min: P3::new(0.0, 0.0, 0.0),
         max: P3::new(eff_w, eff_d, eff_h),
     };
-    println!("stock setup-local bbox: x [0,{:.2}] y [0,{:.2}] z [0,{:.2}]",
-        eff_w, eff_d, eff_h);
+    println!(
+        "stock setup-local bbox: x [0,{:.2}] y [0,{:.2}] z [0,{:.2}]",
+        eff_w, eff_d, eff_h
+    );
     let mut stock = TriDexelStock::from_bounds(&stock_bbox, 0.5);
 
     let never_cancel = || false;
@@ -153,13 +166,21 @@ fn agent_search_axial_doc_diag() {
         }
     }
 
-    println!("peak axial DOC: {:.2}mm at sample {}", peak_axial_doc, peak_sample_idx);
+    println!(
+        "peak axial DOC: {:.2}mm at sample {}",
+        peak_axial_doc, peak_sample_idx
+    );
     if peak_sample_idx < samples.len() {
         let s = &samples[peak_sample_idx];
-        println!("  pos: ({:.2}, {:.2}, {:.2})  move {}  arc {:.2}  chip_eff {:.4}",
-            s.position[0], s.position[1], s.position[2],
-            s.move_index, s.arc_engagement_radians.unwrap_or(0.0),
-            s.effective_chip_thickness_mm.unwrap_or(0.0));
+        println!(
+            "  pos: ({:.2}, {:.2}, {:.2})  move {}  arc {:.2}  chip_eff {:.4}",
+            s.position[0],
+            s.position[1],
+            s.position[2],
+            s.move_index,
+            s.arc_engagement_radians.unwrap_or(0.0),
+            s.effective_chip_thickness_mm.unwrap_or(0.0)
+        );
         // Inspect surrounding moves
         for j in (s.move_index.saturating_sub(2))..=(s.move_index + 2).min(tp.moves.len() - 1) {
             let m = &tp.moves[j];
@@ -168,18 +189,28 @@ fn agent_search_axial_doc_diag() {
                 MoveType::Linear { .. } => "Feed",
                 _ => "Other",
             };
-            println!("  move {}: {} -> ({:.2}, {:.2}, {:.2})",
-                j, kind, m.target.x, m.target.y, m.target.z);
+            println!(
+                "  move {}: {} -> ({:.2}, {:.2}, {:.2})",
+                j, kind, m.target.x, m.target.y, m.target.z
+            );
         }
     }
     println!("samples with axial_doc > 5mm: {}", deep_count);
-    println!("peak effective chipload: {:.4} at sample {}", peak_chipload, peak_chipload_sample_idx);
+    println!(
+        "peak effective chipload: {:.4} at sample {}",
+        peak_chipload, peak_chipload_sample_idx
+    );
     if peak_chipload_sample_idx < samples.len() {
         let s = &samples[peak_chipload_sample_idx];
-        println!("  pos: ({:.2}, {:.2}, {:.2})  move {}  arc {:.2}  axial {:.2}",
-            s.position[0], s.position[1], s.position[2],
-            s.move_index, s.arc_engagement_radians.unwrap_or(0.0),
-            s.axial_doc_mm);
+        println!(
+            "  pos: ({:.2}, {:.2}, {:.2})  move {}  arc {:.2}  axial {:.2}",
+            s.position[0],
+            s.position[1],
+            s.position[2],
+            s.move_index,
+            s.arc_engagement_radians.unwrap_or(0.0),
+            s.axial_doc_mm
+        );
         for j in (s.move_index.saturating_sub(3))..=(s.move_index + 3).min(tp.moves.len() - 1) {
             let m = &tp.moves[j];
             let kind = match m.move_type {
@@ -187,8 +218,10 @@ fn agent_search_axial_doc_diag() {
                 MoveType::Linear { .. } => "Feed",
                 _ => "Other",
             };
-            println!("  move {}: {} -> ({:.2}, {:.2}, {:.2})",
-                j, kind, m.target.x, m.target.y, m.target.z);
+            println!(
+                "  move {}: {} -> ({:.2}, {:.2}, {:.2})",
+                j, kind, m.target.x, m.target.y, m.target.z
+            );
         }
     }
     // Count samples with arc >= π/2 (the chipload-saturation region)
@@ -208,8 +241,10 @@ fn agent_search_axial_doc_diag() {
         .iter()
         .filter(|s| s.arc_engagement_radians.unwrap_or(0.0) >= std::f64::consts::PI - 0.1)
         .count();
-    println!("samples with arc >= π/2: {} ({} half-only, {} full-slot >= π-0.1)",
-        half_slot_count, near_slot_count, full_slot_count);
+    println!(
+        "samples with arc >= π/2: {} ({} half-only, {} full-slot >= π-0.1)",
+        half_slot_count, near_slot_count, full_slot_count
+    );
 
     // Diagnostic: scan all cells in the footprint of the deep-DOC sample
     // to find which one was never cleared. AFTER the full sim, but the
@@ -229,7 +264,13 @@ fn agent_search_axial_doc_diag() {
             &up_to_9388,
             &cutter,
             StockCutDirection::FromTop,
-            1, 18000, 2, 5000.0, 0.5, None, true,
+            1,
+            18000,
+            2,
+            5000.0,
+            0.5,
+            None,
+            true,
             &never_cancel,
         );
         let cs = probe_stock.z_grid.cell_size;
@@ -240,11 +281,15 @@ fn agent_search_axial_doc_diag() {
         let mut peak_cell = (0usize, 0usize);
         for row in 0..probe_stock.z_grid.rows {
             let y = probe_stock.z_grid.origin_v + row as f64 * cs;
-            if (y - mid_y).abs() > radius { continue; }
+            if (y - mid_y).abs() > radius {
+                continue;
+            }
             for col in 0..probe_stock.z_grid.cols {
                 let x = probe_stock.z_grid.origin_u + col as f64 * cs;
                 let d = ((x - mid_x).powi(2) + (y - mid_y).powi(2)).sqrt();
-                if d > radius { continue; }
+                if d > radius {
+                    continue;
+                }
                 let ray = &probe_stock.z_grid.rays[row * probe_stock.z_grid.cols + col];
                 let top = ray.iter().map(|s| s.exit).fold(f32::NEG_INFINITY, f32::max);
                 if top > max_top_in_fp {
@@ -256,8 +301,10 @@ fn agent_search_axial_doc_diag() {
         let (row, col) = peak_cell;
         let x = probe_stock.z_grid.origin_u + col as f64 * cs;
         let y = probe_stock.z_grid.origin_v + row as f64 * cs;
-        println!("  BEFORE move 9389: peak ray_top in footprint at row={}, col={} (world {:.2},{:.2}): top={:.2}",
-            row, col, x, y, max_top_in_fp);
+        println!(
+            "  BEFORE move 9389: peak ray_top in footprint at row={}, col={} (world {:.2},{:.2}): top={:.2}",
+            row, col, x, y, max_top_in_fp
+        );
     }
 
     // Inspect the toolpath: any feed move whose footprint covers (24, 23.5)
@@ -275,12 +322,22 @@ fn agent_search_axial_doc_diag() {
             }
         }
     }
-    println!("feed moves with cutter footprint covering {:?} at z>=8: {}", target_xy, earlier_visits.len());
+    println!(
+        "feed moves with cutter footprint covering {:?} at z>=8: {}",
+        target_xy,
+        earlier_visits.len()
+    );
     for (i, x, y, z) in earlier_visits.iter() {
         // Print move + previous move to see segment direction
-        let prev = if *i > 0 { &tp.moves[*i - 1] } else { &tp.moves[0] };
-        println!("  move {}: from ({:.2},{:.2},{:.2}) -> ({:.2}, {:.2}, {:.2})",
-            i, prev.target.x, prev.target.y, prev.target.z, x, y, z);
+        let prev = if *i > 0 {
+            &tp.moves[*i - 1]
+        } else {
+            &tp.moves[0]
+        };
+        println!(
+            "  move {}: from ({:.2},{:.2},{:.2}) -> ({:.2}, {:.2}, {:.2})",
+            i, prev.target.x, prev.target.y, prev.target.z, x, y, z
+        );
     }
     // Look at ALL moves' minimum y at z=22 + count of moves within
     // 3mm of y=25 (the southern polygon boundary).
@@ -294,19 +351,29 @@ fn agent_search_axial_doc_diag() {
             }
         }
     }
-    println!("min y in z=22 feed moves: {:.2}, moves with y<=27: {}",
-        min_y_at_z22, moves_y_le_27_at_z22);
+    println!(
+        "min y in z=22 feed moves: {:.2}, moves with y<=27: {}",
+        min_y_at_z22, moves_y_le_27_at_z22
+    );
     // List a sampling of feed moves at z=22 with y<26.5 (south of machinable bound).
     // Show first 20 z=22 feed moves to verify perimeter sweep was emitted
     println!("first 20 z=22 feed moves:");
     let mut shown = 0;
     for (i, m) in tp.moves.iter().enumerate() {
         if matches!(m.move_type, MoveType::Linear { .. }) && (m.target.z - 22.0).abs() < 0.1 {
-            let prev = if i > 0 { tp.moves[i - 1].target } else { m.target };
-            println!("  move {}: ({:.2},{:.2},{:.2}) -> ({:.2},{:.2},{:.2})",
-                i, prev.x, prev.y, prev.z, m.target.x, m.target.y, m.target.z);
+            let prev = if i > 0 {
+                tp.moves[i - 1].target
+            } else {
+                m.target
+            };
+            println!(
+                "  move {}: ({:.2},{:.2},{:.2}) -> ({:.2},{:.2},{:.2})",
+                i, prev.x, prev.y, prev.z, m.target.x, m.target.y, m.target.z
+            );
             shown += 1;
-            if shown >= 20 { break; }
+            if shown >= 20 {
+                break;
+            }
         }
     }
     println!("z=22 feed moves with y<26.5:");
@@ -315,10 +382,18 @@ fn agent_search_axial_doc_diag() {
             && (m.target.z - 22.0).abs() < 0.1
             && m.target.y < 26.5
         {
-            let prev = if i > 0 { tp.moves[i - 1].target } else { m.target };
-            println!("  move {}: ({:.2},{:.2},{:.2}) -> ({:.2},{:.2},{:.2})",
-                i, prev.x, prev.y, prev.z, m.target.x, m.target.y, m.target.z);
-            if i > 30 { break; }
+            let prev = if i > 0 {
+                tp.moves[i - 1].target
+            } else {
+                m.target
+            };
+            println!(
+                "  move {}: ({:.2},{:.2},{:.2}) -> ({:.2},{:.2},{:.2})",
+                i, prev.x, prev.y, prev.z, m.target.x, m.target.y, m.target.z
+            );
+            if i > 30 {
+                break;
+            }
         }
     }
     // Now: which moves at z=22 have a SAMPLE position passing within
@@ -328,7 +403,8 @@ fn agent_search_axial_doc_diag() {
     for i in 1..tp.moves.len() {
         let prev = &tp.moves[i - 1];
         let curr = &tp.moves[i];
-        if !matches!(curr.move_type, MoveType::Linear { .. }) || (curr.target.z - 22.0).abs() > 0.1 {
+        if !matches!(curr.move_type, MoveType::Linear { .. }) || (curr.target.z - 22.0).abs() > 0.1
+        {
             continue;
         }
         // Closest point on segment (prev->curr) to target
@@ -349,10 +425,16 @@ fn agent_search_axial_doc_diag() {
             sweeping_moves.push((i, cx, cy, d));
         }
     }
-    println!("z=22 segments whose swept path passes within radius 3.0 of {:?}: {}",
-        target, sweeping_moves.len());
+    println!(
+        "z=22 segments whose swept path passes within radius 3.0 of {:?}: {}",
+        target,
+        sweeping_moves.len()
+    );
     for (i, cx, cy, d) in sweeping_moves.iter().take(8) {
-        println!("  move {}: closest_point=({:.2}, {:.2}), dist={:.3}", i, cx, cy, d);
+        println!(
+            "  move {}: closest_point=({:.2}, {:.2}), dist={:.3}",
+            i, cx, cy, d
+        );
     }
     // The 2D adaptive insets the polygon by tool_radius. For polygon
     // southern edge at y=~23.25, the inset edge (machinable region) is at

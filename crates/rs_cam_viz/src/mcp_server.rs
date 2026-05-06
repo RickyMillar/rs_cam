@@ -188,6 +188,20 @@ impl EmbeddedCamServer {
     }
 
     #[tool(
+        name = "narrate_toolpath",
+        description = "Return a concise prose narration of one generated toolpath: Z-level structure, perimeter-sweep estimates, suspicious large arcs, peak axial DOC, and air-cut percentage. Prefer this first for agent debugging before raw traces/screenshots. Run generate_toolpath first; run_simulation first for DOC/air-cut metrics."
+    )]
+    async fn narrate_toolpath(
+        &self,
+        Parameters(IndexParam { index }): Parameters<IndexParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::NarrateToolpath { index })
+                .await,
+        )
+    }
+
+    #[tool(
         name = "get_cut_trace",
         description = "Get simulation cut trace data: semantic summaries, hotspots, and issues. Run simulation first. Use toolpath_id to filter to a single toolpath."
     )]
@@ -438,9 +452,8 @@ impl EmbeddedCamServer {
     )]
     async fn optimize_toolpath(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(OptimizeToolpathInput {
-            index,
-        }): Parameters<OptimizeToolpathInput>,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(OptimizeToolpathInput { index }): Parameters<OptimizeToolpathInput>,
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::OptimizeToolpath { index })
@@ -632,7 +645,9 @@ impl EmbeddedCamServer {
     async fn set_dressup_field(
         &self,
         #[allow(clippy::needless_pass_by_value)]
-        Parameters(SetDressupFieldParam { index, key, value }): Parameters<SetDressupFieldParam>,
+        Parameters(SetDressupFieldParam { index, key, value }): Parameters<
+            SetDressupFieldParam,
+        >,
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::SetDressupField { index, key, value })

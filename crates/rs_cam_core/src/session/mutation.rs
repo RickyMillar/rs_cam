@@ -641,11 +641,9 @@ impl ProjectSession {
     #[instrument(skip(self))]
     pub fn add_alignment_pin(&mut self, x: f64, y: f64, diameter: f64) -> bool {
         const PIN_DEDUP_EPSILON_MM: f64 = 0.01;
-        let exists = self
-            .stock
-            .alignment_pins
-            .iter()
-            .any(|p| (p.x - x).abs() < PIN_DEDUP_EPSILON_MM && (p.y - y).abs() < PIN_DEDUP_EPSILON_MM);
+        let exists = self.stock.alignment_pins.iter().any(|p| {
+            (p.x - x).abs() < PIN_DEDUP_EPSILON_MM && (p.y - y).abs() < PIN_DEDUP_EPSILON_MM
+        });
         if exists {
             return false;
         }
@@ -1356,8 +1354,7 @@ mod tests {
         // feed_rate=false models a user-overridden value the snapshot
         // must restore (otherwise the GUI's LUT auto-write would clobber
         // the operation field on the next render frame).
-        let snapshot_op =
-            OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default());
+        let snapshot_op = OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default());
         let snapshot_dress = DressupConfig::default();
         let snapshot_faces = Some(vec![crate::enriched_mesh::FaceGroupId(7)]);
         let snapshot_feeds_auto = crate::compute::config::FeedsAutoMode {

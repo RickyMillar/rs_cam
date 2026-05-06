@@ -135,18 +135,8 @@ fn draw_ready(
                     ui.label(egui::RichText::new("verdict").small().strong());
                     ui.end_row();
 
-                    for (row_idx, (tp_index, outcome)) in
-                        report.per_toolpath.iter().enumerate()
-                    {
-                        draw_row(
-                            ui,
-                            state,
-                            row_idx,
-                            *tp_index,
-                            outcome,
-                            row_selected,
-                            events,
-                        );
+                    for (row_idx, (tp_index, outcome)) in report.per_toolpath.iter().enumerate() {
+                        draw_row(ui, state, row_idx, *tp_index, outcome, row_selected, events);
                         ui.end_row();
                     }
                 });
@@ -159,8 +149,7 @@ fn draw_ready(
         .zip(row_selected.iter())
         .any(|((_, outcome), &sel)| sel && outcome.first_safe().is_some());
     ui.horizontal(|ui| {
-        let apply_btn =
-            ui.add_enabled(any_safe_selected, egui::Button::new("Apply selected"));
+        let apply_btn = ui.add_enabled(any_safe_selected, egui::Button::new("Apply selected"));
         if apply_btn.clicked() {
             events.push(AppEvent::ApplyOptimizeProject);
         }
@@ -170,11 +159,7 @@ fn draw_ready(
     });
 }
 
-fn draw_header(
-    ui: &mut egui::Ui,
-    report: &ProjectOptimizeReport,
-    row_selected: &[bool],
-) {
+fn draw_header(ui: &mut egui::Ui, report: &ProjectOptimizeReport, row_selected: &[bool]) {
     let baseline = report.baseline_cycle_time_s;
     let optimized = compute_optimized_cycle(report, row_selected);
     let saving = baseline - optimized;
@@ -204,10 +189,7 @@ fn draw_header(
 /// Sum baseline cycle for unselected rows + recommended cycle for
 /// selected rows — gives the "if you applied just these" estimate.
 /// Refused/skipped rows always contribute their baseline cycle.
-fn compute_optimized_cycle(
-    report: &ProjectOptimizeReport,
-    row_selected: &[bool],
-) -> f64 {
+fn compute_optimized_cycle(report: &ProjectOptimizeReport, row_selected: &[bool]) -> f64 {
     report
         .per_toolpath
         .iter()
@@ -289,10 +271,7 @@ fn draw_row(
             let mut checked = selected;
             // Disable the checkbox if there's nothing to apply.
             let enabled = recommended.is_some();
-            let response = ui.add_enabled(
-                enabled,
-                egui::Checkbox::new(&mut checked, ""),
-            );
+            let response = ui.add_enabled(enabled, egui::Checkbox::new(&mut checked, ""));
             if response.clicked() {
                 events.push(AppEvent::ToggleOptimizeProjectRow(row_idx));
             }
@@ -547,20 +526,16 @@ fn draw_readonly_row(
                             let candidate_cycle = rec.cycle_time_s;
                             let delta = c - candidate_cycle;
                             let mismatch = delta.abs() > 1.0;
-                            let color = if mismatch { theme::WARNING } else { theme::TEXT_MUTED };
-                            egui::RichText::new(format!(
-                                "{} ({:+.1}s)",
-                                format_cycle(c),
-                                delta
-                            ))
-                            .small()
-                            .color(color)
-                        }
-                        None => {
-                            egui::RichText::new("—")
+                            let color = if mismatch {
+                                theme::WARNING
+                            } else {
+                                theme::TEXT_MUTED
+                            };
+                            egui::RichText::new(format!("{} ({:+.1}s)", format_cycle(c), delta))
                                 .small()
-                                .color(theme::TEXT_DIM)
+                                .color(color)
                         }
+                        None => egui::RichText::new("—").small().color(theme::TEXT_DIM),
                     };
                     ui.label(label);
                 }

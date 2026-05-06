@@ -55,6 +55,9 @@ pub enum McpRequestKind {
         max_yield_ratio: Option<f64>,
         max_spans: Option<usize>,
     },
+    NarrateToolpath {
+        index: usize,
+    },
 
     InspectModel,
     InspectStock,

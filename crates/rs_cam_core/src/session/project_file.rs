@@ -678,8 +678,7 @@ pub(super) fn validate_looks_like_cam_project(
     // ProjectJobSection::default() with an empty name; an empty `[job]` table
     // yields the field-level default (`default_job_name()`). Treat both as
     // "user did not supply a job name".
-    let job_is_default =
-        project.job.name.is_empty() || project.job.name == default_job_name();
+    let job_is_default = project.job.name.is_empty() || project.job.name == default_job_name();
     let nothing_loaded = project.setups.is_empty()
         && project.toolpaths.is_empty()
         && project.models.is_empty()

@@ -172,7 +172,8 @@ impl<B: ComputeBackend> AppController<B> {
                 // still restores the session — `is_optimizing` flips
                 // back to false there.
                 if self.state.is_optimizing {
-                    self.compute.cancel_lane(crate::compute::ComputeLane::Optimize);
+                    self.compute
+                        .cancel_lane(crate::compute::ComputeLane::Optimize);
                 }
                 self.state.optimize_modal = None;
             }
@@ -189,7 +190,8 @@ impl<B: ComputeBackend> AppController<B> {
             }
             AppEvent::CloseOptimizeProject => {
                 if self.state.is_optimizing {
-                    self.compute.cancel_lane(crate::compute::ComputeLane::Optimize);
+                    self.compute
+                        .cancel_lane(crate::compute::ComputeLane::Optimize);
                 }
                 self.state.optimize_project = None;
             }
@@ -242,8 +244,8 @@ impl<B: ComputeBackend> AppController<B> {
     /// without touching the worker — there's nothing to optimize
     /// against.
     fn open_optimize_modal(&mut self, toolpath_id: crate::state::toolpath::ToolpathId) {
-        use rs_cam_core::tool_load::optimize::OptimizeOutcome;
         use rs_cam_core::tool_load::RefuseReason;
+        use rs_cam_core::tool_load::optimize::OptimizeOutcome;
 
         let Some(idx) = self
             .state
@@ -271,11 +273,9 @@ impl<B: ComputeBackend> AppController<B> {
         let Some(trace) = trace_clone else {
             self.state.optimize_modal = Some(crate::state::OptimizeModalState {
                 toolpath_id: toolpath_id.0,
-                status: crate::state::OptimizeRunStatus::Ready(
-                    OptimizeOutcome::Skipped {
-                        reason: RefuseReason::SimulationRequired,
-                    },
-                ),
+                status: crate::state::OptimizeRunStatus::Ready(OptimizeOutcome::Skipped {
+                    reason: RefuseReason::SimulationRequired,
+                }),
             });
             return;
         };
@@ -301,12 +301,13 @@ impl<B: ComputeBackend> AppController<B> {
             toolpath_id: toolpath_id.0,
             status: crate::state::OptimizeRunStatus::Loading,
         });
-        self.compute.submit_optimize(crate::compute::OptimizeRequest::Toolpath {
-            session,
-            baseline_trace: trace,
-            toolpath_index: idx,
-            toolpath_id: toolpath_id.0,
-        });
+        self.compute
+            .submit_optimize(crate::compute::OptimizeRequest::Toolpath {
+                session,
+                baseline_trace: trace,
+                toolpath_index: idx,
+                toolpath_id: toolpath_id.0,
+            });
     }
 
     /// Apply a candidate from the cached Optimize outcome. Index 0 is
@@ -319,9 +320,7 @@ impl<B: ComputeBackend> AppController<B> {
         toolpath_id: crate::state::toolpath::ToolpathId,
         candidate_index: usize,
     ) {
-        use rs_cam_core::tool_load::optimize::{
-            OptimizeOutcome, feeds_auto_for_candidate,
-        };
+        use rs_cam_core::tool_load::optimize::{OptimizeOutcome, feeds_auto_for_candidate};
 
         // Lookup phase: extract everything we need from the cached
         // outcome and the toolpath config, then drop the borrow before
@@ -446,10 +445,11 @@ impl<B: ComputeBackend> AppController<B> {
             status: crate::state::OptimizeProjectStatus::Loading,
             row_selected: Vec::new(),
         });
-        self.compute.submit_optimize(crate::compute::OptimizeRequest::Project {
-            session,
-            baseline_trace: trace,
-        });
+        self.compute
+            .submit_optimize(crate::compute::OptimizeRequest::Project {
+                session,
+                baseline_trace: trace,
+            });
     }
 
     /// Apply every selected row from the project rollup. Each row's
@@ -458,9 +458,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// each toolpath; closes the rollup and marks every touched
     /// toolpath stale so auto-regen kicks in.
     fn apply_optimize_project(&mut self) {
-        use rs_cam_core::tool_load::optimize::{
-            OptimizeOutcome, feeds_auto_for_candidate,
-        };
+        use rs_cam_core::tool_load::optimize::{OptimizeOutcome, feeds_auto_for_candidate};
 
         // Lookup phase: pull out (toolpath_id, params, delta) tuples
         // from the cached state. Drop the borrow before any mutation.
@@ -470,7 +468,11 @@ impl<B: ComputeBackend> AppController<B> {
         let crate::state::OptimizeProjectStatus::Ready(report) = &view.status else {
             return;
         };
-        let mut targets: Vec<(usize, rs_cam_core::compute::catalog::OperationConfig, rs_cam_core::tool_load::optimize::ParamDelta)> = Vec::new();
+        let mut targets: Vec<(
+            usize,
+            rs_cam_core::compute::catalog::OperationConfig,
+            rs_cam_core::tool_load::optimize::ParamDelta,
+        )> = Vec::new();
         for (idx, ((toolpath_index, outcome), selected)) in report
             .per_toolpath
             .iter()
@@ -487,7 +489,11 @@ impl<B: ComputeBackend> AppController<B> {
                 tracing::debug!("Skipping row {idx}: no first_safe candidate");
                 continue;
             };
-            targets.push((*toolpath_index, candidate.params.clone(), candidate.delta.clone()));
+            targets.push((
+                *toolpath_index,
+                candidate.params.clone(),
+                candidate.delta.clone(),
+            ));
         }
 
         if targets.is_empty() {

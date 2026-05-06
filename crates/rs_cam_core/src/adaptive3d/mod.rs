@@ -385,9 +385,9 @@ mod tests {
     use super::path::Adaptive3dSegment;
     use super::search::material_remaining_in_region;
     use super::*;
-    use crate::geo::P3;
     use crate::dexel::{DexelSegment, ray_subtract_above};
     use crate::dexel_stock::StockCutDirection;
+    use crate::geo::P3;
     use crate::mesh::SpatialIndex;
     use crate::radial_profile::RadialProfileLUT;
     use crate::slope::SurfaceHeightmap;
@@ -746,8 +746,14 @@ mod tests {
         println!("\n=== AgentSearch Z-drop diagnostics (hemisphere) ===");
         println!("total Cut paths: {}", total_cut_paths);
         println!("max per-step |dz|: {:.3} mm", max_per_step_dz);
-        println!("max path total descent: {:.3} mm (over {} pts)", max_path_total_descent, largest_path_len);
-        println!("paths with total descent > depth_per_pass ({:.1}): {}", params.depth_per_pass, paths_with_descent_gt_dpp);
+        println!(
+            "max path total descent: {:.3} mm (over {} pts)",
+            max_path_total_descent, largest_path_len
+        );
+        println!(
+            "paths with total descent > depth_per_pass ({:.1}): {}",
+            params.depth_per_pass, paths_with_descent_gt_dpp
+        );
         println!("worst path: {}", largest_path_descent_summary);
 
         // The split fix should keep per-step |dz| under depth_per_pass × 1.1.
@@ -755,7 +761,8 @@ mod tests {
         assert!(
             max_per_step_dz <= threshold + 0.01,
             "split fix failed: max per-step |dz| = {:.3} mm exceeds threshold {:.3} mm",
-            max_per_step_dz, threshold
+            max_per_step_dz,
+            threshold
         );
     }
 

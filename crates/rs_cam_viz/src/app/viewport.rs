@@ -492,7 +492,8 @@ impl RsCamApp {
         };
 
         let mut clicked: Option<(crate::state::toolpath::ToolpathId, usize, usize)> = None;
-        for (screen_pos, toolpath_id, hotspot_index, global_move, wasted_runtime_s, tp_name) in pins {
+        for (screen_pos, toolpath_id, hotspot_index, global_move, wasted_runtime_s, tp_name) in pins
+        {
             if !viewport_rect.contains(screen_pos) {
                 continue;
             }

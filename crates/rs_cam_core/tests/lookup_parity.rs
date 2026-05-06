@@ -15,6 +15,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::feeds::vendor_lookup::{LookupQuery, find_best_row};
 use rs_cam_core::feeds::vendor_lut::{
     HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily, VendorLut,
@@ -23,7 +24,6 @@ use rs_cam_core::feeds::{FeedsInput, OperationFamily, PassRole, SetupContext, To
 use rs_cam_core::feeds::{vendor_lookup, vendor_normalize};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
-use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::tool::{BallEndmill, FlatEndmill, MillingCutter, ToolDefinition};
 
 struct Case {
@@ -148,8 +148,7 @@ fn calculator_and_gate_match_same_observation_id() {
             case.flute_count,
             ToolMaterial::Carbide,
         );
-        let (material_family, hardness_kind, hardness_value) =
-            material_to_lut_for_test(&material);
+        let (material_family, hardness_kind, hardness_value) = material_to_lut_for_test(&material);
         // Mirror the gate's construction: lookup_diameter_at(axial_doc).
         // For Flat/Ball tools axial_doc doesn't change the diameter, so any
         // representative value works. Use the diameter as the axial DOC —

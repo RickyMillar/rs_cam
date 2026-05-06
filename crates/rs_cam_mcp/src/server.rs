@@ -673,9 +673,8 @@ impl CamServer {
     )]
     async fn optimize_toolpath(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(OptimizeToolpathInput {
-            index,
-        }): Parameters<OptimizeToolpathInput>,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(OptimizeToolpathInput { index }): Parameters<OptimizeToolpathInput>,
     ) -> String {
         let mut guard = self.session.lock().await;
         let Some(session) = guard.as_mut() else {
@@ -692,12 +691,8 @@ impl CamServer {
             }));
         };
         let cancel = std::sync::atomic::AtomicBool::new(false);
-        let outcome = rs_cam_core::tool_load::optimize::optimize_toolpath(
-            session,
-            &trace,
-            index,
-            &cancel,
-        );
+        let outcome =
+            rs_cam_core::tool_load::optimize::optimize_toolpath(session, &trace, index, &cancel);
         match serde_json::to_value(&outcome) {
             Ok(v) => json_str(v),
             Err(e) => json_str(serde_json::json!({
@@ -924,6 +919,24 @@ impl CamServer {
             Ok(Ok(v)) => json_str(v),
             Ok(Err(e)) => json_str(serde_json::json!({"error": e})),
             Err(e) => json_str(serde_json::json!({"error": format!("Task failed: {e}")})),
+        }
+    }
+
+    #[tool(
+        name = "narrate_toolpath",
+        description = "Return a concise prose narration of one generated toolpath: Z-level structure, perimeter-sweep estimates, suspicious large arcs, peak axial DOC, and air-cut percentage. Prefer this first for agent debugging before raw traces/screenshots. Run generate_toolpath first; run_simulation first for DOC/air-cut metrics."
+    )]
+    async fn narrate_toolpath(
+        &self,
+        Parameters(IndexParam { index }): Parameters<IndexParam>,
+    ) -> String {
+        let guard = self.session.lock().await;
+        let Some(session) = guard.as_ref() else {
+            return no_project_error();
+        };
+        match session.narrate_toolpath(index) {
+            Ok(report) => text(report),
+            Err(e) => text(format!("Error: {e}")),
         }
     }
 
@@ -1400,7 +1413,9 @@ impl CamServer {
     async fn set_dressup_field(
         &self,
         #[allow(clippy::needless_pass_by_value)]
-        Parameters(SetDressupFieldParam { index, key, value }): Parameters<SetDressupFieldParam>,
+        Parameters(SetDressupFieldParam { index, key, value }): Parameters<
+            SetDressupFieldParam,
+        >,
     ) -> String {
         let mut guard = self.session.lock().await;
         let Some(session) = guard.as_mut() else {
@@ -1453,9 +1468,7 @@ impl CamServer {
         };
         let parsed = match source.as_str() {
             "fresh" => rs_cam_core::compute::config::StockSource::Fresh,
-            "from_remaining_stock" => {
-                rs_cam_core::compute::config::StockSource::FromRemainingStock
-            }
+            "from_remaining_stock" => rs_cam_core::compute::config::StockSource::FromRemainingStock,
             other => {
                 return text(format!(
                     "Error: unknown stock_source '{other}'. Expected 'fresh' or 'from_remaining_stock'."

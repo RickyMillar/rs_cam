@@ -118,13 +118,17 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     tool_id: tc_src.tool_id,
                     operation: tc_src.operation.clone(),
                 };
-                let rt_snap = state.gui.toolpath_rt.get(&card.id).map(|r| RuntimeSnapshot {
-                    visible: r.visible,
-                    auto_regen: r.auto_regen,
-                    status: r.status.clone(),
-                    has_result: r.result.is_some(),
-                    stats: r.result.as_ref().map(|res| res.stats.clone()),
-                });
+                let rt_snap = state
+                    .gui
+                    .toolpath_rt
+                    .get(&card.id)
+                    .map(|r| RuntimeSnapshot {
+                        visible: r.visible,
+                        auto_regen: r.auto_regen,
+                        status: r.status.clone(),
+                        has_result: r.result.is_some(),
+                        stats: r.result.as_ref().map(|res| res.stats.clone()),
+                    });
                 draw_toolpath_card(ui, state, events, &card, rt_snap.as_ref(), i, local_idx);
             }
         });

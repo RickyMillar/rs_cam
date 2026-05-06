@@ -6,9 +6,9 @@ use super::config::StockSource;
 use super::operation_configs::{
     Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig, DrillConfig,
     DropCutterConfig, FaceConfig, HorizontalFinishConfig, InlayConfig, PencilConfig, PocketConfig,
-    ProfileConfig, ProjectCurveConfig, RadialFinishConfig,
-    RampFinishConfig, RestConfig, ScallopConfig, SpiralFinishConfig, SteepShallowConfig,
-    TraceConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
+    ProfileConfig, ProjectCurveConfig, RadialFinishConfig, RampFinishConfig, RestConfig,
+    ScallopConfig, SpiralFinishConfig, SteepShallowConfig, TraceConfig, VCarveConfig,
+    WaterlineConfig, ZigzagConfig,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
