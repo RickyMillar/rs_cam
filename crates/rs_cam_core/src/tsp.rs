@@ -96,6 +96,60 @@ fn total_rapid_distance(order: &[usize], segments: &[Segment]) -> f64 {
 // loop variables i,j are bounded by n, and j+1 is guarded by `j+1 < n`.
 #[allow(clippy::indexing_slicing)]
 pub fn optimize_rapid_order(toolpath: &Toolpath, safe_z: f64) -> Toolpath {
+    optimize_rapid_order_unbarriered(toolpath, safe_z)
+}
+
+/// Reorder cutting segments within barrier-delimited groups only.
+///
+/// `barrier_move_indices` are move indices in the input toolpath where a new
+/// semantic/depth group starts. Empty input preserves the historical global TSP.
+// SAFETY: group slicing uses sorted, deduplicated indices bounded by moves.len().
+#[allow(clippy::indexing_slicing)]
+pub fn optimize_rapid_order_with_barriers(
+    toolpath: &Toolpath,
+    safe_z: f64,
+    barrier_move_indices: &[usize],
+) -> Toolpath {
+    if barrier_move_indices.is_empty() || toolpath.moves.is_empty() {
+        return optimize_rapid_order_unbarriered(toolpath, safe_z);
+    }
+
+    let mut barriers: Vec<usize> = barrier_move_indices
+        .iter()
+        .copied()
+        .filter(|&idx| idx < toolpath.moves.len())
+        .collect();
+    barriers.sort_unstable();
+    barriers.dedup();
+
+    let mut starts = Vec::with_capacity(barriers.len() + 1);
+    starts.push(0);
+    starts.extend(barriers.into_iter().filter(|&idx| idx > 0));
+    starts.dedup();
+
+    let mut result = Toolpath::new();
+    for (group_idx, &start) in starts.iter().enumerate() {
+        let end = starts
+            .get(group_idx + 1)
+            .copied()
+            .unwrap_or(toolpath.moves.len());
+        if start >= end {
+            continue;
+        }
+        let group = Toolpath {
+            moves: toolpath.moves[start..end].to_vec(),
+        };
+        let optimized = optimize_rapid_order_unbarriered(&group, safe_z);
+        result.moves.extend(optimized.moves);
+    }
+
+    result
+}
+
+// SAFETY: all indexing mirrors the original TSP implementation and is bounded by
+// segment/order lengths built in this function.
+#[allow(clippy::indexing_slicing)]
+fn optimize_rapid_order_unbarriered(toolpath: &Toolpath, safe_z: f64) -> Toolpath {
     let segments = split_into_segments(toolpath);
 
     // Trivial cases: 0 or 1 segments need no optimization.
@@ -338,6 +392,58 @@ mod tests {
                 "Cutting moves should be identical"
             );
         }
+    }
+
+    #[test]
+    fn test_barriers_prevent_cross_group_reordering() {
+        let safe_z = 10.0;
+        let feed = 1000.0;
+        let mut tp = Toolpath::new();
+
+        tp.moves.extend(make_segment_toolpath(
+            &[P3::new(0.0, 0.0, 0.0), P3::new(1.0, 0.0, 0.0)],
+            safe_z,
+            feed,
+        ));
+        tp.moves.extend(make_segment_toolpath(
+            &[P3::new(100.0, 0.0, 0.0), P3::new(101.0, 0.0, 0.0)],
+            safe_z,
+            feed,
+        ));
+        let group_2_start = tp.moves.len();
+        tp.moves.extend(make_segment_toolpath(
+            &[P3::new(2.0, 0.0, -7.0), P3::new(3.0, 0.0, -7.0)],
+            safe_z,
+            feed,
+        ));
+        tp.moves.extend(make_segment_toolpath(
+            &[P3::new(4.0, 0.0, -7.0), P3::new(5.0, 0.0, -7.0)],
+            safe_z,
+            feed,
+        ));
+
+        let global = optimize_rapid_order(&tp, safe_z);
+        let barriered = optimize_rapid_order_with_barriers(&tp, safe_z, &[0, group_2_start]);
+
+        let global_cut_z: Vec<f64> = global
+            .moves
+            .iter()
+            .filter(|m| m.move_type.is_cutting())
+            .map(|m| m.target.z)
+            .collect();
+        assert_eq!(
+            global_cut_z[2], -7.0,
+            "unbarriered TSP should cross the depth boundary in this fixture"
+        );
+
+        let barriered_cut_z: Vec<f64> = barriered
+            .moves
+            .iter()
+            .filter(|m| m.move_type.is_cutting())
+            .map(|m| m.target.z)
+            .collect();
+        assert_eq!(&barriered_cut_z[0..4], &[0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(&barriered_cut_z[4..], &[-7.0, -7.0, -7.0, -7.0]);
     }
 
     #[test]

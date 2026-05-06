@@ -45,6 +45,34 @@ pub enum OperationAnnotations {
     Pencil(Vec<crate::pencil::PencilRuntimeAnnotation>),
 }
 
+impl OperationAnnotations {
+    /// Move indices where rapid-order TSP must not reorder across semantic groups.
+    pub fn rapid_order_barriers(&self) -> Vec<usize> {
+        match self {
+            Self::Adaptive3d(annotations) => annotations
+                .iter()
+                .filter_map(|annotation| match &annotation.event {
+                    crate::adaptive3d::Adaptive3dRuntimeEvent::RegionZLevel { .. }
+                    | crate::adaptive3d::Adaptive3dRuntimeEvent::GlobalZLevel { .. }
+                    | crate::adaptive3d::Adaptive3dRuntimeEvent::WaterlineCleanup => {
+                        Some(annotation.move_index)
+                    }
+                    crate::adaptive3d::Adaptive3dRuntimeEvent::RegionStart { .. }
+                    | crate::adaptive3d::Adaptive3dRuntimeEvent::PassEntry { .. }
+                    | crate::adaptive3d::Adaptive3dRuntimeEvent::PassPreflightSkip { .. }
+                    | crate::adaptive3d::Adaptive3dRuntimeEvent::PassSummary { .. } => None,
+                })
+                .collect(),
+            Self::None
+            | Self::Adaptive2d(_)
+            | Self::Scallop(_)
+            | Self::RampFinish(_)
+            | Self::SpiralFinish(_)
+            | Self::Pencil(_) => Vec::new(),
+        }
+    }
+}
+
 pub struct AnnotatedToolpath {
     pub toolpath: Toolpath,
     pub annotations: OperationAnnotations,
@@ -981,6 +1009,7 @@ pub fn execute_operation_annotated(
 /// The last two steps are optional and require additional context:
 /// - Air-cut filter needs `prior_stock` (the stock state before this toolpath).
 /// - Feed optimization needs a mutable stock copy, a cutter, and `cfg.feed_optimization == true`.
+#[allow(clippy::too_many_arguments)]
 pub fn apply_dressups(
     mut tp: Toolpath,
     cfg: &DressupConfig,
@@ -989,6 +1018,7 @@ pub fn apply_dressups(
     prior_stock: Option<&crate::dexel_stock::TriDexelStock>,
     feed_opt_stock: Option<&mut crate::dexel_stock::TriDexelStock>,
     cutter: Option<&dyn MillingCutter>,
+    rapid_order_barriers: &[usize],
 ) -> Toolpath {
     use crate::dressup::{
         EntryStyle, LinkMoveParams, apply_dogbones, apply_entry, apply_lead_in_out,
@@ -996,6 +1026,10 @@ pub fn apply_dressups(
     };
 
     let tool_radius = tool_diameter / 2.0;
+
+    if cfg.optimize_rapid_order && !rapid_order_barriers.is_empty() {
+        tp = crate::tsp::optimize_rapid_order_with_barriers(&tp, safe_z, rapid_order_barriers);
+    }
 
     // Determine plunge rate from toolpath
     let plunge_rate = tp
@@ -1059,7 +1093,7 @@ pub fn apply_dressups(
     }
 
     // 6. Rapid order optimization
-    if cfg.optimize_rapid_order {
+    if cfg.optimize_rapid_order && rapid_order_barriers.is_empty() {
         tp = crate::tsp::optimize_rapid_order(&tp, safe_z);
     }
 
@@ -1378,7 +1412,7 @@ mod tests {
         tp.rapid_to(P3::new(50.0, 50.0, 30.0));
 
         let cfg = DressupConfig::default();
-        let result = apply_dressups(tp, &cfg, 6.35, 30.0, None, None, None);
+        let result = apply_dressups(tp, &cfg, 6.35, 30.0, None, None, None, &[]);
 
         assert!(
             !result.moves.is_empty(),
