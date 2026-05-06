@@ -18,13 +18,8 @@ use std::time::Instant;
 use tracing::debug;
 
 use super::path::Adaptive3dSegment;
-use super::search::{
-    is_clear_path_3d, material_remaining_at_level,
-    material_remaining_in_region,
-};
-use super::{
-    ClearingStrategy3d, stock_has_material_above, stock_top_z_at,
-};
+use super::search::{is_clear_path_3d, material_remaining_at_level, material_remaining_in_region};
+use super::{ClearingStrategy3d, stock_has_material_above, stock_top_z_at};
 
 // ── Region detection ──────────────────────────────────────────────────
 
@@ -184,7 +179,6 @@ pub(super) struct ClearZLevelContext<'a> {
     pub(super) clearing_strategy: ClearingStrategy3d,
     pub(super) z_blend: bool,
 }
-
 
 // ── Contour-parallel clearing ─────────────────────────────────────────
 
@@ -964,8 +958,13 @@ pub(super) fn clear_z_level_agent_2d_slice(
     let level_ctx = level_scope.as_ref().map(|scope| scope.context());
 
     // 1. Material boolean grid at this Z-level (includes 1-cell air padding).
-    let (material_grid, rows, cols, origin_x, origin_y, cell_size) =
-        build_material_bool_grid(material_stock, surface_hm, z_level, ctx.stock_to_leave, region);
+    let (material_grid, rows, cols, origin_x, origin_y, cell_size) = build_material_bool_grid(
+        material_stock,
+        surface_hm,
+        z_level,
+        ctx.stock_to_leave,
+        region,
+    );
     if !material_grid.iter().any(|&b| b) {
         return Ok(());
     }
@@ -1016,7 +1015,33 @@ pub(super) fn clear_z_level_agent_2d_slice(
     if single_loops.is_empty() {
         return Ok(());
     }
-    let regions = crate::polygon::detect_containment(single_loops);
+    let mut regions = crate::polygon::detect_containment(single_loops);
+
+    // Fusion-style "ignore stock smaller than X" filter. Heightmap-style
+    // models (e.g. terrain.stl) emit many micro-peaks at top Z levels
+    // — each becomes its own region with its own perimeter sweep + 2D
+    // adaptive entry/exit. The cutter spends most of its in-cut time
+    // travelling between them, technically at feed_rate but barely
+    // engaging material. On wanaka this drove 81% air-cut at every Z.
+    //
+    // Threshold = (2 × tool_diameter)² ≈ "the tool footprint plus an
+    // offset ring fits". Anything smaller is sub-tool noise the cutter
+    // can't address efficiently anyway. Bottom-Z waterline cleanup
+    // catches surviving material; the finishing pass mops up the rest.
+    let tool_diameter = ctx.tool_radius * 2.0;
+    let min_region_area_mm2 = (tool_diameter * 2.0).powi(2);
+    let region_count_before = regions.len();
+    regions.retain(|r| r.area().abs() >= min_region_area_mm2);
+    let dropped_micro = region_count_before - regions.len();
+    if dropped_micro > 0 {
+        debug!(
+            z = z_level,
+            dropped = dropped_micro,
+            kept = regions.len(),
+            threshold_mm2 = min_region_area_mm2,
+            "Dropped sub-tool regions (Fusion-style ignore-features filter)"
+        );
+    }
     if regions.is_empty() {
         return Ok(());
     }
@@ -1288,32 +1313,24 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         };
                         if dz.abs() > z_drop_threshold || abs_slope > PLUNGE_SLOPE_LIMIT {
                             if i - sub_start >= 2 {
-                                segments.push(Adaptive3dSegment::Cut(
-                                    path_3d[sub_start..i].to_vec(),
-                                ));
+                                segments
+                                    .push(Adaptive3dSegment::Cut(path_3d[sub_start..i].to_vec()));
                                 cut_count += 1;
                             }
                             let p3 = path_3d[i];
-                            let rapid_floor =
-                                sample_stock_top_at(material_stock, p3.x, p3.y);
+                            let rapid_floor = sample_stock_top_at(material_stock, p3.x, p3.y);
                             match rapid_floor {
-                                Some(top_z) => {
-                                    segments.push(Adaptive3dSegment::RapidWithFloor {
-                                        entry: p3,
-                                        rapid_floor_z: top_z,
-                                    })
-                                }
-                                None => {
-                                    segments.push(Adaptive3dSegment::Rapid(p3))
-                                }
+                                Some(top_z) => segments.push(Adaptive3dSegment::RapidWithFloor {
+                                    entry: p3,
+                                    rapid_floor_z: top_z,
+                                }),
+                                None => segments.push(Adaptive3dSegment::Rapid(p3)),
                             }
                             sub_start = i;
                         }
                     }
                     if path_3d.len() - sub_start >= 2 {
-                        segments.push(Adaptive3dSegment::Cut(
-                            path_3d[sub_start..].to_vec(),
-                        ));
+                        segments.push(Adaptive3dSegment::Cut(path_3d[sub_start..].to_vec()));
                         cut_count += 1;
                     }
                 }

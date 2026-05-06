@@ -72,10 +72,7 @@ pub enum Confidence {
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum Verdict {
     /// Criterion modeled and within bounds.
-    Within {
-        peak: f64,
-        confidence: Confidence,
-    },
+    Within { peak: f64, confidence: Confidence },
     /// Criterion modeled and out of bounds. `sample_range` is the
     /// half-open per-toolpath sample index range that triggered (empty
     /// for criteria that don't have per-sample resolution, e.g. L/D).
@@ -163,11 +160,15 @@ pub struct ToolLoadReport {
 
 impl ToolLoadReport {
     pub fn any_exceeded(&self) -> bool {
-        self.per_toolpath.iter().any(ToolpathLoadVerdict::any_exceeded)
+        self.per_toolpath
+            .iter()
+            .any(ToolpathLoadVerdict::any_exceeded)
     }
 
     pub fn any_unmodeled(&self) -> bool {
-        self.per_toolpath.iter().any(ToolpathLoadVerdict::any_unmodeled)
+        self.per_toolpath
+            .iter()
+            .any(ToolpathLoadVerdict::any_unmodeled)
     }
 
     /// All toolpath indices that have at least one `Exceeds` verdict, with

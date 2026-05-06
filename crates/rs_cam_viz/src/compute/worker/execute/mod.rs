@@ -78,26 +78,28 @@ fn generate_via_core(
         use rs_cam_core::compute::config::BoundarySource;
         let stock_rect = || {
             Some(rs_cam_core::polygon::Polygon2::rectangle(
-                stock_bbox.min.x, stock_bbox.min.y, stock_bbox.max.x, stock_bbox.max.y,
+                stock_bbox.min.x,
+                stock_bbox.min.y,
+                stock_bbox.max.x,
+                stock_bbox.max.y,
             ))
         };
-        let mut poly = if let (Some(face_ids), Some(enriched)) =
-            (&req.face_selection, &req.enriched_mesh)
-        {
-            enriched
-                .faces_boundary_as_polygon(face_ids)
-                .or_else(stock_rect)
-        } else if matches!(req.boundary.source, BoundarySource::ModelSilhouette)
-            && let Some(mesh) = req.mesh.as_deref()
-        {
-            model_silhouette(mesh, None).into_iter().max_by(|a, b| {
-                a.area()
-                    .partial_cmp(&b.area())
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-        } else {
-            stock_rect()
-        };
+        let mut poly =
+            if let (Some(face_ids), Some(enriched)) = (&req.face_selection, &req.enriched_mesh) {
+                enriched
+                    .faces_boundary_as_polygon(face_ids)
+                    .or_else(stock_rect)
+            } else if matches!(req.boundary.source, BoundarySource::ModelSilhouette)
+                && let Some(mesh) = req.mesh.as_deref()
+            {
+                model_silhouette(mesh, None).into_iter().max_by(|a, b| {
+                    a.area()
+                        .partial_cmp(&b.area())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+            } else {
+                stock_rect()
+            };
         if let Some(p) = poly.as_mut()
             && !req.keep_out_footprints.is_empty()
         {

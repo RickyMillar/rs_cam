@@ -299,8 +299,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let _ = by0;
     let _ = by1;
     let mesh_path = fixture_path("terrain.stl");
-    let mesh = TriangleMesh::from_stl_scaled(&mesh_path, 1.0)
-        .expect("terrain.stl fixture loads");
+    let mesh = TriangleMesh::from_stl_scaled(&mesh_path, 1.0).expect("terrain.stl fixture loads");
     let spatial = SpatialIndex::build_auto(&mesh);
     println!(
         "terrain mesh: {} tris, bbox x=[{:.2},{:.2}] y=[{:.2},{:.2}] z=[{:.2},{:.2}]",
@@ -382,15 +381,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let mut with_links = DressupConfig::default();
     with_links.link_moves = true;
     with_links.link_max_distance = 10.0;
-    let tp_with_links = apply_dressups(
-        all_moves.clone(),
-        &with_links,
-        1.0,
-        10.0,
-        None,
-        None,
-        None,
-    );
+    let tp_with_links = apply_dressups(all_moves.clone(), &with_links, 1.0, 10.0, None, None, None);
     report("project_curve + link_moves", &tp_with_links, &polygons);
 
     // And without link_moves — the fixed default.
@@ -428,15 +419,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let mut ramp_only = DressupConfig::default();
     ramp_only.entry_style = DressupEntryStyle::Ramp;
     ramp_only.ramp_angle = 3.0;
-    let tp_ramp = apply_dressups(
-        all_moves.clone(),
-        &ramp_only,
-        1.0,
-        10.0,
-        None,
-        None,
-        None,
-    );
+    let tp_ramp = apply_dressups(all_moves.clone(), &ramp_only, 1.0, 10.0, None, None, None);
     report("+ ramp entry only", &tp_ramp, &polygons);
 
     // Dump the longest feed-at-cut-depth moves in each variant so we can
@@ -632,8 +615,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
             let target = mv.target;
             if matches!(mv.move_type, MoveType::Linear { .. }) {
                 if let Some(p) = prev {
-                    let dxy =
-                        ((target.x - p.x).powi(2) + (target.y - p.y).powi(2)).sqrt();
+                    let dxy = ((target.x - p.x).powi(2) + (target.y - p.y).powi(2)).sqrt();
                     let both_cut = p.z < 9.5 && target.z < 9.5;
                     if both_cut && dxy > 1.0 {
                         count += 1;
@@ -675,7 +657,9 @@ fn dexel_sim_carve_check(tp: &Toolpath, polygons: &[Polygon2], cutter: &FlatEndm
     let rows = grid.rows;
     for row in 0..rows {
         for col in 0..cols {
-            let Some(cell_top) = grid.top_z_at(row, col) else { continue };
+            let Some(cell_top) = grid.top_z_at(row, col) else {
+                continue;
+            };
             if cell_top as f64 >= initial_top - 0.05 {
                 continue; // not carved
             }
@@ -733,8 +717,7 @@ fn footprint_rasterization_check(
                 let both_cut = p.z < 9.5 && target.z < 9.5;
                 if both_cut {
                     // Raster sample along the segment at cell/2 steps
-                    let dxy =
-                        ((target.x - p.x).powi(2) + (target.y - p.y).powi(2)).sqrt();
+                    let dxy = ((target.x - p.x).powi(2) + (target.y - p.y).powi(2)).sqrt();
                     let n = (dxy / (cell * 0.5)).ceil() as usize + 1;
                     for i in 0..=n {
                         let t = if n == 0 { 0.0 } else { i as f64 / n as f64 };

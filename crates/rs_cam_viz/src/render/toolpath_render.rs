@@ -497,8 +497,9 @@ impl ToolpathGpuData {
             1
         };
 
-        let chipload_color =
-            |move_idx: usize| -> [f32; 3] { chipload_segment_color(envelope.as_ref(), move_chipload.get(&move_idx).copied()) };
+        let chipload_color = |move_idx: usize| -> [f32; 3] {
+            chipload_segment_color(envelope.as_ref(), move_chipload.get(&move_idx).copied())
+        };
 
         let rapid_color: [f32; 3] = [0.15, 0.15, 0.2];
         let mut cut_verts = Vec::new();

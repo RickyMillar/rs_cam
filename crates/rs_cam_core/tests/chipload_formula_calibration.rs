@@ -68,13 +68,7 @@ fn half_engagement_sample(
 ) -> SimulationCutSample {
     let arc = FRAC_PI_2;
     let chipload = WANAKA_FEED_PER_TOOTH_MM;
-    let exposed = effective_chip_thickness_mm(
-        cutter,
-        WANAKA_AXIAL_DOC_MM,
-        Some(arc),
-        chipload,
-        2,
-    );
+    let exposed = effective_chip_thickness_mm(cutter, WANAKA_AXIAL_DOC_MM, Some(arc), chipload, 2);
     SimulationCutSample {
         toolpath_id: tp_id,
         move_index: idx,
@@ -151,8 +145,8 @@ fn exposed_chip_thickness_at_half_engagement_uses_arc_average_convention() {
     // For arc = π/2, feed = 0.0875:
     //   mean = (0.175 / (π/2)) × (1 - cos(π/4))
     //        ≈ 0.1114 × 0.2929 ≈ 0.03264 mm.
-    let expected_mean = (2.0 * WANAKA_FEED_PER_TOOTH_MM / FRAC_PI_2)
-        * (1.0 - (FRAC_PI_2 * 0.5).cos());
+    let expected_mean =
+        (2.0 * WANAKA_FEED_PER_TOOTH_MM / FRAC_PI_2) * (1.0 - (FRAC_PI_2 * 0.5).cos());
     assert!(
         (exposed - expected_mean).abs() < 1e-6,
         "exposed chip thickness must equal arc-average mean ({expected_mean:.5}); \

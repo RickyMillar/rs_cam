@@ -67,14 +67,20 @@ fn draw_verdict_hud(
 
     let (ok, warn, bad, unmodeled, collision_count, trace_count) = {
         let counts = verdict_counts(load_report);
-        let collision_count =
-            sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
+        let collision_count = sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
         let trace_count = gui
             .toolpath_rt
             .values()
             .filter(|rt| rt.debug_trace.is_some() || rt.semantic_trace.is_some())
             .count();
-        (counts.0, counts.1, counts.2, counts.3, collision_count, trace_count)
+        (
+            counts.0,
+            counts.1,
+            counts.2,
+            counts.3,
+            collision_count,
+            trace_count,
+        )
     };
 
     egui::Frame::default()
@@ -245,8 +251,8 @@ fn draw_signal_spine(
 
     ui.add_space(4.0);
     let active_x = Some(sim.playback.current_move as f64);
-    let envelope = focused_id
-        .and_then(|id| chipload_envelope_for_toolpath(session, Some(trace), id));
+    let envelope =
+        focused_id.and_then(|id| chipload_envelope_for_toolpath(session, Some(trace), id));
 
     let mut hotspots: Vec<HotspotMarker> = trace
         .hotspots
@@ -310,7 +316,12 @@ fn draw_signal_spine(
         .map(|b| (b.start_move as f64, b.end_move as f64))
         .unwrap_or((0.0, total_moves_f));
 
-    let tracks: [(&str, fn(&SimulationCutSample) -> Option<f64>, egui::Color32, Option<(f64, f64)>); 5] = [
+    let tracks: [(
+        &str,
+        fn(&SimulationCutSample) -> Option<f64>,
+        egui::Color32,
+        Option<(f64, f64)>,
+    ); 5] = [
         (
             "chipload",
             // Filter air-cut samples (radial_engagement < 0.02) from the
@@ -481,10 +492,11 @@ fn draw_signal_track(
             let mut decimated: Vec<(usize, [f64; 2])> = Vec::with_capacity(per_group_cap + 1);
             let mut chunk_iter = pts.chunks(bucket_size);
             for chunk in chunk_iter.by_ref() {
-                if let Some(peak) = chunk
-                    .iter()
-                    .max_by(|a, b| a.1[1].partial_cmp(&b.1[1]).unwrap_or(std::cmp::Ordering::Equal))
-                {
+                if let Some(peak) = chunk.iter().max_by(|a, b| {
+                    a.1[1]
+                        .partial_cmp(&b.1[1])
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                }) {
                     decimated.push(*peak);
                 }
             }
@@ -509,12 +521,7 @@ fn draw_signal_track(
     // Track label above the plot — the embedded plot legend isn't very
     // visible at this size, and a leading label is more scannable when
     // tracks are stacked vertically in a scroll area.
-    ui.label(
-        egui::RichText::new(label)
-            .small()
-            .strong()
-            .color(color),
-    );
+    ui.label(egui::RichText::new(label).small().strong().color(color));
 
     // The link group ID encodes the X range, so changing focus (which
     // changes x_range) creates a *fresh* link group. Without this, egui_plot
@@ -562,12 +569,9 @@ fn draw_signal_track(
                     let prev_move = pts[i - 1].0;
                     let cur_move = pts[i].0;
                     if cur_move.saturating_sub(prev_move) > MAX_LINE_BRIDGE_GAP {
-                        let xy: Vec<[f64; 2]> =
-                            pts[run_start..i].iter().map(|(_, p)| *p).collect();
+                        let xy: Vec<[f64; 2]> = pts[run_start..i].iter().map(|(_, p)| *p).collect();
                         if xy.len() >= 2 {
-                            plot_ui.line(
-                                Line::new(PlotPoints::from(xy)).name(label).color(color),
-                            );
+                            plot_ui.line(Line::new(PlotPoints::from(xy)).name(label).color(color));
                         }
                         run_start = i;
                     }
@@ -584,8 +588,7 @@ fn draw_signal_track(
                 // Above-max → red (breakage). Below-min → amber (burn).
                 // The clear band between cl_min and cl_max is the safe
                 // chipload zone. Stroke is transparent — fill only.
-                let transparent =
-                    egui::Stroke::new(0.0, egui::Color32::TRANSPARENT);
+                let transparent = egui::Stroke::new(0.0, egui::Color32::TRANSPARENT);
                 if cl_max < max_y {
                     let breakage_top = max_y.max(cl_max);
                     plot_ui.polygon(
@@ -595,9 +598,7 @@ fn draw_signal_track(
                             [x_max, breakage_top],
                             [x_min, breakage_top],
                         ]))
-                        .fill_color(egui::Color32::from_rgba_premultiplied(
-                            70, 18, 18, 90,
-                        ))
+                        .fill_color(egui::Color32::from_rgba_premultiplied(70, 18, 18, 90))
                         .stroke(transparent)
                         .allow_hover(false)
                         .name("breakage zone"),
@@ -612,9 +613,7 @@ fn draw_signal_track(
                             [x_max, cl_min],
                             [x_min, cl_min],
                         ]))
-                        .fill_color(egui::Color32::from_rgba_premultiplied(
-                            90, 60, 12, 80,
-                        ))
+                        .fill_color(egui::Color32::from_rgba_premultiplied(90, 60, 12, 80))
                         .stroke(transparent)
                         .allow_hover(false)
                         .name("burn zone"),
@@ -707,8 +706,7 @@ fn draw_signal_track(
                         events.push(AppEvent::SimJumpToMove(global_move));
                     }
                 } else if dragged
-                    && let Some((global_move, _)) =
-                        nearest_in_groups(pointer.x, &group_points)
+                    && let Some((global_move, _)) = nearest_in_groups(pointer.x, &group_points)
                 {
                     events.push(AppEvent::SimJumpToMove(global_move));
                 }
@@ -741,8 +739,7 @@ fn chipload_envelope_for_toolpath(
     sim_trace: Option<&rs_cam_core::simulation_cut::SimulationCutTrace>,
     toolpath_id: crate::state::toolpath::ToolpathId,
 ) -> Option<(f64, f64)> {
-    let envelopes =
-        rs_cam_core::tool_load::chipload_envelopes_for_session(session, sim_trace);
+    let envelopes = rs_cam_core::tool_load::chipload_envelopes_for_session(session, sim_trace);
     let env = envelopes.get(&toolpath_id.0)?;
     Some((env.start, env.end))
 }
@@ -837,7 +834,6 @@ fn draw_transport_and_scrubber(
             }
         }
     });
-
 }
 
 /// Row 2: Custom-painted per-op timeline bar with collision markers and
@@ -1022,7 +1018,12 @@ fn draw_boundary_timeline(
         {
             if response.clicked()
                 && let Some(target) = nearest_safety_marker_move(
-                    pos.x, rect, total_moves, total_width, sim, load_report,
+                    pos.x,
+                    rect,
+                    total_moves,
+                    total_width,
+                    sim,
+                    load_report,
                 )
             {
                 sim.analytics_tab = SimulationAnalyticsTab::Safety;
@@ -1161,9 +1162,8 @@ fn nearest_marker_tooltip(
             .find(|b| move_idx >= b.start_move && move_idx <= b.end_move)
             .map_or_else(|| "(no toolpath)".to_owned(), |b| b.name.clone())
     };
-    let x_for_move = |move_idx: usize| -> f32 {
-        rect.min.x + (move_idx as f32 / total_moves) * total_width
-    };
+    let x_for_move =
+        |move_idx: usize| -> f32 { rect.min.x + (move_idx as f32 / total_moves) * total_width };
 
     let mut best: Option<(f32, String)> = None;
     let mut consider = |move_idx: usize, label: String| {
@@ -1206,10 +1206,7 @@ fn nearest_marker_tooltip(
     }
 
     // Tool-load exceedance markers
-    let sim_trace = sim
-        .results
-        .as_ref()
-        .and_then(|r| r.cut_trace.as_deref());
+    let sim_trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
     if let Some(trace) = sim_trace {
         for verdict in &load_report.per_toolpath {
             if let Some(focus) = focused_id
@@ -1218,8 +1215,7 @@ fn nearest_marker_tooltip(
                 continue;
             }
             if let Some(move_idx) = first_exceeded_tool_load_move(sim, trace, verdict) {
-                let reason = match (&verdict.chipload, &verdict.power, &verdict.deflection)
-                {
+                let reason = match (&verdict.chipload, &verdict.power, &verdict.deflection) {
                     (rs_cam_core::tool_load::Verdict::Exceeds { reason, peak, .. }, _, _) => {
                         format!("chipload {reason:?} peak {peak:.4}")
                     }
@@ -1511,4 +1507,3 @@ fn draw_semantic_band(
         events.push(AppEvent::SimJumpToMove(boundary.start_move + local_move));
     }
 }
-

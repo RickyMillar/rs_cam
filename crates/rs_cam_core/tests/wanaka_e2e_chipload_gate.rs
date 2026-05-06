@@ -71,9 +71,7 @@ fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
     let back_rough_idx = 1_usize;
     let back_rough_id = toolpaths[back_rough_idx].id;
     let back_rough_name = toolpaths[back_rough_idx].name.clone();
-    println!(
-        "TP{back_rough_idx} = {back_rough_name:?} (stable id {back_rough_id})"
-    );
+    println!("TP{back_rough_idx} = {back_rough_name:?} (stable id {back_rough_id})");
     assert!(
         back_rough_name.to_lowercase().contains("rough"),
         "expected TP1 to be Back Rough, got {back_rough_name:?} — \
@@ -106,7 +104,10 @@ fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
         .find(|v| v.toolpath_id == back_rough_id)
         .unwrap_or_else(|| panic!("no tool-load verdict for Back Rough id {back_rough_id}"));
 
-    println!("Back Rough chipload verdict: {:?}", back_rough_verdict.chipload);
+    println!(
+        "Back Rough chipload verdict: {:?}",
+        back_rough_verdict.chipload
+    );
 
     // Diagnostic: peak axial DOC + air-cut/low-engagement breakdown
     {
@@ -134,7 +135,10 @@ fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
         println!(
             "  Back Rough axial DOC: peak={peak:.3} p99={:.3} p95={:.3} p50={:.3} \
              (n_cutting_samples={})",
-            p_at(0.99), p_at(0.95), p_at(0.50), all.len()
+            p_at(0.99),
+            p_at(0.95),
+            p_at(0.50),
+            all.len()
         );
 
         // Find the peak-axial-DOC sample for context
@@ -142,14 +146,20 @@ fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
             .samples
             .iter()
             .filter(|s| s.toolpath_id == back_rough_id && s.is_cutting)
-            .max_by(|a, b| a.axial_doc_mm.partial_cmp(&b.axial_doc_mm).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|a, b| {
+                a.axial_doc_mm
+                    .partial_cmp(&b.axial_doc_mm)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
         {
             println!(
                 "  peak-axial sample idx {}: kinematics={:?}, position=({:.2},{:.2},{:.2}), \
                  axial_doc={:.3}, radial_eng={:.4}, arc={:?}, removed_vol={:.3}, mrr={:.2}",
                 peak_sample.sample_index,
                 peak_sample.cut_kinematics,
-                peak_sample.position[0], peak_sample.position[1], peak_sample.position[2],
+                peak_sample.position[0],
+                peak_sample.position[1],
+                peak_sample.position[2],
                 peak_sample.axial_doc_mm,
                 peak_sample.radial_engagement,
                 peak_sample.arc_engagement_radians,
@@ -269,7 +279,9 @@ fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
         let sim = session
             .simulation_result()
             .expect("simulation result stored on session");
-        sim.cut_trace.clone().expect("cut trace populated when metrics_enabled")
+        sim.cut_trace
+            .clone()
+            .expect("cut trace populated when metrics_enabled")
     };
 
     let peak_axial_doc = cut_trace

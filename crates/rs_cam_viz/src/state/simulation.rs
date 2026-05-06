@@ -472,9 +472,7 @@ impl SimulationState {
             .boundaries()
             .iter()
             .rev()
-            .position(|boundary| {
-                move_idx >= boundary.start_move && move_idx <= boundary.end_move
-            })
+            .position(|boundary| move_idx >= boundary.start_move && move_idx <= boundary.end_move)
             .map(|rev_idx| count - 1 - rev_idx)?;
         let boundary = &self.boundaries()[boundary_index];
         let local_move = move_idx.saturating_sub(boundary.start_move);

@@ -15,7 +15,12 @@ pub(in crate::ui::properties) fn draw_dropcutter_params(
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
             dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=50.0);
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
+            draw_feed_params(
+                ui,
+                &mut cfg.feed_rate,
+                &mut cfg.plunge_rate,
+                &mut cfg.spindle_rpm,
+            );
             dv(ui, "Min Z:", &mut cfg.min_z, " mm", 0.5, -500.0..=0.0);
             dv(
                 ui,
@@ -62,7 +67,12 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                 0.05,
                 0.0..=10.0,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
+            draw_feed_params(
+                ui,
+                &mut cfg.feed_rate,
+                &mut cfg.plunge_rate,
+                &mut cfg.spindle_rpm,
+            );
             dv(
                 ui,
                 "Tolerance:",
@@ -204,7 +214,12 @@ pub(in crate::ui::properties) fn draw_waterline_params(
             ui.checkbox(&mut cfg.continuous, "");
             ui.end_row();
             // Z range now comes from the Heights tab (top_z / bottom_z)
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
+            draw_feed_params(
+                ui,
+                &mut cfg.feed_rate,
+                &mut cfg.plunge_rate,
+                &mut cfg.spindle_rpm,
+            );
         });
 }
 
@@ -252,7 +267,12 @@ pub(in crate::ui::properties) fn draw_pencil_params(ui: &mut egui::Ui, cfg: &mut
                 0.05..=10.0,
             );
             dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
+            draw_feed_params(
+                ui,
+                &mut cfg.feed_rate,
+                &mut cfg.plunge_rate,
+                &mut cfg.spindle_rpm,
+            );
             dv(
                 ui,
                 "Stock to Leave:",
@@ -316,7 +336,12 @@ pub(in crate::ui::properties) fn draw_scallop_params(ui: &mut egui::Ui, cfg: &mu
                 0.0..=90.0,
             );
             dv(ui, "Slope To:", &mut cfg.slope_to, " deg", 1.0, 0.0..=90.0);
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
+            draw_feed_params(
+                ui,
+                &mut cfg.feed_rate,
+                &mut cfg.plunge_rate,
+                &mut cfg.spindle_rpm,
+            );
             dv(
                 ui,
                 "Stock to Leave:",
@@ -365,7 +390,12 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
             ui.end_row();
             dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=50.0);
             dv(ui, "Z Step:", &mut cfg.z_step, " mm", 0.1, 0.05..=20.0);
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
+            draw_feed_params(
+                ui,
+                &mut cfg.feed_rate,
+                &mut cfg.plunge_rate,
+                &mut cfg.spindle_rpm,
+            );
             dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
             dv(
                 ui,

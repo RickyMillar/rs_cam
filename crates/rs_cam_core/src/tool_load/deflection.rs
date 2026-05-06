@@ -76,11 +76,11 @@ mod tests {
     fn tool_with_stickout(diameter: f64, stickout: f64) -> ToolDefinition {
         ToolDefinition::new(
             Box::new(FlatEndmill::new(diameter, 20.0)),
-            6.0,    // shank_diameter
-            30.0,   // shank_length
-            20.0,   // holder_diameter
+            6.0,  // shank_diameter
+            30.0, // shank_length
+            20.0, // holder_diameter
             stickout,
-            2,      // flute_count
+            2, // flute_count
             crate::compute::tool_config::ToolMaterial::Carbide,
         )
     }

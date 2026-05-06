@@ -437,10 +437,7 @@ impl DressupConfig {
         // stock in angled trenches. Lead-in/out add arc transitions
         // tangent to the segment start, which on a zigzag raster produce
         // more diagonals.
-        let strip_entry = matches!(
-            op,
-            OperationType::ProjectCurve | OperationType::DropCutter
-        );
+        let strip_entry = matches!(op, OperationType::ProjectCurve | OperationType::DropCutter);
         if strip_entry {
             if self.entry_style != DressupEntryStyle::None {
                 self.entry_style = DressupEntryStyle::None;

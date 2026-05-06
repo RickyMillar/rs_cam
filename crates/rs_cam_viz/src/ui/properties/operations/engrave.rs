@@ -30,7 +30,12 @@ pub(in crate::ui::properties) fn draw_trace_params(ui: &mut egui::Ui, cfg: &mut 
                 0.1,
                 0.1..=20.0,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
+            draw_feed_params(
+                ui,
+                &mut cfg.feed_rate,
+                &mut cfg.plunge_rate,
+                &mut cfg.spindle_rpm,
+            );
         });
 }
 
@@ -55,6 +60,11 @@ pub(in crate::ui::properties) fn draw_chamfer_params(ui: &mut egui::Ui, cfg: &mu
                 0.01,
                 0.0..=2.0,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
+            draw_feed_params(
+                ui,
+                &mut cfg.feed_rate,
+                &mut cfg.plunge_rate,
+                &mut cfg.spindle_rpm,
+            );
         });
 }

@@ -33,7 +33,12 @@ pub(in crate::ui::properties) fn draw_face_params(ui: &mut egui::Ui, cfg: &mut F
                 0.1,
                 0.1..=20.0,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
+            draw_feed_params(
+                ui,
+                &mut cfg.feed_rate,
+                &mut cfg.plunge_rate,
+                &mut cfg.spindle_rpm,
+            );
             dv(
                 ui,
                 "Stock Offset:",
@@ -71,7 +76,12 @@ pub(in crate::ui::properties) fn draw_pocket_params(ui: &mut egui::Ui, cfg: &mut
                 0.1,
                 0.1..=50.0,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
+            draw_feed_params(
+                ui,
+                &mut cfg.feed_rate,
+                &mut cfg.plunge_rate,
+                &mut cfg.spindle_rpm,
+            );
             ui.label("Climb:");
             ui.checkbox(&mut cfg.climb, "");
             ui.end_row();
@@ -116,7 +126,12 @@ pub(in crate::ui::properties) fn draw_profile_params(ui: &mut egui::Ui, cfg: &mu
                 0.1,
                 0.1..=50.0,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
+            draw_feed_params(
+                ui,
+                &mut cfg.feed_rate,
+                &mut cfg.plunge_rate,
+                &mut cfg.spindle_rpm,
+            );
             ui.label("Climb:");
             ui.checkbox(&mut cfg.climb, "");
             ui.end_row();
@@ -197,7 +212,12 @@ pub(in crate::ui::properties) fn draw_adaptive_params(ui: &mut egui::Ui, cfg: &m
                 0.1,
                 0.1..=50.0,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
+            draw_feed_params(
+                ui,
+                &mut cfg.feed_rate,
+                &mut cfg.plunge_rate,
+                &mut cfg.spindle_rpm,
+            );
             dv(
                 ui,
                 "Tolerance:",
@@ -227,7 +247,12 @@ pub(in crate::ui::properties) fn draw_vcarve_params(ui: &mut egui::Ui, cfg: &mut
         .show(ui, |ui| {
             dv(ui, "Max Depth:", &mut cfg.max_depth, " mm", 0.1, 0.1..=50.0);
             dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.05, 0.01..=10.0);
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
+            draw_feed_params(
+                ui,
+                &mut cfg.feed_rate,
+                &mut cfg.plunge_rate,
+                &mut cfg.spindle_rpm,
+            );
             dv(
                 ui,
                 "Tolerance:",
@@ -275,7 +300,12 @@ pub(in crate::ui::properties) fn draw_rest_params(
                 0.1,
                 0.1..=50.0,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
+            draw_feed_params(
+                ui,
+                &mut cfg.feed_rate,
+                &mut cfg.plunge_rate,
+                &mut cfg.spindle_rpm,
+            );
             dv(ui, "Angle:", &mut cfg.angle, " deg", 1.0, 0.0..=360.0);
         });
 }
@@ -319,7 +349,12 @@ pub(in crate::ui::properties) fn draw_inlay_params(ui: &mut egui::Ui, cfg: &mut 
                 0.1,
                 0.1..=50.0,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
+            draw_feed_params(
+                ui,
+                &mut cfg.feed_rate,
+                &mut cfg.plunge_rate,
+                &mut cfg.spindle_rpm,
+            );
             dv(
                 ui,
                 "Tolerance:",
@@ -346,7 +381,12 @@ pub(in crate::ui::properties) fn draw_zigzag_params(ui: &mut egui::Ui, cfg: &mut
                 0.1,
                 0.1..=50.0,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, &mut cfg.spindle_rpm);
+            draw_feed_params(
+                ui,
+                &mut cfg.feed_rate,
+                &mut cfg.plunge_rate,
+                &mut cfg.spindle_rpm,
+            );
             dv(ui, "Angle:", &mut cfg.angle, " deg", 1.0, 0.0..=360.0);
         });
 }

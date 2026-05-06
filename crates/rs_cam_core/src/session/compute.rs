@@ -21,9 +21,9 @@ use crate::debug_trace::ToolpathDebugRecorder;
 use crate::dexel_stock::StockCutDirection;
 use crate::geo::{BoundingBox3, P3};
 use crate::mesh::TriangleMesh;
-use crate::tool::MillingCutter;
 use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces};
 use crate::simulation_cut::SimulationMetricOptions;
+use crate::tool::MillingCutter;
 
 use super::{
     ProjectDiagnostics, ProjectSession, SessionError, SimulationOptions, ToolpathComputeResult,
@@ -386,10 +386,8 @@ impl ProjectSession {
         // Resolve heights — use the transformed mesh bbox so Z values are in the
         // setup-local frame. `effective_safe_z` floors the user-configured
         // `post.safe_z` at `stock_top + clearance` so rapids clear the stock.
-        let safe_z = crate::compute::config::effective_safe_z(
-            self.post.safe_z,
-            effective_stock_bbox.max.z,
-        );
+        let safe_z =
+            crate::compute::config::effective_safe_z(self.post.safe_z, effective_stock_bbox.max.z);
 
         let model_bbox = mesh.as_ref().map(|m| &m.bbox);
         let height_ctx = HeightContext {
@@ -616,8 +614,7 @@ impl ProjectSession {
             stock_poly = subtract_keepouts(&stock_poly, keep_out_footprints);
         }
         if boundary_config.offset.abs() > 1e-9 {
-            let offset_polys =
-                crate::polygon::offset_polygon(&stock_poly, -boundary_config.offset);
+            let offset_polys = crate::polygon::offset_polygon(&stock_poly, -boundary_config.offset);
             if let Some(largest) = offset_polys.into_iter().max_by(|a, b| {
                 a.area()
                     .partial_cmp(&b.area())
@@ -926,6 +923,42 @@ impl ProjectSession {
         };
         let check_result = run_collision_check(&request, cancel)?;
         Ok(check_result)
+    }
+
+    /// Narrate one generated toolpath in prose for agent-oriented debugging.
+    #[instrument(skip(self))]
+    pub fn narrate_toolpath(&self, index: usize) -> Result<String, SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        let result = self
+            .results
+            .get(&index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        let tool = self
+            .find_tool_by_raw_id(tc.tool_id)
+            .ok_or(SessionError::ToolNotFound(ToolId(tc.tool_id)))?;
+        let tool_def = build_cutter(tool);
+        let cut_trace = self
+            .simulation
+            .as_ref()
+            .and_then(|sim| sim.cut_trace.as_deref());
+        let context = crate::narrate::ToolpathNarrationContext {
+            toolpath_id: Some(tc.id),
+            toolpath_name: Some(tc.name.as_str()),
+            operation_label: Some(tc.operation.label()),
+            depth_per_pass_mm: tc.operation.depth_per_pass(),
+        };
+
+        Ok(crate::narrate::narrate_toolpath_with_context(
+            &result.toolpath,
+            result.semantic_trace.as_ref(),
+            cut_trace,
+            result.debug_trace.as_ref(),
+            &tool_def,
+            &context,
+        ))
     }
 
     /// Compute project diagnostics from current results and simulation.
@@ -1284,11 +1317,9 @@ mod tests {
         s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
         // Default is None.
         assert_eq!(s.toolpath_configs()[0].operation.spindle_rpm(), None);
-        s.set_toolpath_param(0, "spindle_rpm", json!(15000)).unwrap();
-        assert_eq!(
-            s.toolpath_configs()[0].operation.spindle_rpm(),
-            Some(15000)
-        );
+        s.set_toolpath_param(0, "spindle_rpm", json!(15000))
+            .unwrap();
+        assert_eq!(s.toolpath_configs()[0].operation.spindle_rpm(), Some(15000));
     }
 
     #[test]

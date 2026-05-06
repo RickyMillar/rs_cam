@@ -38,9 +38,9 @@ pub use operation_configs::{
     DropCutterConfig, FaceConfig, FaceDirection, HorizontalFinishConfig, InlayConfig, PencilConfig,
     PocketConfig, PocketPattern, ProfileConfig, ProfileSide, ProjectCurveConfig,
     ProjectCurveDirection, ProjectCurveSide, RadialFinishConfig, RampFinishConfig, RegionOrdering,
-    RestConfig,
-    ScallopConfig, ScallopDirection, SpiralDirection, SpiralFinishConfig, SteepShallowConfig,
-    TraceCompensation, TraceConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
+    RestConfig, ScallopConfig, ScallopDirection, SpiralDirection, SpiralFinishConfig,
+    SteepShallowConfig, TraceCompensation, TraceConfig, VCarveConfig, WaterlineConfig,
+    ZigzagConfig,
 };
 
 pub use tool_config::{BitCutDirection, ToolConfig, ToolId, ToolMaterial, ToolType};

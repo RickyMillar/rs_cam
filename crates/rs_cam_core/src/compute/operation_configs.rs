@@ -99,8 +99,8 @@ impl Default for FaceConfig {
             plunge_rate: 500.0,
             stock_offset: 5.0,
             direction: FaceDirection::Zigzag,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -123,8 +123,8 @@ impl Default for TraceConfig {
             feed_rate: 800.0,
             plunge_rate: 400.0,
             compensation: TraceCompensation::None,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -151,8 +151,8 @@ impl Default for DrillConfig {
             retract_amount: 0.5,
             feed_rate: 300.0,
             retract_z: 2.0,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -180,8 +180,8 @@ impl Default for AlignmentPinDrillConfig {
             peck_depth: 3.0,
             feed_rate: 300.0,
             retract_z: 2.0,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -202,8 +202,8 @@ impl Default for ChamferConfig {
             tip_offset: 0.1,
             feed_rate: 800.0,
             plunge_rate: 400.0,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -234,8 +234,8 @@ impl Default for PocketConfig {
             pattern: PocketPattern::Contour,
             angle: 0.0,
             finishing_passes: 0,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -270,8 +270,8 @@ impl Default for ProfileConfig {
             tab_height: 2.0,
             finishing_passes: 0,
             compensation: CompensationType::InComputer,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -300,8 +300,8 @@ impl Default for AdaptiveConfig {
             tolerance: 0.1,
             slot_clearing: true,
             min_cutting_radius: 0.0,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -324,8 +324,8 @@ impl Default for VCarveConfig {
             feed_rate: 800.0,
             plunge_rate: 400.0,
             tolerance: 0.05,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -352,8 +352,8 @@ impl Default for RestConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             angle: 0.0,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -384,8 +384,8 @@ impl Default for InlayConfig {
             feed_rate: 800.0,
             plunge_rate: 400.0,
             tolerance: 0.05,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -410,8 +410,8 @@ impl Default for ZigzagConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             angle: 0.0,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -436,8 +436,8 @@ impl Default for DropCutterConfig {
             min_z: -50.0,
             slope_from: 0.0,
             slope_to: 90.0,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -494,8 +494,8 @@ impl Default for Adaptive3dConfig {
             region_ordering: RegionOrdering::Global,
             clearing_strategy: ClearingStrategy::ContourParallel,
             z_blend: false,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -534,8 +534,8 @@ impl Default for WaterlineConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             continuous: false,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -566,8 +566,8 @@ impl Default for PencilConfig {
             feed_rate: 800.0,
             plunge_rate: 400.0,
             stock_to_leave: 0.0,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -598,8 +598,8 @@ impl Default for ScallopConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             stock_to_leave: 0.0,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -634,8 +634,8 @@ impl Default for SteepShallowConfig {
             sampling: 0.5,
             stock_to_leave: 0.0,
             tolerance: 0.05,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -668,8 +668,8 @@ impl Default for RampFinishConfig {
             sampling: 0.5,
             stock_to_leave: 0.0,
             tolerance: 0.05,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -692,8 +692,8 @@ impl Default for SpiralFinishConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             stock_to_leave: 0.0,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -716,8 +716,8 @@ impl Default for RadialFinishConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             stock_to_leave: 0.0,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -740,8 +740,8 @@ impl Default for HorizontalFinishConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             stock_to_leave: 0.0,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 
@@ -823,8 +823,8 @@ impl Default for ProjectCurveConfig {
             direction: ProjectCurveDirection::FromAbove,
             side: ProjectCurveSide::Center,
             setup_z_flipped: false,
-                    spindle_rpm: None,
-}
+            spindle_rpm: None,
+        }
     }
 }
 

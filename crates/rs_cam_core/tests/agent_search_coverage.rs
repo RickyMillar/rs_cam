@@ -387,7 +387,10 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
                 z_level, fails
             );
             for (rr, cc, t, l) in &sample {
-                eprintln!("    cell ({}, {}) ray_top={:.3} > limit={:.3}", rr, cc, t, l);
+                eprintln!(
+                    "    cell ({}, {}) ray_top={:.3} > limit={:.3}",
+                    rr, cc, t, l
+                );
             }
             total_failures += fails;
         }

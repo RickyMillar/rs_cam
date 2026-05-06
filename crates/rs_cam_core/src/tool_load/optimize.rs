@@ -32,8 +32,8 @@ use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use crate::feeds::{OperationFamily, PassRole};
 use crate::machine::{MachineProfile, PowerModel};
 use crate::session::{ProjectSession, SessionError, SimulationOptions};
-use crate::tool::MillingCutter;
 use crate::simulation_cut::SimulationCutTrace;
+use crate::tool::MillingCutter;
 
 use super::RefuseReason;
 use super::verdict::{ToolpathLoadVerdict, Verdict};
@@ -217,8 +217,7 @@ impl ProjectOptimizeReport {
             .skip(1)
             .find(|(_, c)| {
                 candidate_is_safe(c)
-                    && c.cycle_time_s + RECOMMENDATION_CYCLE_DELTA_S
-                        < baseline.cycle_time_s
+                    && c.cycle_time_s + RECOMMENDATION_CYCLE_DELTA_S < baseline.cycle_time_s
             })
             .map(|(i, _)| i)
     }
@@ -273,10 +272,7 @@ pub fn optimize_toolpath(
 
     // 3. Skip Custom material — Kc is unvalidated, power model
     //    unreliable.
-    if matches!(
-        ctx.material,
-        crate::material::Material::Custom { .. }
-    ) {
+    if matches!(ctx.material, crate::material::Material::Custom { .. }) {
         return OptimizeOutcome::Skipped {
             reason: RefuseReason::MaterialUnvalidated,
         };
@@ -359,8 +355,7 @@ pub fn optimize_toolpath(
     // 7. Stage 0: closed-form analytical RPM/feed scaling. Skipped
     //    when the baseline already fails the chipload gate
     //    (proportional scaling preserves chipload — can't fix Exceeds).
-    let baseline_chipload_exceeds =
-        matches!(baseline_verdict.chipload, Verdict::Exceeds { .. });
+    let baseline_chipload_exceeds = matches!(baseline_verdict.chipload, Verdict::Exceeds { .. });
     let mut all_candidates: Vec<OptimizeCandidate> = Vec::new();
     if !baseline_chipload_exceeds {
         let stage0_inputs = Stage0Inputs {
@@ -411,11 +406,8 @@ pub fn optimize_toolpath(
         let anchor_stepover = anchor_op
             .stepover()
             .unwrap_or_else(|| baseline_op.stepover().unwrap_or(1.0));
-        let doc_variants = build_doc_variants(
-            anchor_doc,
-            matched_lut_row.as_ref(),
-            ctx.operation_kind,
-        );
+        let doc_variants =
+            build_doc_variants(anchor_doc, matched_lut_row.as_ref(), ctx.operation_kind);
         let stepover_variants = build_stepover_variants(
             anchor_stepover,
             matched_lut_row.as_ref(),
@@ -617,10 +609,7 @@ pub(crate) struct ToolpathParamsSnapshot {
 }
 
 impl ToolpathParamsSnapshot {
-    fn capture(
-        session: &ProjectSession,
-        toolpath_index: usize,
-    ) -> Result<Self, SessionError> {
+    fn capture(session: &ProjectSession, toolpath_index: usize) -> Result<Self, SessionError> {
         let tc = session
             .get_toolpath_config(toolpath_index)
             .ok_or(SessionError::ToolpathNotFound(toolpath_index))?;
@@ -1015,10 +1004,7 @@ pub(crate) fn delta_against_baseline(
 ///
 /// Public because the GUI's Apply handler in viz needs the same
 /// translation when committing the user's selection.
-pub fn feeds_auto_for_candidate(
-    baseline: &FeedsAutoMode,
-    delta: &ParamDelta,
-) -> FeedsAutoMode {
+pub fn feeds_auto_for_candidate(baseline: &FeedsAutoMode, delta: &ParamDelta) -> FeedsAutoMode {
     let mut out = baseline.clone();
     if delta.feed_mm_min.is_some() {
         out.feed_rate = false;
@@ -1100,10 +1086,7 @@ impl EvaluationContext {
     /// Build the evaluation context from the session for the given
     /// toolpath index. Returns `None` if the toolpath or its tool is
     /// missing — caller should `Skipped` in that case.
-    pub(crate) fn from_session(
-        session: &ProjectSession,
-        toolpath_index: usize,
-    ) -> Option<Self> {
+    pub(crate) fn from_session(session: &ProjectSession, toolpath_index: usize) -> Option<Self> {
         let tc = session.get_toolpath_config(toolpath_index)?;
         let tool_cfg = session.get_tool(crate::compute::tool_config::ToolId(tc.tool_id))?;
         let tool = crate::compute::cutter::build_cutter(tool_cfg);
@@ -1299,8 +1282,7 @@ pub(crate) fn build_outcome(
 
     let baseline_cycle = baseline.cycle_time_s;
     let any_safe_and_faster = candidates.iter().any(|c| {
-        candidate_is_safe(c)
-            && c.cycle_time_s + RECOMMENDATION_CYCLE_DELTA_S < baseline_cycle
+        candidate_is_safe(c) && c.cycle_time_s + RECOMMENDATION_CYCLE_DELTA_S < baseline_cycle
     });
 
     if !any_safe_and_faster {
@@ -1499,7 +1481,9 @@ pub fn optimize_project(
 )]
 mod stage0_tests {
     use super::*;
-    use crate::machine::{ChipLoadFormula, MachineProfile, PowerModel, RigidityProfile, SpindleConfig};
+    use crate::machine::{
+        ChipLoadFormula, MachineProfile, PowerModel, RigidityProfile, SpindleConfig,
+    };
 
     fn synthetic_machine(
         max_rpm: f64,
@@ -1547,7 +1531,7 @@ mod stage0_tests {
     fn k_machine_rpm_binds_when_feed_and_power_have_room() {
         let machine = synthetic_machine(
             24_000.0,
-            10_000.0, // generous feed cap
+            10_000.0,                                    // generous feed cap
             PowerModel::ConstantPower { power_kw: 5.0 }, // generous power
             0.8,
         );
@@ -1864,9 +1848,7 @@ mod restore_guard_tests {
             // No mutations.
         }
         // Session unchanged.
-        assert!(
-            (session.toolpath_configs()[0].operation.feed_rate() - baseline_feed).abs() < 1e-9
-        );
+        assert!((session.toolpath_configs()[0].operation.feed_rate() - baseline_feed).abs() < 1e-9);
     }
 
     #[test]
@@ -1897,7 +1879,11 @@ mod restore_guard_tests {
                     .abs()
                     < 1e-6
             );
-            assert!(!guard.session_mut().toolpath_configs()[0].feeds_auto.feed_rate);
+            assert!(
+                !guard.session_mut().toolpath_configs()[0]
+                    .feeds_auto
+                    .feed_rate
+            );
             // Mutation also bridges into the snapshot — but only for
             // copies; the captured snapshot is immutable.
             assert!(
@@ -2035,7 +2021,8 @@ mod orchestration_skip_tests {
     fn session_with_op(operation: OperationConfig) -> ProjectSession {
         let mut s = ProjectSession::new_empty();
         s.add_tool(make_tool());
-        s.add_toolpath(0, make_tc(operation, s.tools()[0].id.0)).unwrap();
+        s.add_toolpath(0, make_tc(operation, s.tools()[0].id.0))
+            .unwrap();
         s
     }
 
@@ -2045,12 +2032,15 @@ mod orchestration_skip_tests {
         let trace = empty_trace();
         let cancel = AtomicBool::new(false);
         let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
-        assert!(matches!(
-            outcome,
-            OptimizeOutcome::Skipped {
-                reason: RefuseReason::SteadyStateSamplesNotPresent
-            }
-        ), "got {outcome:?}");
+        assert!(
+            matches!(
+                outcome,
+                OptimizeOutcome::Skipped {
+                    reason: RefuseReason::SteadyStateSamplesNotPresent
+                }
+            ),
+            "got {outcome:?}"
+        );
     }
 
     #[test]
@@ -2214,7 +2204,12 @@ mod project_rollup_tests {
         }
     }
 
-    fn make_tc(name: &str, operation: OperationConfig, tool_id: usize, enabled: bool) -> ToolpathConfig {
+    fn make_tc(
+        name: &str,
+        operation: OperationConfig,
+        tool_id: usize,
+        enabled: bool,
+    ) -> ToolpathConfig {
         ToolpathConfig {
             id: 0,
             name: name.to_owned(),
@@ -2246,7 +2241,12 @@ mod project_rollup_tests {
         for (name, enabled) in names_and_enabled {
             s.add_toolpath(
                 0,
-                make_tc(name, OperationConfig::Drill(DrillConfig::default()), tool_id, *enabled),
+                make_tc(
+                    name,
+                    OperationConfig::Drill(DrillConfig::default()),
+                    tool_id,
+                    *enabled,
+                ),
             )
             .unwrap();
         }
@@ -2295,8 +2295,7 @@ mod project_rollup_tests {
     fn disabled_toolpaths_excluded_from_walk() {
         // 3 toolpaths, only the middle one is enabled. Progress should
         // see total=1 and the per_toolpath should have one entry.
-        let mut session =
-            session_with_n_drills(&[("a", false), ("b", true), ("c", false)]);
+        let mut session = session_with_n_drills(&[("a", false), ("b", true), ("c", false)]);
         let trace = empty_trace();
         let cancel = AtomicBool::new(false);
         let progress = RecordingProgress::new();
@@ -2308,7 +2307,11 @@ mod project_rollup_tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, 0); // completed before this one
         assert_eq!(calls[0].1, 1); // total enabled
-        assert!(calls[0].2.contains("b"), "label should name the toolpath: {}", calls[0].2);
+        assert!(
+            calls[0].2.contains("b"),
+            "label should name the toolpath: {}",
+            calls[0].2
+        );
     }
 
     #[test]
@@ -2348,12 +2351,8 @@ mod project_rollup_tests {
     fn no_bottleneck_when_runtime_evenly_split() {
         // 4 toolpaths at 25% each — none exceeds 30%, so bottleneck
         // is None. The rollup view will show "no single bottleneck".
-        let mut session = session_with_n_drills(&[
-            ("a", true),
-            ("b", true),
-            ("c", true),
-            ("d", true),
-        ]);
+        let mut session =
+            session_with_n_drills(&[("a", true), ("b", true), ("c", true), ("d", true)]);
         let ids: Vec<usize> = session.toolpath_configs().iter().map(|tc| tc.id).collect();
         let mut trace = empty_trace();
         for &id in &ids {
@@ -2440,7 +2439,12 @@ mod project_rollup_tests {
         session
             .add_toolpath(
                 0,
-                make_tc("p", OperationConfig::Pocket(PocketConfig::default()), tool_id, true),
+                make_tc(
+                    "p",
+                    OperationConfig::Pocket(PocketConfig::default()),
+                    tool_id,
+                    true,
+                ),
             )
             .unwrap();
         // Add an alignment-pin drill to mix in the second skip path.
@@ -2621,7 +2625,10 @@ mod tests {
         let faster_safe = synthetic_candidate(2100.0, 70.0, within_verdict());
         let candidates = vec![baseline, faster_unsafe, faster_safe];
         // Index 1 is unsafe, so the recommendation is index 2.
-        assert_eq!(ProjectOptimizeReport::first_safe_index(&candidates), Some(2));
+        assert_eq!(
+            ProjectOptimizeReport::first_safe_index(&candidates),
+            Some(2)
+        );
     }
 
     #[test]
@@ -2924,10 +2931,7 @@ mod stage1_grid_tests {
         assert_eq!(candidate.spindle_rpm(), Some(18_000));
     }
 
-    fn synthetic_lut_row_with_ae(
-        ae_min: Option<f64>,
-        ae_max: Option<f64>,
-    ) -> MatchedRow {
+    fn synthetic_lut_row_with_ae(ae_min: Option<f64>, ae_max: Option<f64>) -> MatchedRow {
         let mut row = synthetic_lut_row(None, None);
         row.ae_min_mm = ae_min;
         row.ae_max_mm = ae_max;
@@ -2962,8 +2966,7 @@ mod stage1_grid_tests {
         // Baseline 1.0mm, LUT ae_min 0.8mm, ae_max 1.2mm. Multiplier
         // would give [0.7, 1.0, 1.3] — LUT clamps to [0.8, 1.0, 1.2].
         let row = synthetic_lut_row_with_ae(Some(0.8), Some(1.2));
-        let variants =
-            build_stepover_variants(1.0, Some(&row), OperationType::Adaptive3d);
+        let variants = build_stepover_variants(1.0, Some(&row), OperationType::Adaptive3d);
         assert!((variants[0] - 0.8).abs() < 1e-6, "got {variants:?}");
         assert!((variants[2] - 1.2).abs() < 1e-6, "got {variants:?}");
     }
@@ -2980,8 +2983,7 @@ mod stage1_grid_tests {
     fn stepover_always_includes_baseline() {
         // Tight LUT bounds — baseline must still survive the dedup.
         let row = synthetic_lut_row_with_ae(Some(0.99), Some(1.01));
-        let variants =
-            build_stepover_variants(1.0, Some(&row), OperationType::Adaptive3d);
+        let variants = build_stepover_variants(1.0, Some(&row), OperationType::Adaptive3d);
         assert!(
             variants.iter().any(|v| (v - 1.0).abs() < 1e-6),
             "baseline must be present: got {variants:?}"

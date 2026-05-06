@@ -2,6 +2,8 @@
 
 pub mod automation;
 pub mod menu_bar;
+pub mod optimize_modal;
+pub mod optimize_project;
 pub mod preflight;
 pub mod project_tree;
 pub mod properties;
@@ -10,8 +12,6 @@ pub mod shortcuts_window;
 pub mod sim_debug;
 pub mod sim_diagnostics;
 pub mod sim_op_list;
-pub mod optimize_modal;
-pub mod optimize_project;
 pub mod sim_timeline;
 pub mod status_bar;
 pub mod theme;

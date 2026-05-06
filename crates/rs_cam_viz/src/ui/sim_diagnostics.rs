@@ -32,15 +32,7 @@ pub fn draw(
     let linked_span = sim.active_debug_span(gui, max_feed);
     let current_boundary_id = sim.current_boundary().map(|boundary| boundary.id);
 
-    draw_reactive_inspector(
-        ui,
-        sim,
-        session,
-        gui,
-        max_feed,
-        &load_report,
-        events,
-    );
+    draw_reactive_inspector(ui, sim, session, gui, max_feed, &load_report, events);
     ui.separator();
 
     // --- View ---
@@ -467,13 +459,9 @@ fn draw_focused_issue_card(
         .rounding(4.0)
         .show(ui, |ui| {
             ui.label(
-                egui::RichText::new(format!(
-                    "{}: {}",
-                    issue_kind_label(issue.kind),
-                    issue.label
-                ))
-                .strong()
-                .color(theme::WARNING_TEXT),
+                egui::RichText::new(format!("{}: {}", issue_kind_label(issue.kind), issue.label))
+                    .strong()
+                    .color(theme::WARNING_TEXT),
             );
             ui.label(format!("Move {}", issue.move_index));
             ui.horizontal(|ui| {
@@ -520,8 +508,7 @@ fn draw_project_overview(
     let total_sec = ((total_time_min - total_min as f64) * 60.0) as u32;
 
     let (ok, _warn, bad, unmodeled) = verdict_counts_local(load_report);
-    let collision_count =
-        sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
+    let collision_count = sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
     let issue_count = sim.issues(gui, max_feed).len();
     let hotspot_count = sim
         .results
@@ -541,21 +528,31 @@ fn draw_project_overview(
         .num_columns(2)
         .spacing([8.0, 2.0])
         .show(ui, |ui| {
-            ui.label(egui::RichText::new("Moves").small().color(theme::TEXT_MUTED));
+            ui.label(
+                egui::RichText::new("Moves")
+                    .small()
+                    .color(theme::TEXT_MUTED),
+            );
             ui.label(egui::RichText::new(format!("{}", sim.total_moves())).small());
             ui.end_row();
             ui.label(
-                egui::RichText::new("Operations").small().color(theme::TEXT_MUTED),
+                egui::RichText::new("Operations")
+                    .small()
+                    .color(theme::TEXT_MUTED),
             );
             ui.label(egui::RichText::new(format!("{}", sim.boundaries().len())).small());
             ui.end_row();
             ui.label(
-                egui::RichText::new("Cut distance").small().color(theme::TEXT_MUTED),
+                egui::RichText::new("Cut distance")
+                    .small()
+                    .color(theme::TEXT_MUTED),
             );
             ui.label(egui::RichText::new(format!("{:.0} mm", total_cutting)).small());
             ui.end_row();
             ui.label(
-                egui::RichText::new("Rapid distance").small().color(theme::TEXT_MUTED),
+                egui::RichText::new("Rapid distance")
+                    .small()
+                    .color(theme::TEXT_MUTED),
             );
             ui.label(egui::RichText::new(format!("{:.0} mm", total_rapid)).small());
             ui.end_row();
@@ -597,13 +594,25 @@ fn draw_project_overview(
             } else {
                 theme::ERROR
             };
-            ui.label(egui::RichText::new("Collisions").small().color(collision_color));
+            ui.label(
+                egui::RichText::new("Collisions")
+                    .small()
+                    .color(collision_color),
+            );
             ui.label(egui::RichText::new(format!("{collision_count}")).small());
             ui.end_row();
-            ui.label(egui::RichText::new("Issues").small().color(theme::TEXT_MUTED));
+            ui.label(
+                egui::RichText::new("Issues")
+                    .small()
+                    .color(theme::TEXT_MUTED),
+            );
             ui.label(egui::RichText::new(format!("{issue_count}")).small());
             ui.end_row();
-            ui.label(egui::RichText::new("Hotspots").small().color(theme::TEXT_MUTED));
+            ui.label(
+                egui::RichText::new("Hotspots")
+                    .small()
+                    .color(theme::TEXT_MUTED),
+            );
             ui.label(egui::RichText::new(format!("{hotspot_count}")).small());
             ui.end_row();
         });
@@ -645,13 +654,15 @@ fn draw_project_overview(
             let sim_trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
             let chipload_envelopes =
                 rs_cam_core::tool_load::chipload_envelopes_for_session(session, sim_trace);
-            let chipload_cap = chipload_envelopes.get(&boundary_id.0).map(|range| range.end);
+            let chipload_cap = chipload_envelopes
+                .get(&boundary_id.0)
+                .map(|range| range.end);
             let machine = session.machine();
             let max_power_kw = match machine.power {
                 rs_cam_core::machine::PowerModel::ConstantPower { power_kw } => power_kw,
-                rs_cam_core::machine::PowerModel::VfdConstantTorque {
-                    rated_power_kw, ..
-                } => rated_power_kw,
+                rs_cam_core::machine::PowerModel::VfdConstantTorque { rated_power_kw, .. } => {
+                    rated_power_kw
+                }
             };
             let power_cap_kw = (max_power_kw * machine.safety_factor > 0.0)
                 .then_some(max_power_kw * machine.safety_factor);
@@ -697,7 +708,6 @@ fn verdict_counts_local(report: &ToolLoadReport) -> (usize, usize, usize, usize)
     }
     (ok, warn, bad, unmodeled)
 }
-
 
 fn draw_trace_provenance(
     ui: &mut egui::Ui,
@@ -951,7 +961,6 @@ fn aggregate_stats(
 
     (total_cutting, total_rapid, total_time_min)
 }
-
 
 #[cfg(test)]
 #[allow(

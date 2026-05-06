@@ -30,11 +30,9 @@ use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
-use rs_cam_core::session::{
-    LoadedModel, ProjectSession, SimulationOptions, ToolpathConfig,
-};
+use rs_cam_core::session::{LoadedModel, ProjectSession, SimulationOptions, ToolpathConfig};
 use rs_cam_core::tool_load::optimize::{
-    OptimizeOutcome, optimize_project, optimize_toolpath, NoProgress,
+    NoProgress, OptimizeOutcome, optimize_project, optimize_toolpath,
 };
 
 /// Build a session with the demo_pocket SVG, an end mill, and a
@@ -48,8 +46,8 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
         eprintln!("Skipping: fixture not found at {:?}", svg_path);
         return None;
     }
-    let polygons = rs_cam_core::svg_input::load_svg(&svg_path, 0.1)
-        .expect("demo_pocket.svg should parse");
+    let polygons =
+        rs_cam_core::svg_input::load_svg(&svg_path, 0.1).expect("demo_pocket.svg should parse");
     if polygons.is_empty() {
         eprintln!("Skipping: demo_pocket.svg parsed empty");
         return None;
@@ -160,12 +158,7 @@ fn optimize_toolpath_full_pipeline() {
     let baseline_feed_before = baseline_op_before.feed_rate();
 
     // Run the optimizer end-to-end.
-    let outcome = optimize_toolpath(
-        &mut session,
-        &baseline_trace,
-        toolpath_index,
-        &cancel,
-    );
+    let outcome = optimize_toolpath(&mut session, &baseline_trace, toolpath_index, &cancel);
 
     // Verify session is restored regardless of outcome.
     let baseline_op_after = session
@@ -239,12 +232,7 @@ fn optimize_project_full_pipeline() {
             .clone()
     };
 
-    let report = optimize_project(
-        &mut session,
-        &baseline_trace,
-        &NoProgress,
-        &cancel,
-    );
+    let report = optimize_project(&mut session, &baseline_trace, &NoProgress, &cancel);
 
     // Report has one entry per enabled toolpath (just one).
     assert_eq!(
@@ -293,12 +281,7 @@ fn optimize_toolpath_cancel_returns_quickly() {
             .clone()
     };
 
-    let outcome = optimize_toolpath(
-        &mut session,
-        &baseline_trace,
-        toolpath_index,
-        &cancel,
-    );
+    let outcome = optimize_toolpath(&mut session, &baseline_trace, toolpath_index, &cancel);
     assert!(
         !matches!(outcome, OptimizeOutcome::Ranked(_)),
         "Pre-cancelled run should not produce Ranked: {:?}",

@@ -771,10 +771,10 @@ fn spawn_optimize_lane(
     lane: Arc<LaneQueue<OptimizeRequest>>,
     result_tx: mpsc::SyncSender<ComputeMessage>,
 ) -> std::thread::JoinHandle<()> {
+    use rs_cam_core::tool_load::RefuseReason;
     use rs_cam_core::tool_load::optimize::{
         OptimizeOutcome, ProjectOptimizeReport, optimize_project, optimize_toolpath,
     };
-    use rs_cam_core::tool_load::RefuseReason;
 
     std::thread::spawn(move || {
         loop {
@@ -837,7 +837,8 @@ fn spawn_optimize_lane(
                     // observes the cancel between candidates.
                     let outcome = if lane.cancel.load(Ordering::SeqCst) {
                         match outcome {
-                            OptimizeOutcome::Ranked(_) | OptimizeOutcome::NoSafeImprovement { .. } => outcome,
+                            OptimizeOutcome::Ranked(_)
+                            | OptimizeOutcome::NoSafeImprovement { .. } => outcome,
                             OptimizeOutcome::Skipped { .. } => OptimizeOutcome::NoSafeImprovement {
                                 reason: RefuseReason::NoImprovementFound,
                                 explanation: "cancelled before optimization could run".to_owned(),
@@ -859,12 +860,8 @@ fn spawn_optimize_lane(
                     mut session,
                     baseline_trace,
                 } => {
-                    let report: ProjectOptimizeReport = optimize_project(
-                        &mut session,
-                        &baseline_trace,
-                        &progress,
-                        &lane.cancel,
-                    );
+                    let report: ProjectOptimizeReport =
+                        optimize_project(&mut session, &baseline_trace, &progress, &lane.cancel);
                     OptimizeResult {
                         session,
                         kind: OptimizeResultKind::Project { report },

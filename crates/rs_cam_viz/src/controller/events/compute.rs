@@ -674,14 +674,13 @@ impl<B: ComputeBackend> AppController<B> {
         };
 
         // Compute per-toolpath verdicts off the new trace.
-        let load_report = rs_cam_core::gcode::project_load_report(
-            &self.state.session,
-            Some(trace),
-        );
+        let load_report = rs_cam_core::gcode::project_load_report(&self.state.session, Some(trace));
         // Map toolpath_id -> verdict for fast lookup. Index by id
         // (not toolpath_index) because the report uses ids.
-        let mut verdict_by_id: std::collections::HashMap<usize, &rs_cam_core::tool_load::ToolpathLoadVerdict> =
-            std::collections::HashMap::new();
+        let mut verdict_by_id: std::collections::HashMap<
+            usize,
+            &rs_cam_core::tool_load::ToolpathLoadVerdict,
+        > = std::collections::HashMap::new();
         for v in &load_report.per_toolpath {
             verdict_by_id.insert(v.toolpath_id, v);
         }
