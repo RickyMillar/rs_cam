@@ -1944,7 +1944,11 @@ fn main() -> Result<()> {
                     safe_z_threshold: safe_z,
                 };
                 let before_rapid = toolpath.total_rapid_distance();
-                toolpath = apply_link_moves(toolpath, &link_params);
+                toolpath = apply_link_moves(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(toolpath),
+                    &link_params,
+                )
+                .toolpath;
                 info!(
                     before_rapid_mm = format!("{:.1}", before_rapid),
                     after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
@@ -2444,7 +2448,11 @@ fn main() -> Result<()> {
                     safe_z_threshold: safe_z,
                 };
                 let before_rapid = toolpath.total_rapid_distance();
-                toolpath = apply_link_moves(toolpath, &link_params);
+                toolpath = apply_link_moves(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(toolpath),
+                    &link_params,
+                )
+                .toolpath;
                 info!(
                     before_rapid_mm = format!("{:.1}", before_rapid),
                     after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
@@ -2754,7 +2762,11 @@ fn main() -> Result<()> {
                     safe_z_threshold: safe_z,
                 };
                 let before_rapid = toolpath.total_rapid_distance();
-                toolpath = apply_link_moves(toolpath, &link_params);
+                toolpath = apply_link_moves(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(toolpath),
+                    &link_params,
+                )
+                .toolpath;
                 info!(
                     before_rapid_mm = format!("{:.1}", before_rapid),
                     after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
@@ -2864,7 +2876,11 @@ fn main() -> Result<()> {
                     safe_z_threshold: safe_z,
                 };
                 let before_rapid = toolpath.total_rapid_distance();
-                toolpath = apply_link_moves(toolpath, &link_params);
+                toolpath = apply_link_moves(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(toolpath),
+                    &link_params,
+                )
+                .toolpath;
                 info!(
                     before_rapid_mm = format!("{:.1}", before_rapid),
                     after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
@@ -2961,7 +2977,11 @@ fn main() -> Result<()> {
                     safe_z_threshold: safe_z,
                 };
                 let before_rapid = toolpath.total_rapid_distance();
-                toolpath = apply_link_moves(toolpath, &link_params);
+                toolpath = apply_link_moves(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(toolpath),
+                    &link_params,
+                )
+                .toolpath;
                 info!(
                     before_rapid_mm = format!("{:.1}", before_rapid),
                     after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
@@ -3117,7 +3137,11 @@ fn main() -> Result<()> {
                     safe_z_threshold: safe_z,
                 };
                 let before_rapid = toolpath.total_rapid_distance();
-                toolpath = apply_link_moves(toolpath, &link_params);
+                toolpath = apply_link_moves(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(toolpath),
+                    &link_params,
+                )
+                .toolpath;
                 info!(
                     before_rapid_mm = format!("{:.1}", before_rapid),
                     after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),
@@ -3215,7 +3239,11 @@ fn main() -> Result<()> {
                     safe_z_threshold: safe_z,
                 };
                 let before_rapid = toolpath.total_rapid_distance();
-                toolpath = apply_link_moves(toolpath, &link_params);
+                toolpath = apply_link_moves(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(toolpath),
+                    &link_params,
+                )
+                .toolpath;
                 info!(
                     before_rapid_mm = format!("{:.1}", before_rapid),
                     after_rapid_mm = format!("{:.1}", toolpath.total_rapid_distance()),

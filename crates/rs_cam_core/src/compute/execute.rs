@@ -1106,16 +1106,26 @@ pub fn apply_dressups(
         any_move_mutation = true;
     }
 
-    // 4. Link moves
+    // 4. Link moves — span-aware (Phase 3d / #53). Wraps `tp` into an
+    // AnnotatedToolpath so the link logic can honor barriers and remap spans.
+    // Until upstream dressups (entry/dogbones/lead_in_out) become span-aware
+    // we still set `any_move_mutation = true`; the per-step span remap here
+    // is correct in isolation and stays correct once the chain is complete.
     if cfg.link_moves && transform_capabilities.allows_link_moves() {
-        tp = apply_link_moves(
-            tp,
+        let mut staging = AnnotatedToolpath::with_spans(tp, spans.clone());
+        // If earlier steps mutated moves we cannot trust the spans through
+        // this transform — flag them invalid so link_moves doesn't try to
+        // honor stale barriers or remap stale ranges.
+        staging.spans_valid = input_valid && !any_move_mutation;
+        let dressed = apply_link_moves(
+            staging,
             &LinkMoveParams {
                 max_link_distance: cfg.link_max_distance,
                 link_feed_rate: cfg.link_feed_rate,
                 safe_z_threshold: safe_z * 0.9,
             },
         );
+        tp = dressed.toolpath;
         any_move_mutation = true;
     }
 
