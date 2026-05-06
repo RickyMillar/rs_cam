@@ -74,18 +74,29 @@ fn apply_dressup_with_tracing(
 /// Tabs are not applied here; they are handled inline during per-operation depth
 /// stepping (e.g. profile final pass) before the toolpath reaches this function.
 pub(super) fn apply_dressups(
-    mut tp: Toolpath,
+    annotated: rs_cam_core::toolpath_spans::AnnotatedToolpath,
     req: &ComputeRequest,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
     semantic: Option<&rs_cam_core::semantic_trace::ToolpathSemanticContext>,
-    rapid_order_barriers: &[usize],
-) -> Toolpath {
+) -> rs_cam_core::toolpath_spans::AnnotatedToolpath {
     use rs_cam_core::semantic_trace::ToolpathSemanticKind;
 
     let cfg = &req.dressups;
     let tool = &req.tool;
     let safe_z = effective_safe_z(req);
     let transform_capabilities = req.operation.transform_capabilities();
+
+    // Derive TSP barriers from input spans (matches the core path).
+    let rapid_order_barriers = annotated.rapid_order_barriers();
+    let rapid_order_barriers = rapid_order_barriers.as_slice();
+    let rs_cam_core::toolpath_spans::AnnotatedToolpath {
+        toolpath: mut tp,
+        spans,
+        spans_valid: input_valid,
+    } = annotated;
+    // Phase 2: dressups not yet span-aware. Snapshot move-list shape so we
+    // can detect any mutation by comparing at the end.
+    let initial_move_count = tp.moves.len();
 
     if cfg.optimize_rapid_order
         && !rapid_order_barriers.is_empty()
@@ -320,7 +331,12 @@ pub(super) fn apply_dressups(
             |tp| rs_cam_core::tsp::optimize_rapid_order(&tp, sz),
         );
     }
-    tp
+    let any_move_mutation = tp.moves.len() != initial_move_count;
+    rs_cam_core::toolpath_spans::AnnotatedToolpath {
+        toolpath: tp,
+        spans,
+        spans_valid: input_valid && !any_move_mutation,
+    }
 }
 
 pub(super) fn feed_optimization_stock(req: &ComputeRequest) -> Result<TriDexelStock, &'static str> {

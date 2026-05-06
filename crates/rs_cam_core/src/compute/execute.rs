@@ -15,6 +15,7 @@ use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
+use crate::toolpath_spans::AnnotatedToolpath;
 
 // ── Error type ────────────────────────────────────────────────────────
 
@@ -73,7 +74,7 @@ impl OperationAnnotations {
     }
 }
 
-pub struct AnnotatedToolpath {
+pub struct GeneratedToolpath {
     pub toolpath: Toolpath,
     pub annotations: OperationAnnotations,
 }
@@ -168,7 +169,7 @@ pub fn execute_operation_annotated(
     // leaving stock unstamped and deeper z-levels biting through fresh
     // material with full-depth axial DOC.
     boundary: Option<&Polygon2>,
-) -> Result<AnnotatedToolpath, OperationError> {
+) -> Result<GeneratedToolpath, OperationError> {
     let tool_radius = tool_def.radius();
     let safe_z = heights.retract_z;
     let feed_rate = op.feed_rate();
@@ -187,7 +188,7 @@ pub fn execute_operation_annotated(
                 stock_offset: cfg.stock_offset,
                 direction: cfg.direction,
             };
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: crate::face::face_toolpath(stock_bbox, &params),
                 annotations: OperationAnnotations::None,
             })
@@ -229,7 +230,7 @@ pub fn execute_operation_annotated(
                 });
                 combined.moves.extend(tp.moves);
             }
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: combined,
                 annotations: OperationAnnotations::None,
             })
@@ -279,7 +280,7 @@ pub fn execute_operation_annotated(
                     }
                 }
             }
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: combined,
                 annotations: OperationAnnotations::None,
             })
@@ -333,7 +334,7 @@ pub fn execute_operation_annotated(
                     combined.moves.extend(level_tp.moves);
                 }
             }
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: combined,
                 annotations: OperationAnnotations::Adaptive2d(all_annotations),
             })
@@ -359,7 +360,7 @@ pub fn execute_operation_annotated(
                 });
                 combined.moves.extend(tp.moves);
             }
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: combined,
                 annotations: OperationAnnotations::None,
             })
@@ -384,7 +385,7 @@ pub fn execute_operation_annotated(
                 });
                 combined.moves.extend(tp.moves);
             }
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: combined,
                 annotations: OperationAnnotations::None,
             })
@@ -415,7 +416,7 @@ pub fn execute_operation_annotated(
                 );
                 combined.moves.extend(tp.moves);
             }
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: combined,
                 annotations: OperationAnnotations::None,
             })
@@ -445,7 +446,7 @@ pub fn execute_operation_annotated(
                 });
                 combined.moves.extend(tp.moves);
             }
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: combined,
                 annotations: OperationAnnotations::None,
             })
@@ -487,7 +488,7 @@ pub fn execute_operation_annotated(
                 out.final_retract(safe_z);
                 out.moves.extend(male_out.moves);
             }
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: out,
                 annotations: OperationAnnotations::None,
             })
@@ -523,7 +524,7 @@ pub fn execute_operation_annotated(
                     stock_bbox.max.z,
                 ),
             };
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: crate::drill::drill_toolpath(&holes, &params),
                 annotations: OperationAnnotations::None,
             })
@@ -552,7 +553,7 @@ pub fn execute_operation_annotated(
                 let tp = crate::chamfer::chamfer_toolpath(poly, &params);
                 combined.moves.extend(tp.moves);
             }
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: combined,
                 annotations: OperationAnnotations::None,
             })
@@ -590,7 +591,7 @@ pub fn execute_operation_annotated(
                     stock_bbox.max.z,
                 ),
             };
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: crate::drill::drill_toolpath(&cfg.holes, &params),
                 annotations: OperationAnnotations::None,
             })
@@ -668,7 +669,7 @@ pub fn execute_operation_annotated(
                     min_z_filter,
                 )
             };
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: tp,
                 annotations: OperationAnnotations::None,
             })
@@ -755,7 +756,7 @@ pub fn execute_operation_annotated(
                     debug_ctx,
                 )
                 .map_err(|_e| OperationError::Cancelled)?;
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: tp,
                 annotations: OperationAnnotations::Adaptive3d(annotations),
             })
@@ -782,7 +783,7 @@ pub fn execute_operation_annotated(
                 &(|| cancel.load(Ordering::SeqCst)),
             )
             .map_err(|_e| OperationError::Cancelled)?;
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: tp,
                 annotations: OperationAnnotations::None,
             })
@@ -806,7 +807,7 @@ pub fn execute_operation_annotated(
             let (tp, annotations) = crate::pencil::pencil_toolpath_structured_annotated(
                 m, idx, tool_def, &params, debug_ctx,
             );
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: tp,
                 annotations: OperationAnnotations::Pencil(annotations),
             })
@@ -835,7 +836,7 @@ pub fn execute_operation_annotated(
             let (tp, annotations) = crate::scallop::scallop_toolpath_structured_annotated(
                 m, idx, tool_def, &params, debug_ctx,
             );
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: tp,
                 annotations: OperationAnnotations::Scallop(annotations),
             })
@@ -859,7 +860,7 @@ pub fn execute_operation_annotated(
                 stock_to_leave: cfg.stock_to_leave,
                 tolerance: cfg.tolerance,
             };
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: crate::steep_shallow::steep_shallow_toolpath(m, idx, tool_def, &params),
                 annotations: OperationAnnotations::None,
             })
@@ -885,7 +886,7 @@ pub fn execute_operation_annotated(
             let (tp, annotations) = crate::ramp_finish::ramp_finish_toolpath_structured_annotated(
                 m, idx, tool_def, &params, debug_ctx,
             );
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: tp,
                 annotations: OperationAnnotations::RampFinish(annotations),
             })
@@ -907,7 +908,7 @@ pub fn execute_operation_annotated(
                 crate::spiral_finish::spiral_finish_toolpath_structured_annotated(
                     m, idx, tool_def, &params, debug_ctx,
                 );
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: tp,
                 annotations: OperationAnnotations::SpiralFinish(annotations),
             })
@@ -925,7 +926,7 @@ pub fn execute_operation_annotated(
                 safe_z,
                 stock_to_leave: cfg.stock_to_leave,
             };
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: crate::radial_finish::radial_finish_toolpath(m, idx, tool_def, &params),
                 annotations: OperationAnnotations::None,
             })
@@ -943,7 +944,7 @@ pub fn execute_operation_annotated(
                 safe_z,
                 stock_to_leave: cfg.stock_to_leave,
             };
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: crate::horizontal_finish::horizontal_finish_toolpath(
                     m, idx, tool_def, &params,
                 ),
@@ -993,7 +994,7 @@ pub fn execute_operation_annotated(
                     crate::project_curve::project_curve_toolpath(poly, m, idx, &cutter, &params);
                 combined.moves.extend(tp.moves);
             }
-            Ok(AnnotatedToolpath {
+            Ok(GeneratedToolpath {
                 toolpath: combined,
                 annotations: OperationAnnotations::None,
             })
@@ -1007,33 +1008,54 @@ pub fn execute_operation_annotated(
 /// → rapid order optimization → air-cut filter → feed rate optimization.
 /// Move-order/link transforms are gated by operation capabilities.
 ///
+/// TSP barriers are derived from the input [`AnnotatedToolpath`]'s spans
+/// (`RapidOrderBarrier` + `DepthPass` span starts) — see
+/// [`AnnotatedToolpath::rapid_order_barriers`].
+///
 /// The last two steps are optional and require additional context:
 /// - Air-cut filter needs `prior_stock` (the stock state before this toolpath).
 /// - Feed optimization needs a mutable stock copy, a cutter, and `cfg.feed_optimization == true`.
+///
+/// Phase 2 caveat: dressups are not yet span-aware. Any move-mutating
+/// dressup invalidates the input spans; the returned `AnnotatedToolpath`
+/// preserves the original span vector but flags `spans_valid = false`.
+/// Phase 3 sub-tasks (#50–#58) make each dressup remap spans through the
+/// transform.
 #[allow(clippy::too_many_arguments)]
 pub fn apply_dressups(
-    mut tp: Toolpath,
+    annotated: AnnotatedToolpath,
     cfg: &DressupConfig,
     tool_diameter: f64,
     safe_z: f64,
     prior_stock: Option<&crate::dexel_stock::TriDexelStock>,
     feed_opt_stock: Option<&mut crate::dexel_stock::TriDexelStock>,
     cutter: Option<&dyn MillingCutter>,
-    rapid_order_barriers: &[usize],
     transform_capabilities: OperationTransformCapabilities,
-) -> Toolpath {
+) -> AnnotatedToolpath {
     use crate::dressup::{
         EntryStyle, LinkMoveParams, apply_dogbones, apply_entry, apply_lead_in_out,
         apply_link_moves,
     };
 
+    let rapid_order_barriers = annotated.rapid_order_barriers();
+    let AnnotatedToolpath {
+        toolpath: mut tp,
+        spans,
+        spans_valid: input_valid,
+    } = annotated;
+
     let tool_radius = tool_diameter / 2.0;
+    // Tracks whether any move-mutating dressup ran. Phase 3 sub-tasks
+    // remap spans per-dressup; until then we conservatively flag the
+    // output spans invalid when this is true.
+    let mut any_move_mutation = false;
 
     if cfg.optimize_rapid_order
         && !rapid_order_barriers.is_empty()
         && transform_capabilities.allows_barriered_rapid_reorder()
     {
-        tp = crate::tsp::optimize_rapid_order_with_barriers(&tp, safe_z, rapid_order_barriers);
+        tp = crate::tsp::optimize_rapid_order_with_barriers(&tp, safe_z, &rapid_order_barriers);
+        any_move_mutation = true;
     }
 
     // Determine plunge rate from toolpath
@@ -1056,6 +1078,7 @@ pub fn apply_dressups(
                 },
                 plunge_rate,
             );
+            any_move_mutation = true;
         }
         DressupEntryStyle::Helix => {
             tp = apply_entry(
@@ -1066,6 +1089,7 @@ pub fn apply_dressups(
                 },
                 plunge_rate,
             );
+            any_move_mutation = true;
         }
         DressupEntryStyle::None => {}
     }
@@ -1073,11 +1097,13 @@ pub fn apply_dressups(
     // 2. Dogbones
     if cfg.dogbone {
         tp = apply_dogbones(tp, tool_radius, cfg.dogbone_angle);
+        any_move_mutation = true;
     }
 
     // 3. Lead in/out
     if cfg.lead_in_out {
         tp = apply_lead_in_out(tp, cfg.lead_radius);
+        any_move_mutation = true;
     }
 
     // 4. Link moves
@@ -1090,11 +1116,13 @@ pub fn apply_dressups(
                 safe_z_threshold: safe_z * 0.9,
             },
         );
+        any_move_mutation = true;
     }
 
     // 5. Arc fitting
     if cfg.arc_fitting {
         tp = crate::arcfit::fit_arcs(&tp, cfg.arc_tolerance);
+        any_move_mutation = true;
     }
 
     // 6. Rapid order optimization
@@ -1103,14 +1131,17 @@ pub fn apply_dressups(
         && transform_capabilities.allows_unbarriered_rapid_reorder()
     {
         tp = crate::tsp::optimize_rapid_order(&tp, safe_z);
+        any_move_mutation = true;
     }
 
     // 7. Air-cut filter (when prior stock is available)
     if let Some(stock) = prior_stock {
         tp = crate::dressup::filter_air_cuts(tp, stock, tool_radius, safe_z, 0.1);
+        any_move_mutation = true;
     }
 
-    // 8. Feed rate optimization (when enabled and stock + cutter are available)
+    // 8. Feed rate optimization (when enabled and stock + cutter are available).
+    // Note: this rewrites feed rates only — move count/order is preserved.
     if cfg.feed_optimization
         && let (Some(stock), Some(cut)) = (feed_opt_stock, cutter)
     {
@@ -1130,9 +1161,14 @@ pub fn apply_dressups(
             air_cut_threshold: 0.05,
         };
         tp = crate::feedopt::optimize_feed_rates(&tp, cut, stock, &params);
+        // No `any_move_mutation = true` — feed-opt does not change moves.
     }
 
-    tp
+    AnnotatedToolpath {
+        toolpath: tp,
+        spans,
+        spans_valid: input_valid && !any_move_mutation,
+    }
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────
@@ -1421,19 +1457,18 @@ mod tests {
 
         let cfg = DressupConfig::default();
         let result = apply_dressups(
-            tp,
+            AnnotatedToolpath::new(tp),
             &cfg,
             6.35,
             30.0,
             None,
             None,
             None,
-            &[],
             OperationType::DropCutter.transform_capabilities(),
         );
 
         assert!(
-            !result.moves.is_empty(),
+            !result.toolpath.moves.is_empty(),
             "apply_dressups with default config should preserve moves"
         );
     }

@@ -13,6 +13,7 @@ pub mod execute;
 pub mod operation_configs;
 pub mod semantic_helpers;
 pub mod simulate;
+pub mod spans;
 pub mod stats;
 pub mod stock_config;
 pub mod tool_config;
@@ -55,8 +56,9 @@ pub use transform::{FaceUp, SetupTransformInfo, ZRotation};
 // ── Phase 2: Execution helper re-exports ──
 
 pub use cutter::build_cutter;
-pub use execute::{AnnotatedToolpath, OperationAnnotations, OperationError};
+pub use execute::{GeneratedToolpath, OperationAnnotations, OperationError};
 pub use semantic_helpers::{
     CutRun, append_toolpath, bind_scope_to_run, contour_toolpath, cutting_runs, line_toolpath,
 };
+pub use spans::spans_from_annotations;
 pub use stats::compute_stats;

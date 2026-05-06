@@ -32,9 +32,10 @@ pub(super) struct ComputeExecutionOutcome {
     pub debug_trace_path: Option<std::path::PathBuf>,
 }
 
+#[derive(Debug)]
 struct GeneratedToolpath {
     toolpath: Toolpath,
-    rapid_order_barriers: Vec<usize>,
+    spans: Vec<rs_cam_core::toolpath_spans::Span>,
 }
 
 /// Bridge function: delegates toolpath generation to core's `execute_operation`.
@@ -156,8 +157,12 @@ fn generate_via_core(
         annotate_from_runtime_events(&result.annotations, &result.toolpath, &child_ctx);
     }
 
+    let spans = rs_cam_core::compute::spans_from_annotations(
+        &result.annotations,
+        result.toolpath.moves.len(),
+    );
     Ok(GeneratedToolpath {
-        rapid_order_barriers: result.annotations.rapid_order_barriers(),
+        spans,
         toolpath: result.toolpath,
     })
 }
@@ -390,8 +395,9 @@ fn run_compute_with_phase_tracker(
             generated
         };
 
-        let rapid_order_barriers = tp.rapid_order_barriers;
-        let mut tp = tp.toolpath;
+        let annotated =
+            rs_cam_core::toolpath_spans::AnnotatedToolpath::with_spans(tp.toolpath, tp.spans);
+        let mut tp;
 
         {
             let _phase_scope = phase_tracker.map(|tracker| tracker.start_phase("Apply dressups"));
@@ -399,13 +405,8 @@ fn run_compute_with_phase_tracker(
                 .as_ref()
                 .map(|ctx| ctx.start_span("dressups", "Apply dressups"));
             let dressup_ctx = dressup_scope.as_ref().map(|scope| scope.context());
-            tp = apply_dressups(
-                tp,
-                req,
-                dressup_ctx.as_ref(),
-                semantic_root.as_ref(),
-                &rapid_order_barriers,
-            );
+            tp = apply_dressups(annotated, req, dressup_ctx.as_ref(), semantic_root.as_ref())
+                .toolpath;
         }
 
         if req.boundary.enabled
@@ -667,7 +668,9 @@ mod tests {
         let req =
             test_request_with_polygon(OperationConfig::Profile(cfg.clone()), ToolType::EndMill);
         let cancel = AtomicBool::new(false);
-        let tp = generate_via_core(&req, &cancel, None, None, None).unwrap();
+        let tp = generate_via_core(&req, &cancel, None, None, None)
+            .unwrap()
+            .toolpath;
 
         let final_z = -cfg.depth;
         let tab_z = final_z + cfg.tab_height;
@@ -730,7 +733,9 @@ mod tests {
         let req = test_request_with_polygon(OperationConfig::Face(cfg), ToolType::EndMill);
 
         let cancel = AtomicBool::new(false);
-        let tp = generate_via_core(&req, &cancel, None, None, None).unwrap();
+        let tp = generate_via_core(&req, &cancel, None, None, None)
+            .unwrap()
+            .toolpath;
 
         // Verify the operation produces cutting moves
         let cutting_moves: Vec<_> = tp
@@ -754,7 +759,9 @@ mod tests {
         let req = test_request_with_polygon(OperationConfig::Face(cfg.clone()), ToolType::EndMill);
 
         let cancel = AtomicBool::new(false);
-        let tp = generate_via_core(&req, &cancel, None, None, None).unwrap();
+        let tp = generate_via_core(&req, &cancel, None, None, None)
+            .unwrap()
+            .toolpath;
 
         let mut cut_directions = Vec::new();
         for i in 1..tp.moves.len() {
@@ -792,7 +799,9 @@ mod tests {
         let req =
             test_request_with_polygon(OperationConfig::Zigzag(cfg.clone()), ToolType::EndMill);
         let cancel = AtomicBool::new(false);
-        let tp = generate_via_core(&req, &cancel, None, None, None).unwrap();
+        let tp = generate_via_core(&req, &cancel, None, None, None)
+            .unwrap()
+            .toolpath;
 
         assert_eq!(
             dominant_cut_axis(&tp, cfg.feed_rate),
@@ -815,7 +824,9 @@ mod tests {
         req.prev_tool_radius = Some(8.0);
 
         let cancel = AtomicBool::new(false);
-        let tp = generate_via_core(&req, &cancel, None, None, None).unwrap();
+        let tp = generate_via_core(&req, &cancel, None, None, None)
+            .unwrap()
+            .toolpath;
 
         assert_eq!(
             dominant_cut_axis(&tp, cfg.feed_rate),
@@ -834,7 +845,9 @@ mod tests {
             -10.0, -10.0, 10.0, 10.0,
         )]));
         let cancel = AtomicBool::new(false);
-        let tp = generate_via_core(&req, &cancel, None, None, None).unwrap();
+        let tp = generate_via_core(&req, &cancel, None, None, None)
+            .unwrap()
+            .toolpath;
 
         assert!(!tp.moves.is_empty(), "Inlay should produce moves");
 
