@@ -19,7 +19,10 @@ use tracing::debug;
 
 use super::path::Adaptive3dSegment;
 use super::search::{is_clear_path_3d, material_remaining_at_level, material_remaining_in_region};
-use super::{ClearingStrategy3d, stock_has_material_above, stock_top_z_at};
+use super::{
+    Adaptive3dRuntimeEvent, ClearingStrategy3d, ZLevelPlanMetrics, stock_has_material_above,
+    stock_top_z_at,
+};
 
 // ── Region detection ──────────────────────────────────────────────────
 
@@ -929,6 +932,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
     segments: &mut Vec<Adaptive3dSegment>,
     last_pos: &mut Option<P3>,
     region: Option<&MaterialRegion>,
+    level_marker: Option<Adaptive3dRuntimeEvent>,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
     let remaining = if let Some(r) = region {
@@ -1016,6 +1020,9 @@ pub(super) fn clear_z_level_agent_2d_slice(
         return Ok(());
     }
     let mut regions = crate::polygon::detect_containment(single_loops);
+    let mut region_areas_mm2: Vec<f64> = regions.iter().map(|r| r.area().abs()).collect();
+    region_areas_mm2.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    region_areas_mm2.truncate(10);
 
     // Fusion-style "ignore stock smaller than X" filter. Heightmap-style
     // models (e.g. terrain.stl) emit many micro-peaks at top Z levels
@@ -1045,6 +1052,20 @@ pub(super) fn clear_z_level_agent_2d_slice(
     if regions.is_empty() {
         return Ok(());
     }
+
+    let mut level_metrics = ZLevelPlanMetrics {
+        available: true,
+        marching_squares_regions: region_count_before,
+        region_areas_mm2,
+        dropped_micro_region_count: dropped_micro,
+        perimeter_sweep_length_mm: 0.0,
+        agent_walk_cut_length_mm: 0.0,
+        residual_cleanup_cell_count: 0,
+    };
+    let level_marker_index = level_marker.map(|event| {
+        segments.push(Adaptive3dSegment::Marker(event));
+        segments.len().saturating_sub(1)
+    });
 
     // 4. Build 2D adaptive params from 3D context.
     let params_2d = crate::adaptive::AdaptiveParams {
@@ -1167,6 +1188,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                     }
                 }
                 if path_3d.len() >= 2 {
+                    level_metrics.perimeter_sweep_length_mm += polyline_length_3d(&path_3d);
                     segments.push(Adaptive3dSegment::Cut(path_3d.clone()));
                     cut_count += 1;
                 }
@@ -1211,6 +1233,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                     }
                 }
                 if path_3d.len() >= 2 {
+                    level_metrics.perimeter_sweep_length_mm += polyline_length_3d(&path_3d);
                     segments.push(Adaptive3dSegment::Cut(path_3d.clone()));
                     cut_count += 1;
                 }
@@ -1234,63 +1257,82 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         continue;
                     }
                     let path_3d: Vec<P3> = path_2d.iter().map(|&p| lift(p)).collect();
-                    // Stamp along the full path so the next Z-level sees
-                    // every XY the cutter will reach (regardless of how
-                    // we partition the path into Cut + RapidWithFloor
-                    // sub-segments below).
-                    for p in &path_3d {
-                        material_stock.stamp_tool_at(
-                            ctx.lut,
-                            ctx.tool_radius,
-                            p.x,
-                            p.y,
-                            p.z,
-                            StockCutDirection::FromTop,
-                        );
+                    level_metrics.agent_walk_cut_length_mm += polyline_length_3d(&path_3d);
+                    // Per-point classification (BEFORE any stamping):
+                    // cutter is "engaged" if the current dexel ray top at
+                    // this XY is above the cutter Z. "Air" points get
+                    // demoted to rapids — and crucially we DON'T stamp
+                    // them, so the dexel state stays consistent with what
+                    // the actual machine would produce (rapids don't cut).
+                    // Without this, generation-time dexel diverges from
+                    // simulator-time dexel: the planner thinks it cleared
+                    // cells the actual G-code never cuts, leaving
+                    // visible streaks of uncut material in the sim.
+                    const AIR_THRESHOLD_MM: f64 = 0.2;
+                    let mut engaged: Vec<bool> = path_3d
+                        .iter()
+                        .map(|p| match sample_stock_top_at(material_stock, p.x, p.y) {
+                            Some(top) => top > p.z + AIR_THRESHOLD_MM,
+                            None => false,
+                        })
+                        .collect();
+                    // Re-promote short air runs back to engaged: rapid-mode
+                    // is only faster than feed-mode for transit > ~70mm
+                    // because each rapid carries retract+plunge overhead
+                    // (~0.5s). For a 6mm tool at 3150mm/min feed and
+                    // 5000mm/min rapid, the crossover is around 70mm.
+                    // Below that, feeding through air is cheaper than
+                    // demoting to rapid. Threshold is XY toolpath
+                    // distance, so we walk forward summing segment
+                    // lengths until we exceed it or change classification.
+                    const MIN_AIR_RUN_MM: f64 = 70.0;
+                    if !engaged.is_empty() {
+                        let mut i = 0;
+                        while i < engaged.len() {
+                            if engaged[i] {
+                                i += 1;
+                                continue;
+                            }
+                            // Find end of this air run.
+                            let run_start = i;
+                            let mut run_end = i;
+                            let mut run_len_mm = 0.0_f64;
+                            while run_end + 1 < engaged.len() && !engaged[run_end + 1] {
+                                let dx = path_3d[run_end + 1].x - path_3d[run_end].x;
+                                let dy = path_3d[run_end + 1].y - path_3d[run_end].y;
+                                run_len_mm += (dx * dx + dy * dy).sqrt();
+                                run_end += 1;
+                            }
+                            // Add the entry transition length too (from
+                            // last engaged point to first air point) so a
+                            // tiny air "wedge" between two engaged points
+                            // also counts.
+                            if run_start > 0 {
+                                let dx = path_3d[run_start].x - path_3d[run_start - 1].x;
+                                let dy = path_3d[run_start].y - path_3d[run_start - 1].y;
+                                run_len_mm += (dx * dx + dy * dy).sqrt();
+                            }
+                            if run_len_mm < MIN_AIR_RUN_MM {
+                                for k in run_start..=run_end {
+                                    engaged[k] = true;
+                                }
+                            }
+                            i = run_end + 1;
+                        }
                     }
                     if let Some(last) = path_3d.last().copied() {
                         *last_pos = Some(last);
                     }
-                    // Split the lifted path at large Z transitions.
-                    //
-                    // The lift function clamps path Z to either `z_level`
-                    // (over valleys) or `terrain + stock_to_leave` (over
-                    // peaks). Within one offset-ring path that crosses
-                    // both, consecutive points can have Z deltas spanning
-                    // the full mesh height. The path emitter consumes
-                    // consecutive points via linear `feed_to`, so a
-                    // peak→valley transition becomes a diagonal feed move
-                    // through fresh stock at intermediate XYs (the
-                    // dexel above the linearly-interpolated Z is uncut
-                    // material from the previous Z-level). The simulator
-                    // measures arc engagement reaching π → effective
-                    // chipload jumps to nominal (slot mode) → gate flags
-                    // chipload_breakage_risk.
-                    //
-                    // Fix: split where the cutter would descend faster
-                    // than a configurable plunge slope. Pure-|dz|
-                    // thresholds miss the real cause: a 1.1mm dz over
-                    // a 0.8mm XY step is a 54° plunge that drags the
-                    // cutter through stock at lateral feed even when
-                    // dz alone looks "small". We use slope (descent
-                    // per XY) AND absolute |dz| as belt-and-braces:
-                    //
-                    //   - slope > 0.3 (≈17°) — cutter is plunging more
-                    //     than skimming. Split.
-                    //   - |dz| > one pass depth × 1.1 — pathological
-                    //     bridge from a previous z-level lift gap.
-                    //     Split regardless of XY length.
-                    //
-                    // After splitting, retract + rapid + plunge to the
-                    // next point (RapidWithFloor uses dexel-sampled
-                    // stock_top so descent through cleared air is at
-                    // rapid speed). Lost cutting work between split
-                    // points is small (one offset step) and gets
-                    // handled by deeper Z-level passes or waterline
-                    // cleanup.
+                    // Split the lifted path at:
+                    //   - large Z transitions (existing safety: peak→valley
+                    //     bridges that drag the cutter diagonally through
+                    //     uncut stock, see PLUNGE_SLOPE_LIMIT below);
+                    //   - engagement transitions (NEW: air→engaged or vice
+                    //     versa demarcates a real cut from a transit run).
                     const PLUNGE_SLOPE_LIMIT: f64 = 0.3;
                     let z_drop_threshold = ctx.depth_per_pass * 1.1;
                     let mut sub_start = 0usize;
+                    let mut sub_engaged = engaged.first().copied().unwrap_or(true);
                     for i in 1..path_3d.len() {
                         let prev = path_3d[i - 1];
                         let curr = path_3d[i];
@@ -1298,40 +1340,116 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         let dx = curr.x - prev.x;
                         let dy = curr.y - prev.y;
                         let xy_dist = (dx * dx + dy * dy).sqrt();
-                        // Symmetric slope check. Originally only descending
-                        // dz was treated as risky ("rising = leaving air"),
-                        // but the simulator's axial DOC at a steep RISING
-                        // sample is equally large because ray_top - cutter_z
-                        // is huge at the move's low-Z endpoint regardless
-                        // of motion direction. Both signs split.
                         let abs_slope = if xy_dist > 1e-6 {
                             dz.abs() / xy_dist
                         } else if dz.abs() > 1e-6 {
-                            f64::INFINITY // pure-vertical in a Cut path always splits
+                            f64::INFINITY
                         } else {
                             0.0
                         };
-                        if dz.abs() > z_drop_threshold || abs_slope > PLUNGE_SLOPE_LIMIT {
-                            if i - sub_start >= 2 {
-                                segments
-                                    .push(Adaptive3dSegment::Cut(path_3d[sub_start..i].to_vec()));
-                                cut_count += 1;
+                        let large_z =
+                            dz.abs() > z_drop_threshold || abs_slope > PLUNGE_SLOPE_LIMIT;
+                        let engagement_change = engaged[i] != sub_engaged;
+                        if large_z || engagement_change {
+                            // Flush the current run.
+                            let run_len = i - sub_start;
+                            if run_len >= 1 {
+                                if sub_engaged {
+                                    if run_len >= 2 {
+                                        // Stamp the engaged cut into the
+                                        // dexel so the next pass sees it
+                                        // cleared. CRUCIAL that we stamp
+                                        // ONLY engaged segments — air
+                                        // segments are emitted as rapids
+                                        // and the actual machine won't
+                                        // cut them, so the dexel must
+                                        // reflect that.
+                                        for p in &path_3d[sub_start..i] {
+                                            material_stock.stamp_tool_at(
+                                                ctx.lut,
+                                                ctx.tool_radius,
+                                                p.x,
+                                                p.y,
+                                                p.z,
+                                                StockCutDirection::FromTop,
+                                            );
+                                        }
+                                        segments.push(Adaptive3dSegment::Cut(
+                                            path_3d[sub_start..i].to_vec(),
+                                        ));
+                                        cut_count += 1;
+                                    }
+                                } else {
+                                    // Air run → single RapidWithFloor to
+                                    // the end of the run (the cutter just
+                                    // traverses cleared territory). No
+                                    // stamping (rapids don't cut).
+                                    let end_pt = path_3d[i.saturating_sub(1)];
+                                    let rapid_floor =
+                                        sample_stock_top_at(material_stock, end_pt.x, end_pt.y);
+                                    match rapid_floor {
+                                        Some(top_z) => {
+                                            segments.push(Adaptive3dSegment::RapidWithFloor {
+                                                entry: end_pt,
+                                                rapid_floor_z: top_z,
+                                            })
+                                        }
+                                        None => segments.push(Adaptive3dSegment::Rapid(end_pt)),
+                                    }
+                                }
                             }
-                            let p3 = path_3d[i];
-                            let rapid_floor = sample_stock_top_at(material_stock, p3.x, p3.y);
-                            match rapid_floor {
-                                Some(top_z) => segments.push(Adaptive3dSegment::RapidWithFloor {
-                                    entry: p3,
-                                    rapid_floor_z: top_z,
-                                }),
-                                None => segments.push(Adaptive3dSegment::Rapid(p3)),
+                            // After a large_z split, also rapid-position
+                            // to the new point so the cutter retracts
+                            // before continuing.
+                            if large_z {
+                                let p3 = path_3d[i];
+                                let rapid_floor =
+                                    sample_stock_top_at(material_stock, p3.x, p3.y);
+                                match rapid_floor {
+                                    Some(top_z) => {
+                                        segments.push(Adaptive3dSegment::RapidWithFloor {
+                                            entry: p3,
+                                            rapid_floor_z: top_z,
+                                        })
+                                    }
+                                    None => segments.push(Adaptive3dSegment::Rapid(p3)),
+                                }
                             }
                             sub_start = i;
+                            sub_engaged = engaged[i];
                         }
                     }
-                    if path_3d.len() - sub_start >= 2 {
-                        segments.push(Adaptive3dSegment::Cut(path_3d[sub_start..].to_vec()));
-                        cut_count += 1;
+                    // Flush final run.
+                    let run_len = path_3d.len() - sub_start;
+                    if run_len >= 1 {
+                        if sub_engaged {
+                            if run_len >= 2 {
+                                for p in &path_3d[sub_start..] {
+                                    material_stock.stamp_tool_at(
+                                        ctx.lut,
+                                        ctx.tool_radius,
+                                        p.x,
+                                        p.y,
+                                        p.z,
+                                        StockCutDirection::FromTop,
+                                    );
+                                }
+                                segments.push(Adaptive3dSegment::Cut(
+                                    path_3d[sub_start..].to_vec(),
+                                ));
+                                cut_count += 1;
+                            }
+                        } else if let Some(end_pt) = path_3d.last().copied() {
+                            let rapid_floor =
+                                sample_stock_top_at(material_stock, end_pt.x, end_pt.y);
+                            match rapid_floor {
+                                Some(top_z) => segments.push(Adaptive3dSegment::RapidWithFloor {
+                                    entry: end_pt,
+                                    rapid_floor_z: top_z,
+                                }),
+                                None => segments.push(Adaptive3dSegment::Rapid(end_pt)),
+                            }
+                        }
                     }
                 }
                 crate::adaptive::AdaptiveSegment::Rapid(p) => {
@@ -1381,7 +1499,43 @@ pub(super) fn clear_z_level_agent_2d_slice(
 
     if let Some(scope) = level_scope.as_ref() {
         scope.set_counter("cut_segments", cut_count as f64);
+        scope.set_counter(
+            "perimeter_sweep_length_mm",
+            level_metrics.perimeter_sweep_length_mm,
+        );
+        scope.set_counter(
+            "agent_walk_cut_length_mm",
+            level_metrics.agent_walk_cut_length_mm,
+        );
     }
+    update_level_marker_metrics(segments, level_marker_index, level_metrics);
 
     Ok(())
+}
+
+fn update_level_marker_metrics(
+    segments: &mut [Adaptive3dSegment],
+    marker_index: Option<usize>,
+    metrics: ZLevelPlanMetrics,
+) {
+    let Some(index) = marker_index else {
+        return;
+    };
+    if let Some(Adaptive3dSegment::Marker(event)) = segments.get_mut(index) {
+        event.set_z_level_metrics(metrics);
+    }
+}
+
+fn polyline_length_3d(path: &[P3]) -> f64 {
+    path.windows(2)
+        .map(|pair| {
+            let Some(a) = pair.first() else {
+                return 0.0;
+            };
+            let Some(b) = pair.get(1) else {
+                return 0.0;
+            };
+            (*b - *a).norm()
+        })
+        .sum()
 }
