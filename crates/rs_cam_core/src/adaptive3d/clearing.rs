@@ -18,11 +18,14 @@ use std::time::Instant;
 use tracing::debug;
 
 use super::path::Adaptive3dSegment;
-use super::search::{is_clear_path_3d, material_remaining_at_level, material_remaining_in_region};
+use super::search::{
+    blend_corners_3d, is_clear_path_3d, material_remaining_at_level, material_remaining_in_region,
+};
 use super::{
     Adaptive3dRuntimeEvent, ClearingStrategy3d, ZLevelPlanMetrics, stock_has_material_above,
     stock_top_z_at,
 };
+use crate::toolpath::simplify_path_3d;
 
 // ── Region detection ──────────────────────────────────────────────────
 
@@ -175,12 +178,22 @@ pub(super) struct ClearZLevelContext<'a> {
     pub(super) target_frac: f64,
     pub(super) step_len: f64,
     pub(super) max_link_dist: f64,
+    /// Safe-Z used by `segments_to_toolpath` for retracts and the start
+    /// of peck-plunges in `Adaptive3dSegment::Rapid`. Plumbed into the
+    /// clearing layer so the planner can mirror those plunge stamps in
+    /// its internal dexel state (parity with the simulator replay).
+    pub(super) safe_z: f64,
     pub(super) bbox_x_min: f64,
     pub(super) bbox_x_max: f64,
     pub(super) bbox_y_min: f64,
     pub(super) bbox_y_max: f64,
     pub(super) clearing_strategy: ClearingStrategy3d,
     pub(super) z_blend: bool,
+    /// Minimum corner radius for `blend_corners_3d` — needed inside
+    /// `stamp_emitted_segment` so the planner stamps the SAME path the
+    /// simulator will replay (segments_to_toolpath blends Cut paths
+    /// before emitting feeds).
+    pub(super) min_cutting_radius: f64,
 }
 
 // ── Contour-parallel clearing ─────────────────────────────────────────
@@ -242,56 +255,181 @@ fn build_material_bool_grid(
     )
 }
 
-/// Stamp dexel stock along a 3D cutting path at `step_len` intervals.
+/// Stamp dexel stock along a 3D cutting path with **swept** segment
+/// stamps between consecutive points.
+///
+/// Mirrors how `simulate_toolpath_with_metrics_with_cancel` replays a
+/// `Cut` — each consecutive pair becomes a `stamp_linear_segment` (a
+/// stadium-swept stamp). Earlier this function point-stamped at each
+/// path point with `stamp_tool_at`, which over-removes on sloped Cut
+/// segments where the deeper-Z cylinder dominates the cylinder union
+/// at midpoints (Bug 1 in the planner-↔-simulator parity work).
 fn stamp_along_path(
     material_stock: &mut TriDexelStock,
     lut: &RadialProfileLUT,
     tool_radius: f64,
     path: &[P3],
-    step_len: f64,
 ) {
-    let first = match path.first() {
-        Some(p) => *p,
-        None => return,
-    };
-    // Stamp at the first point unconditionally.
-    material_stock.stamp_tool_at(
-        lut,
-        tool_radius,
-        first.x,
-        first.y,
-        first.z,
-        StockCutDirection::FromTop,
-    );
-    let mut travel = 0.0;
-    let mut prev = first;
-    for pt in path {
-        let dx = pt.x - prev.x;
-        let dy = pt.y - prev.y;
-        let seg_len = (dx * dx + dy * dy).sqrt();
-        travel += seg_len;
-        if travel >= step_len {
+    if path.len() < 2 {
+        if let Some(p) = path.first() {
             material_stock.stamp_tool_at(
                 lut,
                 tool_radius,
-                pt.x,
-                pt.y,
-                pt.z,
+                p.x,
+                p.y,
+                p.z,
                 StockCutDirection::FromTop,
             );
-            travel = 0.0;
         }
-        prev = *pt;
+        return;
     }
-    // Stamp at the last point regardless.
-    material_stock.stamp_tool_at(
+    for pair in path.windows(2) {
+        if let [a, b] = pair {
+            material_stock.stamp_linear_segment(
+                lut,
+                tool_radius,
+                *a,
+                *b,
+                StockCutDirection::FromTop,
+            );
+        }
+    }
+}
+
+/// Mirror in the planner's `material_stock` the swept-tube stamps that
+/// the simulator will produce when it replays the toolpath emitted by
+/// `segments_to_toolpath` for `segment`.
+///
+/// Call this AFTER updating `last_pos` for the previous segment but
+/// BEFORE updating it for `segment` (we need the pre-segment XY/Z to
+/// know where a `Link` feed starts from).
+///
+/// `safe_z` / `tolerance` / `min_cutting_radius` match
+/// `Adaptive3dParams`; tolerance and min_cutting_radius are needed
+/// because `segments_to_toolpath` runs `simplify_path_3d` and
+/// `blend_corners_3d` on `Cut` paths before emitting feeds, so the
+/// simulator stamps the SIMPLIFIED+BLENDED path. To stay in lockstep
+/// the planner must do the same transformation here.
+#[allow(clippy::too_many_arguments)]
+fn stamp_emitted_segment(
+    material_stock: &mut TriDexelStock,
+    lut: &RadialProfileLUT,
+    tool_radius: f64,
+    last_pos: &Option<P3>,
+    segment: &Adaptive3dSegment,
+    safe_z: f64,
+    tolerance: f64,
+    min_cutting_radius: f64,
+) {
+    match segment {
+        Adaptive3dSegment::Cut(path) => {
+            // Mirror segments_to_toolpath's path transformation —
+            // simplify_path_3d (RDP) and blend_corners_3d — so the
+            // planner's swept stamps cover the SAME tubes the
+            // simulator will stamp from the emitted feeds.
+            if path.len() >= 2 {
+                let simplified = simplify_path_3d(path, tolerance);
+                let blended = blend_corners_3d(&simplified, min_cutting_radius);
+                stamp_along_path(material_stock, lut, tool_radius, &blended);
+            } else {
+                stamp_along_path(material_stock, lut, tool_radius, path);
+            }
+        }
+        Adaptive3dSegment::Rapid(entry) => {
+            // Toolpath: rapid lift to safe_z, rapid XY at safe_z,
+            // peck-plunge from safe_z down to entry.z. Only the
+            // peck-plunge feeds get stamped — and the net swept-tube
+            // of the interleaved peck/retract feeds is just the full
+            // vertical descent from safe_z to entry.
+            let start = P3::new(entry.x, entry.y, safe_z);
+            material_stock.stamp_linear_segment(
+                lut,
+                tool_radius,
+                start,
+                *entry,
+                StockCutDirection::FromTop,
+            );
+        }
+        Adaptive3dSegment::RapidWithFloor {
+            entry,
+            rapid_floor_z,
+        } => {
+            // Toolpath: rapid descent from safe_z down to ~rapid_floor_z
+            // (cleared air, no stamp), then peck-plunge from there to
+            // entry. Mirror segments_to_toolpath's `descent_floor` calc
+            // exactly so we don't stamp BELOW entry.z (which would
+            // happen if rapid_floor_z < entry.z, e.g. previous pass
+            // already cut DEEPER than this entry — clearing function
+            // sampled the post-stamp top).
+            const RAPID_DESCENT_BUFFER_MM: f64 = 0.5;
+            let descent_floor = (*rapid_floor_z + RAPID_DESCENT_BUFFER_MM)
+                .min(safe_z)
+                .max(entry.z);
+            let start = P3::new(entry.x, entry.y, descent_floor);
+            material_stock.stamp_linear_segment(
+                lut,
+                tool_radius,
+                start,
+                *entry,
+                StockCutDirection::FromTop,
+            );
+        }
+        Adaptive3dSegment::Link(target) => {
+            // Toolpath: feed at constant Z from last_pos to target.
+            if let Some(prev) = last_pos {
+                material_stock.stamp_linear_segment(
+                    lut,
+                    tool_radius,
+                    *prev,
+                    *target,
+                    StockCutDirection::FromTop,
+                );
+            }
+        }
+        Adaptive3dSegment::Marker(_) => {}
+    }
+}
+
+/// Helper to push a segment and stamp its simulator-equivalent swept
+/// material removal in one call.
+#[allow(clippy::too_many_arguments)]
+fn push_segment_with_stamp(
+    segments: &mut Vec<Adaptive3dSegment>,
+    material_stock: &mut TriDexelStock,
+    lut: &RadialProfileLUT,
+    tool_radius: f64,
+    last_pos: &mut Option<P3>,
+    segment: Adaptive3dSegment,
+    safe_z: f64,
+    tolerance: f64,
+    min_cutting_radius: f64,
+) {
+    stamp_emitted_segment(
+        material_stock,
         lut,
         tool_radius,
-        prev.x,
-        prev.y,
-        prev.z,
-        StockCutDirection::FromTop,
+        last_pos,
+        &segment,
+        safe_z,
+        tolerance,
+        min_cutting_radius,
     );
+    // Update last_pos based on segment's terminal XYZ before pushing.
+    match &segment {
+        Adaptive3dSegment::Cut(path) => {
+            if let Some(p) = path.last() {
+                *last_pos = Some(*p);
+            }
+        }
+        Adaptive3dSegment::Rapid(entry) | Adaptive3dSegment::RapidWithFloor { entry, .. } => {
+            *last_pos = Some(*entry);
+        }
+        Adaptive3dSegment::Link(target) => {
+            *last_pos = Some(*target);
+        }
+        Adaptive3dSegment::Marker(_) => {}
+    }
+    segments.push(segment);
 }
 
 /// Clear a Z level using EDT-based contour-parallel strategy.
@@ -482,22 +620,33 @@ pub(super) fn clear_z_level_contour_parallel(
                             ctx.stock_to_leave,
                         )
                 });
-                if should_link {
-                    segments.push(Adaptive3dSegment::Link(*first));
+                let entry_seg = if should_link {
+                    Adaptive3dSegment::Link(*first)
                 } else {
-                    segments.push(Adaptive3dSegment::Rapid(*first));
-                }
-                // Stamp dexel stock along the cutting path before moving path_3d
-                stamp_along_path(
+                    Adaptive3dSegment::Rapid(*first)
+                };
+                push_segment_with_stamp(
+                    segments,
                     material_stock,
                     ctx.lut,
                     ctx.tool_radius,
-                    &path_3d,
-                    ctx.step_len,
+                    last_pos,
+                    entry_seg,
+                    ctx.safe_z,
+                    ctx.tolerance,
+                    ctx.min_cutting_radius,
                 );
-
-                *last_pos = path_3d.last().copied();
-                segments.push(Adaptive3dSegment::Cut(path_3d));
+                push_segment_with_stamp(
+                    segments,
+                    material_stock,
+                    ctx.lut,
+                    ctx.tool_radius,
+                    last_pos,
+                    Adaptive3dSegment::Cut(path_3d),
+                    ctx.safe_z,
+                    ctx.tolerance,
+                    ctx.min_cutting_radius,
+                );
             }
         }
 
@@ -573,24 +722,43 @@ pub(super) fn clear_z_level_contour_parallel(
 
         for path in &cleanup_pts {
             if let Some(first) = path.first() {
-                segments.push(Adaptive3dSegment::Rapid(*first));
+                push_segment_with_stamp(
+                    segments,
+                    material_stock,
+                    ctx.lut,
+                    ctx.tool_radius,
+                    last_pos,
+                    Adaptive3dSegment::Rapid(*first),
+                    ctx.safe_z,
+                    ctx.tolerance,
+                    ctx.min_cutting_radius,
+                );
                 if path.len() >= 2 {
-                    stamp_along_path(material_stock, ctx.lut, ctx.tool_radius, path, ctx.step_len);
-                    *last_pos = path.last().copied();
-                    segments.push(Adaptive3dSegment::Cut(path.clone()));
-                } else {
-                    // Single-point run: stamp and emit as a tiny cut segment
-                    material_stock.stamp_tool_at(
+                    push_segment_with_stamp(
+                        segments,
+                        material_stock,
                         ctx.lut,
                         ctx.tool_radius,
-                        first.x,
-                        first.y,
-                        first.z,
-                        StockCutDirection::FromTop,
+                        last_pos,
+                        Adaptive3dSegment::Cut(path.clone()),
+                        ctx.safe_z,
+                        ctx.tolerance,
+                        ctx.min_cutting_radius,
                     );
+                } else {
+                    // Single-point run: emit as a tiny cut segment.
                     let end = P3::new(first.x + ctx.step_len, first.y, first.z);
-                    *last_pos = Some(end);
-                    segments.push(Adaptive3dSegment::Cut(vec![*first, end]));
+                    push_segment_with_stamp(
+                        segments,
+                        material_stock,
+                        ctx.lut,
+                        ctx.tool_radius,
+                        last_pos,
+                        Adaptive3dSegment::Cut(vec![*first, end]),
+                        ctx.safe_z,
+                        ctx.tolerance,
+                        ctx.min_cutting_radius,
+                    );
                 }
             }
         }
@@ -741,21 +909,33 @@ pub(super) fn clear_z_level_adaptive(
                             ctx.stock_to_leave,
                         )
                 });
-                if should_link {
-                    segments.push(Adaptive3dSegment::Link(*first));
+                let entry_seg = if should_link {
+                    Adaptive3dSegment::Link(*first)
                 } else {
-                    segments.push(Adaptive3dSegment::Rapid(*first));
-                }
-                stamp_along_path(
+                    Adaptive3dSegment::Rapid(*first)
+                };
+                push_segment_with_stamp(
+                    segments,
                     material_stock,
                     ctx.lut,
                     ctx.tool_radius,
-                    &path_3d,
-                    ctx.step_len,
+                    last_pos,
+                    entry_seg,
+                    ctx.safe_z,
+                    ctx.tolerance,
+                    ctx.min_cutting_radius,
                 );
-
-                *last_pos = path_3d.last().copied();
-                segments.push(Adaptive3dSegment::Cut(path_3d));
+                push_segment_with_stamp(
+                    segments,
+                    material_stock,
+                    ctx.lut,
+                    ctx.tool_radius,
+                    last_pos,
+                    Adaptive3dSegment::Cut(path_3d),
+                    ctx.safe_z,
+                    ctx.tolerance,
+                    ctx.min_cutting_radius,
+                );
             }
         }
 
@@ -782,6 +962,9 @@ pub(super) fn waterline_cleanup(
     z_level: f64,
     tool_radius: f64,
     cell_size: f64,
+    safe_z: f64,
+    tolerance: f64,
+    min_cutting_radius: f64,
     segments: &mut Vec<Adaptive3dSegment>,
     last_pos: &mut Option<P3>,
     debug_ctx: Option<&ToolpathDebugContext>,
@@ -827,7 +1010,17 @@ pub(super) fn waterline_cleanup(
             continue;
         }
 
-        segments.push(Adaptive3dSegment::Rapid(contour[0]));
+        push_segment_with_stamp(
+            segments,
+            material_stock,
+            lut,
+            tool_radius,
+            last_pos,
+            Adaptive3dSegment::Rapid(contour[0]),
+            safe_z,
+            tolerance,
+            min_cutting_radius,
+        );
 
         let mut cleanup_path = vec![contour[0]];
         for i in 0..contour.len() {
@@ -842,21 +1035,21 @@ pub(super) fn waterline_cleanup(
                 let x = a.x + t * dx;
                 let y = a.y + t * dy;
                 let z = a.z + t * (b.z - a.z);
-                material_stock.stamp_tool_at(lut, tool_radius, x, y, z, StockCutDirection::FromTop);
                 cleanup_path.push(P3::new(x, y, z));
             }
         }
         cleanup_path.push(contour[0]);
-        material_stock.stamp_tool_at(
+        push_segment_with_stamp(
+            segments,
+            material_stock,
             lut,
             tool_radius,
-            contour[0].x,
-            contour[0].y,
-            contour[0].z,
-            StockCutDirection::FromTop,
+            last_pos,
+            Adaptive3dSegment::Cut(cleanup_path),
+            safe_z,
+            tolerance,
+            min_cutting_radius,
         );
-        segments.push(Adaptive3dSegment::Cut(cleanup_path));
-        *last_pos = Some(contour[0]);
         traced += 1;
     }
     if !contours.is_empty() {
@@ -1167,33 +1360,44 @@ pub(super) fn clear_z_level_agent_2d_slice(
                     path_2d.pop();
                 }
                 let path_3d: Vec<P3> = path_2d.iter().map(|&p| lift(p)).collect();
-                for p in &path_3d {
-                    material_stock.stamp_tool_at(
-                        ctx.lut,
-                        ctx.tool_radius,
-                        p.x,
-                        p.y,
-                        p.z,
-                        StockCutDirection::FromTop,
-                    );
-                }
                 if let Some(first) = path_3d.first().copied() {
+                    // Sample the stock top BEFORE we stamp the rapid /
+                    // cut for this loop, so the rapid-floor reflects
+                    // material state from prior passes only.
                     let rapid_floor = sample_stock_top_at(material_stock, first.x, first.y);
-                    match rapid_floor {
-                        Some(top_z) => segments.push(Adaptive3dSegment::RapidWithFloor {
+                    let entry_seg = match rapid_floor {
+                        Some(top_z) => Adaptive3dSegment::RapidWithFloor {
                             entry: first,
                             rapid_floor_z: top_z,
-                        }),
-                        None => segments.push(Adaptive3dSegment::Rapid(first)),
-                    }
+                        },
+                        None => Adaptive3dSegment::Rapid(first),
+                    };
+                    push_segment_with_stamp(
+                        segments,
+                        material_stock,
+                        ctx.lut,
+                        ctx.tool_radius,
+                        last_pos,
+                        entry_seg,
+                        ctx.safe_z,
+                        ctx.tolerance,
+                        ctx.min_cutting_radius,
+                    );
                 }
                 if path_3d.len() >= 2 {
                     level_metrics.perimeter_sweep_length_mm += polyline_length_3d(&path_3d);
-                    segments.push(Adaptive3dSegment::Cut(path_3d.clone()));
+                    push_segment_with_stamp(
+                        segments,
+                        material_stock,
+                        ctx.lut,
+                        ctx.tool_radius,
+                        last_pos,
+                        Adaptive3dSegment::Cut(path_3d),
+                        ctx.safe_z,
+                        ctx.tolerance,
+                        ctx.min_cutting_radius,
+                    );
                     cut_count += 1;
-                }
-                if let Some(last) = path_3d.last().copied() {
-                    *last_pos = Some(last);
                 }
             }
             // Sweep each hole's boundary too — cutter must clear material
@@ -1212,33 +1416,41 @@ pub(super) fn clear_z_level_agent_2d_slice(
                     path_2d.pop();
                 }
                 let path_3d: Vec<P3> = path_2d.iter().map(|&p| lift(p)).collect();
-                for p in &path_3d {
-                    material_stock.stamp_tool_at(
-                        ctx.lut,
-                        ctx.tool_radius,
-                        p.x,
-                        p.y,
-                        p.z,
-                        StockCutDirection::FromTop,
-                    );
-                }
                 if let Some(first) = path_3d.first().copied() {
                     let rapid_floor = sample_stock_top_at(material_stock, first.x, first.y);
-                    match rapid_floor {
-                        Some(top_z) => segments.push(Adaptive3dSegment::RapidWithFloor {
+                    let entry_seg = match rapid_floor {
+                        Some(top_z) => Adaptive3dSegment::RapidWithFloor {
                             entry: first,
                             rapid_floor_z: top_z,
-                        }),
-                        None => segments.push(Adaptive3dSegment::Rapid(first)),
-                    }
+                        },
+                        None => Adaptive3dSegment::Rapid(first),
+                    };
+                    push_segment_with_stamp(
+                        segments,
+                        material_stock,
+                        ctx.lut,
+                        ctx.tool_radius,
+                        last_pos,
+                        entry_seg,
+                        ctx.safe_z,
+                        ctx.tolerance,
+                        ctx.min_cutting_radius,
+                    );
                 }
                 if path_3d.len() >= 2 {
                     level_metrics.perimeter_sweep_length_mm += polyline_length_3d(&path_3d);
-                    segments.push(Adaptive3dSegment::Cut(path_3d.clone()));
+                    push_segment_with_stamp(
+                        segments,
+                        material_stock,
+                        ctx.lut,
+                        ctx.tool_radius,
+                        last_pos,
+                        Adaptive3dSegment::Cut(path_3d),
+                        ctx.safe_z,
+                        ctx.tolerance,
+                        ctx.min_cutting_radius,
+                    );
                     cut_count += 1;
-                }
-                if let Some(last) = path_3d.last().copied() {
-                    *last_pos = Some(last);
                 }
             }
         }
@@ -1347,8 +1559,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         } else {
                             0.0
                         };
-                        let large_z =
-                            dz.abs() > z_drop_threshold || abs_slope > PLUNGE_SLOPE_LIMIT;
+                        let large_z = dz.abs() > z_drop_threshold || abs_slope > PLUNGE_SLOPE_LIMIT;
                         let engagement_change = engaged[i] != sub_engaged;
                         if large_z || engagement_change {
                             // Flush the current run.
@@ -1356,27 +1567,17 @@ pub(super) fn clear_z_level_agent_2d_slice(
                             if run_len >= 1 {
                                 if sub_engaged {
                                     if run_len >= 2 {
-                                        // Stamp the engaged cut into the
-                                        // dexel so the next pass sees it
-                                        // cleared. CRUCIAL that we stamp
-                                        // ONLY engaged segments — air
-                                        // segments are emitted as rapids
-                                        // and the actual machine won't
-                                        // cut them, so the dexel must
-                                        // reflect that.
-                                        for p in &path_3d[sub_start..i] {
-                                            material_stock.stamp_tool_at(
-                                                ctx.lut,
-                                                ctx.tool_radius,
-                                                p.x,
-                                                p.y,
-                                                p.z,
-                                                StockCutDirection::FromTop,
-                                            );
-                                        }
-                                        segments.push(Adaptive3dSegment::Cut(
-                                            path_3d[sub_start..i].to_vec(),
-                                        ));
+                                        push_segment_with_stamp(
+                                            segments,
+                                            material_stock,
+                                            ctx.lut,
+                                            ctx.tool_radius,
+                                            last_pos,
+                                            Adaptive3dSegment::Cut(path_3d[sub_start..i].to_vec()),
+                                            ctx.safe_z,
+                                            ctx.tolerance,
+                                            ctx.min_cutting_radius,
+                                        );
                                         cut_count += 1;
                                     }
                                 } else {
@@ -1387,15 +1588,24 @@ pub(super) fn clear_z_level_agent_2d_slice(
                                     let end_pt = path_3d[i.saturating_sub(1)];
                                     let rapid_floor =
                                         sample_stock_top_at(material_stock, end_pt.x, end_pt.y);
-                                    match rapid_floor {
-                                        Some(top_z) => {
-                                            segments.push(Adaptive3dSegment::RapidWithFloor {
-                                                entry: end_pt,
-                                                rapid_floor_z: top_z,
-                                            })
-                                        }
-                                        None => segments.push(Adaptive3dSegment::Rapid(end_pt)),
-                                    }
+                                    let entry_seg = match rapid_floor {
+                                        Some(top_z) => Adaptive3dSegment::RapidWithFloor {
+                                            entry: end_pt,
+                                            rapid_floor_z: top_z,
+                                        },
+                                        None => Adaptive3dSegment::Rapid(end_pt),
+                                    };
+                                    push_segment_with_stamp(
+                                        segments,
+                                        material_stock,
+                                        ctx.lut,
+                                        ctx.tool_radius,
+                                        last_pos,
+                                        entry_seg,
+                                        ctx.safe_z,
+                                        ctx.tolerance,
+                                        ctx.min_cutting_radius,
+                                    );
                                 }
                             }
                             // After a large_z split, also rapid-position
@@ -1403,17 +1613,25 @@ pub(super) fn clear_z_level_agent_2d_slice(
                             // before continuing.
                             if large_z {
                                 let p3 = path_3d[i];
-                                let rapid_floor =
-                                    sample_stock_top_at(material_stock, p3.x, p3.y);
-                                match rapid_floor {
-                                    Some(top_z) => {
-                                        segments.push(Adaptive3dSegment::RapidWithFloor {
-                                            entry: p3,
-                                            rapid_floor_z: top_z,
-                                        })
-                                    }
-                                    None => segments.push(Adaptive3dSegment::Rapid(p3)),
-                                }
+                                let rapid_floor = sample_stock_top_at(material_stock, p3.x, p3.y);
+                                let entry_seg = match rapid_floor {
+                                    Some(top_z) => Adaptive3dSegment::RapidWithFloor {
+                                        entry: p3,
+                                        rapid_floor_z: top_z,
+                                    },
+                                    None => Adaptive3dSegment::Rapid(p3),
+                                };
+                                push_segment_with_stamp(
+                                    segments,
+                                    material_stock,
+                                    ctx.lut,
+                                    ctx.tool_radius,
+                                    last_pos,
+                                    entry_seg,
+                                    ctx.safe_z,
+                                    ctx.tolerance,
+                                    ctx.min_cutting_radius,
+                                );
                             }
                             sub_start = i;
                             sub_engaged = engaged[i];
@@ -1424,31 +1642,40 @@ pub(super) fn clear_z_level_agent_2d_slice(
                     if run_len >= 1 {
                         if sub_engaged {
                             if run_len >= 2 {
-                                for p in &path_3d[sub_start..] {
-                                    material_stock.stamp_tool_at(
-                                        ctx.lut,
-                                        ctx.tool_radius,
-                                        p.x,
-                                        p.y,
-                                        p.z,
-                                        StockCutDirection::FromTop,
-                                    );
-                                }
-                                segments.push(Adaptive3dSegment::Cut(
-                                    path_3d[sub_start..].to_vec(),
-                                ));
+                                push_segment_with_stamp(
+                                    segments,
+                                    material_stock,
+                                    ctx.lut,
+                                    ctx.tool_radius,
+                                    last_pos,
+                                    Adaptive3dSegment::Cut(path_3d[sub_start..].to_vec()),
+                                    ctx.safe_z,
+                                    ctx.tolerance,
+                                    ctx.min_cutting_radius,
+                                );
                                 cut_count += 1;
                             }
                         } else if let Some(end_pt) = path_3d.last().copied() {
                             let rapid_floor =
                                 sample_stock_top_at(material_stock, end_pt.x, end_pt.y);
-                            match rapid_floor {
-                                Some(top_z) => segments.push(Adaptive3dSegment::RapidWithFloor {
+                            let entry_seg = match rapid_floor {
+                                Some(top_z) => Adaptive3dSegment::RapidWithFloor {
                                     entry: end_pt,
                                     rapid_floor_z: top_z,
-                                }),
-                                None => segments.push(Adaptive3dSegment::Rapid(end_pt)),
-                            }
+                                },
+                                None => Adaptive3dSegment::Rapid(end_pt),
+                            };
+                            push_segment_with_stamp(
+                                segments,
+                                material_stock,
+                                ctx.lut,
+                                ctx.tool_radius,
+                                last_pos,
+                                entry_seg,
+                                ctx.safe_z,
+                                ctx.tolerance,
+                                ctx.min_cutting_radius,
+                            );
                         }
                     }
                 }
@@ -1461,14 +1688,24 @@ pub(super) fn clear_z_level_agent_2d_slice(
                     // Pass the sampled top to the path emitter so it
                     // can rapid through the air gap before pecking.
                     let rapid_floor = sample_stock_top_at(material_stock, p3.x, p3.y);
-                    *last_pos = Some(p3);
-                    match rapid_floor {
-                        Some(top_z) => segments.push(Adaptive3dSegment::RapidWithFloor {
+                    let entry_seg = match rapid_floor {
+                        Some(top_z) => Adaptive3dSegment::RapidWithFloor {
                             entry: p3,
                             rapid_floor_z: top_z,
-                        }),
-                        None => segments.push(Adaptive3dSegment::Rapid(p3)),
-                    }
+                        },
+                        None => Adaptive3dSegment::Rapid(p3),
+                    };
+                    push_segment_with_stamp(
+                        segments,
+                        material_stock,
+                        ctx.lut,
+                        ctx.tool_radius,
+                        last_pos,
+                        entry_seg,
+                        ctx.safe_z,
+                        ctx.tolerance,
+                        ctx.min_cutting_radius,
+                    );
                 }
                 crate::adaptive::AdaptiveSegment::Link(p) => {
                     // 2D Link = feed at cut depth assuming the path is
@@ -1480,14 +1717,24 @@ pub(super) fn clear_z_level_agent_2d_slice(
                     // rapid-floor optimisation as the Rapid case.
                     let p3 = lift(p);
                     let rapid_floor = sample_stock_top_at(material_stock, p3.x, p3.y);
-                    *last_pos = Some(p3);
-                    match rapid_floor {
-                        Some(top_z) => segments.push(Adaptive3dSegment::RapidWithFloor {
+                    let entry_seg = match rapid_floor {
+                        Some(top_z) => Adaptive3dSegment::RapidWithFloor {
                             entry: p3,
                             rapid_floor_z: top_z,
-                        }),
-                        None => segments.push(Adaptive3dSegment::Rapid(p3)),
-                    }
+                        },
+                        None => Adaptive3dSegment::Rapid(p3),
+                    };
+                    push_segment_with_stamp(
+                        segments,
+                        material_stock,
+                        ctx.lut,
+                        ctx.tool_radius,
+                        last_pos,
+                        entry_seg,
+                        ctx.safe_z,
+                        ctx.tolerance,
+                        ctx.min_cutting_radius,
+                    );
                 }
                 crate::adaptive::AdaptiveSegment::Marker(_) => {
                     // 2D runtime events don't translate cleanly to 3D; swallow.

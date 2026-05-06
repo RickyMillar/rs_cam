@@ -29,6 +29,11 @@ pub struct ToolpathNarrationContext<'a> {
     pub toolpath_name: Option<&'a str>,
     pub operation_label: Option<&'a str>,
     pub depth_per_pass_mm: Option<f64>,
+    pub stepover_mm: Option<f64>,
+    pub tool_diameter_mm: Option<f64>,
+    pub feed_rate_mm_min: Option<f64>,
+    pub spindle_rpm: Option<u32>,
+    pub flute_count: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +45,11 @@ struct ZLevelSummary {
     max_radius_from_centroid_mm: f64,
     cut_run_ids: BTreeSet<usize>,
     marching_square_regions: Option<usize>,
+    region_areas_mm2: Vec<f64>,
+    dropped_micro_regions: Option<usize>,
+    perimeter_sweep_length_mm: Option<f64>,
+    agent_walk_cut_length_mm: Option<f64>,
+    residual_cleanup_cell_count: Option<usize>,
 }
 
 impl ZLevelSummary {
@@ -52,6 +62,11 @@ impl ZLevelSummary {
             max_radius_from_centroid_mm: 0.0,
             cut_run_ids: BTreeSet::new(),
             marching_square_regions: None,
+            region_areas_mm2: Vec::new(),
+            dropped_micro_regions: None,
+            perimeter_sweep_length_mm: None,
+            agent_walk_cut_length_mm: None,
+            residual_cleanup_cell_count: None,
         }
     }
 }
@@ -161,13 +176,17 @@ pub fn narrate_toolpath_with_context(
         ));
     }
 
+    append_operation_context(&mut output, context);
+
     let z_levels = summarize_z_levels(toolpath, semantic_trace);
     output.push_str("\nZ-level structure (highest to lowest, setup-local frame):\n");
     if z_levels.is_empty() {
         output.push_str("  No cutting moves found.\n");
     } else {
-        append_z_level_lines(&mut output, &z_levels);
+        append_z_level_lines(&mut output, &z_levels, debug_trace);
     }
+
+    append_engagement_histogram(&mut output, cut_trace, context);
 
     let anomalies = collect_anomalies(toolpath, cut_trace, tool, context);
     output.push_str("\nAnomalies (most surprising first):\n");
@@ -188,6 +207,129 @@ pub fn narrate_toolpath_with_context(
     }
 
     output
+}
+
+fn append_operation_context(output: &mut String, context: &ToolpathNarrationContext<'_>) {
+    let mut parts = Vec::new();
+    if let Some(depth) = context.depth_per_pass_mm {
+        parts.push(format!("depth_per_pass {:.2}mm", depth));
+    }
+    if let Some(stepover) = context.stepover_mm {
+        let stepover_text = context.tool_diameter_mm.map_or_else(
+            || format!("stepover {:.2}mm", stepover),
+            |diameter| {
+                let pct = if diameter > 0.0 {
+                    stepover / diameter * 100.0
+                } else {
+                    0.0
+                };
+                let expectation = if pct < 20.0 {
+                    " — narrow, expect many low-engagement samples"
+                } else {
+                    ""
+                };
+                format!(
+                    "stepover {:.2}mm ({:.0}% of tool diameter){expectation}",
+                    stepover, pct
+                )
+            },
+        );
+        parts.push(stepover_text);
+    }
+    if let Some(feed) = context.feed_rate_mm_min {
+        parts.push(format!("feed {:.0}mm/min", feed));
+    }
+    if let (Some(feed), Some(rpm), Some(flutes)) = (
+        context.feed_rate_mm_min,
+        context.spindle_rpm,
+        context.flute_count,
+    ) && rpm > 0
+        && flutes > 0
+    {
+        let chipload = feed / f64::from(rpm) / f64::from(flutes);
+        parts.push(format!("nominal chipload {:.4}mm/tooth", chipload));
+    }
+
+    if !parts.is_empty() {
+        output.push_str("Operation context: ");
+        output.push_str(&parts.join(", "));
+        output.push_str(".\n");
+    }
+}
+
+fn append_engagement_histogram(
+    output: &mut String,
+    cut_trace: Option<&SimulationCutTrace>,
+    context: &ToolpathNarrationContext<'_>,
+) {
+    let Some(trace) = cut_trace else {
+        return;
+    };
+
+    let mut buckets = [0usize; 5];
+    let mut total = 0usize;
+    for sample in trace.samples.iter().filter(|sample| sample.is_cutting) {
+        if context
+            .toolpath_id
+            .is_some_and(|id| sample.toolpath_id != id)
+        {
+            continue;
+        }
+        total += 1;
+        let engagement = sample.radial_engagement;
+        let bucket = if engagement < 0.02 {
+            0
+        } else if engagement < 0.10 {
+            1
+        } else if engagement < 0.30 {
+            2
+        } else if engagement < 0.70 {
+            3
+        } else {
+            4
+        };
+        if let Some(slot) = buckets.get_mut(bucket) {
+            *slot += 1;
+        }
+    }
+
+    if total == 0 {
+        return;
+    }
+
+    output.push_str("\nEngagement distribution (in-cut samples only, n=");
+    output.push_str(&format_count(total));
+    output.push_str("):\n");
+    let labels = [
+        ("air   ", "[0.00 .. 0.02]"),
+        ("thin  ", "[0.02 .. 0.10]"),
+        ("light ", "[0.10 .. 0.30]"),
+        ("normal", "[0.30 .. 0.70]"),
+        ("heavy ", "[0.70 ..     ]"),
+    ];
+    for ((label, range), count) in labels.iter().zip(buckets) {
+        if count == 0 {
+            continue;
+        }
+        let pct = count as f64 / total as f64 * 100.0;
+        output.push_str(&format!(
+            "  {label} {range} — {:5.1}% ({})\n",
+            pct,
+            format_count(count)
+        ));
+    }
+}
+
+fn format_count(count: usize) -> String {
+    let digits = count.to_string();
+    let mut out = String::new();
+    for (idx, ch) in digits.chars().rev().enumerate() {
+        if idx > 0 && idx % 3 == 0 {
+            out.push(' ');
+        }
+        out.push(ch);
+    }
+    out.chars().rev().collect()
 }
 
 fn summarize_z_levels(
@@ -235,7 +377,7 @@ fn summarize_z_levels(
                 max_radius_from_centroid(toolpath, level.z, center_x, center_y);
         }
         if let Some(trace) = semantic_trace {
-            level.marching_square_regions = Some(semantic_region_count_at_z(trace, level.z));
+            apply_semantic_level_metrics(level, trace);
         }
     }
 
@@ -286,7 +428,60 @@ fn max_radius_from_centroid(toolpath: &Toolpath, z: f64, center_x: f64, center_y
         .fold(0.0, f64::max)
 }
 
-fn semantic_region_count_at_z(trace: &ToolpathSemanticTrace, z: f64) -> usize {
+fn apply_semantic_level_metrics(level: &mut ZLevelSummary, trace: &ToolpathSemanticTrace) {
+    if let Some(item) = trace
+        .items
+        .iter()
+        .filter(|item| item.kind == ToolpathSemanticKind::DepthLevel)
+        .find(|item| semantic_item_matches_z(item, level.z))
+    {
+        if let Some(count) = item
+            .params
+            .values
+            .get("marching_squares_regions")
+            .and_then(|value| value.as_u64())
+            .and_then(|value| usize::try_from(value).ok())
+        {
+            level.marching_square_regions = Some(count);
+        }
+        if let Some(areas) = item
+            .params
+            .values
+            .get("region_areas_mm2")
+            .and_then(|value| value.as_array())
+        {
+            level.region_areas_mm2 = areas.iter().filter_map(|value| value.as_f64()).collect();
+        }
+        level.dropped_micro_regions = item
+            .params
+            .values
+            .get("dropped_micro_region_count")
+            .and_then(|value| value.as_u64())
+            .and_then(|value| usize::try_from(value).ok());
+        level.perimeter_sweep_length_mm = item
+            .params
+            .values
+            .get("perimeter_sweep_length_mm")
+            .and_then(|value| value.as_f64());
+        level.agent_walk_cut_length_mm = item
+            .params
+            .values
+            .get("agent_walk_cut_length_mm")
+            .and_then(|value| value.as_f64());
+        level.residual_cleanup_cell_count = item
+            .params
+            .values
+            .get("residual_cleanup_cell_count")
+            .and_then(|value| value.as_u64())
+            .and_then(|value| usize::try_from(value).ok());
+    }
+
+    if level.marching_square_regions.is_none() {
+        level.marching_square_regions = Some(fallback_semantic_region_count_at_z(trace, level.z));
+    }
+}
+
+fn fallback_semantic_region_count_at_z(trace: &ToolpathSemanticTrace, z: f64) -> usize {
     let region_ids: BTreeSet<_> = trace
         .items
         .iter()
@@ -330,11 +525,17 @@ fn semantic_item_matches_z(item: &crate::semantic_trace::ToolpathSemanticItem, z
     }
 }
 
-fn append_z_level_lines(output: &mut String, levels: &[ZLevelSummary]) {
+fn append_z_level_lines(
+    output: &mut String,
+    levels: &[ZLevelSummary],
+    debug_trace: Option<&ToolpathDebugTrace>,
+) {
     for (idx, level) in levels.iter().enumerate() {
         if levels.len() > MAX_LEVEL_LINES && idx == 5 {
             output.push_str(&format!(
-                "  … {} intermediate Z levels compressed (similar inferred structure).\n",
+                "  … {} intermediate Z levels compressed (similar inferred structure). \
+                 For per-Z planner gate / floor-cell / emission counters on suppressed \
+                 levels, query get_generation_debug_trace(span_kind=\"z_level_clear\").\n",
                 levels.len().saturating_sub(7)
             ));
             continue;
@@ -361,10 +562,108 @@ fn append_z_level_lines(output: &mut String, levels: &[ZLevelSummary]) {
             level.arc_moves
         ));
         output.push_str(&format!(
-            "perimeter sweep estimate: radius {:.1}mm from centroid; {:.0}mm cutting at this Z.\n",
+            "perimeter sweep estimate: radius {:.1}mm from centroid; {:.0}mm cutting at this Z",
             level.max_radius_from_centroid_mm, level.cutting_distance_mm
         ));
+        if let Some(length) = level.perimeter_sweep_length_mm
+            && length > 0.0
+        {
+            output.push_str(&format!(", true perimeter sweep {:.0}mm", length));
+        }
+        if let Some(length) = level.agent_walk_cut_length_mm
+            && length > 0.0
+        {
+            output.push_str(&format!(", agent walk {:.0}mm", length));
+        }
+        if let Some(dropped) = level.dropped_micro_regions
+            && dropped > 0
+        {
+            output.push_str(&format!(", dropped {dropped} sub-tool region(s)"));
+        }
+        if !level.region_areas_mm2.is_empty() {
+            let areas: Vec<_> = level
+                .region_areas_mm2
+                .iter()
+                .take(3)
+                .map(|area| format!("{area:.0}"))
+                .collect();
+            output.push_str(&format!(", top areas [{}] mm²", areas.join(", ")));
+        }
+        if let Some(cells) = level.residual_cleanup_cell_count
+            && cells > 0
+        {
+            output.push_str(&format!(", residual cleanup {cells} cell(s)"));
+        }
+        output.push('.');
+        if let Some(debug) = debug_trace
+            && let Some(suffix) = z_level_debug_suffix(debug, level.z)
+        {
+            output.push(' ');
+            output.push_str(&suffix);
+        }
+        output.push('\n');
     }
+}
+
+/// Build a one-line diagnostic suffix from the matching `z_level_clear`
+/// debug span for this Z level. Returns None when no matching span
+/// exists (debug trace was empty, or the span's z_level didn't match).
+///
+/// Surfaces the planner-side gate readings + planner emission counts so
+/// the agent can spot levels where the planner emitted cuts but
+/// removed nothing (planner↔sim mismatch) or where the surface sits
+/// above the cut plane everywhere (gate-bypass / surface-above bug).
+fn z_level_debug_suffix(debug: &ToolpathDebugTrace, z: f64) -> Option<String> {
+    let span = debug
+        .spans
+        .iter()
+        .filter(|s| s.kind == "z_level_clear")
+        .filter(|s| {
+            s.z_level
+                .map(|sz| (sz - z).abs() <= Z_EPSILON_MM)
+                .unwrap_or(false)
+        })
+        .min_by(|a, b| {
+            let da = (a.z_level.unwrap_or(f64::INFINITY) - z).abs();
+            let db = (b.z_level.unwrap_or(f64::INFINITY) - z).abs();
+            da.partial_cmp(&db).unwrap_or(Ordering::Equal)
+        })?;
+    let c = &span.counters;
+    let get = |k: &str| c.get(k).copied();
+    let remaining_pre = get("material_remaining_pre")?;
+    let remaining_post = get("material_remaining_post").unwrap_or(remaining_pre);
+    let cells_total = get("floor_cells_total")? as u64;
+    let cells_at_z = get("floor_cells_at_z")? as u64;
+    let cells_with_material = get("floor_cells_with_material")? as u64;
+    let cut_segs = get("planner_cut_segments")? as u64;
+    let rapid_segs = get("planner_rapid_segments")? as u64;
+    let cut_mm = get("planner_cut_mm")?;
+    let cut_path_points = get("planner_cut_path_points").unwrap_or(0.0) as u64;
+    let mut tags = Vec::new();
+    if cells_at_z == 0 && cells_total > 0 {
+        tags.push("surface above plane".to_owned());
+    }
+    if cells_with_material == 0 && cut_segs > 0 {
+        tags.push("planner emitted cuts but no material to cut".to_owned());
+    }
+    let tag_str = if tags.is_empty() {
+        String::new()
+    } else {
+        format!(" ⚠ {}", tags.join("; "))
+    };
+    Some(format!(
+        "[gate: pre {:.3} → post {:.3}, floor {}/{} at-plane ({} with material); planner: {} cut ({:.0}mm, {} stamps) / {} rapid{}]",
+        remaining_pre,
+        remaining_post,
+        cells_at_z,
+        cells_total,
+        cells_with_material,
+        cut_segs,
+        cut_mm,
+        cut_path_points,
+        rapid_segs,
+        tag_str,
+    ))
 }
 
 fn collect_anomalies(
@@ -601,6 +900,11 @@ mod tests {
             toolpath_name: Some("Back Rough"),
             operation_label: Some("adaptive3d"),
             depth_per_pass_mm: Some(3.0),
+            stepover_mm: Some(0.84),
+            tool_diameter_mm: Some(6.0),
+            feed_rate_mm_min: Some(1000.0),
+            spindle_rpm: Some(18_000),
+            flute_count: Some(2),
         };
 
         let report =
@@ -610,6 +914,8 @@ mod tests {
         assert!(report.contains("axial DOC"));
         assert!(report.contains("Anomalies"));
         assert!(report.contains("tool_radius"));
+        assert!(report.contains("Operation context"));
+        assert!(report.contains("Engagement distribution"));
     }
 
     #[test]
@@ -627,12 +933,100 @@ mod tests {
         let report = narrate_toolpath(&toolpath, Some(&semantic_trace), None, None, &tool);
 
         assert!(report.contains("2 cut run(s), 1 marching-squares region(s)"));
+        assert!(report.contains("true perimeter sweep 123mm"));
+        assert!(report.contains("agent walk 456mm"));
         assert!(!report.contains("region/run"));
+    }
+
+    #[test]
+    fn narrate_appends_z_level_debug_suffix_with_warning_tags() {
+        // A z_level_clear span where the planner emitted cuts but the
+        // surface sat above the cut plane everywhere — the exact pattern
+        // observed on wanaka's z=10/z=7 dead passes. Both warning tags
+        // should fire.
+        let mut toolpath = Toolpath::new();
+        toolpath.rapid_to(P3::new(0.0, 0.0, 10.0));
+        toolpath.feed_to(P3::new(0.0, 0.0, 2.0), 1000.0);
+        toolpath.feed_to(P3::new(1.0, 0.0, 2.0), 1000.0);
+
+        let tool = build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+
+        let mut counters = std::collections::BTreeMap::new();
+        counters.insert("material_remaining_pre".to_owned(), 0.886);
+        counters.insert("material_remaining_post".to_owned(), 0.886);
+        counters.insert("floor_cells_total".to_owned(), 1247.0);
+        counters.insert("floor_cells_at_z".to_owned(), 0.0);
+        counters.insert("floor_cells_surf_above".to_owned(), 1247.0);
+        counters.insert("floor_cells_with_material".to_owned(), 0.0);
+        counters.insert("planner_cut_segments".to_owned(), 26.0);
+        counters.insert("planner_rapid_segments".to_owned(), 3.0);
+        counters.insert("planner_link_segments".to_owned(), 0.0);
+        counters.insert("planner_cut_mm".to_owned(), 4846.0);
+        counters.insert("planner_cut_path_points".to_owned(), 1234.0);
+
+        let span = crate::debug_trace::ToolpathDebugSpan {
+            id: 1,
+            parent_id: None,
+            kind: "z_level_clear".to_owned(),
+            label: "Z 2.000 (1/1)".to_owned(),
+            start_us: 0,
+            elapsed_us: 1000,
+            xy_bbox: None,
+            z_level: Some(2.0),
+            move_start: None,
+            move_end: None,
+            exit_reason: None,
+            counters,
+        };
+        let debug_trace = crate::debug_trace::ToolpathDebugTrace {
+            schema_version: crate::debug_trace::TOOLPATH_DEBUG_SCHEMA_VERSION,
+            toolpath_name: "Back Rough".to_owned(),
+            operation_label: "adaptive3d".to_owned(),
+            summary: crate::debug_trace::ToolpathDebugSummary {
+                total_elapsed_us: 1000,
+                span_count: 1,
+                hotspot_count: 0,
+                dominant_span_kind: Some("z_level_clear".to_owned()),
+                dominant_span_label: Some("Z 2.000 (1/1)".to_owned()),
+                dominant_span_elapsed_us: Some(1000),
+            },
+            spans: vec![span],
+            hotspots: vec![],
+            annotations: vec![],
+        };
+
+        let report = narrate_toolpath(&toolpath, None, None, Some(&debug_trace), &tool);
+
+        assert!(
+            report.contains("gate: pre 0.886 → post 0.886"),
+            "expected gate readings in narration; got:\n{report}"
+        );
+        assert!(
+            report.contains("floor 0/1247 at-plane (0 with material)"),
+            "expected floor histogram; got:\n{report}"
+        );
+        assert!(
+            report.contains("planner: 26 cut (4846mm, 1234 stamps) / 3 rapid"),
+            "expected planner emission counters; got:\n{report}"
+        );
+        assert!(
+            report.contains("surface above plane"),
+            "expected surface-above warning tag; got:\n{report}"
+        );
+        assert!(
+            report.contains("planner emitted cuts but no material to cut"),
+            "expected planner-vs-material mismatch warning tag; got:\n{report}"
+        );
     }
 
     fn one_region_semantic_trace(z_level: f64) -> ToolpathSemanticTrace {
         let mut params = ToolpathSemanticParams::default();
         params.insert("z_level", z_level);
+        params.insert("marching_squares_regions", 1usize);
+        params.insert("region_areas_mm2", vec![42.0_f64]);
+        params.insert("perimeter_sweep_length_mm", 123.0_f64);
+        params.insert("agent_walk_cut_length_mm", 456.0_f64);
+        params.insert("residual_cleanup_cell_count", 0usize);
         ToolpathSemanticTrace {
             schema_version: crate::debug_trace::TOOLPATH_DEBUG_SCHEMA_VERSION,
             toolpath_name: "Back Rough".to_owned(),
