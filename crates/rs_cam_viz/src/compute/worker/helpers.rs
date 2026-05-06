@@ -78,12 +78,37 @@ pub(super) fn apply_dressups(
     req: &ComputeRequest,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
     semantic: Option<&rs_cam_core::semantic_trace::ToolpathSemanticContext>,
+    rapid_order_barriers: &[usize],
 ) -> Toolpath {
     use rs_cam_core::semantic_trace::ToolpathSemanticKind;
 
     let cfg = &req.dressups;
     let tool = &req.tool;
     let safe_z = effective_safe_z(req);
+
+    if cfg.optimize_rapid_order && !rapid_order_barriers.is_empty() {
+        let sz = safe_z;
+        tp = apply_dressup_with_tracing(
+            tp,
+            debug,
+            semantic,
+            DressupTraceInfo {
+                debug_key: "rapid_order",
+                debug_label: "Optimize rapid order",
+                kind: ToolpathSemanticKind::Optimization,
+                semantic_label: "Rapid ordering",
+            },
+            |scope| {
+                scope.set_param("safe_z", sz);
+                scope.set_param("barrier_count", rapid_order_barriers.len());
+            },
+            |tp| rs_cam_core::tsp::optimize_rapid_order_with_barriers(
+                &tp,
+                sz,
+                rapid_order_barriers,
+            ),
+        );
+    }
 
     if let Some(core_entry) = cfg.entry_style.to_core(cfg) {
         let tool_radius = tool.envelope_diameter() / 2.0;
@@ -272,7 +297,7 @@ pub(super) fn apply_dressups(
             scope.set_move_range(0, tp.moves.len() - 1);
         }
     }
-    if cfg.optimize_rapid_order {
+    if cfg.optimize_rapid_order && rapid_order_barriers.is_empty() {
         let sz = safe_z;
         tp = apply_dressup_with_tracing(
             tp,

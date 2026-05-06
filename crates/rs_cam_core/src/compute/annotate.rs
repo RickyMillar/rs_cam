@@ -106,6 +106,7 @@ fn annotate_adaptive3d(
                 z_level,
                 level_index,
                 level_total,
+                metrics,
             } => {
                 if let Some(ls) = level_scope.take() {
                     ls.finish();
@@ -116,6 +117,7 @@ fn annotate_adaptive3d(
                 scope.set_param("z_level", *z_level);
                 scope.set_param("level_index", *level_index);
                 scope.set_param("level_total", *level_total);
+                set_z_level_plan_metrics(&scope, metrics);
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 let ctx = scope.context();
                 level_ctx = Some(ctx);
@@ -125,6 +127,7 @@ fn annotate_adaptive3d(
                 z_level,
                 level_index,
                 level_total,
+                metrics,
             } => {
                 // Close any prior level/region scopes
                 if let Some(ls) = level_scope.take() {
@@ -142,6 +145,7 @@ fn annotate_adaptive3d(
                 scope.set_param("z_level", *z_level);
                 scope.set_param("level_index", *level_index);
                 scope.set_param("level_total", *level_total);
+                set_z_level_plan_metrics(&scope, metrics);
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 let ctx = scope.context();
                 level_ctx = Some(ctx);
@@ -214,6 +218,30 @@ fn annotate_adaptive3d(
     if let Some(rs) = region_scope {
         rs.finish();
     }
+}
+
+fn set_z_level_plan_metrics(
+    scope: &crate::semantic_trace::ToolpathSemanticScope,
+    metrics: &crate::adaptive3d::ZLevelPlanMetrics,
+) {
+    if !metrics.available {
+        return;
+    }
+    scope.set_param("marching_squares_regions", metrics.marching_squares_regions);
+    scope.set_param("region_areas_mm2", metrics.region_areas_mm2.clone());
+    scope.set_param(
+        "dropped_micro_region_count",
+        metrics.dropped_micro_region_count,
+    );
+    scope.set_param(
+        "perimeter_sweep_length_mm",
+        metrics.perimeter_sweep_length_mm,
+    );
+    scope.set_param("agent_walk_cut_length_mm", metrics.agent_walk_cut_length_mm);
+    scope.set_param(
+        "residual_cleanup_cell_count",
+        metrics.residual_cleanup_cell_count,
+    );
 }
 
 // ── Adaptive 2D ─────────────────────────────────────────────────────

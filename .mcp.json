@@ -2,11 +2,24 @@
   "mcpServers": {
     "rs-cam": {
       "command": "cargo",
-      "args": ["run", "--release", "-p", "rs_cam_viz", "--bin", "rs_cam_gui", "--", "--mcp"]
+      "args": [
+        "run",
+        "--release",
+        "-p",
+        "rs_cam_viz",
+        "--bin",
+        "rs_cam_gui",
+        "--",
+        "--mcp"
+      ],
+      "directTools": true
     },
     "socraticode": {
       "command": "npx",
-      "args": ["-y", "socraticode"]
+      "args": [
+        "-y",
+        "socraticode"
+      ]
     }
   }
 }

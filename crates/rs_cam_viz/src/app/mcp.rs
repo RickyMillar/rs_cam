@@ -645,6 +645,15 @@ impl super::RsCamApp {
             toolpath_name: Some(tc.name.as_str()),
             operation_label: Some(tc.operation.label()),
             depth_per_pass_mm: tc.operation.depth_per_pass(),
+            stepover_mm: tc.operation.stepover(),
+            tool_diameter_mm: Some(tool_config.diameter),
+            feed_rate_mm_min: Some(tc.operation.feed_rate()),
+            spindle_rpm: Some(
+                tc.operation
+                    .spindle_rpm()
+                    .unwrap_or(state.session.post_config().spindle_speed),
+            ),
+            flute_count: Some(tool_config.flute_count),
         };
 
         rs_cam_core::narrate::narrate_toolpath_with_context(
@@ -1957,6 +1966,19 @@ impl super::RsCamApp {
         };
         let tp_id = ToolpathId(tc.id);
 
+        // MCP diagnostics depend on generation debug + semantic traces; enable
+        // capture before queuing compute so get_generation_debug_trace and
+        // narrate_toolpath have structured planner data.
+        if let Some(tc) = self
+            .controller
+            .state_mut()
+            .session
+            .toolpath_configs_mut()
+            .get_mut(index)
+        {
+            tc.debug_options.enabled = true;
+        }
+
         // Push the generate event via the controller
         self.controller
             .events_mut()
@@ -1987,6 +2009,11 @@ impl super::RsCamApp {
             .filter(|tc| tc.enabled)
             .map(|tc| ToolpathId(tc.id))
             .collect();
+        for tc in self.controller.state_mut().session.toolpath_configs_mut() {
+            if tc.enabled {
+                tc.debug_options.enabled = true;
+            }
+        }
 
         if ids.is_empty() {
             let _ = response_tx.send(McpResponse {

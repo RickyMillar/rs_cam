@@ -108,7 +108,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 ### Verification
 
 - tri-dexel stock simulation (Z/X/Y grids, all 6 cardinal face orientations)
-- agent-readable MCP toolpath narration (`narrate_toolpath`) for Z-level structure, suspicious arcs, peak axial DOC, and air-cut summaries
+- agent-readable MCP toolpath narration (`narrate_toolpath`) for Z-level structure, cut-run vs marching-squares region counts, engagement histogram, suspicious arcs, peak axial DOC, and air-cut summaries
 - playback, scrub, and checkpoints
 - tool visualization during playback
 - holder/shank collision checks
