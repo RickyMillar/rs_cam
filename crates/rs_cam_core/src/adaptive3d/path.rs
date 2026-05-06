@@ -20,10 +20,10 @@ use super::clearing::{
     ClearZLevelContext, clear_z_level_adaptive, clear_z_level_agent_2d_slice,
     clear_z_level_contour_parallel, detect_material_regions, waterline_cleanup,
 };
-use super::search::blend_corners_3d;
+use super::search::{blend_corners_3d, material_remaining_at_level_diag};
 use super::{
     Adaptive3dParams, Adaptive3dRuntimeAnnotation, Adaptive3dRuntimeEvent, ClearingStrategy3d,
-    EntryStyle3d, RegionOrdering,
+    EntryStyle3d, RegionOrdering, ZLevelPlanMetrics,
 };
 
 /// Peck the descent from `start_z` down to `entry.z` at constant XY.
@@ -69,7 +69,75 @@ pub(super) enum Adaptive3dSegment {
     Marker(Adaptive3dRuntimeEvent),
 }
 
+// ── Per-Z debug span ──────────────────────────────────────────────────
+
+/// Per-Z tally returned by [`tally_segments_for_z_level`].
+///
+/// `cut_path_points` is the upper bound on planner stamp calls for the
+/// level (each Cut path point becomes one `stamp_tool_at`). Pair it
+/// with `rapid_segs + link_segs` — each rapid expands to at least one
+/// peck-plunge feed that the simulator stamps but the planner does
+/// not, so a large `rapid_segs` value next to a small
+/// `material_remaining_post` is a hint the planner's accounting is
+/// missing real material removal happening at entry/transit moves.
+struct ZLevelSegmentTally {
+    cut_segs: u64,
+    rapid_segs: u64,
+    link_segs: u64,
+    cut_mm: f64,
+    cut_path_points: u64,
+}
+
+/// Tally Cut/Rapid/Link counts and Cut path length+points for a slice
+/// of segments emitted by one Z-level's clearing dispatch.
+fn tally_segments_for_z_level(segments: &[Adaptive3dSegment]) -> ZLevelSegmentTally {
+    let mut tally = ZLevelSegmentTally {
+        cut_segs: 0,
+        rapid_segs: 0,
+        link_segs: 0,
+        cut_mm: 0.0,
+        cut_path_points: 0,
+    };
+    for seg in segments {
+        match seg {
+            Adaptive3dSegment::Cut(path) => {
+                tally.cut_segs += 1;
+                tally.cut_path_points += path.len() as u64;
+                for pair in path.windows(2) {
+                    if let [a, b] = pair {
+                        let dx = b.x - a.x;
+                        let dy = b.y - a.y;
+                        let dz = b.z - a.z;
+                        tally.cut_mm += (dx * dx + dy * dy + dz * dz).sqrt();
+                    }
+                }
+            }
+            Adaptive3dSegment::Rapid(_) | Adaptive3dSegment::RapidWithFloor { .. } => {
+                tally.rapid_segs += 1;
+            }
+            Adaptive3dSegment::Link(_) => tally.link_segs += 1,
+            Adaptive3dSegment::Marker(_) => {}
+        }
+    }
+    tally
+}
+
 // ── Main loop ─────────────────────────────────────────────────────────
+
+/// Output of [`adaptive_3d_segments`]. The `final_material_stock` and
+/// `surface_heightmap` fields are exposed so tests can compare the
+/// planner's internal dexel state against an independent simulator
+/// replay of the emitted toolpath — see
+/// `tests/adaptive3d_planner_sim_dexel_parity.rs`.
+pub(super) struct Adaptive3dSegmentsResult {
+    pub segments: Vec<Adaptive3dSegment>,
+    /// Test-only: planner's internal dexel state at the end of the run.
+    #[allow(dead_code)]
+    pub final_material_stock: TriDexelStock,
+    /// Test-only: heightmap used to surface-drape Cut paths.
+    #[allow(dead_code)]
+    pub surface_heightmap: SurfaceHeightmap,
+}
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub(super) fn adaptive_3d_segments(
@@ -79,7 +147,7 @@ pub(super) fn adaptive_3d_segments(
     params: &Adaptive3dParams,
     debug_ctx: Option<&ToolpathDebugContext>,
     cancel: &dyn CancelCheck,
-) -> Result<Vec<Adaptive3dSegment>, Cancelled> {
+) -> Result<Adaptive3dSegmentsResult, Cancelled> {
     let tool_radius = params.tool_radius;
     let r = cutter.radius();
 
@@ -376,6 +444,8 @@ pub(super) fn adaptive_3d_segments(
         bbox_y_max,
         clearing_strategy: params.clearing_strategy,
         z_blend: params.z_blend,
+        safe_z: params.safe_z,
+        min_cutting_radius: params.min_cutting_radius,
     };
 
     let mut segments = Vec::new();
@@ -432,16 +502,46 @@ pub(super) fn adaptive_3d_segments(
 
                 for (li, &z_level) in region_z_levels.iter().enumerate() {
                     check_cancel(cancel)?;
-                    segments.push(Adaptive3dSegment::Marker(
-                        Adaptive3dRuntimeEvent::RegionZLevel {
-                            region_index: region_idx + 1,
+                    let level_event = Adaptive3dRuntimeEvent::RegionZLevel {
+                        region_index: region_idx + 1,
+                        z_level,
+                        level_index: li + 1,
+                        level_total: region_z_levels.len(),
+                        metrics: ZLevelPlanMetrics::default(),
+                    };
+                    let level_scope = debug_ctx.map(|dctx| {
+                        let scope = dctx.start_span(
+                            "z_level_clear",
+                            format!(
+                                "Region {} Z {:.3} ({}/{})",
+                                region_idx + 1,
+                                z_level,
+                                li + 1,
+                                region_z_levels.len()
+                            ),
+                        );
+                        scope.set_z_level(z_level);
+                        scope.set_counter("region_index", (region_idx + 1) as f64);
+                        let diag = material_remaining_at_level_diag(
+                            &material_stock,
+                            &surface_hm,
                             z_level,
-                            level_index: li + 1,
-                            level_total: region_z_levels.len(),
-                        },
-                    ));
+                            ctx.stock_to_leave,
+                        );
+                        scope.set_counter("material_remaining_pre", diag.fraction);
+                        scope.set_counter("floor_cells_total", diag.cells_total as f64);
+                        scope.set_counter("floor_cells_at_z", diag.cells_at_z as f64);
+                        scope.set_counter("floor_cells_surf_above", diag.cells_surf_above as f64);
+                        scope.set_counter(
+                            "floor_cells_with_material",
+                            diag.cells_with_material as f64,
+                        );
+                        scope
+                    });
+                    let segs_before = segments.len();
                     match ctx.clearing_strategy {
                         ClearingStrategy3d::ContourParallel => {
+                            segments.push(Adaptive3dSegment::Marker(level_event));
                             clear_z_level_contour_parallel(
                                 &ctx,
                                 &mut material_stock,
@@ -454,6 +554,7 @@ pub(super) fn adaptive_3d_segments(
                             )?;
                         }
                         ClearingStrategy3d::Adaptive => {
+                            segments.push(Adaptive3dSegment::Marker(level_event));
                             clear_z_level_adaptive(
                                 &ctx,
                                 &mut material_stock,
@@ -474,9 +575,30 @@ pub(super) fn adaptive_3d_segments(
                                 &mut segments,
                                 &mut last_pos,
                                 Some(region),
+                                Some(level_event),
                                 cancel,
                             )?;
                         }
+                    }
+                    if let Some(scope) = level_scope {
+                        let tally = tally_segments_for_z_level(&segments[segs_before..]);
+                        scope.set_counter("planner_cut_segments", tally.cut_segs as f64);
+                        scope.set_counter("planner_rapid_segments", tally.rapid_segs as f64);
+                        scope.set_counter("planner_link_segments", tally.link_segs as f64);
+                        scope.set_counter("planner_cut_mm", tally.cut_mm);
+                        scope.set_counter("planner_cut_path_points", tally.cut_path_points as f64);
+                        let diag_post = material_remaining_at_level_diag(
+                            &material_stock,
+                            &surface_hm,
+                            z_level,
+                            ctx.stock_to_leave,
+                        );
+                        scope.set_counter("material_remaining_post", diag_post.fraction);
+                        scope.set_counter(
+                            "floor_cells_with_material_post",
+                            diag_post.cells_with_material as f64,
+                        );
+                        scope.finish();
                     }
                 }
             }
@@ -496,6 +618,9 @@ pub(super) fn adaptive_3d_segments(
                     z_bottom_level,
                     tool_radius,
                     cell_size,
+                    params.safe_z,
+                    params.tolerance,
+                    params.min_cutting_radius,
                     &mut segments,
                     &mut last_pos,
                     debug_ctx,
@@ -506,15 +631,35 @@ pub(super) fn adaptive_3d_segments(
         RegionOrdering::Global => {
             for (level_idx, &z_level) in z_levels.iter().enumerate() {
                 check_cancel(cancel)?;
-                segments.push(Adaptive3dSegment::Marker(
-                    Adaptive3dRuntimeEvent::GlobalZLevel {
+                let level_event = Adaptive3dRuntimeEvent::GlobalZLevel {
+                    z_level,
+                    level_index: level_idx + 1,
+                    level_total: z_levels.len(),
+                    metrics: ZLevelPlanMetrics::default(),
+                };
+                let level_scope = debug_ctx.map(|dctx| {
+                    let scope = dctx.start_span(
+                        "z_level_clear",
+                        format!("Z {:.3} ({}/{})", z_level, level_idx + 1, z_levels.len()),
+                    );
+                    scope.set_z_level(z_level);
+                    let diag = material_remaining_at_level_diag(
+                        &material_stock,
+                        &surface_hm,
                         z_level,
-                        level_index: level_idx + 1,
-                        level_total: z_levels.len(),
-                    },
-                ));
+                        ctx.stock_to_leave,
+                    );
+                    scope.set_counter("material_remaining_pre", diag.fraction);
+                    scope.set_counter("floor_cells_total", diag.cells_total as f64);
+                    scope.set_counter("floor_cells_at_z", diag.cells_at_z as f64);
+                    scope.set_counter("floor_cells_surf_above", diag.cells_surf_above as f64);
+                    scope.set_counter("floor_cells_with_material", diag.cells_with_material as f64);
+                    scope
+                });
+                let segs_before = segments.len();
                 match ctx.clearing_strategy {
                     ClearingStrategy3d::ContourParallel => {
+                        segments.push(Adaptive3dSegment::Marker(level_event));
                         clear_z_level_contour_parallel(
                             &ctx,
                             &mut material_stock,
@@ -527,6 +672,7 @@ pub(super) fn adaptive_3d_segments(
                         )?;
                     }
                     ClearingStrategy3d::Adaptive => {
+                        segments.push(Adaptive3dSegment::Marker(level_event));
                         clear_z_level_adaptive(
                             &ctx,
                             &mut material_stock,
@@ -547,9 +693,30 @@ pub(super) fn adaptive_3d_segments(
                             &mut segments,
                             &mut last_pos,
                             None,
+                            Some(level_event),
                             cancel,
                         )?;
                     }
+                }
+                if let Some(scope) = level_scope {
+                    let tally = tally_segments_for_z_level(&segments[segs_before..]);
+                    scope.set_counter("planner_cut_segments", tally.cut_segs as f64);
+                    scope.set_counter("planner_rapid_segments", tally.rapid_segs as f64);
+                    scope.set_counter("planner_link_segments", tally.link_segs as f64);
+                    scope.set_counter("planner_cut_mm", tally.cut_mm);
+                    scope.set_counter("planner_cut_path_points", tally.cut_path_points as f64);
+                    let diag_post = material_remaining_at_level_diag(
+                        &material_stock,
+                        &surface_hm,
+                        z_level,
+                        ctx.stock_to_leave,
+                    );
+                    scope.set_counter("material_remaining_post", diag_post.fraction);
+                    scope.set_counter(
+                        "floor_cells_with_material_post",
+                        diag_post.cells_with_material as f64,
+                    );
+                    scope.finish();
                 }
 
                 // Waterline cleanup at every Z-level. Historically this only
@@ -570,6 +737,9 @@ pub(super) fn adaptive_3d_segments(
                     z_level,
                     tool_radius,
                     cell_size,
+                    params.safe_z,
+                    params.tolerance,
+                    params.min_cutting_radius,
                     &mut segments,
                     &mut last_pos,
                     debug_ctx,
@@ -579,7 +749,11 @@ pub(super) fn adaptive_3d_segments(
         }
     }
 
-    Ok(segments)
+    Ok(Adaptive3dSegmentsResult {
+        segments,
+        final_material_stock: material_stock,
+        surface_heightmap: surface_hm,
+    })
 }
 
 // ── Public API ────────────────────────────────────────────────────────
