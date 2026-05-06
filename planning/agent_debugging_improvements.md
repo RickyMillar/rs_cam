@@ -277,3 +277,191 @@ This is the kind of workflow that makes an agent useful for CAM debugging instea
 ---
 
 *Drafted 2026-05-06 by Claude Opus 4.7 after the wanaka arc-fit debugging session. The arc-fit chord-deviation bug, in particular, would have been a 30-second fix instead of a 2-hour investigation if this tool existed.*
+
+---
+
+# Addendum 2026-05-06: narrate v2 wishlist
+
+`narrate_toolpath` v1 shipped (commit `4826783`, tag
+`rough-working-needs-tuning`) and immediately paid for itself —
+wanaka air-cut diagnosis went from "clusters of screenshots + custom
+Rust tests" to one tool call. After using it on wanaka the
+following gaps surfaced; this section is the brief for the agent
+that picks up v2.
+
+## v2 goal
+
+Make `narrate_toolpath` answer the next class of questions without
+me writing one-off diagnostics. Specifically:
+
+1. **"Where does the air cut come from?"** — currently narrate reports
+   the `air_cut_percentage` rollup but doesn't say what's driving it.
+2. **"Is the bool grid behaving sensibly at each Z?"** — currently
+   narrate guesses from move clustering (calls them "region/run(s)"
+   ambiguously). The actual marching-squares region count + areas live
+   in the engine but never reach the agent.
+3. **"What did the AgentSearch walk actually do at z=N?"** — currently
+   narrate has no per-pass behavioural summary; the
+   `get_generation_debug_trace` tool returns empty for adaptive3d.
+4. **"Why did this specific sample read what it read?"** — was the
+   `explain_sample` tool from v1; deferred for now.
+
+## Concrete additions
+
+### A. Radial-engagement histogram in narrate
+
+Add a histogram section to the `narrate_toolpath` output, bucketing
+in-cut samples by `radial_engagement`:
+
+```
+Engagement distribution (in-cut samples only, n=12 044):
+  air      [0.00 .. 0.02]  — 81.3% (9 791) ← most cuts barely scrape sidewall
+  thin     [0.02 .. 0.10]  —  9.4% (1 132)
+  light    [0.10 .. 0.30]  —  6.1%   (734)
+  normal   [0.30 .. 0.70]  —  2.8%   (337)
+  heavy    [0.70 ..    ]  —  0.4%    (50)
+```
+
+Why: on wanaka, knowing 81% of samples land in the 0–2% bucket
+(rather than e.g. 80% in the 10–14% bucket as planned by stepover)
+distinguishes a bad ENGAGEMENT METRIC from a bad PLANNER. The single
+"air_cut_percentage" number can't make that distinction.
+
+Implementation: walk `cut_trace.samples`, filter `is_cutting=true`,
+bucket by `radial_engagement` into the 5 ranges above, emit one line
+per non-empty bucket. ~30 LOC.
+
+### B. True per-Z region counts from the engine, not move-inferred
+
+Currently narrate calls move clusters "region/run(s)" — terminology
+fix landed in v1 but the underlying numbers are still misleading.
+What we actually want:
+
+- **marching_squares_regions** at this Z: how many polygon regions
+  the bool grid produced (came from `detect_containment`).
+- **cut_runs** at this Z: how many separate cut sequences the
+  toolpath emits (current narrate behaviour, kept).
+
+These tell different stories. Wanaka has 1 marching-squares region
+per Z but 24 cut runs (from the agent's offset spiral). That divergence
+itself is diagnostic — "lots of cut runs in 1 region" means "agent
+walk is fragmenting", "lots of regions" means "material is fragmented".
+
+Implementation: extend the existing `Adaptive3dRuntimeEvent` enum
+to carry per-Z region counts and areas (already computed in
+`clear_z_level_agent_2d_slice`, just not surfaced). Narrate consumes
+them via the semantic_trace if present. Falls back to current
+move-inference if trace is absent.
+
+Existing event types live in `crates/rs_cam_core/src/adaptive3d/mod.rs`
+around `Adaptive3dRuntimeEvent::GlobalZLevel`. Add fields like:
+
+```rust
+GlobalZLevel {
+    z_level: f64,
+    level_index: usize,
+    level_total: usize,
+    // NEW:
+    marching_squares_regions: usize,
+    region_areas_mm2: Vec<f64>,    // cap to top 10
+    perimeter_sweep_length_mm: f64,
+    agent_walk_cut_length_mm: f64,
+    residual_cleanup_cell_count: usize,
+}
+```
+
+### C. Surface why the semantic / debug traces are empty for adaptive3d
+
+The `get_generation_debug_trace` tool returns:
+
+> "Toolpath 1 has no debug trace — the operation generator didn't
+>  capture one."
+
+…even though `path.rs` clearly threads `debug_ctx` through every
+sub-stage. Investigate why the trace is empty after generation. Likely
+either (a) the recorder isn't being given root context for adaptive3d,
+or (b) the `core_scope` debug span is being dropped before its
+children can attach.
+
+Once the trace is populated, narrate can read structured per-pass
+events (`z_level`, `entry_search`, `agent2d_region`, `waterline_cleanup`,
+`residual_cleanup`) and emit per-Z timing + outcome:
+
+```
+z=22 — 24 regions, 3 dropped (sub-tool), 21 cleared, 1.2s elapsed.
+       Agent walk: 21 entries, 21 successful, max idle_count 3.
+       Perimeter sweep: 1413mm in 198 arcs.
+       Residual cleanup: 0 cells.
+```
+
+This is the "what did the planner actually do" view that's missing
+today.
+
+### D. Operation-config awareness in narrate
+
+Currently narrate doesn't know the operation's config (stepover,
+depth_per_pass, feed/RPM, boundary). It infers `depth_per_pass` from
+Z spacing. Pass the toolpath's `OperationConfig` into the narrator so
+it can:
+
+- Flag samples where `axial_doc > depth_per_pass × 1.5` ("DOC
+  exceeds commanded depth").
+- Compare `chipload_mm_per_tooth` to operation's `feed/(rpm × flutes)`
+  to detect mid-toolpath feed changes.
+- Mention "stepover 0.84mm = 14% of tool diameter — narrow, expect
+  many low-engagement samples" up front, so the air-cut % is
+  pre-explained rather than surprising.
+
+### E. Cross-toolpath project narration
+
+Optional — out of scope for v2 unless cheap. A `narrate_project()`
+tool that surfaces project-level anomalies:
+
+- Toolpaths in dependency order (Pin Drill → Back Rough → Holes).
+- Tool changes between TPs (which way? big-to-small? unusual?).
+- Total runtime breakdown by tool / operation type.
+- Verdicts rolled up per criterion.
+
+Could be `narrate_project()` returning the same prose-first format
+across all toolpaths.
+
+## Out of scope for v2
+
+- `query_moves` DSL (still wanted, separate tool).
+- Annotated SVG export.
+- `explain_sample` (still wanted, separate tool).
+- Re-architecting how cut_trace / semantic_trace store data — keep
+  building on top.
+
+## Suggested implementation order
+
+1. **A (engagement histogram)** — ~30 LOC, biggest immediate diagnosis
+   payoff. Ships in one PR.
+2. **B (true region counts)** — needs a small enum extension + a
+   producer in clearing.rs. Ship next.
+3. **C (debug trace investigation)** — investigation first, fix
+   second. May or may not be a quick win.
+4. **D (operation-config awareness)** — straightforward, surfaces
+   implicit assumptions.
+5. **E (project narration)** — optional, judge after A-D shipped.
+
+## Calibration: how an agent would use v2
+
+Current narrate output answer: "air cut is 81%, here are some
+anomalies, oh well."
+
+After A: "air cut is 81% AND 81% of in-cut samples are in the
+0–2% engagement bucket — so the planner's emitting moves at low
+engagement, not just bad metric calibration. Look at stepover."
+
+After B: "single region per Z, 1 perimeter sweep ~377mm, 24 cut
+runs from agent walk — air cut isn't from fragmented material,
+it's from the perimeter sweep covering 100mm of mostly-air at every
+Z."
+
+After C: "z=22 perimeter sweep took 1.2s of cutting time but only
+removed 8mm³ of stock. Most of the silhouette boundary at z=22 has
+no material above. Skip the perimeter sweep at this Z."
+
+That last conclusion is the kind of thing an agent should be able
+to reach in one tool call rather than two hours of debugging.
