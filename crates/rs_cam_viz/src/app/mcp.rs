@@ -2596,9 +2596,10 @@ fn build_per_depth_pass_summary(
         for (i, span) in spans.iter().enumerate() {
             if span.kind == SpanKind::DepthPass {
                 let (z, p) = match &span.payload {
-                    Some(SpanPayload::DepthPass { z_level, pass_index }) => {
-                        (Some(*z_level), Some(*pass_index))
-                    }
+                    Some(SpanPayload::DepthPass {
+                        z_level,
+                        pass_index,
+                    }) => (Some(*z_level), Some(*pass_index)),
                     _ => (None, None),
                 };
                 depth_pass_meta.push((i, z, p));
@@ -2621,16 +2622,13 @@ fn build_per_depth_pass_summary(
 
         for sample in trace.samples.iter().filter(|s| s.toolpath_id == tc.id) {
             // Find the DepthPass id in this sample's span_path.
-            let pass_pos = sample
-                .span_path
-                .iter()
-                .find_map(|SpanId(id)| {
-                    if depth_pass_ids.contains(id) {
-                        pass_index_of.get(id).copied()
-                    } else {
-                        None
-                    }
-                });
+            let pass_pos = sample.span_path.iter().find_map(|SpanId(id)| {
+                if depth_pass_ids.contains(id) {
+                    pass_index_of.get(id).copied()
+                } else {
+                    None
+                }
+            });
             if let Some(pos) = pass_pos {
                 #[allow(clippy::indexing_slicing)] // pos came from pass_index_of
                 accs[pos].observe(sample);
@@ -2680,11 +2678,12 @@ impl DepthPassAcc {
         self.sample_count += 1;
         if sample.is_cutting {
             self.cutting_runtime_s += sample.segment_time_s;
-            self.engagement_time_weighted_sum +=
-                sample.radial_engagement * sample.segment_time_s;
+            self.engagement_time_weighted_sum += sample.radial_engagement * sample.segment_time_s;
             self.removed_volume_mm3 += sample.removed_volume_est_mm3.max(0.0);
         }
-        self.peak_chipload = self.peak_chipload.max(sample.chipload_mm_per_tooth.max(0.0));
+        self.peak_chipload = self
+            .peak_chipload
+            .max(sample.chipload_mm_per_tooth.max(0.0));
         self.peak_axial_doc = self.peak_axial_doc.max(sample.axial_doc_mm.max(0.0));
     }
 
@@ -2721,7 +2720,11 @@ fn expand_span_kind_synonyms(span_kind: &str) -> Vec<String> {
         // Other SpanKind names have no debug-trace generators yet — return
         // an empty set so the filter matches nothing rather than falsely
         // matching by string.
-        "operation" | "region" | "lead_out" | "link_bridge" | "dressup_artifact"
+        "operation"
+        | "region"
+        | "lead_out"
+        | "link_bridge"
+        | "dressup_artifact"
         | "rapid_order_barrier" => Vec::new(),
         // Fallback: treat as a literal debug-trace kind.
         other => vec![other.to_owned()],

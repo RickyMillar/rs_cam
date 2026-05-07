@@ -790,7 +790,9 @@ fn draw_span_kind_breakdown(
         };
         b.n += 1;
         b.sum_eng += s.radial_engagement;
-        let chip = s.effective_chip_thickness_mm.unwrap_or(s.chipload_mm_per_tooth);
+        let chip = s
+            .effective_chip_thickness_mm
+            .unwrap_or(s.chipload_mm_per_tooth);
         b.sum_chip += chip;
         if chip > b.peak_chip {
             b.peak_chip = chip;

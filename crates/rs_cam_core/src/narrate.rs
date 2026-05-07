@@ -13,7 +13,7 @@ use crate::geo::P3;
 use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticTrace};
 use crate::simulation_cut::SimulationCutTrace;
 use crate::tool::{MillingCutter, ToolDefinition};
-use crate::toolpath::{MoveType, Toolpath};
+use crate::toolpath::{Move, MoveType, Toolpath};
 use crate::toolpath_spans::{AnnotatedToolpath, SpanKind, SpanPayload};
 
 const Z_EPSILON_MM: f64 = 0.05;
@@ -69,6 +69,56 @@ impl ZLevelSummary {
             agent_walk_cut_length_mm: None,
             residual_cleanup_cell_count: None,
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ZLevelAccumulator {
+    summary: ZLevelSummary,
+    centroid_sum_x: f64,
+    centroid_sum_y: f64,
+    cutting_xy: Vec<(f64, f64)>,
+}
+
+impl ZLevelAccumulator {
+    fn new(z: f64) -> Self {
+        Self {
+            summary: ZLevelSummary::new(z),
+            centroid_sum_x: 0.0,
+            centroid_sum_y: 0.0,
+            cutting_xy: Vec::new(),
+        }
+    }
+
+    fn observe_cutting_move(&mut self, mv: &Move, prior_target: Option<P3>, cut_run_id: usize) {
+        self.summary.cutting_moves += 1;
+        self.summary.cut_run_ids.insert(cut_run_id);
+        if matches!(
+            mv.move_type,
+            MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
+        ) {
+            self.summary.arc_moves += 1;
+        }
+        if let Some(prev) = prior_target {
+            self.summary.cutting_distance_mm += (mv.target - prev).norm();
+        }
+        self.centroid_sum_x += mv.target.x;
+        self.centroid_sum_y += mv.target.y;
+        self.cutting_xy.push((mv.target.x, mv.target.y));
+    }
+
+    fn finish(mut self) -> ZLevelSummary {
+        let count = self.cutting_xy.len();
+        if count > 0 {
+            let center_x = self.centroid_sum_x / count as f64;
+            let center_y = self.centroid_sum_y / count as f64;
+            self.summary.max_radius_from_centroid_mm = self
+                .cutting_xy
+                .iter()
+                .map(|(x, y)| ((x - center_x).powi(2) + (y - center_y).powi(2)).sqrt())
+                .fold(0.0, f64::max);
+        }
+        self.summary
     }
 }
 
@@ -169,8 +219,11 @@ pub fn narrate_toolpath_with_context(
             ring_items
         ));
     } else {
-        output.push_str("Semantic trace: not available; Z-level structure inferred from moves.\n");
+        output.push_str("Semantic trace: not available.\n");
     }
+    output.push_str("Z-level source: ");
+    output.push_str(z_level_source_label(annotated));
+    output.push_str(".\n");
 
     if let Some(trace) = debug_trace {
         output.push_str(&format!(
@@ -341,6 +394,21 @@ fn format_count(count: usize) -> String {
     out.chars().rev().collect()
 }
 
+fn z_level_source_label(annotated: &AnnotatedToolpath) -> &'static str {
+    if annotated.spans_valid
+        && annotated
+            .spans_of_kind(SpanKind::DepthPass)
+            .next()
+            .is_some()
+    {
+        "DepthPass spans"
+    } else if annotated.spans_valid {
+        "raw-move fallback (no DepthPass spans present)"
+    } else {
+        "raw-move fallback (spans invalidated by a move-remapping transform)"
+    }
+}
+
 fn summarize_z_levels(
     annotated: &AnnotatedToolpath,
     semantic_trace: Option<&ToolpathSemanticTrace>,
@@ -376,47 +444,7 @@ where
             _ => representative_cut_z_in_range(toolpath, span.start_move, span.end_move)
                 .unwrap_or(0.0),
         };
-        let mut summary = ZLevelSummary::new(z);
-        let mut prior_target: Option<P3> = None;
-        let mut in_cut_run = false;
-        let mut active_cut_run_id = 0usize;
-        let end = span.end_move.min(toolpath.moves.len());
-        for (idx, mv) in toolpath
-            .moves
-            .iter()
-            .enumerate()
-            .take(end)
-            .skip(span.start_move)
-        {
-            let _ = idx;
-            let is_cutting = mv.move_type.is_cutting();
-            if !is_cutting {
-                prior_target = Some(mv.target);
-                in_cut_run = false;
-                continue;
-            }
-            if !in_cut_run {
-                active_cut_run_id += 1;
-                in_cut_run = true;
-            }
-            summary.cutting_moves += 1;
-            summary.cut_run_ids.insert(active_cut_run_id);
-            if matches!(
-                mv.move_type,
-                MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
-            ) {
-                summary.arc_moves += 1;
-            }
-            if let Some(prev) = prior_target {
-                summary.cutting_distance_mm += (mv.target - prev).norm();
-            }
-            prior_target = Some(mv.target);
-        }
-        let (center_x, center_y, count) = cutting_centroid_at_z(toolpath, z);
-        if count > 0 {
-            summary.max_radius_from_centroid_mm =
-                max_radius_from_centroid(toolpath, z, center_x, center_y);
-        }
+        let mut summary = summarize_depth_pass_range(toolpath, span.start_move, span.end_move, z);
         if let Some(trace) = semantic_trace {
             apply_semantic_level_metrics(&mut summary, trace);
         }
@@ -426,24 +454,54 @@ where
     levels
 }
 
+fn summarize_depth_pass_range(
+    toolpath: &Toolpath,
+    start: usize,
+    end: usize,
+    z: f64,
+) -> ZLevelSummary {
+    let mut accumulator = ZLevelAccumulator::new(z);
+    let mut prior_target: Option<P3> = None;
+    let mut in_cut_run = false;
+    let mut active_cut_run_id = 0usize;
+    let end = end.min(toolpath.moves.len());
+    for mv in toolpath.moves.iter().take(end).skip(start) {
+        let is_cutting = mv.move_type.is_cutting();
+        if !is_cutting {
+            prior_target = Some(mv.target);
+            in_cut_run = false;
+            continue;
+        }
+        if !in_cut_run {
+            active_cut_run_id += 1;
+            in_cut_run = true;
+        }
+        accumulator.observe_cutting_move(mv, prior_target, active_cut_run_id);
+        prior_target = Some(mv.target);
+    }
+    accumulator.finish()
+}
+
 fn representative_cut_z_in_range(toolpath: &Toolpath, start: usize, end: usize) -> Option<f64> {
     toolpath
         .moves
         .iter()
-        .enumerate()
         .skip(start)
         .take(end.saturating_sub(start))
-        .find(|(_, mv)| mv.move_type.is_cutting())
-        .map(|(_, mv)| mv.target.z)
+        .find(|mv| mv.move_type.is_cutting())
+        .map(|mv| mv.target.z)
 }
 
 /// Legacy Z-level discovery: cluster cutting move Z-coordinates with
-/// `Z_EPSILON_MM`. Used only when the toolpath has no DepthPass spans.
+/// `Z_EPSILON_MM`. Kept for toolpaths that genuinely lack valid DepthPass spans:
+/// the core session bridge still wraps raw Toolpaths with empty spans (S1.5
+/// pending), and boundary clipping currently invalidates spans until the S83
+/// remap lands.
 fn summarize_z_levels_from_moves(
     toolpath: &Toolpath,
     semantic_trace: Option<&ToolpathSemanticTrace>,
 ) -> Vec<ZLevelSummary> {
-    let mut levels = Vec::<ZLevelSummary>::new();
+    let mut levels = Vec::<ZLevelAccumulator>::new();
     let mut prior_target: Option<P3> = None;
     let mut in_cut_run = false;
     let mut active_cut_run_id = 0usize;
@@ -462,77 +520,39 @@ fn summarize_z_levels_from_moves(
         }
 
         let z = mv.target.z;
-        let summary = find_or_create_level(&mut levels, z);
-        summary.cutting_moves += 1;
-        summary.cut_run_ids.insert(active_cut_run_id);
-        if matches!(
-            mv.move_type,
-            MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
-        ) {
-            summary.arc_moves += 1;
-        }
-        if let Some(prev) = prior_target {
-            summary.cutting_distance_mm += (mv.target - prev).norm();
-        }
+        let accumulator = find_or_create_level_accumulator(&mut levels, z);
+        accumulator.observe_cutting_move(mv, prior_target, active_cut_run_id);
         prior_target = Some(mv.target);
     }
 
-    for level in &mut levels {
-        let (center_x, center_y, count) = cutting_centroid_at_z(toolpath, level.z);
-        if count > 0 {
-            level.max_radius_from_centroid_mm =
-                max_radius_from_centroid(toolpath, level.z, center_x, center_y);
-        }
+    let mut summaries: Vec<_> = levels.into_iter().map(ZLevelAccumulator::finish).collect();
+    for level in &mut summaries {
         if let Some(trace) = semantic_trace {
             apply_semantic_level_metrics(level, trace);
         }
     }
 
-    levels.sort_by(|a, b| b.z.partial_cmp(&a.z).unwrap_or(Ordering::Equal));
-    levels
+    summaries.sort_by(|a, b| b.z.partial_cmp(&a.z).unwrap_or(Ordering::Equal));
+    summaries
 }
 
-fn find_or_create_level(levels: &mut Vec<ZLevelSummary>, z: f64) -> &mut ZLevelSummary {
+fn find_or_create_level_accumulator(
+    levels: &mut Vec<ZLevelAccumulator>,
+    z: f64,
+) -> &mut ZLevelAccumulator {
     if let Some(pos) = levels
         .iter()
-        .position(|level| (level.z - z).abs() <= Z_EPSILON_MM)
+        .position(|level| (level.summary.z - z).abs() <= Z_EPSILON_MM)
     {
         // SAFETY: `pos` came from `levels.iter().position`, so it is in bounds.
         #[allow(clippy::indexing_slicing)]
         return &mut levels[pos];
     }
-    levels.push(ZLevelSummary::new(z));
+    levels.push(ZLevelAccumulator::new(z));
     let last_index = levels.len() - 1;
     // SAFETY: we just pushed one element, so the last element exists.
     #[allow(clippy::indexing_slicing)]
     &mut levels[last_index]
-}
-
-fn cutting_centroid_at_z(toolpath: &Toolpath, z: f64) -> (f64, f64, usize) {
-    let mut sum_x = 0.0;
-    let mut sum_y = 0.0;
-    let mut count = 0usize;
-    for mv in &toolpath.moves {
-        if mv.move_type.is_cutting() && (mv.target.z - z).abs() <= Z_EPSILON_MM {
-            sum_x += mv.target.x;
-            sum_y += mv.target.y;
-            count += 1;
-        }
-    }
-    if count == 0 {
-        (0.0, 0.0, 0)
-    } else {
-        (sum_x / count as f64, sum_y / count as f64, count)
-    }
-}
-
-fn max_radius_from_centroid(toolpath: &Toolpath, z: f64, center_x: f64, center_y: f64) -> f64 {
-    toolpath
-        .moves
-        .iter()
-        .filter(|mv| mv.move_type.is_cutting() && (mv.target.z - z).abs() <= Z_EPSILON_MM)
-        .map(|mv| ((mv.target.x - center_x).powi(2) + (mv.target.y - center_y).powi(2)).sqrt())
-        .fold(0.0, f64::max)
 }
 
 fn apply_semantic_level_metrics(level: &mut ZLevelSummary, trace: &ToolpathSemanticTrace) {
@@ -1010,11 +1030,10 @@ mod tests {
         let n = toolpath.moves.len();
         let spans = vec![
             Span::new(0, n, SpanKind::Operation),
-            Span::new(0, n, SpanKind::DepthPass)
-                .with_payload(SpanPayload::DepthPass {
-                    z_level: 22.0,
-                    pass_index: 0,
-                }),
+            Span::new(0, n, SpanKind::DepthPass).with_payload(SpanPayload::DepthPass {
+                z_level: 22.0,
+                pass_index: 0,
+            }),
         ];
         let annotated = AnnotatedToolpath::with_spans(toolpath, spans);
         let tool = build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill));
