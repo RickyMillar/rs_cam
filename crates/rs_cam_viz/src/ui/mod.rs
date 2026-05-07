@@ -108,12 +108,6 @@ pub enum AppEvent {
     SimJumpToMove(usize),
     SimJumpToOpStart(usize),
     SimJumpToOpEnd(usize),
-    /// Jump playhead to the start of the previous DepthPass span on the
-    /// currently focused toolpath. No-op if no DepthPass spans exist.
-    SimJumpToPrevPass,
-    /// Jump playhead to the start of the next DepthPass span on the
-    /// currently focused toolpath. No-op if no DepthPass spans exist.
-    SimJumpToNextPass,
 
     // Pre-flight / Export
     ExportGcodeConfirmed,

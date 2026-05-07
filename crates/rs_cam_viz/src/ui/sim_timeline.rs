@@ -65,7 +65,7 @@ pub fn draw(
         &active_semantic,
         events,
     );
-    draw_signal_spine(ui, sim, session, events);
+    draw_signal_spine(ui, sim, session, gui, events);
 }
 
 fn draw_verdict_hud(
@@ -195,6 +195,7 @@ fn draw_signal_spine(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
     session: &ProjectSession,
+    gui: &GuiState,
     events: &mut Vec<AppEvent>,
 ) {
     // Signal graphs only render when cut-metric capture was on for the
@@ -329,6 +330,37 @@ fn draw_signal_spine(
         .map(|b| (b.start_move as f64, b.end_move as f64))
         .unwrap_or((0.0, total_moves_f));
 
+    // DepthPass bands behind every track. Computed once and reused so each
+    // track polygon renders at exactly the same X positions as the others
+    // and as the timeline ribbon. Each entry is (global_start, global_end,
+    // is_scope_selected). When the chip-row scope picks a DepthPass on the
+    // focused TP, that band is brighter; otherwise alternating shades give
+    // pass boundaries a faint visual rhythm without explicit lines.
+    let pass_bands: Vec<(f64, f64, bool)> = focused_id
+        .and_then(|id| {
+            let boundary = sim.boundaries().iter().find(|b| b.id == id)?;
+            let rt = gui.toolpath_rt.get(&id.0)?;
+            let result = rt.result.as_ref()?;
+            if !result.spans_valid() {
+                return None;
+            }
+            let spans = result.spans();
+            let scope_span_id = sim.debug.span_scope.span_id;
+            let bands: Vec<(f64, f64, bool)> = spans
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| matches!(s.kind, rs_cam_core::toolpath_spans::SpanKind::DepthPass))
+                .map(|(idx, s)| {
+                    let g_start = (boundary.start_move + s.start_move) as f64;
+                    let g_end = (boundary.start_move + s.end_move) as f64;
+                    let selected = scope_span_id == Some(idx as u32);
+                    (g_start, g_end, selected)
+                })
+                .collect();
+            (!bands.is_empty()).then_some(bands)
+        })
+        .unwrap_or_default();
+
     let tracks: [SignalTrack; 5] = [
         (
             "chipload",
@@ -414,6 +446,7 @@ fn draw_signal_spine(
                     env,
                     &hotspots,
                     x_range,
+                    &pass_bands,
                     &mut clicked_hotspot,
                     events,
                 );
@@ -461,6 +494,7 @@ fn draw_signal_track(
     envelope: Option<(f64, f64)>,
     hotspots: &[HotspotMarker],
     x_range: (f64, f64),
+    pass_bands: &[(f64, f64, bool)],
     clicked_hotspot: &mut Option<(usize, usize)>,
     events: &mut Vec<AppEvent>,
 ) {
@@ -555,6 +589,37 @@ fn draw_signal_track(
         .include_x(x_min)
         .include_x(x_max)
         .show(ui, |plot_ui| {
+            // DepthPass bands first so the data lines and envelope shading
+            // render on top of them. Bands have transparent strokes and
+            // disabled hover so they don't show up in legend hover or
+            // intercept clicks.
+            if !pass_bands.is_empty() {
+                let band_y_min = min_y - (max_y - min_y).abs() * 0.1;
+                let band_y_max = max_y + (max_y - min_y).abs() * 0.1;
+                let band_stroke = egui::Stroke::new(0.0, egui::Color32::TRANSPARENT);
+                for (idx, (g_start, g_end, selected)) in pass_bands.iter().enumerate() {
+                    let fill = if *selected {
+                        egui::Color32::from_rgba_premultiplied(70, 95, 160, 28)
+                    } else if idx % 2 == 0 {
+                        egui::Color32::from_rgba_premultiplied(50, 60, 90, 12)
+                    } else {
+                        egui::Color32::from_rgba_premultiplied(35, 45, 70, 8)
+                    };
+                    plot_ui.polygon(
+                        Polygon::new(PlotPoints::from(vec![
+                            [*g_start, band_y_min],
+                            [*g_end, band_y_min],
+                            [*g_end, band_y_max],
+                            [*g_start, band_y_max],
+                        ]))
+                        .fill_color(fill)
+                        .stroke(band_stroke)
+                        .allow_hover(false)
+                        .name(""),
+                    );
+                }
+            }
+
             // One Line per toolpath, further split into contiguous runs
             // wherever consecutive surviving samples have a sample-index
             // gap > MAX_LINE_BRIDGE_GAP. A gap means the value_fn returned
@@ -802,26 +867,8 @@ fn draw_transport_and_scrubber(
             events.push(AppEvent::SimStepForward);
         }
 
-        // Per-pass scrub: jump to start of prev/next DepthPass span on
-        // the focused toolpath. Only meaningful for ops that emit DepthPass
-        // spans (most multi-pass roughing/finishing).
-        if focused_toolpath_has_depth_passes(sim, gui) {
-            ui.separator();
-            if ui
-                .add(egui::Button::new("«Z").min_size(btn_size))
-                .on_hover_text("Previous depth pass on focused toolpath")
-                .clicked()
-            {
-                events.push(AppEvent::SimJumpToPrevPass);
-            }
-            if ui
-                .add(egui::Button::new("Z»").min_size(btn_size))
-                .on_hover_text("Next depth pass on focused toolpath")
-                .clicked()
-            {
-                events.push(AppEvent::SimJumpToNextPass);
-            }
-        }
+        // Pass-jump buttons removed — the span ribbon below the boundary
+        // timeline replaces them with a clickable visual navigator.
 
         if sim.total_moves() > 0 {
             ui.separator();
@@ -871,29 +918,6 @@ fn draw_transport_and_scrubber(
             }
         }
     });
-}
-
-/// True iff the currently-focused toolpath has at least one
-/// [`SpanKind::DepthPass`] span. Drives visibility of the per-pass scrub
-/// buttons so they only show up when they'd actually do something useful.
-fn focused_toolpath_has_depth_passes(sim: &SimulationState, gui: &GuiState) -> bool {
-    use rs_cam_core::toolpath_spans::SpanKind;
-    let Some(focused) = sim.focused_toolpath() else {
-        return false;
-    };
-    let Some(rt) = gui.toolpath_rt.get(&focused.0) else {
-        return false;
-    };
-    let Some(result) = rt.result.as_ref() else {
-        return false;
-    };
-    if !result.spans_valid() {
-        return false;
-    }
-    result
-        .spans()
-        .iter()
-        .any(|s| matches!(s.kind, SpanKind::DepthPass))
 }
 
 /// Row 2: Custom-painted per-op timeline bar with collision markers and
@@ -1097,6 +1121,13 @@ fn draw_boundary_timeline(
         }
     }
 
+    // Span ribbon: subdivides the scope toolpath's segment of the X axis
+    // into DepthPass blocks (and Region sub-blocks when a pass is selected).
+    // Click → scrub to the span's start AND set the chip-row scope. This
+    // replaces the «Z Z» pass-jump buttons in the transport row with a
+    // visual, hover-aware navigator.
+    draw_span_ribbon(ui, sim, gui, events);
+
     if sim.debug.enabled
         && let Some(boundary) = current_boundary.as_ref()
     {
@@ -1109,6 +1140,241 @@ fn draw_boundary_timeline(
             active_semantic.as_ref(),
             events,
         );
+    }
+}
+
+/// Paint a 14px ribbon under the boundary timeline showing structural
+/// span subdivisions for the scope toolpath. DepthPass spans render as
+/// colored blocks; when one is selected, its Region children render as
+/// lighter sub-blocks. Hover shows the span label; click sets the chip-
+/// row scope to that span and scrubs playback to its start move.
+fn draw_span_ribbon(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    gui: &GuiState,
+    events: &mut Vec<AppEvent>,
+) {
+    use rs_cam_core::toolpath_spans::{SpanKind, SpanPayload};
+
+    if sim.total_moves() == 0 || sim.boundaries().is_empty() {
+        return;
+    }
+
+    let scope_tp = sim
+        .debug
+        .span_scope
+        .toolpath_id
+        .or_else(|| sim.current_boundary().map(|b| b.id));
+    let Some(tp_id) = scope_tp else { return };
+
+    // Find the boundary entry for this toolpath so we can convert its
+    // toolpath-local move indices into the project-global X space.
+    let Some(boundary) = sim.boundaries().iter().find(|b| b.id == tp_id).cloned() else {
+        return;
+    };
+
+    let Some(rt) = gui.toolpath_rt.get(&tp_id.0) else {
+        return;
+    };
+    let Some(result) = rt.result.as_ref() else {
+        return;
+    };
+    if !result.spans_valid() {
+        return;
+    }
+    let spans = result.spans();
+    if spans.is_empty() {
+        return;
+    }
+
+    let total_width = ui.available_width();
+    let height = 14.0;
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(total_width, height), egui::Sense::click());
+    let painter = ui.painter_at(rect);
+
+    // Background — same dim band as the semantic band so the two read as a
+    // single track region when both are visible.
+    painter.rect_filled(
+        rect,
+        2.0,
+        egui::Color32::from_rgba_unmultiplied(35, 35, 45, 200),
+    );
+
+    let total_moves = sim.total_moves().max(1) as f32;
+    let scope_span_id = sim.debug.span_scope.span_id;
+    let global_x = |local_move: usize| -> f32 {
+        let global = (boundary.start_move + local_move) as f32;
+        rect.min.x + (global / total_moves) * total_width
+    };
+
+    // Selected DepthPass id — when set, its Region children show as a
+    // second tier of sub-blocks. Mirrors the span tree's drill-down.
+    let selected_dp_id: Option<u32> = scope_span_id.and_then(|sid| {
+        let target = spans.get(sid as usize)?;
+        if matches!(target.kind, SpanKind::DepthPass) {
+            return Some(sid);
+        }
+        spans
+            .iter()
+            .enumerate()
+            .find(|(_, s)| {
+                matches!(s.kind, SpanKind::DepthPass)
+                    && s.start_move <= target.start_move
+                    && s.end_move >= target.end_move
+            })
+            .map(|(idx, _)| idx as u32)
+    });
+
+    // Paint DepthPass blocks. Alternating tint per pass index so adjacent
+    // passes are visually distinct without per-pass labels (which would
+    // overflow on a 14px row).
+    let mut pass_index_seq = 0u32;
+    let mut click_target: Option<(u32, usize)> = None;
+    let mut hover_label: Option<String> = None;
+    let pointer_x = response.hover_pos().map(|p| p.x);
+
+    for (sid, span) in spans
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| matches!(s.kind, SpanKind::DepthPass))
+    {
+        let sid_u32 = sid as u32;
+        let x_start = global_x(span.start_move);
+        let x_end = global_x(span.end_move);
+        let pass_idx = match &span.payload {
+            Some(SpanPayload::DepthPass { pass_index, .. }) => *pass_index,
+            _ => {
+                let n = pass_index_seq;
+                pass_index_seq += 1;
+                n
+            }
+        };
+
+        let base = if pass_idx % 2 == 0 {
+            egui::Color32::from_rgba_unmultiplied(95, 110, 145, 200)
+        } else {
+            egui::Color32::from_rgba_unmultiplied(75, 90, 125, 200)
+        };
+        let color = if Some(sid_u32) == scope_span_id || Some(sid_u32) == selected_dp_id {
+            // Selected pass — brighter accent.
+            egui::Color32::from_rgb(180, 200, 240)
+        } else {
+            base
+        };
+
+        let block = egui::Rect::from_min_max(
+            egui::pos2(x_start, rect.min.y),
+            egui::pos2(x_end, rect.max.y),
+        );
+        painter.rect_filled(block, 0.0, color);
+        // Thin separator on the right edge so consecutive passes don't blur.
+        painter.line_segment(
+            [egui::pos2(x_end, rect.min.y), egui::pos2(x_end, rect.max.y)],
+            egui::Stroke::new(0.5, egui::Color32::from_rgb(20, 20, 28)),
+        );
+
+        if let Some(px) = pointer_x
+            && px >= x_start
+            && px <= x_end
+        {
+            let z_part = match &span.payload {
+                Some(SpanPayload::DepthPass { z_level, .. }) => format!(" · z={z_level:.2}"),
+                _ => String::new(),
+            };
+            hover_label = Some(format!(
+                "DepthPass {pass_idx}{z_part} · moves {}–{}",
+                span.start_move, span.end_move
+            ));
+            if response.clicked() {
+                click_target = Some((sid_u32, boundary.start_move + span.start_move));
+            }
+        }
+    }
+
+    // Region sub-blocks: only the children of the selected DepthPass, painted
+    // as a lighter overlay in the bottom half of the ribbon.
+    if let Some(dp_id) = selected_dp_id
+        && let Some(dp_span) = spans.get(dp_id as usize)
+    {
+        let region_y = rect.min.y + height * 0.55;
+        for (sid, span) in spans.iter().enumerate().filter(|(_, s)| {
+            matches!(s.kind, SpanKind::Region)
+                && s.start_move >= dp_span.start_move
+                && s.end_move <= dp_span.end_move
+        }) {
+            let sid_u32 = sid as u32;
+            let x_start = global_x(span.start_move);
+            let x_end = global_x(span.end_move);
+            let color = if Some(sid_u32) == scope_span_id {
+                egui::Color32::from_rgb(240, 200, 120)
+            } else {
+                egui::Color32::from_rgba_unmultiplied(220, 180, 110, 180)
+            };
+            let block = egui::Rect::from_min_max(
+                egui::pos2(x_start, region_y),
+                egui::pos2(x_end, rect.max.y),
+            );
+            painter.rect_filled(block, 0.0, color);
+
+            if let Some(px) = pointer_x
+                && px >= x_start
+                && px <= x_end
+                && pointer_x.is_some_and(|p| {
+                    let row_pos = response.hover_pos().map(|h| h.y).unwrap_or(0.0);
+                    let _ = p;
+                    row_pos >= region_y
+                })
+            {
+                let region_id = match &span.payload {
+                    Some(SpanPayload::Region { region_id }) => *region_id,
+                    _ => sid_u32,
+                };
+                hover_label = Some(format!(
+                    "Region {region_id} · moves {}–{}",
+                    span.start_move, span.end_move
+                ));
+                if response.clicked() {
+                    click_target = Some((sid_u32, boundary.start_move + span.start_move));
+                }
+            }
+        }
+    }
+
+    // Playhead overlay so the user can see how its position relates to the
+    // active span.
+    let playhead_x = rect.min.x + (sim.playback.current_move as f32 / total_moves) * total_width;
+    if playhead_x >= rect.min.x && playhead_x <= rect.max.x {
+        painter.line_segment(
+            [
+                egui::pos2(playhead_x, rect.min.y),
+                egui::pos2(playhead_x, rect.max.y),
+            ],
+            egui::Stroke::new(1.5, egui::Color32::WHITE),
+        );
+    }
+
+    if let Some(tip) = hover_label {
+        egui::show_tooltip_at_pointer(
+            ui.ctx(),
+            ui.layer_id(),
+            egui::Id::new("sim_span_ribbon_tip"),
+            |ui| {
+                ui.label(tip);
+            },
+        );
+    }
+
+    if let Some((sid, jump_move)) = click_target {
+        sim.debug.span_scope.toolpath_id = Some(tp_id);
+        // Toggle: clicking the already-selected span clears it back to the
+        // toolpath-wide scope; clicking a fresh span selects it.
+        sim.debug.span_scope.span_id = if sim.debug.span_scope.span_id == Some(sid) {
+            None
+        } else {
+            Some(sid)
+        };
+        events.push(AppEvent::SimJumpToMove(jump_move));
     }
 }
 
