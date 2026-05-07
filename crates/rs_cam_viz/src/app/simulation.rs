@@ -64,18 +64,17 @@ impl RsCamApp {
             return; // nothing changed
         }
 
-        // Use pre-transformed playback data from simulation results.
-        // Each entry has the toolpath already in global stock frame + its direction.
-        let playback_data: Vec<_> = self
+        // Quick presence check — the actual playback_data is read by reference
+        // inside the forward-simulation block below to avoid a per-frame
+        // clone of the (Toolpath, Tool, StockCutDirection) vec.
+        let playback_empty = self
             .controller
             .state()
             .simulation
             .results
             .as_ref()
-            .map(|r| r.playback_data.clone())
-            .unwrap_or_default();
-
-        if playback_data.is_empty() {
+            .is_none_or(|r| r.playback_data.is_empty());
+        if playback_empty {
             return;
         }
 
@@ -122,7 +121,11 @@ impl RsCamApp {
         // Now simulate forward from live_sim_move to target_move
         let current_live = self.controller.state().simulation.playback.live_sim_move;
         if current_live < target_move {
-            // Take the stock out to avoid borrow conflicts
+            // Take the stock out first. Doing this BEFORE we borrow
+            // playback_data immutably means the upcoming `state()` read
+            // can hold its borrow uninterrupted across the whole inner
+            // loop — and lets us read playback_data by reference instead
+            // of cloning a thousands-of-moves Vec every frame.
             let mut stock = self
                 .controller
                 .state_mut()
@@ -131,9 +134,11 @@ impl RsCamApp {
                 .live_stock
                 .take();
 
-            if let Some(ref mut stock) = stock {
+            if let Some(ref mut stock) = stock
+                && let Some(results) = self.controller.state().simulation.results.as_ref()
+            {
                 let mut global_offset = 0;
-                for (toolpath, tool, direction) in &playback_data {
+                for (toolpath, tool, direction) in &results.playback_data {
                     let tp_moves = toolpath.moves.len();
                     let tp_start = global_offset;
                     let tp_end = global_offset + tp_moves;
@@ -159,7 +164,9 @@ impl RsCamApp {
                 }
             }
 
-            // Put it back
+            // Put it back — fresh mutable borrow, no overlap with the
+            // immutable borrow above (which dropped at the end of the
+            // `if let` block).
             let pb = &mut self.controller.state_mut().simulation.playback;
             pb.live_stock = stock;
             pb.live_sim_move = target_move;
