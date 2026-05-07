@@ -91,6 +91,7 @@ fn half_engagement_sample(
         removed_volume_est_mm3: 0.1,
         mrr_mm3_s: 1.0,
         semantic_item_id: None,
+        span_path: Vec::new(),
     }
 }
 

@@ -7,7 +7,22 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
+use serde::{Deserialize, Serialize};
+
 use crate::toolpath::Toolpath;
+
+// ── SpanId ──────────────────────────────────────────────────────────────
+
+/// Stable identifier for a span within one [`AnnotatedToolpath`] — the index
+/// into [`AnnotatedToolpath::spans`].
+///
+/// SpanIds are stable for the lifetime of one toolpath generation but are NOT
+/// stable across regeneration (the spans vec is rebuilt each time). Persist
+/// them only inside artifacts that share the toolpath's lifetime
+/// (e.g. `SimulationCutTrace`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SpanId(pub u32);
 
 // ── Span ────────────────────────────────────────────────────────────────
 
@@ -166,6 +181,44 @@ impl AnnotatedToolpath {
     /// All spans of the given kind, in vector order.
     pub fn spans_of_kind(&self, kind: SpanKind) -> impl Iterator<Item = &Span> {
         self.spans.iter().filter(move |s| s.kind == kind)
+    }
+
+    /// Indices of all non-boundary spans whose move range covers `move_idx`.
+    ///
+    /// Returned in span-vec order, which by convention places outer ancestors
+    /// (Operation) before inner descendants (DepthPass, Region, …) when
+    /// generators emit spans outermost-first.
+    pub fn span_path_at(&self, move_idx: usize) -> Vec<SpanId> {
+        self.spans
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| {
+                if !s.is_boundary() && s.contains(move_idx) {
+                    Some(SpanId(i as u32))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Precompute [`Self::span_path_at`] for every move index in the toolpath.
+    /// Cheaper than calling `span_path_at` per move when stamping ~100K
+    /// simulation samples.
+    pub fn span_paths_by_move(&self) -> Vec<Vec<SpanId>> {
+        let n = self.toolpath.moves.len();
+        let mut out = vec![Vec::<SpanId>::new(); n];
+        for (i, span) in self.spans.iter().enumerate() {
+            if span.is_boundary() {
+                continue;
+            }
+            let id = SpanId(i as u32);
+            let end = span.end_move.min(n);
+            for entry in out.iter_mut().take(end).skip(span.start_move) {
+                entry.push(id);
+            }
+        }
+        out
     }
 
     /// Move-boundary indices that act as TSP barriers — the union of
@@ -463,6 +516,44 @@ mod tests {
         assert_eq!(at_5, vec![5]);
         let at_6: Vec<_> = at.boundaries_at(6).collect();
         assert!(at_6.is_empty());
+    }
+
+    #[test]
+    fn span_path_at_returns_outermost_first() {
+        let at = AnnotatedToolpath::with_spans(
+            toolpath_with_n_moves(10),
+            vec![
+                Span::new(0, 10, SpanKind::Operation),
+                Span::new(0, 5, SpanKind::DepthPass),
+                Span::new(2, 4, SpanKind::Region),
+                Span::boundary(5, SpanKind::RapidOrderBarrier),
+                Span::new(5, 10, SpanKind::DepthPass),
+            ],
+        );
+        // Move 3 is inside Operation (idx 0), DepthPass (idx 1), Region (idx 2).
+        let path = at.span_path_at(3);
+        assert_eq!(path, vec![SpanId(0), SpanId(1), SpanId(2)]);
+        // Move 6 is inside Operation + second DepthPass; the boundary is excluded.
+        let path = at.span_path_at(6);
+        assert_eq!(path, vec![SpanId(0), SpanId(4)]);
+    }
+
+    #[test]
+    fn span_paths_by_move_matches_per_move_lookup() {
+        let at = AnnotatedToolpath::with_spans(
+            toolpath_with_n_moves(8),
+            vec![
+                Span::new(0, 8, SpanKind::Operation),
+                Span::new(0, 4, SpanKind::DepthPass),
+                Span::new(4, 8, SpanKind::DepthPass),
+                Span::boundary(4, SpanKind::RapidOrderBarrier),
+            ],
+        );
+        let bulk = at.span_paths_by_move();
+        assert_eq!(bulk.len(), 8);
+        for (i, path) in bulk.iter().enumerate() {
+            assert_eq!(*path, at.span_path_at(i), "mismatch at move {i}");
+        }
     }
 
     #[test]

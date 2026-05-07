@@ -139,6 +139,7 @@ fn agent_search_axial_doc_diag() {
             5000.0,
             0.5,
             None,
+            &[],
             true,
             &never_cancel,
         )
@@ -271,6 +272,7 @@ fn agent_search_axial_doc_diag() {
             5000.0,
             0.5,
             None,
+            &[],
             true,
             &never_cancel,
         );

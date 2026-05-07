@@ -374,6 +374,7 @@ fn bench_simulate_toolpath_metrics(c: &mut Criterion) {
                     5000.0, // rapid_feed
                     1.0,    // sample_step
                     None,   // no semantic trace
+                    &[],    // no span paths
                     false,  // capture_arc_engagement
                     &never_cancel,
                 )

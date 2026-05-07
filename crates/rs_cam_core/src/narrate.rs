@@ -14,6 +14,7 @@ use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticTrace};
 use crate::simulation_cut::SimulationCutTrace;
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::{MoveType, Toolpath};
+use crate::toolpath_spans::{AnnotatedToolpath, SpanKind, SpanPayload};
 
 const Z_EPSILON_MM: f64 = 0.05;
 const LARGE_ARC_RADIUS_MULTIPLIER: f64 = 30.0;
@@ -89,14 +90,14 @@ struct ArcObservation {
 /// toolpath id or commanded depth per pass; this wrapper keeps the simple API
 /// available for ad-hoc use.
 pub fn narrate_toolpath(
-    toolpath: &Toolpath,
+    annotated: &AnnotatedToolpath,
     semantic_trace: Option<&ToolpathSemanticTrace>,
     cut_trace: Option<&SimulationCutTrace>,
     debug_trace: Option<&ToolpathDebugTrace>,
     tool: &ToolDefinition,
 ) -> String {
     narrate_toolpath_with_context(
-        toolpath,
+        annotated,
         semantic_trace,
         cut_trace,
         debug_trace,
@@ -107,14 +108,22 @@ pub fn narrate_toolpath(
 
 /// Produce a concise prose narration for a generated toolpath, using optional
 /// project metadata to filter simulation samples and label the report.
+///
+/// When `annotated.spans_valid` is true and the toolpath carries
+/// [`SpanKind::DepthPass`] spans, the Z-level structure is read directly from
+/// those spans (one level per pass). This eliminates the phantom-passes
+/// artifact produced by clustering raw move Z-coordinates with `Z_EPSILON_MM`
+/// when one DepthPass legitimately spans multiple Z values
+/// (e.g. lead-in / ramp moves above the pass plane).
 pub fn narrate_toolpath_with_context(
-    toolpath: &Toolpath,
+    annotated: &AnnotatedToolpath,
     semantic_trace: Option<&ToolpathSemanticTrace>,
     cut_trace: Option<&SimulationCutTrace>,
     debug_trace: Option<&ToolpathDebugTrace>,
     tool: &ToolDefinition,
     context: &ToolpathNarrationContext<'_>,
 ) -> String {
+    let toolpath = &annotated.toolpath;
     let title = context
         .toolpath_name
         .or_else(|| semantic_trace.map(|trace| trace.toolpath_name.as_str()))
@@ -178,7 +187,7 @@ pub fn narrate_toolpath_with_context(
 
     append_operation_context(&mut output, context);
 
-    let z_levels = summarize_z_levels(toolpath, semantic_trace);
+    let z_levels = summarize_z_levels(annotated, semantic_trace);
     output.push_str("\nZ-level structure (highest to lowest, setup-local frame):\n");
     if z_levels.is_empty() {
         output.push_str("  No cutting moves found.\n");
@@ -333,6 +342,104 @@ fn format_count(count: usize) -> String {
 }
 
 fn summarize_z_levels(
+    annotated: &AnnotatedToolpath,
+    semantic_trace: Option<&ToolpathSemanticTrace>,
+) -> Vec<ZLevelSummary> {
+    if annotated.spans_valid {
+        let depth_passes: Vec<_> = annotated.spans_of_kind(SpanKind::DepthPass).collect();
+        if !depth_passes.is_empty() {
+            return summarize_z_levels_from_spans(
+                &annotated.toolpath,
+                depth_passes.into_iter(),
+                semantic_trace,
+            );
+        }
+    }
+    summarize_z_levels_from_moves(&annotated.toolpath, semantic_trace)
+}
+
+/// Build one [`ZLevelSummary`] per [`SpanKind::DepthPass`] span, using the
+/// span's payload `z_level` (when present) as the canonical Z. Aggregates
+/// per-move cut metrics inside the span's move range.
+fn summarize_z_levels_from_spans<'a, I>(
+    toolpath: &Toolpath,
+    depth_passes: I,
+    semantic_trace: Option<&ToolpathSemanticTrace>,
+) -> Vec<ZLevelSummary>
+where
+    I: Iterator<Item = &'a crate::toolpath_spans::Span>,
+{
+    let mut levels = Vec::<ZLevelSummary>::new();
+    for span in depth_passes {
+        let z = match &span.payload {
+            Some(SpanPayload::DepthPass { z_level, .. }) => *z_level,
+            _ => representative_cut_z_in_range(toolpath, span.start_move, span.end_move)
+                .unwrap_or(0.0),
+        };
+        let mut summary = ZLevelSummary::new(z);
+        let mut prior_target: Option<P3> = None;
+        let mut in_cut_run = false;
+        let mut active_cut_run_id = 0usize;
+        let end = span.end_move.min(toolpath.moves.len());
+        for (idx, mv) in toolpath
+            .moves
+            .iter()
+            .enumerate()
+            .take(end)
+            .skip(span.start_move)
+        {
+            let _ = idx;
+            let is_cutting = mv.move_type.is_cutting();
+            if !is_cutting {
+                prior_target = Some(mv.target);
+                in_cut_run = false;
+                continue;
+            }
+            if !in_cut_run {
+                active_cut_run_id += 1;
+                in_cut_run = true;
+            }
+            summary.cutting_moves += 1;
+            summary.cut_run_ids.insert(active_cut_run_id);
+            if matches!(
+                mv.move_type,
+                MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
+            ) {
+                summary.arc_moves += 1;
+            }
+            if let Some(prev) = prior_target {
+                summary.cutting_distance_mm += (mv.target - prev).norm();
+            }
+            prior_target = Some(mv.target);
+        }
+        let (center_x, center_y, count) = cutting_centroid_at_z(toolpath, z);
+        if count > 0 {
+            summary.max_radius_from_centroid_mm =
+                max_radius_from_centroid(toolpath, z, center_x, center_y);
+        }
+        if let Some(trace) = semantic_trace {
+            apply_semantic_level_metrics(&mut summary, trace);
+        }
+        levels.push(summary);
+    }
+    levels.sort_by(|a, b| b.z.partial_cmp(&a.z).unwrap_or(Ordering::Equal));
+    levels
+}
+
+fn representative_cut_z_in_range(toolpath: &Toolpath, start: usize, end: usize) -> Option<f64> {
+    toolpath
+        .moves
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .find(|(_, mv)| mv.move_type.is_cutting())
+        .map(|(_, mv)| mv.target.z)
+}
+
+/// Legacy Z-level discovery: cluster cutting move Z-coordinates with
+/// `Z_EPSILON_MM`. Used only when the toolpath has no DepthPass spans.
+fn summarize_z_levels_from_moves(
     toolpath: &Toolpath,
     semantic_trace: Option<&ToolpathSemanticTrace>,
 ) -> Vec<ZLevelSummary> {
@@ -885,6 +992,43 @@ mod tests {
         ToolpathSemanticItem, ToolpathSemanticParams, ToolpathSemanticSummary,
     };
     use crate::simulation_cut::{CutKinematics, SimulationCutSample, SimulationCutTrace};
+    use crate::toolpath_spans::{AnnotatedToolpath, Span, SpanKind, SpanPayload};
+
+    /// Tooth of S2.3: when a DepthPass span legitimately covers moves whose
+    /// raw Z values straddle the pass plane (e.g. an entry move at z=22.5
+    /// and the cut moves at z=22.0), narration should report ONE pass at the
+    /// payload `z_level`, not two phantom passes from `Z_EPSILON_MM`
+    /// clustering of move Z values.
+    #[test]
+    fn narrate_uses_depth_pass_spans_to_avoid_phantom_z_levels() {
+        let mut toolpath = Toolpath::new();
+        toolpath.rapid_to(P3::new(0.0, 0.0, 25.0));
+        toolpath.feed_to(P3::new(0.0, 0.0, 22.5), 1000.0); // entry above pass plane
+        toolpath.feed_to(P3::new(5.0, 0.0, 22.0), 1000.0); // pass plane
+        toolpath.feed_to(P3::new(10.0, 0.0, 22.0), 1000.0);
+
+        let n = toolpath.moves.len();
+        let spans = vec![
+            Span::new(0, n, SpanKind::Operation),
+            Span::new(0, n, SpanKind::DepthPass)
+                .with_payload(SpanPayload::DepthPass {
+                    z_level: 22.0,
+                    pass_index: 0,
+                }),
+        ];
+        let annotated = AnnotatedToolpath::with_spans(toolpath, spans);
+        let tool = build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+
+        let report = narrate_toolpath(&annotated, None, None, None, &tool);
+        // Exactly one Z-level line should appear — at the payload z=22.000.
+        let z_lines: Vec<&str> = report.lines().filter(|l| l.contains("z=")).collect();
+        assert_eq!(
+            z_lines.len(),
+            1,
+            "expected one z-level line from DepthPass, got {z_lines:?}"
+        );
+        assert!(z_lines[0].contains("22.00"), "got: {}", z_lines[0]);
+    }
 
     #[test]
     fn narrate_flags_large_arc_peak_doc_and_air_cut() {
@@ -907,8 +1051,14 @@ mod tests {
             flute_count: Some(2),
         };
 
-        let report =
-            narrate_toolpath_with_context(&toolpath, None, Some(&trace), None, &tool, &context);
+        let report = narrate_toolpath_with_context(
+            &AnnotatedToolpath::new(toolpath),
+            None,
+            Some(&trace),
+            None,
+            &tool,
+            &context,
+        );
 
         assert!(report.contains("perimeter sweep"));
         assert!(report.contains("axial DOC"));
@@ -930,7 +1080,13 @@ mod tests {
 
         let tool = build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill));
         let semantic_trace = one_region_semantic_trace(2.0);
-        let report = narrate_toolpath(&toolpath, Some(&semantic_trace), None, None, &tool);
+        let report = narrate_toolpath(
+            &AnnotatedToolpath::new(toolpath),
+            Some(&semantic_trace),
+            None,
+            None,
+            &tool,
+        );
 
         assert!(report.contains("2 cut run(s), 1 marching-squares region(s)"));
         assert!(report.contains("true perimeter sweep 123mm"));
@@ -995,7 +1151,13 @@ mod tests {
             annotations: vec![],
         };
 
-        let report = narrate_toolpath(&toolpath, None, None, Some(&debug_trace), &tool);
+        let report = narrate_toolpath(
+            &AnnotatedToolpath::new(toolpath),
+            None,
+            None,
+            Some(&debug_trace),
+            &tool,
+        );
 
         assert!(
             report.contains("gate: pre 0.886 → post 0.886"),
@@ -1092,6 +1254,7 @@ mod tests {
             removed_volume_est_mm3: 0.0,
             mrr_mm3_s: 0.0,
             semantic_item_id: None,
+            span_path: Vec::new(),
         }
     }
 }

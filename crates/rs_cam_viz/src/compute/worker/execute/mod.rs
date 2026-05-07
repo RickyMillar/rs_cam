@@ -184,13 +184,10 @@ fn build_core_simulation_request(
                 .iter()
                 .map(|tp| {
                     let cutter = build_cutter(&tp.tool);
-                    // Sim core still consumes Arc<Toolpath>; clone the inner
-                    // toolpath out of the AnnotatedToolpath. S2.1 will lift
-                    // this to Arc<AnnotatedToolpath> so spans flow into samples.
                     SimToolpathEntry {
                         id: tp.id.0,
                         name: tp.name.clone(),
-                        toolpath: Arc::new(tp.annotated.toolpath.clone()),
+                        annotated: Arc::clone(&tp.annotated),
                         tool: cutter,
                         flute_count: tp.tool.flute_count,
                         tool_summary: tp.tool.summary(),

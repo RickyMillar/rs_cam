@@ -22,6 +22,7 @@ use crate::simulation_cut::{
 use crate::stock_mesh::StockMesh;
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
+use crate::toolpath_spans::AnnotatedToolpath;
 
 /// A single toolpath prepared for simulation.
 pub struct SimToolpathEntry {
@@ -29,8 +30,11 @@ pub struct SimToolpathEntry {
     pub id: usize,
     /// Human-readable name (for boundary labels).
     pub name: String,
-    /// The toolpath moves to simulate.
-    pub toolpath: Arc<Toolpath>,
+    /// The toolpath moves to simulate, bundled with the structural spans
+    /// produced by generation. Spans are stamped onto each
+    /// `SimulationCutSample` so downstream MCP/UI tooling can filter by
+    /// `SpanKind` / `pass_index` without re-parsing the move list.
+    pub annotated: Arc<AnnotatedToolpath>,
     /// Pre-built tool definition (cutter + holder geometry).
     pub tool: ToolDefinition,
     /// Number of cutting flutes (for metric sampling).
@@ -177,7 +181,7 @@ fn build_simulation_provenance(request: &SimulationRequest) -> SimulationProvena
     let mut tool_hashes = BTreeMap::new();
     for group in &request.groups {
         for entry in &group.toolpaths {
-            toolpath_hashes.insert(entry.id, hash_toolpath(entry.toolpath.as_ref()));
+            toolpath_hashes.insert(entry.id, hash_toolpath(&entry.annotated.toolpath));
             tool_hashes.insert(
                 entry.id,
                 hash_with(|hasher| {
@@ -331,6 +335,7 @@ where
             .map_or(StockCutDirection::FromTop, |info| info.cut_direction());
 
         for entry in &group.toolpaths {
+            let entry_toolpath = &entry.annotated.toolpath;
             // Snapshot the stock *before* this toolpath carves so the dressup
             // air-cut filter and rest-machining-aware generators can use it.
             prior_stocks.insert(entry.id, Arc::new(group_stock.clone()));
@@ -339,7 +344,7 @@ where
             // (after all previous toolpaths, before this one carves).
             {
                 let rapids =
-                    check_rapid_collisions_against_stock(&entry.toolpath, &group_stock.z_grid);
+                    check_rapid_collisions_against_stock(entry_toolpath, &group_stock.z_grid);
                 for rc in &rapids {
                     rapid_collision_move_indices.push(total_moves + rc.move_index);
                 }
@@ -353,9 +358,10 @@ where
 
             if request.metric_options.enabled {
                 let entry_rpm = entry.spindle_rpm.unwrap_or(request.spindle_rpm);
+                let span_paths_by_move = entry.annotated.span_paths_by_move();
                 let mut samples = group_stock
                     .simulate_toolpath_with_lut_metrics_cancel(
-                        &entry.toolpath,
+                        entry_toolpath,
                         &lut,
                         &entry.tool,
                         radius,
@@ -366,6 +372,7 @@ where
                         request.rapid_feed_mm_min,
                         sample_step_mm,
                         entry.semantic_trace.as_deref(),
+                        &span_paths_by_move,
                         request.metric_options.capture_arc_engagement,
                         &|| cancel.load(Ordering::SeqCst),
                     )
@@ -374,7 +381,7 @@ where
             } else {
                 group_stock
                     .simulate_toolpath_with_lut_cancel(
-                        &entry.toolpath,
+                        entry_toolpath,
                         &lut,
                         radius,
                         direction,
@@ -382,7 +389,7 @@ where
                     )
                     .map_err(|_cancelled| SimulationError::Cancelled)?;
             }
-            total_moves += entry.toolpath.moves.len();
+            total_moves += entry_toolpath.moves.len();
 
             boundaries.push(SimBoundary {
                 id: entry.id,
@@ -395,9 +402,9 @@ where
 
             // Transform toolpath to global frame for parallel global stock.
             let global_tp = if let Some(info) = &group.local_to_global {
-                Arc::new(info.transform_toolpath(&entry.toolpath))
+                Arc::new(info.transform_toolpath(entry_toolpath))
             } else {
-                Arc::clone(&entry.toolpath)
+                Arc::new(entry_toolpath.clone())
             };
 
             // Stamp the global stock in parallel for checkpoint/playback support.
@@ -600,7 +607,7 @@ mod tests {
         let entry = SimToolpathEntry {
             id: 1,
             name: "Test".to_owned(),
-            toolpath: Arc::new(tp),
+            annotated: Arc::new(AnnotatedToolpath::new(tp)),
             tool,
             flute_count: 2,
             tool_summary: "6mm Flat".to_owned(),
@@ -795,7 +802,7 @@ mod tests {
         let entry = SimToolpathEntry {
             id: 1,
             name: "Pocket F-2 validation".to_owned(),
-            toolpath: Arc::new(tp),
+            annotated: Arc::new(AnnotatedToolpath::new(tp)),
             tool: tool_def,
             flute_count: 2,
             tool_summary: "6.35mm Flat".to_owned(),
@@ -895,7 +902,7 @@ mod tests {
             toolpaths: vec![SimToolpathEntry {
                 id: 1,
                 name: "Top Cut".into(),
-                toolpath: Arc::new(top_tp),
+                annotated: Arc::new(AnnotatedToolpath::new(top_tp)),
                 tool: make_tool(),
                 flute_count: 2,
                 tool_summary: "6mm Flat".into(),
@@ -911,7 +918,7 @@ mod tests {
             toolpaths: vec![SimToolpathEntry {
                 id: 2,
                 name: "Bottom Cut".into(),
-                toolpath: Arc::new(bottom_tp),
+                annotated: Arc::new(AnnotatedToolpath::new(bottom_tp)),
                 tool: make_tool(),
                 flute_count: 2,
                 tool_summary: "6mm Flat".into(),

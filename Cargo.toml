@@ -64,3 +64,23 @@ manual_let_else = "deny"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
+
+# Keep day-to-day debug/test artifacts small. Full debug info makes this
+# workspace's GUI/test binaries hundreds of MB each, and incremental caches
+# routinely grow into multi-GB directories.
+[profile.dev]
+debug = "line-tables-only"
+incremental = false
+
+[profile.test]
+debug = "line-tables-only"
+incremental = false
+
+# Prefer maximum runtime performance for explicit release builds. This makes
+# release builds slower, but this repo primarily runs release for real CAM work.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

@@ -849,10 +849,16 @@ impl ProjectSession {
                         build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill))
                     });
 
+                    // ToolpathComputeResult still exposes Toolpath only; until
+                    // S1.5 lifts the core session to AnnotatedToolpath, wrap
+                    // with empty spans here. Sim samples produced through this
+                    // path will carry empty `span_path`.
                     entries.push(SimToolpathEntry {
                         id: tc.id,
                         name: tc.name.clone(),
-                        toolpath: Arc::clone(&result.toolpath),
+                        annotated: Arc::new(crate::toolpath_spans::AnnotatedToolpath::new(
+                            (*result.toolpath).clone(),
+                        )),
                         tool: tool_def,
                         flute_count,
                         tool_summary,
@@ -1001,8 +1007,13 @@ impl ProjectSession {
             flute_count: Some(tool.flute_count),
         };
 
+        // ToolpathComputeResult exposes only Toolpath (S1.5 deferred); wrap
+        // with empty spans so narration falls back to Z-clustering on this
+        // standalone-CLI path. The viz path passes the real spans.
+        let annotated =
+            crate::toolpath_spans::AnnotatedToolpath::new((*result.toolpath).clone());
         Ok(crate::narrate::narrate_toolpath_with_context(
-            &result.toolpath,
+            &annotated,
             result.semantic_trace.as_ref(),
             cut_trace,
             result.debug_trace.as_ref(),

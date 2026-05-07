@@ -162,15 +162,36 @@ pub struct CutTraceParam {
     pub max_hotspots: Option<usize>,
     /// Maximum issues to return (default: 50)
     pub max_issues: Option<usize>,
+    /// Optional: only include samples/issues/hotspots whose `span_path` contains
+    /// a span of this kind. Accepted values match `SpanKind`:
+    /// "operation", "depth_pass", "region", "entry", "lead_out", "link_bridge",
+    /// "dressup_artifact", "rapid_order_barrier".
+    /// Read by the embedded GUI MCP; standalone CLI MCP currently ignores it.
+    #[allow(dead_code)]
+    pub span_kind: Option<String>,
+    /// Optional: only include samples/issues/hotspots whose `span_path` contains
+    /// this exact span id. SpanIds come from `inspect_spans`. Read by the
+    /// embedded GUI MCP; standalone CLI MCP currently ignores it.
+    #[allow(dead_code)]
+    pub span_id: Option<u32>,
+    /// Optional: only include samples/issues/hotspots whose `span_path` contains
+    /// a `DepthPass` span with this `pass_index` payload value (0-based).
+    /// Read by the embedded GUI MCP; standalone CLI MCP currently ignores it.
+    #[allow(dead_code)]
+    pub pass_index: Option<u32>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct GenDebugTraceParam {
     /// Toolpath index (0-based). Must have been generated first.
     pub index: usize,
-    /// Optional filter: only include spans of this kind. Common values:
-    /// "z_level", "adaptive_pass", "entry_search", "preflight", "pre_stamp",
-    /// "widen_band", "waterline_cleanup". Omit to include all kinds.
+    /// Optional filter. Accepts EITHER a generation-debug kind string
+    /// ("z_level", "adaptive_pass", "entry_search", "preflight", "pre_stamp",
+    /// "widen_band", "waterline_cleanup") OR a structural `SpanKind` synonym
+    /// in snake_case ("depth_pass" → matches z_level/adaptive_pass/z_level_clear,
+    /// "entry" → matches entry_search). Omit to include all kinds. Each
+    /// returned span carries a `span_kind_hint` field that maps the debug
+    /// kind back to its structural SpanKind when one applies.
     pub span_kind: Option<String>,
     /// Optional filter: only include spans whose exit_reason contains this
     /// substring. Useful values for AgentSearch diagnosis:
@@ -950,6 +971,13 @@ impl CamServer {
             toolpath_id,
             max_hotspots,
             max_issues,
+            // Standalone CLI MCP path doesn't yet wire spans through
+            // ToolpathComputeResult (S1.5); span filters are accepted but
+            // produce no extra filtering until that path lifts to
+            // AnnotatedToolpath.
+            span_kind: _,
+            span_id: _,
+            pass_index: _,
         }): Parameters<CutTraceParam>,
     ) -> String {
         let guard = self.session.lock().await;

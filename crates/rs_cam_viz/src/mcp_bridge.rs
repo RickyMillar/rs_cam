@@ -47,6 +47,12 @@ pub enum McpRequestKind {
         toolpath_id: Option<usize>,
         max_hotspots: Option<usize>,
         max_issues: Option<usize>,
+        /// Optional `SpanKind` filter (snake_case, e.g. "depth_pass").
+        span_kind: Option<String>,
+        /// Optional exact `SpanId` (vec index) match.
+        span_id: Option<u32>,
+        /// Optional `DepthPass` `pass_index` payload match.
+        pass_index: Option<u32>,
     },
     GetGenerationDebugTrace {
         index: usize,

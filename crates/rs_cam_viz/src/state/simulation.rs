@@ -1857,6 +1857,7 @@ mod tests {
                     removed_volume_est_mm3: 0.1,
                     mrr_mm3_s: 0.5,
                     semantic_item_id: Some(2),
+                    span_path: Vec::new(),
                 },
                 rs_cam_core::simulation_cut::SimulationCutSample {
                     toolpath_id: 1,
@@ -1878,6 +1879,7 @@ mod tests {
                     removed_volume_est_mm3: 2.0,
                     mrr_mm3_s: 5.0,
                     semantic_item_id: Some(3),
+                    span_path: Vec::new(),
                 },
             ],
         );
