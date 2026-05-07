@@ -354,35 +354,19 @@ pub fn optimize_toolpath(
         &machine,
     );
 
-    // 7. Stage 0: closed-form analytical RPM/feed scaling. Skipped
-    //    when the baseline already fails the chipload gate
-    //    (proportional scaling preserves chipload — can't fix Exceeds).
-    let baseline_chipload_exceeds = matches!(baseline_verdict.chipload, Verdict::Exceeds { .. });
+    // 7. Stage 0: closed-form analytical RPM/feed scaling.
     let mut all_candidates: Vec<OptimizeCandidate> = Vec::new();
-    if !baseline_chipload_exceeds {
-        let stage0_inputs = Stage0Inputs {
-            rpm_baseline: baseline_rpm,
-            feed_baseline_mm_min: baseline_op.feed_rate(),
-            peak_power_baseline_kw: baseline_peak_power_kw(&baseline_verdict),
-            machine: &machine,
-            lut_row: matched_lut_row.as_ref(),
-        };
-        let k = solve_headroom_scale(&stage0_inputs);
-        if k > 1.0 + 1e-6 {
-            let scaled_op = apply_scale_to_op(&baseline_op, baseline_rpm, k, &machine);
-            let delta = delta_against_baseline(&baseline_op, &scaled_op);
-            if let Ok(candidate) = evaluate_candidate(
-                &mut guard,
-                &ctx,
-                scaled_op,
-                delta,
-                SearchStage::Coarse,
-                STAGE1_RESOLUTION_MM,
-                cancel,
-            ) {
-                all_candidates.push(candidate);
-            }
-        }
+    if let Some(stage0_candidate) = run_stage_0(
+        &mut guard,
+        &ctx,
+        &baseline_op,
+        baseline_rpm,
+        &baseline_verdict,
+        matched_lut_row.as_ref(),
+        &machine,
+        cancel,
+    ) {
+        all_candidates.push(stage0_candidate);
     }
 
     if cancel.load(Ordering::SeqCst) {
@@ -391,59 +375,16 @@ pub fn optimize_toolpath(
     }
 
     // 8. Stage 1: joint DOC × stepover variant grid for ops with both
-    //    knobs. Anchored at the headroom-point op when available,
-    //    baseline op otherwise. The two axes are coupled in
-    //    practice — lower DOC tolerates higher stepover at constant
-    //    chipload — so we sweep them jointly rather than as separate
-    //    1D passes. 3×3 = 9 candidates per geometry op (4×3 = 12 for
-    //    Pocket/Adaptive), Stage 2 keeps the top 3 by cycle time.
-    if has_doc_knob(ctx.operation_kind) {
-        let anchor_op = all_candidates
-            .first()
-            .map(|c| c.params.clone())
-            .unwrap_or_else(|| baseline_op.clone());
-        let anchor_doc = anchor_op
-            .depth_per_pass()
-            .unwrap_or_else(|| baseline_op.depth_per_pass().unwrap_or(1.5));
-        let anchor_stepover = anchor_op
-            .stepover()
-            .unwrap_or_else(|| baseline_op.stepover().unwrap_or(1.0));
-        let doc_variants =
-            build_doc_variants(anchor_doc, matched_lut_row.as_ref(), ctx.operation_kind);
-        let stepover_variants = build_stepover_variants(
-            anchor_stepover,
-            matched_lut_row.as_ref(),
-            ctx.operation_kind,
-        );
-        'outer: for &doc in &doc_variants {
-            for &stepover in &stepover_variants {
-                if cancel.load(Ordering::SeqCst) {
-                    break 'outer;
-                }
-                // Skip the anchor combo — it's already represented
-                // by the headroom-point candidate (or the baseline).
-                if (doc - anchor_doc).abs() < DOC_DEDUP_TOLERANCE_MM
-                    && (stepover - anchor_stepover).abs() < STEPOVER_DEDUP_TOLERANCE_MM
-                {
-                    continue;
-                }
-                let candidate_op =
-                    apply_stepover_to_op(&apply_doc_to_op(&anchor_op, doc), stepover);
-                let delta = delta_against_baseline(&baseline_op, &candidate_op);
-                if let Ok(candidate) = evaluate_candidate(
-                    &mut guard,
-                    &ctx,
-                    candidate_op,
-                    delta,
-                    SearchStage::Coarse,
-                    STAGE1_RESOLUTION_MM,
-                    cancel,
-                ) {
-                    all_candidates.push(candidate);
-                }
-            }
-        }
-    }
+    //    knobs.
+    let stage_1_candidates = run_stage_1_grid(
+        &mut guard,
+        &ctx,
+        &baseline_op,
+        all_candidates.first(),
+        matched_lut_row.as_ref(),
+        cancel,
+    );
+    all_candidates.extend(stage_1_candidates);
 
     if cancel.load(Ordering::SeqCst) {
         drop(guard);
@@ -468,6 +409,122 @@ pub fn optimize_toolpath(
     //     caller's view of `session` is now back at the baseline.
     drop(guard);
     build_outcome(baseline_candidate, stage2_candidates)
+}
+
+/// Run Stage 0 (analytical RPM/feed headroom scale-up) for one
+/// toolpath. Returns the headroom candidate, or `None` if the baseline
+/// already trips the chipload gate (proportional scaling preserves
+/// chipload, so it can't fix `Exceeds`), if the closed-form solver
+/// finds no headroom (`k ≤ 1`), or if the candidate sim fails.
+///
+/// Pure helper — extracted from `optimize_toolpath` for reviewability.
+/// The optimizer's pre-flight policy lives in the caller; this just
+/// runs the stage.
+#[allow(clippy::too_many_arguments)]
+fn run_stage_0(
+    guard: &mut BaselineRestoreGuard<'_>,
+    ctx: &EvaluationContext,
+    baseline_op: &OperationConfig,
+    baseline_rpm: f64,
+    baseline_verdict: &ToolpathLoadVerdict,
+    matched_lut_row: Option<&MatchedRow>,
+    machine: &MachineProfile,
+    cancel: &AtomicBool,
+) -> Option<OptimizeCandidate> {
+    let baseline_chipload_exceeds = matches!(baseline_verdict.chipload, Verdict::Exceeds { .. });
+    if baseline_chipload_exceeds {
+        return None;
+    }
+    let stage0_inputs = Stage0Inputs {
+        rpm_baseline: baseline_rpm,
+        feed_baseline_mm_min: baseline_op.feed_rate(),
+        peak_power_baseline_kw: baseline_peak_power_kw(baseline_verdict),
+        machine,
+        lut_row: matched_lut_row,
+    };
+    let k = solve_headroom_scale(&stage0_inputs);
+    if k <= 1.0 + 1e-6 {
+        return None;
+    }
+    let scaled_op = apply_scale_to_op(baseline_op, baseline_rpm, k, machine);
+    let delta = delta_against_baseline(baseline_op, &scaled_op);
+    evaluate_candidate(
+        guard,
+        ctx,
+        scaled_op,
+        delta,
+        SearchStage::Coarse,
+        STAGE1_RESOLUTION_MM,
+        cancel,
+    )
+    .ok()
+}
+
+/// Run Stage 1 (joint DOC × stepover variant grid) for one toolpath.
+/// Returns the per-grid-cell candidates that successfully evaluated;
+/// the anchor cell (matching the Stage 0 candidate or baseline) is
+/// skipped to avoid duplication.
+///
+/// `stage0_anchor` is the optional Stage 0 candidate — when present,
+/// the grid is anchored on its params; otherwise it falls back to
+/// `baseline_op`. Returns an empty vector for ops that don't have a
+/// DOC knob.
+fn run_stage_1_grid(
+    guard: &mut BaselineRestoreGuard<'_>,
+    ctx: &EvaluationContext,
+    baseline_op: &OperationConfig,
+    stage0_anchor: Option<&OptimizeCandidate>,
+    matched_lut_row: Option<&MatchedRow>,
+    cancel: &AtomicBool,
+) -> Vec<OptimizeCandidate> {
+    use std::sync::atomic::Ordering;
+
+    if !has_doc_knob(ctx.operation_kind) {
+        return Vec::new();
+    }
+
+    let anchor_op = stage0_anchor
+        .map(|c| c.params.clone())
+        .unwrap_or_else(|| baseline_op.clone());
+    let anchor_doc = anchor_op
+        .depth_per_pass()
+        .unwrap_or_else(|| baseline_op.depth_per_pass().unwrap_or(1.5));
+    let anchor_stepover = anchor_op
+        .stepover()
+        .unwrap_or_else(|| baseline_op.stepover().unwrap_or(1.0));
+    let doc_variants = build_doc_variants(anchor_doc, matched_lut_row, ctx.operation_kind);
+    let stepover_variants =
+        build_stepover_variants(anchor_stepover, matched_lut_row, ctx.operation_kind);
+
+    let mut out: Vec<OptimizeCandidate> = Vec::new();
+    'outer: for &doc in &doc_variants {
+        for &stepover in &stepover_variants {
+            if cancel.load(Ordering::SeqCst) {
+                break 'outer;
+            }
+            // Skip the anchor combo — it's already represented by the
+            // headroom-point candidate (or the baseline).
+            if (doc - anchor_doc).abs() < DOC_DEDUP_TOLERANCE_MM
+                && (stepover - anchor_stepover).abs() < STEPOVER_DEDUP_TOLERANCE_MM
+            {
+                continue;
+            }
+            let candidate_op = apply_stepover_to_op(&apply_doc_to_op(&anchor_op, doc), stepover);
+            let delta = delta_against_baseline(baseline_op, &candidate_op);
+            if let Ok(candidate) = evaluate_candidate(
+                guard,
+                ctx,
+                candidate_op,
+                delta,
+                SearchStage::Coarse,
+                STAGE1_RESOLUTION_MM,
+                cancel,
+            ) {
+                out.push(candidate);
+            }
+        }
+    }
+    out
 }
 
 /// Operation kinds with a `depth_per_pass` knob that Stage 1 sweeps.
