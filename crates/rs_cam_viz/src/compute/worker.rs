@@ -18,26 +18,20 @@ use std::sync::mpsc;
 use std::sync::{Condvar, Mutex};
 use std::time::Instant;
 
-use rs_cam_core::arcfit::fit_arcs;
 use rs_cam_core::collision::{CollisionReport, RapidCollision};
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
-use rs_cam_core::dressup::{
-    LinkMoveParams, apply_dogbones, apply_entry, apply_lead_in_out, apply_link_moves,
-    filter_air_cuts,
-};
-use rs_cam_core::feedopt::{FeedOptParams, optimize_feed_rates};
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::stock_mesh::StockMesh;
-use rs_cam_core::toolpath::{MoveType, Toolpath};
+use rs_cam_core::toolpath::Toolpath;
 
 use super::{ComputeBackend, ComputeError, ComputeLane, ComputeMessage, LaneSnapshot, LaneState};
 use crate::state::job::ToolConfig;
 #[cfg(test)]
 use crate::state::job::ToolType;
 use crate::state::toolpath::{
-    DressupConfig, DressupEntryStyle, OperationConfig, StockSource, ToolpathId, ToolpathResult,
+    DressupConfig, OperationConfig, StockSource, ToolpathId, ToolpathResult,
 };
 
 pub struct ComputeRequest {

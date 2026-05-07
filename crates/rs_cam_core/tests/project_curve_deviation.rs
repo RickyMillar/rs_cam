@@ -397,6 +397,8 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         None,
         None,
         OperationType::ProjectCurve.transform_capabilities(),
+        None,
+        None,
     )
     .toolpath;
     report("project_curve + link_moves", &tp_with_links, &polygons);
@@ -411,6 +413,8 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         None,
         None,
         OperationType::ProjectCurve.transform_capabilities(),
+        None,
+        None,
     )
     .toolpath;
     let (offenders, total, worst) = report("project_curve (no links)", &tp_no_links, &polygons);
@@ -432,6 +436,8 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         None,
         None,
         OperationType::ProjectCurve.transform_capabilities(),
+        None,
+        None,
     )
     .toolpath;
     report("+ finish defaults", &tp_finish, &polygons);
@@ -449,6 +455,8 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         None,
         None,
         OperationType::ProjectCurve.transform_capabilities(),
+        None,
+        None,
     )
     .toolpath;
     report("+ ramp entry only", &tp_ramp, &polygons);

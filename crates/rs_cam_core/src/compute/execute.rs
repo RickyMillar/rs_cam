@@ -13,6 +13,7 @@ use crate::debug_trace::ToolpathDebugContext;
 use crate::geo::BoundingBox3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
+use crate::semantic_trace::{ToolpathSemanticContext, ToolpathSemanticKind, ToolpathSemanticScope};
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
 use crate::toolpath_spans::AnnotatedToolpath;
@@ -1002,6 +1003,53 @@ pub fn execute_operation_annotated(
     }
 }
 
+// ── Dressup tracing helper (Phase 4 / #44) ────────────────────────────
+
+/// Identifiers for one dressup step, used by the tracing wrapper.
+struct DressupTraceInfo<'a> {
+    debug_key: &'a str,
+    debug_label: &'a str,
+    kind: ToolpathSemanticKind,
+    semantic_label: &'a str,
+}
+
+/// Run one dressup step with optional debug + semantic tracing scopes.
+///
+/// Both contexts are optional — when both are `None` (CLI / session paths)
+/// the helper is just `transform(annotated)` with no overhead. When the
+/// GUI passes them through, each step appears as its own item in the
+/// semantic trace tree (consumed by `sim_op_list` etc.) and as a span in
+/// the debug trace.
+fn apply_dressup_traced(
+    annotated: AnnotatedToolpath,
+    debug_ctx: Option<&ToolpathDebugContext>,
+    semantic_ctx: Option<&ToolpathSemanticContext>,
+    info: DressupTraceInfo<'_>,
+    set_params: impl FnOnce(&ToolpathSemanticScope),
+    transform: impl FnOnce(AnnotatedToolpath) -> AnnotatedToolpath,
+) -> AnnotatedToolpath {
+    let debug_scope = debug_ctx.map(|ctx| ctx.start_span(info.debug_key, info.debug_label));
+    let debug_span_id = debug_scope.as_ref().map(|s| s.id());
+    let semantic_scope = semantic_ctx.map(|ctx| {
+        let scope = ctx.start_item(info.kind, info.semantic_label);
+        if let Some(span_id) = debug_span_id {
+            scope.set_debug_span_id(span_id);
+        }
+        set_params(&scope);
+        scope
+    });
+    let result = transform(annotated);
+    if let Some(scope) = semantic_scope.as_ref() {
+        scope.bind_to_toolpath(&result.toolpath, 0, result.toolpath.moves.len());
+    }
+    if let Some(scope) = debug_scope.as_ref()
+        && !result.toolpath.moves.is_empty()
+    {
+        scope.set_move_range(0, result.toolpath.moves.len() - 1);
+    }
+    result
+}
+
 /// Apply the standard dressup pipeline to a toolpath.
 ///
 /// Steps: entry style → dogbones → lead in/out → link moves → arc fitting
@@ -1012,15 +1060,13 @@ pub fn execute_operation_annotated(
 /// (`RapidOrderBarrier` + `DepthPass` span starts) — see
 /// [`AnnotatedToolpath::rapid_order_barriers`].
 ///
-/// The last two steps are optional and require additional context:
-/// - Air-cut filter needs `prior_stock` (the stock state before this toolpath).
-/// - Feed optimization needs a mutable stock copy, a cutter, and `cfg.feed_optimization == true`.
+/// `prior_stock` enables the air-cut filter step. `feed_opt_stock` + `cutter`
+/// enable feed optimization. Both `debug_ctx` and `semantic_ctx` are optional
+/// per-step tracing scopes — the GUI passes them through to populate the
+/// sim-tree view; CLI / session callers pass `None` and pay zero overhead.
 ///
-/// Phase 2 caveat: dressups are not yet span-aware. Any move-mutating
-/// dressup invalidates the input spans; the returned `AnnotatedToolpath`
-/// preserves the original span vector but flags `spans_valid = false`.
-/// Phase 3 sub-tasks (#50–#58) make each dressup remap spans through the
-/// transform.
+/// All dressups in this pipeline are span-aware (Phase 3 sub-tasks
+/// #50–#58); spans on the input are remapped through each step.
 #[allow(clippy::too_many_arguments)]
 pub fn apply_dressups(
     annotated: AnnotatedToolpath,
@@ -1031,6 +1077,8 @@ pub fn apply_dressups(
     feed_opt_stock: Option<&mut crate::dexel_stock::TriDexelStock>,
     cutter: Option<&dyn MillingCutter>,
     transform_capabilities: OperationTransformCapabilities,
+    debug_ctx: Option<&ToolpathDebugContext>,
+    semantic_ctx: Option<&ToolpathSemanticContext>,
 ) -> AnnotatedToolpath {
     use crate::dressup::{
         EntryStyle, LinkMoveParams, apply_dogbones, apply_entry, apply_lead_in_out,
@@ -1043,25 +1091,30 @@ pub fn apply_dressups(
     let mut current = annotated;
 
     let tool_radius = tool_diameter / 2.0;
-    // Tracks whether any non-span-aware step ran. Once all dressups are
-    // span-aware this becomes obsolete; until then we conservatively flag the
-    // output spans invalid when a non-span-aware step mutates moves.
-    // All dressups in this pipeline are now span-aware (Phase 3 sub-tasks
-    // #50–#58 complete). The flag stays as a guard slot for future
-    // non-span-aware additions — currently always false.
-    let any_unaware_mutation = false;
 
     if cfg.optimize_rapid_order
         && !rapid_order_barriers.is_empty()
         && transform_capabilities.allows_barriered_rapid_reorder()
     {
-        // Phase 3f / #55: span-aware barriered TSP. Barriers are derived
-        // from the spans inside `optimize_rapid_order` (matches the
-        // `rapid_order_barriers` we computed above for the capability gate).
-        current = crate::tsp::optimize_rapid_order(current, safe_z);
+        let barrier_count = rapid_order_barriers.len();
+        current = apply_dressup_traced(
+            current,
+            debug_ctx,
+            semantic_ctx,
+            DressupTraceInfo {
+                debug_key: "rapid_order",
+                debug_label: "Optimize rapid order",
+                kind: ToolpathSemanticKind::Optimization,
+                semantic_label: "Rapid ordering",
+            },
+            |scope| {
+                scope.set_param("safe_z", safe_z);
+                scope.set_param("barrier_count", barrier_count);
+            },
+            |at| crate::tsp::optimize_rapid_order(at, safe_z),
+        );
     }
 
-    // Determine plunge rate from toolpath
     let plunge_rate = current
         .toolpath
         .moves
@@ -1072,93 +1125,203 @@ pub fn apply_dressups(
         })
         .unwrap_or(500.0);
 
-    // Helper: before each span-aware step we may need to invalidate spans
-    // first if a prior non-span-aware step mutated moves.
-    let stage_spans = |at: &mut AnnotatedToolpath, any_unaware: bool| {
-        if any_unaware {
-            at.spans_valid = false;
-        }
-    };
-
-    // 1. Entry style — span-aware (Phase 3a / #50)
+    // 1. Entry style
     match cfg.entry_style {
         DressupEntryStyle::Ramp => {
-            stage_spans(&mut current, any_unaware_mutation);
-            current = apply_entry(
+            let ramp_angle = cfg.ramp_angle;
+            current = apply_dressup_traced(
                 current,
-                EntryStyle::Ramp {
-                    max_angle_deg: cfg.ramp_angle,
+                debug_ctx,
+                semantic_ctx,
+                DressupTraceInfo {
+                    debug_key: "entry_style",
+                    debug_label: "Ramp entry",
+                    kind: ToolpathSemanticKind::Entry,
+                    semantic_label: "Ramp entry",
                 },
-                plunge_rate,
+                |scope| {
+                    scope.set_param("kind", "ramp");
+                    scope.set_param("max_angle_deg", ramp_angle);
+                },
+                |at| {
+                    apply_entry(
+                        at,
+                        EntryStyle::Ramp {
+                            max_angle_deg: ramp_angle,
+                        },
+                        plunge_rate,
+                    )
+                },
             );
         }
         DressupEntryStyle::Helix => {
-            stage_spans(&mut current, any_unaware_mutation);
-            current = apply_entry(
+            let helix_radius = cfg.helix_radius;
+            let helix_pitch = cfg.helix_pitch;
+            current = apply_dressup_traced(
                 current,
-                EntryStyle::Helix {
-                    radius: cfg.helix_radius,
-                    pitch: cfg.helix_pitch,
+                debug_ctx,
+                semantic_ctx,
+                DressupTraceInfo {
+                    debug_key: "entry_style",
+                    debug_label: "Helix entry",
+                    kind: ToolpathSemanticKind::Entry,
+                    semantic_label: "Helix entry",
                 },
-                plunge_rate,
+                |scope| {
+                    scope.set_param("kind", "helix");
+                    scope.set_param("radius", helix_radius);
+                    scope.set_param("pitch", helix_pitch);
+                },
+                |at| {
+                    apply_entry(
+                        at,
+                        EntryStyle::Helix {
+                            radius: helix_radius,
+                            pitch: helix_pitch,
+                        },
+                        plunge_rate,
+                    )
+                },
             );
         }
         DressupEntryStyle::None => {}
     }
 
-    // 2. Dogbones — span-aware (Phase 3b / #51)
+    // 2. Dogbones
     if cfg.dogbone {
-        stage_spans(&mut current, any_unaware_mutation);
-        current = apply_dogbones(current, tool_radius, cfg.dogbone_angle);
-    }
-
-    // 3. Lead in/out — span-aware (Phase 3c / #52)
-    if cfg.lead_in_out {
-        stage_spans(&mut current, any_unaware_mutation);
-        current = apply_lead_in_out(current, cfg.lead_radius);
-    }
-
-    // 4. Link moves — span-aware (Phase 3d / #53)
-    if cfg.link_moves && transform_capabilities.allows_link_moves() {
-        stage_spans(&mut current, any_unaware_mutation);
-        current = apply_link_moves(
+        let angle = cfg.dogbone_angle;
+        current = apply_dressup_traced(
             current,
-            &LinkMoveParams {
-                max_link_distance: cfg.link_max_distance,
-                link_feed_rate: cfg.link_feed_rate,
-                safe_z_threshold: safe_z * 0.9,
+            debug_ctx,
+            semantic_ctx,
+            DressupTraceInfo {
+                debug_key: "dogbones",
+                debug_label: "Apply dogbones",
+                kind: ToolpathSemanticKind::Dressup,
+                semantic_label: "Dogbones",
+            },
+            |scope| {
+                scope.set_param("angle_deg", angle);
+            },
+            |at| apply_dogbones(at, tool_radius, angle),
+        );
+    }
+
+    // 3. Lead in/out
+    if cfg.lead_in_out {
+        let radius = cfg.lead_radius;
+        current = apply_dressup_traced(
+            current,
+            debug_ctx,
+            semantic_ctx,
+            DressupTraceInfo {
+                debug_key: "lead_in_out",
+                debug_label: "Apply lead in/out",
+                kind: ToolpathSemanticKind::Dressup,
+                semantic_label: "Lead in/out",
+            },
+            |scope| {
+                scope.set_param("radius", radius);
+            },
+            |at| apply_lead_in_out(at, radius),
+        );
+    }
+
+    // 4. Link moves
+    if cfg.link_moves && transform_capabilities.allows_link_moves() {
+        let max_dist = cfg.link_max_distance;
+        let link_feed = cfg.link_feed_rate;
+        current = apply_dressup_traced(
+            current,
+            debug_ctx,
+            semantic_ctx,
+            DressupTraceInfo {
+                debug_key: "link_moves",
+                debug_label: "Apply link moves",
+                kind: ToolpathSemanticKind::Dressup,
+                semantic_label: "Link moves",
+            },
+            |scope| {
+                scope.set_param("max_link_distance", max_dist);
+                scope.set_param("link_feed_rate", link_feed);
+            },
+            |at| {
+                apply_link_moves(
+                    at,
+                    &LinkMoveParams {
+                        max_link_distance: max_dist,
+                        link_feed_rate: link_feed,
+                        safe_z_threshold: safe_z * 0.9,
+                    },
+                )
             },
         );
     }
 
-    // 5. Arc fitting — span-aware (Phase 3e / #54). Honors RapidOrderBarrier /
-    // DepthPass boundaries; remaps spans through the N-to-1 collapse.
+    // 5. Arc fitting
     if cfg.arc_fitting {
-        stage_spans(&mut current, any_unaware_mutation);
-        current = crate::arcfit::fit_arcs(current, cfg.arc_tolerance);
+        let tolerance = cfg.arc_tolerance;
+        current = apply_dressup_traced(
+            current,
+            debug_ctx,
+            semantic_ctx,
+            DressupTraceInfo {
+                debug_key: "arc_fit",
+                debug_label: "Fit arcs",
+                kind: ToolpathSemanticKind::Optimization,
+                semantic_label: "Arc fitting",
+            },
+            |scope| {
+                scope.set_param("tolerance", tolerance);
+            },
+            |at| crate::arcfit::fit_arcs(at, tolerance),
+        );
     }
 
-    // 6. Rapid order optimization — span-aware (Phase 3f / #55). Without
-    // barriers there is one global TSP group; the call still goes through
-    // the unified entry point so spans are remapped through the
-    // permutation.
+    // 6. Rapid order optimization (unbarriered fallback)
     if cfg.optimize_rapid_order
         && rapid_order_barriers.is_empty()
         && transform_capabilities.allows_unbarriered_rapid_reorder()
     {
-        stage_spans(&mut current, any_unaware_mutation);
-        current = crate::tsp::optimize_rapid_order(current, safe_z);
+        current = apply_dressup_traced(
+            current,
+            debug_ctx,
+            semantic_ctx,
+            DressupTraceInfo {
+                debug_key: "rapid_order",
+                debug_label: "Optimize rapid order",
+                kind: ToolpathSemanticKind::Optimization,
+                semantic_label: "Rapid ordering",
+            },
+            |scope| {
+                scope.set_param("safe_z", safe_z);
+            },
+            |at| crate::tsp::optimize_rapid_order(at, safe_z),
+        );
     }
 
-    // 7. Air-cut filter — span-aware (Phase 3g / #56)
+    // 7. Air-cut filter
     if let Some(stock) = prior_stock {
-        stage_spans(&mut current, any_unaware_mutation);
-        current = crate::dressup::filter_air_cuts(current, stock, tool_radius, safe_z, 0.1);
+        current = apply_dressup_traced(
+            current,
+            debug_ctx,
+            semantic_ctx,
+            DressupTraceInfo {
+                debug_key: "air_cut_filter",
+                debug_label: "Filter air cuts",
+                kind: ToolpathSemanticKind::Optimization,
+                semantic_label: "Air-cut filter",
+            },
+            |scope| {
+                scope.set_param("tool_radius", tool_radius);
+                scope.set_param("safe_z", safe_z);
+            },
+            |at| crate::dressup::filter_air_cuts(at, stock, tool_radius, safe_z, 0.1),
+        );
     }
 
-    // 8. Feed rate optimization (when enabled and stock + cutter are available).
-    // Note: this rewrites feed rates only — move count/order is preserved
-    // (Phase 3h / #57). Spans pass through unchanged.
+    // 8. Feed rate optimization. Rewrites feed rates only — move count/order
+    // and spans pass through unchanged.
     if cfg.feed_optimization
         && let (Some(stock), Some(cut)) = (feed_opt_stock, cutter)
     {
@@ -1171,22 +1334,37 @@ pub fn apply_dressups(
                 _ => None,
             })
             .unwrap_or(1000.0);
+        let max_rate = cfg.feed_max_rate;
+        let ramp_rate = cfg.feed_ramp_rate;
         let params = crate::feedopt::FeedOptParams {
             nominal_feed_rate: nominal,
-            max_feed_rate: cfg.feed_max_rate,
+            max_feed_rate: max_rate,
             min_feed_rate: nominal * 0.5,
-            ramp_rate: cfg.feed_ramp_rate,
+            ramp_rate,
             air_cut_threshold: 0.05,
         };
-        stage_spans(&mut current, any_unaware_mutation);
-        current = crate::feedopt::optimize_feed_rates(current, cut, stock, &params);
-        // Move count/order preserved → no need to mark unaware mutation.
+        current = apply_dressup_traced(
+            current,
+            debug_ctx,
+            semantic_ctx,
+            DressupTraceInfo {
+                debug_key: "feed_optimization",
+                debug_label: "Optimize feeds",
+                kind: ToolpathSemanticKind::Optimization,
+                semantic_label: "Feed optimization",
+            },
+            |scope| {
+                scope.set_param("max_feed_rate", max_rate);
+                scope.set_param("ramp_rate", ramp_rate);
+            },
+            |at| crate::feedopt::optimize_feed_rates(at, cut, stock, &params),
+        );
     }
 
     AnnotatedToolpath {
         toolpath: current.toolpath,
         spans: current.spans,
-        spans_valid: input_valid && current.spans_valid && !any_unaware_mutation,
+        spans_valid: input_valid && current.spans_valid,
     }
 }
 
@@ -1484,6 +1662,8 @@ mod tests {
             None,
             None,
             OperationType::DropCutter.transform_capabilities(),
+            None,
+            None,
         );
 
         assert!(

@@ -8,8 +8,7 @@ use super::{
 };
 #[cfg(test)]
 use super::{
-    BoundingBox3, DressupConfig, MoveType, OperationConfig, StockSource, ToolConfig, ToolType,
-    ToolpathId,
+    BoundingBox3, DressupConfig, OperationConfig, StockSource, ToolConfig, ToolType, ToolpathId,
 };
 #[cfg(test)]
 use crate::state::toolpath::{
@@ -24,6 +23,8 @@ use rs_cam_core::geo::P3;
 #[cfg(test)]
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::semantic_trace::ToolpathSemanticKind;
+#[cfg(test)]
+use rs_cam_core::toolpath::MoveType;
 
 pub(super) struct ComputeExecutionOutcome {
     pub result: Result<ToolpathResult, ComputeError>,

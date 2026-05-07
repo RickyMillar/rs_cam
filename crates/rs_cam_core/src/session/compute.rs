@@ -516,6 +516,8 @@ impl ProjectSession {
                     None,
                     None,
                     tc.operation.transform_capabilities(),
+                    None,
+                    None,
                 );
                 toolpath = dressed.toolpath;
 
