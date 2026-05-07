@@ -1038,28 +1038,31 @@ pub fn apply_dressups(
     };
 
     let rapid_order_barriers = annotated.rapid_order_barriers();
-    let AnnotatedToolpath {
-        toolpath: mut tp,
-        spans,
-        spans_valid: input_valid,
-    } = annotated;
+    let input_valid = annotated.spans_valid;
+    let mut current = annotated;
 
     let tool_radius = tool_diameter / 2.0;
-    // Tracks whether any move-mutating dressup ran. Phase 3 sub-tasks
-    // remap spans per-dressup; until then we conservatively flag the
-    // output spans invalid when this is true.
-    let mut any_move_mutation = false;
+    // Tracks whether any non-span-aware step ran. Once all dressups are
+    // span-aware this becomes obsolete; until then we conservatively flag the
+    // output spans invalid when a non-span-aware step mutates moves.
+    let mut any_unaware_mutation = false;
 
     if cfg.optimize_rapid_order
         && !rapid_order_barriers.is_empty()
         && transform_capabilities.allows_barriered_rapid_reorder()
     {
-        tp = crate::tsp::optimize_rapid_order_with_barriers(&tp, safe_z, &rapid_order_barriers);
-        any_move_mutation = true;
+        let new_tp = crate::tsp::optimize_rapid_order_with_barriers(
+            &current.toolpath,
+            safe_z,
+            &rapid_order_barriers,
+        );
+        current.toolpath = new_tp;
+        any_unaware_mutation = true;
     }
 
     // Determine plunge rate from toolpath
-    let plunge_rate = tp
+    let plunge_rate = current
+        .toolpath
         .moves
         .iter()
         .find_map(|m| match m.move_type {
@@ -1068,86 +1071,86 @@ pub fn apply_dressups(
         })
         .unwrap_or(500.0);
 
-    // 1. Entry style
+    // Helper: before each span-aware step we may need to invalidate spans
+    // first if a prior non-span-aware step mutated moves.
+    let stage_spans = |at: &mut AnnotatedToolpath, any_unaware: bool| {
+        if any_unaware {
+            at.spans_valid = false;
+        }
+    };
+
+    // 1. Entry style — span-aware (Phase 3a / #50)
     match cfg.entry_style {
         DressupEntryStyle::Ramp => {
-            tp = apply_entry(
-                tp,
+            stage_spans(&mut current, any_unaware_mutation);
+            current = apply_entry(
+                current,
                 EntryStyle::Ramp {
                     max_angle_deg: cfg.ramp_angle,
                 },
                 plunge_rate,
             );
-            any_move_mutation = true;
         }
         DressupEntryStyle::Helix => {
-            tp = apply_entry(
-                tp,
+            stage_spans(&mut current, any_unaware_mutation);
+            current = apply_entry(
+                current,
                 EntryStyle::Helix {
                     radius: cfg.helix_radius,
                     pitch: cfg.helix_pitch,
                 },
                 plunge_rate,
             );
-            any_move_mutation = true;
         }
         DressupEntryStyle::None => {}
     }
 
-    // 2. Dogbones
+    // 2. Dogbones — span-aware (Phase 3b / #51)
     if cfg.dogbone {
-        tp = apply_dogbones(tp, tool_radius, cfg.dogbone_angle);
-        any_move_mutation = true;
+        stage_spans(&mut current, any_unaware_mutation);
+        current = apply_dogbones(current, tool_radius, cfg.dogbone_angle);
     }
 
-    // 3. Lead in/out
+    // 3. Lead in/out — span-aware (Phase 3c / #52)
     if cfg.lead_in_out {
-        tp = apply_lead_in_out(tp, cfg.lead_radius);
-        any_move_mutation = true;
+        stage_spans(&mut current, any_unaware_mutation);
+        current = apply_lead_in_out(current, cfg.lead_radius);
     }
 
-    // 4. Link moves — span-aware (Phase 3d / #53). Wraps `tp` into an
-    // AnnotatedToolpath so the link logic can honor barriers and remap spans.
-    // Until upstream dressups (entry/dogbones/lead_in_out) become span-aware
-    // we still set `any_move_mutation = true`; the per-step span remap here
-    // is correct in isolation and stays correct once the chain is complete.
+    // 4. Link moves — span-aware (Phase 3d / #53)
     if cfg.link_moves && transform_capabilities.allows_link_moves() {
-        let mut staging = AnnotatedToolpath::with_spans(tp, spans.clone());
-        // If earlier steps mutated moves we cannot trust the spans through
-        // this transform — flag them invalid so link_moves doesn't try to
-        // honor stale barriers or remap stale ranges.
-        staging.spans_valid = input_valid && !any_move_mutation;
-        let dressed = apply_link_moves(
-            staging,
+        stage_spans(&mut current, any_unaware_mutation);
+        current = apply_link_moves(
+            current,
             &LinkMoveParams {
                 max_link_distance: cfg.link_max_distance,
                 link_feed_rate: cfg.link_feed_rate,
                 safe_z_threshold: safe_z * 0.9,
             },
         );
-        tp = dressed.toolpath;
-        any_move_mutation = true;
     }
 
-    // 5. Arc fitting
+    // 5. Arc fitting — not span-aware
     if cfg.arc_fitting {
-        tp = crate::arcfit::fit_arcs(&tp, cfg.arc_tolerance);
-        any_move_mutation = true;
+        let new_tp = crate::arcfit::fit_arcs(&current.toolpath, cfg.arc_tolerance);
+        current.toolpath = new_tp;
+        any_unaware_mutation = true;
     }
 
-    // 6. Rapid order optimization
+    // 6. Rapid order optimization — not span-aware
     if cfg.optimize_rapid_order
         && rapid_order_barriers.is_empty()
         && transform_capabilities.allows_unbarriered_rapid_reorder()
     {
-        tp = crate::tsp::optimize_rapid_order(&tp, safe_z);
-        any_move_mutation = true;
+        let new_tp = crate::tsp::optimize_rapid_order(&current.toolpath, safe_z);
+        current.toolpath = new_tp;
+        any_unaware_mutation = true;
     }
 
-    // 7. Air-cut filter (when prior stock is available)
+    // 7. Air-cut filter — span-aware (Phase 3g / #56)
     if let Some(stock) = prior_stock {
-        tp = crate::dressup::filter_air_cuts(tp, stock, tool_radius, safe_z, 0.1);
-        any_move_mutation = true;
+        stage_spans(&mut current, any_unaware_mutation);
+        current = crate::dressup::filter_air_cuts(current, stock, tool_radius, safe_z, 0.1);
     }
 
     // 8. Feed rate optimization (when enabled and stock + cutter are available).
@@ -1156,7 +1159,8 @@ pub fn apply_dressups(
     if cfg.feed_optimization
         && let (Some(stock), Some(cut)) = (feed_opt_stock, cutter)
     {
-        let nominal = tp
+        let nominal = current
+            .toolpath
             .moves
             .iter()
             .find_map(|m| match m.move_type {
@@ -1171,19 +1175,15 @@ pub fn apply_dressups(
             ramp_rate: cfg.feed_ramp_rate,
             air_cut_threshold: 0.05,
         };
-        let mut staging = AnnotatedToolpath::with_spans(tp, spans.clone());
-        // If earlier steps mutated moves, the spans we'd carry through here
-        // are stale anyway; mirror that flag honestly.
-        staging.spans_valid = input_valid && !any_move_mutation;
-        let dressed = crate::feedopt::optimize_feed_rates(staging, cut, stock, &params);
-        tp = dressed.toolpath;
-        // No `any_move_mutation = true` — feed-opt does not change moves.
+        stage_spans(&mut current, any_unaware_mutation);
+        current = crate::feedopt::optimize_feed_rates(current, cut, stock, &params);
+        // Move count/order preserved → no need to mark unaware mutation.
     }
 
     AnnotatedToolpath {
-        toolpath: tp,
-        spans,
-        spans_valid: input_valid && !any_move_mutation,
+        toolpath: current.toolpath,
+        spans: current.spans,
+        spans_valid: input_valid && current.spans_valid && !any_unaware_mutation,
     }
 }
 

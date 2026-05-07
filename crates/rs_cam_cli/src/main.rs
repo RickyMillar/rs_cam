@@ -2061,13 +2061,23 @@ fn main() -> Result<()> {
             // Apply entry dressup
             if let Some(entry_style) = helpers::parse_entry_style(&entry)? {
                 debug!("Applying {} entry...", entry);
-                toolpath = apply_entry(toolpath, entry_style, plunge_rate);
+                toolpath = apply_entry(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(toolpath),
+                    entry_style,
+                    plunge_rate,
+                )
+                .toolpath;
             }
 
             // Apply dogbone dressup
             if dogbone {
                 debug!("Applying dogbone overcuts...");
-                toolpath = apply_dogbones(toolpath, tool_radius, 170.0);
+                toolpath = apply_dogbones(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(toolpath),
+                    tool_radius,
+                    170.0,
+                )
+                .toolpath;
             }
 
             let elapsed = start.elapsed();
@@ -2155,7 +2165,12 @@ fn main() -> Result<()> {
             // Apply entry dressup
             if let Some(entry_style) = helpers::parse_entry_style(&entry)? {
                 debug!("Applying {} entry...", entry);
-                toolpath = apply_entry(toolpath, entry_style, plunge_rate);
+                toolpath = apply_entry(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(toolpath),
+                    entry_style,
+                    plunge_rate,
+                )
+                .toolpath;
             }
 
             // Apply tabs (on final depth pass only)
@@ -2173,7 +2188,12 @@ fn main() -> Result<()> {
             // Apply dogbone dressup
             if dogbone {
                 debug!("Applying dogbone overcuts...");
-                toolpath = apply_dogbones(toolpath, tool_radius, 170.0);
+                toolpath = apply_dogbones(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(toolpath),
+                    tool_radius,
+                    170.0,
+                )
+                .toolpath;
             }
 
             let elapsed = start.elapsed();

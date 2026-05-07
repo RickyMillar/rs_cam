@@ -26,14 +26,29 @@ pub enum EntryStyle {
     Helix { radius: f64, pitch: f64 },
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-#[allow(clippy::needless_pass_by_value)] // owned for API consistency across dressup pipeline
 /// Replace straight plunges in a toolpath with ramped or helical entries.
 ///
 /// A "plunge" is detected as a feed move that goes from safe_z (or higher)
-/// down to cutting depth with no XY movement.
-pub fn apply_entry(toolpath: Toolpath, style: EntryStyle, plunge_rate: f64) -> Toolpath {
+/// down to cutting depth with no XY movement. The plunge move is replaced
+/// in-place by one or more ramp/helix moves; the remap reflects the 1→K
+/// expansion. The inserted moves are tagged with [`SpanKind::Entry`] when
+/// the input has valid spans.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub fn apply_entry(
+    annotated: AnnotatedToolpath,
+    style: EntryStyle,
+    plunge_rate: f64,
+) -> AnnotatedToolpath {
+    let AnnotatedToolpath {
+        toolpath,
+        spans,
+        spans_valid,
+    } = annotated;
+
     let mut result = Toolpath::new();
+    let mut old_to_new: Vec<Option<std::ops::Range<usize>>> =
+        Vec::with_capacity(toolpath.moves.len());
+    let mut entry_ranges: Vec<std::ops::Range<usize>> = Vec::new();
 
     let mut i = 0;
     while i < toolpath.moves.len() {
@@ -44,6 +59,7 @@ pub fn apply_entry(toolpath: Toolpath, style: EntryStyle, plunge_rate: f64) -> T
             && i > 0
             && is_plunge(&toolpath.moves[i - 1], m)
         {
+            let entry_start = result.moves.len();
             match style {
                 EntryStyle::Ramp { max_angle_deg } => {
                     // Look ahead for the next XY move to determine ramp direction
@@ -68,15 +84,65 @@ pub fn apply_entry(toolpath: Toolpath, style: EntryStyle, plunge_rate: f64) -> T
                     );
                 }
             }
+            let entry_end = result.moves.len();
+            // Defensive: if entry emitted no moves, skip the tagging step.
+            if entry_end > entry_start {
+                old_to_new.push(Some(entry_start..entry_end));
+                entry_ranges.push(entry_start..entry_end);
+            } else {
+                old_to_new.push(None);
+            }
             i += 1;
             continue;
         }
 
+        let new_idx = result.moves.len();
         result.moves.push(m.clone());
+        old_to_new.push(Some(new_idx..new_idx + 1));
         i += 1;
     }
 
-    result
+    let new_n_moves = result.moves.len();
+    let new_spans = if spans_valid {
+        let remap = MoveRemap { old_to_new };
+        let mut remapped = remap_spans(spans, &remap, new_n_moves);
+        for r in entry_ranges {
+            remapped.push(Span::new(r.start, r.end, SpanKind::Entry));
+        }
+        remapped
+    } else {
+        spans
+    };
+
+    AnnotatedToolpath {
+        toolpath: result,
+        spans: new_spans,
+        spans_valid,
+    }
+}
+
+/// Apply a `MoveRemap` to a vector of spans, dropping spans that fully
+/// dropped out of the new toolpath. Used by every span-aware dressup.
+fn remap_spans(spans: Vec<Span>, remap: &MoveRemap, new_n_moves: usize) -> Vec<Span> {
+    spans
+        .into_iter()
+        .filter_map(|s| {
+            let payload = s.payload.clone();
+            let label = s.label.clone();
+            let mut new_span = if s.is_boundary() {
+                let new_pos = remap.remap_boundary(s.start_move, new_n_moves);
+                Span::new(new_pos, new_pos, s.kind)
+            } else {
+                let r = remap.remap_range(s.start_move, s.end_move)?;
+                Span::new(r.start, r.end, s.kind)
+            }
+            .with_label(label);
+            if let Some(p) = payload {
+                new_span = new_span.with_payload(p);
+            }
+            Some(new_span)
+        })
+        .collect()
 }
 
 fn is_plunge(prev: &Move, current: &Move) -> bool {
@@ -411,20 +477,38 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
 
 /// Insert arc lead-in and lead-out moves at the start/end of cutting passes.
 ///
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-#[allow(clippy::needless_pass_by_value)] // owned for API consistency across dressup pipeline
 /// A "cutting pass" is a sequence of feed moves at the same Z bounded by
 /// rapids or plunges. The lead-in is a quarter-circle arc that approaches
 /// the first cut point tangentially (avoiding a witness mark from a direct
 /// plunge). The lead-out is a matching arc departing the last cut point.
 ///
 /// `radius` is the arc radius in mm (typically 1-3mm or ~half the tool radius).
-pub fn apply_lead_in_out(toolpath: Toolpath, radius: f64) -> Toolpath {
+///
+/// Lead-in moves replace the original plunge: the old plunge index maps to
+/// the inserted prefix arc range, all tagged [`SpanKind::Entry`]. Lead-out
+/// moves are emitted *after* the original cut endpoint: the old cut-end move
+/// remaps to the union of itself plus the appended arcs, with the suffix
+/// tagged [`SpanKind::LeadOut`].
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub fn apply_lead_in_out(annotated: AnnotatedToolpath, radius: f64) -> AnnotatedToolpath {
+    let AnnotatedToolpath {
+        toolpath,
+        spans,
+        spans_valid,
+    } = annotated;
     let mut result = Toolpath::new();
     let moves = &toolpath.moves;
     if moves.is_empty() {
-        return result;
+        return AnnotatedToolpath {
+            toolpath: result,
+            spans,
+            spans_valid,
+        };
     }
+
+    let mut old_to_new: Vec<Option<std::ops::Range<usize>>> = Vec::with_capacity(moves.len());
+    let mut entry_ranges: Vec<std::ops::Range<usize>> = Vec::new();
+    let mut leadout_ranges: Vec<std::ops::Range<usize>> = Vec::new();
 
     let mut i = 0;
     while i < moves.len() {
@@ -462,6 +546,7 @@ pub fn apply_lead_in_out(toolpath: Toolpath, radius: f64) -> Toolpath {
                         _ => 500.0,
                     };
 
+                    let entry_start = result.moves.len();
                     // Plunge to lead-in start instead of original plunge point
                     result.feed_to(lead_start, feed_rate);
 
@@ -476,6 +561,13 @@ pub fn apply_lead_in_out(toolpath: Toolpath, radius: f64) -> Toolpath {
                         let ay = plunge_end.y + perp_y * radius * (1.0 - sin_a)
                             - uy * radius * (1.0 - cos_a);
                         result.feed_to(P3::new(ax, ay, cut_z), feed_rate);
+                    }
+                    let entry_end = result.moves.len();
+                    if entry_end > entry_start {
+                        old_to_new.push(Some(entry_start..entry_end));
+                        entry_ranges.push(entry_start..entry_end);
+                    } else {
+                        old_to_new.push(None);
                     }
 
                     i += 1;
@@ -512,9 +604,11 @@ pub fn apply_lead_in_out(toolpath: Toolpath, radius: f64) -> Toolpath {
                     };
 
                     // Emit the original cut endpoint
+                    let cut_idx = result.moves.len();
                     result.moves.push(moves[i].clone());
 
                     // Lead-out: quarter-circle arc departing tangentially
+                    let lo_start = result.moves.len();
                     let arc_steps = 8;
                     for s in 1..=arc_steps {
                         let t = s as f64 / arc_steps as f64;
@@ -524,6 +618,13 @@ pub fn apply_lead_in_out(toolpath: Toolpath, radius: f64) -> Toolpath {
                         let ay = cut_end.y + uy * radius * sin_a + perp_y * radius * (1.0 - cos_a);
                         result.feed_to(P3::new(ax, ay, cut_z), feed_rate);
                     }
+                    let lo_end = result.moves.len();
+                    // The old cut-end move covers cut_idx..lo_end (itself plus
+                    // the appended lead-out arc).
+                    old_to_new.push(Some(cut_idx..lo_end));
+                    if lo_end > lo_start {
+                        leadout_ranges.push(lo_start..lo_end);
+                    }
 
                     i += 1;
                     continue;
@@ -531,11 +632,32 @@ pub fn apply_lead_in_out(toolpath: Toolpath, radius: f64) -> Toolpath {
             }
         }
 
+        let new_idx = result.moves.len();
         result.moves.push(moves[i].clone());
+        old_to_new.push(Some(new_idx..new_idx + 1));
         i += 1;
     }
 
-    result
+    let new_n_moves = result.moves.len();
+    let new_spans = if spans_valid {
+        let remap = MoveRemap { old_to_new };
+        let mut remapped = remap_spans(spans, &remap, new_n_moves);
+        for r in entry_ranges {
+            remapped.push(Span::new(r.start, r.end, SpanKind::Entry));
+        }
+        for r in leadout_ranges {
+            remapped.push(Span::new(r.start, r.end, SpanKind::LeadOut));
+        }
+        remapped
+    } else {
+        spans
+    };
+
+    AnnotatedToolpath {
+        toolpath: result,
+        spans: new_spans,
+        spans_valid,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -544,101 +666,141 @@ pub fn apply_lead_in_out(toolpath: Toolpath, radius: f64) -> Toolpath {
 
 /// Insert dogbone overcuts at inside corners of a toolpath.
 ///
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// At each corner sharper than `max_angle_deg`, a small extension is cut
 /// along the corner bisector so that a mating part with a sharp corner can
 /// fit into the CNC-cut pocket. The overcut distance is `tool_radius`,
 /// creating a clearance notch at each inside corner.
 ///
 /// Only operates on consecutive linear feed moves at the same Z.
-pub fn apply_dogbones(toolpath: Toolpath, tool_radius: f64, max_angle_deg: f64) -> Toolpath {
+///
+/// The corner move at old index `i` remaps to the union of itself plus the
+/// (overcut, return) pair appended after it. Each inserted overcut+return
+/// pair is tagged with [`SpanKind::DressupArtifact`] (label `"dogbone"`).
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub fn apply_dogbones(
+    annotated: AnnotatedToolpath,
+    tool_radius: f64,
+    max_angle_deg: f64,
+) -> AnnotatedToolpath {
+    let AnnotatedToolpath {
+        toolpath,
+        spans,
+        spans_valid,
+    } = annotated;
     let max_angle_rad = max_angle_deg.to_radians();
     let mut result = Toolpath::new();
 
     let moves = &toolpath.moves;
     if moves.len() < 3 {
-        return toolpath;
+        // Pass-through with whatever spans were provided.
+        return AnnotatedToolpath {
+            toolpath,
+            spans,
+            spans_valid,
+        };
     }
 
+    let mut old_to_new: Vec<Option<std::ops::Range<usize>>> = Vec::with_capacity(moves.len());
+    let mut dogbone_ranges: Vec<std::ops::Range<usize>> = Vec::new();
+
+    // First move (always emitted as-is).
+    let first_idx = result.moves.len();
     result.moves.push(moves[0].clone());
+    old_to_new.push(Some(first_idx..first_idx + 1));
 
     for i in 1..moves.len() - 1 {
+        let corner_idx = result.moves.len();
         result.moves.push(moves[i].clone());
 
         // Only process consecutive linear feed moves at the same Z
         let is_linear = |m: &Move| matches!(m.move_type, MoveType::Linear { .. });
-        if !is_linear(&moves[i - 1]) || !is_linear(&moves[i]) || !is_linear(&moves[i + 1]) {
-            continue;
+        let mut emitted_overcut = false;
+
+        if is_linear(&moves[i - 1]) && is_linear(&moves[i]) && is_linear(&moves[i + 1]) {
+            let a = moves[i - 1].target;
+            let b = moves[i].target;
+            let c = moves[i + 1].target;
+
+            // Must be at same Z (cutting depth)
+            if (a.z - b.z).abs() <= 0.01 && (b.z - c.z).abs() <= 0.01 {
+                let v1x = b.x - a.x;
+                let v1y = b.y - a.y;
+                let v2x = c.x - b.x;
+                let v2y = c.y - b.y;
+                let len1 = (v1x * v1x + v1y * v1y).sqrt();
+                let len2 = (v2x * v2x + v2y * v2y).sqrt();
+
+                if len1 >= 1e-10 && len2 >= 1e-10 {
+                    let u1x = v1x / len1;
+                    let u1y = v1y / len1;
+                    let u2x = v2x / len2;
+                    let u2y = v2y / len2;
+
+                    let dot = u1x * u2x + u1y * u2y;
+                    let angle = dot.clamp(-1.0, 1.0).acos();
+
+                    if angle >= (std::f64::consts::PI - max_angle_rad) {
+                        let bx = -u1x + u2x;
+                        let by = -u1y + u2y;
+                        let blen = (bx * bx + by * by).sqrt();
+
+                        if blen >= 1e-10 {
+                            let dx = -(bx / blen);
+                            let dy = -(by / blen);
+
+                            let feed_rate = match moves[i].move_type {
+                                MoveType::Linear { feed_rate } => feed_rate,
+                                _ => 1000.0,
+                            };
+
+                            let overcut_x = b.x + dx * tool_radius;
+                            let overcut_y = b.y + dy * tool_radius;
+                            let overcut_start = result.moves.len();
+                            result.feed_to(P3::new(overcut_x, overcut_y, b.z), feed_rate);
+                            result.feed_to(b, feed_rate);
+                            let overcut_end = result.moves.len();
+                            dogbone_ranges.push(overcut_start..overcut_end);
+                            emitted_overcut = true;
+                        }
+                    }
+                }
+            }
         }
 
-        let a = moves[i - 1].target;
-        let b = moves[i].target;
-        let c = moves[i + 1].target;
-
-        // Must be at same Z (cutting depth)
-        if (a.z - b.z).abs() > 0.01 || (b.z - c.z).abs() > 0.01 {
-            continue;
-        }
-
-        // Compute edge vectors
-        let v1x = b.x - a.x;
-        let v1y = b.y - a.y;
-        let v2x = c.x - b.x;
-        let v2y = c.y - b.y;
-        let len1 = (v1x * v1x + v1y * v1y).sqrt();
-        let len2 = (v2x * v2x + v2y * v2y).sqrt();
-
-        if len1 < 1e-10 || len2 < 1e-10 {
-            continue;
-        }
-
-        // Normalize
-        let u1x = v1x / len1;
-        let u1y = v1y / len1;
-        let u2x = v2x / len2;
-        let u2y = v2y / len2;
-
-        // Corner angle via dot product of forward directions
-        let dot = u1x * u2x + u1y * u2y;
-        let angle = dot.clamp(-1.0, 1.0).acos(); // 0 = straight, π = U-turn
-
-        // Skip if not a sharp enough corner
-        if angle < (std::f64::consts::PI - max_angle_rad) {
-            continue;
-        }
-
-        // Bisector direction: average of the two "away from B" directions
-        // Points into the material at the corner
-        let bx = -u1x + u2x;
-        let by = -u1y + u2y;
-        let blen = (bx * bx + by * by).sqrt();
-        if blen < 1e-10 {
-            continue; // degenerate (straight line or U-turn)
-        }
-
-        // Dogbone direction is OPPOSITE to the bisector of the forward vectors
-        // (pointing into the outside of the corner, i.e., into material)
-        let dx = -(bx / blen);
-        let dy = -(by / blen);
-
-        let feed_rate = match moves[i].move_type {
-            MoveType::Linear { feed_rate } => feed_rate,
-            _ => 1000.0,
+        // Old corner move at index i remaps to corner_idx, optionally extended
+        // through the appended overcut pair.
+        let new_end = if emitted_overcut {
+            result.moves.len()
+        } else {
+            corner_idx + 1
         };
-
-        // Cut to overcut point and back
-        let overcut_x = b.x + dx * tool_radius;
-        let overcut_y = b.y + dy * tool_radius;
-        result.feed_to(P3::new(overcut_x, overcut_y, b.z), feed_rate);
-        result.feed_to(b, feed_rate);
+        old_to_new.push(Some(corner_idx..new_end));
     }
 
-    // Add last move
-    if moves.len() >= 2 {
-        result.moves.push(moves[moves.len() - 1].clone());
-    }
+    // Last move (always emitted as-is).
+    let last_old = moves.len() - 1;
+    let last_new = result.moves.len();
+    result.moves.push(moves[last_old].clone());
+    old_to_new.push(Some(last_new..last_new + 1));
 
-    result
+    let new_n_moves = result.moves.len();
+    let new_spans = if spans_valid {
+        let remap = MoveRemap { old_to_new };
+        let mut remapped = remap_spans(spans, &remap, new_n_moves);
+        for r in dogbone_ranges {
+            remapped
+                .push(Span::new(r.start, r.end, SpanKind::DressupArtifact).with_label("dogbone"));
+        }
+        remapped
+    } else {
+        spans
+    };
+
+    AnnotatedToolpath {
+        toolpath: result,
+        spans: new_spans,
+        spans_valid,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -783,25 +945,7 @@ pub fn apply_link_moves(
     let new_n_moves = result.moves.len();
     let new_spans = if spans_valid {
         let remap = MoveRemap { old_to_new };
-        let mut remapped: Vec<Span> = spans
-            .into_iter()
-            .filter_map(|s| {
-                let payload = s.payload.clone();
-                let label = s.label.clone();
-                let mut new_span = if s.is_boundary() {
-                    let new_pos = remap.remap_boundary(s.start_move, new_n_moves);
-                    Span::new(new_pos, new_pos, s.kind)
-                } else {
-                    let r = remap.remap_range(s.start_move, s.end_move)?;
-                    Span::new(r.start, r.end, s.kind)
-                }
-                .with_label(label);
-                if let Some(p) = payload {
-                    new_span = new_span.with_payload(p);
-                }
-                Some(new_span)
-            })
-            .collect();
+        let mut remapped = remap_spans(spans, &remap, new_n_moves);
         for pos in bridge_positions {
             remapped.push(Span::new(pos, pos + 1, SpanKind::LinkBridge));
         }
@@ -848,32 +992,43 @@ fn is_in_air(stock: &TriDexelStock, x: f64, y: f64, z: f64, tolerance: f64) -> b
 ///
 /// For each cutting move, checks if material exists at the move's position in
 /// the prior stock. Moves where both endpoints are in air (no material above
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// the cutting Z) are converted to rapids. This is conservative — moves that
 /// partially contact material are preserved.
 ///
 /// Arc moves additionally check the arc center point for extra conservatism.
 ///
 /// `tool_radius` is currently reserved for future per-cell radius checks.
+///
+/// Span behavior: dropped air moves remap to `None`. Each inserted
+/// retract/rapid/plunge that bridges across a dropped run is tagged with
+/// [`SpanKind::LinkBridge`] (these inserts serve the same role as link
+/// bridges and should not block downstream link/TSP passes).
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn filter_air_cuts(
-    toolpath: Toolpath,
+    annotated: AnnotatedToolpath,
     prior_stock: &TriDexelStock,
     _tool_radius: f64,
     safe_z: f64,
     tolerance: f64,
-) -> Toolpath {
+) -> AnnotatedToolpath {
+    let AnnotatedToolpath {
+        toolpath,
+        spans,
+        spans_valid,
+    } = annotated;
     let moves = &toolpath.moves;
     if moves.is_empty() {
-        return toolpath;
+        return AnnotatedToolpath {
+            toolpath,
+            spans,
+            spans_valid,
+        };
     }
 
     // Phase 1: classify each move as "in air" or not.
-    // A move is "fully in air" when both its source and target positions are
-    // above the remaining stock surface.
     let mut air_flags: Vec<bool> = Vec::with_capacity(moves.len());
 
     for (i, m) in moves.iter().enumerate() {
-        // Rapids always pass through unchanged (they are already non-cutting).
         if m.move_type == MoveType::Rapid {
             air_flags.push(false);
             continue;
@@ -885,11 +1040,9 @@ pub fn filter_air_cuts(
             let prev = &moves[i - 1].target;
             is_in_air(prior_stock, prev.x, prev.y, prev.z, tolerance)
         } else {
-            true // No source → treat as air
+            true
         };
 
-        // For arcs, also check the center point (conservative: if center has
-        // material, keep the move).
         let center_air = match m.move_type {
             MoveType::ArcCW { i: io, j: jo, .. } | MoveType::ArcCCW { i: io, j: jo, .. } => {
                 if i > 0 {
@@ -907,18 +1060,17 @@ pub fn filter_air_cuts(
         air_flags.push(source_air && target_air && center_air);
     }
 
-    // Phase 2: emit the filtered toolpath.
-    // Consecutive air moves are collapsed into: rapid up to safe_z, then
-    // before the next non-air move, rapid to its XY at safe_z and rapid down.
+    // Phase 2: emit the filtered toolpath. Track per-old-move where it landed
+    // (or `None` if dropped) and which inserted moves are bridges.
     let mut result = Toolpath::new();
+    let mut old_to_new: Vec<Option<std::ops::Range<usize>>> = Vec::with_capacity(moves.len());
+    let mut bridge_ranges: Vec<std::ops::Range<usize>> = Vec::new();
     let mut in_air_run = false;
 
     for (i, m) in moves.iter().enumerate() {
         if air_flags[i] {
             // This cutting move is in air.
             if !in_air_run {
-                // Start of a new air run: emit rapid up to safe_z from
-                // the current position.
                 let prev_target = if let Some(last) = result.moves.last() {
                     last.target
                 } else if i > 0 {
@@ -927,42 +1079,55 @@ pub fn filter_air_cuts(
                     m.target
                 };
                 if prev_target.z < safe_z - 0.001 {
+                    let b_start = result.moves.len();
                     result.rapid_to(P3::new(prev_target.x, prev_target.y, safe_z));
+                    let b_end = result.moves.len();
+                    bridge_ranges.push(b_start..b_end);
                 }
                 in_air_run = true;
             }
-            // Skip this move (intermediate air moves are dropped).
+            // Drop this move from the output.
+            old_to_new.push(None);
         } else {
             // This move is NOT in air (or is a rapid).
             if in_air_run {
-                // End of an air run: rapid to the target's XY at safe_z,
-                // then rapid down to the target's Z (so the next cutting
-                // move starts at the right position).
-                //
-                // For rapids we just emit them directly. For cutting moves
-                // we need the positioning sequence.
                 if m.move_type != MoveType::Rapid {
-                    // Determine position we need to reach before this cutting
-                    // move starts. The move's source is the previous move's
-                    // target in the *original* toolpath.
                     let source = if i > 0 { moves[i - 1].target } else { m.target };
+                    let b_start = result.moves.len();
                     result.rapid_to(P3::new(source.x, source.y, safe_z));
-                    // Rapid down to the source Z so the feed move distance
-                    // is correct.
                     if source.z < safe_z - 0.001 {
                         result.rapid_to(source);
+                    }
+                    let b_end = result.moves.len();
+                    if b_end > b_start {
+                        bridge_ranges.push(b_start..b_end);
                     }
                 }
                 in_air_run = false;
             }
+            let new_idx = result.moves.len();
             result.moves.push(m.clone());
+            old_to_new.push(Some(new_idx..new_idx + 1));
         }
     }
 
-    // If the toolpath ends while still in an air run, no further action is
-    // needed — we already emitted the retract at the start of the air run.
+    let new_n_moves = result.moves.len();
+    let new_spans = if spans_valid {
+        let remap = MoveRemap { old_to_new };
+        let mut remapped = remap_spans(spans, &remap, new_n_moves);
+        for r in bridge_ranges {
+            remapped.push(Span::new(r.start, r.end, SpanKind::LinkBridge));
+        }
+        remapped
+    } else {
+        spans
+    };
 
-    result
+    AnnotatedToolpath {
+        toolpath: result,
+        spans: new_spans,
+        spans_valid,
+    }
 }
 
 #[cfg(test)]
@@ -995,7 +1160,12 @@ mod tests {
     #[test]
     fn test_ramp_entry_replaces_plunge() {
         let tp = simple_plunge_toolpath();
-        let result = apply_entry(tp.clone(), EntryStyle::Ramp { max_angle_deg: 3.0 }, 500.0);
+        let result = apply_entry(
+            AnnotatedToolpath::new(tp.clone()),
+            EntryStyle::Ramp { max_angle_deg: 3.0 },
+            500.0,
+        )
+        .toolpath;
 
         // Should not have a straight plunge (large Z drop with no XY movement)
         for i in 1..result.moves.len() {
@@ -1021,7 +1191,12 @@ mod tests {
     #[test]
     fn test_ramp_entry_reaches_target_z() {
         let tp = simple_plunge_toolpath();
-        let result = apply_entry(tp.clone(), EntryStyle::Ramp { max_angle_deg: 5.0 }, 500.0);
+        let result = apply_entry(
+            AnnotatedToolpath::new(tp.clone()),
+            EntryStyle::Ramp { max_angle_deg: 5.0 },
+            500.0,
+        )
+        .toolpath;
 
         // Should still reach the cutting depth
         let has_cut_depth = result
@@ -1034,7 +1209,12 @@ mod tests {
     #[test]
     fn test_ramp_preserves_cutting_moves() {
         let tp = simple_plunge_toolpath();
-        let result = apply_entry(tp.clone(), EntryStyle::Ramp { max_angle_deg: 3.0 }, 500.0);
+        let result = apply_entry(
+            AnnotatedToolpath::new(tp.clone()),
+            EntryStyle::Ramp { max_angle_deg: 3.0 },
+            500.0,
+        )
+        .toolpath;
 
         // The cutting moves at -3.0 should still be present
         let cut_moves: Vec<_> = result
@@ -1053,13 +1233,14 @@ mod tests {
     fn test_helix_entry_replaces_plunge() {
         let tp = simple_plunge_toolpath();
         let result = apply_entry(
-            tp.clone(),
+            AnnotatedToolpath::new(tp.clone()),
             EntryStyle::Helix {
                 radius: 2.0,
                 pitch: 1.0,
             },
             500.0,
-        );
+        )
+        .toolpath;
 
         // Should have many intermediate moves (helix steps)
         assert!(
@@ -1074,13 +1255,14 @@ mod tests {
     fn test_helix_entry_reaches_target_z() {
         let tp = simple_plunge_toolpath();
         let result = apply_entry(
-            tp.clone(),
+            AnnotatedToolpath::new(tp.clone()),
             EntryStyle::Helix {
                 radius: 2.0,
                 pitch: 1.0,
             },
             500.0,
-        );
+        )
+        .toolpath;
 
         let has_cut_depth = result.moves.iter().any(|m| (m.target.z - -3.0).abs() < 0.1);
         assert!(has_cut_depth, "Helix should reach cut_depth=-3.0");
@@ -1090,13 +1272,14 @@ mod tests {
     fn test_helix_moves_are_circular() {
         let tp = simple_plunge_toolpath();
         let result = apply_entry(
-            tp.clone(),
+            AnnotatedToolpath::new(tp.clone()),
             EntryStyle::Helix {
                 radius: 3.0,
                 pitch: 1.0,
             },
             500.0,
-        );
+        )
+        .toolpath;
 
         // Helix moves should be within radius of center (10, 10)
         let helix_moves: Vec<_> = result
@@ -1232,7 +1415,7 @@ mod tests {
     #[test]
     fn test_lead_in_adds_arc_moves() {
         let tp = simple_plunge_toolpath();
-        let result = apply_lead_in_out(tp.clone(), 2.0);
+        let result = apply_lead_in_out(AnnotatedToolpath::new(tp.clone()), 2.0).toolpath;
 
         // Should have more moves than original (arc segments added)
         assert!(
@@ -1246,7 +1429,7 @@ mod tests {
     #[test]
     fn test_lead_in_reaches_cut_point() {
         let tp = simple_plunge_toolpath();
-        let result = apply_lead_in_out(tp.clone(), 2.0);
+        let result = apply_lead_in_out(AnnotatedToolpath::new(tp.clone()), 2.0).toolpath;
 
         // The cut moves at x=50, y=10, z=-3 should still be reachable
         let has_first_cut = result.moves.iter().any(|m| {
@@ -1263,7 +1446,7 @@ mod tests {
     #[test]
     fn test_lead_in_preserves_rapids() {
         let tp = simple_plunge_toolpath();
-        let result = apply_lead_in_out(tp.clone(), 2.0);
+        let result = apply_lead_in_out(AnnotatedToolpath::new(tp.clone()), 2.0).toolpath;
 
         // Should still have a rapid move
         let has_rapid = result.moves.iter().any(|m| m.move_type == MoveType::Rapid);
@@ -1288,7 +1471,7 @@ mod tests {
     #[test]
     fn test_dogbone_adds_overcuts() {
         let tp = square_profile_toolpath();
-        let result = apply_dogbones(tp.clone(), 3.0, 170.0);
+        let result = apply_dogbones(AnnotatedToolpath::new(tp.clone()), 3.0, 170.0).toolpath;
 
         // Should have more moves than original (overcut + return at each corner)
         assert!(
@@ -1303,7 +1486,8 @@ mod tests {
     fn test_dogbone_overcut_distance() {
         let tp = square_profile_toolpath();
         let tool_radius = 3.0;
-        let result = apply_dogbones(tp.clone(), tool_radius, 170.0);
+        let result =
+            apply_dogbones(AnnotatedToolpath::new(tp.clone()), tool_radius, 170.0).toolpath;
 
         // Find overcut moves (moves that go away from the path)
         // At corner (50, 0): the overcut should be ~tool_radius from the corner
@@ -1342,7 +1526,7 @@ mod tests {
         tp.feed_to(P3::new(100.0, 0.0, -3.0), 1000.0);
         tp.rapid_to(P3::new(100.0, 0.0, 10.0));
 
-        let result = apply_dogbones(tp.clone(), 3.0, 170.0);
+        let result = apply_dogbones(AnnotatedToolpath::new(tp.clone()), 3.0, 170.0).toolpath;
         assert_eq!(
             result.moves.len(),
             tp.moves.len(),
@@ -1361,7 +1545,7 @@ mod tests {
         tp.feed_to(P3::new(100.0, 5.0, -3.0), 1000.0);
         tp.rapid_to(P3::new(100.0, 5.0, 10.0));
 
-        let result = apply_dogbones(tp.clone(), 3.0, 100.0); // threshold 100°
+        let result = apply_dogbones(AnnotatedToolpath::new(tp.clone()), 3.0, 100.0).toolpath; // threshold 100°
         assert_eq!(
             result.moves.len(),
             tp.moves.len(),
@@ -1660,7 +1844,8 @@ mod tests {
         tp.rapid_to(P3::new(90.0, 50.0, 10.0)); // retract
 
         let stock = half_cleared_stock();
-        let result = filter_air_cuts(tp.clone(), &stock, 3.0, 10.0, 0.1);
+        let result =
+            filter_air_cuts(AnnotatedToolpath::new(tp.clone()), &stock, 3.0, 10.0, 0.1).toolpath;
 
         // The moves at x=60 and x=90 should have been removed (both endpoints in air).
         // Specifically, the move from x=60 to x=90 is fully in air (source and target).
@@ -1705,7 +1890,8 @@ mod tests {
         tp.rapid_to(P3::new(30.0, 50.0, 10.0));
 
         let stock = half_cleared_stock();
-        let result = filter_air_cuts(tp.clone(), &stock, 3.0, 10.0, 0.1);
+        let result =
+            filter_air_cuts(AnnotatedToolpath::new(tp.clone()), &stock, 3.0, 10.0, 0.1).toolpath;
 
         // All cutting moves are in the left half (x < 50) where material exists
         // at top_z=5.0 and tool is at z=2.0 (below stock top). No air cuts.
@@ -1724,7 +1910,7 @@ mod tests {
         tp.rapid_to(P3::new(0.0, 0.0, 10.0));
         tp.feed_to(P3::new(0.0, 0.0, 0.0), 100.0);
         let style = EntryStyle::Ramp { max_angle_deg: 0.0 };
-        let result = apply_entry(tp.clone(), style, 50.0);
+        let result = apply_entry(AnnotatedToolpath::new(tp.clone()), style, 50.0).toolpath;
         // Should not contain NaN or infinity
         for m in &result.moves {
             assert!(m.target.x.is_finite(), "NaN in ramp with 0° angle");
@@ -1741,7 +1927,7 @@ mod tests {
         let style = EntryStyle::Ramp {
             max_angle_deg: 90.0,
         };
-        let result = apply_entry(tp.clone(), style, 50.0);
+        let result = apply_entry(AnnotatedToolpath::new(tp.clone()), style, 50.0).toolpath;
         for m in &result.moves {
             assert!(m.target.x.is_finite(), "NaN in ramp with 90° angle");
             assert!(m.target.z.is_finite(), "NaN in ramp with 90° angle");
@@ -1757,7 +1943,7 @@ mod tests {
             radius: 0.0,
             pitch: 2.0,
         };
-        let result = apply_entry(tp.clone(), style, 50.0);
+        let result = apply_entry(AnnotatedToolpath::new(tp.clone()), style, 50.0).toolpath;
         for m in &result.moves {
             assert!(m.target.x.is_finite(), "NaN in helix with 0 radius");
             assert!(m.target.z.is_finite(), "NaN in helix with 0 radius");
@@ -1773,7 +1959,7 @@ mod tests {
             radius: -1.0,
             pitch: 2.0,
         };
-        let result = apply_entry(tp.clone(), style, 50.0);
+        let result = apply_entry(AnnotatedToolpath::new(tp.clone()), style, 50.0).toolpath;
         for m in &result.moves {
             assert!(m.target.x.is_finite(), "NaN in helix with negative radius");
         }
@@ -1789,7 +1975,8 @@ mod tests {
         tp.rapid_to(P3::new(30.0, 50.0, 10.0));
 
         let stock = half_cleared_stock();
-        let result = filter_air_cuts(tp.clone(), &stock, 3.0, 10.0, 0.1);
+        let result =
+            filter_air_cuts(AnnotatedToolpath::new(tp.clone()), &stock, 3.0, 10.0, 0.1).toolpath;
 
         // The move from x=70 to x=30 has source in air but target in material.
         // Conservative rule: it should be preserved because the target has material.
@@ -1801,5 +1988,270 @@ mod tests {
             has_crossing_cut,
             "Partial air-to-material move should be preserved (conservative)"
         );
+    }
+
+    // ── Span-aware behavior: apply_entry (#50) ──────────────────────────
+
+    #[test]
+    fn apply_entry_remaps_spans_through_transform() {
+        let tp = simple_plunge_toolpath();
+        let n_in = tp.moves.len();
+        let spans = vec![
+            Span::new(0, n_in, SpanKind::Operation),
+            Span::new(0, 2, SpanKind::DepthPass),
+        ];
+        let annotated = AnnotatedToolpath::with_spans(tp, spans);
+        let result = apply_entry(annotated, EntryStyle::Ramp { max_angle_deg: 3.0 }, 500.0);
+        result
+            .check_invariants()
+            .expect("post-entry spans pass invariants");
+        let n_out = result.toolpath.moves.len();
+        let op = result
+            .spans
+            .iter()
+            .find(|s| s.kind == SpanKind::Operation)
+            .expect("Operation span survives");
+        assert_eq!(op.start_move, 0);
+        assert_eq!(op.end_move, n_out);
+        assert!(result.spans_valid);
+    }
+
+    #[test]
+    fn apply_entry_tags_new_moves_with_correct_kind() {
+        let tp = simple_plunge_toolpath();
+        let n_in = tp.moves.len();
+        let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
+        let annotated = AnnotatedToolpath::with_spans(tp, spans);
+        let result = apply_entry(annotated, EntryStyle::Ramp { max_angle_deg: 3.0 }, 500.0);
+        let entries: Vec<&Span> = result
+            .spans
+            .iter()
+            .filter(|s| s.kind == SpanKind::Entry)
+            .collect();
+        assert!(
+            !entries.is_empty(),
+            "ramp entry should tag at least one Entry span"
+        );
+        for e in &entries {
+            assert!(e.end_move <= result.toolpath.moves.len());
+            assert!(e.move_count() > 0, "Entry spans should cover ≥ 1 move");
+        }
+    }
+
+    #[test]
+    fn apply_entry_preserves_invalid_flag() {
+        let tp = simple_plunge_toolpath();
+        let mut annotated = AnnotatedToolpath::new(tp.clone());
+        annotated.spans_valid = false;
+        annotated.spans = vec![Span::new(0, 1, SpanKind::Operation)]; // garbage
+        let result = apply_entry(annotated, EntryStyle::Ramp { max_angle_deg: 3.0 }, 500.0);
+        assert!(!result.spans_valid);
+        // Garbage span returned untouched.
+        assert_eq!(result.spans, vec![Span::new(0, 1, SpanKind::Operation)]);
+    }
+
+    // ── Span-aware behavior: apply_dogbones (#51) ───────────────────────
+
+    #[test]
+    fn apply_dogbones_remaps_spans_through_transform() {
+        let tp = square_profile_toolpath();
+        let n_in = tp.moves.len();
+        let spans = vec![
+            Span::new(0, n_in, SpanKind::Operation),
+            Span::new(0, 3, SpanKind::DepthPass),
+        ];
+        let annotated = AnnotatedToolpath::with_spans(tp, spans);
+        let result = apply_dogbones(annotated, 3.0, 170.0);
+        result
+            .check_invariants()
+            .expect("post-dogbone spans pass invariants");
+        let n_out = result.toolpath.moves.len();
+        let op = result
+            .spans
+            .iter()
+            .find(|s| s.kind == SpanKind::Operation)
+            .expect("Operation span survives");
+        assert_eq!(op.start_move, 0);
+        assert_eq!(op.end_move, n_out);
+        assert!(result.spans_valid);
+    }
+
+    #[test]
+    fn apply_dogbones_tags_new_moves_with_correct_kind() {
+        let tp = square_profile_toolpath();
+        let n_in = tp.moves.len();
+        let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
+        let annotated = AnnotatedToolpath::with_spans(tp, spans);
+        let result = apply_dogbones(annotated, 3.0, 170.0);
+        let dogbones: Vec<&Span> = result
+            .spans
+            .iter()
+            .filter(|s| s.kind == SpanKind::DressupArtifact)
+            .collect();
+        assert!(
+            !dogbones.is_empty(),
+            "square profile should tag at least one DressupArtifact span"
+        );
+        for d in &dogbones {
+            assert_eq!(d.label, "dogbone");
+            assert!(d.end_move <= result.toolpath.moves.len());
+        }
+    }
+
+    #[test]
+    fn apply_dogbones_preserves_invalid_flag() {
+        let tp = square_profile_toolpath();
+        let mut annotated = AnnotatedToolpath::new(tp);
+        annotated.spans_valid = false;
+        annotated.spans = vec![Span::new(0, 1, SpanKind::Operation)];
+        let result = apply_dogbones(annotated, 3.0, 170.0);
+        assert!(!result.spans_valid);
+        assert_eq!(result.spans, vec![Span::new(0, 1, SpanKind::Operation)]);
+    }
+
+    // ── Span-aware behavior: apply_lead_in_out (#52) ────────────────────
+
+    #[test]
+    fn apply_lead_in_out_remaps_spans_through_transform() {
+        let tp = simple_plunge_toolpath();
+        let n_in = tp.moves.len();
+        let spans = vec![
+            Span::new(0, n_in, SpanKind::Operation),
+            Span::new(0, 2, SpanKind::DepthPass),
+        ];
+        let annotated = AnnotatedToolpath::with_spans(tp, spans);
+        let result = apply_lead_in_out(annotated, 2.0);
+        result
+            .check_invariants()
+            .expect("post-lead spans pass invariants");
+        let n_out = result.toolpath.moves.len();
+        let op = result
+            .spans
+            .iter()
+            .find(|s| s.kind == SpanKind::Operation)
+            .expect("Operation span survives");
+        assert_eq!(op.start_move, 0);
+        assert_eq!(op.end_move, n_out);
+        assert!(result.spans_valid);
+    }
+
+    #[test]
+    fn apply_lead_in_out_tags_new_moves_with_correct_kind() {
+        let tp = simple_plunge_toolpath();
+        let n_in = tp.moves.len();
+        let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
+        let annotated = AnnotatedToolpath::with_spans(tp, spans);
+        let result = apply_lead_in_out(annotated, 2.0);
+        let entries: Vec<&Span> = result
+            .spans
+            .iter()
+            .filter(|s| s.kind == SpanKind::Entry)
+            .collect();
+        let leadouts: Vec<&Span> = result
+            .spans
+            .iter()
+            .filter(|s| s.kind == SpanKind::LeadOut)
+            .collect();
+        assert!(!entries.is_empty(), "lead-in should tag Entry span(s)");
+        assert!(!leadouts.is_empty(), "lead-out should tag LeadOut span(s)");
+        for e in &entries {
+            assert!(e.end_move <= result.toolpath.moves.len());
+        }
+        for l in &leadouts {
+            assert!(l.end_move <= result.toolpath.moves.len());
+        }
+    }
+
+    #[test]
+    fn apply_lead_in_out_preserves_invalid_flag() {
+        let tp = simple_plunge_toolpath();
+        let mut annotated = AnnotatedToolpath::new(tp);
+        annotated.spans_valid = false;
+        annotated.spans = vec![Span::new(0, 1, SpanKind::Operation)];
+        let result = apply_lead_in_out(annotated, 2.0);
+        assert!(!result.spans_valid);
+        assert_eq!(result.spans, vec![Span::new(0, 1, SpanKind::Operation)]);
+    }
+
+    // ── Span-aware behavior: filter_air_cuts (#56) ──────────────────────
+
+    #[test]
+    fn filter_air_cuts_remaps_spans_through_transform() {
+        // Toolpath that mixes material and air moves, so filter actually drops
+        // and inserts (matches filter_air_cuts_removes_air_moves fixture).
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(10.0, 50.0, 10.0));
+        tp.feed_to(P3::new(10.0, 50.0, 2.0), 500.0);
+        tp.feed_to(P3::new(30.0, 50.0, 2.0), 1000.0);
+        tp.feed_to(P3::new(60.0, 50.0, 2.0), 1000.0);
+        tp.feed_to(P3::new(90.0, 50.0, 2.0), 1000.0);
+        tp.rapid_to(P3::new(90.0, 50.0, 10.0));
+        let n_in = tp.moves.len();
+        let spans = vec![
+            Span::new(0, n_in, SpanKind::Operation),
+            Span::new(0, 3, SpanKind::DepthPass),
+        ];
+        let annotated = AnnotatedToolpath::with_spans(tp, spans);
+        let stock = half_cleared_stock();
+        let result = filter_air_cuts(annotated, &stock, 3.0, 10.0, 0.1);
+        result
+            .check_invariants()
+            .expect("post-filter spans pass invariants");
+        let n_out = result.toolpath.moves.len();
+        let op = result
+            .spans
+            .iter()
+            .find(|s| s.kind == SpanKind::Operation)
+            .expect("Operation span survives");
+        assert_eq!(op.start_move, 0);
+        assert_eq!(op.end_move, n_out);
+        assert!(result.spans_valid);
+    }
+
+    #[test]
+    fn filter_air_cuts_tags_new_moves_with_correct_kind() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(10.0, 50.0, 10.0));
+        tp.feed_to(P3::new(10.0, 50.0, 2.0), 500.0);
+        tp.feed_to(P3::new(30.0, 50.0, 2.0), 1000.0);
+        tp.feed_to(P3::new(60.0, 50.0, 2.0), 1000.0);
+        tp.feed_to(P3::new(90.0, 50.0, 2.0), 1000.0);
+        tp.rapid_to(P3::new(90.0, 50.0, 10.0));
+        let n_in = tp.moves.len();
+        let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
+        let annotated = AnnotatedToolpath::with_spans(tp, spans);
+        let stock = half_cleared_stock();
+        let result = filter_air_cuts(annotated, &stock, 3.0, 10.0, 0.1);
+        let bridges: Vec<&Span> = result
+            .spans
+            .iter()
+            .filter(|s| s.kind == SpanKind::LinkBridge)
+            .collect();
+        assert!(
+            !bridges.is_empty(),
+            "filter should insert at least one LinkBridge for the dropped air run"
+        );
+        for b in &bridges {
+            assert!(b.end_move <= result.toolpath.moves.len());
+            assert!(b.move_count() > 0);
+        }
+    }
+
+    #[test]
+    fn filter_air_cuts_preserves_invalid_flag() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(10.0, 50.0, 10.0));
+        tp.feed_to(P3::new(10.0, 50.0, 2.0), 500.0);
+        tp.feed_to(P3::new(30.0, 50.0, 2.0), 1000.0);
+        tp.feed_to(P3::new(60.0, 50.0, 2.0), 1000.0);
+        tp.feed_to(P3::new(90.0, 50.0, 2.0), 1000.0);
+        tp.rapid_to(P3::new(90.0, 50.0, 10.0));
+        let mut annotated = AnnotatedToolpath::new(tp);
+        annotated.spans_valid = false;
+        annotated.spans = vec![Span::new(0, 1, SpanKind::Operation)];
+        let stock = half_cleared_stock();
+        let result = filter_air_cuts(annotated, &stock, 3.0, 10.0, 0.1);
+        assert!(!result.spans_valid);
+        assert_eq!(result.spans, vec![Span::new(0, 1, SpanKind::Operation)]);
     }
 }
