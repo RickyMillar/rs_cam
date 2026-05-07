@@ -33,19 +33,6 @@ pub fn draw(
     let linked_span = sim.active_debug_span(gui, max_feed);
     let current_boundary_id = sim.current_boundary().map(|boundary| boundary.id);
 
-    // Default the scope's toolpath to whatever's playing, so the chip row
-    // and tree have something useful to show when the user first opens the
-    // pane. Explicit user picks (any non-default value) are preserved.
-    if sim.debug.span_scope.toolpath_id.is_none()
-        && sim.debug.span_scope.span_id.is_none()
-        && let Some(boundary_id) = current_boundary_id
-    {
-        sim.debug.span_scope.toolpath_id = Some(boundary_id);
-    }
-
-    draw_scope_chips(ui, sim, gui);
-    ui.add_space(2.0);
-
     draw_reactive_inspector(ui, sim, session, gui, max_feed, &load_report, events);
     ui.separator();
 
@@ -496,34 +483,22 @@ fn draw_project_overview(
     let total_min = total_time_min.floor() as u32;
     let total_sec = ((total_time_min - total_min as f64) * 60.0) as u32;
 
-    let scope = sim.debug.span_scope;
-    let scope_active = scope.is_active();
-
     let (ok, _warn, bad, unmodeled) = verdict_counts_local(load_report);
     let collision_count = sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
-    let issue_count = sim
-        .issues(gui, max_feed)
-        .iter()
-        .filter(|iss| {
-            !scope_active
-                || iss
-                    .toolpath_id
-                    .is_some_and(|tp| Some(tp) == scope.toolpath_id)
-        })
-        .count();
+    let issue_count = sim.issues(gui, max_feed).len();
     let hotspot_count = sim
         .results
         .as_ref()
         .and_then(|r| r.cut_trace.as_ref())
-        .map(|t| {
-            t.hotspots
-                .iter()
-                .filter(|h| scope.matches(h.toolpath_id, &h.span_path))
-                .count()
-        })
+        .map(|t| t.hotspots.len())
         .unwrap_or(0);
 
-    // Big cycle-time line.
+    // ─── Global stats ───
+    ui.label(
+        egui::RichText::new("Global")
+            .strong()
+            .color(theme::TEXT_HEADING),
+    );
     ui.label(
         egui::RichText::new(format!("Cycle: {}:{:02} min", total_min, total_sec))
             .strong()
@@ -567,16 +542,9 @@ fn draw_project_overview(
     ui.add_space(4.0);
     ui.separator();
 
-    // Issue counts row — colored to match the bottom-panel HUD pills, but
-    // here as a single horizontal summary. When the scope chip-row is
-    // active, "Issues" and "Hotspots" honor the scope; verdicts and
-    // collisions remain project-wide because they're not span-indexed.
-    let findings_label = if scope_active {
-        "Findings (scoped)"
-    } else {
-        "Findings"
-    };
-    ui.label(egui::RichText::new(findings_label).small().strong());
+    // Project-wide findings counts — Selected section below shows the same
+    // metrics scoped to the active span.
+    ui.label(egui::RichText::new("Findings").small().strong());
     egui::Grid::new("cut_overview_findings")
         .num_columns(2)
         .spacing([8.0, 2.0])
@@ -688,30 +656,20 @@ fn draw_project_overview(
         });
     }
 
-    // Span tree — shows Operation → DepthPass → Region rows for the
-    // toolpath in scope (or the currently-playing one if scope is empty).
-    // Per-row metrics are computed from cut samples whose span_path
-    // contains that row's SpanId. Clicking a row sets the chip-row scope.
-    //
-    // Clone the Arc<SimulationCutTrace> so we can pass `&mut sim` into the
-    // tree without aliasing the read borrow.
-    let tree_toolpath_id = scope
-        .toolpath_id
-        .or_else(|| sim.current_boundary().map(|b| b.id));
+    // ─── Selected stats ───
+    // Reflects whichever span the timeline ribbon is locked to (scope.span_id),
+    // or the span the playhead is currently inside. Clone the cut_trace Arc
+    // up front so we can pass `&mut sim` into the section without borrow
+    // conflicts.
     let trace_arc = sim
         .results
         .as_ref()
         .and_then(|r| r.cut_trace.as_ref())
         .map(std::sync::Arc::clone);
-    if let (Some(tp_id), Some(trace)) = (tree_toolpath_id, trace_arc.as_ref()) {
-        draw_span_tree(ui, sim, gui, tp_id, trace);
-    }
-
-    // Scoped findings list — only when a span scope is active, since the
-    // unscoped lists are noisy enough that the project-overview just
-    // shows the count.
-    if scope_active && let Some(trace) = trace_arc.as_ref() {
-        draw_scoped_findings(ui, sim, gui, max_feed, trace, events);
+    if let Some(trace) = trace_arc.as_ref() {
+        ui.add_space(8.0);
+        ui.separator();
+        draw_selected_section(ui, sim, gui, max_feed, trace, events);
     }
 }
 
@@ -927,456 +885,139 @@ fn aggregate_stats(
     (total_cutting, total_rapid, total_time_min)
 }
 
-// ── Span scope: chip filter row ─────────────────────────────────────────
-
-/// Compact label for a Toolpath chip (truncates long names).
-fn toolpath_chip_label(name: &str, idx: usize) -> String {
-    let trimmed: String = name.chars().take(18).collect();
-    if trimmed.chars().count() < name.chars().count() {
-        format!("TP{idx}: {trimmed}…")
-    } else {
-        format!("TP{idx}: {trimmed}")
-    }
-}
-
-/// Render the scope chip row at the top of the inspector. Reads/writes
-/// `sim.debug.span_scope`. The row mirrors the `inspect_spans` MCP filter
-/// (toolpath + optional span_id) so an agent and the human see the same
-/// scope when they pick the same chips.
-fn draw_scope_chips(ui: &mut egui::Ui, sim: &mut SimulationState, gui: &GuiState) {
-    let toolpaths: Vec<(ToolpathId, String)> = sim
-        .boundaries()
-        .iter()
-        .map(|b| (b.id, b.name.clone()))
-        .collect();
-    if toolpaths.is_empty() {
-        return;
-    }
-
-    ui.horizontal_wrapped(|ui| {
-        ui.label(
-            egui::RichText::new("Scope:")
-                .small()
-                .color(theme::TEXT_MUTED),
-        );
-
-        // Toolpath chip — required to scope by span_id (span ids are
-        // toolpath-relative).
-        let current_tp = sim.debug.span_scope.toolpath_id;
-        let current_label = current_tp
-            .and_then(|tp| {
-                toolpaths
-                    .iter()
-                    .enumerate()
-                    .find(|(_, (id, _))| *id == tp)
-                    .map(|(idx, (_, name))| toolpath_chip_label(name, idx + 1))
-            })
-            .unwrap_or_else(|| "All toolpaths".to_owned());
-        let mut new_tp = current_tp;
-        egui::ComboBox::from_id_salt("scope_chip_toolpath")
-            .selected_text(egui::RichText::new(current_label).small())
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut new_tp, None, "— All toolpaths —");
-                for (idx, (id, name)) in toolpaths.iter().enumerate() {
-                    ui.selectable_value(&mut new_tp, Some(*id), toolpath_chip_label(name, idx + 1));
-                }
-            });
-        if new_tp != current_tp {
-            sim.debug.span_scope.toolpath_id = new_tp;
-            sim.debug.span_scope.span_id = None;
-        }
-
-        // DepthPass + Region chips: only render when the chosen toolpath
-        // exposes structural spans. Otherwise we'd be showing two empty
-        // dropdowns.
-        let spans = sim
-            .debug
-            .span_scope
-            .toolpath_id
-            .and_then(|tp| gui.toolpath_rt.get(&tp.0))
-            .and_then(|rt| rt.result.as_ref())
-            .filter(|r| r.spans_valid())
-            .map(|r| r.spans())
-            .filter(|s| !s.is_empty());
-
-        if let Some(spans) = spans {
-            // Determine the currently-selected DepthPass id from the scope's
-            // span_id by walking up to the containing DepthPass span.
-            let selected_dp = current_depth_pass_id(spans, sim.debug.span_scope.span_id);
-            let dp_label = selected_dp
-                .and_then(|sid| {
-                    spans
-                        .get(sid as usize)
-                        .map(|s| depth_pass_chip_label(s, sid as usize))
-                })
-                .unwrap_or_else(|| "All passes".to_owned());
-
-            let depth_passes: Vec<(u32, &Span)> = spans
-                .iter()
-                .enumerate()
-                .filter(|(_, s)| matches!(s.kind, SpanKind::DepthPass))
-                .map(|(idx, s)| (idx as u32, s))
-                .collect();
-
-            if !depth_passes.is_empty() {
-                let mut new_dp = selected_dp;
-                egui::ComboBox::from_id_salt("scope_chip_depth_pass")
-                    .selected_text(egui::RichText::new(dp_label).small())
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut new_dp, None, "— All passes —");
-                        for (sid, span) in &depth_passes {
-                            ui.selectable_value(
-                                &mut new_dp,
-                                Some(*sid),
-                                depth_pass_chip_label(span, *sid as usize),
-                            );
-                        }
-                    });
-                if new_dp != selected_dp {
-                    sim.debug.span_scope.span_id = new_dp;
-                }
-            }
-
-            // Region chip — only meaningful when a DepthPass is selected
-            // (regions sit inside passes). When no pass is selected we'd
-            // show every region across the toolpath, which is not what the
-            // chip semantics promise.
-            if let Some(dp_sid) = selected_dp
-                && let Some(dp_span) = spans.get(dp_sid as usize)
-            {
-                let regions: Vec<(u32, &Span)> = spans
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, s)| {
-                        matches!(s.kind, SpanKind::Region)
-                            && s.start_move >= dp_span.start_move
-                            && s.end_move <= dp_span.end_move
-                    })
-                    .map(|(idx, s)| (idx as u32, s))
-                    .collect();
-                if !regions.is_empty() {
-                    let region_label = if sim.debug.span_scope.span_id == Some(dp_sid) {
-                        "All regions".to_owned()
-                    } else {
-                        sim.debug
-                            .span_scope
-                            .span_id
-                            .and_then(|sid| {
-                                spans
-                                    .get(sid as usize)
-                                    .filter(|s| matches!(s.kind, SpanKind::Region))
-                                    .map(|s| region_chip_label(s, sid as usize))
-                            })
-                            .unwrap_or_else(|| "All regions".to_owned())
-                    };
-                    let mut new_region = if sim.debug.span_scope.span_id == Some(dp_sid) {
-                        None
-                    } else {
-                        sim.debug.span_scope.span_id
-                    };
-                    egui::ComboBox::from_id_salt("scope_chip_region")
-                        .selected_text(egui::RichText::new(region_label).small())
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut new_region, None, "— All regions —");
-                            for (sid, span) in &regions {
-                                ui.selectable_value(
-                                    &mut new_region,
-                                    Some(*sid),
-                                    region_chip_label(span, *sid as usize),
-                                );
-                            }
-                        });
-                    let target = new_region.or(Some(dp_sid));
-                    if target != sim.debug.span_scope.span_id {
-                        sim.debug.span_scope.span_id = target;
-                    }
-                }
-            }
-        }
-
-        if sim.debug.span_scope.is_active()
-            && ui
-                .small_button("✕")
-                .on_hover_text("Clear scope filter")
-                .clicked()
-        {
-            sim.debug.span_scope.clear();
-        }
-    });
-}
-
-/// Walk up from a span id to find the DepthPass span that contains it (or
-/// is it). Returns `None` when the input is `None`, falls outside the
-/// vec, or when no DepthPass ancestor exists.
-fn current_depth_pass_id(spans: &[Span], span_id: Option<u32>) -> Option<u32> {
-    let sid = span_id?;
-    let target = spans.get(sid as usize)?;
-    if matches!(target.kind, SpanKind::DepthPass) {
-        return Some(sid);
-    }
-    spans
-        .iter()
-        .enumerate()
-        .find(|(_, s)| {
-            matches!(s.kind, SpanKind::DepthPass)
-                && s.start_move <= target.start_move
-                && s.end_move >= target.end_move
-        })
-        .map(|(idx, _)| idx as u32)
-}
+// ── Selected span section ───────────────────────────────────────────────
 
 fn depth_pass_chip_label(span: &Span, sid: usize) -> String {
     match &span.payload {
         Some(SpanPayload::DepthPass {
             pass_index,
             z_level,
-        }) => format!("DP{pass_index}: z={z_level:.2}"),
-        _ => format!("DepthPass[{sid}]"),
+        }) => format!("DepthPass {pass_index} · z={z_level:.2}"),
+        _ => format!("DepthPass [{sid}]"),
     }
 }
 
 fn region_chip_label(span: &Span, sid: usize) -> String {
     match &span.payload {
         Some(SpanPayload::Region { region_id }) => format!("Region {region_id}"),
-        _ => format!("Region[{sid}]"),
+        _ => format!("Region [{sid}]"),
     }
 }
 
-// ── Span tree (replaces per-SpanKind breakdown table) ───────────────────
-
-/// Bucket of cutting samples for one span. Updated incrementally while
-/// scanning the trace's samples.
-#[derive(Default, Clone, Copy)]
-struct SpanBucket {
-    n: usize,
-    sum_eng: f64,
-    sum_chip: f64,
-    peak_chip: f64,
+fn span_kind_label(kind: SpanKind) -> &'static str {
+    match kind {
+        SpanKind::Operation => "Operation",
+        SpanKind::DepthPass => "DepthPass",
+        SpanKind::Region => "Region",
+        SpanKind::Entry => "Entry",
+        SpanKind::LeadOut => "LeadOut",
+        SpanKind::LinkBridge => "LinkBridge",
+        SpanKind::DressupArtifact => "DressupArtifact",
+        SpanKind::RapidOrderBarrier => "RapidOrderBarrier",
+    }
 }
 
-impl SpanBucket {
-    fn ingest(&mut self, eng: f64, chip: f64) {
-        self.n += 1;
-        self.sum_eng += eng;
+fn span_display_label(span: &Span, sid: usize) -> String {
+    match span.kind {
+        SpanKind::DepthPass => depth_pass_chip_label(span, sid),
+        SpanKind::Region => region_chip_label(span, sid),
+        kind => format!("{} [{sid}]", span_kind_label(kind)),
+    }
+}
+
+/// Find the deepest non-boundary span on `toolpath_id` that contains the
+/// playhead's local move. Used to drive the Selected section when the user
+/// hasn't locked it to a ribbon click. Prefers the span with the smallest
+/// move range, which corresponds to the innermost structural level
+/// (Region, then DepthPass, then Operation).
+fn playhead_span_id(sim: &SimulationState, gui: &GuiState, toolpath_id: ToolpathId) -> Option<u32> {
+    let boundary = sim.boundaries().iter().find(|b| b.id == toolpath_id)?;
+    let global = sim.playback.current_move;
+    if global < boundary.start_move || global >= boundary.end_move {
+        return None;
+    }
+    let local = global - boundary.start_move;
+    let rt = gui.toolpath_rt.get(&toolpath_id.0)?;
+    let result = rt.result.as_ref()?;
+    if !result.spans_valid() {
+        return None;
+    }
+    result
+        .spans()
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| {
+            !s.is_boundary() && !matches!(s.kind, SpanKind::RapidOrderBarrier) && s.contains(local)
+        })
+        .min_by_key(|(_, s)| s.move_count())
+        .map(|(i, _)| i as u32)
+}
+
+/// Per-span aggregate over cut samples whose span_path contains the span.
+#[derive(Default, Clone, Copy)]
+struct SpanAggregate {
+    n_samples: usize,
+    n_cutting: usize,
+    sum_eng: f64,
+    peak_eng: f64,
+    sum_chip: f64,
+    peak_chip: f64,
+    peak_doc: f64,
+    sum_mrr: f64,
+    peak_mrr: f64,
+}
+
+impl SpanAggregate {
+    fn ingest(&mut self, sample: &rs_cam_core::simulation_cut::SimulationCutSample) {
+        self.n_samples += 1;
+        if !sample.is_cutting {
+            return;
+        }
+        self.n_cutting += 1;
+        self.sum_eng += sample.radial_engagement;
+        if sample.radial_engagement > self.peak_eng {
+            self.peak_eng = sample.radial_engagement;
+        }
+        let chip = sample
+            .effective_chip_thickness_mm
+            .unwrap_or(sample.chipload_mm_per_tooth);
         self.sum_chip += chip;
         if chip > self.peak_chip {
             self.peak_chip = chip;
         }
+        if sample.axial_doc_mm > self.peak_doc {
+            self.peak_doc = sample.axial_doc_mm;
+        }
+        self.sum_mrr += sample.mrr_mm3_s;
+        if sample.mrr_mm3_s > self.peak_mrr {
+            self.peak_mrr = sample.mrr_mm3_s;
+        }
     }
 }
 
-/// Render the Operation → DepthPass → Region tree for `toolpath_id`.
-/// Each row shows n samples, avg engagement, and avg/peak chipload from
-/// cutting samples whose `span_path` contains that row's SpanId. Clicking
-/// a row sets `sim.debug.span_scope.span_id` so the chip row + findings
-/// list update together.
-fn draw_span_tree(
-    ui: &mut egui::Ui,
-    sim: &mut SimulationState,
-    gui: &GuiState,
-    toolpath_id: ToolpathId,
+/// Walk the cut trace once and aggregate metrics for every sample whose
+/// `span_path` contains `span_id` on `toolpath_id`. Cheap: linear in
+/// samples × span_path depth (typically ≤ 3).
+fn aggregate_for_span(
     trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
-) {
-    let Some(rt) = gui.toolpath_rt.get(&toolpath_id.0) else {
-        return;
-    };
-    let Some(result) = rt.result.as_ref() else {
-        return;
-    };
-    if !result.spans_valid() || result.spans().is_empty() {
-        return;
-    }
-    let spans = result.spans();
-
-    // Pre-aggregate per-SpanId. One scan over samples; every span the
-    // sample's path contains gets the increment.
-    let mut buckets: Vec<SpanBucket> = vec![SpanBucket::default(); spans.len()];
+    toolpath_id: usize,
+    span_id: u32,
+) -> SpanAggregate {
+    let mut agg = SpanAggregate::default();
     for s in &trace.samples {
-        if s.toolpath_id != toolpath_id.0 || !s.is_cutting {
+        if s.toolpath_id != toolpath_id {
             continue;
         }
-        let chip = s
-            .effective_chip_thickness_mm
-            .unwrap_or(s.chipload_mm_per_tooth);
-        for sid in &s.span_path {
-            if let Some(b) = buckets.get_mut(sid.0 as usize) {
-                b.ingest(s.radial_engagement, chip);
-            }
+        if !s.span_path.iter().any(|sid| sid.0 == span_id) {
+            continue;
         }
+        agg.ingest(s);
     }
-
-    ui.add_space(6.0);
-    ui.label(
-        egui::RichText::new("Span breakdown")
-            .small()
-            .color(theme::TEXT_MUTED),
-    )
-    .on_hover_text(
-        "Operation → DepthPass → Region. Click a row to scope the chip filter to that span.",
-    );
-
-    let scope_span_id = sim.debug.span_scope.span_id;
-    let mut click_target: Option<Option<u32>> = None;
-
-    for (op_id, op_span) in spans
-        .iter()
-        .enumerate()
-        .filter(|(_, s)| matches!(s.kind, SpanKind::Operation))
-    {
-        let op_id_u32 = op_id as u32;
-        // SAFETY: `buckets` is sized exactly `spans.len()` and `op_id`
-        // came from enumerating `spans`, so the index is in-bounds.
-        let op_bucket = buckets.get(op_id).copied().unwrap_or_default();
-        if span_tree_row(
-            ui,
-            0,
-            "Operation",
-            op_span,
-            op_id,
-            op_bucket,
-            scope_span_id == Some(op_id_u32),
-        )
-        .clicked()
-        {
-            click_target = Some(if scope_span_id == Some(op_id_u32) {
-                None
-            } else {
-                Some(op_id_u32)
-            });
-        }
-
-        // DepthPass children (one tier in)
-        for (dp_id, dp_span) in spans.iter().enumerate().filter(|(_, s)| {
-            matches!(s.kind, SpanKind::DepthPass)
-                && s.start_move >= op_span.start_move
-                && s.end_move <= op_span.end_move
-        }) {
-            let dp_id_u32 = dp_id as u32;
-            let dp_bucket = buckets.get(dp_id).copied().unwrap_or_default();
-            let dp_label = depth_pass_chip_label(dp_span, dp_id);
-            if span_tree_row(
-                ui,
-                1,
-                &dp_label,
-                dp_span,
-                dp_id,
-                dp_bucket,
-                scope_span_id == Some(dp_id_u32),
-            )
-            .clicked()
-            {
-                click_target = Some(if scope_span_id == Some(dp_id_u32) {
-                    None
-                } else {
-                    Some(dp_id_u32)
-                });
-            }
-
-            // Region grandchildren (only when this DepthPass is selected — keeps
-            // the tree compact; otherwise a 100-region op buries the whole pane).
-            if scope_span_id == Some(dp_id_u32) {
-                for (r_id, r_span) in spans.iter().enumerate().filter(|(_, s)| {
-                    matches!(
-                        s.kind,
-                        SpanKind::Region | SpanKind::Entry | SpanKind::LeadOut
-                    ) && s.start_move >= dp_span.start_move
-                        && s.end_move <= dp_span.end_move
-                }) {
-                    let r_id_u32 = r_id as u32;
-                    let r_bucket = buckets.get(r_id).copied().unwrap_or_default();
-                    let r_label = match r_span.kind {
-                        SpanKind::Region => region_chip_label(r_span, r_id),
-                        SpanKind::Entry => format!("Entry[{r_id}]"),
-                        SpanKind::LeadOut => format!("LeadOut[{r_id}]"),
-                        _ => format!("[{r_id}]"),
-                    };
-                    if span_tree_row(
-                        ui,
-                        2,
-                        &r_label,
-                        r_span,
-                        r_id,
-                        r_bucket,
-                        scope_span_id == Some(r_id_u32),
-                    )
-                    .clicked()
-                    {
-                        click_target = Some(if scope_span_id == Some(r_id_u32) {
-                            // Toggling a region off goes back to its parent
-                            // DepthPass, not the whole toolpath.
-                            Some(dp_id_u32)
-                        } else {
-                            Some(r_id_u32)
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    if let Some(target) = click_target {
-        sim.debug.span_scope.toolpath_id = Some(toolpath_id);
-        sim.debug.span_scope.span_id = target;
-    }
+    agg
 }
 
-/// Render one indented tree row. Returns the row's Response so the caller
-/// can detect clicks. Keeps text small/monospace; selected row gets the
-/// info accent so it stands out without a separate header style.
-fn span_tree_row(
-    ui: &mut egui::Ui,
-    depth: u8,
-    label: &str,
-    span: &Span,
-    sid: usize,
-    bucket: SpanBucket,
-    selected: bool,
-) -> egui::Response {
-    let indent = depth as f32 * 12.0;
-    let row_color = if selected {
-        theme::INFO
-    } else {
-        theme::TEXT_HEADING
-    };
-    let metric_color = if selected {
-        theme::INFO
-    } else {
-        theme::TEXT_MUTED
-    };
-    let metrics = if bucket.n > 0 {
-        let avg_eng = bucket.sum_eng / bucket.n as f64;
-        let avg_chip = bucket.sum_chip / bucket.n as f64;
-        format!(
-            "n={:<5} eng={avg_eng:.2}  chip={avg_chip:.4}/{:.4}",
-            bucket.n, bucket.peak_chip
-        )
-    } else {
-        format!("n=0    moves {}–{}", span.start_move, span.end_move)
-    };
-    let label_with_id = format!("{label} [{sid}]");
-    ui.horizontal(|ui| {
-        ui.add_space(indent);
-        let label_resp = ui.add(
-            egui::Label::new(egui::RichText::new(label_with_id).small().color(row_color))
-                .sense(egui::Sense::click()),
-        );
-        ui.add(egui::Label::new(
-            egui::RichText::new(metrics)
-                .small()
-                .monospace()
-                .color(metric_color),
-        ));
-        label_resp
-    })
-    .inner
-}
-
-// ── Scoped findings list ────────────────────────────────────────────────
-
-/// Inline list of in-scope hotspots and issues, shown beneath the project
-/// overview when the chip-row scope is active. Click a row to focus
-/// (sets `focused_hotspot` / `focused_issue_index`) and jump to its move.
-fn draw_scoped_findings(
+#[allow(clippy::too_many_arguments)]
+fn draw_selected_section(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
     gui: &GuiState,
@@ -1384,19 +1025,169 @@ fn draw_scoped_findings(
     trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
     events: &mut Vec<AppEvent>,
 ) {
-    let scope = sim.debug.span_scope;
+    let toolpath_id = sim
+        .focused_toolpath()
+        .or_else(|| sim.current_boundary().map(|b| b.id));
+    let Some(tp_id) = toolpath_id else {
+        ui.label(
+            egui::RichText::new("Selected")
+                .strong()
+                .color(theme::TEXT_HEADING),
+        );
+        ui.label(
+            egui::RichText::new("Scrub or play to see span details.")
+                .small()
+                .italics()
+                .color(theme::TEXT_DIM),
+        );
+        return;
+    };
+
+    let locked_span_id = sim.debug.span_scope.span_id;
+    let playhead_id = playhead_span_id(sim, gui, tp_id);
+    let effective = locked_span_id.or(playhead_id);
+
+    let Some(rt) = gui.toolpath_rt.get(&tp_id.0) else {
+        return;
+    };
+    let Some(result) = rt.result.as_ref() else {
+        return;
+    };
+    let spans = result.spans();
+
+    // Header: "Selected: <span name>" plus a lock indicator and a quick
+    // "Follow playhead" reset when locked.
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new("Selected")
+                .strong()
+                .color(theme::TEXT_HEADING),
+        );
+        if let Some(sid) = effective
+            && let Some(span) = spans.get(sid as usize)
+        {
+            ui.label(
+                egui::RichText::new(span_display_label(span, sid as usize))
+                    .strong()
+                    .color(theme::INFO),
+            );
+            if locked_span_id.is_some() {
+                ui.label(
+                    egui::RichText::new("· locked")
+                        .small()
+                        .color(theme::WARNING_TEXT),
+                );
+                if ui
+                    .small_button("Follow playhead")
+                    .on_hover_text(
+                        "Clear the ribbon lock and let the Selected section follow playback.",
+                    )
+                    .clicked()
+                {
+                    sim.debug.span_scope.span_id = None;
+                    sim.debug.span_scope.toolpath_id = None;
+                }
+            }
+        } else {
+            ui.label(
+                egui::RichText::new("(playhead outside any span)")
+                    .small()
+                    .italics()
+                    .color(theme::TEXT_DIM),
+            );
+        }
+    });
+
+    let Some(sid) = effective else { return };
+    let Some(span) = spans.get(sid as usize) else {
+        return;
+    };
+
+    // Span-level facts: kind label, move range, payload extras.
+    ui.label(
+        egui::RichText::new(format!(
+            "{} · moves {}–{}",
+            span_kind_label(span.kind),
+            span.start_move,
+            span.end_move
+        ))
+        .small()
+        .color(theme::TEXT_MUTED),
+    );
+
+    // Sample aggregates for this span.
+    let agg = aggregate_for_span(trace, tp_id.0, sid);
+    if agg.n_cutting == 0 {
+        ui.label(
+            egui::RichText::new("No cutting samples in this span.")
+                .small()
+                .italics()
+                .color(theme::TEXT_DIM),
+        );
+    } else {
+        let avg_eng = agg.sum_eng / agg.n_cutting as f64;
+        let avg_chip = agg.sum_chip / agg.n_cutting as f64;
+        let avg_mrr = agg.sum_mrr / agg.n_cutting as f64;
+        ui.add_space(2.0);
+        egui::Grid::new(("selected_metrics_grid", sid))
+            .num_columns(2)
+            .spacing([8.0, 2.0])
+            .show(ui, |ui| {
+                let row = |ui: &mut egui::Ui, label: &str, value: String| {
+                    ui.label(egui::RichText::new(label).small().color(theme::TEXT_MUTED));
+                    ui.label(egui::RichText::new(value).small().monospace());
+                };
+                row(
+                    ui,
+                    "Samples",
+                    format!("{} ({} cutting)", agg.n_samples, agg.n_cutting),
+                );
+                ui.end_row();
+                row(
+                    ui,
+                    "Engagement",
+                    format!("avg {:.2} · peak {:.2}", avg_eng, agg.peak_eng),
+                );
+                ui.end_row();
+                row(
+                    ui,
+                    "Chipload",
+                    format!("avg {:.4} · peak {:.4} mm", avg_chip, agg.peak_chip),
+                );
+                ui.end_row();
+                row(ui, "Axial DOC", format!("peak {:.2} mm", agg.peak_doc));
+                ui.end_row();
+                row(
+                    ui,
+                    "MRR",
+                    format!("avg {:.0} · peak {:.0} mm³/s", avg_mrr, agg.peak_mrr),
+                );
+                ui.end_row();
+            });
+    }
+
+    // In-scope hotspots and issues.
     let in_scope_hotspots: Vec<(usize, &rs_cam_core::simulation_cut::SimulationCutHotspot)> = trace
         .hotspots
         .iter()
         .enumerate()
-        .filter(|(_, h)| scope.matches(h.toolpath_id, &h.span_path))
+        .filter(|(_, h)| h.toolpath_id == tp_id.0 && h.span_path.iter().any(|s| s.0 == sid))
         .collect();
     let issues = sim.issues(gui, max_feed);
     let in_scope_issues: Vec<&_> = issues
         .iter()
         .filter(|iss| {
-            iss.toolpath_id
-                .is_some_and(|tp| Some(tp) == scope.toolpath_id)
+            iss.toolpath_id.is_some_and(|tp| tp == tp_id)
+                && iss
+                    .move_index
+                    .checked_sub(
+                        sim.boundaries()
+                            .iter()
+                            .find(|b| b.id == tp_id)
+                            .map(|b| b.start_move)
+                            .unwrap_or(0),
+                    )
+                    .is_some_and(|local| span.contains(local))
         })
         .collect();
 
@@ -1404,10 +1195,9 @@ fn draw_scoped_findings(
         return;
     }
 
-    ui.add_space(6.0);
-    ui.separator();
+    ui.add_space(4.0);
     ui.label(
-        egui::RichText::new("In-scope findings")
+        egui::RichText::new("Findings in this span")
             .small()
             .strong()
             .color(theme::TEXT_HEADING),
@@ -1415,9 +1205,8 @@ fn draw_scoped_findings(
 
     const MAX_ROWS: usize = 8;
     for (h_idx, h) in in_scope_hotspots.iter().take(MAX_ROWS) {
-        let toolpath_id = ToolpathId(h.toolpath_id);
         let global_start = sim
-            .global_move_for_local(toolpath_id, h.move_start)
+            .global_move_for_local(tp_id, h.move_start)
             .unwrap_or(h.move_start);
         let resp = ui
             .selectable_label(
@@ -1431,7 +1220,7 @@ fn draw_scoped_findings(
             )
             .on_hover_text("Click to focus and jump to start move.");
         if resp.clicked() {
-            sim.debug.focused_hotspot = Some((toolpath_id, *h_idx));
+            sim.debug.focused_hotspot = Some((tp_id, *h_idx));
             events.push(AppEvent::SimJumpToMove(global_start));
         }
     }
@@ -1445,7 +1234,6 @@ fn draw_scoped_findings(
             .color(theme::TEXT_DIM),
         );
     }
-
     for iss in in_scope_issues.iter().take(MAX_ROWS) {
         let move_idx = iss.move_index;
         let label = format!(

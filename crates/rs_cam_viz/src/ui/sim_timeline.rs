@@ -1188,17 +1188,18 @@ fn draw_span_ribbon(
     }
 
     let total_width = ui.available_width();
-    let height = 14.0;
+    let height = 18.0;
     let (rect, response) =
         ui.allocate_exact_size(egui::vec2(total_width, height), egui::Sense::click());
     let painter = ui.painter_at(rect);
 
-    // Background — same dim band as the semantic band so the two read as a
-    // single track region when both are visible.
+    // Background — dim track so DepthPass blocks have something to sit on
+    // before they paint. Visible at the edges of the focused toolpath
+    // (outside the boundary segment).
     painter.rect_filled(
         rect,
         2.0,
-        egui::Color32::from_rgba_unmultiplied(35, 35, 45, 200),
+        egui::Color32::from_rgba_unmultiplied(20, 22, 30, 220),
     );
 
     let total_moves = sim.total_moves().max(1) as f32;
@@ -1208,8 +1209,26 @@ fn draw_span_ribbon(
         rect.min.x + (global / total_moves) * total_width
     };
 
-    // Selected DepthPass id — when set, its Region children show as a
-    // second tier of sub-blocks. Mirrors the span tree's drill-down.
+    // Compute the playhead's current span id (innermost). This drives the
+    // "which block am I in?" highlight when nothing is locked, and gives
+    // us a subtle accent when something IS locked but playback has moved
+    // elsewhere.
+    let playhead_span_id: Option<u32> = (|| {
+        let global = sim.playback.current_move;
+        if global < boundary.start_move || global >= boundary.end_move {
+            return None;
+        }
+        let local = global - boundary.start_move;
+        spans
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| !s.is_boundary() && s.contains(local))
+            .min_by_key(|(_, s)| s.move_count())
+            .map(|(idx, _)| idx as u32)
+    })();
+
+    // Selected DepthPass id — when scope is locked to a Region, its parent
+    // pass also gets the Region sub-block tier rendered below.
     let selected_dp_id: Option<u32> = scope_span_id.and_then(|sid| {
         let target = spans.get(sid as usize)?;
         if matches!(target.kind, SpanKind::DepthPass) {
@@ -1226,9 +1245,15 @@ fn draw_span_ribbon(
             .map(|(idx, _)| idx as u32)
     });
 
-    // Paint DepthPass blocks. Alternating tint per pass index so adjacent
-    // passes are visually distinct without per-pass labels (which would
-    // overflow on a 14px row).
+    // Paint DepthPass blocks with strong alternating contrast so every
+    // section is visible at rest. Locked = bright cyan; playhead-current =
+    // gentle highlight; otherwise alternating blue-grey.
+    const COLOR_EVEN: egui::Color32 = egui::Color32::from_rgb(120, 145, 185);
+    const COLOR_ODD: egui::Color32 = egui::Color32::from_rgb(70, 100, 145);
+    const COLOR_LOCKED: egui::Color32 = egui::Color32::from_rgb(220, 240, 255);
+    const COLOR_PLAYHEAD: egui::Color32 = egui::Color32::from_rgb(160, 200, 235);
+    const COLOR_HOVER_OUTLINE: egui::Color32 = egui::Color32::from_rgb(255, 255, 255);
+
     let mut pass_index_seq = 0u32;
     let mut click_target: Option<(u32, usize)> = None;
     let mut hover_label: Option<String> = None;
@@ -1251,16 +1276,18 @@ fn draw_span_ribbon(
             }
         };
 
-        let base = if pass_idx % 2 == 0 {
-            egui::Color32::from_rgba_unmultiplied(95, 110, 145, 200)
+        let is_locked = Some(sid_u32) == scope_span_id || Some(sid_u32) == selected_dp_id;
+        let is_playhead = !is_locked && Some(sid_u32) == playhead_span_id;
+        let hovered = pointer_x.is_some_and(|px| px >= x_start && px <= x_end);
+
+        let color = if is_locked {
+            COLOR_LOCKED
+        } else if is_playhead {
+            COLOR_PLAYHEAD
+        } else if pass_idx % 2 == 0 {
+            COLOR_EVEN
         } else {
-            egui::Color32::from_rgba_unmultiplied(75, 90, 125, 200)
-        };
-        let color = if Some(sid_u32) == scope_span_id || Some(sid_u32) == selected_dp_id {
-            // Selected pass — brighter accent.
-            egui::Color32::from_rgb(180, 200, 240)
-        } else {
-            base
+            COLOR_ODD
         };
 
         let block = egui::Rect::from_min_max(
@@ -1268,16 +1295,20 @@ fn draw_span_ribbon(
             egui::pos2(x_end, rect.max.y),
         );
         painter.rect_filled(block, 0.0, color);
+
+        // Hover outline — thin white ring around the block under the cursor
+        // so the user has clear visual feedback that the block is clickable.
+        if hovered {
+            painter.rect_stroke(block, 0.0, egui::Stroke::new(1.5, COLOR_HOVER_OUTLINE));
+        }
+
         // Thin separator on the right edge so consecutive passes don't blur.
         painter.line_segment(
             [egui::pos2(x_end, rect.min.y), egui::pos2(x_end, rect.max.y)],
-            egui::Stroke::new(0.5, egui::Color32::from_rgb(20, 20, 28)),
+            egui::Stroke::new(0.5, egui::Color32::from_rgb(15, 17, 24)),
         );
 
-        if let Some(px) = pointer_x
-            && px >= x_start
-            && px <= x_end
-        {
+        if hovered {
             let z_part = match &span.payload {
                 Some(SpanPayload::DepthPass { z_level, .. }) => format!(" · z={z_level:.2}"),
                 _ => String::new(),
