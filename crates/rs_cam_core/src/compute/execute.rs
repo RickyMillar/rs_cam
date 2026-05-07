@@ -1151,7 +1151,8 @@ pub fn apply_dressups(
     }
 
     // 8. Feed rate optimization (when enabled and stock + cutter are available).
-    // Note: this rewrites feed rates only — move count/order is preserved.
+    // Note: this rewrites feed rates only — move count/order is preserved
+    // (Phase 3h / #57). Spans pass through unchanged.
     if cfg.feed_optimization
         && let (Some(stock), Some(cut)) = (feed_opt_stock, cutter)
     {
@@ -1170,7 +1171,12 @@ pub fn apply_dressups(
             ramp_rate: cfg.feed_ramp_rate,
             air_cut_threshold: 0.05,
         };
-        tp = crate::feedopt::optimize_feed_rates(&tp, cut, stock, &params);
+        let mut staging = AnnotatedToolpath::with_spans(tp, spans.clone());
+        // If earlier steps mutated moves, the spans we'd carry through here
+        // are stale anyway; mirror that flag honestly.
+        staging.spans_valid = input_valid && !any_move_mutation;
+        let dressed = crate::feedopt::optimize_feed_rates(staging, cut, stock, &params);
+        tp = dressed.toolpath;
         // No `any_move_mutation = true` — feed-opt does not change moves.
     }
 
