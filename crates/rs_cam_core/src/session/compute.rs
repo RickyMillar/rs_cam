@@ -62,27 +62,36 @@ impl ProjectSession {
             .get_mut(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
 
+        // Numeric fields accept either JSON numbers or numeric strings —
+        // some MCP / JSON-RPC clients stringify scalar values when the
+        // schema type is permissive (`serde_json::Value`), so this
+        // fallback keeps the API resilient.
+        let as_number = |v: &serde_json::Value| -> Option<f64> {
+            v.as_f64()
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        };
+
         match param {
             "feed_rate" => {
-                let v = value.as_f64().ok_or_else(|| {
+                let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("feed_rate must be a number".to_owned())
                 })?;
                 tc.operation.set_feed_rate(v);
             }
             "plunge_rate" => {
-                let v = value.as_f64().ok_or_else(|| {
+                let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("plunge_rate must be a number".to_owned())
                 })?;
                 tc.operation.set_plunge_rate(v);
             }
             "stepover" => {
-                let v = value.as_f64().ok_or_else(|| {
+                let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("stepover must be a number".to_owned())
                 })?;
                 tc.operation.set_stepover(v);
             }
             "depth_per_pass" => {
-                let v = value.as_f64().ok_or_else(|| {
+                let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("depth_per_pass must be a number".to_owned())
                 })?;
                 tc.operation.set_depth_per_pass(v);
