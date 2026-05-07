@@ -78,6 +78,8 @@ mod tests {
             None,
             None,
             OperationType::Adaptive3d.transform_capabilities(),
+            None,
+            None,
         );
 
         let cutting_z = cutting_z_values(&optimized.toolpath);
@@ -118,6 +120,8 @@ mod tests {
             None,
             None,
             OperationType::Adaptive3d.transform_capabilities(),
+            None,
+            None,
         );
 
         assert_eq!(cutting_z_values(&optimized.toolpath), raw_cutting_z);

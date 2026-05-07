@@ -106,6 +106,8 @@ fn dressup(tp: Toolpath, cfg: &DressupConfig, op: OperationType, tool_diameter: 
         /* feed_opt_stock */ None,
         /* cutter */ None,
         op.transform_capabilities(),
+        None,
+        None,
     )
     .toolpath
 }

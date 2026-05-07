@@ -1,8 +1,5 @@
 use super::{
-    AtomicBool, CollisionRequest, CollisionResult, ComputeError, ComputeRequest, DressupEntryStyle,
-    FeedOptParams, LinkMoveParams, MoveType, SimulationRequest, Toolpath, apply_dogbones,
-    apply_entry, apply_lead_in_out, apply_link_moves, filter_air_cuts, fit_arcs,
-    optimize_feed_rates,
+    AtomicBool, CollisionRequest, CollisionResult, ComputeError, ComputeRequest, SimulationRequest,
 };
 use serde_json::json;
 use std::path::PathBuf;
@@ -16,339 +13,34 @@ pub(super) fn effective_safe_z(req: &ComputeRequest) -> f64 {
     req.heights.retract_z
 }
 
-/// Identifiers for a traced dressup step.
-struct DressupTraceInfo<'a> {
-    debug_key: &'a str,
-    debug_label: &'a str,
-    kind: rs_cam_core::semantic_trace::ToolpathSemanticKind,
-    semantic_label: &'a str,
-}
-
-/// Apply a dressup transformation with debug and semantic tracing boilerplate.
-///
-/// `info` names the debug span and semantic trace item.
-/// `set_params` configures operation-specific parameters on the semantic scope.
-/// `transform` receives the current toolpath and returns the transformed toolpath.
-fn apply_dressup_with_tracing(
-    tp: Toolpath,
-    debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
-    semantic: Option<&rs_cam_core::semantic_trace::ToolpathSemanticContext>,
-    info: DressupTraceInfo<'_>,
-    set_params: impl FnOnce(&rs_cam_core::semantic_trace::ToolpathSemanticScope),
-    transform: impl FnOnce(Toolpath) -> Toolpath,
-) -> Toolpath {
-    let debug_scope = debug.map(|ctx| ctx.start_span(info.debug_key, info.debug_label));
-    let debug_span_id = debug_scope.as_ref().map(|scope| scope.id());
-    let semantic_scope = semantic.map(|ctx| {
-        let scope = ctx.start_item(info.kind, info.semantic_label);
-        if let Some(span_id) = debug_span_id {
-            scope.set_debug_span_id(span_id);
-        }
-        set_params(&scope);
-        scope
-    });
-    let result = transform(tp);
-    if let Some(scope) = semantic_scope.as_ref() {
-        scope.bind_to_toolpath(&result, 0, result.moves.len());
-    }
-    if let Some(scope) = debug_scope.as_ref()
-        && !result.moves.is_empty()
-    {
-        scope.set_move_range(0, result.moves.len() - 1);
-    }
-    result
-}
-
 /// Apply all enabled dressup transforms to a computed toolpath.
 ///
-/// Dressups are applied in the following fixed order:
-///
-/// 1. **Entry style** — replaces plunge moves with ramp or helix entries
-/// 2. **Dogbones** — adds corner overcuts for inside-corner clearance
-/// 3. **Lead-in / lead-out** — adds arc transitions at profile entry/exit points
-/// 4. **Link moves** — replaces short retract-rapid-plunge sequences with keep-tool-down links
-/// 5. **Arc fitting** — converts co-circular linear segments into G2/G3 arcs
-/// 6. **Feed optimization** — adjusts feed rates based on stock-aware engagement estimation
-/// 7. **TSP rapid-order optimization** — reorders disconnected cutting segments to minimize rapid travel
-///
-/// Tabs are not applied here; they are handled inline during per-operation depth
-/// stepping (e.g. profile final pass) before the toolpath reaches this function.
+/// Phase 4 / #44: this is now a thin wrapper around the core
+/// [`rs_cam_core::compute::execute::apply_dressups`] pipeline. The viz layer
+/// pre-builds the feed-optimization stock (which depends on GUI-only
+/// `state::toolpath` operation-availability checks) and forwards the per-step
+/// debug + semantic tracing contexts; everything else — capability gates,
+/// dressup ordering, span remapping — lives in core.
 pub(super) fn apply_dressups(
     annotated: rs_cam_core::toolpath_spans::AnnotatedToolpath,
     req: &ComputeRequest,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
     semantic: Option<&rs_cam_core::semantic_trace::ToolpathSemanticContext>,
 ) -> rs_cam_core::toolpath_spans::AnnotatedToolpath {
-    use rs_cam_core::semantic_trace::ToolpathSemanticKind;
-
     let cfg = &req.dressups;
     let tool = &req.tool;
     let safe_z = effective_safe_z(req);
     let transform_capabilities = req.operation.transform_capabilities();
 
-    // Derive TSP barriers from input spans (matches the core path).
-    let rapid_order_barriers = annotated.rapid_order_barriers();
-    let barrier_count = rapid_order_barriers.len();
-    let has_barriers = barrier_count > 0;
-    let rs_cam_core::toolpath_spans::AnnotatedToolpath {
-        toolpath: mut tp,
-        spans,
-        spans_valid: input_valid,
-    } = annotated;
-    // Phase 2: dressups not yet span-aware. Snapshot move-list shape so we
-    // can detect any mutation by comparing at the end.
-    let initial_move_count = tp.moves.len();
-
-    if cfg.optimize_rapid_order
-        && has_barriers
-        && transform_capabilities.allows_barriered_rapid_reorder()
-    {
-        let sz = safe_z;
-        // Phase 3f / #55: barriered TSP is span-aware. Wrap into an
-        // AnnotatedToolpath so the call derives barriers from the spans
-        // themselves; per-step output spans are discarded because the
-        // surrounding helper rebuilds a single AnnotatedToolpath at the
-        // bottom from `tp` + `spans`.
-        let staged_spans = spans.clone();
-        let staged_valid = input_valid;
-        tp = apply_dressup_with_tracing(
-            tp,
-            debug,
-            semantic,
-            DressupTraceInfo {
-                debug_key: "rapid_order",
-                debug_label: "Optimize rapid order",
-                kind: ToolpathSemanticKind::Optimization,
-                semantic_label: "Rapid ordering",
-            },
-            |scope| {
-                scope.set_param("safe_z", sz);
-                scope.set_param("barrier_count", barrier_count);
-            },
-            |tp| {
-                let staged = rs_cam_core::toolpath_spans::AnnotatedToolpath {
-                    toolpath: tp,
-                    spans: staged_spans,
-                    spans_valid: staged_valid,
-                };
-                rs_cam_core::tsp::optimize_rapid_order(staged, sz).toolpath
-            },
-        );
-    }
-
-    if let Some(core_entry) = cfg.entry_style.to_core(cfg) {
-        let tool_radius = tool.envelope_diameter() / 2.0;
-        let ramp_angle = cfg.ramp_angle;
-        let helix_radius = cfg.helix_radius;
-        let helix_pitch = cfg.helix_pitch;
-        let is_ramp = matches!(cfg.entry_style, DressupEntryStyle::Ramp);
-        let label = if is_ramp { "Ramp entry" } else { "Helix entry" };
-        tp = apply_dressup_with_tracing(
-            tp,
-            debug,
-            semantic,
-            DressupTraceInfo {
-                debug_key: "entry_style",
-                debug_label: label,
-                kind: ToolpathSemanticKind::Entry,
-                semantic_label: label,
-            },
-            |scope| {
-                if is_ramp {
-                    scope.set_param("kind", "ramp");
-                    scope.set_param("max_angle_deg", ramp_angle);
-                } else {
-                    scope.set_param("kind", "helix");
-                    scope.set_param("radius", helix_radius);
-                    scope.set_param("pitch", helix_pitch);
-                }
-            },
-            |tp| {
-                apply_entry(
-                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
-                    core_entry,
-                    tool_radius,
-                )
-                .toolpath
-            },
-        );
-    }
-    if cfg.dogbone {
-        let tool_radius = tool.envelope_diameter() / 2.0;
-        let angle = cfg.dogbone_angle;
-        tp = apply_dressup_with_tracing(
-            tp,
-            debug,
-            semantic,
-            DressupTraceInfo {
-                debug_key: "dogbones",
-                debug_label: "Apply dogbones",
-                kind: ToolpathSemanticKind::Dressup,
-                semantic_label: "Dogbones",
-            },
-            |scope| {
-                scope.set_param("angle_deg", angle);
-            },
-            |tp| {
-                apply_dogbones(
-                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
-                    tool_radius,
-                    angle,
-                )
-                .toolpath
-            },
-        );
-    }
-    if cfg.lead_in_out {
-        let radius = cfg.lead_radius;
-        tp = apply_dressup_with_tracing(
-            tp,
-            debug,
-            semantic,
-            DressupTraceInfo {
-                debug_key: "lead_in_out",
-                debug_label: "Apply lead in/out",
-                kind: ToolpathSemanticKind::Dressup,
-                semantic_label: "Lead in/out",
-            },
-            |scope| {
-                scope.set_param("radius", radius);
-            },
-            |tp| {
-                apply_lead_in_out(
-                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
-                    radius,
-                )
-                .toolpath
-            },
-        );
-    }
-    if cfg.link_moves && transform_capabilities.allows_link_moves() {
-        let max_dist = cfg.link_max_distance;
-        let link_feed = cfg.link_feed_rate;
-        let sz = safe_z;
-        tp = apply_dressup_with_tracing(
-            tp,
-            debug,
-            semantic,
-            DressupTraceInfo {
-                debug_key: "link_moves",
-                debug_label: "Apply link moves",
-                kind: ToolpathSemanticKind::Dressup,
-                semantic_label: "Link moves",
-            },
-            |scope| {
-                scope.set_param("max_link_distance", max_dist);
-                scope.set_param("link_feed_rate", link_feed);
-            },
-            |tp| {
-                apply_link_moves(
-                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
-                    &LinkMoveParams {
-                        max_link_distance: max_dist,
-                        link_feed_rate: link_feed,
-                        safe_z_threshold: sz * 0.9,
-                    },
-                )
-                .toolpath
-            },
-        );
-    }
-    if cfg.arc_fitting {
-        let tolerance = cfg.arc_tolerance;
-        tp = apply_dressup_with_tracing(
-            tp,
-            debug,
-            semantic,
-            DressupTraceInfo {
-                debug_key: "arc_fit",
-                debug_label: "Fit arcs",
-                kind: ToolpathSemanticKind::Optimization,
-                semantic_label: "Arc fitting",
-            },
-            |scope| {
-                scope.set_param("tolerance", tolerance);
-            },
-            |tp| {
-                fit_arcs(
-                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
-                    tolerance,
-                )
-                .toolpath
-            },
-        );
-    }
-    if let Some(ref prior_stock) = req.prior_stock {
-        let tool_radius = tool.envelope_diameter() / 2.0;
-        let sz = safe_z;
-        tp = apply_dressup_with_tracing(
-            tp,
-            debug,
-            semantic,
-            DressupTraceInfo {
-                debug_key: "air_cut_filter",
-                debug_label: "Filter air cuts",
-                kind: ToolpathSemanticKind::Optimization,
-                semantic_label: "Air-cut filter",
-            },
-            |scope| {
-                scope.set_param("tool_radius", tool_radius);
-                scope.set_param("safe_z", sz);
-            },
-            |tp| {
-                filter_air_cuts(
-                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
-                    prior_stock,
-                    tool_radius,
-                    sz,
-                    0.1,
-                )
-                .toolpath
-            },
-        );
-    }
+    // Pre-build feed-optimization stock if requested. The GUI-only
+    // availability check (`feed_optimization_stock`) must run here because
+    // core has no knowledge of `state::toolpath`. If the check fails or the
+    // stock can't be built we just don't pass one to core, which mirrors
+    // the previous "skip with warning" behavior.
+    let mut feed_opt_stock = None;
     if cfg.feed_optimization {
-        let max_rate = cfg.feed_max_rate;
-        let ramp_rate = cfg.feed_ramp_rate;
-        // Feed optimization needs a mutable heightmap and special error handling,
-        // so we use the tracing helper for scope management but handle the transform inline.
-        let debug_scope = debug.map(|ctx| ctx.start_span("feed_optimization", "Optimize feeds"));
-        let debug_span_id = debug_scope.as_ref().map(|scope| scope.id());
-        let semantic_scope = semantic.map(|ctx| {
-            let scope = ctx.start_item(ToolpathSemanticKind::Optimization, "Feed optimization");
-            if let Some(span_id) = debug_span_id {
-                scope.set_debug_span_id(span_id);
-            }
-            scope.set_param("max_feed_rate", max_rate);
-            scope.set_param("ramp_rate", ramp_rate);
-            scope
-        });
         match feed_optimization_stock(req) {
-            Ok(mut stock) => {
-                let nominal = tp
-                    .moves
-                    .iter()
-                    .find_map(|m| match m.move_type {
-                        MoveType::Linear { feed_rate } => Some(feed_rate),
-                        _ => None,
-                    })
-                    .unwrap_or(1000.0);
-                let cutter = build_cutter(tool);
-                let params = FeedOptParams {
-                    nominal_feed_rate: nominal,
-                    max_feed_rate: max_rate,
-                    min_feed_rate: nominal * 0.5,
-                    ramp_rate,
-                    air_cut_threshold: 0.05,
-                };
-                tp = optimize_feed_rates(
-                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
-                    &cutter,
-                    &mut stock,
-                    &params,
-                )
-                .toolpath;
-            }
+            Ok(stock) => feed_opt_stock = Some(stock),
             Err(reason) => {
                 tracing::warn!(
                     "Skipping feed optimization for toolpath {}: {reason}",
@@ -356,51 +48,23 @@ pub(super) fn apply_dressups(
                 );
             }
         }
-        if let Some(scope) = semantic_scope.as_ref() {
-            scope.bind_to_toolpath(&tp, 0, tp.moves.len());
-        }
-        if let Some(scope) = debug_scope.as_ref()
-            && !tp.moves.is_empty()
-        {
-            scope.set_move_range(0, tp.moves.len() - 1);
-        }
     }
-    if cfg.optimize_rapid_order
-        && !has_barriers
-        && transform_capabilities.allows_unbarriered_rapid_reorder()
-    {
-        let sz = safe_z;
-        tp = apply_dressup_with_tracing(
-            tp,
-            debug,
-            semantic,
-            DressupTraceInfo {
-                debug_key: "rapid_order",
-                debug_label: "Optimize rapid order",
-                kind: ToolpathSemanticKind::Optimization,
-                semantic_label: "Rapid ordering",
-            },
-            |scope| {
-                scope.set_param("safe_z", sz);
-            },
-            // Phase 3f / #55: unified span-aware entry. Spans are dropped
-            // here because the surrounding helper rebuilds the
-            // AnnotatedToolpath at the bottom from `tp` + `spans`.
-            |tp| {
-                rs_cam_core::tsp::optimize_rapid_order(
-                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
-                    sz,
-                )
-                .toolpath
-            },
-        );
-    }
-    let any_move_mutation = tp.moves.len() != initial_move_count;
-    rs_cam_core::toolpath_spans::AnnotatedToolpath {
-        toolpath: tp,
-        spans,
-        spans_valid: input_valid && !any_move_mutation,
-    }
+    let cutter = feed_opt_stock.as_ref().map(|_| build_cutter(tool));
+
+    rs_cam_core::compute::execute::apply_dressups(
+        annotated,
+        cfg,
+        tool.envelope_diameter(),
+        safe_z,
+        req.prior_stock.as_ref(),
+        feed_opt_stock.as_mut(),
+        cutter
+            .as_ref()
+            .map(|c| c as &dyn rs_cam_core::tool::MillingCutter),
+        transform_capabilities,
+        debug,
+        semantic,
+    )
 }
 
 pub(super) fn feed_optimization_stock(req: &ComputeRequest) -> Result<TriDexelStock, &'static str> {
