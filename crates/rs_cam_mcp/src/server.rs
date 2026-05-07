@@ -181,6 +181,28 @@ pub struct CutTraceParam {
     pub pass_index: Option<u32>,
 }
 
+#[allow(dead_code)] // Used by rs_cam_viz embedded MCP, not the standalone binary
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct InspectSpansParam {
+    /// Toolpath index (0-based). Must have been generated first.
+    pub index: usize,
+    /// Optional `SpanKind` filter (snake_case). Accepted values:
+    /// "operation", "depth_pass", "region", "entry", "lead_out",
+    /// "link_bridge", "dressup_artifact", "rapid_order_barrier".
+    pub kind: Option<String>,
+    /// Optional parent span id (vec index). Restricts results to spans whose
+    /// move range is contained within the parent's range. Pair with `kind` to
+    /// drill from "Operation 0" → its DepthPasses → a single DepthPass's Regions.
+    pub parent_id: Option<u32>,
+    /// Optional `DepthPass` `pass_index` payload match (0-based).
+    pub pass_index: Option<u32>,
+    /// Optional `Region` `region_id` payload match.
+    pub region_id: Option<u32>,
+    /// Hard cap on returned spans (default 50). Result includes `truncated`
+    /// and `total_matching` when capped.
+    pub max_spans: Option<usize>,
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct GenDebugTraceParam {
     /// Toolpath index (0-based). Must have been generated first.

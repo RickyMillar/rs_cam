@@ -74,8 +74,20 @@ pub enum McpRequestKind {
     /// Dump the structural spans (Operation, DepthPass, Region, Entry, LeadOut,
     /// LinkBridge, DressupArtifact, RapidOrderBarrier) of a generated toolpath.
     /// Lets agents inspect toolpath anatomy without parsing the raw move list.
+    /// Defaults to a summary (kind_counts + outermost spans). Set any filter
+    /// to retrieve detail spans.
     InspectSpans {
         index: usize,
+        /// `SpanKind` filter (snake_case e.g. "depth_pass").
+        kind: Option<String>,
+        /// Restrict to spans contained within the span at this id (vec index).
+        parent_id: Option<u32>,
+        /// `DepthPass` `pass_index` payload match.
+        pass_index: Option<u32>,
+        /// `Region` `region_id` payload match.
+        region_id: Option<u32>,
+        /// Cap on returned spans (default 50).
+        max_spans: Option<usize>,
     },
 
     // ── Mutations (instant) ──────────────────────────────────────────
