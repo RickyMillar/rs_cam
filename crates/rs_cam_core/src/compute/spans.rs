@@ -1,62 +1,38 @@
-//! Build [`Span`]s from per-operation runtime annotations.
+//! Build [`Span`]s from operation runtime events.
 //!
-//! This is the bridge between the legacy op-specific
-//! [`OperationAnnotations`](crate::compute::execute::OperationAnnotations)
-//! enum and the generic span model in [`crate::toolpath_spans`]. Each
-//! generator still returns its own `RuntimeAnnotation` events for
-//! narrate / debug / GUI consumers; this module translates the subset
-//! that is structurally meaningful (depth-pass and region boundaries,
-//! TSP barriers) into [`Span`]s for the dressup pipeline.
+//! This is the bridge between op-specific `RuntimeAnnotation` events and the
+//! generic span model in [`crate::toolpath_spans`]. Each generator can still
+//! return its own events for narration/debug/semantic trace construction; this
+//! module translates the subset that is structurally meaningful into [`Span`]s
+//! for the dressup pipeline.
 
-use crate::compute::execute::OperationAnnotations;
 use crate::toolpath_spans::{Span, SpanKind, SpanPayload};
 
-/// Build the span vector for an operation's freshly-generated toolpath.
+/// Build the default span vector for an operation's freshly-generated toolpath.
 ///
-/// Always emits a top-level `Operation` span covering `[0, n_moves)`.
-/// For operations whose annotations carry structural information (today:
-/// only Adaptive3d), additional `Region`, `DepthPass`, and
-/// `RapidOrderBarrier` spans are appended. Other ops fall back to just
-/// the top-level span until their phase-3 wiring is added.
+/// Always emits a top-level `Operation` span covering `[0, n_moves)`. Empty
+/// toolpaths are still wrapped — the span is just zero-width.
+pub fn operation_spans(n_moves: usize) -> Vec<Span> {
+    vec![Span::new(0, n_moves, SpanKind::Operation)]
+}
+
+/// Build structural spans from Adaptive3d runtime events.
 ///
-/// The set of spans here must produce barriers via
-/// [`crate::toolpath_spans::AnnotatedToolpath::rapid_order_barriers`]
-/// that exactly match the legacy
-/// [`OperationAnnotations::rapid_order_barriers`] — the
-/// `adaptive3d_post_tsp_z_monotonicity` regression test will fail if
-/// barrier derivation drifts.
-pub fn spans_from_annotations(annotations: &OperationAnnotations, n_moves: usize) -> Vec<Span> {
-    let mut spans: Vec<Span> = Vec::new();
-
-    // Top-level Operation span. Empty toolpaths are still wrapped — the
-    // span is just zero-width.
-    spans.push(Span::new(0, n_moves, SpanKind::Operation));
-
-    match annotations {
-        OperationAnnotations::None
-        | OperationAnnotations::Adaptive2d(_)
-        | OperationAnnotations::Scallop(_)
-        | OperationAnnotations::RampFinish(_)
-        | OperationAnnotations::SpiralFinish(_)
-        | OperationAnnotations::Pencil(_) => {
-            // Phase-2 scope: only adaptive3d emits structural spans.
-            // The other annotation types carry debug labels that don't
-            // map to barriers / depth-passes; their span derivation is
-            // a follow-up.
-        }
-        OperationAnnotations::Adaptive3d(events) => {
-            push_adaptive3d_spans(&mut spans, events, n_moves);
-        }
-    }
-
+/// Emits the top-level `Operation` span plus `Region`, `DepthPass`, and
+/// `RapidOrderBarrier` spans derived from adaptive3d's event stream.
+pub fn spans_from_adaptive3d_annotations(
+    events: &[crate::adaptive3d::Adaptive3dRuntimeAnnotation],
+    n_moves: usize,
+) -> Vec<Span> {
+    let mut spans = operation_spans(n_moves);
+    push_adaptive3d_spans(&mut spans, events, n_moves);
     spans
 }
 
 /// Translate Adaptive3d runtime events into structural spans.
 ///
 /// - `RegionZLevel | GlobalZLevel | WaterlineCleanup`: zero-width
-///   `RapidOrderBarrier` spans at the move index. Match the legacy
-///   `OperationAnnotations::rapid_order_barriers()` exactly.
+///   `RapidOrderBarrier` spans at the move index.
 /// - Consecutive `RegionZLevel` / `GlobalZLevel` / `WaterlineCleanup`
 ///   events also delimit `DepthPass` spans (each pass runs from the
 ///   event's `move_index` to the next event of the same family, or to
@@ -165,8 +141,8 @@ mod tests {
     }
 
     #[test]
-    fn none_annotations_yields_only_operation_span() {
-        let spans = spans_from_annotations(&OperationAnnotations::None, 42);
+    fn operation_spans_yields_only_operation_span() {
+        let spans = operation_spans(42);
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].kind, SpanKind::Operation);
         assert_eq!(spans[0].start_move, 0);
@@ -175,14 +151,13 @@ mod tests {
 
     #[test]
     fn empty_toolpath_still_gets_operation_span() {
-        let spans = spans_from_annotations(&OperationAnnotations::None, 0);
+        let spans = operation_spans(0);
         assert_eq!(spans.len(), 1);
         assert!(spans[0].is_boundary());
     }
 
     #[test]
-    fn adaptive3d_barriers_match_legacy_rapid_order_barriers() {
-        // Build a representative adaptive3d annotation stream.
+    fn adaptive3d_emits_rapid_order_barriers() {
         let events = vec![
             ev(
                 0,
@@ -224,20 +199,14 @@ mod tests {
                 },
             ),
         ];
-        let annotations = OperationAnnotations::Adaptive3d(events);
 
-        // Legacy method.
-        let legacy = annotations.rapid_order_barriers();
-
-        // New method via spans.
-        let spans = spans_from_annotations(&annotations, 150);
+        let spans = spans_from_adaptive3d_annotations(&events, 150);
         let mut tp = Toolpath::new();
         for _ in 0..150 {
             tp.feed_to(crate::geo::P3::new(0.0, 0.0, 0.0), 1000.0);
         }
         let derived = AnnotatedToolpath::with_spans(tp, spans).rapid_order_barriers();
 
-        assert_eq!(derived, legacy, "span-derived barriers must match legacy");
         assert_eq!(derived, vec![0, 50, 100]);
     }
 
@@ -265,7 +234,7 @@ mod tests {
                 },
             ),
         ];
-        let spans = spans_from_annotations(&OperationAnnotations::Adaptive3d(events), 60);
+        let spans = spans_from_adaptive3d_annotations(&events, 60);
         let depth: Vec<_> = spans
             .iter()
             .filter(|s| s.kind == SpanKind::DepthPass)
@@ -301,7 +270,7 @@ mod tests {
                 },
             ),
         ];
-        let spans = spans_from_annotations(&OperationAnnotations::Adaptive3d(events), 100);
+        let spans = spans_from_adaptive3d_annotations(&events, 100);
         let regions: Vec<_> = spans
             .iter()
             .filter(|s| s.kind == SpanKind::Region)

@@ -33,51 +33,20 @@ pub enum OperationError {
     Other(String),
 }
 
-// ── Annotation types ─────────────────────────────────────────────────
+// ── Generated toolpath helpers ───────────────────────────────────────
 
-/// Runtime annotations returned alongside the toolpath.
-/// Only operations whose algorithms emit structured events populate this.
-pub enum OperationAnnotations {
-    None,
-    Adaptive3d(Vec<crate::adaptive3d::Adaptive3dRuntimeAnnotation>),
-    Adaptive2d(Vec<crate::adaptive::AdaptiveRuntimeAnnotation>),
-    Scallop(Vec<crate::scallop::ScallopRuntimeAnnotation>),
-    RampFinish(Vec<crate::ramp_finish::RampFinishRuntimeAnnotation>),
-    SpiralFinish(Vec<crate::spiral_finish::SpiralFinishRuntimeAnnotation>),
-    Pencil(Vec<crate::pencil::PencilRuntimeAnnotation>),
+pub type GeneratedToolpath = AnnotatedToolpath;
+
+fn generated_with_operation_span(toolpath: Toolpath) -> GeneratedToolpath {
+    let n_moves = toolpath.moves.len();
+    AnnotatedToolpath::with_spans(toolpath, crate::compute::spans::operation_spans(n_moves))
 }
 
-impl OperationAnnotations {
-    /// Move indices where rapid-order TSP must not reorder across semantic groups.
-    pub fn rapid_order_barriers(&self) -> Vec<usize> {
-        match self {
-            Self::Adaptive3d(annotations) => annotations
-                .iter()
-                .filter_map(|annotation| match &annotation.event {
-                    crate::adaptive3d::Adaptive3dRuntimeEvent::RegionZLevel { .. }
-                    | crate::adaptive3d::Adaptive3dRuntimeEvent::GlobalZLevel { .. }
-                    | crate::adaptive3d::Adaptive3dRuntimeEvent::WaterlineCleanup => {
-                        Some(annotation.move_index)
-                    }
-                    crate::adaptive3d::Adaptive3dRuntimeEvent::RegionStart { .. }
-                    | crate::adaptive3d::Adaptive3dRuntimeEvent::PassEntry { .. }
-                    | crate::adaptive3d::Adaptive3dRuntimeEvent::PassPreflightSkip { .. }
-                    | crate::adaptive3d::Adaptive3dRuntimeEvent::PassSummary { .. } => None,
-                })
-                .collect(),
-            Self::None
-            | Self::Adaptive2d(_)
-            | Self::Scallop(_)
-            | Self::RampFinish(_)
-            | Self::SpiralFinish(_)
-            | Self::Pencil(_) => Vec::new(),
-        }
-    }
-}
-
-pub struct GeneratedToolpath {
-    pub toolpath: Toolpath,
-    pub annotations: OperationAnnotations,
+fn generated_with_spans(
+    toolpath: Toolpath,
+    spans: Vec<crate::toolpath_spans::Span>,
+) -> GeneratedToolpath {
+    AnnotatedToolpath::with_spans(toolpath, spans)
 }
 
 impl std::fmt::Display for OperationError {
@@ -137,15 +106,16 @@ pub fn execute_operation(
         cancel,
         initial_stock,
         None,
+        None,
     )
     .map(|at| at.toolpath)
 }
 
-/// Execute a single operation, producing a toolpath together with runtime
-/// annotations from the underlying algorithm (when available).
+/// Execute a single operation, producing a toolpath together with structural
+/// spans from the underlying algorithm (when available).
 ///
 /// This is the single source-of-truth dispatch; [`execute_operation`] delegates
-/// here and discards the annotations for backwards compatibility.
+/// here and discards the spans for backwards compatibility.
 #[allow(clippy::too_many_arguments)]
 pub fn execute_operation_annotated(
     op: &OperationConfig,
@@ -161,6 +131,7 @@ pub fn execute_operation_annotated(
     debug_ctx: Option<&ToolpathDebugContext>,
     cancel: &AtomicBool,
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    semantic_ctx: Option<&ToolpathSemanticContext>,
     // `boundary`: effective machining boundary polygon (model silhouette inset
     // by tool_radius for containment=Inside). When provided, AgentSearch /
     // ContourParallel / Adaptive pre-clear cells outside this boundary in
@@ -189,10 +160,9 @@ pub fn execute_operation_annotated(
                 stock_offset: cfg.stock_offset,
                 direction: cfg.direction,
             };
-            Ok(GeneratedToolpath {
-                toolpath: crate::face::face_toolpath(stock_bbox, &params),
-                annotations: OperationAnnotations::None,
-            })
+            Ok(generated_with_operation_span(crate::face::face_toolpath(
+                stock_bbox, &params,
+            )))
         }
         OperationConfig::Pocket(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -231,10 +201,7 @@ pub fn execute_operation_annotated(
                 });
                 combined.moves.extend(tp.moves);
             }
-            Ok(GeneratedToolpath {
-                toolpath: combined,
-                annotations: OperationAnnotations::None,
-            })
+            Ok(generated_with_operation_span(combined))
         }
         OperationConfig::Profile(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -281,10 +248,7 @@ pub fn execute_operation_annotated(
                     }
                 }
             }
-            Ok(GeneratedToolpath {
-                toolpath: combined,
-                annotations: OperationAnnotations::None,
-            })
+            Ok(generated_with_operation_span(combined))
         }
         OperationConfig::Adaptive(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -335,10 +299,10 @@ pub fn execute_operation_annotated(
                     combined.moves.extend(level_tp.moves);
                 }
             }
-            Ok(GeneratedToolpath {
-                toolpath: combined,
-                annotations: OperationAnnotations::Adaptive2d(all_annotations),
-            })
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_adaptive2d(&all_annotations, &combined, ctx);
+            }
+            Ok(generated_with_operation_span(combined))
         }
         OperationConfig::Zigzag(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -361,10 +325,7 @@ pub fn execute_operation_annotated(
                 });
                 combined.moves.extend(tp.moves);
             }
-            Ok(GeneratedToolpath {
-                toolpath: combined,
-                annotations: OperationAnnotations::None,
-            })
+            Ok(generated_with_operation_span(combined))
         }
         OperationConfig::Trace(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -386,10 +347,7 @@ pub fn execute_operation_annotated(
                 });
                 combined.moves.extend(tp.moves);
             }
-            Ok(GeneratedToolpath {
-                toolpath: combined,
-                annotations: OperationAnnotations::None,
-            })
+            Ok(generated_with_operation_span(combined))
         }
         OperationConfig::VCarve(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -417,10 +375,7 @@ pub fn execute_operation_annotated(
                 );
                 combined.moves.extend(tp.moves);
             }
-            Ok(GeneratedToolpath {
-                toolpath: combined,
-                annotations: OperationAnnotations::None,
-            })
+            Ok(generated_with_operation_span(combined))
         }
         OperationConfig::Rest(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -447,10 +402,7 @@ pub fn execute_operation_annotated(
                 });
                 combined.moves.extend(tp.moves);
             }
-            Ok(GeneratedToolpath {
-                toolpath: combined,
-                annotations: OperationAnnotations::None,
-            })
+            Ok(generated_with_operation_span(combined))
         }
         OperationConfig::Inlay(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -489,10 +441,7 @@ pub fn execute_operation_annotated(
                 out.final_retract(safe_z);
                 out.moves.extend(male_out.moves);
             }
-            Ok(GeneratedToolpath {
-                toolpath: out,
-                annotations: OperationAnnotations::None,
-            })
+            Ok(generated_with_operation_span(out))
         }
         OperationConfig::Drill(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -525,10 +474,9 @@ pub fn execute_operation_annotated(
                     stock_bbox.max.z,
                 ),
             };
-            Ok(GeneratedToolpath {
-                toolpath: crate::drill::drill_toolpath(&holes, &params),
-                annotations: OperationAnnotations::None,
-            })
+            Ok(generated_with_operation_span(crate::drill::drill_toolpath(
+                &holes, &params,
+            )))
         }
         OperationConfig::Chamfer(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -554,10 +502,7 @@ pub fn execute_operation_annotated(
                 let tp = crate::chamfer::chamfer_toolpath(poly, &params);
                 combined.moves.extend(tp.moves);
             }
-            Ok(GeneratedToolpath {
-                toolpath: combined,
-                annotations: OperationAnnotations::None,
-            })
+            Ok(generated_with_operation_span(combined))
         }
         OperationConfig::AlignmentPinDrill(cfg) => {
             if cfg.holes.is_empty() {
@@ -592,10 +537,9 @@ pub fn execute_operation_annotated(
                     stock_bbox.max.z,
                 ),
             };
-            Ok(GeneratedToolpath {
-                toolpath: crate::drill::drill_toolpath(&cfg.holes, &params),
-                annotations: OperationAnnotations::None,
-            })
+            Ok(generated_with_operation_span(crate::drill::drill_toolpath(
+                &cfg.holes, &params,
+            )))
         }
 
         // ── 3D operations ────────────────────────────────────────────
@@ -670,10 +614,7 @@ pub fn execute_operation_annotated(
                     min_z_filter,
                 )
             };
-            Ok(GeneratedToolpath {
-                toolpath: tp,
-                annotations: OperationAnnotations::None,
-            })
+            Ok(generated_with_operation_span(tp))
         }
         OperationConfig::Adaptive3d(cfg) => {
             let m = require_mesh(mesh)?;
@@ -757,10 +698,14 @@ pub fn execute_operation_annotated(
                     debug_ctx,
                 )
                 .map_err(|_e| OperationError::Cancelled)?;
-            Ok(GeneratedToolpath {
-                toolpath: tp,
-                annotations: OperationAnnotations::Adaptive3d(annotations),
-            })
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_adaptive3d(&annotations, &tp, ctx);
+            }
+            let spans = crate::compute::spans::spans_from_adaptive3d_annotations(
+                &annotations,
+                tp.moves.len(),
+            );
+            Ok(generated_with_spans(tp, spans))
         }
         OperationConfig::Waterline(cfg) => {
             let m = require_mesh(mesh)?;
@@ -784,10 +729,7 @@ pub fn execute_operation_annotated(
                 &(|| cancel.load(Ordering::SeqCst)),
             )
             .map_err(|_e| OperationError::Cancelled)?;
-            Ok(GeneratedToolpath {
-                toolpath: tp,
-                annotations: OperationAnnotations::None,
-            })
+            Ok(generated_with_operation_span(tp))
         }
         OperationConfig::Pencil(cfg) => {
             let m = require_mesh(mesh)?;
@@ -808,10 +750,10 @@ pub fn execute_operation_annotated(
             let (tp, annotations) = crate::pencil::pencil_toolpath_structured_annotated(
                 m, idx, tool_def, &params, debug_ctx,
             );
-            Ok(GeneratedToolpath {
-                toolpath: tp,
-                annotations: OperationAnnotations::Pencil(annotations),
-            })
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_pencil(&annotations, &tp, ctx);
+            }
+            Ok(generated_with_operation_span(tp))
         }
         OperationConfig::Scallop(cfg) => {
             if !tool_cfg.tool_type.has_ball_tip() {
@@ -837,10 +779,10 @@ pub fn execute_operation_annotated(
             let (tp, annotations) = crate::scallop::scallop_toolpath_structured_annotated(
                 m, idx, tool_def, &params, debug_ctx,
             );
-            Ok(GeneratedToolpath {
-                toolpath: tp,
-                annotations: OperationAnnotations::Scallop(annotations),
-            })
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_scallop(&annotations, &tp, ctx);
+            }
+            Ok(generated_with_operation_span(tp))
         }
         OperationConfig::SteepShallow(cfg) => {
             let m = require_mesh(mesh)?;
@@ -861,10 +803,9 @@ pub fn execute_operation_annotated(
                 stock_to_leave: cfg.stock_to_leave,
                 tolerance: cfg.tolerance,
             };
-            Ok(GeneratedToolpath {
-                toolpath: crate::steep_shallow::steep_shallow_toolpath(m, idx, tool_def, &params),
-                annotations: OperationAnnotations::None,
-            })
+            Ok(generated_with_operation_span(
+                crate::steep_shallow::steep_shallow_toolpath(m, idx, tool_def, &params),
+            ))
         }
         OperationConfig::RampFinish(cfg) => {
             let m = require_mesh(mesh)?;
@@ -887,10 +828,10 @@ pub fn execute_operation_annotated(
             let (tp, annotations) = crate::ramp_finish::ramp_finish_toolpath_structured_annotated(
                 m, idx, tool_def, &params, debug_ctx,
             );
-            Ok(GeneratedToolpath {
-                toolpath: tp,
-                annotations: OperationAnnotations::RampFinish(annotations),
-            })
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_ramp_finish(&annotations, &tp, ctx);
+            }
+            Ok(generated_with_operation_span(tp))
         }
         OperationConfig::SpiralFinish(cfg) => {
             let m = require_mesh(mesh)?;
@@ -909,10 +850,10 @@ pub fn execute_operation_annotated(
                 crate::spiral_finish::spiral_finish_toolpath_structured_annotated(
                     m, idx, tool_def, &params, debug_ctx,
                 );
-            Ok(GeneratedToolpath {
-                toolpath: tp,
-                annotations: OperationAnnotations::SpiralFinish(annotations),
-            })
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_spiral_finish(&annotations, &tp, ctx);
+            }
+            Ok(generated_with_operation_span(tp))
         }
         OperationConfig::RadialFinish(cfg) => {
             let m = require_mesh(mesh)?;
@@ -927,10 +868,9 @@ pub fn execute_operation_annotated(
                 safe_z,
                 stock_to_leave: cfg.stock_to_leave,
             };
-            Ok(GeneratedToolpath {
-                toolpath: crate::radial_finish::radial_finish_toolpath(m, idx, tool_def, &params),
-                annotations: OperationAnnotations::None,
-            })
+            Ok(generated_with_operation_span(
+                crate::radial_finish::radial_finish_toolpath(m, idx, tool_def, &params),
+            ))
         }
         OperationConfig::HorizontalFinish(cfg) => {
             let m = require_mesh(mesh)?;
@@ -945,12 +885,9 @@ pub fn execute_operation_annotated(
                 safe_z,
                 stock_to_leave: cfg.stock_to_leave,
             };
-            Ok(GeneratedToolpath {
-                toolpath: crate::horizontal_finish::horizontal_finish_toolpath(
-                    m, idx, tool_def, &params,
-                ),
-                annotations: OperationAnnotations::None,
-            })
+            Ok(generated_with_operation_span(
+                crate::horizontal_finish::horizontal_finish_toolpath(m, idx, tool_def, &params),
+            ))
         }
         OperationConfig::ProjectCurve(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -995,10 +932,7 @@ pub fn execute_operation_annotated(
                     crate::project_curve::project_curve_toolpath(poly, m, idx, &cutter, &params);
                 combined.moves.extend(tp.moves);
             }
-            Ok(GeneratedToolpath {
-                toolpath: combined,
-                annotations: OperationAnnotations::None,
-            })
+            Ok(generated_with_operation_span(combined))
         }
     }
 }

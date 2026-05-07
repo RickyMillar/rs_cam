@@ -9,37 +9,6 @@
 use crate::semantic_trace::{ToolpathSemanticContext, ToolpathSemanticKind};
 use crate::toolpath::Toolpath;
 
-use super::execute::OperationAnnotations;
-
-/// Convert operation-specific runtime annotations into hierarchical semantic items.
-pub fn annotate_from_runtime_events(
-    annotations: &OperationAnnotations,
-    toolpath: &Toolpath,
-    op_context: &ToolpathSemanticContext,
-) {
-    match annotations {
-        OperationAnnotations::None => {}
-        OperationAnnotations::Adaptive3d(events) => {
-            annotate_adaptive3d(events, toolpath, op_context);
-        }
-        OperationAnnotations::Adaptive2d(events) => {
-            annotate_adaptive2d(events, toolpath, op_context);
-        }
-        OperationAnnotations::Scallop(events) => {
-            annotate_scallop(events, toolpath, op_context);
-        }
-        OperationAnnotations::RampFinish(events) => {
-            annotate_ramp_finish(events, toolpath, op_context);
-        }
-        OperationAnnotations::SpiralFinish(events) => {
-            annotate_spiral_finish(events, toolpath, op_context);
-        }
-        OperationAnnotations::Pencil(events) => {
-            annotate_pencil(events, toolpath, op_context);
-        }
-    }
-}
-
 // ── Helpers ──────────────────────────────────────────────────────────
 
 /// Compute the exclusive move-end index for annotation `i`.
@@ -53,7 +22,7 @@ fn move_end(move_indices: &[usize], i: usize, toolpath_len: usize) -> usize {
 
 // ── Adaptive 3D ─────────────────────────────────────────────────────
 
-fn annotate_adaptive3d(
+pub(super) fn annotate_adaptive3d(
     events: &[crate::adaptive3d::Adaptive3dRuntimeAnnotation],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,
@@ -246,7 +215,7 @@ fn set_z_level_plan_metrics(
 
 // ── Adaptive 2D ─────────────────────────────────────────────────────
 
-fn annotate_adaptive2d(
+pub(super) fn annotate_adaptive2d(
     events: &[crate::adaptive::AdaptiveRuntimeAnnotation],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,
@@ -347,7 +316,7 @@ fn annotate_adaptive2d(
 
 // ── Scallop ─────────────────────────────────────────────────────────
 
-fn annotate_scallop(
+pub(super) fn annotate_scallop(
     events: &[crate::scallop::ScallopRuntimeAnnotation],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,
@@ -382,7 +351,7 @@ fn annotate_scallop(
 
 // ── RampFinish ──────────────────────────────────────────────────────
 
-fn annotate_ramp_finish(
+pub(super) fn annotate_ramp_finish(
     events: &[crate::ramp_finish::RampFinishRuntimeAnnotation],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,
@@ -432,7 +401,7 @@ fn annotate_ramp_finish(
 
 // ── SpiralFinish ────────────────────────────────────────────────────
 
-fn annotate_spiral_finish(
+pub(super) fn annotate_spiral_finish(
     events: &[crate::spiral_finish::SpiralFinishRuntimeAnnotation],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,
@@ -467,7 +436,7 @@ fn annotate_spiral_finish(
 
 // ── Pencil ──────────────────────────────────────────────────────────
 
-fn annotate_pencil(
+pub(super) fn annotate_pencil(
     events: &[crate::pencil::PencilRuntimeAnnotation],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,

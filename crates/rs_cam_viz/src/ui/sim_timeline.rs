@@ -802,6 +802,27 @@ fn draw_transport_and_scrubber(
             events.push(AppEvent::SimStepForward);
         }
 
+        // Per-pass scrub: jump to start of prev/next DepthPass span on
+        // the focused toolpath. Only meaningful for ops that emit DepthPass
+        // spans (most multi-pass roughing/finishing).
+        if focused_toolpath_has_depth_passes(sim, gui) {
+            ui.separator();
+            if ui
+                .add(egui::Button::new("«Z").min_size(btn_size))
+                .on_hover_text("Previous depth pass on focused toolpath")
+                .clicked()
+            {
+                events.push(AppEvent::SimJumpToPrevPass);
+            }
+            if ui
+                .add(egui::Button::new("Z»").min_size(btn_size))
+                .on_hover_text("Next depth pass on focused toolpath")
+                .clicked()
+            {
+                events.push(AppEvent::SimJumpToNextPass);
+            }
+        }
+
         if sim.total_moves() > 0 {
             ui.separator();
 
@@ -850,6 +871,29 @@ fn draw_transport_and_scrubber(
             }
         }
     });
+}
+
+/// True iff the currently-focused toolpath has at least one
+/// [`SpanKind::DepthPass`] span. Drives visibility of the per-pass scrub
+/// buttons so they only show up when they'd actually do something useful.
+fn focused_toolpath_has_depth_passes(sim: &SimulationState, gui: &GuiState) -> bool {
+    use rs_cam_core::toolpath_spans::SpanKind;
+    let Some(focused) = sim.focused_toolpath() else {
+        return false;
+    };
+    let Some(rt) = gui.toolpath_rt.get(&focused.0) else {
+        return false;
+    };
+    let Some(result) = rt.result.as_ref() else {
+        return false;
+    };
+    if !result.spans_valid() {
+        return false;
+    }
+    result
+        .spans()
+        .iter()
+        .any(|s| matches!(s.kind, SpanKind::DepthPass))
 }
 
 /// Row 2: Custom-painted per-op timeline bar with collision markers and

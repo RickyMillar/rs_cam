@@ -33,8 +33,11 @@ pub enum PickHit {
     },
     /// Hit the stock bounding box. `face_normal` indicates which face.
     StockFace { face_normal: [f32; 3] },
-    /// Hit a toolpath.
-    Toolpath { id: ToolpathId },
+    /// Hit a toolpath. `move_index` is the closest sampled move on that
+    /// toolpath; consumers needing the cut-context (span path, hovered move
+    /// position) can use it to look up the corresponding [`Move`] and
+    /// [`Span`] data.
+    Toolpath { id: ToolpathId, move_index: usize },
     /// Hit a BREP face on an enriched mesh model.
     ModelFace {
         model_id: ModelId,
@@ -243,7 +246,7 @@ fn pick_toolpaths(
 ) -> Option<PickHit> {
     let threshold = PICK_THRESHOLD_TOOLPATH;
     let mut best_dist = threshold;
-    let mut best_id = None;
+    let mut best: Option<(ToolpathId, usize)> = None;
 
     for tc in session.toolpath_configs() {
         let tp_id = ToolpathId(tc.id);
@@ -276,13 +279,13 @@ fn pick_toolpaths(
                 let dist = (dx * dx + dy * dy).sqrt();
                 if dist < best_dist {
                     best_dist = dist;
-                    best_id = Some(tp_id);
+                    best = Some((tp_id, j));
                 }
             }
         }
     }
 
-    best_id.map(|id| PickHit::Toolpath { id })
+    best.map(|(id, move_index)| PickHit::Toolpath { id, move_index })
 }
 
 /// Compute a fixture's clearance bounding box for ray picking.

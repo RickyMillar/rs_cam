@@ -19,6 +19,7 @@ use rs_cam_core::simulation_cut::{
 };
 use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
+use rs_cam_core::toolpath_spans::SpanId;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SimulationAnalyticsTab {
@@ -898,6 +899,41 @@ impl SimulationState {
             semantic_item_id,
             prefer_end,
         )
+    }
+
+    /// Resolve a [`SpanId`] from the [`AnnotatedToolpath`] of `toolpath_id`
+    /// into a sim trace target. Mirrors [`Self::trace_target_for_span`] (which
+    /// operates over debug-trace spans) but reads spans persisted on the
+    /// generated toolpath itself.
+    ///
+    /// `prefer_end`: when true, anchor on the span's last move; otherwise
+    /// the first. Boundary spans (zero-width) anchor on `start_move`.
+    pub fn trace_target_for_annotated_span(
+        &mut self,
+        gui: &GuiState,
+        toolpath_id: ToolpathId,
+        span_id: SpanId,
+        prefer_end: bool,
+    ) -> Option<SimulationTraceTarget> {
+        let rt = gui.toolpath_rt.get(&toolpath_id.0)?;
+        let result = rt.result.as_ref()?;
+        if !result.spans_valid() {
+            return None;
+        }
+        let span = result.spans().get(span_id.0 as usize)?;
+        let local_move = if span.is_boundary() {
+            span.start_move
+        } else if prefer_end {
+            span.end_move.saturating_sub(1)
+        } else {
+            span.start_move
+        };
+        Some(SimulationTraceTarget {
+            toolpath_id,
+            move_index: self.global_move_for_local(toolpath_id, local_move)?,
+            semantic_item_id: None,
+            debug_span_id: None,
+        })
     }
 
     pub fn trace_target_for_hotspot(
