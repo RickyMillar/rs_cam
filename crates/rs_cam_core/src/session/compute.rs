@@ -6,7 +6,6 @@ use std::sync::atomic::AtomicBool;
 
 use tracing::instrument;
 
-use crate::compute::annotate::annotate_from_runtime_events;
 use crate::compute::collision_check::{
     CollisionCheckRequest, CollisionCheckResult, run_collision_check,
 };
@@ -462,6 +461,8 @@ impl ProjectSession {
         };
 
         // Execute the operation via the shared compute::execute module (annotated variant)
+        let op_scope = semantic_root.start_item(ToolpathSemanticKind::Operation, &op_label);
+        let child_ctx = op_scope.context();
         let tp_result = crate::compute::execute::execute_operation_annotated(
             &operation,
             mesh.as_deref(),
@@ -476,26 +477,23 @@ impl ProjectSession {
             Some(&core_ctx),
             cancel,
             None, // no initial_stock for session path
+            Some(&child_ctx),
             pre_boundary.as_ref(),
         );
 
         match tp_result {
             Ok(annotated) => {
-                let mut toolpath = annotated.toolpath;
-                let annotations = annotated.annotations;
+                let mut annotated = annotated;
 
-                if !toolpath.moves.is_empty() {
-                    core_scope.set_move_range(0, toolpath.moves.len().saturating_sub(1));
+                if !annotated.toolpath.moves.is_empty() {
+                    core_scope.set_move_range(0, annotated.toolpath.moves.len().saturating_sub(1));
+                    op_scope.bind_to_toolpath(
+                        &annotated.toolpath,
+                        0,
+                        annotated.toolpath.moves.len(),
+                    );
                 }
                 drop(core_scope);
-
-                // Build semantic trace from runtime annotations
-                let op_scope = semantic_root.start_item(ToolpathSemanticKind::Operation, &op_label);
-                if !toolpath.moves.is_empty() {
-                    op_scope.bind_to_toolpath(&toolpath, 0, toolpath.moves.len());
-                }
-                let child_ctx = op_scope.context();
-                annotate_from_runtime_events(&annotations, &toolpath, &child_ctx);
 
                 // Apply dressups. Pass `prior_stock` if a simulation has
                 // already produced a snapshot for this toolpath id (enables
@@ -505,10 +503,8 @@ impl ProjectSession {
                     .as_ref()
                     .and_then(|sim| sim.prior_stocks.get(&tc.id).cloned());
                 let prior_stock_ref = prior_stock_arc.as_deref();
-                let spans =
-                    crate::compute::spans_from_annotations(&annotations, toolpath.moves.len());
                 let dressed = crate::compute::execute::apply_dressups(
-                    crate::toolpath_spans::AnnotatedToolpath::with_spans(toolpath, spans),
+                    annotated,
                     &tc.dressups,
                     tool_def.diameter(),
                     heights.retract_z,
@@ -519,7 +515,7 @@ impl ProjectSession {
                     None,
                     None,
                 );
-                toolpath = dressed.toolpath;
+                annotated = dressed;
 
                 // ── Boundary clipping ─────────────────────────────────
                 // After dressups, clip the toolpath to the machining boundary
@@ -527,13 +523,8 @@ impl ProjectSession {
                 // an AnnotatedToolpath; spans are invalidated by the clip until
                 // a precise remap is implemented.
                 if boundary_config.enabled {
-                    let staged_spans =
-                        crate::compute::spans_from_annotations(&annotations, toolpath.moves.len());
                     let clipped = Self::apply_boundary_clip(
-                        crate::toolpath_spans::AnnotatedToolpath::with_spans(
-                            toolpath,
-                            staged_spans,
-                        ),
+                        annotated,
                         &boundary_config,
                         &effective_stock_bbox,
                         mesh.as_deref(),
@@ -542,9 +533,10 @@ impl ProjectSession {
                         heights.retract_z,
                         &semantic_root,
                     );
-                    toolpath = clipped.toolpath;
+                    annotated = clipped;
                 }
 
+                let toolpath = annotated.toolpath;
                 let stats = ToolpathStats {
                     move_count: toolpath.moves.len(),
                     cutting_distance: toolpath.total_cutting_distance(),
@@ -1010,8 +1002,7 @@ impl ProjectSession {
         // ToolpathComputeResult exposes only Toolpath (S1.5 deferred); wrap
         // with empty spans so narration falls back to Z-clustering on this
         // standalone-CLI path. The viz path passes the real spans.
-        let annotated =
-            crate::toolpath_spans::AnnotatedToolpath::new((*result.toolpath).clone());
+        let annotated = crate::toolpath_spans::AnnotatedToolpath::new((*result.toolpath).clone());
         Ok(crate::narrate::narrate_toolpath_with_context(
             &annotated,
             result.semantic_trace.as_ref(),

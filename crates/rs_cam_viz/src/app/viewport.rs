@@ -148,7 +148,7 @@ impl RsCamApp {
                     self.pending_checkpoint_load = true;
                 }
             }
-            (_, PickHit::Toolpath { id }) => {
+            (_, PickHit::Toolpath { id, .. }) => {
                 self.controller.state_mut().selection = Selection::Toolpath(id);
             }
             (Workspace::Toolpaths, PickHit::ModelFace { model_id, face_id }) => {
@@ -247,6 +247,47 @@ impl RsCamApp {
                 )
             {
                 self.last_hover_face = Some(face_id);
+            }
+        }
+
+        // Span-path tooltip on toolpath hover. Shows the SpanKind path for
+        // the closest sampled move so the user can read what part of the
+        // operation they're pointing at (e.g. "DepthPass 3 / Region 2").
+        if response.hovered()
+            && let Some(pos) = ui.input(|i| i.pointer.hover_pos())
+        {
+            let pick_ctx = crate::interaction::picking::PickContext {
+                camera: &self.camera,
+                screen_x: pos.x - rect.min.x,
+                screen_y: pos.y - rect.min.y,
+                aspect: if rect.height() > 0.0 {
+                    rect.width() / rect.height()
+                } else {
+                    1.0
+                },
+                vw: rect.width(),
+                vh: rect.height(),
+            };
+            let state = self.controller.state();
+            if let Some(crate::interaction::picking::PickHit::Toolpath { id, move_index }) =
+                crate::interaction::picking::pick(
+                    &pick_ctx,
+                    &state.session,
+                    &state.gui,
+                    self.controller.collision_positions(),
+                    state.workspace,
+                    state.viewport.isolate_toolpath,
+                )
+                && let Some(tip) = span_path_tooltip(state, id, move_index)
+            {
+                egui::show_tooltip_at_pointer(
+                    ui.ctx(),
+                    response.layer_id,
+                    egui::Id::new("toolpath_span_tip"),
+                    |ui| {
+                        ui.label(tip);
+                    },
+                );
             }
         }
 
@@ -667,4 +708,40 @@ impl RsCamApp {
             );
         }
     }
+}
+
+/// Build a one-line tooltip describing the [`SpanKind`] path covering
+/// `move_index` of `toolpath_id` (e.g. `"Operation › DepthPass 3 › Region 2"`).
+/// Returns `None` when the toolpath has no spans, the spans are invalid,
+/// or the path is empty (e.g. a rapid not inside any span).
+fn span_path_tooltip(
+    state: &crate::state::AppState,
+    toolpath_id: crate::state::toolpath::ToolpathId,
+    move_index: usize,
+) -> Option<String> {
+    use rs_cam_core::toolpath_spans::{SpanKind, SpanPayload};
+    let rt = state.gui.toolpath_rt.get(&toolpath_id.0)?;
+    let result = rt.result.as_ref()?;
+    if !result.spans_valid() {
+        return None;
+    }
+    let path = result.annotated.span_path_at(move_index);
+    if path.is_empty() {
+        return None;
+    }
+    let parts: Vec<String> = path
+        .iter()
+        .filter_map(|sid| result.spans().get(sid.0 as usize))
+        .map(|span| match (&span.kind, &span.payload) {
+            (SpanKind::DepthPass, Some(SpanPayload::DepthPass { pass_index, z_level })) => {
+                format!("DepthPass {} (z={:.2})", pass_index, z_level)
+            }
+            (SpanKind::Region, Some(SpanPayload::Region { region_id })) => {
+                format!("Region {}", region_id)
+            }
+            _ if !span.label.is_empty() => format!("{:?} {}", span.kind, span.label),
+            _ => format!("{:?}", span.kind),
+        })
+        .collect();
+    Some(parts.join(" › "))
 }

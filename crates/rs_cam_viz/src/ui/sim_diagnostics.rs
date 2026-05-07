@@ -78,6 +78,33 @@ pub fn draw(
             ui.checkbox(&mut viewport.show_rapids, "Show rapid moves")
                 .on_hover_text("Show orange rapid-traverse lines in the 3D viewport.");
 
+            // SpanKind visibility filter — hides cut segments by their
+            // innermost SpanKind so users can inspect e.g. only LinkBridges
+            // or hide noisy DressupArtifacts. Only active in Normal color
+            // mode; the engagement / chipload modes don't read spans.
+            let f = &mut viewport.span_kind_filter;
+            let any_hidden = !f.all_visible();
+            egui::CollapsingHeader::new(if any_hidden {
+                "SpanKind filter ⏷ (some hidden)"
+            } else {
+                "SpanKind filter ⏵"
+            })
+            .id_salt("span_kind_filter_header")
+            .default_open(any_hidden)
+            .show(ui, |ui| {
+                ui.checkbox(&mut f.show_entry, "Entry")
+                    .on_hover_text("Plunge / ramp / helix lead-in segments");
+                ui.checkbox(&mut f.show_lead_out, "LeadOut")
+                    .on_hover_text("Lead-out / retract transition segments");
+                ui.checkbox(&mut f.show_link_bridge, "LinkBridge")
+                    .on_hover_text("Linker bridges inserted between regions");
+                ui.checkbox(&mut f.show_dressup, "DressupArtifact")
+                    .on_hover_text("Dogbones, arc-fit replacements, other dressup-introduced segments");
+                if any_hidden && ui.small_button("Reset").clicked() {
+                    *f = crate::state::viewport::SpanKindFilter::default();
+                }
+            });
+
             ui.add_space(8.0);
 
             // Analysis — coloring and overlays that surface analysis data
@@ -677,7 +704,161 @@ fn draw_project_overview(
                 events.push(AppEvent::SimJumpToMove(boundary_start));
             }
         });
+
+        // Per-SpanKind chipload + engagement breakdown for the focused toolpath.
+        // Reads samples from sim.results.cut_trace and buckets by the primary
+        // SpanKind in each sample's span_path. Only renders when the toolpath
+        // has spans and at least one bucket has cutting samples.
+        if let Some(trace) = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref()) {
+            draw_span_kind_breakdown(ui, gui, boundary_id, trace);
+        }
     }
+}
+
+/// Bucket cutting samples for `toolpath_id` by the *primary* `SpanKind` in
+/// each sample's span path (innermost-non-DepthPass-or-Operation), then
+/// render rows of n / avg-engagement / avg-chipload / peak-chipload.
+fn draw_span_kind_breakdown(
+    ui: &mut egui::Ui,
+    gui: &GuiState,
+    toolpath_id: ToolpathId,
+    trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
+) {
+    use rs_cam_core::toolpath_spans::SpanKind;
+
+    let Some(rt) = gui.toolpath_rt.get(&toolpath_id.0) else {
+        return;
+    };
+    let Some(result) = rt.result.as_ref() else {
+        return;
+    };
+    if !result.spans_valid() || result.spans().is_empty() {
+        return;
+    }
+    let spans = result.spans();
+
+    #[derive(Default)]
+    struct Bucket {
+        n: usize,
+        sum_eng: f64,
+        sum_chip: f64,
+        peak_chip: f64,
+    }
+
+    // Order is the rendering order; deterministic, omits Operation/DepthPass
+    // (already implicit in the focused-toolpath header).
+    let order: &[SpanKind] = &[
+        SpanKind::Entry,
+        SpanKind::Region,
+        SpanKind::LinkBridge,
+        SpanKind::DressupArtifact,
+        SpanKind::LeadOut,
+    ];
+    let kind_label = |k: &SpanKind| -> &'static str {
+        match k {
+            SpanKind::Entry => "Entry",
+            SpanKind::Region => "Region",
+            SpanKind::LinkBridge => "LinkBridge",
+            SpanKind::DressupArtifact => "Dressup",
+            SpanKind::LeadOut => "LeadOut",
+            _ => "",
+        }
+    };
+
+    let mut buckets: std::collections::HashMap<SpanKind, Bucket> = std::collections::HashMap::new();
+    let mut other = Bucket::default(); // samples whose span path has none of the above
+
+    for s in &trace.samples {
+        if s.toolpath_id != toolpath_id.0 || !s.is_cutting {
+            continue;
+        }
+        // Find the innermost span in this sample's path that is one of the
+        // target kinds. Innermost-first by walking the path in reverse.
+        let mut bucket_kind: Option<SpanKind> = None;
+        for sid in s.span_path.iter().rev() {
+            let Some(sp) = spans.get(sid.0 as usize) else {
+                continue;
+            };
+            if order.contains(&sp.kind) {
+                bucket_kind = Some(sp.kind);
+                break;
+            }
+        }
+        let b = match bucket_kind {
+            Some(k) => buckets.entry(k).or_default(),
+            None => &mut other,
+        };
+        b.n += 1;
+        b.sum_eng += s.radial_engagement;
+        let chip = s.effective_chip_thickness_mm.unwrap_or(s.chipload_mm_per_tooth);
+        b.sum_chip += chip;
+        if chip > b.peak_chip {
+            b.peak_chip = chip;
+        }
+    }
+
+    let any_bucket_populated = buckets.values().any(|b| b.n > 0) || other.n > 0;
+    if !any_bucket_populated {
+        return;
+    }
+
+    ui.add_space(6.0);
+    ui.label(
+        egui::RichText::new("Per-SpanKind breakdown")
+            .small()
+            .color(theme::TEXT_MUTED),
+    );
+
+    egui::Grid::new("span_kind_breakdown_grid")
+        .num_columns(4)
+        .spacing(egui::vec2(10.0, 2.0))
+        .show(ui, |ui| {
+            ui.label(egui::RichText::new("Kind").small().color(theme::TEXT_MUTED));
+            ui.label(egui::RichText::new("n").small().color(theme::TEXT_MUTED));
+            ui.label(
+                egui::RichText::new("avg eng")
+                    .small()
+                    .color(theme::TEXT_MUTED),
+            )
+            .on_hover_text("Average radial engagement (cylinder-volume)");
+            ui.label(
+                egui::RichText::new("chip avg / peak (mm)")
+                    .small()
+                    .color(theme::TEXT_MUTED),
+            )
+            .on_hover_text("Effective chip thickness (falls back to commanded chipload)");
+            ui.end_row();
+
+            let render_row = |ui: &mut egui::Ui, label: &str, b: &Bucket| {
+                if b.n == 0 {
+                    return;
+                }
+                let avg_eng = b.sum_eng / b.n as f64;
+                let avg_chip = b.sum_chip / b.n as f64;
+                ui.label(egui::RichText::new(label).small());
+                ui.label(egui::RichText::new(format!("{}", b.n)).small().monospace());
+                ui.label(
+                    egui::RichText::new(format!("{:.2}", avg_eng))
+                        .small()
+                        .monospace(),
+                );
+                ui.label(
+                    egui::RichText::new(format!("{:.4} / {:.4}", avg_chip, b.peak_chip))
+                        .small()
+                        .monospace(),
+                );
+                ui.end_row();
+            };
+
+            for k in order {
+                if let Some(b) = buckets.get(k) {
+                    render_row(ui, kind_label(k), b);
+                }
+            }
+            if other.n > 0 {
+                render_row(ui, "(other)", &other);
+            }
+        });
 }
 
 fn verdict_counts_local(report: &ToolLoadReport) -> (usize, usize, usize, usize) {

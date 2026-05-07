@@ -8,6 +8,7 @@ use crate::state::toolpath::ToolpathId;
 use crate::state::viewport::ViewportState;
 use crate::ui::theme;
 use rs_cam_core::session::ProjectSession;
+use rs_cam_core::toolpath_spans::{Span, SpanKind, SpanPayload};
 
 /// Left panel in simulation workspace: slim operation list with visibility and jump controls.
 pub fn draw(
@@ -301,40 +302,50 @@ pub fn draw(
             });
 
             if sim.debug.enabled {
-                let has_semantic = gui
-                    .toolpath_rt
-                    .get(&boundary.id.0)
-                    .and_then(|rt| rt.semantic_trace.as_ref())
-                    .is_some();
-                if is_focused && has_semantic {
+                let outline_kind = outline_kind_for_toolpath(gui, boundary.id);
+                if is_focused && outline_kind.is_some() {
                     sim.debug.set_toolpath_expanded(boundary.id, true);
                 }
 
-                if has_semantic {
+                if let Some(kind) = outline_kind {
                     ui.add_space(4.0);
                     let expanded = sim.debug.is_toolpath_expanded(boundary.id);
                     let toggle_label = if expanded {
-                        "Hide semantics"
+                        kind.hide_label()
                     } else {
-                        "Show semantics"
+                        kind.show_label()
                     };
                     if ui
                         .small_button(toggle_label)
-                        .on_hover_text("Expand semantic trace for this toolpath")
+                        .on_hover_text(kind.hover_text())
                         .clicked()
                     {
                         sim.debug.toggle_toolpath_expanded(boundary.id);
                     }
 
                     if sim.debug.is_toolpath_expanded(boundary.id) {
-                        draw_semantic_outline(ui, sim, gui, boundary, active_item_id, events);
+                        match kind {
+                            OutlineKind::StructuralSpans => {
+                                draw_structural_outline(ui, sim, gui, boundary, events);
+                            }
+                            OutlineKind::SemanticFallback => {
+                                draw_semantic_outline(
+                                    ui,
+                                    sim,
+                                    gui,
+                                    boundary,
+                                    active_item_id,
+                                    events,
+                                );
+                            }
+                        }
                     }
                 }
             }
         });
 
         // Whole-card click → jump playback to this TP's start. Inner widgets
-        // (checkbox, visibility eyes, "Show semantics") consume their own
+        // (checkbox, visibility eyes, "Show spans") consume their own
         // clicks first; only clicks on empty card real-estate fall through
         // here. We give the card a discrete `Id` so the response doesn't
         // collide with neighbours.
@@ -382,6 +393,330 @@ pub fn draw(
             events.push(AppEvent::RunSimulation);
         } else {
             events.push(AppEvent::RunSimulationWith(new_selection));
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    enum OutlineKind {
+        StructuralSpans,
+        SemanticFallback,
+    }
+
+    impl OutlineKind {
+        const fn show_label(self) -> &'static str {
+            match self {
+                Self::StructuralSpans => "Show spans",
+                Self::SemanticFallback => "Show semantics",
+            }
+        }
+
+        const fn hide_label(self) -> &'static str {
+            match self {
+                Self::StructuralSpans => "Hide spans",
+                Self::SemanticFallback => "Hide semantics",
+            }
+        }
+
+        const fn hover_text(self) -> &'static str {
+            match self {
+                Self::StructuralSpans => "Expand structural SpanKind outline for this toolpath",
+                Self::SemanticFallback => {
+                    "Spans were invalidated; expand the legacy semantic trace fallback"
+                }
+            }
+        }
+    }
+
+    fn outline_kind_for_toolpath(gui: &GuiState, toolpath_id: ToolpathId) -> Option<OutlineKind> {
+        let rt = gui.toolpath_rt.get(&toolpath_id.0)?;
+        let result = rt.result.as_ref()?;
+        if result.spans_valid() {
+            if result.spans().iter().any(|span| !span.is_boundary()) {
+                Some(OutlineKind::StructuralSpans)
+            } else {
+                None
+            }
+        } else if rt.semantic_trace.is_some() {
+            Some(OutlineKind::SemanticFallback)
+        } else {
+            None
+        }
+    }
+
+    fn draw_structural_outline(
+        ui: &mut egui::Ui,
+        sim: &mut SimulationState,
+        gui: &GuiState,
+        boundary: &crate::state::simulation::ToolpathBoundary,
+        events: &mut Vec<AppEvent>,
+    ) {
+        let Some(rt) = gui.toolpath_rt.get(&boundary.id.0) else {
+            return;
+        };
+        let Some(result) = rt.result.as_ref() else {
+            return;
+        };
+        if !result.spans_valid() {
+            return;
+        }
+        let spans = result.spans();
+        let parent_of = structural_span_parents(spans);
+        let mut root_indices = root_span_indices(spans, &parent_of);
+        sort_span_indices(&mut root_indices, spans);
+        if root_indices.is_empty() {
+            ui.label(
+                egui::RichText::new("No move-linked spans")
+                    .small()
+                    .italics()
+                    .color(theme::TEXT_DIM),
+            );
+            return;
+        }
+
+        let active_local_move =
+            sim.current_local_toolpath_move()
+                .and_then(|(_, toolpath_id, local_move)| {
+                    if toolpath_id == boundary.id {
+                        Some(local_move)
+                    } else {
+                        None
+                    }
+                });
+
+        ui.add_space(2.0);
+        for span_index in root_indices {
+            draw_span_item_row(
+                ui,
+                spans,
+                &parent_of,
+                sim,
+                boundary,
+                span_index,
+                0,
+                active_local_move,
+                events,
+            );
+        }
+    }
+
+    fn structural_span_parents(spans: &[Span]) -> Vec<Option<usize>> {
+        let mut parents = vec![None; spans.len()];
+        for (child_index, child) in spans.iter().enumerate() {
+            if child.is_boundary() {
+                continue;
+            }
+            let parent = spans
+                .iter()
+                .enumerate()
+                .filter_map(|(parent_index, parent)| {
+                    if parent_index != child_index && span_can_parent(parent, child) {
+                        Some(parent_index)
+                    } else {
+                        None
+                    }
+                })
+                .min_by(|a, b| compare_parent_candidates(spans, *a, *b));
+            if let Some(slot) = parents.get_mut(child_index) {
+                *slot = parent;
+            }
+        }
+        parents
+    }
+
+    fn root_span_indices(spans: &[Span], parent_of: &[Option<usize>]) -> Vec<usize> {
+        spans
+            .iter()
+            .enumerate()
+            .filter_map(|(span_index, span)| {
+                if span.is_boundary() {
+                    return None;
+                }
+                let has_parent = parent_of
+                    .get(span_index)
+                    .and_then(|parent| *parent)
+                    .is_some();
+                (!has_parent).then_some(span_index)
+            })
+            .collect()
+    }
+
+    fn span_can_parent(parent: &Span, child: &Span) -> bool {
+        if parent.is_boundary() {
+            return false;
+        }
+        let parent_contains_child = parent.start_move <= child.start_move
+            && parent.end_move >= child.end_move
+            && parent.move_count() >= child.move_count();
+        if !parent_contains_child {
+            return false;
+        }
+        let same_range = parent.start_move == child.start_move && parent.end_move == child.end_move;
+        !same_range || span_kind_rank(parent.kind) < span_kind_rank(child.kind)
+    }
+
+    fn compare_parent_candidates(spans: &[Span], a: usize, b: usize) -> std::cmp::Ordering {
+        let a_span = spans.get(a);
+        let b_span = spans.get(b);
+        match (a_span, b_span) {
+            (Some(a_span), Some(b_span)) => a_span
+                .move_count()
+                .cmp(&b_span.move_count())
+                .then_with(|| span_kind_rank(b_span.kind).cmp(&span_kind_rank(a_span.kind)))
+                .then_with(|| a.cmp(&b)),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.cmp(&b),
+        }
+    }
+
+    fn sort_span_indices(indices: &mut [usize], spans: &[Span]) {
+        indices.sort_by(|a, b| match (spans.get(*a), spans.get(*b)) {
+            (Some(a_span), Some(b_span)) => a_span
+                .start_move
+                .cmp(&b_span.start_move)
+                .then_with(|| a_span.end_move.cmp(&b_span.end_move))
+                .then_with(|| span_kind_rank(a_span.kind).cmp(&span_kind_rank(b_span.kind)))
+                .then_with(|| a.cmp(b)),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.cmp(b),
+        });
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_span_item_row(
+        ui: &mut egui::Ui,
+        spans: &[Span],
+        parent_of: &[Option<usize>],
+        sim: &mut SimulationState,
+        boundary: &crate::state::simulation::ToolpathBoundary,
+        span_index: usize,
+        depth: usize,
+        active_local_move: Option<usize>,
+        events: &mut Vec<AppEvent>,
+    ) {
+        let Some(span) = spans.get(span_index) else {
+            return;
+        };
+        let color = span_kind_color(span.kind);
+        let is_active = active_local_move.is_some_and(|move_index| span.contains(move_index));
+
+        ui.horizontal(|ui| {
+            ui.add_space(depth as f32 * 12.0);
+            ui.label(
+                egui::RichText::new(span_kind_label(span.kind))
+                    .small()
+                    .color(color),
+            );
+
+            let label = span_display_label(span);
+            let text = if is_active {
+                egui::RichText::new(label).small().strong()
+            } else {
+                egui::RichText::new(label).small()
+            };
+            let response = ui.selectable_label(is_active, text);
+            if response.clicked() {
+                sim.clear_pinned_semantic_item();
+                events.push(AppEvent::SimJumpToMove(
+                    boundary.start_move + span.start_move,
+                ));
+            }
+
+            if ui
+                .small_button("►|")
+                .on_hover_text("Jump to span end")
+                .clicked()
+            {
+                events.push(AppEvent::SimJumpToMove(boundary.start_move + span.end_move));
+            }
+            ui.label(
+                egui::RichText::new(format!("{}..{}", span.start_move, span.end_move))
+                    .small()
+                    .color(theme::TEXT_DIM),
+            );
+        });
+
+        let mut children: Vec<usize> = parent_of
+            .iter()
+            .enumerate()
+            .filter_map(|(child_index, parent)| {
+                (*parent == Some(span_index)).then_some(child_index)
+            })
+            .collect();
+        sort_span_indices(&mut children, spans);
+        for child_index in children {
+            draw_span_item_row(
+                ui,
+                spans,
+                parent_of,
+                sim,
+                boundary,
+                child_index,
+                depth + 1,
+                active_local_move,
+                events,
+            );
+        }
+    }
+
+    fn span_display_label(span: &Span) -> String {
+        if !span.label.is_empty() {
+            return span.label.clone().into_owned();
+        }
+        match (&span.kind, &span.payload) {
+            (
+                SpanKind::DepthPass,
+                Some(SpanPayload::DepthPass {
+                    z_level,
+                    pass_index,
+                }),
+            ) => {
+                format!("Pass {} @ Z {:.3}", pass_index + 1, z_level)
+            }
+            (SpanKind::Region, Some(SpanPayload::Region { region_id })) => {
+                format!("Region {region_id}")
+            }
+            _ => span_kind_label(span.kind).to_owned(),
+        }
+    }
+
+    const fn span_kind_rank(kind: SpanKind) -> u8 {
+        match kind {
+            SpanKind::Operation => 0,
+            SpanKind::DepthPass => 1,
+            SpanKind::Region => 2,
+            SpanKind::Entry => 3,
+            SpanKind::LeadOut => 3,
+            SpanKind::LinkBridge => 3,
+            SpanKind::DressupArtifact => 3,
+            SpanKind::RapidOrderBarrier => 4,
+        }
+    }
+
+    const fn span_kind_label(kind: SpanKind) -> &'static str {
+        match kind {
+            SpanKind::Operation => "Operation",
+            SpanKind::DepthPass => "Depth pass",
+            SpanKind::Region => "Region",
+            SpanKind::Entry => "Entry",
+            SpanKind::LeadOut => "Lead-out",
+            SpanKind::LinkBridge => "Link bridge",
+            SpanKind::DressupArtifact => "Dressup",
+            SpanKind::RapidOrderBarrier => "Order barrier",
+        }
+    }
+
+    const fn span_kind_color(kind: SpanKind) -> egui::Color32 {
+        match kind {
+            SpanKind::Operation => egui::Color32::from_rgb(160, 170, 210),
+            SpanKind::DepthPass => egui::Color32::from_rgb(120, 150, 230),
+            SpanKind::Region => egui::Color32::from_rgb(150, 120, 220),
+            SpanKind::Entry => egui::Color32::from_rgb(230, 180, 90),
+            SpanKind::LeadOut => egui::Color32::from_rgb(220, 150, 110),
+            SpanKind::LinkBridge => egui::Color32::from_rgb(110, 200, 210),
+            SpanKind::DressupArtifact => egui::Color32::from_rgb(220, 120, 200),
+            SpanKind::RapidOrderBarrier => egui::Color32::from_rgb(120, 120, 130),
         }
     }
 

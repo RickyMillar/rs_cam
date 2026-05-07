@@ -2,11 +2,45 @@ use super::LineVertex;
 use super::gpu_safety::{self, GpuLimits};
 use egui_wgpu::wgpu;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
+use rs_cam_core::toolpath_spans::{AnnotatedToolpath, SpanKind, SpanPayload};
 use std::collections::HashMap;
 use std::ops::Range;
 
 // Re-export palette from centralized colors module for backward compatibility.
 pub use super::colors::{TOOLPATH_PALETTE, palette_color};
+
+/// Per-move color classification derived from the span path. Internal helper
+/// for [`ToolpathGpuData::from_toolpath`].
+enum SpanColor {
+    Entry,
+    LeadOut,
+    LinkBridge,
+    Dressup,
+    Default { pass_index: Option<u32> },
+}
+
+fn push_segment(out: &mut Vec<LineVertex>, p0: [f32; 3], p1: [f32; 3], color: [f32; 3]) {
+    out.push(LineVertex { position: p0, color });
+    out.push(LineVertex { position: p1, color });
+}
+
+/// Emit a single segment as two short sub-segments (start third + end third)
+/// so it reads as a centre-gapped dash without needing a stipple shader.
+fn push_dashed_segment(out: &mut Vec<LineVertex>, p0: [f32; 3], p1: [f32; 3], color: [f32; 3]) {
+    let lerp = |t: f32| {
+        [
+            p0[0] + (p1[0] - p0[0]) * t,
+            p0[1] + (p1[1] - p0[1]) * t,
+            p0[2] + (p1[2] - p0[2]) * t,
+        ]
+    };
+    let a = lerp(0.35);
+    let b = lerp(0.65);
+    out.push(LineVertex { position: p0, color });
+    out.push(LineVertex { position: a, color });
+    out.push(LineVertex { position: b, color });
+    out.push(LineVertex { position: p1, color });
+}
 
 /// Toolpath line data uploaded to GPU.
 /// Vertices are in move-sequence order so partial drawing works for simulation scrubbing.
@@ -47,7 +81,18 @@ impl ToolpathGpuData {
         (self.move_cut_counts[n - 1], self.move_rapid_counts[n - 1])
     }
 
-    /// Build GPU data from a Toolpath, coloring by palette index with Z-depth blend.
+    /// Build GPU data from an [`AnnotatedToolpath`], coloring cutting moves by
+    /// [`SpanKind`] and palette + Z-depth blend.
+    ///
+    /// Coloring:
+    /// - `Entry` spans → bright cyan tint (overrides palette)
+    /// - `LeadOut` spans → magenta tint
+    /// - `LinkBridge` spans → emitted as a centre-gapped pair of sub-segments
+    ///   (visual stipple) in dim grey
+    /// - `DressupArtifact` spans → desaturated muted variant of the palette
+    /// - Otherwise: palette + Z-depth blend, with `DepthPass` `pass_index`
+    ///   producing a small per-pass lightness shift
+    ///
     /// `index`: toolpath index for deterministic palette color.
     /// `selected`: if true, brighten the toolpath by +30%.
     ///
@@ -58,11 +103,14 @@ impl ToolpathGpuData {
     pub fn from_toolpath(
         device: &wgpu::Device,
         limits: &GpuLimits,
-        tp: &Toolpath,
+        annotated: &AnnotatedToolpath,
         index: usize,
         selected: bool,
+        span_filter: &crate::state::viewport::SpanKindFilter,
     ) -> Self {
         use wgpu::util::DeviceExt;
+
+        let tp = &annotated.toolpath;
 
         // Use actual device limit with 6% headroom instead of hardcoded value.
         let max_buffer_bytes: usize = (limits.max_buffer_size as f64 * 0.94) as usize;
@@ -99,15 +147,7 @@ impl ToolpathGpuData {
         let mut move_cut_counts = Vec::new();
         let mut move_rapid_counts = Vec::new();
 
-        // Blend palette color with Z-depth (30% depth influence)
-        let z_color = |z: f64| -> [f32; 3] {
-            let t = ((z - z_min) / z_range).clamp(0.0, 1.0) as f32;
-            let depth_factor = 0.7 + t * 0.3; // darker at bottom, brighter at top
-            let mut c = [
-                base[0] * depth_factor,
-                base[1] * depth_factor,
-                base[2] * depth_factor,
-            ];
+        let brighten = |mut c: [f32; 3]| -> [f32; 3] {
             if selected {
                 c[0] = (c[0] * 1.3).min(1.0);
                 c[1] = (c[1] * 1.3).min(1.0);
@@ -116,17 +156,29 @@ impl ToolpathGpuData {
             c
         };
 
-        // Dimmed version of palette color for rapids
-        let rapid_color = {
-            let dim = 0.35;
-            let mut c = [base[0] * dim, base[1] * dim, base[2] * dim];
-            if selected {
-                c[0] = (c[0] * 1.3).min(1.0);
-                c[1] = (c[1] * 1.3).min(1.0);
-                c[2] = (c[2] * 1.3).min(1.0);
-            }
-            c
+        // Per-pass lightness shift on top of the palette+Z blend so passes
+        // visually stratify without losing the palette identity.
+        let z_color = |z: f64, pass_index: Option<u32>| -> [f32; 3] {
+            let t = ((z - z_min) / z_range).clamp(0.0, 1.0) as f32;
+            let depth_factor = 0.7 + t * 0.3; // darker at bottom, brighter at top
+            let pass_shift = match pass_index {
+                Some(p) => 1.0 + ((p as f32 % 4.0) - 1.5) * 0.06, // ±~9% spread across 4 passes
+                None => 1.0,
+            };
+            let f = depth_factor * pass_shift;
+            brighten([
+                (base[0] * f).min(1.0),
+                (base[1] * f).min(1.0),
+                (base[2] * f).min(1.0),
+            ])
         };
+
+        let rapid_color = brighten([base[0] * 0.35, base[1] * 0.35, base[2] * 0.35]);
+        let entry_color = brighten([0.20, 0.95, 0.95]);
+        let leadout_color = brighten([0.95, 0.30, 0.85]);
+        let linkbridge_color = brighten([0.45, 0.45, 0.55]);
+        let dressup_color =
+            brighten([0.5 * (base[0] + 0.5), 0.5 * (base[1] + 0.5), 0.5 * (base[2] + 0.5)]);
 
         if stride > 1 {
             tracing::warn!(
@@ -135,6 +187,44 @@ impl ToolpathGpuData {
                 "Toolpath too large for GPU buffer — downsampling for display"
             );
         }
+
+        // Precompute per-move span paths so coloring is O(1) per move.
+        let span_paths = annotated.span_paths_by_move();
+        let spans = annotated.spans.as_slice();
+        let spans_valid = annotated.spans_valid;
+
+        // Classify a move's span path into a coloring decision.
+        let classify = |move_idx: usize| -> SpanColor {
+            if !spans_valid {
+                return SpanColor::Default { pass_index: None };
+            }
+            let Some(path) = span_paths.get(move_idx) else {
+                return SpanColor::Default { pass_index: None };
+            };
+            let mut pass_index: Option<u32> = None;
+            let mut decision = SpanColor::Default { pass_index: None };
+            for sid in path {
+                let Some(sp) = spans.get(sid.0 as usize) else {
+                    continue;
+                };
+                match sp.kind {
+                    SpanKind::Entry => return SpanColor::Entry,
+                    SpanKind::LeadOut => return SpanColor::LeadOut,
+                    SpanKind::LinkBridge => return SpanColor::LinkBridge,
+                    SpanKind::DressupArtifact => decision = SpanColor::Dressup,
+                    SpanKind::DepthPass => {
+                        if let Some(SpanPayload::DepthPass { pass_index: p, .. }) = sp.payload {
+                            pass_index = Some(p);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            match decision {
+                SpanColor::Dressup => SpanColor::Dressup,
+                _ => SpanColor::Default { pass_index },
+            }
+        };
 
         for i in 1..tp.moves.len() {
             // When downsampling, skip intermediate moves but always keep
@@ -163,18 +253,35 @@ impl ToolpathGpuData {
                             color: rapid_color,
                         });
                     }
-                    _ => {
-                        let c0 = z_color(from.z);
-                        let c1 = z_color(to.z);
-                        cut_verts.push(LineVertex {
-                            position: p0,
-                            color: c0,
-                        });
-                        cut_verts.push(LineVertex {
-                            position: p1,
-                            color: c1,
-                        });
-                    }
+                    _ => match classify(i) {
+                        SpanColor::Entry if span_filter.show_entry => {
+                            push_segment(&mut cut_verts, p0, p1, entry_color);
+                        }
+                        SpanColor::LeadOut if span_filter.show_lead_out => {
+                            push_segment(&mut cut_verts, p0, p1, leadout_color);
+                        }
+                        SpanColor::LinkBridge if span_filter.show_link_bridge => {
+                            push_dashed_segment(&mut cut_verts, p0, p1, linkbridge_color);
+                        }
+                        SpanColor::Dressup if span_filter.show_dressup => {
+                            push_segment(&mut cut_verts, p0, p1, dressup_color);
+                        }
+                        SpanColor::Default { pass_index } => {
+                            let c0 = z_color(from.z, pass_index);
+                            let c1 = z_color(to.z, pass_index);
+                            cut_verts.push(LineVertex {
+                                position: p0,
+                                color: c0,
+                            });
+                            cut_verts.push(LineVertex {
+                                position: p1,
+                                color: c1,
+                            });
+                        }
+                        // Filter hid this segment — emit nothing but still
+                        // bump move_*_counts so scrubbing indices stay aligned.
+                        _ => {}
+                    },
                 }
             }
 
@@ -1060,5 +1167,49 @@ mod tests {
         let env = 0.05..0.10;
         let c = chipload_segment_color(Some(&env), Some(0.12));
         assert_eq!(c, [0.95, 0.20, 0.20]);
+    }
+
+    #[test]
+    fn dashed_segment_emits_two_sub_segments() {
+        let mut out = Vec::new();
+        push_dashed_segment(&mut out, [0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+        // Two sub-segments → 4 vertices, with a centre gap between idx 1 and 2.
+        assert_eq!(out.len(), 4);
+        assert_eq!(out[0].position, [0.0, 0.0, 0.0]);
+        assert!((out[1].position[0] - 3.5).abs() < 1e-5);
+        assert!((out[2].position[0] - 6.5).abs() < 1e-5);
+        assert_eq!(out[3].position, [10.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn span_aware_renderer_colors_entry_distinct_from_default() {
+        use rs_cam_core::geo::P3;
+        use rs_cam_core::toolpath::{Move, MoveType};
+        use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
+
+        // Build a 3-move toolpath: rapid → cut(entry) → cut(default).
+        let mut tp = Toolpath::new();
+        tp.moves.push(Move {
+            target: P3::new(0.0, 0.0, 0.0),
+            move_type: MoveType::Rapid,
+        });
+        tp.moves.push(Move {
+            target: P3::new(1.0, 0.0, 0.0),
+            move_type: MoveType::Linear { feed_rate: 100.0 },
+        });
+        tp.moves.push(Move {
+            target: P3::new(2.0, 0.0, 0.0),
+            move_type: MoveType::Linear { feed_rate: 100.0 },
+        });
+        // Entry span covers move 1 only; default cut for move 2.
+        let spans = vec![Span::new(1, 2, SpanKind::Entry)];
+        let annotated = AnnotatedToolpath::with_spans(tp, spans);
+
+        // Move 1 (entry) → SpanColor::Entry
+        let paths = annotated.span_paths_by_move();
+        let move1_path = paths.get(1).expect("move 1 path");
+        let move2_path = paths.get(2).expect("move 2 path");
+        assert!(!move1_path.is_empty());
+        assert!(move2_path.is_empty());
     }
 }

@@ -15,7 +15,6 @@ use crate::state::toolpath::{
     FaceConfig, FaceDirection, HeightContext, HeightsConfig, InlayConfig, ProfileConfig,
     RestConfig, ZigzagConfig,
 };
-use rs_cam_core::compute::annotate::annotate_from_runtime_events;
 use rs_cam_core::compute::execute::execute_operation_annotated;
 use rs_cam_core::compute::{build_cutter, compute_stats};
 #[cfg(test)]
@@ -73,6 +72,7 @@ fn generate_via_core(
     {
         scope.set_debug_span_id(span_id);
     }
+    let op_child_ctx = op_scope.as_ref().map(|scope| scope.context());
 
     // Pre-resolve containment polygon (silhouette/stock + keep-outs + offset)
     // for adaptive3d's internal stock pre-clip. The post-generation boundary
@@ -143,6 +143,7 @@ fn generate_via_core(
         debug_ctx,
         cancel,
         req.prior_stock.as_ref(),
+        op_child_ctx.as_ref(),
         pre_boundary.as_ref(),
     )
     .map_err(ComputeError::from)?;
@@ -153,17 +154,8 @@ fn generate_via_core(
         scope.bind_to_toolpath(&result.toolpath, 0, result.toolpath.moves.len());
     }
 
-    if let Some(scope) = op_scope.as_ref() {
-        let child_ctx = scope.context();
-        annotate_from_runtime_events(&result.annotations, &result.toolpath, &child_ctx);
-    }
-
-    let spans = rs_cam_core::compute::spans_from_annotations(
-        &result.annotations,
-        result.toolpath.moves.len(),
-    );
     Ok(GeneratedToolpath {
-        spans,
+        spans: result.spans,
         toolpath: result.toolpath,
     })
 }

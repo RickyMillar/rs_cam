@@ -1,6 +1,36 @@
 use super::toolpath::ToolpathId;
 use std::collections::HashMap;
 
+/// Per-SpanKind visibility toggles for the 3D toolpath renderer. A `false`
+/// flag hides cut segments whose innermost span kind matches; rapids and
+/// segments with no matching kind are unaffected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpanKindFilter {
+    pub show_entry: bool,
+    pub show_lead_out: bool,
+    pub show_link_bridge: bool,
+    pub show_dressup: bool,
+}
+
+impl Default for SpanKindFilter {
+    fn default() -> Self {
+        Self {
+            show_entry: true,
+            show_lead_out: true,
+            show_link_bridge: true,
+            show_dressup: true,
+        }
+    }
+}
+
+impl SpanKindFilter {
+    /// True iff every kind is visible — lets the renderer skip the per-move
+    /// classify cost in the common case.
+    pub fn all_visible(&self) -> bool {
+        self.show_entry && self.show_lead_out && self.show_link_bridge && self.show_dressup
+    }
+}
+
 /// Per-toolpath move-type visibility. Defaults to both-visible.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ToolpathMoveVisibility {
@@ -37,6 +67,9 @@ pub struct ViewportState {
     /// Per-toolpath move-type visibility overlay — AND'd with the global
     /// `show_cutting` / `show_rapids` flags. Missing entries default to visible.
     pub toolpath_move_visibility: HashMap<ToolpathId, ToolpathMoveVisibility>,
+    /// SpanKind visibility filter for the 3D renderer. When a kind is hidden,
+    /// cut segments with that innermost span kind are dropped at upload time.
+    pub span_kind_filter: SpanKindFilter,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,6 +108,7 @@ impl ViewportState {
             isolate_toolpath: None,
             toolpath_color_mode: ToolpathColorMode::Normal,
             toolpath_move_visibility: HashMap::new(),
+            span_kind_filter: SpanKindFilter::default(),
         }
     }
 }

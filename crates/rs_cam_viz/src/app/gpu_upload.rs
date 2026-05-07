@@ -767,9 +767,10 @@ impl RsCamApp {
                             ToolpathGpuData::from_toolpath(
                                 &render_state.device,
                                 &resources.gpu_limits,
-                                render_tp,
+                                &result.annotated,
                                 i,
                                 selected,
+                                &state.viewport.span_kind_filter,
                             )
                         }
                     };
