@@ -142,8 +142,125 @@ pub struct SimulationDebugState {
     /// `inspect_spans` MCP filter semantics so agent and human read the
     /// same numbers.
     pub span_scope: SpanScope,
+    /// Per-(toolpath, span) sample aggregates, computed once per
+    /// `Arc<SimulationCutTrace>` and reused on every subsequent inspector
+    /// frame. Without this cache the Selected section rescans the full
+    /// sample list every frame — see `SpanAggregateCache::ensure_built`.
+    pub(crate) span_aggregates: SpanAggregateCache,
     pub(crate) semantic_indexes: HashMap<ToolpathId, SimulationSemanticIndex>,
     runtime_profiles: HashMap<ToolpathId, SimulationRuntimeProfile>,
+}
+
+/// Per-(toolpath, span) aggregate of cut samples whose `span_path` contains
+/// the span. Mirrors what the per-span breakdown displays: counts, mean and
+/// peak engagement / chipload, peak axial DOC, and MRR.
+#[derive(Default, Clone, Copy)]
+pub struct SpanAggregate {
+    pub n_samples: usize,
+    pub n_cutting: usize,
+    pub sum_eng: f64,
+    pub peak_eng: f64,
+    pub sum_chip: f64,
+    pub peak_chip: f64,
+    pub peak_doc: f64,
+    pub sum_mrr: f64,
+    pub peak_mrr: f64,
+}
+
+impl SpanAggregate {
+    pub fn ingest(&mut self, sample: &SimulationCutSample) {
+        self.n_samples += 1;
+        if !sample.is_cutting {
+            return;
+        }
+        self.n_cutting += 1;
+        self.sum_eng += sample.radial_engagement;
+        if sample.radial_engagement > self.peak_eng {
+            self.peak_eng = sample.radial_engagement;
+        }
+        let chip = sample
+            .effective_chip_thickness_mm
+            .unwrap_or(sample.chipload_mm_per_tooth);
+        self.sum_chip += chip;
+        if chip > self.peak_chip {
+            self.peak_chip = chip;
+        }
+        if sample.axial_doc_mm > self.peak_doc {
+            self.peak_doc = sample.axial_doc_mm;
+        }
+        self.sum_mrr += sample.mrr_mm3_s;
+        if sample.mrr_mm3_s > self.peak_mrr {
+            self.peak_mrr = sample.mrr_mm3_s;
+        }
+    }
+
+    pub fn avg_engagement(&self) -> f64 {
+        if self.n_cutting == 0 {
+            0.0
+        } else {
+            self.sum_eng / self.n_cutting as f64
+        }
+    }
+
+    pub fn avg_chipload(&self) -> f64 {
+        if self.n_cutting == 0 {
+            0.0
+        } else {
+            self.sum_chip / self.n_cutting as f64
+        }
+    }
+
+    pub fn avg_mrr(&self) -> f64 {
+        if self.n_cutting == 0 {
+            0.0
+        } else {
+            self.sum_mrr / self.n_cutting as f64
+        }
+    }
+}
+
+/// One-shot cache of `SpanAggregate` per `(toolpath_id, span_id)`, keyed
+/// by the `Arc<SimulationCutTrace>` pointer so it invalidates automatically
+/// when a new sim trace lands. The full sample list is scanned exactly
+/// once per trace; subsequent lookups are O(1).
+#[derive(Default)]
+pub struct SpanAggregateCache {
+    /// `Arc::as_ptr(trace) as usize` of the trace this cache reflects.
+    /// `None` = no cache yet. We compare via the pointer rather than
+    /// content because the trace is large and immutable behind an Arc.
+    cached_trace_ptr: Option<usize>,
+    aggregates: HashMap<(ToolpathId, u32), SpanAggregate>,
+}
+
+impl SpanAggregateCache {
+    /// Rebuild aggregates from `trace` if this is a new (or first) trace.
+    /// Cheap when the trace pointer matches the cached one.
+    pub fn ensure_built(&mut self, trace: &Arc<SimulationCutTrace>) {
+        let ptr = Arc::as_ptr(trace) as usize;
+        if self.cached_trace_ptr == Some(ptr) {
+            return;
+        }
+        self.aggregates.clear();
+        for sample in &trace.samples {
+            let key_tp = ToolpathId(sample.toolpath_id);
+            for sid in &sample.span_path {
+                self.aggregates
+                    .entry((key_tp, sid.0))
+                    .or_default()
+                    .ingest(sample);
+            }
+        }
+        self.cached_trace_ptr = Some(ptr);
+    }
+
+    pub fn get(&self, toolpath_id: ToolpathId, span_id: u32) -> Option<&SpanAggregate> {
+        self.aggregates.get(&(toolpath_id, span_id))
+    }
+
+    pub fn invalidate(&mut self) {
+        self.cached_trace_ptr = None;
+        self.aggregates.clear();
+    }
 }
 
 /// Inspector-pane span scope. `toolpath_id` selects the toolpath; `span_id`
@@ -394,6 +511,7 @@ impl SimulationState {
                 highlight_active_item: true,
                 pending_inspect_toolpath: None,
                 span_scope: SpanScope::default(),
+                span_aggregates: SpanAggregateCache::default(),
                 semantic_indexes: HashMap::new(),
                 runtime_profiles: HashMap::new(),
             },
