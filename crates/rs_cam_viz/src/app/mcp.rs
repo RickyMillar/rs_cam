@@ -138,6 +138,10 @@ impl super::RsCamApp {
                 let resp = self.mcp_inspect_brep_faces(model_id);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::InspectCollisions => {
+                let resp = self.mcp_inspect_collisions();
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::InspectSpans {
                 index,
                 kind,
@@ -1291,6 +1295,102 @@ impl super::RsCamApp {
         }))
     }
 
+    /// Per-toolpath listing of collisions detected during simulation:
+    /// holder collisions (sim.checks.collision_report) and rapid collisions
+    /// (sim.checks.rapid_collision_move_indices), grouped by the toolpath
+    /// each move belongs to. Localizes the project-wide
+    /// `rapid_collision_count` from `run_simulation` so the user can drill
+    /// to the specific lift/retract that's clipping uncleared stock.
+    fn mcp_inspect_collisions(&self) -> String {
+        let state = self.controller.state();
+        let sim = &state.simulation;
+
+        if !sim.has_results() {
+            return json_str(serde_json::json!({
+                "error": "No simulation results. Call run_simulation first."
+            }));
+        }
+
+        let mut holder_by_tp: std::collections::BTreeMap<usize, Vec<serde_json::Value>> =
+            std::collections::BTreeMap::new();
+        let mut rapid_by_tp: std::collections::BTreeMap<usize, Vec<serde_json::Value>> =
+            std::collections::BTreeMap::new();
+
+        // Holder/shank collisions live in collision_report. Their `move_idx`
+        // is in global move space; map back to (toolpath_id, local_move).
+        if let Some(report) = sim.checks.collision_report.as_ref() {
+            for c in &report.collisions {
+                let (tp_id, local_move) = sim
+                    .move_to_local_toolpath_move(c.move_idx)
+                    .map(|(_, id, local)| (id.0, local))
+                    .unwrap_or((usize::MAX, c.move_idx));
+                holder_by_tp
+                    .entry(tp_id)
+                    .or_default()
+                    .push(serde_json::json!({
+                        "global_move": c.move_idx,
+                        "local_move": local_move,
+                        "segment": format!("{:?}", c.segment),
+                    }));
+            }
+        }
+
+        // Rapid collisions are stored as bare global move indices.
+        for &global_move in &sim.checks.rapid_collision_move_indices {
+            let (tp_id, local_move) = sim
+                .move_to_local_toolpath_move(global_move)
+                .map(|(_, id, local)| (id.0, local))
+                .unwrap_or((usize::MAX, global_move));
+            rapid_by_tp
+                .entry(tp_id)
+                .or_default()
+                .push(serde_json::json!({
+                    "global_move": global_move,
+                    "local_move": local_move,
+                }));
+        }
+
+        // Build the per-toolpath rollup. Include every TP that has at least
+        // one of either kind so the agent doesn't have to merge two maps.
+        let all_tps: std::collections::BTreeSet<usize> = holder_by_tp
+            .keys()
+            .chain(rapid_by_tp.keys())
+            .copied()
+            .collect();
+
+        let session = &state.simulation;
+        let by_toolpath: Vec<serde_json::Value> = all_tps
+            .iter()
+            .map(|tp_id| {
+                let name = session
+                    .boundaries()
+                    .iter()
+                    .find(|b| b.id.0 == *tp_id)
+                    .map(|b| b.name.clone())
+                    .unwrap_or_else(|| format!("(unknown {tp_id})"));
+                let holder = holder_by_tp.get(tp_id).cloned().unwrap_or_default();
+                let rapid = rapid_by_tp.get(tp_id).cloned().unwrap_or_default();
+                serde_json::json!({
+                    "toolpath_id": tp_id,
+                    "toolpath_name": name,
+                    "holder_collision_count": holder.len(),
+                    "rapid_collision_count": rapid.len(),
+                    "holder_collisions": holder,
+                    "rapid_collisions": rapid,
+                })
+            })
+            .collect();
+
+        let total_holder: usize = holder_by_tp.values().map(|v| v.len()).sum();
+        let total_rapid: usize = rapid_by_tp.values().map(|v| v.len()).sum();
+
+        json_str(serde_json::json!({
+            "holder_collision_count": total_holder,
+            "rapid_collision_count": total_rapid,
+            "by_toolpath": by_toolpath,
+        }))
+    }
+
     fn mcp_inspect_machine(&self) -> String {
         let session = &self.controller.state().session;
         let machine = session.machine();
@@ -2402,7 +2502,7 @@ impl super::RsCamApp {
                 None
             };
             let pixels = rs_cam_core::fingerprint::render_toolpath_composite(
-                result.toolpath(),
+                &result.annotated,
                 bg.as_ref(),
                 w,
                 h,
