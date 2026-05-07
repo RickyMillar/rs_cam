@@ -586,7 +586,9 @@ fn long_simulation_request() -> SimulationRequest {
             toolpaths: vec![SetupSimToolpath {
                 id: ToolpathId(99),
                 name: "Long Sim".to_owned(),
-                toolpath: Arc::new(toolpath),
+                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+                    toolpath,
+                )),
                 tool,
                 semantic_trace: None,
             }],
@@ -620,7 +622,9 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
             toolpaths: vec![SetupSimToolpath {
                 id: ToolpathId(1),
                 name: "Metrics".to_owned(),
-                toolpath: Arc::new(toolpath),
+                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+                    toolpath,
+                )),
                 tool,
                 semantic_trace: None,
             }],
@@ -653,7 +657,11 @@ fn small_simulation_request_with_semantic_metrics(enabled: bool) -> SimulationRe
         "Pass 1",
     );
     if let Some(toolpath) = req.groups.first().and_then(|group| group.toolpaths.first()) {
-        pass.bind_to_toolpath(&toolpath.toolpath, 0, toolpath.toolpath.moves.len());
+        pass.bind_to_toolpath(
+            &toolpath.annotated.toolpath,
+            0,
+            toolpath.annotated.toolpath.moves.len(),
+        );
     }
     let semantic_trace = Arc::new(recorder.finish());
     req.groups[0].toolpaths[0].semantic_trace = Some(semantic_trace);
@@ -758,7 +766,7 @@ fn debug_enabled_compute_attaches_trace_and_keeps_geometry_stable() {
     assert!(plain_result.debug_trace.is_none());
     assert!(plain_result.semantic_trace.is_none());
     assert!(plain_result.debug_trace_path.is_none());
-    assert_toolpaths_match(&debug_toolpath.toolpath, &plain_result.toolpath);
+    assert_toolpaths_match(debug_toolpath.toolpath(), plain_result.toolpath());
     assert_eq!(
         debug_toolpath.stats.move_count,
         plain_result.stats.move_count
@@ -1439,12 +1447,12 @@ fn analysis_requests_replace_stale_work() {
     backend.submit_simulation(long_simulation_request());
     thread::sleep(Duration::from_millis(20));
     backend.submit_collision(CollisionRequest {
-        toolpath: Arc::new({
+        annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new({
             let mut toolpath = Toolpath::new();
             toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
             toolpath.feed_to(P3::new(0.0, 0.0, -1.0), 300.0);
             toolpath
-        }),
+        })),
         tool: ToolConfig::new_default(ToolId(1), ToolType::EndMill),
         mesh: Arc::new(make_test_flat(20.0)),
     });
@@ -1539,7 +1547,9 @@ fn multi_setup_top_bottom_simulation() {
                 toolpaths: vec![SetupSimToolpath {
                     id: ToolpathId(1),
                     name: "Top Cut".to_owned(),
-                    toolpath: Arc::new(top_tp),
+                    annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+                        top_tp,
+                    )),
                     tool: tool.clone(),
                     semantic_trace: None,
                 }],
@@ -1550,7 +1560,9 @@ fn multi_setup_top_bottom_simulation() {
                 toolpaths: vec![SetupSimToolpath {
                     id: ToolpathId(2),
                     name: "Bottom Cut".to_owned(),
-                    toolpath: Arc::new(bottom_tp),
+                    annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+                        bottom_tp,
+                    )),
                     tool,
                     semantic_trace: None,
                 }],
@@ -1668,7 +1680,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                 toolpaths: vec![SetupSimToolpath {
                     id: ToolpathId(1),
                     name: "Top".to_owned(),
-                    toolpath: Arc::new(tp1),
+                    annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp1)),
                     tool: tool.clone(),
                     semantic_trace: None,
                 }],
@@ -1679,7 +1691,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                 toolpaths: vec![SetupSimToolpath {
                     id: ToolpathId(2),
                     name: "Bottom".to_owned(),
-                    toolpath: Arc::new(tp2),
+                    annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp2)),
                     tool,
                     semantic_trace: None,
                 }],

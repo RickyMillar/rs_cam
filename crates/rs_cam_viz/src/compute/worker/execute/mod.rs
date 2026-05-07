@@ -184,10 +184,13 @@ fn build_core_simulation_request(
                 .iter()
                 .map(|tp| {
                     let cutter = build_cutter(&tp.tool);
+                    // Sim core still consumes Arc<Toolpath>; clone the inner
+                    // toolpath out of the AnnotatedToolpath. S2.1 will lift
+                    // this to Arc<AnnotatedToolpath> so spans flow into samples.
                     SimToolpathEntry {
                         id: tp.id.0,
                         name: tp.name.clone(),
-                        toolpath: Arc::clone(&tp.toolpath),
+                        toolpath: Arc::new(tp.annotated.toolpath.clone()),
                         tool: cutter,
                         flute_count: tp.tool.flute_count,
                         tool_summary: tp.tool.summary(),
@@ -235,9 +238,9 @@ fn build_playback_data(
         );
         for tp in &group.toolpaths {
             let global_tp = if let Some(info) = &group.local_to_global {
-                Arc::new(info.transform_toolpath(&tp.toolpath))
+                Arc::new(info.transform_toolpath(&tp.annotated.toolpath))
             } else {
-                Arc::clone(&tp.toolpath)
+                Arc::new(tp.annotated.toolpath.clone())
             };
             playback.push((global_tp, tp.tool.clone(), playback_direction));
         }
@@ -396,9 +399,8 @@ fn run_compute_with_phase_tracker(
             generated
         };
 
-        let annotated =
+        let mut current =
             rs_cam_core::toolpath_spans::AnnotatedToolpath::with_spans(tp.toolpath, tp.spans);
-        let mut tp;
 
         {
             let _phase_scope = phase_tracker.map(|tracker| tracker.start_phase("Apply dressups"));
@@ -406,8 +408,7 @@ fn run_compute_with_phase_tracker(
                 .as_ref()
                 .map(|ctx| ctx.start_span("dressups", "Apply dressups"));
             let dressup_ctx = dressup_scope.as_ref().map(|scope| scope.context());
-            tp = apply_dressups(annotated, req, dressup_ctx.as_ref(), semantic_root.as_ref())
-                .toolpath;
+            current = apply_dressups(current, req, dressup_ctx.as_ref(), semantic_root.as_ref());
         }
 
         if req.boundary.enabled
@@ -482,7 +483,12 @@ fn run_compute_with_phase_tracker(
             let boundaries =
                 effective_boundary(&stock_poly, containment, req.tool.envelope_diameter() / 2.0);
             if let Some(boundary) = boundaries.first() {
-                tp = clip_toolpath_to_boundary(&tp, boundary, effective_safe_z(req));
+                current.toolpath =
+                    clip_toolpath_to_boundary(&current.toolpath, boundary, effective_safe_z(req));
+                // Move-mangling clip: spans are no longer guaranteed to map
+                // correctly. Mirror core's apply_boundary_clip (S58) by
+                // marking spans invalid rather than dropping them silently.
+                current.spans_valid = false;
                 if let Some(root) = semantic_root.as_ref() {
                     let scope =
                         root.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
@@ -498,14 +504,14 @@ fn run_compute_with_phase_tracker(
                         },
                     );
                     scope.set_param("keep_out_count", req.keep_out_footprints.len());
-                    if !tp.moves.is_empty() {
-                        scope.bind_to_toolpath(&tp, 0, tp.moves.len());
+                    if !current.toolpath.moves.is_empty() {
+                        scope.bind_to_toolpath(&current.toolpath, 0, current.toolpath.moves.len());
                     }
                 }
                 if let Some(scope) = boundary_scope.as_ref()
-                    && !tp.moves.is_empty()
+                    && !current.toolpath.moves.is_empty()
                 {
-                    scope.set_move_range(0, tp.moves.len() - 1);
+                    scope.set_move_range(0, current.toolpath.moves.len() - 1);
                 }
             }
         }
@@ -515,11 +521,11 @@ fn run_compute_with_phase_tracker(
             let _stats_scope = debug_root
                 .as_ref()
                 .map(|ctx| ctx.start_span("final_stats", "Compute stats"));
-            compute_stats(&tp)
+            compute_stats(&current.toolpath)
         };
 
         Ok(ToolpathResult {
-            toolpath: Arc::new(tp),
+            annotated: Arc::new(current),
             stats,
             debug_trace: None,
             semantic_trace: None,

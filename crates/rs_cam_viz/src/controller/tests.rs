@@ -246,7 +246,9 @@ fn sample_controller() -> AppController<ScriptedBackend> {
     let tp_id = controller.state.session.toolpath_configs()[0].id;
     let mut rt = ToolpathRuntime::new(true);
     rt.result = Some(ToolpathResult {
-        toolpath: Arc::new(Toolpath::new()),
+        annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+            Toolpath::new(),
+        )),
         stats: Default::default(),
         debug_trace: None,
         semantic_trace: None,
@@ -381,12 +383,12 @@ fn controller_save_open_and_export_smoke() {
     let mut controller = sample_controller();
     controller.state.session.set_name("Smoke".to_owned());
     controller.state.gui.toolpath_rt.get_mut(&0).unwrap().result = Some(ToolpathResult {
-        toolpath: Arc::new({
+        annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new({
             let mut toolpath = Toolpath::new();
             toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
             toolpath.feed_to(P3::new(5.0, 5.0, -1.0), 500.0);
             toolpath
-        }),
+        })),
         stats: Default::default(),
         debug_trace: None,
         semantic_trace: None,
@@ -682,8 +684,10 @@ fn toolpath_results_persist_debug_trace_metadata() {
         rs_cam_core::semantic_trace::ToolpathSemanticKind::Pass,
         "Pass 1",
     );
-    let toolpath = Arc::new(Toolpath::new());
-    pass.bind_to_toolpath(toolpath.as_ref(), 0, 0);
+    let annotated = Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+        Toolpath::new(),
+    ));
+    pass.bind_to_toolpath(&annotated.toolpath, 0, 0);
     let semantic_trace = Arc::new(semantic_recorder.finish());
     let debug_path = temp_path("toolpath_trace_metadata", "json");
 
@@ -691,7 +695,7 @@ fn toolpath_results_persist_debug_trace_metadata() {
         crate::compute::worker::ComputeResult {
             toolpath_id: ToolpathId(0),
             result: Ok(ToolpathResult {
-                toolpath: Arc::clone(&toolpath),
+                annotated: Arc::clone(&annotated),
                 stats: Default::default(),
                 debug_trace: Some(Arc::clone(&trace)),
                 semantic_trace: Some(Arc::clone(&semantic_trace)),

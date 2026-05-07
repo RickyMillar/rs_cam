@@ -734,7 +734,7 @@ impl RsCamApp {
                     // In Setup/Toolpaths workspace (local frame), toolpaths are already
                     // Toolpaths are always in local coords, viewport is always in
                     // local frame — use directly, no transform needed.
-                    let render_tp = result.toolpath.as_ref();
+                    let render_tp = result.toolpath();
 
                     let color_mode = state.viewport.toolpath_color_mode;
                     let mut gpu_data = match color_mode {
@@ -796,7 +796,7 @@ impl RsCamApp {
                             top_z: resolved.top_z,
                         };
                         let preview_verts =
-                            toolpath_render::entry_preview_vertices(&result.toolpath, &config);
+                            toolpath_render::entry_preview_vertices(result.toolpath(), &config);
                         gpu_data.attach_entry_preview(
                             &render_state.device,
                             &resources.gpu_limits,
@@ -810,7 +810,7 @@ impl RsCamApp {
                         {
                             let cutter = rs_cam_core::compute::build_cutter(tool);
                             let profile_verts = toolpath_render::tool_profile_preview_vertices(
-                                &result.toolpath,
+                                result.toolpath(),
                                 &cutter,
                             );
                             gpu_data.attach_tool_profile_preview(

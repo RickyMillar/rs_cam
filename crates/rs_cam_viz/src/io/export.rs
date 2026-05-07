@@ -23,7 +23,7 @@ fn gcode_phase_for_session_toolpath<'a>(
     let tool = session.tools().iter().find(|t| t.id.0 == tc.tool_id);
 
     Some(GcodePhase {
-        toolpath: &result.toolpath,
+        toolpath: result.toolpath(),
         spindle_rpm: gui.post.spindle_speed,
         label: &tc.name,
         pre_gcode: tc.pre_gcode.as_deref(),

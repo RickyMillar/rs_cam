@@ -262,7 +262,7 @@ fn pick_toolpaths(
             continue;
         };
 
-        let moves = &result.toolpath.moves;
+        let moves = &result.toolpath().moves;
         let step = (moves.len() / 200).max(1);
         for j in (0..moves.len()).step_by(step) {
             let m = &moves[j];

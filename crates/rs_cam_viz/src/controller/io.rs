@@ -284,7 +284,7 @@ impl<B: ComputeBackend> AppController<B> {
             .filter(|tc| tc.enabled)
             .filter_map(|tc| {
                 let rt = self.state.gui.toolpath_rt.get(&tc.id)?;
-                rt.result.as_ref().map(|result| &*result.toolpath)
+                rt.result.as_ref().map(|result| result.toolpath())
             })
             .collect();
 

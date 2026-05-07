@@ -1415,18 +1415,14 @@ impl SimulationDebugState {
                 .runtime_profiles
                 .get(&toolpath_id)
                 .is_none_or(|profile| {
-                    profile.move_count != result.toolpath.moves.len()
+                    profile.move_count != result.toolpath().moves.len()
                         || profile.trace_item_count != trace.items.len()
                         || (profile.rapid_feed_mm_min - rapid_feed_mm_min).abs() > 1e-6
                 });
             if needs_rebuild {
                 self.runtime_profiles.insert(
                     toolpath_id,
-                    SimulationRuntimeProfile::build(
-                        result.toolpath.as_ref(),
-                        trace,
-                        rapid_feed_mm_min,
-                    ),
+                    SimulationRuntimeProfile::build(result.toolpath(), trace, rapid_feed_mm_min),
                 );
             }
         }
@@ -1790,7 +1786,9 @@ mod tests {
         rt.semantic_trace = Some(Arc::clone(&semantic_trace));
         rt.debug_trace = Some(Arc::clone(&debug_trace));
         rt.result = Some(crate::state::toolpath::ToolpathResult {
-            toolpath: Arc::new(toolpath),
+            annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+                toolpath,
+            )),
             stats: Default::default(),
             debug_trace: Some(debug_trace),
             semantic_trace: Some(semantic_trace),

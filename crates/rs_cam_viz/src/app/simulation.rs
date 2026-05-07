@@ -261,12 +261,13 @@ impl RsCamApp {
                 }
                 let rt = gui.toolpath_rt.get(&tc.id);
                 if let Some(result) = rt.and_then(|r| r.result.as_ref()) {
-                    let tp_moves = result.toolpath.moves.len();
+                    let tp = result.toolpath();
+                    let tp_moves = tp.moves.len();
                     if current <= cumulative + tp_moves {
                         let local_idx = current.saturating_sub(cumulative);
-                        if local_idx < result.toolpath.moves.len() {
+                        if local_idx < tp.moves.len() {
                             // Toolpath is in local coords, viewport is in local frame — use directly
-                            let pos = result.toolpath.moves[local_idx].target;
+                            let pos = tp.moves[local_idx].target;
                             let tool_info = session
                                 .tools()
                                 .iter()

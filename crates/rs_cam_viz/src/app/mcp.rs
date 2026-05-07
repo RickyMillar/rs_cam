@@ -128,6 +128,10 @@ impl super::RsCamApp {
                 let resp = self.mcp_inspect_brep_faces(model_id);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::InspectSpans { index } => {
+                let resp = self.mcp_inspect_spans(index);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
 
             // ── Mutation operations ──────────────────────────────────
             McpRequestKind::AddAlignmentPin { x, y, diameter } => {
@@ -654,7 +658,7 @@ impl super::RsCamApp {
         };
 
         rs_cam_core::narrate::narrate_toolpath_with_context(
-            &result.toolpath,
+            result.toolpath(),
             semantic_trace,
             cut_trace,
             debug_trace,
@@ -1080,6 +1084,77 @@ impl super::RsCamApp {
         }
 
         json_str(serde_json::json!(result))
+    }
+
+    fn mcp_inspect_spans(&self, index: usize) -> String {
+        use rs_cam_core::toolpath_spans::SpanKind;
+
+        let session = &self.controller.state().session;
+        let gui = &self.controller.state().gui;
+        let Some(tc) = session.toolpath_configs().get(index) else {
+            return text(format!("Toolpath {index} not found."));
+        };
+        let Some(rt) = gui.toolpath_rt.get(&tc.id) else {
+            return text(format!(
+                "Toolpath {index} has no runtime entry. Run generate_toolpath first."
+            ));
+        };
+        let Some(result) = rt.result.as_ref() else {
+            return text(format!(
+                "Toolpath {index} not generated. Run generate_toolpath first."
+            ));
+        };
+
+        let n_moves = result.toolpath().moves.len();
+        let spans = result.spans();
+
+        let kind_label = |k: SpanKind| -> &'static str {
+            match k {
+                SpanKind::Operation => "Operation",
+                SpanKind::DepthPass => "DepthPass",
+                SpanKind::Region => "Region",
+                SpanKind::Entry => "Entry",
+                SpanKind::LeadOut => "LeadOut",
+                SpanKind::LinkBridge => "LinkBridge",
+                SpanKind::DressupArtifact => "DressupArtifact",
+                SpanKind::RapidOrderBarrier => "RapidOrderBarrier",
+            }
+        };
+
+        // Per-kind tally for the summary row.
+        let mut kind_counts: std::collections::BTreeMap<&'static str, usize> =
+            std::collections::BTreeMap::new();
+        for s in spans {
+            *kind_counts.entry(kind_label(s.kind)).or_insert(0) += 1;
+        }
+
+        let spans_json: Vec<serde_json::Value> = spans
+            .iter()
+            .enumerate()
+            .map(|(id, s)| {
+                serde_json::json!({
+                    "id": id,
+                    "kind": kind_label(s.kind),
+                    "start_move": s.start_move,
+                    "end_move": s.end_move,
+                    "is_boundary": s.is_boundary(),
+                    "label": &*s.label,
+                    "payload": s.payload.as_ref().map(|p| format!("{p:?}")),
+                })
+            })
+            .collect();
+
+        json_str(serde_json::json!({
+            "toolpath_id": tc.id,
+            "toolpath_index": index,
+            "name": tc.name,
+            "operation": tc.operation.label(),
+            "move_count": n_moves,
+            "span_count": spans.len(),
+            "spans_valid": result.spans_valid(),
+            "kind_counts": kind_counts,
+            "spans": spans_json,
+        }))
     }
 
     fn mcp_inspect_stock(&self) -> String {
@@ -2147,7 +2222,7 @@ impl super::RsCamApp {
                         .toolpath_rt
                         .values()
                         .filter_map(|rt| rt.result.as_ref())
-                        .map(|r| r.toolpath.as_ref())
+                        .map(|r| r.toolpath())
                         .collect()
                 } else {
                     Vec::new()
@@ -2214,7 +2289,7 @@ impl super::RsCamApp {
                 None
             };
             let pixels = rs_cam_core::fingerprint::render_toolpath_composite(
-                &result.toolpath,
+                result.toolpath(),
                 bg.as_ref(),
                 w,
                 h,
@@ -2223,7 +2298,7 @@ impl super::RsCamApp {
             match image::save_buffer(Path::new(path), &pixels, w, h, image::ColorType::Rgba8) {
                 Ok(()) => text(format!(
                     "Toolpath {index} exported to {path} ({w}x{h}, {} moves, {:.0}mm cutting)",
-                    result.toolpath.moves.len(),
+                    result.toolpath().moves.len(),
                     result.stats.cutting_distance,
                 )),
                 Err(e) => text(format!("Failed to save PNG: {e}")),
@@ -2234,12 +2309,12 @@ impl super::RsCamApp {
                 bbox.min.x, bbox.min.y, bbox.min.z, bbox.max.x, bbox.max.y, bbox.max.z,
             ];
             let html =
-                rs_cam_core::viz::toolpath_standalone_3d_html(&result.toolpath, Some(bounds));
+                rs_cam_core::viz::toolpath_standalone_3d_html(result.toolpath(), Some(bounds));
 
             match std::fs::write(path, &html) {
                 Ok(()) => text(format!(
                     "Toolpath view exported to {path} ({} moves, {:.0}mm cutting)",
-                    result.toolpath.moves.len(),
+                    result.toolpath().moves.len(),
                     result.stats.cutting_distance,
                 )),
                 Err(e) => text(format!("Failed to write: {e}")),
