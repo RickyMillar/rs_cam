@@ -20,8 +20,14 @@ enum SpanColor {
 }
 
 fn push_segment(out: &mut Vec<LineVertex>, p0: [f32; 3], p1: [f32; 3], color: [f32; 3]) {
-    out.push(LineVertex { position: p0, color });
-    out.push(LineVertex { position: p1, color });
+    out.push(LineVertex {
+        position: p0,
+        color,
+    });
+    out.push(LineVertex {
+        position: p1,
+        color,
+    });
 }
 
 /// Emit a single segment as two short sub-segments (start third + end third)
@@ -36,10 +42,16 @@ fn push_dashed_segment(out: &mut Vec<LineVertex>, p0: [f32; 3], p1: [f32; 3], co
     };
     let a = lerp(0.35);
     let b = lerp(0.65);
-    out.push(LineVertex { position: p0, color });
+    out.push(LineVertex {
+        position: p0,
+        color,
+    });
     out.push(LineVertex { position: a, color });
     out.push(LineVertex { position: b, color });
-    out.push(LineVertex { position: p1, color });
+    out.push(LineVertex {
+        position: p1,
+        color,
+    });
 }
 
 /// Toolpath line data uploaded to GPU.
@@ -177,8 +189,11 @@ impl ToolpathGpuData {
         let entry_color = brighten([0.20, 0.95, 0.95]);
         let leadout_color = brighten([0.95, 0.30, 0.85]);
         let linkbridge_color = brighten([0.45, 0.45, 0.55]);
-        let dressup_color =
-            brighten([0.5 * (base[0] + 0.5), 0.5 * (base[1] + 0.5), 0.5 * (base[2] + 0.5)]);
+        let dressup_color = brighten([
+            0.5 * (base[0] + 0.5),
+            0.5 * (base[1] + 0.5),
+            0.5 * (base[2] + 0.5),
+        ]);
 
         if stride > 1 {
             tracing::warn!(

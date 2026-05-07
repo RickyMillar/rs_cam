@@ -733,7 +733,13 @@ fn span_path_tooltip(
         .iter()
         .filter_map(|sid| result.spans().get(sid.0 as usize))
         .map(|span| match (&span.kind, &span.payload) {
-            (SpanKind::DepthPass, Some(SpanPayload::DepthPass { pass_index, z_level })) => {
+            (
+                SpanKind::DepthPass,
+                Some(SpanPayload::DepthPass {
+                    pass_index,
+                    z_level,
+                }),
+            ) => {
                 format!("DepthPass {} (z={:.2})", pass_index, z_level)
             }
             (SpanKind::Region, Some(SpanPayload::Region { region_id })) => {
