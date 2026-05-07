@@ -483,9 +483,22 @@ fn draw_project_overview(
     let total_min = total_time_min.floor() as u32;
     let total_sec = ((total_time_min - total_min as f64) * 60.0) as u32;
 
+    // Refresh the per-span aggregate cache up front so the Selected section
+    // can do O(1) lookups. Cheap when the trace pointer hasn't changed
+    // (just an Arc pointer compare).
+    if let Some(trace_arc) = sim.results.as_ref().and_then(|r| r.cut_trace.as_ref()) {
+        let trace_arc = std::sync::Arc::clone(trace_arc);
+        sim.debug.span_aggregates.ensure_built(&trace_arc);
+    }
+
+    // Compute issues + hotspot counts once per draw — the Selected section
+    // also needs the issue list, so we share via &Vec rather than calling
+    // `sim.issues()` twice (it rebuilds + sorts each call).
+    let issues = sim.issues(gui, max_feed);
+    let issue_count = issues.len();
+
     let (ok, _warn, bad, unmodeled) = verdict_counts_local(load_report);
     let collision_count = sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
-    let issue_count = sim.issues(gui, max_feed).len();
     let hotspot_count = sim
         .results
         .as_ref()
@@ -669,7 +682,7 @@ fn draw_project_overview(
     if let Some(trace) = trace_arc.as_ref() {
         ui.add_space(8.0);
         ui.separator();
-        draw_selected_section(ui, sim, gui, max_feed, trace, events);
+        draw_selected_section(ui, sim, gui, trace, &issues, events);
     }
 }
 
@@ -953,76 +966,12 @@ fn playhead_span_id(sim: &SimulationState, gui: &GuiState, toolpath_id: Toolpath
         .map(|(i, _)| i as u32)
 }
 
-/// Per-span aggregate over cut samples whose span_path contains the span.
-#[derive(Default, Clone, Copy)]
-struct SpanAggregate {
-    n_samples: usize,
-    n_cutting: usize,
-    sum_eng: f64,
-    peak_eng: f64,
-    sum_chip: f64,
-    peak_chip: f64,
-    peak_doc: f64,
-    sum_mrr: f64,
-    peak_mrr: f64,
-}
-
-impl SpanAggregate {
-    fn ingest(&mut self, sample: &rs_cam_core::simulation_cut::SimulationCutSample) {
-        self.n_samples += 1;
-        if !sample.is_cutting {
-            return;
-        }
-        self.n_cutting += 1;
-        self.sum_eng += sample.radial_engagement;
-        if sample.radial_engagement > self.peak_eng {
-            self.peak_eng = sample.radial_engagement;
-        }
-        let chip = sample
-            .effective_chip_thickness_mm
-            .unwrap_or(sample.chipload_mm_per_tooth);
-        self.sum_chip += chip;
-        if chip > self.peak_chip {
-            self.peak_chip = chip;
-        }
-        if sample.axial_doc_mm > self.peak_doc {
-            self.peak_doc = sample.axial_doc_mm;
-        }
-        self.sum_mrr += sample.mrr_mm3_s;
-        if sample.mrr_mm3_s > self.peak_mrr {
-            self.peak_mrr = sample.mrr_mm3_s;
-        }
-    }
-}
-
-/// Walk the cut trace once and aggregate metrics for every sample whose
-/// `span_path` contains `span_id` on `toolpath_id`. Cheap: linear in
-/// samples × span_path depth (typically ≤ 3).
-fn aggregate_for_span(
-    trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
-    toolpath_id: usize,
-    span_id: u32,
-) -> SpanAggregate {
-    let mut agg = SpanAggregate::default();
-    for s in &trace.samples {
-        if s.toolpath_id != toolpath_id {
-            continue;
-        }
-        if !s.span_path.iter().any(|sid| sid.0 == span_id) {
-            continue;
-        }
-        agg.ingest(s);
-    }
-    agg
-}
-
-#[allow(clippy::too_many_arguments)]
 fn draw_selected_section(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
     gui: &GuiState,
-    max_feed: f64,
     trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
+    issues: &[crate::state::simulation::SimulationIssue],
     events: &mut Vec<AppEvent>,
 ) {
     let toolpath_id = sim
@@ -1115,55 +1064,62 @@ fn draw_selected_section(
         .color(theme::TEXT_MUTED),
     );
 
-    // Sample aggregates for this span.
-    let agg = aggregate_for_span(trace, tp_id.0, sid);
-    if agg.n_cutting == 0 {
-        ui.label(
-            egui::RichText::new("No cutting samples in this span.")
-                .small()
-                .italics()
-                .color(theme::TEXT_DIM),
-        );
-    } else {
-        let avg_eng = agg.sum_eng / agg.n_cutting as f64;
-        let avg_chip = agg.sum_chip / agg.n_cutting as f64;
-        let avg_mrr = agg.sum_mrr / agg.n_cutting as f64;
-        ui.add_space(2.0);
-        egui::Grid::new(("selected_metrics_grid", sid))
-            .num_columns(2)
-            .spacing([8.0, 2.0])
-            .show(ui, |ui| {
-                let row = |ui: &mut egui::Ui, label: &str, value: String| {
-                    ui.label(egui::RichText::new(label).small().color(theme::TEXT_MUTED));
-                    ui.label(egui::RichText::new(value).small().monospace());
-                };
-                row(
-                    ui,
-                    "Samples",
-                    format!("{} ({} cutting)", agg.n_samples, agg.n_cutting),
-                );
-                ui.end_row();
-                row(
-                    ui,
-                    "Engagement",
-                    format!("avg {:.2} · peak {:.2}", avg_eng, agg.peak_eng),
-                );
-                ui.end_row();
-                row(
-                    ui,
-                    "Chipload",
-                    format!("avg {:.4} · peak {:.4} mm", avg_chip, agg.peak_chip),
-                );
-                ui.end_row();
-                row(ui, "Axial DOC", format!("peak {:.2} mm", agg.peak_doc));
-                ui.end_row();
-                row(
-                    ui,
-                    "MRR",
-                    format!("avg {:.0} · peak {:.0} mm³/s", avg_mrr, agg.peak_mrr),
-                );
-                ui.end_row();
-            });
+    // Sample aggregates for this span — pulled from the per-trace cache,
+    // which builds on the first frame of a new sim run and is reused on
+    // every frame after. `agg` is `None` when no cutting samples landed
+    // in this span.
+    let agg = sim.debug.span_aggregates.get(tp_id, sid).copied();
+    match agg {
+        Some(agg) if agg.n_cutting > 0 => {
+            ui.add_space(2.0);
+            egui::Grid::new(("selected_metrics_grid", sid))
+                .num_columns(2)
+                .spacing([8.0, 2.0])
+                .show(ui, |ui| {
+                    let row = |ui: &mut egui::Ui, label: &str, value: String| {
+                        ui.label(egui::RichText::new(label).small().color(theme::TEXT_MUTED));
+                        ui.label(egui::RichText::new(value).small().monospace());
+                    };
+                    row(
+                        ui,
+                        "Samples",
+                        format!("{} ({} cutting)", agg.n_samples, agg.n_cutting),
+                    );
+                    ui.end_row();
+                    row(
+                        ui,
+                        "Engagement",
+                        format!("avg {:.2} · peak {:.2}", agg.avg_engagement(), agg.peak_eng),
+                    );
+                    ui.end_row();
+                    row(
+                        ui,
+                        "Chipload",
+                        format!(
+                            "avg {:.4} · peak {:.4} mm",
+                            agg.avg_chipload(),
+                            agg.peak_chip
+                        ),
+                    );
+                    ui.end_row();
+                    row(ui, "Axial DOC", format!("peak {:.2} mm", agg.peak_doc));
+                    ui.end_row();
+                    row(
+                        ui,
+                        "MRR",
+                        format!("avg {:.0} · peak {:.0} mm³/s", agg.avg_mrr(), agg.peak_mrr),
+                    );
+                    ui.end_row();
+                });
+        }
+        _ => {
+            ui.label(
+                egui::RichText::new("No cutting samples in this span.")
+                    .small()
+                    .italics()
+                    .color(theme::TEXT_DIM),
+            );
+        }
     }
 
     // In-scope hotspots and issues.
@@ -1173,20 +1129,19 @@ fn draw_selected_section(
         .enumerate()
         .filter(|(_, h)| h.toolpath_id == tp_id.0 && h.span_path.iter().any(|s| s.0 == sid))
         .collect();
-    let issues = sim.issues(gui, max_feed);
+    let boundary_start = sim
+        .boundaries()
+        .iter()
+        .find(|b| b.id == tp_id)
+        .map(|b| b.start_move)
+        .unwrap_or(0);
     let in_scope_issues: Vec<&_> = issues
         .iter()
         .filter(|iss| {
             iss.toolpath_id.is_some_and(|tp| tp == tp_id)
                 && iss
                     .move_index
-                    .checked_sub(
-                        sim.boundaries()
-                            .iter()
-                            .find(|b| b.id == tp_id)
-                            .map(|b| b.start_move)
-                            .unwrap_or(0),
-                    )
+                    .checked_sub(boundary_start)
                     .is_some_and(|local| span.contains(local))
         })
         .collect();
