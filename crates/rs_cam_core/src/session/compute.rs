@@ -521,10 +521,17 @@ impl ProjectSession {
 
                 // ── Boundary clipping ─────────────────────────────────
                 // After dressups, clip the toolpath to the machining boundary
-                // (matching the GUI compute path).
+                // (matching the GUI compute path). Phase 3i / #58: pass through
+                // an AnnotatedToolpath; spans are invalidated by the clip until
+                // a precise remap is implemented.
                 if boundary_config.enabled {
-                    toolpath = Self::apply_boundary_clip(
-                        toolpath,
+                    let staged_spans =
+                        crate::compute::spans_from_annotations(&annotations, toolpath.moves.len());
+                    let clipped = Self::apply_boundary_clip(
+                        crate::toolpath_spans::AnnotatedToolpath::with_spans(
+                            toolpath,
+                            staged_spans,
+                        ),
                         &boundary_config,
                         &effective_stock_bbox,
                         mesh.as_deref(),
@@ -533,6 +540,7 @@ impl ProjectSession {
                         heights.retract_z,
                         &semantic_root,
                     );
+                    toolpath = clipped.toolpath;
                 }
 
                 let stats = ToolpathStats {
@@ -629,9 +637,15 @@ impl ProjectSession {
     }
 
     /// Apply boundary clipping to a toolpath, subtracting keep-out footprints.
+    ///
+    /// Phase 3i / #58: takes/returns an [`AnnotatedToolpath`]. Boundary
+    /// clipping is the hard span case — it can split or drop arbitrary moves
+    /// depending on geometry — so for now we invalidate spans on output and
+    /// emit a tracing warning when spans were present. A precise span remap
+    /// is deferred.
     #[allow(clippy::too_many_arguments)]
-    fn apply_boundary_clip(
-        toolpath: crate::toolpath::Toolpath,
+    pub fn apply_boundary_clip(
+        annotated: crate::toolpath_spans::AnnotatedToolpath,
         boundary_config: &crate::compute::config::BoundaryConfig,
         stock_bbox: &BoundingBox3,
         mesh: Option<&crate::mesh::TriangleMesh>,
@@ -639,11 +653,17 @@ impl ProjectSession {
         tool_diameter: f64,
         safe_z: f64,
         semantic_ctx: &crate::semantic_trace::ToolpathSemanticContext,
-    ) -> crate::toolpath::Toolpath {
+    ) -> crate::toolpath_spans::AnnotatedToolpath {
         use crate::boundary::{
             ToolContainment, clip_toolpath_to_boundary, effective_boundary, subtract_keepouts,
         };
         use crate::compute::config::BoundarySource;
+
+        let crate::toolpath_spans::AnnotatedToolpath {
+            toolpath,
+            spans,
+            spans_valid: _,
+        } = annotated;
 
         // Resolve the source polygon for the boundary. ModelSilhouette and
         // FaceSelection fall back to the stock rectangle when the required
@@ -708,7 +728,7 @@ impl ProjectSession {
 
         let tool_radius = tool_diameter / 2.0;
         let boundaries = effective_boundary(&stock_poly, containment, tool_radius);
-        if let Some(boundary) = boundaries.first() {
+        let clipped = if let Some(boundary) = boundaries.first() {
             let clipped = clip_toolpath_to_boundary(&toolpath, boundary, safe_z);
 
             // Record semantic trace for boundary clip
@@ -731,6 +751,22 @@ impl ProjectSession {
         } else {
             // Boundary collapsed (e.g. tool too large for stock) — return original
             toolpath
+        };
+
+        // Phase 3i / #58: precise span remap through boundary clipping is
+        // deferred. If the input carried spans, warn so downstream code that
+        // ignores `spans_valid` is still audible in logs.
+        let n = spans.len();
+        if n > 0 {
+            tracing::warn!(
+                "boundary_clip invalidated {} spans (precise remap deferred — Phase 3i)",
+                n
+            );
+        }
+        crate::toolpath_spans::AnnotatedToolpath {
+            toolpath: clipped,
+            spans,
+            spans_valid: false,
         }
     }
 

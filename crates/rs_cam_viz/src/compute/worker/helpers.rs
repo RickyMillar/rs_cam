@@ -293,7 +293,13 @@ pub(super) fn apply_dressups(
                     ramp_rate,
                     air_cut_threshold: 0.05,
                 };
-                tp = optimize_feed_rates(&tp, &cutter, &mut stock, &params);
+                tp = optimize_feed_rates(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
+                    &cutter,
+                    &mut stock,
+                    &params,
+                )
+                .toolpath;
             }
             Err(reason) => {
                 tracing::warn!(

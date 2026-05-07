@@ -17,6 +17,7 @@ use crate::geo::P3;
 use crate::radial_profile::RadialProfileLUT;
 use crate::tool::MillingCutter;
 use crate::toolpath::{Move, MoveType, Toolpath};
+use crate::toolpath_spans::AnnotatedToolpath;
 
 /// Parameters for feed rate optimization.
 pub struct FeedOptParams {
@@ -80,11 +81,39 @@ fn estimate_engagement(
     engaged as f64 / n_samples as f64
 }
 
-/// Apply feed rate optimization to a toolpath.
+/// Apply feed rate optimization to an annotated toolpath (Phase 3h / #57).
 ///
 /// Walks the toolpath, simulates material removal, computes engagement
 /// at each cutting move, and adjusts feed rates using RCTF.
+///
+/// This transform rewrites feed rates only — it does NOT change move count
+/// or order. Spans pass through unchanged and `spans_valid` is preserved.
 pub fn optimize_feed_rates(
+    annotated: AnnotatedToolpath,
+    cutter: &dyn MillingCutter,
+    stock: &mut TriDexelStock,
+    params: &FeedOptParams,
+) -> AnnotatedToolpath {
+    let AnnotatedToolpath {
+        toolpath,
+        spans,
+        spans_valid,
+    } = annotated;
+    let result = optimize_feed_rates_inner(&toolpath, cutter, stock, params);
+    debug_assert_eq!(
+        toolpath.moves.len(),
+        result.moves.len(),
+        "optimize_feed_rates must preserve move count",
+    );
+    AnnotatedToolpath {
+        toolpath: result,
+        spans,
+        spans_valid,
+    }
+}
+
+/// Inner feed-rate rewrite that operates on a raw `Toolpath`.
+fn optimize_feed_rates_inner(
     toolpath: &Toolpath,
     cutter: &dyn MillingCutter,
     stock: &mut TriDexelStock,
@@ -261,7 +290,8 @@ mod tests {
         tp.feed_to(P3::new(20.0, 10.0, 5.0), 1000.0);
         tp.feed_to(P3::new(30.0, 10.0, 5.0), 1000.0);
 
-        let result = optimize_feed_rates(&tp, &tool, &mut stock, &params);
+        let result =
+            optimize_feed_rates(AnnotatedToolpath::new(tp), &tool, &mut stock, &params).toolpath;
 
         // Air cutting should get max feed (or close)
         for mv in &result.moves {
@@ -288,7 +318,8 @@ mod tests {
         tp.feed_to(P3::new(10.0, 10.0, 5.0), 1000.0); // plunge into material
         tp.feed_to(P3::new(20.0, 10.0, 5.0), 1000.0); // full engagement cut
 
-        let result = optimize_feed_rates(&tp, &tool, &mut stock, &params);
+        let result =
+            optimize_feed_rates(AnnotatedToolpath::new(tp), &tool, &mut stock, &params).toolpath;
 
         // With smoothing, feeds should stay reasonable
         for mv in &result.moves {
@@ -305,6 +336,61 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn optimize_feed_rates_preserves_spans() {
+        use crate::toolpath_spans::{Span, SpanKind};
+
+        let tool = FlatEndmill::new(10.0, 25.0);
+        let params = default_params();
+
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 50.0, 50.0, 0.0, 10.0, 1.0);
+
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(10.0, 10.0, 15.0));
+        tp.feed_to(P3::new(10.0, 10.0, 5.0), 1000.0);
+        tp.feed_to(P3::new(20.0, 10.0, 5.0), 1000.0);
+        tp.feed_to(P3::new(30.0, 10.0, 5.0), 1000.0);
+        let n_moves = tp.moves.len();
+
+        let spans = vec![
+            Span::new(0, n_moves, SpanKind::Operation).with_label("op"),
+            Span::new(1, n_moves, SpanKind::DepthPass).with_label("pass-0"),
+            Span::boundary(1, SpanKind::RapidOrderBarrier).with_label("barrier"),
+        ];
+        let mut annotated = crate::toolpath_spans::AnnotatedToolpath::with_spans(tp, spans.clone());
+        annotated.spans_valid = true;
+
+        let result = optimize_feed_rates(annotated, &tool, &mut stock, &params);
+
+        // Move count must be preserved (asserted internally too).
+        assert_eq!(result.toolpath.moves.len(), n_moves);
+        // Spans must pass through byte-identical and remain valid.
+        assert_eq!(result.spans, spans);
+        assert!(result.spans_valid);
+    }
+
+    #[test]
+    fn optimize_feed_rates_preserves_invalid_spans_flag() {
+        use crate::toolpath_spans::{Span, SpanKind};
+
+        let tool = FlatEndmill::new(10.0, 25.0);
+        let params = default_params();
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 50.0, 50.0, 0.0, 10.0, 1.0);
+
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(10.0, 10.0, 15.0));
+        tp.feed_to(P3::new(10.0, 10.0, 5.0), 1000.0);
+        tp.feed_to(P3::new(20.0, 10.0, 5.0), 1000.0);
+
+        let spans = vec![Span::new(0, tp.moves.len(), SpanKind::Operation)];
+        let mut annotated = crate::toolpath_spans::AnnotatedToolpath::with_spans(tp, spans.clone());
+        annotated.spans_valid = false;
+
+        let result = optimize_feed_rates(annotated, &tool, &mut stock, &params);
+        assert_eq!(result.spans, spans);
+        assert!(!result.spans_valid);
     }
 
     #[test]
