@@ -136,8 +136,51 @@ pub struct SimulationDebugState {
     pub focused_issue_index: Option<usize>,
     pub highlight_active_item: bool,
     pub pending_inspect_toolpath: Option<ToolpathId>,
+    /// Span-scope filter for the inspector pane. When set, scopes the
+    /// project-overview metrics, breakdown tree, and findings list to a
+    /// single span (and its descendants) on a single toolpath. Mirrors the
+    /// `inspect_spans` MCP filter semantics so agent and human read the
+    /// same numbers.
+    pub span_scope: SpanScope,
     pub(crate) semantic_indexes: HashMap<ToolpathId, SimulationSemanticIndex>,
     runtime_profiles: HashMap<ToolpathId, SimulationRuntimeProfile>,
+}
+
+/// Inspector-pane span scope. `toolpath_id` selects the toolpath; `span_id`
+/// optionally narrows to one span within that toolpath (the deepest-selected
+/// chip in the filter row). A sample/issue/hotspot is "in scope" when its
+/// `toolpath_id` matches and `span_id` (if set) appears in its `span_path`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SpanScope {
+    pub toolpath_id: Option<ToolpathId>,
+    pub span_id: Option<u32>,
+}
+
+impl SpanScope {
+    pub fn is_active(&self) -> bool {
+        self.toolpath_id.is_some() || self.span_id.is_some()
+    }
+
+    pub fn clear(&mut self) {
+        self.toolpath_id = None;
+        self.span_id = None;
+    }
+
+    /// True if a sample/issue/hotspot with this `toolpath_id` and `span_path`
+    /// is in scope. Empty/unset filter matches everything.
+    pub fn matches(&self, toolpath_id: usize, span_path: &[SpanId]) -> bool {
+        if let Some(tp) = self.toolpath_id
+            && tp.0 != toolpath_id
+        {
+            return false;
+        }
+        if let Some(sid) = self.span_id
+            && !span_path.iter().any(|s| s.0 == sid)
+        {
+            return false;
+        }
+        true
+    }
 }
 
 /// How the simulation stock mesh is colored.
@@ -350,6 +393,7 @@ impl SimulationState {
                 focused_issue_index: None,
                 highlight_active_item: true,
                 pending_inspect_toolpath: None,
+                span_scope: SpanScope::default(),
                 semantic_indexes: HashMap::new(),
                 runtime_profiles: HashMap::new(),
             },
