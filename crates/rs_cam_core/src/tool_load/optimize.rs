@@ -328,6 +328,25 @@ pub fn optimize_toolpath(
     let matched_lut_row =
         find_matched_lut_row(&ctx.tool, &ctx.material, &ctx, baseline_op.depth_per_pass());
 
+    // 5b. Pre-flight: classify the baseline against the gates before
+    //     burning any sims. If the failing axis isn't in the
+    //     optimizer's search space (deflection L/D, bipolar chipload),
+    //     refuse immediately with an op-aware prescription rather
+    //     than running stages that can't move the failing gate.
+    if let Some(refusal) = preflight_classify(
+        &ctx,
+        baseline_trace,
+        baseline_op.feed_rate(),
+        &baseline_verdict,
+        matched_lut_row.as_ref(),
+    ) {
+        return OptimizeOutcome::NoSafeImprovement {
+            reason: refusal.reason,
+            explanation: refusal.explanation,
+            attempted: vec![baseline_candidate],
+        };
+    }
+
     // Cancel check before any sims.
     if cancel.load(Ordering::SeqCst) {
         return OptimizeOutcome::NoSafeImprovement {
@@ -525,6 +544,115 @@ fn run_stage_1_grid(
         }
     }
     out
+}
+
+// ── Pre-flight classifier (HIGH-1, HIGH-3, HIGH-5 from the redesign) ──
+//
+// Before any sims fire, classify the baseline against each gate:
+//
+//   - Deflection `Exceeds` → search space (feed/RPM/DOC/stepover)
+//     can't reach a Within answer because L/D depends only on the
+//     tool config. Refuse with `DeflectionSetupLocked`.
+//   - Bipolar chipload (steady-state samples straddle both `cl_min`
+//     and `cl_max`) → no single feed/RPM scaling fixes both
+//     extremes. Refuse with `BipolarEngagement`.
+//
+// Both refusals carry an op-aware prescription string. The shape is
+// "<diagnostic> — <lever>", where the diagnostic explains *what* is
+// wrong and the lever points at a knob the user has access to.
+
+/// Outcome of pre-flight: either a refusal that should short-circuit
+/// the optimizer, or `None` to proceed to stages.
+struct PreflightRefusal {
+    reason: RefuseReason,
+    explanation: String,
+}
+
+/// Classify the baseline before running any stages. Returns `Some`
+/// when the optimizer should refuse early without burning sims.
+fn preflight_classify(
+    ctx: &EvaluationContext,
+    baseline_trace: &SimulationCutTrace,
+    operation_feed_rate_mm_min: f64,
+    baseline_verdict: &ToolpathLoadVerdict,
+    matched_lut_row: Option<&MatchedRow>,
+) -> Option<PreflightRefusal> {
+    // 1. Deflection — pure setup geometry, unreachable from search space.
+    if let Verdict::Exceeds { peak: ld_ratio, .. } = baseline_verdict.deflection {
+        return Some(PreflightRefusal {
+            reason: RefuseReason::DeflectionSetupLocked,
+            explanation: deflection_setup_prescription(&ctx.tool, ld_ratio),
+        });
+    }
+
+    // 2. Bipolar chipload — needs both LUT bounds to be defined,
+    //    otherwise we can't classify against an undefined floor or
+    //    ceiling. Many vendor rows publish only `chip_load_max_mm`,
+    //    so this gate is opt-in by row coverage.
+    if let Some(row) = matched_lut_row
+        && let (Some(cl_min), Some(cl_max)) = (row.chip_load_min_mm, row.chip_load_max_mm)
+    {
+        let steady = super::chipload::steady_state_samples_for_toolpath(
+            baseline_trace,
+            ctx.toolpath_id,
+            operation_feed_rate_mm_min,
+        );
+        if super::chipload::is_bipolar_engagement(&steady.samples, cl_min, cl_max) {
+            return Some(PreflightRefusal {
+                reason: RefuseReason::BipolarEngagement,
+                explanation: bipolar_prescription(ctx.operation_kind, ctx.op_family),
+            });
+        }
+    }
+
+    None
+}
+
+/// Build the user-facing prescription string for a deflection-setup-
+/// locked refusal. Reports the actual L/D ratio and the stickout that
+/// would bring it back to the safe target (L/D=4).
+fn deflection_setup_prescription(tool: &crate::tool::ToolDefinition, ld_ratio: f64) -> String {
+    let target_stickout_mm = (tool.diameter() * 4.0).max(0.0);
+    format!(
+        "tool L/D ratio is {ld_ratio:.1} (above 6.0 limit) — feed/RPM/DOC/stepover \
+         can't fix this; shorten stickout to ~{target_stickout_mm:.0} mm (target L/D=4) \
+         or use a stiffer tool"
+    )
+}
+
+/// Build the user-facing prescription string for a bipolar-engagement
+/// refusal. The lever depends on whether the operation has a
+/// depth-per-pass knob the user can adjust to reduce engagement
+/// variance: 2.5D ops with DOC/stepover can usually fix it; 3D
+/// finishing ops typically can't and need a setup change.
+fn bipolar_prescription(op_kind: OperationType, op_family: OperationFamily) -> String {
+    let lever = if has_doc_knob(op_kind) {
+        "lower stepover or raise depth-per-pass to reduce engagement variance across the toolpath"
+    } else {
+        match op_family {
+            OperationFamily::Contour | OperationFamily::Trace => {
+                "engagement variance is driven by the part geometry — break the operation into \
+                 multiple passes at fixed engagement, or use a smaller cutter"
+            }
+            OperationFamily::Parallel | OperationFamily::Scallop => {
+                "this is a 3D finishing op — reduce stepover for tighter passes, or shorten \
+                 the cutter to lower setup deflection"
+            }
+            OperationFamily::Face => {
+                "engagement variance on a face op usually means the stock or stepover is \
+                 misaligned with the cutter footprint — adjust stepover or face the stock first"
+            }
+            // Adaptive / Pocket / Adaptive3d are all has_doc_knob — they hit the branch above.
+            OperationFamily::Adaptive | OperationFamily::Pocket => {
+                "lower stepover or raise depth-per-pass to reduce engagement variance"
+            }
+        }
+    };
+    format!(
+        "steady-state chipload samples straddle the LUT chipload range \
+         (some below the burn floor, some above the breakage ceiling) — \
+         no single feed/RPM clears both extremes. {lever}."
+    )
 }
 
 /// Operation kinds with a `depth_per_pass` knob that Stage 1 sweeps.
@@ -1177,6 +1305,11 @@ pub(crate) struct EvaluationContext {
     /// Operation kind — used for the gate's LUT routing and for
     /// skipping ops the optimizer can't model.
     pub operation_kind: OperationType,
+    /// The op's `feeds_family` (pre-LUT-routing). Used by the pre-flight
+    /// prescription helpers to phrase op-aware refusals. The
+    /// `lut_op_family` field below is what the LUT lookup uses; this
+    /// one is for human-readable surface only.
+    pub op_family: OperationFamily,
     /// LUT family from the op's `feeds_family`.
     pub lut_op_family: LutOperationFamily,
     /// LUT pass role from the op's `feeds_pass_role`.
@@ -1200,6 +1333,7 @@ impl EvaluationContext {
             toolpath_index,
             toolpath_id: tc.id,
             operation_kind: tc.operation.op_type(),
+            op_family: spec.feeds_family,
             lut_op_family: lut_op_family_from(spec.feeds_family),
             lut_pass_role: lut_pass_role_from(spec.feeds_pass_role),
             tool,
@@ -2244,6 +2378,126 @@ mod orchestration_skip_tests {
         assert!(
             !matches!(outcome, OptimizeOutcome::Ranked(_)),
             "cancelled run should not produce Ranked, got {outcome:?}"
+        );
+    }
+
+    // ── Pre-flight refusals (Commit #1) ──────────────────────────────
+
+    /// Build a populated trace whose `toolpath_summaries[0]` reports a
+    /// non-zero cycle time, so `optimize_toolpath` walks past the
+    /// "no cycle time" skip path and reaches the pre-flight classifier.
+    fn trace_with_summary() -> SimulationCutTrace {
+        use crate::simulation_cut::SimulationToolpathCutSummary;
+        let mut trace = empty_trace();
+        trace.toolpath_summaries.push(SimulationToolpathCutSummary {
+            toolpath_id: 0,
+            sample_count: 100,
+            total_runtime_s: 60.0,
+            cutting_runtime_s: 50.0,
+            rapid_runtime_s: 10.0,
+            air_cut_time_s: 0.0,
+            low_engagement_time_s: 0.0,
+            average_engagement: 0.5,
+            peak_chipload_mm_per_tooth: 0.04,
+            peak_axial_doc_mm: 2.0,
+            total_removed_volume_est_mm3: 100.0,
+            average_mrr_mm3_s: 2.0,
+        });
+        trace
+    }
+
+    #[test]
+    fn deflection_exceeds_yields_setup_locked_refusal() {
+        // Default endmill has stickout 45mm, diameter 6.35mm →
+        // L/D ≈ 7.09 — above the 6.0 threshold. Pocket op with a
+        // populated trace summary walks past every prior skip path
+        // and lands in pre-flight, where the deflection Exceeds
+        // verdict triggers `DeflectionSetupLocked`.
+        let mut session = session_with_op(OperationConfig::Pocket(PocketConfig::default()));
+        let trace = trace_with_summary();
+        let cancel = AtomicBool::new(false);
+        let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
+        match outcome {
+            OptimizeOutcome::NoSafeImprovement {
+                reason,
+                explanation,
+                attempted,
+            } => {
+                assert_eq!(reason, RefuseReason::DeflectionSetupLocked);
+                assert!(
+                    explanation.contains("L/D"),
+                    "explanation should mention L/D, got: {explanation}"
+                );
+                assert!(
+                    explanation.contains("stickout"),
+                    "explanation should point at the stickout lever, got: {explanation}"
+                );
+                assert_eq!(
+                    attempted.len(),
+                    1,
+                    "deflection refusal should not burn any candidate sims — only the baseline \
+                     candidate should be attempted"
+                );
+            }
+            other => panic!("expected DeflectionSetupLocked NoSafeImprovement, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deflection_setup_locked_explanation_carries_target_stickout() {
+        // 6.35mm tool → target stickout for L/D=4 is 25mm. Verify
+        // the prescription number lands in the explanation string.
+        let tool = crate::tool::ToolDefinition::new(
+            Box::new(crate::tool::FlatEndmill::new(6.35, 20.0)),
+            6.35,
+            20.0,
+            40.0,
+            45.0, // L/D = 7.087
+            2,
+            crate::compute::tool_config::ToolMaterial::Carbide,
+        );
+        let s = deflection_setup_prescription(&tool, 7.087);
+        assert!(s.contains("7.1"), "ratio not in '{s}'");
+        assert!(s.contains("25"), "target stickout 25mm not in '{s}'");
+    }
+
+    #[test]
+    fn bipolar_prescription_for_doc_knob_op_points_at_doc_or_stepover() {
+        // Adaptive3d / Pocket / Adaptive / Rest / Face all have a DOC
+        // knob the user can adjust to reduce engagement variance.
+        let s = bipolar_prescription(OperationType::Adaptive3d, OperationFamily::Adaptive);
+        assert!(
+            s.contains("stepover") || s.contains("depth-per-pass"),
+            "DOC-knob op should suggest stepover or DOC, got: {s}"
+        );
+    }
+
+    #[test]
+    fn bipolar_prescription_for_3d_finishing_op_points_at_setup() {
+        // Parallel and Scallop have no DOC knob — engagement variance
+        // is driven by geometry. The prescription should point at a
+        // setup-level lever, not a DOC tweak.
+        let s = bipolar_prescription(OperationType::Scallop, OperationFamily::Parallel);
+        assert!(
+            !s.contains("depth-per-pass"),
+            "non-DOC-knob op should NOT suggest DOC tweak, got: {s}"
+        );
+        assert!(
+            s.contains("stepover") || s.contains("cutter"),
+            "3D finishing prescription should point at stepover or tool, got: {s}"
+        );
+    }
+
+    #[test]
+    fn bipolar_prescription_for_contour_points_at_geometry() {
+        // Contour and Trace are profile-following ops — variance comes
+        // from the part geometry, not stepover.
+        let s = bipolar_prescription(OperationType::Profile, OperationFamily::Contour);
+        assert!(
+            s.contains("part geometry")
+                || s.contains("multiple passes")
+                || s.contains("smaller cutter"),
+            "contour prescription should point at geometry-driven levers, got: {s}"
         );
     }
 }

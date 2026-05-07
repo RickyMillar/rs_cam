@@ -82,6 +82,51 @@ pub(crate) struct SteadyStateSamples<'a> {
     pub any_in_cut: bool,
 }
 
+/// Fraction of valid steady-state samples that must fall below
+/// `cl_min` (rubbing/burn) AND above `cl_max` (breakage) for the
+/// bipolar predicate to fire. Looser than 1 sample (which would
+/// trigger on a single transient noise sample) but tight enough to
+/// catch real bipolar toolpaths where engagement varies wildly.
+pub(crate) const BIPOLAR_SIDE_FRACTION: f64 = 0.05;
+
+/// Detect bipolar engagement: steady-state samples for one toolpath
+/// straddle both the LUT row's chipload-min and chipload-max bounds.
+/// When true, no single feed/RPM scaling fixes both extremes —
+/// raising feed clears burn but pushes more samples above breakage;
+/// lowering feed clears breakage but pushes more samples below burn.
+/// The user's lever is engagement variance (stepover / DOC / op
+/// strategy), not feed/RPM.
+///
+/// Uses sample counts rather than the median so a 30%-below /
+/// 40%-above toolpath isn't classified as Within by median collapse.
+/// `BIPOLAR_SIDE_FRACTION` (5% of valid samples) on each side is the
+/// threshold; both sides must clear it for the predicate to fire.
+pub(crate) fn is_bipolar_engagement(
+    steady_samples: &[(usize, &crate::simulation_cut::SimulationCutSample)],
+    cl_min: f64,
+    cl_max: f64,
+) -> bool {
+    let mut total: usize = 0;
+    let mut below: usize = 0;
+    let mut above: usize = 0;
+    for (_, s) in steady_samples {
+        let Some(cl) = s.effective_chip_thickness_mm else {
+            continue;
+        };
+        total += 1;
+        if cl < cl_min {
+            below += 1;
+        } else if cl > cl_max {
+            above += 1;
+        }
+    }
+    if total == 0 {
+        return false;
+    }
+    let threshold = ((total as f64 * BIPOLAR_SIDE_FRACTION).ceil() as usize).max(1);
+    below >= threshold && above >= threshold
+}
+
 /// Filter a sim trace down to the steady-state samples for one
 /// toolpath, applying the same cutting/air/feed filters used by the
 /// chipload gate. Extracted so the optimizer's pre-flight classifier
@@ -912,5 +957,90 @@ mod tests {
                 reason: UnmodeledReason::SimulationRequired
             }
         ));
+    }
+
+    // ── Bipolar engagement predicate ─────────────────────────────────
+
+    #[test]
+    fn bipolar_fires_when_both_extremes_populated() {
+        // 30 samples: 5 below cl_min=0.02, 5 above cl_max=0.10, rest in
+        // range. 5 / 30 = 16.7%, well above the 5% per-side threshold.
+        let mut samples = Vec::new();
+        for i in 0..5 {
+            samples.push(sample(0, i, 0.005, 0.5));
+        }
+        for i in 0..5 {
+            samples.push(sample(0, 100 + i, 0.15, 0.5));
+        }
+        for i in 0..20 {
+            samples.push(sample(0, 200 + i, 0.05, 0.5));
+        }
+        let refs: Vec<_> = samples.iter().enumerate().collect();
+        assert!(is_bipolar_engagement(&refs, 0.02, 0.10));
+    }
+
+    #[test]
+    fn bipolar_does_not_fire_when_only_below_min() {
+        // 10 samples below cl_min, 0 above cl_max → not bipolar (just
+        // burn risk, fixable by raising feed).
+        let mut samples = Vec::new();
+        for i in 0..10 {
+            samples.push(sample(0, i, 0.005, 0.5));
+        }
+        for i in 0..20 {
+            samples.push(sample(0, 100 + i, 0.05, 0.5));
+        }
+        let refs: Vec<_> = samples.iter().enumerate().collect();
+        assert!(!is_bipolar_engagement(&refs, 0.02, 0.10));
+    }
+
+    #[test]
+    fn bipolar_does_not_fire_when_only_above_max() {
+        // 10 samples above cl_max, 0 below cl_min → not bipolar (just
+        // breakage risk, fixable by lowering feed).
+        let mut samples = Vec::new();
+        for i in 0..10 {
+            samples.push(sample(0, i, 0.20, 0.5));
+        }
+        for i in 0..20 {
+            samples.push(sample(0, 100 + i, 0.05, 0.5));
+        }
+        let refs: Vec<_> = samples.iter().enumerate().collect();
+        assert!(!is_bipolar_engagement(&refs, 0.02, 0.10));
+    }
+
+    #[test]
+    fn bipolar_ignores_single_transient_samples_below_threshold() {
+        // 1 sample below + 1 sample above out of 100 → 1% on each side,
+        // below the 5% threshold. Single transient samples (corner
+        // brush, lead-in) shouldn't trip bipolar.
+        let mut samples = Vec::new();
+        samples.push(sample(0, 0, 0.005, 0.5));
+        samples.push(sample(0, 1, 0.20, 0.5));
+        for i in 0..98 {
+            samples.push(sample(0, 100 + i, 0.05, 0.5));
+        }
+        let refs: Vec<_> = samples.iter().enumerate().collect();
+        assert!(!is_bipolar_engagement(&refs, 0.02, 0.10));
+    }
+
+    #[test]
+    fn bipolar_returns_false_for_empty_samples() {
+        let samples: Vec<(usize, &SimulationCutSample)> = Vec::new();
+        assert!(!is_bipolar_engagement(&samples, 0.02, 0.10));
+    }
+
+    #[test]
+    fn bipolar_skips_samples_without_chip_thickness() {
+        // Samples whose effective_chip_thickness is None don't count
+        // toward the total — they aren't classified.
+        let mut s_below = sample(0, 0, 0.005, 0.5);
+        s_below.effective_chip_thickness_mm = None;
+        let mut s_above = sample(0, 1, 0.20, 0.5);
+        s_above.effective_chip_thickness_mm = None;
+        let in_range = sample(0, 2, 0.05, 0.5);
+        let samples = [s_below, s_above, in_range];
+        let refs: Vec<_> = samples.iter().enumerate().collect();
+        assert!(!is_bipolar_engagement(&refs, 0.02, 0.10));
     }
 }
