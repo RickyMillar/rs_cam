@@ -219,10 +219,17 @@ impl SpanAggregate {
     }
 }
 
-/// One-shot cache of `SpanAggregate` per `(toolpath_id, span_id)`, keyed
-/// by the `Arc<SimulationCutTrace>` pointer so it invalidates automatically
-/// when a new sim trace lands. The full sample list is scanned exactly
-/// once per trace; subsequent lookups are O(1).
+/// One-shot cache of derived per-trace data, keyed by the
+/// `Arc<SimulationCutTrace>` pointer so it invalidates automatically when
+/// a new sim trace lands. Currently caches:
+///
+/// - per-`(toolpath, span)` `SpanAggregate` for the inspector's Selected
+///   section (replaces a per-frame full sample scan)
+/// - per-toolpath cutting-sample indices for the signal-spine grouping
+///   (replaces a per-frame `O(samples × toolpaths)` linear bucket find)
+///
+/// The full sample list is scanned exactly once per trace; subsequent
+/// lookups are O(1).
 #[derive(Default)]
 pub struct SpanAggregateCache {
     /// `Arc::as_ptr(trace) as usize` of the trace this cache reflects.
@@ -230,10 +237,14 @@ pub struct SpanAggregateCache {
     /// content because the trace is large and immutable behind an Arc.
     cached_trace_ptr: Option<usize>,
     aggregates: HashMap<(ToolpathId, u32), SpanAggregate>,
+    /// Indices into `trace.samples` of cutting samples, partitioned by
+    /// toolpath. Used by `draw_signal_spine` to avoid re-grouping
+    /// hundreds of thousands of samples every frame.
+    cutting_indices: HashMap<ToolpathId, Vec<usize>>,
 }
 
 impl SpanAggregateCache {
-    /// Rebuild aggregates from `trace` if this is a new (or first) trace.
+    /// Rebuild caches from `trace` if this is a new (or first) trace.
     /// Cheap when the trace pointer matches the cached one.
     pub fn ensure_built(&mut self, trace: &Arc<SimulationCutTrace>) {
         let ptr = Arc::as_ptr(trace) as usize;
@@ -241,13 +252,17 @@ impl SpanAggregateCache {
             return;
         }
         self.aggregates.clear();
-        for sample in &trace.samples {
+        self.cutting_indices.clear();
+        for (idx, sample) in trace.samples.iter().enumerate() {
             let key_tp = ToolpathId(sample.toolpath_id);
             for sid in &sample.span_path {
                 self.aggregates
                     .entry((key_tp, sid.0))
                     .or_default()
                     .ingest(sample);
+            }
+            if sample.is_cutting {
+                self.cutting_indices.entry(key_tp).or_default().push(idx);
             }
         }
         self.cached_trace_ptr = Some(ptr);
@@ -257,9 +272,19 @@ impl SpanAggregateCache {
         self.aggregates.get(&(toolpath_id, span_id))
     }
 
+    /// Indices of cutting samples for `toolpath_id`. Empty slice when the
+    /// toolpath has no cutting samples in the cached trace.
+    pub fn cutting_indices_for(&self, toolpath_id: ToolpathId) -> &[usize] {
+        self.cutting_indices
+            .get(&toolpath_id)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
+    }
+
     pub fn invalidate(&mut self) {
         self.cached_trace_ptr = None;
         self.aggregates.clear();
+        self.cutting_indices.clear();
     }
 }
 
