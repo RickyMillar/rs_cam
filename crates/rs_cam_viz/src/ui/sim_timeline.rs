@@ -65,7 +65,7 @@ pub fn draw(
         &active_semantic,
         events,
     );
-    draw_signal_spine(ui, sim, session, gui, events);
+    draw_signal_spine(ui, sim, session, gui, &load_report, events);
 }
 
 fn draw_verdict_hud(
@@ -196,23 +196,32 @@ fn draw_signal_spine(
     sim: &mut SimulationState,
     session: &ProjectSession,
     gui: &GuiState,
+    load_report: &ToolLoadReport,
     events: &mut Vec<AppEvent>,
 ) {
     // Signal graphs only render when cut-metric capture was on for the
     // last sim run. If there's no trace, hide this section entirely —
     // the user enables capture from the left panel's "Setup & run" and
     // re-runs to populate it.
-    let Some(trace) = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref()) else {
-        return;
-    };
+    // Acquire the trace as an Arc so we can keep an immutable handle for
+    // reads while still calling `&mut sim` methods (e.g. ensure_built).
+    let trace_arc = sim
+        .results
+        .as_ref()
+        .and_then(|r| r.cut_trace.as_ref())
+        .map(std::sync::Arc::clone);
+    let Some(trace_arc) = trace_arc else { return };
+    sim.debug.span_aggregates.ensure_built(&trace_arc);
+    let trace = trace_arc.as_ref();
     let total_moves = sim.total_moves();
     if total_moves == 0 {
         return;
     }
 
-    // Group cutting samples by toolpath and convert their X coordinate to the
-    // global move index that the boundary timeline uses. Each toolpath becomes
-    // its own Line so transitions between toolpaths render as visible gaps.
+    // Group cutting samples by toolpath using the per-trace cache. Without
+    // this, the per-frame `for sample in samples.iter()` + linear
+    // `groups.iter_mut().find()` was O(samples × toolpaths) and hundreds
+    // of thousands of ops on a real job.
     let boundaries: Vec<(crate::state::toolpath::ToolpathId, usize, egui::Color32)> = sim
         .boundaries()
         .iter()
@@ -230,21 +239,20 @@ fn draw_signal_spine(
 
     let mut groups: Vec<ToolpathGroup> = boundaries
         .iter()
-        .map(|(id, start, color)| ToolpathGroup {
-            toolpath_id: *id,
-            start_move: *start,
-            color: *color,
-            samples: Vec::new(),
+        .map(|(id, start, color)| {
+            let indices = sim.debug.span_aggregates.cutting_indices_for(*id);
+            let samples: Vec<&SimulationCutSample> = indices
+                .iter()
+                .filter_map(|&idx| trace.samples.get(idx))
+                .collect();
+            ToolpathGroup {
+                toolpath_id: *id,
+                start_move: *start,
+                color: *color,
+                samples,
+            }
         })
         .collect();
-    for sample in trace.samples.iter().filter(|s| s.is_cutting) {
-        if let Some(group) = groups
-            .iter_mut()
-            .find(|g| g.toolpath_id.0 == sample.toolpath_id)
-        {
-            group.samples.push(sample);
-        }
-    }
 
     // Inspector pin / playback-derived focus filters the per-TP groups so
     // graphs show only the selected toolpath when one is focused. The
@@ -295,15 +303,10 @@ fn draw_signal_spine(
         .collect();
 
     // Add tool-load gate markers — one dot per Exceeds verdict at the
-    // gate's actual worst-sample move (not the hotspot's region start).
-    // The simulator's hotspot data is one big "this whole toolpath has
-    // issues" region indexed by `move_start = 0/5`, which lands the dot
-    // at the very start of the graph regardless of where the chipload
-    // actually peaks. The gate's `sample_range.start` is the real worst
-    // sample. Index offset of 10000 keeps these distinct from cut-trace
-    // hotspots when the user clicks one.
-    let load_report_for_markers = rs_cam_core::gcode::project_load_report(session, Some(trace));
-    for (i, verdict) in load_report_for_markers.per_toolpath.iter().enumerate() {
+    // gate's actual worst-sample move. Reuses the timeline's already-
+    // memoed `load_report` (passed in) instead of building a second copy
+    // per frame.
+    for (i, verdict) in load_report.per_toolpath.iter().enumerate() {
         if let Some(focus) = focused_id
             && verdict.toolpath_id != focus.0
         {
