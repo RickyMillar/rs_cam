@@ -519,9 +519,9 @@ impl ProjectSession {
 
                 // ── Boundary clipping ─────────────────────────────────
                 // After dressups, clip the toolpath to the machining boundary
-                // (matching the GUI compute path). Phase 3i / #58: pass through
-                // an AnnotatedToolpath; spans are invalidated by the clip until
-                // a precise remap is implemented.
+                // (matching the GUI compute path). Spans are precisely
+                // remapped through the clip via the input→output provenance
+                // map (S83) so spans_valid stays true.
                 if boundary_config.enabled {
                     let clipped = Self::apply_boundary_clip(
                         annotated,
@@ -536,11 +536,10 @@ impl ProjectSession {
                     annotated = clipped;
                 }
 
-                let toolpath = annotated.toolpath;
                 let stats = ToolpathStats {
-                    move_count: toolpath.moves.len(),
-                    cutting_distance: toolpath.total_cutting_distance(),
-                    rapid_distance: toolpath.total_rapid_distance(),
+                    move_count: annotated.toolpath.moves.len(),
+                    cutting_distance: annotated.toolpath.total_cutting_distance(),
+                    rapid_distance: annotated.toolpath.total_rapid_distance(),
                 };
 
                 let mut debug_trace = debug_recorder.finish();
@@ -550,7 +549,7 @@ impl ProjectSession {
                 self.results.insert(
                     index,
                     ToolpathComputeResult {
-                        toolpath: Arc::new(toolpath),
+                        annotated: Arc::new(annotated),
                         stats,
                         debug_trace: Some(debug_trace),
                         semantic_trace: Some(semantic_trace),
@@ -831,7 +830,7 @@ impl ProjectSession {
                     if opts.skip_ids.contains(&tc.id) {
                         continue;
                     }
-                    if result.toolpath.moves.len() < 2 {
+                    if result.annotated.toolpath.moves.len() < 2 {
                         continue;
                     }
 
@@ -844,16 +843,10 @@ impl ProjectSession {
                         build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill))
                     });
 
-                    // ToolpathComputeResult still exposes Toolpath only; until
-                    // S1.5 lifts the core session to AnnotatedToolpath, wrap
-                    // with empty spans here. Sim samples produced through this
-                    // path will carry empty `span_path`.
                     entries.push(SimToolpathEntry {
                         id: tc.id,
                         name: tc.name.clone(),
-                        annotated: Arc::new(crate::toolpath_spans::AnnotatedToolpath::new(
-                            (*result.toolpath).clone(),
-                        )),
+                        annotated: Arc::clone(&result.annotated),
                         tool: tool_def,
                         flute_count,
                         tool_summary,
@@ -959,7 +952,7 @@ impl ProjectSession {
         let tool_def = build_cutter(tool);
 
         let request = CollisionCheckRequest {
-            toolpath: &result.toolpath,
+            toolpath: result.toolpath(),
             tool: tool_def,
             mesh: model,
         };
@@ -1002,12 +995,8 @@ impl ProjectSession {
             flute_count: Some(tool.flute_count),
         };
 
-        // ToolpathComputeResult exposes only Toolpath (S1.5 deferred); wrap
-        // with empty spans so narration falls back to Z-clustering on this
-        // standalone-CLI path. The viz path passes the real spans.
-        let annotated = crate::toolpath_spans::AnnotatedToolpath::new((*result.toolpath).clone());
         Ok(crate::narrate::narrate_toolpath_with_context(
-            &annotated,
+            &result.annotated,
             result.semantic_trace.as_ref(),
             cut_trace,
             result.debug_trace.as_ref(),
@@ -1411,7 +1400,9 @@ mod tests {
         s.results.insert(
             0,
             ToolpathComputeResult {
-                toolpath: Arc::new(crate::toolpath::Toolpath::new()),
+                annotated: Arc::new(crate::toolpath_spans::AnnotatedToolpath::new(
+                    crate::toolpath::Toolpath::new(),
+                )),
                 stats: ToolpathStats::default(),
                 debug_trace: None,
                 semantic_trace: None,
@@ -1479,7 +1470,9 @@ mod tests {
         s.results.insert(
             0,
             ToolpathComputeResult {
-                toolpath: Arc::new(crate::toolpath::Toolpath::new()),
+                annotated: Arc::new(crate::toolpath_spans::AnnotatedToolpath::new(
+                    crate::toolpath::Toolpath::new(),
+                )),
                 stats: ToolpathStats::default(),
                 debug_trace: None,
                 semantic_trace: None,

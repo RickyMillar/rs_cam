@@ -383,10 +383,21 @@ pub struct ToolpathConfig {
 
 /// Result of generating a single toolpath.
 pub struct ToolpathComputeResult {
-    pub toolpath: Arc<Toolpath>,
+    /// Generated toolpath with semantic spans attached. Spans are emitted
+    /// directly by the operation generators; transforms (dressups, boundary
+    /// clip, TSP, arc-fit, feed optimisation) either remap them or set
+    /// [`AnnotatedToolpath::spans_valid`] to `false` when they can't.
+    pub annotated: Arc<crate::toolpath_spans::AnnotatedToolpath>,
     pub stats: ToolpathStats,
     pub debug_trace: Option<ToolpathDebugTrace>,
     pub semantic_trace: Option<ToolpathSemanticTrace>,
+}
+
+impl ToolpathComputeResult {
+    /// Convenience accessor for the underlying [`Toolpath`].
+    pub fn toolpath(&self) -> &Toolpath {
+        &self.annotated.toolpath
+    }
 }
 
 /// Summary of a toolpath for listing.
@@ -1195,7 +1206,9 @@ mod tests {
         session.results.insert(
             0,
             ToolpathComputeResult {
-                toolpath: std::sync::Arc::new(crate::toolpath::Toolpath::new()),
+                annotated: std::sync::Arc::new(crate::toolpath_spans::AnnotatedToolpath::new(
+                    crate::toolpath::Toolpath::new(),
+                )),
                 stats: crate::compute::config::ToolpathStats::default(),
                 debug_trace: None,
                 semantic_trace: None,

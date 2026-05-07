@@ -535,7 +535,7 @@ pub fn export_gcode_checked(
         .filter_map(|(idx, tc)| {
             let result = project.get_result(idx)?;
             Some(GcodePhase {
-                toolpath: &result.toolpath,
+                toolpath: result.toolpath(),
                 spindle_rpm: effective_spindle_rpm(
                     &tc.operation,
                     project.post_config().spindle_speed,
