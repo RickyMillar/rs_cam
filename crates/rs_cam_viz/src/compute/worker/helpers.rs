@@ -256,7 +256,13 @@ pub(super) fn apply_dressups(
             |scope| {
                 scope.set_param("tolerance", tolerance);
             },
-            |tp| fit_arcs(&tp, tolerance),
+            |tp| {
+                fit_arcs(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
+                    tolerance,
+                )
+                .toolpath
+            },
         );
     }
     if let Some(ref prior_stock) = req.prior_stock {

@@ -2766,7 +2766,11 @@ fn main() -> Result<()> {
             // Apply arc fitting if requested
             if arc_tolerance > 0.0 {
                 let before = toolpath.moves.len();
-                toolpath = fit_arcs(&toolpath, arc_tolerance);
+                toolpath = fit_arcs(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(toolpath),
+                    arc_tolerance,
+                )
+                .toolpath;
                 debug!(
                     before = before,
                     after = toolpath.moves.len(),

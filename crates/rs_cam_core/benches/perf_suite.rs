@@ -245,7 +245,12 @@ fn bench_arc_fitting(c: &mut Criterion) {
     for n in [500, 2000, 10000] {
         let tp = make_linear_toolpath(n);
         group.bench_function(BenchmarkId::new("fit_arcs", n), |b| {
-            b.iter(|| black_box(fit_arcs(&tp, 0.01)))
+            b.iter(|| {
+                black_box(fit_arcs(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp.clone()),
+                    0.01,
+                ))
+            })
         });
     }
 

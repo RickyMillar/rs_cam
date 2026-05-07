@@ -1130,11 +1130,11 @@ pub fn apply_dressups(
         );
     }
 
-    // 5. Arc fitting — not span-aware
+    // 5. Arc fitting — span-aware (Phase 3e / #54). Honors RapidOrderBarrier /
+    // DepthPass boundaries; remaps spans through the N-to-1 collapse.
     if cfg.arc_fitting {
-        let new_tp = crate::arcfit::fit_arcs(&current.toolpath, cfg.arc_tolerance);
-        current.toolpath = new_tp;
-        any_unaware_mutation = true;
+        stage_spans(&mut current, any_unaware_mutation);
+        current = crate::arcfit::fit_arcs(current, cfg.arc_tolerance);
     }
 
     // 6. Rapid order optimization — not span-aware
