@@ -743,6 +743,43 @@ fn draw_trace_provenance(
                         trace.annotations.len()
                     ));
                 }
+                if let Some(result) = rt.result.as_ref() {
+                    use rs_cam_core::toolpath_spans::SpanKind;
+                    let spans = result.spans();
+                    let mut counts: std::collections::BTreeMap<&'static str, usize> =
+                        std::collections::BTreeMap::new();
+                    for s in spans {
+                        let key = match s.kind {
+                            SpanKind::Operation => "Operation",
+                            SpanKind::DepthPass => "DepthPass",
+                            SpanKind::Region => "Region",
+                            SpanKind::Entry => "Entry",
+                            SpanKind::LeadOut => "LeadOut",
+                            SpanKind::LinkBridge => "LinkBridge",
+                            SpanKind::DressupArtifact => "DressupArtifact",
+                            SpanKind::RapidOrderBarrier => "RapidOrderBarrier",
+                        };
+                        *counts.entry(key).or_insert(0) += 1;
+                    }
+                    let breakdown = if counts.is_empty() {
+                        "none".to_owned()
+                    } else {
+                        counts
+                            .iter()
+                            .map(|(k, n)| format!("{k}×{n}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    };
+                    let validity = if result.spans_valid() {
+                        "valid"
+                    } else {
+                        "INVALID"
+                    };
+                    ui.label(format!(
+                        "Structural spans: {} ({validity}) — {breakdown}",
+                        spans.len()
+                    ));
+                }
             }
 
             if let Some(results) = sim.results.as_ref() {

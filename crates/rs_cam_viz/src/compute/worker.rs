@@ -25,6 +25,7 @@ use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::toolpath::Toolpath;
+use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 
 use super::{ComputeBackend, ComputeError, ComputeLane, ComputeMessage, LaneSnapshot, LaneState};
 use crate::state::job::ToolConfig;
@@ -72,7 +73,7 @@ pub struct ComputeResult {
 pub struct SetupSimToolpath {
     pub id: ToolpathId,
     pub name: String,
-    pub toolpath: Arc<Toolpath>,
+    pub annotated: Arc<AnnotatedToolpath>,
     pub tool: ToolConfig,
     pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
 }
@@ -142,7 +143,7 @@ pub struct SimulationResult {
 }
 
 pub struct CollisionRequest {
-    pub toolpath: Arc<Toolpath>,
+    pub annotated: Arc<AnnotatedToolpath>,
     pub tool: ToolConfig,
     pub mesh: Arc<TriangleMesh>,
 }

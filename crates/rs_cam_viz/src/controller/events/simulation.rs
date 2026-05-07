@@ -132,7 +132,7 @@ impl<B: ComputeBackend> AppController<B> {
                     Some(SetupSimToolpath {
                         id: ToolpathId(tc.id),
                         name: tc.name.clone(),
-                        toolpath: Arc::clone(&result.toolpath),
+                        annotated: Arc::clone(&result.annotated),
                         tool,
                         semantic_trace: rt.semantic_trace.clone(),
                     })
@@ -285,12 +285,12 @@ impl<B: ComputeBackend> AppController<B> {
                 .iter()
                 .find(|m| m.id == tc.model_id)
                 .and_then(|m| m.mesh.clone())?;
-            Some((Arc::clone(&result.toolpath), tool, mesh))
+            Some((Arc::clone(&result.annotated), tool, mesh))
         });
 
-        if let Some((toolpath, tool, mesh)) = toolpath_data {
+        if let Some((annotated, tool, mesh)) = toolpath_data {
             self.compute.submit_collision(CollisionRequest {
-                toolpath,
+                annotated,
                 tool,
                 mesh,
             });

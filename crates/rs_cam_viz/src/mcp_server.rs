@@ -287,6 +287,20 @@ impl EmbeddedCamServer {
         )
     }
 
+    #[tool(
+        name = "inspect_spans",
+        description = "Dump the structural spans of a generated toolpath: Operation, DepthPass, Region, Entry, LeadOut, LinkBridge, DressupArtifact, and RapidOrderBarrier ranges over the move list. Use to inspect toolpath anatomy (which moves belong to which pass / dressup) without parsing the raw move dump. Run generate_toolpath first."
+    )]
+    async fn inspect_spans(
+        &self,
+        Parameters(IndexParam { index }): Parameters<IndexParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::InspectSpans { index })
+                .await,
+        )
+    }
+
     // ── Mutation tools ───────────────────────────────────────────────
 
     #[tool(

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use rs_cam_core::enriched_mesh::FaceGroupId;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::toolpath::Toolpath;
+use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span};
 
 use crate::state::job::{ModelId, ToolId};
 
@@ -155,11 +156,25 @@ pub struct ToolpathEntry {
 
 #[derive(Clone)]
 pub struct ToolpathResult {
-    pub toolpath: Arc<Toolpath>,
+    pub annotated: Arc<AnnotatedToolpath>,
     pub stats: ToolpathStats,
     pub debug_trace: Option<Arc<rs_cam_core::debug_trace::ToolpathDebugTrace>>,
     pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
     pub debug_trace_path: Option<PathBuf>,
+}
+
+impl ToolpathResult {
+    pub fn toolpath(&self) -> &Toolpath {
+        &self.annotated.toolpath
+    }
+
+    pub fn spans(&self) -> &[Span] {
+        &self.annotated.spans
+    }
+
+    pub fn spans_valid(&self) -> bool {
+        self.annotated.spans_valid
+    }
 }
 
 impl ToolpathEntry {
@@ -272,7 +287,7 @@ mod tests {
         source.stock_source = StockSource::FromRemainingStock;
         source.status = ComputeStatus::Done;
         source.result = Some(ToolpathResult {
-            toolpath: Arc::new(Toolpath::new()),
+            annotated: Arc::new(AnnotatedToolpath::new(Toolpath::new())),
             stats: ToolpathStats::default(),
             debug_trace: None,
             semantic_trace: None,
@@ -306,7 +321,7 @@ mod tests {
 
         entry.status = ComputeStatus::Error("x".to_owned());
         entry.result = Some(ToolpathResult {
-            toolpath: Arc::new(Toolpath::new()),
+            annotated: Arc::new(AnnotatedToolpath::new(Toolpath::new())),
             stats: ToolpathStats::default(),
             debug_trace: None,
             semantic_trace: None,

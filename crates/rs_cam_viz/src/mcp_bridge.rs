@@ -65,6 +65,12 @@ pub enum McpRequestKind {
     InspectBrepFaces {
         model_id: usize,
     },
+    /// Dump the structural spans (Operation, DepthPass, Region, Entry, LeadOut,
+    /// LinkBridge, DressupArtifact, RapidOrderBarrier) of a generated toolpath.
+    /// Lets agents inspect toolpath anatomy without parsing the raw move list.
+    InspectSpans {
+        index: usize,
+    },
 
     // ── Mutations (instant) ──────────────────────────────────────────
     AddAlignmentPin {

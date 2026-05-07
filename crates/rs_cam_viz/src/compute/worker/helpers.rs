@@ -95,7 +95,7 @@ where
 
     set_phase("Build collision index");
     let core_req = core_cc::CollisionCheckRequest {
-        toolpath: &req.toolpath,
+        toolpath: &req.annotated.toolpath,
         tool: build_cutter(&req.tool),
         mesh: &req.mesh,
     };
