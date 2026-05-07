@@ -71,6 +71,11 @@ pub enum McpRequestKind {
     InspectBrepFaces {
         model_id: usize,
     },
+    /// Per-toolpath listing of rapid + holder collisions: which moves they
+    /// happen at, what XYZ position, and the local move index within the
+    /// toolpath. Localizes the project-wide `rapid_collision_count` from
+    /// run_simulation. Run simulation first.
+    InspectCollisions,
     /// Dump the structural spans (Operation, DepthPass, Region, Entry, LeadOut,
     /// LinkBridge, DressupArtifact, RapidOrderBarrier) of a generated toolpath.
     /// Lets agents inspect toolpath anatomy without parsing the raw move list.
