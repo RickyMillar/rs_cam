@@ -65,7 +65,52 @@ use super::verdict::{Confidence, ExceedsReason, UnmodeledReason, Verdict};
 /// 5% is loose enough to absorb sub-sample feed-integration noise but
 /// tight enough to exclude common ramp feeds (typically 50% of cutting
 /// feed) and plunge feeds (typically 10–30%).
-const STEADY_STATE_FEED_FRACTION: f64 = 0.95;
+pub(crate) const STEADY_STATE_FEED_FRACTION: f64 = 0.95;
+
+/// Result of filtering a sim trace to in-cut, non-air, steady-state
+/// samples for a single toolpath. Borrows the underlying trace.
+pub(crate) struct SteadyStateSamples<'a> {
+    /// `(global_index_into_trace, sample)` tuples for samples whose
+    /// feed is within `STEADY_STATE_FEED_FRACTION` of the commanded
+    /// operation feed. Empty for an all-transient toolpath (e.g. an
+    /// all-plunge drill cycle).
+    pub samples: Vec<(usize, &'a crate::simulation_cut::SimulationCutSample)>,
+    /// `true` if at least one sample for this toolpath was in-cut and
+    /// out of air, regardless of feed. Distinguishes "no usable cut
+    /// samples at all" (SimulationRequired) from "samples exist but
+    /// none meet the steady-state threshold" (SteadyStateSamplesNotPresent).
+    pub any_in_cut: bool,
+}
+
+/// Filter a sim trace down to the steady-state samples for one
+/// toolpath, applying the same cutting/air/feed filters used by the
+/// chipload gate. Extracted so the optimizer's pre-flight classifier
+/// can read the same sample set the gate verdict was computed from
+/// without duplicating the threshold constants.
+pub(crate) fn steady_state_samples_for_toolpath<'a>(
+    trace: &'a SimulationCutTrace,
+    toolpath_id: usize,
+    operation_feed_rate_mm_min: f64,
+) -> SteadyStateSamples<'a> {
+    let feed_threshold = STEADY_STATE_FEED_FRACTION * operation_feed_rate_mm_min;
+    let mut any_in_cut = false;
+    let samples = trace
+        .samples
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| {
+            if s.toolpath_id != toolpath_id || !s.is_cutting || s.radial_engagement < 0.02 {
+                return None;
+            }
+            any_in_cut = true;
+            (s.feed_rate_mm_min >= feed_threshold).then_some((i, s))
+        })
+        .collect();
+    SteadyStateSamples {
+        samples,
+        any_in_cut,
+    }
+}
 
 /// Burn-risk verdict semantics.
 ///
@@ -128,26 +173,16 @@ pub fn evaluate(
     // Skip rapids (`!is_cutting`) and air-cut samples (`radial_engagement
     // < 0.02` — same threshold as `SimulationCutIssueKind::AirCut` per
     // `simulation_cut.rs`). Air cuts have no real chip and produce
-    // misleading chipload readings.
-    //
-    // Steady-state filter (Item C): only count samples whose feed rate
-    // matches the commanded operation feed. Transient samples (plunge,
-    // ramp, lead-in) at lower feeds get a separate non-decision rather
-    // than being measured against the steady-state LUT envelope.
-    let feed_threshold = STEADY_STATE_FEED_FRACTION * operation_feed_rate_mm_min;
-    let mut any_in_cut_for_toolpath = false;
-    let steady_samples: Vec<(usize, &crate::simulation_cut::SimulationCutSample)> = trace
-        .samples
-        .iter()
-        .enumerate()
-        .filter_map(|(i, s)| {
-            if s.toolpath_id != toolpath_id || !s.is_cutting || s.radial_engagement < 0.02 {
-                return None;
-            }
-            any_in_cut_for_toolpath = true;
-            (s.feed_rate_mm_min >= feed_threshold).then_some((i, s))
-        })
-        .collect();
+    // misleading chipload readings. Steady-state filter (Item C): only
+    // count samples whose feed rate matches the commanded operation
+    // feed; transient samples (plunge, ramp, lead-in) at lower feeds
+    // get a separate non-decision rather than being measured against
+    // the steady-state LUT envelope. See
+    // `steady_state_samples_for_toolpath` for the canonical filter.
+    let SteadyStateSamples {
+        samples: steady_samples,
+        any_in_cut: any_in_cut_for_toolpath,
+    } = steady_state_samples_for_toolpath(trace, toolpath_id, operation_feed_rate_mm_min);
 
     // 3. Build verdicts for no usable sample data before attempting a LUT
     // lookup. This preserves the distinction between missing samples and
