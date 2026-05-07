@@ -138,8 +138,22 @@ impl super::RsCamApp {
                 let resp = self.mcp_inspect_brep_faces(model_id);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
-            McpRequestKind::InspectSpans { index } => {
-                let resp = self.mcp_inspect_spans(index);
+            McpRequestKind::InspectSpans {
+                index,
+                kind,
+                parent_id,
+                pass_index,
+                region_id,
+                max_spans,
+            } => {
+                let resp = self.mcp_inspect_spans(
+                    index,
+                    kind.as_deref(),
+                    parent_id,
+                    pass_index,
+                    region_id,
+                    max_spans,
+                );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
 
@@ -1204,9 +1218,15 @@ impl super::RsCamApp {
         json_str(serde_json::json!(result))
     }
 
-    fn mcp_inspect_spans(&self, index: usize) -> String {
-        use rs_cam_core::toolpath_spans::SpanKind;
-
+    fn mcp_inspect_spans(
+        &self,
+        index: usize,
+        kind: Option<&str>,
+        parent_id: Option<u32>,
+        pass_index: Option<u32>,
+        region_id: Option<u32>,
+        max_spans: Option<usize>,
+    ) -> String {
         let session = &self.controller.state().session;
         let gui = &self.controller.state().gui;
         let Some(tc) = session.toolpath_configs().get(index) else {
@@ -1224,55 +1244,23 @@ impl super::RsCamApp {
         };
 
         let n_moves = result.toolpath().moves.len();
-        let spans = result.spans();
-
-        let kind_label = |k: SpanKind| -> &'static str {
-            match k {
-                SpanKind::Operation => "Operation",
-                SpanKind::DepthPass => "DepthPass",
-                SpanKind::Region => "Region",
-                SpanKind::Entry => "Entry",
-                SpanKind::LeadOut => "LeadOut",
-                SpanKind::LinkBridge => "LinkBridge",
-                SpanKind::DressupArtifact => "DressupArtifact",
-                SpanKind::RapidOrderBarrier => "RapidOrderBarrier",
-            }
-        };
-
-        // Per-kind tally for the summary row.
-        let mut kind_counts: std::collections::BTreeMap<&'static str, usize> =
-            std::collections::BTreeMap::new();
-        for s in spans {
-            *kind_counts.entry(kind_label(s.kind)).or_insert(0) += 1;
+        match build_inspect_spans_response(
+            tc.id,
+            index,
+            &tc.name,
+            tc.operation.label(),
+            n_moves,
+            result.spans(),
+            result.spans_valid(),
+            kind,
+            parent_id,
+            pass_index,
+            region_id,
+            max_spans,
+        ) {
+            Ok(value) => json_str(value),
+            Err(msg) => json_str(serde_json::json!({ "error": msg })),
         }
-
-        let spans_json: Vec<serde_json::Value> = spans
-            .iter()
-            .enumerate()
-            .map(|(id, s)| {
-                serde_json::json!({
-                    "id": id,
-                    "kind": kind_label(s.kind),
-                    "start_move": s.start_move,
-                    "end_move": s.end_move,
-                    "is_boundary": s.is_boundary(),
-                    "label": &*s.label,
-                    "payload": s.payload.as_ref().map(|p| format!("{p:?}")),
-                })
-            })
-            .collect();
-
-        json_str(serde_json::json!({
-            "toolpath_id": tc.id,
-            "toolpath_index": index,
-            "name": tc.name,
-            "operation": tc.operation.label(),
-            "move_count": n_moves,
-            "span_count": spans.len(),
-            "spans_valid": result.spans_valid(),
-            "kind_counts": kind_counts,
-            "spans": spans_json,
-        }))
     }
 
     fn mcp_inspect_stock(&self) -> String {
@@ -2756,5 +2744,407 @@ fn parse_span_kind_filter(s: &str) -> Result<rs_cam_core::toolpath_spans::SpanKi
         "dressup_artifact" => Ok(SpanKind::DressupArtifact),
         "rapid_order_barrier" => Ok(SpanKind::RapidOrderBarrier),
         other => Err(format!("unknown span_kind {other:?}")),
+    }
+}
+
+fn span_kind_label(k: rs_cam_core::toolpath_spans::SpanKind) -> &'static str {
+    use rs_cam_core::toolpath_spans::SpanKind;
+    match k {
+        SpanKind::Operation => "Operation",
+        SpanKind::DepthPass => "DepthPass",
+        SpanKind::Region => "Region",
+        SpanKind::Entry => "Entry",
+        SpanKind::LeadOut => "LeadOut",
+        SpanKind::LinkBridge => "LinkBridge",
+        SpanKind::DressupArtifact => "DressupArtifact",
+        SpanKind::RapidOrderBarrier => "RapidOrderBarrier",
+    }
+}
+
+fn span_to_json(id: usize, s: &rs_cam_core::toolpath_spans::Span) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
+        "kind": span_kind_label(s.kind),
+        "start_move": s.start_move,
+        "end_move": s.end_move,
+        "is_boundary": s.is_boundary(),
+        "label": &*s.label,
+        "payload": s.payload.as_ref().map(|p| format!("{p:?}")),
+    })
+}
+
+/// Build the JSON response body for `inspect_spans`. Returns the response
+/// envelope on success or an error message on bad filter input.
+///
+/// Default (no filter) returns a summary: `kind_counts` plus outermost spans
+/// (Operation + DepthPass) under `top_level` with child counts. Setting any
+/// of `kind`, `parent_id`, `pass_index`, `region_id` switches to detail mode
+/// and returns matching spans under `spans`, with `total_matching` and
+/// `truncated` reflecting `max_spans`.
+#[allow(clippy::too_many_arguments)]
+fn build_inspect_spans_response(
+    toolpath_id: usize,
+    toolpath_index: usize,
+    name: &str,
+    operation_label: &str,
+    n_moves: usize,
+    spans: &[rs_cam_core::toolpath_spans::Span],
+    spans_valid: bool,
+    kind: Option<&str>,
+    parent_id: Option<u32>,
+    pass_index: Option<u32>,
+    region_id: Option<u32>,
+    max_spans: Option<usize>,
+) -> Result<serde_json::Value, String> {
+    use rs_cam_core::toolpath_spans::{SpanKind, SpanPayload};
+
+    let kind_filter = kind.map(parse_span_kind_filter).transpose()?;
+
+    // Validate parent_id and resolve its move range.
+    let parent_range: Option<(usize, usize)> = match parent_id {
+        Some(pid) => {
+            let parent = spans.get(pid as usize).ok_or_else(|| {
+                format!("parent_id {pid} out of range (span_count={})", spans.len())
+            })?;
+            Some((parent.start_move, parent.end_move))
+        }
+        None => None,
+    };
+
+    // Per-kind tally for the summary row — always included.
+    let mut kind_counts: std::collections::BTreeMap<&'static str, usize> =
+        std::collections::BTreeMap::new();
+    for s in spans {
+        *kind_counts.entry(span_kind_label(s.kind)).or_insert(0) += 1;
+    }
+
+    let filter_active =
+        kind.is_some() || parent_id.is_some() || pass_index.is_some() || region_id.is_some();
+
+    let mut response = serde_json::json!({
+        "toolpath_id": toolpath_id,
+        "toolpath_index": toolpath_index,
+        "name": name,
+        "operation": operation_label,
+        "move_count": n_moves,
+        "span_count": spans.len(),
+        "spans_valid": spans_valid,
+        "kind_counts": kind_counts,
+    });
+
+    if !filter_active {
+        // Summary mode: outermost spans only (Operation + DepthPass), with
+        // child counts of contained non-boundary spans (excluding self).
+        let top_level: Vec<serde_json::Value> = spans
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| matches!(s.kind, SpanKind::Operation | SpanKind::DepthPass))
+            .map(|(id, s)| {
+                let child_count = spans
+                    .iter()
+                    .enumerate()
+                    .filter(|(other_id, c)| {
+                        *other_id != id
+                            && !c.is_boundary()
+                            && c.start_move >= s.start_move
+                            && c.end_move <= s.end_move
+                    })
+                    .count();
+                let mut v = span_to_json(id, s);
+                if let serde_json::Value::Object(map) = &mut v {
+                    map.insert("child_count".into(), serde_json::json!(child_count));
+                }
+                v
+            })
+            .collect();
+
+        if let serde_json::Value::Object(map) = &mut response {
+            map.insert("top_level".into(), serde_json::Value::Array(top_level));
+            map.insert(
+                "hint".into(),
+                serde_json::json!(
+                    "Pass kind, parent_id, pass_index, or region_id to retrieve detail spans."
+                ),
+            );
+        }
+        return Ok(response);
+    }
+
+    // Detail mode: collect matching spans, then truncate.
+    let matching: Vec<(usize, &rs_cam_core::toolpath_spans::Span)> = spans
+        .iter()
+        .enumerate()
+        .filter(|(id, s)| {
+            if let Some(want) = kind_filter
+                && s.kind != want
+            {
+                return false;
+            }
+            if let Some((p_start, p_end)) = parent_range {
+                // Child must be strictly different from parent and contained
+                // within parent's range. Boundary spans at the parent's
+                // start/end count as inside.
+                if (*id as u32) == parent_id.unwrap_or(u32::MAX) {
+                    return false;
+                }
+                if s.start_move < p_start || s.end_move > p_end {
+                    return false;
+                }
+            }
+            if let Some(want_pi) = pass_index {
+                match &s.payload {
+                    Some(SpanPayload::DepthPass { pass_index: pi, .. }) if *pi == want_pi => {}
+                    _ => return false,
+                }
+            }
+            if let Some(want_rid) = region_id {
+                match &s.payload {
+                    Some(SpanPayload::Region { region_id: rid }) if *rid == want_rid => {}
+                    _ => return false,
+                }
+            }
+            true
+        })
+        .collect();
+
+    let total_matching = matching.len();
+    let cap = max_spans.unwrap_or(50);
+    let truncated = total_matching > cap;
+    let spans_json: Vec<serde_json::Value> = matching
+        .into_iter()
+        .take(cap)
+        .map(|(id, s)| span_to_json(id, s))
+        .collect();
+
+    if let serde_json::Value::Object(map) = &mut response {
+        map.insert("total_matching".into(), serde_json::json!(total_matching));
+        map.insert("truncated".into(), serde_json::json!(truncated));
+        map.insert("max_spans".into(), serde_json::json!(cap));
+        map.insert("spans".into(), serde_json::Value::Array(spans_json));
+    }
+    Ok(response)
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+    use rs_cam_core::toolpath_spans::{Span, SpanKind, SpanPayload};
+
+    /// Build a representative span tree:
+    /// - Operation 0..30
+    ///   - DepthPass 0..15 (pass_index=0)
+    ///     - Region 0..7 (region_id=0)
+    ///     - Region 7..15 (region_id=1)
+    ///   - DepthPass 15..30 (pass_index=1)
+    ///     - Region 15..22 (region_id=2)
+    ///     - Region 22..30 (region_id=3)
+    fn fixture_spans() -> Vec<Span> {
+        vec![
+            Span::new(0, 30, SpanKind::Operation),
+            Span::new(0, 15, SpanKind::DepthPass).with_payload(SpanPayload::DepthPass {
+                z_level: -2.0,
+                pass_index: 0,
+            }),
+            Span::new(0, 7, SpanKind::Region).with_payload(SpanPayload::Region { region_id: 0 }),
+            Span::new(7, 15, SpanKind::Region).with_payload(SpanPayload::Region { region_id: 1 }),
+            Span::new(15, 30, SpanKind::DepthPass).with_payload(SpanPayload::DepthPass {
+                z_level: -4.0,
+                pass_index: 1,
+            }),
+            Span::new(15, 22, SpanKind::Region).with_payload(SpanPayload::Region { region_id: 2 }),
+            Span::new(22, 30, SpanKind::Region).with_payload(SpanPayload::Region { region_id: 3 }),
+        ]
+    }
+
+    fn build(
+        spans: &[Span],
+        kind: Option<&str>,
+        parent_id: Option<u32>,
+        pass_index: Option<u32>,
+        region_id: Option<u32>,
+        max_spans: Option<usize>,
+    ) -> serde_json::Value {
+        build_inspect_spans_response(
+            42, 0, "tp", "pocket", 30, spans, true, kind, parent_id, pass_index, region_id,
+            max_spans,
+        )
+        .expect("valid filter")
+    }
+
+    #[test]
+    fn default_returns_summary_with_kind_counts_and_top_level() {
+        let spans = fixture_spans();
+        let v = build(&spans, None, None, None, None, None);
+
+        assert_eq!(v["span_count"], 7);
+        assert_eq!(v["move_count"], 30);
+        assert_eq!(v["spans_valid"], true);
+        // Spans array must NOT be present in summary mode.
+        assert!(v.get("spans").is_none());
+
+        let kc = &v["kind_counts"];
+        assert_eq!(kc["Operation"], 1);
+        assert_eq!(kc["DepthPass"], 2);
+        assert_eq!(kc["Region"], 4);
+
+        let top_level = v["top_level"].as_array().expect("top_level array");
+        // Operation + 2 DepthPass = 3 entries, no Region leaves.
+        assert_eq!(top_level.len(), 3);
+        let kinds: Vec<&str> = top_level
+            .iter()
+            .map(|e| e["kind"].as_str().unwrap())
+            .collect();
+        assert_eq!(kinds, vec!["Operation", "DepthPass", "DepthPass"]);
+
+        // Operation has 6 contained spans (2 DepthPass + 4 Region).
+        assert_eq!(top_level[0]["child_count"], 6);
+        // Each DepthPass has 2 Region children.
+        assert_eq!(top_level[1]["child_count"], 2);
+        assert_eq!(top_level[2]["child_count"], 2);
+
+        assert!(v["hint"].as_str().unwrap().contains("kind"));
+    }
+
+    #[test]
+    fn kind_filter_returns_only_matching_spans() {
+        let spans = fixture_spans();
+        let v = build(&spans, Some("depth_pass"), None, None, None, None);
+
+        assert_eq!(v["total_matching"], 2);
+        assert_eq!(v["truncated"], false);
+        let arr = v["spans"].as_array().expect("spans array");
+        assert_eq!(arr.len(), 2);
+        for s in arr {
+            assert_eq!(s["kind"], "DepthPass");
+        }
+    }
+
+    #[test]
+    fn parent_id_filter_narrows_to_contained_children() {
+        let spans = fixture_spans();
+        // parent_id=1 is the first DepthPass (covers 0..15).
+        let v = build(&spans, None, Some(1), None, None, None);
+        let arr = v["spans"].as_array().expect("spans array");
+        // Children: Region 0..7 (id=2) and Region 7..15 (id=3). The parent
+        // itself is excluded.
+        let ids: Vec<u64> = arr.iter().map(|s| s["id"].as_u64().unwrap()).collect();
+        assert_eq!(ids, vec![2, 3]);
+    }
+
+    #[test]
+    fn parent_id_combined_with_kind_filters_correctly() {
+        let spans = fixture_spans();
+        // parent_id=0 (Operation), kind=region → all 4 regions.
+        let v = build(&spans, Some("region"), Some(0), None, None, None);
+        assert_eq!(v["total_matching"], 4);
+    }
+
+    #[test]
+    fn pass_index_filters_to_matching_depth_pass() {
+        let spans = fixture_spans();
+        let v = build(&spans, None, None, Some(1), None, None);
+        let arr = v["spans"].as_array().expect("spans array");
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["kind"], "DepthPass");
+        assert_eq!(arr[0]["start_move"], 15);
+    }
+
+    #[test]
+    fn region_id_filters_to_matching_region() {
+        let spans = fixture_spans();
+        let v = build(&spans, None, None, None, Some(2), None);
+        let arr = v["spans"].as_array().expect("spans array");
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["start_move"], 15);
+        assert_eq!(arr[0]["end_move"], 22);
+    }
+
+    #[test]
+    fn max_spans_truncates_and_reports_total() {
+        let spans = fixture_spans();
+        let v = build(&spans, Some("region"), None, None, None, Some(2));
+        assert_eq!(v["total_matching"], 4);
+        assert_eq!(v["truncated"], true);
+        assert_eq!(v["max_spans"], 2);
+        let arr = v["spans"].as_array().expect("spans array");
+        assert_eq!(arr.len(), 2);
+    }
+
+    #[test]
+    fn default_max_spans_is_50() {
+        // Build 60 region spans.
+        let mut spans = vec![Span::new(0, 60, SpanKind::Operation)];
+        for i in 0..60 {
+            spans.push(
+                Span::new(i, i + 1, SpanKind::Region).with_payload(SpanPayload::Region {
+                    region_id: i as u32,
+                }),
+            );
+        }
+        let v = build_inspect_spans_response(
+            1,
+            0,
+            "tp",
+            "pocket",
+            60,
+            &spans,
+            true,
+            Some("region"),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(v["total_matching"], 60);
+        assert_eq!(v["truncated"], true);
+        assert_eq!(v["max_spans"], 50);
+        assert_eq!(v["spans"].as_array().unwrap().len(), 50);
+    }
+
+    #[test]
+    fn invalid_kind_returns_error() {
+        let spans = fixture_spans();
+        let res = build_inspect_spans_response(
+            1,
+            0,
+            "tp",
+            "pocket",
+            30,
+            &spans,
+            true,
+            Some("garbage"),
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn invalid_parent_id_returns_error() {
+        let spans = fixture_spans();
+        let res = build_inspect_spans_response(
+            1,
+            0,
+            "tp",
+            "pocket",
+            30,
+            &spans,
+            true,
+            None,
+            Some(999),
+            None,
+            None,
+            None,
+        );
+        assert!(res.is_err());
     }
 }

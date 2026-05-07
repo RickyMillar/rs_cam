@@ -14,7 +14,7 @@ use crate::mcp_bridge::{McpRequest, McpRequestKind, ProgressUpdate};
 // Re-use parameter structs from the standalone MCP crate.
 use rs_cam_mcp::server::{
     AddAlignmentPinParam, AddToolParam, AddToolpathParam, CollisionCheckParam, CutTraceParam,
-    ExportParam, GenDebugTraceParam, IndexParam, LoadProjectParam, ModelIdParam,
+    ExportParam, GenDebugTraceParam, IndexParam, InspectSpansParam, LoadProjectParam, ModelIdParam,
     OptimizeToolpathInput, RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam,
     SaveProjectParam, ScreenshotSimParam, ScreenshotToolpathParam, SetBoundaryConfigParam,
     SetDressupConfigParam, SetDressupFieldParam, SetStockConfigParam, SetStockSourceParam,
@@ -295,15 +295,29 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "inspect_spans",
-        description = "Dump the structural spans of a generated toolpath: Operation, DepthPass, Region, Entry, LeadOut, LinkBridge, DressupArtifact, and RapidOrderBarrier ranges over the move list. Use to inspect toolpath anatomy (which moves belong to which pass / dressup) without parsing the raw move dump. Run generate_toolpath first."
+        description = "Inspect the structural spans (Operation, DepthPass, Region, Entry, LeadOut, LinkBridge, DressupArtifact, RapidOrderBarrier) of a generated toolpath. With no filter, returns a summary: total `kind_counts` plus outermost spans (Operation + DepthPass) under `top_level` with child counts. Pass `kind`, `parent_id`, `pass_index`, or `region_id` to retrieve detail spans under `spans`. `kind` is a SpanKind name in snake_case. `parent_id` is a span id from a previous call (drill: Operation → DepthPass → Region). `pass_index` matches DepthPass payload; `region_id` matches Region payload. `max_spans` caps the result (default 50; report `truncated` + `total_matching` when capped). Run generate_toolpath first."
     )]
     async fn inspect_spans(
         &self,
-        Parameters(IndexParam { index }): Parameters<IndexParam>,
+        Parameters(InspectSpansParam {
+            index,
+            kind,
+            parent_id,
+            pass_index,
+            region_id,
+            max_spans,
+        }): Parameters<InspectSpansParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::InspectSpans { index })
-                .await,
+            self.send_request(McpRequestKind::InspectSpans {
+                index,
+                kind,
+                parent_id,
+                pass_index,
+                region_id,
+                max_spans,
+            })
+            .await,
         )
     }
 
