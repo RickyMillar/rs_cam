@@ -80,8 +80,8 @@ fn wanaka_back_rough_axial_doc() {
 
     // Get the actual toolpath move at peak.move_index.
     let tp_result = session.get_result(1).expect("back rough result");
-    let mv = &tp_result.toolpath.moves[peak.move_index];
-    let prev = &tp_result.toolpath.moves[peak.move_index.saturating_sub(1)];
+    let mv = &tp_result.toolpath().moves[peak.move_index];
+    let prev = &tp_result.toolpath().moves[peak.move_index.saturating_sub(1)];
     println!(
         "  move {}: type={:?}, from ({:.3},{:.3},{:.3}) -> ({:.3},{:.3},{:.3})",
         peak.move_index,
@@ -95,9 +95,9 @@ fn wanaka_back_rough_axial_doc() {
     );
     println!("  surrounding moves:");
     let lo = peak.move_index.saturating_sub(3);
-    let hi = (peak.move_index + 3).min(tp_result.toolpath.moves.len() - 1);
+    let hi = (peak.move_index + 3).min(tp_result.toolpath().moves.len() - 1);
     for j in lo..=hi {
-        let m = &tp_result.toolpath.moves[j];
+        let m = &tp_result.toolpath().moves[j];
         println!(
             "    move {}: type={:?} target=({:.3},{:.3},{:.3})",
             j, m.move_type, m.target.x, m.target.y, m.target.z
@@ -106,8 +106,8 @@ fn wanaka_back_rough_axial_doc() {
 
     // Check earlier moves to identify what stage this is. move 98 is early.
     println!("  first 10 moves of Back Rough:");
-    for j in 0..10.min(tp_result.toolpath.moves.len()) {
-        let m = &tp_result.toolpath.moves[j];
+    for j in 0..10.min(tp_result.toolpath().moves.len()) {
+        let m = &tp_result.toolpath().moves[j];
         println!(
             "    move {}: type={:?} target=({:.3},{:.3},{:.3})",
             j, m.move_type, m.target.x, m.target.y, m.target.z
@@ -117,9 +117,9 @@ fn wanaka_back_rough_axial_doc() {
     // Total moves to understand position in toolpath
     println!(
         "  total moves: {}, peak at move {} ({:.1}% through)",
-        tp_result.toolpath.moves.len(),
+        tp_result.toolpath().moves.len(),
         peak.move_index,
-        100.0 * peak.move_index as f64 / tp_result.toolpath.moves.len() as f64
+        100.0 * peak.move_index as f64 / tp_result.toolpath().moves.len() as f64
     );
 
     // Probe simulator dexel state RIGHT BEFORE the peak DOC sample's move.
@@ -138,7 +138,7 @@ fn wanaka_back_rough_axial_doc() {
         };
         let mut probe = TriDexelStock::from_bounds(&local_bbox, 0.5);
         // Truncate Back Rough up to but not including the peak move.
-        let mut up_to = (*tp_result.toolpath).clone();
+        let mut up_to = (*tp_result.toolpath()).clone();
         if peak.move_index < up_to.moves.len() {
             up_to.moves.truncate(peak.move_index);
         }
@@ -203,7 +203,7 @@ fn wanaka_back_rough_axial_doc() {
     for &(tx, ty, tz) in &perim_targets {
         let mut found_count = 0;
         let mut found_idx = 0usize;
-        for (j, m) in tp_result.toolpath.moves.iter().enumerate() {
+        for (j, m) in tp_result.toolpath().moves.iter().enumerate() {
             if (m.target.x - tx).abs() < 0.01
                 && (m.target.y - ty).abs() < 0.01
                 && (m.target.z - tz).abs() < 0.01
@@ -223,7 +223,7 @@ fn wanaka_back_rough_axial_doc() {
     // Sanity: any feed move at z=22 within 5mm of (47.76, 119.0)?
     let target = (peak.position[0], peak.position[1]);
     let mut z22_near_count = 0;
-    for m in &tp_result.toolpath.moves {
+    for m in &tp_result.toolpath().moves {
         if matches!(
             m.move_type,
             rs_cam_core::toolpath::MoveType::Linear { .. }
@@ -244,7 +244,7 @@ fn wanaka_back_rough_axial_doc() {
 
     // Count Linear (feed) moves at various Z levels
     let mut z_level_feeds = std::collections::BTreeMap::<i32, usize>::new();
-    for m in &tp_result.toolpath.moves {
+    for m in &tp_result.toolpath().moves {
         if matches!(m.move_type, rs_cam_core::toolpath::MoveType::Linear { .. }) {
             let z_round = m.target.z.round() as i32;
             *z_level_feeds.entry(z_round).or_insert(0) += 1;
@@ -256,7 +256,7 @@ fn wanaka_back_rough_axial_doc() {
     }
     // Find first/last z=22 feeds and show context
     let mut z22_feeds = Vec::new();
-    for (j, m) in tp_result.toolpath.moves.iter().enumerate() {
+    for (j, m) in tp_result.toolpath().moves.iter().enumerate() {
         if matches!(m.move_type, rs_cam_core::toolpath::MoveType::Linear { .. })
             && (m.target.z - 22.0).abs() < 0.5
         {
@@ -266,9 +266,9 @@ fn wanaka_back_rough_axial_doc() {
     if let Some(&first) = z22_feeds.first() {
         println!("  first z=22 feed at move {}", first);
         let lo = first.saturating_sub(2);
-        let hi = (first + 5).min(tp_result.toolpath.moves.len() - 1);
+        let hi = (first + 5).min(tp_result.toolpath().moves.len() - 1);
         for j in lo..=hi {
-            let m = &tp_result.toolpath.moves[j];
+            let m = &tp_result.toolpath().moves[j];
             println!(
                 "    move {}: type={:?} ({:.3},{:.3},{:.3})",
                 j, m.move_type, m.target.x, m.target.y, m.target.z
@@ -278,8 +278,8 @@ fn wanaka_back_rough_axial_doc() {
 
     // First 80 moves (verbatim) to see what z=22 cuts look like
     println!("  first 80 moves verbatim:");
-    for j in 0..80.min(tp_result.toolpath.moves.len()) {
-        let m = &tp_result.toolpath.moves[j];
+    for j in 0..80.min(tp_result.toolpath().moves.len()) {
+        let m = &tp_result.toolpath().moves[j];
         println!(
             "    move {}: type={:?} ({:.3},{:.3},{:.3})",
             j, m.move_type, m.target.x, m.target.y, m.target.z
@@ -290,7 +290,7 @@ fn wanaka_back_rough_axial_doc() {
     println!("  z transitions across all moves:");
     let mut prev_z_bucket: Option<i32> = None;
     let mut bucket_start = 0usize;
-    for (j, m) in tp_result.toolpath.moves.iter().enumerate() {
+    for (j, m) in tp_result.toolpath().moves.iter().enumerate() {
         let bucket = (m.target.z / 3.0).round() as i32;
         if Some(bucket) != prev_z_bucket {
             if let Some(b) = prev_z_bucket {
@@ -306,7 +306,7 @@ fn wanaka_back_rough_axial_doc() {
         }
     }
     if let Some(b) = prev_z_bucket {
-        let last = tp_result.toolpath.moves.len() - 1;
+        let last = tp_result.toolpath().moves.len() - 1;
         println!(
             "    moves {}..{}: ~z={:.1}",
             bucket_start,

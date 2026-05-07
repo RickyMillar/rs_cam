@@ -85,7 +85,7 @@ fn drop_cutter_does_not_cut_outside_mesh_footprint() {
     let mesh = TriangleMesh::from_stl_scaled(&fixture_path("terrain.stl"), 1.0).expect("stl loads");
     let index = SpatialIndex::build_auto(&mesh);
 
-    let final_tp: &Toolpath = &result.toolpath;
+    let final_tp: &Toolpath = result.toolpath();
     const CUT_Z_THRESHOLD: f64 = 9.5;
 
     let mut off_mesh = Vec::new();
@@ -149,7 +149,7 @@ fn rapids_should_be_at_safe_z() {
     let result = session
         .generate_toolpath(finish_idx, &cancel)
         .expect("generates");
-    let tp = &result.toolpath;
+    let tp = result.toolpath();
 
     // Safe-z floor: project post.safe_z = 10 mm, stock_top = 10 (Top
     // face with stock_origin_z=-15, stock_z=25 → top at z=10).
@@ -226,11 +226,12 @@ fn drop_cutter_toolpath_stamp_no_dive_below_mesh() {
     // without that migration, the 3D Finish would emit ~2400 dive bands
     // from the ramp entries at every raster-segment start.
     let cancel = AtomicBool::new(false);
-    let tp = std::sync::Arc::clone(
-        &session
+    let tp = std::sync::Arc::new(
+        session
             .generate_toolpath(finish_idx, &cancel)
             .expect("generates")
-            .toolpath,
+            .toolpath()
+            .clone(),
     );
 
     let world_mesh =

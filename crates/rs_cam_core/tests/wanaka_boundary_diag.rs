@@ -65,7 +65,7 @@ fn wanaka_back_rough_cuts_outside_silhouette() {
 
     // Walk Back Rough's moves
     let tp_result = session.get_result(1).expect("back rough result");
-    let toolpath = &tp_result.toolpath;
+    let toolpath = &tp_result.toolpath();
     let mut total_cut_moves = 0_usize;
     let mut outside_count = 0_usize;
     let mut max_outside_dist_mm = 0.0_f64;

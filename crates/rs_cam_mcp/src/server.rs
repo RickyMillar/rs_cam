@@ -813,7 +813,7 @@ impl CamServer {
             let toolpaths: Vec<&rs_cam_core::toolpath::Toolpath> =
                 if include_toolpaths.unwrap_or(true) {
                     (0..session.toolpath_count())
-                        .filter_map(|i| session.get_result(i).map(|r| r.toolpath.as_ref()))
+                        .filter_map(|i| session.get_result(i).map(|r| r.toolpath()))
                         .collect()
                 } else {
                     Vec::new()
@@ -874,7 +874,7 @@ impl CamServer {
                 None
             };
             let pixels = rs_cam_core::fingerprint::render_toolpath_composite(
-                &result.toolpath,
+                result.toolpath(),
                 bg.as_ref(),
                 w,
                 h,
@@ -883,7 +883,7 @@ impl CamServer {
             match image::save_buffer(Path::new(&path), &pixels, w, h, image::ColorType::Rgba8) {
                 Ok(()) => text(format!(
                     "Toolpath {index} exported to {path} ({w}x{h}, {} moves, {:.0}mm cutting)",
-                    result.toolpath.moves.len(),
+                    result.toolpath().moves.len(),
                     result.stats.cutting_distance,
                 )),
                 Err(e) => text(format!("Failed to save PNG: {e}")),
@@ -894,12 +894,12 @@ impl CamServer {
                 bbox.min.x, bbox.min.y, bbox.min.z, bbox.max.x, bbox.max.y, bbox.max.z,
             ];
             let html =
-                rs_cam_core::viz::toolpath_standalone_3d_html(&result.toolpath, Some(bounds));
+                rs_cam_core::viz::toolpath_standalone_3d_html(result.toolpath(), Some(bounds));
 
             match std::fs::write(&path, &html) {
                 Ok(()) => text(format!(
                     "Toolpath view exported to {path} ({} moves, {:.0}mm cutting)",
-                    result.toolpath.moves.len(),
+                    result.toolpath().moves.len(),
                     result.stats.cutting_distance,
                 )),
                 Err(e) => text(format!("Failed to write: {e}")),

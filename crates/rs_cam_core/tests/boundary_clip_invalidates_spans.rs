@@ -1,8 +1,12 @@
-//! Phase 3i / #58: `apply_boundary_clip` accepts an `AnnotatedToolpath` and
-//! always emits `spans_valid = false` until a precise span remap is built.
+//! S83: `apply_boundary_clip` precisely remaps spans through the clip
+//! using the per-input-move provenance map from
+//! `clip_toolpath_to_boundary_with_provenance`.
 //!
-//! This test calls the function directly with a small synthesized toolpath
-//! and a unit rectangle stock bbox, and asserts the invalidation contract.
+//! These tests call the function directly with a small synthesized toolpath
+//! and assert the new contract: spans pass through with `spans_valid = true`
+//! and their move ranges remapped to the post-clip output indices.
+
+#![allow(clippy::indexing_slicing)]
 
 use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
 use rs_cam_core::geo::{BoundingBox3, P3};
@@ -12,10 +16,9 @@ use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
 
 #[test]
-fn boundary_clip_invalidates_spans() {
-    // Build a 10×10 stock bbox so the default rectangle boundary fully
-    // contains a small interior toolpath — the actual clip is a no-op on
-    // moves, but it still must invalidate the spans.
+fn boundary_clip_preserves_spans_when_all_moves_inside() {
+    // 10×10 stock with a fully-inside toolpath. The clipper passes every
+    // input move through 1:1, so spans must remap to identical ranges.
     let stock_bbox = BoundingBox3 {
         min: P3::new(0.0, 0.0, -10.0),
         max: P3::new(10.0, 10.0, 0.0),
@@ -51,29 +54,27 @@ fn boundary_clip_invalidates_spans() {
         &stock_bbox,
         None,
         &[],
-        2.0,  // tool diameter
-        20.0, // safe Z
+        2.0,
+        20.0,
         &semantic_ctx,
     );
 
-    // Phase 3i contract: boundary clip always invalidates spans on output.
     assert!(
-        !clipped.spans_valid,
-        "apply_boundary_clip must set spans_valid = false (precise remap deferred)",
+        clipped.spans_valid,
+        "apply_boundary_clip must keep spans_valid = true after S83 precise remap",
     );
-    // The spans payload itself is preserved (we only flip the flag) so callers
-    // that want to inspect what was invalidated still can.
-    assert_eq!(
-        clipped.spans.len(),
-        2,
-        "spans vector should be carried through (only the validity flag flips)",
-    );
+    assert_eq!(clipped.spans.len(), 2, "spans vector preserved");
+    assert_eq!(clipped.spans[0].kind, SpanKind::Operation);
+    assert_eq!(clipped.spans[0].start_move, 0);
+    assert_eq!(clipped.spans[0].end_move, clipped.toolpath.moves.len());
+    assert_eq!(clipped.spans[1].kind, SpanKind::DepthPass);
+    // Pass span starts at input move 1; with a 1:1 mapping that's still 1.
+    assert_eq!(clipped.spans[1].start_move, 1);
 }
 
 #[test]
-fn boundary_clip_with_no_input_spans_still_invalidates() {
-    // Empty spans → no warning is emitted, but the output flag is still
-    // documented as `false` to match the contract.
+fn boundary_clip_with_no_input_spans_emits_no_spans() {
+    // No input spans → no output spans, regardless of clip behaviour.
     let stock_bbox = BoundingBox3 {
         min: P3::new(0.0, 0.0, -10.0),
         max: P3::new(10.0, 10.0, 0.0),
@@ -106,6 +107,6 @@ fn boundary_clip_with_no_input_spans_still_invalidates() {
         &semantic_ctx,
     );
 
-    assert!(!clipped.spans_valid);
+    assert!(clipped.spans_valid);
     assert!(clipped.spans.is_empty());
 }

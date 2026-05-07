@@ -237,7 +237,7 @@ fn live_project_pc6_has_no_phantom_cuts() {
     let polygons = rs_cam_core::dxf_input::load_dxf(&fixture_path("rivers_aligned.dxf"), 5.0)
         .expect("DXF loads");
 
-    let final_tp = &result.toolpath;
+    let final_tp = &result.toolpath();
     let lateral_count = count_lateral_cuts_at_depth(final_tp, 9.5, 1.0);
     println!(
         "Live PC6 pipeline lateral feed moves > 1mm at cut-depth: {}",
