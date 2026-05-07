@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::config::{DressupConfig, FeedsAutoMode};
 use crate::enriched_mesh::FaceGroupId;
+use crate::feeds::geometry::radial_chip_thinning_factor;
 use crate::feeds::vendor_lookup::MatchedRow;
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use crate::feeds::{OperationFamily, PassRole};
@@ -373,19 +374,37 @@ pub fn optimize_toolpath(
         &machine,
     );
 
-    // 7. Stage 0: closed-form analytical RPM/feed scaling.
+    // 7. Stage F: closed-form feed/RPM solve. Two modes:
+    //    - Within baselines → headroom scale-up (Stage 0).
+    //    - Single-side Exceeds (Burn or Breakage, not bipolar — pre-
+    //      flight refused bipolar already) → re-target via the LUT
+    //      row's chipload envelope, RCTF-compensated.
+    //    Either mode produces at most one candidate.
     let mut all_candidates: Vec<OptimizeCandidate> = Vec::new();
-    if let Some(stage0_candidate) = run_stage_0(
-        &mut guard,
-        &ctx,
-        &baseline_op,
-        baseline_rpm,
-        &baseline_verdict,
-        matched_lut_row.as_ref(),
-        &machine,
-        cancel,
-    ) {
-        all_candidates.push(stage0_candidate);
+    let stage_f_candidate = match baseline_verdict.chipload {
+        Verdict::Within { .. } => run_stage_0(
+            &mut guard,
+            &ctx,
+            &baseline_op,
+            baseline_rpm,
+            &baseline_verdict,
+            matched_lut_row.as_ref(),
+            &machine,
+            cancel,
+        ),
+        Verdict::Exceeds { .. } => run_stage_f_retarget(
+            &mut guard,
+            &ctx,
+            &baseline_op,
+            baseline_rpm,
+            matched_lut_row.as_ref(),
+            &machine,
+            cancel,
+        ),
+        Verdict::Unmodeled { .. } => None,
+    };
+    if let Some(c) = stage_f_candidate {
+        all_candidates.push(c);
     }
 
     if cancel.load(Ordering::SeqCst) {
@@ -471,6 +490,70 @@ fn run_stage_0(
         guard,
         ctx,
         scaled_op,
+        delta,
+        SearchStage::Coarse,
+        STAGE1_RESOLUTION_MM,
+        cancel,
+    )
+    .ok()
+}
+
+/// Run Stage F's re-target mode for a baseline that trips the
+/// chipload gate single-sidedly (Burn or Breakage but not bipolar —
+/// the pre-flight already refuses bipolar). Computes a target feed /
+/// RPM / plunge from the LUT row's chipload envelope and tries that
+/// candidate at coarse resolution. Returns `None` when the LUT row
+/// is missing data, the RPM bracket has no machine overlap, the
+/// retarget is below the noise floor, or the candidate sim fails.
+///
+/// Sibling to `run_stage_0` — both produce at most one Stage F
+/// candidate. The orchestrator picks which to run based on baseline
+/// chipload verdict.
+#[allow(clippy::too_many_arguments)]
+fn run_stage_f_retarget(
+    guard: &mut BaselineRestoreGuard<'_>,
+    ctx: &EvaluationContext,
+    baseline_op: &OperationConfig,
+    baseline_rpm: f64,
+    matched_lut_row: Option<&MatchedRow>,
+    machine: &MachineProfile,
+    cancel: &AtomicBool,
+) -> Option<OptimizeCandidate> {
+    let row = matched_lut_row?;
+
+    // Engaged diameter at commanded DOC — same convention as the
+    // chipload gate uses sample-by-sample.
+    let commanded_doc = baseline_op.depth_per_pass().unwrap_or(0.0);
+    let engaged_diameter = if commanded_doc > 0.0 {
+        ctx.tool.lookup_diameter_at(commanded_doc)
+    } else {
+        ctx.tool.diameter()
+    };
+
+    // Commanded radial engagement = stepover. Ops without a stepover
+    // pass 0; RCTF returns 1.0 in that case (treated as full slot).
+    let commanded_ae = baseline_op.stepover().unwrap_or(0.0).max(0.0);
+
+    // Material plunge base for the safety cap.
+    let plunge_base = ctx.material.plunge_rate_base();
+
+    let solution = solve_chipload_retarget(
+        baseline_op,
+        baseline_rpm,
+        ctx.tool.flute_count,
+        engaged_diameter,
+        commanded_ae,
+        plunge_base,
+        row,
+        machine,
+    )?;
+
+    let candidate_op = apply_retarget_to_op(baseline_op, &solution, machine);
+    let delta = delta_against_baseline(baseline_op, &candidate_op);
+    evaluate_candidate(
+        guard,
+        ctx,
+        candidate_op,
         delta,
         SearchStage::Coarse,
         STAGE1_RESOLUTION_MM,
@@ -992,6 +1075,167 @@ pub(crate) fn apply_scale_to_op(
     let scaled_rpm = machine.clamp_rpm(rpm_baseline * k).round() as u32;
     scaled.set_spindle_rpm(Some(scaled_rpm));
     scaled
+}
+
+// ── Stage F re-target (chipload-Exceeds baselines) ────────────────────
+//
+// Stage 0 (headroom scale-up) is the Stage F mode for Within
+// baselines. The re-target mode runs when the baseline trips the
+// chipload gate single-sidedly (Burn or Breakage but not bipolar — the
+// pre-flight in #1 already refuses bipolar). It computes a target
+// chipload from the LUT row, compensates for radial chip thinning
+// (RCTF) at the commanded engagement, and re-derives feed and RPM
+// inside the machine + LUT envelope.
+
+/// Solution returned by `solve_chipload_retarget`. Absolute target
+/// values, not a multiplicative scale.
+#[derive(Debug, Clone, Copy)]
+struct RetargetSolution {
+    target_feed_mm_min: f64,
+    target_rpm: f64,
+    /// Updated plunge rate, when the feed change is meaningful enough
+    /// (>10%) to warrant tracking. `None` means "leave plunge alone."
+    target_plunge_mm_min: Option<f64>,
+}
+
+/// Pick the target effective chipload from the LUT row's published
+/// bounds. Returns `None` when the row carries neither bound — there
+/// is nothing to retarget against.
+fn lut_chipload_target(row: &MatchedRow) -> Option<f64> {
+    match (row.chip_load_min_mm, row.chip_load_max_mm) {
+        (Some(lo), Some(hi)) if lo > 0.0 && hi >= lo => Some((lo + hi) * 0.5),
+        (None, Some(hi)) if hi > 0.0 => Some(hi * 0.85),
+        (Some(lo), None) if lo > 0.0 => Some(lo * 1.15),
+        _ => None,
+    }
+}
+
+/// Pick the target RPM for retarget. Prefers the LUT row's
+/// `rpm_nominal` when present, else the baseline RPM, then clamps
+/// against the machine envelope and the LUT row's `[rpm_min, rpm_max]`
+/// bracket if defined. Returns `None` when the LUT bracket has no
+/// overlap with the machine range — that case is `RpmBracketEmpty`
+/// and the orchestrator should refuse.
+fn solve_target_rpm(baseline_rpm: f64, row: &MatchedRow, machine: &MachineProfile) -> Option<f64> {
+    let (machine_min, machine_max) = machine.rpm_range();
+
+    // 1. LUT bracket: prefer rpm_nominal; fall back to mid(min,max).
+    //    The Engineering Default 5 ±20% bracket isn't applied here —
+    //    retarget is selecting an exact target, not a cap.
+    let lut_target = row.rpm_nominal.or({
+        match (row.rpm_min, row.rpm_max) {
+            (Some(lo), Some(hi)) => Some((lo + hi) * 0.5),
+            (Some(v), None) | (None, Some(v)) => Some(v),
+            (None, None) => None,
+        }
+    });
+
+    let target = lut_target.unwrap_or(baseline_rpm);
+
+    // 2. Clamp by machine + LUT bracket. If the LUT row's bracket
+    //    has no overlap with the machine range, that's RpmBracketEmpty.
+    let lut_lo = row.rpm_min.unwrap_or(machine_min);
+    let lut_hi = row.rpm_max.unwrap_or(machine_max);
+    let effective_min = lut_lo.max(machine_min);
+    let effective_max = lut_hi.min(machine_max);
+    if effective_min > effective_max {
+        return None;
+    }
+    Some(target.clamp(effective_min, effective_max))
+}
+
+/// Compute a retarget solution for a chipload-Exceeds baseline.
+/// Targets the LUT row's nominal chipload, compensated by RCTF for
+/// the commanded radial engagement, with RPM clamped by both the
+/// machine envelope and the LUT row's RPM bracket.
+///
+/// Returns `None` when:
+///   - the LUT row has no usable chipload bounds (NoFeasibleRow case)
+///   - the LUT row's RPM bracket has no overlap with the machine
+///     range (RpmBracketEmpty)
+///   - the resulting feed would be non-finite or non-positive
+///   - the change from baseline feed is below 1% (no meaningful
+///     retarget — Stage 1 grid will pick up the rest)
+#[allow(clippy::too_many_arguments)]
+fn solve_chipload_retarget(
+    baseline_op: &OperationConfig,
+    baseline_rpm: f64,
+    flute_count: u32,
+    engaged_diameter_mm: f64,
+    commanded_ae_mm: f64,
+    plunge_base_mm_min: f64,
+    lut_row: &MatchedRow,
+    machine: &MachineProfile,
+) -> Option<RetargetSolution> {
+    // 1. Target effective (post-thinning) chipload from the LUT row.
+    let target_chipload_eff = lut_chipload_target(lut_row)?;
+
+    // 2. Compensate for radial chip thinning. We aim for the feed
+    //    that produces the LUT-target effective chipload AT the
+    //    commanded engagement, so the nominal chipload (= feed /
+    //    (rpm × flutes)) must be raised by RCTF.
+    let rctf = radial_chip_thinning_factor(commanded_ae_mm, engaged_diameter_mm);
+    let target_chipload_nominal = target_chipload_eff * rctf;
+
+    // 3. Pick a target RPM inside the machine + LUT envelope.
+    let target_rpm = solve_target_rpm(baseline_rpm, lut_row, machine)?;
+
+    // 4. Compute target feed = chipload × rpm × flutes.
+    let target_feed_raw = target_chipload_nominal * target_rpm * f64::from(flute_count);
+    if !target_feed_raw.is_finite() || target_feed_raw <= 0.0 {
+        return None;
+    }
+    // Clamp by machine feed envelope. Below the machine min isn't
+    // valid; if the unclamped target is above the machine max we
+    // accept the clamped value — this is still a meaningful retarget
+    // even when the machine ceiling is the binding cap.
+    let target_feed = target_feed_raw.min(machine.max_feed_mm_min).max(1.0);
+
+    // 5. Skip noise-level retargets — Stage 1 grid will explore from
+    //    baseline if the change is too small to matter.
+    let baseline_feed = baseline_op.feed_rate().max(1.0);
+    if ((target_feed - baseline_feed) / baseline_feed).abs() < 0.01 {
+        return None;
+    }
+
+    // 6. Plunge tracking. Plunge is derived from feed in the F&S
+    //    calculator; when the optimizer moves feed by >10%, plunge
+    //    has to come along or the next regen will rebuild a transient
+    //    that's no longer steady-state. Cap by `material plunge_base
+    //    × machine.safety_factor`.
+    let feed_ratio = target_feed / baseline_feed;
+    let target_plunge_mm_min = if (feed_ratio - 1.0).abs() > 0.10 {
+        let baseline_plunge = baseline_op.plunge_rate();
+        let scaled = baseline_plunge * feed_ratio;
+        let cap = (plunge_base_mm_min * machine.safety_factor).max(0.0);
+        Some(scaled.clamp(0.0, cap.max(scaled.min(plunge_base_mm_min))))
+    } else {
+        None
+    };
+
+    Some(RetargetSolution {
+        target_feed_mm_min: target_feed,
+        target_rpm,
+        target_plunge_mm_min,
+    })
+}
+
+/// Build the retarget `OperationConfig` from a `RetargetSolution`.
+/// Mirrors `apply_scale_to_op` but uses absolute targets and
+/// optionally writes a new plunge rate.
+fn apply_retarget_to_op(
+    baseline_op: &OperationConfig,
+    solution: &RetargetSolution,
+    machine: &MachineProfile,
+) -> OperationConfig {
+    let mut out = baseline_op.clone();
+    out.set_feed_rate(solution.target_feed_mm_min);
+    let rpm = machine.clamp_rpm(solution.target_rpm).round() as u32;
+    out.set_spindle_rpm(Some(rpm));
+    if let Some(plunge) = solution.target_plunge_mm_min {
+        out.set_plunge_rate(plunge);
+    }
+    out
 }
 
 // ── Stage 1: DOC candidate generation (Engineering Default 9) ─────────
@@ -1722,6 +1966,7 @@ pub fn optimize_project(
 )]
 mod stage0_tests {
     use super::*;
+    use crate::compute::operation_configs::PocketConfig;
     use crate::machine::{
         ChipLoadFormula, MachineProfile, PowerModel, RigidityProfile, SpindleConfig,
     };
@@ -2024,6 +2269,293 @@ mod stage0_tests {
         });
         let scaled = apply_scale_to_op(&baseline, 12_000.0, 2.0, &machine);
         assert_eq!(scaled.spindle_rpm(), Some(18_000));
+    }
+
+    // ── Stage F re-target (Commit #2) ────────────────────────────────
+
+    fn empty_row() -> MatchedRow {
+        MatchedRow {
+            chip_load_mm: 0.05,
+            chip_load_min_mm: None,
+            chip_load_max_mm: None,
+            rpm_nominal: None,
+            rpm_min: None,
+            rpm_max: None,
+            ap_min_mm: None,
+            ap_max_mm: None,
+            ae_min_mm: None,
+            ae_max_mm: None,
+            observation_id: "test".to_owned(),
+            source_vendor: "synthetic".to_owned(),
+            score: 0,
+            diameter_match_score: 0,
+        }
+    }
+
+    #[test]
+    fn lut_chipload_target_uses_midpoint_when_both_bounds_set() {
+        let mut row = empty_row();
+        row.chip_load_min_mm = Some(0.04);
+        row.chip_load_max_mm = Some(0.10);
+        let target = lut_chipload_target(&row).unwrap();
+        assert!((target - 0.07).abs() < 1e-9, "got {target}");
+    }
+
+    #[test]
+    fn lut_chipload_target_uses_offset_when_only_one_bound_set() {
+        // Only max published → target slightly below max (15% margin)
+        // so we don't sit on the breakage ceiling.
+        let mut row = empty_row();
+        row.chip_load_max_mm = Some(0.10);
+        let target = lut_chipload_target(&row).unwrap();
+        assert!((target - 0.085).abs() < 1e-6, "got {target}");
+
+        // Only min published → target slightly above min (15% margin)
+        // so we don't sit on the burn floor.
+        let mut row = empty_row();
+        row.chip_load_min_mm = Some(0.04);
+        let target = lut_chipload_target(&row).unwrap();
+        assert!((target - 0.046).abs() < 1e-6, "got {target}");
+    }
+
+    #[test]
+    fn lut_chipload_target_returns_none_when_no_bounds() {
+        let row = empty_row();
+        assert!(lut_chipload_target(&row).is_none());
+    }
+
+    #[test]
+    fn solve_target_rpm_prefers_lut_nominal_inside_machine_range() {
+        let machine = synthetic_machine(
+            24_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let mut row = empty_row();
+        row.rpm_nominal = Some(15_000.0);
+        row.rpm_min = Some(12_000.0);
+        row.rpm_max = Some(20_000.0);
+        let rpm = solve_target_rpm(8_000.0, &row, &machine).unwrap();
+        assert!((rpm - 15_000.0).abs() < 1e-6, "got {rpm}");
+    }
+
+    #[test]
+    fn solve_target_rpm_returns_none_when_brackets_disjoint() {
+        // Machine maxes at 18k; LUT row needs ≥ 25k. No overlap.
+        let machine = synthetic_machine(
+            18_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let mut row = empty_row();
+        row.rpm_min = Some(25_000.0);
+        row.rpm_max = Some(30_000.0);
+        assert!(solve_target_rpm(12_000.0, &row, &machine).is_none());
+    }
+
+    #[test]
+    fn retarget_raises_feed_for_burn_baseline() {
+        // Baseline feed 600 mm/min, RPM 12k, 2 flutes → chipload =
+        // 600 / (12000 × 2) = 0.025 mm/tooth, BELOW the row's
+        // [0.04, 0.10] range. Retarget should pick midpoint 0.07
+        // and raise feed accordingly.
+        let machine = synthetic_machine(
+            24_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let mut row = empty_row();
+        row.chip_load_min_mm = Some(0.04);
+        row.chip_load_max_mm = Some(0.10);
+        row.rpm_nominal = Some(12_000.0);
+        let baseline = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 600.0,
+            spindle_rpm: Some(12_000),
+            ..PocketConfig::default()
+        });
+        // Full slot (ae=0 → RCTF=1.0 default). 6.35 mm endmill, 2 flutes.
+        let solution = solve_chipload_retarget(
+            &baseline, 12_000.0, 2,    // flutes
+            6.35, // engaged diameter
+            0.0,  // commanded ae (full slot fallback)
+            1500.0, &row, &machine,
+        )
+        .unwrap();
+        // Target nominal chipload = 0.07 × RCTF(0.0, 6.35) = 0.07.
+        // Feed = 0.07 × 12000 × 2 = 1680. Capped by machine max 10000.
+        assert!(solution.target_feed_mm_min > baseline.feed_rate());
+        assert!(
+            (solution.target_feed_mm_min - 1680.0).abs() < 1.0,
+            "got {solution:?}"
+        );
+        // RPM stays at LUT nominal.
+        assert!((solution.target_rpm - 12_000.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn retarget_lowers_feed_for_breakage_baseline() {
+        // Baseline feed 4000 mm/min → chipload 0.167, well above max.
+        // Retarget should pull feed down toward midpoint 0.07.
+        let machine = synthetic_machine(
+            24_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let mut row = empty_row();
+        row.chip_load_min_mm = Some(0.04);
+        row.chip_load_max_mm = Some(0.10);
+        row.rpm_nominal = Some(12_000.0);
+        let baseline = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 4000.0,
+            spindle_rpm: Some(12_000),
+            ..PocketConfig::default()
+        });
+        let solution =
+            solve_chipload_retarget(&baseline, 12_000.0, 2, 6.35, 0.0, 1500.0, &row, &machine)
+                .unwrap();
+        assert!(solution.target_feed_mm_min < baseline.feed_rate());
+        // Feed = 0.07 × 12000 × 2 = 1680.
+        assert!((solution.target_feed_mm_min - 1680.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn retarget_compensates_for_partial_engagement_via_rctf() {
+        // 20% engagement on a 6 mm tool: ae/d = 0.2, RCTF ~ 1.25.
+        // Target nominal chipload = 0.05 × 1.25 = 0.0625, so feed
+        // should land 25% higher than the no-RCTF case.
+        let machine = synthetic_machine(
+            24_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let mut row = empty_row();
+        row.chip_load_min_mm = Some(0.04);
+        row.chip_load_max_mm = Some(0.06);
+        row.rpm_nominal = Some(12_000.0);
+        let baseline = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 600.0,
+            spindle_rpm: Some(12_000),
+            ..PocketConfig::default()
+        });
+        let no_rctf = solve_chipload_retarget(
+            &baseline, 12_000.0, 2, 6.0, 0.0, // ae=0 → RCTF=1
+            1500.0, &row, &machine,
+        )
+        .unwrap();
+        let with_rctf = solve_chipload_retarget(
+            &baseline, 12_000.0, 2, 6.0, 1.2, // 20% engagement → RCTF ≈ 1.25
+            1500.0, &row, &machine,
+        )
+        .unwrap();
+        let ratio = with_rctf.target_feed_mm_min / no_rctf.target_feed_mm_min;
+        assert!(
+            ratio > 1.20 && ratio < 1.30,
+            "RCTF should bump feed ~25% — got ratio {ratio}"
+        );
+    }
+
+    #[test]
+    fn retarget_plunge_tracks_feed_when_delta_exceeds_ten_percent() {
+        // Big retarget (>10% feed change) → plunge updates.
+        let machine = synthetic_machine(
+            24_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let mut row = empty_row();
+        row.chip_load_min_mm = Some(0.04);
+        row.chip_load_max_mm = Some(0.10);
+        row.rpm_nominal = Some(12_000.0);
+        let baseline = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 600.0,
+            spindle_rpm: Some(12_000),
+            plunge_rate: 200.0,
+            ..PocketConfig::default()
+        });
+        let solution =
+            solve_chipload_retarget(&baseline, 12_000.0, 2, 6.35, 0.0, 1500.0, &row, &machine)
+                .unwrap();
+        assert!(
+            solution.target_plunge_mm_min.is_some(),
+            "feed change ~2.8× should trip the plunge tracker"
+        );
+    }
+
+    #[test]
+    fn retarget_skips_noise_floor_changes() {
+        // Baseline feed already inside the LUT envelope at midpoint.
+        // Resulting "retarget" delta is well below 1% — solver should
+        // refuse rather than emit a no-op candidate.
+        let machine = synthetic_machine(
+            24_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let mut row = empty_row();
+        row.chip_load_min_mm = Some(0.04);
+        row.chip_load_max_mm = Some(0.10);
+        row.rpm_nominal = Some(12_000.0);
+        // Baseline feed = midpoint × rpm × flutes = 0.07 × 12000 × 2 = 1680.
+        let baseline = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 1680.0,
+            spindle_rpm: Some(12_000),
+            ..PocketConfig::default()
+        });
+        let solution =
+            solve_chipload_retarget(&baseline, 12_000.0, 2, 6.35, 0.0, 1500.0, &row, &machine);
+        assert!(solution.is_none(), "noise-level retarget should refuse");
+    }
+
+    #[test]
+    fn retarget_returns_none_when_no_lut_chipload_bounds() {
+        let machine = synthetic_machine(
+            24_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let row = empty_row(); // no chipload bounds
+        let baseline = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 600.0,
+            spindle_rpm: Some(12_000),
+            ..PocketConfig::default()
+        });
+        assert!(
+            solve_chipload_retarget(&baseline, 12_000.0, 2, 6.35, 0.0, 1500.0, &row, &machine)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn apply_retarget_writes_feed_rpm_and_optional_plunge() {
+        let machine = synthetic_machine(
+            24_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let baseline = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 600.0,
+            spindle_rpm: Some(12_000),
+            plunge_rate: 200.0,
+            ..PocketConfig::default()
+        });
+        let solution = RetargetSolution {
+            target_feed_mm_min: 1680.0,
+            target_rpm: 12_500.0,
+            target_plunge_mm_min: Some(560.0),
+        };
+        let out = apply_retarget_to_op(&baseline, &solution, &machine);
+        assert!((out.feed_rate() - 1680.0).abs() < 1e-6);
+        assert_eq!(out.spindle_rpm(), Some(12_500));
+        assert!((out.plunge_rate() - 560.0).abs() < 1e-6);
     }
 }
 
