@@ -18,6 +18,7 @@ use crate::semantic_trace::ToolpathSemanticTrace;
 use crate::simulation_cut::{CutKinematics, SimulationCutSample};
 use crate::tool::{EngagementMode, MillingCutter};
 use crate::toolpath::{MoveType, Toolpath};
+use crate::toolpath_spans::SpanId;
 
 impl TriDexelStock {
     // ── Toolpath simulation ─────────────────────────────────────────────
@@ -104,6 +105,7 @@ impl TriDexelStock {
         rapid_feed_mm_min: f64,
         sample_step_mm: f64,
         semantic_trace: Option<&ToolpathSemanticTrace>,
+        span_paths_by_move: &[Vec<SpanId>],
         capture_arc_engagement: bool,
         cancel: &dyn CancelCheck,
     ) -> Result<Vec<SimulationCutSample>, Cancelled> {
@@ -120,6 +122,7 @@ impl TriDexelStock {
             rapid_feed_mm_min,
             sample_step_mm,
             semantic_trace,
+            span_paths_by_move,
             capture_arc_engagement,
             cancel,
         )
@@ -141,6 +144,7 @@ impl TriDexelStock {
         rapid_feed_mm_min: f64,
         sample_step_mm: f64,
         semantic_trace: Option<&ToolpathSemanticTrace>,
+        span_paths_by_move: &[Vec<SpanId>],
         capture_arc_engagement: bool,
         cancel: &dyn CancelCheck,
     ) -> Result<Vec<SimulationCutSample>, Cancelled> {
@@ -149,6 +153,7 @@ impl TriDexelStock {
         }
         let sample_step_mm = sample_step_mm.max(1e-3);
         let semantic_lookup = build_move_semantic_lookup(toolpath.moves.len(), semantic_trace);
+        let empty_span_path: Vec<SpanId> = Vec::new();
 
         let mut samples = Vec::with_capacity(toolpath.moves.len() * 2);
         let mut cumulative_time_s = 0.0;
@@ -160,6 +165,10 @@ impl TriDexelStock {
             let start = toolpath.moves[move_index - 1].target;
             let end = toolpath.moves[move_index].target;
             let semantic_item_id = semantic_lookup.get(move_index).copied().flatten();
+            let span_path: &[SpanId] = span_paths_by_move
+                .get(move_index)
+                .map(|v| v.as_slice())
+                .unwrap_or(empty_span_path.as_slice());
 
             match toolpath.moves[move_index].move_type {
                 MoveType::Rapid => {
@@ -176,6 +185,7 @@ impl TriDexelStock {
                             spindle_rpm,
                             flute_count,
                             semantic_item_id,
+                            span_path,
                         },
                         &mut cumulative_time_s,
                         &mut next_sample_index,
@@ -197,6 +207,7 @@ impl TriDexelStock {
                             spindle_rpm,
                             flute_count,
                             semantic_item_id,
+                            span_path,
                             sample_step_mm,
                             cut_kinematics: classify_cut_kinematics(start, end, false),
                             capture_arc_engagement,
@@ -225,6 +236,7 @@ impl TriDexelStock {
                                 spindle_rpm,
                                 flute_count,
                                 semantic_item_id,
+                                span_path,
                                 sample_step_mm,
                                 cut_kinematics: CutKinematics::Arc,
                                 capture_arc_engagement,
@@ -262,6 +274,7 @@ impl TriDexelStock {
                                 spindle_rpm,
                                 flute_count,
                                 semantic_item_id,
+                                span_path,
                                 sample_step_mm,
                                 cut_kinematics: CutKinematics::Arc,
                                 capture_arc_engagement,
@@ -425,6 +438,7 @@ impl TriDexelStock {
                     removed_volume_est_mm3 / segment_time_s
                 },
                 semantic_item_id: params.semantic_item_id,
+                span_path: params.span_path.to_vec(),
             });
             *next_sample_index += 1;
         }
@@ -549,6 +563,7 @@ mod tests {
                 3000.0,
                 2.0,
                 None,
+                &[],
                 true,
                 &never_cancel,
             )
@@ -616,6 +631,7 @@ mod tests {
                 3000.0,
                 1.0,
                 None,
+                &[],
                 true,
                 &never_cancel,
             )

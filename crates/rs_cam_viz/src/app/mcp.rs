@@ -88,8 +88,18 @@ impl super::RsCamApp {
                 toolpath_id,
                 max_hotspots,
                 max_issues,
+                span_kind,
+                span_id,
+                pass_index,
             } => {
-                let resp = self.mcp_get_cut_trace(toolpath_id, max_hotspots, max_issues);
+                let resp = self.mcp_get_cut_trace(
+                    toolpath_id,
+                    max_hotspots,
+                    max_issues,
+                    span_kind.as_deref(),
+                    span_id,
+                    pass_index,
+                );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::GetGenerationDebugTrace {
@@ -658,7 +668,7 @@ impl super::RsCamApp {
         };
 
         rs_cam_core::narrate::narrate_toolpath_with_context(
-            result.toolpath(),
+            result.annotated.as_ref(),
             semantic_trace,
             cut_trace,
             debug_trace,
@@ -672,8 +682,14 @@ impl super::RsCamApp {
         toolpath_id: Option<usize>,
         max_hotspots: Option<usize>,
         max_issues: Option<usize>,
+        span_kind: Option<&str>,
+        span_id: Option<u32>,
+        pass_index: Option<u32>,
     ) -> String {
-        let sim_state = &self.controller.state().simulation;
+        use rs_cam_core::toolpath_spans::{SpanId, SpanPayload};
+
+        let state = self.controller.state();
+        let sim_state = &state.simulation;
         let Some(results) = sim_state.results.as_ref() else {
             return json_str(
                 serde_json::json!({"error": "No simulation result. Run run_simulation first."}),
@@ -688,6 +704,75 @@ impl super::RsCamApp {
         let max_h = max_hotspots.unwrap_or(20);
         let max_i = max_issues.unwrap_or(50);
 
+        // Translate the span filter args into a per-toolpath set of accepted
+        // SpanIds. A span_path matches when it contains any accepted SpanId
+        // (or the filter is unset).
+        //
+        // Filter resolution requires the AnnotatedToolpath to look up
+        // SpanKind / SpanPayload for each span index. When toolpath_id is
+        // unset and any span filter is set, we resolve per toolpath.
+        let want_kind = span_kind
+            .map(parse_span_kind_filter)
+            .transpose()
+            .unwrap_or(None);
+        let span_filter_active = span_kind.is_some() || span_id.is_some() || pass_index.is_some();
+        let resolve_accepted = |tp_index_for_id: usize| -> Option<std::collections::HashSet<u32>> {
+            if !span_filter_active {
+                return None;
+            }
+            let tc = state.session.get_toolpath_config(tp_index_for_id)?;
+            let rt = state.gui.toolpath_rt.get(&tc.id)?;
+            let result = rt.result.as_ref()?;
+            let spans = result.spans();
+            let mut set = std::collections::HashSet::<u32>::new();
+            for (i, span) in spans.iter().enumerate() {
+                let id = i as u32;
+                let mut accept = true;
+                if let Some(kind) = want_kind {
+                    accept &= span.kind == kind;
+                }
+                if let Some(want_id) = span_id {
+                    accept &= id == want_id;
+                }
+                if let Some(want_pi) = pass_index {
+                    accept &= matches!(
+                        &span.payload,
+                        Some(SpanPayload::DepthPass { pass_index, .. }) if *pass_index == want_pi
+                    );
+                }
+                if accept {
+                    set.insert(id);
+                }
+            }
+            Some(set)
+        };
+        // Build a {toolpath_id_raw → accepted SpanId set}. Toolpath_id arg is
+        // the project-level raw id (matching SimulationCutSample.toolpath_id),
+        // while accepted-set lookup needs the index — translate via session.
+        let mut accepted_by_toolpath: std::collections::HashMap<
+            usize,
+            Option<std::collections::HashSet<u32>>,
+        > = std::collections::HashMap::new();
+        if span_filter_active {
+            let n = state.session.toolpath_count();
+            for idx in 0..n {
+                if let Some(tc) = state.session.get_toolpath_config(idx)
+                    && toolpath_id.is_none_or(|raw_id| tc.id == raw_id)
+                {
+                    accepted_by_toolpath.insert(tc.id, resolve_accepted(idx));
+                }
+            }
+        }
+        let span_path_matches = |tp_id: usize, path: &[SpanId]| -> bool {
+            if !span_filter_active {
+                return true;
+            }
+            match accepted_by_toolpath.get(&tp_id) {
+                Some(Some(accepted)) => path.iter().any(|sid| accepted.contains(&sid.0)),
+                _ => false,
+            }
+        };
+
         let summaries: Vec<&_> = ct
             .semantic_summaries
             .iter()
@@ -697,11 +782,13 @@ impl super::RsCamApp {
             .hotspots
             .iter()
             .filter(|h| toolpath_id.is_none_or(|id| h.toolpath_id == id))
+            .filter(|h| span_path_matches(h.toolpath_id, &h.span_path))
             .collect();
         let issues: Vec<&_> = ct
             .issues
             .iter()
             .filter(|i| toolpath_id.is_none_or(|id| i.toolpath_id == id))
+            .filter(|i| span_path_matches(i.toolpath_id, &i.span_path))
             .collect();
 
         let hotspot_count = hotspots.len();
@@ -753,11 +840,24 @@ impl super::RsCamApp {
             }));
         };
 
+        // span_kind accepts EITHER a generation-debug string (e.g.
+        // "adaptive_pass", "z_level_clear", "preflight") OR a structural
+        // SpanKind synonym in snake_case (e.g. "depth_pass", "entry"). The
+        // latter expands to the set of debug-trace kinds that participate in
+        // that structural span. This unifies the agent vocabulary across
+        // get_cut_trace + inspect_spans + get_generation_debug_trace.
+        let kind_filter: Box<dyn Fn(&str) -> bool> = match span_kind {
+            None => Box::new(|_| true),
+            Some(needle) => {
+                let synonyms = expand_span_kind_synonyms(needle);
+                Box::new(move |k: &str| synonyms.iter().any(|s| s == k))
+            }
+        };
         let limit = max_spans.unwrap_or(100);
         let filtered: Vec<_> = trace
             .spans
             .iter()
-            .filter(|s| span_kind.is_none_or(|k| s.kind == k))
+            .filter(|s| kind_filter(s.kind.as_str()))
             .filter(|s| {
                 exit_reason.is_none_or(|needle| {
                     s.exit_reason.as_deref().is_some_and(|r| r.contains(needle))
@@ -769,11 +869,29 @@ impl super::RsCamApp {
             })
             .collect();
         let total_matching = filtered.len();
-        let visible: Vec<_> = if limit == 0 {
+        let visible_spans: Vec<_> = if limit == 0 {
             filtered.clone()
         } else {
             filtered.iter().copied().take(limit).collect()
         };
+        // Each returned span is enriched with `span_kind_hint`: the
+        // structural `SpanKind` (snake_case) that this generation-time span
+        // contributes to, or null when there's no clean mapping (e.g.
+        // op-internal "preflight", "widen_band").
+        let visible: Vec<serde_json::Value> = visible_spans
+            .iter()
+            .map(|span| {
+                let mut value =
+                    serde_json::to_value(span).unwrap_or_else(|_| serde_json::json!({}));
+                if let serde_json::Value::Object(map) = &mut value {
+                    map.insert(
+                        "span_kind_hint".into(),
+                        serde_json::json!(map_debug_kind_to_span_kind(&span.kind)),
+                    );
+                }
+                value
+            })
+            .collect();
 
         let pass_spans: Vec<_> = trace
             .spans
@@ -1646,12 +1764,19 @@ impl super::RsCamApp {
             .as_ref()
             .and_then(|r| r.cut_trace.as_deref());
         let report = rs_cam_core::gcode::project_load_report(&state.session, sim_trace);
-        match serde_json::to_value(&report) {
-            Ok(v) => json_str(v),
-            Err(e) => json_str(serde_json::json!({
-                "error": format!("Failed to serialize tool load report: {e}")
-            })),
-        }
+
+        // Per-DepthPass MRR/feed/engagement histogram (S2.5). Keyed by
+        // toolpath raw id, then a list of one entry per `SpanKind::DepthPass`
+        // span, in span order (pass 0, pass 1, …). Lets agents distinguish
+        // the high-DOC first pass from the steady-state passes for any
+        // multi-pass operation without re-grouping the raw sample stream.
+        let per_depth_pass = build_per_depth_pass_summary(state, sim_trace);
+
+        let load_value = serde_json::to_value(&report).unwrap_or(serde_json::Value::Null);
+        json_str(serde_json::json!({
+            "load_report": load_value,
+            "per_depth_pass": per_depth_pass,
+        }))
     }
 
     /// Run the optimizer on a single toolpath synchronously and
@@ -2432,5 +2557,201 @@ impl super::RsCamApp {
             "active_toolpath": active_toolpath,
             "checkpoint": checkpoint,
         }))
+    }
+}
+
+/// Build the per-DepthPass histogram for [`mcp_get_tool_load_report`].
+/// Returns `{ "<toolpath_raw_id>": [ { ... }, … ] }` keyed by stringified
+/// toolpath id. Toolpaths without DepthPass spans or without samples in the
+/// trace are omitted.
+fn build_per_depth_pass_summary(
+    state: &crate::state::AppState,
+    sim_trace: Option<&rs_cam_core::simulation_cut::SimulationCutTrace>,
+) -> serde_json::Value {
+    use rs_cam_core::toolpath_spans::{SpanId, SpanKind, SpanPayload};
+
+    let Some(trace) = sim_trace else {
+        return serde_json::Value::Null;
+    };
+
+    let mut out = serde_json::Map::<String, serde_json::Value>::new();
+    let n = state.session.toolpath_count();
+    for idx in 0..n {
+        let Some(tc) = state.session.get_toolpath_config(idx) else {
+            continue;
+        };
+        let Some(rt) = state.gui.toolpath_rt.get(&tc.id) else {
+            continue;
+        };
+        let Some(result) = rt.result.as_ref() else {
+            continue;
+        };
+        let spans = result.spans();
+        if !result.spans_valid() || spans.is_empty() {
+            continue;
+        }
+        // Map each DepthPass span vec-index to its (z_level, pass_index)
+        // payload, filling defaults when payload is missing.
+        let mut depth_pass_meta: Vec<(usize, Option<f64>, Option<u32>)> = Vec::new();
+        for (i, span) in spans.iter().enumerate() {
+            if span.kind == SpanKind::DepthPass {
+                let (z, p) = match &span.payload {
+                    Some(SpanPayload::DepthPass { z_level, pass_index }) => {
+                        (Some(*z_level), Some(*pass_index))
+                    }
+                    _ => (None, None),
+                };
+                depth_pass_meta.push((i, z, p));
+            }
+        }
+        if depth_pass_meta.is_empty() {
+            continue;
+        }
+        let depth_pass_ids: std::collections::HashSet<u32> =
+            depth_pass_meta.iter().map(|(i, _, _)| *i as u32).collect();
+        // Accumulate per-pass stats in lock-step with depth_pass_meta.
+        let mut accs: Vec<DepthPassAcc> = (0..depth_pass_meta.len())
+            .map(|_| DepthPassAcc::default())
+            .collect();
+        let pass_index_of: std::collections::HashMap<u32, usize> = depth_pass_meta
+            .iter()
+            .enumerate()
+            .map(|(i, (sid, _, _))| (*sid as u32, i))
+            .collect();
+
+        for sample in trace.samples.iter().filter(|s| s.toolpath_id == tc.id) {
+            // Find the DepthPass id in this sample's span_path.
+            let pass_pos = sample
+                .span_path
+                .iter()
+                .find_map(|SpanId(id)| {
+                    if depth_pass_ids.contains(id) {
+                        pass_index_of.get(id).copied()
+                    } else {
+                        None
+                    }
+                });
+            if let Some(pos) = pass_pos {
+                #[allow(clippy::indexing_slicing)] // pos came from pass_index_of
+                accs[pos].observe(sample);
+            }
+        }
+
+        let entries: Vec<serde_json::Value> = depth_pass_meta
+            .iter()
+            .zip(accs.into_iter())
+            .map(|((span_id, z, pass_idx), acc)| {
+                serde_json::json!({
+                    "span_id": *span_id,
+                    "z_level": z,
+                    "pass_index": pass_idx,
+                    "sample_count": acc.sample_count,
+                    "cutting_runtime_s": acc.cutting_runtime_s,
+                    "total_removed_volume_est_mm3": acc.removed_volume_mm3,
+                    "average_mrr_mm3_s": acc.average_mrr(),
+                    "average_engagement": acc.average_engagement(),
+                    "peak_chipload_mm_per_tooth": acc.peak_chipload,
+                    "peak_axial_doc_mm": acc.peak_axial_doc,
+                })
+            })
+            .collect();
+        out.insert(tc.id.to_string(), serde_json::Value::Array(entries));
+    }
+
+    if out.is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::Value::Object(out)
+    }
+}
+
+#[derive(Default)]
+struct DepthPassAcc {
+    sample_count: usize,
+    cutting_runtime_s: f64,
+    removed_volume_mm3: f64,
+    engagement_time_weighted_sum: f64,
+    peak_chipload: f64,
+    peak_axial_doc: f64,
+}
+
+impl DepthPassAcc {
+    fn observe(&mut self, sample: &rs_cam_core::simulation_cut::SimulationCutSample) {
+        self.sample_count += 1;
+        if sample.is_cutting {
+            self.cutting_runtime_s += sample.segment_time_s;
+            self.engagement_time_weighted_sum +=
+                sample.radial_engagement * sample.segment_time_s;
+            self.removed_volume_mm3 += sample.removed_volume_est_mm3.max(0.0);
+        }
+        self.peak_chipload = self.peak_chipload.max(sample.chipload_mm_per_tooth.max(0.0));
+        self.peak_axial_doc = self.peak_axial_doc.max(sample.axial_doc_mm.max(0.0));
+    }
+
+    fn average_mrr(&self) -> f64 {
+        if self.cutting_runtime_s <= 1e-9 {
+            0.0
+        } else {
+            self.removed_volume_mm3 / self.cutting_runtime_s
+        }
+    }
+
+    fn average_engagement(&self) -> f64 {
+        if self.cutting_runtime_s <= 1e-9 {
+            0.0
+        } else {
+            self.engagement_time_weighted_sum / self.cutting_runtime_s
+        }
+    }
+}
+
+/// Generation-debug span "kind" strings that participate in a given
+/// structural `SpanKind`. When the input is itself a generation-debug kind
+/// (e.g. "adaptive_pass"), the synonym set is just `{input}` so the filter
+/// keeps backward compatibility with the existing string vocabulary.
+fn expand_span_kind_synonyms(span_kind: &str) -> Vec<String> {
+    match span_kind {
+        // Structural SpanKind synonyms expand to the matching debug kinds.
+        "depth_pass" => vec![
+            "z_level_clear".to_owned(),
+            "adaptive_pass".to_owned(),
+            "z_level".to_owned(),
+        ],
+        "entry" => vec!["entry_search".to_owned()],
+        // Other SpanKind names have no debug-trace generators yet — return
+        // an empty set so the filter matches nothing rather than falsely
+        // matching by string.
+        "operation" | "region" | "lead_out" | "link_bridge" | "dressup_artifact"
+        | "rapid_order_barrier" => Vec::new(),
+        // Fallback: treat as a literal debug-trace kind.
+        other => vec![other.to_owned()],
+    }
+}
+
+/// Map a debug-trace span "kind" string back to the structural `SpanKind`
+/// (snake_case) it most directly contributes to. Op-internal phases
+/// (preflight, widen_band, etc.) have no structural equivalent and return
+/// `None`.
+fn map_debug_kind_to_span_kind(debug_kind: &str) -> Option<&'static str> {
+    match debug_kind {
+        "z_level_clear" | "adaptive_pass" | "z_level" => Some("depth_pass"),
+        "entry_search" => Some("entry"),
+        _ => None,
+    }
+}
+
+/// Map an MCP `span_kind` string (snake_case) to the `SpanKind` enum.
+fn parse_span_kind_filter(s: &str) -> Result<rs_cam_core::toolpath_spans::SpanKind, String> {
+    use rs_cam_core::toolpath_spans::SpanKind;
+    match s {
+        "operation" => Ok(SpanKind::Operation),
+        "depth_pass" => Ok(SpanKind::DepthPass),
+        "region" => Ok(SpanKind::Region),
+        "entry" => Ok(SpanKind::Entry),
+        "lead_out" => Ok(SpanKind::LeadOut),
+        "link_bridge" => Ok(SpanKind::LinkBridge),
+        "dressup_artifact" => Ok(SpanKind::DressupArtifact),
+        "rapid_order_barrier" => Ok(SpanKind::RapidOrderBarrier),
+        other => Err(format!("unknown span_kind {other:?}")),
     }
 }

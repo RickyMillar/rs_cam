@@ -1847,6 +1847,7 @@ fn main() -> Result<()> {
                         rapid_feed,
                         sample_step,
                         None,
+                        &[],
                         true,
                         &never_cancel,
                     ) {

@@ -1,5 +1,6 @@
 use crate::debug_trace::TOOLPATH_DEBUG_SCHEMA_VERSION;
 use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticTrace};
+use crate::toolpath_spans::SpanId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -68,6 +69,11 @@ pub struct SimulationCutSample {
     pub removed_volume_est_mm3: f64,
     pub mrr_mm3_s: f64,
     pub semantic_item_id: Option<u64>,
+    /// Indices into [`crate::toolpath_spans::AnnotatedToolpath::spans`] for
+    /// every non-boundary span covering this sample's move. Outermost-first
+    /// (Operation, then DepthPass, …). Empty when the toolpath had no spans.
+    #[serde(default)]
+    pub span_path: Vec<SpanId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -110,6 +116,11 @@ pub struct SimulationCutIssue {
     /// Minimum radial engagement across all samples in the segment.
     #[serde(default)]
     pub min_radial_engagement: f64,
+
+    /// Span path inherited from the first sample in the segment. Empty when
+    /// the toolpath had no spans.
+    #[serde(default)]
+    pub span_path: Vec<SpanId>,
 }
 
 fn default_sample_count() -> usize {
@@ -143,6 +154,7 @@ fn new_open_segment(
         sample_count: 1,
         duration_s: 0.0,
         min_radial_engagement: sample.radial_engagement,
+        span_path: sample.span_path.clone(),
     }
 }
 
@@ -209,6 +221,10 @@ pub struct SimulationCutHotspot {
     pub peak_axial_doc_mm: f64,
     pub total_removed_volume_est_mm3: f64,
     pub average_mrr_mm3_s: f64,
+    /// Span path inherited from the first sample contributing to this
+    /// hotspot. Empty when the toolpath had no spans.
+    #[serde(default)]
+    pub span_path: Vec<SpanId>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -547,6 +563,7 @@ struct HotspotAccumulator {
     sample_index_end: usize,
     representative_position: [f64; 3],
     representative_segment_time_s: f64,
+    span_path: Vec<SpanId>,
     summary: SummaryAccumulator,
 }
 
@@ -561,6 +578,7 @@ impl HotspotAccumulator {
             sample_index_end: sample.sample_index,
             representative_position: sample.position,
             representative_segment_time_s: sample.segment_time_s,
+            span_path: sample.span_path.clone(),
             summary: SummaryAccumulator::default(),
         }
     }
@@ -599,6 +617,7 @@ impl HotspotAccumulator {
             peak_axial_doc_mm: self.summary.peak_axial_doc_mm,
             total_removed_volume_est_mm3: self.summary.total_removed_volume_est_mm3,
             average_mrr_mm3_s,
+            span_path: self.span_path,
         }
     }
 }
@@ -742,6 +761,7 @@ mod tests {
                     removed_volume_est_mm3: 2.0,
                     mrr_mm3_s: 10.0,
                     semantic_item_id: Some(9),
+                    span_path: Vec::new(),
                 },
                 SimulationCutSample {
                     toolpath_id: 1,
@@ -763,6 +783,7 @@ mod tests {
                     removed_volume_est_mm3: 3.0,
                     mrr_mm3_s: 10.0,
                     semantic_item_id: Some(9),
+                    span_path: Vec::new(),
                 },
                 SimulationCutSample {
                     toolpath_id: 1,
@@ -784,6 +805,7 @@ mod tests {
                     removed_volume_est_mm3: 0.0,
                     mrr_mm3_s: 0.0,
                     semantic_item_id: None,
+                    span_path: Vec::new(),
                 },
             ],
         );
@@ -837,6 +859,7 @@ mod tests {
                     removed_volume_est_mm3: 0.2,
                     mrr_mm3_s: 1.0,
                     semantic_item_id: Some(2),
+                    span_path: Vec::new(),
                 },
                 SimulationCutSample {
                     toolpath_id: 1,
@@ -858,6 +881,7 @@ mod tests {
                     removed_volume_est_mm3: 0.4,
                     mrr_mm3_s: 2.0,
                     semantic_item_id: Some(2),
+                    span_path: Vec::new(),
                 },
             ],
             [(1, &trace)],
@@ -873,6 +897,67 @@ mod tests {
         assert_eq!(summary.sample_count, 2);
         assert!(summary.peak_engagement >= summary.average_engagement);
         assert!(summary.peak_mrr_mm3_s >= summary.average_mrr_mm3_s);
+    }
+
+    #[test]
+    fn issues_and_hotspots_inherit_span_path_from_first_sample() {
+        let span_path = vec![
+            crate::toolpath_spans::SpanId(0),
+            crate::toolpath_spans::SpanId(1),
+        ];
+        let trace = SimulationCutTrace::from_samples(
+            0.5,
+            vec![
+                SimulationCutSample {
+                    toolpath_id: 1,
+                    move_index: 4,
+                    sample_index: 0,
+                    position: [1.0, 2.0, -1.0],
+                    cumulative_time_s: 0.2,
+                    segment_time_s: 0.2,
+                    is_cutting: true,
+                    cut_kinematics: CutKinematics::Linear,
+                    feed_rate_mm_min: 600.0,
+                    spindle_rpm: 18_000,
+                    flute_count: 2,
+                    axial_doc_mm: 1.5,
+                    radial_engagement: 0.005,
+                    arc_engagement_radians: None,
+                    chipload_mm_per_tooth: 0.0166,
+                    effective_chip_thickness_mm: Some(0.0166),
+                    removed_volume_est_mm3: 0.1,
+                    mrr_mm3_s: 0.5,
+                    semantic_item_id: Some(7),
+                    span_path: span_path.clone(),
+                },
+                SimulationCutSample {
+                    toolpath_id: 1,
+                    move_index: 4,
+                    sample_index: 1,
+                    position: [1.5, 2.0, -1.0],
+                    cumulative_time_s: 0.4,
+                    segment_time_s: 0.2,
+                    is_cutting: true,
+                    cut_kinematics: CutKinematics::Linear,
+                    feed_rate_mm_min: 600.0,
+                    spindle_rpm: 18_000,
+                    flute_count: 2,
+                    axial_doc_mm: 1.5,
+                    radial_engagement: 0.005,
+                    arc_engagement_radians: None,
+                    chipload_mm_per_tooth: 0.0166,
+                    effective_chip_thickness_mm: Some(0.0166),
+                    removed_volume_est_mm3: 0.1,
+                    mrr_mm3_s: 0.5,
+                    semantic_item_id: Some(7),
+                    span_path: span_path.clone(),
+                },
+            ],
+        );
+        assert_eq!(trace.issues.len(), 1, "one coalesced air-cut issue");
+        assert_eq!(trace.issues[0].span_path, span_path);
+        assert_eq!(trace.hotspots.len(), 1);
+        assert_eq!(trace.hotspots[0].span_path, span_path);
     }
 
     #[test]
@@ -947,6 +1032,7 @@ mod tests {
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             },
             SimulationCutSample {
                 toolpath_id: 0,
@@ -968,6 +1054,7 @@ mod tests {
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             },
         ];
 
@@ -1009,6 +1096,7 @@ mod tests {
                 removed_volume_est_mm3: 0.1,
                 mrr_mm3_s: 1.0,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             },
             // Low engagement: is_cutting=true, 0.02 <= engagement < 0.10
             SimulationCutSample {
@@ -1031,6 +1119,7 @@ mod tests {
                 removed_volume_est_mm3: 0.3,
                 mrr_mm3_s: 3.0,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             },
             // Good engagement: is_cutting=true, engagement >= 0.10
             SimulationCutSample {
@@ -1053,6 +1142,7 @@ mod tests {
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             },
         ];
 
@@ -1161,6 +1251,7 @@ mod tests {
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             });
         }
         // One good sample breaks the segment
@@ -1184,6 +1275,7 @@ mod tests {
             removed_volume_est_mm3: 1.0,
             mrr_mm3_s: 10.0,
             semantic_item_id: None,
+            span_path: Vec::new(),
         });
         for i in 0..5 {
             samples.push(SimulationCutSample {
@@ -1206,6 +1298,7 @@ mod tests {
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             });
         }
 
@@ -1267,6 +1360,7 @@ mod tests {
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             },
             SimulationCutSample {
                 toolpath_id: 0,
@@ -1288,6 +1382,7 @@ mod tests {
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             },
         ];
 
@@ -1325,6 +1420,7 @@ mod tests {
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             },
             SimulationCutSample {
                 toolpath_id: 1,
@@ -1346,6 +1442,7 @@ mod tests {
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             },
             SimulationCutSample {
                 toolpath_id: 0,
@@ -1367,6 +1464,7 @@ mod tests {
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             },
         ];
 
@@ -1407,6 +1505,7 @@ mod tests {
                 removed_volume_est_mm3: 2.0,
                 mrr_mm3_s: 20.0,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             },
             SimulationCutSample {
                 toolpath_id: 0,
@@ -1428,6 +1527,7 @@ mod tests {
                 removed_volume_est_mm3: 5.0,
                 mrr_mm3_s: 50.0,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             },
         ];
 
@@ -1475,6 +1575,7 @@ mod tests {
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             },
             SimulationCutSample {
                 toolpath_id: 1,
@@ -1496,6 +1597,7 @@ mod tests {
                 removed_volume_est_mm3: 3.0,
                 mrr_mm3_s: 15.0,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             },
         ];
 
@@ -1558,6 +1660,7 @@ mod tests {
                 removed_volume_est_mm3: 0.5,
                 mrr_mm3_s: 5.0,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             },
             // 0.3s at engagement=0.80
             SimulationCutSample {
@@ -1580,6 +1683,7 @@ mod tests {
                 removed_volume_est_mm3: 2.0,
                 mrr_mm3_s: 6.67,
                 semantic_item_id: None,
+                span_path: Vec::new(),
             },
         ];
 
@@ -1621,6 +1725,7 @@ mod tests {
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: Some(1),
+                span_path: Vec::new(),
             },
             SimulationCutSample {
                 toolpath_id: 0,
@@ -1642,6 +1747,7 @@ mod tests {
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: Some(2),
+                span_path: Vec::new(),
             },
             SimulationCutSample {
                 toolpath_id: 0,
@@ -1663,6 +1769,7 @@ mod tests {
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: Some(1),
+                span_path: Vec::new(),
             },
         ];
 

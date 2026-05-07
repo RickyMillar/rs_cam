@@ -17,15 +17,17 @@ use crate::geo::P3;
 use crate::radial_profile::RadialProfileLUT;
 use crate::semantic_trace::ToolpathSemanticTrace;
 use crate::simulation_cut::{CutKinematics, SimulationCutSample};
+use crate::toolpath_spans::SpanId;
 
 #[derive(Clone, Copy)]
-pub(super) struct CuttingCaptureParams {
+pub(super) struct CuttingCaptureParams<'a> {
     pub(super) toolpath_id: usize,
     pub(super) move_index: usize,
     pub(super) feed_rate_mm_min: f64,
     pub(super) spindle_rpm: u32,
     pub(super) flute_count: u32,
     pub(super) semantic_item_id: Option<u64>,
+    pub(super) span_path: &'a [SpanId],
     pub(super) sample_step_mm: f64,
     pub(super) cut_kinematics: CutKinematics,
     pub(super) capture_arc_engagement: bool,
@@ -422,7 +424,7 @@ pub(super) fn stamp_segment_with_metrics(
 }
 
 /// Bundled parameters for `sample_segment_runtime`.
-pub(super) struct SegmentSampleParams {
+pub(super) struct SegmentSampleParams<'a> {
     pub(super) move_index: usize,
     pub(super) toolpath_id: usize,
     pub(super) sample_step_mm: f64,
@@ -432,12 +434,13 @@ pub(super) struct SegmentSampleParams {
     pub(super) spindle_rpm: u32,
     pub(super) flute_count: u32,
     pub(super) semantic_item_id: Option<u64>,
+    pub(super) span_path: &'a [SpanId],
 }
 
 pub(super) fn sample_segment_runtime(
     start: P3,
     end: P3,
-    params: &SegmentSampleParams,
+    params: &SegmentSampleParams<'_>,
     cumulative_time_s: &mut f64,
     next_sample_index: &mut usize,
     samples: &mut Vec<SimulationCutSample>,
@@ -480,6 +483,7 @@ pub(super) fn sample_segment_runtime(
             removed_volume_est_mm3: 0.0,
             mrr_mm3_s: 0.0,
             semantic_item_id: params.semantic_item_id,
+            span_path: params.span_path.to_vec(),
         });
         *next_sample_index += 1;
     }
