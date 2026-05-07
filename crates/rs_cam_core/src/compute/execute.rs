@@ -1037,6 +1037,7 @@ pub fn apply_dressups(
         apply_link_moves,
     };
 
+    // Capability gate: barriered TSP only fires when the input has barriers.
     let rapid_order_barriers = annotated.rapid_order_barriers();
     let input_valid = annotated.spans_valid;
     let mut current = annotated;
@@ -1045,19 +1046,19 @@ pub fn apply_dressups(
     // Tracks whether any non-span-aware step ran. Once all dressups are
     // span-aware this becomes obsolete; until then we conservatively flag the
     // output spans invalid when a non-span-aware step mutates moves.
-    let mut any_unaware_mutation = false;
+    // All dressups in this pipeline are now span-aware (Phase 3 sub-tasks
+    // #50–#58 complete). The flag stays as a guard slot for future
+    // non-span-aware additions — currently always false.
+    let any_unaware_mutation = false;
 
     if cfg.optimize_rapid_order
         && !rapid_order_barriers.is_empty()
         && transform_capabilities.allows_barriered_rapid_reorder()
     {
-        let new_tp = crate::tsp::optimize_rapid_order_with_barriers(
-            &current.toolpath,
-            safe_z,
-            &rapid_order_barriers,
-        );
-        current.toolpath = new_tp;
-        any_unaware_mutation = true;
+        // Phase 3f / #55: span-aware barriered TSP. Barriers are derived
+        // from the spans inside `optimize_rapid_order` (matches the
+        // `rapid_order_barriers` we computed above for the capability gate).
+        current = crate::tsp::optimize_rapid_order(current, safe_z);
     }
 
     // Determine plunge rate from toolpath
@@ -1137,14 +1138,16 @@ pub fn apply_dressups(
         current = crate::arcfit::fit_arcs(current, cfg.arc_tolerance);
     }
 
-    // 6. Rapid order optimization — not span-aware
+    // 6. Rapid order optimization — span-aware (Phase 3f / #55). Without
+    // barriers there is one global TSP group; the call still goes through
+    // the unified entry point so spans are remapped through the
+    // permutation.
     if cfg.optimize_rapid_order
         && rapid_order_barriers.is_empty()
         && transform_capabilities.allows_unbarriered_rapid_reorder()
     {
-        let new_tp = crate::tsp::optimize_rapid_order(&current.toolpath, safe_z);
-        current.toolpath = new_tp;
-        any_unaware_mutation = true;
+        stage_spans(&mut current, any_unaware_mutation);
+        current = crate::tsp::optimize_rapid_order(current, safe_z);
     }
 
     // 7. Air-cut filter — span-aware (Phase 3g / #56)

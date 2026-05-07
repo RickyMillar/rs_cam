@@ -88,7 +88,8 @@ pub(super) fn apply_dressups(
 
     // Derive TSP barriers from input spans (matches the core path).
     let rapid_order_barriers = annotated.rapid_order_barriers();
-    let rapid_order_barriers = rapid_order_barriers.as_slice();
+    let barrier_count = rapid_order_barriers.len();
+    let has_barriers = barrier_count > 0;
     let rs_cam_core::toolpath_spans::AnnotatedToolpath {
         toolpath: mut tp,
         spans,
@@ -99,10 +100,17 @@ pub(super) fn apply_dressups(
     let initial_move_count = tp.moves.len();
 
     if cfg.optimize_rapid_order
-        && !rapid_order_barriers.is_empty()
+        && has_barriers
         && transform_capabilities.allows_barriered_rapid_reorder()
     {
         let sz = safe_z;
+        // Phase 3f / #55: barriered TSP is span-aware. Wrap into an
+        // AnnotatedToolpath so the call derives barriers from the spans
+        // themselves; per-step output spans are discarded because the
+        // surrounding helper rebuilds a single AnnotatedToolpath at the
+        // bottom from `tp` + `spans`.
+        let staged_spans = spans.clone();
+        let staged_valid = input_valid;
         tp = apply_dressup_with_tracing(
             tp,
             debug,
@@ -115,10 +123,15 @@ pub(super) fn apply_dressups(
             },
             |scope| {
                 scope.set_param("safe_z", sz);
-                scope.set_param("barrier_count", rapid_order_barriers.len());
+                scope.set_param("barrier_count", barrier_count);
             },
             |tp| {
-                rs_cam_core::tsp::optimize_rapid_order_with_barriers(&tp, sz, rapid_order_barriers)
+                let staged = rs_cam_core::toolpath_spans::AnnotatedToolpath {
+                    toolpath: tp,
+                    spans: staged_spans,
+                    spans_valid: staged_valid,
+                };
+                rs_cam_core::tsp::optimize_rapid_order(staged, sz).toolpath
             },
         );
     }
@@ -353,7 +366,7 @@ pub(super) fn apply_dressups(
         }
     }
     if cfg.optimize_rapid_order
-        && rapid_order_barriers.is_empty()
+        && !has_barriers
         && transform_capabilities.allows_unbarriered_rapid_reorder()
     {
         let sz = safe_z;
@@ -370,7 +383,16 @@ pub(super) fn apply_dressups(
             |scope| {
                 scope.set_param("safe_z", sz);
             },
-            |tp| rs_cam_core::tsp::optimize_rapid_order(&tp, sz),
+            // Phase 3f / #55: unified span-aware entry. Spans are dropped
+            // here because the surrounding helper rebuilds the
+            // AnnotatedToolpath at the bottom from `tp` + `spans`.
+            |tp| {
+                rs_cam_core::tsp::optimize_rapid_order(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
+                    sz,
+                )
+                .toolpath
+            },
         );
     }
     let any_move_mutation = tp.moves.len() != initial_move_count;
