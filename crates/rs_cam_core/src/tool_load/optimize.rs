@@ -320,8 +320,13 @@ pub fn optimize_toolpath(
     };
 
     // 5. Look up the matched LUT row. Used by Stage 0's `k_lut` bound
-    //    and Stage 1's DOC-grid endpoint clamping.
-    let matched_lut_row = find_matched_lut_row(&ctx.tool, &ctx.material, &ctx);
+    //    and Stage 1's DOC-grid endpoint clamping. The commanded DOC
+    //    drives engaged-diameter selection for tapered tools — at
+    //    shallow DOC a tapered ball engages a much smaller diameter
+    //    than its shank, and the LUT row that fits the engaged tool is
+    //    not the same row that fits the shank.
+    let matched_lut_row =
+        find_matched_lut_row(&ctx.tool, &ctx.material, &ctx, baseline_op.depth_per_pass());
 
     // Cancel check before any sims.
     if cancel.load(Ordering::SeqCst) {
@@ -515,6 +520,25 @@ fn baseline_rpm_from_trace(
         .unwrap_or_else(|| machine.rpm_range().0)
 }
 
+/// Pick the diameter to feed into the LUT lookup for a given
+/// commanded DOC. For tools whose engaged diameter varies with axial
+/// engagement (tapered ball nose, V-bit), `lookup_diameter_at(doc)`
+/// returns the actual engaged diameter; for cylindrical tools (end
+/// mill, bull nose, drill, plain ball nose) it equals the nominal
+/// diameter. When the operation has no commanded DOC (drilling per
+/// peck, V-carve, scallop, ...) or the value is non-positive, fall
+/// back to the nominal diameter — matching the LUT row to the shank
+/// is still better than rejecting the lookup.
+fn diameter_for_lut_lookup(
+    tool: &crate::tool::ToolDefinition,
+    commanded_doc_mm: Option<f64>,
+) -> f64 {
+    match commanded_doc_mm {
+        Some(doc) if doc.is_finite() && doc > 0.0 => tool.lookup_diameter_at(doc),
+        _ => tool.diameter(),
+    }
+}
+
 /// Look up the best-matching LUT row for the toolpath's tool /
 /// material / operation combination. Mirrors `suggest::evaluate`'s
 /// LUT plumbing so the optimizer reads from the same calibration data
@@ -525,6 +549,7 @@ fn find_matched_lut_row(
     tool: &crate::tool::ToolDefinition,
     material: &crate::material::Material,
     ctx: &EvaluationContext,
+    commanded_doc_mm: Option<f64>,
 ) -> Option<MatchedRow> {
     let tool_family = super::chipload::tool_family_for(tool.to_geometry_hint());
     let (lut_op_family, lut_pass_role) = super::chipload::routed_lookup_family(
@@ -541,7 +566,7 @@ fn find_matched_lut_row(
     let criteria = crate::feeds::vendor_lookup::LookupCriteria {
         tool_family,
         tool_subfamily: None,
-        diameter_mm: tool.diameter(),
+        diameter_mm: diameter_for_lut_lookup(tool, commanded_doc_mm),
         flute_count: tool.flute_count,
         material_family,
         hardness_kind: Some(hardness_kind),
@@ -885,8 +910,7 @@ pub(crate) fn build_doc_variants(
     // back into the well-tested envelope when the user's baseline drifted
     // far from it (ex: TP 1 wanaka — adaptive3d default 3mm, baseline
     // 3mm; benign here). Always added; dedup handles the no-op case.
-    if let Some(default_doc) = OperationConfig::new_default(op_type)
-        .depth_per_pass()
+    if let Some(default_doc) = OperationConfig::new_default(op_type).depth_per_pass()
         && default_doc.is_finite()
         && default_doc > DOC_HARD_FLOOR_MM
     {
@@ -3223,5 +3247,73 @@ mod candidate_eval_tests {
             LutPassRole::SemiFinish
         );
         assert_eq!(lut_pass_role_from(PassRole::Finish), LutPassRole::Finish);
+    }
+
+    /// Build a `ToolDefinition` wrapping any `MillingCutter` for testing.
+    /// Stickout / shank / holder values are arbitrary — the LUT-lookup
+    /// helper only reads the cutter's diameter / engaged-diameter.
+    fn wrap_cutter(cutter: Box<dyn crate::tool::MillingCutter>) -> crate::tool::ToolDefinition {
+        crate::tool::ToolDefinition::new(
+            cutter,
+            6.35, // shank
+            20.0, // shank length
+            40.0, // holder diameter
+            60.0, // stickout
+            2,    // flutes
+            crate::compute::tool_config::ToolMaterial::Carbide,
+        )
+    }
+
+    #[test]
+    fn diameter_for_lut_lookup_tapered_ball_uses_engaged_at_doc() {
+        // Tapered ball nose: ball_dia 2 mm, half-angle 10°, shaft 8 mm,
+        // cutting length 30 mm. At a shallow DOC of 0.1 mm we're in
+        // the ball region — engaged diameter is much less than the
+        // 8 mm shaft.
+        let cutter = Box::new(crate::tool::TaperedBallEndmill::new(2.0, 10.0, 8.0, 30.0));
+        let tool = wrap_cutter(cutter);
+
+        // Sanity: nominal "diameter" is the shaft (max) — the bug we're
+        // fixing is the optimizer matching LUT rows against this value.
+        assert!((tool.diameter() - 8.0).abs() < 1e-9);
+
+        let engaged = diameter_for_lut_lookup(&tool, Some(0.1));
+        assert!(
+            engaged < 1.0,
+            "expected engaged diameter <1 mm at DOC=0.1 mm on a 2 mm \
+             ball-tip taper, got {engaged}"
+        );
+        assert!(
+            engaged > 0.0,
+            "engaged diameter should be positive at DOC>0"
+        );
+    }
+
+    #[test]
+    fn diameter_for_lut_lookup_endmill_returns_nominal_diameter() {
+        // Cylindrical endmill: lookup_diameter_at returns nominal at
+        // any DOC. The helper must preserve that — non-tapered tools
+        // are unaffected by this change.
+        let cutter = Box::new(crate::tool::FlatEndmill::new(6.0, 25.0));
+        let tool = wrap_cutter(cutter);
+        assert!((diameter_for_lut_lookup(&tool, Some(3.0)) - 6.0).abs() < 1e-9);
+        assert!((diameter_for_lut_lookup(&tool, Some(0.05)) - 6.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn diameter_for_lut_lookup_falls_back_to_nominal_when_doc_missing() {
+        // Drilling, V-carve, scallop don't carry depth_per_pass; the
+        // helper should still produce a usable diameter rather than
+        // refusing the lookup.
+        let cutter = Box::new(crate::tool::TaperedBallEndmill::new(2.0, 10.0, 8.0, 30.0));
+        let tool = wrap_cutter(cutter);
+
+        assert!((diameter_for_lut_lookup(&tool, None) - 8.0).abs() < 1e-9);
+        // Defensive: zero / negative DOC also falls back.
+        assert!((diameter_for_lut_lookup(&tool, Some(0.0)) - 8.0).abs() < 1e-9);
+        assert!((diameter_for_lut_lookup(&tool, Some(-1.0)) - 8.0).abs() < 1e-9);
+        // NaN / infinite likewise.
+        assert!((diameter_for_lut_lookup(&tool, Some(f64::NAN)) - 8.0).abs() < 1e-9);
+        assert!((diameter_for_lut_lookup(&tool, Some(f64::INFINITY)) - 8.0).abs() < 1e-9);
     }
 }
