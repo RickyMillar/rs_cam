@@ -150,7 +150,14 @@ pub(super) fn apply_dressups(
                     scope.set_param("pitch", helix_pitch);
                 }
             },
-            |tp| apply_entry(tp, core_entry, tool_radius),
+            |tp| {
+                apply_entry(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
+                    core_entry,
+                    tool_radius,
+                )
+                .toolpath
+            },
         );
     }
     if cfg.dogbone {
@@ -169,7 +176,14 @@ pub(super) fn apply_dressups(
             |scope| {
                 scope.set_param("angle_deg", angle);
             },
-            |tp| apply_dogbones(tp, tool_radius, angle),
+            |tp| {
+                apply_dogbones(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
+                    tool_radius,
+                    angle,
+                )
+                .toolpath
+            },
         );
     }
     if cfg.lead_in_out {
@@ -187,7 +201,13 @@ pub(super) fn apply_dressups(
             |scope| {
                 scope.set_param("radius", radius);
             },
-            |tp| apply_lead_in_out(tp, radius),
+            |tp| {
+                apply_lead_in_out(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
+                    radius,
+                )
+                .toolpath
+            },
         );
     }
     if cfg.link_moves && transform_capabilities.allows_link_moves() {
@@ -256,7 +276,16 @@ pub(super) fn apply_dressups(
                 scope.set_param("tool_radius", tool_radius);
                 scope.set_param("safe_z", sz);
             },
-            |tp| filter_air_cuts(tp, prior_stock, tool_radius, sz, 0.1),
+            |tp| {
+                filter_air_cuts(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
+                    prior_stock,
+                    tool_radius,
+                    sz,
+                    0.1,
+                )
+                .toolpath
+            },
         );
     }
     if cfg.feed_optimization {

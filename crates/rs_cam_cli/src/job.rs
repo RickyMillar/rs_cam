@@ -420,10 +420,20 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                 if let Some(entry) = &op.entry
                     && let Some(style) = crate::helpers::parse_entry_style(entry)?
                 {
-                    tp = apply_entry(tp, style, plunge_rate);
+                    tp = apply_entry(
+                        rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
+                        style,
+                        plunge_rate,
+                    )
+                    .toolpath;
                 }
                 if op.dogbone.unwrap_or(false) {
-                    tp = apply_dogbones(tp, tool_radius, 170.0);
+                    tp = apply_dogbones(
+                        rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
+                        tool_radius,
+                        170.0,
+                    )
+                    .toolpath;
                 }
                 tp
             }
@@ -465,7 +475,12 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                 if let Some(entry) = &op.entry
                     && let Some(style) = crate::helpers::parse_entry_style(entry)?
                 {
-                    tp = apply_entry(tp, style, plunge_rate);
+                    tp = apply_entry(
+                        rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
+                        style,
+                        plunge_rate,
+                    )
+                    .toolpath;
                 }
 
                 // Tabs
@@ -477,7 +492,12 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                     tp = apply_tabs(tp, &tab_list, -depth);
                 }
                 if op.dogbone.unwrap_or(false) {
-                    tp = apply_dogbones(tp, tool_radius, 170.0);
+                    tp = apply_dogbones(
+                        rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
+                        tool_radius,
+                        170.0,
+                    )
+                    .toolpath;
                 }
                 tp
             }
