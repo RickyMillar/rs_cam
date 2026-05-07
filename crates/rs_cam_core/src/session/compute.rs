@@ -632,11 +632,13 @@ impl ProjectSession {
 
     /// Apply boundary clipping to a toolpath, subtracting keep-out footprints.
     ///
-    /// Phase 3i / #58: takes/returns an [`AnnotatedToolpath`]. Boundary
-    /// clipping is the hard span case — it can split or drop arbitrary moves
-    /// depending on geometry — so for now we invalidate spans on output and
-    /// emit a tracing warning when spans were present. A precise span remap
-    /// is deferred.
+    /// Takes/returns an [`AnnotatedToolpath`]. Spans are precisely remapped
+    /// through the clip via the provenance map returned from
+    /// [`crate::boundary::clip_toolpath_to_boundary_with_provenance`]; the
+    /// clipper never drops input moves, only inserts retract/rapid pairs
+    /// between them, so a Region span that originally covered "the moves
+    /// doing the cut for region X" still covers them post-clip plus any
+    /// retracts inserted into the middle. `spans_valid` stays `true`.
     #[allow(clippy::too_many_arguments)]
     pub fn apply_boundary_clip(
         annotated: crate::toolpath_spans::AnnotatedToolpath,
@@ -649,14 +651,15 @@ impl ProjectSession {
         semantic_ctx: &crate::semantic_trace::ToolpathSemanticContext,
     ) -> crate::toolpath_spans::AnnotatedToolpath {
         use crate::boundary::{
-            ToolContainment, clip_toolpath_to_boundary, effective_boundary, subtract_keepouts,
+            ToolContainment, clip_toolpath_to_boundary_with_provenance, effective_boundary,
+            subtract_keepouts,
         };
         use crate::compute::config::BoundarySource;
 
         let crate::toolpath_spans::AnnotatedToolpath {
             toolpath,
             spans,
-            spans_valid: _,
+            spans_valid,
         } = annotated;
 
         // Resolve the source polygon for the boundary. ModelSilhouette and
@@ -722,45 +725,45 @@ impl ProjectSession {
 
         let tool_radius = tool_diameter / 2.0;
         let boundaries = effective_boundary(&stock_poly, containment, tool_radius);
-        let clipped = if let Some(boundary) = boundaries.first() {
-            let clipped = clip_toolpath_to_boundary(&toolpath, boundary, safe_z);
+        let (clipped, mapping) = match boundaries.first() {
+            Some(boundary) => {
+                let (clipped, mapping) =
+                    clip_toolpath_to_boundary_with_provenance(&toolpath, boundary, safe_z);
 
-            // Record semantic trace for boundary clip
-            let clip_scope =
-                semantic_ctx.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
-            clip_scope.set_param(
-                "containment",
-                match boundary_config.containment {
-                    crate::compute::config::BoundaryContainment::Center => "center",
-                    crate::compute::config::BoundaryContainment::Inside => "inside",
-                    crate::compute::config::BoundaryContainment::Outside => "outside",
-                },
-            );
-            clip_scope.set_param("keep_out_count", keep_out_footprints.len());
-            if !clipped.moves.is_empty() {
-                clip_scope.bind_to_toolpath(&clipped, 0, clipped.moves.len());
+                // Record semantic trace for boundary clip
+                let clip_scope =
+                    semantic_ctx.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
+                clip_scope.set_param(
+                    "containment",
+                    match boundary_config.containment {
+                        crate::compute::config::BoundaryContainment::Center => "center",
+                        crate::compute::config::BoundaryContainment::Inside => "inside",
+                        crate::compute::config::BoundaryContainment::Outside => "outside",
+                    },
+                );
+                clip_scope.set_param("keep_out_count", keep_out_footprints.len());
+                if !clipped.moves.is_empty() {
+                    clip_scope.bind_to_toolpath(&clipped, 0, clipped.moves.len());
+                }
+
+                (clipped, mapping)
             }
-
-            clipped
-        } else {
-            // Boundary collapsed (e.g. tool too large for stock) — return original
-            toolpath
+            None => {
+                // Boundary collapsed (e.g. tool too large for stock) — return
+                // original toolpath with an identity mapping so spans pass
+                // through unchanged.
+                let n = toolpath.moves.len();
+                (toolpath, (0..=n).collect())
+            }
         };
 
-        // Phase 3i / #58: precise span remap through boundary clipping is
-        // deferred. If the input carried spans, warn so downstream code that
-        // ignores `spans_valid` is still audible in logs.
-        let n = spans.len();
-        if n > 0 {
-            tracing::warn!(
-                "boundary_clip invalidated {} spans (precise remap deferred — Phase 3i)",
-                n
-            );
-        }
+        let remapped: Vec<crate::toolpath_spans::Span> =
+            spans.iter().map(|s| s.remap(&mapping)).collect();
+
         crate::toolpath_spans::AnnotatedToolpath {
             toolpath: clipped,
-            spans,
-            spans_valid: false,
+            spans: remapped,
+            spans_valid,
         }
     }
 

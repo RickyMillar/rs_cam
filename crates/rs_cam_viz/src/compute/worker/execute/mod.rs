@@ -409,8 +409,8 @@ fn run_compute_with_phase_tracker(
                 .map(|ctx| ctx.start_span("boundary_clip", "Clip to boundary"));
             let boundary_span_id = boundary_scope.as_ref().map(|scope| scope.id());
             use rs_cam_core::boundary::{
-                ToolContainment, clip_toolpath_to_boundary, effective_boundary, model_silhouette,
-                subtract_keepouts,
+                ToolContainment, clip_toolpath_to_boundary_with_provenance, effective_boundary,
+                model_silhouette, subtract_keepouts,
             };
             use rs_cam_core::compute::config::BoundarySource;
             // Resolve the source polygon. Order:
@@ -472,12 +472,16 @@ fn run_compute_with_phase_tracker(
             let boundaries =
                 effective_boundary(&stock_poly, containment, req.tool.envelope_diameter() / 2.0);
             if let Some(boundary) = boundaries.first() {
-                current.toolpath =
-                    clip_toolpath_to_boundary(&current.toolpath, boundary, effective_safe_z(req));
-                // Move-mangling clip: spans are no longer guaranteed to map
-                // correctly. Mirror core's apply_boundary_clip (S58) by
-                // marking spans invalid rather than dropping them silently.
-                current.spans_valid = false;
+                let (clipped, mapping) = clip_toolpath_to_boundary_with_provenance(
+                    &current.toolpath,
+                    boundary,
+                    effective_safe_z(req),
+                );
+                current.toolpath = clipped;
+                // Precise span remap (S83): the clipper never drops input
+                // moves so each input span's [start, end) range maps to
+                // [mapping[start], mapping[end]) in the output.
+                current.spans = current.spans.iter().map(|s| s.remap(&mapping)).collect();
                 if let Some(root) = semantic_root.as_ref() {
                     let scope =
                         root.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");

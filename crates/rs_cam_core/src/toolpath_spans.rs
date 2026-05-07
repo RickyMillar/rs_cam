@@ -94,6 +94,29 @@ impl Span {
     pub const fn range(&self) -> Range<usize> {
         self.start_move..self.end_move
     }
+
+    /// Remap this span's move indices through a per-input-move provenance map
+    /// produced by a span-preserving toolpath transform (e.g.
+    /// [`crate::boundary::clip_toolpath_to_boundary_with_provenance`]).
+    ///
+    /// `mapping` must have length `original_move_count + 1` with
+    /// `mapping[i]` = first output index produced from input move `i` and
+    /// `mapping[mapping.len() - 1]` = total output move count (sentinel).
+    /// Out-of-range start/end indices are clamped to the last entry so a
+    /// malformed mapping degrades to a zero-width span at the end rather
+    /// than panicking.
+    pub fn remap(&self, mapping: &[usize]) -> Span {
+        let last = mapping.last().copied().unwrap_or(0);
+        let new_start = mapping.get(self.start_move).copied().unwrap_or(last);
+        let new_end = mapping.get(self.end_move).copied().unwrap_or(last);
+        Span {
+            start_move: new_start,
+            end_move: new_end,
+            kind: self.kind,
+            label: self.label.clone(),
+            payload: self.payload.clone(),
+        }
+    }
 }
 
 // ── SpanKind ────────────────────────────────────────────────────────────
@@ -554,6 +577,63 @@ mod tests {
         for (i, path) in bulk.iter().enumerate() {
             assert_eq!(*path, at.span_path_at(i), "mismatch at move {i}");
         }
+    }
+
+    // ── Span::remap ─────────────────────────────────────────────────────
+
+    #[test]
+    fn remap_identity_mapping_preserves_span() {
+        let span = Span::new(2, 5, SpanKind::Region);
+        let mapping: Vec<usize> = (0..=10).collect();
+        let out = span.remap(&mapping);
+        assert_eq!(out.start_move, 2);
+        assert_eq!(out.end_move, 5);
+        assert_eq!(out.kind, SpanKind::Region);
+    }
+
+    #[test]
+    fn remap_dilating_mapping_expands_span() {
+        // input moves 0..5; each input move produces 2 outputs except move 3 which produces 1.
+        // mapping: [0, 2, 4, 6, 7, 9]
+        let mapping = vec![0, 2, 4, 6, 7, 9];
+        let span = Span::new(1, 4, SpanKind::Region);
+        let out = span.remap(&mapping);
+        assert_eq!(out.start_move, 2);
+        assert_eq!(out.end_move, 7);
+    }
+
+    #[test]
+    fn remap_boundary_span_preserves_zero_width() {
+        let mapping = vec![0, 2, 4, 6, 7, 9];
+        let span = Span::boundary(3, SpanKind::RapidOrderBarrier);
+        let out = span.remap(&mapping);
+        assert_eq!(out.start_move, 6);
+        assert_eq!(out.end_move, 6);
+        assert!(out.is_boundary());
+    }
+
+    #[test]
+    fn remap_payload_preserved() {
+        let span = Span::new(0, 3, SpanKind::DepthPass).with_payload(SpanPayload::DepthPass {
+            z_level: -1.5,
+            pass_index: 2,
+        });
+        let mapping = vec![0, 1, 4, 5];
+        let out = span.remap(&mapping);
+        assert_eq!(out.payload, span.payload);
+        assert_eq!(out.start_move, 0);
+        assert_eq!(out.end_move, 5);
+    }
+
+    #[test]
+    fn remap_out_of_range_clamps_to_sentinel() {
+        // Malformed input: span end past mapping length. Should clamp rather
+        // than panic.
+        let mapping = vec![0, 2, 4];
+        let span = Span::new(0, 99, SpanKind::Region);
+        let out = span.remap(&mapping);
+        assert_eq!(out.start_move, 0);
+        assert_eq!(out.end_move, 4);
     }
 
     #[test]

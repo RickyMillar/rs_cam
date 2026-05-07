@@ -59,24 +59,46 @@ pub fn subtract_keepouts(boundary: &Polygon2, keepouts: &[Polygon2]) -> Polygon2
 
 /// Clip a toolpath to stay within a boundary polygon.
 ///
+/// Convenience wrapper around [`clip_toolpath_to_boundary_with_provenance`]
+/// for callers that don't need the input→output move mapping.
+pub fn clip_toolpath_to_boundary(tp: &Toolpath, boundary: &Polygon2, safe_z: f64) -> Toolpath {
+    clip_toolpath_to_boundary_with_provenance(tp, boundary, safe_z).0
+}
+
+/// Clip a toolpath to stay within a boundary polygon and return a per-input
+/// move provenance map for span remapping.
+///
 /// Moves whose target is inside the boundary are kept. Moves that cross from
 /// inside to outside get a retract to `safe_z` and become rapids. Moves that
 /// cross from outside to inside get a rapid to `safe_z` above the target
-/// followed by a plunge.
+/// followed by a plunge. The first move is treated as if the previous position
+/// was outside the boundary (the tool starts from a safe location).
 ///
-/// The first move is treated as if the previous position was outside the boundary
-/// (the tool starts from a safe location).
-pub fn clip_toolpath_to_boundary(tp: &Toolpath, boundary: &Polygon2, safe_z: f64) -> Toolpath {
+/// Returns `(clipped, mapping)` where `mapping` has length `tp.moves.len() + 1`:
+/// `mapping[i]` is the index of the first output move produced from input move
+/// `i`, and `mapping[tp.moves.len()]` is `clipped.moves.len()` (sentinel).
+/// Every input move produces ≥1 output move (no drops), so `mapping` is
+/// non-decreasing and a half-open input range `[a, b)` remaps to the
+/// half-open output range `[mapping[a], mapping[b])`.
+pub fn clip_toolpath_to_boundary_with_provenance(
+    tp: &Toolpath,
+    boundary: &Polygon2,
+    safe_z: f64,
+) -> (Toolpath, Vec<usize>) {
     let mut result = Toolpath::new();
+    let mut mapping: Vec<usize> = Vec::with_capacity(tp.moves.len() + 1);
 
     if tp.moves.is_empty() {
-        return result;
+        mapping.push(0);
+        return (result, mapping);
     }
 
     let mut prev_inside = false;
     let mut prev_pos: Option<P3> = None;
 
     for m in &tp.moves {
+        mapping.push(result.moves.len());
+
         let target_xy = P2::new(m.target.x, m.target.y);
         let cur_inside = boundary.contains_point(&target_xy);
 
@@ -118,7 +140,8 @@ pub fn clip_toolpath_to_boundary(tp: &Toolpath, boundary: &Polygon2, safe_z: f64
         prev_pos = Some(m.target);
     }
 
-    result
+    mapping.push(result.moves.len());
+    (result, mapping)
 }
 
 /// Extract the feed rate from a move type, if it has one.
@@ -749,6 +772,98 @@ mod tests {
 
         // Centre should be inside.
         assert!(polys.iter().any(|p| p.contains_point(&P2::new(0.0, 0.0))));
+    }
+
+    // --- clip_toolpath_to_boundary_with_provenance tests ---
+
+    #[test]
+    fn provenance_pure_inside_is_one_to_one() {
+        let boundary = Polygon2::rectangle(0.0, 0.0, 100.0, 100.0);
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(10.0, 10.0, 20.0));
+        tp.feed_to(P3::new(50.0, 50.0, -5.0), 1000.0);
+        tp.feed_to(P3::new(90.0, 50.0, -5.0), 1000.0);
+
+        let (clipped, mapping) = clip_toolpath_to_boundary_with_provenance(&tp, &boundary, 20.0);
+        assert_eq!(mapping, vec![0, 1, 2, 3]);
+        assert_eq!(clipped.moves.len(), 3);
+    }
+
+    #[test]
+    fn provenance_pure_outside_is_one_to_one() {
+        let boundary = Polygon2::rectangle(0.0, 0.0, 10.0, 10.0);
+        let mut tp = Toolpath::new();
+        tp.feed_to(P3::new(50.0, 50.0, -5.0), 1000.0);
+        tp.feed_to(P3::new(60.0, 50.0, -5.0), 1000.0);
+
+        let (clipped, mapping) = clip_toolpath_to_boundary_with_provenance(&tp, &boundary, 20.0);
+        assert_eq!(mapping, vec![0, 1, 2]);
+        assert_eq!(clipped.moves.len(), 2);
+    }
+
+    #[test]
+    fn provenance_crossing_in_doubles_one_input() {
+        // First move starts outside, then crosses to inside on move 2 → that
+        // move emits 2 outputs (rapid up + plunge). Boundary at x=50.
+        let boundary = Polygon2::rectangle(0.0, 0.0, 100.0, 100.0);
+        let mut tp = Toolpath::new();
+        tp.feed_to(P3::new(-10.0, 50.0, -5.0), 1000.0); // outside
+        tp.feed_to(P3::new(50.0, 50.0, -5.0), 1000.0); // inside (crossing in)
+        tp.feed_to(P3::new(60.0, 50.0, -5.0), 1000.0); // inside
+
+        let (clipped, mapping) = clip_toolpath_to_boundary_with_provenance(&tp, &boundary, 20.0);
+        // input 0 → 1 output (rapid at safe_z)
+        // input 1 → 2 outputs (rapid up, then plunge)
+        // input 2 → 1 output (kept)
+        // sentinel = 4
+        assert_eq!(mapping, vec![0, 1, 3, 4]);
+        assert_eq!(clipped.moves.len(), 4);
+    }
+
+    #[test]
+    fn provenance_crossing_out_doubles_one_input() {
+        let boundary = Polygon2::rectangle(0.0, 0.0, 100.0, 100.0);
+        let mut tp = Toolpath::new();
+        tp.feed_to(P3::new(50.0, 50.0, -5.0), 1000.0); // inside (first)
+        tp.feed_to(P3::new(60.0, 50.0, -5.0), 1000.0); // inside
+        tp.feed_to(P3::new(150.0, 50.0, -5.0), 1000.0); // outside (crossing out)
+
+        let (clipped, mapping) = clip_toolpath_to_boundary_with_provenance(&tp, &boundary, 20.0);
+        // input 0 → 1 output (kept)
+        // input 1 → 1 output (kept)
+        // input 2 → 2 outputs (retract from prev + rapid to outside)
+        // sentinel = 4
+        assert_eq!(mapping, vec![0, 1, 2, 4]);
+        assert_eq!(clipped.moves.len(), 4);
+    }
+
+    #[test]
+    fn provenance_empty_returns_zero_sentinel() {
+        let boundary = Polygon2::rectangle(0.0, 0.0, 10.0, 10.0);
+        let tp = Toolpath::new();
+        let (clipped, mapping) = clip_toolpath_to_boundary_with_provenance(&tp, &boundary, 20.0);
+        assert!(clipped.moves.is_empty());
+        assert_eq!(mapping, vec![0]);
+    }
+
+    #[test]
+    fn provenance_remap_preserves_span_through_crossing() {
+        // Build a 3-move toolpath: outside → inside → inside, with a Region
+        // span covering moves 1..3. After remap the Region should include the
+        // inserted plunge between input moves 0 and 1.
+        use crate::toolpath_spans::{Span, SpanKind};
+        let boundary = Polygon2::rectangle(0.0, 0.0, 100.0, 100.0);
+        let mut tp = Toolpath::new();
+        tp.feed_to(P3::new(-10.0, 50.0, -5.0), 1000.0);
+        tp.feed_to(P3::new(50.0, 50.0, -5.0), 1000.0);
+        tp.feed_to(P3::new(60.0, 50.0, -5.0), 1000.0);
+
+        let region = Span::new(1, 3, SpanKind::Region);
+        let (_clipped, mapping) = clip_toolpath_to_boundary_with_provenance(&tp, &boundary, 20.0);
+        let remapped = region.remap(&mapping);
+        // input 1..3 → output 1..4 per the prior crossing-in test.
+        assert_eq!(remapped.start_move, 1);
+        assert_eq!(remapped.end_move, 4);
     }
 
     #[test]
