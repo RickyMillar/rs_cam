@@ -113,8 +113,6 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::SimJumpToEnd => self.handle_sim_jump_to_end(),
             AppEvent::SimJumpToOpStart(idx) => self.handle_sim_jump_to_op_start(idx),
             AppEvent::SimJumpToOpEnd(idx) => self.handle_sim_jump_to_op_end(idx),
-            AppEvent::SimJumpToPrevPass => self.handle_sim_jump_pass(-1),
-            AppEvent::SimJumpToNextPass => self.handle_sim_jump_pass(1),
 
             // --- Compute / check events ---
             AppEvent::RunCollisionCheck => self.request_collision_check(),
