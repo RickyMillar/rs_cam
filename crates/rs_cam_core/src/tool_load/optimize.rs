@@ -829,6 +829,11 @@ const STEPOVER_DEDUP_TOLERANCE_MM: f64 = 0.005;
 /// the multiplier envelope) or fall back to the multiplier envelope
 /// alone.
 ///
+/// Always also includes the operation's own factory default DOC as an
+/// "anchor" candidate so a wildly-out-of-envelope baseline (e.g. user
+/// set 0.5mm DOC on an op whose default is 3.0mm) can still walk back
+/// to the well-known-safe value the variant search would otherwise miss.
+///
 /// Returns variants sorted ascending. May return fewer than the
 /// nominal 3 or 4 entries when adjacent values dedupe (e.g. an LUT
 /// row whose `ap_max` lies inside `1.4 × baseline` ends up with the
@@ -875,6 +880,18 @@ pub(crate) fn build_doc_variants(
         variants.push((baseline + hi) * 0.5);
     }
     variants.push(hi);
+
+    // Anchor: the operation's factory default. Brings the optimizer
+    // back into the well-tested envelope when the user's baseline drifted
+    // far from it (ex: TP 1 wanaka — adaptive3d default 3mm, baseline
+    // 3mm; benign here). Always added; dedup handles the no-op case.
+    if let Some(default_doc) = OperationConfig::new_default(op_type)
+        .depth_per_pass()
+        && default_doc.is_finite()
+        && default_doc > DOC_HARD_FLOOR_MM
+    {
+        variants.push(default_doc);
+    }
 
     variants.sort_by(f64::total_cmp);
     variants.dedup_by(|a, b| (*a - *b).abs() < DOC_DEDUP_TOLERANCE_MM);
@@ -932,6 +949,20 @@ pub(crate) fn build_stepover_variants(
         variants.push((baseline + hi) * 0.5);
     }
     variants.push(hi);
+
+    // Anchor: the operation's factory default stepover. Without this,
+    // a user-baseline that's drifted far below (or above) the safe
+    // envelope is unrecoverable by the local search — the multipliers
+    // stay near baseline. Wanaka exhibited this: adaptive3d default
+    // stepover is 2.0mm, but TP 1's baseline of 0.84mm bounded the
+    // search to [0.59, 1.18], well below the 2.0 the chipload gate
+    // needed. Always added; dedup handles the no-op case.
+    if let Some(default_so) = OperationConfig::new_default(op_type).stepover()
+        && default_so.is_finite()
+        && default_so > STEPOVER_HARD_FLOOR_MM
+    {
+        variants.push(default_so);
+    }
 
     variants.sort_by(f64::total_cmp);
     variants.dedup_by(|a, b| (*a - *b).abs() < STEPOVER_DEDUP_TOLERANCE_MM);
@@ -2936,12 +2967,42 @@ mod stage1_grid_tests {
     #[test]
     fn stepover_three_variant_op_with_no_lut_row() {
         // Adaptive3d with baseline 0.8mm and no LUT bounds.
-        // Expected: [0.7×0.8, 0.8, 1.3×0.8] = [0.56, 0.8, 1.04]
+        // Multiplier envelope: [0.7×0.8, 0.8, 1.3×0.8] = [0.56, 0.8, 1.04].
+        // Factory default anchor for Adaptive3d stepover is 2.0mm — this
+        // is far enough from the baseline range that it survives the
+        // dedup, giving 4 sorted variants.
         let variants = build_stepover_variants(0.8, None, OperationType::Adaptive3d);
-        assert_eq!(variants.len(), 3, "got {variants:?}");
+        assert_eq!(variants.len(), 4, "got {variants:?}");
         assert!((variants[0] - 0.56).abs() < 1e-6);
         assert!((variants[1] - 0.8).abs() < 1e-6);
         assert!((variants[2] - 1.04).abs() < 1e-6);
+        assert!((variants[3] - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn stepover_factory_default_anchored_when_baseline_low() {
+        // Regression test for the wanaka case: a user-set stepover well
+        // below the operation's factory default should still produce a
+        // candidate at the default value, so the optimizer can walk the
+        // toolpath back up into the well-known safe envelope.
+        let variants = build_stepover_variants(0.84, None, OperationType::Adaptive3d);
+        assert!(
+            variants.iter().any(|v| (v - 2.0).abs() < 1e-6),
+            "expected the Adaptive3d default stepover (2.0) to be \
+             included as an anchor candidate, got {variants:?}"
+        );
+    }
+
+    #[test]
+    fn doc_factory_default_anchored_when_baseline_low() {
+        // Same regression for DOC: a tiny user baseline should still
+        // produce the factory default DOC as a candidate.
+        let variants = build_doc_variants(0.5, None, OperationType::Adaptive3d);
+        assert!(
+            variants.iter().any(|v| (v - 3.0).abs() < 1e-6),
+            "expected the Adaptive3d default DOC (3.0) to be included \
+             as an anchor candidate, got {variants:?}"
+        );
     }
 
     #[test]
