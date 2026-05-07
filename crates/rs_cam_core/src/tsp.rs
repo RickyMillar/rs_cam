@@ -3,14 +3,21 @@
 //! Reorders independent toolpath segments to minimize total rapid travel distance
 //! using a nearest-neighbor heuristic followed by 2-opt improvement.
 
+use std::ops::Range;
+
 use crate::geo::P3;
 use crate::toolpath::{Move, MoveType, Toolpath};
+use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
 
 /// A continuous sequence of cutting moves between rapids.
 struct Segment {
     moves: Vec<Move>,
     start: P3,
     end: P3,
+    /// Half-open range of move indices in the *input* toolpath that this
+    /// segment's cutting moves came from. Rapids around the segment are
+    /// not included — they are regenerated during reassembly.
+    src_range: Range<usize>,
 }
 
 /// XY-plane distance between two 3D points (ignores Z).
@@ -23,40 +30,56 @@ fn xy_distance(a: &P3, b: &P3) -> f64 {
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Split a toolpath into segments of consecutive non-rapid moves.
 ///
-/// Each segment tracks the start and end positions of its cutting moves.
+/// Each segment tracks the start and end positions of its cutting moves and
+/// the half-open `[start..end)` range of input move indices it covers.
 /// Rapids between segments are discarded (they will be regenerated).
 fn split_into_segments(toolpath: &Toolpath) -> Vec<Segment> {
     let mut segments = Vec::new();
     let mut current_moves: Vec<Move> = Vec::new();
+    let mut current_start_idx: Option<usize> = None;
 
-    for m in &toolpath.moves {
+    for (idx, m) in toolpath.moves.iter().enumerate() {
         match m.move_type {
             MoveType::Rapid => {
-                // Flush any accumulated cutting moves as a segment.
-                if let (Some(first), Some(last)) = (current_moves.first(), current_moves.last()) {
+                if let (Some(first), Some(last), Some(src_start)) = (
+                    current_moves.first(),
+                    current_moves.last(),
+                    current_start_idx,
+                ) {
                     let start = first.target;
                     let end = last.target;
+                    let n = current_moves.len();
                     segments.push(Segment {
                         moves: std::mem::take(&mut current_moves),
                         start,
                         end,
+                        src_range: src_start..src_start + n,
                     });
+                    current_start_idx = None;
                 }
             }
             _ => {
+                if current_start_idx.is_none() {
+                    current_start_idx = Some(idx);
+                }
                 current_moves.push(m.clone());
             }
         }
     }
 
-    // Flush trailing cutting moves.
-    if let (Some(first), Some(last)) = (current_moves.first(), current_moves.last()) {
+    if let (Some(first), Some(last), Some(src_start)) = (
+        current_moves.first(),
+        current_moves.last(),
+        current_start_idx,
+    ) {
         let start = first.target;
         let end = last.target;
+        let n = current_moves.len();
         segments.push(Segment {
             moves: current_moves,
             start,
             end,
+            src_range: src_start..src_start + n,
         });
     }
 
@@ -70,99 +93,183 @@ fn split_into_segments(toolpath: &Toolpath) -> Vec<Segment> {
 /// start of the next segment in the order.
 #[cfg(test)]
 fn total_rapid_distance(order: &[usize], segments: &[Segment]) -> f64 {
-    // Safety: each window pair [a, b] is a valid 2-element slice from order.
-    // order values are valid segment indices by construction.
     #[allow(clippy::indexing_slicing)]
     order.windows(2).fold(0.0, |dist, pair| {
         dist + xy_distance(&segments[pair[0]].end, &segments[pair[1]].start)
     })
 }
 
-/// Reorder independent toolpath segments to minimize total rapid travel distance.
+/// Reorder independent toolpath cutting segments to minimize rapid travel,
+/// honoring TSP barriers derived from the input's span annotations.
 ///
-/// A "segment" is a continuous sequence of cutting moves between rapids.
-/// Returns a new toolpath with segments reordered for shorter rapids,
-/// with proper retract/rapid/plunge moves inserted between segments.
+/// Barriers come from [`AnnotatedToolpath::rapid_order_barriers`]
+/// (`RapidOrderBarrier` + `DepthPass` span starts). Reordering happens
+/// independently within each barrier-delimited group; cuts on opposite sides
+/// of a barrier are never swapped — this is the wanaka safety guarantee that
+/// keeps depth-pass and lock-step ordering intact.
+///
+/// # Span remapping (Phase 3f / #55)
+///
+/// Each input span is rewritten through a [`MoveRemap`] reflecting the
+/// permutation. An `Operation` span covering the whole toolpath survives
+/// identical because the permutation is contained within the operation.
+/// A `Region`/`DepthPass`/etc. span covering only some moves is remapped to
+/// the new range its moves occupy.
+///
+/// **Known limitation:** if a non-`Operation` span's old move range maps to a
+/// non-contiguous new range — i.e. the bounding range of the span's moves in
+/// the new toolpath also contains foreign moves that came from outside the
+/// span — the output's `spans_valid` flag is set to `false` and a
+/// `tracing::warn!` is emitted. The span is preserved with its bounding
+/// range so downstream code that honors `spans_valid` still has something
+/// usable for diagnostics.
 ///
 /// # Algorithm
 ///
-/// 1. Split the toolpath into cutting segments (strips rapids).
-/// 2. Apply nearest-neighbor heuristic starting from segment 0.
-/// 3. Improve with 2-opt swaps (up to 100 iterations).
-/// 4. Reassemble with rapids between segments: retract to `safe_z`, rapid to
-///    next segment start XY at `safe_z`, then the segment's cutting moves.
-// Safety: all indexing in this function is bounded by `n` (segment count).
-// `order` contains valid segment indices 0..n, `visited` is sized to n,
-// loop variables i,j are bounded by n, and j+1 is guarded by `j+1 < n`.
+/// 1. Derive barriers from the input spans (if any) and slice the toolpath
+///    into barrier-delimited groups.
+/// 2. Within each group: split into cutting segments, apply nearest-neighbor
+///    + 2-opt, then reassemble with retract/rapid/plunge between segments.
+/// 3. Build a `MoveRemap` describing where each old move ended up.
+/// 4. Remap input spans through the permutation; flag `spans_valid = false`
+///    if any non-`Operation` span fragmented across barriers / segments.
+// SAFETY: all indexing in this function is bounded by `n` (segment count)
+// and group_bounds, both built locally.
 #[allow(clippy::indexing_slicing)]
-pub fn optimize_rapid_order(toolpath: &Toolpath, safe_z: f64) -> Toolpath {
-    optimize_rapid_order_unbarriered(toolpath, safe_z)
-}
+pub fn optimize_rapid_order(annotated: AnnotatedToolpath, safe_z: f64) -> AnnotatedToolpath {
+    let barriers = annotated.rapid_order_barriers();
+    let AnnotatedToolpath {
+        toolpath,
+        spans,
+        spans_valid: input_valid,
+    } = annotated;
 
-/// Reorder cutting segments within barrier-delimited groups only.
-///
-/// `barrier_move_indices` are move indices in the input toolpath where a new
-/// semantic/depth group starts. Empty input preserves the historical global TSP.
-// SAFETY: group slicing uses sorted, deduplicated indices bounded by moves.len().
-#[allow(clippy::indexing_slicing)]
-pub fn optimize_rapid_order_with_barriers(
-    toolpath: &Toolpath,
-    safe_z: f64,
-    barrier_move_indices: &[usize],
-) -> Toolpath {
-    if barrier_move_indices.is_empty() || toolpath.moves.is_empty() {
-        return optimize_rapid_order_unbarriered(toolpath, safe_z);
+    if toolpath.moves.is_empty() {
+        return AnnotatedToolpath {
+            toolpath,
+            spans,
+            spans_valid: input_valid,
+        };
     }
 
-    let mut barriers: Vec<usize> = barrier_move_indices
-        .iter()
-        .copied()
-        .filter(|&idx| idx < toolpath.moves.len())
-        .collect();
-    barriers.sort_unstable();
-    barriers.dedup();
-
-    let mut starts = Vec::with_capacity(barriers.len() + 1);
+    // Build the per-group bounds in input-move coordinates. With no barriers
+    // there is one group covering the whole toolpath. With barriers, the
+    // groups are `[0..b0)`, `[b0..b1)`, ..., `[bN..moves.len())` after
+    // dropping any `0` or out-of-range indices.
+    let n_in = toolpath.moves.len();
+    let mut starts: Vec<usize> = Vec::with_capacity(barriers.len() + 1);
     starts.push(0);
-    starts.extend(barriers.into_iter().filter(|&idx| idx > 0));
+    for &b in &barriers {
+        if b > 0 && b < n_in {
+            starts.push(b);
+        }
+    }
+    starts.sort_unstable();
     starts.dedup();
 
-    let mut result = Toolpath::new();
-    for (group_idx, &start) in starts.iter().enumerate() {
-        let end = starts
-            .get(group_idx + 1)
-            .copied()
-            .unwrap_or(toolpath.moves.len());
-        if start >= end {
-            continue;
+    let mut group_bounds: Vec<Range<usize>> = Vec::with_capacity(starts.len());
+    for (i, &s) in starts.iter().enumerate() {
+        let e = starts.get(i + 1).copied().unwrap_or(n_in);
+        if s < e {
+            group_bounds.push(s..e);
         }
-        let group = Toolpath {
-            moves: toolpath.moves[start..end].to_vec(),
-        };
-        let optimized = optimize_rapid_order_unbarriered(&group, safe_z);
-        result.moves.extend(optimized.moves);
     }
 
-    result
+    // Optimize each group, accumulating the new toolpath and a per-old-move
+    // remap entry. Each old cutting move maps to its new index; old rapids
+    // remap to a zero-width slot at the group's new-output start (leading
+    // rapids before any cuts) or end (trailing rapids), so spans covering
+    // a whole group remap cleanly.
+    let mut result = Toolpath::new();
+    let mut old_to_new: Vec<Option<Range<usize>>> = vec![None; n_in];
+
+    for group in &group_bounds {
+        let group_new_start = result.moves.len();
+        optimize_one_group(
+            &toolpath,
+            group.clone(),
+            safe_z,
+            &mut result,
+            &mut old_to_new,
+        );
+        let group_new_end = result.moves.len();
+        fill_group_rapids(
+            &mut old_to_new,
+            group.clone(),
+            group_new_start,
+            group_new_end,
+        );
+    }
+
+    let new_n = result.moves.len();
+    let remap = MoveRemap { old_to_new };
+
+    let (new_spans, new_valid) = if input_valid {
+        remap_spans(&spans, &remap, new_n)
+    } else {
+        (spans, false)
+    };
+
+    AnnotatedToolpath {
+        toolpath: result,
+        spans: new_spans,
+        spans_valid: new_valid,
+    }
 }
 
-// SAFETY: all indexing mirrors the original TSP implementation and is bounded by
-// segment/order lengths built in this function.
+/// Run the single-group nearest-neighbor + 2-opt over `[group_start..group_end)`
+/// of the input, append the reordered moves to `result`, and update `old_to_new`
+/// so each input cutting move points to its new index.
 #[allow(clippy::indexing_slicing)]
-fn optimize_rapid_order_unbarriered(toolpath: &Toolpath, safe_z: f64) -> Toolpath {
-    let segments = split_into_segments(toolpath);
-
-    // Trivial cases: 0 or 1 segments need no optimization.
-    if segments.len() <= 1 {
-        return toolpath.clone();
+fn optimize_one_group(
+    toolpath: &Toolpath,
+    group: Range<usize>,
+    safe_z: f64,
+    result: &mut Toolpath,
+    old_to_new: &mut [Option<Range<usize>>],
+) {
+    let group_view = Toolpath {
+        moves: toolpath.moves[group.clone()].to_vec(),
+    };
+    let mut segments = split_into_segments(&group_view);
+    // Shift segment src_ranges back into input-toolpath coordinates.
+    for s in &mut segments {
+        s.src_range = s.src_range.start + group.start..s.src_range.end + group.start;
     }
 
-    // --- Nearest-neighbor heuristic ---
+    if segments.is_empty() {
+        // Nothing cut — copy moves through verbatim so the move count stays
+        // sensible. (In practice this is a group of pure rapids.)
+        for idx in group {
+            let dst = result.moves.len();
+            result.moves.push(toolpath.moves[idx].clone());
+            old_to_new[idx] = Some(dst..dst + 1);
+        }
+        return;
+    }
+
+    if segments.len() == 1 {
+        // Single segment: no reordering. Append the moves as-is, including
+        // any framing rapids from the input range.
+        for idx in group {
+            let dst = result.moves.len();
+            result.moves.push(toolpath.moves[idx].clone());
+            old_to_new[idx] = Some(dst..dst + 1);
+        }
+        return;
+    }
+
+    let order = run_tsp(&segments);
+    rebuild_group(&segments, &order, safe_z, result, old_to_new);
+}
+
+/// Nearest-neighbor + 2-opt order computation over `segments`.
+#[allow(clippy::indexing_slicing)]
+fn run_tsp(segments: &[Segment]) -> Vec<usize> {
     let n = segments.len();
     let mut visited = vec![false; n];
     let mut order = Vec::with_capacity(n);
 
-    // Start from segment 0.
     order.push(0);
     visited[0] = true;
 
@@ -188,21 +295,17 @@ fn optimize_rapid_order_unbarriered(toolpath: &Toolpath, safe_z: f64) -> Toolpat
         order.push(best_idx);
     }
 
-    // --- 2-opt improvement ---
     // 2-opt is O(N²) per sweep and each reverse is O(N), so a full pass is
     // O(N³). With 100 iterations and N > ~500, this can hang the app for
-    // hours. On very fragmented toolpaths (project_curve over many DXF
-    // rings, adaptive with many tiny pockets) the nearest-neighbor pass
-    // from step 1 is already a strong solution — skip 2-opt beyond this
-    // threshold and accept the NN order. A future improvement could use
-    // a spatial index (kd-tree) for local 2-opt swaps.
+    // hours. On very fragmented toolpaths the nearest-neighbor pass from
+    // step 1 is already a strong solution — skip 2-opt beyond this threshold.
     const MAX_2OPT_SEGMENTS: usize = 500;
     if n > MAX_2OPT_SEGMENTS {
         tracing::info!(
             segments = n,
             "Skipping 2-opt pass: segment count exceeds safe threshold; nearest-neighbor order used"
         );
-        return rebuild_toolpath_from_order(&segments, &order, safe_z);
+        return order;
     }
     let max_iterations = 100;
     for _ in 0..max_iterations {
@@ -210,8 +313,6 @@ fn optimize_rapid_order_unbarriered(toolpath: &Toolpath, safe_z: f64) -> Toolpat
 
         for i in 0..n.saturating_sub(1) {
             for j in (i + 2)..n {
-                // Cost of current edges: (i -> i+1) and (j -> j+1 if exists).
-                // Cost if we reverse the sub-tour i+1..=j.
                 let cost_before =
                     xy_distance(&segments[order[i]].end, &segments[order[i + 1]].start)
                         + if j + 1 < n {
@@ -239,13 +340,20 @@ fn optimize_rapid_order_unbarriered(toolpath: &Toolpath, safe_z: f64) -> Toolpat
         }
     }
 
-    rebuild_toolpath_from_order(&segments, &order, safe_z)
+    order
 }
 
+/// Append the segments in `order` (with retract/rapid/plunge interstitial
+/// rapids) to `result`, recording each input cutting move's new slot in
+/// `old_to_new`.
 #[allow(clippy::indexing_slicing)]
-fn rebuild_toolpath_from_order(segments: &[Segment], order: &[usize], safe_z: f64) -> Toolpath {
-    let mut result = Toolpath::new();
-
+fn rebuild_group(
+    segments: &[Segment],
+    order: &[usize],
+    safe_z: f64,
+    result: &mut Toolpath,
+    old_to_new: &mut [Option<Range<usize>>],
+) {
     for (idx, &seg_idx) in order.iter().enumerate() {
         let seg = &segments[seg_idx];
 
@@ -257,8 +365,11 @@ fn rebuild_toolpath_from_order(segments: &[Segment], order: &[usize], safe_z: f6
             result.rapid_to(P3::new(seg.start.x, seg.start.y, safe_z));
         }
 
-        for m in &seg.moves {
+        let src_start = seg.src_range.start;
+        for (k, m) in seg.moves.iter().enumerate() {
+            let new_idx = result.moves.len();
             result.moves.push(m.clone());
+            old_to_new[src_start + k] = Some(new_idx..new_idx + 1);
         }
     }
 
@@ -266,36 +377,146 @@ fn rebuild_toolpath_from_order(segments: &[Segment], order: &[usize], safe_z: f6
         let last_seg = &segments[*last_seg_idx];
         result.rapid_to(P3::new(last_seg.end.x, last_seg.end.y, safe_z));
     }
+}
 
-    result
+/// Fill `None` slots within a group's input range with zero-width markers at
+/// the appropriate edge of the group's output range. Leading rapids (before
+/// the first surviving cut) map to `group_new_start..group_new_start`;
+/// trailing rapids (after the last surviving cut) map to
+/// `group_new_end..group_new_end`. Mid-group rapids that lie between
+/// surviving cuts map to the next cut's slot.
+#[allow(clippy::indexing_slicing)]
+fn fill_group_rapids(
+    old_to_new: &mut [Option<Range<usize>>],
+    group: Range<usize>,
+    group_new_start: usize,
+    group_new_end: usize,
+) {
+    let first_surviving = (group.start..group.end).find(|&i| old_to_new[i].is_some());
+
+    let Some(first) = first_surviving else {
+        // No cuts in this group — entire input range maps to a zero-width
+        // slot at group_new_start (which equals group_new_end here).
+        for i in group {
+            if old_to_new[i].is_none() {
+                old_to_new[i] = Some(group_new_start..group_new_start);
+            }
+        }
+        return;
+    };
+
+    // Leading rapids → group_new_start.
+    for slot in old_to_new.iter_mut().take(first).skip(group.start) {
+        if slot.is_none() {
+            *slot = Some(group_new_start..group_new_start);
+        }
+    }
+
+    // Walk forward from `first` filling None entries with the *next*
+    // surviving cut's start slot, or `group_new_end` if no further survivor.
+    let mut next_slot = group_new_end;
+    for i in (first..group.end).rev() {
+        match &old_to_new[i] {
+            Some(r) => next_slot = r.start,
+            None => old_to_new[i] = Some(next_slot..next_slot),
+        }
+    }
+}
+
+/// Remap each input span through the permutation. Returns the new spans and
+/// a `spans_valid` flag — `false` if any non-`Operation` span fragmented
+/// (foreign moves intruded into its new bounding range).
+#[allow(clippy::indexing_slicing)]
+fn remap_spans(spans: &[Span], remap: &MoveRemap, new_n: usize) -> (Vec<Span>, bool) {
+    let mut out: Vec<Span> = Vec::with_capacity(spans.len());
+    let mut valid = true;
+
+    for s in spans {
+        let payload = s.payload.clone();
+        let label = s.label.clone();
+
+        let new_span = if s.is_boundary() {
+            let new_pos = remap.remap_boundary(s.start_move, new_n);
+            Span::new(new_pos, new_pos, s.kind)
+        } else {
+            // Bounding remap — the min..max of where the old moves landed.
+            let Some(bounds) = remap.remap_range(s.start_move, s.end_move) else {
+                // Every move in the span got dropped — drop the span too.
+                continue;
+            };
+
+            // Foreign-intrusion check: any old move *outside* the span that
+            // non-trivially overlaps `bounds` means the span's contents got
+            // interleaved with foreign moves by the reorder. Operation
+            // spans are exempt because the permutation is internal to them.
+            let foreign_intrusion = remap
+                .old_to_new
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i < s.start_move || *i >= s.end_move)
+                .any(|(_, slot)| {
+                    slot.as_ref().is_some_and(|r| {
+                        // Non-trivial overlap: the slot covers an actual
+                        // new-move index (start < end) AND that index is
+                        // inside `bounds`.
+                        r.start < r.end && r.start < bounds.end && r.end > bounds.start
+                    })
+                });
+
+            if foreign_intrusion && s.kind != SpanKind::Operation {
+                tracing::warn!(
+                    span_kind = ?s.kind,
+                    span_label = %s.label,
+                    old_range = ?(s.start_move..s.end_move),
+                    new_bounds = ?bounds,
+                    "TSP rapid-order optimization split a non-Operation span; \
+                     marking spans_valid = false"
+                );
+                valid = false;
+            }
+
+            Span::new(bounds.start, bounds.end, s.kind)
+        };
+
+        let new_span = new_span.with_label(label);
+        let new_span = if let Some(p) = payload {
+            new_span.with_payload(p)
+        } else {
+            new_span
+        };
+        out.push(new_span);
+    }
+
+    (out, valid)
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
     use crate::toolpath::MoveType;
+    use crate::toolpath_spans::{Span, SpanKind};
 
-    /// Build a simple cutting segment: rapid to start at safe_z, feed moves along points,
-    /// rapid retract at the end.
     fn make_segment_toolpath(points: &[P3], safe_z: f64, feed_rate: f64) -> Vec<Move> {
         let mut moves = Vec::new();
         let (Some(first), Some(last)) = (points.first(), points.last()) else {
             return moves;
         };
-        // Rapid to above start
         moves.push(Move {
             target: P3::new(first.x, first.y, safe_z),
             move_type: MoveType::Rapid,
         });
-        // Feed through all points
         for p in points {
             moves.push(Move {
                 target: *p,
                 move_type: MoveType::Linear { feed_rate },
             });
         }
-        // Retract
         moves.push(Move {
             target: P3::new(last.x, last.y, safe_z),
             move_type: MoveType::Rapid,
@@ -303,47 +524,39 @@ mod tests {
         moves
     }
 
+    fn opt_unannotated(tp: &Toolpath, safe_z: f64) -> Toolpath {
+        optimize_rapid_order(AnnotatedToolpath::new(tp.clone()), safe_z).toolpath
+    }
+
     #[test]
     fn test_four_segments_square_optimizer_improves() {
-        // Four segments arranged in a square pattern but given in worst-case order:
-        // Segment 0: (0,0) -> (1,0)   (bottom-left)
-        // Segment 1: (100,100) -> (101,100)  (top-right, far away)
-        // Segment 2: (1,0) -> (2,0)   (next to seg 0)
-        // Segment 3: (100,0) -> (101,0)  (bottom-right, near seg 2's end via longer path)
-        //
-        // A bad order like [0, 1, 2, 3] would jump far; optimizer should find something better.
         let safe_z = 10.0;
         let feed = 1000.0;
 
         let mut tp = Toolpath::new();
-        // Segment 0: cut at (0,0,-1) to (10,0,-1)
         tp.moves.extend(make_segment_toolpath(
             &[P3::new(0.0, 0.0, -1.0), P3::new(10.0, 0.0, -1.0)],
             safe_z,
             feed,
         ));
-        // Segment 1: cut at (100,100,-1) to (110,100,-1)  -- far corner
         tp.moves.extend(make_segment_toolpath(
             &[P3::new(100.0, 100.0, -1.0), P3::new(110.0, 100.0, -1.0)],
             safe_z,
             feed,
         ));
-        // Segment 2: cut at (12,0,-1) to (20,0,-1)  -- near segment 0
         tp.moves.extend(make_segment_toolpath(
             &[P3::new(12.0, 0.0, -1.0), P3::new(20.0, 0.0, -1.0)],
             safe_z,
             feed,
         ));
-        // Segment 3: cut at (100,0,-1) to (110,0,-1)  -- near segment 1 in X
         tp.moves.extend(make_segment_toolpath(
             &[P3::new(100.0, 0.0, -1.0), P3::new(110.0, 0.0, -1.0)],
             safe_z,
             feed,
         ));
 
-        let optimized = optimize_rapid_order(&tp, safe_z);
+        let optimized = opt_unannotated(&tp, safe_z);
 
-        // Compute rapid distances for the original vs optimized.
         let original_rapid = tp.total_rapid_distance();
         let optimized_rapid = optimized.total_rapid_distance();
 
@@ -354,7 +567,6 @@ mod tests {
             original_rapid,
         );
 
-        // Verify that all cutting moves are preserved (4 segments, 2 feed moves each = 8).
         let cutting_count = optimized
             .moves
             .iter()
@@ -372,9 +584,8 @@ mod tests {
         tp.feed_to(P3::new(10.0, 0.0, -1.0), 1000.0);
         tp.rapid_to(P3::new(10.0, 0.0, safe_z));
 
-        let optimized = optimize_rapid_order(&tp, safe_z);
+        let optimized = opt_unannotated(&tp, safe_z);
 
-        // With one segment the output should have the same cutting moves.
         let orig_cutting: Vec<_> = tp
             .moves
             .iter()
@@ -422,8 +633,16 @@ mod tests {
             feed,
         ));
 
-        let global = optimize_rapid_order(&tp, safe_z);
-        let barriered = optimize_rapid_order_with_barriers(&tp, safe_z, &[0, group_2_start]);
+        let global = opt_unannotated(&tp, safe_z);
+        let n = tp.moves.len();
+        let annotated = AnnotatedToolpath::with_spans(
+            tp.clone(),
+            vec![
+                Span::new(0, group_2_start, SpanKind::DepthPass),
+                Span::new(group_2_start, n, SpanKind::DepthPass),
+            ],
+        );
+        let barriered = optimize_rapid_order(annotated, safe_z).toolpath;
 
         let global_cut_z: Vec<f64> = global
             .moves
@@ -449,7 +668,7 @@ mod tests {
     #[test]
     fn test_empty_toolpath_unchanged() {
         let tp = Toolpath::new();
-        let optimized = optimize_rapid_order(&tp, 10.0);
+        let optimized = opt_unannotated(&tp, 10.0);
         assert!(
             optimized.moves.is_empty(),
             "Empty toolpath should produce empty result"
@@ -459,11 +678,9 @@ mod tests {
     #[test]
     fn test_split_into_segments() {
         let mut tp = Toolpath::new();
-        // Segment 1
         tp.rapid_to(P3::new(0.0, 0.0, 10.0));
         tp.feed_to(P3::new(0.0, 0.0, -1.0), 500.0);
         tp.feed_to(P3::new(5.0, 0.0, -1.0), 1000.0);
-        // Segment 2
         tp.rapid_to(P3::new(5.0, 0.0, 10.0));
         tp.rapid_to(P3::new(20.0, 0.0, 10.0));
         tp.feed_to(P3::new(20.0, 0.0, -1.0), 500.0);
@@ -499,23 +716,188 @@ mod tests {
                 moves: vec![],
                 start: P3::new(0.0, 0.0, 0.0),
                 end: P3::new(10.0, 0.0, 0.0),
+                src_range: 0..0,
             },
             Segment {
                 moves: vec![],
                 start: P3::new(10.0, 10.0, 0.0),
                 end: P3::new(20.0, 10.0, 0.0),
+                src_range: 0..0,
             },
             Segment {
                 moves: vec![],
                 start: P3::new(20.0, 0.0, 0.0),
                 end: P3::new(30.0, 0.0, 0.0),
+                src_range: 0..0,
             },
         ];
 
         let order = vec![0, 1, 2];
         let dist = total_rapid_distance(&order, &segments);
-        // end[0]=(10,0) -> start[1]=(10,10): 10.0
-        // end[1]=(20,10) -> start[2]=(20,0): 10.0
         assert!((dist - 20.0).abs() < 1e-10, "Expected 20.0, got {}", dist);
+    }
+
+    // ── Span-aware behavior (Phase 3f / #55) ─────────────────────────────
+
+    #[test]
+    fn optimize_rapid_order_derives_barriers_from_spans() {
+        // Verifies barriers are derived from DepthPass span starts (no
+        // explicit RapidOrderBarrier). Cuts below the barrier (Z=-7) must
+        // stay below the cuts above (Z=0) after reorder.
+        let safe_z = 10.0;
+        let feed = 1000.0;
+        let mut tp = Toolpath::new();
+
+        tp.moves.extend(make_segment_toolpath(
+            &[P3::new(0.0, 0.0, 0.0), P3::new(1.0, 0.0, 0.0)],
+            safe_z,
+            feed,
+        ));
+        tp.moves.extend(make_segment_toolpath(
+            &[P3::new(100.0, 0.0, 0.0), P3::new(101.0, 0.0, 0.0)],
+            safe_z,
+            feed,
+        ));
+        let group_2_start = tp.moves.len();
+        tp.moves.extend(make_segment_toolpath(
+            &[P3::new(2.0, 0.0, -7.0), P3::new(3.0, 0.0, -7.0)],
+            safe_z,
+            feed,
+        ));
+        tp.moves.extend(make_segment_toolpath(
+            &[P3::new(4.0, 0.0, -7.0), P3::new(5.0, 0.0, -7.0)],
+            safe_z,
+            feed,
+        ));
+
+        let n = tp.moves.len();
+        let annotated = AnnotatedToolpath::with_spans(
+            tp,
+            vec![
+                Span::new(0, n, SpanKind::Operation),
+                Span::new(0, group_2_start, SpanKind::DepthPass),
+                Span::new(group_2_start, n, SpanKind::DepthPass),
+            ],
+        );
+        let result = optimize_rapid_order(annotated, safe_z);
+
+        let cut_z: Vec<f64> = result
+            .toolpath
+            .moves
+            .iter()
+            .filter(|m| m.move_type.is_cutting())
+            .map(|m| m.target.z)
+            .collect();
+        assert_eq!(&cut_z[0..4], &[0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(&cut_z[4..], &[-7.0, -7.0, -7.0, -7.0]);
+    }
+
+    #[test]
+    fn optimize_rapid_order_remaps_operation_span() {
+        // A trivial Operation span over the whole toolpath should survive
+        // with end_move equal to the new toolpath length, and spans_valid
+        // should remain true.
+        let safe_z = 10.0;
+        let feed = 1000.0;
+        let mut tp = Toolpath::new();
+        tp.moves.extend(make_segment_toolpath(
+            &[P3::new(0.0, 0.0, -1.0), P3::new(10.0, 0.0, -1.0)],
+            safe_z,
+            feed,
+        ));
+        tp.moves.extend(make_segment_toolpath(
+            &[P3::new(50.0, 0.0, -1.0), P3::new(60.0, 0.0, -1.0)],
+            safe_z,
+            feed,
+        ));
+        let n = tp.moves.len();
+        let annotated =
+            AnnotatedToolpath::with_spans(tp, vec![Span::new(0, n, SpanKind::Operation)]);
+
+        let result = optimize_rapid_order(annotated, safe_z);
+
+        let op = result
+            .spans
+            .iter()
+            .find(|s| s.kind == SpanKind::Operation)
+            .expect("Operation span must survive");
+        assert_eq!(op.start_move, 0);
+        assert_eq!(op.end_move, result.toolpath.moves.len());
+        assert!(
+            result.spans_valid,
+            "Operation-only spans must round-trip cleanly"
+        );
+        result
+            .check_invariants()
+            .expect("remapped spans satisfy invariants");
+    }
+
+    #[test]
+    fn optimize_rapid_order_invalidates_on_split() {
+        // Build four segments so that NN/2-opt picks the order
+        // [seg0, seg2, seg1, seg3] (proximity grouping):
+        //   seg0 cuts at X=0, seg1 at X=50 (far), seg2 at X=2 (next to seg0),
+        //   seg3 at X=52 (next to seg1).
+        // A Region span covers input range [0..seg2_start), i.e. seg0+seg1.
+        // After reorder, seg2 (which is OUTSIDE the span) lands between
+        // seg0 and seg1 in the output → seg2's new slot intrudes into the
+        // span's bounding range → spans_valid must flip to false.
+        let safe_z = 10.0;
+        let feed = 1000.0;
+        let mut tp = Toolpath::new();
+        // seg0 cuts at X=0
+        tp.moves.extend(make_segment_toolpath(
+            &[P3::new(0.0, 0.0, -1.0), P3::new(1.0, 0.0, -1.0)],
+            safe_z,
+            feed,
+        ));
+        // seg1 cuts at X=50 (far from seg0)
+        tp.moves.extend(make_segment_toolpath(
+            &[P3::new(50.0, 0.0, -1.0), P3::new(51.0, 0.0, -1.0)],
+            safe_z,
+            feed,
+        ));
+        let seg2_start = tp.moves.len();
+        // seg2 cuts at X=2 (next to seg0)
+        tp.moves.extend(make_segment_toolpath(
+            &[P3::new(2.0, 0.0, -1.0), P3::new(3.0, 0.0, -1.0)],
+            safe_z,
+            feed,
+        ));
+        // seg3 cuts at X=52 (next to seg1)
+        tp.moves.extend(make_segment_toolpath(
+            &[P3::new(52.0, 0.0, -1.0), P3::new(53.0, 0.0, -1.0)],
+            safe_z,
+            feed,
+        ));
+
+        let annotated = AnnotatedToolpath::with_spans(
+            tp.clone(),
+            vec![Span::new(0, seg2_start, SpanKind::Region).with_label("seg0+seg1")],
+        );
+        let result = optimize_rapid_order(annotated, safe_z);
+
+        let cut_x: Vec<f64> = result
+            .toolpath
+            .moves
+            .iter()
+            .filter(|m| m.move_type.is_cutting())
+            .map(|m| m.target.x)
+            .collect();
+        let original_cut_x: Vec<f64> = tp
+            .moves
+            .iter()
+            .filter(|m| m.move_type.is_cutting())
+            .map(|m| m.target.x)
+            .collect();
+        assert_ne!(cut_x, original_cut_x, "TSP should have reordered the cuts");
+
+        assert!(
+            !result.spans_valid,
+            "Region span split by foreign-move intrusion must invalidate spans"
+        );
+        result
+            .check_invariants()
+            .expect("remapped spans still satisfy structural invariants");
     }
 }
