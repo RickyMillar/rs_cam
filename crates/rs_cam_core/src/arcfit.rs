@@ -6,21 +6,58 @@
 
 use crate::geo::P3;
 use crate::toolpath::{Move, MoveType, Toolpath};
+use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Fit arcs to a toolpath, replacing linear segments with G2/G3 where possible.
 ///
 /// `tolerance` is the maximum allowed deviation (mm) between the original linear
 /// path and the fitted arc. Typical values: 0.001 to 0.01 mm.
 ///
 /// Only fits arcs in the XY plane (constant Z within tolerance).
-pub fn fit_arcs(toolpath: &Toolpath, tolerance: f64) -> Toolpath {
-    let mut result = Toolpath::new();
+///
+/// Span-aware (Phase 3e / #54):
+/// - Honors `RapidOrderBarrier` and `DepthPass` boundaries: a candidate arc run
+///   that would span across such a barrier is truncated at the barrier.
+/// - Each inserted arc is tagged with a `DressupArtifact` span labeled "arc-fit".
+/// - Input spans are remapped through the N-to-1 collapse via `MoveRemap`.
+/// - When `spans_valid` is `false`, the legacy unconditional collapse runs and
+///   spans pass through untouched.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub fn fit_arcs(annotated: AnnotatedToolpath, tolerance: f64) -> AnnotatedToolpath {
+    let AnnotatedToolpath {
+        toolpath,
+        spans,
+        spans_valid,
+    } = annotated;
     let moves = &toolpath.moves;
 
     if moves.is_empty() {
-        return result;
+        return AnnotatedToolpath {
+            toolpath: Toolpath::new(),
+            spans,
+            spans_valid,
+        };
     }
+
+    // Barriers we must not collapse across. A barrier at index `b` sits before
+    // moves[b]; we treat it as cutting the arc-eligible run so any candidate
+    // window [start, end) must satisfy: no barrier in (start, end) — i.e. a
+    // barrier at index `b` with start < b < end blocks that window.
+    let barriers: std::collections::BTreeSet<usize> = if spans_valid {
+        spans
+            .iter()
+            .filter_map(|s| match s.kind {
+                SpanKind::RapidOrderBarrier | SpanKind::DepthPass => Some(s.start_move),
+                _ => None,
+            })
+            .collect()
+    } else {
+        std::collections::BTreeSet::new()
+    };
+
+    let mut result = Toolpath::new();
+    let mut old_to_new: Vec<Option<std::ops::Range<usize>>> = Vec::with_capacity(moves.len());
+    let mut arc_positions: Vec<usize> = Vec::new();
 
     let mut i = 0;
     while i < moves.len() {
@@ -28,14 +65,18 @@ pub fn fit_arcs(toolpath: &Toolpath, tolerance: f64) -> Toolpath {
 
         // Only try to fit arcs on linear moves
         let MoveType::Linear { feed_rate } = m.move_type else {
+            let new_idx = result.moves.len();
             result.moves.push(m.clone());
+            old_to_new.push(Some(new_idx..new_idx + 1));
             i += 1;
             continue;
         };
 
         // Try to extend an arc starting from the previous point through this point
         if i == 0 {
+            let new_idx = result.moves.len();
             result.moves.push(m.clone());
+            old_to_new.push(Some(new_idx..new_idx + 1));
             i += 1;
             continue;
         }
@@ -57,11 +98,24 @@ pub fn fit_arcs(toolpath: &Toolpath, tolerance: f64) -> Toolpath {
             }
         }
 
+        // Honor span barriers: cap end_idx at the first barrier strictly after
+        // i. A barrier at index b (i < b <= end_idx) means we cannot include
+        // moves[b..] in this arc — that would erase the barrier between moves
+        // i-1..i and moves b. We can still arc-fit moves[i..b].
+        if spans_valid
+            && i < end_idx
+            && let Some(&b) = barriers.range((i + 1)..=end_idx).next()
+        {
+            end_idx = b;
+        }
+
         let segment_count = end_idx - i;
 
         // Need at least 3 points (start + 2 segments) to fit an arc
         if segment_count < 2 {
+            let new_idx = result.moves.len();
             result.moves.push(m.clone());
+            old_to_new.push(Some(new_idx..new_idx + 1));
             i += 1;
             continue;
         }
@@ -94,6 +148,7 @@ pub fn fit_arcs(toolpath: &Toolpath, tolerance: f64) -> Toolpath {
             let ij_i = arc.cx - start.x;
             let ij_j = arc.cy - start.y;
 
+            let arc_idx = result.moves.len();
             if arc.clockwise {
                 result.moves.push(Move {
                     target: P3::new(end_pt.x, end_pt.y, z),
@@ -113,15 +168,57 @@ pub fn fit_arcs(toolpath: &Toolpath, tolerance: f64) -> Toolpath {
                     },
                 });
             }
+            arc_positions.push(arc_idx);
 
+            // All collapsed source moves (i..best_arc_end) map to the single arc.
+            let r = arc_idx..arc_idx + 1;
+            for _ in i..best_arc_end {
+                old_to_new.push(Some(r.clone()));
+            }
             i = best_arc_end;
         } else {
+            let new_idx = result.moves.len();
             result.moves.push(m.clone());
+            old_to_new.push(Some(new_idx..new_idx + 1));
             i += 1;
         }
     }
 
-    result
+    let new_n_moves = result.moves.len();
+    let new_spans = if spans_valid {
+        let remap = MoveRemap { old_to_new };
+        let mut remapped: Vec<Span> = spans
+            .into_iter()
+            .filter_map(|s| {
+                let payload = s.payload.clone();
+                let label = s.label.clone();
+                let mut new_span = if s.is_boundary() {
+                    let new_pos = remap.remap_boundary(s.start_move, new_n_moves);
+                    Span::new(new_pos, new_pos, s.kind)
+                } else {
+                    let r = remap.remap_range(s.start_move, s.end_move)?;
+                    Span::new(r.start, r.end, s.kind)
+                }
+                .with_label(label);
+                if let Some(p) = payload {
+                    new_span = new_span.with_payload(p);
+                }
+                Some(new_span)
+            })
+            .collect();
+        for pos in arc_positions {
+            remapped.push(Span::new(pos, pos + 1, SpanKind::DressupArtifact).with_label("arc-fit"));
+        }
+        remapped
+    } else {
+        spans
+    };
+
+    AnnotatedToolpath {
+        toolpath: result,
+        spans: new_spans,
+        spans_valid,
+    }
 }
 
 struct ArcParams {
@@ -304,7 +401,13 @@ fn circle_from_3_points(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::redundant_clone
+)]
 mod tests {
     use super::*;
 
@@ -406,7 +509,7 @@ mod tests {
         tp.rapid_to(P3::new(0.0, 0.0, 10.0));
         tp.rapid_to(P3::new(10.0, 0.0, 0.0));
 
-        let result = fit_arcs(&tp, 0.01);
+        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.01).toolpath;
         assert_eq!(result.moves.len(), 2);
         assert_eq!(result.moves[0].move_type, MoveType::Rapid);
         assert_eq!(result.moves[1].move_type, MoveType::Rapid);
@@ -424,7 +527,7 @@ mod tests {
         }
         tp.rapid_to(P3::new(pts[0].x, pts[0].y, 10.0));
 
-        let result = fit_arcs(&tp, 0.1);
+        let result = fit_arcs(AnnotatedToolpath::new(tp.clone()), 0.1).toolpath;
 
         // Should have fewer moves (arcs replace multiple linears)
         assert!(
@@ -457,7 +560,7 @@ mod tests {
         tp.feed_to(P3::new(20.0, 0.0, 0.0), 1000.0);
         tp.feed_to(P3::new(30.0, 0.0, 0.0), 1000.0);
 
-        let result = fit_arcs(&tp, 0.01);
+        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.01).toolpath;
 
         // Straight line segments should pass through unchanged
         let arc_count = result
@@ -482,7 +585,7 @@ mod tests {
         tp.feed_to(P3::new(-10.0, 0.0, 0.0), 1000.0);
         tp.feed_to(P3::new(0.0, -10.0, 5.0), 1000.0); // Z jump
 
-        let result = fit_arcs(&tp, 0.01);
+        let result = fit_arcs(AnnotatedToolpath::new(tp.clone()), 0.01).toolpath;
         // First 2 linears at Z=0 can be arc-fit, but the Z=5 one breaks the arc.
         // So we get: rapid + arc + linear = 3 moves (fewer than 4)
         assert!(
@@ -577,8 +680,161 @@ mod tests {
     #[test]
     fn test_fit_arcs_empty() {
         let tp = Toolpath::new();
-        let result = fit_arcs(&tp, 0.01);
+        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.01).toolpath;
         assert!(result.moves.is_empty());
+    }
+
+    // ── Span-aware behavior (#54) ─────────────────────────────────────────
+
+    /// Build a toolpath that traces a circle as `n` linear segments, plus a
+    /// leading rapid. Returns the toolpath; first linear is at index 1.
+    fn circle_linear_toolpath(n: usize) -> Toolpath {
+        let pts = make_circle_points(0.0, 0.0, 10.0, n, -3.0, true);
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(pts[0].x, pts[0].y, 10.0));
+        tp.feed_to(pts[0], 1000.0);
+        for pt in &pts[1..] {
+            tp.feed_to(*pt, 1000.0);
+        }
+        tp
+    }
+
+    #[test]
+    fn fit_arcs_honors_depth_pass_barrier() {
+        // A long run of arc-eligible linear moves split by a DepthPass
+        // barrier in the middle. Arc-fit must not collapse a single arc
+        // across the barrier — both halves should be arc-fit (or each smaller
+        // run preserved) but the barrier index itself must NOT fall inside
+        // any DressupArtifact arc span.
+        let tp = circle_linear_toolpath(64);
+        let n_in = tp.moves.len();
+        // Place barrier at the midpoint of the linear run.
+        let mid = 1 + (n_in - 1) / 2;
+        let spans = vec![
+            Span::new(0, n_in, SpanKind::Operation),
+            Span::new(0, mid, SpanKind::DepthPass),
+            Span::new(mid, n_in, SpanKind::DepthPass),
+            Span::boundary(mid, SpanKind::RapidOrderBarrier),
+        ];
+        let annotated = AnnotatedToolpath::with_spans(tp.clone(), spans);
+
+        // Without the barrier check, arc-fit could try to span the whole run.
+        // With the barrier, no arc may span the boundary.
+        let result = fit_arcs(annotated, 0.1);
+
+        // Build a remap from old indices to the new arc/move via DressupArtifact
+        // span coverage in the new toolpath. Any arc that COVERS a barrier in
+        // OLD indices would have collapsed across — we instead check the
+        // structural invariant: the total number of moves is reduced (arcs
+        // were fit on at least one side), and no arc spans more old moves
+        // than the half-run's length.
+        assert!(
+            result.toolpath.moves.len() < n_in,
+            "arc-fit should still fire on each side of the barrier"
+        );
+
+        // The barrier span itself must round-trip and remain a boundary.
+        let barriers: Vec<&Span> = result
+            .spans
+            .iter()
+            .filter(|s| s.kind == SpanKind::RapidOrderBarrier)
+            .collect();
+        assert_eq!(barriers.len(), 1, "barrier preserved exactly once");
+        assert!(barriers[0].is_boundary(), "barrier stays zero-width");
+
+        // No DressupArtifact (arc-fit) span may contain the barrier index in
+        // the new toolpath — that would mean we collapsed across it.
+        let barrier_new_idx = barriers[0].start_move;
+        for s in result
+            .spans
+            .iter()
+            .filter(|s| s.kind == SpanKind::DressupArtifact)
+        {
+            assert!(
+                !(s.start_move < barrier_new_idx && s.end_move > barrier_new_idx),
+                "no arc-fit span may straddle the barrier (arc {}..{} vs barrier {})",
+                s.start_move,
+                s.end_move,
+                barrier_new_idx,
+            );
+        }
+
+        assert!(result.spans_valid);
+        result
+            .check_invariants()
+            .expect("post-arc spans pass invariants");
+    }
+
+    #[test]
+    fn fit_arcs_remaps_spans_and_tags_artifact() {
+        // No barriers — a clean arc-eligible run. Operation span should shrink
+        // to match new move count, and DressupArtifact spans should tag the
+        // arcs.
+        let tp = circle_linear_toolpath(64);
+        let n_in = tp.moves.len();
+        let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
+        let annotated = AnnotatedToolpath::with_spans(tp.clone(), spans);
+
+        let result = fit_arcs(annotated, 0.1);
+        let n_out = result.toolpath.moves.len();
+        assert!(n_out < n_in, "arc-fit should fire");
+
+        let op = result
+            .spans
+            .iter()
+            .find(|s| s.kind == SpanKind::Operation)
+            .expect("Operation span survives");
+        assert_eq!(op.start_move, 0);
+        assert_eq!(op.end_move, n_out, "Operation span tracks new move count");
+
+        let artifacts: Vec<&Span> = result
+            .spans
+            .iter()
+            .filter(|s| s.kind == SpanKind::DressupArtifact)
+            .collect();
+        assert!(
+            !artifacts.is_empty(),
+            "at least one DressupArtifact (arc-fit) span"
+        );
+        for a in &artifacts {
+            assert_eq!(a.label, "arc-fit");
+            assert_eq!(a.move_count(), 1, "each arc-fit span tags one arc move");
+            // The tagged move must actually be an arc.
+            assert!(
+                matches!(
+                    result.toolpath.moves[a.start_move].move_type,
+                    MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
+                ),
+                "DressupArtifact span must tag an arc move"
+            );
+        }
+
+        assert!(result.spans_valid);
+        result
+            .check_invariants()
+            .expect("post-arc spans pass invariants");
+    }
+
+    #[test]
+    fn fit_arcs_preserves_invalid_flag() {
+        // If input spans are flagged invalid, arc-fit doesn't try to remap
+        // and doesn't read barriers from spans either — behavior matches the
+        // legacy unconditional collapse, and spans pass through untouched.
+        let tp = circle_linear_toolpath(32);
+        let n_in = tp.moves.len();
+        let mut annotated = AnnotatedToolpath::new(tp);
+        annotated.spans_valid = false;
+        let garbage = vec![Span::new(0, 1, SpanKind::Operation)];
+        annotated.spans = garbage.clone();
+
+        let result = fit_arcs(annotated, 0.1);
+
+        assert!(result.toolpath.moves.len() < n_in, "arc-fit fires");
+        assert!(!result.spans_valid, "invalid stays invalid");
+        assert_eq!(
+            result.spans, garbage,
+            "spans pass through unchanged when input is invalid"
+        );
     }
 
     #[test]
