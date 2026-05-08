@@ -83,12 +83,43 @@ trait.
 `has_doc_knob`. Audit `OperationParams::depth_per_pass()` impls to confirm
 those return non-zero values for these op types.
 
+**Plan (re-verified 2026-05-08).**
+
+- `ProfileConfig` (`compute/operation_configs.rs:243`): has
+  `depth_per_pass: f64` (default 2.0 mm); `OperationParams` impl returns
+  `Some(self.depth_per_pass)`. No stepover field — Profile is a contour
+  follow.
+- `ZigzagConfig` (`compute/operation_configs.rs:393`): has both
+  `depth_per_pass: f64` (default 1.5 mm) and `stepover: f64` (default
+  2.0 mm); both surfaced via the trait.
+- The catch with Profile: today Stage 1's grid runs the `for stepover in
+  stepover_variants` inner loop unconditionally. With Profile lacking
+  stepover, `OperationParams::stepover()` returns `None` (default trait
+  impl) and `apply_stepover_to_op` (which calls `set_stepover`) is a
+  no-op. Inner-loop iterations would all produce identical toolpaths,
+  burning sim budget on duplicates.
+- Fix: in `run_stage_1_grid`, when the anchor op has no stepover knob
+  (`anchor_op.stepover().is_none()`), collapse `stepover_variants` to a
+  single dummy entry so the inner loop runs once per DOC. Existing
+  dedup against the anchor stays correct.
+
 **Validation gate.**
 - Build a fixture with a Pocket-equivalent toolpath using `OperationType::Profile` on FlatEnd in a wood material that has a matching LUT row.
 - MCP `optimize_toolpath` should produce ≥3 attempted candidates (not 1) when feed/RPM is binding at machine cap.
-- Existing `tool_load::optimize::stage1_grid_tests::*` should still pass.
+- New unit test pins `has_doc_knob(Profile) == true` and `has_doc_knob(Zigzag) == true`.
+- New unit test pins that `run_stage_1_grid` for a Profile op generates `doc_variants.len()` candidates, not `doc_variants.len() × stepover_variants.len()`.
+- Existing `tool_load::optimize::stage1_grid_tests::*` pass unchanged.
 
-**Status.** Not started.
+**Status.** **Done** 2026-05-08. `has_doc_knob` now includes Profile and
+Zigzag; `run_stage_1_grid` collapses the stepover dimension to a single
+entry when `anchor_op.stepover().is_none()` so Profile (no-stepover op)
+no longer fans out to duplicate sims; `bipolar_prescription` now picks
+the family-specific lever for Contour/Trace before the DOC-knob branch
+because Profile's bipolar variance is geometry-driven, not DOC-driven.
+Three new unit tests in `stage1_grid_tests` pin the behaviour. Wanaka
+has no Profile or Zigzag TPs so MCP-level validation defers to a future
+fixture; `cargo test -p rs_cam_core --lib` 1213/1213 ✓ and `cargo clippy
+-p rs_cam_core --all-targets -- -D warnings` clean.
 
 ---
 

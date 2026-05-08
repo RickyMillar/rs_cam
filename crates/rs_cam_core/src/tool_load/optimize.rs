@@ -703,8 +703,17 @@ fn run_stage_1_grid(
         .stepover()
         .unwrap_or_else(|| baseline_op.stepover().unwrap_or(1.0));
     let doc_variants = build_doc_variants(anchor_doc, matched_lut_row, ctx.operation_kind);
-    let stepover_variants =
-        build_stepover_variants(anchor_stepover, matched_lut_row, ctx.operation_kind);
+    // Collapse the stepover dimension for ops without a stepover knob
+    // (e.g. Profile is a contour follow). Without this, the inner loop
+    // would iterate `build_stepover_variants` entries each producing an
+    // identical candidate via the no-op `set_stepover`, wasting one full
+    // sim per duplicate. Single-entry vec hits the anchor-dedup branch
+    // cleanly so only DOC variants advance.
+    let stepover_variants = if anchor_op.stepover().is_some() {
+        build_stepover_variants(anchor_stepover, matched_lut_row, ctx.operation_kind)
+    } else {
+        vec![anchor_stepover]
+    };
 
     let mut out: Vec<OptimizeCandidate> = Vec::new();
     'outer: for &doc in &doc_variants {
@@ -817,26 +826,31 @@ fn deflection_setup_prescription(tool: &crate::tool::ToolDefinition, ld_ratio: f
 /// variance: 2.5D ops with DOC/stepover can usually fix it; 3D
 /// finishing ops typically can't and need a setup change.
 fn bipolar_prescription(op_kind: OperationType, op_family: OperationFamily) -> String {
-    let lever = if has_doc_knob(op_kind) {
-        "lower stepover or raise depth-per-pass to reduce engagement variance across the toolpath"
-    } else {
-        match op_family {
-            OperationFamily::Contour | OperationFamily::Trace => {
-                "engagement variance is driven by the part geometry — break the operation into \
-                 multiple passes at fixed engagement, or use a smaller cutter"
-            }
-            OperationFamily::Parallel | OperationFamily::Scallop => {
-                "this is a 3D finishing op — reduce stepover for tighter passes, or shorten \
-                 the cutter to lower setup deflection"
-            }
-            OperationFamily::Face => {
-                "engagement variance on a face op usually means the stock or stepover is \
-                 misaligned with the cutter footprint — adjust stepover or face the stock first"
-            }
-            // Adaptive / Pocket / Adaptive3d are all has_doc_knob — they hit the branch above.
-            OperationFamily::Adaptive | OperationFamily::Pocket => {
-                "lower stepover or raise depth-per-pass to reduce engagement variance"
-            }
+    // Family takes precedence over the DOC-knob check: Contour and
+    // Trace are profile-follow ops whose engagement variance is driven
+    // by part geometry (corners, curve changes), not by depth-per-pass.
+    // Even though Profile (G1, 2026-05-08) now exposes a DOC knob to
+    // Stage 1, raising DOC on a contour-follow doesn't reduce the
+    // geometric variance that produced the bipolar verdict.
+    let lever = match op_family {
+        OperationFamily::Contour | OperationFamily::Trace => {
+            "engagement variance is driven by the part geometry — break the operation into \
+             multiple passes at fixed engagement, or use a smaller cutter"
+        }
+        _ if has_doc_knob(op_kind) => {
+            "lower stepover or raise depth-per-pass to reduce engagement variance across the toolpath"
+        }
+        OperationFamily::Parallel | OperationFamily::Scallop => {
+            "this is a 3D finishing op — reduce stepover for tighter passes, or shorten \
+             the cutter to lower setup deflection"
+        }
+        OperationFamily::Face => {
+            "engagement variance on a face op usually means the stock or stepover is \
+             misaligned with the cutter footprint — adjust stepover or face the stock first"
+        }
+        // Adaptive / Pocket / Adaptive3d are all has_doc_knob — they hit the branch above.
+        OperationFamily::Adaptive | OperationFamily::Pocket => {
+            "lower stepover or raise depth-per-pass to reduce engagement variance"
         }
     };
     format!(
@@ -847,8 +861,12 @@ fn bipolar_prescription(op_kind: OperationType, op_family: OperationFamily) -> S
 }
 
 /// Operation kinds with a `depth_per_pass` knob that Stage 1 sweeps.
-/// Per Engineering Default 9 + the 5 ops the plan explicitly calls
-/// out (Adaptive3d, Pocket, Adaptive, Rest, Face).
+/// Per Engineering Default 9; expanded 2026-05-08 (G1) to cover Profile
+/// and Zigzag, which both expose `depth_per_pass()` via `OperationParams`
+/// but were excluded from the original 5-op list. Profile has only DOC
+/// (no stepover); Zigzag has both. `run_stage_1_grid` collapses the
+/// stepover dimension for ops where `op.stepover()` is `None`, so adding
+/// Profile here doesn't fan out into duplicate sims.
 fn has_doc_knob(op_kind: OperationType) -> bool {
     matches!(
         op_kind,
@@ -857,6 +875,8 @@ fn has_doc_knob(op_kind: OperationType) -> bool {
             | OperationType::Adaptive
             | OperationType::Rest
             | OperationType::Face
+            | OperationType::Profile
+            | OperationType::Zigzag
     )
 }
 
@@ -4041,7 +4061,44 @@ mod tests {
 )]
 mod stage1_grid_tests {
     use super::*;
-    use crate::compute::operation_configs::PocketConfig;
+    use crate::compute::catalog::OperationParams;
+    use crate::compute::operation_configs::{PocketConfig, ProfileConfig, ZigzagConfig};
+
+    #[test]
+    fn has_doc_knob_includes_profile_and_zigzag() {
+        // G1 (2026-05-08): Profile and Zigzag both expose
+        // `depth_per_pass()` via the trait but were excluded from the
+        // original 5-op list, so Stage 1 silently skipped them.
+        assert!(has_doc_knob(OperationType::Profile));
+        assert!(has_doc_knob(OperationType::Zigzag));
+        // Sanity: the original 5 stay in.
+        assert!(has_doc_knob(OperationType::Pocket));
+        assert!(has_doc_knob(OperationType::Adaptive));
+        assert!(has_doc_knob(OperationType::Adaptive3d));
+        assert!(has_doc_knob(OperationType::Rest));
+        assert!(has_doc_knob(OperationType::Face));
+        // Sanity: ops that genuinely lack a DOC knob stay out.
+        assert!(!has_doc_knob(OperationType::Drill));
+        assert!(!has_doc_knob(OperationType::DropCutter));
+        assert!(!has_doc_knob(OperationType::Scallop));
+    }
+
+    #[test]
+    fn profile_config_exposes_doc_but_not_stepover() {
+        // Used by `run_stage_1_grid` to collapse the stepover dimension
+        // for ops without a stepover knob — Profile is a contour follow.
+        let p = ProfileConfig::default();
+        assert!(p.depth_per_pass().is_some(), "Profile should expose DOC");
+        assert!(p.stepover().is_none(), "Profile should NOT expose stepover");
+    }
+
+    #[test]
+    fn zigzag_config_exposes_both_doc_and_stepover() {
+        // Zigzag is a full DOC × stepover grid op.
+        let z = ZigzagConfig::default();
+        assert!(z.depth_per_pass().is_some(), "Zigzag should expose DOC");
+        assert!(z.stepover().is_some(), "Zigzag should expose stepover");
+    }
 
     fn synthetic_lut_row(ap_min: Option<f64>, ap_max: Option<f64>) -> MatchedRow {
         MatchedRow {
