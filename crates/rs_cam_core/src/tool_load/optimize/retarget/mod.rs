@@ -28,9 +28,9 @@ pub trait Retargeter {
     fn driving_axes(&self) -> &'static [SearchAxis];
 
     /// Compute a target patch list for the given verdict. Returns
-    /// `None` when the verdict is not the gate this retargeter handles
-    /// (every retargeter is matched to exactly one [`super::super::verdict::ExceedsReason`]
-    /// family).
+    /// `None` when the verdict isn't an `Exceeds` arm of the gate this
+    /// retargeter handles (each retargeter is typed to exactly one
+    /// gate's verdict via the associated `Verdict` type).
     fn target(
         &self,
         verdict: &Self::Verdict,

@@ -8,11 +8,9 @@ use crate::state::toolpath::ToolpathId;
 use crate::ui::theme;
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::tool_load::verdict::{
-    ChipSide, ChiploadVerdict, DeflectionVerdict, PowerVerdict,
+    ChipSide, ChiploadVerdict, CriterionKind, CriterionStatus, LoadState,
 };
-use rs_cam_core::tool_load::{
-    Confidence, ExceedsReason, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason, Verdict,
-};
+use rs_cam_core::tool_load::{Confidence, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason};
 use rs_cam_core::toolpath_spans::{Span, SpanKind, SpanPayload};
 
 pub fn draw(
@@ -730,6 +728,13 @@ fn draw_tool_load_badges(
     power_cap_kw: Option<f64>,
     deflection_cap: Option<f64>,
 ) {
+    let burn_risk = matches!(
+        verdict.chipload,
+        ChiploadVerdict::Exceeds {
+            side: ChipSide::Low,
+            ..
+        }
+    );
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new("Tool load:")
@@ -739,111 +744,25 @@ fn draw_tool_load_badges(
         verdict_badge(
             ui,
             "chipload",
-            &chipload_to_legacy(&verdict.chipload),
+            &verdict.chipload.as_criterion_status(),
             chipload_cap,
+            burn_risk,
         );
-        verdict_badge(ui, "power", &power_to_legacy(&verdict.power), power_cap_kw);
+        verdict_badge(
+            ui,
+            "power",
+            &verdict.power.as_criterion_status(),
+            power_cap_kw,
+            false,
+        );
         verdict_badge(
             ui,
             "L/D",
-            &deflection_to_legacy(&verdict.deflection),
+            &verdict.deflection.as_criterion_status(),
             deflection_cap,
+            false,
         );
     });
-}
-
-/// Transitional adapter (G16 Step 7b): the typed `PowerVerdict` carries
-/// `peak_kw` + `available_kw`, but `verdict_badge` is still on the flat
-/// `Verdict`. Step 7e migrates the badge layer to the typed verdicts;
-/// until then we synthesize a flat verdict that preserves the rendered
-/// fields (peak + confidence + variant).
-fn power_to_legacy(p: &PowerVerdict) -> Verdict {
-    match p {
-        PowerVerdict::Within {
-            peak_kw,
-            confidence,
-            ..
-        } => Verdict::Within {
-            peak: *peak_kw,
-            confidence: confidence.clone(),
-        },
-        PowerVerdict::Exceeds {
-            peak_kw,
-            evidence,
-            confidence,
-            ..
-        } => Verdict::Exceeds {
-            peak: *peak_kw,
-            sample_range: evidence.sample_range.clone(),
-            reason: ExceedsReason::SpindlePowerExceeded,
-            confidence: confidence.clone(),
-        },
-        PowerVerdict::Unmodeled { reason } => Verdict::Unmodeled {
-            reason: reason.clone(),
-        },
-    }
-}
-
-/// Transitional adapter (G16 Step 7d): typed `ChiploadVerdict` →
-/// legacy flat `Verdict` for the still-unmigrated `verdict_badge`.
-/// Deleted by Step 7e/7f.
-fn chipload_to_legacy(c: &ChiploadVerdict) -> Verdict {
-    match c {
-        ChiploadVerdict::Within {
-            approach_to_max,
-            confidence,
-            ..
-        } => Verdict::Within {
-            peak: approach_to_max.observed_mm_per_tooth,
-            confidence: confidence.clone(),
-        },
-        ChiploadVerdict::Exceeds {
-            side,
-            triggering,
-            confidence,
-        } => Verdict::Exceeds {
-            peak: triggering.observed_mm_per_tooth,
-            sample_range: triggering.evidence.sample_range.clone(),
-            reason: match side {
-                ChipSide::Low => ExceedsReason::ChiploadBurnRisk,
-                ChipSide::High => ExceedsReason::ChiploadBreakageRisk,
-            },
-            confidence: confidence.clone(),
-        },
-        ChiploadVerdict::Unmodeled { reason } => Verdict::Unmodeled {
-            reason: reason.clone(),
-        },
-    }
-}
-
-/// Transitional adapter (G16 Step 7c): typed `DeflectionVerdict` →
-/// legacy flat `Verdict` for the still-unmigrated `verdict_badge`.
-/// Deleted by Step 7e/7f.
-fn deflection_to_legacy(d: &DeflectionVerdict) -> Verdict {
-    match d {
-        DeflectionVerdict::Within {
-            peak_mm,
-            confidence,
-            ..
-        } => Verdict::Within {
-            peak: *peak_mm,
-            confidence: confidence.clone(),
-        },
-        DeflectionVerdict::Exceeds {
-            peak_mm,
-            evidence,
-            confidence,
-            ..
-        } => Verdict::Exceeds {
-            peak: *peak_mm,
-            sample_range: evidence.sample_range.clone(),
-            reason: ExceedsReason::LongToolStiffnessUnsafe,
-            confidence: confidence.clone(),
-        },
-        DeflectionVerdict::Unmodeled { reason } => Verdict::Unmodeled {
-            reason: reason.clone(),
-        },
-    }
 }
 
 /// Default L/D safe threshold for the deflection gate's `% of cap`
@@ -864,45 +783,41 @@ fn pct_of_cap(peak: f64, cap: Option<f64>) -> Option<i32> {
     Some(pct as i32)
 }
 
-fn verdict_badge(ui: &mut egui::Ui, label: &str, verdict: &Verdict, cap: Option<f64>) {
+fn verdict_badge(
+    ui: &mut egui::Ui,
+    label: &str,
+    status: &CriterionStatus<'_>,
+    cap: Option<f64>,
+    burn_risk: bool,
+) {
     // For chipload BurnRisk the peak is *below* the floor, not above the
     // cap — `% of cap` is misleading there. Skip the % branch and fall
     // back to a non-numeric badge.
-    let burn_risk = matches!(
-        verdict,
-        Verdict::Exceeds {
-            reason: ExceedsReason::ChiploadBurnRisk,
-            ..
+    let peak = status.display_peak.unwrap_or(0.0);
+    let (color, status_text) = match (status.state, status.confidence) {
+        (LoadState::Within, Some(Confidence::Validated)) | (LoadState::Within, None) => {
+            match pct_of_cap(peak, cap) {
+                Some(pct) => (theme::SUCCESS, format!("{pct}%")),
+                None => (theme::SUCCESS, "OK".to_owned()),
+            }
         }
-    );
-    let (color, status) = match verdict {
-        Verdict::Within {
-            peak,
-            confidence: Confidence::Validated,
-        } => match pct_of_cap(*peak, cap) {
-            Some(pct) => (theme::SUCCESS, format!("{pct}%")),
-            None => (theme::SUCCESS, "OK".to_owned()),
-        },
-        Verdict::Within {
-            peak,
-            confidence: Confidence::Approximate(_),
-        } => match pct_of_cap(*peak, cap) {
+        (LoadState::Within, Some(Confidence::Approximate(_))) => match pct_of_cap(peak, cap) {
             Some(pct) => (theme::WARNING_MILD, format!("{pct}%\u{2248}")),
             None => (theme::WARNING_MILD, "OK\u{2248}".to_owned()),
         },
-        Verdict::Exceeds { peak, .. } if !burn_risk => match pct_of_cap(*peak, cap) {
+        (LoadState::Exceeds, _) if burn_risk => (theme::ERROR, "BURN".to_owned()),
+        (LoadState::Exceeds, _) => match pct_of_cap(peak, cap) {
             Some(pct) => (theme::ERROR, format!("{pct}%")),
             None => (theme::ERROR, "FAIL".to_owned()),
         },
-        Verdict::Exceeds { .. } => (theme::ERROR, "BURN".to_owned()),
-        Verdict::Unmodeled { .. } => (theme::TEXT_DIM, "—".to_owned()),
+        (LoadState::Unmodeled, _) => (theme::TEXT_DIM, "—".to_owned()),
     };
-    let text = format!("{label} {status}");
+    let text = format!("{label} {status_text}");
     ui.label(egui::RichText::new(text).small().color(color))
-        .on_hover_text(verdict_tooltip(verdict, cap));
+        .on_hover_text(verdict_tooltip(status, cap, burn_risk));
 }
 
-fn verdict_tooltip(verdict: &Verdict, cap: Option<f64>) -> String {
+fn verdict_tooltip(status: &CriterionStatus<'_>, cap: Option<f64>, burn_risk: bool) -> String {
     let format_peak = |peak: f64| -> String {
         match cap.filter(|c| *c > 0.0) {
             Some(c) => {
@@ -912,61 +827,60 @@ fn verdict_tooltip(verdict: &Verdict, cap: Option<f64>) -> String {
             None => format!("peak {peak:.4}"),
         }
     };
-    match verdict {
-        Verdict::Within { peak, confidence } => match confidence {
-            Confidence::Validated => format!("Within bounds ({}) — validated", format_peak(*peak)),
-            Confidence::Approximate(why) => {
-                format!("Within bounds ({}) — approximate: {why}", format_peak(*peak))
+    let peak = status.display_peak.unwrap_or(0.0);
+    match status.state {
+        LoadState::Within => match status.confidence {
+            Some(Confidence::Validated) | None => {
+                format!("Within bounds ({}) — validated", format_peak(peak))
+            }
+            Some(Confidence::Approximate(why)) => {
+                format!("Within bounds ({}) — approximate: {why}", format_peak(peak))
             }
         },
-        Verdict::Exceeds {
-            peak,
-            reason,
-            confidence,
-            ..
-        } => {
-            let reason_str = match reason {
-                ExceedsReason::ChiploadBurnRisk => {
+        LoadState::Exceeds => {
+            let reason_str = match (status.kind, burn_risk) {
+                (CriterionKind::Chipload, true) => {
                     "chipload below vendor min — rubbing/burning risk"
                 }
-                ExceedsReason::ChiploadBreakageRisk => "chipload above vendor max — breakage risk",
-                ExceedsReason::LongToolStiffnessUnsafe => "L/D > 6 — tool stickout too long",
-                ExceedsReason::SpindlePowerExceeded => {
-                    "predicted spindle power exceeds machine limit"
+                (CriterionKind::Chipload, false) => "chipload above vendor max — breakage risk",
+                (CriterionKind::Power, _) => "predicted spindle power exceeds machine limit",
+                (CriterionKind::Deflection, _) => {
+                    "tip deflection exceeds 200 µm — finish/breakage risk"
                 }
             };
-            let conf = match confidence {
-                Confidence::Validated => "validated".to_owned(),
-                Confidence::Approximate(why) => format!("approximate: {why}"),
+            let conf = match status.confidence {
+                Some(Confidence::Validated) | None => "validated".to_owned(),
+                Some(Confidence::Approximate(why)) => format!("approximate: {why}"),
             };
-            format!("EXCEEDS: {reason_str} ({}, {conf})", format_peak(*peak))
+            format!("EXCEEDS: {reason_str} ({}, {conf})", format_peak(peak))
         }
-        Verdict::Unmodeled { reason } => match reason {
-            UnmodeledReason::SimulationRequired => {
+        LoadState::Unmodeled => match status.unmodeled_reason {
+            Some(UnmodeledReason::SimulationRequired) => {
                 "Unmodeled: simulation has not been run".to_owned()
             }
-            UnmodeledReason::StaleSimulation => {
+            Some(UnmodeledReason::StaleSimulation) => {
                 "Unmodeled: simulation trace is stale — re-run simulation".to_owned()
             }
-            UnmodeledReason::ArcEngagementNotCaptured => {
+            Some(UnmodeledReason::ArcEngagementNotCaptured) => {
                 "Unmodeled: arc-engagement metric not captured — enable Cut Metrics and re-run"
                     .to_owned()
             }
-            UnmodeledReason::NoVendorData => {
+            Some(UnmodeledReason::NoVendorData) => {
                 "Unmodeled: no vendor LUT row for this tool/material combination".to_owned()
             }
-            UnmodeledReason::SteadyStateSamplesNotPresent => {
+            Some(UnmodeledReason::SteadyStateSamplesNotPresent) => {
                 "Unmodeled: no steady-state cutting samples — toolpath runs entirely on transient (plunge/ramp) feeds".to_owned()
             }
-            UnmodeledReason::MaterialUnvalidated => {
+            Some(UnmodeledReason::MaterialUnvalidated) => {
                 "Unmodeled: material is Custom without a validated Kc value".to_owned()
             }
-            UnmodeledReason::CutterModeUnsupported(why) => {
+            Some(UnmodeledReason::CutterModeUnsupported(why)) => {
                 format!("Unmodeled: cutter mode unsupported — {why}")
             }
-            UnmodeledReason::NotImplemented(phase) => {
+            Some(UnmodeledReason::NotImplemented(phase)) => {
                 format!("Unmodeled: not implemented yet — {phase}")
             }
+            None => "Unmodeled".to_owned(),
         },
     }
 }
@@ -1331,12 +1245,17 @@ mod tests {
 
     #[test]
     fn arc_engagement_unmodeled_tooltip_points_to_cut_metrics() {
-        let tooltip = verdict_tooltip(
-            &Verdict::Unmodeled {
-                reason: UnmodeledReason::ArcEngagementNotCaptured,
-            },
-            None,
-        );
+        let reason = UnmodeledReason::ArcEngagementNotCaptured;
+        let status = CriterionStatus {
+            kind: CriterionKind::Chipload,
+            state: LoadState::Unmodeled,
+            confidence: None,
+            unmodeled_reason: Some(&reason),
+            sample_range: None,
+            display_peak: None,
+            unit: "mm/tooth",
+        };
+        let tooltip = verdict_tooltip(&status, None, false);
         assert!(tooltip.contains("Cut Metrics"));
     }
 }

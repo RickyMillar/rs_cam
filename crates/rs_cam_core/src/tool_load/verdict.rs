@@ -63,93 +63,12 @@ pub enum Confidence {
     Approximate(String),
 }
 
-/// A single criterion's outcome for a single toolpath.
-///
-/// `peak` is the criterion-specific scalar that drove the verdict — for
-/// chipload it's mm/tooth, for L/D it's the ratio. Always carries a unit
-/// in the criterion's documentation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", tag = "kind")]
-pub enum Verdict {
-    /// Criterion modeled and within bounds.
-    Within { peak: f64, confidence: Confidence },
-    /// Criterion modeled and out of bounds. `sample_range` is the
-    /// half-open per-toolpath sample index range that triggered (empty
-    /// for criteria that don't have per-sample resolution, e.g. L/D).
-    Exceeds {
-        peak: f64,
-        sample_range: Range<usize>,
-        reason: ExceedsReason,
-        confidence: Confidence,
-    },
-    /// Criterion not evaluated; reason is typed.
-    Unmodeled { reason: UnmodeledReason },
-}
-
-/// Why a criterion exceeded its bound.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ExceedsReason {
-    /// Chipload below vendor min — rubbing/burning risk, dulls the edge.
-    ChiploadBurnRisk,
-    /// Chipload above vendor max — breakage risk.
-    ChiploadBreakageRisk,
-    /// Cantilever L/D too long — tool stiffness inadequate regardless of
-    /// load. Geometric only; no force inputs.
-    LongToolStiffnessUnsafe,
-    /// Instantaneous spindle power exceeds available power × safety factor.
-    SpindlePowerExceeded,
-}
-
-impl Verdict {
-    /// Convenience: a criterion that this phase doesn't implement yet.
-    pub fn not_implemented(phase: &str) -> Self {
-        Verdict::Unmodeled {
-            reason: UnmodeledReason::NotImplemented(phase.to_owned()),
-        }
-    }
-
-    /// True if the verdict is `Exceeds`. Used by the export gate.
-    pub fn is_exceeded(&self) -> bool {
-        matches!(self, Verdict::Exceeds { .. })
-    }
-
-    /// True if the verdict is `Unmodeled`. Used by the export gate.
-    pub fn is_unmodeled(&self) -> bool {
-        matches!(self, Verdict::Unmodeled { .. })
-    }
-
-    /// Coarse outcome shared with the typed verdicts. Lets viz / export
-    /// iterate over all three gates without knowing each variant.
-    pub fn state(&self) -> LoadState {
-        match self {
-            Verdict::Within { .. } => LoadState::Within,
-            Verdict::Exceeds { .. } => LoadState::Exceeds,
-            Verdict::Unmodeled { .. } => LoadState::Unmodeled,
-        }
-    }
-
-    /// `Some` for Within / Exceeds; `None` for Unmodeled. Mirrors the
-    /// typed verdicts' helper so iteration code can stay generic.
-    pub fn confidence(&self) -> Option<&Confidence> {
-        match self {
-            Verdict::Within { confidence, .. } | Verdict::Exceeds { confidence, .. } => {
-                Some(confidence)
-            }
-            Verdict::Unmodeled { .. } => None,
-        }
-    }
-}
-
 /// Per-toolpath outcome across all criteria.
 ///
 /// `toolpath_id` is the core `usize` index into the project's enabled
 /// toolpath list (matches `SimulationCutSample::toolpath_id` semantics).
 ///
-/// All three gates have migrated to typed verdicts (G16 Step 7b–7d).
-/// The legacy flat `Verdict` and `ExceedsReason` enums remain in this
-/// module only for the export-gate label tuple in `exceeded_toolpaths`;
-/// Step 7e migrates that to `ExceededCriterion`, then 7f deletes both.
+/// All three gates use typed verdicts (G16 Step 7).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolpathLoadVerdict {
     pub toolpath_id: usize,
@@ -251,35 +170,6 @@ impl ToolLoadReport {
             .collect()
     }
 
-    /// Legacy export-gate label tuple. Step 7f deletes this in favour
-    /// of `exceeded_criteria()`. Synthesizes the legacy `ExceedsReason`
-    /// from the typed verdict's `ChipSide` / variant kind.
-    pub fn exceeded_toolpaths(&self) -> Vec<(usize, Vec<(&'static str, ExceedsReason)>)> {
-        self.per_toolpath
-            .iter()
-            .filter_map(|v| {
-                let mut reasons: Vec<(&'static str, ExceedsReason)> = Vec::new();
-                if let ChiploadVerdict::Exceeds { side, .. } = &v.chipload {
-                    let r = match side {
-                        ChipSide::Low => ExceedsReason::ChiploadBurnRisk,
-                        ChipSide::High => ExceedsReason::ChiploadBreakageRisk,
-                    };
-                    reasons.push(("chipload", r));
-                }
-                if v.power.is_exceeded() {
-                    reasons.push(("power", ExceedsReason::SpindlePowerExceeded));
-                }
-                if v.deflection.is_exceeded() {
-                    reasons.push(("deflection", ExceedsReason::LongToolStiffnessUnsafe));
-                }
-                if reasons.is_empty() {
-                    None
-                } else {
-                    Some((v.toolpath_id, reasons))
-                }
-            })
-            .collect()
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -335,6 +225,7 @@ pub struct CriterionStatus<'a> {
     pub kind: CriterionKind,
     pub state: LoadState,
     pub confidence: Option<&'a Confidence>,
+    pub unmodeled_reason: Option<&'a UnmodeledReason>,
     pub sample_range: Option<Range<usize>>,
     pub display_peak: Option<f64>,
     pub unit: &'static str,
@@ -489,6 +380,13 @@ impl ChiploadVerdict {
         }
     }
 
+    pub fn unmodeled_reason(&self) -> Option<&UnmodeledReason> {
+        match self {
+            ChiploadVerdict::Unmodeled { reason } => Some(reason),
+            _ => None,
+        }
+    }
+
     pub fn as_criterion_status(&self) -> CriterionStatus<'_> {
         let (state, peak, range) = match self {
             ChiploadVerdict::Within {
@@ -509,6 +407,7 @@ impl ChiploadVerdict {
             kind: CriterionKind::Chipload,
             state,
             confidence: self.confidence(),
+            unmodeled_reason: self.unmodeled_reason(),
             sample_range: range,
             display_peak: peak,
             unit: CriterionKind::Chipload.unit(),
@@ -563,6 +462,13 @@ impl PowerVerdict {
         }
     }
 
+    pub fn unmodeled_reason(&self) -> Option<&UnmodeledReason> {
+        match self {
+            PowerVerdict::Unmodeled { reason } => Some(reason),
+            _ => None,
+        }
+    }
+
     pub fn as_criterion_status(&self) -> CriterionStatus<'_> {
         let (state, peak, range) = match self {
             PowerVerdict::Within {
@@ -585,6 +491,7 @@ impl PowerVerdict {
             kind: CriterionKind::Power,
             state,
             confidence: self.confidence(),
+            unmodeled_reason: self.unmodeled_reason(),
             sample_range: range,
             display_peak: peak,
             unit: CriterionKind::Power.unit(),
@@ -652,6 +559,13 @@ impl DeflectionVerdict {
         }
     }
 
+    pub fn unmodeled_reason(&self) -> Option<&UnmodeledReason> {
+        match self {
+            DeflectionVerdict::Unmodeled { reason } => Some(reason),
+            _ => None,
+        }
+    }
+
     pub fn as_criterion_status(&self) -> CriterionStatus<'_> {
         let (state, peak, range) = match self {
             DeflectionVerdict::Within {
@@ -674,6 +588,7 @@ impl DeflectionVerdict {
             kind: CriterionKind::Deflection,
             state,
             confidence: self.confidence(),
+            unmodeled_reason: self.unmodeled_reason(),
             sample_range: range,
             display_peak: peak,
             unit: CriterionKind::Deflection.unit(),
@@ -889,11 +804,11 @@ mod tests {
             ],
         };
         assert!(r.any_exceeded());
-        let exceeded = r.exceeded_toolpaths();
+        let exceeded = r.exceeded_criteria();
         assert_eq!(exceeded.len(), 1);
         assert_eq!(exceeded[0].0, 0);
         assert_eq!(exceeded[0].1.len(), 1);
-        assert_eq!(exceeded[0].1[0].0, "deflection");
+        assert_eq!(exceeded[0].1[0], ExceededCriterion::deflection());
     }
 
     // ── Typed verdict scaffolding (Step 7a) ─────────────────────────
