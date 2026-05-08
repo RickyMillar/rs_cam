@@ -44,6 +44,12 @@ pub struct SimMeshChunk {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub index_count: u32,
+    /// Allocated byte capacity of `vertex_buffer`. Playback can rewrite into
+    /// the existing buffer while the new mesh fits, avoiding expensive GPU
+    /// buffer destruction/recreation on every frame.
+    pub vertex_capacity_bytes: usize,
+    /// Allocated byte capacity of `index_buffer`.
+    pub index_capacity_bytes: usize,
 }
 
 /// Simulation result mesh uploaded to GPU, possibly split across multiple
@@ -203,7 +209,7 @@ impl SimMeshGpuData {
                     limits,
                     "sim_mesh_indices",
                     index_bytes,
-                    wgpu::BufferUsages::INDEX,
+                    wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
                 ),
             )
         {
@@ -212,6 +218,8 @@ impl SimMeshGpuData {
                     vertex_buffer: vb,
                     index_buffer: ib,
                     index_count: hm.indices.len() as u32,
+                    vertex_capacity_bytes: vertex_bytes.len(),
+                    index_capacity_bytes: index_bytes.len(),
                 }],
                 generation: NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
                 cached_color_fingerprint: fingerprint,
@@ -290,16 +298,19 @@ impl SimMeshGpuData {
                 contents: bytemuck::cast_slice(&local_verts),
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             });
+            let index_bytes = bytemuck::cast_slice(&local_indices);
             let ib = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("sim_mesh_chunk_indices"),
-                contents: bytemuck::cast_slice(&local_indices),
-                usage: wgpu::BufferUsages::INDEX,
+                contents: index_bytes,
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             });
 
             chunks.push(SimMeshChunk {
                 vertex_buffer: vb,
                 index_buffer: ib,
                 index_count: local_indices.len() as u32,
+                vertex_capacity_bytes: bytemuck::cast_slice::<_, u8>(&local_verts).len(),
+                index_capacity_bytes: index_bytes.len(),
             });
 
             tri_offset += chunk_tris;
@@ -310,6 +321,46 @@ impl SimMeshGpuData {
             "Sim mesh chunked for GPU upload"
         );
         chunks
+    }
+
+    /// Rewrite the already-allocated single-chunk GPU buffers if the new mesh
+    /// fits inside their existing capacities.
+    ///
+    /// Playback changes mesh vertices every refresh and may change index count
+    /// as holes/cavities appear. Reusing buffers avoids the Vulkan/kernel cost
+    /// of destroying/recreating large buffers on every playback frame. Returns
+    /// `false` when the mesh no longer fits or the data is chunked, in which
+    /// case callers should rebuild via [`Self::from_heightmap_mesh_colored`].
+    pub fn update_mesh_if_fits(
+        &mut self,
+        queue: &wgpu::Queue,
+        hm: &StockMesh,
+        colors: &[[f32; 3]],
+    ) -> bool {
+        // SAFETY: length checked on the line above.
+        #[allow(clippy::indexing_slicing)]
+        let Some(chunk) = (self.chunks.len() == 1).then(|| &mut self.chunks[0]) else {
+            return false;
+        };
+        if hm.indices.is_empty() {
+            return false;
+        }
+
+        let mesh_verts = Self::build_vertex_data(hm, colors);
+        let vertex_bytes = bytemuck::cast_slice::<_, u8>(&mesh_verts);
+        let index_bytes = bytemuck::cast_slice::<_, u8>(&hm.indices);
+        if vertex_bytes.len() > chunk.vertex_capacity_bytes
+            || index_bytes.len() > chunk.index_capacity_bytes
+        {
+            return false;
+        }
+
+        queue.write_buffer(&chunk.vertex_buffer, 0, vertex_bytes);
+        queue.write_buffer(&chunk.index_buffer, 0, index_bytes);
+        chunk.index_count = hm.indices.len() as u32;
+        self.cached_color_fingerprint = ColorFingerprint::from_colors(colors);
+        self.generation = NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        true
     }
 
     /// Re-upload colors only if they differ from the cached fingerprint.

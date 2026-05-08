@@ -10,13 +10,13 @@
     clippy::semicolon_if_nothing_returned
 )]
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use std::path::Path;
 
 use rs_cam_core::arc_util::linearize_arc;
 use rs_cam_core::arcfit::fit_arcs;
 use rs_cam_core::contour_extract::weave_contours;
-use rs_cam_core::dexel_mesh::dexel_stock_to_mesh;
+use rs_cam_core::dexel_mesh::{dexel_stock_to_mesh, dexel_stock_to_top_surface_mesh};
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dropcutter::{DropCutterGrid, batch_drop_cutter, point_drop_cutter};
 use rs_cam_core::fiber::{Fiber, Interval};
@@ -25,6 +25,7 @@ use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
 use rs_cam_core::polygon::{Polygon2, offset_polygon, pocket_offsets};
 use rs_cam_core::pushcutter::batch_push_cutter;
 use rs_cam_core::radial_profile::RadialProfileLUT;
+use rs_cam_core::simulation_cut::{CutKinematics, SimulationCutSample, SimulationCutTrace};
 use rs_cam_core::slope::SlopeMap;
 use rs_cam_core::steep_shallow::dilate_grid;
 use rs_cam_core::tool::{BallEndmill, CLPoint, FlatEndmill, MillingCutter};
@@ -66,6 +67,38 @@ fn make_linear_toolpath(n_moves: usize) -> Toolpath {
         tp.feed_to(P3::new(x, y, -1.0), 1000.0);
     }
     tp
+}
+
+fn make_cut_samples(n_samples: usize, toolpath_count: usize) -> Vec<SimulationCutSample> {
+    (0..n_samples)
+        .map(|i| {
+            let toolpath_id = i % toolpath_count.max(1);
+            let radial_engagement = if i % 17 == 0 { 0.01 } else { 0.35 };
+            let segment_time_s = 0.01;
+            SimulationCutSample {
+                toolpath_id,
+                move_index: i / toolpath_count.max(1),
+                sample_index: i,
+                position: [i as f64 * 0.1, toolpath_id as f64, -1.0],
+                cumulative_time_s: i as f64 * segment_time_s,
+                segment_time_s,
+                is_cutting: true,
+                cut_kinematics: CutKinematics::Linear,
+                feed_rate_mm_min: 1200.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 1.5,
+                radial_engagement,
+                arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),
+                chipload_mm_per_tooth: 1200.0 / 18_000.0 / 2.0,
+                effective_chip_thickness_mm: Some(0.025),
+                removed_volume_est_mm3: if radial_engagement < 0.02 { 0.0 } else { 0.8 },
+                mrr_mm3_s: if radial_engagement < 0.02 { 0.0 } else { 80.0 },
+                semantic_item_id: None,
+                span_path: Vec::new(),
+            }
+        })
+        .collect()
 }
 
 // ── 1. Drop-cutter benchmarks ────────────────────────────────────────────
@@ -474,6 +507,71 @@ fn bench_dexel_mesh_extraction(c: &mut Criterion) {
         b.iter(|| black_box(dexel_stock_to_mesh(&medium)))
     });
 
+    // Larger GUI-playback-like stock: ~160k cells / ~320k base vertices.
+    let mut large = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, 0.0, 10.0, 0.25);
+    for i in 0..20 {
+        large.stamp_tool_at(
+            &lut,
+            ball.radius(),
+            5.0 + 4.5 * i as f64,
+            50.0 + 20.0 * (i as f64 * 0.7).sin(),
+            -2.0,
+            StockCutDirection::FromTop,
+        );
+    }
+
+    group.bench_function("400x400_cs025", |b| {
+        b.iter(|| black_box(dexel_stock_to_mesh(&large)))
+    });
+    group.bench_function("400x400_cs025_preview_top", |b| {
+        b.iter(|| black_box(dexel_stock_to_top_surface_mesh(&large)))
+    });
+
+    group.finish();
+}
+
+fn bench_dexel_checkpoint_clone(c: &mut Criterion) {
+    let mut group = c.benchmark_group("dexel_checkpoint_clone");
+    group.sample_size(20);
+
+    let ball = BallEndmill::new(6.0, 25.0);
+    let lut = RadialProfileLUT::from_cutter(&ball, 256);
+    let mut stock = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, 0.0, 10.0, 0.25);
+    for i in 0..20 {
+        stock.stamp_tool_at(
+            &lut,
+            ball.radius(),
+            5.0 + 4.5 * i as f64,
+            50.0,
+            -2.0,
+            StockCutDirection::FromTop,
+        );
+    }
+
+    group.bench_function("400x400_stock", |b| {
+        b.iter(|| black_box(stock.checkpoint()))
+    });
+    group.finish();
+}
+
+fn bench_simulation_cut_trace_aggregation(c: &mut Criterion) {
+    let mut group = c.benchmark_group("simulation_cut_trace_aggregation");
+    group.sample_size(10);
+
+    for n_samples in [50_000, 250_000] {
+        let samples = make_cut_samples(n_samples, 8);
+        group.bench_function(BenchmarkId::new("from_samples", n_samples), |b| {
+            b.iter_batched(
+                || samples.clone(),
+                |samples| {
+                    let trace = SimulationCutTrace::from_samples(1.0, samples);
+                    black_box(trace.summary.sample_count);
+                },
+                BatchSize::LargeInput,
+            )
+        });
+    }
+
     group.finish();
 }
 
@@ -663,6 +761,8 @@ criterion_group!(
     bench_fiber_interval_insert,
     bench_simulate_toolpath_metrics,
     bench_dexel_mesh_extraction,
+    bench_dexel_checkpoint_clone,
+    bench_simulation_cut_trace_aggregation,
     bench_arc_linearize,
     bench_push_cutter_batch,
     bench_weave_contours,

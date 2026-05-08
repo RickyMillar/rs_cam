@@ -450,6 +450,11 @@ impl<B: ComputeBackend> AppController<B> {
 
                         self.state.simulation.playback.display_deviations = simulation.deviations;
                         self.state.simulation.playback.display_mesh = None;
+                        self.state.simulation.playback.display_mesh_move = None;
+                        self.state.simulation.playback.last_mesh_upload_at = None;
+                        self.state.simulation.playback.tool_gpu_move = None;
+                        self.state.simulation.playback.display_mesh_preview = false;
+                        self.state.simulation.playback.scrub_drag_active = false;
 
                         let stock = self.state.session.stock_config();
                         let stock_bbox = rs_cam_core::geo::BoundingBox3 {

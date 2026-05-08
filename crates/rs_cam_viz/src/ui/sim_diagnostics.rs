@@ -24,10 +24,7 @@ pub fn draw(
     ui.heading("Inspector");
     ui.separator();
 
-    let load_report = {
-        let sim_trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
-        rs_cam_core::gcode::project_load_report(session, sim_trace)
-    };
+    let load_report = sim.cached_load_report(session, gui.edit_counter);
 
     let active_semantic = sim.active_semantic_item(gui, max_feed);
     let linked_span = sim.active_debug_span(gui, max_feed);
@@ -622,10 +619,10 @@ fn draw_project_overview(
 
     // Tool-load badges + jump buttons for the currently-playing toolpath
     // (project-wide concern, not span-scoped).
-    if let Some(boundary) = sim.current_boundary() {
-        let boundary_id = boundary.id;
-        let boundary_name = boundary.name.clone();
-        let boundary_start = boundary.start_move;
+    if let Some((boundary_id, boundary_name, boundary_start)) = sim
+        .current_boundary()
+        .map(|boundary| (boundary.id, boundary.name.clone(), boundary.start_move))
+    {
         ui.add_space(6.0);
         ui.separator();
         ui.horizontal(|ui| {
@@ -641,9 +638,7 @@ fn draw_project_overview(
             .iter()
             .find(|tp| tp.toolpath_id == boundary_id.0)
         {
-            let sim_trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
-            let chipload_envelopes =
-                rs_cam_core::tool_load::chipload_envelopes_for_session(session, sim_trace);
+            let chipload_envelopes = sim.cached_chipload_envelopes(session, gui.edit_counter);
             let chipload_cap = chipload_envelopes
                 .get(&boundary_id.0)
                 .map(|range| range.end);

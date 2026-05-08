@@ -111,6 +111,38 @@ pub fn draw(
             ui.checkbox(&mut viewport.show_cutting, "Paths (cutting)");
             ui.checkbox(&mut viewport.show_rapids, "Rapids");
             ui.checkbox(&mut viewport.show_collisions, "Collisions");
+
+            // SpanKind filter — hides cut segments by their innermost
+            // SpanKind (Entry / LeadOut / LinkBridge / DressupArtifact).
+            // Only takes effect in Palette color mode; the Engagement /
+            // Chipload modes don't read spans.
+            let f = &mut viewport.span_kind_filter;
+            let any_hidden = !f.all_visible();
+            ui.menu_button(
+                if any_hidden {
+                    "By SpanKind ▾ (some hidden)"
+                } else {
+                    "By SpanKind ▾"
+                },
+                |ui| {
+                    ui.set_min_width(180.0);
+                    ui.checkbox(&mut f.show_entry, "Entry")
+                        .on_hover_text("Plunge / ramp / helix lead-in segments");
+                    ui.checkbox(&mut f.show_lead_out, "LeadOut")
+                        .on_hover_text("Lead-out / retract transition segments");
+                    ui.checkbox(&mut f.show_link_bridge, "LinkBridge")
+                        .on_hover_text("Linker bridges inserted between regions");
+                    ui.checkbox(&mut f.show_dressup, "DressupArtifact")
+                        .on_hover_text(
+                            "Dogbones, arc-fit replacements, other dressup-introduced segments",
+                        );
+                    if any_hidden && ui.button("Reset").clicked() {
+                        *f = crate::state::viewport::SpanKindFilter::default();
+                        ui.close_menu();
+                    }
+                },
+            );
+
             ui.separator();
             ui.checkbox(&mut viewport.show_tool_profile_preview, "Tool-profile ghost");
             ui.horizontal(|ui| {

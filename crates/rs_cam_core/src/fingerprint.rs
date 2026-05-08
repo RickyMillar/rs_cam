@@ -457,18 +457,24 @@ pub fn render_stock_composite(
 /// Converts toolpath moves to a tube mesh and renders through the same
 /// pipeline as stock composites. If `background_mesh` is provided, it is
 /// rendered dimmed as spatial context with full z-buffer interaction.
+///
+/// Cutting segments are coloured by their innermost
+/// [`crate::toolpath_spans::SpanKind`] (Entry / LeadOut / LinkBridge /
+/// DressupArtifact get distinct colours) — same taxonomy as the live 3D
+/// renderer. Toolpaths without spans fall back to the plain green/orange
+/// cut/rapid scheme.
 #[allow(clippy::indexing_slicing)]
 pub fn render_toolpath_composite(
-    toolpath: &crate::toolpath::Toolpath,
+    annotated: &crate::toolpath_spans::AnnotatedToolpath,
     background_mesh: Option<&crate::stock_mesh::StockMesh>,
     width: u32,
     height: u32,
     include_rapids: bool,
 ) -> Vec<u8> {
-    use crate::stock_mesh::{auto_ribbon_radius, toolpath_to_tube_mesh};
+    use crate::stock_mesh::{auto_ribbon_radius, toolpath_to_tube_mesh_with_spans};
 
-    let radius = auto_ribbon_radius(toolpath);
-    let tp_mesh = toolpath_to_tube_mesh(toolpath, radius, include_rapids);
+    let radius = auto_ribbon_radius(&annotated.toolpath);
+    let tp_mesh = toolpath_to_tube_mesh_with_spans(annotated, radius, include_rapids);
 
     let combined = if let Some(bg) = background_mesh {
         let mut m = bg.with_dimmed_colors(0.35);

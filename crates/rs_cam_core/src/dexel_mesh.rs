@@ -9,7 +9,7 @@
 //! index offsets.
 
 use crate::dexel::{DexelAxis, DexelGrid, DexelSegment, ray_bottom, ray_top};
-use crate::dexel_stock::TriDexelStock;
+use crate::dexel_stock::{StockCutDirection, TriDexelStock};
 use crate::stock_mesh::StockMesh;
 
 // Wood colors: uncut = light tan, cut = dark walnut.
@@ -19,6 +19,122 @@ const UNCUT_B: f32 = 0.42;
 const CUT_R: f32 = 0.45;
 const CUT_G: f32 = 0.25;
 const CUT_B: f32 = 0.10;
+
+/// Extract a fast preview mesh from the active tool-entry side.
+///
+/// This intentionally skips bottom faces, side walls, and internal cavity
+/// surfaces. It is meant for interactive playback where smooth frame cadence
+/// matters more than a fully closed solid. The final/pause mesh still uses
+/// [`dexel_stock_to_mesh`]. Direction matters for multi-setup playback: a
+/// bottom setup previews the Z-grid bottom surface, and side setups preview
+/// the appropriate X/Y side grid.
+#[allow(clippy::indexing_slicing)] // grid indexing bounded by row/col loops
+pub fn dexel_stock_to_entry_surface_mesh(
+    stock: &TriDexelStock,
+    direction: StockCutDirection,
+) -> StockMesh {
+    let Some(grid) = preview_grid_for_direction(stock, direction) else {
+        return StockMesh::empty();
+    };
+    let rows = grid.rows;
+    let cols = grid.cols;
+    if rows < 2 || cols < 2 {
+        return StockMesh::empty();
+    }
+
+    let cells = rows * cols;
+    let from_high = direction.cuts_from_high_side();
+    let (axis_min, axis_max) = axis_depth_bounds(stock, direction.grid_axis());
+    let fallback_depth = if from_high { axis_max } else { axis_min };
+    let axis_range = (axis_max - axis_min).max(1e-6);
+
+    let mut vertices = Vec::with_capacity(cells * 3);
+    let mut colors = Vec::with_capacity(cells * 3);
+    let mut depths = Vec::with_capacity(cells);
+
+    for ray in &grid.rays {
+        let depth = if from_high {
+            ray_top(ray)
+        } else {
+            ray_bottom(ray)
+        }
+        .unwrap_or(fallback_depth);
+        depths.push(depth);
+    }
+
+    for row in 0..rows {
+        for col in 0..cols {
+            let idx = row * cols + col;
+            let (u, v) = grid.cell_to_world(row, col);
+            let depth = depths[idx];
+            let (x, y, z) = preview_vertex_from_grid(grid.axis, u as f32, v as f32, depth);
+            vertices.push(x);
+            vertices.push(y);
+            vertices.push(z);
+
+            let depth_t = if from_high {
+                ((axis_max - depth) / axis_range).clamp(0.0, 1.0)
+            } else {
+                ((depth - axis_min) / axis_range).clamp(0.0, 1.0)
+            };
+            colors.push(UNCUT_R + (CUT_R - UNCUT_R) * depth_t);
+            colors.push(UNCUT_G + (CUT_G - UNCUT_G) * depth_t);
+            colors.push(UNCUT_B + (CUT_B - UNCUT_B) * depth_t);
+        }
+    }
+
+    let mut indices = Vec::with_capacity((rows - 1) * (cols - 1) * 6);
+    for row in 0..(rows - 1) {
+        for col in 0..(cols - 1) {
+            let tl = (row * cols + col) as u32;
+            let tr = tl + 1;
+            let bl = ((row + 1) * cols + col) as u32;
+            let br = bl + 1;
+            indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
+        }
+    }
+
+    StockMesh {
+        vertices,
+        indices,
+        colors,
+    }
+}
+
+/// Backwards-compatible helper for callers that specifically want the top
+/// surface. Prefer [`dexel_stock_to_entry_surface_mesh`] for playback.
+pub fn dexel_stock_to_top_surface_mesh(stock: &TriDexelStock) -> StockMesh {
+    dexel_stock_to_entry_surface_mesh(stock, StockCutDirection::FromTop)
+}
+
+fn preview_grid_for_direction<'a>(
+    stock: &'a TriDexelStock,
+    direction: StockCutDirection,
+) -> Option<&'a DexelGrid> {
+    match direction.grid_axis() {
+        DexelAxis::Z => Some(&stock.z_grid),
+        DexelAxis::Y => stock.y_grid.as_ref(),
+        DexelAxis::X => stock.x_grid.as_ref(),
+    }
+}
+
+fn axis_depth_bounds(stock: &TriDexelStock, axis: DexelAxis) -> (f32, f32) {
+    match axis {
+        DexelAxis::X => (stock.stock_bbox.min.x as f32, stock.stock_bbox.max.x as f32),
+        DexelAxis::Y => (stock.stock_bbox.min.y as f32, stock.stock_bbox.max.y as f32),
+        DexelAxis::Z => (stock.stock_bbox.min.z as f32, stock.stock_bbox.max.z as f32),
+    }
+}
+
+fn preview_vertex_from_grid(axis: DexelAxis, u: f32, v: f32, depth: f32) -> (f32, f32, f32) {
+    match axis {
+        DexelAxis::Z => (u, v, depth),
+        // Y-grid stores u=X, v=Z, depth=Y.
+        DexelAxis::Y => (u, depth, v),
+        // X-grid stores u=Y, v=Z, depth=X.
+        DexelAxis::X => (depth, u, v),
+    }
+}
 
 /// Extract a combined mesh from all active grids of a [`TriDexelStock`].
 pub fn dexel_stock_to_mesh(stock: &TriDexelStock) -> StockMesh {

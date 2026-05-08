@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use crate::render::RenderResources;
 use crate::render::sim_render::SimMeshGpuData;
 
@@ -20,7 +22,13 @@ impl RsCamApp {
             // setup's local frame so it matches the tool position.
             self.transform_mesh_to_local_frame(&mut mesh, move_idx);
             let colors = self.compute_sim_colors(&mesh);
-            self.controller.state_mut().simulation.playback.display_mesh = Some(mesh);
+            {
+                let pb = &mut self.controller.state_mut().simulation.playback;
+                pb.display_mesh = Some(mesh);
+                pb.display_mesh_move = Some(move_idx);
+                pb.display_mesh_preview = false;
+                pb.last_mesh_upload_at = Some(Instant::now());
+            }
             if let Some(rs) = frame.wgpu_render_state() {
                 // SAFETY: display_mesh was set to Some on the line above.
                 #[allow(clippy::unwrap_used)]
@@ -37,12 +45,18 @@ impl RsCamApp {
                 #[allow(clippy::unwrap_used)]
                 let resources: &mut RenderResources =
                     renderer.callback_resources.get_mut().unwrap();
-                resources.sim_mesh_data = SimMeshGpuData::from_heightmap_mesh_colored(
-                    &rs.device,
-                    &resources.gpu_limits,
-                    mesh_ref,
-                    &colors,
-                );
+                let updated = resources
+                    .sim_mesh_data
+                    .as_mut()
+                    .is_some_and(|data| data.update_mesh_if_fits(&rs.queue, mesh_ref, &colors));
+                if !updated {
+                    resources.sim_mesh_data = SimMeshGpuData::from_heightmap_mesh_colored(
+                        &rs.device,
+                        &resources.gpu_limits,
+                        mesh_ref,
+                        &colors,
+                    );
+                }
             }
         }
     }
@@ -54,14 +68,41 @@ impl RsCamApp {
     // SAFETY: cp_idx is from enumerate over boundaries; vertex loop uses step_by(3) within len
     #[allow(clippy::indexing_slicing)]
     pub(super) fn update_live_sim(&mut self, frame: &mut eframe::Frame) {
-        use rs_cam_core::dexel_mesh::dexel_stock_to_mesh;
+        use rs_cam_core::dexel_mesh::{dexel_stock_to_entry_surface_mesh, dexel_stock_to_mesh};
         use rs_cam_core::dexel_stock::TriDexelStock;
 
         let target_move = self.controller.state().simulation.playback.current_move;
         let live_move = self.controller.state().simulation.playback.live_sim_move;
 
-        if target_move == live_move {
+        let playback_needs_full_mesh = {
+            let pb = &self.controller.state().simulation.playback;
+            pb.display_mesh_preview && !pb.playing && !pb.scrub_drag_active
+        };
+        if target_move == live_move
+            && self
+                .controller
+                .state()
+                .simulation
+                .playback
+                .display_mesh_move
+                == Some(target_move)
+            && !playback_needs_full_mesh
+        {
             return; // nothing changed
+        }
+
+        // While the pointer is dragging a timeline/plot scrubber, do not replay
+        // stock or rebuild/upload a mesh on the UI thread. The playhead and tool
+        // marker stay responsive; the stock catches up on the first frame after
+        // release because `live_sim_move` remains behind/ahead of `current_move`.
+        if self
+            .controller
+            .state()
+            .simulation
+            .playback
+            .scrub_drag_active
+        {
+            return;
         }
 
         // Quick presence check — the actual playback_data is read by reference
@@ -172,18 +213,60 @@ impl RsCamApp {
             pb.live_sim_move = target_move;
         }
 
-        // Convert stock to mesh and upload to GPU.
+        // Convert stock to mesh and upload to GPU. During continuous playback,
+        // throttle this expensive UI-thread work; the playhead/tool still move
+        // every frame, but full stock remesh/upload is capped to keep egui responsive.
+        const LIVE_MESH_UPLOAD_INTERVAL: Duration = Duration::from_millis(50);
+        let total_moves = self.controller.state().simulation.total_moves();
+        let skip_mesh_refresh = {
+            let pb = &self.controller.state().simulation.playback;
+            pb.playing
+                && target_move < total_moves
+                && pb
+                    .last_mesh_upload_at
+                    .is_some_and(|last| last.elapsed() < LIVE_MESH_UPLOAD_INTERVAL)
+        };
+        if skip_mesh_refresh {
+            return;
+        }
+
         if let Some(stock) = &self.controller.state().simulation.playback.live_stock {
-            let mut mesh = dexel_stock_to_mesh(stock);
+            let total_start = Instant::now();
+            let mesh_start = Instant::now();
+            let use_preview_mesh = self.controller.state().simulation.playback.playing;
+            let preview_direction = self
+                .controller
+                .state()
+                .simulation
+                .current_boundary()
+                .map_or(rs_cam_core::dexel_stock::StockCutDirection::FromTop, |b| {
+                    b.direction
+                });
+            let mut mesh = if use_preview_mesh {
+                dexel_stock_to_entry_surface_mesh(stock, preview_direction)
+            } else {
+                dexel_stock_to_mesh(stock)
+            };
 
             // Transform mesh from global stock frame to the active setup's
             // local frame so it matches the tool position (already in local).
             self.transform_mesh_to_local_frame(&mut mesh, target_move);
+            let mesh_elapsed = mesh_start.elapsed();
 
+            let color_start = Instant::now();
             let colors = self.compute_sim_colors(&mesh);
-            self.controller.state_mut().simulation.playback.display_mesh = Some(mesh);
+            let color_elapsed = color_start.elapsed();
+            {
+                let pb = &mut self.controller.state_mut().simulation.playback;
+                pb.display_mesh = Some(mesh);
+                pb.display_mesh_move = Some(target_move);
+                pb.display_mesh_preview = use_preview_mesh;
+                pb.last_mesh_upload_at = Some(Instant::now());
+            }
 
+            let mut upload_elapsed = Duration::ZERO;
             if let Some(rs) = frame.wgpu_render_state() {
+                let upload_start = Instant::now();
                 // SAFETY: display_mesh was set to Some on the line above.
                 #[allow(clippy::unwrap_used)]
                 let mesh_ref = self
@@ -199,11 +282,30 @@ impl RsCamApp {
                 #[allow(clippy::unwrap_used)]
                 let resources: &mut RenderResources =
                     renderer.callback_resources.get_mut().unwrap();
-                resources.sim_mesh_data = SimMeshGpuData::from_heightmap_mesh_colored(
-                    &rs.device,
-                    &resources.gpu_limits,
-                    mesh_ref,
-                    &colors,
+                let updated = resources
+                    .sim_mesh_data
+                    .as_mut()
+                    .is_some_and(|data| data.update_mesh_if_fits(&rs.queue, mesh_ref, &colors));
+                if !updated {
+                    resources.sim_mesh_data = SimMeshGpuData::from_heightmap_mesh_colored(
+                        &rs.device,
+                        &resources.gpu_limits,
+                        mesh_ref,
+                        &colors,
+                    );
+                }
+                upload_elapsed = upload_start.elapsed();
+            }
+
+            let total_elapsed = total_start.elapsed();
+            if total_elapsed > Duration::from_millis(16) {
+                tracing::debug!(
+                    target_move,
+                    mesh_ms = mesh_elapsed.as_secs_f64() * 1000.0,
+                    color_ms = color_elapsed.as_secs_f64() * 1000.0,
+                    upload_ms = upload_elapsed.as_secs_f64() * 1000.0,
+                    total_ms = total_elapsed.as_secs_f64() * 1000.0,
+                    "slow live simulation mesh refresh"
                 );
             }
         }
@@ -246,55 +348,47 @@ impl RsCamApp {
         if !self.controller.state().simulation.has_results()
             || self.controller.state().simulation.total_moves() == 0
         {
-            self.controller
-                .state_mut()
-                .simulation
-                .playback
-                .tool_position = None;
+            let pb = &mut self.controller.state_mut().simulation.playback;
+            pb.tool_position = None;
+            pb.tool_gpu_move = None;
             return;
         }
 
-        // Find which toolpath and move index we're at
+        // Find the active simulated boundary first. This matches the exact
+        // simulation timeline ordering (including multi-setup flips), instead
+        // of assuming session toolpath-config order equals playback order.
         let current = self.controller.state().simulation.playback.current_move;
-        let mut cumulative = 0;
-        let mut found = None;
-        {
+        let active = self
+            .controller
+            .state()
+            .simulation
+            .move_to_local_toolpath_move(current);
+        let Some((_boundary_index, toolpath_id, local_idx)) = active else {
+            let pb = &mut self.controller.state_mut().simulation.playback;
+            pb.tool_position = None;
+            pb.tool_gpu_move = None;
+            return;
+        };
+
+        let found = (|| {
             let state = self.controller.state();
             let session = &state.session;
             let gui = &state.gui;
-            for tc in session.toolpath_configs() {
-                if !tc.enabled {
-                    continue;
-                }
-                let rt = gui.toolpath_rt.get(&tc.id);
-                if let Some(result) = rt.and_then(|r| r.result.as_ref()) {
-                    let tp = result.toolpath();
-                    let tp_moves = tp.moves.len();
-                    if current <= cumulative + tp_moves {
-                        let local_idx = current.saturating_sub(cumulative);
-                        if local_idx < tp.moves.len() {
-                            // Toolpath is in local coords, viewport is in local frame — use directly
-                            let pos = tp.moves[local_idx].target;
-                            let tool_info = session
-                                .tools()
-                                .iter()
-                                .find(|tool| tool.id.0 == tc.tool_id)
-                                .cloned();
-                            found = Some((pos, tool_info));
-                        }
-                        break;
-                    }
-                    cumulative += tp_moves;
-                }
-            }
-        }
+            let rt = gui.toolpath_rt.get(&toolpath_id.0);
+            let result = rt.and_then(|r| r.result.as_ref())?;
+            let tp = result.toolpath();
+            let motion = tp.moves.get(local_idx)?;
+            let tool_info = session
+                .find_toolpath_config_by_id(toolpath_id.0)
+                .and_then(|(_, tc)| session.tools().iter().find(|tool| tool.id.0 == tc.tool_id))
+                .cloned();
+            Some((motion.target, tool_info))
+        })();
 
         let Some((pos, tool_info)) = found else {
-            self.controller
-                .state_mut()
-                .simulation
-                .playback
-                .tool_position = None;
+            let pb = &mut self.controller.state_mut().simulation.playback;
+            pb.tool_position = None;
+            pb.tool_gpu_move = None;
             return;
         };
 
@@ -305,6 +399,10 @@ impl RsCamApp {
                 pb.tool_radius = tool.diameter / 2.0;
                 pb.tool_type_label = tool.tool_type.label().to_owned();
             }
+        }
+
+        if self.controller.state().simulation.playback.tool_gpu_move == Some(current) {
+            return;
         }
 
         if let Some(tool) = tool_info
@@ -326,6 +424,11 @@ impl RsCamApp {
                     [pos.x as f32, pos.y as f32, pos.z as f32],
                 ),
             );
+            self.controller
+                .state_mut()
+                .simulation
+                .playback
+                .tool_gpu_move = Some(current);
         }
     }
 }
