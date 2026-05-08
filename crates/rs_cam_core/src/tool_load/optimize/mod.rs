@@ -45,6 +45,7 @@ pub mod axes;
 pub mod bounds;
 pub mod patches;
 mod policy;
+pub mod retarget;
 pub mod space;
 
 use axes::SearchAxis;
