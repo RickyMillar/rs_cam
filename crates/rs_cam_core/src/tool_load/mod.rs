@@ -287,7 +287,7 @@ pub fn evaluate_toolpath(
             ctx.operation_kind,
         ),
         power,
-        deflection: deflection::evaluate(ctx.tool),
+        deflection: deflection::evaluate(ctx.toolpath_id, ctx.tool, ctx.material, sim_trace),
     }
 }
 

@@ -47,6 +47,13 @@ pub enum ToolMaterial {
     Hss,
 }
 
+/// Young's modulus of tungsten carbide (N/mm² == MPa). Cited range
+/// 550–650 GPa across grades; 600 is the canonical handbook value.
+pub const CARBIDE_YOUNGS_MODULUS_N_PER_MM2: f64 = 600_000.0;
+/// Young's modulus of high-speed steel (N/mm² == MPa). Handbook value
+/// is 200–210 GPa for M2/M42 grades; 200 chosen as a clean reference.
+pub const HSS_YOUNGS_MODULUS_N_PER_MM2: f64 = 200_000.0;
+
 impl ToolMaterial {
     pub const ALL: &[ToolMaterial] = &[ToolMaterial::Carbide, ToolMaterial::Hss];
 
@@ -54,6 +61,15 @@ impl ToolMaterial {
         match self {
             ToolMaterial::Carbide => "Carbide",
             ToolMaterial::Hss => "HSS",
+        }
+    }
+
+    /// Young's modulus E in N/mm² (= MPa). Used by the deflection gate
+    /// to translate cutting force into tip displacement.
+    pub fn youngs_modulus_n_per_mm2(&self) -> f64 {
+        match self {
+            ToolMaterial::Carbide => CARBIDE_YOUNGS_MODULUS_N_PER_MM2,
+            ToolMaterial::Hss => HSS_YOUNGS_MODULUS_N_PER_MM2,
         }
     }
 }
@@ -203,6 +219,17 @@ impl ToolConfig {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn youngs_modulus_matches_canonical_values() {
+        assert_eq!(ToolMaterial::Carbide.youngs_modulus_n_per_mm2(), 600_000.0);
+        assert_eq!(ToolMaterial::Hss.youngs_modulus_n_per_mm2(), 200_000.0);
+        // Carbide is meaningfully stiffer than HSS.
+        assert!(
+            ToolMaterial::Carbide.youngs_modulus_n_per_mm2()
+                > 2.5 * ToolMaterial::Hss.youngs_modulus_n_per_mm2()
+        );
+    }
 
     #[test]
     fn toml_round_trip_preserves_helix_corner_radius_and_material() {
