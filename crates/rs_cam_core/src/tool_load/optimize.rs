@@ -20,6 +20,7 @@
 //! See `planning/OPTIMIZER_UX_PLAN.md` — particularly Resolutions 1-9
 //! and Engineering Defaults 1-10.
 
+use std::sync::LazyLock;
 use std::sync::atomic::AtomicBool;
 
 use serde::{Deserialize, Serialize};
@@ -39,6 +40,16 @@ use crate::tool::MillingCutter;
 use super::RefuseReason;
 use super::verdict::{ToolpathLoadVerdict, Verdict};
 use super::{ToolpathLoadContext, evaluate_toolpath};
+
+mod policy;
+
+use policy::SearchPolicy;
+
+static DEFAULT_SEARCH_POLICY: LazyLock<SearchPolicy> = LazyLock::new(SearchPolicy::default);
+
+fn search_policy() -> &'static SearchPolicy {
+    &DEFAULT_SEARCH_POLICY
+}
 
 /// Which search stage produced a candidate. The reported `cycle_time_s`
 /// and `verdict` on every candidate the optimizer surfaces come from
@@ -226,7 +237,7 @@ impl OptimizeOutcome {
     /// Recommended candidate: the first non-baseline candidate that
     /// (a) passes the gate (no `Exceeds` verdict on any criterion)
     /// AND (b) is faster than baseline by more than
-    /// `RECOMMENDATION_CYCLE_DELTA_S`. Returns `None` for `Skipped` /
+    /// the policy recommendation cycle delta. Returns `None` for `Skipped` /
     /// `NoSafeImprovement` outcomes, and for `Ranked` outcomes where
     /// no candidate clears both bars.
     ///
@@ -240,20 +251,12 @@ impl OptimizeOutcome {
             return None;
         };
         let baseline = candidates.first()?;
+        let min_cycle_delta_s = search_policy().ranking.recommendation_cycle_delta_s.value;
         candidates.iter().skip(1).find(|c| {
-            candidate_is_safe(c)
-                && c.cycle_time_s + RECOMMENDATION_CYCLE_DELTA_S < baseline.cycle_time_s
+            candidate_is_safe(c) && c.cycle_time_s + min_cycle_delta_s < baseline.cycle_time_s
         })
     }
 }
-
-/// Minimum cycle-time improvement (in seconds) for a candidate to
-/// count as a recommendation. Below this delta, the candidate is
-/// indistinguishable from baseline given simulator and gate-noise
-/// uncertainty — surfacing it as ⭐ would be misleading. 0.5 s is
-/// well below any user-perceptible cycle time and well above
-/// floating-point noise on small sub-second toolpaths.
-pub(crate) const RECOMMENDATION_CYCLE_DELTA_S: f64 = 0.5;
 
 /// True if every criterion is non-`Exceeds`. `Within` and `Unmodeled`
 /// both pass; `Unmodeled` is the gate's honest "I don't know" and
@@ -285,9 +288,11 @@ fn classify_one_gate(b: &Verdict, c: &Verdict) -> GateDelta {
         (Verdict::Within { .. }, Verdict::Exceeds { .. }) => GateDelta::Worsened,
         (Verdict::Exceeds { peak: bp, .. }, Verdict::Exceeds { peak: cp, .. }) => {
             // Both still failing — a smaller overshoot is "less unsafe"
-            // and counts as Improved. We use a 5% relative threshold
-            // to avoid noise-level changes flipping the classification.
-            let threshold = (bp.abs() * 0.05).max(1e-6);
+            // and counts as Improved. The policy threshold avoids
+            // noise-level changes flipping the classification.
+            let policy = search_policy();
+            let threshold = (bp.abs() * policy.ranking.failing_gate_relative_threshold.value)
+                .max(policy.ranking.failing_gate_absolute_epsilon.value);
             if *cp + threshold < *bp {
                 GateDelta::Improved
             } else if *cp > *bp + threshold {
@@ -319,20 +324,20 @@ pub struct ProjectOptimizeReport {
 impl ProjectOptimizeReport {
     /// Index of the first non-baseline candidate that's safe (no
     /// `Exceeds` verdict on any criterion) and faster than baseline
-    /// by more than `RECOMMENDATION_CYCLE_DELTA_S`. Returns `None`
+    /// by more than the policy recommendation cycle delta. Returns `None`
     /// if no such candidate exists. This is the index version of
     /// [`OptimizeOutcome::first_safe`] so callers can mutate the
     /// candidate in place (e.g. populate reconciled values during
     /// U4 reconciliation).
     pub fn first_safe_index(candidates: &[OptimizeCandidate]) -> Option<usize> {
         let baseline = candidates.first()?;
+        let min_cycle_delta_s = search_policy().ranking.recommendation_cycle_delta_s.value;
         candidates
             .iter()
             .enumerate()
             .skip(1)
             .find(|(_, c)| {
-                candidate_is_safe(c)
-                    && c.cycle_time_s + RECOMMENDATION_CYCLE_DELTA_S < baseline.cycle_time_s
+                candidate_is_safe(c) && c.cycle_time_s + min_cycle_delta_s < baseline.cycle_time_s
             })
             .map(|(i, _)| i)
     }
@@ -545,7 +550,8 @@ pub fn optimize_toolpath(
     }
 
     // 9. Stage 2: top-3 by cycle time, re-eval at full resolution.
-    let stage2_seeds = select_stage2_candidates(all_candidates, STAGE2_SURVIVOR_COUNT);
+    let stage2_survivor_count = search_policy().stages.refined_survivor_count.value;
+    let stage2_seeds = select_stage2_candidates(all_candidates, stage2_survivor_count);
     let Ok(stage2_candidates) = refine_stage2(&mut guard, &ctx, stage2_seeds, cancel) else {
         drop(guard);
         return OptimizeOutcome::NoSafeImprovement {
@@ -596,7 +602,8 @@ fn run_stage_0(
         lut_row: matched_lut_row,
     };
     let k = solve_headroom_scale(&stage0_inputs);
-    if k <= 1.0 + 1e-6 {
+    let policy = search_policy();
+    if k <= policy.feed.scale_floor.value + policy.feed.scale_epsilon.value {
         return None;
     }
     let scaled_op = apply_scale_to_op(baseline_op, baseline_rpm, k, machine);
@@ -607,7 +614,7 @@ fn run_stage_0(
         scaled_op,
         delta,
         SearchStage::Coarse,
-        STAGE1_RESOLUTION_MM,
+        search_policy().stages.coarse_resolution_mm.value,
         cancel,
     )
     .ok()
@@ -671,7 +678,7 @@ fn run_stage_f_retarget(
         candidate_op,
         delta,
         SearchStage::Coarse,
-        STAGE1_RESOLUTION_MM,
+        search_policy().stages.coarse_resolution_mm.value,
         cancel,
     )
     .ok()
@@ -714,15 +721,22 @@ fn run_stage_1_grid(
         return Vec::new();
     }
 
-    let anchor_doc = anchor_op
-        .depth_per_pass()
-        .unwrap_or_else(|| baseline_op.depth_per_pass().unwrap_or(1.5));
-    let anchor_stepover = anchor_op
-        .stepover()
-        .unwrap_or_else(|| baseline_op.stepover().unwrap_or(1.0));
-    let anchor_scallop = anchor_op
-        .scallop_height()
-        .unwrap_or_else(|| baseline_op.scallop_height().unwrap_or(0.1));
+    let policy = search_policy();
+    let anchor_doc = anchor_op.depth_per_pass().unwrap_or_else(|| {
+        baseline_op
+            .depth_per_pass()
+            .unwrap_or(policy.fallback.doc_anchor_mm.value)
+    });
+    let anchor_stepover = anchor_op.stepover().unwrap_or_else(|| {
+        baseline_op
+            .stepover()
+            .unwrap_or(policy.fallback.stepover_anchor_mm.value)
+    });
+    let anchor_scallop = anchor_op.scallop_height().unwrap_or_else(|| {
+        baseline_op
+            .scallop_height()
+            .unwrap_or(policy.fallback.scallop_height_anchor_mm.value)
+    });
 
     // Build variant lists per axis. Empty/anchor-only when the op
     // doesn't expose that knob — `apply_*_to_op` is a no-op for missing
@@ -753,9 +767,11 @@ fn run_stage_1_grid(
                 }
                 // Skip the anchor combo — already represented by the
                 // headroom-point candidate (or the baseline).
-                if (doc - anchor_doc).abs() < DOC_DEDUP_TOLERANCE_MM
-                    && (stepover - anchor_stepover).abs() < STEPOVER_DEDUP_TOLERANCE_MM
-                    && (scallop - anchor_scallop).abs() < SCALLOP_HEIGHT_DEDUP_TOLERANCE_MM
+                if (doc - anchor_doc).abs() < policy.axes.doc.dedup_tolerance.value
+                    && (stepover - anchor_stepover).abs()
+                        < policy.axes.stepover.dedup_tolerance.value
+                    && (scallop - anchor_scallop).abs()
+                        < policy.axes.scallop_height.dedup_tolerance.value
                 {
                     continue;
                 }
@@ -770,7 +786,7 @@ fn run_stage_1_grid(
                     candidate_op,
                     delta,
                     SearchStage::Coarse,
-                    STAGE1_RESOLUTION_MM,
+                    policy.stages.coarse_resolution_mm.value,
                     cancel,
                 ) {
                     out.push(candidate);
@@ -862,7 +878,7 @@ fn preflight_classify(
 /// `target_L = current_L × (50 µm / peak)^(1/3)`.
 fn deflection_setup_prescription(tool: &crate::tool::ToolDefinition, peak_delta_mm: f64) -> String {
     let peak_um = peak_delta_mm * 1000.0;
-    let target_um = 50.0_f64; // matches deflection::WITHIN_BOUND_MM × 1000
+    let target_um = search_policy().deflection_setup_target_um.value;
     let scale = if peak_um > target_um {
         (target_um / peak_um).cbrt()
     } else {
@@ -1200,8 +1216,10 @@ pub(crate) struct Stage0Inputs<'a> {
 /// independently decide whether to run Stage 0 at all (skip it for
 /// `Exceeds`-baseline TPs per Engineering Default 6).
 pub(crate) fn solve_headroom_scale(inputs: &Stage0Inputs<'_>) -> f64 {
-    let rpm_baseline = inputs.rpm_baseline.max(1.0);
-    let feed_baseline = inputs.feed_baseline_mm_min.max(1.0);
+    let policy = search_policy();
+    let min_positive = policy.feed.min_positive_scale_input.value;
+    let rpm_baseline = inputs.rpm_baseline.max(min_positive);
+    let feed_baseline = inputs.feed_baseline_mm_min.max(min_positive);
 
     // 1. Machine RPM cap.
     let (_min_rpm, max_rpm) = inputs.machine.rpm_range();
@@ -1227,9 +1245,10 @@ pub(crate) fn solve_headroom_scale(inputs: &Stage0Inputs<'_>) -> f64 {
     //    back further to the machine ceiling (no LUT constraint).
     let k_lut = match inputs.lut_row {
         Some(row) => {
+            let rpm_nominal_headroom = policy.feed.lut_rpm_nominal_headroom.value;
             let lut_rpm_max = row
                 .rpm_max
-                .or_else(|| row.rpm_nominal.map(|n| n * 1.2))
+                .or_else(|| row.rpm_nominal.map(|n| n * rpm_nominal_headroom))
                 .unwrap_or(max_rpm);
             lut_rpm_max / rpm_baseline
         }
@@ -1237,9 +1256,9 @@ pub(crate) fn solve_headroom_scale(inputs: &Stage0Inputs<'_>) -> f64 {
     };
 
     let k_unclamped = k_rpm_machine.min(k_feed).min(k_power).min(k_lut);
-    // Floor at 1.0 — never propose scaling DOWN from baseline in
-    // Stage 0. (Down-scaling is Stage 1's job for Exceeds baselines.)
-    k_unclamped.max(1.0)
+    // Never propose scaling DOWN from baseline in Stage 0. Down-scaling
+    // is Stage 1's job for Exceeds baselines.
+    k_unclamped.max(policy.feed.scale_floor.value)
 }
 
 /// Maximum power the spindle is capable of delivering at any RPM.
@@ -1294,10 +1313,17 @@ struct RetargetSolution {
 /// bounds. Returns `None` when the row carries neither bound — there
 /// is nothing to retarget against.
 fn lut_chipload_target(row: &MatchedRow) -> Option<f64> {
+    let policy = search_policy();
     match (row.chip_load_min_mm, row.chip_load_max_mm) {
-        (Some(lo), Some(hi)) if lo > 0.0 && hi >= lo => Some((lo + hi) * 0.5),
-        (None, Some(hi)) if hi > 0.0 => Some(hi * 0.85),
-        (Some(lo), None) if lo > 0.0 => Some(lo * 1.15),
+        (Some(lo), Some(hi)) if lo > 0.0 && hi >= lo => {
+            Some((lo + hi) * policy.retarget.chipload_target_midpoint_weight.value)
+        }
+        (None, Some(hi)) if hi > 0.0 => {
+            Some(hi * policy.retarget.chipload_upper_only_fraction.value)
+        }
+        (Some(lo), None) if lo > 0.0 => {
+            Some(lo * policy.retarget.chipload_lower_only_headroom.value)
+        }
         _ => None,
     }
 }
@@ -1314,9 +1340,10 @@ fn solve_target_rpm(baseline_rpm: f64, row: &MatchedRow, machine: &MachineProfil
     // 1. LUT bracket: prefer rpm_nominal; fall back to mid(min,max).
     //    The Engineering Default 5 ±20% bracket isn't applied here —
     //    retarget is selecting an exact target, not a cap.
+    let midpoint_weight = search_policy().retarget.rpm_bracket_midpoint_weight.value;
     let lut_target = row.rpm_nominal.or({
         match (row.rpm_min, row.rpm_max) {
-            (Some(lo), Some(hi)) => Some((lo + hi) * 0.5),
+            (Some(lo), Some(hi)) => Some((lo + hi) * midpoint_weight),
             (Some(v), None) | (None, Some(v)) => Some(v),
             (None, None) => None,
         }
@@ -1377,26 +1404,32 @@ fn solve_chipload_retarget(
     if !target_feed_raw.is_finite() || target_feed_raw <= 0.0 {
         return None;
     }
+    let policy = search_policy();
+    let min_feed = policy.feed.min_positive_scale_input.value;
     // Clamp by machine feed envelope. Below the machine min isn't
     // valid; if the unclamped target is above the machine max we
     // accept the clamped value — this is still a meaningful retarget
     // even when the machine ceiling is the binding cap.
-    let target_feed = target_feed_raw.min(machine.max_feed_mm_min).max(1.0);
+    let target_feed = target_feed_raw.min(machine.max_feed_mm_min).max(min_feed);
 
     // 5. Skip noise-level retargets — Stage 1 grid will explore from
     //    baseline if the change is too small to matter.
-    let baseline_feed = baseline_op.feed_rate().max(1.0);
-    if ((target_feed - baseline_feed) / baseline_feed).abs() < 0.01 {
+    let baseline_feed = baseline_op.feed_rate().max(min_feed);
+    if ((target_feed - baseline_feed) / baseline_feed).abs()
+        < policy.feed.dedup_threshold_fraction.value
+    {
         return None;
     }
 
     // 6. Plunge tracking. Plunge is derived from feed in the F&S
-    //    calculator; when the optimizer moves feed by >10%, plunge
+    //    calculator; when the optimizer moves feed meaningfully, plunge
     //    has to come along or the next regen will rebuild a transient
     //    that's no longer steady-state. Cap by `material plunge_base
     //    × machine.safety_factor`.
     let feed_ratio = target_feed / baseline_feed;
-    let target_plunge_mm_min = if (feed_ratio - 1.0).abs() > 0.10 {
+    let target_plunge_mm_min = if (feed_ratio - policy.feed.scale_floor.value).abs()
+        > policy.feed.plunge_tracking_threshold_fraction.value
+    {
         let baseline_plunge = baseline_op.plunge_rate();
         let scaled = baseline_plunge * feed_ratio;
         let cap = (plunge_base_mm_min * machine.safety_factor).max(0.0);
@@ -1444,43 +1477,6 @@ fn apply_retarget_to_op(
 // 3-variant ops (Adaptive3d, Rest, Face): `[lo, base, hi]`.
 // 4-variant ops (Pocket, Adaptive): `[lo, base, mid(base, hi), hi]`.
 
-/// Hard floor on any DOC value the optimizer proposes. Real router
-/// toolpaths can pass values smaller than this for finishing operations,
-/// but Stage 1's job is the rougher 5 ops where ~50µm is a reasonable
-/// minimum. ED 9 calls this out as "use 0.05 mm as a hard floor".
-const DOC_HARD_FLOOR_MM: f64 = 0.05;
-
-/// Equality threshold for deduping near-identical DOC values produced
-/// by the LUT-anchored grid (e.g. when `ap_min`/`ap_max` happen to
-/// land microns from the multiplier endpoints). 5 µm is well below
-/// any simulator-distinguishable resolution; deliberately tight so
-/// the spec'd `[0.7×, 1.0×, 1.3×]` grid survives intact even when
-/// floating-point arithmetic puts adjacent values 0.0500000001 mm
-/// apart.
-const DOC_DEDUP_TOLERANCE_MM: f64 = 0.005;
-
-/// Hard floor on stepover. Same reasoning as `DOC_HARD_FLOOR_MM` —
-/// the optimizer is calibrated for the 5 roughing/clearing ops where
-/// sub-50µm stepover is finishing territory and outside the LUT
-/// envelope.
-const STEPOVER_HARD_FLOOR_MM: f64 = 0.05;
-
-/// Dedup tolerance for stepover variants. Same rationale as
-/// `DOC_DEDUP_TOLERANCE_MM`.
-const STEPOVER_DEDUP_TOLERANCE_MM: f64 = 0.005;
-
-/// Hard floor on scallop height. Sub-10µm scallop targets are
-/// effectively "polish" passes — outside both the LUT envelope and
-/// what wood toolpaths target. Below this the chord-step formula
-/// produces sub-mm radial steps that explode toolpath length without
-/// surface gain.
-const SCALLOP_HEIGHT_HARD_FLOOR_MM: f64 = 0.01;
-
-/// Dedup tolerance for scallop_height variants. Tighter than stepover
-/// because scallop_height itself is an order of magnitude smaller (0.1mm
-/// typical vs 1.0mm typical for stepover).
-const SCALLOP_HEIGHT_DEDUP_TOLERANCE_MM: f64 = 0.001;
-
 /// Build the DOC candidate grid for a Stage-1 sweep. Always includes
 /// the baseline (`baseline_doc_mm`) as a control candidate; the lo and
 /// hi endpoints come from the LUT row's calibrated bounds (clamped by
@@ -1502,17 +1498,18 @@ pub(crate) fn build_doc_variants(
     lut_row: Option<&MatchedRow>,
     op_type: OperationType,
 ) -> Vec<f64> {
-    let baseline = baseline_doc_mm.max(DOC_HARD_FLOOR_MM);
+    let axis_policy = &search_policy().axes.doc;
+    let hard_floor = axis_policy.hard_floor.value;
+    let baseline = baseline_doc_mm.max(hard_floor);
     let four_variant = matches!(op_type, OperationType::Pocket | OperationType::Adaptive);
 
-    // Multiplier envelope. ED 9: 0.7× to 1.3× for 3-variant; 0.7× to
-    // 1.4× for 4-variant (so the midpoint between base and hi lands at
-    // 1.2× — a useful intermediate step).
-    let mult_lo = 0.7 * baseline;
+    // Multiplier envelope is policy-owned; four-variant clearing ops get
+    // the wider high bound that creates a useful midpoint.
+    let mult_lo = axis_policy.baseline_mult_lo.value * baseline;
     let mult_hi = if four_variant {
-        1.4 * baseline
+        axis_policy.baseline_mult_hi_four_point.value * baseline
     } else {
-        1.3 * baseline
+        axis_policy.baseline_mult_hi_three_point.value * baseline
     };
 
     // Clamp inside LUT-row calibrated bounds if available. The
@@ -1530,12 +1527,12 @@ pub(crate) fn build_doc_variants(
     // Floor every value at the hard minimum, and ensure the high
     // endpoint isn't accidentally smaller than baseline (degenerate
     // case where the LUT row is very tight).
-    let lo = lo.max(DOC_HARD_FLOOR_MM);
-    let hi = hi.max(baseline).max(DOC_HARD_FLOOR_MM);
+    let lo = lo.max(hard_floor);
+    let hi = hi.max(baseline).max(hard_floor);
 
     let mut variants = vec![lo, baseline];
     if four_variant {
-        variants.push((baseline + hi) * 0.5);
+        variants.push(baseline + (hi - baseline) * axis_policy.midpoint_weight.value);
     }
     variants.push(hi);
 
@@ -1545,13 +1542,14 @@ pub(crate) fn build_doc_variants(
     // 3mm; benign here). Always added; dedup handles the no-op case.
     if let Some(default_doc) = OperationConfig::new_default(op_type).depth_per_pass()
         && default_doc.is_finite()
-        && default_doc > DOC_HARD_FLOOR_MM
+        && default_doc > hard_floor
     {
         variants.push(default_doc);
     }
 
     variants.sort_by(f64::total_cmp);
-    variants.dedup_by(|a, b| (*a - *b).abs() < DOC_DEDUP_TOLERANCE_MM);
+    let dedup_tolerance = axis_policy.dedup_tolerance.value;
+    variants.dedup_by(|a, b| (*a - *b).abs() < dedup_tolerance);
     variants
 }
 
@@ -1579,14 +1577,16 @@ pub(crate) fn build_stepover_variants(
     lut_row: Option<&MatchedRow>,
     op_type: OperationType,
 ) -> Vec<f64> {
-    let baseline = baseline_stepover_mm.max(STEPOVER_HARD_FLOOR_MM);
+    let axis_policy = &search_policy().axes.stepover;
+    let hard_floor = axis_policy.hard_floor.value;
+    let baseline = baseline_stepover_mm.max(hard_floor);
     let four_variant = matches!(op_type, OperationType::Pocket | OperationType::Adaptive);
 
-    let mult_lo = 0.7 * baseline;
+    let mult_lo = axis_policy.baseline_mult_lo.value * baseline;
     let mult_hi = if four_variant {
-        1.4 * baseline
+        axis_policy.baseline_mult_hi_four_point.value * baseline
     } else {
-        1.3 * baseline
+        axis_policy.baseline_mult_hi_three_point.value * baseline
     };
 
     let (lo, hi) = match lut_row {
@@ -1598,12 +1598,12 @@ pub(crate) fn build_stepover_variants(
         None => (mult_lo, mult_hi),
     };
 
-    let lo = lo.max(STEPOVER_HARD_FLOOR_MM);
-    let hi = hi.max(baseline).max(STEPOVER_HARD_FLOOR_MM);
+    let lo = lo.max(hard_floor);
+    let hi = hi.max(baseline).max(hard_floor);
 
     let mut variants = vec![lo, baseline];
     if four_variant {
-        variants.push((baseline + hi) * 0.5);
+        variants.push(baseline + (hi - baseline) * axis_policy.midpoint_weight.value);
     }
     variants.push(hi);
 
@@ -1616,13 +1616,14 @@ pub(crate) fn build_stepover_variants(
     // needed. Always added; dedup handles the no-op case.
     if let Some(default_so) = OperationConfig::new_default(op_type).stepover()
         && default_so.is_finite()
-        && default_so > STEPOVER_HARD_FLOOR_MM
+        && default_so > hard_floor
     {
         variants.push(default_so);
     }
 
     variants.sort_by(f64::total_cmp);
-    variants.dedup_by(|a, b| (*a - *b).abs() < STEPOVER_DEDUP_TOLERANCE_MM);
+    let dedup_tolerance = axis_policy.dedup_tolerance.value;
+    variants.dedup_by(|a, b| (*a - *b).abs() < dedup_tolerance);
     variants
 }
 
@@ -1643,15 +1644,18 @@ pub(crate) fn apply_stepover_to_op(
 /// bounds describe radial step in mm, which differs in units and
 /// magnitude from `scallop_height` (a 0.1 mm scallop target on a 6 mm
 /// ball produces ~1.55 mm radial step). Returns variants sorted
-/// ascending; always includes the baseline. Floored at
-/// `SCALLOP_HEIGHT_HARD_FLOOR_MM`.
+/// ascending; always includes the baseline. Floored at the policy's
+/// scallop-height hard floor.
 pub(crate) fn build_scallop_height_variants(baseline_scallop_mm: f64) -> Vec<f64> {
-    let baseline = baseline_scallop_mm.max(SCALLOP_HEIGHT_HARD_FLOOR_MM);
-    let lo = (0.7 * baseline).max(SCALLOP_HEIGHT_HARD_FLOOR_MM);
-    let hi = (1.3 * baseline).max(baseline);
+    let axis_policy = &search_policy().axes.scallop_height;
+    let hard_floor = axis_policy.hard_floor.value;
+    let baseline = baseline_scallop_mm.max(hard_floor);
+    let lo = (axis_policy.baseline_mult_lo.value * baseline).max(hard_floor);
+    let hi = (axis_policy.baseline_mult_hi_three_point.value * baseline).max(baseline);
     let mut variants = vec![lo, baseline, hi];
     variants.sort_by(f64::total_cmp);
-    variants.dedup_by(|a, b| (*a - *b).abs() < SCALLOP_HEIGHT_DEDUP_TOLERANCE_MM);
+    let dedup_tolerance = axis_policy.dedup_tolerance.value;
+    variants.dedup_by(|a, b| (*a - *b).abs() < dedup_tolerance);
     variants
 }
 
@@ -1684,7 +1688,8 @@ pub(crate) fn delta_against_baseline(
     candidate: &OperationConfig,
 ) -> ParamDelta {
     let mut delta = ParamDelta::default();
-    if (baseline.feed_rate() - candidate.feed_rate()).abs() > 0.5 {
+    let feed_delta_tolerance = search_policy().feed.delta_display_tolerance_mm_min.value;
+    if (baseline.feed_rate() - candidate.feed_rate()).abs() > feed_delta_tolerance {
         delta.feed_mm_min = Some(candidate.feed_rate());
     }
     if baseline.spindle_rpm() != candidate.spindle_rpm() {
@@ -1925,18 +1930,6 @@ pub(crate) fn evaluate_candidate(
 // then folds Stage 2 + the baseline candidate into one of the three
 // `OptimizeOutcome` variants per ED 8.
 
-/// How many Stage-1 candidates survive into Stage 2 by default. Per
-/// ED 2: top 3 by cycle time, ignoring verdict.
-pub(crate) const STAGE2_SURVIVOR_COUNT: usize = 3;
-
-/// Default Stage-1 dexel resolution per ED 1: 1.0mm. Calibrated
-/// 2026-05-03 on wanaka to keep verdict-kinds stable vs. 0.5mm.
-pub(crate) const STAGE1_RESOLUTION_MM: f64 = 1.0;
-
-/// Default Stage-2 / Refined dexel resolution. Matches the GUI's
-/// default sim resolution; the rollup quotes Stage-2 numbers verbatim.
-pub(crate) const STAGE2_RESOLUTION_MM: f64 = 0.5;
-
 /// Sort `stage1_winners` by ascending cycle time and keep the top
 /// `n` (lowest-cycle-time) entries. Per ED 2 we pick by cycle time
 /// alone — Stage 2 re-applies the gate verdict at full resolution.
@@ -1972,7 +1965,7 @@ pub(crate) fn refine_stage2(
             c.params,
             c.delta,
             SearchStage::Refined,
-            STAGE2_RESOLUTION_MM,
+            search_policy().stages.refined_resolution_mm.value,
             cancel,
         )?;
         refined.push(candidate);
@@ -2023,8 +2016,8 @@ pub(crate) fn build_outcome(
     sorted.sort_by(|a, b| a.cycle_time_s.total_cmp(&b.cycle_time_s));
 
     let baseline_cycle = baseline.cycle_time_s;
-    let is_faster =
-        |c: &OptimizeCandidate| c.cycle_time_s + RECOMMENDATION_CYCLE_DELTA_S < baseline_cycle;
+    let min_cycle_delta_s = search_policy().ranking.recommendation_cycle_delta_s.value;
+    let is_faster = |c: &OptimizeCandidate| c.cycle_time_s + min_cycle_delta_s < baseline_cycle;
 
     // Pure improvement (Ranked tier): faster AND no regression.
     let any_pure_improvement = sorted
@@ -2068,7 +2061,7 @@ pub(crate) fn build_outcome(
         format!(
             "{}: no candidate beat the baseline cycle time by more than {:.1}s",
             RefuseReason::NoImprovementFound.explanation_for_optimize(),
-            RECOMMENDATION_CYCLE_DELTA_S
+            min_cycle_delta_s
         )
     };
     let mut attempted = Vec::with_capacity(sorted.len() + 1);
@@ -2100,15 +2093,6 @@ pub(crate) fn build_outcome(
 // subsequent project sims would skip it). We re-generate the toolpath
 // at baseline params after each `optimize_toolpath` call to keep the
 // project's results map populated for the rest of the walk.
-
-/// Threshold above which a toolpath is flagged as the project's
-/// bottleneck. A toolpath whose baseline cycle time is at least this
-/// fraction of the project's total runtime gets the "Bottleneck:"
-/// callout in the U3 rollup. 30% is calibrated against wanaka — TP 6
-/// (the 3D finish at 61% of project time) trips it; smaller setups
-/// like the project_curves at ~5% don't. If multiple toolpaths trip
-/// it, the largest wins (only one bottleneck callout per rollup).
-pub const BOTTLENECK_FRACTION: f64 = 0.30;
 
 /// Progress callback for `optimize_project`. The worker-thread lane
 /// implements this to mirror progress into `LaneSnapshot::current_phase`
@@ -2146,9 +2130,9 @@ impl ProgressReporter for NoProgress {
 ///
 /// **Baseline cycle time** comes from `baseline_trace.toolpath_summaries`
 /// — the same trace the gate read from. The bottleneck index is the
-/// toolpath whose baseline cycle exceeds [`BOTTLENECK_FRACTION`] of the
-/// project total, breaking ties by the largest cycle (so only one row
-/// gets the callout).
+/// toolpath whose baseline cycle exceeds the policy bottleneck fraction
+/// of total project runtime, breaking ties by the largest cycle (so only
+/// one row gets the callout).
 pub fn optimize_project(
     session: &mut ProjectSession,
     baseline_trace: &SimulationCutTrace,
@@ -2206,15 +2190,16 @@ pub fn optimize_project(
     }
 
     // 4. Pick the bottleneck: the largest-cycle toolpath whose baseline
-    //    cycle is ≥ BOTTLENECK_FRACTION of the project total. Walk the
-    //    `enabled` list (not `per_toolpath`, which may be partial under
-    //    cancel) so the bottleneck is stable regardless of how far the
-    //    optimization run got.
+    //    cycle crosses the policy fraction of total project time. Walk
+    //    the `enabled` list (not `per_toolpath`, which may be partial
+    //    under cancel) so the bottleneck is stable regardless of how far
+    //    the optimization run got.
+    let bottleneck_fraction = search_policy().bottleneck_fraction.value;
     let bottleneck_index = if baseline_cycle_time_s > 0.0 {
         enabled
             .iter()
             .zip(baseline_cycles.iter())
-            .filter(|(_, (_, cycle))| *cycle / baseline_cycle_time_s >= BOTTLENECK_FRACTION)
+            .filter(|(_, (_, cycle))| *cycle / baseline_cycle_time_s >= bottleneck_fraction)
             .max_by(|(_, (_, a)), (_, (_, b))| a.total_cmp(b))
             .map(|((idx, _, _), _)| *idx)
     } else {
@@ -3633,7 +3618,7 @@ mod project_rollup_tests {
     fn bottleneck_threshold_constant_is_thirty_percent() {
         // Lock the constant in place so a future tweak to the
         // threshold gets a deliberate test update.
-        assert!((BOTTLENECK_FRACTION - 0.30).abs() < 1e-9);
+        assert!((search_policy().bottleneck_fraction.value - 0.30).abs() < 1e-9);
     }
 
     #[test]
@@ -4334,7 +4319,7 @@ mod stage1_grid_tests {
         let variants = build_scallop_height_variants(0.005);
         for v in &variants {
             assert!(
-                *v >= SCALLOP_HEIGHT_HARD_FLOOR_MM - 1e-9,
+                *v >= search_policy().axes.scallop_height.hard_floor.value - 1e-9,
                 "got {variants:?}"
             );
         }
@@ -4492,7 +4477,10 @@ mod stage1_grid_tests {
         let variants = build_doc_variants(0.01, None, OperationType::Pocket);
         // Every variant respects the floor (0.05mm).
         for v in &variants {
-            assert!(*v >= DOC_HARD_FLOOR_MM - 1e-9, "got {variants:?}");
+            assert!(
+                *v >= search_policy().axes.doc.hard_floor.value - 1e-9,
+                "got {variants:?}"
+            );
         }
     }
 
@@ -4606,7 +4594,10 @@ mod stage1_grid_tests {
     fn stepover_floors_at_hard_minimum() {
         let variants = build_stepover_variants(0.01, None, OperationType::Pocket);
         for v in &variants {
-            assert!(*v >= STEPOVER_HARD_FLOOR_MM - 1e-9, "got {variants:?}");
+            assert!(
+                *v >= search_policy().axes.stepover.hard_floor.value - 1e-9,
+                "got {variants:?}"
+            );
         }
     }
 
