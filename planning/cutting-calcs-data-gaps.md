@@ -194,8 +194,37 @@ max_stepdown, RadialFinish angular_step, Trace).
 - `cargo test -p rs_cam_core --lib --tests` clean.
 - `cargo clippy -p rs_cam_core --all-targets -- -D warnings` clean.
 
-**Status.** Implementing 2026-05-08. Code merged; pending live-MCP
-validation against wanaka TP 7 after GUI rebuild.
+**Status.** **Done** 2026-05-08 (commit `c40795b`). Live MCP validation
+against wanaka TP 7 (DropCutter / TaperedBall, hardwood) after GUI
+rebuild:
+
+- **Pre-G2:** `optimize_toolpath(7)` → `NoImprovementFound`,
+  `attempted.len() == 1` (baseline only). DropCutter was excluded by
+  `has_doc_knob` and Scallop's `scallop_height` axis didn't exist.
+- **Post-G2:** `optimize_toolpath(7)` → `NoImprovementFound`,
+  `attempted.len() == 4` (baseline + 3 Stage 1 stepover variants:
+  1.0 mm, 0.39 mm, 0.3 mm). Each candidate carries
+  `gate_deltas: { chipload: "worsened", deflection: "same", power: "same" }`.
+  The verdict's Approximate detail string carries the per-variant
+  diameter scale (×0.38 baseline, ×0.59 / ×0.54 / ×0.49 for Stage 1).
+
+The optimizer correctly refuses because all candidates worsen
+chipload — Stage 0's RPM drop (21000 → 17500) raises chipload at fixed
+feed and the Stage 1 stepover sweeps can't compensate. The gate
+widening behaviour is exactly what the plan specified.
+
+Two side observations worth tracking as follow-up gaps:
+
+1. Stage F retarget didn't appear in `attempted`. With `Exceeds(BreakageRisk)`
+   on a row whose scaled `chipload_max` is ~0.0114 mm/tooth and a
+   baseline peak of 0.0140 mm/tooth, Stage F should be able to drop
+   feed/RPM to bring chipload back inside. Possibly Stage F's
+   preflight requires bipolar semantics that don't apply when *all*
+   samples exceed the upper bound; verify after compaction.
+2. Diameter scale varies per Stage 1 variant (×0.38–×0.59) because
+   peak axial DOC depends on stepover. Working as intended — the
+   Approximate detail carries this per-candidate so the operator can
+   see the spread.
 
 ---
 
