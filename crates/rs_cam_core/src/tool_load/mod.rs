@@ -32,7 +32,8 @@ use crate::tool::ToolDefinition;
 use serde::{Deserialize, Serialize};
 
 pub use verdict::{
-    Confidence, ExceedsReason, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason, Verdict,
+    Confidence, ExceedsReason, PowerVerdict, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason,
+    Verdict,
 };
 
 /// Why the optimizer refused to produce a recommendation. Typed
@@ -268,7 +269,7 @@ pub fn evaluate_toolpath(
 ) -> ToolpathLoadVerdict {
     let power = match machine {
         Some(m) => power::evaluate(ctx.toolpath_id, ctx.tool, ctx.material, m, sim_trace),
-        None => Verdict::Unmodeled {
+        None => PowerVerdict::Unmodeled {
             reason: UnmodeledReason::NotImplemented(
                 "machine profile not provided to evaluator".to_owned(),
             ),

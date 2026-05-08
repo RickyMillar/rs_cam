@@ -23,7 +23,7 @@
 //! injection keeps this retargeter testable in isolation without
 //! coupling it to the wider machine/space plumbing.
 
-use crate::tool_load::verdict::{ExceedsReason, Verdict};
+use crate::tool_load::verdict::PowerVerdict;
 
 use super::super::axes::{AxisContext, AxisView, SearchAxis};
 use super::super::patches::{AxisPatch, PatchSource};
@@ -56,7 +56,7 @@ pub struct PowerFeedRetargeter {
 }
 
 impl Retargeter for PowerFeedRetargeter {
-    type Verdict = Verdict;
+    type Verdict = PowerVerdict;
 
     fn driving_axes(&self) -> &'static [SearchAxis] {
         POWER_DRIVING_AXES
@@ -64,20 +64,15 @@ impl Retargeter for PowerFeedRetargeter {
 
     fn target(
         &self,
-        verdict: &Verdict,
+        verdict: &PowerVerdict,
         space: &SearchSpace,
         view: &AxisView<'_>,
         ctx: &AxisContext<'_>,
     ) -> Option<RetargetSolution> {
         // 1. Match only the power-exceeded variant. Every other verdict
-        //    (Within, Unmodeled, or other Exceeds reasons) is for a
-        //    different retargeter to handle.
+        //    (Within, Unmodeled) is a no-op for this retargeter.
         let peak_kw = match verdict {
-            Verdict::Exceeds {
-                peak,
-                reason: ExceedsReason::SpindlePowerExceeded,
-                ..
-            } => *peak,
+            PowerVerdict::Exceeds { peak_kw, .. } => *peak_kw,
             _ => return None,
         };
 
@@ -146,8 +141,6 @@ impl Retargeter for PowerFeedRetargeter {
     clippy::indexing_slicing
 )]
 mod tests {
-    use std::ops::Range;
-
     use super::*;
     use crate::compute::catalog::{OperationConfig, OptimizationSurface};
     use crate::compute::operation_configs::PocketConfig;
@@ -156,7 +149,7 @@ mod tests {
     use crate::material::Material;
     use crate::tool::ToolDefinition;
     use crate::tool_load::optimize::policy::SearchPolicy;
-    use crate::tool_load::verdict::{Confidence, ExceedsReason, Verdict};
+    use crate::tool_load::verdict::{Confidence, PowerVerdict, SampleEvidence};
 
     // ── Test scaffolding ──────────────────────────────────────────
 
@@ -230,17 +223,13 @@ mod tests {
         }
     }
 
-    fn power_exceeds(peak_kw: f64) -> Verdict {
-        Verdict::Exceeds {
-            peak: peak_kw,
-            sample_range: empty_range(),
-            reason: ExceedsReason::SpindlePowerExceeded,
+    fn power_exceeds(peak_kw: f64) -> PowerVerdict {
+        PowerVerdict::Exceeds {
+            peak_kw,
+            available_kw: 0.5,
+            evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
         }
-    }
-
-    fn empty_range() -> Range<usize> {
-        0..0
     }
 
     fn primary(patches: &[AxisPatch]) -> &AxisPatch {
@@ -339,7 +328,11 @@ mod tests {
     }
 
     #[test]
-    fn returns_none_for_non_power_verdict() {
+    fn returns_none_for_non_exceeds_power_verdict() {
+        // Now that the retargeter is typed as `Verdict = PowerVerdict`,
+        // non-power verdicts can't even reach it (the type system filters
+        // them out). The remaining axis to verify is that Within and
+        // Unmodeled power verdicts are no-ops.
         let env = Env::new(3000.0);
         let view = env.view();
         let ctx = env.ctx();
@@ -351,19 +344,18 @@ mod tests {
             plunge_tracking_threshold: 0.10,
         };
 
-        let chipload_verdict = Verdict::Exceeds {
-            peak: 0.5,
-            sample_range: empty_range(),
-            reason: ExceedsReason::ChiploadBurnRisk,
-            confidence: Confidence::Validated,
-        };
-        assert!(r.target(&chipload_verdict, &space, &view, &ctx).is_none());
-
-        let within = Verdict::Within {
-            peak: 0.3,
+        let within = PowerVerdict::Within {
+            peak_kw: 0.3,
+            available_kw: 1.0,
+            evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
         };
         assert!(r.target(&within, &space, &view, &ctx).is_none());
+
+        let unmodeled = PowerVerdict::Unmodeled {
+            reason: crate::tool_load::verdict::UnmodeledReason::SimulationRequired,
+        };
+        assert!(r.target(&unmodeled, &space, &view, &ctx).is_none());
     }
 
     #[test]

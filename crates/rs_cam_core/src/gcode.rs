@@ -657,7 +657,7 @@ pub fn enforce_load_policy(
                 if let crate::tool_load::Verdict::Unmodeled { reason } = &v.chipload {
                     crits.push(format!("chipload={reason:?}"));
                 }
-                if let crate::tool_load::Verdict::Unmodeled { reason } = &v.power {
+                if let crate::tool_load::PowerVerdict::Unmodeled { reason } = &v.power {
                     crits.push(format!("power={reason:?}"));
                 }
                 if let crate::tool_load::Verdict::Unmodeled { reason } = &v.deflection {
@@ -1681,10 +1681,15 @@ mod tests {
     // ----- enforce_load_policy negative tests -----
 
     use crate::tool_load::{
-        Confidence, ExceedsReason, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason, Verdict,
+        Confidence, ExceedsReason, PowerVerdict, ToolLoadReport, ToolpathLoadVerdict,
+        UnmodeledReason, Verdict,
     };
 
-    fn report_with(chipload: Verdict, power: Verdict, deflection: Verdict) -> ToolLoadReport {
+    fn report_with(
+        chipload: Verdict,
+        power: PowerVerdict,
+        deflection: Verdict,
+    ) -> ToolLoadReport {
         ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
                 toolpath_id: 4,
@@ -1695,6 +1700,12 @@ mod tests {
         }
     }
 
+    fn power_not_implemented() -> PowerVerdict {
+        PowerVerdict::Unmodeled {
+            reason: UnmodeledReason::NotImplemented("phase 1b".to_owned()),
+        }
+    }
+
     #[test]
     fn enforce_blocks_exceeded_by_default() {
         let report = report_with(
@@ -1702,7 +1713,7 @@ mod tests {
                 peak: 0.05,
                 confidence: Confidence::Validated,
             },
-            Verdict::not_implemented("phase 1b"),
+            power_not_implemented(),
             Verdict::Exceeds {
                 peak: 10.0,
                 sample_range: 0..0,
@@ -1738,7 +1749,7 @@ mod tests {
                 peak: 0.05,
                 confidence: Confidence::Validated,
             },
-            Verdict::not_implemented("phase 1b"),
+            power_not_implemented(),
             Verdict::Exceeds {
                 peak: 10.0,
                 sample_range: 0..0,
@@ -1780,7 +1791,7 @@ mod tests {
     fn enforce_blocks_unmodeled_by_default() {
         let report = report_with(
             Verdict::not_implemented("phase 5"),
-            Verdict::not_implemented("phase 1b"),
+            power_not_implemented(),
             Verdict::Within {
                 peak: 3.0,
                 confidence: Confidence::Validated,
@@ -1800,8 +1811,10 @@ mod tests {
                 peak: 0.05,
                 confidence: Confidence::Validated,
             },
-            Verdict::Within {
-                peak: 0.5,
+            PowerVerdict::Within {
+                peak_kw: 0.5,
+                available_kw: 0.71,
+                evidence: crate::tool_load::verdict::SampleEvidence::empty(),
                 confidence: Confidence::Approximate("isotropic Kc only".into()),
             },
             Verdict::Within {
@@ -1823,7 +1836,7 @@ mod tests {
             Verdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired,
             },
-            Verdict::not_implemented("phase 1b"),
+            power_not_implemented(),
             Verdict::Within {
                 peak: 3.0,
                 confidence: Confidence::Validated,
@@ -1833,7 +1846,7 @@ mod tests {
             Verdict::Unmodeled {
                 reason: UnmodeledReason::NoVendorData,
             },
-            Verdict::not_implemented("phase 1b"),
+            power_not_implemented(),
             Verdict::Within {
                 peak: 3.0,
                 confidence: Confidence::Validated,

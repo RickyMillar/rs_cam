@@ -6,7 +6,7 @@ use crate::state::simulation::{ActiveSemanticItem, SimulationAnalyticsTab, Simul
 use egui_plot::{Line, Plot, PlotPoints, Polygon};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::simulation_cut::SimulationCutSample;
-use rs_cam_core::tool_load::{Confidence, ToolLoadReport, Verdict};
+use rs_cam_core::tool_load::{Confidence, ToolLoadReport};
 
 /// Per-toolpath line in the signal plot: a colour plus a sequence of
 /// `(global_move_index, [x, y])` points decimated for the current X span.
@@ -166,36 +166,28 @@ fn draw_verdict_hud(
 }
 
 fn verdict_counts(report: &ToolLoadReport) -> (usize, usize, usize, usize) {
+    use rs_cam_core::tool_load::verdict::LoadState;
     let mut ok = 0;
     let mut warn = 0;
     let mut bad = 0;
     let mut unmodeled = 0;
     for tp in &report.per_toolpath {
-        for verdict in [&tp.chipload, &tp.power, &tp.deflection] {
-            match verdict {
-                Verdict::Within { .. } => ok += 1,
-                Verdict::Unmodeled { .. } => unmodeled += 1,
-                Verdict::Exceeds { .. } => bad += 1,
+        for (state, confidence) in [
+            (tp.chipload.state(), tp.chipload.confidence()),
+            (tp.power.state(), tp.power.confidence()),
+            (tp.deflection.state(), tp.deflection.confidence()),
+        ] {
+            match state {
+                LoadState::Within => ok += 1,
+                LoadState::Unmodeled => unmodeled += 1,
+                LoadState::Exceeds => bad += 1,
             }
-            if verdict_is_approximate(verdict) {
+            if matches!(confidence, Some(Confidence::Approximate(_))) {
                 warn += 1;
             }
         }
     }
     (ok, warn, bad, unmodeled)
-}
-
-fn verdict_is_approximate(verdict: &Verdict) -> bool {
-    matches!(
-        verdict,
-        Verdict::Within {
-            confidence: Confidence::Approximate(_),
-            ..
-        } | Verdict::Exceeds {
-            confidence: Confidence::Approximate(_),
-            ..
-        }
-    )
 }
 
 fn info_pill(ui: &mut egui::Ui, text: String, color: egui::Color32, hover: &str) {
@@ -1628,17 +1620,16 @@ fn nearest_marker_tooltip(
                 continue;
             }
             if let Some(move_idx) = first_exceeded_tool_load_move(sim, trace, verdict) {
-                let reason = match (&verdict.chipload, &verdict.power, &verdict.deflection) {
-                    (rs_cam_core::tool_load::Verdict::Exceeds { reason, peak, .. }, _, _) => {
-                        format!("chipload {reason:?} peak {peak:.4}")
-                    }
-                    (_, rs_cam_core::tool_load::Verdict::Exceeds { reason, peak, .. }, _) => {
-                        format!("power {reason:?} peak {peak:.3} kW")
-                    }
-                    (_, _, rs_cam_core::tool_load::Verdict::Exceeds { reason, peak, .. }) => {
-                        format!("deflection {reason:?} peak {peak:.2} L/D")
-                    }
-                    _ => "tool-load exceeds".to_owned(),
+                use rs_cam_core::tool_load::Verdict;
+                use rs_cam_core::tool_load::verdict::PowerVerdict;
+                let reason = if let Verdict::Exceeds { reason, peak, .. } = &verdict.chipload {
+                    format!("chipload {reason:?} peak {peak:.4}")
+                } else if let PowerVerdict::Exceeds { peak_kw, .. } = &verdict.power {
+                    format!("power SpindlePowerExceeded peak {peak_kw:.3} kW")
+                } else if let Verdict::Exceeds { reason, peak, .. } = &verdict.deflection {
+                    format!("deflection {reason:?} peak {peak:.2} L/D")
+                } else {
+                    "tool-load exceeds".to_owned()
                 };
                 consider(
                     move_idx,
@@ -1661,15 +1652,17 @@ fn first_exceeded_tool_load_move(
     trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
     verdict: &rs_cam_core::tool_load::ToolpathLoadVerdict,
 ) -> Option<usize> {
-    let sample_index = [&verdict.chipload, &verdict.power, &verdict.deflection]
-        .iter()
-        .find_map(|criterion| match criterion {
-            rs_cam_core::tool_load::Verdict::Exceeds { sample_range, .. } => {
-                Some(sample_range.start)
-            }
-            rs_cam_core::tool_load::Verdict::Within { .. }
-            | rs_cam_core::tool_load::Verdict::Unmodeled { .. } => None,
-        })?;
+    use rs_cam_core::tool_load::Verdict;
+    use rs_cam_core::tool_load::verdict::PowerVerdict;
+    let sample_index = if let Verdict::Exceeds { sample_range, .. } = &verdict.chipload {
+        sample_range.start
+    } else if let PowerVerdict::Exceeds { evidence, .. } = &verdict.power {
+        evidence.sample_range.start
+    } else if let Verdict::Exceeds { sample_range, .. } = &verdict.deflection {
+        sample_range.start
+    } else {
+        return None;
+    };
     let sample = trace.samples.get(sample_index)?;
     let boundary_start = sim
         .boundaries()

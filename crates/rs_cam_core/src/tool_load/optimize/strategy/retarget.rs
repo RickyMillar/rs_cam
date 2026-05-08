@@ -179,6 +179,26 @@ mod tests {
         }
     }
 
+    fn within_power(peak_kw: f64) -> crate::tool_load::verdict::PowerVerdict {
+        use crate::tool_load::verdict::{PowerVerdict, SampleEvidence};
+        PowerVerdict::Within {
+            peak_kw,
+            available_kw: 1.0,
+            evidence: SampleEvidence::empty(),
+            confidence: Confidence::Validated,
+        }
+    }
+
+    fn exceeds_power(peak_kw: f64) -> crate::tool_load::verdict::PowerVerdict {
+        use crate::tool_load::verdict::{PowerVerdict, SampleEvidence};
+        PowerVerdict::Exceeds {
+            peak_kw,
+            available_kw: 1.0,
+            evidence: SampleEvidence::at(0),
+            confidence: Confidence::Validated,
+        }
+    }
+
     fn exceeds(peak: f64, reason: ExceedsReason) -> Verdict {
         Verdict::Exceeds {
             peak,
@@ -226,7 +246,7 @@ mod tests {
         let verdict = ToolpathLoadVerdict {
             toolpath_id: 0,
             chipload: within(0.05),
-            power: within(0.4),
+            power: within_power(0.4),
             deflection: within(0.020),
         };
         assert!(strat.candidates(&view, &verdict).is_empty());
@@ -248,7 +268,7 @@ mod tests {
         let verdict = ToolpathLoadVerdict {
             toolpath_id: 0,
             chipload: exceeds(0.025, ExceedsReason::ChiploadBurnRisk),
-            power: within(0.4),
+            power: within_power(0.4),
             deflection: within(0.020),
         };
         let cps = strat.candidates(&view, &verdict);
@@ -272,7 +292,7 @@ mod tests {
         let verdict = ToolpathLoadVerdict {
             toolpath_id: 0,
             chipload: exceeds(0.025, ExceedsReason::ChiploadBurnRisk),
-            power: exceeds(1.5, ExceedsReason::SpindlePowerExceeded),
+            power: exceeds_power(1.5),
             deflection: within(0.020),
         };
         let cps = strat.candidates(&view, &verdict);
@@ -297,7 +317,7 @@ mod tests {
         let verdict = ToolpathLoadVerdict {
             toolpath_id: 0,
             chipload: exceeds(0.025, ExceedsReason::ChiploadBurnRisk),
-            power: exceeds(1.5, ExceedsReason::SpindlePowerExceeded),
+            power: exceeds_power(1.5),
             deflection: exceeds(0.32, ExceedsReason::LongToolStiffnessUnsafe),
         };
         let cps = strat.candidates(&view, &verdict);
@@ -325,7 +345,7 @@ mod tests {
         let verdict = ToolpathLoadVerdict {
             toolpath_id: 0,
             chipload: exceeds(0.025, ExceedsReason::ChiploadBurnRisk),
-            power: within(0.4),
+            power: within_power(0.4),
             deflection: within(0.020),
         };
         assert!(strat.candidates(&view, &verdict).is_empty());
@@ -349,7 +369,7 @@ mod tests {
         let burn = ToolpathLoadVerdict {
             toolpath_id: 0,
             chipload: exceeds(0.025, ExceedsReason::ChiploadBurnRisk),
-            power: within(0.4),
+            power: within_power(0.4),
             deflection: within(0.020),
         };
         assert!(strat.candidates(&view, &burn).is_empty());
@@ -357,7 +377,7 @@ mod tests {
         let breakage = ToolpathLoadVerdict {
             toolpath_id: 0,
             chipload: exceeds(0.20, ExceedsReason::ChiploadBreakageRisk),
-            power: within(0.4),
+            power: within_power(0.4),
             deflection: within(0.020),
         };
         let cps = strat.candidates(&view, &breakage);
@@ -385,7 +405,7 @@ mod tests {
         let verdict = ToolpathLoadVerdict {
             toolpath_id: 0,
             chipload: exceeds(0.0253, ExceedsReason::ChiploadBurnRisk),
-            power: within(0.4),
+            power: within_power(0.4),
             deflection: within(0.020),
         };
         let cps = strat.candidates(&view, &verdict);

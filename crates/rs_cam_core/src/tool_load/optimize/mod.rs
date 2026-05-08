@@ -38,7 +38,7 @@ use crate::simulation_cut::SimulationCutTrace;
 use crate::tool::MillingCutter;
 
 use super::RefuseReason;
-use super::verdict::{ToolpathLoadVerdict, Verdict};
+use super::verdict::{PowerVerdict, ToolpathLoadVerdict, Verdict};
 use super::{ToolpathLoadContext, evaluate_toolpath};
 
 pub mod axes;
@@ -270,7 +270,7 @@ impl OptimizeOutcome {
 /// shouldn't block a recommendation by itself.
 pub(crate) fn candidate_is_safe(candidate: &OptimizeCandidate) -> bool {
     !matches!(candidate.verdict.chipload, Verdict::Exceeds { .. })
-        && !matches!(candidate.verdict.power, Verdict::Exceeds { .. })
+        && !candidate.verdict.power.is_exceeded()
         && !matches!(candidate.verdict.deflection, Verdict::Exceeds { .. })
 }
 
@@ -283,7 +283,7 @@ pub(crate) fn classify_candidate_vs_baseline(
 ) -> GateDeltas {
     GateDeltas {
         chipload: classify_one_gate(&baseline.chipload, &candidate.chipload),
-        power: classify_one_gate(&baseline.power, &candidate.power),
+        power: classify_one_gate_power(&baseline.power, &candidate.power),
         deflection: classify_one_gate(&baseline.deflection, &candidate.deflection),
     }
 }
@@ -294,21 +294,40 @@ fn classify_one_gate(b: &Verdict, c: &Verdict) -> GateDelta {
         (Verdict::Exceeds { .. }, Verdict::Within { .. }) => GateDelta::Improved,
         (Verdict::Within { .. }, Verdict::Exceeds { .. }) => GateDelta::Worsened,
         (Verdict::Exceeds { peak: bp, .. }, Verdict::Exceeds { peak: cp, .. }) => {
-            // Both still failing — a smaller overshoot is "less unsafe"
-            // and counts as Improved. The policy threshold avoids
-            // noise-level changes flipping the classification.
-            let policy = search_policy();
-            let threshold = (bp.abs() * policy.ranking.failing_gate_relative_threshold.value)
-                .max(policy.ranking.failing_gate_absolute_epsilon.value);
-            if *cp + threshold < *bp {
-                GateDelta::Improved
-            } else if *cp > *bp + threshold {
-                GateDelta::Worsened
-            } else {
-                GateDelta::Same
-            }
+            classify_exceeds_pair(*bp, *cp)
         }
         (Verdict::Within { .. }, Verdict::Within { .. }) => GateDelta::Same,
+    }
+}
+
+/// Power-typed counterpart to `classify_one_gate`. Same logic;
+/// pulls peak from the typed `peak_kw` field. Will fold back into
+/// a generic state+peak helper once chipload + deflection migrate.
+fn classify_one_gate_power(b: &PowerVerdict, c: &PowerVerdict) -> GateDelta {
+    use PowerVerdict::*;
+    match (b, c) {
+        (Unmodeled { .. }, _) | (_, Unmodeled { .. }) => GateDelta::Unmodeled,
+        (Exceeds { .. }, Within { .. }) => GateDelta::Improved,
+        (Within { .. }, Exceeds { .. }) => GateDelta::Worsened,
+        (Exceeds { peak_kw: bp, .. }, Exceeds { peak_kw: cp, .. }) => {
+            classify_exceeds_pair(*bp, *cp)
+        }
+        (Within { .. }, Within { .. }) => GateDelta::Same,
+    }
+}
+
+/// Both-Exceeds branch: peak comparison with a policy-derived
+/// noise threshold so noise-level changes don't flip the classification.
+fn classify_exceeds_pair(b_peak: f64, c_peak: f64) -> GateDelta {
+    let policy = search_policy();
+    let threshold = (b_peak.abs() * policy.ranking.failing_gate_relative_threshold.value)
+        .max(policy.ranking.failing_gate_absolute_epsilon.value);
+    if c_peak + threshold < b_peak {
+        GateDelta::Improved
+    } else if c_peak > b_peak + threshold {
+        GateDelta::Worsened
+    } else {
+        GateDelta::Same
     }
 }
 
@@ -976,9 +995,10 @@ fn has_doc_knob(op_kind: OperationType) -> bool {
 /// Extract peak power from the gate's verdict. `None` for `Unmodeled`.
 pub(crate) fn baseline_peak_power_kw(verdict: &ToolpathLoadVerdict) -> Option<f64> {
     match verdict.power {
-        Verdict::Within { peak, .. } => Some(peak),
-        Verdict::Exceeds { peak, .. } => Some(peak),
-        Verdict::Unmodeled { .. } => None,
+        PowerVerdict::Within { peak_kw, .. } | PowerVerdict::Exceeds { peak_kw, .. } => {
+            Some(peak_kw)
+        }
+        PowerVerdict::Unmodeled { .. } => None,
     }
 }
 
@@ -3721,6 +3741,16 @@ mod tests {
         }
     }
 
+    fn within_power_verdict() -> PowerVerdict {
+        use super::super::verdict::{Confidence, SampleEvidence};
+        PowerVerdict::Within {
+            peak_kw: 0.5,
+            available_kw: 0.71,
+            evidence: SampleEvidence::empty(),
+            confidence: Confidence::Validated,
+        }
+    }
+
     fn within_verdict() -> ToolpathLoadVerdict {
         use super::super::verdict::Confidence;
         ToolpathLoadVerdict {
@@ -3729,10 +3759,7 @@ mod tests {
                 peak: 0.04,
                 confidence: Confidence::Validated,
             },
-            power: Verdict::Within {
-                peak: 0.5,
-                confidence: Confidence::Validated,
-            },
+            power: within_power_verdict(),
             deflection: Verdict::Within {
                 peak: 0.030,
                 confidence: Confidence::Validated,
@@ -3750,10 +3777,7 @@ mod tests {
                 reason: ExceedsReason::ChiploadBreakageRisk,
                 confidence: Confidence::Validated,
             },
-            power: Verdict::Within {
-                peak: 0.5,
-                confidence: Confidence::Validated,
-            },
+            power: within_power_verdict(),
             deflection: Verdict::Within {
                 peak: 0.030,
                 confidence: Confidence::Validated,
@@ -3971,12 +3995,12 @@ mod tests {
     // ── Per-candidate gate deltas + tier dispatcher (Commit #3) ──────
 
     fn exceeds_power_verdict() -> ToolpathLoadVerdict {
-        use super::super::verdict::{Confidence, ExceedsReason};
+        use super::super::verdict::{Confidence, SampleEvidence};
         let mut v = within_verdict();
-        v.power = Verdict::Exceeds {
-            peak: 2.5,
-            sample_range: 0..1,
-            reason: ExceedsReason::SpindlePowerExceeded,
+        v.power = PowerVerdict::Exceeds {
+            peak_kw: 2.5,
+            available_kw: 0.71,
+            evidence: SampleEvidence::at(0),
             confidence: Confidence::Validated,
         };
         v
@@ -3995,10 +4019,10 @@ mod tests {
     fn classify_one_gate_within_to_within_is_same() {
         let b = within_verdict();
         let mut c = within_verdict();
-        if let Verdict::Within { peak, .. } = &mut c.power {
-            *peak = 0.55;
+        if let PowerVerdict::Within { peak_kw, .. } = &mut c.power {
+            *peak_kw = 0.55;
         }
-        assert_eq!(classify_one_gate(&b.power, &c.power), GateDelta::Same);
+        assert_eq!(classify_one_gate_power(&b.power, &c.power), GateDelta::Same);
     }
 
     #[test]

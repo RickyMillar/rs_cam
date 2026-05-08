@@ -173,6 +173,7 @@ mod tests {
     use crate::tool_load::verdict::{Confidence, Verdict};
 
     fn empty_verdict() -> ToolpathLoadVerdict {
+        use crate::tool_load::verdict::{PowerVerdict, SampleEvidence};
         let within = Verdict::Within {
             peak: 0.0,
             confidence: Confidence::Validated,
@@ -180,7 +181,12 @@ mod tests {
         ToolpathLoadVerdict {
             toolpath_id: 0,
             chipload: within.clone(),
-            power: within.clone(),
+            power: PowerVerdict::Within {
+                peak_kw: 0.0,
+                available_kw: 0.71,
+                evidence: SampleEvidence::empty(),
+                confidence: Confidence::Validated,
+            },
             deflection: within,
         }
     }
