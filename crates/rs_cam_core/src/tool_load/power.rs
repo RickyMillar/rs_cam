@@ -27,7 +27,7 @@ use crate::material::Material;
 use crate::simulation_cut::SimulationCutTrace;
 use crate::tool::{MillingCutter, ToolDefinition};
 
-use super::verdict::{Confidence, ExceedsReason, UnmodeledReason, Verdict};
+use super::verdict::{Confidence, PowerVerdict, SampleEvidence, UnmodeledReason};
 
 /// Worst-case anisotropy multiplier on Kc. See module-level doc.
 const ANISOTROPY_MULTIPLIER: f64 = 2.5;
@@ -38,9 +38,9 @@ pub fn evaluate(
     material: &Material,
     machine: &MachineProfile,
     sim_trace: Option<&SimulationCutTrace>,
-) -> Verdict {
+) -> PowerVerdict {
     let Some(trace) = sim_trace else {
-        return Verdict::Unmodeled {
+        return PowerVerdict::Unmodeled {
             reason: UnmodeledReason::SimulationRequired,
         };
     };
@@ -50,14 +50,14 @@ pub fn evaluate(
     // unless a project-level "validated" flag exists, the safest default
     // is to refuse rather than predict force from an unvetted constant.
     if let Material::Custom { .. } = material {
-        return Verdict::Unmodeled {
+        return PowerVerdict::Unmodeled {
             reason: UnmodeledReason::MaterialUnvalidated,
         };
     }
 
     let kc = material.kc_n_per_mm2();
     if !(kc.is_finite()) || kc <= 0.0 {
-        return Verdict::Unmodeled {
+        return PowerVerdict::Unmodeled {
             reason: UnmodeledReason::MaterialUnvalidated,
         };
     }
@@ -69,6 +69,10 @@ pub fn evaluate(
     let mut any_arc_captured = false;
     let mut any_slot = false;
     let mut peak_available_at_peak: f64 = 0.0;
+    // Track an available_kw for any captured sample so the Within case
+    // (which often falls through with `peak_power == 0.0` on light cuts)
+    // still has a usable headroom number to surface.
+    let mut last_available_kw: f64 = 0.0;
 
     for (i, s) in trace.samples.iter().enumerate() {
         if s.toolpath_id != toolpath_id {
@@ -103,18 +107,19 @@ pub fn evaluate(
             any_slot = true;
         }
 
+        let avail = machine.power_at_rpm(s.spindle_rpm as f64) * machine.safety_factor;
+        last_available_kw = avail;
         if p_kw > peak_power {
             peak_power = p_kw;
             peak_idx = Some(i);
-            peak_available_at_peak =
-                machine.power_at_rpm(s.spindle_rpm as f64) * machine.safety_factor;
+            peak_available_at_peak = avail;
         }
     }
 
     if !any_arc_captured {
         // No samples carried arc data — likely capture_arc_engagement was
         // off when the trace was recorded.
-        return Verdict::Unmodeled {
+        return PowerVerdict::Unmodeled {
             reason: UnmodeledReason::ArcEngagementNotCaptured,
         };
     }
@@ -129,17 +134,34 @@ pub fn evaluate(
         )
     };
 
+    let evidence = match peak_idx {
+        Some(idx) => SampleEvidence::at(idx),
+        None => SampleEvidence::empty(),
+    };
+
+    // available_kw on the verdict reflects the capacity at the worst
+    // sample we saw. Falls back to the last captured sample's available
+    // power when no peak was set (light cuts where p_kw never exceeded
+    // 0). Both arms set `available_kw` so consumers can render the
+    // headroom band uniformly.
+    let available_kw = if peak_available_at_peak > 0.0 {
+        peak_available_at_peak
+    } else {
+        last_available_kw
+    };
+
     if peak_available_at_peak > 0.0 && peak_power > peak_available_at_peak {
-        let idx = peak_idx.unwrap_or(0);
-        return Verdict::Exceeds {
-            peak: peak_power,
-            sample_range: idx..(idx + 1),
-            reason: ExceedsReason::SpindlePowerExceeded,
+        return PowerVerdict::Exceeds {
+            peak_kw: peak_power,
+            available_kw,
+            evidence,
             confidence,
         };
     }
-    Verdict::Within {
-        peak: peak_power,
+    PowerVerdict::Within {
+        peak_kw: peak_power,
+        available_kw,
+        evidence,
         confidence,
     }
 }
@@ -243,7 +265,7 @@ mod tests {
         );
         assert!(matches!(
             v,
-            Verdict::Unmodeled {
+            PowerVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired
             }
         ));
@@ -265,7 +287,7 @@ mod tests {
         );
         assert!(matches!(
             v,
-            Verdict::Unmodeled {
+            PowerVerdict::Unmodeled {
                 reason: UnmodeledReason::ArcEngagementNotCaptured
             }
         ));
@@ -292,21 +314,22 @@ mod tests {
         );
         assert!(matches!(
             v,
-            Verdict::Unmodeled {
+            PowerVerdict::Unmodeled {
                 reason: UnmodeledReason::MaterialUnvalidated
             }
         ));
     }
 
     #[test]
-    fn light_cut_is_within() {
+    fn light_cut_is_within_with_available_kw() {
         // 6.35mm flat in hard maple, half-engagement (arc=π/2), 1mm DOC,
         // 1000 mm/min feed:
         //   engagement_radius = 3.175
         //   radial_width = (π/2 / π) × 3.175 × 2 = 3.175
         //   Kc_eff = 2.5 × 15 = 37.5 N/mm²
         //   P_kW = 37.5 × 1 × 3.175 × 1000 / 60e6 ≈ 0.00198 kW
-        // Shapeoko Makita = 0.71 kW. Within.
+        // Shapeoko Makita ≈ 0.71 kW × 0.8 safety = 0.568. Within, and the
+        // verdict must surface the available headroom for UI rendering.
         let trace = trace_with(vec![cutting_sample(
             0,
             1.0,
@@ -323,26 +346,26 @@ mod tests {
             Some(&trace),
         );
         match v {
-            Verdict::Within { peak, .. } => {
-                assert!(peak > 0.0 && peak < 0.01, "peak power {peak} kW");
+            PowerVerdict::Within {
+                peak_kw,
+                available_kw,
+                ..
+            } => {
+                assert!(peak_kw > 0.0 && peak_kw < 0.01, "peak power {peak_kw} kW");
+                assert!(
+                    available_kw > 0.0,
+                    "Within must carry available_kw for headroom rendering, got {available_kw}"
+                );
             }
             other => panic!("expected Within, got {other:?}"),
         }
     }
 
     #[test]
-    fn heavy_cut_exceeds_machine() {
-        // Slot at 8mm DOC and 4000 mm/min in Ipe (Kc=28):
-        //   engagement_radius = 3.175
-        //   arc = π → radial_width = 6.35
-        //   Kc_eff = 2.5 × 28 = 70 N/mm²
-        //   P_kW = 70 × 8 × 6.35 × 4000 / 60e6 ≈ 0.237 kW per ?
-        // Hmm, push DOC higher to actually exceed Makita. Try DOC=15mm,
-        // feed=5000:
-        //   P = 70 × 15 × 6.35 × 5000 / 60e6 = 0.555 kW
-        // Makita × safety = 0.71 × 0.8 = 0.568 kW. Still below.
-        // DOC=20, feed=6000: P = 70 × 20 × 6.35 × 6000 / 60e6 = 0.889 kW.
-        // > 0.568, exceeds.
+    fn heavy_cut_exceeds_machine_with_available_kw() {
+        // Slot at 20mm DOC, 6000 mm/min in Ipe (Kc=28) → P ≈ 0.889 kW
+        // vs available × safety = 0.568 kW. Exceeds, and the verdict
+        // must carry both peak_kw and available_kw.
         let trace = trace_with(vec![cutting_sample(0, 20.0, std::f64::consts::PI, 6000.0)]);
         let v = evaluate(
             0,
@@ -354,11 +377,15 @@ mod tests {
             Some(&trace),
         );
         match v {
-            Verdict::Exceeds {
-                reason: ExceedsReason::SpindlePowerExceeded,
+            PowerVerdict::Exceeds {
+                peak_kw,
+                available_kw,
                 ..
-            } => {}
-            other => panic!("expected Exceeds(SpindlePowerExceeded), got {other:?}"),
+            } => {
+                assert!(peak_kw > available_kw, "exceedance must hold by definition");
+                assert!(available_kw > 0.0, "available_kw must be populated");
+            }
+            other => panic!("expected Exceeds, got {other:?}"),
         }
     }
 
@@ -375,7 +402,7 @@ mod tests {
             Some(&trace),
         );
         match v {
-            Verdict::Within {
+            PowerVerdict::Within {
                 confidence: Confidence::Approximate(reason),
                 ..
             } => assert!(reason.contains("slot"), "got {reason}"),

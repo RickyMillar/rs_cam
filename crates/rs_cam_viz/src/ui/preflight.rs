@@ -478,6 +478,7 @@ fn unmodeled_reason_label(reason: &rs_cam_core::tool_load::UnmodeledReason) -> &
 
 fn format_verdict_line(verdict: &ToolpathLoadVerdict) -> String {
     use rs_cam_core::tool_load::Verdict;
+    use rs_cam_core::tool_load::verdict::PowerVerdict;
     let mut parts: Vec<String> = Vec::new();
     let push = |parts: &mut Vec<String>, label: &str, v: &Verdict| match v {
         Verdict::Exceeds { reason, .. } => {
@@ -492,7 +493,18 @@ fn format_verdict_line(verdict: &ToolpathLoadVerdict) -> String {
         Verdict::Within { .. } => {}
     };
     push(&mut parts, "chipload", &verdict.chipload);
-    push(&mut parts, "power", &verdict.power);
+    match &verdict.power {
+        PowerVerdict::Exceeds { .. } => {
+            parts.push("power: EXCEEDS (SpindlePowerExceeded)".to_owned());
+        }
+        PowerVerdict::Unmodeled { reason } => {
+            parts.push(format!(
+                "power: unmodeled ({})",
+                unmodeled_reason_label(reason)
+            ));
+        }
+        PowerVerdict::Within { .. } => {}
+    }
     push(&mut parts, "deflection", &verdict.deflection);
     format!("TP {}: {}", verdict.toolpath_id, parts.join(" \u{00B7} "))
 }

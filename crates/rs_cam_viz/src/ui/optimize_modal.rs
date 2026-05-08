@@ -249,7 +249,7 @@ fn draw_attempted_row(
 
     // Status: why isn't this candidate the recommendation?
     let status = if matches!(candidate.verdict.chipload, Verdict::Exceeds { .. })
-        || matches!(candidate.verdict.power, Verdict::Exceeds { .. })
+        || candidate.verdict.power.is_exceeded()
         || matches!(candidate.verdict.deflection, Verdict::Exceeds { .. })
     {
         ("gate", theme::ERROR)
@@ -427,7 +427,7 @@ fn draw_candidate_row(
     draw_verdict_badges(ui, &candidate.verdict);
 
     let safe = !matches!(candidate.verdict.chipload, Verdict::Exceeds { .. })
-        && !matches!(candidate.verdict.power, Verdict::Exceeds { .. })
+        && !candidate.verdict.power.is_exceeded()
         && !matches!(candidate.verdict.deflection, Verdict::Exceeds { .. });
     let label = if is_recommended { "Apply ⭐" } else { "Apply" };
     let button = ui.add_enabled(safe, egui::Button::new(label));
@@ -441,17 +441,22 @@ fn draw_candidate_row(
 
 fn draw_verdict_badges(ui: &mut egui::Ui, verdict: &ToolpathLoadVerdict) {
     ui.horizontal(|ui| {
-        verdict_badge(ui, "chipload", &verdict.chipload);
-        verdict_badge(ui, "power", &verdict.power);
-        verdict_badge(ui, "L/D", &verdict.deflection);
+        verdict_badge_state(ui, "chipload", verdict.chipload.state());
+        verdict_badge_state(ui, "power", verdict.power.state());
+        verdict_badge_state(ui, "L/D", verdict.deflection.state());
     });
 }
 
-fn verdict_badge(ui: &mut egui::Ui, label: &str, verdict: &Verdict) {
-    let (color, glyph) = match verdict {
-        Verdict::Within { .. } => (theme::SUCCESS, "✓"),
-        Verdict::Exceeds { .. } => (theme::ERROR, "⚠"),
-        Verdict::Unmodeled { .. } => (theme::TEXT_MUTED, "·"),
+fn verdict_badge_state(
+    ui: &mut egui::Ui,
+    label: &str,
+    state: rs_cam_core::tool_load::verdict::LoadState,
+) {
+    use rs_cam_core::tool_load::verdict::LoadState;
+    let (color, glyph) = match state {
+        LoadState::Within => (theme::SUCCESS, "✓"),
+        LoadState::Exceeds => (theme::ERROR, "⚠"),
+        LoadState::Unmodeled => (theme::TEXT_MUTED, "·"),
     };
     ui.label(
         egui::RichText::new(format!("{glyph} {label}"))

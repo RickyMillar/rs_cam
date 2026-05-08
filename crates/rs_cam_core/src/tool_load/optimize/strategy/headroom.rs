@@ -130,6 +130,16 @@ mod tests {
         }
     }
 
+    fn within_power(peak_kw: f64) -> crate::tool_load::verdict::PowerVerdict {
+        use crate::tool_load::verdict::{PowerVerdict, SampleEvidence};
+        PowerVerdict::Within {
+            peak_kw,
+            available_kw: 0.71,
+            evidence: SampleEvidence::empty(),
+            confidence: Confidence::Validated,
+        }
+    }
+
     fn exceeds_chipload(peak: f64) -> Verdict {
         Verdict::Exceeds {
             peak,
@@ -162,7 +172,7 @@ mod tests {
         let verdict = ToolpathLoadVerdict {
             toolpath_id: 0,
             chipload: within(0.05),
-            power: within(0.4),
+            power: within_power(0.4),
             deflection: within(0.020),
         };
 
@@ -208,7 +218,7 @@ mod tests {
         let verdict = ToolpathLoadVerdict {
             toolpath_id: 0,
             chipload: exceeds_chipload(0.005),
-            power: within(0.4),
+            power: within_power(0.4),
             deflection: within(0.020),
         };
         assert!(strategy.candidates(&view, &verdict).is_empty());
@@ -233,7 +243,7 @@ mod tests {
         let verdict = ToolpathLoadVerdict {
             toolpath_id: 0,
             chipload: unmodeled(),
-            power: within(0.4),
+            power: within_power(0.4),
             deflection: within(0.020),
         };
         assert_eq!(strategy.candidates(&view, &verdict).len(), 1);
@@ -259,7 +269,7 @@ mod tests {
         let verdict = ToolpathLoadVerdict {
             toolpath_id: 0,
             chipload: within(0.05),
-            power: within(0.4),
+            power: within_power(0.4),
             deflection: within(0.020),
         };
         assert!(strategy.candidates(&view, &verdict).is_empty());

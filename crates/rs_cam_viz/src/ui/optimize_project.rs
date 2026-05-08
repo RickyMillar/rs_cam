@@ -363,7 +363,7 @@ fn draw_row(
 fn draw_compact_verdict(ui: &mut egui::Ui, candidate: &OptimizeCandidate) {
     use rs_cam_core::tool_load::verdict::Verdict;
     let any_exceed = matches!(candidate.verdict.chipload, Verdict::Exceeds { .. })
-        || matches!(candidate.verdict.power, Verdict::Exceeds { .. })
+        || candidate.verdict.power.is_exceeded()
         || matches!(candidate.verdict.deflection, Verdict::Exceeds { .. });
     let (glyph, color) = if any_exceed {
         ("⚠", theme::ERROR)

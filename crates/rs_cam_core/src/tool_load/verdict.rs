@@ -118,27 +118,58 @@ impl Verdict {
     pub fn is_unmodeled(&self) -> bool {
         matches!(self, Verdict::Unmodeled { .. })
     }
+
+    /// Coarse outcome shared with the typed verdicts. Lets viz / export
+    /// iterate over all three gates without knowing each variant.
+    pub fn state(&self) -> LoadState {
+        match self {
+            Verdict::Within { .. } => LoadState::Within,
+            Verdict::Exceeds { .. } => LoadState::Exceeds,
+            Verdict::Unmodeled { .. } => LoadState::Unmodeled,
+        }
+    }
+
+    /// `Some` for Within / Exceeds; `None` for Unmodeled. Mirrors the
+    /// typed verdicts' helper so iteration code can stay generic.
+    pub fn confidence(&self) -> Option<&Confidence> {
+        match self {
+            Verdict::Within { confidence, .. } | Verdict::Exceeds { confidence, .. } => {
+                Some(confidence)
+            }
+            Verdict::Unmodeled { .. } => None,
+        }
+    }
 }
 
 /// Per-toolpath outcome across all criteria.
 ///
 /// `toolpath_id` is the core `usize` index into the project's enabled
 /// toolpath list (matches `SimulationCutSample::toolpath_id` semantics).
+///
+/// Power has migrated to the typed `PowerVerdict` (G16 Step 7b). Chipload
+/// and deflection are still on the legacy flat `Verdict` until 7c / 7d.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolpathLoadVerdict {
     pub toolpath_id: usize,
     pub chipload: Verdict,
-    pub power: Verdict,
+    pub power: PowerVerdict,
     pub deflection: Verdict,
 }
 
 impl ToolpathLoadVerdict {
     /// Count criteria with a non-`Unmodeled` verdict (i.e. actually evaluated).
     pub fn modeled_count(&self) -> usize {
-        [&self.chipload, &self.power, &self.deflection]
-            .iter()
-            .filter(|v| !v.is_unmodeled())
-            .count()
+        let mut n = 0;
+        if !self.chipload.is_unmodeled() {
+            n += 1;
+        }
+        if !self.power.is_unmodeled() {
+            n += 1;
+        }
+        if !self.deflection.is_unmodeled() {
+            n += 1;
+        }
+        n
     }
 
     /// True if any criterion is `Exceeds`.
@@ -182,8 +213,8 @@ impl ToolLoadReport {
                 if let Verdict::Exceeds { reason, .. } = &v.chipload {
                     reasons.push(("chipload", reason.clone()));
                 }
-                if let Verdict::Exceeds { reason, .. } = &v.power {
-                    reasons.push(("power", reason.clone()));
+                if v.power.is_exceeded() {
+                    reasons.push(("power", ExceedsReason::SpindlePowerExceeded));
                 }
                 if let Verdict::Exceeds { reason, .. } = &v.deflection {
                     reasons.push(("deflection", reason.clone()));
@@ -668,7 +699,7 @@ mod tests {
                 peak: 0.05,
                 confidence: Confidence::Validated,
             },
-            power: Verdict::Unmodeled {
+            power: PowerVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired,
             },
             deflection: Verdict::Within {
@@ -694,7 +725,7 @@ mod tests {
                     peak: 0.05,
                     confidence: Confidence::Approximate("isotropic Kc only".to_owned()),
                 },
-                power: Verdict::Unmodeled {
+                power: PowerVerdict::Unmodeled {
                     reason: UnmodeledReason::CutterModeUnsupported("v-bit tip".to_owned()),
                 },
                 deflection: Verdict::Within {
@@ -720,7 +751,9 @@ mod tests {
                         peak: 0.05,
                         confidence: Confidence::Validated,
                     },
-                    power: Verdict::not_implemented("phase 1b"),
+                    power: PowerVerdict::Unmodeled {
+                        reason: UnmodeledReason::NotImplemented("phase 1b".to_owned()),
+                    },
                     deflection: Verdict::Exceeds {
                         peak: 8.5,
                         sample_range: 0..0,
@@ -734,7 +767,9 @@ mod tests {
                         peak: 0.04,
                         confidence: Confidence::Validated,
                     },
-                    power: Verdict::not_implemented("phase 1b"),
+                    power: PowerVerdict::Unmodeled {
+                        reason: UnmodeledReason::NotImplemented("phase 1b".to_owned()),
+                    },
                     deflection: Verdict::Within {
                         peak: 2.5,
                         confidence: Confidence::Validated,

@@ -7,6 +7,7 @@ use crate::state::simulation::{SimulationIssueKind, SimulationState, StockVizMod
 use crate::state::toolpath::ToolpathId;
 use crate::ui::theme;
 use rs_cam_core::session::ProjectSession;
+use rs_cam_core::tool_load::verdict::PowerVerdict;
 use rs_cam_core::tool_load::{
     Confidence, ExceedsReason, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason, Verdict,
 };
@@ -682,27 +683,23 @@ fn draw_project_overview(
 }
 
 fn verdict_counts_local(report: &ToolLoadReport) -> (usize, usize, usize, usize) {
+    use rs_cam_core::tool_load::verdict::LoadState;
     let mut ok = 0;
     let mut warn = 0;
     let mut bad = 0;
     let mut unmodeled = 0;
     for tp in &report.per_toolpath {
-        for verdict in [&tp.chipload, &tp.power, &tp.deflection] {
-            match verdict {
-                Verdict::Within { .. } => ok += 1,
-                Verdict::Unmodeled { .. } => unmodeled += 1,
-                Verdict::Exceeds { .. } => bad += 1,
+        for (state, confidence) in [
+            (tp.chipload.state(), tp.chipload.confidence()),
+            (tp.power.state(), tp.power.confidence()),
+            (tp.deflection.state(), tp.deflection.confidence()),
+        ] {
+            match state {
+                LoadState::Within => ok += 1,
+                LoadState::Unmodeled => unmodeled += 1,
+                LoadState::Exceeds => bad += 1,
             }
-            if matches!(
-                verdict,
-                Verdict::Within {
-                    confidence: Confidence::Approximate(_),
-                    ..
-                } | Verdict::Exceeds {
-                    confidence: Confidence::Approximate(_),
-                    ..
-                }
-            ) {
+            if matches!(confidence, Some(Confidence::Approximate(_))) {
                 warn += 1;
             }
         }
@@ -738,9 +735,41 @@ fn draw_tool_load_badges(
                 .color(theme::TEXT_STRONG),
         );
         verdict_badge(ui, "chipload", &verdict.chipload, chipload_cap);
-        verdict_badge(ui, "power", &verdict.power, power_cap_kw);
+        verdict_badge(ui, "power", &power_to_legacy(&verdict.power), power_cap_kw);
         verdict_badge(ui, "L/D", &verdict.deflection, deflection_cap);
     });
+}
+
+/// Transitional adapter (G16 Step 7b): the typed `PowerVerdict` carries
+/// `peak_kw` + `available_kw`, but `verdict_badge` is still on the flat
+/// `Verdict`. Step 7e migrates the badge layer to the typed verdicts;
+/// until then we synthesize a flat verdict that preserves the rendered
+/// fields (peak + confidence + variant).
+fn power_to_legacy(p: &PowerVerdict) -> Verdict {
+    match p {
+        PowerVerdict::Within {
+            peak_kw,
+            confidence,
+            ..
+        } => Verdict::Within {
+            peak: *peak_kw,
+            confidence: confidence.clone(),
+        },
+        PowerVerdict::Exceeds {
+            peak_kw,
+            evidence,
+            confidence,
+            ..
+        } => Verdict::Exceeds {
+            peak: *peak_kw,
+            sample_range: evidence.sample_range.clone(),
+            reason: ExceedsReason::SpindlePowerExceeded,
+            confidence: confidence.clone(),
+        },
+        PowerVerdict::Unmodeled { reason } => Verdict::Unmodeled {
+            reason: reason.clone(),
+        },
+    }
 }
 
 /// Default L/D safe threshold for the deflection gate's `% of cap`
