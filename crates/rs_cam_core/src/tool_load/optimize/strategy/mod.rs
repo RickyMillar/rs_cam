@@ -12,6 +12,7 @@ use super::axes::AxisView;
 use super::patches::AxisPatch;
 use crate::tool_load::verdict::ToolpathLoadVerdict;
 
+pub mod grid;
 pub mod headroom;
 
 /// One candidate's patch list with provenance. The strategy's name + a
