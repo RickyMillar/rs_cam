@@ -102,6 +102,11 @@ impl Retargeter for ChiploadFeedRetargeter {
             Side::Burn => self.lut_chipload_min * self.low_headroom,
             Side::Breakage => self.lut_chipload_max / self.high_headroom,
         };
+        // The bound for the matched side may be missing (NaN sentinel from the
+        // strategy when the LUT row only carries the opposite bound).
+        if !target_chipload.is_finite() || target_chipload <= 0.0 {
+            return None;
+        }
         let multiplier = target_chipload / peak;
 
         // Apply the multiplier to baseline feed; clamp to the hard feed

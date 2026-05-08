@@ -508,30 +508,34 @@ pub fn optimize_toolpath(
     //      row's chipload envelope, RCTF-compensated.
     //    Either mode produces at most one candidate.
     let mut all_candidates: Vec<OptimizeCandidate> = Vec::new();
-    let stage_f_candidate = match baseline_verdict.chipload {
-        Verdict::Within { .. } => run_headroom_strategy(
-            &mut guard,
-            &ctx,
-            &baseline_op,
-            baseline_rpm,
-            &baseline_verdict,
-            matched_lut_row.as_ref(),
-            &machine,
-            cancel,
-        ),
-        Verdict::Exceeds { .. } => run_stage_f_retarget(
-            &mut guard,
-            &ctx,
-            &baseline_op,
-            baseline_rpm,
-            matched_lut_row.as_ref(),
-            &machine,
-            cancel,
-        ),
-        Verdict::Unmodeled { .. } => None,
-    };
-    if let Some(c) = stage_f_candidate {
-        all_candidates.push(c);
+    match baseline_verdict.chipload {
+        Verdict::Within { .. } => {
+            if let Some(c) = run_headroom_strategy(
+                &mut guard,
+                &ctx,
+                &baseline_op,
+                baseline_rpm,
+                &baseline_verdict,
+                matched_lut_row.as_ref(),
+                &machine,
+                cancel,
+            ) {
+                all_candidates.push(c);
+            }
+        }
+        Verdict::Exceeds { .. } => {
+            all_candidates.extend(run_retarget_strategy(
+                &mut guard,
+                &ctx,
+                &baseline_op,
+                baseline_rpm,
+                &baseline_verdict,
+                matched_lut_row.as_ref(),
+                &machine,
+                cancel,
+            ));
+        }
+        Verdict::Unmodeled { .. } => {}
     }
 
     if cancel.load(Ordering::SeqCst) {
@@ -639,68 +643,108 @@ fn run_headroom_strategy(
     .ok()
 }
 
-/// Run Stage F's re-target mode for a baseline that trips the
-/// chipload gate single-sidedly (Burn or Breakage but not bipolar —
-/// the pre-flight already refuses bipolar). Computes a target feed /
-/// RPM / plunge from the LUT row's chipload envelope and tries that
-/// candidate at coarse resolution. Returns `None` when the LUT row
-/// is missing data, the RPM bracket has no machine overlap, the
-/// retarget is below the noise floor, or the candidate sim fails.
+/// Run the [`PerGateRetargetStrategy`] against a baseline whose
+/// chipload gate is `Exceeds`. For each load-driving gate that's also
+/// Exceeds, the strategy emits one [`CandidatePatch`]; this wrapper
+/// applies each via `apply_patches_to_op` and runs the per-candidate
+/// sim. Replaces the legacy `run_stage_f_retarget` (G16 Step 6b).
 ///
-/// Sibling to `run_stage_0` — both produce at most one Stage F
-/// candidate. The orchestrator picks which to run based on baseline
-/// chipload verdict.
+/// **Behaviour change.** The legacy chipload retarget produced a
+/// `commanded × RCTF` solve that lowered feed on `BurnRisk`. The new
+/// chipload retargeter is sample-driven (`target_chipload /
+/// observed_peak`), so `BurnRisk` raises feed. Wanaka TP 4 (feed=3150,
+/// peak=0.0253, LUT [0.038, 0.07], 1.20× headroom) now produces a
+/// feed-up candidate that clamps at 5000 mm/min — the previous Stage F
+/// produced a feed-down one.
 #[allow(clippy::too_many_arguments)]
-fn run_stage_f_retarget(
+fn run_retarget_strategy(
     guard: &mut BaselineRestoreGuard<'_>,
     ctx: &EvaluationContext,
     baseline_op: &OperationConfig,
     baseline_rpm: f64,
+    baseline_verdict: &ToolpathLoadVerdict,
     matched_lut_row: Option<&MatchedRow>,
     machine: &MachineProfile,
     cancel: &AtomicBool,
-) -> Option<OptimizeCandidate> {
-    let row = matched_lut_row?;
+) -> Vec<OptimizeCandidate> {
+    use crate::compute::catalog::OptimizationSurface;
+    use std::sync::atomic::Ordering;
+    use strategy::OptimizationStrategy;
+    use strategy::retarget::PerGateRetargetStrategy;
 
-    // Engaged diameter at commanded DOC — same convention as the
-    // chipload gate uses sample-by-sample.
-    let commanded_doc = baseline_op.depth_per_pass().unwrap_or(0.0);
-    let engaged_diameter = if commanded_doc > 0.0 {
-        ctx.tool.lookup_diameter_at(commanded_doc)
-    } else {
-        ctx.tool.diameter()
+    let view = match baseline_op.optimization_surface() {
+        OptimizationSurface::Optimizable(v) => v,
+        OptimizationSurface::NotOptimizable { .. } => return Vec::new(),
     };
 
-    // Commanded radial engagement = stepover. Ops without a stepover
-    // pass 0; RCTF returns 1.0 in that case (treated as full slot).
-    let commanded_ae = baseline_op.stepover().unwrap_or(0.0).max(0.0);
-
-    // Material plunge base for the safety cap.
-    let plunge_base = ctx.material.plunge_rate_base();
-
-    let solution = solve_chipload_retarget(
-        baseline_op,
-        baseline_rpm,
-        ctx.tool.flute_count,
-        engaged_diameter,
-        commanded_ae,
-        plunge_base,
-        row,
+    let policy = search_policy();
+    let axis_ctx = axes::AxisContext {
+        // No project-default-RPM accessor on session today; 18_000 matches
+        // the gcode pipeline's hard-coded fallback. Step 8 should plumb a
+        // real default through `EvaluationContext`.
+        project_default_rpm: 18_000,
         machine,
-    )?;
+        tool: &ctx.tool,
+        material: &ctx.material,
+    };
+    let space = space::SearchSpace::build(&view, &axis_ctx, matched_lut_row, policy);
 
-    let candidate_op = apply_retarget_to_op(baseline_op, &solution, machine);
-    let delta = delta_against_baseline(baseline_op, &candidate_op);
-    evaluate_candidate(
-        guard,
-        ctx,
-        candidate_op,
-        delta,
-        SearchStage::Coarse,
-        search_policy().stages.coarse_resolution_mm.value,
-        cancel,
-    )
-    .ok()
+    let chipload = matched_lut_row.and_then(|row| {
+        if row.chip_load_min_mm.is_none() && row.chip_load_max_mm.is_none() {
+            return None;
+        }
+        Some(retarget::chipload::ChiploadFeedRetargeter {
+            lut_chipload_min: row.chip_load_min_mm.unwrap_or(f64::NAN),
+            lut_chipload_max: row.chip_load_max_mm.unwrap_or(f64::NAN),
+            low_headroom: policy.retarget.chipload_low_headroom.value,
+            high_headroom: policy.retarget.chipload_high_headroom.value,
+            plunge_tracking_threshold: policy.feed.plunge_tracking_threshold_fraction.value,
+        })
+    });
+
+    let available_kw = machine.power_at_rpm(baseline_rpm) * machine.safety_factor;
+    let power = retarget::power::PowerFeedRetargeter {
+        available_kw,
+        headroom: policy.retarget.power_headroom.value,
+        plunge_tracking_threshold: policy.feed.plunge_tracking_threshold_fraction.value,
+    };
+
+    let deflection = retarget::deflection::DeflectionDocRetargeter::with_headroom(
+        super::deflection::EXCEEDS_BOUND_MM,
+        policy.retarget.deflection_headroom.value,
+    );
+
+    let strat = PerGateRetargetStrategy {
+        chipload,
+        power,
+        deflection,
+        space: &space,
+        ctx: &axis_ctx,
+    };
+    let cps = strat.candidates(&view, baseline_verdict);
+
+    let mut out: Vec<OptimizeCandidate> = Vec::new();
+    for cp in cps {
+        if cancel.load(Ordering::SeqCst) {
+            break;
+        }
+        let Ok(candidate_op) = patches::apply_patches_to_op(baseline_op, &cp.patches) else {
+            continue;
+        };
+        let delta = delta_against_baseline(baseline_op, &candidate_op);
+        if let Ok(candidate) = evaluate_candidate(
+            guard,
+            ctx,
+            candidate_op,
+            delta,
+            SearchStage::Coarse,
+            policy.stages.coarse_resolution_mm.value,
+            cancel,
+        ) {
+            out.push(candidate);
+        }
+    }
+    out
 }
 
 /// Run the [`AxisGridStrategy`] against the baseline (or the headroom
@@ -1271,6 +1315,7 @@ pub(crate) fn apply_scale_to_op(
 /// Solution returned by `solve_chipload_retarget`. Absolute target
 /// values, not a multiplicative scale.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(not(test), allow(dead_code))]
 struct RetargetSolution {
     target_feed_mm_min: f64,
     target_rpm: f64,
@@ -1282,6 +1327,7 @@ struct RetargetSolution {
 /// Pick the target effective chipload from the LUT row's published
 /// bounds. Returns `None` when the row carries neither bound — there
 /// is nothing to retarget against.
+#[cfg_attr(not(test), allow(dead_code))]
 fn lut_chipload_target(row: &MatchedRow) -> Option<f64> {
     let policy = search_policy();
     match (row.chip_load_min_mm, row.chip_load_max_mm) {
@@ -1304,6 +1350,7 @@ fn lut_chipload_target(row: &MatchedRow) -> Option<f64> {
 /// bracket if defined. Returns `None` when the LUT bracket has no
 /// overlap with the machine range — that case is `RpmBracketEmpty`
 /// and the orchestrator should refuse.
+#[cfg_attr(not(test), allow(dead_code))]
 fn solve_target_rpm(baseline_rpm: f64, row: &MatchedRow, machine: &MachineProfile) -> Option<f64> {
     let (machine_min, machine_max) = machine.rpm_range();
 
@@ -1346,6 +1393,7 @@ fn solve_target_rpm(baseline_rpm: f64, row: &MatchedRow, machine: &MachineProfil
 ///   - the change from baseline feed is below 1% (no meaningful
 ///     retarget — Stage 1 grid will pick up the rest)
 #[allow(clippy::too_many_arguments)]
+#[cfg_attr(not(test), allow(dead_code))]
 fn solve_chipload_retarget(
     baseline_op: &OperationConfig,
     baseline_rpm: f64,
@@ -1418,6 +1466,7 @@ fn solve_chipload_retarget(
 /// Build the retarget `OperationConfig` from a `RetargetSolution`.
 /// Mirrors `apply_scale_to_op` but uses absolute targets and
 /// optionally writes a new plunge rate.
+#[cfg_attr(not(test), allow(dead_code))]
 fn apply_retarget_to_op(
     baseline_op: &OperationConfig,
     solution: &RetargetSolution,
