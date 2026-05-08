@@ -199,6 +199,32 @@ mod tests {
         }
     }
 
+    fn within_deflection(peak_mm: f64) -> crate::tool_load::verdict::DeflectionVerdict {
+        use crate::tool_load::verdict::{DeflectionBounds, DeflectionVerdict, SampleEvidence};
+        DeflectionVerdict::Within {
+            peak_mm,
+            bounds: DeflectionBounds {
+                validated_within_mm: 0.050,
+                exceeds_mm: 0.200,
+            },
+            evidence: SampleEvidence::empty(),
+            confidence: Confidence::Validated,
+        }
+    }
+
+    fn exceeds_deflection(peak_mm: f64) -> crate::tool_load::verdict::DeflectionVerdict {
+        use crate::tool_load::verdict::{DeflectionBounds, DeflectionVerdict, SampleEvidence};
+        DeflectionVerdict::Exceeds {
+            peak_mm,
+            bounds: DeflectionBounds {
+                validated_within_mm: 0.050,
+                exceeds_mm: 0.200,
+            },
+            evidence: SampleEvidence::at(0),
+            confidence: Confidence::Validated,
+        }
+    }
+
     fn exceeds(peak: f64, reason: ExceedsReason) -> Verdict {
         Verdict::Exceeds {
             peak,
@@ -247,7 +273,7 @@ mod tests {
             toolpath_id: 0,
             chipload: within(0.05),
             power: within_power(0.4),
-            deflection: within(0.020),
+            deflection: within_deflection(0.020),
         };
         assert!(strat.candidates(&view, &verdict).is_empty());
     }
@@ -269,7 +295,7 @@ mod tests {
             toolpath_id: 0,
             chipload: exceeds(0.025, ExceedsReason::ChiploadBurnRisk),
             power: within_power(0.4),
-            deflection: within(0.020),
+            deflection: within_deflection(0.020),
         };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 1);
@@ -293,7 +319,7 @@ mod tests {
             toolpath_id: 0,
             chipload: exceeds(0.025, ExceedsReason::ChiploadBurnRisk),
             power: exceeds_power(1.5),
-            deflection: within(0.020),
+            deflection: within_deflection(0.020),
         };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 2);
@@ -318,7 +344,7 @@ mod tests {
             toolpath_id: 0,
             chipload: exceeds(0.025, ExceedsReason::ChiploadBurnRisk),
             power: exceeds_power(1.5),
-            deflection: exceeds(0.32, ExceedsReason::LongToolStiffnessUnsafe),
+            deflection: exceeds_deflection(0.32),
         };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 3);
@@ -346,7 +372,7 @@ mod tests {
             toolpath_id: 0,
             chipload: exceeds(0.025, ExceedsReason::ChiploadBurnRisk),
             power: within_power(0.4),
-            deflection: within(0.020),
+            deflection: within_deflection(0.020),
         };
         assert!(strat.candidates(&view, &verdict).is_empty());
     }
@@ -370,7 +396,7 @@ mod tests {
             toolpath_id: 0,
             chipload: exceeds(0.025, ExceedsReason::ChiploadBurnRisk),
             power: within_power(0.4),
-            deflection: within(0.020),
+            deflection: within_deflection(0.020),
         };
         assert!(strat.candidates(&view, &burn).is_empty());
 
@@ -378,7 +404,7 @@ mod tests {
             toolpath_id: 0,
             chipload: exceeds(0.20, ExceedsReason::ChiploadBreakageRisk),
             power: within_power(0.4),
-            deflection: within(0.020),
+            deflection: within_deflection(0.020),
         };
         let cps = strat.candidates(&view, &breakage);
         assert_eq!(cps.len(), 1);
@@ -406,7 +432,7 @@ mod tests {
             toolpath_id: 0,
             chipload: exceeds(0.0253, ExceedsReason::ChiploadBurnRisk),
             power: within_power(0.4),
-            deflection: within(0.020),
+            deflection: within_deflection(0.020),
         };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 1);

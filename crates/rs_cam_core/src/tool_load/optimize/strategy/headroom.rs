@@ -140,6 +140,19 @@ mod tests {
         }
     }
 
+    fn within_deflection(peak_mm: f64) -> crate::tool_load::verdict::DeflectionVerdict {
+        use crate::tool_load::verdict::{DeflectionBounds, DeflectionVerdict, SampleEvidence};
+        DeflectionVerdict::Within {
+            peak_mm,
+            bounds: DeflectionBounds {
+                validated_within_mm: 0.050,
+                exceeds_mm: 0.200,
+            },
+            evidence: SampleEvidence::empty(),
+            confidence: Confidence::Validated,
+        }
+    }
+
     fn exceeds_chipload(peak: f64) -> Verdict {
         Verdict::Exceeds {
             peak,
@@ -173,7 +186,7 @@ mod tests {
             toolpath_id: 0,
             chipload: within(0.05),
             power: within_power(0.4),
-            deflection: within(0.020),
+            deflection: within_deflection(0.020),
         };
 
         let candidates = strategy.candidates(&view, &verdict);
@@ -219,7 +232,7 @@ mod tests {
             toolpath_id: 0,
             chipload: exceeds_chipload(0.005),
             power: within_power(0.4),
-            deflection: within(0.020),
+            deflection: within_deflection(0.020),
         };
         assert!(strategy.candidates(&view, &verdict).is_empty());
     }
@@ -244,7 +257,7 @@ mod tests {
             toolpath_id: 0,
             chipload: unmodeled(),
             power: within_power(0.4),
-            deflection: within(0.020),
+            deflection: within_deflection(0.020),
         };
         assert_eq!(strategy.candidates(&view, &verdict).len(), 1);
     }
@@ -270,7 +283,7 @@ mod tests {
             toolpath_id: 0,
             chipload: within(0.05),
             power: within_power(0.4),
-            deflection: within(0.020),
+            deflection: within_deflection(0.020),
         };
         assert!(strategy.candidates(&view, &verdict).is_empty());
     }

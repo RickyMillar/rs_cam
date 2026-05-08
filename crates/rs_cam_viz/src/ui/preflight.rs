@@ -478,7 +478,7 @@ fn unmodeled_reason_label(reason: &rs_cam_core::tool_load::UnmodeledReason) -> &
 
 fn format_verdict_line(verdict: &ToolpathLoadVerdict) -> String {
     use rs_cam_core::tool_load::Verdict;
-    use rs_cam_core::tool_load::verdict::PowerVerdict;
+    use rs_cam_core::tool_load::verdict::{DeflectionVerdict, PowerVerdict};
     let mut parts: Vec<String> = Vec::new();
     let push = |parts: &mut Vec<String>, label: &str, v: &Verdict| match v {
         Verdict::Exceeds { reason, .. } => {
@@ -505,6 +505,17 @@ fn format_verdict_line(verdict: &ToolpathLoadVerdict) -> String {
         }
         PowerVerdict::Within { .. } => {}
     }
-    push(&mut parts, "deflection", &verdict.deflection);
+    match &verdict.deflection {
+        DeflectionVerdict::Exceeds { .. } => {
+            parts.push("deflection: EXCEEDS (LongToolStiffnessUnsafe)".to_owned());
+        }
+        DeflectionVerdict::Unmodeled { reason } => {
+            parts.push(format!(
+                "deflection: unmodeled ({})",
+                unmodeled_reason_label(reason)
+            ));
+        }
+        DeflectionVerdict::Within { .. } => {}
+    }
     format!("TP {}: {}", verdict.toolpath_id, parts.join(" \u{00B7} "))
 }

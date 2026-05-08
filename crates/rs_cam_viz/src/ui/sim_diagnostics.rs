@@ -7,7 +7,7 @@ use crate::state::simulation::{SimulationIssueKind, SimulationState, StockVizMod
 use crate::state::toolpath::ToolpathId;
 use crate::ui::theme;
 use rs_cam_core::session::ProjectSession;
-use rs_cam_core::tool_load::verdict::PowerVerdict;
+use rs_cam_core::tool_load::verdict::{DeflectionVerdict, PowerVerdict};
 use rs_cam_core::tool_load::{
     Confidence, ExceedsReason, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason, Verdict,
 };
@@ -736,7 +736,12 @@ fn draw_tool_load_badges(
         );
         verdict_badge(ui, "chipload", &verdict.chipload, chipload_cap);
         verdict_badge(ui, "power", &power_to_legacy(&verdict.power), power_cap_kw);
-        verdict_badge(ui, "L/D", &verdict.deflection, deflection_cap);
+        verdict_badge(
+            ui,
+            "L/D",
+            &deflection_to_legacy(&verdict.deflection),
+            deflection_cap,
+        );
     });
 }
 
@@ -767,6 +772,36 @@ fn power_to_legacy(p: &PowerVerdict) -> Verdict {
             confidence: confidence.clone(),
         },
         PowerVerdict::Unmodeled { reason } => Verdict::Unmodeled {
+            reason: reason.clone(),
+        },
+    }
+}
+
+/// Transitional adapter (G16 Step 7c): typed `DeflectionVerdict` →
+/// legacy flat `Verdict` for the still-unmigrated `verdict_badge`.
+/// Deleted by Step 7e/7f.
+fn deflection_to_legacy(d: &DeflectionVerdict) -> Verdict {
+    match d {
+        DeflectionVerdict::Within {
+            peak_mm,
+            confidence,
+            ..
+        } => Verdict::Within {
+            peak: *peak_mm,
+            confidence: confidence.clone(),
+        },
+        DeflectionVerdict::Exceeds {
+            peak_mm,
+            evidence,
+            confidence,
+            ..
+        } => Verdict::Exceeds {
+            peak: *peak_mm,
+            sample_range: evidence.sample_range.clone(),
+            reason: ExceedsReason::LongToolStiffnessUnsafe,
+            confidence: confidence.clone(),
+        },
+        DeflectionVerdict::Unmodeled { reason } => Verdict::Unmodeled {
             reason: reason.clone(),
         },
     }

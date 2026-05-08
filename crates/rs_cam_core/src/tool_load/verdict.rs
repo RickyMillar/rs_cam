@@ -146,14 +146,14 @@ impl Verdict {
 /// `toolpath_id` is the core `usize` index into the project's enabled
 /// toolpath list (matches `SimulationCutSample::toolpath_id` semantics).
 ///
-/// Power has migrated to the typed `PowerVerdict` (G16 Step 7b). Chipload
-/// and deflection are still on the legacy flat `Verdict` until 7c / 7d.
+/// Power (Step 7b) and deflection (Step 7c) have migrated to typed
+/// verdicts. Chipload still uses the legacy flat `Verdict` until Step 7d.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolpathLoadVerdict {
     pub toolpath_id: usize,
     pub chipload: Verdict,
     pub power: PowerVerdict,
-    pub deflection: Verdict,
+    pub deflection: DeflectionVerdict,
 }
 
 impl ToolpathLoadVerdict {
@@ -216,8 +216,8 @@ impl ToolLoadReport {
                 if v.power.is_exceeded() {
                     reasons.push(("power", ExceedsReason::SpindlePowerExceeded));
                 }
-                if let Verdict::Exceeds { reason, .. } = &v.deflection {
-                    reasons.push(("deflection", reason.clone()));
+                if v.deflection.is_exceeded() {
+                    reasons.push(("deflection", ExceedsReason::LongToolStiffnessUnsafe));
                 }
                 if reasons.is_empty() {
                     None
@@ -702,8 +702,13 @@ mod tests {
             power: PowerVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired,
             },
-            deflection: Verdict::Within {
-                peak: 3.5,
+            deflection: DeflectionVerdict::Within {
+                peak_mm: 3.5,
+                bounds: DeflectionBounds {
+                    validated_within_mm: 0.050,
+                    exceeds_mm: 0.200,
+                },
+                evidence: SampleEvidence::empty(),
                 confidence: Confidence::Validated,
             },
         };
@@ -728,8 +733,13 @@ mod tests {
                 power: PowerVerdict::Unmodeled {
                     reason: UnmodeledReason::CutterModeUnsupported("v-bit tip".to_owned()),
                 },
-                deflection: Verdict::Within {
-                    peak: 4.5,
+                deflection: DeflectionVerdict::Within {
+                    peak_mm: 4.5,
+                    bounds: DeflectionBounds {
+                        validated_within_mm: 0.050,
+                        exceeds_mm: 0.200,
+                    },
+                    evidence: SampleEvidence::empty(),
                     confidence: Confidence::Approximate("L/D in 4-6 range".to_owned()),
                 },
             }],
@@ -754,10 +764,13 @@ mod tests {
                     power: PowerVerdict::Unmodeled {
                         reason: UnmodeledReason::NotImplemented("phase 1b".to_owned()),
                     },
-                    deflection: Verdict::Exceeds {
-                        peak: 8.5,
-                        sample_range: 0..0,
-                        reason: ExceedsReason::LongToolStiffnessUnsafe,
+                    deflection: DeflectionVerdict::Exceeds {
+                        peak_mm: 8.5,
+                        bounds: DeflectionBounds {
+                            validated_within_mm: 0.050,
+                            exceeds_mm: 0.200,
+                        },
+                        evidence: SampleEvidence::empty(),
                         confidence: Confidence::Validated,
                     },
                 },
@@ -770,8 +783,13 @@ mod tests {
                     power: PowerVerdict::Unmodeled {
                         reason: UnmodeledReason::NotImplemented("phase 1b".to_owned()),
                     },
-                    deflection: Verdict::Within {
-                        peak: 2.5,
+                    deflection: DeflectionVerdict::Within {
+                        peak_mm: 2.5,
+                        bounds: DeflectionBounds {
+                            validated_within_mm: 0.050,
+                            exceeds_mm: 0.200,
+                        },
+                        evidence: SampleEvidence::empty(),
                         confidence: Confidence::Validated,
                     },
                 },

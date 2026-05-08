@@ -18,7 +18,7 @@
 use crate::tool_load::optimize::axes::{AxisContext, AxisView, SearchAxis};
 use crate::tool_load::optimize::patches::{AxisPatch, PatchSource};
 use crate::tool_load::optimize::space::SearchSpace;
-use crate::tool_load::verdict::{ExceedsReason, Verdict};
+use crate::tool_load::verdict::DeflectionVerdict;
 
 use super::{Retargeter, RetargetSolution};
 
@@ -60,7 +60,7 @@ impl DeflectionDocRetargeter {
 const DRIVING_AXES: &[SearchAxis] = &[SearchAxis::DepthPerPass];
 
 impl Retargeter for DeflectionDocRetargeter {
-    type Verdict = Verdict;
+    type Verdict = DeflectionVerdict;
 
     fn driving_axes(&self) -> &'static [SearchAxis] {
         DRIVING_AXES
@@ -68,26 +68,18 @@ impl Retargeter for DeflectionDocRetargeter {
 
     fn target(
         &self,
-        verdict: &Verdict,
+        verdict: &DeflectionVerdict,
         space: &SearchSpace,
         view: &AxisView<'_>,
         ctx: &AxisContext<'_>,
     ) -> Option<RetargetSolution> {
-        // Match only deflection-exceeded verdicts. The flat `Verdict`
-        // enum (Step 5 era) doesn't separate "geometric L/D unsafe" from
-        // "force-aware deflection unsafe" — both share
-        // `LongToolStiffnessUnsafe`. Step 7 will introduce a typed
-        // `DeflectionVerdict`; until then this retargeter handles the
-        // shared variant. Force-aware deflection is the only one where
-        // DOC scaling actually helps; for pure geometric L/D the sim
-        // will still flag the result, but the retargeter's job is to
-        // *propose* — verification stays downstream.
+        // Only deflection-exceeded verdicts retarget. The typed
+        // `DeflectionVerdict::Exceeds` carries the peak directly; we
+        // prefer the verdict's bounds (when present) over the
+        // constructor-injected threshold so the actual evaluator's
+        // numbers drive the math.
         let peak_mm = match verdict {
-            Verdict::Exceeds {
-                peak,
-                reason: ExceedsReason::LongToolStiffnessUnsafe,
-                ..
-            } => *peak,
+            DeflectionVerdict::Exceeds { peak_mm, .. } => *peak_mm,
             _ => return None,
         };
 
@@ -212,11 +204,15 @@ mod tests {
         }
     }
 
-    fn exceeds(peak_mm: f64, reason: ExceedsReason) -> Verdict {
-        Verdict::Exceeds {
-            peak: peak_mm,
-            sample_range: 0..1,
-            reason,
+    fn exceeds(peak_mm: f64) -> DeflectionVerdict {
+        use crate::tool_load::verdict::{DeflectionBounds, SampleEvidence};
+        DeflectionVerdict::Exceeds {
+            peak_mm,
+            bounds: DeflectionBounds {
+                validated_within_mm: 0.050,
+                exceeds_mm: 0.200,
+            },
+            evidence: SampleEvidence::at(0),
             confidence: Confidence::Validated,
         }
     }
@@ -233,7 +229,7 @@ mod tests {
         let ctx = make_ctx(&machine, &material, &tool);
 
         let r = DeflectionDocRetargeter::with_headroom(0.04, 1.0);
-        let v = exceeds(0.32, ExceedsReason::LongToolStiffnessUnsafe);
+        let v = exceeds(0.32);
         let sol = r.target(&v, &space, &view, &ctx).expect("must retarget");
         assert_eq!(sol.patches.len(), 1, "single primary DOC patch expected");
         let p = &sol.patches[0];
@@ -258,7 +254,7 @@ mod tests {
 
         // threshold = 0.200, headroom = 1.0, peak = 0.21 (just over)
         let r = DeflectionDocRetargeter::with_headroom(0.200, 1.0);
-        let v = exceeds(0.21, ExceedsReason::LongToolStiffnessUnsafe);
+        let v = exceeds(0.21);
         let sol = r.target(&v, &space, &view, &ctx).expect("must retarget");
         let p = &sol.patches[0];
         // multiplier = cbrt(0.200 / 0.21) ≈ cbrt(0.9524) ≈ 0.9839
@@ -287,7 +283,7 @@ mod tests {
         // Use a more extreme case: peak 1e9 × target → mult = 1e-3,
         // raw = 1.5e-3 → below 0.05 floor.
         let r = DeflectionDocRetargeter::with_headroom(1e-9, 1.0);
-        let v = exceeds(1.0, ExceedsReason::LongToolStiffnessUnsafe);
+        let v = exceeds(1.0);
         let sol = r.target(&v, &space, &view, &ctx).expect("must retarget");
         let p = &sol.patches[0];
         let floor = space
@@ -304,7 +300,10 @@ mod tests {
     }
 
     #[test]
-    fn returns_none_for_non_deflection_verdict() {
+    fn returns_none_for_non_exceeds_deflection_verdict() {
+        // The retargeter's `Verdict` associated type is now
+        // `DeflectionVerdict`, so non-deflection verdicts can't reach it.
+        // The remaining axis is verifying Within / Unmodeled are no-ops.
         let (op, space, tool) = build_space(1.5);
         let view = view_of(&op);
         let machine = MachineProfile::shapeoko_makita();
@@ -312,17 +311,21 @@ mod tests {
         let ctx = make_ctx(&machine, &material, &tool);
 
         let r = DeflectionDocRetargeter::new(0.200);
-        let v = exceeds(2.0, ExceedsReason::SpindlePowerExceeded);
-        assert!(r.target(&v, &space, &view, &ctx).is_none());
-
-        let v2 = exceeds(0.025, ExceedsReason::ChiploadBurnRisk);
-        assert!(r.target(&v2, &space, &view, &ctx).is_none());
-
-        let v3 = Verdict::Within {
-            peak: 0.05,
+        let within = DeflectionVerdict::Within {
+            peak_mm: 0.05,
+            bounds: crate::tool_load::verdict::DeflectionBounds {
+                validated_within_mm: 0.050,
+                exceeds_mm: 0.200,
+            },
+            evidence: crate::tool_load::verdict::SampleEvidence::empty(),
             confidence: Confidence::Validated,
         };
-        assert!(r.target(&v3, &space, &view, &ctx).is_none());
+        assert!(r.target(&within, &space, &view, &ctx).is_none());
+
+        let unmodeled = DeflectionVerdict::Unmodeled {
+            reason: crate::tool_load::verdict::UnmodeledReason::SimulationRequired,
+        };
+        assert!(r.target(&unmodeled, &space, &view, &ctx).is_none());
     }
 
     #[test]
@@ -336,7 +339,7 @@ mod tests {
         // Same construction as the floor-clamp test — just assert the
         // clamped flag this time.
         let r = DeflectionDocRetargeter::with_headroom(1e-9, 1.0);
-        let v = exceeds(1.0, ExceedsReason::LongToolStiffnessUnsafe);
+        let v = exceeds(1.0);
         let sol = r.target(&v, &space, &view, &ctx).expect("must retarget");
         assert!(sol.patches[0].clamped, "expected clamped=true");
     }
@@ -350,7 +353,7 @@ mod tests {
         let ctx = make_ctx(&machine, &material, &tool);
 
         let r = DeflectionDocRetargeter::with_headroom(0.04, 1.0);
-        let v = exceeds(0.32, ExceedsReason::LongToolStiffnessUnsafe);
+        let v = exceeds(0.32);
         let sol = r.target(&v, &space, &view, &ctx).expect("must retarget");
         // 0.32 mm peak, 0.04 mm target, 0.500 multiplier.
         assert!(
@@ -379,7 +382,7 @@ mod tests {
         let ctx = make_ctx(&machine, &material, &tool);
 
         let r = DeflectionDocRetargeter::new(0.200);
-        let v = exceeds(0.4, ExceedsReason::LongToolStiffnessUnsafe);
+        let v = exceeds(0.4);
         let sol = r.target(&v, &space, &view, &ctx).expect("must retarget");
         assert_eq!(sol.patches.len(), 1);
         assert!(matches!(sol.patches[0].source, PatchSource::Primary));
