@@ -47,6 +47,7 @@ pub mod patches;
 mod policy;
 pub mod retarget;
 pub mod space;
+pub mod strategy;
 
 use axes::SearchAxis;
 use policy::SearchPolicy;
@@ -508,7 +509,7 @@ pub fn optimize_toolpath(
     //    Either mode produces at most one candidate.
     let mut all_candidates: Vec<OptimizeCandidate> = Vec::new();
     let stage_f_candidate = match baseline_verdict.chipload {
-        Verdict::Within { .. } => run_stage_0(
+        Verdict::Within { .. } => run_headroom_strategy(
             &mut guard,
             &ctx,
             &baseline_op,
@@ -582,11 +583,13 @@ pub fn optimize_toolpath(
 /// chipload, so it can't fix `Exceeds`), if the closed-form solver
 /// finds no headroom (`k ≤ 1`), or if the candidate sim fails.
 ///
-/// Pure helper — extracted from `optimize_toolpath` for reviewability.
-/// The optimizer's pre-flight policy lives in the caller; this just
-/// runs the stage.
+/// Run the headroom-scale strategy against the baseline and return
+/// the (at most one) candidate it produces. Replaces the legacy
+/// `run_stage_0` (G16 Step 6) — the strategy emits `CandidatePatch`es;
+/// this wrapper applies them to the baseline op via `apply_patches_to_op`
+/// and runs the per-candidate sim.
 #[allow(clippy::too_many_arguments)]
-fn run_stage_0(
+fn run_headroom_strategy(
     guard: &mut BaselineRestoreGuard<'_>,
     ctx: &EvaluationContext,
     baseline_op: &OperationConfig,
@@ -596,31 +599,38 @@ fn run_stage_0(
     machine: &MachineProfile,
     cancel: &AtomicBool,
 ) -> Option<OptimizeCandidate> {
-    let baseline_chipload_exceeds = matches!(baseline_verdict.chipload, Verdict::Exceeds { .. });
-    if baseline_chipload_exceeds {
-        return None;
-    }
-    let stage0_inputs = Stage0Inputs {
-        rpm_baseline: baseline_rpm,
-        feed_baseline_mm_min: baseline_op.feed_rate(),
-        peak_power_baseline_kw: baseline_peak_power_kw(baseline_verdict),
+    use crate::compute::catalog::OptimizationSurface;
+    use strategy::OptimizationStrategy;
+    use strategy::headroom::HeadroomScaleStrategy;
+
+    // The strategy operates on an AxisView; non-optimizable ops are
+    // skipped here just like the rest of the search machinery. (The
+    // orchestrator already excludes Drill / AlignmentPinDrill earlier.)
+    let view = match baseline_op.optimization_surface() {
+        OptimizationSurface::Optimizable(v) => v,
+        OptimizationSurface::NotOptimizable { .. } => return None,
+    };
+
+    let policy = search_policy();
+    let strat = HeadroomScaleStrategy {
         machine,
         lut_row: matched_lut_row,
+        baseline_rpm,
+        policy,
     };
-    let k = solve_headroom_scale(&stage0_inputs);
-    let policy = search_policy();
-    if k <= policy.feed.scale_floor.value + policy.feed.scale_epsilon.value {
-        return None;
-    }
-    let scaled_op = apply_scale_to_op(baseline_op, baseline_rpm, k, machine);
-    let delta = delta_against_baseline(baseline_op, &scaled_op);
+
+    let mut candidates = strat.candidates(&view, baseline_verdict);
+    let cp = candidates.pop()?; // strategy emits at most one candidate.
+
+    let candidate_op = patches::apply_patches_to_op(baseline_op, &cp.patches).ok()?;
+    let delta = delta_against_baseline(baseline_op, &candidate_op);
     evaluate_candidate(
         guard,
         ctx,
-        scaled_op,
+        candidate_op,
         delta,
         SearchStage::Coarse,
-        search_policy().stages.coarse_resolution_mm.value,
+        policy.stages.coarse_resolution_mm.value,
         cancel,
     )
     .ok()
@@ -967,7 +977,7 @@ fn has_doc_knob(op_kind: OperationType) -> bool {
 }
 
 /// Extract peak power from the gate's verdict. `None` for `Unmodeled`.
-fn baseline_peak_power_kw(verdict: &ToolpathLoadVerdict) -> Option<f64> {
+pub(crate) fn baseline_peak_power_kw(verdict: &ToolpathLoadVerdict) -> Option<f64> {
     match verdict.power {
         Verdict::Within { peak, .. } => Some(peak),
         Verdict::Exceeds { peak, .. } => Some(peak),
@@ -1281,6 +1291,7 @@ fn machine_max_power_kw(machine: &MachineProfile) -> f64 {
 /// the baseline op's feed and RPM. All other fields are left unchanged
 /// — the search only touches feed/RPM in Stage 0. The new RPM is
 /// rounded and clamped to the machine's discrete or variable range.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn apply_scale_to_op(
     baseline_op: &OperationConfig,
     rpm_baseline: f64,
