@@ -1621,13 +1621,13 @@ fn nearest_marker_tooltip(
             }
             if let Some(move_idx) = first_exceeded_tool_load_move(sim, trace, verdict) {
                 use rs_cam_core::tool_load::Verdict;
-                use rs_cam_core::tool_load::verdict::PowerVerdict;
+                use rs_cam_core::tool_load::verdict::{DeflectionVerdict, PowerVerdict};
                 let reason = if let Verdict::Exceeds { reason, peak, .. } = &verdict.chipload {
                     format!("chipload {reason:?} peak {peak:.4}")
                 } else if let PowerVerdict::Exceeds { peak_kw, .. } = &verdict.power {
                     format!("power SpindlePowerExceeded peak {peak_kw:.3} kW")
-                } else if let Verdict::Exceeds { reason, peak, .. } = &verdict.deflection {
-                    format!("deflection {reason:?} peak {peak:.2} L/D")
+                } else if let DeflectionVerdict::Exceeds { peak_mm, .. } = &verdict.deflection {
+                    format!("deflection LongToolStiffnessUnsafe peak {peak_mm:.4} mm")
                 } else {
                     "tool-load exceeds".to_owned()
                 };
@@ -1653,13 +1653,13 @@ fn first_exceeded_tool_load_move(
     verdict: &rs_cam_core::tool_load::ToolpathLoadVerdict,
 ) -> Option<usize> {
     use rs_cam_core::tool_load::Verdict;
-    use rs_cam_core::tool_load::verdict::PowerVerdict;
+    use rs_cam_core::tool_load::verdict::{DeflectionVerdict, PowerVerdict};
     let sample_index = if let Verdict::Exceeds { sample_range, .. } = &verdict.chipload {
         sample_range.start
     } else if let PowerVerdict::Exceeds { evidence, .. } = &verdict.power {
         evidence.sample_range.start
-    } else if let Verdict::Exceeds { sample_range, .. } = &verdict.deflection {
-        sample_range.start
+    } else if let DeflectionVerdict::Exceeds { evidence, .. } = &verdict.deflection {
+        evidence.sample_range.start
     } else {
         return None;
     };

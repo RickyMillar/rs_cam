@@ -47,40 +47,49 @@ use crate::material::Material;
 use crate::simulation_cut::SimulationCutTrace;
 use crate::tool::ToolDefinition;
 
-use super::verdict::{Confidence, ExceedsReason, UnmodeledReason, Verdict};
+use super::verdict::{
+    Confidence, DeflectionBounds, DeflectionVerdict, SampleEvidence, UnmodeledReason,
+};
 
 /// Below this peak tip deflection (mm), the cut is `Within(Validated)`.
-const WITHIN_BOUND_MM: f64 = 0.050; // 50 µm
+pub(crate) const WITHIN_BOUND_MM: f64 = 0.050; // 50 µm
 
 /// Above this peak tip deflection (mm), the cut is `Exceeds`.
 pub(crate) const EXCEEDS_BOUND_MM: f64 = 0.200; // 200 µm
+
+fn standard_bounds() -> DeflectionBounds {
+    DeflectionBounds {
+        validated_within_mm: WITHIN_BOUND_MM,
+        exceeds_mm: EXCEEDS_BOUND_MM,
+    }
+}
 
 pub fn evaluate(
     toolpath_id: usize,
     tool: &ToolDefinition,
     material: &Material,
     sim_trace: Option<&SimulationCutTrace>,
-) -> Verdict {
+) -> DeflectionVerdict {
     let Some(trace) = sim_trace else {
-        return Verdict::Unmodeled {
+        return DeflectionVerdict::Unmodeled {
             reason: UnmodeledReason::SimulationRequired,
         };
     };
 
     if let Material::Custom { .. } = material {
-        return Verdict::Unmodeled {
+        return DeflectionVerdict::Unmodeled {
             reason: UnmodeledReason::MaterialUnvalidated,
         };
     }
     let kc = material.kc_n_per_mm2();
     if !kc.is_finite() || kc <= 0.0 {
-        return Verdict::Unmodeled {
+        return DeflectionVerdict::Unmodeled {
             reason: UnmodeledReason::MaterialUnvalidated,
         };
     }
 
     if tool.stickout <= 0.0 {
-        return Verdict::Unmodeled {
+        return DeflectionVerdict::Unmodeled {
             reason: UnmodeledReason::NotImplemented("tool reports zero stickout".to_owned()),
         };
     }
@@ -126,7 +135,7 @@ pub fn evaluate(
     }
 
     if !any_arc_captured {
-        return Verdict::Unmodeled {
+        return DeflectionVerdict::Unmodeled {
             reason: UnmodeledReason::ArcEngagementNotCaptured,
         };
     }
@@ -140,12 +149,17 @@ pub fn evaluate(
         format!("peak tip deflection {peak_um:.0} µm (isotropic Kc, bending only)")
     };
 
+    let evidence = match peak_idx {
+        Some(idx) => SampleEvidence::at(idx),
+        None => SampleEvidence::empty(),
+    };
+    let bounds = standard_bounds();
+
     if peak_delta_mm > EXCEEDS_BOUND_MM {
-        let idx = peak_idx.unwrap_or(0);
-        return Verdict::Exceeds {
-            peak: peak_delta_mm,
-            sample_range: idx..(idx + 1),
-            reason: ExceedsReason::LongToolStiffnessUnsafe,
+        return DeflectionVerdict::Exceeds {
+            peak_mm: peak_delta_mm,
+            bounds,
+            evidence,
             confidence: Confidence::Approximate(base_detail),
         };
     }
@@ -158,8 +172,10 @@ pub fn evaluate(
     } else {
         Confidence::Validated
     };
-    Verdict::Within {
-        peak: peak_delta_mm,
+    DeflectionVerdict::Within {
+        peak_mm: peak_delta_mm,
+        bounds,
+        evidence,
         confidence,
     }
 }
@@ -290,7 +306,7 @@ mod tests {
         );
         assert!(matches!(
             v,
-            Verdict::Unmodeled {
+            DeflectionVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired
             }
         ));
@@ -311,7 +327,7 @@ mod tests {
         );
         assert!(matches!(
             v,
-            Verdict::Unmodeled {
+            DeflectionVerdict::Unmodeled {
                 reason: UnmodeledReason::ArcEngagementNotCaptured
             }
         ));
@@ -339,7 +355,7 @@ mod tests {
         );
         assert!(matches!(
             v,
-            Verdict::Unmodeled {
+            DeflectionVerdict::Unmodeled {
                 reason: UnmodeledReason::MaterialUnvalidated
             }
         ));
@@ -373,11 +389,12 @@ mod tests {
             Some(&trace),
         );
         match v {
-            Verdict::Within {
-                peak,
+            DeflectionVerdict::Within {
+                peak_mm,
                 confidence: Confidence::Approximate(detail),
+                ..
             } => {
-                let um = peak * 1000.0;
+                let um = peak_mm * 1000.0;
                 assert!(
                     (100.0..=200.0).contains(&um),
                     "wanaka-like End-Mill slot at hardwood should land 100-200 µm; got {um:.1} µm"
@@ -413,8 +430,8 @@ mod tests {
             Some(&trace),
         );
         match v {
-            Verdict::Within { peak, .. } => {
-                let um = peak * 1000.0;
+            DeflectionVerdict::Within { peak_mm, .. } => {
+                let um = peak_mm * 1000.0;
                 assert!(
                     um < 50.0,
                     "tapered-ball finishing should land Within(Validated); got {um:.1} µm"
@@ -447,8 +464,8 @@ mod tests {
             Some(&trace),
         );
         let peak_um = match v {
-            Verdict::Within { peak, .. } => peak * 1000.0,
-            Verdict::Exceeds { peak, .. } => peak * 1000.0,
+            DeflectionVerdict::Within { peak_mm, .. }
+            | DeflectionVerdict::Exceeds { peak_mm, .. } => peak_mm * 1000.0,
             other => panic!("expected modeled verdict, got {other:?}"),
         };
         assert!(
@@ -502,7 +519,7 @@ mod tests {
             Some(&trace),
         );
         match v {
-            Verdict::Within {
+            DeflectionVerdict::Within {
                 confidence: Confidence::Approximate(detail),
                 ..
             } => assert!(

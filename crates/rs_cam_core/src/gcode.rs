@@ -660,7 +660,7 @@ pub fn enforce_load_policy(
                 if let crate::tool_load::PowerVerdict::Unmodeled { reason } = &v.power {
                     crits.push(format!("power={reason:?}"));
                 }
-                if let crate::tool_load::Verdict::Unmodeled { reason } = &v.deflection {
+                if let crate::tool_load::DeflectionVerdict::Unmodeled { reason } = &v.deflection {
                     crits.push(format!("deflection={reason:?}"));
                 }
                 let _ = writeln!(msg, "  toolpath {}: {}", v.toolpath_id, crits.join(", "));
@@ -1681,14 +1681,15 @@ mod tests {
     // ----- enforce_load_policy negative tests -----
 
     use crate::tool_load::{
-        Confidence, ExceedsReason, PowerVerdict, ToolLoadReport, ToolpathLoadVerdict,
+        Confidence, DeflectionVerdict, PowerVerdict, ToolLoadReport, ToolpathLoadVerdict,
         UnmodeledReason, Verdict,
     };
+    use crate::tool_load::verdict::{DeflectionBounds, SampleEvidence};
 
     fn report_with(
         chipload: Verdict,
         power: PowerVerdict,
-        deflection: Verdict,
+        deflection: DeflectionVerdict,
     ) -> ToolLoadReport {
         ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
@@ -1706,6 +1707,32 @@ mod tests {
         }
     }
 
+    fn deflection_bounds_default() -> DeflectionBounds {
+        DeflectionBounds {
+            validated_within_mm: 0.050,
+            exceeds_mm: 0.200,
+        }
+    }
+
+    fn deflection_within(peak_mm: f64) -> DeflectionVerdict {
+        DeflectionVerdict::Within {
+            peak_mm,
+            bounds: deflection_bounds_default(),
+            evidence: SampleEvidence::empty(),
+            confidence: Confidence::Validated,
+        }
+    }
+
+    fn deflection_exceeds(peak_mm: f64) -> DeflectionVerdict {
+        DeflectionVerdict::Exceeds {
+            peak_mm,
+            bounds: deflection_bounds_default(),
+            evidence: SampleEvidence::at(0),
+            confidence: Confidence::Validated,
+        }
+    }
+
+
     #[test]
     fn enforce_blocks_exceeded_by_default() {
         let report = report_with(
@@ -1714,12 +1741,7 @@ mod tests {
                 confidence: Confidence::Validated,
             },
             power_not_implemented(),
-            Verdict::Exceeds {
-                peak: 10.0,
-                sample_range: 0..0,
-                reason: ExceedsReason::LongToolStiffnessUnsafe,
-                confidence: Confidence::Validated,
-            },
+            deflection_exceeds(10.0),
         );
         let policy = ToolLoadExportPolicy::default();
         let err =
@@ -1750,12 +1772,7 @@ mod tests {
                 confidence: Confidence::Validated,
             },
             power_not_implemented(),
-            Verdict::Exceeds {
-                peak: 10.0,
-                sample_range: 0..0,
-                reason: ExceedsReason::LongToolStiffnessUnsafe,
-                confidence: Confidence::Validated,
-            },
+            deflection_exceeds(10.0),
         );
 
         // accept_unmodeled alone is NOT enough — Exceeds still blocks.
@@ -1792,10 +1809,7 @@ mod tests {
         let report = report_with(
             Verdict::not_implemented("phase 5"),
             power_not_implemented(),
-            Verdict::Within {
-                peak: 3.0,
-                confidence: Confidence::Validated,
-            },
+            deflection_within(3.0),
         );
         let err = enforce_load_policy(&report, &ToolLoadExportPolicy::default())
             .expect_err("Unmodeled must block by default");
@@ -1814,13 +1828,10 @@ mod tests {
             PowerVerdict::Within {
                 peak_kw: 0.5,
                 available_kw: 0.71,
-                evidence: crate::tool_load::verdict::SampleEvidence::empty(),
+                evidence: SampleEvidence::empty(),
                 confidence: Confidence::Approximate("isotropic Kc only".into()),
             },
-            Verdict::Within {
-                peak: 3.5,
-                confidence: Confidence::Validated,
-            },
+            deflection_within(3.5),
         );
         assert!(
             enforce_load_policy(&report, &ToolLoadExportPolicy::default()).is_ok(),
@@ -1837,20 +1848,14 @@ mod tests {
                 reason: UnmodeledReason::SimulationRequired,
             },
             power_not_implemented(),
-            Verdict::Within {
-                peak: 3.0,
-                confidence: Confidence::Validated,
-            },
+            deflection_within(3.0),
         );
         let r2 = report_with(
             Verdict::Unmodeled {
                 reason: UnmodeledReason::NoVendorData,
             },
             power_not_implemented(),
-            Verdict::Within {
-                peak: 3.0,
-                confidence: Confidence::Validated,
-            },
+            deflection_within(3.0),
         );
         let m1 = enforce_load_policy(&r1, &ToolLoadExportPolicy::default())
             .expect_err("blocks")

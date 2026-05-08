@@ -38,7 +38,7 @@ use crate::simulation_cut::SimulationCutTrace;
 use crate::tool::MillingCutter;
 
 use super::RefuseReason;
-use super::verdict::{PowerVerdict, ToolpathLoadVerdict, Verdict};
+use super::verdict::{DeflectionVerdict, PowerVerdict, ToolpathLoadVerdict, Verdict};
 use super::{ToolpathLoadContext, evaluate_toolpath};
 
 pub mod axes;
@@ -271,7 +271,7 @@ impl OptimizeOutcome {
 pub(crate) fn candidate_is_safe(candidate: &OptimizeCandidate) -> bool {
     !matches!(candidate.verdict.chipload, Verdict::Exceeds { .. })
         && !candidate.verdict.power.is_exceeded()
-        && !matches!(candidate.verdict.deflection, Verdict::Exceeds { .. })
+        && !candidate.verdict.deflection.is_exceeded()
 }
 
 /// Compute the per-criterion delta for one candidate vs the baseline
@@ -284,7 +284,7 @@ pub(crate) fn classify_candidate_vs_baseline(
     GateDeltas {
         chipload: classify_one_gate(&baseline.chipload, &candidate.chipload),
         power: classify_one_gate_power(&baseline.power, &candidate.power),
-        deflection: classify_one_gate(&baseline.deflection, &candidate.deflection),
+        deflection: classify_one_gate_deflection(&baseline.deflection, &candidate.deflection),
     }
 }
 
@@ -310,6 +310,21 @@ fn classify_one_gate_power(b: &PowerVerdict, c: &PowerVerdict) -> GateDelta {
         (Exceeds { .. }, Within { .. }) => GateDelta::Improved,
         (Within { .. }, Exceeds { .. }) => GateDelta::Worsened,
         (Exceeds { peak_kw: bp, .. }, Exceeds { peak_kw: cp, .. }) => {
+            classify_exceeds_pair(*bp, *cp)
+        }
+        (Within { .. }, Within { .. }) => GateDelta::Same,
+    }
+}
+
+/// Deflection-typed counterpart to `classify_one_gate`. Same shape as
+/// the power version; reads `peak_mm` for the both-failing branch.
+fn classify_one_gate_deflection(b: &DeflectionVerdict, c: &DeflectionVerdict) -> GateDelta {
+    use DeflectionVerdict::*;
+    match (b, c) {
+        (Unmodeled { .. }, _) | (_, Unmodeled { .. }) => GateDelta::Unmodeled,
+        (Exceeds { .. }, Within { .. }) => GateDelta::Improved,
+        (Within { .. }, Exceeds { .. }) => GateDelta::Worsened,
+        (Exceeds { peak_mm: bp, .. }, Exceeds { peak_mm: cp, .. }) => {
             classify_exceeds_pair(*bp, *cp)
         }
         (Within { .. }, Within { .. }) => GateDelta::Same,
@@ -867,8 +882,8 @@ fn preflight_classify(
     //    bring δ below the threshold. We refuse pre-flight; the
     //    prescription points the user at the setup levers (stickout,
     //    tool material) the search space can't reach.
-    if let Verdict::Exceeds {
-        peak: peak_delta_mm,
+    if let DeflectionVerdict::Exceeds {
+        peak_mm: peak_delta_mm,
         ..
     } = baseline_verdict.deflection
     {
@@ -3751,6 +3766,19 @@ mod tests {
         }
     }
 
+    fn within_deflection_verdict(peak_mm: f64) -> DeflectionVerdict {
+        use super::super::verdict::{Confidence, DeflectionBounds, SampleEvidence};
+        DeflectionVerdict::Within {
+            peak_mm,
+            bounds: DeflectionBounds {
+                validated_within_mm: 0.050,
+                exceeds_mm: 0.200,
+            },
+            evidence: SampleEvidence::empty(),
+            confidence: Confidence::Validated,
+        }
+    }
+
     fn within_verdict() -> ToolpathLoadVerdict {
         use super::super::verdict::Confidence;
         ToolpathLoadVerdict {
@@ -3760,10 +3788,7 @@ mod tests {
                 confidence: Confidence::Validated,
             },
             power: within_power_verdict(),
-            deflection: Verdict::Within {
-                peak: 0.030,
-                confidence: Confidence::Validated,
-            },
+            deflection: within_deflection_verdict(0.030),
         }
     }
 
@@ -3778,10 +3803,7 @@ mod tests {
                 confidence: Confidence::Validated,
             },
             power: within_power_verdict(),
-            deflection: Verdict::Within {
-                peak: 0.030,
-                confidence: Confidence::Validated,
-            },
+            deflection: within_deflection_verdict(0.030),
         }
     }
 

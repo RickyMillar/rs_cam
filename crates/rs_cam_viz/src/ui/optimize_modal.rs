@@ -250,7 +250,7 @@ fn draw_attempted_row(
     // Status: why isn't this candidate the recommendation?
     let status = if matches!(candidate.verdict.chipload, Verdict::Exceeds { .. })
         || candidate.verdict.power.is_exceeded()
-        || matches!(candidate.verdict.deflection, Verdict::Exceeds { .. })
+        || candidate.verdict.deflection.is_exceeded()
     {
         ("gate", theme::ERROR)
     } else if cycle_delta >= -0.5 {
@@ -428,7 +428,7 @@ fn draw_candidate_row(
 
     let safe = !matches!(candidate.verdict.chipload, Verdict::Exceeds { .. })
         && !candidate.verdict.power.is_exceeded()
-        && !matches!(candidate.verdict.deflection, Verdict::Exceeds { .. });
+        && !candidate.verdict.deflection.is_exceeded();
     let label = if is_recommended { "Apply ⭐" } else { "Apply" };
     let button = ui.add_enabled(safe, egui::Button::new(label));
     if button.clicked() {
