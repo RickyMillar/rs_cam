@@ -57,8 +57,11 @@ pub struct AxisPolicy {
     pub four_point_count: PolicyValue<usize>,
     pub midpoint_weight: PolicyValue<f64>,
     pub hard_floor: PolicyValue<f64>,
+    pub hard_ceiling: PolicyValue<f64>,
     pub dedup_tolerance: PolicyValue<f64>,
     pub allow_outside_preferred: PolicyValue<bool>,
+    pub outside_preferred_hi_mult: PolicyValue<f64>,
+    pub outside_preferred_lo_mult: PolicyValue<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -158,6 +161,11 @@ impl Default for SearchPolicy {
                         rationale: "Sub-50um DOC in wood is effectively rubbing/polishing, outside the roughing optimizer envelope.",
                         source: PolicySource::PhysicalLimit,
                     },
+                    hard_ceiling: PolicyValue {
+                        value: 100.0,
+                        rationale: "Sane upper cap on the DOC hard envelope, well above any router/wood scenario; tool cutting length may tighten this in retargeters.",
+                        source: PolicySource::PhysicalLimit,
+                    },
                     dedup_tolerance: PolicyValue {
                         value: 0.005,
                         rationale: "5um differences are below simulator-distinguishable resolution for this search stage.",
@@ -170,6 +178,20 @@ impl Default for SearchPolicy {
                         rationale: "Future bounds resolver may probe beyond LUT-preferred bounds because every candidate is sim-verified.",
                         source: PolicySource::TuningChoice {
                             hypothesis: "Aggressive probes recover baselines that drift outside vendor envelopes without compromising safety gates.",
+                        },
+                    },
+                    outside_preferred_hi_mult: PolicyValue {
+                        value: 1.15,
+                        rationale: "Probe just above LUT-preferred max at +15% to challenge vendor envelope without leaping outside hard limits.",
+                        source: PolicySource::TuningChoice {
+                            hypothesis: "+15% catches the wanaka TP 4 case where the user's intent is well above LUT ae_max.",
+                        },
+                    },
+                    outside_preferred_lo_mult: PolicyValue {
+                        value: 0.85,
+                        rationale: "Probe just below LUT-preferred min at -15% so chipload-low retargets aren't trapped at vendor floor.",
+                        source: PolicySource::TuningChoice {
+                            hypothesis: "Symmetric to the above probe; sim verifies safety.",
                         },
                     },
                 },
@@ -221,6 +243,11 @@ impl Default for SearchPolicy {
                         rationale: "Sub-50um stepover is finishing/polishing territory, not a router roughing search candidate.",
                         source: PolicySource::PhysicalLimit,
                     },
+                    hard_ceiling: PolicyValue {
+                        value: 100.0,
+                        rationale: "Sane upper cap on the stepover hard envelope; well above any practical router stepover value.",
+                        source: PolicySource::PhysicalLimit,
+                    },
                     dedup_tolerance: PolicyValue {
                         value: 0.005,
                         rationale: "5um differences are below simulator-distinguishable resolution for this search stage.",
@@ -233,6 +260,20 @@ impl Default for SearchPolicy {
                         rationale: "Future bounds resolver may probe beyond LUT-preferred bounds because every candidate is sim-verified.",
                         source: PolicySource::TuningChoice {
                             hypothesis: "Aggressive probes recover baselines that drift outside vendor envelopes without compromising safety gates.",
+                        },
+                    },
+                    outside_preferred_hi_mult: PolicyValue {
+                        value: 1.15,
+                        rationale: "Probe just above LUT-preferred max at +15% so the search exceeds LUT ae_max when the operator's intent demands it.",
+                        source: PolicySource::TuningChoice {
+                            hypothesis: "+15% recovers the wanaka TP 4 stepover case (LUT ae_max=0.95 vs operator wanting >2.5).",
+                        },
+                    },
+                    outside_preferred_lo_mult: PolicyValue {
+                        value: 0.85,
+                        rationale: "Probe just below LUT-preferred min at -15%; sim verifies whether chipload still survives.",
+                        source: PolicySource::TuningChoice {
+                            hypothesis: "Symmetric to the above probe.",
                         },
                     },
                 },
@@ -284,6 +325,11 @@ impl Default for SearchPolicy {
                         rationale: "Sub-10um scallop targets behave like polishing passes and can explode toolpath length with little wood-surface gain.",
                         source: PolicySource::PhysicalLimit,
                     },
+                    hard_ceiling: PolicyValue {
+                        value: 10.0,
+                        rationale: "Scallop heights above 10mm describe a finish operation that's effectively roughing; well above operator quality intent.",
+                        source: PolicySource::PhysicalLimit,
+                    },
                     dedup_tolerance: PolicyValue {
                         value: 0.001,
                         rationale: "1um tolerance is appropriate because scallop-height values are an order of magnitude smaller than stepover values.",
@@ -296,6 +342,20 @@ impl Default for SearchPolicy {
                         rationale: "No LUT-preferred envelope currently exists for scallop height; local quality probes remain allowed.",
                         source: PolicySource::TuningChoice {
                             hypothesis: "Operator quality intent is preserved by staying near baseline.",
+                        },
+                    },
+                    outside_preferred_hi_mult: PolicyValue {
+                        value: 1.15,
+                        rationale: "Reserved — scallop has no LUT-preferred envelope today, so probes never fire.",
+                        source: PolicySource::TuningChoice {
+                            hypothesis: "Symmetric to DOC/stepover for future use.",
+                        },
+                    },
+                    outside_preferred_lo_mult: PolicyValue {
+                        value: 0.85,
+                        rationale: "Reserved — scallop has no LUT-preferred envelope today, so probes never fire.",
+                        source: PolicySource::TuningChoice {
+                            hypothesis: "Symmetric to DOC/stepover for future use.",
                         },
                     },
                 },
