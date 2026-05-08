@@ -41,6 +41,8 @@ use super::RefuseReason;
 use super::verdict::{ToolpathLoadVerdict, Verdict};
 use super::{ToolpathLoadContext, evaluate_toolpath};
 
+pub mod axes;
+pub mod patches;
 mod policy;
 
 use policy::SearchPolicy;
