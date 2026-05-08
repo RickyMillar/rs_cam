@@ -1329,6 +1329,12 @@ impl OperationParams for ScallopConfig {
     fn set_plunge_rate(&mut self, value: f64) {
         self.plunge_rate = value;
     }
+    fn scallop_height(&self) -> Option<f64> {
+        Some(self.scallop_height)
+    }
+    fn set_scallop_height(&mut self, value: f64) {
+        self.scallop_height = value;
+    }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
     }
