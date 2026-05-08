@@ -170,19 +170,29 @@ mod tests {
     use super::*;
     use crate::compute::catalog::{OperationConfig, OptimizationSurface};
     use crate::compute::operation_configs::{Adaptive3dConfig, PocketConfig, ScallopConfig};
-    use crate::tool_load::verdict::{Confidence, Verdict};
+    use crate::tool_load::verdict::Confidence;
 
     fn empty_verdict() -> ToolpathLoadVerdict {
         use crate::tool_load::verdict::{
+            ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, ChiploadVerdict,
             DeflectionBounds, DeflectionVerdict, PowerVerdict, SampleEvidence,
-        };
-        let within = Verdict::Within {
-            peak: 0.0,
-            confidence: Confidence::Validated,
         };
         ToolpathLoadVerdict {
             toolpath_id: 0,
-            chipload: within,
+            chipload: ChiploadVerdict::Within {
+                approach_to_min: None,
+                approach_to_max: ChiploadMetric {
+                    observed_mm_per_tooth: 0.0,
+                    statistic: ChiploadStatistic::PeakInRange,
+                    evidence: SampleEvidence::empty(),
+                    bounds: ChipBounds {
+                        min_mm_per_tooth: Some(0.038),
+                        max_mm_per_tooth: 0.07,
+                        source: ChipBoundsSource::VendorLut,
+                    },
+                },
+                confidence: Confidence::Validated,
+            },
             power: PowerVerdict::Within {
                 peak_kw: 0.0,
                 available_kw: 0.71,

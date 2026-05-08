@@ -56,7 +56,10 @@ pub(super) fn embedded_lut() -> &'static VendorLut {
     EMBEDDED_LUT.get_or_init(VendorLut::embedded)
 }
 
-use super::verdict::{Confidence, ExceedsReason, UnmodeledReason, Verdict};
+use super::verdict::{
+    ChipBounds, ChipBoundsSource, ChipSide, ChiploadMetric, ChiploadStatistic, ChiploadVerdict,
+    Confidence, SampleEvidence, UnmodeledReason,
+};
 
 /// Fraction of the commanded operation feed below which a sample is
 /// considered to be running on a transient feed (plunge, ramp, lead-in)
@@ -204,10 +207,10 @@ pub fn evaluate(
     pass_role: LutPassRole,
     operation_feed_rate_mm_min: f64,
     operation_kind: OperationType,
-) -> Verdict {
+) -> ChiploadVerdict {
     // 1. Provenance gate.
     let Some(trace) = sim_trace else {
-        return Verdict::Unmodeled {
+        return ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::SimulationRequired,
         };
     };
@@ -233,12 +236,12 @@ pub fn evaluate(
     // lookup. This preserves the distinction between missing samples and
     // missing vendor data.
     if !any_in_cut_for_toolpath {
-        return Verdict::Unmodeled {
+        return ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::SimulationRequired,
         };
     }
     if steady_samples.is_empty() {
-        return Verdict::Unmodeled {
+        return ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::SteadyStateSamplesNotPresent,
         };
     }
@@ -254,7 +257,7 @@ pub fn evaluate(
     let Some((operation_family, pass_role)) =
         routed_lookup_family(operation_kind, tool_family, operation_family, pass_role)
     else {
-        return Verdict::Unmodeled {
+        return ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::NoVendorData,
         };
     };
@@ -271,7 +274,7 @@ pub fn evaluate(
         pass_role,
     };
     let Some(result) = find_best_row(lut, &query) else {
-        return Verdict::Unmodeled {
+        return ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::NoVendorData,
         };
     };
@@ -282,10 +285,19 @@ pub fn evaluate(
         (Some(lo), Some(hi)) if lo > 0.0 && hi >= lo => (Some(lo), hi),
         (None, Some(hi)) if hi > 0.0 => (None, hi),
         _ => {
-            return Verdict::Unmodeled {
+            return ChiploadVerdict::Unmodeled {
                 reason: UnmodeledReason::NoVendorData,
             };
         }
+    };
+    let bounds = ChipBounds {
+        min_mm_per_tooth: min,
+        max_mm_per_tooth: max,
+        source: if result.is_extrapolated {
+            ChipBoundsSource::VendorLutExtrapolated
+        } else {
+            ChipBoundsSource::VendorLut
+        },
     };
     // Confidence is `Approximate` whenever the matched row's chipload
     // bounds were extrapolated to the query's diameter / hardness past
@@ -305,7 +317,7 @@ pub fn evaluate(
     };
 
     let mut peak_above: Option<(f64, usize)> = None;
-    let mut peak_in_range: f64 = 0.0;
+    let mut peak_in_range: (f64, usize) = (0.0, 0);
     let mut valid_count: usize = 0;
     let mut missing_arc_count: usize = 0;
     let mut chip_geometry_unsupported_count: usize = 0;
@@ -334,24 +346,29 @@ pub fn evaluate(
             if peak_above.is_none_or(|(prev, _)| dev > prev) {
                 peak_above = Some((dev, i));
             }
-        } else if cl > peak_in_range {
-            peak_in_range = cl;
+        } else if cl > peak_in_range.0 {
+            peak_in_range = (cl, i);
         }
     }
 
     // Burn-risk: median of per-sample chip thickness vs LUT min.
-    let peak_below: Option<(f64, usize)> = if let Some(min) = min
-        && !burn_samples.is_empty()
-    {
+    // Sort once and re-use both for the median chip thickness and for
+    // the within-case `approach_to_min` (same statistic, both arms).
+    if !burn_samples.is_empty() {
         burn_samples.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    }
+    let median_sample: Option<(f64, usize)> = if burn_samples.is_empty() {
+        None
+    } else {
         let median_idx = burn_samples.len() / 2;
         #[allow(clippy::indexing_slicing)] // SAFETY: median_idx < len() by construction
-        let (median_cl, median_sample_idx) = burn_samples[median_idx];
-        if median_cl < min {
-            Some((min - median_cl, median_sample_idx))
-        } else {
-            None
-        }
+        Some(burn_samples[median_idx])
+    };
+    let peak_below: Option<(f64, usize)> = if let Some(min_value) = min
+        && let Some((median_cl, median_sample_idx)) = median_sample
+        && median_cl < min_value
+    {
+        Some((min_value - median_cl, median_sample_idx))
     } else {
         None
     };
@@ -366,29 +383,63 @@ pub fn evaluate(
                 "chip geometry unsupported for sampled cutter engagement".to_owned(),
             )
         };
-        return Verdict::Unmodeled { reason };
+        return ChiploadVerdict::Unmodeled { reason };
     }
 
     // 6. Build verdict. Above-max takes priority over below-min: breakage is more
     // catastrophic than burn risk and we want it surfaced.
     if let Some((dev, idx)) = peak_above {
-        return Verdict::Exceeds {
-            peak: max + dev,
-            sample_range: idx..(idx + 1),
-            reason: ExceedsReason::ChiploadBreakageRisk,
+        return ChiploadVerdict::Exceeds {
+            side: ChipSide::High,
+            triggering: ChiploadMetric {
+                observed_mm_per_tooth: max + dev,
+                statistic: ChiploadStatistic::PeakHigh,
+                evidence: SampleEvidence::at_with_stat(idx, ChiploadStatistic::PeakHigh),
+                bounds,
+            },
             confidence: chipload_confidence,
         };
     }
     if let Some((dev, idx)) = peak_below {
-        return Verdict::Exceeds {
-            peak: min.map(|min| min - dev).unwrap_or_default().max(0.0),
-            sample_range: idx..(idx + 1),
-            reason: ExceedsReason::ChiploadBurnRisk,
+        let observed = min.map(|m| m - dev).unwrap_or_default().max(0.0);
+        return ChiploadVerdict::Exceeds {
+            side: ChipSide::Low,
+            triggering: ChiploadMetric {
+                observed_mm_per_tooth: observed,
+                statistic: ChiploadStatistic::MedianLow,
+                evidence: SampleEvidence::at_with_stat(idx, ChiploadStatistic::MedianLow),
+                bounds,
+            },
             confidence: chipload_confidence,
         };
     }
-    Verdict::Within {
-        peak: peak_in_range,
+
+    // Within: report both bounds-approach metrics. `approach_to_min` is
+    // None when the LUT row has no min; otherwise it carries the median
+    // sample (same statistic the burn-risk arm uses).
+    let approach_to_min = match (min, median_sample) {
+        (Some(_), Some((median_cl, median_idx))) => Some(ChiploadMetric {
+            observed_mm_per_tooth: median_cl,
+            statistic: ChiploadStatistic::MedianLow,
+            evidence: SampleEvidence::at_with_stat(median_idx, ChiploadStatistic::MedianLow),
+            bounds: bounds.clone(),
+        }),
+        _ => None,
+    };
+    let (peak_value, peak_idx) = peak_in_range;
+    let approach_to_max = ChiploadMetric {
+        observed_mm_per_tooth: peak_value,
+        statistic: ChiploadStatistic::PeakInRange,
+        evidence: if peak_value > 0.0 {
+            SampleEvidence::at_with_stat(peak_idx, ChiploadStatistic::PeakInRange)
+        } else {
+            SampleEvidence::empty()
+        },
+        bounds,
+    };
+    ChiploadVerdict::Within {
+        approach_to_min,
+        approach_to_max,
         confidence: chipload_confidence,
     }
 }
@@ -538,7 +589,7 @@ mod tests {
         assert!(
             matches!(
                 v,
-                Verdict::Within {
+                ChiploadVerdict::Within {
                     confidence: Confidence::Approximate(_),
                     ..
                 }
@@ -564,7 +615,7 @@ mod tests {
         );
         assert!(matches!(
             v,
-            Verdict::Unmodeled {
+            ChiploadVerdict::Unmodeled {
                 reason: UnmodeledReason::NoVendorData
             }
         ));
@@ -585,7 +636,7 @@ mod tests {
             OperationType::Pocket,
         );
         match v {
-            Verdict::Unmodeled {
+            ChiploadVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired,
             } => {}
             other => panic!("expected Unmodeled(SimulationRequired), got {other:?}"),
@@ -612,7 +663,7 @@ mod tests {
         );
         assert!(matches!(
             v,
-            Verdict::Unmodeled {
+            ChiploadVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired
             }
         ));
@@ -638,7 +689,7 @@ mod tests {
         assert!(
             matches!(
                 v,
-                Verdict::Within {
+                ChiploadVerdict::Within {
                     confidence: Confidence::Validated,
                     ..
                 }
@@ -664,11 +715,14 @@ mod tests {
             OperationType::Pocket,
         );
         match v {
-            Verdict::Exceeds {
-                reason: ExceedsReason::ChiploadBreakageRisk,
+            ChiploadVerdict::Exceeds {
+                side: ChipSide::High,
+                triggering,
                 ..
-            } => {}
-            other => panic!("expected Exceeds(ChiploadBreakageRisk), got {other:?}"),
+            } => {
+                assert_eq!(triggering.statistic, ChiploadStatistic::PeakHigh);
+            }
+            other => panic!("expected Exceeds(High/PeakHigh), got {other:?}"),
         }
     }
 
@@ -689,11 +743,14 @@ mod tests {
             OperationType::Pocket,
         );
         match v {
-            Verdict::Exceeds {
-                reason: ExceedsReason::ChiploadBurnRisk,
+            ChiploadVerdict::Exceeds {
+                side: ChipSide::Low,
+                triggering,
                 ..
-            } => {}
-            other => panic!("expected Exceeds(ChiploadBurnRisk), got {other:?}"),
+            } => {
+                assert_eq!(triggering.statistic, ChiploadStatistic::MedianLow);
+            }
+            other => panic!("expected Exceeds(Low/MedianLow), got {other:?}"),
         }
     }
 
@@ -714,7 +771,7 @@ mod tests {
             1000.0,
             OperationType::Pocket,
         );
-        assert!(matches!(v, Verdict::Within { .. }));
+        assert!(matches!(v, ChiploadVerdict::Within { .. }));
     }
 
     #[test]
@@ -734,7 +791,7 @@ mod tests {
             1000.0,
             OperationType::Pocket,
         );
-        assert!(matches!(v, Verdict::Within { .. }));
+        assert!(matches!(v, ChiploadVerdict::Within { .. }));
     }
 
     // -------- Item C: steady-state feed-rate filter ---------
@@ -769,7 +826,7 @@ mod tests {
             OperationType::Pocket,
         );
         match v {
-            Verdict::Unmodeled {
+            ChiploadVerdict::Unmodeled {
                 reason: UnmodeledReason::SteadyStateSamplesNotPresent,
             } => {}
             other => panic!("expected Unmodeled(SteadyStateSamplesNotPresent), got {other:?}"),
@@ -811,7 +868,7 @@ mod tests {
         assert!(
             matches!(
                 v,
-                Verdict::Within {
+                ChiploadVerdict::Within {
                     confidence: Confidence::Validated,
                     ..
                 }
@@ -851,12 +908,12 @@ mod tests {
             OperationType::Pocket,
         );
         match v {
-            Verdict::Exceeds {
-                reason: ExceedsReason::ChiploadBreakageRisk,
+            ChiploadVerdict::Exceeds {
+                side: ChipSide::High,
                 ..
             } => {}
             other => panic!(
-                "expected Exceeds(ChiploadBreakageRisk) — Helix samples must be kept by the filter, got {other:?}"
+                "expected Exceeds(High) — Helix samples must be kept by the filter, got {other:?}"
             ),
         }
     }
@@ -883,7 +940,7 @@ mod tests {
             OperationType::Pocket,
         );
         assert!(
-            matches!(v, Verdict::Within { .. }),
+            matches!(v, ChiploadVerdict::Within { .. }),
             "exactly-95% sample must be kept, got {v:?}"
         );
     }
@@ -918,7 +975,7 @@ mod tests {
             OperationType::Pocket,
         );
         assert!(
-            matches!(v, Verdict::Within { .. }),
+            matches!(v, ChiploadVerdict::Within { .. }),
             "one None sample must be skipped, not abort the verdict, got {v:?}"
         );
     }
@@ -949,7 +1006,7 @@ mod tests {
         assert!(
             matches!(
                 v,
-                Verdict::Unmodeled {
+                ChiploadVerdict::Unmodeled {
                     reason: UnmodeledReason::CutterModeUnsupported(_)
                 }
             ),
@@ -983,7 +1040,7 @@ mod tests {
         );
         assert!(matches!(
             v,
-            Verdict::Unmodeled {
+            ChiploadVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired
             }
         ));

@@ -654,7 +654,7 @@ pub fn enforce_load_policy(
         for v in &report.per_toolpath {
             if v.any_unmodeled() {
                 let mut crits = Vec::new();
-                if let crate::tool_load::Verdict::Unmodeled { reason } = &v.chipload {
+                if let crate::tool_load::ChiploadVerdict::Unmodeled { reason } = &v.chipload {
                     crits.push(format!("chipload={reason:?}"));
                 }
                 if let crate::tool_load::PowerVerdict::Unmodeled { reason } = &v.power {
@@ -1681,13 +1681,16 @@ mod tests {
     // ----- enforce_load_policy negative tests -----
 
     use crate::tool_load::{
-        Confidence, DeflectionVerdict, PowerVerdict, ToolLoadReport, ToolpathLoadVerdict,
-        UnmodeledReason, Verdict,
+        ChiploadVerdict, Confidence, DeflectionVerdict, PowerVerdict, ToolLoadReport,
+        ToolpathLoadVerdict, UnmodeledReason,
     };
-    use crate::tool_load::verdict::{DeflectionBounds, SampleEvidence};
+    use crate::tool_load::verdict::{
+        ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, DeflectionBounds,
+        SampleEvidence,
+    };
 
     fn report_with(
-        chipload: Verdict,
+        chipload: ChiploadVerdict,
         power: PowerVerdict,
         deflection: DeflectionVerdict,
     ) -> ToolLoadReport {
@@ -1699,6 +1702,31 @@ mod tests {
                 deflection,
             }],
         }
+    }
+
+    fn chip_bounds() -> ChipBounds {
+        ChipBounds {
+            min_mm_per_tooth: Some(0.038),
+            max_mm_per_tooth: 0.07,
+            source: ChipBoundsSource::VendorLut,
+        }
+    }
+
+    fn chipload_within(peak: f64) -> ChiploadVerdict {
+        ChiploadVerdict::Within {
+            approach_to_min: None,
+            approach_to_max: ChiploadMetric {
+                observed_mm_per_tooth: peak,
+                statistic: ChiploadStatistic::PeakInRange,
+                evidence: SampleEvidence::empty(),
+                bounds: chip_bounds(),
+            },
+            confidence: Confidence::Validated,
+        }
+    }
+
+    fn chipload_unmodeled(reason: UnmodeledReason) -> ChiploadVerdict {
+        ChiploadVerdict::Unmodeled { reason }
     }
 
     fn power_not_implemented() -> PowerVerdict {
@@ -1736,10 +1764,7 @@ mod tests {
     #[test]
     fn enforce_blocks_exceeded_by_default() {
         let report = report_with(
-            Verdict::Within {
-                peak: 0.05,
-                confidence: Confidence::Validated,
-            },
+            chipload_within(0.05),
             power_not_implemented(),
             deflection_exceeds(10.0),
         );
@@ -1767,10 +1792,7 @@ mod tests {
         // also true — if it weren't, the report's unmodeled chipload/power
         // criteria would still block. Verify the two flags are distinct.
         let report = report_with(
-            Verdict::Within {
-                peak: 0.05,
-                confidence: Confidence::Validated,
-            },
+            chipload_within(0.05),
             power_not_implemented(),
             deflection_exceeds(10.0),
         );
@@ -1807,7 +1829,7 @@ mod tests {
     #[test]
     fn enforce_blocks_unmodeled_by_default() {
         let report = report_with(
-            Verdict::not_implemented("phase 5"),
+            chipload_unmodeled(UnmodeledReason::NotImplemented("phase 5".to_owned())),
             power_not_implemented(),
             deflection_within(3.0),
         );
@@ -1821,10 +1843,7 @@ mod tests {
     #[test]
     fn enforce_passes_when_all_within() {
         let report = report_with(
-            Verdict::Within {
-                peak: 0.05,
-                confidence: Confidence::Validated,
-            },
+            chipload_within(0.05),
             PowerVerdict::Within {
                 peak_kw: 0.5,
                 available_kw: 0.71,
@@ -1844,16 +1863,12 @@ mod tests {
         // Different `Unmodeled` reasons produce different error messages so
         // the user knows whether to "run sim" vs "this material has no LUT".
         let r1 = report_with(
-            Verdict::Unmodeled {
-                reason: UnmodeledReason::SimulationRequired,
-            },
+            chipload_unmodeled(UnmodeledReason::SimulationRequired),
             power_not_implemented(),
             deflection_within(3.0),
         );
         let r2 = report_with(
-            Verdict::Unmodeled {
-                reason: UnmodeledReason::NoVendorData,
-            },
+            chipload_unmodeled(UnmodeledReason::NoVendorData),
             power_not_implemented(),
             deflection_within(3.0),
         );

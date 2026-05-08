@@ -9,7 +9,7 @@
 //! `optimize_toolpath` synchronously and stashes the outcome here.
 
 use rs_cam_core::tool_load::optimize::{OptimizeCandidate, OptimizeOutcome, ParamDelta};
-use rs_cam_core::tool_load::verdict::{ToolpathLoadVerdict, Verdict};
+use rs_cam_core::tool_load::verdict::ToolpathLoadVerdict;
 
 use super::{AppEvent, theme};
 use crate::state::AppState;
@@ -223,8 +223,6 @@ fn draw_attempted_row(
     candidate: &OptimizeCandidate,
     baseline: &OptimizeCandidate,
 ) {
-    use rs_cam_core::tool_load::verdict::Verdict;
-
     ui.label(egui::RichText::new(format_delta(&candidate.delta)).small());
 
     let cycle_delta = candidate.cycle_time_s - baseline.cycle_time_s;
@@ -248,7 +246,7 @@ fn draw_attempted_row(
     draw_verdict_badges(ui, &candidate.verdict);
 
     // Status: why isn't this candidate the recommendation?
-    let status = if matches!(candidate.verdict.chipload, Verdict::Exceeds { .. })
+    let status = if candidate.verdict.chipload.is_exceeded()
         || candidate.verdict.power.is_exceeded()
         || candidate.verdict.deflection.is_exceeded()
     {
@@ -426,7 +424,7 @@ fn draw_candidate_row(
 
     draw_verdict_badges(ui, &candidate.verdict);
 
-    let safe = !matches!(candidate.verdict.chipload, Verdict::Exceeds { .. })
+    let safe = !candidate.verdict.chipload.is_exceeded()
         && !candidate.verdict.power.is_exceeded()
         && !candidate.verdict.deflection.is_exceeded();
     let label = if is_recommended { "Apply ⭐" } else { "Apply" };

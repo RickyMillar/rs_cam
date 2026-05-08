@@ -37,7 +37,7 @@ use rs_cam_core::simulation_cut::{
 };
 use rs_cam_core::tool::{EngagementMode, FlatEndmill, MillingCutter, ToolDefinition};
 use rs_cam_core::tool_load::chipload;
-use rs_cam_core::tool_load::verdict::{Confidence, ExceedsReason, Verdict};
+use rs_cam_core::tool_load::verdict::Confidence;
 
 /// Wanaka-like nominal chipload (mm/tooth) — matches the value that
 /// trips the gate end-to-end on wanaka Back Rough.
@@ -209,19 +209,20 @@ fn wanaka_like_half_engagement_sample_passes_chipload_gate() {
     );
 
     match verdict {
-        Verdict::Within {
+        rs_cam_core::tool_load::ChiploadVerdict::Within {
             confidence: Confidence::Validated,
             ..
         } => {}
-        Verdict::Exceeds {
-            reason: ExceedsReason::ChiploadBreakageRisk,
-            peak,
+        rs_cam_core::tool_load::ChiploadVerdict::Exceeds {
+            side: rs_cam_core::tool_load::verdict::ChipSide::High,
+            triggering,
             ..
         } => panic!(
             "chipload gate trips on a half-engagement sample at the \
-             commanded wanaka feed/RPM (peak={peak:.4}). Root cause: \
+             commanded wanaka feed/RPM (peak={:.4}). Root cause: \
              simulator exposes peak instantaneous chip thickness, but \
-             vendor LUT caps are calibrated against arc-average."
+             vendor LUT caps are calibrated against arc-average.",
+            triggering.observed_mm_per_tooth
         ),
         other => panic!("unexpected verdict: {other:?}"),
     }

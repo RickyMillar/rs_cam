@@ -32,8 +32,8 @@ use crate::tool::ToolDefinition;
 use serde::{Deserialize, Serialize};
 
 pub use verdict::{
-    Confidence, DeflectionVerdict, ExceedsReason, PowerVerdict, ToolLoadReport, ToolpathLoadVerdict,
-    UnmodeledReason, Verdict,
+    ChiploadVerdict, Confidence, DeflectionVerdict, ExceedsReason, PowerVerdict, ToolLoadReport,
+    ToolpathLoadVerdict, UnmodeledReason, Verdict,
 };
 
 /// Why the optimizer refused to produce a recommendation. Typed
