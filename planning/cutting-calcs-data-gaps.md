@@ -645,17 +645,33 @@ commanded DOC, but only in `find_matched_lut_row`. Other gate paths (chipload
 sample-by-sample, deflection's `tool.diameter()`, power's `Kc` engagement
 width) may still use nominal/shaft diameter.
 
-**Root cause.** Audit not done.
+**Audit (2026-05-08, cam-navigator subagent).** No code fixes needed.
+Every LUT-query path under `crates/rs_cam_core/src/tool_load/` already
+uses `lookup_diameter_at(doc)`:
 
-**Fix shape.** Audit each `tool.diameter()` call site in `tool_load/`, decide
-whether engaged or nominal is correct per call, fix any shaft-where-engaged
-should land.
+- `chipload.rs:265` — `tool.lookup_diameter_at(lookup_axial_doc_mm)` (the A2 fix)
+- `mod.rs:214` — suggest path, correct
+- `optimize.rs:643` — Stage 0 / Stage F retarget, correct
+- `optimize.rs:976` — `diameter_for_lut_lookup` shared helper, correct
 
-**Validation gate.** A tapered-ball fixture at very shallow DOC (0.1mm) should
-match a small-diameter LUT row, not the shank's row. Per-sample chipload
-verdicts should be consistent across gates.
+The remaining `tool.diameter()` (shaft) call sites are correctly
+shaft-scoped:
 
-**Status.** Not started. Likely small.
+- `deflection.rs:32` — cantilever L/D uses shaft because shaft *is* the
+  beam structurally; this is exactly what the geometric model intends.
+- `optimize.rs:850` — stickout recommendation in shaft-relative terms.
+- `power.rs:93` — wraps `engagement_radius(axial_doc)` which is already
+  DOC-aware; for tapered ball this resolves to the tip geometry.
+- `optimize.rs:645` / `:977` — explicit fallbacks when DOC is 0 or
+  unknown, well-documented.
+
+One UX clarity item flagged but not a correctness bug:
+`deflection_setup_prescription` says "target L/D=4" without naming which
+diameter; reasonable to clarify in a future polish pass alongside G13's
+prescription rewrite. Logged as a soft follow-up.
+
+**Status.** **Done** 2026-05-08. Audit-only gap — no code changes
+required. Closed via this status flip.
 
 ---
 
