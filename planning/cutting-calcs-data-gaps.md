@@ -156,74 +156,134 @@ scope. Inlay may sit between.
 
 ---
 
-## Category B — Routing gaps (pass_role / op_family mismatches)
+## Category B — Lookup-matching gaps (engaged-edge + hardness)
 
-LUT data exists but the lookup criteria sent by the optimizer don't match it.
-Pure routing logic in `crates/rs_cam_core/src/tool_load/chipload.rs` and the
-op spec mappings in `crates/rs_cam_core/src/compute/operation_configs.rs`.
+Verification 2026-05-08 against live wanaka MCP showed the original B-category
+framing (pass_role routing fallback + per-op `feeds_pass_role` overrides) was
+**materially wrong**:
 
-### G5: TaperedBall + Scallop sends `Finish`, LUT only has `SemiFinish`
+- `pass_role` is not a hard filter in `passes_must_match` (vendor_lookup.rs:125).
+  It's only a +45/-25 score nudge. Adding `Finish ↔ SemiFinish` fallback would
+  not change which rows are returned.
+- The wanaka regression table in `AGENT_PROMPT.md` mislabels TPs 4/5: both are
+  `Project Curve` / TaperedBall (not Scallop / SpiralFinish). All three failing
+  tapered-ball TPs (4, 5, 7) route to `(parallel, finish)`, which has 8 LUT
+  rows including hardwood. Routing isn't the failing layer.
+- The actual failure for the 1mm-tip / 7° / 6mm-shank tool on hardwood is the
+  diameter-ratio gate. `tool.lookup_diameter_at(peak_steady_axial_doc)` returns
+  the engaged ball/cone diameter, which for shallow surface-following cuts
+  (peak DOC 1.37–2.04 mm) gives ≈1.2–1.4 mm. LUT's smallest row is 3.175 mm,
+  ratio ≈ 0.38, fails the [0.5, 2.0] hard gate in `passes_must_match` → all
+  rows rejected → `NoVendorData`.
 
-**Symptom.** Wanaka TPs 5 and 7 (tapered-ball 3D finishing) return
-`Unmodeled(NoVendorData)` on chipload. Stage F refuses, Stage 1 has no knobs
-(see G2). Operator sees `NoImprovementFound` even though calibrated data
-exists.
+So the Category B gaps are restated below as a single fused gap covering the
+real failure mode.
 
-**Root cause.** `data/vendor_lut/observations/*.json` has 2 rows for
-`tapered_ball_nose / scallop / semi_finish`. `ScallopConfig`'s `feeds_pass_role`
-returns `Finish`. Lookup never matches.
+### G5+G6+G7 (fused): engaged-edge lookup with diameter-scaled chipload bounds
 
-**Fix shape.** Two valid paths:
+**Symptom.** Live wanaka (`mcp__rs-cam__get_tool_load_report` 2026-05-08):
 
-1. Widen `routed_lookup_family` (or `find_best_row`) to fall back across
-   `Finish ↔ SemiFinish` for ops where the operator-facing distinction isn't
-   meaningful (everything except true-roughing). Keep diameter / family /
-   tool-family as hard matches.
-2. Re-classify the existing tapered-ball Scallop LUT rows as `Finish` (data
-   change, not code).
+| Index | TP id | Op | Tool | Chipload verdict |
+|---|---|---|---|---|
+| 4 | 5 | Project Curve | TaperedBall (1mm tip / 7° / 6mm shank) | `Unmodeled(NoVendorData)` |
+| 5 | 6 | Project Curve | same | `Unmodeled(NoVendorData)` |
+| 7 | 11 | 3D Finish (DropCutter) | same | `Unmodeled(NoVendorData)` |
 
-(1) is more general; (2) is faster but only helps these specific rows.
+Stage F refuses, Stage 1 has no knobs for ProjectCurve / DropCutter (see G2/G3).
+Operator sees `NoImprovementFound` despite the LUT containing 8 calibrated
+`tapered_ball_nose / parallel / finish` rows across hardwood, softwood, mdf,
+acrylic at diameters 3.175 and 6.0 mm.
+
+**Root cause (verified empirically).**
+
+1. `passes_must_match` in `crates/rs_cam_core/src/feeds/vendor_lookup.rs:125`
+   has a hard diameter-ratio gate `[0.5, 2.0]`. Engaged tip diameter for the
+   1mm-tip tapered ball at peak steady-state DOC is ≈ 1.2 mm; ratio against
+   the smallest LUT row (3.175 mm) is ≈ 0.38 — every row rejected.
+2. `passes_must_match` also hard-rejects on `material_family` mismatch. Today
+   wanaka is hardwood and the affected tuples have hardwood rows so this gate
+   doesn't fire — but it would for softwood/MDF projects against hardwood-only
+   tuples (e.g. tapered_ball_nose / scallop / semi_finish has 2 rows, both
+   hardwood). Per operator guidance 2026-05-08: matching should be largely
+   hardness-agnostic; hardness should dial parameters, not reject rows.
+3. `pass_role` is already a soft +45/-25 score nudge — not a filter. So the
+   originally-audited "Finish ↔ SemiFinish fallback" is a no-op.
+
+**Fix shape.** Re-think `vendor_lookup` row selection so engaged-edge geometry
+remains the truth (don't lie about engaged diameter to fit the LUT) and LUT
+rows become a derivable calibration source for the actual cutting condition:
+
+1. **Relax the [0.5, 2.0] hard ratio gate.** Replace with a wider envelope or
+   no gate, ranking purely by the existing diameter-proximity score (`diam_score`
+   in `score_observation`).
+2. **Scale chipload bounds by diameter ratio when query diverges from row.**
+   The LUT exhibits roughly diameter-linear chipload scaling for ball tools
+   (3.175 → 6.0 mm, hardwood parallel/finish: 0.010–0.020 → 0.018–0.032; min
+   bound scales ≈ d¹·⁰, max ≈ d⁰·⁷). Apply linear scaling to both bounds for
+   the safest extrapolation:
+   `scaled_min = row.chipload_min × (query_d / row_d)`
+   `scaled_max = row.chipload_max × (query_d / row_d)`
+3. **Mark verdict confidence as `Approximate` when scaling kicks in** (e.g.
+   |log(query_d / row_d)| > log(1.4) ≈ 0.34). Detail string carries the ratio
+   so the operator can see how far the extrapolation reached.
+4. **Hardness-agnostic matching.** Convert `material_family` from a hard
+   filter to a score-only contributor. After row selection, use the row's
+   hardness vs the query's hardness as a chipload-scaling factor (scale
+   chipload bounds inversely with hardness ratio — softer wood tolerates
+   more chipload). Same `Approximate` confidence treatment.
+
+**Why these are fused.** All three originally-numbered gaps trace to the same
+file (`vendor_lookup.rs`) and the same fix surface (relax filters, scale
+bounds, mark approximate). G7 (FlatEnd Profile) is also in scope: with the
+ratio gate relaxed and pass_role already soft, FlatEnd Profile's
+`(contour, roughing)` query will pick up the existing `(contour, finish)`
+rows that today exhibit a -25 score nudge but already pass `passes_must_match`
+on the existing diameter band. (G7 may already be partially functional; the
+diagnosis-pass error in the original audit applied here too. Validation gate
+will confirm.)
+
+**Plan.**
+
+1. Add a `MatchedRow` field carrying the diameter ratio between query and the
+   selected row.
+2. In `passes_must_match`, relax the diameter ratio gate from [0.5, 2.0] to
+   either drop it entirely (rely on diameter-proximity score) or widen to
+   [0.05, 20.0] as a sanity floor.
+3. Convert `material_family` from a hard filter to a score-only contributor
+   in `passes_must_match` and `score_observation`. Add a hardness scaling
+   factor `(row_hardness / query_hardness)^h` to chipload bounds with `h`
+   in [0.5, 1.0] (chipload scales inversely with hardness). Default `h=1.0`
+   linear; revisit if calibration data supports otherwise.
+4. In `build_result` (and in `chipload::evaluate`'s use of the result),
+   scale `chip_load_min/max` by `(query_d / row_d) × (row_hardness/query_hardness)`.
+5. In `chipload::evaluate`, downgrade verdict confidence to `Approximate`
+   when either scaling factor diverges from 1.0 by more than ±40 %. Detail
+   string carries both ratios.
+6. Tests:
+   - Unit test: tapered_ball_nose / parallel / finish / hardwood with
+     query diameter 1.0 mm finds the 3.175 mm row and returns
+     `chipload_max ≈ 0.020 × (1.0/3.175) ≈ 0.0063`.
+   - Unit test: hardwood query against softwood-only row scales chipload
+     bounds by hardwood/softwood janka ratio (1450/600 → ~0.41x).
+   - Existing `tool_load::*` and `feeds::*` tests must still pass.
 
 **Validation gate.**
-- MCP `optimize_toolpath` index 5 (Lakes back inside) on wanaka should produce a Stage F retarget candidate (or `BipolarEngagement` refusal) — not `NoVendorData`.
-- `get_tool_load_report` for that TP should show `chipload: Within` or `Exceeds`, not `Unmodeled`.
 
-**Status.** Not started. **Highest priority for wanaka regression.**
+- MCP `mcp__rs-cam__get_tool_load_report` after change: TPs 4, 5, 7
+  chipload verdict no longer `Unmodeled(NoVendorData)`. Should be
+  `Approximate Within` or `Approximate Exceeds`.
+- MCP `mcp__rs-cam__optimize_toolpath` on TP 4 should produce ≥ 1
+  attempted candidate with a non-`Unmodeled` chipload delta in
+  `gate_deltas` (Improved/Same/Worsened, not Unmodeled).
+- TPs 0, 2 stay `Skipped` (drill cycles, no change).
+- TPs 1, 6 chipload verdicts stay roughly the same (FlatEnd / hardwood /
+  adaptive3d already match well within current band; scaling factor ≈ 1.0
+  so no Approximate downgrade).
+- `cargo test -p rs_cam_core --lib --tests` clean.
+- `cargo clippy --workspace --all-targets -- -D warnings` clean.
 
----
-
-### G6: TaperedBall + SpiralFinish — same mismatch as G5
-
-**Symptom.** Same shape as G5. Spiral finishing on a tapered ball ends up
-`Unmodeled` despite the data existing.
-
-**Root cause.** Identical: `feeds_pass_role` mismatch.
-
-**Fix shape.** Closing G5 in the general (1) form closes G6 automatically.
-If we go with the data-only fix in (2), G6 needs its own row reclassification.
-
-**Validation gate.** Build a SpiralFinish fixture on a tapered ball, expect
-non-`Unmodeled` chipload verdict.
-
-**Status.** Not started; bundles with G5.
-
----
-
-### G7: FlatEnd + Profile sends `Roughing`, LUT only has `Contour/Finish`
-
-**Symptom.** Flat-end profile cuts return `Unmodeled(NoVendorData)`. Wanaka
-doesn't exercise this directly but it's a common workflow gap.
-
-**Root cause.** `ProfileConfig::feeds_pass_role` returns `Roughing`. The LUT
-has `flat_end / contour / finish` rows but no `flat_end / contour / roughing`.
-
-**Fix shape.** Same widening as G5 (Finish ↔ Roughing fallback for Contour
-family). Profile cuts a wall, not bulk material — Finish-calibrated chipload
-is closer to right than nothing.
-
-**Validation gate.** Build a Profile fixture, expect non-`Unmodeled` chipload.
-
-**Status.** Not started.
+**Status.** Re-verified 2026-05-08; original framing (pass_role routing) was
+incorrect, fused gap describes the real fix. Plan above. Implementing next.
 
 ---
 

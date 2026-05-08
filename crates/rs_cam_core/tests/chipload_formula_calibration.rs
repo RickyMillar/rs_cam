@@ -44,13 +44,16 @@ use rs_cam_core::tool_load::verdict::{Confidence, ExceedsReason, Verdict};
 const WANAKA_FEED_PER_TOOTH_MM: f64 = 0.0875;
 /// Wanaka Back Rough commanded depth-per-pass.
 const WANAKA_AXIAL_DOC_MM: f64 = 3.0;
-/// Wanaka tool: 1.587mm 2-flute. We use a 6.35mm 2-flute for the
-/// repro because the existing chipload gate tests use this tool against
-/// the hard-maple Amana LUT row, so the LUT cap is a known quantity.
+/// Wanaka tool: 1.587mm 2-flute. We use a 6.0 mm 2-flute for the repro
+/// so the LUT diameter exactly matches the calibrated row (the
+/// `flat_end / pocket / roughing / hardwood` 6 mm row at janka 1450) —
+/// avoids any extrapolation scaling that would otherwise shift the
+/// chipload bounds and obscure what this test is checking
+/// (chip-thickness convention, peak vs arc-average).
 fn wanaka_tool() -> ToolDefinition {
     ToolDefinition::new(
-        Box::new(FlatEndmill::new(6.35, 20.0)),
-        6.35,
+        Box::new(FlatEndmill::new(6.0, 20.0)),
+        6.0,
         30.0,
         20.0,
         30.0,
