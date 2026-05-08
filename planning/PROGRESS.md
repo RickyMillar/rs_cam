@@ -24,6 +24,53 @@
 
 ## Recent work (2026-05-08)
 
+### Optimizer gap-doc burst — six closures + one new gap opened
+
+Closed six of the seven optimizer gaps tracked in
+`planning/cutting-calcs-data-gaps.md`, end-to-end live-validated
+against the wanaka project via the MCP `get_tool_load_report` and
+`optimize_toolpath` tools.
+
+- **G5 + G6 + G7** (`d09001e`) — vendor LUT lookup widened to support
+  engaged-edge geometry on tapered tools, with linear chipload scaling
+  by diameter ratio and hardness ratio. Verdict carries
+  `Confidence::Approximate(detail)` past ±40 % divergence with the
+  scaling factors named in the detail string. Material-family changed
+  from a hard match (wood / plastic / metal) to a category gate;
+  hardness moved from a reject filter to a soft-scoring lever.
+- **G1** (`11e0f9f`) — Profile + Zigzag added to the optimizer's
+  `has_doc_knob` allowlist so Stage 1 collapses the stepover dim when
+  the op lacks the knob. Bipolar prescription reordered so Contour /
+  Trace family ops point at geometry-driven levers instead of DOC.
+- **G2** (`c40795b`) — `scallop_height` added as a third axis to
+  Stage 1's grid; gate widened from "has DOC knob" to "has any sweep
+  knob". Live-validated against wanaka TP 7 (1 attempted → 4
+  attempted).
+- **G3** (`2926a15`) — Trace, RampFinish, Waterline added to
+  `has_doc_knob`; Pencil gets conditional stepover when
+  `num_offset_passes > 1`. RadialFinish split out as the new G3a
+  (deferred).
+- **G14** (`13a469e`) — engaged-diameter usage audit across every
+  tool-load gate path; cam-navigator subagent confirmed no code fixes
+  needed. Closed audit-only.
+- **G13** (`1fe3292`) — replaced the geometric L/D > 6 deflection
+  gate with a force-aware tip-deflection estimator. New
+  `ToolDefinition::tip_deflection_mm` integrates a stepped cantilever
+  (shank + cutting region) using each cutter's existing
+  `lookup_diameter_at` profile; `δ = F·L³/(3EI)` from per-sample
+  `F = Kc · axial_doc · radial_width` (same arc-equivalent slab as
+  the power gate). Verdict thresholds 50 µm Within / 200 µm Exceeds.
+  Live wanaka MCP confirmed the End-Mill TPs that previously refused
+  pre-flight on `Exceeds(L/D=7.5)` now reach Stage F as
+  `Within(Approximate)` 157–175 µm; TaperedBall TPs that previously
+  read `Approximate(L/D=5.83)` now read `Validated` at 5–9 µm.
+
+**Opened.** `G15` — investigate Stage F retarget skip on TaperedBall
+chipload-Exceeds(Approximate) with extrapolated LUT rows. Surfaced as
+a side observation during G2 validation; needs an end-to-end
+`optimize_toolpath` MCP run with `attempted`-list inspection before a
+fix shape lands.
+
 ### Simulation span coverage
 
 Audited structural span and semantic trace coverage for simulation diagnostics. Added `planning/SIMULATION_SPAN_COVERAGE.md` as the coverage tracker. Generation now derives structural spans for operations that previously emitted only a top-level `Operation` span: depth-stepped 2.5D ops get `DepthPass` + cutting-run `Region` spans; drill-like ops get hole/plunge `Region` spans without adding depth-order barriers; other operations get generic cutting-run regions. Adaptive3D keeps its richer annotation-derived spans with labeled z-level/region spans, and Pencil/Scallop/Ramp/Spiral runtime annotations now convert into labeled structural spans. Trace emits semantic `Chain` children under depth levels; drill emits semantic `Hole`/`Cycle` children. `get_cut_trace` now includes `span_summaries` so selected structural spans have aggregate metrics. Simulation outline fallback now shows semantic traces when structural spans are operation-only. Added broad span coverage tests across all 23 operation families, including system-only alignment-pin drilling.

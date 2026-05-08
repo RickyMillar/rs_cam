@@ -5,6 +5,31 @@ for gaps surfaced by the [tool × op capability matrix audit](#audit-summary)
 between (a) the operation × tool combinations the optimizer should be able to
 handle and (b) what actually works today.
 
+## Current state (2026-05-08, end of session)
+
+**Done this session:** G1, G2, G3, G5+G6+G7, G13, G14 — every blocker on the
+wanaka project surface. Live MCP verdicts post-fix:
+- End-Mill TPs that previously refused pre-flight on `Exceeds(L/D=7.5)` now
+  reach Stage F as `Within(Approximate)` 157–175 µm tip deflection.
+- TaperedBall TPs read clean `Within(Validated)` (5–9 µm) instead of the prior
+  geometric `Approximate(L/D=5.83)`.
+- Stage 1 grid axes now exist for every operation that has any sweep knob
+  (DOC × stepover × scallop_height).
+
+**Open gaps remaining**, in priority order:
+1. **G15** — investigate why Stage F retarget didn't fire on TaperedBall TPs
+   despite `Exceeds(BreakageRisk)` with matchable scaled LUT bounds. Open.
+2. **G3a** — RadialFinish angular_step axis. Deferred follow-up to G3.
+3. **G4** — V-bit knob accessors (Chamfer, VCarve, Inlay). Lower volume.
+4. **G8 / G9** — vendor-data backfills for FlatEnd × Face / Profile roughing.
+5. **G10 / G11 / G12** — long-tail data gaps (3D finishing rows, BullNose
+   coverage, Waterline rows). Do as users hit them.
+
+The optimizer body is now feature-complete for the wanaka surface. Remaining
+work is targeted polish (G15 investigation, G3a/G4 knob coverage) and vendor-
+LUT data growth (G8–G12) — all driven by user demand rather than a known
+broken behaviour.
+
 Sister docs:
 
 - `planning/archive/optimizer_redesign_2026-05-08.md` — design rationale for
@@ -887,20 +912,81 @@ required. Closed via this status flip.
 
 ---
 
+### G15: Stage F retarget skips TaperedBall chipload-Exceeds(Approximate)
+
+**Symptom.** On wanaka post-G5+G6+G7 fix, the three TaperedBall TPs
+(5/6/11) carry `chipload: Exceeds(ChiploadBreakageRisk)` with peaks
+0.010–0.015 mm/tooth — well above the scaled max bound from the
+extrapolated `amana-tapered-hardwood-parallel-3175-2f` row (×0.38–0.44
+diameter scale, ×1.00 hardness). The chipload band IS defined, so Stage
+F has bounds to retarget against, yet the operator has not observed
+Stage F producing a Within candidate for these TPs in
+`optimize_toolpath`. (Side observation flagged during G2 validation;
+not investigated end-to-end before session compact.)
+
+**Root cause.** Unconfirmed. Three plausible candidates:
+
+1. Stage F's `solve_chipload_retarget` has a corner case for very
+   small engaged-diameter tapered tools — the RCTF compensation may
+   produce a feed that exceeds machine `plunge_base` and the safety
+   cap rejects it before evaluating.
+2. The matched-LUT row from G5+G6+G7 extrapolation passes the gate
+   (returns `Some`) but its `chip_load_min_mm` / `chip_load_max_mm`
+   may not be re-scaled by the new `chipload_diameter_scale`. If
+   Stage F reads the raw bounds, the retarget aims at a bound that
+   doesn't apply to the actual cutter.
+3. The Project Curve operation type doesn't expose the right knobs to
+   Stage F (verify `OperationParams::feed_rate` / `set_feed_rate`
+   are wired for Project Curve).
+
+Hypothesis #2 is the most concerning because it would mean the G5+G6+G7
+soft-scaling work isn't actually plumbed all the way through to Stage
+F's retarget math.
+
+**Fix shape.** First, run `optimize_toolpath` against wanaka TP 5
+(easiest, lowest engagement) and capture the full attempted-candidates
+list. Verify whether Stage F was attempted at all and, if so, what
+constraints it hit. Then decide between a targeted code fix vs. a wider
+Stage F audit.
+
+**Validation gate.** Wanaka TP 5/6/11 should each produce at least one
+candidate from Stage F retarget (even if the candidate fails verdict
+checks) — the optimizer's `attempted` list should show the Stage F
+slot non-empty. If Stage F is firing but producing infeasible
+candidates, the gate becomes "Stage F output has chipload Within at
+the scaled bounds for the cutter".
+
+**Status.** Not started. Investigation gap — needs an MCP run before a
+fix shape lands.
+
+---
+
 ## Priority order (suggested)
 
-1. **G5 + G6 + G7** — routing widening unlocks 3 cells of LUT data the
-   optimizer can already reach. Single change, biggest impact, validates
-   directly against wanaka.
-2. **G1 + G2 + G3** — code-only knob fixes; once routing is fixed, these
-   make Stage 1 sweeps actually run on the unblocked cells.
-3. **G13** — deflection model rewrite; needed before serious sub-6mm work.
-4. **G14** — engaged-diameter audit; likely small but worth doing before
-   we trust any chipload verdict on tapered tools.
-5. **G4** — knob-accessor work for V-bit ops (lower volume of users).
-6. **G8 / G9** — data gaps that have routing workarounds; punt unless
+1. **G15** — investigate Stage F retarget skip on TaperedBall TPs
+   with extrapolated LUT rows. Most-recent operator pain point now
+   that pre-flight refusals are unblocked.
+2. **G3a** — RadialFinish angular_step axis. Small Stage 1 follow-up
+   to G3.
+3. **G4** — knob-accessor work for V-bit ops (lower volume of users).
+4. **G8 / G9** — data gaps that have routing workarounds; punt unless
    operator demand surfaces.
-7. **G10 / G11 / G12** — long tail; do as users hit them.
+5. **G10 / G11 / G12** — long tail; do as users hit them.
+
+### Closed (this session, 2026-05-08)
+
+- **G5 + G6 + G7** — engaged-edge LUT lookup with diameter + hardness
+  chipload scaling (commit `d09001e`).
+- **G1** — Profile + Zigzag added to `has_doc_knob`; bipolar
+  prescription reordered for Contour/Trace family (commit `11e0f9f`).
+- **G2** — `scallop_height` axis added to Stage 1 grid; gate widened
+  from "has DOC knob" to "has any sweep knob" (commit `c40795b`).
+- **G3** — Trace, RampFinish, Waterline get DOC axis; Pencil gets
+  conditional stepover (commit `2926a15`).
+- **G14** — engaged-diameter usage audit; no code fixes needed
+  (commit `13a469e`).
+- **G13** — force-aware tip-deflection model; geometric L/D check
+  removed (commit `1fe3292`).
 
 ## Tracking
 
