@@ -1281,6 +1281,16 @@ impl OperationParams for WaterlineConfig {
     fn set_plunge_rate(&mut self, value: f64) {
         self.plunge_rate = value;
     }
+    /// Z step between successive horizontal contour passes — same
+    /// physical role as `depth_per_pass` for 2.5D ops (axial cutter
+    /// engagement on each pass). G3 (2026-05-08) surfaces this so
+    /// Stage 1 can sweep it.
+    fn depth_per_pass(&self) -> Option<f64> {
+        Some(self.z_step)
+    }
+    fn set_depth_per_pass(&mut self, value: f64) {
+        self.z_step = value;
+    }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
     }
@@ -1304,6 +1314,20 @@ impl OperationParams for PencilConfig {
     }
     fn set_plunge_rate(&mut self, value: f64) {
         self.plunge_rate = value;
+    }
+    /// Pencil's `offset_stepover` only takes effect when
+    /// `num_offset_passes > 1`. Single-pass pencil has no spacing knob;
+    /// returning `None` in that case keeps Stage 1 from generating
+    /// duplicate sims. G3 (2026-05-08).
+    fn stepover(&self) -> Option<f64> {
+        if self.num_offset_passes > 1 {
+            Some(self.offset_stepover)
+        } else {
+            None
+        }
+    }
+    fn set_stepover(&mut self, value: f64) {
+        self.offset_stepover = value;
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
@@ -1388,6 +1412,18 @@ impl OperationParams for RampFinishConfig {
     }
     fn set_plunge_rate(&mut self, value: f64) {
         self.plunge_rate = value;
+    }
+    /// Maximum Z descent per ramp pass. Same physical role as
+    /// `depth_per_pass` (axial cutter engagement) — `max_stepdown` is a
+    /// cap; the planner uses `min(max_stepdown, slope-derived)` as the
+    /// effective per-pass descent. Sweeping the cap moves the actual
+    /// descent for every pass that hits the cap, so it's a meaningful
+    /// Stage 1 axis. G3 (2026-05-08).
+    fn depth_per_pass(&self) -> Option<f64> {
+        Some(self.max_stepdown)
+    }
+    fn set_depth_per_pass(&mut self, value: f64) {
+        self.max_stepdown = value;
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
