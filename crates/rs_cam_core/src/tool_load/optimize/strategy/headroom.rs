@@ -12,7 +12,7 @@
 
 use crate::feeds::vendor_lookup::MatchedRow;
 use crate::machine::MachineProfile;
-use crate::tool_load::verdict::{ToolpathLoadVerdict, Verdict};
+use crate::tool_load::verdict::ToolpathLoadVerdict;
 
 use super::super::axes::{AxisView, SearchAxis};
 use super::super::patches::{AxisPatch, PatchSource};
@@ -46,7 +46,7 @@ impl<'a> OptimizationStrategy for HeadroomScaleStrategy<'a> {
     ) -> Vec<CandidatePatch> {
         // Skip when the baseline trips chipload — proportional scaling
         // preserves chipload, so it can never fix Burn/Breakage.
-        if matches!(baseline_verdict.chipload, Verdict::Exceeds { .. }) {
+        if baseline_verdict.chipload.is_exceeded() {
             return Vec::new();
         }
 
@@ -112,8 +112,7 @@ mod tests {
     use super::*;
     use crate::compute::catalog::{OperationConfig, OptimizationSurface};
     use crate::compute::operation_configs::PocketConfig;
-    use crate::tool_load::verdict::{Confidence, ExceedsReason, UnmodeledReason};
-    use std::ops::Range;
+    use crate::tool_load::verdict::{Confidence, UnmodeledReason};
 
     fn pocket_with_feed_rpm(feed: f64, rpm: u32) -> OperationConfig {
         OperationConfig::Pocket(PocketConfig {
@@ -123,9 +122,23 @@ mod tests {
         })
     }
 
-    fn within(peak: f64) -> Verdict {
-        Verdict::Within {
-            peak,
+    fn within(peak: f64) -> crate::tool_load::verdict::ChiploadVerdict {
+        use crate::tool_load::verdict::{
+            ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, ChiploadVerdict,
+            SampleEvidence,
+        };
+        ChiploadVerdict::Within {
+            approach_to_min: None,
+            approach_to_max: ChiploadMetric {
+                observed_mm_per_tooth: peak,
+                statistic: ChiploadStatistic::PeakInRange,
+                evidence: SampleEvidence::empty(),
+                bounds: ChipBounds {
+                    min_mm_per_tooth: Some(0.038),
+                    max_mm_per_tooth: 0.07,
+                    source: ChipBoundsSource::VendorLut,
+                },
+            },
             confidence: Confidence::Validated,
         }
     }
@@ -153,17 +166,29 @@ mod tests {
         }
     }
 
-    fn exceeds_chipload(peak: f64) -> Verdict {
-        Verdict::Exceeds {
-            peak,
-            sample_range: Range { start: 0, end: 1 },
-            reason: ExceedsReason::ChiploadBurnRisk,
+    fn exceeds_chipload(peak: f64) -> crate::tool_load::verdict::ChiploadVerdict {
+        use crate::tool_load::verdict::{
+            ChipBounds, ChipBoundsSource, ChipSide, ChiploadMetric, ChiploadStatistic,
+            ChiploadVerdict, SampleEvidence,
+        };
+        ChiploadVerdict::Exceeds {
+            side: ChipSide::Low,
+            triggering: ChiploadMetric {
+                observed_mm_per_tooth: peak,
+                statistic: ChiploadStatistic::MedianLow,
+                evidence: SampleEvidence::at_with_stat(0, ChiploadStatistic::MedianLow),
+                bounds: ChipBounds {
+                    min_mm_per_tooth: Some(0.038),
+                    max_mm_per_tooth: 0.07,
+                    source: ChipBoundsSource::VendorLut,
+                },
+            },
             confidence: Confidence::Validated,
         }
     }
 
-    fn unmodeled() -> Verdict {
-        Verdict::Unmodeled {
+    fn unmodeled() -> crate::tool_load::verdict::ChiploadVerdict {
+        crate::tool_load::verdict::ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::NotImplemented("test".to_owned()),
         }
     }

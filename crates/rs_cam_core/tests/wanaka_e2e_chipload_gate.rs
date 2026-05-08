@@ -26,7 +26,6 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::session::{ProjectSession, SimulationOptions};
-use rs_cam_core::tool_load::verdict::Verdict;
 
 const WANAKA_TOML: &str = "/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml";
 
@@ -199,12 +198,14 @@ fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
     // Diagnostic: dump the sample at the verdict's `sample_range` start
     // so we can see whether a Burn/Breakage flag came from a real
     // overload or from a near-air edge sample.
-    if let Verdict::Exceeds { sample_range, .. } = &back_rough_verdict.chipload {
+    if let rs_cam_core::tool_load::ChiploadVerdict::Exceeds { triggering, .. } =
+        &back_rough_verdict.chipload
+    {
         let cut_trace_for_diag = session
             .simulation_result()
             .and_then(|s| s.cut_trace.as_ref())
             .expect("cut trace for diagnostic");
-        let i = sample_range.start;
+        let i = triggering.evidence.sample_range.start;
         if let Some(s) = cut_trace_for_diag.samples.get(i) {
             println!(
                 "  flagged sample idx {i}: tp={}, kinematics={:?}, \
@@ -257,17 +258,25 @@ fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
     }
 
     match &back_rough_verdict.chipload {
-        Verdict::Within { peak, .. } => {
-            println!("  peak chipload (mean convention): {peak:.5} mm/tooth");
+        rs_cam_core::tool_load::ChiploadVerdict::Within {
+            approach_to_max, ..
+        } => {
+            println!(
+                "  peak chipload (mean convention): {:.5} mm/tooth",
+                approach_to_max.observed_mm_per_tooth
+            );
         }
-        Verdict::Exceeds { peak, reason, .. } => panic!(
-            "Back Rough chipload verdict is Exceeds({reason:?}) at peak={peak:.5} \
+        rs_cam_core::tool_load::ChiploadVerdict::Exceeds {
+            side, triggering, ..
+        } => panic!(
+            "Back Rough chipload verdict is Exceeds({side:?}) at peak={:.5} \
              mm/tooth. The auto-fix chain (O5b/O5c/O6) did not land. \
              Inspect: O6 should drop the peak below the LUT cap; if it didn't, \
              the simulator might still be exposing max_chip_thickness_mm rather \
-             than mean_chip_thickness_mm in dexel_stock::effective_chip_thickness_mm."
+             than mean_chip_thickness_mm in dexel_stock::effective_chip_thickness_mm.",
+            triggering.observed_mm_per_tooth
         ),
-        Verdict::Unmodeled { reason } => panic!(
+        rs_cam_core::tool_load::ChiploadVerdict::Unmodeled { reason } => panic!(
             "Back Rough chipload verdict is Unmodeled({reason:?}) — gate could not \
              evaluate. Either the simulation didn't capture arc engagement, or no \
              vendor LUT row matched. Investigate before declaring the chain working."

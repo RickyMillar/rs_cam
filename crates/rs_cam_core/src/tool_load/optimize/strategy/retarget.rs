@@ -102,8 +102,6 @@ fn into_candidate(strategy: &'static str, sol: RetargetSolution) -> CandidatePat
     clippy::indexing_slicing
 )]
 mod tests {
-    use std::ops::Range;
-
     use super::*;
     use crate::compute::catalog::{OperationConfig, OptimizationSurface};
     use crate::compute::operation_configs::PocketConfig;
@@ -113,7 +111,7 @@ mod tests {
     use crate::material::Material;
     use crate::tool::{FlatEndmill, ToolDefinition};
     use crate::tool_load::optimize::policy::SearchPolicy;
-    use crate::tool_load::verdict::{Confidence, ExceedsReason, Verdict};
+    use crate::tool_load::verdict::Confidence;
 
     struct Env {
         op: OperationConfig,
@@ -172,9 +170,59 @@ mod tests {
         }
     }
 
-    fn within(peak: f64) -> Verdict {
-        Verdict::Within {
-            peak,
+    fn chip_bounds() -> crate::tool_load::verdict::ChipBounds {
+        use crate::tool_load::verdict::{ChipBounds, ChipBoundsSource};
+        ChipBounds {
+            min_mm_per_tooth: Some(0.05),
+            max_mm_per_tooth: 0.10,
+            source: ChipBoundsSource::VendorLut,
+        }
+    }
+
+    fn within(peak: f64) -> crate::tool_load::verdict::ChiploadVerdict {
+        use crate::tool_load::verdict::{
+            ChiploadMetric, ChiploadStatistic, ChiploadVerdict, SampleEvidence,
+        };
+        ChiploadVerdict::Within {
+            approach_to_min: None,
+            approach_to_max: ChiploadMetric {
+                observed_mm_per_tooth: peak,
+                statistic: ChiploadStatistic::PeakInRange,
+                evidence: SampleEvidence::empty(),
+                bounds: chip_bounds(),
+            },
+            confidence: Confidence::Validated,
+        }
+    }
+
+    fn exceeds_burn(peak: f64) -> crate::tool_load::verdict::ChiploadVerdict {
+        use crate::tool_load::verdict::{
+            ChipSide, ChiploadMetric, ChiploadStatistic, ChiploadVerdict, SampleEvidence,
+        };
+        ChiploadVerdict::Exceeds {
+            side: ChipSide::Low,
+            triggering: ChiploadMetric {
+                observed_mm_per_tooth: peak,
+                statistic: ChiploadStatistic::MedianLow,
+                evidence: SampleEvidence::at_with_stat(0, ChiploadStatistic::MedianLow),
+                bounds: chip_bounds(),
+            },
+            confidence: Confidence::Validated,
+        }
+    }
+
+    fn exceeds_breakage(peak: f64) -> crate::tool_load::verdict::ChiploadVerdict {
+        use crate::tool_load::verdict::{
+            ChipSide, ChiploadMetric, ChiploadStatistic, ChiploadVerdict, SampleEvidence,
+        };
+        ChiploadVerdict::Exceeds {
+            side: ChipSide::High,
+            triggering: ChiploadMetric {
+                observed_mm_per_tooth: peak,
+                statistic: ChiploadStatistic::PeakHigh,
+                evidence: SampleEvidence::at_with_stat(0, ChiploadStatistic::PeakHigh),
+                bounds: chip_bounds(),
+            },
             confidence: Confidence::Validated,
         }
     }
@@ -225,14 +273,6 @@ mod tests {
         }
     }
 
-    fn exceeds(peak: f64, reason: ExceedsReason) -> Verdict {
-        Verdict::Exceeds {
-            peak,
-            sample_range: Range { start: 0, end: 1 },
-            reason,
-            confidence: Confidence::Validated,
-        }
-    }
 
     fn make_chipload(env: &Env, lut_min: Option<f64>, lut_max: Option<f64>) -> ChiploadFeedRetargeter {
         ChiploadFeedRetargeter {
@@ -293,7 +333,7 @@ mod tests {
         };
         let verdict = ToolpathLoadVerdict {
             toolpath_id: 0,
-            chipload: exceeds(0.025, ExceedsReason::ChiploadBurnRisk),
+            chipload: exceeds_burn(0.025),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
         };
@@ -317,7 +357,7 @@ mod tests {
         };
         let verdict = ToolpathLoadVerdict {
             toolpath_id: 0,
-            chipload: exceeds(0.025, ExceedsReason::ChiploadBurnRisk),
+            chipload: exceeds_burn(0.025),
             power: exceeds_power(1.5),
             deflection: within_deflection(0.020),
         };
@@ -342,7 +382,7 @@ mod tests {
         };
         let verdict = ToolpathLoadVerdict {
             toolpath_id: 0,
-            chipload: exceeds(0.025, ExceedsReason::ChiploadBurnRisk),
+            chipload: exceeds_burn(0.025),
             power: exceeds_power(1.5),
             deflection: exceeds_deflection(0.32),
         };
@@ -370,7 +410,7 @@ mod tests {
         };
         let verdict = ToolpathLoadVerdict {
             toolpath_id: 0,
-            chipload: exceeds(0.025, ExceedsReason::ChiploadBurnRisk),
+            chipload: exceeds_burn(0.025),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
         };
@@ -394,7 +434,7 @@ mod tests {
         };
         let burn = ToolpathLoadVerdict {
             toolpath_id: 0,
-            chipload: exceeds(0.025, ExceedsReason::ChiploadBurnRisk),
+            chipload: exceeds_burn(0.025),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
         };
@@ -402,7 +442,7 @@ mod tests {
 
         let breakage = ToolpathLoadVerdict {
             toolpath_id: 0,
-            chipload: exceeds(0.20, ExceedsReason::ChiploadBreakageRisk),
+            chipload: exceeds_breakage(0.20),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
         };
@@ -430,7 +470,7 @@ mod tests {
         };
         let verdict = ToolpathLoadVerdict {
             toolpath_id: 0,
-            chipload: exceeds(0.0253, ExceedsReason::ChiploadBurnRisk),
+            chipload: exceeds_burn(0.0253),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
         };

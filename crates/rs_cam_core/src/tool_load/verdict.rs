@@ -146,12 +146,14 @@ impl Verdict {
 /// `toolpath_id` is the core `usize` index into the project's enabled
 /// toolpath list (matches `SimulationCutSample::toolpath_id` semantics).
 ///
-/// Power (Step 7b) and deflection (Step 7c) have migrated to typed
-/// verdicts. Chipload still uses the legacy flat `Verdict` until Step 7d.
+/// All three gates have migrated to typed verdicts (G16 Step 7b–7d).
+/// The legacy flat `Verdict` and `ExceedsReason` enums remain in this
+/// module only for the export-gate label tuple in `exceeded_toolpaths`;
+/// Step 7e migrates that to `ExceededCriterion`, then 7f deletes both.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolpathLoadVerdict {
     pub toolpath_id: usize,
-    pub chipload: Verdict,
+    pub chipload: ChiploadVerdict,
     pub power: PowerVerdict,
     pub deflection: DeflectionVerdict,
 }
@@ -210,8 +212,12 @@ impl ToolLoadReport {
             .iter()
             .filter_map(|v| {
                 let mut reasons: Vec<(&'static str, ExceedsReason)> = Vec::new();
-                if let Verdict::Exceeds { reason, .. } = &v.chipload {
-                    reasons.push(("chipload", reason.clone()));
+                if let ChiploadVerdict::Exceeds { side, .. } = &v.chipload {
+                    let r = match side {
+                        ChipSide::Low => ExceedsReason::ChiploadBurnRisk,
+                        ChipSide::High => ExceedsReason::ChiploadBreakageRisk,
+                    };
+                    reasons.push(("chipload", r));
                 }
                 if v.power.is_exceeded() {
                     reasons.push(("power", ExceedsReason::SpindlePowerExceeded));
@@ -695,8 +701,18 @@ mod tests {
     fn modeled_count_ignores_unmodeled() {
         let v = ToolpathLoadVerdict {
             toolpath_id: 0,
-            chipload: Verdict::Within {
-                peak: 0.05,
+            chipload: ChiploadVerdict::Within {
+                approach_to_min: None,
+                approach_to_max: ChiploadMetric {
+                    observed_mm_per_tooth: 0.05,
+                    statistic: ChiploadStatistic::PeakInRange,
+                    evidence: SampleEvidence::empty(),
+                    bounds: ChipBounds {
+                        min_mm_per_tooth: Some(0.038),
+                        max_mm_per_tooth: 0.07,
+                        source: ChipBoundsSource::VendorLut,
+                    },
+                },
                 confidence: Confidence::Validated,
             },
             power: PowerVerdict::Unmodeled {
@@ -726,8 +742,18 @@ mod tests {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
                 toolpath_id: 0,
-                chipload: Verdict::Within {
-                    peak: 0.05,
+                chipload: ChiploadVerdict::Within {
+                    approach_to_min: None,
+                    approach_to_max: ChiploadMetric {
+                        observed_mm_per_tooth: 0.05,
+                        statistic: ChiploadStatistic::PeakInRange,
+                        evidence: SampleEvidence::empty(),
+                        bounds: ChipBounds {
+                            min_mm_per_tooth: Some(0.038),
+                            max_mm_per_tooth: 0.07,
+                            source: ChipBoundsSource::VendorLut,
+                        },
+                    },
                     confidence: Confidence::Approximate("isotropic Kc only".to_owned()),
                 },
                 power: PowerVerdict::Unmodeled {
@@ -757,8 +783,18 @@ mod tests {
             per_toolpath: vec![
                 ToolpathLoadVerdict {
                     toolpath_id: 0,
-                    chipload: Verdict::Within {
-                        peak: 0.05,
+                    chipload: ChiploadVerdict::Within {
+                        approach_to_min: None,
+                        approach_to_max: ChiploadMetric {
+                            observed_mm_per_tooth: 0.05,
+                            statistic: ChiploadStatistic::PeakInRange,
+                            evidence: SampleEvidence::empty(),
+                            bounds: ChipBounds {
+                                min_mm_per_tooth: Some(0.038),
+                                max_mm_per_tooth: 0.07,
+                                source: ChipBoundsSource::VendorLut,
+                            },
+                        },
                         confidence: Confidence::Validated,
                     },
                     power: PowerVerdict::Unmodeled {
@@ -776,8 +812,18 @@ mod tests {
                 },
                 ToolpathLoadVerdict {
                     toolpath_id: 1,
-                    chipload: Verdict::Within {
-                        peak: 0.04,
+                    chipload: ChiploadVerdict::Within {
+                        approach_to_min: None,
+                        approach_to_max: ChiploadMetric {
+                            observed_mm_per_tooth: 0.04,
+                            statistic: ChiploadStatistic::PeakInRange,
+                            evidence: SampleEvidence::empty(),
+                            bounds: ChipBounds {
+                                min_mm_per_tooth: Some(0.038),
+                                max_mm_per_tooth: 0.07,
+                                source: ChipBoundsSource::VendorLut,
+                            },
+                        },
                         confidence: Confidence::Validated,
                     },
                     power: PowerVerdict::Unmodeled {

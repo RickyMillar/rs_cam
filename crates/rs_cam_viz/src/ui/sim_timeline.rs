@@ -1620,10 +1620,21 @@ fn nearest_marker_tooltip(
                 continue;
             }
             if let Some(move_idx) = first_exceeded_tool_load_move(sim, trace, verdict) {
-                use rs_cam_core::tool_load::Verdict;
-                use rs_cam_core::tool_load::verdict::{DeflectionVerdict, PowerVerdict};
-                let reason = if let Verdict::Exceeds { reason, peak, .. } = &verdict.chipload {
-                    format!("chipload {reason:?} peak {peak:.4}")
+                use rs_cam_core::tool_load::verdict::{
+                    ChipSide, ChiploadVerdict, DeflectionVerdict, PowerVerdict,
+                };
+                let reason = if let ChiploadVerdict::Exceeds {
+                    side, triggering, ..
+                } = &verdict.chipload
+                {
+                    let label = match side {
+                        ChipSide::Low => "BurnRisk",
+                        ChipSide::High => "BreakageRisk",
+                    };
+                    format!(
+                        "chipload {label} peak {:.4}",
+                        triggering.observed_mm_per_tooth
+                    )
                 } else if let PowerVerdict::Exceeds { peak_kw, .. } = &verdict.power {
                     format!("power SpindlePowerExceeded peak {peak_kw:.3} kW")
                 } else if let DeflectionVerdict::Exceeds { peak_mm, .. } = &verdict.deflection {
@@ -1652,10 +1663,9 @@ fn first_exceeded_tool_load_move(
     trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
     verdict: &rs_cam_core::tool_load::ToolpathLoadVerdict,
 ) -> Option<usize> {
-    use rs_cam_core::tool_load::Verdict;
-    use rs_cam_core::tool_load::verdict::{DeflectionVerdict, PowerVerdict};
-    let sample_index = if let Verdict::Exceeds { sample_range, .. } = &verdict.chipload {
-        sample_range.start
+    use rs_cam_core::tool_load::verdict::{ChiploadVerdict, DeflectionVerdict, PowerVerdict};
+    let sample_index = if let ChiploadVerdict::Exceeds { triggering, .. } = &verdict.chipload {
+        triggering.evidence.sample_range.start
     } else if let PowerVerdict::Exceeds { evidence, .. } = &verdict.power {
         evidence.sample_range.start
     } else if let DeflectionVerdict::Exceeds { evidence, .. } = &verdict.deflection {

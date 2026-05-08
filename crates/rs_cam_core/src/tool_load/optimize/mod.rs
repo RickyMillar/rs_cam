@@ -38,7 +38,7 @@ use crate::simulation_cut::SimulationCutTrace;
 use crate::tool::MillingCutter;
 
 use super::RefuseReason;
-use super::verdict::{DeflectionVerdict, PowerVerdict, ToolpathLoadVerdict, Verdict};
+use super::verdict::{ChiploadVerdict, DeflectionVerdict, PowerVerdict, ToolpathLoadVerdict};
 use super::{ToolpathLoadContext, evaluate_toolpath};
 
 pub mod axes;
@@ -269,7 +269,7 @@ impl OptimizeOutcome {
 /// both pass; `Unmodeled` is the gate's honest "I don't know" and
 /// shouldn't block a recommendation by itself.
 pub(crate) fn candidate_is_safe(candidate: &OptimizeCandidate) -> bool {
-    !matches!(candidate.verdict.chipload, Verdict::Exceeds { .. })
+    !candidate.verdict.chipload.is_exceeded()
         && !candidate.verdict.power.is_exceeded()
         && !candidate.verdict.deflection.is_exceeded()
 }
@@ -282,21 +282,27 @@ pub(crate) fn classify_candidate_vs_baseline(
     candidate: &ToolpathLoadVerdict,
 ) -> GateDeltas {
     GateDeltas {
-        chipload: classify_one_gate(&baseline.chipload, &candidate.chipload),
+        chipload: classify_one_gate_chipload(&baseline.chipload, &candidate.chipload),
         power: classify_one_gate_power(&baseline.power, &candidate.power),
         deflection: classify_one_gate_deflection(&baseline.deflection, &candidate.deflection),
     }
 }
 
-fn classify_one_gate(b: &Verdict, c: &Verdict) -> GateDelta {
+fn classify_one_gate_chipload(b: &ChiploadVerdict, c: &ChiploadVerdict) -> GateDelta {
+    use ChiploadVerdict::*;
     match (b, c) {
-        (Verdict::Unmodeled { .. }, _) | (_, Verdict::Unmodeled { .. }) => GateDelta::Unmodeled,
-        (Verdict::Exceeds { .. }, Verdict::Within { .. }) => GateDelta::Improved,
-        (Verdict::Within { .. }, Verdict::Exceeds { .. }) => GateDelta::Worsened,
-        (Verdict::Exceeds { peak: bp, .. }, Verdict::Exceeds { peak: cp, .. }) => {
-            classify_exceeds_pair(*bp, *cp)
-        }
-        (Verdict::Within { .. }, Verdict::Within { .. }) => GateDelta::Same,
+        (Unmodeled { .. }, _) | (_, Unmodeled { .. }) => GateDelta::Unmodeled,
+        (Exceeds { .. }, Within { .. }) => GateDelta::Improved,
+        (Within { .. }, Exceeds { .. }) => GateDelta::Worsened,
+        (
+            Exceeds {
+                triggering: bm, ..
+            },
+            Exceeds {
+                triggering: cm, ..
+            },
+        ) => classify_exceeds_pair(bm.observed_mm_per_tooth, cm.observed_mm_per_tooth),
+        (Within { .. }, Within { .. }) => GateDelta::Same,
     }
 }
 
@@ -543,7 +549,7 @@ pub fn optimize_toolpath(
     //    Either mode produces at most one candidate.
     let mut all_candidates: Vec<OptimizeCandidate> = Vec::new();
     match baseline_verdict.chipload {
-        Verdict::Within { .. } => {
+        ChiploadVerdict::Within { .. } => {
             if let Some(c) = run_headroom_strategy(
                 &mut guard,
                 &ctx,
@@ -557,7 +563,7 @@ pub fn optimize_toolpath(
                 all_candidates.push(c);
             }
         }
-        Verdict::Exceeds { .. } => {
+        ChiploadVerdict::Exceeds { .. } => {
             all_candidates.extend(run_retarget_strategy(
                 &mut guard,
                 &ctx,
@@ -569,7 +575,7 @@ pub fn optimize_toolpath(
                 cancel,
             ));
         }
-        Verdict::Unmodeled { .. } => {}
+        ChiploadVerdict::Unmodeled { .. } => {}
     }
 
     if cancel.load(Ordering::SeqCst) {
@@ -3779,29 +3785,61 @@ mod tests {
         }
     }
 
+    fn within_chipload_verdict(peak: f64) -> ChiploadVerdict {
+        use super::super::verdict::{
+            ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, Confidence,
+            SampleEvidence,
+        };
+        ChiploadVerdict::Within {
+            approach_to_min: None,
+            approach_to_max: ChiploadMetric {
+                observed_mm_per_tooth: peak,
+                statistic: ChiploadStatistic::PeakInRange,
+                evidence: SampleEvidence::empty(),
+                bounds: ChipBounds {
+                    min_mm_per_tooth: Some(0.038),
+                    max_mm_per_tooth: 0.07,
+                    source: ChipBoundsSource::VendorLut,
+                },
+            },
+            confidence: Confidence::Validated,
+        }
+    }
+
+    fn exceeds_chipload_verdict_high(peak: f64) -> ChiploadVerdict {
+        use super::super::verdict::{
+            ChipBounds, ChipBoundsSource, ChipSide, ChiploadMetric, ChiploadStatistic, Confidence,
+            SampleEvidence,
+        };
+        ChiploadVerdict::Exceeds {
+            side: ChipSide::High,
+            triggering: ChiploadMetric {
+                observed_mm_per_tooth: peak,
+                statistic: ChiploadStatistic::PeakHigh,
+                evidence: SampleEvidence::at(0),
+                bounds: ChipBounds {
+                    min_mm_per_tooth: Some(0.038),
+                    max_mm_per_tooth: 0.07,
+                    source: ChipBoundsSource::VendorLut,
+                },
+            },
+            confidence: Confidence::Validated,
+        }
+    }
+
     fn within_verdict() -> ToolpathLoadVerdict {
-        use super::super::verdict::Confidence;
         ToolpathLoadVerdict {
             toolpath_id: 0,
-            chipload: Verdict::Within {
-                peak: 0.04,
-                confidence: Confidence::Validated,
-            },
+            chipload: within_chipload_verdict(0.04),
             power: within_power_verdict(),
             deflection: within_deflection_verdict(0.030),
         }
     }
 
     fn exceeds_chipload_verdict() -> ToolpathLoadVerdict {
-        use super::super::verdict::{Confidence, ExceedsReason};
         ToolpathLoadVerdict {
             toolpath_id: 0,
-            chipload: Verdict::Exceeds {
-                peak: 0.08,
-                sample_range: 0..1,
-                reason: ExceedsReason::ChiploadBreakageRisk,
-                confidence: Confidence::Validated,
-            },
+            chipload: exceeds_chipload_verdict_high(0.08),
             power: within_power_verdict(),
             deflection: within_deflection_verdict(0.030),
         }
@@ -4031,7 +4069,7 @@ mod tests {
     fn unmodeled_chipload_verdict() -> ToolpathLoadVerdict {
         use super::super::verdict::UnmodeledReason;
         let mut v = within_verdict();
-        v.chipload = Verdict::Unmodeled {
+        v.chipload = ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::NoVendorData,
         };
         v
@@ -4052,7 +4090,7 @@ mod tests {
         let b = exceeds_chipload_verdict();
         let c = within_verdict();
         assert_eq!(
-            classify_one_gate(&b.chipload, &c.chipload),
+            classify_one_gate_chipload(&b.chipload, &c.chipload),
             GateDelta::Improved
         );
     }
@@ -4062,45 +4100,29 @@ mod tests {
         let b = within_verdict();
         let c = exceeds_chipload_verdict();
         assert_eq!(
-            classify_one_gate(&b.chipload, &c.chipload),
+            classify_one_gate_chipload(&b.chipload, &c.chipload),
             GateDelta::Worsened
         );
     }
 
     #[test]
     fn classify_one_gate_exceeds_to_smaller_exceeds_is_improved() {
-        use super::super::verdict::{Confidence, ExceedsReason};
-        let b_v = Verdict::Exceeds {
-            peak: 0.10,
-            sample_range: 0..1,
-            reason: ExceedsReason::ChiploadBreakageRisk,
-            confidence: Confidence::Validated,
-        };
-        let c_v = Verdict::Exceeds {
-            peak: 0.08, // strictly smaller, > 5% threshold
-            sample_range: 0..1,
-            reason: ExceedsReason::ChiploadBreakageRisk,
-            confidence: Confidence::Validated,
-        };
-        assert_eq!(classify_one_gate(&b_v, &c_v), GateDelta::Improved);
+        let b_v = exceeds_chipload_verdict_high(0.10);
+        let c_v = exceeds_chipload_verdict_high(0.08); // strictly smaller, > 5% threshold
+        assert_eq!(
+            classify_one_gate_chipload(&b_v, &c_v),
+            GateDelta::Improved
+        );
     }
 
     #[test]
     fn classify_one_gate_exceeds_to_larger_exceeds_is_worsened() {
-        use super::super::verdict::{Confidence, ExceedsReason};
-        let b_v = Verdict::Exceeds {
-            peak: 0.08,
-            sample_range: 0..1,
-            reason: ExceedsReason::ChiploadBreakageRisk,
-            confidence: Confidence::Validated,
-        };
-        let c_v = Verdict::Exceeds {
-            peak: 0.10,
-            sample_range: 0..1,
-            reason: ExceedsReason::ChiploadBreakageRisk,
-            confidence: Confidence::Validated,
-        };
-        assert_eq!(classify_one_gate(&b_v, &c_v), GateDelta::Worsened);
+        let b_v = exceeds_chipload_verdict_high(0.08);
+        let c_v = exceeds_chipload_verdict_high(0.10);
+        assert_eq!(
+            classify_one_gate_chipload(&b_v, &c_v),
+            GateDelta::Worsened
+        );
     }
 
     #[test]
@@ -4108,11 +4130,11 @@ mod tests {
         let b = unmodeled_chipload_verdict();
         let c = within_verdict();
         assert_eq!(
-            classify_one_gate(&b.chipload, &c.chipload),
+            classify_one_gate_chipload(&b.chipload, &c.chipload),
             GateDelta::Unmodeled
         );
         assert_eq!(
-            classify_one_gate(&c.chipload, &b.chipload),
+            classify_one_gate_chipload(&c.chipload, &b.chipload),
             GateDelta::Unmodeled
         );
     }

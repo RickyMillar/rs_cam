@@ -7,7 +7,9 @@ use crate::state::simulation::{SimulationIssueKind, SimulationState, StockVizMod
 use crate::state::toolpath::ToolpathId;
 use crate::ui::theme;
 use rs_cam_core::session::ProjectSession;
-use rs_cam_core::tool_load::verdict::{DeflectionVerdict, PowerVerdict};
+use rs_cam_core::tool_load::verdict::{
+    ChipSide, ChiploadVerdict, DeflectionVerdict, PowerVerdict,
+};
 use rs_cam_core::tool_load::{
     Confidence, ExceedsReason, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason, Verdict,
 };
@@ -734,7 +736,12 @@ fn draw_tool_load_badges(
                 .small()
                 .color(theme::TEXT_STRONG),
         );
-        verdict_badge(ui, "chipload", &verdict.chipload, chipload_cap);
+        verdict_badge(
+            ui,
+            "chipload",
+            &chipload_to_legacy(&verdict.chipload),
+            chipload_cap,
+        );
         verdict_badge(ui, "power", &power_to_legacy(&verdict.power), power_cap_kw);
         verdict_badge(
             ui,
@@ -772,6 +779,38 @@ fn power_to_legacy(p: &PowerVerdict) -> Verdict {
             confidence: confidence.clone(),
         },
         PowerVerdict::Unmodeled { reason } => Verdict::Unmodeled {
+            reason: reason.clone(),
+        },
+    }
+}
+
+/// Transitional adapter (G16 Step 7d): typed `ChiploadVerdict` →
+/// legacy flat `Verdict` for the still-unmigrated `verdict_badge`.
+/// Deleted by Step 7e/7f.
+fn chipload_to_legacy(c: &ChiploadVerdict) -> Verdict {
+    match c {
+        ChiploadVerdict::Within {
+            approach_to_max,
+            confidence,
+            ..
+        } => Verdict::Within {
+            peak: approach_to_max.observed_mm_per_tooth,
+            confidence: confidence.clone(),
+        },
+        ChiploadVerdict::Exceeds {
+            side,
+            triggering,
+            confidence,
+        } => Verdict::Exceeds {
+            peak: triggering.observed_mm_per_tooth,
+            sample_range: triggering.evidence.sample_range.clone(),
+            reason: match side {
+                ChipSide::Low => ExceedsReason::ChiploadBurnRisk,
+                ChipSide::High => ExceedsReason::ChiploadBreakageRisk,
+            },
+            confidence: confidence.clone(),
+        },
+        ChiploadVerdict::Unmodeled { reason } => Verdict::Unmodeled {
             reason: reason.clone(),
         },
     }

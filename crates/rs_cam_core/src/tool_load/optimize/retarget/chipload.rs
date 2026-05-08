@@ -23,10 +23,10 @@ use crate::tool_load::optimize::axes::{AxisContext, AxisView, SearchAxis};
 use crate::tool_load::optimize::patches::{AxisPatch, PatchSource};
 use crate::tool_load::optimize::retarget::{Retargeter, RetargetSolution};
 use crate::tool_load::optimize::space::SearchSpace;
-use crate::tool_load::verdict::{ExceedsReason, Verdict};
+use crate::tool_load::verdict::{ChipSide, ChiploadVerdict};
 
-/// Which side of the LUT envelope the verdict landed on. Local discriminant —
-/// Step 7 will replace with typed verdict variants.
+/// Local label for rationale strings. Mirrors `ChipSide` 1:1; kept
+/// distinct so rationale stays human-readable.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Side {
     Burn,
@@ -58,7 +58,7 @@ pub struct ChiploadFeedRetargeter {
 }
 
 impl Retargeter for ChiploadFeedRetargeter {
-    type Verdict = Verdict;
+    type Verdict = ChiploadVerdict;
 
     fn driving_axes(&self) -> &'static [SearchAxis] {
         DRIVING_AXES
@@ -66,25 +66,24 @@ impl Retargeter for ChiploadFeedRetargeter {
 
     fn target(
         &self,
-        verdict: &Verdict,
+        verdict: &ChiploadVerdict,
         space: &SearchSpace,
         view: &AxisView<'_>,
         ctx: &AxisContext<'_>,
     ) -> Option<RetargetSolution> {
-        // Only fires on the chipload-Exceeds variants. Any other verdict
-        // (Within / Unmodeled / non-chipload Exceeds) returns None so the
-        // orchestrator can dispatch to a different retargeter.
+        // Only fires on the chipload-Exceeds variants. Within and
+        // Unmodeled return None.
         let (peak, side) = match verdict {
-            Verdict::Exceeds {
-                peak,
-                reason: ExceedsReason::ChiploadBurnRisk,
+            ChiploadVerdict::Exceeds {
+                side: ChipSide::Low,
+                triggering,
                 ..
-            } => (*peak, Side::Burn),
-            Verdict::Exceeds {
-                peak,
-                reason: ExceedsReason::ChiploadBreakageRisk,
+            } => (triggering.observed_mm_per_tooth, Side::Burn),
+            ChiploadVerdict::Exceeds {
+                side: ChipSide::High,
+                triggering,
                 ..
-            } => (*peak, Side::Breakage),
+            } => (triggering.observed_mm_per_tooth, Side::Breakage),
             _ => return None,
         };
 
@@ -173,7 +172,10 @@ mod tests {
     use crate::tool::{FlatEndmill, ToolDefinition};
     use crate::tool_load::optimize::policy::SearchPolicy;
     use crate::tool_load::optimize::space::SearchSpace;
-    use crate::tool_load::verdict::Confidence;
+    use crate::tool_load::verdict::{
+        ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, Confidence,
+        SampleEvidence,
+    };
 
     /// Test fixture bundling everything an `AxisContext` needs to live, plus
     /// the op + view for `axis_value` resolution. Lifetimes thread through
@@ -242,20 +244,36 @@ mod tests {
         }
     }
 
-    fn burn_verdict(peak: f64) -> Verdict {
-        Verdict::Exceeds {
-            peak,
-            sample_range: 0..1,
-            reason: ExceedsReason::ChiploadBurnRisk,
+    fn chip_bounds() -> ChipBounds {
+        ChipBounds {
+            min_mm_per_tooth: Some(0.05),
+            max_mm_per_tooth: 0.10,
+            source: ChipBoundsSource::VendorLut,
+        }
+    }
+
+    fn burn_verdict(peak: f64) -> ChiploadVerdict {
+        ChiploadVerdict::Exceeds {
+            side: ChipSide::Low,
+            triggering: ChiploadMetric {
+                observed_mm_per_tooth: peak,
+                statistic: ChiploadStatistic::MedianLow,
+                evidence: SampleEvidence::at_with_stat(0, ChiploadStatistic::MedianLow),
+                bounds: chip_bounds(),
+            },
             confidence: Confidence::Validated,
         }
     }
 
-    fn breakage_verdict(peak: f64) -> Verdict {
-        Verdict::Exceeds {
-            peak,
-            sample_range: 0..1,
-            reason: ExceedsReason::ChiploadBreakageRisk,
+    fn breakage_verdict(peak: f64) -> ChiploadVerdict {
+        ChiploadVerdict::Exceeds {
+            side: ChipSide::High,
+            triggering: ChiploadMetric {
+                observed_mm_per_tooth: peak,
+                statistic: ChiploadStatistic::PeakHigh,
+                evidence: SampleEvidence::at_with_stat(0, ChiploadStatistic::PeakHigh),
+                bounds: chip_bounds(),
+            },
             confidence: Confidence::Validated,
         }
     }
@@ -380,7 +398,10 @@ mod tests {
     }
 
     #[test]
-    fn returns_none_for_non_chipload_verdict() {
+    fn returns_none_for_non_exceeds_chipload_verdict() {
+        // The retargeter's `Verdict` associated type is now
+        // `ChiploadVerdict`, so non-chipload verdicts can't reach it.
+        // Verify Within / Unmodeled chipload variants are no-ops.
         let fx = Fixture::new(2000.0);
         let space = fx.space();
         let view = fx.view();
@@ -392,19 +413,22 @@ mod tests {
             high_headroom: 1.0,
             plunge_tracking_threshold: 0.10,
         };
-        let power_verdict = Verdict::Exceeds {
-            peak: 0.5,
-            sample_range: 0..1,
-            reason: ExceedsReason::SpindlePowerExceeded,
-            confidence: Confidence::Validated,
-        };
-        assert!(r.target(&power_verdict, &space, &view, &ctx).is_none());
-
-        let within = Verdict::Within {
-            peak: 0.05,
+        let within = ChiploadVerdict::Within {
+            approach_to_min: None,
+            approach_to_max: ChiploadMetric {
+                observed_mm_per_tooth: 0.05,
+                statistic: ChiploadStatistic::PeakInRange,
+                evidence: SampleEvidence::empty(),
+                bounds: chip_bounds(),
+            },
             confidence: Confidence::Validated,
         };
         assert!(r.target(&within, &space, &view, &ctx).is_none());
+
+        let unmodeled = ChiploadVerdict::Unmodeled {
+            reason: crate::tool_load::verdict::UnmodeledReason::SimulationRequired,
+        };
+        assert!(r.target(&unmodeled, &space, &view, &ctx).is_none());
     }
 
     #[test]
