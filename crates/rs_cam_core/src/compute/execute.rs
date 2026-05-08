@@ -37,15 +37,25 @@ pub enum OperationError {
 
 pub type GeneratedToolpath = AnnotatedToolpath;
 
-fn generated_with_operation_span(toolpath: Toolpath) -> GeneratedToolpath {
-    let n_moves = toolpath.moves.len();
-    AnnotatedToolpath::with_spans(toolpath, crate::compute::spans::operation_spans(n_moves))
-}
-
 fn generated_with_spans(
     toolpath: Toolpath,
     spans: Vec<crate::toolpath_spans::Span>,
 ) -> GeneratedToolpath {
+    AnnotatedToolpath::with_spans(toolpath, spans)
+}
+
+fn generated_with_depth_run_spans(toolpath: Toolpath, levels: &[f64]) -> GeneratedToolpath {
+    let spans = crate::compute::spans::spans_from_depth_runs(&toolpath, levels);
+    AnnotatedToolpath::with_spans(toolpath, spans)
+}
+
+fn generated_with_cut_run_spans(toolpath: Toolpath, label_prefix: &str) -> GeneratedToolpath {
+    let spans = crate::compute::spans::spans_from_cutting_runs(&toolpath, label_prefix);
+    AnnotatedToolpath::with_spans(toolpath, spans)
+}
+
+fn generated_with_drill_spans(toolpath: Toolpath) -> GeneratedToolpath {
+    let spans = crate::compute::spans::spans_from_drill_holes(&toolpath);
     AnnotatedToolpath::with_spans(toolpath, spans)
 }
 
@@ -160,9 +170,18 @@ pub fn execute_operation_annotated(
                 stock_offset: cfg.stock_offset,
                 direction: cfg.direction,
             };
-            Ok(generated_with_operation_span(crate::face::face_toolpath(
-                stock_bbox, &params,
-            )))
+            let generated = generated_with_depth_run_spans(
+                crate::face::face_toolpath(stock_bbox, &params),
+                &[],
+            );
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_depth_run_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
         OperationConfig::Pocket(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -201,7 +220,15 @@ pub fn execute_operation_annotated(
                 });
                 combined.moves.extend(tp.moves);
             }
-            Ok(generated_with_operation_span(combined))
+            let generated = generated_with_depth_run_spans(combined, &levels);
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_depth_run_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
         OperationConfig::Profile(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -248,7 +275,15 @@ pub fn execute_operation_annotated(
                     }
                 }
             }
-            Ok(generated_with_operation_span(combined))
+            let generated = generated_with_depth_run_spans(combined, &levels);
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_depth_run_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
         OperationConfig::Adaptive(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -302,7 +337,15 @@ pub fn execute_operation_annotated(
             if let Some(ctx) = semantic_ctx {
                 crate::compute::annotate::annotate_adaptive2d(&all_annotations, &combined, ctx);
             }
-            Ok(generated_with_operation_span(combined))
+            let generated = generated_with_depth_run_spans(combined, &levels);
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_depth_run_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
         OperationConfig::Zigzag(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -325,7 +368,15 @@ pub fn execute_operation_annotated(
                 });
                 combined.moves.extend(tp.moves);
             }
-            Ok(generated_with_operation_span(combined))
+            let generated = generated_with_depth_run_spans(combined, &levels);
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_depth_run_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
         OperationConfig::Trace(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -347,7 +398,15 @@ pub fn execute_operation_annotated(
                 });
                 combined.moves.extend(tp.moves);
             }
-            Ok(generated_with_operation_span(combined))
+            let generated = generated_with_depth_run_spans(combined, &levels);
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_trace_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
         OperationConfig::VCarve(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -375,7 +434,15 @@ pub fn execute_operation_annotated(
                 );
                 combined.moves.extend(tp.moves);
             }
-            Ok(generated_with_operation_span(combined))
+            let generated = generated_with_cut_run_spans(combined, "V-carve run");
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_depth_run_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
         OperationConfig::Rest(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -402,7 +469,15 @@ pub fn execute_operation_annotated(
                 });
                 combined.moves.extend(tp.moves);
             }
-            Ok(generated_with_operation_span(combined))
+            let generated = generated_with_depth_run_spans(combined, &levels);
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_depth_run_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
         OperationConfig::Inlay(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -441,7 +516,15 @@ pub fn execute_operation_annotated(
                 out.final_retract(safe_z);
                 out.moves.extend(male_out.moves);
             }
-            Ok(generated_with_operation_span(out))
+            let generated = generated_with_cut_run_spans(out, "Inlay run");
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_depth_run_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
         OperationConfig::Drill(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -474,9 +557,16 @@ pub fn execute_operation_annotated(
                     stock_bbox.max.z,
                 ),
             };
-            Ok(generated_with_operation_span(crate::drill::drill_toolpath(
-                &holes, &params,
-            )))
+            let generated =
+                generated_with_drill_spans(crate::drill::drill_toolpath(&holes, &params));
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_drill_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
         OperationConfig::Chamfer(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -502,7 +592,15 @@ pub fn execute_operation_annotated(
                 let tp = crate::chamfer::chamfer_toolpath(poly, &params);
                 combined.moves.extend(tp.moves);
             }
-            Ok(generated_with_operation_span(combined))
+            let generated = generated_with_cut_run_spans(combined, "Chamfer run");
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_depth_run_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
         OperationConfig::AlignmentPinDrill(cfg) => {
             if cfg.holes.is_empty() {
@@ -537,9 +635,16 @@ pub fn execute_operation_annotated(
                     stock_bbox.max.z,
                 ),
             };
-            Ok(generated_with_operation_span(crate::drill::drill_toolpath(
-                &cfg.holes, &params,
-            )))
+            let generated =
+                generated_with_drill_spans(crate::drill::drill_toolpath(&cfg.holes, &params));
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_drill_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
 
         // ── 3D operations ────────────────────────────────────────────
@@ -614,7 +719,15 @@ pub fn execute_operation_annotated(
                     min_z_filter,
                 )
             };
-            Ok(generated_with_operation_span(tp))
+            let generated = generated_with_cut_run_spans(tp, "Raster row");
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_depth_run_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
         OperationConfig::Adaptive3d(cfg) => {
             let m = require_mesh(mesh)?;
@@ -729,7 +842,15 @@ pub fn execute_operation_annotated(
                 &(|| cancel.load(Ordering::SeqCst)),
             )
             .map_err(|_e| OperationError::Cancelled)?;
-            Ok(generated_with_operation_span(tp))
+            let generated = generated_with_depth_run_spans(tp, &[]);
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_depth_run_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
         OperationConfig::Pencil(cfg) => {
             let m = require_mesh(mesh)?;
@@ -753,7 +874,13 @@ pub fn execute_operation_annotated(
             if let Some(ctx) = semantic_ctx {
                 crate::compute::annotate::annotate_pencil(&annotations, &tp, ctx);
             }
-            Ok(generated_with_operation_span(tp))
+            let spans = crate::compute::spans::spans_from_labeled_events(
+                tp.moves.len(),
+                annotations
+                    .iter()
+                    .map(|ann| (ann.move_index, ann.event.label())),
+            );
+            Ok(generated_with_spans(tp, spans))
         }
         OperationConfig::Scallop(cfg) => {
             if !tool_cfg.tool_type.has_ball_tip() {
@@ -782,7 +909,13 @@ pub fn execute_operation_annotated(
             if let Some(ctx) = semantic_ctx {
                 crate::compute::annotate::annotate_scallop(&annotations, &tp, ctx);
             }
-            Ok(generated_with_operation_span(tp))
+            let spans = crate::compute::spans::spans_from_labeled_events(
+                tp.moves.len(),
+                annotations
+                    .iter()
+                    .map(|ann| (ann.move_index, ann.event.label())),
+            );
+            Ok(generated_with_spans(tp, spans))
         }
         OperationConfig::SteepShallow(cfg) => {
             let m = require_mesh(mesh)?;
@@ -803,9 +936,18 @@ pub fn execute_operation_annotated(
                 stock_to_leave: cfg.stock_to_leave,
                 tolerance: cfg.tolerance,
             };
-            Ok(generated_with_operation_span(
+            let generated = generated_with_cut_run_spans(
                 crate::steep_shallow::steep_shallow_toolpath(m, idx, tool_def, &params),
-            ))
+                "Steep/shallow run",
+            );
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_depth_run_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
         OperationConfig::RampFinish(cfg) => {
             let m = require_mesh(mesh)?;
@@ -831,7 +973,13 @@ pub fn execute_operation_annotated(
             if let Some(ctx) = semantic_ctx {
                 crate::compute::annotate::annotate_ramp_finish(&annotations, &tp, ctx);
             }
-            Ok(generated_with_operation_span(tp))
+            let spans = crate::compute::spans::spans_from_labeled_events(
+                tp.moves.len(),
+                annotations
+                    .iter()
+                    .map(|ann| (ann.move_index, ann.event.label())),
+            );
+            Ok(generated_with_spans(tp, spans))
         }
         OperationConfig::SpiralFinish(cfg) => {
             let m = require_mesh(mesh)?;
@@ -853,7 +1001,13 @@ pub fn execute_operation_annotated(
             if let Some(ctx) = semantic_ctx {
                 crate::compute::annotate::annotate_spiral_finish(&annotations, &tp, ctx);
             }
-            Ok(generated_with_operation_span(tp))
+            let spans = crate::compute::spans::spans_from_labeled_events(
+                tp.moves.len(),
+                annotations
+                    .iter()
+                    .map(|ann| (ann.move_index, ann.event.label())),
+            );
+            Ok(generated_with_spans(tp, spans))
         }
         OperationConfig::RadialFinish(cfg) => {
             let m = require_mesh(mesh)?;
@@ -868,9 +1022,18 @@ pub fn execute_operation_annotated(
                 safe_z,
                 stock_to_leave: cfg.stock_to_leave,
             };
-            Ok(generated_with_operation_span(
+            let generated = generated_with_cut_run_spans(
                 crate::radial_finish::radial_finish_toolpath(m, idx, tool_def, &params),
-            ))
+                "Radial ray",
+            );
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_depth_run_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
         OperationConfig::HorizontalFinish(cfg) => {
             let m = require_mesh(mesh)?;
@@ -885,9 +1048,18 @@ pub fn execute_operation_annotated(
                 safe_z,
                 stock_to_leave: cfg.stock_to_leave,
             };
-            Ok(generated_with_operation_span(
+            let generated = generated_with_cut_run_spans(
                 crate::horizontal_finish::horizontal_finish_toolpath(m, idx, tool_def, &params),
-            ))
+                "Horizontal slice",
+            );
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_depth_run_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
         OperationConfig::ProjectCurve(cfg) => {
             let polys = require_polygons(polygons)?;
@@ -932,7 +1104,15 @@ pub fn execute_operation_annotated(
                     crate::project_curve::project_curve_toolpath(poly, m, idx, &cutter, &params);
                 combined.moves.extend(tp.moves);
             }
-            Ok(generated_with_operation_span(combined))
+            let generated = generated_with_cut_run_spans(combined, "Projected curve");
+            if let Some(ctx) = semantic_ctx {
+                crate::compute::annotate::annotate_depth_run_spans(
+                    &generated.spans,
+                    &generated.toolpath,
+                    ctx,
+                );
+            }
+            Ok(generated)
         }
     }
 }
@@ -1348,7 +1528,9 @@ mod tests {
     use crate::compute::cutter::build_cutter;
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::geo::{BoundingBox3, P3};
+    use crate::mesh::{SpatialIndex, TriangleMesh, make_test_flat, make_test_hemisphere};
     use crate::polygon::Polygon2;
+    use crate::toolpath_spans::SpanKind;
 
     /// Build a default tool definition and config for a given tool type.
     fn make_tool(tool_type: ToolType) -> (crate::tool::ToolDefinition, ToolConfig) {
@@ -1374,6 +1556,392 @@ mod tests {
             min: P3::new(0.0, 0.0, 0.0),
             max: P3::new(100.0, 100.0, 25.0),
         }
+    }
+
+    fn make_v_groove_mesh(length: f64, depth: f64, width: f64) -> TriangleMesh {
+        TriangleMesh::from_raw(
+            vec![
+                P3::new(0.0, -width, 0.0),
+                P3::new(length, -width, 0.0),
+                P3::new(0.0, 0.0, -depth),
+                P3::new(length, 0.0, -depth),
+                P3::new(0.0, width, 0.0),
+                P3::new(length, width, 0.0),
+            ],
+            vec![[0, 2, 1], [1, 2, 3], [2, 4, 3], [3, 4, 5]],
+        )
+    }
+
+    #[derive(Clone, Copy)]
+    enum MeshFixture {
+        Flat,
+        Hemisphere,
+        Groove,
+    }
+
+    #[derive(Clone, Copy)]
+    enum PolygonFixture {
+        Standard,
+        Drill,
+        ProjectCurve,
+    }
+
+    struct SpanCoverageCase {
+        name: &'static str,
+        op: OperationConfig,
+        tool_type: ToolType,
+        mesh: Option<MeshFixture>,
+        polygons: Option<PolygonFixture>,
+        prev_tool_radius: Option<f64>,
+        expected_kinds: Vec<SpanKind>,
+        forbidden_kinds: Vec<SpanKind>,
+        expected_label_fragments: Vec<&'static str>,
+    }
+
+    fn op_with_updates(
+        op_type: OperationType,
+        update: impl FnOnce(&mut OperationConfig),
+    ) -> OperationConfig {
+        let mut op = OperationConfig::new_default(op_type);
+        update(&mut op);
+        op
+    }
+
+    fn span_coverage_cases() -> Vec<SpanCoverageCase> {
+        let depth_expected = vec![
+            SpanKind::RapidOrderBarrier,
+            SpanKind::DepthPass,
+            SpanKind::Region,
+        ];
+        let region_expected = vec![SpanKind::Region];
+        let drill_expected = vec![SpanKind::Region];
+
+        let adaptive3d = op_with_updates(OperationType::Adaptive3d, |op| {
+            let OperationConfig::Adaptive3d(cfg) = op else {
+                unreachable!("default op kind mismatch");
+            };
+            cfg.depth_per_pass = 4.0;
+            cfg.detect_flat_areas = true;
+            cfg.region_ordering = crate::compute::operation_configs::RegionOrdering::ByArea;
+        });
+        let alignment_pin = op_with_updates(OperationType::AlignmentPinDrill, |op| {
+            let OperationConfig::AlignmentPinDrill(cfg) = op else {
+                unreachable!("default op kind mismatch");
+            };
+            cfg.holes = vec![[25.0, 25.0], [55.0, 55.0]];
+        });
+        let drop_cutter = op_with_updates(OperationType::DropCutter, |op| {
+            let OperationConfig::DropCutter(cfg) = op else {
+                unreachable!("default op kind mismatch");
+            };
+            cfg.stepover = 2.0;
+            cfg.min_z = -5.0;
+        });
+        let waterline = op_with_updates(OperationType::Waterline, |op| {
+            let OperationConfig::Waterline(cfg) = op else {
+                unreachable!("default op kind mismatch");
+            };
+            cfg.z_step = 2.0;
+            cfg.sampling = 1.0;
+        });
+        let scallop = op_with_updates(OperationType::Scallop, |op| {
+            let OperationConfig::Scallop(cfg) = op else {
+                unreachable!("default op kind mismatch");
+            };
+            cfg.scallop_height = 0.2;
+            cfg.tolerance = 0.2;
+            cfg.continuous = true;
+        });
+        let ramp_finish = op_with_updates(OperationType::RampFinish, |op| {
+            let OperationConfig::RampFinish(cfg) = op else {
+                unreachable!("default op kind mismatch");
+            };
+            cfg.max_stepdown = 2.0;
+            cfg.sampling = 2.0;
+            cfg.tolerance = 0.2;
+        });
+        let spiral_finish = op_with_updates(OperationType::SpiralFinish, |op| {
+            let OperationConfig::SpiralFinish(cfg) = op else {
+                unreachable!("default op kind mismatch");
+            };
+            cfg.stepover = 2.0;
+        });
+        let radial_finish = op_with_updates(OperationType::RadialFinish, |op| {
+            let OperationConfig::RadialFinish(cfg) = op else {
+                unreachable!("default op kind mismatch");
+            };
+            cfg.angular_step = 30.0;
+            cfg.point_spacing = 2.0;
+        });
+        let horizontal_finish = op_with_updates(OperationType::HorizontalFinish, |op| {
+            let OperationConfig::HorizontalFinish(cfg) = op else {
+                unreachable!("default op kind mismatch");
+            };
+            cfg.stepover = 3.0;
+        });
+        let project_curve = op_with_updates(OperationType::ProjectCurve, |op| {
+            let OperationConfig::ProjectCurve(cfg) = op else {
+                unreachable!("default op kind mismatch");
+            };
+            cfg.depth = 0.75;
+            cfg.point_spacing = 1.0;
+        });
+
+        vec![
+            SpanCoverageCase {
+                name: "Face",
+                op: OperationConfig::new_default(OperationType::Face),
+                tool_type: ToolType::EndMill,
+                mesh: None,
+                polygons: None,
+                prev_tool_radius: None,
+                expected_kinds: depth_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Depth pass", "Run"],
+            },
+            SpanCoverageCase {
+                name: "Pocket",
+                op: OperationConfig::new_default(OperationType::Pocket),
+                tool_type: ToolType::EndMill,
+                mesh: None,
+                polygons: Some(PolygonFixture::Standard),
+                prev_tool_radius: None,
+                expected_kinds: depth_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Depth pass", "Run"],
+            },
+            SpanCoverageCase {
+                name: "Profile",
+                op: OperationConfig::new_default(OperationType::Profile),
+                tool_type: ToolType::EndMill,
+                mesh: None,
+                polygons: Some(PolygonFixture::Standard),
+                prev_tool_radius: None,
+                expected_kinds: depth_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Depth pass", "Run"],
+            },
+            SpanCoverageCase {
+                name: "Adaptive",
+                op: OperationConfig::new_default(OperationType::Adaptive),
+                tool_type: ToolType::EndMill,
+                mesh: None,
+                polygons: Some(PolygonFixture::Standard),
+                prev_tool_radius: None,
+                expected_kinds: depth_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Depth pass", "Run"],
+            },
+            SpanCoverageCase {
+                name: "VCarve",
+                op: OperationConfig::new_default(OperationType::VCarve),
+                tool_type: ToolType::VBit,
+                mesh: None,
+                polygons: Some(PolygonFixture::Standard),
+                prev_tool_radius: None,
+                expected_kinds: region_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["V-carve run"],
+            },
+            SpanCoverageCase {
+                name: "Rest",
+                op: OperationConfig::new_default(OperationType::Rest),
+                tool_type: ToolType::EndMill,
+                mesh: None,
+                polygons: Some(PolygonFixture::Standard),
+                prev_tool_radius: Some(6.0),
+                expected_kinds: depth_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Depth pass", "Run"],
+            },
+            SpanCoverageCase {
+                name: "Inlay",
+                op: OperationConfig::new_default(OperationType::Inlay),
+                tool_type: ToolType::VBit,
+                mesh: None,
+                polygons: Some(PolygonFixture::Standard),
+                prev_tool_radius: None,
+                expected_kinds: region_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Inlay run"],
+            },
+            SpanCoverageCase {
+                name: "Zigzag",
+                op: OperationConfig::new_default(OperationType::Zigzag),
+                tool_type: ToolType::EndMill,
+                mesh: None,
+                polygons: Some(PolygonFixture::Standard),
+                prev_tool_radius: None,
+                expected_kinds: depth_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Depth pass", "Run"],
+            },
+            SpanCoverageCase {
+                name: "Trace",
+                op: OperationConfig::new_default(OperationType::Trace),
+                tool_type: ToolType::EndMill,
+                mesh: None,
+                polygons: Some(PolygonFixture::Standard),
+                prev_tool_radius: None,
+                expected_kinds: depth_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Depth pass", "Run"],
+            },
+            SpanCoverageCase {
+                name: "Drill",
+                op: OperationConfig::new_default(OperationType::Drill),
+                tool_type: ToolType::EndMill,
+                mesh: None,
+                polygons: Some(PolygonFixture::Drill),
+                prev_tool_radius: None,
+                expected_kinds: drill_expected.clone(),
+                forbidden_kinds: vec![SpanKind::DepthPass],
+                expected_label_fragments: vec!["Hole", "plunge"],
+            },
+            SpanCoverageCase {
+                name: "Chamfer",
+                op: OperationConfig::new_default(OperationType::Chamfer),
+                tool_type: ToolType::VBit,
+                mesh: None,
+                polygons: Some(PolygonFixture::Standard),
+                prev_tool_radius: None,
+                expected_kinds: region_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Chamfer run"],
+            },
+            SpanCoverageCase {
+                name: "DropCutter",
+                op: drop_cutter,
+                tool_type: ToolType::BallNose,
+                mesh: Some(MeshFixture::Flat),
+                polygons: None,
+                prev_tool_radius: None,
+                expected_kinds: region_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Raster row"],
+            },
+            SpanCoverageCase {
+                name: "Adaptive3d",
+                op: adaptive3d,
+                tool_type: ToolType::EndMill,
+                mesh: Some(MeshFixture::Hemisphere),
+                polygons: None,
+                prev_tool_radius: None,
+                expected_kinds: depth_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Z level", "Adaptive region"],
+            },
+            SpanCoverageCase {
+                name: "Waterline",
+                op: waterline,
+                tool_type: ToolType::EndMill,
+                mesh: Some(MeshFixture::Hemisphere),
+                polygons: None,
+                prev_tool_radius: None,
+                expected_kinds: depth_expected,
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Depth pass", "Run"],
+            },
+            SpanCoverageCase {
+                name: "Pencil",
+                op: OperationConfig::new_default(OperationType::Pencil),
+                tool_type: ToolType::BallNose,
+                mesh: Some(MeshFixture::Groove),
+                polygons: None,
+                prev_tool_radius: None,
+                expected_kinds: region_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Chain"],
+            },
+            SpanCoverageCase {
+                name: "Scallop",
+                op: scallop,
+                tool_type: ToolType::BallNose,
+                mesh: Some(MeshFixture::Hemisphere),
+                polygons: None,
+                prev_tool_radius: None,
+                expected_kinds: region_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Ring"],
+            },
+            SpanCoverageCase {
+                name: "SteepShallow",
+                op: OperationConfig::new_default(OperationType::SteepShallow),
+                tool_type: ToolType::BallNose,
+                mesh: Some(MeshFixture::Hemisphere),
+                polygons: None,
+                prev_tool_radius: None,
+                expected_kinds: region_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Steep/shallow run"],
+            },
+            SpanCoverageCase {
+                name: "RampFinish",
+                op: ramp_finish,
+                tool_type: ToolType::BallNose,
+                mesh: Some(MeshFixture::Hemisphere),
+                polygons: None,
+                prev_tool_radius: None,
+                expected_kinds: region_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Terrace"],
+            },
+            SpanCoverageCase {
+                name: "SpiralFinish",
+                op: spiral_finish,
+                tool_type: ToolType::BallNose,
+                mesh: Some(MeshFixture::Hemisphere),
+                polygons: None,
+                prev_tool_radius: None,
+                expected_kinds: region_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Ring"],
+            },
+            SpanCoverageCase {
+                name: "RadialFinish",
+                op: radial_finish,
+                tool_type: ToolType::BallNose,
+                mesh: Some(MeshFixture::Flat),
+                polygons: None,
+                prev_tool_radius: None,
+                expected_kinds: region_expected.clone(),
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Radial ray"],
+            },
+            SpanCoverageCase {
+                name: "HorizontalFinish",
+                op: horizontal_finish,
+                tool_type: ToolType::BallNose,
+                mesh: Some(MeshFixture::Flat),
+                polygons: None,
+                prev_tool_radius: None,
+                expected_kinds: region_expected,
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Horizontal slice"],
+            },
+            SpanCoverageCase {
+                name: "ProjectCurve",
+                op: project_curve,
+                tool_type: ToolType::BallNose,
+                mesh: Some(MeshFixture::Hemisphere),
+                polygons: Some(PolygonFixture::ProjectCurve),
+                prev_tool_radius: None,
+                expected_kinds: vec![SpanKind::Region],
+                forbidden_kinds: Vec::new(),
+                expected_label_fragments: vec!["Projected curve"],
+            },
+            SpanCoverageCase {
+                name: "AlignmentPinDrill",
+                op: alignment_pin,
+                tool_type: ToolType::EndMill,
+                mesh: None,
+                polygons: None,
+                prev_tool_radius: None,
+                expected_kinds: drill_expected,
+                forbidden_kinds: vec![SpanKind::DepthPass],
+                expected_label_fragments: vec!["Hole", "plunge"],
+            },
+        ]
     }
 
     #[test]
@@ -1572,6 +2140,324 @@ mod tests {
         assert!(
             !tp.moves.is_empty(),
             "Drill toolpath should contain at least one move"
+        );
+    }
+
+    #[test]
+    fn all_operation_families_emit_expected_structural_span_kinds() {
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let cancel = AtomicBool::new(false);
+        let standard_polygons = vec![Polygon2::rectangle(10.0, 10.0, 50.0, 50.0)];
+        let drill_polygons = vec![
+            Polygon2::rectangle(24.0, 24.0, 26.0, 26.0),
+            Polygon2::rectangle(54.0, 54.0, 56.0, 56.0),
+        ];
+        let project_curve_polygons = vec![
+            Polygon2::rectangle(12.0, 12.0, 40.0, 40.0),
+            Polygon2::rectangle(18.0, 18.0, 32.0, 32.0),
+        ];
+        let flat_mesh = make_test_flat(80.0);
+        let flat_index = SpatialIndex::build_auto(&flat_mesh);
+        let hemisphere_mesh = make_test_hemisphere(25.0, 16);
+        let hemisphere_index = SpatialIndex::build_auto(&hemisphere_mesh);
+        let groove_mesh = make_v_groove_mesh(60.0, 8.0, 14.0);
+        let groove_index = SpatialIndex::build_auto(&groove_mesh);
+
+        for case in span_coverage_cases() {
+            let (tool_def, tool_cfg) = make_tool(case.tool_type);
+            let cutting_levels = case.op.cutting_levels(heights.top_z);
+            let mesh_and_index = match case.mesh {
+                Some(MeshFixture::Flat) => Some((&flat_mesh, &flat_index)),
+                Some(MeshFixture::Hemisphere) => Some((&hemisphere_mesh, &hemisphere_index)),
+                Some(MeshFixture::Groove) => Some((&groove_mesh, &groove_index)),
+                None => None,
+            };
+            let polygons = match case.polygons {
+                Some(PolygonFixture::Standard) => Some(standard_polygons.as_slice()),
+                Some(PolygonFixture::Drill) => Some(drill_polygons.as_slice()),
+                Some(PolygonFixture::ProjectCurve) => Some(project_curve_polygons.as_slice()),
+                None => None,
+            };
+
+            let result = execute_operation_annotated(
+                &case.op,
+                mesh_and_index.map(|(mesh, _)| mesh),
+                mesh_and_index.map(|(_, index)| index),
+                polygons,
+                &tool_def,
+                &tool_cfg,
+                &heights,
+                &cutting_levels,
+                &bbox,
+                case.prev_tool_radius,
+                None,
+                &cancel,
+                None,
+                None,
+                None,
+            )
+            .unwrap_or_else(|err| panic!("{} should generate: {err}", case.name));
+
+            assert!(result.spans_valid, "{} spans should be valid", case.name);
+            assert!(
+                !result.toolpath.moves.is_empty(),
+                "{} should generate moves for span coverage",
+                case.name
+            );
+            result
+                .check_invariants()
+                .unwrap_or_else(|err| panic!("{} span invariants failed: {err}", case.name));
+            assert!(
+                result
+                    .spans
+                    .iter()
+                    .any(|span| span.kind == SpanKind::Operation),
+                "{} should retain an Operation span",
+                case.name
+            );
+            assert!(
+                result
+                    .spans
+                    .iter()
+                    .any(|span| span.kind != SpanKind::Operation),
+                "{} should expose structure below the Operation span",
+                case.name
+            );
+            for expected in &case.expected_kinds {
+                assert!(
+                    result.spans.iter().any(|span| span.kind == *expected),
+                    "{} should emit {expected:?} spans; got {:?}",
+                    case.name,
+                    result
+                        .spans
+                        .iter()
+                        .map(|span| span.kind)
+                        .collect::<Vec<_>>()
+                );
+            }
+            for forbidden in &case.forbidden_kinds {
+                assert!(
+                    result.spans.iter().all(|span| span.kind != *forbidden),
+                    "{} should not emit {forbidden:?} spans",
+                    case.name
+                );
+            }
+            for fragment in &case.expected_label_fragments {
+                assert!(
+                    result
+                        .spans
+                        .iter()
+                        .any(|span| span.label.contains(fragment)),
+                    "{} should emit a span label containing {fragment:?}; labels: {:?}",
+                    case.name,
+                    result
+                        .spans
+                        .iter()
+                        .map(|span| span.label.as_ref())
+                        .collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn trace_annotated_output_has_depth_and_region_spans() {
+        let op = OperationConfig::new_default(OperationType::Trace);
+        let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let cancel = AtomicBool::new(false);
+        let polys = vec![Polygon2::rectangle(10.0, 10.0, 50.0, 50.0)];
+        let levels = op.cutting_levels(heights.top_z);
+
+        let result = execute_operation_annotated(
+            &op,
+            None,
+            None,
+            Some(&polys),
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &levels,
+            &bbox,
+            None,
+            None,
+            &cancel,
+            None,
+            None,
+            None,
+        )
+        .expect("trace should succeed");
+
+        assert!(result.spans_valid);
+        assert!(
+            result
+                .spans
+                .iter()
+                .any(|span| span.kind == crate::toolpath_spans::SpanKind::DepthPass),
+            "trace should emit DepthPass spans"
+        );
+        assert!(
+            result
+                .spans
+                .iter()
+                .any(|span| span.kind == crate::toolpath_spans::SpanKind::Region),
+            "trace should emit per-chain Region spans"
+        );
+        result
+            .check_invariants()
+            .expect("trace spans should satisfy invariants");
+    }
+
+    #[test]
+    fn drill_annotated_output_has_hole_and_plunge_spans_without_depth_barriers() {
+        let op = OperationConfig::new_default(OperationType::Drill);
+        let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let cancel = AtomicBool::new(false);
+        let polys = vec![
+            Polygon2::rectangle(24.0, 24.0, 26.0, 26.0),
+            Polygon2::rectangle(54.0, 54.0, 56.0, 56.0),
+        ];
+
+        let result = execute_operation_annotated(
+            &op,
+            None,
+            None,
+            Some(&polys),
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &[],
+            &bbox,
+            None,
+            None,
+            &cancel,
+            None,
+            None,
+            None,
+        )
+        .expect("drill should succeed");
+
+        assert!(result.spans_valid);
+        let hole_count = result
+            .spans
+            .iter()
+            .filter(|span| span.label.starts_with("Hole ") && !span.label.contains("plunge"))
+            .count();
+        let plunge_count = result
+            .spans
+            .iter()
+            .filter(|span| span.label.contains("plunge"))
+            .count();
+        assert_eq!(hole_count, 2, "expected one hole span per input hole");
+        assert!(plunge_count >= 2, "expected drill plunge child spans");
+        assert!(
+            result
+                .spans
+                .iter()
+                .all(|span| span.kind != crate::toolpath_spans::SpanKind::DepthPass),
+            "drill must not emit DepthPass spans because they act as TSP barriers"
+        );
+        result
+            .check_invariants()
+            .expect("drill spans should satisfy invariants");
+    }
+
+    #[test]
+    fn trace_semantic_trace_has_depth_and_chain_children() {
+        let op = OperationConfig::new_default(OperationType::Trace);
+        let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let cancel = AtomicBool::new(false);
+        let polys = vec![Polygon2::rectangle(10.0, 10.0, 50.0, 50.0)];
+        let levels = op.cutting_levels(heights.top_z);
+        let recorder = crate::semantic_trace::ToolpathSemanticRecorder::new("Trace", "Trace");
+        let ctx = recorder.root_context();
+
+        let _ = execute_operation_annotated(
+            &op,
+            None,
+            None,
+            Some(&polys),
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &levels,
+            &bbox,
+            None,
+            None,
+            &cancel,
+            None,
+            Some(&ctx),
+            None,
+        )
+        .expect("trace should succeed");
+        let semantic = recorder.finish();
+
+        assert!(
+            semantic
+                .items
+                .iter()
+                .any(|item| item.kind == crate::semantic_trace::ToolpathSemanticKind::DepthLevel),
+            "trace should emit DepthLevel semantic items"
+        );
+        assert!(
+            semantic
+                .items
+                .iter()
+                .any(|item| item.kind == crate::semantic_trace::ToolpathSemanticKind::Chain),
+            "trace should emit Chain semantic items"
+        );
+    }
+
+    #[test]
+    fn drill_semantic_trace_has_hole_and_cycle_children() {
+        let op = OperationConfig::new_default(OperationType::Drill);
+        let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let cancel = AtomicBool::new(false);
+        let polys = vec![Polygon2::rectangle(24.0, 24.0, 26.0, 26.0)];
+        let recorder = crate::semantic_trace::ToolpathSemanticRecorder::new("Drill", "Drill");
+        let ctx = recorder.root_context();
+
+        let _ = execute_operation_annotated(
+            &op,
+            None,
+            None,
+            Some(&polys),
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &[],
+            &bbox,
+            None,
+            None,
+            &cancel,
+            None,
+            Some(&ctx),
+            None,
+        )
+        .expect("drill should succeed");
+        let semantic = recorder.finish();
+
+        assert!(
+            semantic
+                .items
+                .iter()
+                .any(|item| item.kind == crate::semantic_trace::ToolpathSemanticKind::Hole),
+            "drill should emit Hole semantic items"
+        );
+        assert!(
+            semantic
+                .items
+                .iter()
+                .any(|item| item.kind == crate::semantic_trace::ToolpathSemanticKind::Cycle),
+            "drill should emit Cycle semantic items"
         );
     }
 

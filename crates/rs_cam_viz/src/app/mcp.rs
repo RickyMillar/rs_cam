@@ -791,6 +791,14 @@ impl super::RsCamApp {
             }
         };
 
+        let span_summaries = build_span_cut_summaries(
+            state,
+            ct,
+            toolpath_id,
+            span_filter_active,
+            &accepted_by_toolpath,
+        );
+
         let summaries: Vec<&_> = ct
             .semantic_summaries
             .iter()
@@ -826,6 +834,7 @@ impl super::RsCamApp {
         json_str(serde_json::json!({
             "summary": summary_val,
             "semantic_summaries": summaries_val,
+            "span_summaries": span_summaries,
             "hotspots": hotspots_val,
             "hotspot_count": hotspot_count,
             "issue_count": issue_count,
@@ -2645,6 +2654,142 @@ impl super::RsCamApp {
             "active_toolpath": active_toolpath,
             "checkpoint": checkpoint,
         }))
+    }
+}
+
+/// Build span-level cut summaries for `get_cut_trace`.
+///
+/// Returns summaries for every structural span that has samples in the current
+/// trace. When a span filter is active, only accepted span ids are summarized.
+fn build_span_cut_summaries(
+    state: &crate::state::AppState,
+    trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
+    toolpath_id: Option<usize>,
+    span_filter_active: bool,
+    accepted_by_toolpath: &std::collections::HashMap<usize, Option<std::collections::HashSet<u32>>>,
+) -> serde_json::Value {
+    use rs_cam_core::toolpath_spans::SpanId;
+
+    let mut out = Vec::new();
+    let n = state.session.toolpath_count();
+    for idx in 0..n {
+        let Some(tc) = state.session.get_toolpath_config(idx) else {
+            continue;
+        };
+        if toolpath_id.is_some_and(|id| tc.id != id) {
+            continue;
+        }
+        let Some(rt) = state.gui.toolpath_rt.get(&tc.id) else {
+            continue;
+        };
+        let Some(result) = rt.result.as_ref() else {
+            continue;
+        };
+        if !result.spans_valid() {
+            continue;
+        }
+        let spans = result.spans();
+        for (span_index, span) in spans.iter().enumerate() {
+            let span_id = span_index as u32;
+            if span_filter_active {
+                let accepted = accepted_by_toolpath
+                    .get(&tc.id)
+                    .and_then(|set| set.as_ref());
+                if !accepted.is_some_and(|set| set.contains(&span_id)) {
+                    continue;
+                }
+            }
+
+            let mut acc = SpanCutAcc::default();
+            for sample in trace
+                .samples
+                .iter()
+                .filter(|sample| sample.toolpath_id == tc.id)
+            {
+                if sample.span_path.iter().any(|SpanId(id)| *id == span_id) {
+                    acc.observe(sample);
+                }
+            }
+            if acc.sample_count == 0 {
+                continue;
+            }
+            out.push(serde_json::json!({
+                "toolpath_id": tc.id,
+                "span_id": span_id,
+                "kind": span_kind_label(span.kind),
+                "label": &*span.label,
+                "payload": span.payload.as_ref().map(|p| format!("{p:?}")),
+                "start_move": span.start_move,
+                "end_move": span.end_move,
+                "is_boundary": span.is_boundary(),
+                "sample_count": acc.sample_count,
+                "total_runtime_s": acc.total_runtime_s,
+                "cutting_runtime_s": acc.cutting_runtime_s,
+                "rapid_runtime_s": acc.rapid_runtime_s,
+                "air_cut_time_s": acc.air_cut_time_s,
+                "low_engagement_time_s": acc.low_engagement_time_s,
+                "wasted_runtime_s": acc.air_cut_time_s + acc.low_engagement_time_s,
+                "average_engagement": acc.average_engagement(),
+                "peak_chipload_mm_per_tooth": acc.peak_chipload,
+                "peak_axial_doc_mm": acc.peak_axial_doc,
+                "total_removed_volume_est_mm3": acc.removed_volume_mm3,
+                "average_mrr_mm3_s": acc.average_mrr(),
+            }));
+        }
+    }
+    serde_json::Value::Array(out)
+}
+
+#[derive(Default)]
+struct SpanCutAcc {
+    sample_count: usize,
+    total_runtime_s: f64,
+    cutting_runtime_s: f64,
+    rapid_runtime_s: f64,
+    air_cut_time_s: f64,
+    low_engagement_time_s: f64,
+    removed_volume_mm3: f64,
+    engagement_time_weighted_sum: f64,
+    peak_chipload: f64,
+    peak_axial_doc: f64,
+}
+
+impl SpanCutAcc {
+    fn observe(&mut self, sample: &rs_cam_core::simulation_cut::SimulationCutSample) {
+        self.sample_count += 1;
+        self.total_runtime_s += sample.segment_time_s;
+        self.removed_volume_mm3 += sample.removed_volume_est_mm3.max(0.0);
+        if sample.is_cutting {
+            self.cutting_runtime_s += sample.segment_time_s;
+            self.engagement_time_weighted_sum += sample.radial_engagement * sample.segment_time_s;
+            if sample.radial_engagement < 0.02 {
+                self.air_cut_time_s += sample.segment_time_s;
+            } else if sample.radial_engagement < 0.10 {
+                self.low_engagement_time_s += sample.segment_time_s;
+            }
+        } else {
+            self.rapid_runtime_s += sample.segment_time_s;
+        }
+        self.peak_chipload = self
+            .peak_chipload
+            .max(sample.chipload_mm_per_tooth.max(0.0));
+        self.peak_axial_doc = self.peak_axial_doc.max(sample.axial_doc_mm.max(0.0));
+    }
+
+    fn average_mrr(&self) -> f64 {
+        if self.cutting_runtime_s <= 1e-9 {
+            0.0
+        } else {
+            self.removed_volume_mm3 / self.cutting_runtime_s
+        }
+    }
+
+    fn average_engagement(&self) -> f64 {
+        if self.cutting_runtime_s <= 1e-9 {
+            0.0
+        } else {
+            self.engagement_time_weighted_sum / self.cutting_runtime_s
+        }
     }
 }
 

@@ -22,6 +22,12 @@
 - unified service layer: `ProjectSession` API in core, shared `execute_operation()` dispatch for all 23 ops
 - MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration
 
+## Recent work (2026-05-08)
+
+### Simulation span coverage
+
+Audited structural span and semantic trace coverage for simulation diagnostics. Added `planning/SIMULATION_SPAN_COVERAGE.md` as the coverage tracker. Generation now derives structural spans for operations that previously emitted only a top-level `Operation` span: depth-stepped 2.5D ops get `DepthPass` + cutting-run `Region` spans; drill-like ops get hole/plunge `Region` spans without adding depth-order barriers; other operations get generic cutting-run regions. Adaptive3D keeps its richer annotation-derived spans with labeled z-level/region spans, and Pencil/Scallop/Ramp/Spiral runtime annotations now convert into labeled structural spans. Trace emits semantic `Chain` children under depth levels; drill emits semantic `Hole`/`Cycle` children. `get_cut_trace` now includes `span_summaries` so selected structural spans have aggregate metrics. Simulation outline fallback now shows semantic traces when structural spans are operation-only. Added broad span coverage tests across all 23 operation families, including system-only alignment-pin drilling.
+
 ## Recent work (2026-04-11)
 
 ### Tech debt audit — post service layer + MCP refactor
