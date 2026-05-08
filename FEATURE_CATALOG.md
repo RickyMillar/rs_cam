@@ -109,6 +109,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 
 - tri-dexel stock simulation (Z/X/Y grids, all 6 cardinal face orientations)
 - agent-readable MCP toolpath narration (`narrate_toolpath`) for Z-level structure, cut-run vs marching-squares region counts, engagement histogram, suspicious arcs, peak axial DOC, and air-cut summaries
+- structural toolpath spans (`Operation`, `DepthPass`, `Region`, entry/lead/link/dressup artifacts) propagated into simulation cut samples for span-aware filtering and outline navigation
 - playback, scrub, and checkpoints
 - tool visualization during playback
 - holder/shank collision checks

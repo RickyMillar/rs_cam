@@ -431,8 +431,14 @@ pub fn draw(
         let rt = gui.toolpath_rt.get(&toolpath_id.0)?;
         let result = rt.result.as_ref()?;
         if result.spans_valid() {
-            if result.spans().iter().any(|span| !span.is_boundary()) {
+            if result
+                .spans()
+                .iter()
+                .any(|span| !span.is_boundary() && span.kind != SpanKind::Operation)
+            {
                 Some(OutlineKind::StructuralSpans)
+            } else if rt.semantic_trace.is_some() {
+                Some(OutlineKind::SemanticFallback)
             } else {
                 None
             }

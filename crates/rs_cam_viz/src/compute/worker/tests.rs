@@ -1098,8 +1098,15 @@ fn drill_semantic_trace_records_cycle_children() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
-        "expected top-level Operation scope"
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Hole),
+        "expected drill Hole semantic item"
+    );
+    assert!(
+        semantic_trace
+            .items
+            .iter()
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Cycle),
+        "expected drill Cycle semantic item"
     );
 }
 

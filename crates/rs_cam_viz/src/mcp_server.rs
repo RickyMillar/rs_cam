@@ -203,7 +203,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "get_cut_trace",
-        description = "Get simulation cut trace data: semantic summaries, hotspots, and issues. Run simulation first. Filter to a single toolpath via toolpath_id, or to a structural span via span_kind (e.g. \"depth_pass\"), span_id (from inspect_spans), or pass_index (DepthPass payload, 0-based)."
+        description = "Get simulation cut trace data: semantic summaries, structural span summaries, hotspots, and issues. Run simulation first. Filter to a single toolpath via toolpath_id, or to a structural span via span_kind (e.g. \"depth_pass\"), span_id (from inspect_spans), or pass_index (DepthPass payload, 0-based)."
     )]
     async fn get_cut_trace(
         &self,

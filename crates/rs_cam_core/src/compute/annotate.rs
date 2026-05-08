@@ -8,6 +8,7 @@
 
 use crate::semantic_trace::{ToolpathSemanticContext, ToolpathSemanticKind};
 use crate::toolpath::Toolpath;
+use crate::toolpath_spans::{Span, SpanKind, SpanPayload};
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -18,6 +19,164 @@ use crate::toolpath::Toolpath;
 /// end of the toolpath.
 fn move_end(move_indices: &[usize], i: usize, toolpath_len: usize) -> usize {
     move_indices.get(i + 1).copied().unwrap_or(toolpath_len)
+}
+
+/// Build generic semantic `DepthLevel` + child items from structural spans.
+///
+/// This is used for operations whose structure can be derived from spans even
+/// when the generator has no native semantic event stream yet.
+pub(super) fn annotate_depth_run_spans(
+    spans: &[Span],
+    toolpath: &Toolpath,
+    op_context: &ToolpathSemanticContext,
+) {
+    annotate_depth_run_spans_with_region_kind(
+        spans,
+        toolpath,
+        op_context,
+        &ToolpathSemanticKind::Region,
+    );
+}
+
+/// Semantic trace for Trace engraving: depth levels with child chains.
+pub(super) fn annotate_trace_spans(
+    spans: &[Span],
+    toolpath: &Toolpath,
+    op_context: &ToolpathSemanticContext,
+) {
+    annotate_depth_run_spans_with_region_kind(
+        spans,
+        toolpath,
+        op_context,
+        &ToolpathSemanticKind::Chain,
+    );
+}
+
+fn annotate_depth_run_spans_with_region_kind(
+    spans: &[Span],
+    toolpath: &Toolpath,
+    op_context: &ToolpathSemanticContext,
+    region_kind: &ToolpathSemanticKind,
+) {
+    let depth_spans: Vec<&Span> = spans
+        .iter()
+        .filter(|span| span.kind == SpanKind::DepthPass && !span.is_boundary())
+        .collect();
+    if depth_spans.is_empty() {
+        annotate_region_spans(spans, toolpath, op_context, region_kind);
+        return;
+    }
+
+    for (depth_index, depth_span) in depth_spans.iter().enumerate() {
+        let label = match &depth_span.payload {
+            Some(SpanPayload::DepthPass {
+                z_level,
+                pass_index,
+            }) => format!("Z {z_level:.3} pass {}", pass_index + 1),
+            _ => format!("Depth pass {}", depth_index + 1),
+        };
+        let scope = op_context.start_item(ToolpathSemanticKind::DepthLevel, label);
+        if let Some(SpanPayload::DepthPass {
+            z_level,
+            pass_index,
+        }) = &depth_span.payload
+        {
+            scope.set_param("z_level", *z_level);
+            scope.set_param("pass_index", *pass_index);
+        }
+        bind_span_scope(&scope, toolpath, depth_span);
+        let child_ctx = scope.context();
+        for child in spans.iter().filter(|candidate| {
+            candidate.kind == SpanKind::Region
+                && !candidate.is_boundary()
+                && candidate.start_move >= depth_span.start_move
+                && candidate.end_move <= depth_span.end_move
+        }) {
+            annotate_one_region_span(child, toolpath, &child_ctx, region_kind);
+        }
+        scope.finish();
+    }
+}
+
+fn annotate_region_spans(
+    spans: &[Span],
+    toolpath: &Toolpath,
+    op_context: &ToolpathSemanticContext,
+    region_kind: &ToolpathSemanticKind,
+) {
+    for span in spans
+        .iter()
+        .filter(|span| span.kind == SpanKind::Region && !span.is_boundary())
+    {
+        annotate_one_region_span(span, toolpath, op_context, region_kind);
+    }
+}
+
+fn annotate_one_region_span(
+    span: &Span,
+    toolpath: &Toolpath,
+    context: &ToolpathSemanticContext,
+    kind: &ToolpathSemanticKind,
+) {
+    let label = if span.label.is_empty() {
+        "Run".to_owned()
+    } else {
+        span.label.clone().into_owned()
+    };
+    let scope = context.start_item(kind.clone(), label);
+    if let Some(SpanPayload::Region { region_id }) = &span.payload {
+        scope.set_param("region_id", *region_id);
+    }
+    bind_span_scope(&scope, toolpath, span);
+    scope.finish();
+}
+
+/// Semantic trace for drill-like operations: `Hole` items with child `Cycle`
+/// items for each plunge/peck feed move.
+pub(super) fn annotate_drill_spans(
+    spans: &[Span],
+    toolpath: &Toolpath,
+    op_context: &ToolpathSemanticContext,
+) {
+    for hole_span in spans.iter().filter(|span| {
+        span.kind == SpanKind::Region
+            && !span.is_boundary()
+            && span.label.starts_with("Hole ")
+            && !span.label.contains("plunge")
+    }) {
+        let scope = op_context.start_item(ToolpathSemanticKind::Hole, hole_span.label.clone());
+        if let Some(SpanPayload::Region { region_id }) = &hole_span.payload {
+            scope.set_param("hole_index", *region_id);
+        }
+        bind_span_scope(&scope, toolpath, hole_span);
+        let child_ctx = scope.context();
+        for plunge_span in spans.iter().filter(|candidate| {
+            candidate.kind == SpanKind::Region
+                && !candidate.is_boundary()
+                && candidate.label.contains("plunge")
+                && candidate.start_move >= hole_span.start_move
+                && candidate.end_move <= hole_span.end_move
+        }) {
+            let cycle =
+                child_ctx.start_item(ToolpathSemanticKind::Cycle, plunge_span.label.clone());
+            if let Some(SpanPayload::Region { region_id }) = &plunge_span.payload {
+                cycle.set_param("cycle_index", *region_id);
+            }
+            bind_span_scope(&cycle, toolpath, plunge_span);
+            cycle.finish();
+        }
+        scope.finish();
+    }
+}
+
+fn bind_span_scope(
+    scope: &crate::semantic_trace::ToolpathSemanticScope,
+    toolpath: &Toolpath,
+    span: &Span,
+) {
+    if span.end_move > span.start_move && span.end_move <= toolpath.moves.len() {
+        scope.bind_to_toolpath(toolpath, span.start_move, span.end_move);
+    }
 }
 
 // ── Adaptive 3D ─────────────────────────────────────────────────────

@@ -1164,9 +1164,11 @@ fn draw_boundary_timeline(
 
 /// Paint a 14px ribbon under the boundary timeline showing structural
 /// span subdivisions for the scope toolpath. DepthPass spans render as
-/// colored blocks; when one is selected, its Region children render as
-/// lighter sub-blocks. Hover shows the span label; click sets the chip-
-/// row scope to that span and scrubs playback to its start move.
+/// primary colored blocks when present; operations without DepthPass spans
+/// render Region spans as the primary blocks instead. When a DepthPass is
+/// selected, its Region children render as lighter sub-blocks. Hover shows
+/// the span label; click sets the chip-row scope to that span and scrubs
+/// playback to its start move.
 fn draw_span_ribbon(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
@@ -1246,34 +1248,48 @@ fn draw_span_ribbon(
             .map(|(idx, _)| idx as u32)
     })();
 
-    // Selected DepthPass id — when scope is locked to a Region, its parent
-    // pass also gets the Region sub-block tier rendered below.
-    let selected_dp_id: Option<u32> = scope_span_id.and_then(|sid| {
-        let target = spans.get(sid as usize)?;
-        if matches!(target.kind, SpanKind::DepthPass) {
-            return Some(sid);
-        }
-        spans
-            .iter()
-            .enumerate()
-            .find(|(_, s)| {
-                matches!(s.kind, SpanKind::DepthPass)
-                    && s.start_move <= target.start_move
-                    && s.end_move >= target.end_move
-            })
-            .map(|(idx, _)| idx as u32)
-    });
+    let has_depth_passes = spans
+        .iter()
+        .any(|span| !span.is_boundary() && matches!(span.kind, SpanKind::DepthPass));
+    let primary_kind = if has_depth_passes {
+        SpanKind::DepthPass
+    } else {
+        SpanKind::Region
+    };
 
-    // Paint DepthPass blocks with strong alternating contrast so every
-    // section is visible at rest. Locked = bright cyan; playhead-current =
-    // gentle highlight; otherwise alternating blue-grey.
+    // Selected DepthPass id — when scope is locked to a Region, its parent
+    // pass also gets the Region sub-block tier rendered below. Toolpaths
+    // without DepthPass spans draw Region spans directly as primary blocks.
+    let selected_dp_id: Option<u32> = if has_depth_passes {
+        scope_span_id.and_then(|sid| {
+            let target = spans.get(sid as usize)?;
+            if matches!(target.kind, SpanKind::DepthPass) {
+                return Some(sid);
+            }
+            spans
+                .iter()
+                .enumerate()
+                .find(|(_, s)| {
+                    matches!(s.kind, SpanKind::DepthPass)
+                        && s.start_move <= target.start_move
+                        && s.end_move >= target.end_move
+                })
+                .map(|(idx, _)| idx as u32)
+        })
+    } else {
+        None
+    };
+
+    // Paint primary blocks with strong alternating contrast so every section
+    // is visible at rest. Locked = bright cyan; playhead-current = gentle
+    // highlight; otherwise alternating blue-grey.
     const COLOR_EVEN: egui::Color32 = egui::Color32::from_rgb(120, 145, 185);
     const COLOR_ODD: egui::Color32 = egui::Color32::from_rgb(70, 100, 145);
     const COLOR_LOCKED: egui::Color32 = egui::Color32::from_rgb(220, 240, 255);
     const COLOR_PLAYHEAD: egui::Color32 = egui::Color32::from_rgb(160, 200, 235);
     const COLOR_HOVER_OUTLINE: egui::Color32 = egui::Color32::from_rgb(255, 255, 255);
 
-    let mut pass_index_seq = 0u32;
+    let mut primary_index_seq = 0u32;
     let mut click_target: Option<(u32, usize)> = None;
     let mut hover_label: Option<String> = None;
     let pointer_x = response.hover_pos().map(|p| p.x);
@@ -1281,16 +1297,17 @@ fn draw_span_ribbon(
     for (sid, span) in spans
         .iter()
         .enumerate()
-        .filter(|(_, s)| matches!(s.kind, SpanKind::DepthPass))
+        .filter(|(_, s)| !s.is_boundary() && s.kind == primary_kind)
     {
         let sid_u32 = sid as u32;
         let x_start = global_x(span.start_move);
         let x_end = global_x(span.end_move);
-        let pass_idx = match &span.payload {
+        let primary_idx = match &span.payload {
             Some(SpanPayload::DepthPass { pass_index, .. }) => *pass_index,
+            Some(SpanPayload::Region { region_id }) if !has_depth_passes => *region_id,
             _ => {
-                let n = pass_index_seq;
-                pass_index_seq += 1;
+                let n = primary_index_seq;
+                primary_index_seq += 1;
                 n
             }
         };
@@ -1303,7 +1320,7 @@ fn draw_span_ribbon(
             COLOR_LOCKED
         } else if is_playhead {
             COLOR_PLAYHEAD
-        } else if pass_idx % 2 == 0 {
+        } else if primary_idx % 2 == 0 {
             COLOR_EVEN
         } else {
             COLOR_ODD
@@ -1328,13 +1345,11 @@ fn draw_span_ribbon(
         );
 
         if hovered {
-            let z_part = match &span.payload {
-                Some(SpanPayload::DepthPass { z_level, .. }) => format!(" · z={z_level:.2}"),
-                _ => String::new(),
-            };
             hover_label = Some(format!(
-                "DepthPass {pass_idx}{z_part} · moves {}–{}",
-                span.start_move, span.end_move
+                "{} · moves {}–{}",
+                ribbon_span_label(span, primary_idx),
+                span.start_move,
+                span.end_move
             ));
             if response.clicked() {
                 click_target = Some((sid_u32, boundary.start_move + span.start_move));
@@ -1425,6 +1440,29 @@ fn draw_span_ribbon(
             Some(sid)
         };
         events.push(AppEvent::SimJumpToMove(jump_move));
+    }
+}
+
+fn ribbon_span_label(span: &rs_cam_core::toolpath_spans::Span, fallback_index: u32) -> String {
+    use rs_cam_core::toolpath_spans::{SpanKind, SpanPayload};
+
+    if !span.label.is_empty() {
+        return span.label.clone().into_owned();
+    }
+    match (&span.kind, &span.payload) {
+        (
+            SpanKind::DepthPass,
+            Some(SpanPayload::DepthPass {
+                z_level,
+                pass_index,
+            }),
+        ) => format!("DepthPass {pass_index} · z={z_level:.2}"),
+        (SpanKind::Region, Some(SpanPayload::Region { region_id })) => {
+            format!("Region {region_id}")
+        }
+        (SpanKind::DepthPass, _) => format!("DepthPass {fallback_index}"),
+        (SpanKind::Region, _) => format!("Region {fallback_index}"),
+        _ => format!("{:?} {fallback_index}", span.kind),
     }
 }
 
