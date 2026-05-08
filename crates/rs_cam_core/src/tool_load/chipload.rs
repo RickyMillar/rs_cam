@@ -287,6 +287,22 @@ pub fn evaluate(
             };
         }
     };
+    // Confidence is `Approximate` whenever the matched row's chipload
+    // bounds were extrapolated to the query's diameter / hardness past
+    // ±40 %. The detail string carries both factors so the operator can
+    // see how far the row was stretched.
+    let chipload_confidence = if result.is_extrapolated {
+        Confidence::Approximate(format!(
+            "extrapolated from row {} (calibrated d={:.3}mm): diameter scale ×{:.2}, \
+             hardness scale ×{:.2}",
+            result.observation_id,
+            result.row_diameter_mm,
+            result.chipload_diameter_scale,
+            result.chipload_hardness_scale,
+        ))
+    } else {
+        Confidence::Validated
+    };
 
     let mut peak_above: Option<(f64, usize)> = None;
     let mut peak_in_range: f64 = 0.0;
@@ -360,7 +376,7 @@ pub fn evaluate(
             peak: max + dev,
             sample_range: idx..(idx + 1),
             reason: ExceedsReason::ChiploadBreakageRisk,
-            confidence: Confidence::Validated,
+            confidence: chipload_confidence,
         };
     }
     if let Some((dev, idx)) = peak_below {
@@ -368,12 +384,12 @@ pub fn evaluate(
             peak: min.map(|min| min - dev).unwrap_or_default().max(0.0),
             sample_range: idx..(idx + 1),
             reason: ExceedsReason::ChiploadBurnRisk,
-            confidence: Confidence::Validated,
+            confidence: chipload_confidence,
         };
     }
     Verdict::Within {
         peak: peak_in_range,
-        confidence: Confidence::Validated,
+        confidence: chipload_confidence,
     }
 }
 
@@ -501,7 +517,12 @@ mod tests {
 
     #[test]
     fn project_curve_flat_routes_to_contour_finish() {
-        let t = trace(vec![sample(0, 0, 0.02, 0.5)]);
+        // 6.35 mm flat tool against the 3.175 mm hardwood `contour/finish`
+        // row diameter-scales chipload bounds by ~2.0×, so the sample
+        // chipload must be in the scaled band (raw 0.018–0.030 → scaled
+        // ≈ 0.032–0.054). The verdict is `Approximate` because the
+        // diameter scale crosses the ±40 % threshold.
+        let t = trace(vec![sample(0, 0, 0.04, 0.5)]);
         let v = evaluate(
             0,
             &tool(),
@@ -514,7 +535,16 @@ mod tests {
             1000.0,
             OperationType::ProjectCurve,
         );
-        assert!(matches!(v, Verdict::Within { .. }), "got {v:?}");
+        assert!(
+            matches!(
+                v,
+                Verdict::Within {
+                    confidence: Confidence::Approximate(_),
+                    ..
+                }
+            ),
+            "got {v:?}"
+        );
     }
 
     #[test]

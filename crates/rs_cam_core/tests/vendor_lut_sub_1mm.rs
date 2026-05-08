@@ -39,12 +39,16 @@ fn sub_1mm_tapered_ball_softwood_finish_matches() {
 }
 
 #[test]
-fn sub_1mm_tapered_ball_hardwood_finish_documented_gap() {
-    // Refusal-first: the Amana ZrN 3D Profiling chart conflates softwood/hardwood
-    // under one "Wood" row. We deliberately did not emit hardwood rows from that
-    // source for sub-1mm tools. A 1mm tapered ball + hardwood + parallel/finish
-    // query should NOT match any sub-1mm row (the 3.175mm rows are out of the
-    // 0.5x-2x diameter ratio range for a 1mm query).
+fn sub_1mm_tapered_ball_hardwood_finish_extrapolates_with_scaling() {
+    // Used to be a "documented gap" — the Amana ZrN 3D Profiling chart
+    // conflates softwood/hardwood under one "Wood" row, so no
+    // hardwood-specific sub-1mm row exists. Pre G5+G6+G7 (2026-05-08) the
+    // [0.5, 2.0] hard ratio gate refused on the 3.175 mm rows and the
+    // lookup returned None. With engaged-edge scaling the lookup now
+    // matches the 3.175 mm hardwood row, scales chipload bounds linearly
+    // by the diameter ratio (0.31×), and flags the result as
+    // extrapolated so verdicts derived from it are reported with
+    // `Approximate` confidence.
     let lut = VendorLut::embedded();
     let query = LookupQuery {
         tool_family: ToolFamily::TaperedBallNose,
@@ -57,11 +61,13 @@ fn sub_1mm_tapered_ball_hardwood_finish_documented_gap() {
         operation_family: LutOperationFamily::Parallel,
         pass_role: LutPassRole::Finish,
     };
+    let result = lookup_best(&lut, &query)
+        .expect("1mm hardwood tapered ball should now extrapolate from a 3.175 mm hardwood row");
     assert!(
-        lookup_best(&lut, &query).is_none(),
-        "sub-1mm hardwood ball/tapered-ball is a documented coverage gap; \
-         see source_manifest.json amana_zrn_3d_profiling.coverage_notes"
+        result.is_extrapolated,
+        "1.0 / 3.175 = 0.31× must trip the Approximate threshold"
     );
+    assert!((result.chipload_diameter_scale - (1.0 / 3.175)).abs() < 1e-6);
 }
 
 #[test]

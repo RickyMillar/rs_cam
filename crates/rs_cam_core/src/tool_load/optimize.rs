@@ -2271,6 +2271,10 @@ mod stage0_tests {
             source_vendor: "Test".to_owned(),
             score: 100,
             diameter_match_score: 200,
+            row_diameter_mm: 6.0,
+            chipload_diameter_scale: 1.0,
+            chipload_hardness_scale: 1.0,
+            is_extrapolated: false,
         };
         let inputs = Stage0Inputs {
             rpm_baseline: 12_000.0,
@@ -2313,6 +2317,10 @@ mod stage0_tests {
             source_vendor: "Test".to_owned(),
             score: 100,
             diameter_match_score: 200,
+            row_diameter_mm: 6.0,
+            chipload_diameter_scale: 1.0,
+            chipload_hardness_scale: 1.0,
+            is_extrapolated: false,
         };
         let inputs = Stage0Inputs {
             rpm_baseline: 12_000.0,
@@ -2430,6 +2438,10 @@ mod stage0_tests {
             source_vendor: "synthetic".to_owned(),
             score: 0,
             diameter_match_score: 0,
+            row_diameter_mm: 6.0,
+            chipload_diameter_scale: 1.0,
+            chipload_hardness_scale: 1.0,
+            is_extrapolated: false,
         }
     }
 
@@ -4047,6 +4059,10 @@ mod stage1_grid_tests {
             source_vendor: "Test".to_owned(),
             score: 100,
             diameter_match_score: 200,
+            row_diameter_mm: 6.0,
+            chipload_diameter_scale: 1.0,
+            chipload_hardness_scale: 1.0,
+            is_extrapolated: false,
         }
     }
 
