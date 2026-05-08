@@ -107,10 +107,10 @@ pub fn dexel_stock_to_top_surface_mesh(stock: &TriDexelStock) -> StockMesh {
     dexel_stock_to_entry_surface_mesh(stock, StockCutDirection::FromTop)
 }
 
-fn preview_grid_for_direction<'a>(
-    stock: &'a TriDexelStock,
+fn preview_grid_for_direction(
+    stock: &TriDexelStock,
     direction: StockCutDirection,
-) -> Option<&'a DexelGrid> {
+) -> Option<&DexelGrid> {
     match direction.grid_axis() {
         DexelAxis::Z => Some(&stock.z_grid),
         DexelAxis::Y => stock.y_grid.as_ref(),
