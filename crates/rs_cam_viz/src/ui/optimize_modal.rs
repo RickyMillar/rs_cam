@@ -136,6 +136,28 @@ fn draw_outcome(
         OptimizeOutcome::Ranked(candidates) => {
             draw_ranked(ui, candidates, outcome.first_safe(), toolpath_id, events);
         }
+        OptimizeOutcome::TradeOff(candidates) => {
+            // Trade-off candidates: faster than baseline AND improve a
+            // failing gate, but worsen another. Render the same table
+            // as Ranked but with a "trade-off" header so the user
+            // knows there's a regression to accept. No ⭐ — the
+            // optimizer doesn't auto-recommend trade-offs.
+            ui.label(
+                egui::RichText::new("Trade-off candidates")
+                    .strong()
+                    .color(theme::WARNING),
+            );
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new(
+                    "Each candidate below improves the failing baseline gate but worsens \
+                     another. Apply only after reviewing the per-gate columns.",
+                )
+                .small(),
+            );
+            ui.add_space(8.0);
+            draw_ranked(ui, candidates, None, toolpath_id, events);
+        }
     }
 }
 

@@ -84,6 +84,63 @@ impl ParamDelta {
     }
 }
 
+/// One gate's relative state for a candidate vs the baseline. Used
+/// by the tier dispatcher to distinguish pure improvements (no
+/// regressions) from trade-offs (improves the failing gate but
+/// worsens another).
+///
+/// `Within → Within` is `Same` regardless of peak magnitude — the
+/// directional meaning of "lower peak" is criterion-specific
+/// (chipload prefers near-midpoint, power prefers lower, deflection
+/// prefers lower) and the optimizer can't make a useful judgment
+/// from peaks alone in the safe region.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GateDelta {
+    /// `Exceeds → Within` (crossed back into safety) or both Exceeds
+    /// with strictly smaller peak.
+    Improved,
+    /// Both `Within`, or both `Exceeds` with effectively equal peak.
+    Same,
+    /// `Within → Exceeds` (crossed out of safety) or both Exceeds
+    /// with strictly larger peak.
+    Worsened,
+    /// At least one side is `Unmodeled` — comparison not meaningful.
+    Unmodeled,
+}
+
+/// Per-criterion deltas for a candidate vs baseline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GateDeltas {
+    pub chipload: GateDelta,
+    pub power: GateDelta,
+    pub deflection: GateDelta,
+}
+
+impl GateDeltas {
+    /// True if no gate regressed (every delta is Improved, Same, or
+    /// Unmodeled). A "pure improvement" candidate satisfies this.
+    pub fn no_regression(&self) -> bool {
+        !matches!(self.chipload, GateDelta::Worsened)
+            && !matches!(self.power, GateDelta::Worsened)
+            && !matches!(self.deflection, GateDelta::Worsened)
+    }
+
+    /// True if at least one gate was Improved.
+    pub fn any_improved(&self) -> bool {
+        matches!(self.chipload, GateDelta::Improved)
+            || matches!(self.power, GateDelta::Improved)
+            || matches!(self.deflection, GateDelta::Improved)
+    }
+
+    /// True if at least one gate was Worsened.
+    pub fn any_worsened(&self) -> bool {
+        matches!(self.chipload, GateDelta::Worsened)
+            || matches!(self.power, GateDelta::Worsened)
+            || matches!(self.deflection, GateDelta::Worsened)
+    }
+}
+
 /// One candidate's full evaluation record. Populated by the optimizer
 /// during Stage 0/1/2; each field is sim-measured (or, for the baseline
 /// candidate at index 0, sourced from `baseline_trace`).
@@ -109,6 +166,11 @@ pub struct OptimizeCandidate {
     pub reconciled_cycle_time_s: Option<f64>,
     /// Reconciled verdict from the post-Apply project sim (U4).
     pub reconciled_verdict: Option<ToolpathLoadVerdict>,
+    /// Per-criterion delta vs the baseline candidate at index 0. `None`
+    /// for the baseline itself. Populated by the tier dispatcher in
+    /// `build_outcome` so consumers don't have to recompute.
+    #[serde(default)]
+    pub gate_deltas: Option<GateDeltas>,
 }
 
 /// Outcome of `optimize_toolpath` for one toolpath.
@@ -120,6 +182,15 @@ pub enum OptimizeOutcome {
     /// candidate has `.first_safe()` returns — the first non-baseline
     /// candidate whose verdict is not `Exceeds` on any criterion.
     Ranked(Vec<OptimizeCandidate>),
+    /// At least one candidate is faster than baseline AND improves a
+    /// failing baseline gate, but also worsens a non-failing one.
+    /// Distinct from `Ranked` because the user has to explicitly
+    /// accept the regression — the optimizer can't auto-recommend a
+    /// trade-off.
+    ///
+    /// Index 0 is the baseline; subsequent entries are sorted ascending
+    /// by cycle time and carry populated `gate_deltas`.
+    TradeOff(Vec<OptimizeCandidate>),
     /// Every non-baseline candidate either failed the gate (Exceeds on
     /// some criterion) or was slower than baseline. The rollup row
     /// surfaces this with the binding-limit narrative. The
@@ -184,6 +255,42 @@ pub(crate) fn candidate_is_safe(candidate: &OptimizeCandidate) -> bool {
     !matches!(candidate.verdict.chipload, Verdict::Exceeds { .. })
         && !matches!(candidate.verdict.power, Verdict::Exceeds { .. })
         && !matches!(candidate.verdict.deflection, Verdict::Exceeds { .. })
+}
+
+/// Compute the per-criterion delta for one candidate vs the baseline
+/// verdict. Pure function — no tie-breaking with cycle time, no peak
+/// magnitude judgment for `Within → Within`.
+pub(crate) fn classify_candidate_vs_baseline(
+    baseline: &ToolpathLoadVerdict,
+    candidate: &ToolpathLoadVerdict,
+) -> GateDeltas {
+    GateDeltas {
+        chipload: classify_one_gate(&baseline.chipload, &candidate.chipload),
+        power: classify_one_gate(&baseline.power, &candidate.power),
+        deflection: classify_one_gate(&baseline.deflection, &candidate.deflection),
+    }
+}
+
+fn classify_one_gate(b: &Verdict, c: &Verdict) -> GateDelta {
+    match (b, c) {
+        (Verdict::Unmodeled { .. }, _) | (_, Verdict::Unmodeled { .. }) => GateDelta::Unmodeled,
+        (Verdict::Exceeds { .. }, Verdict::Within { .. }) => GateDelta::Improved,
+        (Verdict::Within { .. }, Verdict::Exceeds { .. }) => GateDelta::Worsened,
+        (Verdict::Exceeds { peak: bp, .. }, Verdict::Exceeds { peak: cp, .. }) => {
+            // Both still failing — a smaller overshoot is "less unsafe"
+            // and counts as Improved. We use a 5% relative threshold
+            // to avoid noise-level changes flipping the classification.
+            let threshold = (bp.abs() * 0.05).max(1e-6);
+            if *cp + threshold < *bp {
+                GateDelta::Improved
+            } else if *cp > *bp + threshold {
+                GateDelta::Worsened
+            } else {
+                GateDelta::Same
+            }
+        }
+        (Verdict::Within { .. }, Verdict::Within { .. }) => GateDelta::Same,
+    }
 }
 
 /// Project-level rollup over every enabled toolpath. Surfaced by U3's
@@ -318,6 +425,7 @@ pub fn optimize_toolpath(
         stage: SearchStage::Baseline,
         reconciled_cycle_time_s: None,
         reconciled_verdict: None,
+        gate_deltas: None,
     };
 
     // 5. Look up the matched LUT row. Used by Stage 0's `k_lut` bound
@@ -1675,6 +1783,7 @@ pub(crate) fn evaluate_candidate(
         stage,
         reconciled_cycle_time_s: None,
         reconciled_verdict: None,
+        gate_deltas: None,
     })
 }
 
@@ -1742,14 +1851,19 @@ pub(crate) fn refine_stage2(
 }
 
 /// Build an `OptimizeOutcome` from a baseline candidate and the
-/// Stage-2 refined candidates. Per ED 8:
-///   - Empty `candidates` (no candidates produced at all) →
-///     `NoSafeImprovement` with the "no improvement found" narrative.
-///   - All candidates `Exceeds` or all slower than baseline →
-///     `NoSafeImprovement`.
-///   - At least one safe-and-faster candidate → `Ranked`, with
-///     baseline at index 0 and the rest sorted ascending by cycle
-///     time.
+/// Stage-2 refined candidates. Tier dispatcher per the redesign plan:
+///
+///   - Empty candidates → `NoSafeImprovement` (no improvement found).
+///   - At least one candidate is faster AND has no regression on any
+///     gate (every delta Improved/Same/Unmodeled) → `Ranked`. Today's
+///     auto-recommendation surface; UI can ⭐ the first safe entry.
+///   - At least one candidate is faster AND improves a failing gate
+///     while worsening a non-failing one → `TradeOff`. New tier — the
+///     user has to explicitly accept the regression.
+///   - Otherwise → `NoSafeImprovement`.
+///
+/// Every non-baseline candidate carries populated `gate_deltas` after
+/// this function runs, so consumers don't have to recompute.
 pub(crate) fn build_outcome(
     baseline: OptimizeCandidate,
     candidates: Vec<OptimizeCandidate>,
@@ -1765,49 +1879,76 @@ pub(crate) fn build_outcome(
         };
     }
 
-    let baseline_cycle = baseline.cycle_time_s;
-    let any_safe_and_faster = candidates.iter().any(|c| {
-        candidate_is_safe(c) && c.cycle_time_s + RECOMMENDATION_CYCLE_DELTA_S < baseline_cycle
-    });
+    // Populate per-candidate gate deltas vs baseline. Done up-front so
+    // every downstream branch sees the same data on the candidates,
+    // not just the surviving tier.
+    let baseline_verdict = baseline.verdict.clone();
+    let mut sorted = candidates;
+    for c in sorted.iter_mut() {
+        c.gate_deltas = Some(classify_candidate_vs_baseline(
+            &baseline_verdict,
+            &c.verdict,
+        ));
+    }
+    sorted.sort_by(|a, b| a.cycle_time_s.total_cmp(&b.cycle_time_s));
 
-    if !any_safe_and_faster {
-        let all_unsafe = candidates.iter().all(|c| !candidate_is_safe(c));
-        let explanation = if all_unsafe {
-            format!(
-                "{}: every candidate hit a gate limit (chipload, power, or deflection)",
-                RefuseReason::NoImprovementFound.explanation_for_optimize()
-            )
-        } else {
-            format!(
-                "{}: no candidate beat the baseline cycle time by more than {:.1}s",
-                RefuseReason::NoImprovementFound.explanation_for_optimize(),
-                RECOMMENDATION_CYCLE_DELTA_S
-            )
-        };
-        // Build the attempted list the same way Ranked does — baseline
-        // at index 0, then candidates sorted by ascending cycle time.
-        // The user can see what was tried and how each fell short.
-        let mut sorted = candidates;
-        sorted.sort_by(|a, b| a.cycle_time_s.total_cmp(&b.cycle_time_s));
-        let mut attempted = Vec::with_capacity(sorted.len() + 1);
-        attempted.push(baseline);
-        attempted.extend(sorted);
-        return OptimizeOutcome::NoSafeImprovement {
-            reason: RefuseReason::NoImprovementFound,
-            explanation,
-            attempted,
-        };
+    let baseline_cycle = baseline.cycle_time_s;
+    let is_faster =
+        |c: &OptimizeCandidate| c.cycle_time_s + RECOMMENDATION_CYCLE_DELTA_S < baseline_cycle;
+
+    // Pure improvement (Ranked tier): faster AND no regression.
+    let any_pure_improvement = sorted
+        .iter()
+        .any(|c| c.gate_deltas.map(|d| d.no_regression()).unwrap_or(false) && is_faster(c));
+
+    // Trade-off tier: faster AND improves something AND worsens
+    // something. Pure improvements take priority — only land in
+    // TradeOff if there's no Ranked candidate.
+    let any_tradeoff = !any_pure_improvement
+        && sorted.iter().any(|c| {
+            c.gate_deltas
+                .map(|d| d.any_improved() && d.any_worsened())
+                .unwrap_or(false)
+                && is_faster(c)
+        });
+
+    if any_pure_improvement {
+        let mut ranked = Vec::with_capacity(sorted.len() + 1);
+        ranked.push(baseline);
+        ranked.extend(sorted);
+        return OptimizeOutcome::Ranked(ranked);
     }
 
-    // Build the ranked list: baseline at index 0, then candidates
-    // sorted by ascending cycle time. The recommendation is whichever
-    // first_safe() returns.
-    let mut sorted = candidates;
-    sorted.sort_by(|a, b| a.cycle_time_s.total_cmp(&b.cycle_time_s));
-    let mut ranked = Vec::with_capacity(sorted.len() + 1);
-    ranked.push(baseline);
-    ranked.extend(sorted);
-    OptimizeOutcome::Ranked(ranked)
+    if any_tradeoff {
+        let mut tradeoffs = Vec::with_capacity(sorted.len() + 1);
+        tradeoffs.push(baseline);
+        tradeoffs.extend(sorted);
+        return OptimizeOutcome::TradeOff(tradeoffs);
+    }
+
+    // Fall through: NoSafeImprovement, with the same attempted-list
+    // shape as before.
+    let all_unsafe = sorted.iter().all(|c| !candidate_is_safe(c));
+    let explanation = if all_unsafe {
+        format!(
+            "{}: every candidate hit a gate limit (chipload, power, or deflection)",
+            RefuseReason::NoImprovementFound.explanation_for_optimize()
+        )
+    } else {
+        format!(
+            "{}: no candidate beat the baseline cycle time by more than {:.1}s",
+            RefuseReason::NoImprovementFound.explanation_for_optimize(),
+            RECOMMENDATION_CYCLE_DELTA_S
+        )
+    };
+    let mut attempted = Vec::with_capacity(sorted.len() + 1);
+    attempted.push(baseline);
+    attempted.extend(sorted);
+    OptimizeOutcome::NoSafeImprovement {
+        reason: RefuseReason::NoImprovementFound,
+        explanation,
+        attempted,
+    }
 }
 
 // ── Project-level rollup (U3) ─────────────────────────────────────────
@@ -3432,6 +3573,7 @@ mod tests {
             stage: SearchStage::Refined,
             reconciled_cycle_time_s: None,
             reconciled_verdict: None,
+            gate_deltas: None,
         }
     }
 
@@ -3670,6 +3812,7 @@ mod tests {
             RefuseReason::NoVendorData,
             RefuseReason::SteadyStateSamplesNotPresent,
             RefuseReason::BipolarEngagement,
+            RefuseReason::DeflectionSetupLocked,
             RefuseReason::NoFeasibleRow,
             RefuseReason::RpmBracketEmpty,
             RefuseReason::DiameterExtrapolationTooPoor,
@@ -3679,6 +3822,201 @@ mod tests {
             let s = v.explanation_for_optimize();
             assert!(!s.is_empty(), "variant {v:?} returned empty explanation");
         }
+    }
+
+    // ── Per-candidate gate deltas + tier dispatcher (Commit #3) ──────
+
+    fn exceeds_power_verdict() -> ToolpathLoadVerdict {
+        use super::super::verdict::{Confidence, ExceedsReason};
+        let mut v = within_verdict();
+        v.power = Verdict::Exceeds {
+            peak: 2.5,
+            sample_range: 0..1,
+            reason: ExceedsReason::SpindlePowerExceeded,
+            confidence: Confidence::Validated,
+        };
+        v
+    }
+
+    fn unmodeled_chipload_verdict() -> ToolpathLoadVerdict {
+        use super::super::verdict::UnmodeledReason;
+        let mut v = within_verdict();
+        v.chipload = Verdict::Unmodeled {
+            reason: UnmodeledReason::NoVendorData,
+        };
+        v
+    }
+
+    #[test]
+    fn classify_one_gate_within_to_within_is_same() {
+        let b = within_verdict();
+        let mut c = within_verdict();
+        if let Verdict::Within { peak, .. } = &mut c.power {
+            *peak = 0.55;
+        }
+        assert_eq!(classify_one_gate(&b.power, &c.power), GateDelta::Same);
+    }
+
+    #[test]
+    fn classify_one_gate_exceeds_to_within_is_improved() {
+        let b = exceeds_chipload_verdict();
+        let c = within_verdict();
+        assert_eq!(
+            classify_one_gate(&b.chipload, &c.chipload),
+            GateDelta::Improved
+        );
+    }
+
+    #[test]
+    fn classify_one_gate_within_to_exceeds_is_worsened() {
+        let b = within_verdict();
+        let c = exceeds_chipload_verdict();
+        assert_eq!(
+            classify_one_gate(&b.chipload, &c.chipload),
+            GateDelta::Worsened
+        );
+    }
+
+    #[test]
+    fn classify_one_gate_exceeds_to_smaller_exceeds_is_improved() {
+        use super::super::verdict::{Confidence, ExceedsReason};
+        let b_v = Verdict::Exceeds {
+            peak: 0.10,
+            sample_range: 0..1,
+            reason: ExceedsReason::ChiploadBreakageRisk,
+            confidence: Confidence::Validated,
+        };
+        let c_v = Verdict::Exceeds {
+            peak: 0.08, // strictly smaller, > 5% threshold
+            sample_range: 0..1,
+            reason: ExceedsReason::ChiploadBreakageRisk,
+            confidence: Confidence::Validated,
+        };
+        assert_eq!(classify_one_gate(&b_v, &c_v), GateDelta::Improved);
+    }
+
+    #[test]
+    fn classify_one_gate_exceeds_to_larger_exceeds_is_worsened() {
+        use super::super::verdict::{Confidence, ExceedsReason};
+        let b_v = Verdict::Exceeds {
+            peak: 0.08,
+            sample_range: 0..1,
+            reason: ExceedsReason::ChiploadBreakageRisk,
+            confidence: Confidence::Validated,
+        };
+        let c_v = Verdict::Exceeds {
+            peak: 0.10,
+            sample_range: 0..1,
+            reason: ExceedsReason::ChiploadBreakageRisk,
+            confidence: Confidence::Validated,
+        };
+        assert_eq!(classify_one_gate(&b_v, &c_v), GateDelta::Worsened);
+    }
+
+    #[test]
+    fn classify_one_gate_unmodeled_either_side_is_unmodeled() {
+        let b = unmodeled_chipload_verdict();
+        let c = within_verdict();
+        assert_eq!(
+            classify_one_gate(&b.chipload, &c.chipload),
+            GateDelta::Unmodeled
+        );
+        assert_eq!(
+            classify_one_gate(&c.chipload, &b.chipload),
+            GateDelta::Unmodeled
+        );
+    }
+
+    #[test]
+    fn gate_deltas_helpers() {
+        let pure = GateDeltas {
+            chipload: GateDelta::Improved,
+            power: GateDelta::Same,
+            deflection: GateDelta::Same,
+        };
+        assert!(pure.no_regression());
+        assert!(pure.any_improved());
+        assert!(!pure.any_worsened());
+
+        let tradeoff = GateDeltas {
+            chipload: GateDelta::Improved,
+            power: GateDelta::Worsened,
+            deflection: GateDelta::Same,
+        };
+        assert!(!tradeoff.no_regression());
+        assert!(tradeoff.any_improved());
+        assert!(tradeoff.any_worsened());
+    }
+
+    #[test]
+    fn build_outcome_pure_improvement_yields_ranked_with_deltas() {
+        // Baseline has chipload Exceeds. Candidate fixes it (Improved
+        // on chipload, Same on others) and is faster. Should land in
+        // Ranked, with gate_deltas populated on the candidate.
+        let baseline = synthetic_candidate(1500.0, 100.0, exceeds_chipload_verdict());
+        let pure = synthetic_candidate(2100.0, 70.0, within_verdict());
+        let outcome = build_outcome(baseline, vec![pure]);
+        let OptimizeOutcome::Ranked(ranked) = outcome else {
+            panic!("expected Ranked, got {outcome:?}");
+        };
+        assert!(ranked[0].gate_deltas.is_none(), "baseline has no deltas");
+        let deltas = ranked[1].gate_deltas.expect("candidate has deltas");
+        assert_eq!(deltas.chipload, GateDelta::Improved);
+        assert_eq!(deltas.power, GateDelta::Same);
+        assert_eq!(deltas.deflection, GateDelta::Same);
+    }
+
+    #[test]
+    fn build_outcome_tradeoff_yields_tradeoff_variant() {
+        // Baseline trips chipload. Candidate fixes chipload (Improved)
+        // but pushes power into Exceeds (Worsened). Faster overall.
+        // Pure-improvement check fails; trade-off check fires.
+        let baseline = synthetic_candidate(1500.0, 100.0, exceeds_chipload_verdict());
+        let mut tradeoff_verdict = within_verdict();
+        // Fix chipload but trip power.
+        tradeoff_verdict.chipload = within_verdict().chipload;
+        tradeoff_verdict.power = exceeds_power_verdict().power;
+        let candidate = synthetic_candidate(2200.0, 80.0, tradeoff_verdict);
+        let outcome = build_outcome(baseline, vec![candidate]);
+        let OptimizeOutcome::TradeOff(tradeoffs) = outcome else {
+            panic!("expected TradeOff, got {outcome:?}");
+        };
+        assert_eq!(tradeoffs.len(), 2, "baseline + 1 trade-off");
+        let deltas = tradeoffs[1].gate_deltas.expect("populated");
+        assert_eq!(deltas.chipload, GateDelta::Improved);
+        assert_eq!(deltas.power, GateDelta::Worsened);
+    }
+
+    #[test]
+    fn build_outcome_prefers_pure_improvement_over_tradeoff() {
+        // Two candidates: one is a trade-off, one is pure improvement.
+        // Pure should win — Ranked outcome.
+        let baseline = synthetic_candidate(1500.0, 100.0, exceeds_chipload_verdict());
+        let pure = synthetic_candidate(2100.0, 75.0, within_verdict());
+        let mut tradeoff_verdict = within_verdict();
+        tradeoff_verdict.power = exceeds_power_verdict().power;
+        let tradeoff_cand = synthetic_candidate(2200.0, 70.0, tradeoff_verdict);
+        let outcome = build_outcome(baseline, vec![tradeoff_cand, pure]);
+        assert!(
+            matches!(outcome, OptimizeOutcome::Ranked(_)),
+            "pure improvement must win, got {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn first_safe_returns_none_for_tradeoff_outcome() {
+        // first_safe only auto-recommends from Ranked outcomes.
+        // TradeOff candidates need explicit user acceptance.
+        let baseline = synthetic_candidate(1500.0, 100.0, exceeds_chipload_verdict());
+        let mut tradeoff_verdict = within_verdict();
+        tradeoff_verdict.power = exceeds_power_verdict().power;
+        let candidate = synthetic_candidate(2200.0, 70.0, tradeoff_verdict);
+        let outcome = build_outcome(baseline, vec![candidate]);
+        assert!(matches!(outcome, OptimizeOutcome::TradeOff(_)));
+        assert!(
+            outcome.first_safe().is_none(),
+            "TradeOff outcomes should not auto-recommend"
+        );
     }
 }
 
