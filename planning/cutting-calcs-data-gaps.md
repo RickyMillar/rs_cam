@@ -282,8 +282,23 @@ will confirm.)
 - `cargo test -p rs_cam_core --lib --tests` clean.
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
 
-**Status.** Re-verified 2026-05-08; original framing (pass_role routing) was
-incorrect, fused gap describes the real fix. Plan above. Implementing next.
+**Status.** **Done** 2026-05-08 (commit `d09001e`). Live MCP validation gate
+passed against wanaka:
+
+| Idx | TP | Tool | Chipload before | Chipload after |
+|---|---|---|---|---|
+| 4 | Project Curve | TaperedBall (1 mm tip) | `Unmodeled(NoVendorData)` | `Exceeds 0.00992 BreakageRisk Approximate` (×0.44 / ×1.00) |
+| 5 | Project Curve | TaperedBall | `Unmodeled(NoVendorData)` | `Exceeds 0.0149 BreakageRisk Approximate` (×0.42 / ×1.00) |
+| 7 | 3D Finish (DropCutter) | TaperedBall | `Unmodeled(NoVendorData)` | `Exceeds 0.0140 BreakageRisk Approximate` (×0.38 / ×1.00) |
+| 3 | Project Curve | FlatEnd 6 mm | `Exceeds 0.00667 BurnRisk Validated` | `Exceeds 0.00667 BurnRisk Approximate` (×1.89 / ×0.90) — same peak, confidence demoted to reflect that the 3.175 mm row was previously consumed at face value |
+
+TPs 0 / 2 stay `Skipped`. TPs 1 / 6 chipload verdicts unchanged (6 mm flat
+matches its calibrated 6 mm row exactly, no scaling). The
+`Exceeds(BreakageRisk)` outcomes on the tapered-ball TPs are real:
+per-sample chipload is well above the row's `chipload_max` after linear
+scaling for the small engaged tip, indicating actual
+chipload-vs-tool-size mismatch the optimizer should now address via
+Stage F retargeting once G2 / G3 land stepover knobs.
 
 ---
 
