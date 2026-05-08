@@ -833,6 +833,7 @@ fn spawn_optimize_lane(
                     let outcome = if lane.cancel.load(Ordering::SeqCst) {
                         match outcome {
                             OptimizeOutcome::Ranked(_)
+                            | OptimizeOutcome::TradeOff(_)
                             | OptimizeOutcome::NoSafeImprovement { .. } => outcome,
                             OptimizeOutcome::Skipped { .. } => OptimizeOutcome::NoSafeImprovement {
                                 reason: RefuseReason::NoImprovementFound,

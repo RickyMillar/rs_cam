@@ -138,6 +138,8 @@ Wanaka TP 1 lands in **Setup prescription** (deflection L/D 7.5 unreachable from
 
 **A1: Clear `feeds_auto.feed_rate` when optimizer mutates feed.** ~10 LOC + 1 test. Files: `optimize.rs::apply_scale_to_op`. Stops candidates evaluating against unintended baseline-recomputed feeds.
 
+> **Update 2026-05-08 (mid-execution):** Verified already fixed in commit `8bf7394` ("optimize: per-candidate evaluation"). The flag clearing flows through `delta_against_baseline` → `feeds_auto_for_candidate` (`optimize.rs:1031`) → `apply_toolpath_param_snapshot`. Existing tests at `optimize.rs:3143-3185` pin the behaviour. Audit was based on a stale reading. **No commit needed; skip to A2.**
+
 **A2: Tapered-ball LUT lookup uses `lookup_diameter_at(commanded_doc)`.** ~5 LOC + tests. Files: `optimize.rs::find_matched_lut_row`. Affects every tapered-ball op's matched row.
 
 ### Prep — Mechanical refactor (no behaviour change)

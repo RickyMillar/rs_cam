@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::config::{DressupConfig, FeedsAutoMode};
 use crate::enriched_mesh::FaceGroupId;
+use crate::feeds::geometry::radial_chip_thinning_factor;
 use crate::feeds::vendor_lookup::MatchedRow;
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use crate::feeds::{OperationFamily, PassRole};
@@ -83,6 +84,63 @@ impl ParamDelta {
     }
 }
 
+/// One gate's relative state for a candidate vs the baseline. Used
+/// by the tier dispatcher to distinguish pure improvements (no
+/// regressions) from trade-offs (improves the failing gate but
+/// worsens another).
+///
+/// `Within → Within` is `Same` regardless of peak magnitude — the
+/// directional meaning of "lower peak" is criterion-specific
+/// (chipload prefers near-midpoint, power prefers lower, deflection
+/// prefers lower) and the optimizer can't make a useful judgment
+/// from peaks alone in the safe region.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GateDelta {
+    /// `Exceeds → Within` (crossed back into safety) or both Exceeds
+    /// with strictly smaller peak.
+    Improved,
+    /// Both `Within`, or both `Exceeds` with effectively equal peak.
+    Same,
+    /// `Within → Exceeds` (crossed out of safety) or both Exceeds
+    /// with strictly larger peak.
+    Worsened,
+    /// At least one side is `Unmodeled` — comparison not meaningful.
+    Unmodeled,
+}
+
+/// Per-criterion deltas for a candidate vs baseline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GateDeltas {
+    pub chipload: GateDelta,
+    pub power: GateDelta,
+    pub deflection: GateDelta,
+}
+
+impl GateDeltas {
+    /// True if no gate regressed (every delta is Improved, Same, or
+    /// Unmodeled). A "pure improvement" candidate satisfies this.
+    pub fn no_regression(&self) -> bool {
+        !matches!(self.chipload, GateDelta::Worsened)
+            && !matches!(self.power, GateDelta::Worsened)
+            && !matches!(self.deflection, GateDelta::Worsened)
+    }
+
+    /// True if at least one gate was Improved.
+    pub fn any_improved(&self) -> bool {
+        matches!(self.chipload, GateDelta::Improved)
+            || matches!(self.power, GateDelta::Improved)
+            || matches!(self.deflection, GateDelta::Improved)
+    }
+
+    /// True if at least one gate was Worsened.
+    pub fn any_worsened(&self) -> bool {
+        matches!(self.chipload, GateDelta::Worsened)
+            || matches!(self.power, GateDelta::Worsened)
+            || matches!(self.deflection, GateDelta::Worsened)
+    }
+}
+
 /// One candidate's full evaluation record. Populated by the optimizer
 /// during Stage 0/1/2; each field is sim-measured (or, for the baseline
 /// candidate at index 0, sourced from `baseline_trace`).
@@ -108,6 +166,11 @@ pub struct OptimizeCandidate {
     pub reconciled_cycle_time_s: Option<f64>,
     /// Reconciled verdict from the post-Apply project sim (U4).
     pub reconciled_verdict: Option<ToolpathLoadVerdict>,
+    /// Per-criterion delta vs the baseline candidate at index 0. `None`
+    /// for the baseline itself. Populated by the tier dispatcher in
+    /// `build_outcome` so consumers don't have to recompute.
+    #[serde(default)]
+    pub gate_deltas: Option<GateDeltas>,
 }
 
 /// Outcome of `optimize_toolpath` for one toolpath.
@@ -119,6 +182,15 @@ pub enum OptimizeOutcome {
     /// candidate has `.first_safe()` returns — the first non-baseline
     /// candidate whose verdict is not `Exceeds` on any criterion.
     Ranked(Vec<OptimizeCandidate>),
+    /// At least one candidate is faster than baseline AND improves a
+    /// failing baseline gate, but also worsens a non-failing one.
+    /// Distinct from `Ranked` because the user has to explicitly
+    /// accept the regression — the optimizer can't auto-recommend a
+    /// trade-off.
+    ///
+    /// Index 0 is the baseline; subsequent entries are sorted ascending
+    /// by cycle time and carry populated `gate_deltas`.
+    TradeOff(Vec<OptimizeCandidate>),
     /// Every non-baseline candidate either failed the gate (Exceeds on
     /// some criterion) or was slower than baseline. The rollup row
     /// surfaces this with the binding-limit narrative. The
@@ -183,6 +255,42 @@ pub(crate) fn candidate_is_safe(candidate: &OptimizeCandidate) -> bool {
     !matches!(candidate.verdict.chipload, Verdict::Exceeds { .. })
         && !matches!(candidate.verdict.power, Verdict::Exceeds { .. })
         && !matches!(candidate.verdict.deflection, Verdict::Exceeds { .. })
+}
+
+/// Compute the per-criterion delta for one candidate vs the baseline
+/// verdict. Pure function — no tie-breaking with cycle time, no peak
+/// magnitude judgment for `Within → Within`.
+pub(crate) fn classify_candidate_vs_baseline(
+    baseline: &ToolpathLoadVerdict,
+    candidate: &ToolpathLoadVerdict,
+) -> GateDeltas {
+    GateDeltas {
+        chipload: classify_one_gate(&baseline.chipload, &candidate.chipload),
+        power: classify_one_gate(&baseline.power, &candidate.power),
+        deflection: classify_one_gate(&baseline.deflection, &candidate.deflection),
+    }
+}
+
+fn classify_one_gate(b: &Verdict, c: &Verdict) -> GateDelta {
+    match (b, c) {
+        (Verdict::Unmodeled { .. }, _) | (_, Verdict::Unmodeled { .. }) => GateDelta::Unmodeled,
+        (Verdict::Exceeds { .. }, Verdict::Within { .. }) => GateDelta::Improved,
+        (Verdict::Within { .. }, Verdict::Exceeds { .. }) => GateDelta::Worsened,
+        (Verdict::Exceeds { peak: bp, .. }, Verdict::Exceeds { peak: cp, .. }) => {
+            // Both still failing — a smaller overshoot is "less unsafe"
+            // and counts as Improved. We use a 5% relative threshold
+            // to avoid noise-level changes flipping the classification.
+            let threshold = (bp.abs() * 0.05).max(1e-6);
+            if *cp + threshold < *bp {
+                GateDelta::Improved
+            } else if *cp > *bp + threshold {
+                GateDelta::Worsened
+            } else {
+                GateDelta::Same
+            }
+        }
+        (Verdict::Within { .. }, Verdict::Within { .. }) => GateDelta::Same,
+    }
 }
 
 /// Project-level rollup over every enabled toolpath. Surfaced by U3's
@@ -317,11 +425,36 @@ pub fn optimize_toolpath(
         stage: SearchStage::Baseline,
         reconciled_cycle_time_s: None,
         reconciled_verdict: None,
+        gate_deltas: None,
     };
 
     // 5. Look up the matched LUT row. Used by Stage 0's `k_lut` bound
-    //    and Stage 1's DOC-grid endpoint clamping.
-    let matched_lut_row = find_matched_lut_row(&ctx.tool, &ctx.material, &ctx);
+    //    and Stage 1's DOC-grid endpoint clamping. The commanded DOC
+    //    drives engaged-diameter selection for tapered tools — at
+    //    shallow DOC a tapered ball engages a much smaller diameter
+    //    than its shank, and the LUT row that fits the engaged tool is
+    //    not the same row that fits the shank.
+    let matched_lut_row =
+        find_matched_lut_row(&ctx.tool, &ctx.material, &ctx, baseline_op.depth_per_pass());
+
+    // 5b. Pre-flight: classify the baseline against the gates before
+    //     burning any sims. If the failing axis isn't in the
+    //     optimizer's search space (deflection L/D, bipolar chipload),
+    //     refuse immediately with an op-aware prescription rather
+    //     than running stages that can't move the failing gate.
+    if let Some(refusal) = preflight_classify(
+        &ctx,
+        baseline_trace,
+        baseline_op.feed_rate(),
+        &baseline_verdict,
+        matched_lut_row.as_ref(),
+    ) {
+        return OptimizeOutcome::NoSafeImprovement {
+            reason: refusal.reason,
+            explanation: refusal.explanation,
+            attempted: vec![baseline_candidate],
+        };
+    }
 
     // Cancel check before any sims.
     if cancel.load(Ordering::SeqCst) {
@@ -349,35 +482,37 @@ pub fn optimize_toolpath(
         &machine,
     );
 
-    // 7. Stage 0: closed-form analytical RPM/feed scaling. Skipped
-    //    when the baseline already fails the chipload gate
-    //    (proportional scaling preserves chipload — can't fix Exceeds).
-    let baseline_chipload_exceeds = matches!(baseline_verdict.chipload, Verdict::Exceeds { .. });
+    // 7. Stage F: closed-form feed/RPM solve. Two modes:
+    //    - Within baselines → headroom scale-up (Stage 0).
+    //    - Single-side Exceeds (Burn or Breakage, not bipolar — pre-
+    //      flight refused bipolar already) → re-target via the LUT
+    //      row's chipload envelope, RCTF-compensated.
+    //    Either mode produces at most one candidate.
     let mut all_candidates: Vec<OptimizeCandidate> = Vec::new();
-    if !baseline_chipload_exceeds {
-        let stage0_inputs = Stage0Inputs {
-            rpm_baseline: baseline_rpm,
-            feed_baseline_mm_min: baseline_op.feed_rate(),
-            peak_power_baseline_kw: baseline_peak_power_kw(&baseline_verdict),
-            machine: &machine,
-            lut_row: matched_lut_row.as_ref(),
-        };
-        let k = solve_headroom_scale(&stage0_inputs);
-        if k > 1.0 + 1e-6 {
-            let scaled_op = apply_scale_to_op(&baseline_op, baseline_rpm, k, &machine);
-            let delta = delta_against_baseline(&baseline_op, &scaled_op);
-            if let Ok(candidate) = evaluate_candidate(
-                &mut guard,
-                &ctx,
-                scaled_op,
-                delta,
-                SearchStage::Coarse,
-                STAGE1_RESOLUTION_MM,
-                cancel,
-            ) {
-                all_candidates.push(candidate);
-            }
-        }
+    let stage_f_candidate = match baseline_verdict.chipload {
+        Verdict::Within { .. } => run_stage_0(
+            &mut guard,
+            &ctx,
+            &baseline_op,
+            baseline_rpm,
+            &baseline_verdict,
+            matched_lut_row.as_ref(),
+            &machine,
+            cancel,
+        ),
+        Verdict::Exceeds { .. } => run_stage_f_retarget(
+            &mut guard,
+            &ctx,
+            &baseline_op,
+            baseline_rpm,
+            matched_lut_row.as_ref(),
+            &machine,
+            cancel,
+        ),
+        Verdict::Unmodeled { .. } => None,
+    };
+    if let Some(c) = stage_f_candidate {
+        all_candidates.push(c);
     }
 
     if cancel.load(Ordering::SeqCst) {
@@ -386,59 +521,16 @@ pub fn optimize_toolpath(
     }
 
     // 8. Stage 1: joint DOC × stepover variant grid for ops with both
-    //    knobs. Anchored at the headroom-point op when available,
-    //    baseline op otherwise. The two axes are coupled in
-    //    practice — lower DOC tolerates higher stepover at constant
-    //    chipload — so we sweep them jointly rather than as separate
-    //    1D passes. 3×3 = 9 candidates per geometry op (4×3 = 12 for
-    //    Pocket/Adaptive), Stage 2 keeps the top 3 by cycle time.
-    if has_doc_knob(ctx.operation_kind) {
-        let anchor_op = all_candidates
-            .first()
-            .map(|c| c.params.clone())
-            .unwrap_or_else(|| baseline_op.clone());
-        let anchor_doc = anchor_op
-            .depth_per_pass()
-            .unwrap_or_else(|| baseline_op.depth_per_pass().unwrap_or(1.5));
-        let anchor_stepover = anchor_op
-            .stepover()
-            .unwrap_or_else(|| baseline_op.stepover().unwrap_or(1.0));
-        let doc_variants =
-            build_doc_variants(anchor_doc, matched_lut_row.as_ref(), ctx.operation_kind);
-        let stepover_variants = build_stepover_variants(
-            anchor_stepover,
-            matched_lut_row.as_ref(),
-            ctx.operation_kind,
-        );
-        'outer: for &doc in &doc_variants {
-            for &stepover in &stepover_variants {
-                if cancel.load(Ordering::SeqCst) {
-                    break 'outer;
-                }
-                // Skip the anchor combo — it's already represented
-                // by the headroom-point candidate (or the baseline).
-                if (doc - anchor_doc).abs() < DOC_DEDUP_TOLERANCE_MM
-                    && (stepover - anchor_stepover).abs() < STEPOVER_DEDUP_TOLERANCE_MM
-                {
-                    continue;
-                }
-                let candidate_op =
-                    apply_stepover_to_op(&apply_doc_to_op(&anchor_op, doc), stepover);
-                let delta = delta_against_baseline(&baseline_op, &candidate_op);
-                if let Ok(candidate) = evaluate_candidate(
-                    &mut guard,
-                    &ctx,
-                    candidate_op,
-                    delta,
-                    SearchStage::Coarse,
-                    STAGE1_RESOLUTION_MM,
-                    cancel,
-                ) {
-                    all_candidates.push(candidate);
-                }
-            }
-        }
-    }
+    //    knobs.
+    let stage_1_candidates = run_stage_1_grid(
+        &mut guard,
+        &ctx,
+        &baseline_op,
+        all_candidates.first(),
+        matched_lut_row.as_ref(),
+        cancel,
+    );
+    all_candidates.extend(stage_1_candidates);
 
     if cancel.load(Ordering::SeqCst) {
         drop(guard);
@@ -463,6 +555,295 @@ pub fn optimize_toolpath(
     //     caller's view of `session` is now back at the baseline.
     drop(guard);
     build_outcome(baseline_candidate, stage2_candidates)
+}
+
+/// Run Stage 0 (analytical RPM/feed headroom scale-up) for one
+/// toolpath. Returns the headroom candidate, or `None` if the baseline
+/// already trips the chipload gate (proportional scaling preserves
+/// chipload, so it can't fix `Exceeds`), if the closed-form solver
+/// finds no headroom (`k ≤ 1`), or if the candidate sim fails.
+///
+/// Pure helper — extracted from `optimize_toolpath` for reviewability.
+/// The optimizer's pre-flight policy lives in the caller; this just
+/// runs the stage.
+#[allow(clippy::too_many_arguments)]
+fn run_stage_0(
+    guard: &mut BaselineRestoreGuard<'_>,
+    ctx: &EvaluationContext,
+    baseline_op: &OperationConfig,
+    baseline_rpm: f64,
+    baseline_verdict: &ToolpathLoadVerdict,
+    matched_lut_row: Option<&MatchedRow>,
+    machine: &MachineProfile,
+    cancel: &AtomicBool,
+) -> Option<OptimizeCandidate> {
+    let baseline_chipload_exceeds = matches!(baseline_verdict.chipload, Verdict::Exceeds { .. });
+    if baseline_chipload_exceeds {
+        return None;
+    }
+    let stage0_inputs = Stage0Inputs {
+        rpm_baseline: baseline_rpm,
+        feed_baseline_mm_min: baseline_op.feed_rate(),
+        peak_power_baseline_kw: baseline_peak_power_kw(baseline_verdict),
+        machine,
+        lut_row: matched_lut_row,
+    };
+    let k = solve_headroom_scale(&stage0_inputs);
+    if k <= 1.0 + 1e-6 {
+        return None;
+    }
+    let scaled_op = apply_scale_to_op(baseline_op, baseline_rpm, k, machine);
+    let delta = delta_against_baseline(baseline_op, &scaled_op);
+    evaluate_candidate(
+        guard,
+        ctx,
+        scaled_op,
+        delta,
+        SearchStage::Coarse,
+        STAGE1_RESOLUTION_MM,
+        cancel,
+    )
+    .ok()
+}
+
+/// Run Stage F's re-target mode for a baseline that trips the
+/// chipload gate single-sidedly (Burn or Breakage but not bipolar —
+/// the pre-flight already refuses bipolar). Computes a target feed /
+/// RPM / plunge from the LUT row's chipload envelope and tries that
+/// candidate at coarse resolution. Returns `None` when the LUT row
+/// is missing data, the RPM bracket has no machine overlap, the
+/// retarget is below the noise floor, or the candidate sim fails.
+///
+/// Sibling to `run_stage_0` — both produce at most one Stage F
+/// candidate. The orchestrator picks which to run based on baseline
+/// chipload verdict.
+#[allow(clippy::too_many_arguments)]
+fn run_stage_f_retarget(
+    guard: &mut BaselineRestoreGuard<'_>,
+    ctx: &EvaluationContext,
+    baseline_op: &OperationConfig,
+    baseline_rpm: f64,
+    matched_lut_row: Option<&MatchedRow>,
+    machine: &MachineProfile,
+    cancel: &AtomicBool,
+) -> Option<OptimizeCandidate> {
+    let row = matched_lut_row?;
+
+    // Engaged diameter at commanded DOC — same convention as the
+    // chipload gate uses sample-by-sample.
+    let commanded_doc = baseline_op.depth_per_pass().unwrap_or(0.0);
+    let engaged_diameter = if commanded_doc > 0.0 {
+        ctx.tool.lookup_diameter_at(commanded_doc)
+    } else {
+        ctx.tool.diameter()
+    };
+
+    // Commanded radial engagement = stepover. Ops without a stepover
+    // pass 0; RCTF returns 1.0 in that case (treated as full slot).
+    let commanded_ae = baseline_op.stepover().unwrap_or(0.0).max(0.0);
+
+    // Material plunge base for the safety cap.
+    let plunge_base = ctx.material.plunge_rate_base();
+
+    let solution = solve_chipload_retarget(
+        baseline_op,
+        baseline_rpm,
+        ctx.tool.flute_count,
+        engaged_diameter,
+        commanded_ae,
+        plunge_base,
+        row,
+        machine,
+    )?;
+
+    let candidate_op = apply_retarget_to_op(baseline_op, &solution, machine);
+    let delta = delta_against_baseline(baseline_op, &candidate_op);
+    evaluate_candidate(
+        guard,
+        ctx,
+        candidate_op,
+        delta,
+        SearchStage::Coarse,
+        STAGE1_RESOLUTION_MM,
+        cancel,
+    )
+    .ok()
+}
+
+/// Run Stage 1 (joint DOC × stepover variant grid) for one toolpath.
+/// Returns the per-grid-cell candidates that successfully evaluated;
+/// the anchor cell (matching the Stage 0 candidate or baseline) is
+/// skipped to avoid duplication.
+///
+/// `stage0_anchor` is the optional Stage 0 candidate — when present,
+/// the grid is anchored on its params; otherwise it falls back to
+/// `baseline_op`. Returns an empty vector for ops that don't have a
+/// DOC knob.
+fn run_stage_1_grid(
+    guard: &mut BaselineRestoreGuard<'_>,
+    ctx: &EvaluationContext,
+    baseline_op: &OperationConfig,
+    stage0_anchor: Option<&OptimizeCandidate>,
+    matched_lut_row: Option<&MatchedRow>,
+    cancel: &AtomicBool,
+) -> Vec<OptimizeCandidate> {
+    use std::sync::atomic::Ordering;
+
+    if !has_doc_knob(ctx.operation_kind) {
+        return Vec::new();
+    }
+
+    let anchor_op = stage0_anchor
+        .map(|c| c.params.clone())
+        .unwrap_or_else(|| baseline_op.clone());
+    let anchor_doc = anchor_op
+        .depth_per_pass()
+        .unwrap_or_else(|| baseline_op.depth_per_pass().unwrap_or(1.5));
+    let anchor_stepover = anchor_op
+        .stepover()
+        .unwrap_or_else(|| baseline_op.stepover().unwrap_or(1.0));
+    let doc_variants = build_doc_variants(anchor_doc, matched_lut_row, ctx.operation_kind);
+    let stepover_variants =
+        build_stepover_variants(anchor_stepover, matched_lut_row, ctx.operation_kind);
+
+    let mut out: Vec<OptimizeCandidate> = Vec::new();
+    'outer: for &doc in &doc_variants {
+        for &stepover in &stepover_variants {
+            if cancel.load(Ordering::SeqCst) {
+                break 'outer;
+            }
+            // Skip the anchor combo — it's already represented by the
+            // headroom-point candidate (or the baseline).
+            if (doc - anchor_doc).abs() < DOC_DEDUP_TOLERANCE_MM
+                && (stepover - anchor_stepover).abs() < STEPOVER_DEDUP_TOLERANCE_MM
+            {
+                continue;
+            }
+            let candidate_op = apply_stepover_to_op(&apply_doc_to_op(&anchor_op, doc), stepover);
+            let delta = delta_against_baseline(baseline_op, &candidate_op);
+            if let Ok(candidate) = evaluate_candidate(
+                guard,
+                ctx,
+                candidate_op,
+                delta,
+                SearchStage::Coarse,
+                STAGE1_RESOLUTION_MM,
+                cancel,
+            ) {
+                out.push(candidate);
+            }
+        }
+    }
+    out
+}
+
+// ── Pre-flight classifier (HIGH-1, HIGH-3, HIGH-5 from the redesign) ──
+//
+// Before any sims fire, classify the baseline against each gate:
+//
+//   - Deflection `Exceeds` → search space (feed/RPM/DOC/stepover)
+//     can't reach a Within answer because L/D depends only on the
+//     tool config. Refuse with `DeflectionSetupLocked`.
+//   - Bipolar chipload (steady-state samples straddle both `cl_min`
+//     and `cl_max`) → no single feed/RPM scaling fixes both
+//     extremes. Refuse with `BipolarEngagement`.
+//
+// Both refusals carry an op-aware prescription string. The shape is
+// "<diagnostic> — <lever>", where the diagnostic explains *what* is
+// wrong and the lever points at a knob the user has access to.
+
+/// Outcome of pre-flight: either a refusal that should short-circuit
+/// the optimizer, or `None` to proceed to stages.
+struct PreflightRefusal {
+    reason: RefuseReason,
+    explanation: String,
+}
+
+/// Classify the baseline before running any stages. Returns `Some`
+/// when the optimizer should refuse early without burning sims.
+fn preflight_classify(
+    ctx: &EvaluationContext,
+    baseline_trace: &SimulationCutTrace,
+    operation_feed_rate_mm_min: f64,
+    baseline_verdict: &ToolpathLoadVerdict,
+    matched_lut_row: Option<&MatchedRow>,
+) -> Option<PreflightRefusal> {
+    // 1. Deflection — pure setup geometry, unreachable from search space.
+    if let Verdict::Exceeds { peak: ld_ratio, .. } = baseline_verdict.deflection {
+        return Some(PreflightRefusal {
+            reason: RefuseReason::DeflectionSetupLocked,
+            explanation: deflection_setup_prescription(&ctx.tool, ld_ratio),
+        });
+    }
+
+    // 2. Bipolar chipload — needs both LUT bounds to be defined,
+    //    otherwise we can't classify against an undefined floor or
+    //    ceiling. Many vendor rows publish only `chip_load_max_mm`,
+    //    so this gate is opt-in by row coverage.
+    if let Some(row) = matched_lut_row
+        && let (Some(cl_min), Some(cl_max)) = (row.chip_load_min_mm, row.chip_load_max_mm)
+    {
+        let steady = super::chipload::steady_state_samples_for_toolpath(
+            baseline_trace,
+            ctx.toolpath_id,
+            operation_feed_rate_mm_min,
+        );
+        if super::chipload::is_bipolar_engagement(&steady.samples, cl_min, cl_max) {
+            return Some(PreflightRefusal {
+                reason: RefuseReason::BipolarEngagement,
+                explanation: bipolar_prescription(ctx.operation_kind, ctx.op_family),
+            });
+        }
+    }
+
+    None
+}
+
+/// Build the user-facing prescription string for a deflection-setup-
+/// locked refusal. Reports the actual L/D ratio and the stickout that
+/// would bring it back to the safe target (L/D=4).
+fn deflection_setup_prescription(tool: &crate::tool::ToolDefinition, ld_ratio: f64) -> String {
+    let target_stickout_mm = (tool.diameter() * 4.0).max(0.0);
+    format!(
+        "tool L/D ratio is {ld_ratio:.1} (above 6.0 limit) — feed/RPM/DOC/stepover \
+         can't fix this; shorten stickout to ~{target_stickout_mm:.0} mm (target L/D=4) \
+         or use a stiffer tool"
+    )
+}
+
+/// Build the user-facing prescription string for a bipolar-engagement
+/// refusal. The lever depends on whether the operation has a
+/// depth-per-pass knob the user can adjust to reduce engagement
+/// variance: 2.5D ops with DOC/stepover can usually fix it; 3D
+/// finishing ops typically can't and need a setup change.
+fn bipolar_prescription(op_kind: OperationType, op_family: OperationFamily) -> String {
+    let lever = if has_doc_knob(op_kind) {
+        "lower stepover or raise depth-per-pass to reduce engagement variance across the toolpath"
+    } else {
+        match op_family {
+            OperationFamily::Contour | OperationFamily::Trace => {
+                "engagement variance is driven by the part geometry — break the operation into \
+                 multiple passes at fixed engagement, or use a smaller cutter"
+            }
+            OperationFamily::Parallel | OperationFamily::Scallop => {
+                "this is a 3D finishing op — reduce stepover for tighter passes, or shorten \
+                 the cutter to lower setup deflection"
+            }
+            OperationFamily::Face => {
+                "engagement variance on a face op usually means the stock or stepover is \
+                 misaligned with the cutter footprint — adjust stepover or face the stock first"
+            }
+            // Adaptive / Pocket / Adaptive3d are all has_doc_knob — they hit the branch above.
+            OperationFamily::Adaptive | OperationFamily::Pocket => {
+                "lower stepover or raise depth-per-pass to reduce engagement variance"
+            }
+        }
+    };
+    format!(
+        "steady-state chipload samples straddle the LUT chipload range \
+         (some below the burn floor, some above the breakage ceiling) — \
+         no single feed/RPM clears both extremes. {lever}."
+    )
 }
 
 /// Operation kinds with a `depth_per_pass` knob that Stage 1 sweeps.
@@ -515,6 +896,25 @@ fn baseline_rpm_from_trace(
         .unwrap_or_else(|| machine.rpm_range().0)
 }
 
+/// Pick the diameter to feed into the LUT lookup for a given
+/// commanded DOC. For tools whose engaged diameter varies with axial
+/// engagement (tapered ball nose, V-bit), `lookup_diameter_at(doc)`
+/// returns the actual engaged diameter; for cylindrical tools (end
+/// mill, bull nose, drill, plain ball nose) it equals the nominal
+/// diameter. When the operation has no commanded DOC (drilling per
+/// peck, V-carve, scallop, ...) or the value is non-positive, fall
+/// back to the nominal diameter — matching the LUT row to the shank
+/// is still better than rejecting the lookup.
+fn diameter_for_lut_lookup(
+    tool: &crate::tool::ToolDefinition,
+    commanded_doc_mm: Option<f64>,
+) -> f64 {
+    match commanded_doc_mm {
+        Some(doc) if doc.is_finite() && doc > 0.0 => tool.lookup_diameter_at(doc),
+        _ => tool.diameter(),
+    }
+}
+
 /// Look up the best-matching LUT row for the toolpath's tool /
 /// material / operation combination. Mirrors `suggest::evaluate`'s
 /// LUT plumbing so the optimizer reads from the same calibration data
@@ -525,6 +925,7 @@ fn find_matched_lut_row(
     tool: &crate::tool::ToolDefinition,
     material: &crate::material::Material,
     ctx: &EvaluationContext,
+    commanded_doc_mm: Option<f64>,
 ) -> Option<MatchedRow> {
     let tool_family = super::chipload::tool_family_for(tool.to_geometry_hint());
     let (lut_op_family, lut_pass_role) = super::chipload::routed_lookup_family(
@@ -541,7 +942,7 @@ fn find_matched_lut_row(
     let criteria = crate::feeds::vendor_lookup::LookupCriteria {
         tool_family,
         tool_subfamily: None,
-        diameter_mm: tool.diameter(),
+        diameter_mm: diameter_for_lut_lookup(tool, commanded_doc_mm),
         flute_count: tool.flute_count,
         material_family,
         hardness_kind: Some(hardness_kind),
@@ -784,6 +1185,167 @@ pub(crate) fn apply_scale_to_op(
     scaled
 }
 
+// ── Stage F re-target (chipload-Exceeds baselines) ────────────────────
+//
+// Stage 0 (headroom scale-up) is the Stage F mode for Within
+// baselines. The re-target mode runs when the baseline trips the
+// chipload gate single-sidedly (Burn or Breakage but not bipolar — the
+// pre-flight in #1 already refuses bipolar). It computes a target
+// chipload from the LUT row, compensates for radial chip thinning
+// (RCTF) at the commanded engagement, and re-derives feed and RPM
+// inside the machine + LUT envelope.
+
+/// Solution returned by `solve_chipload_retarget`. Absolute target
+/// values, not a multiplicative scale.
+#[derive(Debug, Clone, Copy)]
+struct RetargetSolution {
+    target_feed_mm_min: f64,
+    target_rpm: f64,
+    /// Updated plunge rate, when the feed change is meaningful enough
+    /// (>10%) to warrant tracking. `None` means "leave plunge alone."
+    target_plunge_mm_min: Option<f64>,
+}
+
+/// Pick the target effective chipload from the LUT row's published
+/// bounds. Returns `None` when the row carries neither bound — there
+/// is nothing to retarget against.
+fn lut_chipload_target(row: &MatchedRow) -> Option<f64> {
+    match (row.chip_load_min_mm, row.chip_load_max_mm) {
+        (Some(lo), Some(hi)) if lo > 0.0 && hi >= lo => Some((lo + hi) * 0.5),
+        (None, Some(hi)) if hi > 0.0 => Some(hi * 0.85),
+        (Some(lo), None) if lo > 0.0 => Some(lo * 1.15),
+        _ => None,
+    }
+}
+
+/// Pick the target RPM for retarget. Prefers the LUT row's
+/// `rpm_nominal` when present, else the baseline RPM, then clamps
+/// against the machine envelope and the LUT row's `[rpm_min, rpm_max]`
+/// bracket if defined. Returns `None` when the LUT bracket has no
+/// overlap with the machine range — that case is `RpmBracketEmpty`
+/// and the orchestrator should refuse.
+fn solve_target_rpm(baseline_rpm: f64, row: &MatchedRow, machine: &MachineProfile) -> Option<f64> {
+    let (machine_min, machine_max) = machine.rpm_range();
+
+    // 1. LUT bracket: prefer rpm_nominal; fall back to mid(min,max).
+    //    The Engineering Default 5 ±20% bracket isn't applied here —
+    //    retarget is selecting an exact target, not a cap.
+    let lut_target = row.rpm_nominal.or({
+        match (row.rpm_min, row.rpm_max) {
+            (Some(lo), Some(hi)) => Some((lo + hi) * 0.5),
+            (Some(v), None) | (None, Some(v)) => Some(v),
+            (None, None) => None,
+        }
+    });
+
+    let target = lut_target.unwrap_or(baseline_rpm);
+
+    // 2. Clamp by machine + LUT bracket. If the LUT row's bracket
+    //    has no overlap with the machine range, that's RpmBracketEmpty.
+    let lut_lo = row.rpm_min.unwrap_or(machine_min);
+    let lut_hi = row.rpm_max.unwrap_or(machine_max);
+    let effective_min = lut_lo.max(machine_min);
+    let effective_max = lut_hi.min(machine_max);
+    if effective_min > effective_max {
+        return None;
+    }
+    Some(target.clamp(effective_min, effective_max))
+}
+
+/// Compute a retarget solution for a chipload-Exceeds baseline.
+/// Targets the LUT row's nominal chipload, compensated by RCTF for
+/// the commanded radial engagement, with RPM clamped by both the
+/// machine envelope and the LUT row's RPM bracket.
+///
+/// Returns `None` when:
+///   - the LUT row has no usable chipload bounds (NoFeasibleRow case)
+///   - the LUT row's RPM bracket has no overlap with the machine
+///     range (RpmBracketEmpty)
+///   - the resulting feed would be non-finite or non-positive
+///   - the change from baseline feed is below 1% (no meaningful
+///     retarget — Stage 1 grid will pick up the rest)
+#[allow(clippy::too_many_arguments)]
+fn solve_chipload_retarget(
+    baseline_op: &OperationConfig,
+    baseline_rpm: f64,
+    flute_count: u32,
+    engaged_diameter_mm: f64,
+    commanded_ae_mm: f64,
+    plunge_base_mm_min: f64,
+    lut_row: &MatchedRow,
+    machine: &MachineProfile,
+) -> Option<RetargetSolution> {
+    // 1. Target effective (post-thinning) chipload from the LUT row.
+    let target_chipload_eff = lut_chipload_target(lut_row)?;
+
+    // 2. Compensate for radial chip thinning. We aim for the feed
+    //    that produces the LUT-target effective chipload AT the
+    //    commanded engagement, so the nominal chipload (= feed /
+    //    (rpm × flutes)) must be raised by RCTF.
+    let rctf = radial_chip_thinning_factor(commanded_ae_mm, engaged_diameter_mm);
+    let target_chipload_nominal = target_chipload_eff * rctf;
+
+    // 3. Pick a target RPM inside the machine + LUT envelope.
+    let target_rpm = solve_target_rpm(baseline_rpm, lut_row, machine)?;
+
+    // 4. Compute target feed = chipload × rpm × flutes.
+    let target_feed_raw = target_chipload_nominal * target_rpm * f64::from(flute_count);
+    if !target_feed_raw.is_finite() || target_feed_raw <= 0.0 {
+        return None;
+    }
+    // Clamp by machine feed envelope. Below the machine min isn't
+    // valid; if the unclamped target is above the machine max we
+    // accept the clamped value — this is still a meaningful retarget
+    // even when the machine ceiling is the binding cap.
+    let target_feed = target_feed_raw.min(machine.max_feed_mm_min).max(1.0);
+
+    // 5. Skip noise-level retargets — Stage 1 grid will explore from
+    //    baseline if the change is too small to matter.
+    let baseline_feed = baseline_op.feed_rate().max(1.0);
+    if ((target_feed - baseline_feed) / baseline_feed).abs() < 0.01 {
+        return None;
+    }
+
+    // 6. Plunge tracking. Plunge is derived from feed in the F&S
+    //    calculator; when the optimizer moves feed by >10%, plunge
+    //    has to come along or the next regen will rebuild a transient
+    //    that's no longer steady-state. Cap by `material plunge_base
+    //    × machine.safety_factor`.
+    let feed_ratio = target_feed / baseline_feed;
+    let target_plunge_mm_min = if (feed_ratio - 1.0).abs() > 0.10 {
+        let baseline_plunge = baseline_op.plunge_rate();
+        let scaled = baseline_plunge * feed_ratio;
+        let cap = (plunge_base_mm_min * machine.safety_factor).max(0.0);
+        Some(scaled.clamp(0.0, cap.max(scaled.min(plunge_base_mm_min))))
+    } else {
+        None
+    };
+
+    Some(RetargetSolution {
+        target_feed_mm_min: target_feed,
+        target_rpm,
+        target_plunge_mm_min,
+    })
+}
+
+/// Build the retarget `OperationConfig` from a `RetargetSolution`.
+/// Mirrors `apply_scale_to_op` but uses absolute targets and
+/// optionally writes a new plunge rate.
+fn apply_retarget_to_op(
+    baseline_op: &OperationConfig,
+    solution: &RetargetSolution,
+    machine: &MachineProfile,
+) -> OperationConfig {
+    let mut out = baseline_op.clone();
+    out.set_feed_rate(solution.target_feed_mm_min);
+    let rpm = machine.clamp_rpm(solution.target_rpm).round() as u32;
+    out.set_spindle_rpm(Some(rpm));
+    if let Some(plunge) = solution.target_plunge_mm_min {
+        out.set_plunge_rate(plunge);
+    }
+    out
+}
+
 // ── Stage 1: DOC candidate generation (Engineering Default 9) ─────────
 //
 // Five geometry-bearing ops carry a `depth_per_pass`; the optimizer
@@ -885,8 +1447,7 @@ pub(crate) fn build_doc_variants(
     // back into the well-tested envelope when the user's baseline drifted
     // far from it (ex: TP 1 wanaka — adaptive3d default 3mm, baseline
     // 3mm; benign here). Always added; dedup handles the no-op case.
-    if let Some(default_doc) = OperationConfig::new_default(op_type)
-        .depth_per_pass()
+    if let Some(default_doc) = OperationConfig::new_default(op_type).depth_per_pass()
         && default_doc.is_finite()
         && default_doc > DOC_HARD_FLOOR_MM
     {
@@ -1096,6 +1657,11 @@ pub(crate) struct EvaluationContext {
     /// Operation kind — used for the gate's LUT routing and for
     /// skipping ops the optimizer can't model.
     pub operation_kind: OperationType,
+    /// The op's `feeds_family` (pre-LUT-routing). Used by the pre-flight
+    /// prescription helpers to phrase op-aware refusals. The
+    /// `lut_op_family` field below is what the LUT lookup uses; this
+    /// one is for human-readable surface only.
+    pub op_family: OperationFamily,
     /// LUT family from the op's `feeds_family`.
     pub lut_op_family: LutOperationFamily,
     /// LUT pass role from the op's `feeds_pass_role`.
@@ -1119,6 +1685,7 @@ impl EvaluationContext {
             toolpath_index,
             toolpath_id: tc.id,
             operation_kind: tc.operation.op_type(),
+            op_family: spec.feeds_family,
             lut_op_family: lut_op_family_from(spec.feeds_family),
             lut_pass_role: lut_pass_role_from(spec.feeds_pass_role),
             tool,
@@ -1216,6 +1783,7 @@ pub(crate) fn evaluate_candidate(
         stage,
         reconciled_cycle_time_s: None,
         reconciled_verdict: None,
+        gate_deltas: None,
     })
 }
 
@@ -1283,14 +1851,19 @@ pub(crate) fn refine_stage2(
 }
 
 /// Build an `OptimizeOutcome` from a baseline candidate and the
-/// Stage-2 refined candidates. Per ED 8:
-///   - Empty `candidates` (no candidates produced at all) →
-///     `NoSafeImprovement` with the "no improvement found" narrative.
-///   - All candidates `Exceeds` or all slower than baseline →
-///     `NoSafeImprovement`.
-///   - At least one safe-and-faster candidate → `Ranked`, with
-///     baseline at index 0 and the rest sorted ascending by cycle
-///     time.
+/// Stage-2 refined candidates. Tier dispatcher per the redesign plan:
+///
+///   - Empty candidates → `NoSafeImprovement` (no improvement found).
+///   - At least one candidate is faster AND has no regression on any
+///     gate (every delta Improved/Same/Unmodeled) → `Ranked`. Today's
+///     auto-recommendation surface; UI can ⭐ the first safe entry.
+///   - At least one candidate is faster AND improves a failing gate
+///     while worsening a non-failing one → `TradeOff`. New tier — the
+///     user has to explicitly accept the regression.
+///   - Otherwise → `NoSafeImprovement`.
+///
+/// Every non-baseline candidate carries populated `gate_deltas` after
+/// this function runs, so consumers don't have to recompute.
 pub(crate) fn build_outcome(
     baseline: OptimizeCandidate,
     candidates: Vec<OptimizeCandidate>,
@@ -1306,49 +1879,76 @@ pub(crate) fn build_outcome(
         };
     }
 
-    let baseline_cycle = baseline.cycle_time_s;
-    let any_safe_and_faster = candidates.iter().any(|c| {
-        candidate_is_safe(c) && c.cycle_time_s + RECOMMENDATION_CYCLE_DELTA_S < baseline_cycle
-    });
+    // Populate per-candidate gate deltas vs baseline. Done up-front so
+    // every downstream branch sees the same data on the candidates,
+    // not just the surviving tier.
+    let baseline_verdict = baseline.verdict.clone();
+    let mut sorted = candidates;
+    for c in sorted.iter_mut() {
+        c.gate_deltas = Some(classify_candidate_vs_baseline(
+            &baseline_verdict,
+            &c.verdict,
+        ));
+    }
+    sorted.sort_by(|a, b| a.cycle_time_s.total_cmp(&b.cycle_time_s));
 
-    if !any_safe_and_faster {
-        let all_unsafe = candidates.iter().all(|c| !candidate_is_safe(c));
-        let explanation = if all_unsafe {
-            format!(
-                "{}: every candidate hit a gate limit (chipload, power, or deflection)",
-                RefuseReason::NoImprovementFound.explanation_for_optimize()
-            )
-        } else {
-            format!(
-                "{}: no candidate beat the baseline cycle time by more than {:.1}s",
-                RefuseReason::NoImprovementFound.explanation_for_optimize(),
-                RECOMMENDATION_CYCLE_DELTA_S
-            )
-        };
-        // Build the attempted list the same way Ranked does — baseline
-        // at index 0, then candidates sorted by ascending cycle time.
-        // The user can see what was tried and how each fell short.
-        let mut sorted = candidates;
-        sorted.sort_by(|a, b| a.cycle_time_s.total_cmp(&b.cycle_time_s));
-        let mut attempted = Vec::with_capacity(sorted.len() + 1);
-        attempted.push(baseline);
-        attempted.extend(sorted);
-        return OptimizeOutcome::NoSafeImprovement {
-            reason: RefuseReason::NoImprovementFound,
-            explanation,
-            attempted,
-        };
+    let baseline_cycle = baseline.cycle_time_s;
+    let is_faster =
+        |c: &OptimizeCandidate| c.cycle_time_s + RECOMMENDATION_CYCLE_DELTA_S < baseline_cycle;
+
+    // Pure improvement (Ranked tier): faster AND no regression.
+    let any_pure_improvement = sorted
+        .iter()
+        .any(|c| c.gate_deltas.map(|d| d.no_regression()).unwrap_or(false) && is_faster(c));
+
+    // Trade-off tier: faster AND improves something AND worsens
+    // something. Pure improvements take priority — only land in
+    // TradeOff if there's no Ranked candidate.
+    let any_tradeoff = !any_pure_improvement
+        && sorted.iter().any(|c| {
+            c.gate_deltas
+                .map(|d| d.any_improved() && d.any_worsened())
+                .unwrap_or(false)
+                && is_faster(c)
+        });
+
+    if any_pure_improvement {
+        let mut ranked = Vec::with_capacity(sorted.len() + 1);
+        ranked.push(baseline);
+        ranked.extend(sorted);
+        return OptimizeOutcome::Ranked(ranked);
     }
 
-    // Build the ranked list: baseline at index 0, then candidates
-    // sorted by ascending cycle time. The recommendation is whichever
-    // first_safe() returns.
-    let mut sorted = candidates;
-    sorted.sort_by(|a, b| a.cycle_time_s.total_cmp(&b.cycle_time_s));
-    let mut ranked = Vec::with_capacity(sorted.len() + 1);
-    ranked.push(baseline);
-    ranked.extend(sorted);
-    OptimizeOutcome::Ranked(ranked)
+    if any_tradeoff {
+        let mut tradeoffs = Vec::with_capacity(sorted.len() + 1);
+        tradeoffs.push(baseline);
+        tradeoffs.extend(sorted);
+        return OptimizeOutcome::TradeOff(tradeoffs);
+    }
+
+    // Fall through: NoSafeImprovement, with the same attempted-list
+    // shape as before.
+    let all_unsafe = sorted.iter().all(|c| !candidate_is_safe(c));
+    let explanation = if all_unsafe {
+        format!(
+            "{}: every candidate hit a gate limit (chipload, power, or deflection)",
+            RefuseReason::NoImprovementFound.explanation_for_optimize()
+        )
+    } else {
+        format!(
+            "{}: no candidate beat the baseline cycle time by more than {:.1}s",
+            RefuseReason::NoImprovementFound.explanation_for_optimize(),
+            RECOMMENDATION_CYCLE_DELTA_S
+        )
+    };
+    let mut attempted = Vec::with_capacity(sorted.len() + 1);
+    attempted.push(baseline);
+    attempted.extend(sorted);
+    OptimizeOutcome::NoSafeImprovement {
+        reason: RefuseReason::NoImprovementFound,
+        explanation,
+        attempted,
+    }
 }
 
 // ── Project-level rollup (U3) ─────────────────────────────────────────
@@ -1507,6 +2107,7 @@ pub fn optimize_project(
 )]
 mod stage0_tests {
     use super::*;
+    use crate::compute::operation_configs::PocketConfig;
     use crate::machine::{
         ChipLoadFormula, MachineProfile, PowerModel, RigidityProfile, SpindleConfig,
     };
@@ -1809,6 +2410,293 @@ mod stage0_tests {
         });
         let scaled = apply_scale_to_op(&baseline, 12_000.0, 2.0, &machine);
         assert_eq!(scaled.spindle_rpm(), Some(18_000));
+    }
+
+    // ── Stage F re-target (Commit #2) ────────────────────────────────
+
+    fn empty_row() -> MatchedRow {
+        MatchedRow {
+            chip_load_mm: 0.05,
+            chip_load_min_mm: None,
+            chip_load_max_mm: None,
+            rpm_nominal: None,
+            rpm_min: None,
+            rpm_max: None,
+            ap_min_mm: None,
+            ap_max_mm: None,
+            ae_min_mm: None,
+            ae_max_mm: None,
+            observation_id: "test".to_owned(),
+            source_vendor: "synthetic".to_owned(),
+            score: 0,
+            diameter_match_score: 0,
+        }
+    }
+
+    #[test]
+    fn lut_chipload_target_uses_midpoint_when_both_bounds_set() {
+        let mut row = empty_row();
+        row.chip_load_min_mm = Some(0.04);
+        row.chip_load_max_mm = Some(0.10);
+        let target = lut_chipload_target(&row).unwrap();
+        assert!((target - 0.07).abs() < 1e-9, "got {target}");
+    }
+
+    #[test]
+    fn lut_chipload_target_uses_offset_when_only_one_bound_set() {
+        // Only max published → target slightly below max (15% margin)
+        // so we don't sit on the breakage ceiling.
+        let mut row = empty_row();
+        row.chip_load_max_mm = Some(0.10);
+        let target = lut_chipload_target(&row).unwrap();
+        assert!((target - 0.085).abs() < 1e-6, "got {target}");
+
+        // Only min published → target slightly above min (15% margin)
+        // so we don't sit on the burn floor.
+        let mut row = empty_row();
+        row.chip_load_min_mm = Some(0.04);
+        let target = lut_chipload_target(&row).unwrap();
+        assert!((target - 0.046).abs() < 1e-6, "got {target}");
+    }
+
+    #[test]
+    fn lut_chipload_target_returns_none_when_no_bounds() {
+        let row = empty_row();
+        assert!(lut_chipload_target(&row).is_none());
+    }
+
+    #[test]
+    fn solve_target_rpm_prefers_lut_nominal_inside_machine_range() {
+        let machine = synthetic_machine(
+            24_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let mut row = empty_row();
+        row.rpm_nominal = Some(15_000.0);
+        row.rpm_min = Some(12_000.0);
+        row.rpm_max = Some(20_000.0);
+        let rpm = solve_target_rpm(8_000.0, &row, &machine).unwrap();
+        assert!((rpm - 15_000.0).abs() < 1e-6, "got {rpm}");
+    }
+
+    #[test]
+    fn solve_target_rpm_returns_none_when_brackets_disjoint() {
+        // Machine maxes at 18k; LUT row needs ≥ 25k. No overlap.
+        let machine = synthetic_machine(
+            18_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let mut row = empty_row();
+        row.rpm_min = Some(25_000.0);
+        row.rpm_max = Some(30_000.0);
+        assert!(solve_target_rpm(12_000.0, &row, &machine).is_none());
+    }
+
+    #[test]
+    fn retarget_raises_feed_for_burn_baseline() {
+        // Baseline feed 600 mm/min, RPM 12k, 2 flutes → chipload =
+        // 600 / (12000 × 2) = 0.025 mm/tooth, BELOW the row's
+        // [0.04, 0.10] range. Retarget should pick midpoint 0.07
+        // and raise feed accordingly.
+        let machine = synthetic_machine(
+            24_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let mut row = empty_row();
+        row.chip_load_min_mm = Some(0.04);
+        row.chip_load_max_mm = Some(0.10);
+        row.rpm_nominal = Some(12_000.0);
+        let baseline = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 600.0,
+            spindle_rpm: Some(12_000),
+            ..PocketConfig::default()
+        });
+        // Full slot (ae=0 → RCTF=1.0 default). 6.35 mm endmill, 2 flutes.
+        let solution = solve_chipload_retarget(
+            &baseline, 12_000.0, 2,    // flutes
+            6.35, // engaged diameter
+            0.0,  // commanded ae (full slot fallback)
+            1500.0, &row, &machine,
+        )
+        .unwrap();
+        // Target nominal chipload = 0.07 × RCTF(0.0, 6.35) = 0.07.
+        // Feed = 0.07 × 12000 × 2 = 1680. Capped by machine max 10000.
+        assert!(solution.target_feed_mm_min > baseline.feed_rate());
+        assert!(
+            (solution.target_feed_mm_min - 1680.0).abs() < 1.0,
+            "got {solution:?}"
+        );
+        // RPM stays at LUT nominal.
+        assert!((solution.target_rpm - 12_000.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn retarget_lowers_feed_for_breakage_baseline() {
+        // Baseline feed 4000 mm/min → chipload 0.167, well above max.
+        // Retarget should pull feed down toward midpoint 0.07.
+        let machine = synthetic_machine(
+            24_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let mut row = empty_row();
+        row.chip_load_min_mm = Some(0.04);
+        row.chip_load_max_mm = Some(0.10);
+        row.rpm_nominal = Some(12_000.0);
+        let baseline = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 4000.0,
+            spindle_rpm: Some(12_000),
+            ..PocketConfig::default()
+        });
+        let solution =
+            solve_chipload_retarget(&baseline, 12_000.0, 2, 6.35, 0.0, 1500.0, &row, &machine)
+                .unwrap();
+        assert!(solution.target_feed_mm_min < baseline.feed_rate());
+        // Feed = 0.07 × 12000 × 2 = 1680.
+        assert!((solution.target_feed_mm_min - 1680.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn retarget_compensates_for_partial_engagement_via_rctf() {
+        // 20% engagement on a 6 mm tool: ae/d = 0.2, RCTF ~ 1.25.
+        // Target nominal chipload = 0.05 × 1.25 = 0.0625, so feed
+        // should land 25% higher than the no-RCTF case.
+        let machine = synthetic_machine(
+            24_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let mut row = empty_row();
+        row.chip_load_min_mm = Some(0.04);
+        row.chip_load_max_mm = Some(0.06);
+        row.rpm_nominal = Some(12_000.0);
+        let baseline = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 600.0,
+            spindle_rpm: Some(12_000),
+            ..PocketConfig::default()
+        });
+        let no_rctf = solve_chipload_retarget(
+            &baseline, 12_000.0, 2, 6.0, 0.0, // ae=0 → RCTF=1
+            1500.0, &row, &machine,
+        )
+        .unwrap();
+        let with_rctf = solve_chipload_retarget(
+            &baseline, 12_000.0, 2, 6.0, 1.2, // 20% engagement → RCTF ≈ 1.25
+            1500.0, &row, &machine,
+        )
+        .unwrap();
+        let ratio = with_rctf.target_feed_mm_min / no_rctf.target_feed_mm_min;
+        assert!(
+            ratio > 1.20 && ratio < 1.30,
+            "RCTF should bump feed ~25% — got ratio {ratio}"
+        );
+    }
+
+    #[test]
+    fn retarget_plunge_tracks_feed_when_delta_exceeds_ten_percent() {
+        // Big retarget (>10% feed change) → plunge updates.
+        let machine = synthetic_machine(
+            24_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let mut row = empty_row();
+        row.chip_load_min_mm = Some(0.04);
+        row.chip_load_max_mm = Some(0.10);
+        row.rpm_nominal = Some(12_000.0);
+        let baseline = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 600.0,
+            spindle_rpm: Some(12_000),
+            plunge_rate: 200.0,
+            ..PocketConfig::default()
+        });
+        let solution =
+            solve_chipload_retarget(&baseline, 12_000.0, 2, 6.35, 0.0, 1500.0, &row, &machine)
+                .unwrap();
+        assert!(
+            solution.target_plunge_mm_min.is_some(),
+            "feed change ~2.8× should trip the plunge tracker"
+        );
+    }
+
+    #[test]
+    fn retarget_skips_noise_floor_changes() {
+        // Baseline feed already inside the LUT envelope at midpoint.
+        // Resulting "retarget" delta is well below 1% — solver should
+        // refuse rather than emit a no-op candidate.
+        let machine = synthetic_machine(
+            24_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let mut row = empty_row();
+        row.chip_load_min_mm = Some(0.04);
+        row.chip_load_max_mm = Some(0.10);
+        row.rpm_nominal = Some(12_000.0);
+        // Baseline feed = midpoint × rpm × flutes = 0.07 × 12000 × 2 = 1680.
+        let baseline = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 1680.0,
+            spindle_rpm: Some(12_000),
+            ..PocketConfig::default()
+        });
+        let solution =
+            solve_chipload_retarget(&baseline, 12_000.0, 2, 6.35, 0.0, 1500.0, &row, &machine);
+        assert!(solution.is_none(), "noise-level retarget should refuse");
+    }
+
+    #[test]
+    fn retarget_returns_none_when_no_lut_chipload_bounds() {
+        let machine = synthetic_machine(
+            24_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let row = empty_row(); // no chipload bounds
+        let baseline = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 600.0,
+            spindle_rpm: Some(12_000),
+            ..PocketConfig::default()
+        });
+        assert!(
+            solve_chipload_retarget(&baseline, 12_000.0, 2, 6.35, 0.0, 1500.0, &row, &machine)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn apply_retarget_writes_feed_rpm_and_optional_plunge() {
+        let machine = synthetic_machine(
+            24_000.0,
+            10_000.0,
+            PowerModel::ConstantPower { power_kw: 5.0 },
+            0.8,
+        );
+        let baseline = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 600.0,
+            spindle_rpm: Some(12_000),
+            plunge_rate: 200.0,
+            ..PocketConfig::default()
+        });
+        let solution = RetargetSolution {
+            target_feed_mm_min: 1680.0,
+            target_rpm: 12_500.0,
+            target_plunge_mm_min: Some(560.0),
+        };
+        let out = apply_retarget_to_op(&baseline, &solution, &machine);
+        assert!((out.feed_rate() - 1680.0).abs() < 1e-6);
+        assert_eq!(out.spindle_rpm(), Some(12_500));
+        assert!((out.plunge_rate() - 560.0).abs() < 1e-6);
     }
 }
 
@@ -2163,6 +3051,126 @@ mod orchestration_skip_tests {
         assert!(
             !matches!(outcome, OptimizeOutcome::Ranked(_)),
             "cancelled run should not produce Ranked, got {outcome:?}"
+        );
+    }
+
+    // ── Pre-flight refusals (Commit #1) ──────────────────────────────
+
+    /// Build a populated trace whose `toolpath_summaries[0]` reports a
+    /// non-zero cycle time, so `optimize_toolpath` walks past the
+    /// "no cycle time" skip path and reaches the pre-flight classifier.
+    fn trace_with_summary() -> SimulationCutTrace {
+        use crate::simulation_cut::SimulationToolpathCutSummary;
+        let mut trace = empty_trace();
+        trace.toolpath_summaries.push(SimulationToolpathCutSummary {
+            toolpath_id: 0,
+            sample_count: 100,
+            total_runtime_s: 60.0,
+            cutting_runtime_s: 50.0,
+            rapid_runtime_s: 10.0,
+            air_cut_time_s: 0.0,
+            low_engagement_time_s: 0.0,
+            average_engagement: 0.5,
+            peak_chipload_mm_per_tooth: 0.04,
+            peak_axial_doc_mm: 2.0,
+            total_removed_volume_est_mm3: 100.0,
+            average_mrr_mm3_s: 2.0,
+        });
+        trace
+    }
+
+    #[test]
+    fn deflection_exceeds_yields_setup_locked_refusal() {
+        // Default endmill has stickout 45mm, diameter 6.35mm →
+        // L/D ≈ 7.09 — above the 6.0 threshold. Pocket op with a
+        // populated trace summary walks past every prior skip path
+        // and lands in pre-flight, where the deflection Exceeds
+        // verdict triggers `DeflectionSetupLocked`.
+        let mut session = session_with_op(OperationConfig::Pocket(PocketConfig::default()));
+        let trace = trace_with_summary();
+        let cancel = AtomicBool::new(false);
+        let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
+        match outcome {
+            OptimizeOutcome::NoSafeImprovement {
+                reason,
+                explanation,
+                attempted,
+            } => {
+                assert_eq!(reason, RefuseReason::DeflectionSetupLocked);
+                assert!(
+                    explanation.contains("L/D"),
+                    "explanation should mention L/D, got: {explanation}"
+                );
+                assert!(
+                    explanation.contains("stickout"),
+                    "explanation should point at the stickout lever, got: {explanation}"
+                );
+                assert_eq!(
+                    attempted.len(),
+                    1,
+                    "deflection refusal should not burn any candidate sims — only the baseline \
+                     candidate should be attempted"
+                );
+            }
+            other => panic!("expected DeflectionSetupLocked NoSafeImprovement, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deflection_setup_locked_explanation_carries_target_stickout() {
+        // 6.35mm tool → target stickout for L/D=4 is 25mm. Verify
+        // the prescription number lands in the explanation string.
+        let tool = crate::tool::ToolDefinition::new(
+            Box::new(crate::tool::FlatEndmill::new(6.35, 20.0)),
+            6.35,
+            20.0,
+            40.0,
+            45.0, // L/D = 7.087
+            2,
+            crate::compute::tool_config::ToolMaterial::Carbide,
+        );
+        let s = deflection_setup_prescription(&tool, 7.087);
+        assert!(s.contains("7.1"), "ratio not in '{s}'");
+        assert!(s.contains("25"), "target stickout 25mm not in '{s}'");
+    }
+
+    #[test]
+    fn bipolar_prescription_for_doc_knob_op_points_at_doc_or_stepover() {
+        // Adaptive3d / Pocket / Adaptive / Rest / Face all have a DOC
+        // knob the user can adjust to reduce engagement variance.
+        let s = bipolar_prescription(OperationType::Adaptive3d, OperationFamily::Adaptive);
+        assert!(
+            s.contains("stepover") || s.contains("depth-per-pass"),
+            "DOC-knob op should suggest stepover or DOC, got: {s}"
+        );
+    }
+
+    #[test]
+    fn bipolar_prescription_for_3d_finishing_op_points_at_setup() {
+        // Parallel and Scallop have no DOC knob — engagement variance
+        // is driven by geometry. The prescription should point at a
+        // setup-level lever, not a DOC tweak.
+        let s = bipolar_prescription(OperationType::Scallop, OperationFamily::Parallel);
+        assert!(
+            !s.contains("depth-per-pass"),
+            "non-DOC-knob op should NOT suggest DOC tweak, got: {s}"
+        );
+        assert!(
+            s.contains("stepover") || s.contains("cutter"),
+            "3D finishing prescription should point at stepover or tool, got: {s}"
+        );
+    }
+
+    #[test]
+    fn bipolar_prescription_for_contour_points_at_geometry() {
+        // Contour and Trace are profile-following ops — variance comes
+        // from the part geometry, not stepover.
+        let s = bipolar_prescription(OperationType::Profile, OperationFamily::Contour);
+        assert!(
+            s.contains("part geometry")
+                || s.contains("multiple passes")
+                || s.contains("smaller cutter"),
+            "contour prescription should point at geometry-driven levers, got: {s}"
         );
     }
 }
@@ -2565,6 +3573,7 @@ mod tests {
             stage: SearchStage::Refined,
             reconciled_cycle_time_s: None,
             reconciled_verdict: None,
+            gate_deltas: None,
         }
     }
 
@@ -2803,6 +3812,7 @@ mod tests {
             RefuseReason::NoVendorData,
             RefuseReason::SteadyStateSamplesNotPresent,
             RefuseReason::BipolarEngagement,
+            RefuseReason::DeflectionSetupLocked,
             RefuseReason::NoFeasibleRow,
             RefuseReason::RpmBracketEmpty,
             RefuseReason::DiameterExtrapolationTooPoor,
@@ -2812,6 +3822,201 @@ mod tests {
             let s = v.explanation_for_optimize();
             assert!(!s.is_empty(), "variant {v:?} returned empty explanation");
         }
+    }
+
+    // ── Per-candidate gate deltas + tier dispatcher (Commit #3) ──────
+
+    fn exceeds_power_verdict() -> ToolpathLoadVerdict {
+        use super::super::verdict::{Confidence, ExceedsReason};
+        let mut v = within_verdict();
+        v.power = Verdict::Exceeds {
+            peak: 2.5,
+            sample_range: 0..1,
+            reason: ExceedsReason::SpindlePowerExceeded,
+            confidence: Confidence::Validated,
+        };
+        v
+    }
+
+    fn unmodeled_chipload_verdict() -> ToolpathLoadVerdict {
+        use super::super::verdict::UnmodeledReason;
+        let mut v = within_verdict();
+        v.chipload = Verdict::Unmodeled {
+            reason: UnmodeledReason::NoVendorData,
+        };
+        v
+    }
+
+    #[test]
+    fn classify_one_gate_within_to_within_is_same() {
+        let b = within_verdict();
+        let mut c = within_verdict();
+        if let Verdict::Within { peak, .. } = &mut c.power {
+            *peak = 0.55;
+        }
+        assert_eq!(classify_one_gate(&b.power, &c.power), GateDelta::Same);
+    }
+
+    #[test]
+    fn classify_one_gate_exceeds_to_within_is_improved() {
+        let b = exceeds_chipload_verdict();
+        let c = within_verdict();
+        assert_eq!(
+            classify_one_gate(&b.chipload, &c.chipload),
+            GateDelta::Improved
+        );
+    }
+
+    #[test]
+    fn classify_one_gate_within_to_exceeds_is_worsened() {
+        let b = within_verdict();
+        let c = exceeds_chipload_verdict();
+        assert_eq!(
+            classify_one_gate(&b.chipload, &c.chipload),
+            GateDelta::Worsened
+        );
+    }
+
+    #[test]
+    fn classify_one_gate_exceeds_to_smaller_exceeds_is_improved() {
+        use super::super::verdict::{Confidence, ExceedsReason};
+        let b_v = Verdict::Exceeds {
+            peak: 0.10,
+            sample_range: 0..1,
+            reason: ExceedsReason::ChiploadBreakageRisk,
+            confidence: Confidence::Validated,
+        };
+        let c_v = Verdict::Exceeds {
+            peak: 0.08, // strictly smaller, > 5% threshold
+            sample_range: 0..1,
+            reason: ExceedsReason::ChiploadBreakageRisk,
+            confidence: Confidence::Validated,
+        };
+        assert_eq!(classify_one_gate(&b_v, &c_v), GateDelta::Improved);
+    }
+
+    #[test]
+    fn classify_one_gate_exceeds_to_larger_exceeds_is_worsened() {
+        use super::super::verdict::{Confidence, ExceedsReason};
+        let b_v = Verdict::Exceeds {
+            peak: 0.08,
+            sample_range: 0..1,
+            reason: ExceedsReason::ChiploadBreakageRisk,
+            confidence: Confidence::Validated,
+        };
+        let c_v = Verdict::Exceeds {
+            peak: 0.10,
+            sample_range: 0..1,
+            reason: ExceedsReason::ChiploadBreakageRisk,
+            confidence: Confidence::Validated,
+        };
+        assert_eq!(classify_one_gate(&b_v, &c_v), GateDelta::Worsened);
+    }
+
+    #[test]
+    fn classify_one_gate_unmodeled_either_side_is_unmodeled() {
+        let b = unmodeled_chipload_verdict();
+        let c = within_verdict();
+        assert_eq!(
+            classify_one_gate(&b.chipload, &c.chipload),
+            GateDelta::Unmodeled
+        );
+        assert_eq!(
+            classify_one_gate(&c.chipload, &b.chipload),
+            GateDelta::Unmodeled
+        );
+    }
+
+    #[test]
+    fn gate_deltas_helpers() {
+        let pure = GateDeltas {
+            chipload: GateDelta::Improved,
+            power: GateDelta::Same,
+            deflection: GateDelta::Same,
+        };
+        assert!(pure.no_regression());
+        assert!(pure.any_improved());
+        assert!(!pure.any_worsened());
+
+        let tradeoff = GateDeltas {
+            chipload: GateDelta::Improved,
+            power: GateDelta::Worsened,
+            deflection: GateDelta::Same,
+        };
+        assert!(!tradeoff.no_regression());
+        assert!(tradeoff.any_improved());
+        assert!(tradeoff.any_worsened());
+    }
+
+    #[test]
+    fn build_outcome_pure_improvement_yields_ranked_with_deltas() {
+        // Baseline has chipload Exceeds. Candidate fixes it (Improved
+        // on chipload, Same on others) and is faster. Should land in
+        // Ranked, with gate_deltas populated on the candidate.
+        let baseline = synthetic_candidate(1500.0, 100.0, exceeds_chipload_verdict());
+        let pure = synthetic_candidate(2100.0, 70.0, within_verdict());
+        let outcome = build_outcome(baseline, vec![pure]);
+        let OptimizeOutcome::Ranked(ranked) = outcome else {
+            panic!("expected Ranked, got {outcome:?}");
+        };
+        assert!(ranked[0].gate_deltas.is_none(), "baseline has no deltas");
+        let deltas = ranked[1].gate_deltas.expect("candidate has deltas");
+        assert_eq!(deltas.chipload, GateDelta::Improved);
+        assert_eq!(deltas.power, GateDelta::Same);
+        assert_eq!(deltas.deflection, GateDelta::Same);
+    }
+
+    #[test]
+    fn build_outcome_tradeoff_yields_tradeoff_variant() {
+        // Baseline trips chipload. Candidate fixes chipload (Improved)
+        // but pushes power into Exceeds (Worsened). Faster overall.
+        // Pure-improvement check fails; trade-off check fires.
+        let baseline = synthetic_candidate(1500.0, 100.0, exceeds_chipload_verdict());
+        let mut tradeoff_verdict = within_verdict();
+        // Fix chipload but trip power.
+        tradeoff_verdict.chipload = within_verdict().chipload;
+        tradeoff_verdict.power = exceeds_power_verdict().power;
+        let candidate = synthetic_candidate(2200.0, 80.0, tradeoff_verdict);
+        let outcome = build_outcome(baseline, vec![candidate]);
+        let OptimizeOutcome::TradeOff(tradeoffs) = outcome else {
+            panic!("expected TradeOff, got {outcome:?}");
+        };
+        assert_eq!(tradeoffs.len(), 2, "baseline + 1 trade-off");
+        let deltas = tradeoffs[1].gate_deltas.expect("populated");
+        assert_eq!(deltas.chipload, GateDelta::Improved);
+        assert_eq!(deltas.power, GateDelta::Worsened);
+    }
+
+    #[test]
+    fn build_outcome_prefers_pure_improvement_over_tradeoff() {
+        // Two candidates: one is a trade-off, one is pure improvement.
+        // Pure should win — Ranked outcome.
+        let baseline = synthetic_candidate(1500.0, 100.0, exceeds_chipload_verdict());
+        let pure = synthetic_candidate(2100.0, 75.0, within_verdict());
+        let mut tradeoff_verdict = within_verdict();
+        tradeoff_verdict.power = exceeds_power_verdict().power;
+        let tradeoff_cand = synthetic_candidate(2200.0, 70.0, tradeoff_verdict);
+        let outcome = build_outcome(baseline, vec![tradeoff_cand, pure]);
+        assert!(
+            matches!(outcome, OptimizeOutcome::Ranked(_)),
+            "pure improvement must win, got {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn first_safe_returns_none_for_tradeoff_outcome() {
+        // first_safe only auto-recommends from Ranked outcomes.
+        // TradeOff candidates need explicit user acceptance.
+        let baseline = synthetic_candidate(1500.0, 100.0, exceeds_chipload_verdict());
+        let mut tradeoff_verdict = within_verdict();
+        tradeoff_verdict.power = exceeds_power_verdict().power;
+        let candidate = synthetic_candidate(2200.0, 70.0, tradeoff_verdict);
+        let outcome = build_outcome(baseline, vec![candidate]);
+        assert!(matches!(outcome, OptimizeOutcome::TradeOff(_)));
+        assert!(
+            outcome.first_safe().is_none(),
+            "TradeOff outcomes should not auto-recommend"
+        );
     }
 }
 
@@ -3223,5 +4428,73 @@ mod candidate_eval_tests {
             LutPassRole::SemiFinish
         );
         assert_eq!(lut_pass_role_from(PassRole::Finish), LutPassRole::Finish);
+    }
+
+    /// Build a `ToolDefinition` wrapping any `MillingCutter` for testing.
+    /// Stickout / shank / holder values are arbitrary — the LUT-lookup
+    /// helper only reads the cutter's diameter / engaged-diameter.
+    fn wrap_cutter(cutter: Box<dyn crate::tool::MillingCutter>) -> crate::tool::ToolDefinition {
+        crate::tool::ToolDefinition::new(
+            cutter,
+            6.35, // shank
+            20.0, // shank length
+            40.0, // holder diameter
+            60.0, // stickout
+            2,    // flutes
+            crate::compute::tool_config::ToolMaterial::Carbide,
+        )
+    }
+
+    #[test]
+    fn diameter_for_lut_lookup_tapered_ball_uses_engaged_at_doc() {
+        // Tapered ball nose: ball_dia 2 mm, half-angle 10°, shaft 8 mm,
+        // cutting length 30 mm. At a shallow DOC of 0.1 mm we're in
+        // the ball region — engaged diameter is much less than the
+        // 8 mm shaft.
+        let cutter = Box::new(crate::tool::TaperedBallEndmill::new(2.0, 10.0, 8.0, 30.0));
+        let tool = wrap_cutter(cutter);
+
+        // Sanity: nominal "diameter" is the shaft (max) — the bug we're
+        // fixing is the optimizer matching LUT rows against this value.
+        assert!((tool.diameter() - 8.0).abs() < 1e-9);
+
+        let engaged = diameter_for_lut_lookup(&tool, Some(0.1));
+        assert!(
+            engaged < 1.0,
+            "expected engaged diameter <1 mm at DOC=0.1 mm on a 2 mm \
+             ball-tip taper, got {engaged}"
+        );
+        assert!(
+            engaged > 0.0,
+            "engaged diameter should be positive at DOC>0"
+        );
+    }
+
+    #[test]
+    fn diameter_for_lut_lookup_endmill_returns_nominal_diameter() {
+        // Cylindrical endmill: lookup_diameter_at returns nominal at
+        // any DOC. The helper must preserve that — non-tapered tools
+        // are unaffected by this change.
+        let cutter = Box::new(crate::tool::FlatEndmill::new(6.0, 25.0));
+        let tool = wrap_cutter(cutter);
+        assert!((diameter_for_lut_lookup(&tool, Some(3.0)) - 6.0).abs() < 1e-9);
+        assert!((diameter_for_lut_lookup(&tool, Some(0.05)) - 6.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn diameter_for_lut_lookup_falls_back_to_nominal_when_doc_missing() {
+        // Drilling, V-carve, scallop don't carry depth_per_pass; the
+        // helper should still produce a usable diameter rather than
+        // refusing the lookup.
+        let cutter = Box::new(crate::tool::TaperedBallEndmill::new(2.0, 10.0, 8.0, 30.0));
+        let tool = wrap_cutter(cutter);
+
+        assert!((diameter_for_lut_lookup(&tool, None) - 8.0).abs() < 1e-9);
+        // Defensive: zero / negative DOC also falls back.
+        assert!((diameter_for_lut_lookup(&tool, Some(0.0)) - 8.0).abs() < 1e-9);
+        assert!((diameter_for_lut_lookup(&tool, Some(-1.0)) - 8.0).abs() < 1e-9);
+        // NaN / infinite likewise.
+        assert!((diameter_for_lut_lookup(&tool, Some(f64::NAN)) - 8.0).abs() < 1e-9);
+        assert!((diameter_for_lut_lookup(&tool, Some(f64::INFINITY)) - 8.0).abs() < 1e-9);
     }
 }

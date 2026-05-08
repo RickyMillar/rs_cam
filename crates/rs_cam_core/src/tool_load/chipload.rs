@@ -65,7 +65,97 @@ use super::verdict::{Confidence, ExceedsReason, UnmodeledReason, Verdict};
 /// 5% is loose enough to absorb sub-sample feed-integration noise but
 /// tight enough to exclude common ramp feeds (typically 50% of cutting
 /// feed) and plunge feeds (typically 10–30%).
-const STEADY_STATE_FEED_FRACTION: f64 = 0.95;
+pub(crate) const STEADY_STATE_FEED_FRACTION: f64 = 0.95;
+
+/// Result of filtering a sim trace to in-cut, non-air, steady-state
+/// samples for a single toolpath. Borrows the underlying trace.
+pub(crate) struct SteadyStateSamples<'a> {
+    /// `(global_index_into_trace, sample)` tuples for samples whose
+    /// feed is within `STEADY_STATE_FEED_FRACTION` of the commanded
+    /// operation feed. Empty for an all-transient toolpath (e.g. an
+    /// all-plunge drill cycle).
+    pub samples: Vec<(usize, &'a crate::simulation_cut::SimulationCutSample)>,
+    /// `true` if at least one sample for this toolpath was in-cut and
+    /// out of air, regardless of feed. Distinguishes "no usable cut
+    /// samples at all" (SimulationRequired) from "samples exist but
+    /// none meet the steady-state threshold" (SteadyStateSamplesNotPresent).
+    pub any_in_cut: bool,
+}
+
+/// Fraction of valid steady-state samples that must fall below
+/// `cl_min` (rubbing/burn) AND above `cl_max` (breakage) for the
+/// bipolar predicate to fire. Looser than 1 sample (which would
+/// trigger on a single transient noise sample) but tight enough to
+/// catch real bipolar toolpaths where engagement varies wildly.
+pub(crate) const BIPOLAR_SIDE_FRACTION: f64 = 0.05;
+
+/// Detect bipolar engagement: steady-state samples for one toolpath
+/// straddle both the LUT row's chipload-min and chipload-max bounds.
+/// When true, no single feed/RPM scaling fixes both extremes —
+/// raising feed clears burn but pushes more samples above breakage;
+/// lowering feed clears breakage but pushes more samples below burn.
+/// The user's lever is engagement variance (stepover / DOC / op
+/// strategy), not feed/RPM.
+///
+/// Uses sample counts rather than the median so a 30%-below /
+/// 40%-above toolpath isn't classified as Within by median collapse.
+/// `BIPOLAR_SIDE_FRACTION` (5% of valid samples) on each side is the
+/// threshold; both sides must clear it for the predicate to fire.
+pub(crate) fn is_bipolar_engagement(
+    steady_samples: &[(usize, &crate::simulation_cut::SimulationCutSample)],
+    cl_min: f64,
+    cl_max: f64,
+) -> bool {
+    let mut total: usize = 0;
+    let mut below: usize = 0;
+    let mut above: usize = 0;
+    for (_, s) in steady_samples {
+        let Some(cl) = s.effective_chip_thickness_mm else {
+            continue;
+        };
+        total += 1;
+        if cl < cl_min {
+            below += 1;
+        } else if cl > cl_max {
+            above += 1;
+        }
+    }
+    if total == 0 {
+        return false;
+    }
+    let threshold = ((total as f64 * BIPOLAR_SIDE_FRACTION).ceil() as usize).max(1);
+    below >= threshold && above >= threshold
+}
+
+/// Filter a sim trace down to the steady-state samples for one
+/// toolpath, applying the same cutting/air/feed filters used by the
+/// chipload gate. Extracted so the optimizer's pre-flight classifier
+/// can read the same sample set the gate verdict was computed from
+/// without duplicating the threshold constants.
+pub(crate) fn steady_state_samples_for_toolpath<'a>(
+    trace: &'a SimulationCutTrace,
+    toolpath_id: usize,
+    operation_feed_rate_mm_min: f64,
+) -> SteadyStateSamples<'a> {
+    let feed_threshold = STEADY_STATE_FEED_FRACTION * operation_feed_rate_mm_min;
+    let mut any_in_cut = false;
+    let samples = trace
+        .samples
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| {
+            if s.toolpath_id != toolpath_id || !s.is_cutting || s.radial_engagement < 0.02 {
+                return None;
+            }
+            any_in_cut = true;
+            (s.feed_rate_mm_min >= feed_threshold).then_some((i, s))
+        })
+        .collect();
+    SteadyStateSamples {
+        samples,
+        any_in_cut,
+    }
+}
 
 /// Burn-risk verdict semantics.
 ///
@@ -128,26 +218,16 @@ pub fn evaluate(
     // Skip rapids (`!is_cutting`) and air-cut samples (`radial_engagement
     // < 0.02` — same threshold as `SimulationCutIssueKind::AirCut` per
     // `simulation_cut.rs`). Air cuts have no real chip and produce
-    // misleading chipload readings.
-    //
-    // Steady-state filter (Item C): only count samples whose feed rate
-    // matches the commanded operation feed. Transient samples (plunge,
-    // ramp, lead-in) at lower feeds get a separate non-decision rather
-    // than being measured against the steady-state LUT envelope.
-    let feed_threshold = STEADY_STATE_FEED_FRACTION * operation_feed_rate_mm_min;
-    let mut any_in_cut_for_toolpath = false;
-    let steady_samples: Vec<(usize, &crate::simulation_cut::SimulationCutSample)> = trace
-        .samples
-        .iter()
-        .enumerate()
-        .filter_map(|(i, s)| {
-            if s.toolpath_id != toolpath_id || !s.is_cutting || s.radial_engagement < 0.02 {
-                return None;
-            }
-            any_in_cut_for_toolpath = true;
-            (s.feed_rate_mm_min >= feed_threshold).then_some((i, s))
-        })
-        .collect();
+    // misleading chipload readings. Steady-state filter (Item C): only
+    // count samples whose feed rate matches the commanded operation
+    // feed; transient samples (plunge, ramp, lead-in) at lower feeds
+    // get a separate non-decision rather than being measured against
+    // the steady-state LUT envelope. See
+    // `steady_state_samples_for_toolpath` for the canonical filter.
+    let SteadyStateSamples {
+        samples: steady_samples,
+        any_in_cut: any_in_cut_for_toolpath,
+    } = steady_state_samples_for_toolpath(trace, toolpath_id, operation_feed_rate_mm_min);
 
     // 3. Build verdicts for no usable sample data before attempting a LUT
     // lookup. This preserves the distinction between missing samples and
@@ -877,5 +957,90 @@ mod tests {
                 reason: UnmodeledReason::SimulationRequired
             }
         ));
+    }
+
+    // ── Bipolar engagement predicate ─────────────────────────────────
+
+    #[test]
+    fn bipolar_fires_when_both_extremes_populated() {
+        // 30 samples: 5 below cl_min=0.02, 5 above cl_max=0.10, rest in
+        // range. 5 / 30 = 16.7%, well above the 5% per-side threshold.
+        let mut samples = Vec::new();
+        for i in 0..5 {
+            samples.push(sample(0, i, 0.005, 0.5));
+        }
+        for i in 0..5 {
+            samples.push(sample(0, 100 + i, 0.15, 0.5));
+        }
+        for i in 0..20 {
+            samples.push(sample(0, 200 + i, 0.05, 0.5));
+        }
+        let refs: Vec<_> = samples.iter().enumerate().collect();
+        assert!(is_bipolar_engagement(&refs, 0.02, 0.10));
+    }
+
+    #[test]
+    fn bipolar_does_not_fire_when_only_below_min() {
+        // 10 samples below cl_min, 0 above cl_max → not bipolar (just
+        // burn risk, fixable by raising feed).
+        let mut samples = Vec::new();
+        for i in 0..10 {
+            samples.push(sample(0, i, 0.005, 0.5));
+        }
+        for i in 0..20 {
+            samples.push(sample(0, 100 + i, 0.05, 0.5));
+        }
+        let refs: Vec<_> = samples.iter().enumerate().collect();
+        assert!(!is_bipolar_engagement(&refs, 0.02, 0.10));
+    }
+
+    #[test]
+    fn bipolar_does_not_fire_when_only_above_max() {
+        // 10 samples above cl_max, 0 below cl_min → not bipolar (just
+        // breakage risk, fixable by lowering feed).
+        let mut samples = Vec::new();
+        for i in 0..10 {
+            samples.push(sample(0, i, 0.20, 0.5));
+        }
+        for i in 0..20 {
+            samples.push(sample(0, 100 + i, 0.05, 0.5));
+        }
+        let refs: Vec<_> = samples.iter().enumerate().collect();
+        assert!(!is_bipolar_engagement(&refs, 0.02, 0.10));
+    }
+
+    #[test]
+    fn bipolar_ignores_single_transient_samples_below_threshold() {
+        // 1 sample below + 1 sample above out of 100 → 1% on each side,
+        // below the 5% threshold. Single transient samples (corner
+        // brush, lead-in) shouldn't trip bipolar.
+        let mut samples = Vec::new();
+        samples.push(sample(0, 0, 0.005, 0.5));
+        samples.push(sample(0, 1, 0.20, 0.5));
+        for i in 0..98 {
+            samples.push(sample(0, 100 + i, 0.05, 0.5));
+        }
+        let refs: Vec<_> = samples.iter().enumerate().collect();
+        assert!(!is_bipolar_engagement(&refs, 0.02, 0.10));
+    }
+
+    #[test]
+    fn bipolar_returns_false_for_empty_samples() {
+        let samples: Vec<(usize, &SimulationCutSample)> = Vec::new();
+        assert!(!is_bipolar_engagement(&samples, 0.02, 0.10));
+    }
+
+    #[test]
+    fn bipolar_skips_samples_without_chip_thickness() {
+        // Samples whose effective_chip_thickness is None don't count
+        // toward the total — they aren't classified.
+        let mut s_below = sample(0, 0, 0.005, 0.5);
+        s_below.effective_chip_thickness_mm = None;
+        let mut s_above = sample(0, 1, 0.20, 0.5);
+        s_above.effective_chip_thickness_mm = None;
+        let in_range = sample(0, 2, 0.05, 0.5);
+        let samples = [s_below, s_above, in_range];
+        let refs: Vec<_> = samples.iter().enumerate().collect();
+        assert!(!is_bipolar_engagement(&refs, 0.02, 0.10));
     }
 }
