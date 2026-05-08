@@ -202,6 +202,16 @@ fn optimize_toolpath_full_pipeline() {
         OptimizeOutcome::Skipped { .. } => {
             // Acceptable for a fixture with no LUT-matching tool.
         }
+        OptimizeOutcome::TradeOff(candidates) => {
+            assert!(
+                !candidates.is_empty(),
+                "TradeOff outcome must carry at least the baseline candidate"
+            );
+            assert!(
+                !candidates[0].delta.has_changes(),
+                "Index 0 must be baseline (no delta)"
+            );
+        }
     }
 }
 
