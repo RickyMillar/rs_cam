@@ -29,7 +29,22 @@ pub fn draw(
     gui: &GuiState,
     events: &mut Vec<AppEvent>,
 ) {
+    // Recomputed each frame by the widgets below. `update_live_sim()` runs
+    // after UI/event handling and uses this to defer expensive stock replay
+    // while the pointer is actively dragging a scrubber.
+    sim.playback.scrub_drag_active = false;
     let max_feed = session.machine().max_feed_mm_min;
+    if sim.playback.playing || sim.playback.display_mesh_preview {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(
+                egui::RichText::new("⚡ Mesh quality reduced for playback — pause for full render")
+                    .small()
+                    .strong()
+                    .color(egui::Color32::from_rgb(255, 220, 130)),
+            );
+        });
+        ui.add_space(2.0);
+    }
     sim.sync_debug_state(gui, max_feed);
     let active_semantic = sim.active_semantic_item(gui, max_feed);
     let current_boundary = sim.current_boundary().cloned();
@@ -42,10 +57,7 @@ pub fn draw(
     // wanaka-sized job (8 TPs, ~600k samples) that's the worst hot path
     // in the bottom panel. Right panel (sim_diagnostics) already memoes
     // per its own draw.
-    let load_report = {
-        let sim_trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
-        rs_cam_core::gcode::project_load_report(session, sim_trace)
-    };
+    let load_report = sim.cached_load_report(session, gui.edit_counter);
 
     // Boundary timeline always shows the whole project — user wants the
     // full picture (Pin Drill, Back Rough, ...) at a glance regardless
@@ -273,8 +285,10 @@ fn draw_signal_spine(
 
     ui.add_space(4.0);
     let active_x = Some(sim.playback.current_move as f64);
-    let envelope =
-        focused_id.and_then(|id| chipload_envelope_for_toolpath(session, Some(trace), id));
+    let chipload_envelopes = sim.cached_chipload_envelopes(session, gui.edit_counter);
+    let envelope = focused_id
+        .and_then(|id| chipload_envelopes.get(&id.0))
+        .map(|range| (range.start, range.end));
 
     let mut hotspots: Vec<HotspotMarker> = trace
         .hotspots
@@ -323,6 +337,7 @@ fn draw_signal_spine(
     let display_x = sim.hovered_x;
     let mut new_hovered: Option<f64> = None;
     let mut clicked_hotspot: Option<(usize, usize)> = None;
+    let mut signal_drag_active = false;
     let total_moves_f = total_moves as f64;
 
     // X-axis range for the tracks. When a TP is focused, zoom the X axis to
@@ -451,12 +466,16 @@ fn draw_signal_spine(
                     x_range,
                     &pass_bands,
                     &mut clicked_hotspot,
+                    &mut signal_drag_active,
                     events,
                 );
                 ui.add_space(8.0);
             }
         });
 
+    if signal_drag_active {
+        sim.playback.scrub_drag_active = true;
+    }
     sim.hovered_x = new_hovered;
     if let Some((hotspot_index, global_move)) = clicked_hotspot {
         if let Some(hs) = trace.hotspots.get(hotspot_index) {
@@ -499,6 +518,7 @@ fn draw_signal_track(
     x_range: (f64, f64),
     pass_bands: &[(f64, f64, bool)],
     clicked_hotspot: &mut Option<(usize, usize)>,
+    scrub_drag_active: &mut bool,
     events: &mut Vec<AppEvent>,
 ) {
     let (x_min, x_max) = x_range;
@@ -767,6 +787,9 @@ fn draw_signal_track(
             // data bounds).
             let pointer_in_rect = plot_ui.response().hovered();
             let dragged = plot_ui.response().dragged();
+            if dragged {
+                *scrub_drag_active = true;
+            }
             if (pointer_in_rect || dragged)
                 && let Some(pointer) = plot_ui.pointer_coordinate()
                 && pointer.x >= x_min
@@ -816,16 +839,6 @@ fn nearest_in_groups(target_x: f64, group_points: &GroupPoints) -> Option<(usize
                 .total_cmp(&(b.1[0] - target_x).abs())
         })
         .copied()
-}
-
-fn chipload_envelope_for_toolpath(
-    session: &ProjectSession,
-    sim_trace: Option<&rs_cam_core::simulation_cut::SimulationCutTrace>,
-    toolpath_id: crate::state::toolpath::ToolpathId,
-) -> Option<(f64, f64)> {
-    let envelopes = rs_cam_core::tool_load::chipload_envelopes_for_session(session, sim_trace);
-    let env = envelopes.get(&toolpath_id.0)?;
-    Some((env.start, env.end))
 }
 
 /// Row 1: Transport buttons, timeline scrubber slider, and time display.
@@ -1099,6 +1112,9 @@ fn draw_boundary_timeline(
 
         // Click or drag to seek. If the pointer is near an actionable safety
         // marker, focus the Safety tab and jump to that finding instead.
+        if response.dragged() {
+            sim.playback.scrub_drag_active = true;
+        }
         if (response.dragged() || response.clicked())
             && let Some(pos) = response.interact_pointer_pos()
         {

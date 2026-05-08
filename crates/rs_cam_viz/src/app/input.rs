@@ -118,7 +118,8 @@ impl RsCamApp {
                         let pb = &mut self.controller.state_mut().simulation.playback;
                         pb.playing = false;
                         pb.current_move = move_idx.min(total);
-                        self.pending_checkpoint_load = pb.current_move < previous;
+                        self.pending_checkpoint_load =
+                            !pb.scrub_drag_active && pb.current_move < previous;
                     }
                 }
                 AppEvent::SimJumpToOpStart(boundary_idx) => {
@@ -139,8 +140,11 @@ impl RsCamApp {
                         // SimJumpToMove logic). This is what makes "click TP 0
                         // (rough) from TP 6 (finish)" the slow path that spawned
                         // the loading-overlay UX, while clicks down the list
-                        // stay fast.
-                        self.pending_checkpoint_load = pb.current_move < previous;
+                        // stay fast. During an active drag we defer checkpoint
+                        // reload until release so scrubbing doesn't block on a
+                        // full checkpoint mesh upload per pointer move.
+                        self.pending_checkpoint_load =
+                            !pb.scrub_drag_active && pb.current_move < previous;
                     }
                 }
 

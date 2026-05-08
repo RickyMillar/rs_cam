@@ -137,6 +137,105 @@ const CUT_COLOR: [f32; 3] = [0.1, 0.85, 0.2];
 /// Rapid move color: orange-red.
 const RAPID_COLOR: [f32; 3] = [0.9, 0.3, 0.1];
 
+// SpanKind colors — match the live renderer so screenshots and the
+// interactive viewport agree on the visual taxonomy.
+const SPAN_ENTRY_COLOR: [f32; 3] = [0.2, 0.85, 0.95];
+const SPAN_LEADOUT_COLOR: [f32; 3] = [0.95, 0.35, 0.85];
+const SPAN_LINK_BRIDGE_COLOR: [f32; 3] = [0.55, 0.55, 0.6];
+const SPAN_DRESSUP_COLOR: [f32; 3] = [0.65, 0.55, 0.4];
+
+/// Convert an annotated toolpath into a tube mesh, coloring cutting
+/// segments by their innermost interesting [`crate::toolpath_spans::SpanKind`]
+/// (Entry → cyan, LeadOut → magenta, LinkBridge → dim grey, DressupArtifact →
+/// muted brown). Default cuts stay green; rapids stay orange-red. Falls
+/// through to the move-color path if the toolpath carries no spans.
+pub fn toolpath_to_tube_mesh_with_spans(
+    annotated: &crate::toolpath_spans::AnnotatedToolpath,
+    ribbon_radius: f32,
+    include_rapids: bool,
+) -> StockMesh {
+    use crate::toolpath_spans::SpanKind;
+
+    if !annotated.spans_valid || annotated.spans.is_empty() {
+        return toolpath_to_tube_mesh(&annotated.toolpath, ribbon_radius, include_rapids);
+    }
+
+    let toolpath = &annotated.toolpath;
+    let mut mesh = StockMesh::empty();
+    if toolpath.moves.len() < 2 {
+        return mesh;
+    }
+
+    let est_segs = toolpath.moves.len();
+    mesh.vertices.reserve(est_segs * 8 * 3);
+    mesh.indices.reserve(est_segs * 36);
+    mesh.colors.reserve(est_segs * 8 * 3);
+
+    let r = f64::from(ribbon_radius);
+    let mut prev = toolpath.moves.first().map(|m| m.target);
+
+    // Per-move span path (outermost-first) precomputed once. Cheap relative
+    // to the tube mesh emission.
+    let move_paths = annotated.span_paths_by_move();
+
+    let span_color = |move_idx: usize| -> [f32; 3] {
+        let Some(path) = move_paths.get(move_idx) else {
+            return CUT_COLOR;
+        };
+        // Innermost-first walk; pick the first kind we have a colour for.
+        for span_id in path.iter().rev() {
+            let Some(span) = annotated.spans.get(span_id.0 as usize) else {
+                continue;
+            };
+            match span.kind {
+                SpanKind::Entry => return SPAN_ENTRY_COLOR,
+                SpanKind::LeadOut => return SPAN_LEADOUT_COLOR,
+                SpanKind::LinkBridge => return SPAN_LINK_BRIDGE_COLOR,
+                SpanKind::DressupArtifact => return SPAN_DRESSUP_COLOR,
+                _ => continue,
+            }
+        }
+        CUT_COLOR
+    };
+
+    for m_idx in 1..toolpath.moves.len() {
+        // SAFETY: m_idx in 1..len; prev set from index 0.
+        #[allow(clippy::indexing_slicing)]
+        let mv = &toolpath.moves[m_idx];
+        let Some(from) = prev else { continue };
+        prev = Some(mv.target);
+
+        let is_cutting = mv.move_type.is_cutting();
+        if !is_cutting && !include_rapids {
+            continue;
+        }
+
+        let color = if is_cutting {
+            span_color(m_idx)
+        } else {
+            RAPID_COLOR
+        };
+
+        match mv.move_type {
+            MoveType::ArcCW { i, j, .. } | MoveType::ArcCCW { i, j, .. } => {
+                let cw = matches!(mv.move_type, MoveType::ArcCW { .. });
+                let pts = linearize_arc(from, mv.target, i, j, cw, r * 4.0);
+                let mut seg_from = from;
+                for pt in pts {
+                    push_tube_segment(&mut mesh, seg_from, pt, r, color);
+                    seg_from = pt;
+                }
+                push_tube_segment(&mut mesh, seg_from, mv.target, r, color);
+            }
+            _ => {
+                push_tube_segment(&mut mesh, from, mv.target, r, color);
+            }
+        }
+    }
+
+    mesh
+}
+
 /// Convert a toolpath into a tube mesh for software rasterization.
 ///
 /// Each line segment becomes a thin rectangular prism visible from any angle.

@@ -1,4 +1,6 @@
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -18,6 +20,7 @@ use rs_cam_core::simulation_cut::{
     SimulationCutTrace, SimulationMetricOptions, SimulationSemanticCutSummary,
 };
 use rs_cam_core::stock_mesh::StockMesh;
+use rs_cam_core::tool_load::ToolLoadReport;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 use rs_cam_core::toolpath_spans::SpanId;
 
@@ -147,8 +150,49 @@ pub struct SimulationDebugState {
     /// frame. Without this cache the Selected section rescans the full
     /// sample list every frame — see `SpanAggregateCache::ensure_built`.
     pub(crate) span_aggregates: SpanAggregateCache,
+    /// Cached project tool-load verdicts keyed by sim trace + edit counter.
+    /// The bottom timeline and right inspector both need this every frame;
+    /// building it scans large cut traces once per criterion/toolpath.
+    pub(crate) load_report_cache: ToolLoadReportCache,
+    /// Cached chipload envelope LUT matches keyed by sim trace + edit counter.
+    /// The lookup needs per-toolpath peak axial DOC and otherwise scans the
+    /// full sample trace for every toolpath if rebuilt per frame.
+    pub(crate) chipload_envelope_cache: ChiploadEnvelopeCache,
+    /// Cached sorted issue list keyed by sim/debug trace fingerprints.
+    /// Avoids rebuilding + sorting the same air-cut/hotspot/collision list
+    /// in multiple panels during smooth playback.
+    issue_cache: IssueListCache,
     pub(crate) semantic_indexes: HashMap<ToolpathId, SimulationSemanticIndex>,
     runtime_profiles: HashMap<ToolpathId, SimulationRuntimeProfile>,
+}
+
+#[derive(Default)]
+pub(crate) struct ToolLoadReportCache {
+    trace_ptr: Option<usize>,
+    edit_counter: u64,
+    report: Option<ToolLoadReport>,
+}
+
+#[derive(Default)]
+pub(crate) struct ChiploadEnvelopeCache {
+    trace_ptr: Option<usize>,
+    edit_counter: u64,
+    envelopes: Option<HashMap<usize, Range<f64>>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct IssueListCacheKey {
+    cut_trace_ptr: Option<usize>,
+    gui_edit_counter: u64,
+    debug_trace_fingerprint: u64,
+    max_feed_bits: u64,
+    collision_fingerprint: u64,
+}
+
+#[derive(Default)]
+struct IssueListCache {
+    key: Option<IssueListCacheKey>,
+    issues: Vec<SimulationIssue>,
 }
 
 /// Per-(toolpath, span) aggregate of cut samples whose `span_path` contains
@@ -420,6 +464,22 @@ pub struct SimulationPlayback {
     pub live_sim_move: usize,
     /// Current display mesh (may differ from final mesh during scrubbing).
     pub display_mesh: Option<StockMesh>,
+    /// Move index represented by `display_mesh` / uploaded GPU stock mesh.
+    pub display_mesh_move: Option<usize>,
+    /// Wall-clock time of the last live stock remesh/upload. Used to throttle
+    /// playback rendering without slowing the timeline/tool marker.
+    pub last_mesh_upload_at: Option<std::time::Instant>,
+    /// Move index represented by the uploaded tool wireframe. The geometry is
+    /// tiny, but recreating its GPU buffer every frame is still avoidable.
+    pub tool_gpu_move: Option<usize>,
+    /// True when `display_mesh` is the fast top-surface playback preview
+    /// rather than the fully closed simulation mesh. When playback pauses,
+    /// the next live-sim update replaces it with a full mesh for inspection.
+    pub display_mesh_preview: bool,
+    /// True for the current frame while the user is dragging a simulation
+    /// scrubber/plot. Live stock replay is intentionally deferred until the
+    /// drag releases so the UI tracks the pointer immediately.
+    pub scrub_drag_active: bool,
     /// Per-vertex deviations from model surface (for deviation coloring).
     pub display_deviations: Option<Vec<f32>>,
 }
@@ -506,6 +566,11 @@ impl SimulationState {
                 live_stock: None,
                 live_sim_move: 0,
                 display_mesh: None,
+                display_mesh_move: None,
+                last_mesh_upload_at: None,
+                tool_gpu_move: None,
+                display_mesh_preview: false,
+                scrub_drag_active: false,
                 display_deviations: None,
             },
             checks: SimulationChecks {
@@ -537,6 +602,9 @@ impl SimulationState {
                 pending_inspect_toolpath: None,
                 span_scope: SpanScope::default(),
                 span_aggregates: SpanAggregateCache::default(),
+                load_report_cache: ToolLoadReportCache::default(),
+                chipload_envelope_cache: ChiploadEnvelopeCache::default(),
+                issue_cache: IssueListCache::default(),
                 semantic_indexes: HashMap::new(),
                 runtime_profiles: HashMap::new(),
             },
@@ -549,6 +617,79 @@ impl SimulationState {
     /// Whether simulation results exist.
     pub fn has_results(&self) -> bool {
         self.results.is_some()
+    }
+
+    /// Project tool-load report cached by simulation trace pointer and GUI edit counter.
+    ///
+    /// The report evaluates chipload/power/deflection for every enabled toolpath and
+    /// scans the cut trace for the sample-based criteria. Both the bottom timeline and
+    /// right inspector need it every frame, so compute it once per trace/edit version
+    /// and return a cheap clone for borrow-friendly UI code.
+    pub fn cached_load_report(
+        &mut self,
+        session: &ProjectSession,
+        edit_counter: u64,
+    ) -> ToolLoadReport {
+        let trace_ptr = self
+            .results
+            .as_ref()
+            .and_then(|results| results.cut_trace.as_ref())
+            .map(|trace| Arc::as_ptr(trace) as usize);
+        if self.debug.load_report_cache.trace_ptr == trace_ptr
+            && self.debug.load_report_cache.edit_counter == edit_counter
+            && let Some(report) = &self.debug.load_report_cache.report
+        {
+            return report.clone();
+        }
+
+        let start = std::time::Instant::now();
+        let sim_trace = self.results.as_ref().and_then(|r| r.cut_trace.as_deref());
+        let report = rs_cam_core::gcode::project_load_report(session, sim_trace);
+        let elapsed = start.elapsed();
+        if elapsed > std::time::Duration::from_millis(8) {
+            tracing::debug!(
+                elapsed_ms = elapsed.as_secs_f64() * 1000.0,
+                "slow simulation tool-load report build"
+            );
+        }
+        self.debug.load_report_cache.trace_ptr = trace_ptr;
+        self.debug.load_report_cache.edit_counter = edit_counter;
+        self.debug.load_report_cache.report = Some(report.clone());
+        report
+    }
+
+    pub fn cached_chipload_envelopes(
+        &mut self,
+        session: &ProjectSession,
+        edit_counter: u64,
+    ) -> HashMap<usize, Range<f64>> {
+        let trace_ptr = self
+            .results
+            .as_ref()
+            .and_then(|results| results.cut_trace.as_ref())
+            .map(|trace| Arc::as_ptr(trace) as usize);
+        if self.debug.chipload_envelope_cache.trace_ptr == trace_ptr
+            && self.debug.chipload_envelope_cache.edit_counter == edit_counter
+            && let Some(envelopes) = &self.debug.chipload_envelope_cache.envelopes
+        {
+            return envelopes.clone();
+        }
+
+        let start = std::time::Instant::now();
+        let sim_trace = self.results.as_ref().and_then(|r| r.cut_trace.as_deref());
+        let envelopes = rs_cam_core::tool_load::chipload_envelopes_for_session(session, sim_trace);
+        let elapsed = start.elapsed();
+        if elapsed > std::time::Duration::from_millis(8) {
+            tracing::debug!(
+                envelope_count = envelopes.len(),
+                elapsed_ms = elapsed.as_secs_f64() * 1000.0,
+                "slow chipload envelope build"
+            );
+        }
+        self.debug.chipload_envelope_cache.trace_ptr = trace_ptr;
+        self.debug.chipload_envelope_cache.edit_counter = edit_counter;
+        self.debug.chipload_envelope_cache.envelopes = Some(envelopes.clone());
+        envelopes
     }
 
     /// Total moves from results (0 if no results).
@@ -1254,6 +1395,12 @@ impl SimulationState {
 
     pub fn issues(&mut self, gui: &GuiState, max_feed_mm_min: f64) -> Vec<SimulationIssue> {
         self.sync_debug_state(gui, max_feed_mm_min);
+        let cache_key = self.issue_cache_key(gui, max_feed_mm_min);
+        if self.debug.issue_cache.key == Some(cache_key) {
+            return self.debug.issue_cache.issues.clone();
+        }
+
+        let start = std::time::Instant::now();
         let mut issues = Vec::new();
 
         for boundary in self.boundaries().to_vec() {
@@ -1376,7 +1523,59 @@ impl SimulationState {
                 .then_with(|| issue_kind_rank(left.kind).cmp(&issue_kind_rank(right.kind)))
                 .then_with(|| left.label.cmp(&right.label))
         });
+        let elapsed = start.elapsed();
+        if elapsed > std::time::Duration::from_millis(8) {
+            tracing::debug!(
+                issue_count = issues.len(),
+                elapsed_ms = elapsed.as_secs_f64() * 1000.0,
+                "slow simulation issue list build"
+            );
+        }
+        self.debug.issue_cache.key = Some(cache_key);
+        self.debug.issue_cache.issues = issues.clone();
         issues
+    }
+
+    fn issue_cache_key(&self, gui: &GuiState, max_feed_mm_min: f64) -> IssueListCacheKey {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for boundary in self.boundaries() {
+            boundary.id.0.hash(&mut hasher);
+            if let Some(rt) = gui.toolpath_rt.get(&boundary.id.0) {
+                if let Some(trace) = rt.debug_trace.as_ref() {
+                    (Arc::as_ptr(trace) as usize).hash(&mut hasher);
+                    trace.annotations.len().hash(&mut hasher);
+                    trace.hotspots.len().hash(&mut hasher);
+                }
+                if let Some(trace) = rt.semantic_trace.as_ref() {
+                    (Arc::as_ptr(trace) as usize).hash(&mut hasher);
+                    trace.items.len().hash(&mut hasher);
+                }
+            }
+        }
+        let debug_trace_fingerprint = hasher.finish();
+
+        let mut collision_hasher = std::collections::hash_map::DefaultHasher::new();
+        for &move_index in &self.checks.rapid_collision_move_indices {
+            move_index.hash(&mut collision_hasher);
+        }
+        if let Some(report) = self.checks.collision_report.as_ref() {
+            for collision in &report.collisions {
+                collision.move_idx.hash(&mut collision_hasher);
+            }
+        }
+        let collision_fingerprint = collision_hasher.finish();
+
+        IssueListCacheKey {
+            cut_trace_ptr: self
+                .results
+                .as_ref()
+                .and_then(|results| results.cut_trace.as_ref())
+                .map(|trace| Arc::as_ptr(trace) as usize),
+            gui_edit_counter: gui.edit_counter,
+            debug_trace_fingerprint,
+            max_feed_bits: max_feed_mm_min.to_bits(),
+            collision_fingerprint,
+        }
     }
 
     pub fn current_issue(
@@ -1869,6 +2068,11 @@ impl Default for SimulationPlayback {
             live_stock: None,
             live_sim_move: 0,
             display_mesh: None,
+            display_mesh_move: None,
+            last_mesh_upload_at: None,
+            tool_gpu_move: None,
+            display_mesh_preview: false,
+            scrub_drag_active: false,
             display_deviations: None,
         }
     }

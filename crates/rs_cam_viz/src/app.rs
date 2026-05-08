@@ -28,6 +28,7 @@ pub struct RsCamApp {
     show_quit_dialog: bool,
     /// Track toolpath color mode changes to trigger re-upload.
     last_tp_color_mode: crate::state::viewport::ToolpathColorMode,
+    last_span_kind_filter: crate::state::viewport::SpanKindFilter,
     /// MCP request receiver (populated when `--mcp` is passed).
     #[cfg(feature = "mcp")]
     mcp_receiver: Option<std::sync::mpsc::Receiver<crate::mcp_bridge::McpRequest>>,
@@ -140,6 +141,7 @@ impl RsCamApp {
             last_hover_face: None,
             show_quit_dialog: false,
             last_tp_color_mode: crate::state::viewport::ToolpathColorMode::Normal,
+            last_span_kind_filter: crate::state::viewport::SpanKindFilter::default(),
             #[cfg(feature = "mcp")]
             mcp_receiver,
         }
@@ -336,6 +338,29 @@ impl RsCamApp {
             .show(ctx, |ui| {
                 self.draw_viewport(ui);
             });
+
+        let playback = &self.controller.state().simulation.playback;
+        if playback.playing || playback.display_mesh_preview {
+            egui::Area::new(egui::Id::new("sim_preview_quality_notice"))
+                .order(egui::Order::Foreground)
+                .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 54.0))
+                .show(ctx, |ui| {
+                    egui::Frame::default()
+                        .fill(egui::Color32::from_rgba_premultiplied(35, 30, 18, 220))
+                        .rounding(5.0)
+                        .inner_margin(egui::Margin::symmetric(10.0, 6.0))
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new(
+                                    "Mesh quality reduced for playback — pause for full render",
+                                )
+                                .small()
+                                .strong()
+                                .color(egui::Color32::from_rgb(255, 220, 130)),
+                            );
+                        });
+                });
+        }
     }
 
     /// Save an egui screenshot to a PNG file in the current directory.
@@ -410,15 +435,17 @@ impl eframe::App for RsCamApp {
             self.last_tp_color_mode = current_tp_mode;
             self.controller.set_pending_upload();
         }
+        // Re-upload when SpanKind filter checkboxes change — the filter is
+        // applied at GPU upload (renderer skips segments by SpanKind), so
+        // toggling a kind needs a fresh upload to take visible effect.
+        let current_filter = self.controller.state().viewport.span_kind_filter;
+        if current_filter != self.last_span_kind_filter {
+            self.last_span_kind_filter = current_filter;
+            self.controller.set_pending_upload();
+        }
 
         if self.controller.take_pending_upload() {
             self.upload_gpu_data(frame);
-        }
-
-        if self.controller.state().workspace == Workspace::Simulation
-            && self.controller.state().simulation.has_results()
-        {
-            self.update_sim_tool_position(frame);
         }
 
         // Handle keyboard shortcuts (before UI to prevent conflicts)
@@ -514,8 +541,17 @@ impl eframe::App for RsCamApp {
         // Unsaved-changes confirmation dialog (shown on top of everything)
         self.show_unsaved_changes_dialog(ctx);
 
-        // Load checkpoint mesh for backward scrubbing
-        if self.pending_checkpoint_load {
+        // Load checkpoint mesh for backward scrubbing. During active pointer
+        // scrubbing, defer this potentially large clone/remesh/upload until
+        // release; `update_live_sim()` will catch the live stock up then.
+        if self.pending_checkpoint_load
+            && !self
+                .controller
+                .state()
+                .simulation
+                .playback
+                .scrub_drag_active
+        {
             self.pending_checkpoint_load = false;
             let move_idx = self.controller.state().simulation.playback.current_move;
             self.load_checkpoint_for_move(move_idx, frame);
@@ -593,10 +629,13 @@ impl eframe::App for RsCamApp {
             ctx.request_repaint();
         }
 
-        // Incremental stock simulation: update live heightmap to match current_move
         if self.controller.state().workspace == Workspace::Simulation
             && self.controller.state().simulation.has_results()
         {
+            // Update after UI/event handling and playback advancement so the
+            // rendered tool matches the same move as the stock preview/full mesh.
+            self.update_sim_tool_position(frame);
+            // Incremental stock simulation: update live heightmap to match current_move
             self.update_live_sim(frame);
         }
 

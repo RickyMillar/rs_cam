@@ -565,17 +565,27 @@ impl RsCamApp {
             }
         }
 
-        // Re-upload sim mesh with current viz mode colors, or clear if no results
+        // Re-upload sim mesh with current viz mode colors, or clear if no results.
+        // If the geometry is already uploaded (typical SimVizModeChanged path),
+        // update the single vertex buffer in-place instead of recreating GPU buffers.
         if self.controller.state().simulation.has_results() {
             if let Some(mesh) = &self.controller.state().simulation.playback.display_mesh {
                 let colors = self.compute_sim_colors(mesh);
-                let new_data = SimMeshGpuData::from_heightmap_mesh_colored(
-                    &render_state.device,
-                    &resources.gpu_limits,
-                    mesh,
-                    &colors,
-                );
-                resources.sim_mesh_data = new_data;
+                let can_update_existing = resources
+                    .sim_mesh_data
+                    .as_ref()
+                    .is_some_and(|data| data.chunks.len() == 1);
+                if can_update_existing && let Some(data) = resources.sim_mesh_data.as_mut() {
+                    data.update_colors_if_changed(&render_state.queue, mesh, &colors);
+                } else {
+                    let new_data = SimMeshGpuData::from_heightmap_mesh_colored(
+                        &render_state.device,
+                        &resources.gpu_limits,
+                        mesh,
+                        &colors,
+                    );
+                    resources.sim_mesh_data = new_data;
+                }
             }
         } else {
             resources.sim_mesh_data = None;
