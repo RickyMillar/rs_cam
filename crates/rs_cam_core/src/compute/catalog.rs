@@ -506,6 +506,17 @@ pub trait OperationParams {
     }
     fn set_depth_per_pass(&mut self, _value: f64) {}
 
+    /// Maximum scallop ridge height between adjacent passes (mm). Used
+    /// by surface-following finish ops (currently only `ScallopConfig`)
+    /// where the planner derives stepover from this + tool ball radius
+    /// via the chord-height formula. Distinct from `stepover()` because
+    /// units and magnitudes differ — a 0.1 mm scallop on a 6 mm ball
+    /// gives ~1.55 mm radial step.
+    fn scallop_height(&self) -> Option<f64> {
+        None
+    }
+    fn set_scallop_height(&mut self, _value: f64) {}
+
     fn depth_semantics(&self) -> DepthSemantics;
 
     /// Per-toolpath spindle speed override. `None` means "use the project
@@ -707,6 +718,14 @@ impl OperationConfig {
 
     pub fn set_depth_per_pass(&mut self, value: f64) {
         self.as_params_mut().set_depth_per_pass(value);
+    }
+
+    pub fn scallop_height(&self) -> Option<f64> {
+        self.as_params().scallop_height()
+    }
+
+    pub fn set_scallop_height(&mut self, value: f64) {
+        self.as_params_mut().set_scallop_height(value);
     }
 
     pub fn depth_semantics(&self) -> DepthSemantics {

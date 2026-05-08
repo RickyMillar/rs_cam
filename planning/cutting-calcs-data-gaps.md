@@ -123,25 +123,79 @@ fixture; `cargo test -p rs_cam_core --lib` 1213/1213 ✓ and `cargo clippy
 
 ---
 
-### G2: `ScallopConfig` stepover not exposed via `OperationParams::stepover()`
+### G2: ScallopConfig spacing knob (`scallop_height`) not swept by Stage 1
 
-**Symptom.** Ball-nose Scallop has a Stage F retarget path (Scallop/Finish LUT
-rows exist for ball-nose) but Stage 1 produces no candidates because the
-optimizer thinks Scallop has no stepover knob. Tapered ball is similarly
-affected once G5 lands.
+**Symptom.** Ball-nose Scallop has a Stage F retarget path (Scallop/Finish
+LUT rows exist for ball-nose, hardwood) but Stage 1 produces no candidates
+because Scallop fails the `has_doc_knob` gate and the optimizer has no
+spacing-axis knob to sweep. Tapered-ball scallop has the same shape.
 
-**Root cause.** `ScallopConfig` carries a stepover value internally but the
-`OperationParams::stepover()` impl returns `None` (or doesn't exist).
+**Root cause (re-verified 2026-05-08).** The audit was wrong on two counts:
 
-**Fix shape.** Wire `ScallopConfig::stepover` through the trait. Likely a
-2-line change once the field is identified.
+1. **`ScallopConfig` has no `stepover` field.** Its driving knob is
+   `scallop_height: f64` (default 0.1 mm) — the maximum ridge height
+   between passes. The path planner derives an effective radial step
+   from `(scallop_height, ball_radius)` via the chord-height formula
+   `step ≈ 2·sqrt(2·r·h − h²)`. So 0.1 mm scallop on a 6 mm ball ≈
+   1.55 mm radial step. `scallop_height` and the LUT's `ae_*_mm` bounds
+   live in different units; conflating them in
+   `build_stepover_variants` would clamp incorrectly.
+2. **`has_doc_knob` is the only Stage 1 gate.** Scallop has no
+   depth-per-pass (it's surface-following), and no current
+   `OperationParams` accessor surfaces `scallop_height`, so Stage 1
+   short-circuits to an empty candidate list. Adding a `stepover()`
+   accessor that returned `scallop_height` would pass-through the unit
+   confusion to every other consumer
+   (`session/compute.rs`, `commanded_ae`, etc.).
+
+**Fix shape.**
+
+1. Add `OperationParams::scallop_height()` and `set_scallop_height()`
+   to the trait with default `None` / no-op. Implement on
+   `ScallopConfig`. Keep `scallop_height` semantics distinct from
+   `stepover` so existing consumers aren't misled.
+2. Add `build_scallop_height_variants(baseline)` — multiplicative
+   envelope only (`[0.7×, 1.0×, 1.3×]`), no LUT clamping (the LUT's
+   `ae_*_mm` aren't comparable to scallop_height).
+3. Add `apply_scallop_height_to_op(op, value)` symmetric to
+   `apply_stepover_to_op`.
+4. In `run_stage_1_grid`:
+   - Widen the gate from `has_doc_knob(...)` to "has any sweep knob"
+     — DOC, stepover, or scallop_height.
+   - Collapse each axis to a single anchor entry when the op doesn't
+     expose that knob (already done for stepover in G1; mirror for
+     DOC and scallop_height).
+   - Build the candidate as `apply_scallop_height_to_op(apply_stepover_to_op(apply_doc_to_op(...)))`.
+5. `delta_against_baseline` records scallop_height changes.
+
+**Plan.**
+
+The gate widening also affects DropCutter (has stepover, no DOC) and
+SpiralFinish (has stepover, no DOC). Those should now also enter
+Stage 1, consistent with G3's intent. The G2 commit ships this widening
+because the gate change is tightly coupled to the scallop_height work
+and the alternative (re-narrowing) would be wrong for Scallop too.
+G3 stays scoped to its own per-op accessor work (RampFinish
+max_stepdown, RadialFinish angular_step, Trace).
 
 **Validation gate.**
-- Construct a Scallop fixture on a ball-nose tool with a wood material that has a matching Scallop/Finish LUT row.
-- MCP `optimize_toolpath` should generate Stage 1 candidates with varying stepover; the verdict on each should be sim-measured.
-- `build_stepover_variants` unit tests should already cover the math; the new test asserts that the variants reach the apply path for Scallop.
+- New unit tests pin: `ScallopConfig::scallop_height()` returns Some,
+  `set_scallop_height` writes the field, `has_any_sweep_knob(Scallop)`
+  is true, the new variant builder produces a `[0.07, 0.10, 0.13]`-shape
+  envelope on a 0.10 mm baseline.
+- Wanaka has no Scallop TPs to validate end-to-end, but TPs 4 / 5 / 7
+  (TaperedBall ProjectCurve / DropCutter, post G5+G6+G7) should
+  remain unaffected by the gate widening — DropCutter has stepover
+  but the Stage 1 grid result depends on the gate verdicts already
+  reported as Approximate Exceeds. Live MCP `optimize_toolpath` on
+  TP 7 (DropCutter / TaperedBall) should newly produce Stage 1
+  candidates (currently returns NoImprovementFound after the
+  Approximate verdict).
+- `cargo test -p rs_cam_core --lib --tests` clean.
+- `cargo clippy -p rs_cam_core --all-targets -- -D warnings` clean.
 
-**Status.** Not started.
+**Status.** Implementing 2026-05-08. Code merged; pending live-MCP
+validation against wanaka TP 7 after GUI rebuild.
 
 ---
 

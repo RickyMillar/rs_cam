@@ -72,6 +72,12 @@ pub struct ParamDelta {
     pub stepover_mm: Option<f64>,
     /// New depth-per-pass in mm.
     pub depth_per_pass_mm: Option<f64>,
+    /// New scallop ridge height in mm. Distinct axis from `stepover_mm`
+    /// because they live in different units — Scallop derives stepover
+    /// from `(scallop_height, ball_radius)` via the chord-step formula.
+    /// G2 (2026-05-08).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scallop_height_mm: Option<f64>,
 }
 
 impl ParamDelta {
@@ -81,6 +87,7 @@ impl ParamDelta {
             || self.spindle_rpm.is_some()
             || self.stepover_mm.is_some()
             || self.depth_per_pass_mm.is_some()
+            || self.scallop_height_mm.is_some()
     }
 }
 
@@ -689,57 +696,85 @@ fn run_stage_1_grid(
 ) -> Vec<OptimizeCandidate> {
     use std::sync::atomic::Ordering;
 
-    if !has_doc_knob(ctx.operation_kind) {
-        return Vec::new();
-    }
-
     let anchor_op = stage0_anchor
         .map(|c| c.params.clone())
         .unwrap_or_else(|| baseline_op.clone());
+
+    // Determine which spacing-axis knobs the op exposes. Stage 1 sweeps
+    // every axis the op surfaces and collapses the rest to a single
+    // anchor entry so we don't fan out into duplicate sims via no-op
+    // setters. G2 (2026-05-08) added `scallop_height` as a third axis
+    // for Scallop (which has no DOC and no stepover, only the
+    // ridge-height knob).
+    let has_doc_axis = anchor_op.depth_per_pass().is_some();
+    let has_stepover_axis = anchor_op.stepover().is_some();
+    let has_scallop_axis = anchor_op.scallop_height().is_some();
+
+    if !has_doc_axis && !has_stepover_axis && !has_scallop_axis {
+        return Vec::new();
+    }
+
     let anchor_doc = anchor_op
         .depth_per_pass()
         .unwrap_or_else(|| baseline_op.depth_per_pass().unwrap_or(1.5));
     let anchor_stepover = anchor_op
         .stepover()
         .unwrap_or_else(|| baseline_op.stepover().unwrap_or(1.0));
-    let doc_variants = build_doc_variants(anchor_doc, matched_lut_row, ctx.operation_kind);
-    // Collapse the stepover dimension for ops without a stepover knob
-    // (e.g. Profile is a contour follow). Without this, the inner loop
-    // would iterate `build_stepover_variants` entries each producing an
-    // identical candidate via the no-op `set_stepover`, wasting one full
-    // sim per duplicate. Single-entry vec hits the anchor-dedup branch
-    // cleanly so only DOC variants advance.
-    let stepover_variants = if anchor_op.stepover().is_some() {
+    let anchor_scallop = anchor_op
+        .scallop_height()
+        .unwrap_or_else(|| baseline_op.scallop_height().unwrap_or(0.1));
+
+    // Build variant lists per axis. Empty/anchor-only when the op
+    // doesn't expose that knob — `apply_*_to_op` is a no-op for missing
+    // setters, so a single-element vec produces exactly one candidate
+    // per outer-loop iteration without any duplication.
+    let doc_variants = if has_doc_axis && has_doc_knob(ctx.operation_kind) {
+        build_doc_variants(anchor_doc, matched_lut_row, ctx.operation_kind)
+    } else {
+        vec![anchor_doc]
+    };
+    let stepover_variants = if has_stepover_axis {
         build_stepover_variants(anchor_stepover, matched_lut_row, ctx.operation_kind)
     } else {
         vec![anchor_stepover]
+    };
+    let scallop_variants = if has_scallop_axis {
+        build_scallop_height_variants(anchor_scallop)
+    } else {
+        vec![anchor_scallop]
     };
 
     let mut out: Vec<OptimizeCandidate> = Vec::new();
     'outer: for &doc in &doc_variants {
         for &stepover in &stepover_variants {
-            if cancel.load(Ordering::SeqCst) {
-                break 'outer;
-            }
-            // Skip the anchor combo — it's already represented by the
-            // headroom-point candidate (or the baseline).
-            if (doc - anchor_doc).abs() < DOC_DEDUP_TOLERANCE_MM
-                && (stepover - anchor_stepover).abs() < STEPOVER_DEDUP_TOLERANCE_MM
-            {
-                continue;
-            }
-            let candidate_op = apply_stepover_to_op(&apply_doc_to_op(&anchor_op, doc), stepover);
-            let delta = delta_against_baseline(baseline_op, &candidate_op);
-            if let Ok(candidate) = evaluate_candidate(
-                guard,
-                ctx,
-                candidate_op,
-                delta,
-                SearchStage::Coarse,
-                STAGE1_RESOLUTION_MM,
-                cancel,
-            ) {
-                out.push(candidate);
+            for &scallop in &scallop_variants {
+                if cancel.load(Ordering::SeqCst) {
+                    break 'outer;
+                }
+                // Skip the anchor combo — already represented by the
+                // headroom-point candidate (or the baseline).
+                if (doc - anchor_doc).abs() < DOC_DEDUP_TOLERANCE_MM
+                    && (stepover - anchor_stepover).abs() < STEPOVER_DEDUP_TOLERANCE_MM
+                    && (scallop - anchor_scallop).abs() < SCALLOP_HEIGHT_DEDUP_TOLERANCE_MM
+                {
+                    continue;
+                }
+                let candidate_op = apply_scallop_height_to_op(
+                    &apply_stepover_to_op(&apply_doc_to_op(&anchor_op, doc), stepover),
+                    scallop,
+                );
+                let delta = delta_against_baseline(baseline_op, &candidate_op);
+                if let Ok(candidate) = evaluate_candidate(
+                    guard,
+                    ctx,
+                    candidate_op,
+                    delta,
+                    SearchStage::Coarse,
+                    STAGE1_RESOLUTION_MM,
+                    cancel,
+                ) {
+                    out.push(candidate);
+                }
             }
         }
     }
@@ -1405,6 +1440,18 @@ const STEPOVER_HARD_FLOOR_MM: f64 = 0.05;
 /// `DOC_DEDUP_TOLERANCE_MM`.
 const STEPOVER_DEDUP_TOLERANCE_MM: f64 = 0.005;
 
+/// Hard floor on scallop height. Sub-10µm scallop targets are
+/// effectively "polish" passes — outside both the LUT envelope and
+/// what wood toolpaths target. Below this the chord-step formula
+/// produces sub-mm radial steps that explode toolpath length without
+/// surface gain.
+const SCALLOP_HEIGHT_HARD_FLOOR_MM: f64 = 0.01;
+
+/// Dedup tolerance for scallop_height variants. Tighter than stepover
+/// because scallop_height itself is an order of magnitude smaller (0.1mm
+/// typical vs 1.0mm typical for stepover).
+const SCALLOP_HEIGHT_DEDUP_TOLERANCE_MM: f64 = 0.001;
+
 /// Build the DOC candidate grid for a Stage-1 sweep. Always includes
 /// the baseline (`baseline_doc_mm`) as a control candidate; the lo and
 /// hi endpoints come from the LUT row's calibrated bounds (clamped by
@@ -1562,6 +1609,35 @@ pub(crate) fn apply_stepover_to_op(
     variant
 }
 
+/// Build the scallop-height candidate grid for a Stage-1 sweep.
+/// Multiplicative envelope only (no LUT clamping) — the LUT's `ae_*_mm`
+/// bounds describe radial step in mm, which differs in units and
+/// magnitude from `scallop_height` (a 0.1 mm scallop target on a 6 mm
+/// ball produces ~1.55 mm radial step). Returns variants sorted
+/// ascending; always includes the baseline. Floored at
+/// `SCALLOP_HEIGHT_HARD_FLOOR_MM`.
+pub(crate) fn build_scallop_height_variants(baseline_scallop_mm: f64) -> Vec<f64> {
+    let baseline = baseline_scallop_mm.max(SCALLOP_HEIGHT_HARD_FLOOR_MM);
+    let lo = (0.7 * baseline).max(SCALLOP_HEIGHT_HARD_FLOOR_MM);
+    let hi = (1.3 * baseline).max(baseline);
+    let mut variants = vec![lo, baseline, hi];
+    variants.sort_by(f64::total_cmp);
+    variants.dedup_by(|a, b| (*a - *b).abs() < SCALLOP_HEIGHT_DEDUP_TOLERANCE_MM);
+    variants
+}
+
+/// Apply a candidate scallop_height value to a baseline op. No-op for
+/// ops that don't expose `set_scallop_height` via the trait (which is
+/// every op except `ScallopConfig` today).
+pub(crate) fn apply_scallop_height_to_op(
+    baseline_op: &OperationConfig,
+    scallop_mm: f64,
+) -> OperationConfig {
+    let mut variant = baseline_op.clone();
+    variant.set_scallop_height(scallop_mm);
+    variant
+}
+
 // ── Candidate evaluation: apply → regen → sim → gate ──────────────────
 //
 // The single per-candidate driver. Apply the candidate's params via the
@@ -1594,6 +1670,11 @@ pub(crate) fn delta_against_baseline(
         && let Some(d) = candidate.depth_per_pass()
     {
         delta.depth_per_pass_mm = Some(d);
+    }
+    if baseline.scallop_height() != candidate.scallop_height()
+        && let Some(s) = candidate.scallop_height()
+    {
+        delta.scallop_height_mm = Some(s);
     }
     delta
 }
@@ -4062,7 +4143,83 @@ mod tests {
 mod stage1_grid_tests {
     use super::*;
     use crate::compute::catalog::OperationParams;
-    use crate::compute::operation_configs::{PocketConfig, ProfileConfig, ZigzagConfig};
+    use crate::compute::operation_configs::{
+        PocketConfig, ProfileConfig, ScallopConfig, ZigzagConfig,
+    };
+
+    #[test]
+    fn scallop_config_exposes_scallop_height_not_stepover() {
+        // G2 (2026-05-08): ScallopConfig has no `stepover` field —
+        // its spacing knob is `scallop_height` (default 0.1 mm).
+        // Stage 1 sweeps this as a third axis distinct from
+        // `stepover` because units differ (a 0.1 mm scallop on a
+        // 6 mm ball produces ~1.55 mm radial step).
+        let s = ScallopConfig::default();
+        assert!(
+            s.scallop_height().is_some(),
+            "Scallop should expose scallop_height"
+        );
+        assert!(s.stepover().is_none(), "Scallop should NOT expose stepover");
+        assert!(
+            s.depth_per_pass().is_none(),
+            "Scallop should NOT expose depth_per_pass — it's surface-following"
+        );
+        assert!(
+            (s.scallop_height().expect("scallop_height present") - 0.1).abs() < 1e-9,
+            "expected default 0.1 mm scallop height"
+        );
+    }
+
+    #[test]
+    fn set_scallop_height_writes_through() {
+        let mut s = ScallopConfig::default();
+        s.set_scallop_height(0.05);
+        assert!((s.scallop_height().expect("scallop_height present") - 0.05).abs() < 1e-9);
+    }
+
+    #[test]
+    fn build_scallop_height_variants_three_around_baseline() {
+        // 0.10 mm baseline → [0.07, 0.10, 0.13].
+        let variants = build_scallop_height_variants(0.10);
+        assert_eq!(variants.len(), 3, "got {variants:?}");
+        assert!((variants[0] - 0.07).abs() < 1e-6);
+        assert!((variants[1] - 0.10).abs() < 1e-6);
+        assert!((variants[2] - 0.13).abs() < 1e-6);
+    }
+
+    #[test]
+    fn build_scallop_height_variants_floored_at_minimum() {
+        // 0.005 mm baseline (below the 0.01 floor) → all variants
+        // collapse to the floor.
+        let variants = build_scallop_height_variants(0.005);
+        for v in &variants {
+            assert!(
+                *v >= SCALLOP_HEIGHT_HARD_FLOOR_MM - 1e-9,
+                "got {variants:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn apply_scallop_height_preserves_other_fields() {
+        let baseline = OperationConfig::Scallop(ScallopConfig::default());
+        let modified = apply_scallop_height_to_op(&baseline, 0.05);
+        assert!((modified.scallop_height().expect("scallop_height present") - 0.05).abs() < 1e-9);
+        // Feed and plunge unchanged.
+        assert!((modified.feed_rate() - baseline.feed_rate()).abs() < 1e-9);
+        assert!((modified.plunge_rate() - baseline.plunge_rate()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn delta_against_baseline_records_scallop_height_change() {
+        let baseline = OperationConfig::Scallop(ScallopConfig::default());
+        let candidate = apply_scallop_height_to_op(&baseline, 0.05);
+        let d = delta_against_baseline(&baseline, &candidate);
+        assert_eq!(d.scallop_height_mm, Some(0.05));
+        assert!(d.has_changes());
+        assert!(d.depth_per_pass_mm.is_none());
+        assert!(d.stepover_mm.is_none());
+    }
 
     #[test]
     fn has_doc_knob_includes_profile_and_zigzag() {
@@ -4425,6 +4582,7 @@ mod candidate_eval_tests {
             spindle_rpm: None,
             stepover_mm: None,
             depth_per_pass_mm: Some(2.5),
+            scallop_height_mm: None,
         };
         let result = feeds_auto_for_candidate(&baseline, &delta);
         assert!(!result.feed_rate, "feed_rate should be flipped to false");
