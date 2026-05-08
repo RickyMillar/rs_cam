@@ -53,7 +53,7 @@ use super::verdict::{Confidence, ExceedsReason, UnmodeledReason, Verdict};
 const WITHIN_BOUND_MM: f64 = 0.050; // 50 µm
 
 /// Above this peak tip deflection (mm), the cut is `Exceeds`.
-const EXCEEDS_BOUND_MM: f64 = 0.200; // 200 µm
+pub(crate) const EXCEEDS_BOUND_MM: f64 = 0.200; // 200 µm
 
 pub fn evaluate(
     toolpath_id: usize,

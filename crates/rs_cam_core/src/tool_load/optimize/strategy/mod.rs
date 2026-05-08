@@ -14,6 +14,7 @@ use crate::tool_load::verdict::ToolpathLoadVerdict;
 
 pub mod grid;
 pub mod headroom;
+pub mod retarget;
 
 /// One candidate's patch list with provenance. The strategy's name + a
 /// human-readable rationale are surfaced in MCP / GUI output.
