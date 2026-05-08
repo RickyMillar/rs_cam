@@ -615,7 +615,9 @@ pub fn project_load_report(
             power: crate::tool_load::power::evaluate(
                 tc.id, &tool_def, material, machine, sim_trace,
             ),
-            deflection: crate::tool_load::deflection::evaluate(&tool_def),
+            deflection: crate::tool_load::deflection::evaluate(
+                tc.id, &tool_def, material, sim_trace,
+            ),
         });
     }
     crate::tool_load::ToolLoadReport { per_toolpath }

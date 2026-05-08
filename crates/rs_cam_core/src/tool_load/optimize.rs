@@ -812,11 +812,21 @@ fn preflight_classify(
     baseline_verdict: &ToolpathLoadVerdict,
     matched_lut_row: Option<&MatchedRow>,
 ) -> Option<PreflightRefusal> {
-    // 1. Deflection — pure setup geometry, unreachable from search space.
-    if let Verdict::Exceeds { peak: ld_ratio, .. } = baseline_verdict.deflection {
+    // 1. Deflection — predicted tip deflection at baseline force. The
+    //    search-space levers (feed/RPM/DOC/stepover) reduce force
+    //    linearly with DOC × radial-width, but for tool/material/
+    //    stickout-driven failures even the smallest viable DOC won't
+    //    bring δ below the threshold. We refuse pre-flight; the
+    //    prescription points the user at the setup levers (stickout,
+    //    tool material) the search space can't reach.
+    if let Verdict::Exceeds {
+        peak: peak_delta_mm,
+        ..
+    } = baseline_verdict.deflection
+    {
         return Some(PreflightRefusal {
             reason: RefuseReason::DeflectionSetupLocked,
-            explanation: deflection_setup_prescription(&ctx.tool, ld_ratio),
+            explanation: deflection_setup_prescription(&ctx.tool, peak_delta_mm),
         });
     }
 
@@ -844,14 +854,25 @@ fn preflight_classify(
 }
 
 /// Build the user-facing prescription string for a deflection-setup-
-/// locked refusal. Reports the actual L/D ratio and the stickout that
-/// would bring it back to the safe target (L/D=4).
-fn deflection_setup_prescription(tool: &crate::tool::ToolDefinition, ld_ratio: f64) -> String {
-    let target_stickout_mm = (tool.diameter() * 4.0).max(0.0);
+/// locked refusal. Reports the predicted peak tip deflection (µm) and
+/// names the setup levers the optimizer's search space can't reach
+/// (stickout, tool material). The target stickout is derived by
+/// scaling the current cantilever length so that, for a uniform-cylinder
+/// approximation, peak δ would land at the Within bound (50 µm) — i.e.
+/// `target_L = current_L × (50 µm / peak)^(1/3)`.
+fn deflection_setup_prescription(tool: &crate::tool::ToolDefinition, peak_delta_mm: f64) -> String {
+    let peak_um = peak_delta_mm * 1000.0;
+    let target_um = 50.0_f64; // matches deflection::WITHIN_BOUND_MM × 1000
+    let scale = if peak_um > target_um {
+        (target_um / peak_um).cbrt()
+    } else {
+        1.0
+    };
+    let target_stickout_mm = (tool.stickout * scale).max(0.0);
     format!(
-        "tool L/D ratio is {ld_ratio:.1} (above 6.0 limit) — feed/RPM/DOC/stepover \
-         can't fix this; shorten stickout to ~{target_stickout_mm:.0} mm (target L/D=4) \
-         or use a stiffer tool"
+        "predicted tip deflection {peak_um:.0} µm at peak load (above 200 µm limit) — \
+         feed/RPM/DOC/stepover alone can't bring this under threshold for this setup; \
+         shorten stickout below ~{target_stickout_mm:.0} mm or use a stiffer tool/material"
     )
 }
 
@@ -3180,35 +3201,72 @@ mod orchestration_skip_tests {
     /// Build a populated trace whose `toolpath_summaries[0]` reports a
     /// non-zero cycle time, so `optimize_toolpath` walks past the
     /// "no cycle time" skip path and reaches the pre-flight classifier.
-    fn trace_with_summary() -> SimulationCutTrace {
-        use crate::simulation_cut::SimulationToolpathCutSummary;
+    /// Adds cutting samples for `toolpath_id = 0` so the force-aware
+    /// deflection gate has data to evaluate.
+    fn trace_with_summary_and_high_force_samples() -> SimulationCutTrace {
+        use crate::simulation_cut::{
+            CutKinematics, SimulationCutSample, SimulationToolpathCutSummary,
+        };
         let mut trace = empty_trace();
         trace.toolpath_summaries.push(SimulationToolpathCutSummary {
             toolpath_id: 0,
-            sample_count: 100,
+            sample_count: 4,
             total_runtime_s: 60.0,
             cutting_runtime_s: 50.0,
             rapid_runtime_s: 10.0,
             air_cut_time_s: 0.0,
             low_engagement_time_s: 0.0,
-            average_engagement: 0.5,
-            peak_chipload_mm_per_tooth: 0.04,
-            peak_axial_doc_mm: 2.0,
+            average_engagement: 0.8,
+            peak_chipload_mm_per_tooth: 0.06,
+            peak_axial_doc_mm: 6.0,
             total_removed_volume_est_mm3: 100.0,
             average_mrr_mm3_s: 2.0,
         });
+        // Slot at 6 mm DOC on a 6.35 mm cutter at full π arc — force
+        // peaks at Kc × 6 × 6.35. With softwood Kc=6 and the default
+        // 45 mm stickout carbide tool, this produces δ around 230 µm,
+        // tripping the 200 µm Exceeds threshold.
+        for i in 0..4 {
+            trace.samples.push(SimulationCutSample {
+                toolpath_id: 0,
+                move_index: i,
+                sample_index: i,
+                position: [i as f64, 0.0, -6.0],
+                cumulative_time_s: 0.1 * i as f64,
+                segment_time_s: 0.1,
+                is_cutting: true,
+                cut_kinematics: CutKinematics::Linear,
+                feed_rate_mm_min: 1500.0,
+                spindle_rpm: 18_000,
+                flute_count: 2,
+                axial_doc_mm: 6.0,
+                radial_engagement: 1.0,
+                arc_engagement_radians: Some(std::f64::consts::PI),
+                chipload_mm_per_tooth: 0.04,
+                effective_chip_thickness_mm: Some(0.04),
+                removed_volume_est_mm3: 1.0,
+                mrr_mm3_s: 10.0,
+                semantic_item_id: None,
+                span_path: Vec::new(),
+            });
+        }
         trace
     }
 
     #[test]
     fn deflection_exceeds_yields_setup_locked_refusal() {
-        // Default endmill has stickout 45mm, diameter 6.35mm →
-        // L/D ≈ 7.09 — above the 6.0 threshold. Pocket op with a
-        // populated trace summary walks past every prior skip path
-        // and lands in pre-flight, where the deflection Exceeds
-        // verdict triggers `DeflectionSetupLocked`.
+        // Default endmill has stickout 45 mm, diameter 6.35 mm. With a
+        // 6 mm slot in HardMaple (Kc=15) the force-aware deflection
+        // gate predicts a peak δ around 350 µm, comfortably above the
+        // 200 µm Exceeds threshold and triggering the pre-flight
+        // `DeflectionSetupLocked` refusal.
         let mut session = session_with_op(OperationConfig::Pocket(PocketConfig::default()));
-        let trace = trace_with_summary();
+        let mut stock = session.stock_config().clone();
+        stock.material = crate::material::Material::SolidWood {
+            species: crate::material::WoodSpecies::HardMaple,
+        };
+        session.set_stock_config(stock);
+        let trace = trace_with_summary_and_high_force_samples();
         let cancel = AtomicBool::new(false);
         let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
         match outcome {
@@ -3219,8 +3277,8 @@ mod orchestration_skip_tests {
             } => {
                 assert_eq!(reason, RefuseReason::DeflectionSetupLocked);
                 assert!(
-                    explanation.contains("L/D"),
-                    "explanation should mention L/D, got: {explanation}"
+                    explanation.contains("µm"),
+                    "explanation should report deflection in µm, got: {explanation}"
                 );
                 assert!(
                     explanation.contains("stickout"),
@@ -3239,20 +3297,23 @@ mod orchestration_skip_tests {
 
     #[test]
     fn deflection_setup_locked_explanation_carries_target_stickout() {
-        // 6.35mm tool → target stickout for L/D=4 is 25mm. Verify
-        // the prescription number lands in the explanation string.
+        // For peak δ=215 µm and current stickout=45 mm, the cube-root
+        // scaling target stickout for δ=50 µm is
+        //   target_L = 45 × (50/215)^(1/3) ≈ 27.8 mm  →  rounds to "28".
         let tool = crate::tool::ToolDefinition::new(
             Box::new(crate::tool::FlatEndmill::new(6.35, 20.0)),
             6.35,
             20.0,
             40.0,
-            45.0, // L/D = 7.087
+            45.0,
             2,
             crate::compute::tool_config::ToolMaterial::Carbide,
         );
-        let s = deflection_setup_prescription(&tool, 7.087);
-        assert!(s.contains("7.1"), "ratio not in '{s}'");
-        assert!(s.contains("25"), "target stickout 25mm not in '{s}'");
+        let peak_delta_mm = 0.215;
+        let s = deflection_setup_prescription(&tool, peak_delta_mm);
+        assert!(s.contains("215"), "peak µm not in '{s}'");
+        assert!(s.contains("28"), "target stickout ~28mm not in '{s}'");
+        assert!(s.contains("stickout"), "stickout lever not in '{s}'");
     }
 
     #[test]
@@ -3711,7 +3772,7 @@ mod tests {
                 confidence: Confidence::Validated,
             },
             deflection: Verdict::Within {
-                peak: 5.0,
+                peak: 0.030,
                 confidence: Confidence::Validated,
             },
         }
@@ -3732,7 +3793,7 @@ mod tests {
                 confidence: Confidence::Validated,
             },
             deflection: Verdict::Within {
-                peak: 5.0,
+                peak: 0.030,
                 confidence: Confidence::Validated,
             },
         }

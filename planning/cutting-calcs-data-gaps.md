@@ -632,7 +632,219 @@ The `DeflectionSetupLocked` pre-flight refusal stays for the new model's
 - A 6mm HSS flat at 60mm stickout in steel (which we don't actually cut, but verifies the model isn't wood-only) should fail the new model — F·L³ / (3·E·I) at HSS modulus puts deflection > 200 µm at typical chipload.
 - `tool_load::deflection::tests::*` rewritten to pin all three of the above.
 
-**Status.** Not started. Largest single piece of work in this doc.
+**Status.** **Done** 2026-05-08. Force-aware tip-deflection model live;
+calibration confirms the 50 µm / 200 µm defaults work without
+adjustment.
+
+*Live wanaka MCP results (post-fix, 2026-05-08).*
+
+| TP    | Tool                            | Pre-fix (geom L/D)            | Post-fix (force-aware)            | Notes |
+|-------|---------------------------------|--------------------------------|-----------------------------------|-------|
+| 14    | 6 mm flat, 45 mm stickout       | Exceeds(L/D=7.5)              | Unmodeled(ArcEngagementNotCaptured) | Drill — no arc capture, parallel to power gate |
+| 4     | 6 mm flat, 45 mm stickout       | Exceeds(L/D=7.5)              | **Within(Approximate)** 158 µm    | Reaches Stage F — slot engagement annotated |
+| 7     | 6 mm flat, 45 mm stickout       | Exceeds(L/D=7.5)              | Unmodeled(ArcEngagementNotCaptured) | Drill |
+| 12    | 6 mm flat, 45 mm stickout       | Exceeds(L/D=7.5)              | **Within(Approximate)** 175 µm    | Reaches Stage F |
+| 5     | 2 mm tip / 6 mm shank, 35 mm    | Within(Approximate, L/D=5.83) | **Within(Validated)** 9.4 µm      | Tapered-ball tip-only engagement |
+| 6     | 2 mm tip / 6 mm shank, 35 mm    | Within(Approximate, L/D=5.83) | **Within(Validated)** 7.8 µm      | |
+| 10    | 6 mm flat, 45 mm stickout       | Exceeds(L/D=7.5)              | **Within(Approximate)** 157 µm    | Reaches Stage F |
+| 11    | 2 mm tip / 6 mm shank, 35 mm    | Within(Approximate, L/D=5.83) | **Within(Validated)** 5.3 µm      | |
+
+The five End-Mill TPs that previously refused pre-flight (TPs 4, 12, 10
+plus the two drill TPs) all land in the safe zone with the new model:
+the cutting TPs at 157–175 µm get the "finish degradation expected"
+Approximate annotation, and the drills become Unmodeled (parallel to
+the power gate's behavior on no-arc traces). The three TaperedBall TPs
+are now correctly classified as low-deflection (sub-10 µm tip wander)
+because the stepped-cantilever model accounts for the stiff 6 mm shank
+above the tapered cutting region — the previous geometric L/D=5.83
+buried this signal.
+
+No threshold adjustment needed: 50 µm / 200 µm defaults discriminate
+the wanaka cases cleanly with margin on both sides. Implementation
+matches plan: stepped-cantilever integrator on `ToolDefinition`,
+force-aware evaluator in `tool_load/deflection.rs`, prescription string
+rewritten to report µm + target stickout, no behavioural fallback when
+the trace is absent.
+
+**Plan (2026-05-08, awaiting approval).**
+
+*Wanaka baseline (live MCP, current geometric model).* Tool 3 = 6 mm flat,
+45 mm stickout (L/D 7.5). Tool 2 = tapered ball (2 mm tip / 7° / 6 mm
+shank), 35 mm stickout (L/D 5.83 against shaft). All End-Mill TPs
+(`14, 4, 7, 12, 10`) → `Exceeds(LongToolStiffnessUnsafe)` peak 7.5; all
+TaperedBall TPs (`5, 6, 11`) → `Within(Approximate)` peak 5.83. End-Mill
+TPs cannot reach Stage F because the pre-flight refusal fires first.
+
+*Force model* — per cutting sample, mirrored from `power::evaluate`:
+
+```
+F_i  =  Kc(material)  ×  axial_doc_i_mm  ×  radial_width_i_mm    [N]
+```
+
+with:
+- `radial_width = (arc_engagement_radians / π) × engagement_radius(axial_doc) × 2`
+  — same arc-equivalent slab as power; honest within isotropy bounds.
+- `Kc = material.kc_n_per_mm2()` — **raw**, no 2.5× anisotropy
+  multiplier. Best-practice for static deflection: sustained tip
+  position responds to mean cutting force, not transient grain spikes.
+  The 2.5× was scoped to power-safety as an instant-spike bound and
+  doesn't transfer here.
+
+*Beam model* — stepped/integrated cantilever, not a single-cylinder
+approximation:
+
+The tool is anchored at the collet (`x = 0`) and free at the tip
+(`x = stickout`). Cross-section diameter varies along the axis: the
+shank region is `shank_diameter`; inside the cutting region it follows
+the cutter geometry. Each milling-cutter type already exposes
+`lookup_diameter_at(axial_doc_from_tip)` (used by the LUT lookup post
+G14 audit). The deflection integral reuses this:
+
+```
+d(x)        = shank_diameter,                               for stickout - x > cutting_length
+            = cutter.lookup_diameter_at(stickout - x),      otherwise
+I(x)        = π × d(x)⁴ / 64
+
+Force is treated as a point load applied at the midpoint of axial
+engagement: a = stickout − axial_doc / 2 (from the clamp).
+
+For x ∈ [0, a]:  M(x) = F · (a − x)   (bending region)
+For x ∈ [a, L]:  M(x) = 0             (rigid extension; just translates)
+
+θ(a)   = (F / E) × ∫₀ᵃ (a − x) / I(x) dx          (slope at load)
+δ(a)   = (F / E) × ∫₀ᵃ (a − x)² / I(x) dx        (deflection at load)
+δ_tip  = δ(a) + θ(a) × (L − a)                    (carried out to tip)
+```
+
+Numerical integration via 64 mid-point segments (over `[0, a]`); fast,
+deterministic, accurate to better than 1 % for monotone-tapered
+profiles. Implementation lives on `ToolDefinition` so it composes the
+shank and cutter regions cleanly; the cutter trait stays at its
+existing `lookup_diameter_at` surface (no new trait method needed).
+
+Modulus from `ToolConfig.tool_material` via a new
+`ToolMaterial::youngs_modulus_n_per_mm2()` accessor: Carbide = 600 000,
+HSS = 200 000.
+
+*Torsion note.* The tool also experiences a torsional load (tangential
+force × engagement radius creates twist about the tool axis). For a
+coaxial cutter the resulting tip rotation does not translate the tip
+position — it only rotates the cutting edge around the axis. So
+torsion does not contribute to the "tip-wandering" metric this gate
+predicts, and we model bending only. Documented inline in the module
+docstring so this assumption is visible.
+
+Verdict from the **peak `δ` across all cutting samples** of the toolpath:
+
+| Peak tip deflection | Verdict           | Confidence detail string                       |
+|---------------------|-------------------|------------------------------------------------|
+| `< 50 µm`           | `Within`          | `Validated`                                    |
+| `50 – 200 µm`       | `Within`          | `Approximate("…Xµm at sample idx Y…")`         |
+| `> 200 µm`          | `Exceeds`         | `LongToolStiffnessUnsafe` (reuses existing tag) |
+
+Slot samples (`arc ≥ π`) annotate `Approximate("slot engagement")` like
+power does; isotropy disclaimer reused.
+
+*Threshold derivation (50 µm / 200 µm).* The 50 µm Within bound matches
+the chipload finish band typical of wood finishing (≥ 0.05 mm
+chip-per-tooth ≫ 50 µm tip wander, so the tool is moving more than the
+deflection); below it, tool wander is sub-chip and finish is
+unaffected. The 200 µm Exceeds bound is the rule-of-thumb chatter
+onset / dimensional-tolerance limit cited in handbook deflection
+nomograms (≈ 0.2 mm = 0.008"). These are starting points; **calibration
+against wanaka per the next step is the load-bearing part**, and
+operator pushback on either bound is expected.
+
+*Calibration data (sanity-check from wanaka MCP report, single-cylinder
+proxy).*
+
+Hardwood Kc = 15 N/mm², Carbide E = 600 000 N/mm², engaged-cylinder I.
+The integrated stepped-cantilever above will produce **lower** δ than
+this proxy because the shank region is stiffer than the cutter
+cross-section — but the proxy bounds the answer and confirms the
+order-of-magnitude is right:
+
+| TP    | Tool    | d (mm) | L (mm) | I (mm⁴) | peak DOC | peak rad-width | F (N) | δ_proxy (µm) | Likely true verdict |
+|-------|---------|--------|--------|---------|----------|----------------|-------|--------------|---------------------|
+| 4     | 6 flat  | 6.00   | 45     | 63.6    | 3.0      | 6.00 (slot)    | 270   | 215          | Within(Approximate) once stepped-shank is honest |
+| 4 avg | 6 flat  | 6.00   | 45     | 63.6    | 3.0      | 1.95 (avg eng) | 88    | 70           | Within(Approximate)                              |
+| 5/6/11| 2 tip   | (TBD)  | 35     | (TBD)   | (TBD)    | (TBD)          | (TBD) | (TBD)        | (compute via sim)                                |
+
+The proxy uses an absurdly conservative I (the engaged cross-section
+extended all the way to the clamp). Real wanaka tools have a 6 mm shank
+region above the cutting flutes that contributes most of the bending
+stiffness — for the 6 mm flat the shank IS the same diameter so the
+proxy is exact; for the tapered ball the shank dominates and the proxy
+massively overestimates δ. **Implementation will compute peak δ across
+actual samples with the stepped model**, then thresholds get a
+calibration pass against that data inline in this entry.
+
+*Steel-shop sanity check (for the "model isn't wood-only" gate).*
+6 mm HSS at 60 mm stickout, mild steel Kc ≈ 2000, light cut DOC=1
+chipload=0.05, half-engagement: F = 2000 × 1 × 3 = 6000 N (per sample,
+not per tooth). E = 200 000, I = 63.6 → δ = 6000 × 60³ / (3 × 200 000 ×
+63.6) = 33.97 mm. Even an order-of-magnitude smaller force (600 N at
+deeper engagement giving avg-radial-width 0.5) gives δ = 3.4 mm =
+3400 µm ≫ 200. The model fails steel cuts decisively, as required.
+
+*Code structure.*
+
+| File                                                    | Change |
+|---------------------------------------------------------|--------|
+| `crates/rs_cam_core/src/tool.rs` / `tool/mod.rs`        | New `ToolDefinition::tip_deflection_under_tip_load(force_n, axial_doc_mm) -> f64` that integrates the stepped cantilever (shank + cutting region) using existing `cutter.lookup_diameter_at`. Pure geometry/mechanics — no Material or sim dependency. Unit-tested with closed-form references (uniform cylinder = `F·L³/3EI`; stepped cylinder against a hand-computed two-segment case). |
+| `crates/rs_cam_core/src/compute/tool_config.rs`         | `ToolMaterial::youngs_modulus_n_per_mm2()` accessor with constants `CARBIDE_MODULUS_N_PER_MM2 = 600_000.0`, `HSS_MODULUS_N_PER_MM2 = 200_000.0`. |
+| `crates/rs_cam_core/src/tool_load/deflection.rs`        | Replace geometric `evaluate(tool)` with `evaluate(toolpath_id, tool, material, sim_trace)`. Walks samples like `power::evaluate`, computes per-sample `F` then `δ = tool.tip_deflection_under_tip_load(F, axial_doc) / E`. Refusals: `SimulationRequired` (no trace), `ArcEngagementNotCaptured` (no arc on samples), `MaterialUnvalidated` (`Custom` Kc), zero stickout / zero-engagement samples filtered. Module docstring rewrites with the formula, threshold table, and torsion note. Tests rewritten for four calibration scenarios. |
+| `crates/rs_cam_core/src/tool_load/mod.rs`               | Update `evaluate_toolpath` to pass `sim_trace` and `material` to `deflection::evaluate`. |
+| `crates/rs_cam_core/src/tool_load/optimize.rs`          | `deflection_setup_prescription` rewritten to report "predicted tip deflection X µm at sample idx Y — shorten stickout to ~Z mm, use a stiffer tool/material, or reduce DOC". Pre-flight branch (`preflight_classify`) unchanged structurally — still triggers on `Verdict::Exceeds` from baseline-sim deflection. The 4 sites in `optimize.rs` tests that construct mock `Verdict::Exceeds { peak: ld_ratio, ... }` for deflection get updated to construct it with peak in micrometres. |
+
+No public API changes outside the deflection module signature.
+`OptimizeOutcome::DeflectionSetupLocked` tag stays (UI/MCP consumers).
+Geometric L/D constants `WITHIN_BOUND` / `EXCEEDS_BOUND` deleted.
+
+*Implementation order.*
+
+1. Add `youngs_modulus_n_per_mm2` on `ToolMaterial` with carbide / HSS
+   constants. Unit-test the accessor.
+2. Add `ToolDefinition::tip_deflection_under_tip_load(force_n,
+   axial_doc_mm) -> f64`. Unit tests:
+   (a) uniform cylinder (flat endmill, no shank step) matches closed-
+       form `F·L³/(3EI)` to better than 1 %;
+   (b) two-segment stepped cylinder (shank + cutter, different d)
+       matches a hand-derivation;
+   (c) tapered ball — sanity check that the integrated δ is between
+       the all-shank and all-tip limits.
+3. Rewrite `deflection.rs` with the force-aware evaluator. Walks
+   cutting samples, computes per-sample F → δ, takes peak across
+   toolpath. Refusals symmetric with `power::evaluate`.
+4. Wire `material` and `sim_trace` through `mod.rs::evaluate_toolpath`.
+5. Update `deflection_setup_prescription` and fix the 4 mock-verdict
+   test sites in `optimize.rs`.
+6. Run wanaka MCP `get_tool_load_report`. Capture predicted δ for
+   every TP. Compare against the proxy table above and the verdict
+   targets (End-Mill TPs → `Within(Approximate)`, TaperedBall TPs →
+   `Within(Validated)` or `Within(Approximate)` matching the current
+   chipload-side conservative read). Adjust thresholds if needed and
+   document the adjustment inline here.
+7. Rewrite unit tests for the four calibration scenarios (wanaka End-
+   Mill peak / wanaka TaperedBall / 1 mm engraver light cut / 6 mm
+   HSS in steel); pin both the verdict variant and the predicted δ
+   to a tolerance.
+8. Validate end-to-end via `optimize_toolpath`: the End-Mill TPs that
+   were stuck on `DeflectionSetupLocked` should pass pre-flight and
+   reach Stage F (or refuse with a force-derived reason, e.g. a
+   chipload-driven retarget that fails to find a Within point).
+
+*Decisions resolved (operator approved 2026-05-08).*
+
+- **Anisotropy multiplier**: drop. Use raw `Kc(material)`. Static
+  deflection is not the place for a worst-case spike bound.
+- **Tapered tool stiffness**: stepped/integrated cantilever, not a
+  single-cylinder approximation. Honest geometry.
+- **No-trace behavior**: `Unmodeled(SimulationRequired)`. No
+  geometric L/D fallback. The pre-flight refusal moves into the
+  post-baseline classifier (where it already runs structurally).
+- **Threshold defaults**: 50 µm Within / 200 µm Exceeds, subject to
+  the calibration step (implementation step 6).
 
 ---
 

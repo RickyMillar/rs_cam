@@ -370,6 +370,85 @@ impl ToolDefinition {
     pub fn to_geometry_hint(&self) -> crate::feeds::ToolGeometryHint {
         self.cutter.geometry_hint()
     }
+
+    /// Predicted tip deflection (mm) under a transverse point load
+    /// `force_n` (N) applied at the midpoint of axial engagement
+    /// (`axial_doc_mm / 2` above the tip).
+    ///
+    /// Models the tool as a stepped cantilever clamped at `x = 0` (the
+    /// collet face) and free at `x = stickout` (the tip). The cutting
+    /// region uses the per-cutter `lookup_diameter_at(axial_from_tip)`
+    /// profile; above the flutes the cross-section is the uniform
+    /// `shank_diameter`. Numerical integration via 64 mid-point segments
+    /// along the bending region `[0, load_position]`; the section above
+    /// the load (including the rigid cantilever extension to the tip)
+    /// translates via the slope at the load point.
+    ///
+    /// Bending only — torsion is ignored because for a coaxial cutter
+    /// twist rotates the tip around the axis without translating it.
+    pub fn tip_deflection_mm(
+        &self,
+        force_n: f64,
+        axial_doc_mm: f64,
+        youngs_modulus_n_per_mm2: f64,
+    ) -> f64 {
+        let l = self.stickout;
+        let e = youngs_modulus_n_per_mm2;
+        if l <= 0.0 || e <= 0.0 || force_n == 0.0 {
+            return 0.0;
+        }
+        let a_doc = axial_doc_mm.max(0.0);
+        let load_pos = (l - a_doc * 0.5).max(0.0);
+        if load_pos <= 0.0 {
+            return 0.0;
+        }
+        let cutter_len = self.cutter.length();
+        // Floor on local diameter to keep 1/d⁴ finite at degenerate
+        // near-tip evaluations. 0.05 mm is well below any realistic
+        // engaged cross-section.
+        const D_FLOOR_MM: f64 = 0.05;
+        // Split integration at the shank/cutter step so the discontinuity
+        // never falls mid-segment (mid-point rule is O(1/N) at jumps,
+        // O(1/N²) on smooth pieces).
+        let shank_top = (l - cutter_len).max(0.0).min(load_pos);
+        let mut delta_at_load = 0.0_f64;
+        let mut slope_at_load = 0.0_f64;
+        // Region 1: shank, x ∈ [0, shank_top].
+        if shank_top > 0.0 {
+            let d = self.shank_diameter.max(D_FLOOR_MM);
+            let i_mm4 = std::f64::consts::PI * d.powi(4) / 64.0;
+            const N_SHANK: usize = 32;
+            let dx = shank_top / N_SHANK as f64;
+            for i in 0..N_SHANK {
+                let x = (i as f64 + 0.5) * dx;
+                let arm = load_pos - x;
+                let inv_ei = force_n / (e * i_mm4);
+                delta_at_load += inv_ei * arm * arm * dx;
+                slope_at_load += inv_ei * arm * dx;
+            }
+        }
+        // Region 2: cutter, x ∈ [shank_top, load_pos].
+        if load_pos > shank_top {
+            const N_CUTTER: usize = 64;
+            let span = load_pos - shank_top;
+            let dx = span / N_CUTTER as f64;
+            for i in 0..N_CUTTER {
+                let x = shank_top + (i as f64 + 0.5) * dx;
+                let axial_from_tip = l - x;
+                let d = self
+                    .cutter
+                    .lookup_diameter_at(axial_from_tip)
+                    .max(D_FLOOR_MM);
+                let i_mm4 = std::f64::consts::PI * d.powi(4) / 64.0;
+                let arm = load_pos - x;
+                let inv_ei = force_n / (e * i_mm4);
+                delta_at_load += inv_ei * arm * arm * dx;
+                slope_at_load += inv_ei * arm * dx;
+            }
+        }
+        let cantilever_extension = (l - load_pos).max(0.0);
+        delta_at_load + slope_at_load * cantilever_extension
+    }
 }
 
 impl MillingCutter for ToolDefinition {
@@ -672,6 +751,111 @@ mod tests {
             }
             other => panic!("expected Bull, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn tip_deflection_uniform_cylinder_matches_closed_form() {
+        // Uniform 6 mm flat cantilever (shank diameter = cutter diameter,
+        // cutting_length covers stickout). Closed-form for a cantilever
+        // with point load at distance `a` from clamp, deflection at tip
+        // x = L:  δ = F·a²·(3L − a) / (6·E·I)
+        let cutter = Box::new(FlatEndmill::new(6.0, 60.0));
+        let td = ToolDefinition::new(cutter, 6.0, 100.0, 25.0, 45.0, 2, ToolMaterial::Carbide);
+        let force = 270.0;
+        let axial_doc = 6.0;
+        let l = 45.0;
+        let a = l - axial_doc * 0.5;
+        let i = std::f64::consts::PI * 6.0_f64.powi(4) / 64.0;
+        let e = 600_000.0;
+        let expected = force * a * a * (3.0 * l - a) / (6.0 * e * i);
+        let got = td.tip_deflection_mm(force, axial_doc, e);
+        let rel_err = (got - expected).abs() / expected;
+        assert!(
+            rel_err < 0.01,
+            "uniform cantilever integrator within 1%: got {got}, expected {expected}, rel_err={rel_err}"
+        );
+    }
+
+    #[test]
+    fn tip_deflection_two_segment_stepped_matches_hand_calc() {
+        // Cutter diameter 6 mm, cutting_length 20 mm; shank 12 mm;
+        // stickout 40 mm; load at axial_doc/2 = 5 from tip → a = 35.
+        // Hand-derivation in the G13 plan: δ_tip = (F/E) × 41.917 mm³.
+        let cutter = Box::new(FlatEndmill::new(6.0, 20.0));
+        let td = ToolDefinition::new(cutter, 12.0, 30.0, 25.0, 40.0, 2, ToolMaterial::Carbide);
+        let force = 270.0;
+        let axial_doc = 10.0;
+        let e = 600_000.0;
+        let expected = force * 41.917 / e;
+        let got = td.tip_deflection_mm(force, axial_doc, e);
+        let rel_err = (got - expected).abs() / expected;
+        assert!(
+            rel_err < 0.01,
+            "stepped integrator within 1% of hand calc: got {got}, expected {expected}, rel_err={rel_err}"
+        );
+    }
+
+    #[test]
+    fn tip_deflection_tapered_ball_lies_between_shank_and_tip_limits() {
+        // For a tapered ball with 2 mm tip / 6 mm shank, taper 7°,
+        // cutting_length 35 mm, stickout 45 mm, the integrated tip
+        // deflection should sit BETWEEN:
+        //  - all-shank (uniform 6 mm cantilever) — stiffest bound
+        //  - all-tip   (uniform 2 mm cantilever) — most-flexible bound
+        // because the real profile transitions from 2 mm at the tip to
+        // 6 mm at the top of the cutting region.
+        let tapered = Box::new(TaperedBallEndmill::new(2.0, 7.0, 6.0, 35.0));
+        let td_real = ToolDefinition::new(tapered, 6.0, 30.0, 25.0, 45.0, 2, ToolMaterial::Carbide);
+        let td_shank = ToolDefinition::new(
+            Box::new(FlatEndmill::new(6.0, 100.0)),
+            6.0,
+            30.0,
+            25.0,
+            45.0,
+            2,
+            ToolMaterial::Carbide,
+        );
+        let td_tip = ToolDefinition::new(
+            Box::new(FlatEndmill::new(2.0, 100.0)),
+            2.0,
+            30.0,
+            25.0,
+            45.0,
+            2,
+            ToolMaterial::Carbide,
+        );
+        let force = 5.0;
+        let axial_doc = 4.0;
+        let e = 600_000.0;
+        let real = td_real.tip_deflection_mm(force, axial_doc, e);
+        let shank = td_shank.tip_deflection_mm(force, axial_doc, e);
+        let tip = td_tip.tip_deflection_mm(force, axial_doc, e);
+        assert!(
+            shank < real && real < tip,
+            "expected shank-limit {shank} < real {real} < tip-limit {tip}"
+        );
+    }
+
+    #[test]
+    fn tip_deflection_zero_force_is_zero() {
+        let cutter = Box::new(FlatEndmill::new(6.0, 60.0));
+        let td = ToolDefinition::new(cutter, 6.0, 30.0, 25.0, 45.0, 2, ToolMaterial::Carbide);
+        assert_eq!(td.tip_deflection_mm(0.0, 6.0, 600_000.0), 0.0);
+    }
+
+    #[test]
+    fn tip_deflection_carbide_stiffer_than_hss_by_3x() {
+        // Same tool, same load, swap E. δ ∝ 1/E so the HSS deflection is 3×
+        // the carbide deflection (200 vs 600 GPa).
+        let cutter = Box::new(FlatEndmill::new(6.0, 60.0));
+        let td = ToolDefinition::new(cutter, 6.0, 30.0, 25.0, 45.0, 2, ToolMaterial::Carbide);
+        let carbide = td.tip_deflection_mm(100.0, 5.0, 600_000.0);
+        let hss = td.tip_deflection_mm(100.0, 5.0, 200_000.0);
+        let ratio = hss / carbide;
+        assert!(
+            (ratio - 3.0).abs() < 0.01,
+            "HSS/Carbide deflection ratio should be 3.0, got {ratio}"
+        );
     }
 
     #[test]
