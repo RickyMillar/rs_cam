@@ -896,12 +896,17 @@ fn bipolar_prescription(op_kind: OperationType, op_family: OperationFamily) -> S
 }
 
 /// Operation kinds with a `depth_per_pass` knob that Stage 1 sweeps.
-/// Per Engineering Default 9; expanded 2026-05-08 (G1) to cover Profile
-/// and Zigzag, which both expose `depth_per_pass()` via `OperationParams`
-/// but were excluded from the original 5-op list. Profile has only DOC
-/// (no stepover); Zigzag has both. `run_stage_1_grid` collapses the
-/// stepover dimension for ops where `op.stepover()` is `None`, so adding
-/// Profile here doesn't fan out into duplicate sims.
+/// Per Engineering Default 9; expanded 2026-05-08 across G1+G3:
+///
+/// - G1: Profile, Zigzag — both expose `depth_per_pass()` via
+///   `OperationParams`.
+/// - G3: Trace, RampFinish, Waterline — Trace already exposes
+///   `depth_per_pass()`; RampFinish wraps `max_stepdown` and Waterline
+///   wraps `z_step` as DOC-equivalent axes via the trait.
+///
+/// `run_stage_1_grid` collapses the stepover and scallop_height
+/// dimensions for ops that don't expose those, so adding ops here
+/// doesn't fan out duplicate sims.
 fn has_doc_knob(op_kind: OperationType) -> bool {
     matches!(
         op_kind,
@@ -912,6 +917,9 @@ fn has_doc_knob(op_kind: OperationType) -> bool {
             | OperationType::Face
             | OperationType::Profile
             | OperationType::Zigzag
+            | OperationType::Trace
+            | OperationType::RampFinish
+            | OperationType::Waterline
     )
 }
 
@@ -4144,8 +4152,79 @@ mod stage1_grid_tests {
     use super::*;
     use crate::compute::catalog::OperationParams;
     use crate::compute::operation_configs::{
-        PocketConfig, ProfileConfig, ScallopConfig, ZigzagConfig,
+        PencilConfig, PocketConfig, ProfileConfig, RampFinishConfig, ScallopConfig, TraceConfig,
+        WaterlineConfig, ZigzagConfig,
     };
+
+    #[test]
+    fn has_doc_knob_includes_g3_ops() {
+        // G3 (2026-05-08) — Trace was always exposed via the trait but
+        // missing from `has_doc_knob`; RampFinish and Waterline now
+        // wrap their semantically-equivalent Z-step knobs.
+        assert!(has_doc_knob(OperationType::Trace));
+        assert!(has_doc_knob(OperationType::RampFinish));
+        assert!(has_doc_knob(OperationType::Waterline));
+        // RadialFinish stays out — its `angular_step` is degrees,
+        // structurally different from the existing mm-based axes.
+        assert!(!has_doc_knob(OperationType::RadialFinish));
+    }
+
+    #[test]
+    fn ramp_finish_depth_per_pass_wraps_max_stepdown() {
+        let mut r = RampFinishConfig::default();
+        let initial = r
+            .depth_per_pass()
+            .expect("RampFinish should expose depth_per_pass after G3");
+        assert!((initial - r.max_stepdown).abs() < 1e-9);
+        // Set-through writes max_stepdown so existing planner code
+        // that consumes max_stepdown picks up the new value.
+        r.set_depth_per_pass(0.8);
+        assert!((r.max_stepdown - 0.8).abs() < 1e-9);
+        assert!((r.depth_per_pass().expect("present") - 0.8).abs() < 1e-9);
+    }
+
+    #[test]
+    fn waterline_depth_per_pass_wraps_z_step() {
+        let mut w = WaterlineConfig::default();
+        let initial = w
+            .depth_per_pass()
+            .expect("Waterline should expose depth_per_pass after G3");
+        assert!((initial - w.z_step).abs() < 1e-9);
+        w.set_depth_per_pass(2.0);
+        assert!((w.z_step - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn pencil_stepover_only_when_multipass() {
+        // Default `num_offset_passes = 1` → no stepover knob exposed.
+        let single = PencilConfig {
+            num_offset_passes: 1,
+            ..PencilConfig::default()
+        };
+        assert!(single.stepover().is_none());
+        // Multipass → exposes offset_stepover.
+        let mut multi = PencilConfig {
+            num_offset_passes: 3,
+            ..PencilConfig::default()
+        };
+        let s = multi.stepover().expect("stepover exposed when multipass");
+        assert!((s - multi.offset_stepover).abs() < 1e-9);
+        multi.set_stepover(0.75);
+        assert!((multi.offset_stepover - 0.75).abs() < 1e-9);
+    }
+
+    #[test]
+    fn trace_config_exposes_depth_per_pass() {
+        // Trace's accessor already existed pre-G3 — this test pins it
+        // alongside the `has_doc_knob` membership change so a future
+        // refactor can't silently drop Trace from Stage 1 again.
+        let t = TraceConfig::default();
+        assert!(t.depth_per_pass().is_some());
+        assert!(
+            t.stepover().is_none(),
+            "Trace is a path-follow, no stepover"
+        );
+    }
 
     #[test]
     fn scallop_config_exposes_scallop_height_not_stepover() {

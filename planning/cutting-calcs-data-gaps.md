@@ -199,24 +199,108 @@ validation against wanaka TP 7 after GUI rebuild.
 
 ---
 
-### G3: Stepover accessors missing on RampFinish, RadialFinish, Trace
+### G3: Stage 1 sweep knobs for Trace, RampFinish, Waterline, Pencil (RadialFinish deferred)
 
-**Symptom.** Ball-nose finishing ops with LUT matches (Parallel/Finish) can run
-Stage F but Stage 1 produces zero candidates because no stepover knob is
-exposed to the optimizer. Similarly for V-bit Trace.
+**Symptom.** Same as G2 in shape: ball-nose / V-bit finishing ops with LUT
+matches can hit the chipload gate but Stage 1 produces no candidates because
+none of these ops contributes a sweep axis to the grid.
 
-**Root cause.** Same shape as G2 — config carries a stepover but the trait
-impl is missing or returns None.
+**Root cause (re-verified 2026-05-08).** Per-op audit:
 
-**Fix shape.** Audit each op's config for a stepover field, surface via the
-trait. Some ops may genuinely lack stepover (true 1D path-following) — those
-stay None.
+| Op | Driving knob | Existing accessor | Right axis |
+|---|---|---|---|
+| Trace | `depth_per_pass: f64` | ✅ `depth_per_pass()` exposed | DOC — but Trace is missing from `has_doc_knob`, so post-G2 the DOC dim collapses to anchor-only |
+| RampFinish | `max_stepdown: f64` (Z descent per pass) | ❌ none | DOC-equivalent (Z descent ≈ axial DOC for cone-tooth contact) |
+| Waterline | `z_step: f64` (Z spacing between contour passes) | ❌ none | DOC-equivalent (same shape as RampFinish) |
+| Pencil | `offset_stepover: f64` (only meaningful when `num_offset_passes > 1`) | ❌ none | stepover (conditional) |
+| RadialFinish | `angular_step: f64` **degrees** | ❌ none | New axis — out of scope this commit |
+| HorizontalFinish | `stepover: f64` | ✅ `stepover()` exposed | Already swept via the G2 gate widening (no `has_doc_knob` add needed because stepover-only ops now enter Stage 1) |
+
+So G3 splits into two distinct fixes:
+
+1. **DOC-axis ops:** Trace is in `has_doc_knob`'s allowlist (alongside
+   Profile/Zigzag from G1). RampFinish and Waterline get
+   `depth_per_pass()` accessors that wrap their semantically-equivalent
+   `max_stepdown`/`z_step` fields, then join `has_doc_knob`.
+2. **Stepover-axis ops:** Pencil gets a conditional `stepover()` that
+   returns `Some(self.offset_stepover)` only when `num_offset_passes > 1`,
+   `None` otherwise. The G2 gate widening already takes care of letting
+   stepover-only ops into Stage 1.
+
+RadialFinish's angular_step is degrees, structurally a different axis
+than mm-based DOC/stepover. Deferred to a future gap (G3a) — would need
+a new `angular_step_deg()` axis with its own envelope logic. Document
+the deferral here so a future agent doesn't re-audit.
+
+**Plan.**
+
+1. `TraceConfig`: add to `has_doc_knob` (depth_per_pass accessor
+   already exists).
+2. `RampFinishConfig`: implement
+   `depth_per_pass()` → `Some(self.max_stepdown)` and
+   `set_depth_per_pass(value)` → `self.max_stepdown = value`. Add to
+   `has_doc_knob`.
+3. `WaterlineConfig`: same shape as RampFinish, mapping to `z_step`.
+4. `PencilConfig`: implement conditional `stepover()` and
+   `set_stepover` mapping to `offset_stepover`. No `has_doc_knob`
+   change — the G2 gate widening already lets stepover-only ops into
+   Stage 1.
+5. `bipolar_prescription` is already routed by op_family for
+   Contour/Trace (G1 reorder). Trace ops with bipolar engagement
+   would still get the geometry-driven lever — no change needed.
 
 **Validation gate.**
-- Per op, build a fixture and run `optimize_toolpath`. Outcome should produce stepover-varying candidates when the op has one.
-- Run the param sweep system on the relevant ops: `cargo run -p rs_cam_cli -- sweep <fixture> --param stepover --values "..."` should write valid SVGs at every value (not blank).
 
-**Status.** Not started.
+- New unit tests pin: `has_doc_knob(Trace) == true`,
+  `has_doc_knob(RampFinish) == true`, `has_doc_knob(Waterline) == true`,
+  `RampFinish.depth_per_pass()` reflects `max_stepdown`,
+  `Waterline.depth_per_pass()` reflects `z_step`,
+  `Pencil.stepover()` returns Some when `num_offset_passes > 1` and
+  None otherwise, set-through writes the correct underlying field.
+- `cargo test -p rs_cam_core --lib --tests` clean.
+- `cargo clippy --workspace --all-targets -- -D warnings` clean.
+- Wanaka has no Trace/RampFinish/Waterline/Pencil TPs to validate
+  end-to-end. Live MCP gate deferred to a future fixture build.
+
+**Status.** **Done** 2026-05-08. Trace, RampFinish, Waterline added to
+`has_doc_knob`; RampFinish wraps `max_stepdown` and Waterline wraps
+`z_step` via `OperationParams::depth_per_pass`. PencilConfig exposes
+conditional `stepover()` (only when `num_offset_passes > 1`). Five new
+unit tests in `stage1_grid_tests` pin the behaviour. Wanaka has no
+matching TPs so MCP-level validation defers to a future fixture;
+`cargo test -p rs_cam_core --lib` 1224/1224 ✓ and `cargo clippy
+--workspace --all-targets -- -D warnings` clean.
+
+RadialFinish split out as a follow-up gap (G3a, opened 2026-05-08):
+its `angular_step` is degrees and needs its own axis treatment that
+doesn't fit DOC/stepover/scallop_height envelopes.
+
+---
+
+### G3a: RadialFinish angular_step axis (opened 2026-05-08)
+
+**Symptom.** RadialFinish has no Stage 1 sweep axis. Its `angular_step`
+field is in degrees and `point_spacing` is mm path resolution (sub-knob
+for sample density, not engagement density).
+
+**Root cause.** The Stage 1 grid's three axes (DOC, stepover,
+scallop_height) all live in mm. Adding `angular_step()` to
+`OperationParams` would let Stage 1 sweep it, but the grid envelope
+generators currently assume mm semantics — clamping against LUT
+`ae_*_mm` would be nonsensical.
+
+**Fix shape.** Either (a) add a fourth grid axis with degree-aware
+envelope (no LUT clamp, multiplicative envelope around baseline), or
+(b) translate `angular_step` to a chord-equivalent radial step at the
+local cutting radius and treat that as a stepover-equivalent. (a) is
+simpler; (b) reuses the stepover envelope but needs the radius (not
+known in the trait).
+
+**Validation gate.** Build a RadialFinish fixture; MCP
+`optimize_toolpath` should produce ≥3 stepover-varying candidates.
+
+**Status.** Not started — defer until a project actually uses
+RadialFinish (low operator demand today).
 
 ---
 
