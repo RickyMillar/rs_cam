@@ -1,7 +1,33 @@
 # G16 — Optimizer architectural refactor
 
-**Status.** Design draft, 2026-05-08. Awaiting independent review before
-implementation begins.
+**Status.** Revision 2 — 2026-05-08. Independent reviewer approved with
+required changes; this revision incorporates them.
+
+**Revision log:**
+- **R2 (2026-05-08).** Reviewer feedback addressed. Major changes:
+  - §3.2 trait pattern reworked from `OptimizableOp` impls (silent
+    fallthrough risk) to `OperationConfig::optimization_surface()` with
+    explicit non-wildcard match. Adds genuine compile-time coverage.
+  - §3.2 introduces `AxisContext` so spindle RPM resolution sees the
+    project default — `Option<u32>` no longer conflated with "axis
+    absent".
+  - §3.2 introduces `AxisBinding` with semantics (LoadDriving /
+    QualityTarget / CycleTimeDriving) so scallop_height isn't treated as
+    interchangeable with stepover.
+  - §3.3 `AxisBounds` split into `hard` / `preferred` / `warm_start`
+    intervals. The wanaka TP 4 fix now requires *both* the bounds split
+    *and* G17 (LUT-family routing) — previous draft overclaimed.
+  - §3.4 `RetargetSolution` returns `Vec<AxisPatch>` so coupled
+    feed/RPM/plunge changes are first-class. Plunge tracking moves from
+    hidden side-effect to explicit coupling rule.
+  - §3.5 multi-retarget composition deferred (separate candidates first).
+  - §3.0 `PolicyValue<T>` adds rationale + source provenance to every
+    constant.
+  - §1.1 `ChiploadVerdict` shape moves from raw peak fields to
+    `ChiploadMetric` carrying the statistic kind (peak vs median).
+  - §5 migration reorder: typed verdicts move from Step 2 to Step 7
+    (after search architecture proves out), per reviewer request.
+  - §9 open questions marked resolved with reviewer answers.
 
 **Scope.** Rewrite the structure of `tool_load/optimize.rs` (~4000 lines)
 around explicit traits, typed search axes, sample-driven retargeting, and
@@ -84,11 +110,29 @@ stepover 0.84 mm). LUT row `amana-flat-hardwood-adaptive-6000-2f` has
 ae_max = 0.95 mm. Multiplier hi = 1.3 × 0.84 = 1.09. Intersection = 0.95.
 Search candidates: `[0.59, 0.84, 0.95, default-anchor 2.0]`. The user
 *wants* 2.5–3.0 mm stepover (pocket-style on a 3D adaptive op), but
-nothing in the search space goes there. Investigation in conversation
-2026-05-08.
+nothing in the search space goes there.
 
-The intent of "stay near baseline" is fine for a *warm start*, but the
-search space itself should be the LUT envelope when present.
+**Two separate problems combine here**, and the refactor needs to address
+both:
+
+1. **The intersection-with-multiplier shape** (covered by this refactor).
+   Even with a clean LUT envelope, the multiplier intersection caps the
+   search at min(LUT, baseline × multiplier) which is rarely the right
+   intent.
+2. **The matched LUT row's `ae_max=0.95` is itself the cap** — the LUT
+   row chosen (`amana-flat-hardwood-adaptive-6000-2f`) is the vendor's
+   *2D adaptive HSM* recommendation, with narrow stepover by design.
+   Adaptive3d's path geometry is closer to pocket-style clearing; the
+   matching is routing it to the wrong LUT family. **This is G17, a
+   separate gap closure that depends on this refactor's foundations.**
+
+The refactor (§3.3 below) fixes problem 1 cleanly via the
+`hard / preferred / warm_start` bounds split, which also enables
+*probing beyond* preferred bounds when policy permits. G17 fixes
+problem 2 by improving LUT routing for 3D ops in wood. Both are
+required for TP 4 specifically; this design doc owns problem 1 and
+states problem 2 explicitly so the wanaka case isn't the misleading
+worked example it would be otherwise.
 
 ### 1.4 Stage F retargeting uses commanded × RCTF, not sim ground truth
 
@@ -157,7 +201,7 @@ its types, and depends only on the layers below.
   Layer 3           │  SearchSpace + AxisBounds           │   per-axis bounds
                     └─────────────────────────────────────┘
                     ┌─────────────────────────────────────┐
-  Layer 2           │  OptimizableOp + SearchAxis         │   axis topology
+  Layer 2           │  OptimizationSurface + AxisBinding  │   axis topology
                     └─────────────────────────────────────┘
                     ┌─────────────────────────────────────┐
   Layer 1           │  Per-gate Verdict types             │   typed peaks
@@ -180,18 +224,47 @@ Section 3 expands each layer with concrete signatures.
 
 ## 3. Layer-by-layer detail
 
-### 3.0 Layer 0 — `SearchPolicy`
+### 3.0 Layer 0 — `SearchPolicy` with provenance
 
-One struct, one file (`optimize/policy.rs`), every magic number named.
+One struct, one file (`optimize/policy.rs`). Every value carries
+provenance so future readers know *why* it has that value, not just
+that it does. **Reviewer's "magic numbers in named struct are still
+magic" critique addressed.**
 
 ```rust
+/// A tunable policy value with provenance. Reviewers can read the
+/// rationale instead of guessing why the constant is what it is, and
+/// `source` makes it visible whether the value is physically derived
+/// (don't change without analysis), handbook-empirical (defensible
+/// but not derived), or a tuning choice (expect to revisit).
+pub struct PolicyValue<T> {
+    pub value: T,
+    pub rationale: &'static str,
+    pub source: PolicySource,
+}
+
+pub enum PolicySource {
+    /// Physical / machine / safety limit. Don't change without
+    /// re-deriving the analysis (e.g., 0.05 mm = rubbing floor).
+    PhysicalLimit,
+    /// Empirical handbook value, citation-backed (e.g., HSM
+    /// 6%–16% × D adaptive stepover from machining handbooks).
+    Handbook { citation: &'static str },
+    /// Tuning choice we made; expect to revise as we collect data.
+    /// Includes a hypothesis we'd test before changing.
+    TuningChoice { hypothesis: &'static str },
+    /// Derived at runtime from machine / tool / material — not a
+    /// constant. Captures dependency for debugging.
+    Derived { from: &'static str },
+}
+
 pub struct SearchPolicy {
     pub axes: AxesPolicy,
     pub feed: FeedPolicy,
     pub retarget: RetargetPolicy,
-    pub stage2_survivor_count: usize,
-    pub recommendation_cycle_delta_s: f64,
-    pub bottleneck_fraction: f64,
+    pub stage2_survivor_count: PolicyValue<usize>,
+    pub recommendation_cycle_delta_s: PolicyValue<f64>,
+    pub bottleneck_fraction: PolicyValue<f64>,
 }
 
 pub struct AxesPolicy {
@@ -202,17 +275,18 @@ pub struct AxesPolicy {
 }
 
 pub struct AxisPolicy {
-    /// When LUT bounds are absent, search baseline × [lo, hi] of these
-    /// multipliers. When present, LUT bounds win and these are ignored.
-    pub baseline_mult_lo: f64,
-    pub baseline_mult_hi: f64,
-    /// Number of grid points (including endpoints) when sweeping this axis.
-    pub grid_point_count: usize,
-    /// Below this, the cut is rubbing not cutting (any tool / material).
-    /// Hard physical floor; never violated.
-    pub hard_floor: f64,
-    /// Sort-and-dedup tolerance to prevent near-duplicate grid points.
-    pub dedup_tolerance: f64,
+    pub baseline_mult_lo: PolicyValue<f64>,
+    pub baseline_mult_hi: PolicyValue<f64>,
+    pub grid_point_count: PolicyValue<usize>,
+    /// Below this, the cut is rubbing not cutting. Hard physical floor.
+    pub hard_floor: PolicyValue<f64>,
+    pub dedup_tolerance: PolicyValue<f64>,
+    /// Whether candidate generation is allowed to probe beyond the
+    /// LUT-preferred envelope when sim still verifies. The reviewer's
+    /// hard/preferred/warm-start critique surfaces here as a policy
+    /// choice the operator can disable for "stay in vendor envelope"
+    /// runs vs enable for "explore aggressively, sim verifies" runs.
+    pub allow_outside_preferred: PolicyValue<bool>,
 }
 
 pub struct FeedPolicy {
@@ -244,24 +318,65 @@ pub struct RetargetPolicy {
 }
 
 impl SearchPolicy {
-    pub const fn default() -> Self {
+    pub fn default() -> Self {
         Self {
             axes: AxesPolicy {
                 doc: AxisPolicy {
-                    baseline_mult_lo: 0.7,
-                    baseline_mult_hi: 1.4,
-                    grid_point_count: 4,
-                    hard_floor: 0.05,
-                    dedup_tolerance: 0.005,
+                    baseline_mult_lo: PolicyValue {
+                        value: 0.7,
+                        rationale: "Lower bound for baseline-multiplier sweep when LUT silent. \
+                                    0.7× lets us search visibly shallower (test conservative) without \
+                                    going below sub-rubbing depths for typical baselines.",
+                        source: PolicySource::Handbook {
+                            citation: "Engineering Default 9, optimizer redesign 2026-05-08",
+                        },
+                    },
+                    baseline_mult_hi: PolicyValue {
+                        value: 1.4,
+                        rationale: "Upper bound for baseline-multiplier sweep. 1.4× pairs with \
+                                    midpoint at 1.2× — a useful intermediate step when sweeping 4 points.",
+                        source: PolicySource::Handbook { citation: "ED 9" },
+                    },
+                    grid_point_count: PolicyValue {
+                        value: 4,
+                        rationale: "[lo, baseline, mid, hi] for high-leverage axes (DOC for clearing ops).",
+                        source: PolicySource::TuningChoice {
+                            hypothesis: "4 points beats 3 enough to justify the extra sim cost",
+                        },
+                    },
+                    hard_floor: PolicyValue {
+                        value: 0.05,
+                        rationale: "Below 0.05mm DOC, any tool is rubbing rather than cutting in wood. \
+                                    Below this is unrecoverable — refuse rather than search there.",
+                        source: PolicySource::PhysicalLimit,
+                    },
+                    dedup_tolerance: PolicyValue {
+                        value: 0.005,
+                        rationale: "Differences below 5µm are below sim resolution; treat as duplicate.",
+                        source: PolicySource::Derived { from: "sim cell size" },
+                    },
+                    allow_outside_preferred: PolicyValue {
+                        value: true,
+                        rationale: "Sim verifies every candidate, so probing beyond LUT-preferred is safe \
+                                    and unlocks cases where baseline drifted far outside vendor envelope.",
+                        source: PolicySource::TuningChoice {
+                            hypothesis: "wanaka TP4 needs this; verify with regression",
+                        },
+                    },
                 },
-                stepover: AxisPolicy { /* same shape */ },
-                scallop_height: AxisPolicy { /* tighter floor 0.01 */ },
+                stepover: AxisPolicy { /* same shape, same provenance pattern */ },
+                scallop_height: AxisPolicy { /* hard_floor 0.01, semantics QualityTarget */ },
             },
             // ...
         }
     }
 }
 ```
+
+**`SearchPolicy` is no longer `const fn`** because `PolicyValue<T>` is
+construction-time only. That's the cost of provenance; the benefit is
+reviewers and future readers can audit every value without grep-and-
+guess.
 
 **Migration win:** every `0.7 *`, `1.3 *`, `0.05` literal becomes
 `policy.axes.stepover.baseline_mult_lo`, etc. Search-and-replace finds
@@ -277,18 +392,43 @@ information for its retargeter to act without re-reading sim trace or LUT.
 ```rust
 // crates/rs_cam_core/src/tool_load/verdict.rs
 
+/// What statistic a chipload measurement represents. Reviewer flagged
+/// that "peak" is ambiguous — current logic uses median effective chip
+/// thickness for some checks, sample-peak for others. Make this
+/// explicit in the type.
+pub enum ChiploadStatistic {
+    /// Lowest sample chipload across the toolpath. Drives BurnRisk
+    /// detection — the worst (thinnest) sample defines the verdict.
+    PeakLow,
+    /// Highest sample chipload. Drives BreakageRisk detection.
+    PeakHigh,
+    /// Median across steady-state samples. Used for retarget targets
+    /// to avoid responding to a single transient outlier sample.
+    MedianLow,
+    MedianHigh,
+}
+
+pub struct ChiploadMetric {
+    pub observed_mm_per_tooth: f64,
+    pub statistic: ChiploadStatistic,
+    pub sample_idx: Option<usize>,
+    pub bounds: ChipBounds,
+}
+
 pub enum ChiploadVerdict {
     Within {
-        peak_low_mm_per_tooth: f64,    // closest approach to LUT_min
-        peak_high_mm_per_tooth: f64,   // closest approach to LUT_max
-        bounds: ChipBounds,
+        /// Worst approach to LUT_min observed (PeakLow).
+        approach_to_min: ChiploadMetric,
+        /// Worst approach to LUT_max observed (PeakHigh).
+        approach_to_max: ChiploadMetric,
         confidence: Confidence,
     },
     Exceeds {
-        side: ChipSide,                // Low (BurnRisk) | High (BreakageRisk)
-        peak_mm_per_tooth: f64,        // worst-direction sample value
-        sample_idx: usize,
-        bounds: ChipBounds,
+        side: ChipSide,
+        /// The metric that triggered the verdict. Carries the
+        /// statistic kind so retargeters know whether they're acting
+        /// on a peak sample or median.
+        triggering: ChiploadMetric,
         confidence: Confidence,
     },
     Unmodeled { reason: UnmodeledReason },
@@ -297,7 +437,7 @@ pub enum ChiploadVerdict {
 pub struct ChipBounds {
     pub min_mm_per_tooth: f64,
     pub max_mm_per_tooth: f64,
-    pub source: BoundsSource,          // LUT row id, or extrapolated-from-id with scale factors
+    pub source: BoundsSource,
 }
 
 pub enum ChipSide { Low, High }
@@ -323,8 +463,9 @@ pub struct ToolpathLoadVerdict {
 ```
 
 **Compile-time wins:**
-- `ChiploadVerdict::Exceeds.peak_mm_per_tooth` cannot be assigned to a
-  power kW field. Each unit lives on its named field.
+- A `ChiploadMetric::observed_mm_per_tooth` cannot be assigned to
+  a `PowerVerdict::peak_kw` field. Each unit lives on its named field
+  in its named per-gate type.
 - A retargeter taking `&ChiploadVerdict` literally cannot read deflection
   data. Decoupling enforced by types.
 - New gate (vibration, runout, …) = new `XVerdict` type, plus a field on
@@ -337,7 +478,14 @@ per-gate-typed. Consumers branch on the gate field, not on
 `reason: "chipload_burn_risk"`. Acceptable because no backward compat is
 required.
 
-### 3.2 Layer 2 — `SearchAxis` and `OptimizableOp` trait
+### 3.2 Layer 2 — `SearchAxis`, `OptimizationSurface`, `AxisBinding`, `AxisContext`
+
+**Reviewer flagged three issues with the original `OptimizableOp` trait:**
+(a) trait impls don't force every `OperationConfig` variant to declare
+its status — silent drift remains possible; (b) `SpindleRpm` is
+`Option<u32>` where None means "use project default", not "axis absent";
+(c) `mm` axes aren't interchangeable (scallop_height ≠ stepover ≠ DOC).
+The revised design fixes all three.
 
 ```rust
 // crates/rs_cam_core/src/tool_load/optimize/axes.rs
@@ -345,139 +493,274 @@ required.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum SearchAxis {
     FeedRate,        // mm/min
-    SpindleRpm,      // rpm
+    SpindleRpm,      // rpm — resolved via AxisContext (see below)
     DepthPerPass,    // mm
-    Stepover,        // mm
-    ScallopHeight,   // mm
+    Stepover,        // mm — radial engagement
+    ScallopHeight,   // mm — quality target, NOT load-driving
     AngularStep,     // degrees      (RadialFinish; G3a)
     HelixPitch,      // mm           (Adaptive3d helix entry; future)
     RampAngle,       // degrees      (Adaptive3d / RampFinish; future)
 }
 
+/// Unit semantics — prevents `mm` axes from being treated as
+/// interchangeable. Reviewer's concern.
+pub enum AxisUnit { MmPerMin, Rpm, Mm, Deg }
+
+/// What this axis *means* for optimization. Drives strategy choice:
+/// LoadDriving axes feed into retargeters; QualityTarget axes are
+/// only swept for cycle-time impact, never retargeted to fix gates.
+pub enum AxisSemantics {
+    /// Directly affects per-sample cutting load. Retargeters can
+    /// drive these in response to chipload/power/deflection verdicts.
+    LoadDriving {
+        affects_chipload: bool,
+        affects_force: bool,
+    },
+    /// Quality target — affects finish/tolerance. Retargeters do not
+    /// drive these. The grid sweeps them only for cycle-time impact.
+    QualityTarget,
+    /// Cycle-time driving with no direct load impact (rare; future).
+    CycleTimeDriving,
+}
+
+pub struct AxisBinding {
+    pub axis: SearchAxis,
+    pub field_name: &'static str,    // for debugging / logs
+    pub unit: AxisUnit,
+    pub semantics: AxisSemantics,
+}
+
 impl SearchAxis {
-    pub const fn unit(self) -> &'static str { /* "mm/min", "rpm", "mm", "deg" */ }
+    pub const fn unit(self) -> AxisUnit { /* match self { ... } */ }
     pub const fn label(self) -> &'static str { /* "Feed rate", ... */ }
     pub const fn is_feed_axis(self) -> bool {
         matches!(self, SearchAxis::FeedRate | SearchAxis::SpindleRpm)
     }
-}
-
-/// An operation that the optimizer can search over. Implemented by every
-/// op type whose toolpath generation responds to feed/RPM/DOC/stepover
-/// changes. Drill-like ops (where chipload is meaningless and DOC is
-/// fixed by hole depth) explicitly do NOT impl this — the orchestrator
-/// short-circuits to `Skipped { SteadyStateSamplesNotPresent }`.
-pub trait OptimizableOp: OperationParams {
-    /// Static axis topology — depends only on the op type, not on
-    /// instance values. A `&'static [SearchAxis]` lets the optimizer
-    /// iterate axes without per-call allocation.
-    fn search_axes(&self) -> &'static [SearchAxis];
-
-    /// Generic getter, complementing the typed `feed_rate()`,
-    /// `depth_per_pass()`, etc. on `OperationParams`. Returns Some
-    /// for axes named in `search_axes()`, None otherwise.
-    fn axis_value(&self, axis: SearchAxis) -> Option<f64>;
-
-    /// Generic setter. Returns Err when the axis isn't present on this
-    /// op type, or when the value is non-finite / non-positive.
-    fn set_axis(&mut self, axis: SearchAxis, value: f64) -> Result<(), AxisError>;
-}
-
-#[derive(Debug)]
-pub enum AxisError {
-    NotPresent { axis: SearchAxis, op_type: OperationType },
-    InvalidValue { axis: SearchAxis, value: f64 },
+    pub const fn semantics(self) -> AxisSemantics { /* per-axis */ }
 }
 ```
-
-**Implementation strategy:** add the trait, impl for each
-`OperationConfig` variant by delegating to existing typed accessors:
 
 ```rust
-impl OptimizableOp for AdaptiveConfig {
-    fn search_axes(&self) -> &'static [SearchAxis] {
-        &[SearchAxis::FeedRate, SearchAxis::SpindleRpm,
-          SearchAxis::DepthPerPass, SearchAxis::Stepover]
+/// Runtime context needed to resolve axis values that depend on
+/// inheritance or environment. Critical for SpindleRpm, where
+/// op.spindle_rpm == None means "use project default", not "absent".
+pub struct AxisContext<'a> {
+    pub project_default_rpm: u32,
+    pub machine: &'a MachineProfile,
+    pub tool: &'a ToolDefinition,
+    pub material: &'a Material,
+}
+```
+
+#### Compile-time coverage via `OperationConfig::optimization_surface`
+
+**The key change:** instead of `OptimizableOp` trait impls (which can
+silently fall through), `OperationConfig` exposes a method whose
+implementation is a `match` over every variant with **no wildcard arm**.
+Adding a new variant is an explicit compile error until the new variant
+is classified.
+
+```rust
+// crates/rs_cam_core/src/compute/catalog.rs (extension)
+
+pub enum OptimizationSurface<'op> {
+    Optimizable(AxisView<'op>),
+    /// Op type is known and intentionally not optimizable. Carries the
+    /// reason that surfaces in the orchestrator's outcome.
+    NotOptimizable { reason: RefuseReason },
+}
+
+pub struct AxisView<'op> {
+    pub op: &'op OperationConfig,
+    pub bindings: &'static [AxisBinding],
+    pub op_type: OperationType,
+}
+
+impl<'op> AxisView<'op> {
+    pub fn axes(&self) -> impl Iterator<Item = SearchAxis> + '_ {
+        self.bindings.iter().map(|b| b.axis)
     }
-    fn axis_value(&self, axis: SearchAxis) -> Option<f64> {
-        match axis {
-            SearchAxis::FeedRate => Some(self.feed_rate()),
-            SearchAxis::SpindleRpm => self.spindle_rpm().map(f64::from),
-            SearchAxis::DepthPerPass => Some(self.depth_per_pass),
-            SearchAxis::Stepover => Some(self.stepover),
-            _ => None,
+
+    /// Read an axis value. For `SpindleRpm`, falls back to
+    /// `ctx.project_default_rpm` when the op's own value is None.
+    pub fn axis_value(&self, axis: SearchAxis, ctx: &AxisContext<'_>) -> Option<f64> {
+        // ... per-axis match
+    }
+}
+
+impl OperationConfig {
+    pub fn optimization_surface(&self) -> OptimizationSurface<'_> {
+        match self {
+            OperationConfig::Adaptive(c) => OptimizationSurface::Optimizable(AxisView {
+                op: self,
+                bindings: ADAPTIVE_AXES,
+                op_type: OperationType::Adaptive,
+            }),
+            OperationConfig::Adaptive3d(c) => OptimizationSurface::Optimizable(AxisView {
+                op: self, bindings: ADAPTIVE3D_AXES, op_type: OperationType::Adaptive3d,
+            }),
+            OperationConfig::Pocket(_) => OptimizationSurface::Optimizable(/* ... */),
+            // ... every Optimizable variant explicitly named ...
+
+            OperationConfig::Drill(_) => OptimizationSurface::NotOptimizable {
+                reason: RefuseReason::SteadyStateSamplesNotPresent,
+            },
+            OperationConfig::AlignmentPinDrill(_) => OptimizationSurface::NotOptimizable {
+                reason: RefuseReason::SteadyStateSamplesNotPresent,
+            },
+            // NO WILDCARD ARM. Adding a new OperationConfig variant
+            // forces an explicit decision here at compile time.
         }
     }
-    fn set_axis(&mut self, axis: SearchAxis, value: f64) -> Result<(), AxisError> {
-        if !value.is_finite() || value <= 0.0 {
-            return Err(AxisError::InvalidValue { axis, value });
+}
+
+const ADAPTIVE3D_AXES: &[AxisBinding] = &[
+    AxisBinding {
+        axis: SearchAxis::FeedRate,
+        field_name: "feed_rate",
+        unit: AxisUnit::MmPerMin,
+        semantics: AxisSemantics::LoadDriving {
+            affects_chipload: true, affects_force: true,
+        },
+    },
+    AxisBinding {
+        axis: SearchAxis::SpindleRpm, /* same shape; LoadDriving */
+    },
+    AxisBinding {
+        axis: SearchAxis::DepthPerPass, /* LoadDriving */
+    },
+    AxisBinding {
+        axis: SearchAxis::Stepover, /* LoadDriving */
+    },
+    // Adaptive3d does NOT expose ScallopHeight. ScallopConfig does.
+];
+```
+
+#### Mutation: `AxisPatch` applies to a borrowed op
+
+Mutation moves out of a trait method into a helper that takes the
+patch struct from §3.4 and applies it to a clone of the baseline:
+
+```rust
+pub fn apply_patch_to_op(
+    op: &OperationConfig,
+    patch: &AxisPatch,
+    ctx: &AxisContext<'_>,
+) -> Result<OperationConfig, AxisError> {
+    let mut out = op.clone();
+    match (op, patch.axis) {
+        (OperationConfig::Adaptive3d(_), SearchAxis::FeedRate) => {
+            if let OperationConfig::Adaptive3d(c) = &mut out {
+                c.feed_rate = patch.value;
+            }
+            Ok(out)
         }
-        match axis {
-            SearchAxis::FeedRate => { self.set_feed_rate(value); Ok(()) }
-            SearchAxis::SpindleRpm => { self.set_spindle_rpm(Some(value as u32)); Ok(()) }
-            SearchAxis::DepthPerPass => { self.depth_per_pass = value; Ok(()) }
-            SearchAxis::Stepover => { self.stepover = value; Ok(()) }
-            other => Err(AxisError::NotPresent { axis: other, op_type: OperationType::Adaptive }),
+        // ... per (op, axis) explicit match
+        _ => Err(AxisError::NotPresent { axis: patch.axis, op_type: op.op_type() }),
+    }
+}
+```
+
+#### Test required by the design
+
+```rust
+#[test]
+fn every_operation_type_has_explicit_optimization_surface() {
+    for &op_type in OperationType::ALL {
+        let op = OperationConfig::new_default(op_type);
+        let surface = op.optimization_surface();
+        // Just calling it is enough — the compiler enforces every
+        // variant is named explicitly. This test guards against a
+        // future "match any with wildcard" regression.
+        match surface {
+            OptimizationSurface::Optimizable(view) => {
+                assert!(!view.bindings.is_empty(),
+                    "{op_type:?} declared Optimizable with no axes");
+            }
+            OptimizationSurface::NotOptimizable { .. } => {}
         }
     }
 }
 ```
 
-**Compile-time wins:**
-- `match axis { ... }` is exhaustive on the `SearchAxis` enum. Adding a
-  new axis to the enum without updating every op's match is a compile
-  error.
-- `OperationConfig` enum dispatch can `match self` and call into each
-  variant's `OptimizableOp` impl uniformly.
-- Drill / AlignmentPinDrill don't impl `OptimizableOp`, so a call site
-  taking `&dyn OptimizableOp` literally cannot accept them — the
-  orchestrator must consciously branch to skip them.
+**Compile-time + test-time wins:**
+- New `OperationConfig` variant → compile error in `optimization_surface`
+  until classified.
+- New `SearchAxis` variant → compile error in every per-axis match.
+- `SpindleRpm` resolved via `AxisContext` so the project default flows
+  through, fixing the `Option<u32>` conflation.
+- `LoadDriving`/`QualityTarget` semantics prevent retargeters from being
+  pointed at scallop_height (which is a quality knob, not a load lever).
+- Drill / AlignmentPinDrill explicitly classified as `NotOptimizable`,
+  not just "doesn't impl trait" — auditable in one place.
 
 **Eliminates:** `has_doc_knob`, the `OperationParams::stepover()` →
-`Some(...)` heuristic for "does this op have stepover?", the per-op
-allowlist branches in `bipolar_prescription`.
+`Some(...)` heuristic, the per-op allowlist branches in
+`bipolar_prescription`. Plus the silent-fallthrough risk of the
+trait-only design the reviewer flagged.
 
-### 3.3 Layer 3 — `AxisBounds` and `SearchSpace`
+### 3.3 Layer 3 — `AxisBounds` (hard / preferred / warm_start) and `SearchSpace`
+
+**Reviewer's critique:** treating LUT bounds as a single hard envelope
+fails the wanaka TP 4 case (LUT ae_max = 0.95 mm, user wants 2.5–3.0).
+Splitting bounds into three intervals — hard physical limits, vendor-
+preferred envelope, and baseline-anchored warm-start — gives candidate
+generation the freedom to probe outside vendor-preferred when sim still
+verifies, while never violating physical limits.
 
 ```rust
 // crates/rs_cam_core/src/tool_load/optimize/bounds.rs
 
+pub struct Interval { pub lo: f64, pub hi: f64 }
+
+impl Interval {
+    pub fn contains(&self, v: f64) -> bool { self.lo <= v && v <= self.hi }
+    pub fn clamp(&self, v: f64) -> f64 { v.clamp(self.lo, self.hi) }
+    pub fn intersect(&self, other: &Self) -> Option<Self> { /* ... */ }
+}
+
 pub struct AxisBounds {
     pub axis: SearchAxis,
-    pub baseline: f64,        // current op value, for warm-start
-    pub lo: f64,
-    pub hi: f64,
-    pub source: BoundsSource, // why these bounds, for debugging
+    pub baseline: f64,
+
+    /// Hard physical / machine / safety limits. Search MUST stay inside
+    /// or be refused. Source: machine envelope, policy hard_floor,
+    /// rubbing-prevention floor.
+    pub hard: Interval,
+
+    /// Vendor-recommended envelope (LUT row's `ae_*_mm` / `ap_*_mm`).
+    /// `None` when the LUT has no bounds for this axis. Search prefers
+    /// to stay inside; may probe beyond when policy.allow_outside_preferred
+    /// is true. Sim verdict is the ground-truth verifier in either case.
+    pub preferred: Option<Interval>,
+
+    /// Where to anchor grid sweeps for routine candidates. Typically
+    /// `baseline × [mult_lo, mult_hi]` clamped into `hard`. Expands
+    /// toward the nearer boundary of `preferred` when baseline is far
+    /// outside vendor envelope.
+    pub warm_start: Interval,
+
+    /// Multiple sources may contribute (e.g., LUT for preferred,
+    /// machine for hard). Carry all for debugging.
+    pub sources: Vec<BoundsSource>,
 }
 
 #[derive(Debug, Clone)]
 pub enum BoundsSource {
-    /// LUT row had explicit bounds for this axis. Used directly.
-    LutEnvelope { row_id: ObservationId, lut_lo: f64, lut_hi: f64 },
-    /// Machine envelope was tighter than LUT bounds on at least one side.
-    MachineClamped {
-        lut_lo: f64, lut_hi: f64,
-        machine_lo: f64, machine_hi: f64,
-    },
-    /// LUT had no bounds for this axis; derived from baseline × policy.
-    BaselineMultiplier {
-        policy_mult_lo: f64,
-        policy_mult_hi: f64,
-        applied_lo: f64,
-        applied_hi: f64,
-    },
-    /// Hard physical floor was binding. Documents what the natural
-    /// bound would have been.
-    HardFloor { floor: f64, would_have_been: f64 },
+    LutPreferred { row_id: ObservationId, lo: f64, hi: f64 },
+    MachineEnvelope { lo: f64, hi: f64 },
+    HardFloor { floor: f64, source: &'static str },
+    BaselineMultiplier { mult_lo: f64, mult_hi: f64, baseline: f64 },
+    HardCeiling { ceiling: f64, source: &'static str },
 }
 
 /// Per-axis bound resolver. One function per axis to keep the rules
 /// explicit. All take the same context but differ in which LUT field /
 /// machine envelope component they read.
 pub fn resolve_doc_bounds(
-    op: &dyn OptimizableOp,
+    view: &AxisView<'_>,
+    ctx: &AxisContext<'_>,
     lut: Option<&MatchedRow>,
-    machine: &MachineProfile,
     policy: &SearchPolicy,
 ) -> AxisBounds { /* uses ap_min_mm / ap_max_mm */ }
 
@@ -492,14 +775,13 @@ pub struct SearchSpace {
 
 impl SearchSpace {
     pub fn build(
-        op: &dyn OptimizableOp,
+        view: &AxisView<'_>,
+        ctx: &AxisContext<'_>,
         lut: Option<&MatchedRow>,
-        machine: &MachineProfile,
         policy: &SearchPolicy,
     ) -> Self {
-        let bounds = op.search_axes()
-            .iter()
-            .map(|&a| (a, resolve_axis(a, op, lut, machine, policy)))
+        let bounds = view.bindings.iter()
+            .map(|b| (b.axis, resolve_axis(b.axis, view, ctx, lut, policy)))
             .collect();
         Self { bounds }
     }
@@ -513,181 +795,260 @@ impl SearchSpace {
 }
 ```
 
-**Resolution rule for each axis is one function**, easy to read and
-test. The DOC resolver is illustrative:
+**Resolution rule for each axis is one function.** The DOC resolver:
 
 ```rust
 pub fn resolve_doc_bounds(
-    op: &dyn OptimizableOp,
+    view: &AxisView<'_>,
+    ctx: &AxisContext<'_>,
     lut: Option<&MatchedRow>,
-    machine: &MachineProfile,
     policy: &SearchPolicy,
 ) -> AxisBounds {
-    let baseline = op.axis_value(SearchAxis::DepthPerPass).unwrap_or(0.0);
+    let baseline = view.axis_value(SearchAxis::DepthPerPass, ctx).unwrap_or(0.0);
     let p = &policy.axes.doc;
+    let mut sources = Vec::new();
 
-    // 1. LUT bounds win when present.
-    if let Some(row) = lut
-        && let (Some(ap_min), Some(ap_max)) = (row.ap_min_mm, row.ap_max_mm)
-    {
-        let lo = ap_min.max(p.hard_floor);
-        let hi = ap_max;
-        return AxisBounds {
-            axis: SearchAxis::DepthPerPass, baseline, lo, hi,
-            source: BoundsSource::LutEnvelope {
-                row_id: row.observation_id.clone(),
-                lut_lo: ap_min, lut_hi: ap_max,
-            },
-        };
-    }
+    // Hard interval: physical floor at the bottom, machine sanity at the top.
+    let hard_lo = p.hard_floor.value;
+    let hard_hi = ctx.tool.cutting_length;  // conservative upper sanity
+    sources.push(BoundsSource::HardFloor { floor: hard_lo, source: "rubbing prevention" });
 
-    // 2. No LUT bounds → baseline-multiplier envelope, floored.
-    let lo = (baseline * p.baseline_mult_lo).max(p.hard_floor);
-    let hi = (baseline * p.baseline_mult_hi).max(baseline);
+    // Preferred interval: LUT row's calibrated envelope, when present.
+    let preferred = lut.and_then(|row| {
+        let lo = row.ap_min_mm?;
+        let hi = row.ap_max_mm?;
+        sources.push(BoundsSource::LutPreferred {
+            row_id: row.observation_id.clone(), lo, hi,
+        });
+        Some(Interval { lo, hi })
+    });
+
+    // Warm-start: baseline × multipliers, clamped into hard. Expanded
+    // toward preferred when baseline is far outside.
+    let raw_lo = (baseline * p.baseline_mult_lo.value).max(hard_lo);
+    let raw_hi = (baseline * p.baseline_mult_hi.value).max(baseline);
+    let warm_start = match &preferred {
+        Some(pref) if !pref.contains(baseline) => {
+            // Baseline outside vendor envelope — expand toward preferred so
+            // the grid sweeps a useful range, not just baseline-local.
+            let lo = raw_lo.min(pref.lo);
+            let hi = raw_hi.max(pref.hi);
+            Interval { lo: lo.max(hard_lo), hi: hi.min(hard_hi) }
+        }
+        _ => Interval { lo: raw_lo, hi: raw_hi.min(hard_hi) },
+    };
+    sources.push(BoundsSource::BaselineMultiplier {
+        mult_lo: p.baseline_mult_lo.value, mult_hi: p.baseline_mult_hi.value, baseline,
+    });
+
     AxisBounds {
-        axis: SearchAxis::DepthPerPass, baseline, lo, hi,
-        source: BoundsSource::BaselineMultiplier {
-            policy_mult_lo: p.baseline_mult_lo,
-            policy_mult_hi: p.baseline_mult_hi,
-            applied_lo: lo, applied_hi: hi,
-        },
+        axis: SearchAxis::DepthPerPass,
+        baseline,
+        hard: Interval { lo: hard_lo, hi: hard_hi },
+        preferred,
+        warm_start,
+        sources,
     }
 }
 ```
 
+#### Candidate generation against the three intervals
+
+```rust
+impl AxisBounds {
+    /// Sweep points in warm_start (the routine search range).
+    pub fn warm_start_grid(&self, n_points: usize) -> Vec<f64> { /* ... */ }
+
+    /// Sweep points just outside preferred (probes), capped by hard.
+    /// Returns empty if `policy.allow_outside_preferred` is false or
+    /// preferred is None.
+    pub fn outside_preferred_probes(&self, policy: &SearchPolicy) -> Vec<f64> { /* ... */ }
+}
+```
+
+This is what fixes the §1.3 wanaka case (problem 1): even with LUT
+ae_max=0.95, `warm_start` expands toward preferred, and
+`outside_preferred_probes` adds candidates above 0.95 if policy allows.
+The sim verifies every candidate, so probing is safe.
+
+(Problem 2 — Adaptive3d routed to wrong LUT family — is G17, not this
+refactor's job. But this design *enables* G17: if Adaptive3d gets
+routed to the pocket row whose ae_max=2.2, the search picks up that
+range automatically.)
+
 **Wins:**
-- Bounds policy is one function per axis, ~20 lines each. Adding axis
-  rules is local.
-- `BoundsSource` lets debugging answer "why did Stage 1 only try
-  stepover up to 0.95?" by inspecting `bounds.source`.
-- The bug from §1.3 is gone *by construction*: when LUT bounds are
-  present, they're used directly, never intersected with multiplier.
+- Bounds policy is one function per axis.
+- `BoundsSource` answers "why did Stage 1 only try stepover X?" via
+  inspection of `bounds.sources` — every contributor surfaced.
+- The §1.3 multiplier-intersection bug is fixed by construction; the
+  hard/preferred split additionally allows probing outside vendor
+  envelope when policy permits.
 
 **Existing `build_doc_variants` etc. become point-generators inside the
-resolved bounds**, ~10 lines each.
+resolved bounds**, ~10 lines each, calling
+`bounds.warm_start_grid(n_points)`.
 
-### 3.4 Layer 4 — `Retargeter` trait
+### 3.4 Layer 4 — `Retargeter` trait, multi-axis patches
+
+**Reviewer's critique:** the original single-axis `RetargetSolution`
+hides coupled changes. Current Stage F changes feed AND rpm AND plunge
+together; a single-axis return type would lose information. Revised
+design returns `Vec<AxisPatch>` so coupling is first-class.
 
 ```rust
 // crates/rs_cam_core/src/tool_load/optimize/retarget/mod.rs
 
-/// Given a failing verdict and the search space, return an axis-target
-/// pair that, applied to baseline, predicts to bring the verdict toward
-/// Within. Sample-driven: reads `verdict.peak_*` (from sim) directly,
-/// no commanded × RCTF assumption.
 pub trait Retargeter {
-    /// Verdict type this retargeter consumes. One impl per gate.
     type Verdict;
 
-    /// Which axis does this retargeter drive?
-    fn driving_axis(&self) -> SearchAxis;
+    /// Axes this retargeter may drive. May return multiple — chipload
+    /// retarget freezes RPM but moves feed (+ coupled plunge); power
+    /// retarget moves feed alone; deflection retarget moves DOC.
+    /// Declaring this in the trait is part of the contract: a
+    /// retargeter that names only [FeedRate] commits to NOT touching
+    /// RPM, which is what makes the chipload multiplier math linear.
+    fn driving_axes(&self) -> &'static [SearchAxis];
 
-    /// Compute target solution. None means: the verdict is fine, or no
-    /// feasible target in bounds.
     fn target(
         &self,
         verdict: &Self::Verdict,
         space: &SearchSpace,
-        baseline: &dyn OptimizableOp,
+        view: &AxisView<'_>,
+        ctx: &AxisContext<'_>,
     ) -> Option<RetargetSolution>;
 }
 
-#[derive(Clone, Debug)]
 pub struct RetargetSolution {
+    /// One or more patches. Multi-axis when retargeter has coupled
+    /// levers (chipload retarget produces a feed patch and a coupled
+    /// plunge patch).
+    pub patches: Vec<AxisPatch>,
+    pub rationale: String,
+}
+
+pub struct AxisPatch {
     pub axis: SearchAxis,
-    pub target_value: f64,
-    pub multiplier_from_baseline: f64,
-    pub clamped: bool,        // was the target clamped to bounds?
-    pub rationale: String,    // human-readable, surfaced in MCP report
+    pub value: f64,
+    pub clamped: bool,
+    pub source: PatchSource,
+}
+
+pub enum PatchSource {
+    /// The retargeter's primary lever — the axis it consciously moved.
+    Primary,
+    /// Coupling rule fired in response to a primary patch.
+    Coupled { from_axis: SearchAxis, rule: &'static str },
+    /// Strategy-driven patch (Stage 1 grid sweep, headroom scale).
+    Strategy { strategy: &'static str },
 }
 ```
 
 Concrete implementations live in `optimize/retarget/{chipload,power,
-deflection}.rs`, each ~50 lines. The chipload one:
+deflection}.rs`, each ~80 lines. The chipload one:
 
 ```rust
 // optimize/retarget/chipload.rs
 
 pub struct ChiploadFeedRetargeter {
-    low_headroom: f64,    // from policy.retarget.chipload_low_headroom
+    low_headroom: f64,
     high_headroom: f64,
+    plunge_tracking_threshold: f64,
 }
 
 impl Retargeter for ChiploadFeedRetargeter {
     type Verdict = ChiploadVerdict;
 
-    fn driving_axis(&self) -> SearchAxis { SearchAxis::FeedRate }
+    fn driving_axes(&self) -> &'static [SearchAxis] {
+        &[SearchAxis::FeedRate]   // RPM intentionally NOT here
+    }
 
     fn target(
         &self,
         verdict: &ChiploadVerdict,
         space: &SearchSpace,
-        baseline: &dyn OptimizableOp,
+        view: &AxisView<'_>,
+        ctx: &AxisContext<'_>,
     ) -> Option<RetargetSolution> {
-        let ChiploadVerdict::Exceeds { side, peak_mm_per_tooth, bounds, .. } = verdict
-        else { return None };
-
-        let baseline_feed = baseline.axis_value(SearchAxis::FeedRate)?;
-
-        let target_chipload = match side {
-            ChipSide::Low  => bounds.min_mm_per_tooth * self.low_headroom,
-            ChipSide::High => bounds.max_mm_per_tooth / self.high_headroom,
+        let (side, triggering) = match verdict {
+            ChiploadVerdict::Exceeds { side, triggering, .. } => (side, triggering),
+            _ => return None,
         };
-        let multiplier = target_chipload / peak_mm_per_tooth;
-        let raw_target = baseline_feed * multiplier;
 
+        // Sample-driven: read sim-observed metric, not commanded.
+        // Linear scaling of feed scales sample chipload linearly —
+        // exact because engagement geometry is fixed sample-by-sample.
+        let target_chipload = match side {
+            ChipSide::Low  => triggering.bounds.min_mm_per_tooth * self.low_headroom,
+            ChipSide::High => triggering.bounds.max_mm_per_tooth / self.high_headroom,
+        };
+        let multiplier = target_chipload / triggering.observed_mm_per_tooth;
+
+        let baseline_feed = view.axis_value(SearchAxis::FeedRate, ctx)?;
+        let raw_target = baseline_feed * multiplier;
         let feed_bounds = space.axis(SearchAxis::FeedRate)?;
-        let clamped_target = raw_target.clamp(feed_bounds.lo, feed_bounds.hi);
-        let was_clamped = (clamped_target - raw_target).abs() > 1e-6;
+        let clamped = feed_bounds.hard.clamp(raw_target);
+        let was_clamped = (clamped - raw_target).abs() > 1e-6;
+
+        let mut patches = vec![AxisPatch {
+            axis: SearchAxis::FeedRate,
+            value: clamped,
+            clamped: was_clamped,
+            source: PatchSource::Primary,
+        }];
+
+        // Coupling rule: plunge tracks feed for non-trivial changes.
+        // Captured as a Coupled patch so it's visible in the candidate's
+        // rationale, not hidden as a side-effect of `apply_patches`.
+        if (clamped / baseline_feed - 1.0).abs() > self.plunge_tracking_threshold {
+            patches.push(AxisPatch {
+                axis: SearchAxis::FeedRate,   // plunge isn't a search axis
+                value: clamped,
+                clamped: was_clamped,
+                source: PatchSource::Coupled {
+                    from_axis: SearchAxis::FeedRate,
+                    rule: "plunge tracks feed when |Δfeed| > 10%",
+                },
+            });
+        }
 
         Some(RetargetSolution {
-            axis: SearchAxis::FeedRate,
-            target_value: clamped_target,
-            multiplier_from_baseline: clamped_target / baseline_feed,
-            clamped: was_clamped,
+            patches,
             rationale: format!(
-                "{:?}: scale feed by {:.2}× to lift sample chipload from {:.4} to LUT bound × {:.2}",
-                side, multiplier, peak_mm_per_tooth,
-                if matches!(side, ChipSide::Low) { self.low_headroom } else { 1.0 / self.high_headroom },
+                "{:?}: scale feed by {:.2}× to lift sample {:?} from {:.4} to LUT bound × headroom",
+                side, multiplier, triggering.statistic, triggering.observed_mm_per_tooth,
             ),
         })
     }
 }
 ```
 
-**No RCTF.** The verdict already encodes the actual sim peak; targeting
-LUT bound × headroom by linear-scaling feed *is the correct math*
-because feed scales sample chipload linearly (engagement geometry is
-fixed by the toolpath, sample-by-sample, regardless of feed).
+**No RCTF anywhere.** `triggering.observed_mm_per_tooth` is the actual
+sim measurement; linear feed scaling preserves engagement geometry, so
+the multiplier is exact.
 
-**Tests** for this single function are tiny and easy:
+**RPM frozen by contract.** `driving_axes()` returns `&[FeedRate]` —
+the trait declares the contract that this retargeter does not touch
+RPM. That's what makes the linear math correct
+(`chipload ∝ feed/rpm`; freeze rpm → linear in feed).
 
-```rust
-#[test]
-fn burnrisk_doubles_feed_when_peak_is_half_lut_min() {
-    let space = test_space_with_feed_bounds(1000.0, 6000.0);
-    let verdict = ChiploadVerdict::Exceeds {
-        side: ChipSide::Low,
-        peak_mm_per_tooth: 0.025,
-        bounds: ChipBounds { min: 0.05, max: 0.10, /* ... */ },
-        sample_idx: 0,
-        confidence: Confidence::Validated,
-    };
-    let baseline = test_op_with_feed(2000.0);
-    let solution = ChiploadFeedRetargeter { low_headroom: 1.0, .. }.target(&verdict, &space, &baseline).unwrap();
-    assert_eq!(solution.target_value, 4000.0);  // 2× feed → 2× sample chipload → 0.05 = LUT min
-}
-```
+**Plunge coupling visible.** Reviewer flagged that the old
+`solve_chipload_retarget` hid plunge tracking inside its
+`RetargetSolution.target_plunge_mm_min`. New design surfaces it as a
+`PatchSource::Coupled` patch with a named rule.
 
-Symmetric retargeters exist for power (reduce feed when `peak_kw >
-available × headroom`) and deflection (reduce DOC when `peak_mm >
-threshold × headroom`).
+Symmetric retargeters: `PowerFeedRetargeter` (drives FeedRate;
+`peak_kw → available × headroom` linearly), `DeflectionDocRetargeter`
+(drives DepthPerPass; force scales with DOC × radial_width, so
+multiplier ≈ `cube_root(threshold / peak)` — closer to a non-linear
+solve, but tractable).
 
-**Wins:**
-- Each retargeter is testable in isolation, ~5 unit tests each.
-- New gate added later → one new retargeter, no edits to existing ones.
-- The wrong-direction Stage F bug from §1.4 is gone *by construction* —
-  there's no commanded × RCTF anywhere in the new code path.
+**Wins over original draft:**
+- Coupled axes first-class in `RetargetSolution.patches`.
+- RPM-freeze contract declared in `driving_axes()`, not implicit.
+- Plunge tracking visible in candidate's `PatchSource` list.
+- Each retargeter testable in isolation; ~5 unit tests each.
+- No commanded × RCTF anywhere → wrong-direction bug gone by
+  construction.
 
 ### 3.5 Layer 5 — `OptimizationStrategy` trait
 
@@ -697,14 +1058,25 @@ threshold × headroom`).
 pub trait OptimizationStrategy {
     fn name(&self) -> &'static str;
 
-    /// Generate candidate ops. Pure: no sim, no mutation. Caller drives
-    /// evaluation separately.
+    /// Generate candidate patches (not full OperationConfigs). Pure:
+    /// no sim, no mutation. The orchestrator applies patches to the
+    /// baseline and evaluates separately. Reviewer's recommendation:
+    /// patches are the searchable atom, not full ops, so each
+    /// candidate's provenance is inspectable as a list of
+    /// (axis, value, source) triples.
     fn candidates(
         &self,
-        baseline: &dyn OptimizableOp,
+        baseline: &AxisView<'_>,
         baseline_verdict: &ToolpathLoadVerdict,
         space: &SearchSpace,
-    ) -> Vec<OperationConfig>;
+        ctx: &AxisContext<'_>,
+    ) -> Vec<CandidatePatch>;
+}
+
+pub struct CandidatePatch {
+    pub patches: Vec<AxisPatch>,
+    pub strategy: &'static str,
+    pub rationale: String,
 }
 ```
 
@@ -712,23 +1084,32 @@ Strategies (each in its own file under `optimize/strategy/`):
 
 | Strategy | Was | Generates |
 |---|---|---|
-| `HeadroomScaleStrategy` | Stage 0 | When all gates are Within: a single feed-scaled candidate at the closed-form headroom point. |
-| `RetargetStrategy` | Stage F | For each gate that's Exceeds: run that gate's `Retargeter`, produce a candidate at the target. Composes multiple retargets when multiple gates exceed (joint feed reduction for power + DOC reduction for deflection, etc.). |
-| `AxisGridStrategy` | Stage 1 | Grid sweep over each axis the op exposes. Anchored at baseline, points distributed inside `AxisBounds`. Joint sweeps for ops with multiple axes (DOC × stepover × scallop_height for ScallopConfig). |
-| `BaselineWarmStartStrategy` | implicit | Returns `[baseline.clone()]`. Always run first so the baseline is in the evaluated set. |
+| `BaselineWarmStartStrategy` | implicit | Returns `[]` of patches (baseline is added by the orchestrator). |
+| `HeadroomScaleStrategy` | Stage 0 | When all gates are Within: a single feed-scaled patch at the closed-form headroom point. |
+| `PerGateRetargetStrategy` | Stage F | For *each* gate that's Exceeds: run that gate's `Retargeter` independently, emit one `CandidatePatch` per retarget. **Reviewer's recommendation: separate candidates first, no auto-composition.** A future `JointRetargetStrategy` can compose if monotonicity tests prove combined retargets behave well. |
+| `AxisGridStrategy` | Stage 1 | Grid sweep over each axis the op's `bindings` declares. For `LoadDriving` axes, sweeps `bounds.warm_start_grid()` plus optional `outside_preferred_probes()` per policy. For `QualityTarget` axes (scallop_height), sweeps separately and only for cycle-time impact. |
 
-The orchestrator runs strategies in order; each contributes candidates
-to a flat list; evaluation and ranking happen at the end uniformly.
+**Multi-gate composition is deferred.** The original draft contradicted
+itself on this (§3.5 said "composes", §9 asked "should it?"). Decision:
+each retargeter emits an independent candidate. If both chipload and
+power exceed, the optimizer evaluates two candidates (one per gate's
+preferred fix), ranks them, and picks. A combined patch (e.g.,
+"reduce feed AND reduce DOC") may be worth adding as a separate
+`JointRetargetStrategy` later, with monotonicity tests pinning that
+the combined response improves on both single-gate responses.
+
+The orchestrator runs strategies in order; each contributes candidate
+patches to a flat list; the orchestrator applies patches via
+`apply_patches_to_op(baseline, &patch.patches)` and evaluates each.
 
 **Wins:**
-- Stage F + Stage 1 are now composable. If both want to act, both fire;
-  the orchestrator doesn't need a special "what if both gates failed?"
-  branch (currently absent → bug source).
-- Adding a new search strategy (e.g., gradient-based local search around
-  the best Stage 2 survivor) is a new file + one line in the
+- Patches as the searchable atom: every candidate is an inspectable
+  list of (axis, value, source) — full provenance.
+- Single retarget per gate is straightforward; combined retarget is
+  opt-in, not the default.
+- Adding a new search strategy is a new file + one line in the
   orchestrator's strategies vector.
-- Each strategy is unit-testable: feed it a synthetic `SearchSpace` and
-  verdict, assert the candidate set.
+- Each strategy unit-testable in isolation.
 
 ### 3.6 Layer 6 — Orchestrator
 
@@ -827,7 +1208,7 @@ crates/rs_cam_core/src/tool_load/
     policy.rs                 # SearchPolicy + named constants (~120 LOC)
     context.rs                # EvaluationContext, BaselineRestoreGuard (~150 LOC)
 
-    axes.rs                   # SearchAxis, OptimizableOp trait, impls (~300 LOC)
+    axes.rs                   # SearchAxis, AxisBinding, AxisView, AxisContext, OptimizationSurface (~300 LOC)
     bounds.rs                 # AxisBounds, BoundsSource, resolve_*_bounds (~250 LOC)
     space.rs                  # SearchSpace builder + summary (~80 LOC)
 
@@ -860,156 +1241,170 @@ want."**
 
 ---
 
-## 5. Migration sequence
+## 5. Migration sequence (revised — typed verdicts moved late)
+
+**Reviewer's reorder:** typed verdicts (originally Step 2) had the
+biggest blast radius before any of the search architecture existed.
+Reordered so search-architecture steps prove out first; verdict-shape
+change happens after retargeting works against the existing flat
+`Verdict` enum.
 
 Each step lands as a single commit, all tests green, with a wanaka MCP
-smoke check. If a step fails, prior commits stand as strict improvement.
+smoke check including a **candidate-set snapshot** (axes searched,
+bounds source, generated values, retarget rationale) — not just final
+outcome — so silent search-space shrinkage is caught immediately.
 
-### Step 0 — Doc this design, get review (this step)
+### Step 0 — This doc + reviewer sign-off
 
-**Output:** this doc, plus operator approval after independent review.
-**Risk:** none.
+**Output:** this doc (revision 2). **Risk:** none.
 
-### Step 1 — Extract `policy.rs`
+### Step 1 — Extract `policy.rs` with `PolicyValue<T>` provenance
 
-**Scope:** every `const` and inline literal magic number → named const
-in a new `tool_load/optimize/policy.rs`. Behavior identical.
+**Scope:** every magic number → named `PolicyValue<T>` field with
+rationale + source. Behavior identical.
 
-**Approach:** create `policy.rs` with the structs from §3.0; replace
-literals in `optimize.rs` with `policy.axes.X.Y` references; pass
-`SearchPolicy::default()` from the orchestrator entry point through to
-the existing builder functions.
+**Approach:** define `SearchPolicy`, `AxisPolicy`, `FeedPolicy`,
+`RetargetPolicy`, `PolicyValue<T>` in `optimize/policy.rs`. Replace
+literals in `optimize.rs` with `policy.X.Y.value` reads. Snapshot
+existing wanaka MCP outcome before commit.
 
-**Test gate:** all existing tests pass; wanaka MCP returns identical
-verdicts and candidate sets.
+**Test gate:** all existing tests pass; wanaka MCP returns *identical*
+verdicts and candidate sets (snapshot-asserted).
 
 **Risk:** small. ~half day.
 
-### Step 2 — Per-gate `Verdict` types
+### Step 2 — File split into `optimize/` directory
 
-**Scope:** add `ChiploadVerdict`, `PowerVerdict`, `DeflectionVerdict`.
-Each gate's `evaluate` returns the typed verdict. `ToolpathLoadVerdict`
-holds typed fields.
+**Scope:** physical move into the structure of §4. Pure motion, no
+logic change. Done early so subsequent steps land in the correct
+files.
 
-**Approach:**
-1. Define types in `verdict.rs`.
-2. Update `chipload::evaluate`, `power::evaluate`,
-   `deflection::evaluate` to return typed.
-3. Update every consumer (optimizer, MCP, GUI) to read typed fields.
-   This is the biggest blast-radius step. Search every `Verdict::Within`
-   pattern, replace with the typed equivalent.
-4. Remove the old `Verdict` enum and `ExceedsReason` flat enum.
-
-**Test gate:** all tests pass; MCP `get_tool_load_report` and
-`optimize_toolpath` return new shape (acceptable, no PRD).
-
-**Risk:** medium. Many edit sites. ~1 day.
-
-### Step 3 — `OptimizableOp` trait + `SearchAxis`
-
-**Scope:** add the trait and enum; impl for every `OperationConfig`
-variant; adjust the orchestrator to take `&dyn OptimizableOp`.
-
-**Approach:**
-1. Define types in `optimize/axes.rs`.
-2. Hand-write impls for each of the ~17 `OperationConfig` variants.
-   Optional: a small derive macro to generate them, but probably faster
-   to just write them.
-3. Adjust `bipolar_prescription`, the Stage 1 grid, and the variant
-   builders to read `op.search_axes()` instead of `has_doc_knob()`.
-4. Delete `has_doc_knob` and the per-op type-checks it was used for.
-
-**Test gate:** all tests pass. New tests: for every op type, assert
-`search_axes()` returns the expected axes; assert `axis_value() != None`
-exactly for those axes.
-
-**Risk:** small (additive); the deletion at the end is the risky part.
-~1 day.
-
-### Step 4 — `AxisBounds` + `SearchSpace` + bounds resolvers
-
-**Scope:** replace inline bound construction in `build_doc_variants`,
-`build_stepover_variants`, `build_scallop_height_variants` with calls to
-the resolvers.
-
-**Approach:**
-1. Define types in `optimize/bounds.rs` and `optimize/space.rs`.
-2. Write `resolve_doc_bounds`, `resolve_stepover_bounds`,
-   `resolve_scallop_bounds`, `resolve_feed_bounds` —
-   one function each, ~30 LOC.
-3. Reduce existing `build_*_variants` to point-generators inside
-   resolved bounds (~10 LOC each).
-4. **Behavioral change:** the LUT-as-outer-envelope semantics now apply.
-   This is the first behavior-changing step.
-
-**Test gate:** existing tests pass *with possibly different candidate
-sets* — update tests to reflect new bounds. Wanaka MCP smoke check
-should now show wider stepover/DOC search candidates for TPs whose
-baseline is far from the LUT recommendation. Capture before/after in
-the commit message.
-
-**Risk:** medium-high (first behavior change). ~1 day.
-
-### Step 5 — Sample-driven `Retargeter` impls
-
-**Scope:** add the trait and concrete impls for each gate. Replace the
-old `solve_chipload_retarget` with `RetargetStrategy` driven by the new
-retargeters.
-
-**Approach:**
-1. Define `Retargeter` trait in `optimize/retarget/mod.rs`.
-2. Write `ChiploadFeedRetargeter`, `PowerFeedRetargeter`,
-   `DeflectionDocRetargeter` (~50 LOC each).
-3. Write `RetargetStrategy` that runs the retargeters and emits
-   candidates.
-4. **Behavioral change:** Stage F's wrong-direction bug is gone. Wanaka
-   TPs with chipload-Exceeds(BurnRisk) should now produce candidates
-   with feed *raised*, not lowered.
-
-**Test gate:** new unit tests for each retargeter (target value math,
-clamping, rationale string). Wanaka MCP `optimize_toolpath` against
-TP 4 should show a higher-feed candidate among `attempted`. Capture the
-new `attempted` list in the commit.
-
-**Risk:** medium-high (real behavior change with operator-visible
-effects). ~1 day.
-
-### Step 6 — `OptimizationStrategy` trait + migrate stages
-
-**Scope:** convert `run_stage_0`, `run_stage_f_retarget`,
-`run_stage_1_grid` into `OptimizationStrategy` impls. The orchestrator
-becomes the linear pipeline from §3.6.
-
-**Approach:**
-1. One commit per stage. For each:
-   - Add the strategy struct with `candidates(...)` method.
-   - Replace the orchestrator's stage call with a strategy invocation.
-   - Run wanaka regression — outcome should match prior commit.
-2. After all three stages migrated, simplify the orchestrator to the
-   linear loop in §3.6.
-
-**Test gate:** outcome variants and candidate sets match prior commit
-(strict refactor with no behavior change).
-
-**Risk:** medium (touch the hot orchestration path). ~1 day spread
-across three commits.
-
-### Step 7 — Split into `optimize/` directory
-
-**Scope:** physically move types into the file structure of §4. Pure
-code motion, no logic change.
-
-**Approach:** straightforward file moves, fix imports.
+**Approach:** move types and helpers in batches keeping each
+sub-commit compiling. Fix imports.
 
 **Test gate:** all tests pass; clippy clean.
 
 **Risk:** small. ~half day.
 
+### Step 3 — `SearchAxis` + `OptimizationSurface` + `AxisContext` + `AxisBinding`
+
+**Scope:** add the explicit `OperationConfig::optimization_surface()`
+method (no wildcard arm — compile-time coverage); add `SearchAxis`,
+`AxisBinding`, `AxisContext`. Impl `AxisView` for each
+`OperationConfig` variant.
+
+**Approach:**
+1. Define types in `optimize/axes.rs`.
+2. Add `optimization_surface()` to `OperationConfig` with the explicit
+   match. Compile error until every variant is classified.
+3. Add `every_operation_type_has_explicit_optimization_surface` test.
+4. Adjust `bipolar_prescription`, `has_doc_knob` callers, Stage 1 grid
+   to read `view.bindings` instead of the old allowlist.
+5. Delete `has_doc_knob`.
+
+**Test gate:** all existing tests pass. New tests: surface coverage
+test, per-op axis-list assertions, `AxisContext` correctly resolves
+project-default RPM when op's spindle_rpm is None.
+
+**Risk:** small (additive); the deletion is the risky part. ~1 day.
+
+### Step 4 — `AxisBounds` (hard / preferred / warm_start) + bounds resolvers
+
+**Scope:** replace inline bound construction in `build_doc_variants`,
+`build_stepover_variants`, `build_scallop_height_variants` with calls
+to `resolve_*_bounds`. **First behavior-changing step** — the
+LUT-bounds-as-preferred semantics activate here, plus
+`outside_preferred_probes` when policy permits.
+
+**Approach:**
+1. Define types in `optimize/bounds.rs` and `optimize/space.rs`.
+2. Write per-axis resolvers, ~30 LOC each.
+3. Reduce existing `build_*_variants` to call
+   `bounds.warm_start_grid(n)` + `bounds.outside_preferred_probes()`.
+4. Snapshot wanaka candidate sets before/after.
+
+**Test gate:** existing tests pass; some test expectations update to
+reflect wider candidate sets. Wanaka snapshot shows wider stepover/DOC
+search for TPs whose baseline is far from LUT-preferred. Property
+tests: bounds always have `lo <= baseline <= hi` when intended;
+`hard` always contains `warm_start`; resolvers never produce
+non-finite values.
+
+**Risk:** medium-high (first behavior change). ~1 day.
+
+### Step 5 — Sample-driven `Retargeter` impls
+
+**Scope:** add the `Retargeter` trait and per-gate impls. Retargeters
+read the *existing* flat `Verdict` enum at this stage (typed verdicts
+come later), reading `peak` with the unit each retargeter knows applies
+to its gate. **Second behavior change:** Stage F's wrong-direction bug
+fixed here.
+
+**Approach:**
+1. Define `Retargeter` trait, `RetargetSolution`, `AxisPatch` in
+   `optimize/retarget/mod.rs`.
+2. Write `ChiploadFeedRetargeter`, `PowerFeedRetargeter`,
+   `DeflectionDocRetargeter` (~80 LOC each).
+3. `PerGateRetargetStrategy` that runs each gate's retargeter and emits
+   one `CandidatePatch` per gate Exceeds.
+4. Wire into orchestrator alongside (not replacing) the old
+   `solve_chipload_retarget` for differential testing.
+5. Differential-test: same wanaka inputs through old vs new path.
+   Once new is at-or-better on every TP, delete old.
+
+**Test gate:** unit tests for each retargeter (5 each: target math,
+clamping, rationale, multi-axis patch shape, RPM-frozen contract).
+Wanaka MCP shows higher-feed candidates among `attempted` for TP 4.
+Property tests: retarget direction is correct for low/high chipload;
+patches always have `axis ∈ driving_axes()`.
+
+**Risk:** medium-high (real behavior change). ~1 day.
+
+### Step 6 — `OptimizationStrategy` trait + migrate stages
+
+**Scope:** convert `run_stage_0`, the new retarget logic, and
+`run_stage_1_grid` into `OptimizationStrategy` impls returning
+`Vec<CandidatePatch>`. Orchestrator becomes the linear pipeline of
+§3.6.
+
+**Approach:**
+1. One commit per stage. For each: add strategy struct, replace
+   orchestrator call, snapshot-assert outcome unchanged.
+2. After all three stages migrated, simplify orchestrator.
+
+**Test gate:** outcome variants and candidate sets match prior
+commit's snapshot (strict refactor).
+
+**Risk:** medium. ~1 day across three commits.
+
+### Step 7 — Per-gate `Verdict` types (large blast radius)
+
+**Scope:** add `ChiploadVerdict`, `PowerVerdict`, `DeflectionVerdict`
+(with `ChiploadMetric` for chipload). Update gate evaluators, MCP
+serialization, GUI rendering, retargeters.
+
+**Approach:**
+1. Define types in `tool_load/verdict.rs`.
+2. Update `chipload::evaluate`, `power::evaluate`,
+   `deflection::evaluate` to return typed.
+3. Refactor retargeters from generic `&Verdict` reads to typed
+   `&ChiploadVerdict` / `&PowerVerdict` / `&DeflectionVerdict`.
+4. Update MCP serialization — wire format changes (acceptable).
+5. Update GUI rendering of verdict displays.
+6. Delete the old `Verdict` enum and `ExceedsReason` flat enum.
+
+**Test gate:** all tests pass with typed reads. MCP returns new shape
+(documented in commit). Snapshot tests of outcome candidate sets stay
+identical.
+
+**Risk:** medium (large blast radius, many edit sites, but all
+mechanical now that the search architecture is settled). ~1 day.
+
 ### Step 8 — Delete legacy
 
-**Scope:** delete the transitional `Verdict` enum if any compatibility
-shim remained, delete `has_doc_knob`, delete `solve_chipload_retarget`'s
-dead code, etc.
+**Scope:** delete `has_doc_knob` if anything still references it,
+delete dead code from old `solve_chipload_retarget`, delete any
+transitional shims.
 
 **Test gate:** all tests pass; clippy clean.
 
@@ -1030,39 +1425,55 @@ Three test layers, all in CI:
 
 ### 6.1 Unit tests per layer
 
-- **Policy:** struct construction, default values pinned.
-- **Verdict types:** serialization round-trip, gate-specific peak field
-  reads.
-- **`OptimizableOp`:** for every `OperationConfig` variant, assert
-  `search_axes()` matches the typed accessor surface; assert
-  `axis_value()` returns Some exactly for those axes; assert
-  `set_axis()` round-trips.
-- **`BoundsResolver`:** for representative (op, lut, machine) tuples,
-  assert resolved bounds are physically sensible. Particular cases:
-  no LUT row; LUT row without bounds; LUT bounds tighter than machine;
-  hard-floor binding.
-- **`Retargeter`:** for synthetic verdicts (representative Burn /
-  Breakage / power / deflection cases), assert target values match
-  hand-computed expectations. ~5 tests per retargeter.
+- **Policy:** struct construction, default values pinned, `PolicyValue`
+  rationale strings non-empty.
+- **Verdict types:** serialization round-trip, gate-specific metric
+  reads, `ChiploadStatistic` discriminates correctly.
+- **`OperationConfig::optimization_surface`:** the
+  `every_operation_type_has_explicit_optimization_surface` test from
+  §3.2; for every Optimizable op, asserts `bindings` non-empty and
+  every binding's `axis_value()` resolves cleanly via `AxisContext`
+  (especially that `SpindleRpm` falls back to `project_default_rpm`).
+- **`BoundsResolver`:** for representative `(op, lut, machine)` tuples,
+  assert `hard ⊇ warm_start` always; assert `preferred ⊆ hard`;
+  cases — no LUT, LUT without bounds, LUT outside machine, baseline
+  outside preferred.
+- **`Retargeter`:** for synthetic verdicts, assert target values match
+  hand-computed expectations. **Property tests:** retarget direction
+  is correct for Burn vs Breakage; multipliers stay within bounds;
+  patches always have `axis ∈ driving_axes()`.
 - **`OptimizationStrategy`:** for synthetic search spaces, assert
-  candidate sets contain expected variants.
+  candidate-patch sets contain expected variants.
 
-### 6.2 Integration tests
+### 6.2 Integration tests + candidate-set snapshots
 
-- Wanaka project as the gold fixture. Run `optimize_toolpath` against
-  every TP; assert outcome variant + cycle delta + verdict shape.
-- Param-sweep system (`tests/param_sweep.rs`): existing 54 sweeps
-  continue to produce stable fingerprints.
+**Reviewer's recommendation:** snapshot candidate sets, not just final
+outcomes. Otherwise a future change can silently shrink search space
+while still returning `NoSafeImprovement`.
 
-### 6.3 MCP smoke check (manual, per migration step)
+For each fixture (wanaka TPs 4, 10, 12 plus tapered-ball TPs 5, 6, 11
+plus a Pocket and an Adaptive3d edge case from synthetic projects),
+snapshot:
+- Axes searched (from `view.bindings`)
+- Per-axis bounds with `BoundsSource` list
+- Generated candidate patches (axis, value, source)
+- Retarget rationales when retargeters fired
+- Final verdict per gate
 
-- After each step that touches behavior, run
+These snapshots live in `tests/snapshots/` and are version-controlled.
+Changes to expected snapshots are explicit per-commit and reviewable.
+
+Param-sweep system (`tests/param_sweep.rs`): existing 54 sweeps
+continue to produce stable fingerprints.
+
+### 6.3 MCP smoke check (manual, per behavior-changing migration step)
+
+- After steps 4 and 5 (the two behavior-changing steps), run
   `mcp__rs-cam__get_tool_load_report` and
   `mcp__rs-cam__optimize_toolpath` against wanaka.
 - Capture before/after delta in commit message — what changed, why.
-- The two operator-relevant outputs are: TP-level verdict shifts (e.g.,
-  Within → Approximate; Exceeds → Within) and `attempted` candidate
-  shape (which axes got searched, what targets were proposed).
+- Outputs to inspect: TP-level verdict shifts and `attempted` candidate
+  shape (axes searched, target values, retarget rationales).
 
 ---
 
@@ -1131,7 +1542,7 @@ Worth flagging explicitly:
 - **MCP tool names** (`optimize_toolpath`, `get_tool_load_report`):
   unchanged. The JSON shape inside changes.
 - **`OperationConfig` enum** and its variants: untouched at the type
-  level. Each variant gains an `OptimizableOp` impl; that's it.
+  level. Each variant gains an arm in `optimization_surface()`; that's it.
 
 The refactor is scoped tightly to the optimizer's search/orchestration
 layer and the verdict output types. Everything outside that — about 95 %
@@ -1139,47 +1550,64 @@ of the engine — is unaffected.
 
 ---
 
-## 9. Open questions for review
+## 9. Open questions — resolved by reviewer
 
-1. **Do I have the right axes?** `SearchAxis` enum currently lists 8
-   variants; should `MinCuttingRadius`, `Tolerance`, `EntryStyle` be in
-   there? My read: those are not optimization knobs (operator picks them
-   based on quality goals, not throughput), so they stay out. Confirm.
-2. **Should `Drill` impl `OptimizableOp` with empty axes, or just not
-   impl it?** I'd argue the latter — the type-system signal "drill is
-   not optimizable" is more honest.
-3. **Should `RetargetStrategy` compose multiple retargets in one
-   candidate** (e.g., raise feed *and* reduce DOC if both gates fail),
-   or emit them as separate candidates? My read: separate candidates,
-   so the optimizer can rank them independently. The combined case can
-   come later as a `JointRetargetStrategy` if needed.
-4. **`BoundsSource::MachineClamped` shows up when LUT bounds are wider
-   than machine envelope**. Currently we silently clamp; the new
-   structure can surface "you're hitting machine ceiling" in the
-   outcome's debug summary. Worth doing now or later?
-5. **Property tests** (with `proptest`) for the bounds resolver and
-   retargeters? Cheap insurance against edge cases. Lean yes.
-6. **Should `SearchPolicy` be carried in `ProjectSession`** so per-
-   project tuning is possible? Currently default-only is fine; flagging
-   for future.
+All six original open questions answered by the independent reviewer.
+Carrying forward as decisions:
+
+1. **Right axes?** Keep current 8 (FeedRate, SpindleRpm, DepthPerPass,
+   Stepover, ScallopHeight, AngularStep, HelixPitch, RampAngle). Keep
+   out: `Tolerance`, `MinCuttingRadius`, `EntryStyle` (quality picks,
+   not throughput). Future: V-bit/chamfer depth axes when those gaps
+   close; `PathSpacing` may emerge as semantically distinct from raw
+   stepover for some ops.
+2. **Drill `OptimizableOp` impl?** Neither — Drill returns
+   `OptimizationSurface::NotOptimizable { reason: SteadyStateSamplesNotPresent }`
+   from its arm of the explicit `match` in `optimization_surface()`.
+   Auditable across all ops, no silent fallthrough.
+3. **Compose multi-gate retargets?** Separate candidates first.
+   `JointRetargetStrategy` deferred until monotonicity tests prove
+   combined retargets behave well. Documented in §3.5.
+4. **Surface `MachineClamped`?** Now. Cheap and exactly the
+   transparency this refactor delivers. `BoundsSource` carries machine
+   contributions explicitly.
+5. **Property tests with `proptest`?** Yes. Bounds never produce
+   non-finite values; `lo ≤ baseline ≤ hi` when intended; `hard`
+   always contains `warm_start`; retarget direction correct for
+   low/high chipload; candidate dedup never accidentally removes all
+   candidates.
+6. **`SearchPolicy` in `ProjectSession`?** Not yet, but structure for
+   it. `optimize_toolpath` accepts an `OptimizeOptions { policy:
+   SearchPolicy }` so per-call override is possible without wedging
+   into `ProjectSession`.
 
 ---
 
 ## 10. Sign-off
 
-Once an independent reviewer signs off on the design, implementation
-proceeds in the migration sequence above. Each step lands as its own
-commit on master with green tests and a wanaka MCP smoke check. The
-total work is estimated at ~5 days of focused effort.
+Revision 2 incorporates the independent reviewer's required changes:
+explicit `OptimizationSurface` for compile-time op coverage, `AxisContext`
+for RPM resolution, hard/preferred/warm_start bounds split,
+`Vec<AxisPatch>` retarget solutions with declared `driving_axes()`
+contract, decision against multi-gate auto-composition, `PolicyValue<T>`
+provenance, `ChiploadMetric` with explicit statistic, and the migration
+reorder placing typed verdicts after search architecture.
 
-After this lands, the three small fixes flagged earlier (G16 sample-
-driven retarget, G17 Adaptive3d LUT routing, G18 LUT bounds as outer
-envelope) reduce to:
+Implementation begins on reviewer sign-off of revision 2. Each step
+lands as its own commit on master with green tests, a wanaka MCP
+smoke check, and a candidate-set snapshot diff in the commit message.
 
-- **G16** is solved by step 5 (Retargeter trait).
-- **G17** becomes a one-line policy choice in `bounds.rs`'s LUT-family
-  routing function.
-- **G18** is solved by step 4 (BoundsResolver).
+**Total work: ~6 days** (revised up from 5 in revision 1; the file
+split moved earlier and the per-gate verdict step is more involved
+once retargeters depend on it).
 
-So the architectural refactor closes three gap items and pre-empts the
-next several gap closures from accumulating new conditional drift.
+After this lands, three previously-flagged smaller fixes reduce to
+trivial follow-ups:
+
+- **Sample-driven retarget** (was a separate gap) — solved by Step 5.
+- **Adaptive3d LUT-family routing** — a single-rule addition to
+  `bounds.rs`'s row-matching policy.
+- **LUT bounds as outer envelope** — solved by Step 4.
+
+So the architectural refactor closes three gap items as side effects
+and pre-empts further conditional drift in the optimizer.
