@@ -203,6 +203,12 @@ fn compute_optimized_cycle(report: &ProjectOptimizeReport, row_selected: &[bool]
                     baseline
                 }
             }
+            OptimizeOutcome::TradeOff(candidates) => {
+                // Trade-off rows aren't auto-selectable from the
+                // project rollup — the user has to open the modal to
+                // accept the regression. Contribute baseline.
+                candidates.first().map_or(0.0, |c| c.cycle_time_s)
+            }
             OptimizeOutcome::NoSafeImprovement { .. } | OptimizeOutcome::Skipped { .. } => {
                 // No candidate to swap — contributes baseline.
                 // We don't have direct access to baseline cycle for
@@ -329,6 +335,25 @@ fn draw_row(
                 egui::RichText::new(reason.explanation_for_optimize().to_owned())
                     .small()
                     .color(theme::TEXT_DIM),
+            );
+            ui.label("");
+        }
+        OptimizeOutcome::TradeOff(candidates) => {
+            // Trade-off rows: faster candidate exists but has a gate
+            // regression. Render with a "trade-off" badge and no
+            // checkbox (open the modal to apply).
+            ui.label(""); // checkbox column blank
+            ui.label(egui::RichText::new(name).small());
+            ui.label(
+                egui::RichText::new("trade-off")
+                    .small()
+                    .color(theme::WARNING),
+            );
+            let tried = candidates.len().saturating_sub(1);
+            ui.label(
+                egui::RichText::new(format!("{tried} faster candidate(s) with gate regression"))
+                    .small()
+                    .color(theme::WARNING),
             );
             ui.label("");
         }
@@ -582,6 +607,24 @@ fn draw_readonly_row(
                 egui::RichText::new(reason.explanation_for_optimize().to_owned())
                     .small()
                     .color(theme::TEXT_DIM),
+            );
+            ui.label("");
+            if show_reconciled {
+                ui.label("");
+            }
+        }
+        OptimizeOutcome::TradeOff(candidates) => {
+            ui.label(egui::RichText::new(name).small());
+            ui.label(
+                egui::RichText::new("trade-off")
+                    .small()
+                    .color(theme::WARNING),
+            );
+            let tried = candidates.len().saturating_sub(1);
+            ui.label(
+                egui::RichText::new(format!("{tried} faster candidate(s) — needs review"))
+                    .small()
+                    .color(theme::WARNING),
             );
             ui.label("");
             if show_reconciled {

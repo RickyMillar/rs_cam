@@ -67,6 +67,12 @@ pub enum RefuseReason {
     /// single feed fixes both. The user should reduce stepover
     /// variation, not change feed.
     BipolarEngagement,
+    /// Tool L/D ratio is above the deflection guardrail. Stickout and
+    /// diameter are tool-config inputs — feed/RPM/DOC/stepover can't
+    /// move them, so the optimizer refuses rather than searching a
+    /// space that can't reach a safe answer. The fix is a setup
+    /// change (shorten stickout, swap to a stiffer tool).
+    DeflectionSetupLocked,
     /// Every compatible LUT row has a chipload range that, even at
     /// the row's nominal RPM, would require a feed below the
     /// machine's minimum or above the machine's maximum feed.
@@ -108,6 +114,9 @@ impl RefuseReason {
             }
             Self::BipolarEngagement => {
                 "stepover varies wildly across the toolpath — no single feed/RPM fixes both extremes; reduce stepover variation"
+            }
+            Self::DeflectionSetupLocked => {
+                "tool stickout / diameter ratio (L/D) exceeds 6 — feed/RPM/DOC/stepover can't fix this; shorten the stickout or use a stiffer tool"
             }
             Self::NoFeasibleRow => {
                 "every compatible LUT row falls outside the machine's feed or RPM range"
