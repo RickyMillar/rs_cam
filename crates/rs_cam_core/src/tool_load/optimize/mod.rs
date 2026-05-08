@@ -539,12 +539,15 @@ pub fn optimize_toolpath(
         return finalize_partial(baseline_candidate, all_candidates);
     }
 
-    // 8. Stage 1: joint DOC × stepover variant grid for ops with both
-    //    knobs.
-    let stage_1_candidates = run_stage_1_grid(
+    // 8. Axis-grid strategy: joint DOC × stepover × scallop_height
+    //    variant grid, anchored on the headroom candidate's params
+    //    (when stage F fired) or baseline (when it didn't). Replaces
+    //    the legacy `run_stage_1_grid` (G16 Step 6c).
+    let stage_1_candidates = run_grid_strategy(
         &mut guard,
         &ctx,
         &baseline_op,
+        &baseline_verdict,
         all_candidates.first(),
         matched_lut_row.as_ref(),
         cancel,
@@ -700,114 +703,64 @@ fn run_stage_f_retarget(
     .ok()
 }
 
-/// Run Stage 1 (joint DOC × stepover variant grid) for one toolpath.
-/// Returns the per-grid-cell candidates that successfully evaluated;
-/// the anchor cell (matching the Stage 0 candidate or baseline) is
-/// skipped to avoid duplication.
-///
-/// `stage0_anchor` is the optional Stage 0 candidate — when present,
-/// the grid is anchored on its params; otherwise it falls back to
-/// `baseline_op`. Returns an empty vector for ops that don't have a
-/// DOC knob.
-fn run_stage_1_grid(
+/// Run the [`AxisGridStrategy`] against the baseline (or the headroom
+/// candidate, when stage F fired) and evaluate every emitted cell.
+/// Replaces the legacy `run_stage_1_grid` (G16 Step 6c) — same anchor
+/// + dedup + variant logic, now lifted into the strategy module.
+fn run_grid_strategy(
     guard: &mut BaselineRestoreGuard<'_>,
     ctx: &EvaluationContext,
     baseline_op: &OperationConfig,
+    baseline_verdict: &ToolpathLoadVerdict,
     stage0_anchor: Option<&OptimizeCandidate>,
     matched_lut_row: Option<&MatchedRow>,
     cancel: &AtomicBool,
 ) -> Vec<OptimizeCandidate> {
+    use crate::compute::catalog::OptimizationSurface;
     use std::sync::atomic::Ordering;
+    use strategy::OptimizationStrategy;
+    use strategy::grid::AxisGridStrategy;
 
     let anchor_op = stage0_anchor
         .map(|c| c.params.clone())
         .unwrap_or_else(|| baseline_op.clone());
 
-    // Determine which spacing-axis knobs the op exposes. Stage 1 sweeps
-    // every axis the op surfaces and collapses the rest to a single
-    // anchor entry so we don't fan out into duplicate sims via no-op
-    // setters. G2 (2026-05-08) added `scallop_height` as a third axis
-    // for Scallop (which has no DOC and no stepover, only the
-    // ridge-height knob).
-    let has_doc_axis = anchor_op.depth_per_pass().is_some();
-    let has_stepover_axis = anchor_op.stepover().is_some();
-    let has_scallop_axis = anchor_op.scallop_height().is_some();
-
-    if !has_doc_axis && !has_stepover_axis && !has_scallop_axis {
-        return Vec::new();
-    }
+    // Strategy needs a baseline view for trait conformance; it's
+    // unused inside the grid path (anchor-relative by design) but
+    // we still produce one to satisfy the contract.
+    let baseline_view = match baseline_op.optimization_surface() {
+        OptimizationSurface::Optimizable(v) => v,
+        OptimizationSurface::NotOptimizable { .. } => return Vec::new(),
+    };
 
     let policy = search_policy();
-    let anchor_doc = anchor_op.depth_per_pass().unwrap_or_else(|| {
-        baseline_op
-            .depth_per_pass()
-            .unwrap_or(policy.fallback.doc_anchor_mm.value)
-    });
-    let anchor_stepover = anchor_op.stepover().unwrap_or_else(|| {
-        baseline_op
-            .stepover()
-            .unwrap_or(policy.fallback.stepover_anchor_mm.value)
-    });
-    let anchor_scallop = anchor_op.scallop_height().unwrap_or_else(|| {
-        baseline_op
-            .scallop_height()
-            .unwrap_or(policy.fallback.scallop_height_anchor_mm.value)
-    });
-
-    // Build variant lists per axis. Empty/anchor-only when the op
-    // doesn't expose that knob — `apply_*_to_op` is a no-op for missing
-    // setters, so a single-element vec produces exactly one candidate
-    // per outer-loop iteration without any duplication.
-    let doc_variants = if has_doc_axis && has_doc_knob(ctx.operation_kind) {
-        build_doc_variants(anchor_doc, matched_lut_row, ctx.operation_kind)
-    } else {
-        vec![anchor_doc]
+    let strat = AxisGridStrategy {
+        anchor_op: &anchor_op,
+        lut_row: matched_lut_row,
+        op_type: ctx.operation_kind,
+        policy,
     };
-    let stepover_variants = if has_stepover_axis {
-        build_stepover_variants(anchor_stepover, matched_lut_row, ctx.operation_kind)
-    } else {
-        vec![anchor_stepover]
-    };
-    let scallop_variants = if has_scallop_axis {
-        build_scallop_height_variants(anchor_scallop)
-    } else {
-        vec![anchor_scallop]
-    };
+    let cps = strat.candidates(&baseline_view, baseline_verdict);
 
     let mut out: Vec<OptimizeCandidate> = Vec::new();
-    'outer: for &doc in &doc_variants {
-        for &stepover in &stepover_variants {
-            for &scallop in &scallop_variants {
-                if cancel.load(Ordering::SeqCst) {
-                    break 'outer;
-                }
-                // Skip the anchor combo — already represented by the
-                // headroom-point candidate (or the baseline).
-                if (doc - anchor_doc).abs() < policy.axes.doc.dedup_tolerance.value
-                    && (stepover - anchor_stepover).abs()
-                        < policy.axes.stepover.dedup_tolerance.value
-                    && (scallop - anchor_scallop).abs()
-                        < policy.axes.scallop_height.dedup_tolerance.value
-                {
-                    continue;
-                }
-                let candidate_op = apply_scallop_height_to_op(
-                    &apply_stepover_to_op(&apply_doc_to_op(&anchor_op, doc), stepover),
-                    scallop,
-                );
-                let delta = delta_against_baseline(baseline_op, &candidate_op);
-                if let Ok(candidate) = evaluate_candidate(
-                    guard,
-                    ctx,
-                    candidate_op,
-                    delta,
-                    SearchStage::Coarse,
-                    policy.stages.coarse_resolution_mm.value,
-                    cancel,
-                ) {
-                    out.push(candidate);
-                }
-            }
+    for cp in cps {
+        if cancel.load(Ordering::SeqCst) {
+            break;
+        }
+        let Ok(candidate_op) = patches::apply_patches_to_op(&anchor_op, &cp.patches) else {
+            continue;
+        };
+        let delta = delta_against_baseline(baseline_op, &candidate_op);
+        if let Ok(candidate) = evaluate_candidate(
+            guard,
+            ctx,
+            candidate_op,
+            delta,
+            SearchStage::Coarse,
+            policy.stages.coarse_resolution_mm.value,
+            cancel,
+        ) {
+            out.push(candidate);
         }
     }
     out
@@ -1529,6 +1482,7 @@ pub(crate) fn build_doc_variants(
 /// Apply a candidate DOC value to a baseline op, leaving every other
 /// field unchanged. The op must be one of the 5 families that exposes
 /// `depth_per_pass` via the `OperationParams` trait.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn apply_doc_to_op(baseline_op: &OperationConfig, doc_mm: f64) -> OperationConfig {
     let mut variant = baseline_op.clone();
     variant.set_depth_per_pass(doc_mm);
@@ -1599,6 +1553,7 @@ fn build_geometry_variants_from_bounds(
 /// Apply a candidate stepover value to a baseline op. The op must be
 /// one of the 5 families that exposes `stepover` via the
 /// `OperationParams` trait.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn apply_stepover_to_op(
     baseline_op: &OperationConfig,
     stepover_mm: f64,
@@ -1634,6 +1589,7 @@ pub(crate) fn build_scallop_height_variants(baseline_scallop_mm: f64) -> Vec<f64
 /// Apply a candidate scallop_height value to a baseline op. No-op for
 /// ops that don't expose `set_scallop_height` via the trait (which is
 /// every op except `ScallopConfig` today).
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn apply_scallop_height_to_op(
     baseline_op: &OperationConfig,
     scallop_mm: f64,
