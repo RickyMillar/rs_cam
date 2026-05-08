@@ -482,7 +482,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "get_tool_load_report",
-        description = "Per-toolpath tool-load report: chipload, power, deflection verdicts. Each criterion is independent (no scalar load %). Verdicts are Within/Exceeds/Unmodeled with typed reasons."
+        description = "Per-toolpath tool-load report: chipload, power, deflection verdicts. Each criterion is independent (no scalar load %). Each gate uses a typed verdict: ChiploadVerdict (Within carries approach-to-min/max metrics, Exceeds carries ChipSide + ChiploadStatistic + ChipBounds), PowerVerdict (carries peak_kw + available_kw on both arms), DeflectionVerdict (carries peak_mm + DeflectionBounds with 50µm/200µm thresholds). All three states are Within/Exceeds/Unmodeled."
     )]
     async fn get_tool_load_report(&self) -> String {
         Self::format_result(self.send_request(McpRequestKind::GetToolLoadReport).await)

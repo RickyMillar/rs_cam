@@ -183,6 +183,36 @@ impl ToolpathLoadVerdict {
     pub fn any_unmodeled(&self) -> bool {
         self.chipload.is_unmodeled() || self.power.is_unmodeled() || self.deflection.is_unmodeled()
     }
+
+    /// Generic per-criterion summaries — chipload, power, deflection in
+    /// that order. Lets UI / export / timeline iterate over the gates
+    /// without knowing each typed verdict's internals.
+    pub fn criteria(&self) -> [CriterionStatus<'_>; 3] {
+        [
+            self.chipload.as_criterion_status(),
+            self.power.as_criterion_status(),
+            self.deflection.as_criterion_status(),
+        ]
+    }
+
+    /// Per-criterion exceedance labels for this toolpath. Empty when no
+    /// criterion is `Exceeds`. Used by the export gate.
+    pub fn exceeded_criteria(&self) -> Vec<ExceededCriterion> {
+        let mut out = Vec::new();
+        if let ChiploadVerdict::Exceeds { side, .. } = &self.chipload {
+            out.push(match side {
+                ChipSide::Low => ExceededCriterion::chipload_burn(),
+                ChipSide::High => ExceededCriterion::chipload_breakage(),
+            });
+        }
+        if self.power.is_exceeded() {
+            out.push(ExceededCriterion::power());
+        }
+        if self.deflection.is_exceeded() {
+            out.push(ExceededCriterion::deflection());
+        }
+        out
+    }
 }
 
 /// Project-level report: one verdict per toolpath.
@@ -205,8 +235,25 @@ impl ToolLoadReport {
     }
 
     /// All toolpath indices that have at least one `Exceeds` verdict, with
-    /// the per-criterion reasons. Used by the export gate to produce the
-    /// blocking error message.
+    /// per-criterion `ExceededCriterion` entries. Used by the export gate
+    /// to produce the blocking error message.
+    pub fn exceeded_criteria(&self) -> Vec<(usize, Vec<ExceededCriterion>)> {
+        self.per_toolpath
+            .iter()
+            .filter_map(|v| {
+                let crits = v.exceeded_criteria();
+                if crits.is_empty() {
+                    None
+                } else {
+                    Some((v.toolpath_id, crits))
+                }
+            })
+            .collect()
+    }
+
+    /// Legacy export-gate label tuple. Step 7f deletes this in favour
+    /// of `exceeded_criteria()`. Synthesizes the legacy `ExceedsReason`
+    /// from the typed verdict's `ChipSide` / variant kind.
     pub fn exceeded_toolpaths(&self) -> Vec<(usize, Vec<(&'static str, ExceedsReason)>)> {
         self.per_toolpath
             .iter()
@@ -1046,6 +1093,116 @@ mod tests {
         assert_eq!(CriterionKind::Chipload.unit(), "mm/tooth");
         assert_eq!(CriterionKind::Power.unit(), "kW");
         assert_eq!(CriterionKind::Deflection.unit(), "mm");
+    }
+
+    /// Wire-format snapshot for `ToolLoadReport` after the typed-verdict
+    /// migration (G16 Step 7). The MCP `get_tool_load_report` tool serves
+    /// this JSON; consumers should be able to read the kind tags and the
+    /// typed payloads without surprises.
+    #[test]
+    fn report_serializes_typed_verdict_wire_format() {
+        let r = ToolLoadReport {
+            per_toolpath: vec![ToolpathLoadVerdict {
+                toolpath_id: 7,
+                chipload: ChiploadVerdict::Exceeds {
+                    side: ChipSide::Low,
+                    triggering: ChiploadMetric {
+                        observed_mm_per_tooth: 0.012,
+                        statistic: ChiploadStatistic::MedianLow,
+                        evidence: SampleEvidence::at_with_stat(11, ChiploadStatistic::MedianLow),
+                        bounds: ChipBounds {
+                            min_mm_per_tooth: Some(0.038),
+                            max_mm_per_tooth: 0.07,
+                            source: ChipBoundsSource::VendorLut,
+                        },
+                    },
+                    confidence: Confidence::Validated,
+                },
+                power: PowerVerdict::Within {
+                    peak_kw: 0.4,
+                    available_kw: 0.71,
+                    evidence: SampleEvidence::at(2),
+                    confidence: Confidence::Approximate("isotropic Kc".to_owned()),
+                },
+                deflection: DeflectionVerdict::Within {
+                    peak_mm: 0.080,
+                    bounds: DeflectionBounds {
+                        validated_within_mm: 0.050,
+                        exceeds_mm: 0.200,
+                    },
+                    evidence: SampleEvidence::at(5),
+                    confidence: Confidence::Approximate("approximate band".to_owned()),
+                },
+            }],
+        };
+        let s = serde_json::to_string(&r).expect("serialize");
+        // Chipload payload — ChipSide + ChiploadStatistic + bounds.
+        assert!(s.contains("\"side\":\"low\""), "missing chipload side: {s}");
+        assert!(
+            s.contains("\"statistic\":\"median_low\""),
+            "missing chipload statistic: {s}"
+        );
+        assert!(
+            s.contains("\"min_mm_per_tooth\":0.038"),
+            "missing LUT min: {s}"
+        );
+        // Power payload — both arms must surface available_kw.
+        assert!(
+            s.contains("\"available_kw\":0.71"),
+            "missing power available_kw: {s}"
+        );
+        // Deflection payload — both thresholds present.
+        assert!(
+            s.contains("\"validated_within_mm\":0.05"),
+            "missing deflection within bound: {s}"
+        );
+        assert!(
+            s.contains("\"exceeds_mm\":0.2"),
+            "missing deflection exceeds bound: {s}"
+        );
+        // Round-trips.
+        let back: ToolLoadReport = serde_json::from_str(&s).expect("round-trip");
+        assert_eq!(back.per_toolpath.len(), 1);
+    }
+
+    #[test]
+    fn exceeded_criteria_returns_typed_labels() {
+        let r = ToolLoadReport {
+            per_toolpath: vec![ToolpathLoadVerdict {
+                toolpath_id: 0,
+                chipload: ChiploadVerdict::Exceeds {
+                    side: ChipSide::High,
+                    triggering: ChiploadMetric {
+                        observed_mm_per_tooth: 0.20,
+                        statistic: ChiploadStatistic::PeakHigh,
+                        evidence: SampleEvidence::at(0),
+                        bounds: ChipBounds {
+                            min_mm_per_tooth: Some(0.038),
+                            max_mm_per_tooth: 0.07,
+                            source: ChipBoundsSource::VendorLut,
+                        },
+                    },
+                    confidence: Confidence::Validated,
+                },
+                power: PowerVerdict::Unmodeled {
+                    reason: UnmodeledReason::SimulationRequired,
+                },
+                deflection: DeflectionVerdict::Within {
+                    peak_mm: 0.020,
+                    bounds: DeflectionBounds {
+                        validated_within_mm: 0.050,
+                        exceeds_mm: 0.200,
+                    },
+                    evidence: SampleEvidence::empty(),
+                    confidence: Confidence::Validated,
+                },
+            }],
+        };
+        let exceeded = r.exceeded_criteria();
+        assert_eq!(exceeded.len(), 1);
+        assert_eq!(exceeded[0].0, 0);
+        assert_eq!(exceeded[0].1.len(), 1);
+        assert_eq!(exceeded[0].1[0], ExceededCriterion::chipload_breakage());
     }
 
     #[test]

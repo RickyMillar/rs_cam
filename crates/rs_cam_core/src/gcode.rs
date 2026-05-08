@@ -631,14 +631,14 @@ pub fn enforce_load_policy(
     policy: &ToolLoadExportPolicy,
 ) -> Result<(), ExportError> {
     if !policy.accept_exceeded {
-        let exceeded = report.exceeded_toolpaths();
+        let exceeded = report.exceeded_criteria();
         if !exceeded.is_empty() {
             let mut msg =
                 String::from("G-code export refused: tool load exceeded on toolpath(s):\n");
-            for (id, reasons) in &exceeded {
-                let reason_list: Vec<String> = reasons
+            for (id, crits) in &exceeded {
+                let reason_list: Vec<String> = crits
                     .iter()
-                    .map(|(crit, why)| format!("{crit}={why:?}"))
+                    .map(|ec| format!("{}={}", ec.label, ec.reason_label))
                     .collect();
                 let _ = writeln!(msg, "  toolpath {id}: {}", reason_list.join(", "));
             }
@@ -1781,7 +1781,7 @@ mod tests {
             "error names the criterion: {msg}"
         );
         assert!(
-            msg.contains("LongToolStiffnessUnsafe"),
+            msg.contains("stiffness"),
             "error names the reason: {msg}"
         );
     }
