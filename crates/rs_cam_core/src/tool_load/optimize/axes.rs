@@ -17,7 +17,7 @@ use crate::tool::ToolDefinition;
 
 /// Knobs the optimizer may move on a toolpath. Closed enum; adding a
 /// variant forces every match site to consider it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SearchAxis {
     /// Feed rate, mm/min. Resolved off the op's `feed_rate()`.
     FeedRate,

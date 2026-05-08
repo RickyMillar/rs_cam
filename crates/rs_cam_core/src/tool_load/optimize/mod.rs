@@ -42,9 +42,12 @@ use super::verdict::{ToolpathLoadVerdict, Verdict};
 use super::{ToolpathLoadContext, evaluate_toolpath};
 
 pub mod axes;
+pub mod bounds;
 pub mod patches;
 mod policy;
+pub mod space;
 
+use axes::SearchAxis;
 use policy::SearchPolicy;
 
 static DEFAULT_SEARCH_POLICY: LazyLock<SearchPolicy> = LazyLock::new(SearchPolicy::default);
@@ -1500,59 +1503,15 @@ pub(crate) fn build_doc_variants(
     lut_row: Option<&MatchedRow>,
     op_type: OperationType,
 ) -> Vec<f64> {
-    let axis_policy = &search_policy().axes.doc;
-    let hard_floor = axis_policy.hard_floor.value;
-    let baseline = baseline_doc_mm.max(hard_floor);
-    let four_variant = matches!(op_type, OperationType::Pocket | OperationType::Adaptive);
-
-    // Multiplier envelope is policy-owned; four-variant clearing ops get
-    // the wider high bound that creates a useful midpoint.
-    let mult_lo = axis_policy.baseline_mult_lo.value * baseline;
-    let mult_hi = if four_variant {
-        axis_policy.baseline_mult_hi_four_point.value * baseline
-    } else {
-        axis_policy.baseline_mult_hi_three_point.value * baseline
-    };
-
-    // Clamp inside LUT-row calibrated bounds if available. The
-    // `max(ap_min, mult_lo)` choice mirrors ED 9 directly — never go
-    // below the calibrated floor *or* below 0.7× baseline.
-    let (lo, hi) = match lut_row {
-        Some(row) => {
-            let ap_min = row.ap_min_mm.unwrap_or(mult_lo);
-            let ap_max = row.ap_max_mm.unwrap_or(mult_hi);
-            (ap_min.max(mult_lo), ap_max.min(mult_hi))
-        }
-        None => (mult_lo, mult_hi),
-    };
-
-    // Floor every value at the hard minimum, and ensure the high
-    // endpoint isn't accidentally smaller than baseline (degenerate
-    // case where the LUT row is very tight).
-    let lo = lo.max(hard_floor);
-    let hi = hi.max(baseline).max(hard_floor);
-
-    let mut variants = vec![lo, baseline];
-    if four_variant {
-        variants.push(baseline + (hi - baseline) * axis_policy.midpoint_weight.value);
-    }
-    variants.push(hi);
-
-    // Anchor: the operation's factory default. Brings the optimizer
-    // back into the well-tested envelope when the user's baseline drifted
-    // far from it (ex: TP 1 wanaka — adaptive3d default 3mm, baseline
-    // 3mm; benign here). Always added; dedup handles the no-op case.
-    if let Some(default_doc) = OperationConfig::new_default(op_type).depth_per_pass()
-        && default_doc.is_finite()
-        && default_doc > hard_floor
-    {
-        variants.push(default_doc);
-    }
-
-    variants.sort_by(f64::total_cmp);
-    let dedup_tolerance = axis_policy.dedup_tolerance.value;
-    variants.dedup_by(|a, b| (*a - *b).abs() < dedup_tolerance);
-    variants
+    let policy = search_policy();
+    let bounds = bounds::resolve_doc_bounds(baseline_doc_mm, lut_row, op_type, policy);
+    build_geometry_variants_from_bounds(
+        &bounds,
+        op_type,
+        SearchAxis::DepthPerPass,
+        &policy.axes.doc,
+        policy,
+    )
 }
 
 /// Apply a candidate DOC value to a baseline op, leaving every other
@@ -1579,48 +1538,44 @@ pub(crate) fn build_stepover_variants(
     lut_row: Option<&MatchedRow>,
     op_type: OperationType,
 ) -> Vec<f64> {
-    let axis_policy = &search_policy().axes.stepover;
-    let hard_floor = axis_policy.hard_floor.value;
-    let baseline = baseline_stepover_mm.max(hard_floor);
+    let policy = search_policy();
+    let bounds = bounds::resolve_stepover_bounds(baseline_stepover_mm, lut_row, op_type, policy);
+    build_geometry_variants_from_bounds(
+        &bounds,
+        op_type,
+        SearchAxis::Stepover,
+        &policy.axes.stepover,
+        policy,
+    )
+}
+
+/// Shared composer used by `build_doc_variants` / `build_stepover_variants`.
+/// Combines the warm-start grid, outside-preferred probes (when policy
+/// permits and the LUT envelope is present), and the operation's factory
+/// default anchor. Sorts and dedupes per axis policy.
+fn build_geometry_variants_from_bounds(
+    bounds: &bounds::AxisBounds,
+    op_type: OperationType,
+    axis: SearchAxis,
+    axis_policy: &policy::AxisPolicy,
+    policy: &policy::SearchPolicy,
+) -> Vec<f64> {
     let four_variant = matches!(op_type, OperationType::Pocket | OperationType::Adaptive);
+    let n_points = if four_variant { 4 } else { 3 };
+    let mut variants = bounds.warm_start_grid(n_points, axis_policy.midpoint_weight.value);
 
-    let mult_lo = axis_policy.baseline_mult_lo.value * baseline;
-    let mult_hi = if four_variant {
-        axis_policy.baseline_mult_hi_four_point.value * baseline
-    } else {
-        axis_policy.baseline_mult_hi_three_point.value * baseline
-    };
+    // Outside-preferred probes — extends the search beyond the LUT
+    // envelope when policy permits. This is the §1.3 wanaka TP 4 fix:
+    // when LUT ae_max caps below operator intent, probes above LUT max
+    // give the chipload gate retargeters a wider feasible set.
+    variants.extend(bounds.outside_preferred_probes(axis_policy));
 
-    let (lo, hi) = match lut_row {
-        Some(row) => {
-            let ae_min = row.ae_min_mm.unwrap_or(mult_lo);
-            let ae_max = row.ae_max_mm.unwrap_or(mult_hi);
-            (ae_min.max(mult_lo), ae_max.min(mult_hi))
-        }
-        None => (mult_lo, mult_hi),
-    };
-
-    let lo = lo.max(hard_floor);
-    let hi = hi.max(baseline).max(hard_floor);
-
-    let mut variants = vec![lo, baseline];
-    if four_variant {
-        variants.push(baseline + (hi - baseline) * axis_policy.midpoint_weight.value);
-    }
-    variants.push(hi);
-
-    // Anchor: the operation's factory default stepover. Without this,
-    // a user-baseline that's drifted far below (or above) the safe
-    // envelope is unrecoverable by the local search — the multipliers
-    // stay near baseline. Wanaka exhibited this: adaptive3d default
-    // stepover is 2.0mm, but TP 1's baseline of 0.84mm bounded the
-    // search to [0.59, 1.18], well below the 2.0 the chipload gate
-    // needed. Always added; dedup handles the no-op case.
-    if let Some(default_so) = OperationConfig::new_default(op_type).stepover()
-        && default_so.is_finite()
-        && default_so > hard_floor
-    {
-        variants.push(default_so);
+    // Factory default anchor — recovers a candidate at the well-tested
+    // canonical setup when the user's baseline has drifted far from it.
+    // Always added; dedup handles the no-op case where it lands inside
+    // the warm-start grid.
+    if let Some(default_v) = bounds::factory_default_for_axis(axis, op_type, policy) {
+        variants.push(default_v);
     }
 
     variants.sort_by(f64::total_cmp);
@@ -1649,12 +1604,15 @@ pub(crate) fn apply_stepover_to_op(
 /// ascending; always includes the baseline. Floored at the policy's
 /// scallop-height hard floor.
 pub(crate) fn build_scallop_height_variants(baseline_scallop_mm: f64) -> Vec<f64> {
-    let axis_policy = &search_policy().axes.scallop_height;
-    let hard_floor = axis_policy.hard_floor.value;
-    let baseline = baseline_scallop_mm.max(hard_floor);
-    let lo = (axis_policy.baseline_mult_lo.value * baseline).max(hard_floor);
-    let hi = (axis_policy.baseline_mult_hi_three_point.value * baseline).max(baseline);
-    let mut variants = vec![lo, baseline, hi];
+    let policy = search_policy();
+    let axis_policy = &policy.axes.scallop_height;
+    // Scallop height is a 3-point quality axis on Scallop ops. Use
+    // `OperationType::Scallop` so the bounds resolver picks the
+    // 3-variant multiplier path; Scallop is not in the four-variant
+    // clearing set.
+    let bounds =
+        bounds::resolve_scallop_height_bounds(baseline_scallop_mm, OperationType::Scallop, policy);
+    let mut variants = bounds.warm_start_grid(3, axis_policy.midpoint_weight.value);
     variants.sort_by(f64::total_cmp);
     let dedup_tolerance = axis_policy.dedup_tolerance.value;
     variants.dedup_by(|a, b| (*a - *b).abs() < dedup_tolerance);
@@ -4431,22 +4389,37 @@ mod stage1_grid_tests {
     }
 
     #[test]
-    fn lut_row_clamps_lo_to_ap_min() {
+    fn lut_row_does_not_clamp_warm_start_when_baseline_inside_preferred() {
         // Baseline 3.0mm, LUT ap_min = 2.5mm (above 0.7×3.0 = 2.1).
-        // Lo should be ap_min = 2.5, not 2.1.
+        // Old behaviour: lo clamped to ap_min = 2.5.
+        // G16 Step 4: LUT becomes preferred, not hard. Warm-start uses
+        // baseline × mults so lo = 2.1; an outside-preferred probe at
+        // ap_min × 0.85 = 2.125 sits between baseline-mult-lo and ap_min.
         let row = synthetic_lut_row(Some(2.5), Some(5.0));
         let variants = build_doc_variants(3.0, Some(&row), OperationType::Adaptive3d);
-        assert!((variants[0] - 2.5).abs() < 1e-6, "got {variants:?}");
+        // The smallest variant should be the multiplier-anchored 2.1, not the LUT lo.
+        assert!(
+            variants[0] < 2.5,
+            "smallest variant should sit below LUT ap_min (warm-start unclamped): got {variants:?}"
+        );
+        // Baseline survives.
+        assert!(variants.iter().any(|v| (v - 3.0).abs() < 1e-6));
     }
 
     #[test]
-    fn lut_row_clamps_hi_to_ap_max() {
+    fn lut_row_does_not_clamp_warm_start_hi_when_baseline_inside_preferred() {
         // Baseline 3.0mm, LUT ap_max = 3.5mm (below 1.3×3.0 = 3.9).
-        // Hi should be ap_max = 3.5, not 3.9.
+        // Old behaviour: hi clamped to ap_max = 3.5.
+        // G16 Step 4: warm-start hi = 3.9, plus an outside-preferred
+        // probe at ap_max × 1.15 = 4.025 — search now exceeds the LUT
+        // upper bound.
         let row = synthetic_lut_row(Some(1.0), Some(3.5));
         let variants = build_doc_variants(3.0, Some(&row), OperationType::Adaptive3d);
         let last = *variants.last().unwrap();
-        assert!((last - 3.5).abs() < 1e-6, "got {variants:?}");
+        assert!(
+            last > 3.5,
+            "search should now extend above LUT ap_max via outside-preferred probe: got {variants:?}"
+        );
     }
 
     #[test]
@@ -4462,15 +4435,23 @@ mod stage1_grid_tests {
     }
 
     #[test]
-    fn deduplicates_when_lut_bounds_collapse_envelope() {
-        // LUT row tight to within microns of baseline → lo, base, hi
-        // all within the dedupe tolerance (5 µm) → collapse.
+    fn tight_lut_envelope_no_longer_collapses_search() {
+        // LUT row tight to within microns of baseline. Old behaviour:
+        // intersection with mult envelope collapsed to ~baseline.
+        // G16 Step 4: warm-start uses pure multipliers so the search
+        // still spans [0.7×3.0, 3.0, 1.3×3.0]; the tight LUT bounds
+        // generate near-baseline outside-preferred probes that simply
+        // dedupe against the warm-start grid.
         let row = synthetic_lut_row(Some(2.9999), Some(3.0001));
         let variants = build_doc_variants(3.0, Some(&row), OperationType::Adaptive3d);
+        // We retain a useful spread, not a collapsed pair.
         assert!(
-            variants.len() <= 2,
-            "expected dedupe to collapse near-identical values, got {variants:?}"
+            variants.len() >= 3,
+            "warm-start should not collapse against tight LUT: got {variants:?}"
         );
+        // Baseline still present, low and high endpoints span around it.
+        assert!(variants.first().unwrap() < &3.0);
+        assert!(variants.last().unwrap() > &3.0);
     }
 
     #[test]
@@ -4583,13 +4564,49 @@ mod stage1_grid_tests {
     }
 
     #[test]
-    fn stepover_lut_row_clamps_to_ae_bounds() {
-        // Baseline 1.0mm, LUT ae_min 0.8mm, ae_max 1.2mm. Multiplier
-        // would give [0.7, 1.0, 1.3] — LUT clamps to [0.8, 1.0, 1.2].
+    fn stepover_warm_start_unclamped_by_lut_with_outside_preferred_probes() {
+        // Baseline 1.0mm, LUT ae_min 0.8mm, ae_max 1.2mm.
+        // Old behaviour: warm-start clamped to LUT [0.8, 1.2].
+        // G16 Step 4: warm-start uses pure mults [0.7, 1.0, 1.3]; LUT
+        // is preferred and produces outside-preferred probes at 0.68
+        // (ae_min × 0.85) and 1.38 (ae_max × 1.15).
         let row = synthetic_lut_row_with_ae(Some(0.8), Some(1.2));
         let variants = build_stepover_variants(1.0, Some(&row), OperationType::Adaptive3d);
-        assert!((variants[0] - 0.8).abs() < 1e-6, "got {variants:?}");
-        assert!((variants[2] - 1.2).abs() < 1e-6, "got {variants:?}");
+        // Warm-start lo = 0.7 must be present (not LUT's 0.8).
+        assert!(
+            variants.iter().any(|v| (v - 0.7).abs() < 1e-6),
+            "warm-start lo (0.7) should be unclamped: got {variants:?}"
+        );
+        // Warm-start hi = 1.3 must be present (not LUT's 1.2).
+        assert!(
+            variants.iter().any(|v| (v - 1.3).abs() < 1e-6),
+            "warm-start hi (1.3) should be unclamped: got {variants:?}"
+        );
+        // Outside-preferred probe above LUT: 1.2 × 1.15 = 1.38.
+        assert!(
+            variants.iter().any(|v| (v - 1.38).abs() < 1e-6),
+            "expected outside-preferred probe above LUT: got {variants:?}"
+        );
+    }
+
+    #[test]
+    fn wanaka_tp4_stepover_search_extends_beyond_lut_max() {
+        // Regression for the wanaka TP 4 bug (G16 §1.3): baseline 0.84mm
+        // Adaptive3d stepover, LUT ae_max = 0.95mm capped the search at
+        // [0.59, 0.84, 0.95, 2.0]. After Step 4, search must extend
+        // beyond LUT ae_max via outside-preferred probes and unclamped
+        // warm-start hi.
+        let row = synthetic_lut_row_with_ae(Some(0.40), Some(0.95));
+        let variants = build_stepover_variants(0.84, Some(&row), OperationType::Adaptive3d);
+        // At least one variant must sit strictly above LUT ae_max.
+        assert!(
+            variants.iter().any(|v| *v > 0.95 + 1e-6),
+            "wanaka TP 4 stepover search should now extend above LUT ae_max=0.95, got {variants:?}"
+        );
+        // Baseline still present.
+        assert!(variants.iter().any(|v| (v - 0.84).abs() < 1e-6));
+        // Factory-default anchor (Adaptive3d default 2.0mm) still present.
+        assert!(variants.iter().any(|v| (v - 2.0).abs() < 1e-6));
     }
 
     #[test]
