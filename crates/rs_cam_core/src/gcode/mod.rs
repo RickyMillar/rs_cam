@@ -13,7 +13,7 @@ pub use ir::{Program, ProgramMetadata, Statement};
 use crate::compute::catalog::effective_spindle_rpm;
 use crate::session::ProjectSession;
 use crate::simulation_cut::SimulationCutTrace;
-use crate::toolpath::{MoveType, Toolpath};
+use crate::toolpath::Toolpath;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Write};
 
@@ -227,44 +227,46 @@ impl PostProcessor for LinuxCncPost {
 
 /// Emit G-code from a toolpath using the given post-processor.
 pub fn emit_gcode(toolpath: &Toolpath, post: &dyn PostProcessor, spindle_rpm: u32) -> String {
+    emit_program(&program_builder::build_single(toolpath, spindle_rpm), post)
+}
+
+/// Render a `Program` to g-code text using the given post-processor.
+///
+/// One-pass walk over `Statement`s. Modal/elision decisions were made
+/// by `program_builder`; this pass is a pure transformation from the
+/// IR to bytes.
+pub fn emit_program(program: &Program, post: &dyn PostProcessor) -> String {
     let mut output = String::new();
+    for statement in &program.statements {
+        emit_statement(&mut output, statement, post);
+    }
+    output
+}
 
-    output.push_str(&post.preamble(spindle_rpm));
-
-    let mut last_feed: Option<f64> = None;
-
-    for m in &toolpath.moves {
-        match m.move_type {
-            MoveType::Rapid => {
-                output.push_str(&post.rapid(m.target.x, m.target.y, m.target.z));
-                last_feed = None;
-            }
-            MoveType::Linear { feed_rate } => {
-                if last_feed != Some(feed_rate) {
-                    output.push_str(&post.linear(m.target.x, m.target.y, m.target.z, feed_rate));
-                    last_feed = Some(feed_rate);
-                } else {
-                    let dp = post.decimal_places();
-                    let _ = writeln!(
-                        output,
-                        "G1 X{:.dp$} Y{:.dp$} Z{:.dp$}",
-                        m.target.x, m.target.y, m.target.z
-                    );
-                }
-            }
-            MoveType::ArcCW { i, j, feed_rate } => {
-                output.push_str(&post.arc_cw(m.target.x, m.target.y, m.target.z, i, j, feed_rate));
-                last_feed = Some(feed_rate);
-            }
-            MoveType::ArcCCW { i, j, feed_rate } => {
-                output.push_str(&post.arc_ccw(m.target.x, m.target.y, m.target.z, i, j, feed_rate));
-                last_feed = Some(feed_rate);
-            }
+fn emit_statement(output: &mut String, statement: &Statement, post: &dyn PostProcessor) {
+    match *statement {
+        Statement::Preamble { spindle_rpm } => output.push_str(&post.preamble(spindle_rpm)),
+        Statement::Postamble => output.push_str(&post.postamble()),
+        Statement::ProgramPause { ref message } => output.push_str(&post.program_pause(message)),
+        Statement::Comment(ref text) => output.push_str(&post.comment(text)),
+        Statement::Raw(ref text) => output.push_str(text),
+        Statement::Rapid { x, y, z } => output.push_str(&post.rapid(x, y, z)),
+        Statement::Linear { x, y, z, feed } => output.push_str(&post.linear(x, y, z, feed)),
+        Statement::LinearModal { x, y, z } => {
+            let dp = post.decimal_places();
+            let _ = writeln!(output, "G1 X{x:.dp$} Y{y:.dp$} Z{z:.dp$}");
+        }
+        Statement::ArcCw { x, y, z, i, j, feed } => {
+            output.push_str(&post.arc_cw(x, y, z, i, j, feed));
+        }
+        Statement::ArcCcw { x, y, z, i, j, feed } => {
+            output.push_str(&post.arc_ccw(x, y, z, i, j, feed));
+        }
+        Statement::SafeZRetract { z } => {
+            let dp = post.decimal_places();
+            let _ = writeln!(output, "G0 Z{z:.dp$}");
         }
     }
-
-    output.push_str(&post.postamble());
-    output
 }
 
 /// Mach3-compatible post-processor.
@@ -341,177 +343,7 @@ pub struct GcodePhase<'a> {
 /// Emit G-code from multiple phases, inserting tool changes, spindle speed
 /// changes, and coolant commands between operations as needed.
 pub(crate) fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &dyn PostProcessor) -> String {
-    if phases.is_empty() {
-        return String::new();
-    }
-
-    let mut output = String::new();
-    // SAFETY: early return above guarantees phases is non-empty
-    #[allow(clippy::indexing_slicing)]
-    let first_phase = &phases[0];
-    let first_rpm = first_phase.spindle_rpm;
-    output.push_str(&post.preamble(first_rpm));
-
-    // Emit coolant start if the first phase has coolant enabled
-    let first_coolant = first_phase.coolant;
-    if first_coolant.is_active() {
-        output.push_str(first_coolant.start_gcode());
-    }
-
-    let mut current_rpm = first_rpm;
-    let mut current_tool: Option<u32> = first_phase.tool_number;
-    let mut current_coolant = first_coolant;
-    let mut last_feed: Option<f64> = None;
-
-    for (idx, phase) in phases.iter().enumerate() {
-        output.push_str(&post.comment(phase.label));
-
-        // Tool change: emit M6 T{n} if tool number changed
-        if idx > 0
-            && let Some(tool_num) = phase.tool_number
-            && current_tool != Some(tool_num)
-        {
-            // Stop spindle and coolant before tool change
-            if current_coolant.is_active() {
-                let _ = writeln!(output, "M9");
-            }
-            let _ = writeln!(output, "M5");
-            let _ = writeln!(output, "M6 T{tool_num}");
-            // Restart spindle after tool change
-            let _ = writeln!(output, "M3 S{}", phase.spindle_rpm);
-            current_rpm = phase.spindle_rpm;
-            current_tool = Some(tool_num);
-            // Restart coolant after tool change if needed
-            if phase.coolant.is_active() {
-                output.push_str(phase.coolant.start_gcode());
-            }
-            current_coolant = phase.coolant;
-            last_feed = None;
-        }
-
-        // Spindle speed change (only if we didn't already emit it in the tool change block)
-        if phase.spindle_rpm != current_rpm {
-            let _ = writeln!(output, "M3 S{}", phase.spindle_rpm);
-            current_rpm = phase.spindle_rpm;
-        }
-
-        // Coolant mode change (only if we didn't already handle it in tool change)
-        if idx > 0
-            && phase.coolant != current_coolant
-            && !(phase.tool_number.is_some() && current_tool == phase.tool_number)
-        {
-            if current_coolant.is_active() && !phase.coolant.is_active() {
-                let _ = writeln!(output, "M9");
-            } else if phase.coolant.is_active() {
-                if current_coolant.is_active() {
-                    let _ = writeln!(output, "M9");
-                }
-                output.push_str(phase.coolant.start_gcode());
-            }
-            current_coolant = phase.coolant;
-        }
-
-        if let Some(pre) = phase.pre_gcode
-            && !pre.is_empty()
-        {
-            output.push_str(pre);
-            if !pre.ends_with('\n') {
-                output.push('\n');
-            }
-        }
-
-        // Controller compensation: emit G41/G42 before first cutting move
-        let comp = phase.controller_compensation;
-        let mut comp_started = false;
-        let tool_num_for_comp = phase.tool_number.unwrap_or(1);
-
-        for m in &phase.toolpath.moves {
-            match m.move_type {
-                MoveType::Rapid => {
-                    output.push_str(&post.rapid(m.target.x, m.target.y, m.target.z));
-                    last_feed = None;
-                }
-                MoveType::Linear { feed_rate } => {
-                    if let Some(dir) = comp
-                        && !comp_started
-                    {
-                        let code = match dir {
-                            ControllerCompensation::Left => "G41",
-                            ControllerCompensation::Right => "G42",
-                        };
-                        let _ = writeln!(output, "{code} D{tool_num_for_comp}");
-                        comp_started = true;
-                    }
-                    if last_feed != Some(feed_rate) {
-                        output
-                            .push_str(&post.linear(m.target.x, m.target.y, m.target.z, feed_rate));
-                        last_feed = Some(feed_rate);
-                    } else {
-                        let dp = post.decimal_places();
-                        let _ = writeln!(
-                            output,
-                            "G1 X{:.dp$} Y{:.dp$} Z{:.dp$}",
-                            m.target.x, m.target.y, m.target.z
-                        );
-                    }
-                }
-                MoveType::ArcCW { i, j, feed_rate } => {
-                    if let Some(dir) = comp
-                        && !comp_started
-                    {
-                        let code = match dir {
-                            ControllerCompensation::Left => "G41",
-                            ControllerCompensation::Right => "G42",
-                        };
-                        let _ = writeln!(output, "{code} D{tool_num_for_comp}");
-                        comp_started = true;
-                    }
-                    output.push_str(
-                        &post.arc_cw(m.target.x, m.target.y, m.target.z, i, j, feed_rate),
-                    );
-                    last_feed = Some(feed_rate);
-                }
-                MoveType::ArcCCW { i, j, feed_rate } => {
-                    if let Some(dir) = comp
-                        && !comp_started
-                    {
-                        let code = match dir {
-                            ControllerCompensation::Left => "G41",
-                            ControllerCompensation::Right => "G42",
-                        };
-                        let _ = writeln!(output, "{code} D{tool_num_for_comp}");
-                        comp_started = true;
-                    }
-                    output.push_str(
-                        &post.arc_ccw(m.target.x, m.target.y, m.target.z, i, j, feed_rate),
-                    );
-                    last_feed = Some(feed_rate);
-                }
-            }
-        }
-
-        // Cancel controller compensation after the last cutting move
-        if comp_started {
-            let _ = writeln!(output, "G40");
-        }
-
-        if let Some(post_gc) = phase.post_gcode
-            && !post_gc.is_empty()
-        {
-            output.push_str(post_gc);
-            if !post_gc.ends_with('\n') {
-                output.push('\n');
-            }
-        }
-    }
-
-    // Turn off coolant before postamble if it was active
-    if current_coolant.is_active() {
-        let _ = writeln!(output, "M9");
-    }
-
-    output.push_str(&post.postamble());
-    output
+    emit_program(&program_builder::build_phased(phases), post)
 }
 
 /// Emit checked G-code from a project session.
@@ -747,214 +579,7 @@ pub(crate) fn emit_gcode_multi_setup(
     post: &dyn PostProcessor,
     safe_z: f64,
 ) -> String {
-    if setups.is_empty() {
-        return String::new();
-    }
-
-    let mut output = String::new();
-    let first_rpm = setups
-        .iter()
-        .flat_map(|setup| setup.phases.iter())
-        .map(|phase| phase.spindle_rpm)
-        .next()
-        .unwrap_or(18_000);
-
-    output.push_str(&post.preamble(first_rpm));
-
-    let first_coolant = setups
-        .iter()
-        .flat_map(|setup| setup.phases.iter())
-        .map(|phase| phase.coolant)
-        .next()
-        .unwrap_or(CoolantMode::Off);
-    if first_coolant.is_active() {
-        output.push_str(first_coolant.start_gcode());
-    }
-
-    let mut current_rpm = first_rpm;
-    let mut current_tool: Option<u32> = setups
-        .iter()
-        .flat_map(|setup| setup.phases.iter())
-        .find_map(|phase| phase.tool_number);
-    let mut current_coolant = first_coolant;
-    let mut last_feed: Option<f64> = None;
-    let dp = post.decimal_places();
-
-    for (setup_index, setup) in setups.iter().enumerate() {
-        if setup_index > 0 {
-            if current_coolant.is_active() {
-                let _ = writeln!(output, "M9");
-            }
-            let _ = writeln!(output, "G0 Z{safe_z:.dp$}");
-            output.push_str(&post.program_pause(&format!("Setup change: {}", setup.setup_label)));
-
-            let next_rpm = setup
-                .phases
-                .first()
-                .map(|phase| phase.spindle_rpm)
-                .unwrap_or(current_rpm);
-            let _ = writeln!(output, "M3 S{next_rpm}");
-            current_rpm = next_rpm;
-            last_feed = None;
-
-            // Restart coolant for the first phase of this setup
-            let next_coolant = setup
-                .phases
-                .first()
-                .map(|phase| phase.coolant)
-                .unwrap_or(CoolantMode::Off);
-            if next_coolant.is_active() {
-                output.push_str(next_coolant.start_gcode());
-            }
-            current_coolant = next_coolant;
-        }
-
-        output.push_str(&post.comment(&format!("=== {} ===", setup.setup_label)));
-
-        for phase in &setup.phases {
-            output.push_str(&post.comment(phase.label));
-
-            // Tool change
-            if let Some(tool_num) = phase.tool_number
-                && current_tool != Some(tool_num)
-            {
-                if current_coolant.is_active() {
-                    let _ = writeln!(output, "M9");
-                }
-                let _ = writeln!(output, "M5");
-                let _ = writeln!(output, "M6 T{tool_num}");
-                let _ = writeln!(output, "M3 S{}", phase.spindle_rpm);
-                current_rpm = phase.spindle_rpm;
-                current_tool = Some(tool_num);
-                if phase.coolant.is_active() {
-                    output.push_str(phase.coolant.start_gcode());
-                }
-                current_coolant = phase.coolant;
-                last_feed = None;
-            }
-
-            if phase.spindle_rpm != current_rpm {
-                let _ = writeln!(output, "M3 S{}", phase.spindle_rpm);
-                current_rpm = phase.spindle_rpm;
-            }
-
-            // Coolant mode change
-            if phase.coolant != current_coolant
-                && !(phase.tool_number.is_some() && current_tool == phase.tool_number)
-            {
-                if current_coolant.is_active() && !phase.coolant.is_active() {
-                    let _ = writeln!(output, "M9");
-                } else if phase.coolant.is_active() {
-                    if current_coolant.is_active() {
-                        let _ = writeln!(output, "M9");
-                    }
-                    output.push_str(phase.coolant.start_gcode());
-                }
-                current_coolant = phase.coolant;
-            }
-
-            if let Some(pre) = phase.pre_gcode
-                && !pre.is_empty()
-            {
-                output.push_str(pre);
-                if !pre.ends_with('\n') {
-                    output.push('\n');
-                }
-            }
-
-            // Controller compensation: emit G41/G42 before first cutting move
-            let comp = phase.controller_compensation;
-            let mut comp_started = false;
-            let tool_num_for_comp = phase.tool_number.unwrap_or(1);
-
-            for m in &phase.toolpath.moves {
-                match m.move_type {
-                    MoveType::Rapid => {
-                        output.push_str(&post.rapid(m.target.x, m.target.y, m.target.z));
-                        last_feed = None;
-                    }
-                    MoveType::Linear { feed_rate } => {
-                        if let Some(dir) = comp
-                            && !comp_started
-                        {
-                            let code = match dir {
-                                ControllerCompensation::Left => "G41",
-                                ControllerCompensation::Right => "G42",
-                            };
-                            let _ = writeln!(output, "{code} D{tool_num_for_comp}");
-                            comp_started = true;
-                        }
-                        if last_feed != Some(feed_rate) {
-                            output.push_str(
-                                &post.linear(m.target.x, m.target.y, m.target.z, feed_rate),
-                            );
-                            last_feed = Some(feed_rate);
-                        } else {
-                            let _ = writeln!(
-                                output,
-                                "G1 X{:.dp$} Y{:.dp$} Z{:.dp$}",
-                                m.target.x, m.target.y, m.target.z
-                            );
-                        }
-                    }
-                    MoveType::ArcCW { i, j, feed_rate } => {
-                        if let Some(dir) = comp
-                            && !comp_started
-                        {
-                            let code = match dir {
-                                ControllerCompensation::Left => "G41",
-                                ControllerCompensation::Right => "G42",
-                            };
-                            let _ = writeln!(output, "{code} D{tool_num_for_comp}");
-                            comp_started = true;
-                        }
-                        output.push_str(
-                            &post.arc_cw(m.target.x, m.target.y, m.target.z, i, j, feed_rate),
-                        );
-                        last_feed = Some(feed_rate);
-                    }
-                    MoveType::ArcCCW { i, j, feed_rate } => {
-                        if let Some(dir) = comp
-                            && !comp_started
-                        {
-                            let code = match dir {
-                                ControllerCompensation::Left => "G41",
-                                ControllerCompensation::Right => "G42",
-                            };
-                            let _ = writeln!(output, "{code} D{tool_num_for_comp}");
-                            comp_started = true;
-                        }
-                        output.push_str(
-                            &post.arc_ccw(m.target.x, m.target.y, m.target.z, i, j, feed_rate),
-                        );
-                        last_feed = Some(feed_rate);
-                    }
-                }
-            }
-
-            // Cancel controller compensation after the last cutting move
-            if comp_started {
-                let _ = writeln!(output, "G40");
-            }
-
-            if let Some(post_gc) = phase.post_gcode
-                && !post_gc.is_empty()
-            {
-                output.push_str(post_gc);
-                if !post_gc.ends_with('\n') {
-                    output.push('\n');
-                }
-            }
-        }
-    }
-
-    // Turn off coolant before postamble if it was active
-    if current_coolant.is_active() {
-        let _ = writeln!(output, "M9");
-    }
-
-    output.push_str(&post.postamble());
-    output
+    emit_program(&program_builder::build_multi_setup(setups, safe_z), post)
 }
 
 /// Replace G0 rapid moves with G1 at a high feedrate.
