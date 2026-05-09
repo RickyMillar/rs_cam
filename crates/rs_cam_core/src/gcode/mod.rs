@@ -4,6 +4,10 @@
 //! Writing to `String` is infallible (only fails on OOM, which panics regardless),
 //! so discarding the `Result` with `let _ =` is safe.
 
+pub mod ir;
+
+pub use ir::{Program, ProgramMetadata, Statement};
+
 use crate::compute::catalog::effective_spindle_rpm;
 use crate::session::ProjectSession;
 use crate::simulation_cut::SimulationCutTrace;
