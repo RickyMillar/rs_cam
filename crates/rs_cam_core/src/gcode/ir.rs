@@ -64,6 +64,10 @@ pub enum Statement {
         j: f64,
         feed: f64,
     },
+    /// Rapid Z-retract to safe height. Formatted with the post's
+    /// `decimal_places` (the only Z-only modal-state line that depends
+    /// on per-post precision; everything else is post-agnostic Raw).
+    SafeZRetract { z: f64 },
 }
 
 /// Optional per-program metadata. Empty placeholder for Phase 2; future
