@@ -146,15 +146,39 @@ tests/
 ### Phase 0 — Reference corpus & gap report
 **No production code changes. Pure investigation.**
 
-- Pull Fusion's published posts: `grbl.cps`, `grblhal.cps`, `linuxcnc.cps`, `mach3mill.cps` from `cam.autodesk.com/posts`. License-check (MIT). Stash as read-only reference under `crates/rs_cam_core/reference/posts/`.
+**License decision (2026-05-10):** Fusion's `.cps` posts are `Copyright Autodesk, all rights reserved`, governed by the Autodesk License and Services Agreement — NOT open-source. We cannot redistribute them in this repo. The MIT license many sources cite applies only to Autodesk's `cam-posteditor` VS Code extension, not to the post files. Decision: treat `.cps` files as **local-only scratch reference**. The generated `.expected.nc` outputs ARE checked in (those are factual machine instructions, not Autodesk's creative work — the same as any tool's stdout in a golden-file test). Once the reference parity work is done in Phase 4, the local `reference/` dir can be deleted entirely; only the `.expected.nc` goldens remain.
+
+- Pull Fusion's published posts (`grbl.cps`, `grblhal.cps`, `linuxcnc.cps`, `mach3mill.cps`) from `cam.autodesk.com/posts/posts/` to a **gitignored** `reference/posts/` dir at the worktree root.
 - Read each post end-to-end. Document modal/transition decisions in `planning/post_reference_notes.md` (one section per dialect).
-- Pick 6 fixture jobs covering: simple pocket, multi-pass profile w/ ramp, two-toolpaths-same-tool, two-toolpaths-different-tools, multi-setup, 3D adaptive (arc-heavy).
-- For each fixture × dialect: post-process via Fusion, save output as `tests/posts/<dialect>/<fixture>.expected.nc`.
-- Run current `emit_gcode` on the same fixtures, diff against expected, write `planning/gcode_gap_report.md`.
+- Pick 6 fixture jobs covering: simple pocket, multi-pass profile w/ ramp, two-toolpaths-same-tool, two-toolpaths-different-tools, multi-setup, 3D adaptive (arc-heavy). Reuse existing `crates/rs_cam_core/tests/` fixtures where possible.
+- Run current `emit_gcode_phased` on each fixture × dialect, save outputs to `planning/gcode_current_outputs/` for later diff.
+- ~~For each fixture × dialect: post-process via Fusion~~ **Re-targeted (2026-05-10):** dropped Fusion-byte-parity as the success criterion. See [Phase 0.5](#phase-05--controller-emulator-validation-replaces-fusion-byte-parity) below. The remaining Phase 0 work is the spec-only gap analysis from reading the `.cps` source, which is sufficient to motivate Phase 1.
+- Write `planning/gcode_gap_report.md` capturing the spec-only gaps surfaced from `.cps` reading + the inputs Phase 0.5 will need.
 
-**Exit:** gap report exists with explicit per-dialect, per-fixture diff summary. We know exactly how far we are.
+**Exit:** gap report exists; spec-only safety/encoding issues enumerated; reference notes exist; fixture corpus defined and committed.
 
-**Risk:** Fusion's `.cps` may emit timestamps / job-specific comments that need normalization. Build a `normalize_for_diff()` helper (strip comments matching `(\(.*\))`, strip leading whitespace, etc.) — version it.
+---
+
+### Phase 0.5 — Controller-emulator validation *(replaces Fusion byte-parity)*
+
+**Why this exists:** Autodesk's `post` CLI is not available for Linux (it ships only inside Fusion 360, which has no native Linux build). Chasing byte-parity with Fusion would have required Wine + a Fusion install per contributor, with the binary under Autodesk EULA — fragile and non-hermetic. More importantly, byte-parity was a *proxy* for the real goal: machine safety. We can achieve that goal more directly by validating output against the **actual controller's parser**.
+
+**Approach:** for each shipped dialect, install the canonical open-source emulator/parser for that controller in `reference/validators/` (gitignored), and pipe each fixture's emitted g-code through it. The controller either accepts the program (exit 0) or rejects it (non-zero + diagnostic). This is a strict upgrade over byte-parity: it tests what actually runs on the machine, not whether we coincidentally match one vendor's preferred style.
+
+**Validators:**
+- **Grbl:** [`grbl/grbl-sim`](https://github.com/grbl/grbl-sim) — compiles the real Grbl firmware as a Linux executable. Ships `gvalidate` for parser-level validation.
+- **grblHAL:** [`grblHAL/Simulator`](https://github.com/grblHAL/Simulator) — ships `grblHAL_validator`, a synchronous CLI tool explicitly designed for CI batch validation.
+- **LinuxCNC:** build `rs274ngc` (LinuxCNC's interpreter) from source, or use the `linuxcnc-uspace` package's bundled parser. Open-source, Linux-native.
+- **Mach3:** no open-source emulator exists. Mach3 g-code is ≥90% LinuxCNC-compatible; use the LinuxCNC parser as proxy. Document any known divergences in the post's TOML notes (Phase 3).
+
+**Deliverables:**
+- `reference/validators/` (gitignored): each validator's source + built binary.
+- `crates/rs_cam_core/tests/gcode_emulator_validation.rs`: integration test that, for each captured fixture × dialect, pipes through the matching validator and asserts exit 0 (or expected non-zero with documented reason).
+- `planning/gcode_gap_report.md` updated: the "skeleton" rows fill in with real exit codes / diagnostics from the validators on our 18 current outputs. This is the *real* gap report.
+
+**Exit:** every captured fixture × dialect either passes its validator or has a documented (and tracked) reason for failing. Failures become the work list for Phase 1+.
+
+**Trade-off:** we lose the "byte-identical with Fusion" bragging right. We trade it for "passes the actual controller's parser in CI on every commit," which is what the safety claim was supposed to mean in the first place. Future stretch: integrate [CAMotics](https://camotics.org/) for full motion-path simulation + collision detection (Phase 6 if motivated).
 
 ---
 
@@ -209,25 +233,16 @@ tests/
 
 ---
 
-### Phase 4 — Reference parity & new dialects
-**Now we earn the safety claim.**
+### Phase 4 — Broaden corpus & lock in emulator-validation CI gate
+**Earn the safety claim through controller-parser passes, not Fusion bytes.**
 
-- For each `(post, fixture)` pair from Phase 0, add a golden-file test:
-  ```rust
-  #[test]
-  fn grbl_pocket_2d_matches_fusion_reference() {
-      let program = build_program(&FIXTURE_POCKET, /* opts */);
-      let post = PostDefinition::load("posts/grbl.toml").unwrap();
-      let actual = Emitter::new(&post).emit(&program);
-      assert_normalized_eq(&actual, include_str!("posts/grbl/pocket_2d.expected.nc"));
-  }
-  ```
-- For every diff vs reference: either fix the post TOML or document an intentional deviation in the post's TOML `notes` field.
-- Add `grblhal.toml` (similar to grbl, differs on M6, probing macros, real-time overrides). Same fixture corpus.
-- Add `WcsCode`, units toggle, arc-linearize as `PostDefinition` fields; surface to fixture jobs to verify.
-- Set up CI gate: `cargo test --test gcode_golden_files` runs on every PR; failure blocks merge.
+- Grow the fixture corpus from 6 to 15-20 (add edge cases as they emerge: full-circle, single-axis-only-feed, ramp-into-arc, extremely small arcs, depth-step boundaries, etc.). Same `Toolpath`-based fixture style as Phase 0.
+- Add `grblhal.toml` post + run its fixtures through `grblHAL_validator`. Source a community grblHAL `.cps` for design reference (Autodesk doesn't publish one).
+- Add `WcsCode`, units toggle, arc-linearize as `PostDefinition` fields; surface to fixture jobs to verify each toggle changes output as expected and still passes the validator.
+- CI gate: `cargo test --test gcode_emulator_validation` (from Phase 0.5) runs on every PR; any non-zero validator exit blocks merge.
+- Optional secondary anchor: pick 1-2 hand-traced reference outputs from the `.cps` source for spot-check golden tests on cosmetic style (header layout, comment case). Strictly cosmetic — emulator validation is the safety gate.
 
-**Exit:** every shipped dialect has a green golden-file suite against Fusion reference. New dialect = new TOML + new fixture rows + green test.
+**Exit:** every shipped dialect has both (a) a green emulator-validation suite covering 15+ fixtures and (b) at least one hand-traced cosmetic-style golden per dialect. New dialect = new TOML + new fixture rows + green emulator pass + (optional) hand-traced cosmetic golden.
 
 ---
 
@@ -262,7 +277,7 @@ Order by user demand, not speculation:
 
 ## Open questions
 
-1. **License audit on Fusion `.cps` files.** Believed MIT-licensed; confirm before stashing in repo. Fall-back: keep them outside the repo and have contributors generate fixtures locally.
+1. ~~**License audit on Fusion `.cps` files.**~~ **Resolved 2026-05-10:** Autodesk-copyrighted, not OSS. Local-only reference, generated outputs only in repo. See Phase 0 license decision.
 2. **Normalization rules for diff.** Comments? Timestamps? Empty lines? Need a versioned `NormalizationProfile` so "matches reference" is reproducible.
 3. **Template engine or string replace?** Start with `str::replace`. Upgrade to `minijinja` if tool-change blocks need conditionals (probe-or-not, length-comp-or-not).
 4. **Where does WCS live?** Per-setup (each fixture origin = one WCS) or per-toolpath? Fusion does per-setup. Recommend matching that.
@@ -283,12 +298,13 @@ Add as needed (Centroid, Masso, Buildbotics, Mach4, Smoothieware) on user reques
 
 | Phase | Scope | Breaks output? | Effort |
 |---|---|---|---|
-| 0 | Reference corpus, gap report | No | 1–2 days |
+| 0 | Reference notes, fixture corpus, spec-only gap report | No | 1 day (done) |
+| 0.5 | Controller emulator install + baseline validation | No | 1 day |
 | 1 | Validator | No | 2 days |
 | 2 | `Program` IR refactor | No (byte-identical) | 2–3 days |
 | 3 | Data-driven post (TOML) | No (byte-identical) | 3–4 days |
-| 4 | Reference parity + grblHAL | Maybe (intentional fixes) | 3–5 days |
+| 4 | Broaden corpus + grblHAL + CI emulator gate | Maybe (intentional fixes) | 3–5 days |
 | 5 | Wizard UX | No (additive) | 3–4 days |
-| 6 | Power features | Per-feature | Open-ended |
+| 6 | Power features (incl. CAMotics motion-sim option) | Per-feature | Open-ended |
 
 **Total to land Phase 5: ~3 weeks of focused work.** Phase 0–1 alone (1 week) gets you the safety net even if the rest slips.
