@@ -16,7 +16,7 @@ Survives context compaction. **Update after every commit.**
 | 1. Tolerance bands | ✅ done (deflection wrap closed in follow-up) | `53cb252` + `00e889b` | 2026-05-10 |
 | 2a. composite_score additive | ✅ done (callable, no call sites) | `f873440` | 2026-05-10 |
 | 2b. Rewire ranking to composite | ✅ done | `b4dc8df` | 2026-05-10 |
-| 2c. Calibrate α/β/γ vs wanaka + 3 fixtures | ✅ done (defaults retained, synthetic locks added) | _pending commit_ | 2026-05-10 |
+| 2c. Calibrate α/β/γ vs wanaka + 3 fixtures | ✅ done (defaults retained, synthetic locks added) | `3e68d48` | 2026-05-10 |
 | 3. MarginalSafe outcome tier | ✅ done | `a62d112` | 2026-05-10 |
 | 4. Adaptive3d LUT-family routing | ✅ done | `3c937e5` | 2026-05-10 |
 
