@@ -44,6 +44,7 @@ mod outcome;
 pub mod patches;
 mod policy;
 mod preflight;
+mod rank;
 mod refusal;
 pub mod retarget;
 pub mod space;

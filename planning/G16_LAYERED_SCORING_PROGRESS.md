@@ -2,7 +2,7 @@
 
 **Plan:** `planning/OPTIMIZER_REFACTOR_G16.md` §11.
 **Started:** 2026-05-10.
-**Status:** Layer 1 — landed (chipload + power; deflection deferred). Next: 2a composite_score.
+**Status:** Layer 2a — landed (composite_score module + α/β/γ + power_warning_fraction; no call sites yet). Next: 2b rewire ranking.
 
 This doc is the execution checklist for §11 of the G16 design doc.
 Survives context compaction. **Update after every commit.**
@@ -14,7 +14,7 @@ Survives context compaction. **Update after every commit.**
 | Phase | Status | Hash | Date |
 |---|---|---|---|
 | 1. Tolerance bands | ✅ done (deflection wrap deferred — note §1) | `53cb252` | 2026-05-10 |
-| 2a. composite_score additive | ⏳ pending | — | — |
+| 2a. composite_score additive | ✅ done (callable, no call sites) | _pending_ | 2026-05-10 |
 | 2b. Rewire ranking to composite | ⏳ pending | — | — |
 | 2c. Calibrate α/β/γ vs wanaka + 3 fixtures | ⏳ pending | — | — |
 | 3. MarginalSafe outcome tier | ⏳ pending | — | — |
@@ -70,18 +70,26 @@ Legend: ⏳ pending • 🟡 in-progress • ✅ done • 🚫 blocked • ⏭�
 **Reference:** §11.3, §11.7 "Layer 2a".
 **Effort:** ~½d. **Files:** 1 new. **LOC:** ~150.
 
-- [ ] New `crates/rs_cam_core/src/tool_load/optimize/rank.rs` (or fold into
-      `outcome.rs` if cleaner). Defines `composite_score`,
-      `chipload_distance_penalty`, `power_overuse_penalty`,
-      `deflection_overuse_penalty`. Code shape per §11.3.
-- [ ] Add `alpha_chipload_distance` (5.0), `beta_power_overuse` (3.0),
-      `gamma_deflection_overuse` (2.0), `power_warning_fraction` (0.80) to
-      `RankingPolicy`. PolicyValue + TuningChoice provenance.
-- [ ] No call sites yet — module is callable but unused.
-- [ ] Tests: `composite_score_prefers_midpoint_when_cycle_times_equal`,
-      `composite_score_prefers_faster_when_chipload_equal`,
-      `power_penalty_zero_at_below_warning_threshold`,
-      `deflection_penalty_ramps_in_band`.
+- [x] New `crates/rs_cam_core/src/tool_load/optimize/rank.rs`. Defines
+      `composite_score`, `chipload_distance_penalty`,
+      `power_overuse_penalty`, `deflection_overuse_penalty`. Code shape
+      per §11.3. Module carries `#![allow(dead_code)]` for Phase 2a; the
+      allow comes off at 2b when call sites land.
+- [x] Added `alpha_chipload_distance` (5.0), `beta_power_overuse` (3.0),
+      `gamma_deflection_overuse` (2.0), `power_warning_fraction` (0.80)
+      to `RankingPolicy`. PolicyValue + TuningChoice provenance citing
+      §11.3 calibration plan and CADEM S1/S6 motor convention.
+- [x] No call sites yet — module is callable but unused (verified by
+      `cargo build -p rs_cam_core --lib` warnings on the 4 helpers, all
+      now silenced by the file-level `#![allow(dead_code)]`).
+- [x] Tests (4): all pass. 1302 total lib tests (vs 1298 baseline).
+      `composite_score_prefers_midpoint_when_cycle_times_equal` checks
+      mid_score=20.0 vs edge_score=15.0 (= 20 - 1.0×α at the bound).
+      `composite_score_prefers_faster_when_chipload_equal` confirms the
+      cycle-time term still dominates with equal penalties.
+      `power_penalty_zero_at_below_warning_threshold` walks 50/80/90/100%
+      points (0, 0, 0.5, 1.0). `deflection_penalty_ramps_in_band` walks
+      30/50/125/200/250 µm (0, 0, 0.5, 1, 1).
 
 ### 2b. Rewire ranking to composite_score
 
@@ -266,4 +274,18 @@ with date and reasoning.)
   connected during the commit. Re-run `optimize_toolpath` on TP indices
   1 + 6 in the next session and append a note here with verdict / cycle-
   time deltas.
+- **2026-05-10 — Phase 2a.** Module ships with file-level
+  `#![allow(dead_code)]`. The 4 `pub(crate)` helpers are only consumed
+  by the in-module test suite; without the allow, `cargo clippy
+  --workspace --all-targets -- -D warnings` flags them as dead at the
+  lib level (the test compilation isn't enough to satisfy lib dead-code
+  analysis). Phase 2b removes the allow when `build_outcome` and
+  `select_stage2_candidates` start consuming `composite_score`.
+- **2026-05-10 — Phase 2a.** Operator's WIP in `rs_cam_viz` (3 files
+  modified, viewport-overlay automation harness wiring + adaptive3d
+  semantic-trace test cleanup) was untouched. All `git add` per file;
+  no global fmt run; pre-existing workspace fmt drift in
+  `verdict.rs`/`bounds.rs`/`patches.rs`/etc. left intact for whoever
+  picks them up. Only `rank.rs` was rustfmt'd (single trailing-newline
+  fix).
 
