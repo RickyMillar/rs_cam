@@ -26,6 +26,7 @@ pub mod feeds;
 pub mod fiber;
 pub mod fingerprint;
 pub mod gcode;
+pub mod gcode_validator;
 pub mod geo;
 pub mod horizontal_finish;
 pub mod inlay;

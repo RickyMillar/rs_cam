@@ -1,6 +1,6 @@
 # G-Code Export Overhaul — Roadmap
 
-**Status:** in progress (Phase 0)
+**Status:** Phase 0, 0.5, and 1 complete. Phase 2 (IR refactor) is next.
 **Owner:** TBD
 **Last updated:** 2026-05-10
 **Worktree:** `/home/ricky/personal_repos/rs_cam-gcode-overhaul/` on branch `gcode-overhaul` (branched from `master` @ fe27805). All implementation work for this overhaul lives there; the main checkout stays on `master` for unrelated work and the other agent's optimizer changes.
@@ -182,23 +182,26 @@ tests/
 
 ---
 
-### Phase 1 — Validator (safety net first)
+### Phase 1 — Validator (safety net first) — **DONE**
 **Land safety before refactoring.**
 
-- Add `gcode/validator.rs` with rules:
-  - `M6` must be preceded within 5 lines by spindle stop + Z move to safe-Z
-  - Every `G0` with X or Y must be preceded by Z lift to safe-Z (unless the previous Z is already ≥ safe_z)
-  - `G2`/`G3` with R-format → `|R|` ≥ 0.5 × chord length
-  - `M30`/`M2` requires modal spindle off + coolant off
-  - First cut after `M3` must be preceded by dwell (G4) of ≥ post-defined `spindle_warmup_ms`
-  - Feed and rapid values within `PostLimits`
-- Wire validator into `emit_gcode_*` — return `(String, Vec<Finding>)`.
-- Run on every existing test fixture; investigate any findings (they may be real bugs).
-- Add a regression test that snapshots findings count per fixture (zero is the goal).
+Implemented `crates/rs_cam_core/src/gcode_validator.rs` with **5 priority rules** focused on the machine-safety gaps surfaced in Phase 0+0.5:
 
-**Exit:** validator runs on every emit; existing test suite green; any findings are either fixed or explicitly waived in fixture metadata.
+1. **`UnsupportedM6`** — Grbl 1.1 doesn't implement M6 (gvalidate-confirmed real bug)
+2. **`MissingG91_1`** — LinuxCNC arc-IJK absolute mode latent crash
+3. **`WrongProgramEndCode`** — LinuxCNC must use M30, not M2
+4. **`MissingProgramBrackets`** — LinuxCNC `%` tape begin/end
+5. **`MissingWcs`** — explicit G54-G59 before first cutting move
 
-**Why first:** any subsequent refactor risks regressions. The validator catches the worst class of regression (machine-breakers) before they ship, regardless of whether golden files cover the case.
+Baseline test (`tests/gcode_validator_baseline.rs`) snapshots all 37 findings the current emitter produces across the 18 captured fixtures. Each finding kind has a clear resolution path tied to a downstream phase (mostly Phase 3 — data-driven `PostDefinition` lets each post declare which rules apply and which formats to emit).
+
+**Deferred from the original plan:**
+
+- Modal-state rules (`M6` preceded by spindle stop + safe-Z; `G0` preceded by Z lift; first cut after `M3` dwells) — need a proper modal-state machine, slots in cleanly with the Phase 2 IR refactor.
+- Encoding rules (feed decimals, R-format arc radius, `M30`/`M2` modal spindle-off check, feed/rapid against `PostLimits`) — wait for the data-driven post (Phase 3) since they reference per-post configuration.
+- Wiring validator into `emit_gcode_*` to return `(String, Vec<Finding>)` — deferred to Phase 2 when the IR refactor naturally surfaces an `ExportResult` boundary.
+
+**Exit met:** validator runs (`cargo test -p rs_cam_core gcode_validator`); baseline locked at 37 findings across 18 captures (`cargo test -p rs_cam_core --test gcode_validator_baseline`); every existing test suite still green; clippy clean.
 
 ---
 
@@ -299,8 +302,8 @@ Add as needed (Centroid, Masso, Buildbotics, Mach4, Smoothieware) on user reques
 | Phase | Scope | Breaks output? | Effort |
 |---|---|---|---|
 | 0 | Reference notes, fixture corpus, spec-only gap report | No | 1 day (done) |
-| 0.5 | Controller emulator install + baseline validation | No | 1 day |
-| 1 | Validator | No | 2 days |
+| 0.5 | Controller emulator install + baseline validation | No | 1 day (done) |
+| 1 | Validator (5 priority rules) | No | <1 day (done) |
 | 2 | `Program` IR refactor | No (byte-identical) | 2–3 days |
 | 3 | Data-driven post (TOML) | No (byte-identical) | 3–4 days |
 | 4 | Broaden corpus + grblHAL + CI emulator gate | Maybe (intentional fixes) | 3–5 days |

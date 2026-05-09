@@ -2,7 +2,7 @@
 
 **Phase 0 deliverable.** Per-dialect, per-fixture summary of how the **current** rs_cam emitter (`crates/rs_cam_core/src/gcode.rs`) differs from what Fusion's published `.cps` posts would produce for an equivalent toolpath.
 
-**Status: spec-only gaps captured; emulator validation results landing in Phase 0.5.** The "rs_cam current" column is filled from the captures in `planning/gcode_current_outputs/`. The right-hand columns will be filled by piping each capture through `grbl-sim`'s `gvalidate`, `grblHAL_validator`, and LinuxCNC's `rs274ngc` parser (see [Phase 0.5](GCODE_EXPORT_OVERHAUL.md#phase-05--controller-emulator-validation-replaces-fusion-byte-parity) in the plan).
+**Status: spec-only gaps captured (Phase 0); emulator validation results landed (Phase 0.5); validator baseline locked in (Phase 1).** The "rs_cam current" column is filled from the captures in `planning/gcode_current_outputs/`. The right-hand columns will be filled by piping each capture through `grbl-sim`'s `gvalidate`, `grblHAL_validator`, and LinuxCNC's `rs274ngc` parser (see [Phase 0.5](GCODE_EXPORT_OVERHAUL.md#phase-05--controller-emulator-validation-replaces-fusion-byte-parity) in the plan).
 
 **Original target — Fusion byte-parity — was abandoned because Autodesk's `post` CLI doesn't exist for Linux** (it ships only inside Fusion 360, which has no native Linux build; cam-posteditor's binary lookup hardcodes Win/Mac install paths). Re-targeted to controller-emulator validation — which tests what actually matters (does the controller accept this g-code?) and is hermetic on Linux for CI use.
 
@@ -107,7 +107,45 @@ grblHAL fixtures defer to Phase 4 (no rs_cam grblHAL post yet, and `grblHAL_vali
 
 ---
 
-## Recommendation for Phase 1 entry
+## Phase 1 validator results
+
+The validator (`rs_cam_core::gcode_validator`) implements 5 invariant rules covering the machine-safety gaps. Run the baseline test:
+
+```bash
+cargo test --test gcode_validator_baseline
+```
+
+Output (current emitter, against the 18 captured fixtures):
+
+| Capture | Findings | Detail |
+|---------|---------:|--------|
+| f1_basic_lines / grbl | 1 | MissingWcs |
+| f2_arcs_xy / grbl | 1 | MissingWcs |
+| f3_helical_ramp / grbl | 1 | MissingWcs |
+| f4_profile_multipass / grbl | 1 | MissingWcs |
+| f5_two_tool_changes / grbl | 2 | UnsupportedM6 + MissingWcs |
+| f6_two_setups / grbl | 1 | MissingWcs |
+| f1-f6 / linuxcnc | 4 each, 24 total | MissingG91_1 + 2× MissingProgramBrackets + WrongProgramEndCode |
+| f1-f6 / mach3 | 1 each, 6 total | MissingWcs |
+| **Total** | **37** | across 18 captures |
+
+The baseline test (`tests/gcode_validator_baseline.rs`) snapshots these counts. **Driving the count to zero is the Phase 2/3 work.** Each fix that lands updates the `BASELINE` constant in the same commit.
+
+### Which finding gets resolved in which phase
+
+| Finding | Resolution path |
+|---------|-----------------|
+| `MissingWcs` (Grbl, Mach3) | Phase 3: data-driven post emits `G54` from `[wcs]` block in TOML |
+| `UnsupportedM6` (Grbl) | Phase 3: data-driven post adds `tool_change.use_m6` field, default `false` for Grbl |
+| `MissingG91_1` (LinuxCNC) | Phase 3: `[modal] include_g91_1_in_preamble = true` for LinuxCNC TOML |
+| `MissingProgramBrackets` (LinuxCNC) | Phase 3: `[wrapper] header_percent / footer_percent = true` for LinuxCNC TOML |
+| `WrongProgramEndCode` (LinuxCNC) | Phase 3: `[program_end] m_program_end = 30` for LinuxCNC TOML |
+
+Phase 2 (the IR refactor) keeps output byte-identical, so the baseline shouldn't move during it — that's a useful invariant for catching accidental refactor regressions.
+
+---
+
+## Original recommendation for Phase 1 entry (now closed)
 
 Phase 0's stated exit was "we know exactly how far we are." Combining the `.cps`-source-only review with Phase 0.5 emulator results, we now have:
 
