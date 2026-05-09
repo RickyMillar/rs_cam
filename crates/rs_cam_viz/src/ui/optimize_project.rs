@@ -209,6 +209,12 @@ fn compute_optimized_cycle(report: &ProjectOptimizeReport, row_selected: &[bool]
                 // accept the regression. Contribute baseline.
                 candidates.first().map_or(0.0, |c| c.cycle_time_s)
             }
+            OptimizeOutcome::MarginalSafe { candidates, .. } => {
+                // MarginalSafe rows aren't auto-selectable either —
+                // user opens the modal and verifies before applying.
+                // Contribute baseline.
+                candidates.first().map_or(0.0, |c| c.cycle_time_s)
+            }
             OptimizeOutcome::NoSafeImprovement { .. } | OptimizeOutcome::Skipped { .. } => {
                 // No candidate to swap — contributes baseline.
                 // We don't have direct access to baseline cycle for
@@ -239,6 +245,9 @@ fn draw_bottleneck_callout(
         .find(|(idx, _)| *idx == bottleneck_index)
         .and_then(|(_, outcome)| match outcome {
             OptimizeOutcome::Ranked(candidates) => candidates.first().map(|c| c.cycle_time_s),
+            OptimizeOutcome::MarginalSafe { candidates, .. } => {
+                candidates.first().map(|c| c.cycle_time_s)
+            }
             _ => None,
         })
         .unwrap_or(0.0);
@@ -352,6 +361,26 @@ fn draw_row(
             let tried = candidates.len().saturating_sub(1);
             ui.label(
                 egui::RichText::new(format!("{tried} faster candidate(s) with gate regression"))
+                    .small()
+                    .color(theme::WARNING),
+            );
+            ui.label("");
+        }
+        OptimizeOutcome::MarginalSafe { candidates, .. } => {
+            // G16 §11.4 Layer 3: faster candidate exists but at least
+            // one gate reading was admitted only by the tolerance
+            // band. No checkbox — user must verify on a scrap via the
+            // modal before applying.
+            ui.label(""); // checkbox column blank
+            ui.label(egui::RichText::new(name).small());
+            ui.label(
+                egui::RichText::new("verify on scrap")
+                    .small()
+                    .color(theme::WARNING),
+            );
+            let tried = candidates.len().saturating_sub(1);
+            ui.label(
+                egui::RichText::new(format!("{tried} candidate(s) inside tolerance band"))
                     .small()
                     .color(theme::WARNING),
             );
@@ -622,6 +651,24 @@ fn draw_readonly_row(
             let tried = candidates.len().saturating_sub(1);
             ui.label(
                 egui::RichText::new(format!("{tried} faster candidate(s) — needs review"))
+                    .small()
+                    .color(theme::WARNING),
+            );
+            ui.label("");
+            if show_reconciled {
+                ui.label("");
+            }
+        }
+        OptimizeOutcome::MarginalSafe { candidates, .. } => {
+            ui.label(egui::RichText::new(name).small());
+            ui.label(
+                egui::RichText::new("verify on scrap")
+                    .small()
+                    .color(theme::WARNING),
+            );
+            let tried = candidates.len().saturating_sub(1);
+            ui.label(
+                egui::RichText::new(format!("{tried} candidate(s) inside tolerance band"))
                     .small()
                     .color(theme::WARNING),
             );
