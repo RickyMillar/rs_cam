@@ -18,11 +18,11 @@ use crate::feeds::vendor_lookup::MatchedRow;
 use crate::tool_load::verdict::ToolpathLoadVerdict;
 
 use super::super::axes::{AxisView, SearchAxis};
-use super::super::patches::{AxisPatch, PatchSource};
-use super::super::policy::SearchPolicy;
-use super::super::{
+use super::super::candidate::{
     build_doc_variants, build_scallop_height_variants, build_stepover_variants, has_doc_knob,
 };
+use super::super::patches::{AxisPatch, PatchSource};
+use super::super::policy::SearchPolicy;
 use super::{CandidatePatch, OptimizationStrategy};
 
 const STRATEGY_NAME: &str = "axis-grid";
@@ -107,8 +107,7 @@ impl<'a> OptimizationStrategy for AxisGridStrategy<'a> {
                     if (doc - anchor_doc).abs() < doc_policy.dedup_tolerance.value
                         && (stepover - anchor_stepover).abs()
                             < stepover_policy.dedup_tolerance.value
-                        && (scallop - anchor_scallop).abs()
-                            < scallop_policy.dedup_tolerance.value
+                        && (scallop - anchor_scallop).abs() < scallop_policy.dedup_tolerance.value
                     {
                         continue;
                     }
@@ -294,9 +293,11 @@ mod tests {
                 .map(|p| p.value)
                 .unwrap_or(0.84);
             let is_anchor = (doc - 3.0).abs() < policy.axes.doc.dedup_tolerance.value
-                && (stepover - 0.84).abs()
-                    < policy.axes.stepover.dedup_tolerance.value;
-            assert!(!is_anchor, "anchor cell leaked into grid: doc={doc}, stepover={stepover}");
+                && (stepover - 0.84).abs() < policy.axes.stepover.dedup_tolerance.value;
+            assert!(
+                !is_anchor,
+                "anchor cell leaked into grid: doc={doc}, stepover={stepover}"
+            );
         }
     }
 
