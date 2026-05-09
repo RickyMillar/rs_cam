@@ -2,7 +2,7 @@
 
 **Plan:** `planning/OPTIMIZER_REFACTOR_G16.md` §11.
 **Started:** 2026-05-10.
-**Status:** Layer 2a — landed (composite_score module + α/β/γ + power_warning_fraction; no call sites yet). Next: 2b rewire ranking.
+**Status:** Layer 2b — landed (`composite_score` now drives `select_stage2_candidates` + `build_outcome` sort). Next: 2c calibration on wanaka + 3 fixtures.
 
 This doc is the execution checklist for §11 of the G16 design doc.
 Survives context compaction. **Update after every commit.**
@@ -15,7 +15,7 @@ Survives context compaction. **Update after every commit.**
 |---|---|---|---|
 | 1. Tolerance bands | ✅ done (deflection wrap deferred — note §1) | `53cb252` | 2026-05-10 |
 | 2a. composite_score additive | ✅ done (callable, no call sites) | `f873440` | 2026-05-10 |
-| 2b. Rewire ranking to composite | ⏳ pending | — | — |
+| 2b. Rewire ranking to composite | ✅ done | _pending_ | 2026-05-10 |
 | 2c. Calibrate α/β/γ vs wanaka + 3 fixtures | ⏳ pending | — | — |
 | 3. MarginalSafe outcome tier | ⏳ pending | — | — |
 | 4. Adaptive3d LUT-family routing | ⏳ pending | — | — |
@@ -96,17 +96,28 @@ Legend: ⏳ pending • 🟡 in-progress • ✅ done • 🚫 blocked • ⏭�
 **Reference:** §11.4 "Layer 2", §11.7 "Layer 2b".
 **Effort:** ~½d. **Files:** 3. **LOC:** signature + 1 call site + ~3 fixtures.
 
-- [ ] Change `select_stage2_candidates` signature in
-      `optimize/candidate.rs:391` to `(stage1_winners, baseline, policy, n)`.
-- [ ] Update single call site at `optimize/mod.rs:306`.
-- [ ] Replace `cycle_time_s.total_cmp` sort in `optimize/outcome.rs:164`
-      (inside `build_outcome`) with composite-score comparator.
-- [ ] Update `select_stage2_candidates` tests at
-      `optimize/mod.rs:1613-1624` for new signature.
-- [ ] Re-baseline param-sweep snapshots (`crates/rs_cam_core/tests/param_sweep.rs`,
-      54 sweeps). Document diff distribution in commit message — how many sweeps
-      reordered, how many unchanged.
-- [ ] Wanaka MCP smoke: candidate ordering may shift within Ranked. Review by hand once.
+- [x] Changed `select_stage2_candidates` signature in
+      `optimize/candidate.rs:397` to `(stage1_winners, baseline, policy, n)`.
+      Sorts by `composite_score` descending (highest-score = best).
+- [x] Updated single runtime call site at `optimize/mod.rs:329` (was 326
+      in tracker — drifted by Stage 2 comment expansion).
+- [x] Replaced `cycle_time_s.total_cmp` sort in `optimize/outcome.rs:164`
+      (inside `build_outcome`) with composite-score comparator. Borrows
+      `&baseline` for the comparator key, uses `search_policy()` directly.
+- [x] Renamed `select_stage2_keeps_top_n_by_cycle_time` →
+      `select_stage2_keeps_top_n_by_composite_score` and threaded baseline
+      + policy through all three test call sites at `optimize/mod.rs`.
+      Added `select_stage2_prefers_midpoint_over_band_edge_at_close_cycle_time`
+      to demonstrate the composite-score reorder vs pure cycle time
+      (76s @ chipload max scores 119; 80s @ midpoint scores 120).
+- [x] Param sweeps untouched: 54/54 pass. The fingerprint harness
+      doesn't touch `tool_load/optimize`, so candidate ordering changes
+      can't shift toolpath fingerprints. **No re-baseline needed.** The
+      tracker's "re-baseline" task was over-anticipated impact.
+- [x] `#![allow(dead_code)]` removed from `rank.rs` since the helpers
+      are now consumed.
+- [ ] **Pending:** Wanaka MCP smoke. Defer to 2c (which already needs
+      MCP for the calibration sweep).
 
 ### 2c. Calibrate α/β/γ
 
@@ -288,4 +299,14 @@ with date and reasoning.)
   `verdict.rs`/`bounds.rs`/`patches.rs`/etc. left intact for whoever
   picks them up. Only `rank.rs` was rustfmt'd (single trailing-newline
   fix).
+- **2026-05-10 — Phase 2b.** Existing test fixture
+  `within_chipload_verdict(peak)` sets `approach_to_min: None`, which
+  forces `chipload_distance_penalty` into the synthetic-midpoint
+  fallback (`max * 0.5`). For the new
+  `select_stage2_prefers_midpoint_over_band_edge_at_close_cycle_time`
+  test, that fallback skews the midpoint to 0.0525 (not 0.054) and the
+  arithmetic stops working. The test inlines a chipload verdict with
+  both `approach_to_min` and `approach_to_max` populated so the LUT
+  bracket midpoint is genuine. The shared fixture wasn't changed —
+  other tests rely on the no-min-bound behaviour.
 

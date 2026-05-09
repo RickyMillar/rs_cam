@@ -27,7 +27,8 @@ use super::axes::SearchAxis;
 use super::bounds;
 use super::context::{BaselineRestoreGuard, EvaluationContext, cycle_time_from_trace};
 use super::delta::{GateDeltas, ParamDelta};
-use super::policy;
+use super::policy::{self, SearchPolicy};
+use super::rank::composite_score;
 use super::{SearchStage, search_policy, tolerance_bands_from_policy};
 
 /// One candidate's full evaluation record. Populated by the optimizer
@@ -387,18 +388,24 @@ pub(crate) fn evaluate_candidate(
 
 // ── Stage 2 candidate refinement ──────────────────────────────────────
 //
-// Stage 2 takes the top-3 by Stage-1 cycle time (per ED 2 — ranking
-// ignores verdict) and re-evaluates them at 0.5mm dexel. The reported
-// numbers on the rollup are always Stage-2 numbers.
+// Stage 2 takes the top-N by Stage-1 composite_score (G16 §11 layer 2b
+// — replaces the prior cycle-time-only sort) and re-evaluates them at
+// 0.5mm dexel. The reported numbers on the rollup are always Stage-2
+// numbers.
 
-/// Sort `stage1_winners` by ascending cycle time and keep the top
-/// `n` (lowest-cycle-time) entries. Per ED 2 we pick by cycle time
-/// alone — Stage 2 re-applies the gate verdict at full resolution.
+/// Sort `stage1_winners` by descending `composite_score` against
+/// `baseline` and keep the top `n` (highest-score) entries. The score
+/// weights cycle savings against chipload-distance / power-overuse /
+/// deflection-overuse penalties — see [`super::rank`] for the formula.
 pub(crate) fn select_stage2_candidates(
     mut stage1_winners: Vec<OptimizeCandidate>,
+    baseline: &OptimizeCandidate,
+    policy: &SearchPolicy,
     n: usize,
 ) -> Vec<OptimizeCandidate> {
-    stage1_winners.sort_by(|a, b| a.cycle_time_s.total_cmp(&b.cycle_time_s));
+    stage1_winners.sort_by(|a, b| {
+        composite_score(b, baseline, policy).total_cmp(&composite_score(a, baseline, policy))
+    });
     stage1_winners.truncate(n);
     stage1_winners
 }
