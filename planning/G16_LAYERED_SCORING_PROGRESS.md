@@ -18,7 +18,7 @@ Survives context compaction. **Update after every commit.**
 | 2b. Rewire ranking to composite | ✅ done | `b4dc8df` | 2026-05-10 |
 | 2c. Calibrate α/β/γ vs wanaka + 3 fixtures | 🚫 blocked (needs MCP) | — | — |
 | 3. MarginalSafe outcome tier | ⏳ pending | — | — |
-| 4. Adaptive3d LUT-family routing | ✅ done | _pending_ | 2026-05-10 |
+| 4. Adaptive3d LUT-family routing | ✅ done | `3c937e5` | 2026-05-10 |
 
 Legend: ⏳ pending • 🟡 in-progress • ✅ done • 🚫 blocked • ⏭️ skipped
 
