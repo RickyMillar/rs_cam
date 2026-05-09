@@ -1,6 +1,6 @@
 # G-Code Export Overhaul — Roadmap
 
-**Status:** Phase 0, 0.5, and 1 complete. Phase 2 (IR refactor) is next.
+**Status:** Phase 0, 0.5, 1, and 2 complete. Phase 3 (data-driven `PostDefinition`) is next.
 **Owner:** TBD
 **Last updated:** 2026-05-10
 **Worktree:** `/home/ricky/personal_repos/rs_cam-gcode-overhaul/` on branch `gcode-overhaul` (branched from `master` @ fe27805). All implementation work for this overhaul lives there; the main checkout stays on `master` for unrelated work and the other agent's optimizer changes.
@@ -205,19 +205,28 @@ Baseline test (`tests/gcode_validator_baseline.rs`) snapshots all 37 findings th
 
 ---
 
-### Phase 2 — Extract `Program` IR
+### Phase 2 — Extract `Program` IR — **DONE**
 **Refactor without changing output.**
 
-- Define `Statement`, `Program`, `ProgramBuilder` in `gcode/ir.rs` and `gcode/program_builder.rs`.
-- Refactor `emit_gcode_phased` into two passes:
-  1. `Toolpath → Program` (in `program_builder.rs`)
-  2. `Program → String` (still using current trait-based `PostProcessor`)
-- All existing tests must remain **byte-identical** (the existing tests at `gcode.rs:1013+` are the safety net here).
-- New test: `program_builder_is_deterministic` — same input → same Program.
+Module layout under `crates/rs_cam_core/src/gcode/`:
 
-**Exit:** `emit_gcode`, `emit_gcode_phased`, `emit_gcode_multi_setup` all funnel through `ProgramBuilder`; existing tests byte-identical; clippy clean.
+- `mod.rs` — public API surface (`emit_gcode`, `emit_program`, `PostProcessor`, `PostFormat`, etc.). The three legacy emit paths (`emit_gcode`, `emit_gcode_phased`, `emit_gcode_multi_setup`) are now thin wrappers that build a `Program` then render it via `emit_program`.
+- `ir.rs` — `Statement` (Preamble, Postamble, ProgramPause, Comment, Raw, Rapid, Linear, LinearModal, ArcCw, ArcCcw, SafeZRetract), `Program`, `ProgramMetadata`. Each variant maps 1:1 to a byte slice the legacy emitter produced.
+- `program_builder.rs` — `build_single`, `build_phased`, `build_multi_setup` produce `Program` from `Toolpath` inputs. Mirrors the legacy iteration order, modal-state transitions, and formatting decisions exactly.
+- `modal.rs` — `ModalState` book-keeping (last_feed, current_rpm, current_tool, current_coolant) used by the builder.
 
-**Risk:** "byte-identical" is brittle. If we discover the current emitter has a bug worth fixing en route, fix it and update the expected output in the same commit, with `gap_report.md` annotated.
+Net diff: ~370 lines of imperative emission collapsed into the two-pass builder + emitter (~100 lines + ~390 lines of well-organized IR/builder code that Phase 3 will reuse against `PostDefinition`).
+
+**Byte-identical verification:**
+- 37 in-source unit tests in `gcode/mod.rs` pass unchanged.
+- `gcode_validator_baseline` still snapshots 37 findings across the 18 captured fixtures.
+- `gcode_phase0_capture --ignored` re-run produces ZERO diff in `planning/gcode_current_outputs/`.
+- `cargo test --workspace` green; clippy clean.
+- New `program_builder_is_deterministic` test guards against nondeterministic IR construction across all three builder entry points.
+
+**Deferred to Phase 3:** newtype wrappers (`Rpm`, `Feedrate`, `SafeZ`) — adding them mid-refactor would have churned every test. Phase 3 introduces them naturally when `PostDefinition` lands.
+
+**Exit met:** all three emit paths funnel through `ProgramBuilder`; existing tests byte-identical; clippy clean; new determinism test added.
 
 ---
 
@@ -304,7 +313,7 @@ Add as needed (Centroid, Masso, Buildbotics, Mach4, Smoothieware) on user reques
 | 0 | Reference notes, fixture corpus, spec-only gap report | No | 1 day (done) |
 | 0.5 | Controller emulator install + baseline validation | No | 1 day (done) |
 | 1 | Validator (5 priority rules) | No | <1 day (done) |
-| 2 | `Program` IR refactor | No (byte-identical) | 2–3 days |
+| 2 | `Program` IR refactor | No (byte-identical) | 2–3 days (done) |
 | 3 | Data-driven post (TOML) | No (byte-identical) | 3–4 days |
 | 4 | Broaden corpus + grblHAL + CI emulator gate | Maybe (intentional fixes) | 3–5 days |
 | 5 | Wizard UX | No (additive) | 3–4 days |
