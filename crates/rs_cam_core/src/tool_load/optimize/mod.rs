@@ -33,7 +33,7 @@ use crate::simulation_cut::SimulationCutTrace;
 
 use super::RefuseReason;
 use super::verdict::{ChiploadVerdict, ToolpathLoadVerdict};
-use super::{ToolpathLoadContext, evaluate_toolpath};
+use super::{ToleranceBands, ToolpathLoadContext, evaluate_toolpath};
 
 pub mod axes;
 pub mod bounds;
@@ -68,6 +68,21 @@ static DEFAULT_SEARCH_POLICY: LazyLock<SearchPolicy> = LazyLock::new(SearchPolic
 
 fn search_policy() -> &'static SearchPolicy {
     &DEFAULT_SEARCH_POLICY
+}
+
+/// Build the gate-trigger tolerance bands from the active `SearchPolicy`'s
+/// ranking section. Centralises the policy → `ToleranceBands` mapping so
+/// every optimizer call to `evaluate_toolpath` widens the gates the same
+/// way (Layer 1 of `planning/OPTIMIZER_REFACTOR_G16.md` §11).
+pub(crate) fn tolerance_bands_from_policy(policy: &SearchPolicy) -> ToleranceBands {
+    ToleranceBands {
+        breakage: policy.ranking.breakage_tolerance.value,
+        burn: policy.ranking.burn_tolerance.value,
+        power_breach: policy.ranking.power_breach_tolerance.value,
+        // `deflection_breach_tolerance` exists on the policy for symmetry
+        // but the deflection gate isn't wired through `ToleranceBands` in
+        // this commit — see the doc on `tool_load::ToleranceBands`.
+    }
 }
 
 /// Which search stage produced a candidate. The reported `cycle_time_s`
@@ -164,8 +179,13 @@ pub fn optimize_toolpath(
         operation_kind: ctx.operation_kind,
     };
     let machine = session.machine().clone();
-    let baseline_verdict =
-        evaluate_toolpath(&baseline_load_ctx, Some(baseline_trace), Some(&machine));
+    let policy_tolerance = tolerance_bands_from_policy(search_policy());
+    let baseline_verdict = evaluate_toolpath(
+        &baseline_load_ctx,
+        Some(baseline_trace),
+        Some(&machine),
+        &policy_tolerance,
+    );
     let baseline_cycle_s = match cycle_time_from_trace(baseline_trace, ctx.toolpath_id) {
         Some(t) if t > 0.0 => t,
         _ => {

@@ -28,7 +28,7 @@ use super::bounds;
 use super::context::{BaselineRestoreGuard, EvaluationContext, cycle_time_from_trace};
 use super::delta::{GateDeltas, ParamDelta};
 use super::policy;
-use super::{SearchStage, search_policy};
+use super::{SearchStage, search_policy, tolerance_bands_from_policy};
 
 /// One candidate's full evaluation record. Populated by the optimizer
 /// during Stage 0/1/2; each field is sim-measured (or, for the baseline
@@ -362,7 +362,13 @@ pub(crate) fn evaluate_candidate(
         operation_feed_rate_mm_min: candidate_op.feed_rate(),
         operation_kind: ctx.operation_kind,
     };
-    let verdict = evaluate_toolpath(&load_ctx, trace, Some(session_ref.machine()));
+    let policy_tolerance = tolerance_bands_from_policy(search_policy());
+    let verdict = evaluate_toolpath(
+        &load_ctx,
+        trace,
+        Some(session_ref.machine()),
+        &policy_tolerance,
+    );
     let cycle_time_s = trace
         .and_then(|t| cycle_time_from_trace(t, ctx.toolpath_id))
         .unwrap_or(f64::INFINITY);

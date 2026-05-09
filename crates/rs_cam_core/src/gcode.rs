@@ -600,6 +600,9 @@ pub fn project_load_report(
         // chipload guardrail can filter out transient (plunge/ramp/entry)
         // samples and only measure steady-state cutting against the LUT.
         let operation_feed_rate_mm_min = tc.operation.feed_rate();
+        // gcode export keeps strict LUT/machine-ceiling behaviour — only
+        // the optimizer routes wider tolerance bands. See `ToleranceBands`.
+        let strict_tolerance = crate::tool_load::ToleranceBands::default();
         per_toolpath.push(crate::tool_load::ToolpathLoadVerdict {
             toolpath_id: tc.id,
             chipload: crate::tool_load::chipload::evaluate(
@@ -611,12 +614,21 @@ pub fn project_load_report(
                 lut_pass,
                 operation_feed_rate_mm_min,
                 tc.operation.op_type(),
+                &strict_tolerance,
             ),
             power: crate::tool_load::power::evaluate(
-                tc.id, &tool_def, material, machine, sim_trace,
+                tc.id,
+                &tool_def,
+                material,
+                machine,
+                sim_trace,
+                &strict_tolerance,
             ),
             deflection: crate::tool_load::deflection::evaluate(
-                tc.id, &tool_def, material, sim_trace,
+                tc.id,
+                &tool_def,
+                material,
+                sim_trace,
             ),
         });
     }
@@ -1680,13 +1692,13 @@ mod tests {
 
     // ----- enforce_load_policy negative tests -----
 
-    use crate::tool_load::{
-        ChiploadVerdict, Confidence, DeflectionVerdict, PowerVerdict, ToolLoadReport,
-        ToolpathLoadVerdict, UnmodeledReason,
-    };
     use crate::tool_load::verdict::{
         ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, DeflectionBounds,
         SampleEvidence,
+    };
+    use crate::tool_load::{
+        ChiploadVerdict, Confidence, DeflectionVerdict, PowerVerdict, ToolLoadReport,
+        ToolpathLoadVerdict, UnmodeledReason,
     };
 
     fn report_with(
@@ -1760,7 +1772,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn enforce_blocks_exceeded_by_default() {
         let report = report_with(
@@ -1780,10 +1791,7 @@ mod tests {
             msg.contains("deflection"),
             "error names the criterion: {msg}"
         );
-        assert!(
-            msg.contains("stiffness"),
-            "error names the reason: {msg}"
-        );
+        assert!(msg.contains("stiffness"), "error names the reason: {msg}");
     }
 
     #[test]

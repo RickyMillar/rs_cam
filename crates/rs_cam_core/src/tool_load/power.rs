@@ -38,6 +38,7 @@ pub fn evaluate(
     material: &Material,
     machine: &MachineProfile,
     sim_trace: Option<&SimulationCutTrace>,
+    tolerance: &super::ToleranceBands,
 ) -> PowerVerdict {
     let Some(trace) = sim_trace else {
         return PowerVerdict::Unmodeled {
@@ -150,7 +151,11 @@ pub fn evaluate(
         last_available_kw
     };
 
-    if peak_available_at_peak > 0.0 && peak_power > peak_available_at_peak {
+    // Layer 1 tolerance band: widen the peak-vs-available trigger by
+    // `power_breach`. Default is 0 (preserves the strict machine-ceiling
+    // behaviour) — see `ToleranceBands::power_breach` doc.
+    let power_trigger = peak_available_at_peak * (1.0 + tolerance.power_breach);
+    if peak_available_at_peak > 0.0 && peak_power > power_trigger {
         return PowerVerdict::Exceeds {
             peak_kw: peak_power,
             available_kw,
@@ -262,6 +267,7 @@ mod tests {
             },
             &shapeoko_makita(),
             None,
+            &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
             v,
@@ -284,6 +290,7 @@ mod tests {
             },
             &shapeoko_makita(),
             Some(&trace),
+            &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
             v,
@@ -311,6 +318,7 @@ mod tests {
             },
             &shapeoko_makita(),
             Some(&trace),
+            &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
             v,
@@ -344,6 +352,7 @@ mod tests {
             },
             &shapeoko_makita(),
             Some(&trace),
+            &crate::tool_load::ToleranceBands::default(),
         );
         match v {
             PowerVerdict::Within {
@@ -375,6 +384,7 @@ mod tests {
             },
             &shapeoko_makita(),
             Some(&trace),
+            &crate::tool_load::ToleranceBands::default(),
         );
         match v {
             PowerVerdict::Exceeds {
@@ -400,6 +410,7 @@ mod tests {
             },
             &shapeoko_makita(),
             Some(&trace),
+            &crate::tool_load::ToleranceBands::default(),
         );
         match v {
             PowerVerdict::Within {
@@ -408,5 +419,32 @@ mod tests {
             } => assert!(reason.contains("slot"), "got {reason}"),
             other => panic!("expected Within(Approximate(slot ...)), got {other:?}"),
         }
+    }
+
+    /// Same fixture as `heavy_cut_exceeds_machine_with_available_kw` but
+    /// with `power_breach` set generously enough to admit the candidate.
+    /// Confirms the tolerance band actually widens the gate trigger;
+    /// `power_breach = 0` (the default) preserves today's strict ceiling.
+    #[test]
+    fn heavy_cut_within_with_power_breach_tolerance() {
+        let trace = trace_with(vec![cutting_sample(0, 20.0, std::f64::consts::PI, 6000.0)]);
+        let bands = crate::tool_load::ToleranceBands {
+            power_breach: 1.0, // widen by 100 % so the heavy-cut probe lands Within
+            ..crate::tool_load::ToleranceBands::default()
+        };
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::Ipe,
+            },
+            &shapeoko_makita(),
+            Some(&trace),
+            &bands,
+        );
+        assert!(
+            matches!(v, PowerVerdict::Within { .. }),
+            "expected Within with power_breach=1.0, got {v:?}"
+        );
     }
 }
