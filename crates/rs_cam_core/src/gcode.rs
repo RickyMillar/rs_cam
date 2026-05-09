@@ -629,6 +629,7 @@ pub fn project_load_report(
                 &tool_def,
                 material,
                 sim_trace,
+                &strict_tolerance,
             ),
         });
     }

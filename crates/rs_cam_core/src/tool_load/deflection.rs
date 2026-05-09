@@ -103,6 +103,7 @@ pub fn evaluate(
     tool: &ToolDefinition,
     material: &Material,
     sim_trace: Option<&SimulationCutTrace>,
+    tolerance: &super::ToleranceBands,
 ) -> DeflectionVerdict {
     let Some(trace) = sim_trace else {
         return DeflectionVerdict::Unmodeled {
@@ -182,7 +183,8 @@ pub fn evaluate(
     };
     let bounds = standard_bounds();
 
-    if peak_delta_mm > EXCEEDS_BOUND_MM {
+    let exceeds_trigger = EXCEEDS_BOUND_MM * (1.0 + tolerance.deflection_breach);
+    if peak_delta_mm > exceeds_trigger {
         return DeflectionVerdict::Exceeds {
             peak_mm: peak_delta_mm,
             bounds,
@@ -329,7 +331,8 @@ mod tests {
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
-            None
+            None,
+            &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
             v,
@@ -350,7 +353,8 @@ mod tests {
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
-            Some(&trace)
+            Some(&trace),
+            &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
             v,
@@ -378,7 +382,8 @@ mod tests {
                 hardness_index: 1.0,
                 kc: 10.0,
             },
-            Some(&trace)
+            Some(&trace),
+            &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
             v,
@@ -413,7 +418,8 @@ mod tests {
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
-            Some(&trace)
+            Some(&trace),
+            &crate::tool_load::ToleranceBands::default(),
         );
         match v {
             DeflectionVerdict::Within {
@@ -454,7 +460,8 @@ mod tests {
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
-            Some(&trace)
+            Some(&trace),
+            &crate::tool_load::ToleranceBands::default(),
         );
         match v {
             DeflectionVerdict::Within { peak_mm, .. } => {
@@ -488,7 +495,8 @@ mod tests {
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
-            Some(&trace)
+            Some(&trace),
+            &crate::tool_load::ToleranceBands::default(),
         );
         let peak_um = match v {
             DeflectionVerdict::Within { peak_mm, .. }
@@ -543,7 +551,8 @@ mod tests {
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
-            Some(&trace)
+            Some(&trace),
+            &crate::tool_load::ToleranceBands::default(),
         );
         match v {
             DeflectionVerdict::Within {
@@ -554,6 +563,54 @@ mod tests {
                 "slot annotation expected in detail string, got: {detail}"
             ),
             other => panic!("expected Within(Approximate(slot...)), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deflection_breach_tolerance_widens_exceeds_trigger() {
+        // Compare strict vs widened bands on the same trace. Either
+        // strict already lands Within (geometry doesn't push past 200µm
+        // in wood — this is the common case) and widened stays Within,
+        // OR strict lands Exceeds and widened *must* flip to Within.
+        // The wrong direction (strict Within → widened Exceeds) is a
+        // regression in the trigger math.
+        let tool = hss_flat(6.0, 60.0);
+        let trace = trace_with(vec![cutting_sample(
+            0,
+            0,
+            6.0,
+            std::f64::consts::FRAC_PI_2,
+            1000.0,
+            0.4,
+        )]);
+        let strict = evaluate(
+            0,
+            &tool,
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&trace),
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        let widened = evaluate(
+            0,
+            &tool,
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&trace),
+            &crate::tool_load::ToleranceBands {
+                deflection_breach: 100.0, // absurdly wide → no peak can trip Exceeds
+                ..crate::tool_load::ToleranceBands::default()
+            },
+        );
+        match (&strict, &widened) {
+            (DeflectionVerdict::Exceeds { .. }, DeflectionVerdict::Within { .. }) => {}
+            (DeflectionVerdict::Within { .. }, DeflectionVerdict::Within { .. }) => {}
+            _ => panic!(
+                "deflection_breach must not flip verdict in the wrong direction; \
+                 strict={strict:?} widened={widened:?}"
+            ),
         }
     }
 }

@@ -80,9 +80,7 @@ pub(crate) fn tolerance_bands_from_policy(policy: &SearchPolicy) -> ToleranceBan
         breakage: policy.ranking.breakage_tolerance.value,
         burn: policy.ranking.burn_tolerance.value,
         power_breach: policy.ranking.power_breach_tolerance.value,
-        // `deflection_breach_tolerance` exists on the policy for symmetry
-        // but the deflection gate isn't wired through `ToleranceBands` in
-        // this commit — see the doc on `tool_load::ToleranceBands`.
+        deflection_breach: policy.ranking.deflection_breach_tolerance.value,
     }
 }
 
