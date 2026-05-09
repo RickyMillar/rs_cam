@@ -313,11 +313,12 @@ fn w3_face_z_propagates_to_height_resolution() {
     let op_depth = 3.0;
     let mut heights = heights_config.resolve(&HeightContext::simple(10.0, op_depth));
 
-    // Without face Z, top_z defaults to stock_top_z (= op_depth in simple context)
+    // Without face Z, auto top_z resolves to 0 (HeightContext::simple stock
+    // spans 0 → -op_depth; resolve() uses 0 as the auto top default — see
+    // commit 1e8df9f which locked in this behavior).
     assert!(
-        (heights.top_z - op_depth).abs() < 1e-9,
-        "Auto top_z should be stock_top_z ({}), got {}",
-        op_depth,
+        heights.top_z.abs() < 1e-9,
+        "Auto top_z should be 0.0, got {}",
         heights.top_z
     );
 

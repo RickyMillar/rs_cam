@@ -977,6 +977,12 @@ fn semantic_trace_records_entry_params_and_boundary_clip() {
 
 #[test]
 fn adaptive3d_semantic_trace_records_runtime_structure() {
+    // After Phase 3A the per-pass / planning / shelf-detection annotations
+    // emitted by the old viz-side adaptive3d wrapper are no longer produced;
+    // dispatch goes through `core::execute_operation`, which leaves
+    // adaptive3d with the generic span-derived `DepthLevel` items emitted by
+    // `compute/annotate.rs`. Verify the trace exists and at least one
+    // DepthLevel item is attached.
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let mut request = adaptive3d_request(91);
     request.debug_options.enabled = true;
@@ -993,38 +999,16 @@ fn adaptive3d_semantic_trace_records_runtime_structure() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.label == "Z level planning"),
-        "expected planning item"
-    );
-    assert!(
-        semantic_trace
-            .items
-            .iter()
-            .any(|item| item.label == "Flat shelf detection"),
-        "expected flat detection item"
-    );
-    assert!(
-        semantic_trace
-            .items
-            .iter()
-            .any(|item| item.label == "Region detection"),
-        "expected region detection item"
+            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+        "expected top-level Operation scope"
     );
     assert!(
         semantic_trace
             .items
             .iter()
             .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::DepthLevel),
-        "expected depth-level semantics"
+        "expected depth-level semantics from generic span annotation"
     );
-    let pass = semantic_trace
-        .items
-        .iter()
-        .find(|item| item.label.starts_with("Adaptive pass "))
-        .expect("expected adaptive pass semantic item");
-    assert!(pass.move_start.is_some() && pass.move_end.is_some());
-    assert!(pass.params.values.contains_key("step_count"));
-    assert!(pass.params.values.contains_key("yield_ratio"));
 
     if let Some(path) = result.debug_trace_path.as_ref() {
         std::fs::remove_file(path).ok();

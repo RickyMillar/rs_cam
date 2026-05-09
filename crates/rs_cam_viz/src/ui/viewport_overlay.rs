@@ -3,6 +3,7 @@ use crate::compute::LaneSnapshot;
 use crate::render::camera::{ProjectionMode, ViewPreset};
 use crate::state::Workspace;
 use crate::state::viewport::{RenderMode, ToolpathColorMode, ViewportState};
+use crate::ui::automation;
 use crate::ui::theme;
 
 // SAFETY: viewport overlay needs the full UI context (workspace, sim flag,
@@ -101,7 +102,7 @@ pub fn draw(
         });
 
         // ── Show dropdown: all visibility toggles in one popover ─
-        ui.menu_button("Show ▼", |ui| {
+        let show_menu = ui.menu_button("Show ▼", |ui| {
             ui.set_min_width(180.0);
             ui.checkbox(&mut viewport.show_grid, "Grid");
             ui.checkbox(&mut viewport.show_stock, "Stock");
@@ -179,6 +180,14 @@ pub fn draw(
                     });
             });
         });
+        // Record the Show ▼ button so the automation harness can locate the
+        // collision-toggle entry point without expanding the popover.
+        automation::record(
+            ui,
+            "overlay_collision_check",
+            &show_menu.response,
+            "Show ▼ (collisions)",
+        );
 
         // ── Isolate button ──────────────────────────────────────
         if let Some(name) = isolated_name {
@@ -218,7 +227,9 @@ pub fn draw(
                 .collect::<Vec<_>>()
                 .join(" | ");
             ui.label(egui::RichText::new(label).color(theme::WARNING));
-            if ui.small_button("Cancel All").clicked() {
+            let cancel_resp = ui.small_button("Cancel All");
+            automation::record(ui, "overlay_cancel_all", &cancel_resp, "Cancel All");
+            if cancel_resp.clicked() {
                 events.push(AppEvent::CancelCompute);
             }
         }
