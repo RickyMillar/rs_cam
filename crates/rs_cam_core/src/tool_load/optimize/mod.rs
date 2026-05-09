@@ -32,7 +32,7 @@ use crate::session::ProjectSession;
 use crate::simulation_cut::SimulationCutTrace;
 
 use super::RefuseReason;
-use super::verdict::{ChiploadVerdict, DeflectionVerdict, PowerVerdict, ToolpathLoadVerdict};
+use super::verdict::{ChiploadVerdict, PowerVerdict, ToolpathLoadVerdict};
 use super::{ToolpathLoadContext, evaluate_toolpath};
 
 pub mod axes;
@@ -43,6 +43,7 @@ mod delta;
 mod outcome;
 pub mod patches;
 mod policy;
+mod preflight;
 mod refusal;
 pub mod retarget;
 pub mod space;
@@ -198,7 +199,7 @@ pub fn optimize_toolpath(
     //     optimizer's search space (deflection L/D, bipolar chipload),
     //     refuse immediately with an op-aware prescription rather
     //     than running stages that can't move the failing gate.
-    if let Some(refusal) = preflight_classify(
+    if let Some(refusal) = preflight::preflight_classify(
         &ctx,
         baseline_trace,
         baseline_op.feed_rate(),
@@ -561,63 +562,6 @@ fn run_grid_strategy(
 // Both refusals carry an op-aware prescription string. The shape is
 // "<diagnostic> — <lever>", where the diagnostic explains *what* is
 // wrong and the lever points at a knob the user has access to.
-
-/// Outcome of pre-flight: either a refusal that should short-circuit
-/// the optimizer, or `None` to proceed to stages.
-struct PreflightRefusal {
-    reason: RefuseReason,
-    explanation: String,
-}
-
-/// Classify the baseline before running any stages. Returns `Some`
-/// when the optimizer should refuse early without burning sims.
-fn preflight_classify(
-    ctx: &EvaluationContext,
-    baseline_trace: &SimulationCutTrace,
-    operation_feed_rate_mm_min: f64,
-    baseline_verdict: &ToolpathLoadVerdict,
-    matched_lut_row: Option<&MatchedRow>,
-) -> Option<PreflightRefusal> {
-    // 1. Deflection — predicted tip deflection at baseline force. The
-    //    search-space levers (feed/RPM/DOC/stepover) reduce force
-    //    linearly with DOC × radial-width, but for tool/material/
-    //    stickout-driven failures even the smallest viable DOC won't
-    //    bring δ below the threshold. We refuse pre-flight; the
-    //    prescription points the user at the setup levers (stickout,
-    //    tool material) the search space can't reach.
-    if let DeflectionVerdict::Exceeds {
-        peak_mm: peak_delta_mm,
-        ..
-    } = baseline_verdict.deflection
-    {
-        return Some(PreflightRefusal {
-            reason: RefuseReason::DeflectionSetupLocked,
-            explanation: refusal::deflection_setup_prescription(&ctx.tool, peak_delta_mm),
-        });
-    }
-
-    // 2. Bipolar chipload — needs both LUT bounds to be defined,
-    //    otherwise we can't classify against an undefined floor or
-    //    ceiling. Many vendor rows publish only `chip_load_max_mm`,
-    //    so this gate is opt-in by row coverage.
-    if let Some(row) = matched_lut_row
-        && let (Some(cl_min), Some(cl_max)) = (row.chip_load_min_mm, row.chip_load_max_mm)
-    {
-        let steady = super::chipload::steady_state_samples_for_toolpath(
-            baseline_trace,
-            ctx.toolpath_id,
-            operation_feed_rate_mm_min,
-        );
-        if super::chipload::is_bipolar_engagement(&steady.samples, cl_min, cl_max) {
-            return Some(PreflightRefusal {
-                reason: RefuseReason::BipolarEngagement,
-                explanation: refusal::bipolar_prescription(ctx.operation_kind, ctx.op_family),
-            });
-        }
-    }
-
-    None
-}
 
 /// Extract peak power from the gate's verdict. `None` for `Unmodeled`.
 pub(crate) fn baseline_peak_power_kw(verdict: &ToolpathLoadVerdict) -> Option<f64> {
@@ -1824,6 +1768,7 @@ mod project_rollup_tests {
 mod tests {
     use super::delta::{classify_one_gate_chipload, classify_one_gate_power};
     use super::*;
+    use crate::tool_load::verdict::DeflectionVerdict;
 
     #[test]
     fn param_delta_has_changes_detects_any_field() {
