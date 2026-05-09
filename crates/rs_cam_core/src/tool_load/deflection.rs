@@ -44,7 +44,7 @@
 //!   this gate predicts therefore ignores torsion.
 
 use crate::material::Material;
-use crate::simulation_cut::SimulationCutTrace;
+use crate::simulation_cut::{SimulationCutSample, SimulationCutTrace};
 use crate::tool::ToolDefinition;
 
 use super::verdict::{
@@ -52,16 +52,50 @@ use super::verdict::{
 };
 
 /// Below this peak tip deflection (mm), the cut is `Within(Validated)`.
-pub(crate) const WITHIN_BOUND_MM: f64 = 0.050; // 50 µm
+pub const WITHIN_BOUND_MM: f64 = 0.050; // 50 µm
 
 /// Above this peak tip deflection (mm), the cut is `Exceeds`.
-pub(crate) const EXCEEDS_BOUND_MM: f64 = 0.200; // 200 µm
+pub const EXCEEDS_BOUND_MM: f64 = 0.200; // 200 µm
 
 fn standard_bounds() -> DeflectionBounds {
     DeflectionBounds {
         validated_within_mm: WITHIN_BOUND_MM,
         exceeds_mm: EXCEEDS_BOUND_MM,
     }
+}
+
+/// Predict tip deflection for one simulation sample.
+///
+/// Returns `None` when the sample is not a usable cutting sample for the
+/// force-derived deflection model: no arc engagement was captured, no radial
+/// width/axial DOC is present, material Kc is unavailable, or the tool has no
+/// stickout. The returned value is the same mm-scale tip displacement used by
+/// [`evaluate`].
+pub fn sample_tip_deflection_mm(
+    tool: &ToolDefinition,
+    material: &Material,
+    sample: &SimulationCutSample,
+) -> Option<f64> {
+    if !sample.is_cutting || sample.radial_engagement < 0.02 || sample.axial_doc_mm <= 0.0 {
+        return None;
+    }
+    if matches!(material, Material::Custom { .. }) || tool.stickout <= 0.0 {
+        return None;
+    }
+    let kc = material.kc_n_per_mm2();
+    if !kc.is_finite() || kc <= 0.0 {
+        return None;
+    }
+    let arc = sample.arc_engagement_radians?;
+    let engagement_radius =
+        crate::tool::MillingCutter::engagement_radius(tool, sample.axial_doc_mm).max(0.0);
+    let radial_width = (arc / std::f64::consts::PI) * engagement_radius * 2.0;
+    if radial_width <= 0.0 {
+        return None;
+    }
+    let force_n = kc * sample.axial_doc_mm * radial_width;
+    let e = tool.tool_material.youngs_modulus_n_per_mm2();
+    Some(tool.tip_deflection_mm(force_n, sample.axial_doc_mm, e))
 }
 
 pub fn evaluate(
@@ -93,7 +127,6 @@ pub fn evaluate(
             reason: UnmodeledReason::NotImplemented("tool reports zero stickout".to_owned()),
         };
     }
-    let e = tool.tool_material.youngs_modulus_n_per_mm2();
 
     let mut peak_delta_mm = 0.0_f64;
     let mut peak_idx: Option<usize> = None;
@@ -115,15 +148,9 @@ pub fn evaluate(
         };
         any_arc_captured = true;
 
-        let engagement_radius =
-            crate::tool::MillingCutter::engagement_radius(tool, s.axial_doc_mm).max(0.0);
-        let radial_width = (arc / std::f64::consts::PI) * engagement_radius * 2.0;
-        if radial_width <= 0.0 || s.axial_doc_mm <= 0.0 {
+        let Some(delta_mm) = sample_tip_deflection_mm(tool, material, s) else {
             continue;
-        }
-
-        let force_n = kc * s.axial_doc_mm * radial_width;
-        let delta_mm = tool.tip_deflection_mm(force_n, s.axial_doc_mm, e);
+        };
 
         if arc >= std::f64::consts::PI - 1e-3 {
             any_slot = true;
@@ -302,7 +329,7 @@ mod tests {
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
-            None,
+            None
         );
         assert!(matches!(
             v,
@@ -323,7 +350,7 @@ mod tests {
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
-            Some(&trace),
+            Some(&trace)
         );
         assert!(matches!(
             v,
@@ -351,7 +378,7 @@ mod tests {
                 hardness_index: 1.0,
                 kc: 10.0,
             },
-            Some(&trace),
+            Some(&trace)
         );
         assert!(matches!(
             v,
@@ -386,7 +413,7 @@ mod tests {
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
-            Some(&trace),
+            Some(&trace)
         );
         match v {
             DeflectionVerdict::Within {
@@ -427,7 +454,7 @@ mod tests {
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
-            Some(&trace),
+            Some(&trace)
         );
         match v {
             DeflectionVerdict::Within { peak_mm, .. } => {
@@ -461,7 +488,7 @@ mod tests {
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
-            Some(&trace),
+            Some(&trace)
         );
         let peak_um = match v {
             DeflectionVerdict::Within { peak_mm, .. }
@@ -516,7 +543,7 @@ mod tests {
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
-            Some(&trace),
+            Some(&trace)
         );
         match v {
             DeflectionVerdict::Within {

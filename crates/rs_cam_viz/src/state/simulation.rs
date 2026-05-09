@@ -458,6 +458,14 @@ pub struct SimulationPlayback {
     pub tool_radius: f64,
     /// Tool type label for current operation during playback.
     pub tool_type_label: String,
+    /// Total stickout for the current tool during playback.
+    pub tool_stickout: f64,
+    /// Cutting length for the current tool during playback.
+    pub tool_cutting_length: f64,
+    /// Predicted tip deflection for the current cutting sample, in mm.
+    /// `None` on rapids, when metrics are unavailable, or when the current
+    /// sample cannot be modeled.
+    pub tool_deflection_mm: Option<f64>,
     /// Live tri-dexel stock for incremental playback simulation.
     pub live_stock: Option<TriDexelStock>,
     /// Move index the live heightmap has been simulated up to.
@@ -563,6 +571,9 @@ impl SimulationState {
                 tool_position: None,
                 tool_radius: 0.0,
                 tool_type_label: String::new(),
+                tool_stickout: 0.0,
+                tool_cutting_length: 0.0,
+                tool_deflection_mm: None,
                 live_stock: None,
                 live_sim_move: 0,
                 display_mesh: None,
@@ -2065,6 +2076,9 @@ impl Default for SimulationPlayback {
             tool_position: None,
             tool_radius: 0.0,
             tool_type_label: String::new(),
+            tool_stickout: 0.0,
+            tool_cutting_length: 0.0,
+            tool_deflection_mm: None,
             live_stock: None,
             live_sim_move: 0,
             display_mesh: None,

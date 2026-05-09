@@ -135,6 +135,7 @@ impl<B: ComputeBackend> AppController<B> {
                         annotated: Arc::clone(&result.annotated),
                         tool,
                         semantic_trace: rt.semantic_trace.clone(),
+                        spindle_rpm: tc.operation.spindle_rpm(),
                     })
                 })
                 .collect();

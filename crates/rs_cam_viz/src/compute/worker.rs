@@ -76,6 +76,9 @@ pub struct SetupSimToolpath {
     pub annotated: Arc<AnnotatedToolpath>,
     pub tool: ToolConfig,
     pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
+    /// Per-toolpath spindle RPM override. `None` means use the simulation
+    /// request's project/post default RPM.
+    pub spindle_rpm: Option<u32>,
 }
 
 /// A group of toolpaths from one setup in setup-local coordinates.

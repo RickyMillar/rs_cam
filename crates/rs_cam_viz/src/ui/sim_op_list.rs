@@ -3,11 +3,12 @@ use super::sim_debug::{semantic_kind_color, semantic_kind_label};
 use crate::render::toolpath_render::palette_color;
 use crate::state::job::SetupId;
 use crate::state::runtime::GuiState;
-use crate::state::simulation::SimulationState;
+use crate::state::simulation::{SimulationIssue, SimulationIssueKind, SimulationState};
 use crate::state::toolpath::ToolpathId;
 use crate::state::viewport::ViewportState;
 use crate::ui::theme;
 use rs_cam_core::session::ProjectSession;
+use rs_cam_core::tool_load::verdict::{Confidence, CriterionKind, LoadState, ToolpathLoadVerdict};
 use rs_cam_core::toolpath_spans::{Span, SpanKind, SpanPayload};
 
 /// Left panel in simulation workspace: slim operation list with visibility and jump controls.
@@ -204,6 +205,8 @@ pub fn draw(
     let selected_set: Vec<ToolpathId> = sim.selected_toolpaths().cloned().unwrap_or_default();
     let boundaries = sim.boundaries().to_vec();
     let setup_boundaries = sim.setup_boundaries().to_vec();
+    let issues = sim.issues(gui, max_feed);
+    let load_report = sim.cached_load_report(session, gui.edit_counter);
     sim.sync_debug_state(gui, max_feed);
     let active_item = sim.active_semantic_item(gui, max_feed);
     let active_item_id = active_item
@@ -259,7 +262,12 @@ pub fn draw(
             ui.horizontal(|ui| {
                 // Checkbox for including in simulation
                 let mut checked = all_selected || selected_set.contains(&boundary.id);
-                if ui.checkbox(&mut checked, "").changed() {
+                let include_tip = if checked {
+                    "Included in this simulation run. Toggle off and the simulation will re-run without it."
+                } else {
+                    "Excluded from this simulation run. Toggle on and the simulation will re-run with it."
+                };
+                if ui.checkbox(&mut checked, "").on_hover_text(include_tip).changed() {
                     toggled_id = Some(boundary.id);
                 }
 
@@ -284,6 +292,12 @@ pub fn draw(
                     .small()
                     .color(theme::TEXT_MUTED),
             );
+
+            let load_verdict = load_report
+                .per_toolpath
+                .iter()
+                .find(|verdict| verdict.toolpath_id == boundary.id.0);
+            draw_toolpath_status_flags(ui, boundary.id, &issues, load_verdict);
 
             // Per-toolpath visibility controls: eye / cut / rapid / isolate.
             // Shared with the Toolpaths-workspace panel for a consistent row.
@@ -843,5 +857,191 @@ pub fn draw(
                 );
             }
         }
+    }
+}
+
+struct ToolpathStatusFlag {
+    label: String,
+    detail: String,
+    color: egui::Color32,
+}
+
+impl ToolpathStatusFlag {
+    fn new(label: String, detail: String, color: egui::Color32) -> Self {
+        Self {
+            label,
+            detail,
+            color,
+        }
+    }
+}
+
+fn draw_toolpath_status_flags(
+    ui: &mut egui::Ui,
+    toolpath_id: ToolpathId,
+    issues: &[SimulationIssue],
+    verdict: Option<&ToolpathLoadVerdict>,
+) {
+    let flags = toolpath_status_flags(toolpath_id, issues, verdict);
+    ui.horizontal_wrapped(|ui| {
+        if flags.is_empty() {
+            ui.label(
+                egui::RichText::new("✓ all clear")
+                    .small()
+                    .color(theme::SUCCESS),
+            )
+            .on_hover_text(
+                "No simulation issues and all modeled tool-load criteria are within bounds.",
+            );
+            return;
+        }
+        for flag in flags {
+            ui.label(egui::RichText::new(flag.label).small().color(flag.color))
+                .on_hover_text(flag.detail);
+        }
+    });
+}
+
+fn toolpath_status_flags(
+    toolpath_id: ToolpathId,
+    issues: &[SimulationIssue],
+    verdict: Option<&ToolpathLoadVerdict>,
+) -> Vec<ToolpathStatusFlag> {
+    let mut flags = Vec::new();
+    for kind in [
+        SimulationIssueKind::RapidCollision,
+        SimulationIssueKind::HolderCollision,
+        SimulationIssueKind::Hotspot,
+        SimulationIssueKind::Annotation,
+        SimulationIssueKind::AirCut,
+        SimulationIssueKind::LowEngagement,
+    ] {
+        let count = issues
+            .iter()
+            .filter(|issue| issue.toolpath_id == Some(toolpath_id) && issue.kind == kind)
+            .count();
+        if count > 0 {
+            flags.push(ToolpathStatusFlag::new(
+                format!("⚠ {}×{count}", issue_kind_short_label(kind)),
+                issue_kind_detail(toolpath_id, issues, kind, count),
+                issue_kind_color(kind),
+            ));
+        }
+    }
+
+    if let Some(verdict) = verdict {
+        for status in verdict.criteria() {
+            match status.state {
+                LoadState::Exceeds => flags.push(ToolpathStatusFlag::new(
+                    format!("⚠ {}", criterion_short_label(status.kind)),
+                    criterion_detail(&status),
+                    theme::ERROR,
+                )),
+                LoadState::Unmodeled => flags.push(ToolpathStatusFlag::new(
+                    format!("? {}", criterion_short_label(status.kind)),
+                    criterion_detail(&status),
+                    theme::TEXT_DIM,
+                )),
+                LoadState::Within => {
+                    if matches!(status.confidence, Some(Confidence::Approximate(_))) {
+                        flags.push(ToolpathStatusFlag::new(
+                            format!("≈ {}", criterion_short_label(status.kind)),
+                            criterion_detail(&status),
+                            theme::WARNING_MILD,
+                        ));
+                    }
+                }
+            }
+        }
+    } else {
+        flags.push(ToolpathStatusFlag::new(
+            "? load".to_owned(),
+            "Tool-load report did not include this toolpath.".to_owned(),
+            theme::TEXT_DIM,
+        ));
+    }
+
+    flags
+}
+
+fn issue_kind_short_label(kind: SimulationIssueKind) -> &'static str {
+    match kind {
+        SimulationIssueKind::Hotspot => "hotspot",
+        SimulationIssueKind::Annotation => "note",
+        SimulationIssueKind::AirCut => "air",
+        SimulationIssueKind::LowEngagement => "low-eng",
+        SimulationIssueKind::RapidCollision => "rapid",
+        SimulationIssueKind::HolderCollision => "holder",
+    }
+}
+
+fn issue_kind_color(kind: SimulationIssueKind) -> egui::Color32 {
+    match kind {
+        SimulationIssueKind::RapidCollision | SimulationIssueKind::HolderCollision => theme::ERROR,
+        SimulationIssueKind::Hotspot
+        | SimulationIssueKind::Annotation
+        | SimulationIssueKind::AirCut
+        | SimulationIssueKind::LowEngagement => theme::WARNING,
+    }
+}
+
+fn issue_kind_detail(
+    toolpath_id: ToolpathId,
+    issues: &[SimulationIssue],
+    kind: SimulationIssueKind,
+    count: usize,
+) -> String {
+    let examples = issues
+        .iter()
+        .filter(|issue| issue.toolpath_id == Some(toolpath_id) && issue.kind == kind)
+        .take(3)
+        .map(|issue| format!("move {}: {}", issue.move_index, issue.label))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let more = count.saturating_sub(3);
+    if more > 0 {
+        format!(
+            "{} issue(s): {count}\n{examples}\n…and {more} more",
+            issue_kind_short_label(kind)
+        )
+    } else {
+        format!(
+            "{} issue(s): {count}\n{examples}",
+            issue_kind_short_label(kind)
+        )
+    }
+}
+
+fn criterion_short_label(kind: CriterionKind) -> &'static str {
+    match kind {
+        CriterionKind::Chipload => "chip",
+        CriterionKind::Power => "power",
+        CriterionKind::Deflection => "defl",
+    }
+}
+
+fn criterion_detail(status: &rs_cam_core::tool_load::verdict::CriterionStatus<'_>) -> String {
+    let peak = status
+        .display_peak
+        .map(|peak| format!(" peak {peak:.4} {}", status.unit))
+        .unwrap_or_default();
+    let confidence = match status.confidence {
+        Some(Confidence::Validated) => "validated".to_owned(),
+        Some(Confidence::Approximate(why)) => format!("approximate: {why}"),
+        None => "no confidence tag".to_owned(),
+    };
+    match status.state {
+        LoadState::Within => format!(
+            "{} is within bounds; {confidence}.{peak}",
+            status.kind.label()
+        ),
+        LoadState::Exceeds => format!(
+            "{} exceeds its safety bound; {confidence}.{peak}",
+            status.kind.label()
+        ),
+        LoadState::Unmodeled => match status.unmodeled_reason {
+            Some(reason) => format!("{} is unmodeled: {reason:?}.", status.kind.label()),
+            None => format!("{} is unmodeled.", status.kind.label()),
+        },
     }
 }
