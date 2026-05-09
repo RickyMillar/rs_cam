@@ -206,6 +206,7 @@ fn wanaka_like_half_engagement_sample_passes_chipload_gate() {
         LutPassRole::Roughing,
         1000.0,
         OperationType::Pocket,
+        &rs_cam_core::tool_load::ToleranceBands::default(),
     );
 
     match verdict {

@@ -235,6 +235,36 @@ pub fn chipload_envelopes_for_session(
     out
 }
 
+/// Soft fractional widenings on the chipload + power hard-gate triggers.
+/// Default is all-zeros (preserves strict LUT/machine-ceiling behaviour).
+/// The optimizer derives non-zero values from
+/// `optimize::policy::SearchPolicy::ranking` so single-sample transients
+/// (e.g. wanaka TP4 5/2026: one sample 1.05% over `chip_load_max`) don't
+/// flip a candidate to `Exceeds`. See `planning/OPTIMIZER_REFACTOR_G16.md`
+/// §11.4 "Layer 1".
+///
+/// Tolerance widens the *trigger condition* only — the underlying
+/// `peak_above` / `triggering` metrics on `Within` verdicts continue to
+/// record the observed values for downstream display.
+///
+/// The deflection gate is intentionally not plumbed in this commit:
+/// `DeflectionBounds` already exposes a `validated_within` → `exceeds`
+/// band, and the policy default for that fourth field would be 0 anyway.
+/// The `deflection_breach_tolerance` policy field is reserved for the
+/// follow-on wiring in §11.4.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ToleranceBands {
+    /// Fractional widening of the chipload high-side trigger.
+    /// Trigger flips when `cl > max * (1.0 + breakage)`.
+    pub breakage: f64,
+    /// Fractional narrowing of the chipload low-side trigger.
+    /// Trigger flips when `median_cl < min * (1.0 - burn)`.
+    pub burn: f64,
+    /// Fractional widening of the power-exceeds trigger.
+    /// Trigger flips when `peak_power > peak_available * (1.0 + power_breach)`.
+    pub power_breach: f64,
+}
+
 /// Per-toolpath inputs passed to `evaluate_toolpath`. Bundling avoids a
 /// 7-argument function and keeps call sites stable when later phases add
 /// inputs (e.g. `MachineProfile` for the power criterion).
@@ -262,13 +292,24 @@ pub struct ToolpathLoadContext<'a> {
 /// Evaluate every guardrail criterion for a single toolpath. All three
 /// criteria are independent — caller passes the inputs needed for each
 /// and the result carries per-criterion `Verdict`s.
+///
+/// `tolerance` widens the gate triggers per `ToleranceBands`; pass
+/// `&ToleranceBands::default()` for strict LUT/machine-ceiling behaviour.
 pub fn evaluate_toolpath(
     ctx: &ToolpathLoadContext<'_>,
     sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
     machine: Option<&crate::machine::MachineProfile>,
+    tolerance: &ToleranceBands,
 ) -> ToolpathLoadVerdict {
     let power = match machine {
-        Some(m) => power::evaluate(ctx.toolpath_id, ctx.tool, ctx.material, m, sim_trace),
+        Some(m) => power::evaluate(
+            ctx.toolpath_id,
+            ctx.tool,
+            ctx.material,
+            m,
+            sim_trace,
+            tolerance,
+        ),
         None => PowerVerdict::Unmodeled {
             reason: UnmodeledReason::NotImplemented(
                 "machine profile not provided to evaluator".to_owned(),
@@ -286,6 +327,7 @@ pub fn evaluate_toolpath(
             ctx.pass_role,
             ctx.operation_feed_rate_mm_min,
             ctx.operation_kind,
+            tolerance,
         ),
         power,
         deflection: deflection::evaluate(ctx.toolpath_id, ctx.tool, ctx.material, sim_trace),
@@ -297,10 +339,11 @@ pub fn evaluate_project(
     contexts: &[ToolpathLoadContext<'_>],
     sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
     machine: Option<&crate::machine::MachineProfile>,
+    tolerance: &ToleranceBands,
 ) -> ToolLoadReport {
     let per_toolpath = contexts
         .iter()
-        .map(|ctx| evaluate_toolpath(ctx, sim_trace, machine))
+        .map(|ctx| evaluate_toolpath(ctx, sim_trace, machine, tolerance))
         .collect();
     ToolLoadReport { per_toolpath }
 }

@@ -207,6 +207,7 @@ pub fn evaluate(
     pass_role: LutPassRole,
     operation_feed_rate_mm_min: f64,
     operation_kind: OperationType,
+    tolerance: &super::ToleranceBands,
 ) -> ChiploadVerdict {
     // 1. Provenance gate.
     let Some(trace) = sim_trace else {
@@ -341,7 +342,13 @@ pub fn evaluate(
         };
         valid_count += 1;
         burn_samples.push((cl, i));
-        if cl > max {
+        // Layer 1 tolerance band: a single sample 1-2% over `max` (e.g.
+        // wanaka TP4 5/2026 transient at 1.05% over) shouldn't flip the
+        // verdict to `Exceeds(High)`. The widened trigger is purely a
+        // gate-trip decision; the underlying `peak_above` deviation is
+        // still recorded so downstream displays surface the value.
+        let max_trigger = max * (1.0 + tolerance.breakage);
+        if cl > max_trigger {
             let dev = cl - max;
             if peak_above.is_none_or(|(prev, _)| dev > prev) {
                 peak_above = Some((dev, i));
@@ -364,9 +371,14 @@ pub fn evaluate(
         #[allow(clippy::indexing_slicing)] // SAFETY: median_idx < len() by construction
         Some(burn_samples[median_idx])
     };
+    // Layer 1 tolerance band: narrow the burn-risk trigger by
+    // `burn_tolerance` so noisy LUT-min rows don't flip on a 1-2 %
+    // shortfall. The deviation `min_value - median_cl` reported on the
+    // verdict still uses the strict LUT min so downstream displays read
+    // the real distance to the nominal envelope.
     let peak_below: Option<(f64, usize)> = if let Some(min_value) = min
         && let Some((median_cl, median_sample_idx)) = median_sample
-        && median_cl < min_value
+        && median_cl < min_value * (1.0 - tolerance.burn)
     {
         Some((min_value - median_cl, median_sample_idx))
     } else {
@@ -585,6 +597,7 @@ mod tests {
             LutPassRole::Finish,
             1000.0,
             OperationType::ProjectCurve,
+            &crate::tool_load::ToleranceBands::default(),
         );
         assert!(
             matches!(
@@ -612,6 +625,7 @@ mod tests {
             LutPassRole::Finish,
             1000.0,
             OperationType::ProjectCurve,
+            &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
             v,
@@ -634,6 +648,7 @@ mod tests {
             LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
         );
         match v {
             ChiploadVerdict::Unmodeled {
@@ -660,6 +675,7 @@ mod tests {
             LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
             v,
@@ -685,6 +701,7 @@ mod tests {
             LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
         );
         assert!(
             matches!(
@@ -713,6 +730,7 @@ mod tests {
             LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
         );
         match v {
             ChiploadVerdict::Exceeds {
@@ -741,6 +759,7 @@ mod tests {
             LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
         );
         match v {
             ChiploadVerdict::Exceeds {
@@ -770,6 +789,7 @@ mod tests {
             LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(v, ChiploadVerdict::Within { .. }));
     }
@@ -790,6 +810,7 @@ mod tests {
             LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(v, ChiploadVerdict::Within { .. }));
     }
@@ -824,6 +845,7 @@ mod tests {
             LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
         );
         match v {
             ChiploadVerdict::Unmodeled {
@@ -864,6 +886,7 @@ mod tests {
             LutPassRole::Roughing,
             1500.0,
             OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
         );
         assert!(
             matches!(
@@ -906,6 +929,7 @@ mod tests {
             LutPassRole::Roughing,
             1500.0,
             OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
         );
         match v {
             ChiploadVerdict::Exceeds {
@@ -938,6 +962,7 @@ mod tests {
             LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
         );
         assert!(
             matches!(v, ChiploadVerdict::Within { .. }),
@@ -973,6 +998,7 @@ mod tests {
             LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
         );
         assert!(
             matches!(v, ChiploadVerdict::Within { .. }),
@@ -1002,6 +1028,7 @@ mod tests {
             LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
         );
         assert!(
             matches!(
@@ -1037,6 +1064,7 @@ mod tests {
             LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
             v,
@@ -1129,5 +1157,189 @@ mod tests {
         let samples = [s_below, s_above, in_range];
         let refs: Vec<_> = samples.iter().enumerate().collect();
         assert!(!is_bipolar_engagement(&refs, 0.02, 0.10));
+    }
+
+    /// Resolve the LUT chipload max for the 6.35 mm flat / HardMaple /
+    /// Pocket / Roughing fixture by running a known-Within evaluation and
+    /// reading the bounds the verdict carries. Lets the tolerance-band
+    /// tests below scale their probe samples relative to the actual row,
+    /// so future LUT changes don't break the test setup.
+    fn pocket_rough_lut_max() -> f64 {
+        let t = trace(vec![sample(0, 0, 0.04, 0.5)]);
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            LutOperationFamily::Pocket,
+            LutPassRole::Roughing,
+            1000.0,
+            OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        match v {
+            ChiploadVerdict::Within {
+                approach_to_max, ..
+            } => approach_to_max.bounds.max_mm_per_tooth,
+            other => panic!("expected Within, got {other:?}"),
+        }
+    }
+
+    fn pocket_rough_lut_min() -> f64 {
+        let t = trace(vec![sample(0, 0, 0.04, 0.5)]);
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            LutOperationFamily::Pocket,
+            LutPassRole::Roughing,
+            1000.0,
+            OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        match v {
+            ChiploadVerdict::Within {
+                approach_to_max, ..
+            } => approach_to_max
+                .bounds
+                .min_mm_per_tooth
+                .expect("LUT row carries a min for the chosen fixture"),
+            other => panic!("expected Within, got {other:?}"),
+        }
+    }
+
+    /// Wanaka TP4 5/2026: a single transient sample 1.05 % above LUT max
+    /// flipped the verdict to `Exceeds(High)` and killed every roughing
+    /// optimization candidate. Layer 1's `breakage_tolerance` widens the
+    /// trigger by 5 %, so 4 % over now stays Within.
+    #[test]
+    fn chipload_high_just_above_max_within_tolerance_is_within() {
+        let max = pocket_rough_lut_max();
+        let probe = max * 1.04;
+        let t = trace(vec![sample(0, 0, probe, 0.5)]);
+        let bands = crate::tool_load::ToleranceBands {
+            breakage: 0.05,
+            ..crate::tool_load::ToleranceBands::default()
+        };
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            LutOperationFamily::Pocket,
+            LutPassRole::Roughing,
+            1000.0,
+            OperationType::Pocket,
+            &bands,
+        );
+        assert!(
+            matches!(v, ChiploadVerdict::Within { .. }),
+            "expected Within with breakage_tolerance=0.05 at 1.04×max, got {v:?}"
+        );
+    }
+
+    /// Mirror of the above: a sample 6 % over LUT max still exceeds the
+    /// 5 % tolerance band and must trip `Exceeds(High)`.
+    #[test]
+    fn chipload_high_above_tolerance_is_exceeds() {
+        let max = pocket_rough_lut_max();
+        let probe = max * 1.06;
+        let t = trace(vec![sample(0, 0, probe, 0.5)]);
+        let bands = crate::tool_load::ToleranceBands {
+            breakage: 0.05,
+            ..crate::tool_load::ToleranceBands::default()
+        };
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            LutOperationFamily::Pocket,
+            LutPassRole::Roughing,
+            1000.0,
+            OperationType::Pocket,
+            &bands,
+        );
+        assert!(
+            matches!(
+                v,
+                ChiploadVerdict::Exceeds {
+                    side: ChipSide::High,
+                    ..
+                }
+            ),
+            "expected Exceeds(High) at 1.06×max with breakage_tolerance=0.05, got {v:?}"
+        );
+    }
+
+    #[test]
+    fn chipload_low_just_below_min_within_tolerance_is_within() {
+        let min = pocket_rough_lut_min();
+        let probe = min * 0.96;
+        let t = trace(vec![sample(0, 0, probe, 0.5)]);
+        let bands = crate::tool_load::ToleranceBands {
+            burn: 0.05,
+            ..crate::tool_load::ToleranceBands::default()
+        };
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            LutOperationFamily::Pocket,
+            LutPassRole::Roughing,
+            1000.0,
+            OperationType::Pocket,
+            &bands,
+        );
+        assert!(
+            matches!(v, ChiploadVerdict::Within { .. }),
+            "expected Within with burn_tolerance=0.05 at 0.96×min, got {v:?}"
+        );
+    }
+
+    #[test]
+    fn chipload_low_below_tolerance_is_exceeds() {
+        let min = pocket_rough_lut_min();
+        let probe = min * 0.94;
+        let t = trace(vec![sample(0, 0, probe, 0.5)]);
+        let bands = crate::tool_load::ToleranceBands {
+            burn: 0.05,
+            ..crate::tool_load::ToleranceBands::default()
+        };
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            LutOperationFamily::Pocket,
+            LutPassRole::Roughing,
+            1000.0,
+            OperationType::Pocket,
+            &bands,
+        );
+        assert!(
+            matches!(
+                v,
+                ChiploadVerdict::Exceeds {
+                    side: ChipSide::Low,
+                    ..
+                }
+            ),
+            "expected Exceeds(Low) at 0.94×min with burn_tolerance=0.05, got {v:?}"
+        );
     }
 }

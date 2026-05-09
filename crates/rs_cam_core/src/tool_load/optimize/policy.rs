@@ -93,6 +93,24 @@ pub struct RankingPolicy {
     pub recommendation_cycle_delta_s: PolicyValue<f64>,
     pub failing_gate_relative_threshold: PolicyValue<f64>,
     pub failing_gate_absolute_epsilon: PolicyValue<f64>,
+    /// Fractional widening of the chipload high-side gate trigger. A value
+    /// of 0.05 means a single-sample chipload up to 5% above LUT max stays
+    /// `Within` instead of flipping to `Exceeds(High)`. The underlying
+    /// `peak_above` metric is still recorded; only the gate-trip decision
+    /// is widened.
+    pub breakage_tolerance: PolicyValue<f64>,
+    /// Fractional narrowing of the chipload low-side gate trigger. A value
+    /// of 0.05 means median chipload down to 5% below LUT min stays
+    /// `Within` instead of flipping to `Exceeds(Low)`.
+    pub burn_tolerance: PolicyValue<f64>,
+    /// Fractional widening of the power gate trigger above
+    /// `available_kw × safety_factor`. Default 0 preserves the existing
+    /// hard machine-ceiling behaviour; the field exists for symmetry.
+    pub power_breach_tolerance: PolicyValue<f64>,
+    /// Fractional widening of the deflection-`Exceeds` trigger above the
+    /// `EXCEEDS_BOUND_MM` threshold. Default 0 preserves today's behaviour;
+    /// the validated→exceeds band already provides the soft warning zone.
+    pub deflection_breach_tolerance: PolicyValue<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -494,6 +512,34 @@ impl Default for SearchPolicy {
                     rationale: "Absolute floor for gate-delta comparisons when baseline peak is near zero.",
                     source: PolicySource::Derived {
                         from: "f64 arithmetic tolerance",
+                    },
+                },
+                breakage_tolerance: PolicyValue {
+                    value: 0.05,
+                    rationale: "Calibrated against wanaka transient TP4 5/2026 (single sample 1.05% over chip_load_max marked the candidate Exceeds). Vendor charts publish chipload as bracket ranges with ≥20% implicit material variability; CNCCookbook tool-life-cliff data shows ~40% loss at 50% of total chipload allowance, so 5% sits well below the breakage cliff.",
+                    source: PolicySource::TuningChoice {
+                        hypothesis: "5% widening absorbs single-sample transients without admitting structural exceedance; revisit once §11 layer-2 calibration data accumulates.",
+                    },
+                },
+                burn_tolerance: PolicyValue {
+                    value: 0.05,
+                    rationale: "Symmetric belt-and-braces: the low-side gate already uses median statistic so the band is mostly defensive against LUT row imprecision.",
+                    source: PolicySource::TuningChoice {
+                        hypothesis: "5% mirror of breakage_tolerance keeps the policy posture symmetric; tighter values revisited with calibration data.",
+                    },
+                },
+                power_breach_tolerance: PolicyValue {
+                    value: 0.0,
+                    rationale: "Power has a real machine ceiling enforced upstream via MachineProfile::safety_factor; do not widen the trigger by default.",
+                    source: PolicySource::TuningChoice {
+                        hypothesis: "Field exists for symmetry; non-zero values would belong to a different machine-confidence regime than this codebase targets.",
+                    },
+                },
+                deflection_breach_tolerance: PolicyValue {
+                    value: 0.0,
+                    rationale: "DeflectionBounds already exposes a 50→200 µm validated→exceeds band; widening EXCEEDS further would dilute that warning posture.",
+                    source: PolicySource::TuningChoice {
+                        hypothesis: "Layer 2 of §11 reads the existing band as a soft penalty; this field stays at 0 unless real data shows otherwise.",
                     },
                 },
             },
