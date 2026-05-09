@@ -26,7 +26,6 @@ use std::sync::atomic::AtomicBool;
 use serde::{Deserialize, Serialize};
 
 use crate::compute::catalog::{OperationConfig, OperationType};
-use crate::feeds::OperationFamily;
 use crate::feeds::vendor_lookup::MatchedRow;
 use crate::machine::MachineProfile;
 use crate::session::ProjectSession;
@@ -44,13 +43,14 @@ mod delta;
 mod outcome;
 pub mod patches;
 mod policy;
+mod refusal;
 pub mod retarget;
 pub mod space;
 pub mod strategy;
 
 pub use candidate::{OptimizeCandidate, feeds_auto_for_candidate};
 pub(crate) use candidate::{
-    evaluate_candidate, finalize_partial, has_doc_knob, refine_stage2, select_stage2_candidates,
+    evaluate_candidate, finalize_partial, refine_stage2, select_stage2_candidates,
 };
 pub(crate) use delta::delta_against_baseline;
 pub use delta::{GateDelta, GateDeltas, ParamDelta};
@@ -592,7 +592,7 @@ fn preflight_classify(
     {
         return Some(PreflightRefusal {
             reason: RefuseReason::DeflectionSetupLocked,
-            explanation: deflection_setup_prescription(&ctx.tool, peak_delta_mm),
+            explanation: refusal::deflection_setup_prescription(&ctx.tool, peak_delta_mm),
         });
     }
 
@@ -611,75 +611,12 @@ fn preflight_classify(
         if super::chipload::is_bipolar_engagement(&steady.samples, cl_min, cl_max) {
             return Some(PreflightRefusal {
                 reason: RefuseReason::BipolarEngagement,
-                explanation: bipolar_prescription(ctx.operation_kind, ctx.op_family),
+                explanation: refusal::bipolar_prescription(ctx.operation_kind, ctx.op_family),
             });
         }
     }
 
     None
-}
-
-/// Build the user-facing prescription string for a deflection-setup-
-/// locked refusal. Reports the predicted peak tip deflection (µm) and
-/// names the setup levers the optimizer's search space can't reach
-/// (stickout, tool material). The target stickout is derived by
-/// scaling the current cantilever length so that, for a uniform-cylinder
-/// approximation, peak δ would land at the Within bound (50 µm) — i.e.
-/// `target_L = current_L × (50 µm / peak)^(1/3)`.
-fn deflection_setup_prescription(tool: &crate::tool::ToolDefinition, peak_delta_mm: f64) -> String {
-    let peak_um = peak_delta_mm * 1000.0;
-    let target_um = search_policy().deflection_setup_target_um.value;
-    let scale = if peak_um > target_um {
-        (target_um / peak_um).cbrt()
-    } else {
-        1.0
-    };
-    let target_stickout_mm = (tool.stickout * scale).max(0.0);
-    format!(
-        "predicted tip deflection {peak_um:.0} µm at peak load (above 200 µm limit) — \
-         feed/RPM/DOC/stepover alone can't bring this under threshold for this setup; \
-         shorten stickout below ~{target_stickout_mm:.0} mm or use a stiffer tool/material"
-    )
-}
-
-/// Build the user-facing prescription string for a bipolar-engagement
-/// refusal. The lever depends on whether the operation has a
-/// depth-per-pass knob the user can adjust to reduce engagement
-/// variance: 2.5D ops with DOC/stepover can usually fix it; 3D
-/// finishing ops typically can't and need a setup change.
-fn bipolar_prescription(op_kind: OperationType, op_family: OperationFamily) -> String {
-    // Family takes precedence over the DOC-knob check: Contour and
-    // Trace are profile-follow ops whose engagement variance is driven
-    // by part geometry (corners, curve changes), not by depth-per-pass.
-    // Even though Profile (G1, 2026-05-08) now exposes a DOC knob to
-    // Stage 1, raising DOC on a contour-follow doesn't reduce the
-    // geometric variance that produced the bipolar verdict.
-    let lever = match op_family {
-        OperationFamily::Contour | OperationFamily::Trace => {
-            "engagement variance is driven by the part geometry — break the operation into \
-             multiple passes at fixed engagement, or use a smaller cutter"
-        }
-        _ if has_doc_knob(op_kind) => {
-            "lower stepover or raise depth-per-pass to reduce engagement variance across the toolpath"
-        }
-        OperationFamily::Parallel | OperationFamily::Scallop => {
-            "this is a 3D finishing op — reduce stepover for tighter passes, or shorten \
-             the cutter to lower setup deflection"
-        }
-        OperationFamily::Face => {
-            "engagement variance on a face op usually means the stock or stepover is \
-             misaligned with the cutter footprint — adjust stepover or face the stock first"
-        }
-        // Adaptive / Pocket / Adaptive3d are all has_doc_knob — they hit the branch above.
-        OperationFamily::Adaptive | OperationFamily::Pocket => {
-            "lower stepover or raise depth-per-pass to reduce engagement variance"
-        }
-    };
-    format!(
-        "steady-state chipload samples straddle the LUT chipload range \
-         (some below the burn floor, some above the breakage ceiling) — \
-         no single feed/RPM clears both extremes. {lever}."
-    )
 }
 
 /// Extract peak power from the gate's verdict. `None` for `Unmodeled`.
@@ -1209,11 +1146,13 @@ mod orchestration_skip_tests {
     //! actual sims are deferred to integration tests in
     //! `tests/optimize_smoke.rs` (slow path).
 
+    use super::refusal::{bipolar_prescription, deflection_setup_prescription};
     use super::*;
     use crate::compute::catalog::OperationConfig;
     use crate::compute::config::{DressupConfig, FeedsAutoMode};
     use crate::compute::operation_configs::{AlignmentPinDrillConfig, DrillConfig, PocketConfig};
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use crate::feeds::OperationFamily;
     use crate::session::ToolpathConfig;
     use crate::simulation_cut::{SimulationCutSummary, SimulationCutTrace};
 
@@ -2870,8 +2809,8 @@ mod candidate_eval_tests {
     use super::*;
     use crate::compute::config::FeedsAutoMode;
     use crate::compute::operation_configs::PocketConfig;
-    use crate::feeds::PassRole;
     use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
+    use crate::feeds::{OperationFamily, PassRole};
     use crate::tool::MillingCutter;
 
     fn baseline_op() -> OperationConfig {
