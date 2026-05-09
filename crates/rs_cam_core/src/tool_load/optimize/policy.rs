@@ -111,6 +111,26 @@ pub struct RankingPolicy {
     /// `EXCEEDS_BOUND_MM` threshold. Default 0 preserves today's behaviour;
     /// the validated→exceeds band already provides the soft warning zone.
     pub deflection_breach_tolerance: PolicyValue<f64>,
+    /// Composite-score weight on chipload-distance penalty (§11.3).
+    /// Cycle-time equivalent (seconds) per unit normalised distance from
+    /// the LUT-bracket midpoint. At midpoint penalty = 0; at either bound
+    /// penalty = 1, costing `alpha` seconds of cycle-time savings. A
+    /// midpoint candidate beats a bound-edge candidate only when the
+    /// cycle-time gap is < `alpha` seconds.
+    pub alpha_chipload_distance: PolicyValue<f64>,
+    /// Composite-score weight on power-overuse penalty (§11.3). Penalty
+    /// ramps linearly from 0 at `power_warning_fraction × available_kw`
+    /// to 1 at `available_kw`, costing `beta` seconds at the ceiling.
+    pub beta_power_overuse: PolicyValue<f64>,
+    /// Composite-score weight on deflection-overuse penalty (§11.3).
+    /// Penalty ramps linearly across the `validated_within → exceeds`
+    /// band on `DeflectionBounds`, costing `gamma` seconds at the
+    /// `exceeds` threshold.
+    pub gamma_deflection_overuse: PolicyValue<f64>,
+    /// Fraction of `available_kw` at which the power-overuse penalty
+    /// starts ramping. Below this fraction the penalty is 0 — captures
+    /// the S1 continuous envelope sitting inside the S6 peak rating.
+    pub power_warning_fraction: PolicyValue<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -540,6 +560,34 @@ impl Default for SearchPolicy {
                     rationale: "DeflectionBounds already exposes a 50→200 µm validated→exceeds band; widening EXCEEDS further would dilute that warning posture.",
                     source: PolicySource::TuningChoice {
                         hypothesis: "Layer 2 of §11 reads the existing band as a soft penalty; this field stays at 0 unless real data shows otherwise.",
+                    },
+                },
+                alpha_chipload_distance: PolicyValue {
+                    value: 5.0,
+                    rationale: "Cycle-time equivalent (s) at the LUT-bracket bound. Calibrated so a midpoint candidate beats a bound-edge candidate only when cycle-time gap is <5s. Taylor n for carbide is 0.2-0.4; feed-exponent literature on wood is sparse, so this is a TuningChoice not a Handbook value.",
+                    source: PolicySource::TuningChoice {
+                        hypothesis: "Calibrate against wanaka + 3 fixtures before changing; §11.3.",
+                    },
+                },
+                beta_power_overuse: PolicyValue {
+                    value: 3.0,
+                    rationale: "Cycle-time equivalent (s) at 100% of available_kw. Smaller than alpha because power-Within has a hard machine ceiling enforced upstream via MachineProfile::safety_factor.",
+                    source: PolicySource::TuningChoice {
+                        hypothesis: "Calibrate against wanaka + 3 fixtures before changing; §11.3.",
+                    },
+                },
+                gamma_deflection_overuse: PolicyValue {
+                    value: 2.0,
+                    rationale: "Cycle-time equivalent (s) at DeflectionBounds::exceeds_mm (200 µm). Smaller than alpha because deflection mostly drives surface finish, not catastrophic failure inside Within.",
+                    source: PolicySource::TuningChoice {
+                        hypothesis: "Calibrate against wanaka + 3 fixtures before changing; §11.3.",
+                    },
+                },
+                power_warning_fraction: PolicyValue {
+                    value: 0.80,
+                    rationale: "S6 peak / S1 continuous spindle ratings sit at ~1.15-1.25x per CADEM. 80% of available_kw (which already includes MachineProfile::safety_factor) marks the S1 continuous envelope inside the S6 peak.",
+                    source: PolicySource::TuningChoice {
+                        hypothesis: "0.80 mirrors the S1/S6 motor-rating convention; revisit if calibration shows the ramp starts too early.",
                     },
                 },
             },
