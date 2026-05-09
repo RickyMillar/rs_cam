@@ -14,6 +14,7 @@ use crate::tool_load::RefuseReason;
 
 use super::candidate::OptimizeCandidate;
 use super::delta::{candidate_is_safe, classify_candidate_vs_baseline};
+use super::rank::composite_score;
 use super::search_policy;
 
 /// Outcome of `optimize_toolpath` for one toolpath.
@@ -161,7 +162,14 @@ pub(crate) fn build_outcome(
             &c.verdict,
         ));
     }
-    sorted.sort_by(|a, b| a.cycle_time_s.total_cmp(&b.cycle_time_s));
+    // G16 §11 layer 2b — sort by composite_score descending (highest
+    // score = best). Replaces the prior cycle-time-only sort so that
+    // band-admitted candidates near the chipload edge don't outrank a
+    // mid-bracket sibling at comparable cycle time.
+    let policy = search_policy();
+    sorted.sort_by(|a, b| {
+        composite_score(b, &baseline, policy).total_cmp(&composite_score(a, &baseline, policy))
+    });
 
     let baseline_cycle = baseline.cycle_time_s;
     let min_cycle_delta_s = search_policy().ranking.recommendation_cycle_delta_s.value;

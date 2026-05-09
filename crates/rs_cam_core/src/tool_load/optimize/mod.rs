@@ -322,9 +322,16 @@ pub fn optimize_toolpath(
         return finalize_partial(baseline_candidate, all_candidates);
     }
 
-    // 9. Stage 2: top-3 by cycle time, re-eval at full resolution.
+    // 9. Stage 2: top-N by composite_score, re-eval at full resolution.
+    //    G16 §11 layer 2b — score weights cycle savings against
+    //    chipload-distance / power-overuse / deflection-overuse penalties.
     let stage2_survivor_count = search_policy().stages.refined_survivor_count.value;
-    let stage2_seeds = select_stage2_candidates(all_candidates, stage2_survivor_count);
+    let stage2_seeds = select_stage2_candidates(
+        all_candidates,
+        &baseline_candidate,
+        search_policy(),
+        stage2_survivor_count,
+    );
     let Ok(stage2_candidates) = refine_stage2(&mut guard, &ctx, stage2_seeds, cancel) else {
         drop(guard);
         return OptimizeOutcome::NoSafeImprovement {
@@ -1623,7 +1630,13 @@ mod tests {
     }
 
     #[test]
-    fn select_stage2_keeps_top_n_by_cycle_time() {
+    fn select_stage2_keeps_top_n_by_composite_score() {
+        // Baseline cycle 200s; all candidates use chipload 0.04 mm/tooth
+        // against a 0.038-0.07 LUT bracket, so the within penalties are
+        // identical. Cycle savings dominate ordering for the within
+        // candidates; the exceeds candidate carries a fixed 2.0 chipload
+        // penalty (~10s at α=5.0) but its 140s savings still wins overall.
+        let baseline = synthetic_candidate(1500.0, 200.0, within_verdict());
         let candidates = vec![
             synthetic_candidate(2000.0, 80.0, within_verdict()),
             synthetic_candidate(2100.0, 70.0, within_verdict()),
@@ -1631,18 +1644,79 @@ mod tests {
             synthetic_candidate(2200.0, 60.0, exceeds_chipload_verdict()),
             synthetic_candidate(1800.0, 100.0, within_verdict()),
         ];
-        let top3 = select_stage2_candidates(candidates, 3);
+        let policy = SearchPolicy::default();
+        let top3 = select_stage2_candidates(candidates, &baseline, &policy, 3);
         assert_eq!(top3.len(), 3);
-        // Sorted ascending: 60, 70, 80.
+        // Top three by composite score: 60 (exceeds, savings 140 - pen 10),
+        // then 70 and 80 (within, equal penalty so cycle dominates).
         assert!((top3[0].cycle_time_s - 60.0).abs() < 1e-9);
         assert!((top3[1].cycle_time_s - 70.0).abs() < 1e-9);
         assert!((top3[2].cycle_time_s - 80.0).abs() < 1e-9);
     }
 
     #[test]
+    fn select_stage2_prefers_midpoint_over_band_edge_at_close_cycle_time() {
+        // Demonstrates the layer 2b reorder relative to a pure-cycle-time
+        // sort. Two within candidates with similar cycle times but
+        // different chipload positions: the midpoint candidate wins
+        // despite being slightly slower.
+        let baseline = synthetic_candidate(1500.0, 200.0, within_verdict());
+        // Build chipload verdicts with both approach_to_min AND
+        // approach_to_max so the rank-side midpoint comes from the
+        // real LUT bracket (0.038 / 0.070, mid = 0.054, half = 0.016)
+        // and not from the synthetic `max * 0.5` fallback.
+        let with_chipload = |cl: f64| {
+            use super::super::verdict::{
+                ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, Confidence,
+                SampleEvidence,
+            };
+            let bounds = ChipBounds {
+                min_mm_per_tooth: Some(0.038),
+                max_mm_per_tooth: 0.070,
+                source: ChipBoundsSource::VendorLut,
+            };
+            let chipload = ChiploadVerdict::Within {
+                approach_to_min: Some(ChiploadMetric {
+                    observed_mm_per_tooth: cl,
+                    statistic: ChiploadStatistic::MedianLow,
+                    evidence: SampleEvidence::empty(),
+                    bounds: bounds.clone(),
+                }),
+                approach_to_max: ChiploadMetric {
+                    observed_mm_per_tooth: cl,
+                    statistic: ChiploadStatistic::PeakInRange,
+                    evidence: SampleEvidence::empty(),
+                    bounds,
+                },
+                confidence: Confidence::Validated,
+            };
+            ToolpathLoadVerdict {
+                toolpath_id: 0,
+                chipload,
+                power: within_power_verdict(),
+                deflection: within_deflection_verdict(0.030),
+            }
+        };
+        // Faster but parked at LUT max (chipload 0.07 → distance 1.0
+        // from midpoint 0.054 → penalty 5.0 at α=5.0).
+        let edge = synthetic_candidate(2200.0, 76.0, with_chipload(0.07));
+        // Slower by 4s but at midpoint → penalty 0.
+        let mid = synthetic_candidate(2000.0, 80.0, with_chipload(0.054));
+        let policy = SearchPolicy::default();
+        let top = select_stage2_candidates(vec![edge, mid], &baseline, &policy, 2);
+        // Edge: savings 124, penalty 5 → score 119.
+        // Mid:  savings 120, penalty 0 → score 120.
+        // Midpoint wins.
+        assert!((top[0].cycle_time_s - 80.0).abs() < 1e-9);
+        assert!((top[1].cycle_time_s - 76.0).abs() < 1e-9);
+    }
+
+    #[test]
     fn select_stage2_does_not_panic_when_fewer_candidates_than_n() {
+        let baseline = synthetic_candidate(1500.0, 200.0, within_verdict());
         let candidates = vec![synthetic_candidate(2000.0, 80.0, within_verdict())];
-        let result = select_stage2_candidates(candidates, 3);
+        let policy = SearchPolicy::default();
+        let result = select_stage2_candidates(candidates, &baseline, &policy, 3);
         assert_eq!(result.len(), 1);
     }
 

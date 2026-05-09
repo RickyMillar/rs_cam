@@ -19,10 +19,8 @@
 //! arms below); they should still be reachable but never preferred over
 //! a strictly-Within sibling at comparable cycle time.
 //!
-//! This module is callable but unused in Phase 2a. Phase 2b rewires
-//! `select_stage2_candidates` and `build_outcome` to consume it; the
-//! `dead_code` allow below comes off then.
-#![allow(dead_code)]
+//! Layer 2b (G16 §11) wires this into `select_stage2_candidates` and
+//! `build_outcome` — both sort by `composite_score` descending.
 
 use super::OptimizeCandidate;
 use super::policy::SearchPolicy;
