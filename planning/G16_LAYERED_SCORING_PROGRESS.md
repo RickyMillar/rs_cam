@@ -2,7 +2,7 @@
 
 **Plan:** `planning/OPTIMIZER_REFACTOR_G16.md` §11.
 **Started:** 2026-05-10.
-**Status:** Layer 2b — landed (`composite_score` now drives `select_stage2_candidates` + `build_outcome` sort). Next: 2c calibration on wanaka + 3 fixtures.
+**Status:** Layer 2b landed. Phase 1 deflection gate now also wrapped (operator's WIP shipped). Next: 2c calibration on wanaka + 3 fixtures.
 
 This doc is the execution checklist for §11 of the G16 design doc.
 Survives context compaction. **Update after every commit.**
@@ -13,7 +13,7 @@ Survives context compaction. **Update after every commit.**
 
 | Phase | Status | Hash | Date |
 |---|---|---|---|
-| 1. Tolerance bands | ✅ done (deflection wrap deferred — note §1) | `53cb252` | 2026-05-10 |
+| 1. Tolerance bands | ✅ done (deflection wrap closed in follow-up) | `53cb252` + _pending_ | 2026-05-10 |
 | 2a. composite_score additive | ✅ done (callable, no call sites) | `f873440` | 2026-05-10 |
 | 2b. Rewire ranking to composite | ✅ done | `b4dc8df` | 2026-05-10 |
 | 2c. Calibrate α/β/γ vs wanaka + 3 fixtures | ⏳ pending | — | — |
@@ -45,13 +45,17 @@ Legend: ⏳ pending • 🟡 in-progress • ✅ done • 🚫 blocked • ⏭�
 - [x] Wrap `tool_load/chipload.rs:344` (`if cl > max`) with breakage_tolerance.
 - [x] Wrap `tool_load/chipload.rs:367+` (`median_cl < min_value`) with burn_tolerance.
 - [x] Wrap `tool_load/power.rs:153` (`peak_power > peak_available_at_peak`).
-- [ ] **Deferred:** wrap `tool_load/deflection.rs:158`
-      (`peak_delta_mm > EXCEEDS_BOUND_MM`). Operator had unstaged WIP in
-      `deflection.rs` (`sample_tip_deflection_mm` + pub constants); to keep
-      Layer 1 free of WIP entanglement we left the deflection gate strict
-      and `ToleranceBands` exposes only 3 fields (no `deflection_breach`).
-      `RankingPolicy::deflection_breach_tolerance` stays as a reserved field
-      so the follow-on is a one-line wrap once the WIP lands.
+- [x] Wrapped `tool_load/deflection.rs:185`
+      (`peak_delta_mm > EXCEEDS_BOUND_MM * (1.0 + tolerance.deflection_breach)`)
+      after the operator's WIP landed. Threaded `tolerance: &ToleranceBands`
+      into `deflection::evaluate` (8 call-site updates: 1 in
+      `tool_load/mod.rs`, 1 in `gcode.rs`, 7 in deflection's own tests
+      passing `&ToleranceBands::default()`). Added `pub deflection_breach: f64`
+      field to `ToleranceBands` and removed the "intentionally not plumbed"
+      doc note. Updated `tolerance_bands_from_policy` to populate the field.
+      Sanity test `deflection_breach_tolerance_widens_exceeds_trigger`
+      verifies a strict-Within result stays Within when widened, and that
+      the trigger never flips Within → Exceeds in the wrong direction.
 - [x] Plumb `&ToleranceBands` (not `&SearchPolicy` — kept the optimize-policy
       types out of `tool_load`) through chipload + power evaluators and
       `evaluate_toolpath` / `evaluate_project`. New helper

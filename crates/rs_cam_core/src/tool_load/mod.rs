@@ -246,12 +246,6 @@ pub fn chipload_envelopes_for_session(
 /// Tolerance widens the *trigger condition* only — the underlying
 /// `peak_above` / `triggering` metrics on `Within` verdicts continue to
 /// record the observed values for downstream display.
-///
-/// The deflection gate is intentionally not plumbed in this commit:
-/// `DeflectionBounds` already exposes a `validated_within` → `exceeds`
-/// band, and the policy default for that fourth field would be 0 anyway.
-/// The `deflection_breach_tolerance` policy field is reserved for the
-/// follow-on wiring in §11.4.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct ToleranceBands {
     /// Fractional widening of the chipload high-side trigger.
@@ -263,6 +257,11 @@ pub struct ToleranceBands {
     /// Fractional widening of the power-exceeds trigger.
     /// Trigger flips when `peak_power > peak_available * (1.0 + power_breach)`.
     pub power_breach: f64,
+    /// Fractional widening of the deflection-exceeds trigger.
+    /// Trigger flips when `peak_delta_mm > EXCEEDS_BOUND_MM * (1.0 + deflection_breach)`.
+    /// Defaults to 0 — the existing `validated_within → exceeds` band on
+    /// `DeflectionBounds` already provides the soft warning zone.
+    pub deflection_breach: f64,
 }
 
 /// Per-toolpath inputs passed to `evaluate_toolpath`. Bundling avoids a
@@ -330,7 +329,13 @@ pub fn evaluate_toolpath(
             tolerance,
         ),
         power,
-        deflection: deflection::evaluate(ctx.toolpath_id, ctx.tool, ctx.material, sim_trace),
+        deflection: deflection::evaluate(
+            ctx.toolpath_id,
+            ctx.tool,
+            ctx.material,
+            sim_trace,
+            tolerance,
+        ),
     }
 }
 
