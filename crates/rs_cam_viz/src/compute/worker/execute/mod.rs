@@ -184,10 +184,7 @@ fn build_core_simulation_request(
                         flute_count: tp.tool.flute_count,
                         tool_summary: tp.tool.summary(),
                         semantic_trace: tp.semantic_trace.clone(),
-                        // Per-toolpath spindle override is not yet plumbed
-                        // through viz `SetupSimToolpath`; falls back to the
-                        // request-level global RPM. Wired in Phase A3.
-                        spindle_rpm: None,
+                        spindle_rpm: tp.spindle_rpm,
                     }
                 })
                 .collect(),

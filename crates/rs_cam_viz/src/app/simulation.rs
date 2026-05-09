@@ -348,9 +348,7 @@ impl RsCamApp {
         if !self.controller.state().simulation.has_results()
             || self.controller.state().simulation.total_moves() == 0
         {
-            let pb = &mut self.controller.state_mut().simulation.playback;
-            pb.tool_position = None;
-            pb.tool_gpu_move = None;
+            clear_playback_tool(&mut self.controller.state_mut().simulation.playback);
             return;
         }
 
@@ -364,9 +362,7 @@ impl RsCamApp {
             .simulation
             .move_to_local_toolpath_move(current);
         let Some((_boundary_index, toolpath_id, local_idx)) = active else {
-            let pb = &mut self.controller.state_mut().simulation.playback;
-            pb.tool_position = None;
-            pb.tool_gpu_move = None;
+            clear_playback_tool(&mut self.controller.state_mut().simulation.playback);
             return;
         };
 
@@ -381,23 +377,44 @@ impl RsCamApp {
             let tool_info = session
                 .find_toolpath_config_by_id(toolpath_id.0)
                 .and_then(|(_, tc)| session.tools().iter().find(|tool| tool.id.0 == tc.tool_id))
-                .cloned();
-            Some((motion.target, tool_info))
+                .cloned()
+                .map(|tool| {
+                    let tool_def = crate::compute::worker::helpers::build_cutter(&tool);
+                    (tool, tool_def)
+                });
+            let deflection_mm = tool_info.as_ref().and_then(|(_, tool_def)| {
+                state
+                    .simulation
+                    .results
+                    .as_ref()
+                    .and_then(|results| results.cut_trace.as_deref())
+                    .and_then(|trace| {
+                        peak_deflection_for_move(
+                            trace,
+                            toolpath_id.0,
+                            local_idx,
+                            tool_def,
+                            &session.stock_config().material,
+                        )
+                    })
+            });
+            Some((motion.target, tool_info, deflection_mm))
         })();
 
-        let Some((pos, tool_info)) = found else {
-            let pb = &mut self.controller.state_mut().simulation.playback;
-            pb.tool_position = None;
-            pb.tool_gpu_move = None;
+        let Some((pos, tool_info, deflection_mm)) = found else {
+            clear_playback_tool(&mut self.controller.state_mut().simulation.playback);
             return;
         };
 
         {
             let pb = &mut self.controller.state_mut().simulation.playback;
             pb.tool_position = Some([pos.x, pos.y, pos.z]);
-            if let Some(tool) = &tool_info {
+            pb.tool_deflection_mm = deflection_mm;
+            if let Some((tool, tool_def)) = &tool_info {
                 pb.tool_radius = tool.diameter / 2.0;
                 pb.tool_type_label = tool.tool_type.label().to_owned();
+                pb.tool_stickout = tool_def.stickout;
+                pb.tool_cutting_length = rs_cam_core::tool::MillingCutter::length(tool_def);
             }
         }
 
@@ -405,11 +422,10 @@ impl RsCamApp {
             return;
         }
 
-        if let Some(tool) = tool_info
+        if let Some((tool, tool_def)) = tool_info
             && let Some(rs) = frame.wgpu_render_state()
         {
             let geom = ToolGeometry::from_tool_config(&tool);
-            let tool_def = crate::compute::worker::helpers::build_cutter(&tool);
             let assembly_info =
                 crate::render::sim_render::ToolAssemblyInfo::from_tool_definition(&tool_def);
             let mut renderer = rs.renderer.write();
@@ -417,11 +433,12 @@ impl RsCamApp {
             #[allow(clippy::unwrap_used)]
             let resources: &mut RenderResources = renderer.callback_resources.get_mut().unwrap();
             resources.tool_model_data = Some(
-                crate::render::sim_render::ToolModelGpuData::from_tool_assembly(
+                crate::render::sim_render::ToolModelGpuData::from_tool_assembly_colored(
                     &rs.device,
                     &geom,
                     &assembly_info,
                     [pos.x as f32, pos.y as f32, pos.z as f32],
+                    deflection_render_color(deflection_mm),
                 ),
             );
             self.controller
@@ -430,5 +447,41 @@ impl RsCamApp {
                 .playback
                 .tool_gpu_move = Some(current);
         }
+    }
+}
+
+fn clear_playback_tool(playback: &mut crate::state::simulation::SimulationPlayback) {
+    playback.tool_position = None;
+    playback.tool_deflection_mm = None;
+    playback.tool_gpu_move = None;
+}
+
+fn peak_deflection_for_move(
+    trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
+    toolpath_id: usize,
+    local_move: usize,
+    tool: &rs_cam_core::tool::ToolDefinition,
+    material: &rs_cam_core::material::Material,
+) -> Option<f64> {
+    trace
+        .samples
+        .iter()
+        .filter(|sample| sample.toolpath_id == toolpath_id && sample.move_index == local_move)
+        .filter_map(|sample| {
+            rs_cam_core::tool_load::deflection::sample_tip_deflection_mm(tool, material, sample)
+        })
+        .max_by(f64::total_cmp)
+}
+
+fn deflection_render_color(deflection_mm: Option<f64>) -> [f32; 3] {
+    let Some(delta) = deflection_mm else {
+        return crate::render::colors::TOOL_CUTTER;
+    };
+    if delta <= rs_cam_core::tool_load::deflection::WITHIN_BOUND_MM {
+        [0.25, 0.95, 0.35]
+    } else if delta <= rs_cam_core::tool_load::deflection::EXCEEDS_BOUND_MM {
+        [1.0, 0.72, 0.20]
+    } else {
+        [1.0, 0.18, 0.12]
     }
 }

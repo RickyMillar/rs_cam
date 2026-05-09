@@ -26,9 +26,9 @@ pub fn draw(
     if ui
         .small_button(eye)
         .on_hover_text(if overall_visible {
-            "Hide this toolpath"
+            "Hide this entire toolpath in the 3D viewport. Simulation still includes it."
         } else {
-            "Show this toolpath"
+            "Show this toolpath again in the 3D viewport."
         })
         .clicked()
     {
@@ -49,7 +49,11 @@ pub fn draw(
     .min_size(egui::vec2(18.0, 16.0));
     if ui
         .add(cut_btn)
-        .on_hover_text("Show cutting moves for this toolpath")
+        .on_hover_text(if entry.show_cutting {
+            "Hide green cutting/feed moves for this toolpath."
+        } else {
+            "Show green cutting/feed moves for this toolpath."
+        })
         .clicked()
     {
         entry.show_cutting = !entry.show_cutting;
@@ -66,7 +70,11 @@ pub fn draw(
     .min_size(egui::vec2(18.0, 16.0));
     if ui
         .add(rapid_btn)
-        .on_hover_text("Show rapid moves for this toolpath")
+        .on_hover_text(if entry.show_rapids {
+            "Hide orange rapid-traverse moves for this toolpath."
+        } else {
+            "Show orange rapid-traverse moves for this toolpath."
+        })
         .clicked()
     {
         entry.show_rapids = !entry.show_rapids;
@@ -85,9 +93,9 @@ pub fn draw(
     if ui
         .add(iso_btn)
         .on_hover_text(if is_isolated {
-            "Clear isolation"
+            "Clear isolation and show all visible toolpaths."
         } else {
-            "Show only this toolpath (Isolate)"
+            "Show only this toolpath in the viewport; click again to clear isolation."
         })
         .clicked()
     {

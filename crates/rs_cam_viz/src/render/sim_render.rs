@@ -571,9 +571,21 @@ impl ToolModelGpuData {
         info: &ToolAssemblyInfo,
         position: [f32; 3],
     ) -> Self {
+        Self::from_tool_assembly_colored(device, geom, info, position, super::colors::TOOL_CUTTER)
+    }
+
+    /// Generate wireframe for the complete tool assembly with a custom cutter color.
+    /// Used by simulation playback to tint the cutter by live deflection while
+    /// leaving shank/holder colors stable.
+    pub fn from_tool_assembly_colored(
+        device: &wgpu::Device,
+        geom: &ToolGeometry,
+        info: &ToolAssemblyInfo,
+        position: [f32; 3],
+        cutter_color: [f32; 3],
+    ) -> Self {
         use wgpu::util::DeviceExt;
 
-        let cutter_color = super::colors::TOOL_CUTTER;
         let shank_color = super::colors::TOOL_SHANK;
         let holder_color = super::colors::TOOL_HOLDER;
         let segments: usize = 24;

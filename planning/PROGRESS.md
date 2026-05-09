@@ -214,6 +214,7 @@ Full-codebase audit across 5 domains (operations, rendering, feeds/speeds, core/
 
 ## Current priorities
 
+- **G16 layered scoring (in flight)** — multi-commit follow-on to the G16 reorg, softens binary gates and adds composite scoring. Design doc §11: `planning/OPTIMIZER_REFACTOR_G16.md`. **Tracker (read first): `planning/G16_LAYERED_SCORING_PROGRESS.md`**.
 - **MCP server polish** — MCP server (`rs_cam_mcp`) is shipped with 16 tools; ongoing work to integrate with running GUI session for real-time AI agent access. Design doc: `planning/SERVICE_LAYER_EXTRACTION.md`
 - **Fix 2 remaining simulation test failures** — `multi_setup_top_bottom_simulation` and `multi_setup_backward_scrub_uses_checkpoints` fail because bottom-up tri-dexel cuts produce empty stock
 - **Stock-level alignment pins** — moving pins from per-setup to the stock definition so they persist across flips. Design doc: `planning/ALIGNMENT_PINS_DESIGN.md`

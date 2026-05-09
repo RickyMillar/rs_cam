@@ -19,7 +19,8 @@
       "args": [
         "-y",
         "socraticode"
-      ]
+      ],
+      "directTools": true
     }
   }
 }

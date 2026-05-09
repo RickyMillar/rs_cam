@@ -202,6 +202,7 @@ impl RsCamApp {
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
 
         self.viewport_rect = rect;
+        self.draw_sim_deflection_overlay(ui, rect);
 
         // Click-to-select toolpath in viewport
         if response.clicked()
@@ -707,6 +708,111 @@ impl RsCamApp {
                 color,
             );
         }
+    }
+
+    fn draw_sim_deflection_overlay(&self, ui: &mut egui::Ui, viewport_rect: egui::Rect) {
+        let state = self.controller.state();
+        if state.workspace != Workspace::Simulation || !state.simulation.has_results() {
+            return;
+        }
+        let playback = &state.simulation.playback;
+        if playback.tool_position.is_none() {
+            return;
+        }
+
+        let panel_size = egui::vec2(178.0, 126.0);
+        let panel_rect =
+            egui::Rect::from_min_size(viewport_rect.min + egui::vec2(12.0, 12.0), panel_size);
+        let painter = ui.painter_at(viewport_rect);
+        painter.rect_filled(
+            panel_rect,
+            6.0,
+            egui::Color32::from_rgba_premultiplied(18, 20, 24, 220),
+        );
+        painter.rect_stroke(
+            panel_rect,
+            6.0,
+            egui::Stroke::new(1.0, egui::Color32::from_rgb(70, 74, 84)),
+        );
+
+        let delta = playback.tool_deflection_mm;
+        let color = deflection_ui_color(delta);
+        let title = match delta {
+            Some(mm) => format!("Tool deflection  δ={:.0} µm", mm * 1000.0),
+            None => "Tool deflection  —".to_owned(),
+        };
+        painter.text(
+            panel_rect.min + egui::vec2(8.0, 8.0),
+            egui::Align2::LEFT_TOP,
+            title,
+            egui::FontId::proportional(12.0),
+            color,
+        );
+
+        let stickout_mm = playback.tool_stickout.max(10.0) as f32;
+        let body_top = panel_rect.min + egui::vec2(82.0, 32.0);
+        let body_bottom = panel_rect.min + egui::vec2(82.0, 104.0);
+        let px_per_mm = (body_bottom.y - body_top.y) / stickout_mm;
+        let exaggerated_tip_offset = delta
+            .map(|mm| (mm as f32 * DEFLECTION_OVERLAY_EXAGGERATION * px_per_mm).min(42.0))
+            .unwrap_or(0.0);
+        let deflected_tip = body_bottom + egui::vec2(exaggerated_tip_offset, 0.0);
+
+        painter.line_segment(
+            [body_top, body_bottom],
+            egui::Stroke::new(1.0, egui::Color32::from_rgb(100, 105, 112)),
+        );
+        painter.line_segment([body_top, deflected_tip], egui::Stroke::new(2.0, color));
+        painter.circle_filled(body_top, 3.0, egui::Color32::from_rgb(130, 135, 145));
+        painter.circle_filled(deflected_tip, 3.5, color);
+
+        let cutter_len_px = (playback.tool_cutting_length as f32 * px_per_mm).clamp(12.0, 34.0);
+        let cutter_top = body_bottom.y - cutter_len_px;
+        let radius_px = (playback.tool_radius as f32 * px_per_mm).clamp(3.0, 10.0);
+        let cutter_rect = egui::Rect::from_min_max(
+            egui::pos2(body_bottom.x - radius_px, cutter_top),
+            egui::pos2(body_bottom.x + radius_px, body_bottom.y),
+        );
+        painter.rect_stroke(
+            cutter_rect,
+            2.0,
+            egui::Stroke::new(1.0, egui::Color32::from_rgb(150, 150, 95)),
+        );
+
+        let note = if delta.is_some() {
+            format!("{DEFLECTION_OVERLAY_EXAGGERATION:.0}× exaggerated\nDirection illustrative")
+        } else {
+            "No cutting sample\nat playhead".to_owned()
+        };
+        painter.text(
+            panel_rect.min + egui::vec2(8.0, 62.0),
+            egui::Align2::LEFT_TOP,
+            note,
+            egui::FontId::proportional(11.0),
+            crate::ui::theme::TEXT_MUTED,
+        );
+        painter.text(
+            panel_rect.min + egui::vec2(8.0, 106.0),
+            egui::Align2::LEFT_TOP,
+            playback.tool_type_label.as_str(),
+            egui::FontId::proportional(11.0),
+            crate::ui::theme::TEXT_DIM,
+        );
+    }
+}
+
+const DEFLECTION_OVERLAY_EXAGGERATION: f32 = 200.0;
+
+fn deflection_ui_color(deflection_mm: Option<f64>) -> egui::Color32 {
+    let Some(delta) = deflection_mm else {
+        return crate::ui::theme::TEXT_DIM;
+    };
+    if delta <= rs_cam_core::tool_load::deflection::WITHIN_BOUND_MM {
+        crate::ui::theme::SUCCESS
+    } else if delta <= rs_cam_core::tool_load::deflection::EXCEEDS_BOUND_MM {
+        crate::ui::theme::WARNING
+    } else {
+        crate::ui::theme::ERROR
     }
 }
 

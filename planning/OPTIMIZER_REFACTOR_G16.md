@@ -1611,3 +1611,378 @@ trivial follow-ups:
 
 So the architectural refactor closes three gap items as side effects
 and pre-empts further conditional drift in the optimizer.
+
+---
+
+## 11. Layered scoring refinement (post-G16)
+
+G16 lands the architecture; this section scopes the next behavior change.
+The motivating finding came from May 2026 wanaka testing, after G16 commits
+`c3cfd36..cfb9ffc` shipped: the optimizer returns `NoSafeImprovement` on
+every roughing toolpath despite candidates that are 50 % faster than
+baseline, because the chipload high-side gate fires on any single sample
+that exceeds `chip_load_max_mm`. One transient at 0.0707 vs max 0.07 (1.05 %
+over) marks the entire candidate `Exceeds(High)`. The framing the user
+landed on:
+
+> "We are not optimizing, we are trying to find perfection."
+
+The fix is a four-layer evolution: soften the binary gates with a
+calibrated tolerance band, replace cycle-time-only ranking with a
+composite score that reads the typed verdict fields G16 Step 7 already
+populates, surface a `MarginalSafe` outcome tier for candidates inside the
+tolerance band, and (deferred) add a Bayesian peak-finding strategy if
+layers 1–3 leave a measurable gap.
+
+This section is the design plan. Implementation begins after G16 lands
+green and a wanaka regression is captured.
+
+### 11.1 Why this is the next architectural step
+
+Two observations make this the natural follow-on to G16.
+
+**G16 invested in typed verdicts; the optimizer doesn't read them.**
+`ChiploadVerdict::Within { approach_to_min, approach_to_max, .. }`,
+`PowerVerdict::Within { peak_kw, available_kw, .. }`, and
+`DeflectionVerdict::Within { peak_mm, bounds: { validated_within_mm,
+exceeds_mm }, .. }` (`crates/rs_cam_core/src/tool_load/verdict.rs`)
+carry exactly the data a composite score needs — distance to each side
+of the LUT envelope, power-headroom band, deflection threshold band.
+Today's ranking ignores all of it: `select_stage2_candidates`
+(`optimize/candidate.rs:391`) sorts by cycle time alone, and
+`build_outcome` (`optimize/outcome.rs:138`) re-sorts by cycle time. Step
+7 paid the verdict-shape cost without the optimizer collecting the
+benefit.
+
+**The hard gates are asymmetric, in the wrong direction.** The
+high-side chipload gate at `chipload.rs:344` (`if cl > max`) fires on a
+single transient sample. The low-side gate at `chipload.rs:367+` uses
+the median-sample, which is robust to noise. So a 1 % overshoot on one
+sample produces `Exceeds(High)`; the same magnitude undershoot on one
+sample produces nothing — only sustained low chipload trips burn risk.
+That asymmetry is defensible per gate (breakage is more catastrophic
+than burn) but not in aggregate: the optimizer treats a transient and
+a structural exceedance identically, and the structural reading isn't
+even computed.
+
+The deflection gate is closer to right — it has a 50 µm "validated
+within" / 200 µm "exceeds" band already (`deflection.rs:55-58`), an
+implicit warning zone — but the optimizer collapses the band into a
+binary `Exceeds` test via `candidate_is_safe`. The ingredients for
+soft scoring are present in the verdicts; they just aren't connected.
+
+### 11.2 The four layers, scoped
+
+| Layer | Scope | Risk | Effort |
+|---|---|---|---|
+| 1. Tolerance bands on hard gates | Replace `cl > max` with `cl > max × (1 + breakage_tolerance)` in three files. PolicyValue defaults to ≈ 5 %. Symmetric tolerance for low-side burn. | Small. Behaviour-preserving when tolerance = 0. | ~1 h |
+| 2. Composite ranking score | Replace cycle-time-only sort with a weighted `score = cycle_savings − α × chipload_dist − β × power_overuse − γ × deflection_overuse`. Penalties ramp inside warning zones. Reads existing verdict-`Within` fields. | Medium. Weight calibration drives optimizer behaviour. | ~1 d |
+| 3. `MarginalSafe` outcome tier | New `OptimizeOutcome::MarginalSafe(Vec<OptimizeCandidate>)` variant for candidates past strict LUT but inside the tolerance band. New match arms in dispatch + UI + MCP. | Small once layer 2 lands. | ~½ d |
+| 4. Bayesian peak-finding strategy | New `strategy/gaussian_process.rs` implementing `OptimizationStrategy` with a GP surrogate over already-evaluated candidates. Feeds proposals to grid stage. | Large. Punt unless 1–3 leave a measurable gap. | ~1–2 w |
+
+Layers land independently; each commit is independently revertible. Layer
+4 is gated on a measurable-gap definition (§ 11.7).
+
+### 11.3 Score formula and defensible default values
+
+The scoring layer 2 collapses three signals into a single ranking
+quantity, replacing the cycle-time tiebreaker today:
+
+```rust
+// In optimize/rank.rs, called from select_stage2_candidates.
+fn composite_score(
+    candidate: &OptimizeCandidate,
+    baseline: &OptimizeCandidate,
+    policy: &SearchPolicy,
+) -> f64 {
+    let cycle_savings_s = baseline.cycle_time_s - candidate.cycle_time_s;
+    let chipload_pen = chipload_distance_penalty(&candidate.verdict.chipload);
+    let power_pen    = power_overuse_penalty(&candidate.verdict.power);
+    let defl_pen     = deflection_overuse_penalty(&candidate.verdict.deflection);
+
+    let r = &policy.ranking;
+    cycle_savings_s
+        - r.alpha_chipload_distance.value * chipload_pen
+        - r.beta_power_overuse.value      * power_pen
+        - r.gamma_deflection_overuse.value * defl_pen
+}
+```
+
+Each penalty term reads typed-verdict fields directly:
+
+```rust
+fn chipload_distance_penalty(v: &ChiploadVerdict) -> f64 {
+    match v {
+        ChiploadVerdict::Within { approach_to_min, approach_to_max, .. } => {
+            // Distance from LUT midpoint, normalised to bracket half-width.
+            // 0 at midpoint, 1 at either bound.
+            let cl = approach_to_max.observed_mm_per_tooth;
+            let max = approach_to_max.bounds.max_mm_per_tooth;
+            let min = approach_to_min.as_ref()
+                .map(|m| m.bounds.min_mm_per_tooth.unwrap_or(max * 0.5))
+                .unwrap_or(max * 0.5);
+            let mid = 0.5 * (min + max);
+            let half = 0.5 * (max - min).max(1e-9);
+            ((cl - mid) / half).abs().clamp(0.0, 2.0)
+        }
+        ChiploadVerdict::Exceeds { .. } => 2.0, // Layer 1 may have admitted this; still penalise.
+        ChiploadVerdict::Unmodeled { .. } => 0.0, // Don't score what we can't measure.
+    }
+}
+
+fn power_overuse_penalty(v: &PowerVerdict) -> f64 {
+    match v {
+        PowerVerdict::Within { peak_kw, available_kw, .. } => {
+            // Ramp linearly inside the 80 %–100 % of available band.
+            let frac = (peak_kw / available_kw.max(1e-9)).clamp(0.0, 1.0);
+            ((frac - 0.80) / 0.20).max(0.0)
+        }
+        PowerVerdict::Exceeds { .. } => 1.5,
+        PowerVerdict::Unmodeled { .. } => 0.0,
+    }
+}
+
+fn deflection_overuse_penalty(v: &DeflectionVerdict) -> f64 {
+    match v {
+        DeflectionVerdict::Within { peak_mm, bounds, .. } => {
+            // Ramp inside validated_within → exceeds band (50 → 200 µm).
+            let lo = bounds.validated_within_mm;
+            let hi = bounds.exceeds_mm;
+            ((peak_mm - lo) / (hi - lo).max(1e-9)).clamp(0.0, 1.0)
+        }
+        DeflectionVerdict::Exceeds { .. } => 1.5,
+        DeflectionVerdict::Unmodeled { .. } => 0.0,
+    }
+}
+```
+
+#### Defensible default values
+
+| Symbol | Default | Units | Source / rationale |
+|---|---|---|---|
+| `breakage_tolerance` | `0.05` | fraction | Vendor charts publish chipload as bracket ranges (e.g. Amana Spektra: `0.004–0.005″`, ≈ 25 % implicit material variability) and CNCCookbook notes vendor tables span 2× SFM ranges with no precision guidance ¹. 5 % is conservative against published precision and safely below the breakage cliff (`tool life cuts ~40 % at 50 % of total chipload allowance` per CNCCookbook ²). |
+| `burn_tolerance` | `0.05` | fraction | Symmetric. The low-side gate already uses median statistic (`chipload.rs:367+`), so this is mostly belt-and-braces. |
+| `power_warning_fraction` | `0.80` | fraction of `available_kw` | S6 peak / S1 continuous spindle ratings sit at ~ 1.15–1.25× per [CADEM](https://cadem.com/s1-s6-motor-ratings-spindle-motor/) ³. 80 % of `available_kw` (which already includes `MachineProfile::safety_factor`) marks the S1 envelope inside the S6 peak. |
+| `deflection_warning_band` | implicit | mm | Read directly from `DeflectionBounds::{validated_within_mm, exceeds_mm}` (50 / 200 µm) — the band already exists. CNCCookbook's deflection guide cites Ingersoll's 0.001″ (~25 µm) for 1/2″ carbide roughing ⁴; the codebase 50 µm threshold sits ~2× this, 200 µm at chatter onset. |
+| `α` (alpha_chipload_distance) | `5.0` | s of cycle-time equivalent per unit normalised distance | Holds calibration: at midpoint `penalty = 0`, at bound `penalty = α = 5 s`. Calibrated so a midpoint candidate beats a bound-edge candidate only when cycle-time gap is < 5 s. Taylor `n` for carbide is 0.2–0.4 ⁵ — feed-exponent literature on wood is sparse, so this is a `TuningChoice`, not a `Handbook` value. |
+| `β` (beta_power_overuse) | `3.0` | s of cycle-time equivalent per unit overuse | At 100 % of available, `penalty = 1.0` → 3 s cost. Smaller than α because power-Within has a hard machine ceiling enforced upstream. |
+| `γ` (gamma_deflection_overuse) | `2.0` | s of cycle-time equivalent per unit band-distance | At 200 µm, `penalty = 1.0` → 2 s cost. Smaller than α because deflection mostly drives surface finish, not catastrophic failure inside `Within`. |
+
+¹ <https://www.cnccookbook.com/7-biggest-feeds-speeds-mistakes-cncers-make/>
+² ibid.
+³ <https://cadem.com/s1-s6-motor-ratings-spindle-motor/>
+⁴ <https://www.cnccookbook.com/afraid-tool-deflection/>
+⁵ <https://www.mechical.com/2022/01/tool-life-taylors-tool-life-equation.html>; Taylor extended form `V·T^n·f^n1·d^n2 = C` with `n1 < n` per [Practical Machinist forum thread](https://www.practicalmachinist.com/forum/threads/taylors-tool-life-equation-constants.284356/).
+
+**All values land as `PolicyValue<f64>` with `PolicySource::TuningChoice
+{ hypothesis: "calibrate against wanaka + 3 fixtures before changing"
+}`.** The default-value policy commit is layer 0; tuning happens in layer
+2's first calibration pass with explicit before/after snapshots.
+
+### 11.4 Integration touch points
+
+Punch list per file. Read this top-to-bottom when implementing; the
+sequencing matches the migration in § 11.7.
+
+#### Layer 1 — tolerance bands
+
+| File:line | Change |
+|---|---|
+| `tool_load/chipload.rs:344` | Replace `if cl > max` with `if cl > max * (1.0 + policy.breakage_tolerance.value)`. |
+| `tool_load/chipload.rs:367-374` | Replace `median_cl < min_value` with `median_cl < min_value * (1.0 - policy.burn_tolerance.value)`. Symmetric for completeness. |
+| `tool_load/power.rs:153` | Replace `peak_power > peak_available_at_peak` with `peak_power > peak_available_at_peak * (1.0 + policy.power_breach_tolerance.value)`. Defaults to 0 (preserves today's behaviour) — power has a real machine ceiling, so the band is mostly there for symmetry. |
+| `tool_load/deflection.rs:158` | Replace `peak_delta_mm > EXCEEDS_BOUND_MM` with `peak_delta_mm > EXCEEDS_BOUND_MM * (1.0 + policy.deflection_breach_tolerance.value)`. Default 0 — band is in `validated_within → exceeds` already, no need to expand `exceeds`. |
+| `tool_load/optimize/policy.rs` | Add four `PolicyValue<f64>` fields on `RankingPolicy` (or new `ToleranceBandPolicy`). Wire defaults; rationale = "calibrated against wanaka transient TP4 5/2026". |
+
+#### Layer 2 — composite scoring
+
+| File:line | Change |
+|---|---|
+| `tool_load/optimize/candidate.rs:391` (`select_stage2_candidates`) | **Plumbing change required.** Today takes `Vec<OptimizeCandidate>` and sorts by cycle time. Layer 2 needs the baseline candidate to compute `cycle_savings`. Minimum-invasive: change signature to `select_stage2_candidates(stage1_winners, baseline, policy, n)`. Caller is `optimize/mod.rs:306` — single call site, no fanout. |
+| `tool_load/optimize/outcome.rs:164` (`build_outcome` sort) | Replace `sort_by(\|a, b\| a.cycle_time_s.total_cmp(&b.cycle_time_s))` with `sort_by(composite_score(...).total_cmp(...))` against `baseline` (already in scope). |
+| `tool_load/optimize/rank.rs` (new file or adjacent to delta.rs) | Add `composite_score`, `chipload_distance_penalty`, `power_overuse_penalty`, `deflection_overuse_penalty`. ~80 LOC. Currently only `refine_top_k` is called out in § 4 of this doc; this slots in next to it. |
+| `tool_load/optimize/policy.rs` | Add `RankingPolicy::{ alpha_chipload_distance, beta_power_overuse, gamma_deflection_overuse }`. PolicyValue defaults per § 11.3. |
+
+#### Layer 3 — `MarginalSafe` outcome tier
+
+| File:line | Change |
+|---|---|
+| `tool_load/optimize/outcome.rs:22-59` (`OptimizeOutcome` enum) | Add `MarginalSafe { recommended: Vec<OptimizeCandidate>, explanation: String }`. Variant order: `Ranked` > `MarginalSafe` > `TradeOff` > `NoSafeImprovement` > `Skipped`. |
+| `tool_load/optimize/outcome.rs:74-83` (`first_safe`) | Add `MarginalSafe` arm — return `recommended.first()` once UI confirms acceptance. Or keep strict (`Ranked`-only) and add `first_marginal_safe(&self)`. Recommend: keep strict, add helper. |
+| `tool_load/optimize/outcome.rs:110-121` (`first_safe_index`) | Same shape — strict by default, parallel `first_marginal_safe_index`. |
+| `tool_load/optimize/outcome.rs:138` (`build_outcome`) | New tier-dispatch arm: after the pure-improvement check fails, before TradeOff, check whether any candidate is faster + inside-tolerance-band-but-outside-strict-LUT. Tag those `MarginalSafe`. |
+| `crates/rs_cam_viz/src/ui/optimize_modal.rs:101-139` | Add match arm. Render with a yellow caution stripe (vs Ranked's green ⭐); modal text: "Inside policy tolerance band. Verify on a scrap before committing." |
+| `crates/rs_cam_viz/src/ui/optimize_project.rs:198-212`, `:241`, `:273-330`, `:533-615` | Six match sites. Each gets a `MarginalSafe` arm rendering as an intermediate state between Ranked and NoSafeImprovement. |
+| `crates/rs_cam_viz/src/state/mod.rs:84` | `OptimizeRunStatus::Ready(OptimizeOutcome)` is non-exhaustive; the new variant inherits automatically — no change here, just confirm the compiler nudges every consumer. |
+| `crates/rs_cam_viz/src/controller/events/mod.rs:336, 485` & `events/compute.rs:712` | Three `OptimizeOutcome::Ranked(_)` matches that today extract candidates for U4 reconciliation. Decide per-site whether `MarginalSafe` qualifies for auto-Apply (recommend: no — require explicit user click). |
+| `crates/rs_cam_viz/src/compute/worker.rs:838-841` | Add `MarginalSafe(_)` to the pass-through arm list. |
+| `crates/rs_cam_mcp/src/server.rs:715` (tool description) | Update the `optimize_toolpath` description to add `MarginalSafe` to the `OptimizeOutcome JSON, one of: ...` list. |
+| `crates/rs_cam_viz/src/mcp_server.rs:493` (mirror description) | Same edit as above — the GUI's MCP server has its own copy of the description string. |
+| `crates/rs_cam_viz/src/mcp_bridge.rs:41` | Doc comment on the bridge function — same one-line addition. |
+
+#### Wanaka regression
+
+The existing `wanaka_tp4_burnrisk_emits_feed_up_candidate` test
+(`tool_load/optimize/strategy/retarget.rs:459`) checks the *retarget
+direction*, not the gate verdict. Its assertions (`primary.value > 3150.0`,
+`primary.clamped`) are unaffected by Layer 1 (the verdict is already
+BurnRisk; the tolerance band on burn-risk only narrows the trigger
+condition, never widens it past the existing bounds). Safe to keep
+as-is.
+
+### 11.5 Test strategy
+
+**New test cases.** Each layer adds tests close to the changed code:
+
+| Layer | New tests | Where |
+|---|---|---|
+| 1 | `chipload_high_just_above_max_within_tolerance_is_within` (cl = 1.04 × max passes); `chipload_high_above_tolerance_is_exceeds` (cl = 1.06 × max fails); symmetric for low side. | `tool_load/chipload.rs` test mod |
+| 2 | `composite_score_prefers_midpoint_when_cycle_times_equal`; `composite_score_prefers_faster_when_chipload_equal`; `power_penalty_zero_at_below_warning_threshold`; `deflection_penalty_ramps_in_band`. | `tool_load/optimize/rank.rs` (new) |
+| 3 | `build_outcome_emits_marginal_safe_when_inside_tolerance_band`; `marginal_safe_does_not_auto_apply_in_first_safe`; `marginal_safe_renders_in_optimize_modal_with_caution`. | `outcome.rs` + `ui/optimize_modal.rs` UI test |
+
+**Existing tests to update.**
+
+- `tool_load/optimize/strategy/retarget.rs:459` (`wanaka_tp4_burnrisk_emits_feed_up_candidate`): unchanged. Direction-only assertion; gate change doesn't perturb.
+- `tool_load/optimize/mod.rs:1198-1301` (rollup tests on `baseline_cycle_time_s`): unchanged. Rollup numbers don't flow through scoring.
+- `tool_load/optimize/mod.rs:1613-1624` (`select_stage2_candidates` tests): **must update**. New signature requires baseline + policy plumbing in test fixtures.
+- Param-sweep snapshot tests (`crates/rs_cam_core/tests/param_sweep.rs`, 54 sweeps): re-baseline after Layer 2 lands. The composite score will reorder candidates within `Ranked` outcomes; expected to change per the design intent. Capture diffs in commit message.
+
+**Wanaka MCP smoke check (per § 5 cadence).** Each layer commit
+includes a wanaka MCP run with snapshot diff. Layer 1 expected: the
+single-transient TP failures move from `NoSafeImprovement` to
+`Ranked` or `MarginalSafe` (the design goal). Layer 2: candidate
+ordering may shift within `Ranked` — review by hand once.
+
+### 11.6 Risks
+
+#### 11.6.1 Weight miscalibration
+
+**Risk:** α/β/γ defaults are `TuningChoice` values. Too small → score
+collapses to cycle-time-only, no behaviour change. Too large → score
+dominates cycle time, optimizer becomes too cautious and surfaces only
+midpoint-LUT candidates regardless of cycle-time gap.
+
+**Mitigation:** layer 2 ships with a calibration commit (separate from
+the implementation commit) that runs wanaka + 3 fixtures and dumps
+score breakdowns per candidate. The commit message records the
+chosen values and the fixtures' before/after candidate ordering. Easy
+to re-tune after data accumulates.
+
+#### 11.6.2 Tolerance band hides real tool failures
+
+**Risk:** a 5 % breakage tolerance accepts a candidate that snaps the
+tool. The single-transient case the tolerance is designed to ignore
+might *be* the leading edge of a structural exceedance.
+
+**Mitigation:**
+
+- Tolerance only applies to the gate-trigger condition; the underlying
+  metric (`peak_above`, `triggering`) is still recorded and surfaced on
+  the verdict for the user to read. Nothing is hidden, just downgraded
+  from a hard refusal.
+- `MarginalSafe` is a *separate* outcome tier. The user has to look at
+  it and accept it. It does not auto-apply via `first_safe`.
+- The 5 % default is calibrated against vendor chart range-publishing
+  (≥ 20 % material variability already implicit) and CNCCookbook's tool-
+  life-cliff data (40 % loss at 50 % of allowance) — well below the
+  breakage threshold.
+
+#### 11.6.3 UI users don't trust `MarginalSafe`
+
+**Risk:** the new tier is rendered between Ranked (green ⭐) and
+NoSafeImprovement (red). Users either treat it as Ranked (defeating
+the purpose) or as Skipped (defeating the optimization).
+
+**Mitigation:** the modal text explicitly calls out the verification
+step ("verify on a scrap before committing"). The MCP `optimize_toolpath`
+description gets the same note. UI copy is reviewed before layer 3
+ships.
+
+#### 11.6.4 Layer 4 is wasted effort
+
+**Risk:** the GP surrogate strategy is a non-trivial implementation
+(~1–2 weeks). If layers 1–3 close the wanaka gap, layer 4 ships dead
+code.
+
+**Mitigation:** layer 4 is gated. Defined "measurable gap" criteria in
+§ 11.7. Not started until that gate trips.
+
+### 11.7 Migration sequence
+
+One commit per layer, in order. Each independently revertible.
+
+#### Layer 1 — tolerance bands (~1 h)
+
+Single commit. Three files, ~30 LOC change. Adds 4 PolicyValue fields.
+Existing tests pass with `tolerance = 0`; new tests assert the band.
+
+**Test gate:** existing tests + new tolerance-band tests pass; wanaka
+MCP run shows previously-`NoSafeImprovement` TPs now produce candidate
+sets. Candidate-set snapshot diff in commit message.
+
+#### Layer 2 — composite scoring (~1 d)
+
+Two commits:
+
+- 2a: add `composite_score` + helpers in `optimize/rank.rs`. No call
+  sites yet. Pure additive code. ~150 LOC + tests.
+- 2b: rewire `select_stage2_candidates` and `build_outcome` to use it.
+  Updates 1 signature + 1 call site + ~3 test fixtures.
+
+**Test gate:** layer 1 tests still pass; layer 2 tests pass; wanaka
+MCP smoke: candidate ordering may shift, review by hand. Param-sweep
+snapshot baseline updated atomically with the 2b commit; commit message
+documents the diff distribution (how many sweeps reordered, how many
+unchanged).
+
+#### Layer 3 — `MarginalSafe` outcome tier (~½ d)
+
+Single commit. New enum variant + ~12 match-arm additions across
+core/UI/MCP. No behaviour change for candidates strictly inside LUT —
+they still land in `Ranked`. New tier only triggers when layer 1's
+tolerance-band-admitted candidates exist.
+
+**Test gate:** all prior tests pass; new `MarginalSafe` tier tests
+pass; wanaka MCP run renders the new tier in the modal screenshot;
+MCP tool description in 3 files updated atomically.
+
+#### Layer 4 — Bayesian peak-finding strategy (~1–2 w, **deferred**)
+
+Gated. Don't start until **all three** measurable-gap criteria trip:
+
+1. Wanaka + 3 fixture projects show the optimizer settling on a local
+   optimum that's > 10 s slower than a hand-found global optimum on
+   any toolpath.
+2. The local-optimum candidate is `Within` on all three gates AND the
+   global optimum is also `Within` (so it's a search-coverage gap, not a
+   policy gap).
+3. Adding probes to the existing grid (cheap, ~½ d effort each) does
+   not close the gap on first attempt.
+
+If any criterion fails, the gap is closed by tuning or extra probes,
+not by adding the GP layer.
+
+When started, layer 4 is its own design-doc revision (likely G17). The
+slot in this doc reserves the file location (`strategy/gaussian_process.rs`)
+and the `OptimizationStrategy` interface contract.
+
+### 11.8 What G16 Step 7 already provides
+
+The score formulas above read fields that Step 7's typed verdicts
+already surface. This table maps each penalty term to its data source —
+no new verdict-shape changes needed for layers 1–3.
+
+| Penalty term | Reads | From | Step 7 status |
+|---|---|---|---|
+| `chipload_distance_penalty` | `approach_to_min.bounds.min_mm_per_tooth`, `approach_to_max.{observed_mm_per_tooth, bounds.max_mm_per_tooth}` | `ChiploadVerdict::Within` | Already shipped per § 3.1 |
+| `power_overuse_penalty` | `peak_kw`, `available_kw` | `PowerVerdict::Within` | Already shipped; both arms carry `available_kw` per `power.rs:142-151` |
+| `deflection_overuse_penalty` | `peak_mm`, `bounds.{validated_within_mm, exceeds_mm}` | `DeflectionVerdict::Within` | Already shipped; `DeflectionBounds` carries 50/200 µm thresholds |
+| `cycle_savings_s` | `cycle_time_s` | `OptimizeCandidate` | Always present |
+
+The single G16 deficit for Layer 2 is plumbing-only:
+`select_stage2_candidates` doesn't take the baseline. One signature
+change in one file (§ 11.4).
+
+This is the architectural payoff Step 7 promised: typed verdict fields
+get read by something other than display code. Layer 2 is the first
+consumer.

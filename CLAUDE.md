@@ -34,6 +34,22 @@ It has three product layers:
 3. Update docs when the visible product surface changes.
 4. Keep `CREDITS.md` current when adding external datasets, formulas, or algorithm references.
 
+## SocratiCode codebase intelligence
+
+This project is indexed with SocratiCode. Prefer the SocratiCode tools for codebase exploration before reading files directly.
+
+Core workflow:
+
+1. Start most explorations with `codebase_search` using broad conceptual queries or exact symbol/type names. Use `rg` instead when you already know the exact string or regex.
+2. Read files only after search narrows the work to a small set of relevant paths; avoid speculative whole-file reads.
+3. Use `codebase_graph_query` before following imports manually, and before modifying/deleting files to see file-level dependents.
+4. Use symbol-level tools before refactors: `codebase_impact` for blast radius, `codebase_flow` for forward execution flow, `codebase_symbol` for callers/callees, and `codebase_symbols` for symbol discovery.
+5. Use `codebase_graph_circular` / `codebase_graph_stats` when debugging architectural/import-order issues.
+6. If search returns no results, call `codebase_status`; if indexing is incomplete, wait and poll status before searching.
+7. Use `codebase_context` and `codebase_context_search` for non-code artifacts if `.socraticodecontextartifacts.json` exists.
+
+When indexing has just been started, call `codebase_status` roughly every 60 seconds until complete; indexing is asynchronous and progress is checkpointed.
+
 ## Dependency reality
 
 Use the actual manifests as source of truth:
