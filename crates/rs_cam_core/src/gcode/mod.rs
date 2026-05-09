@@ -5,6 +5,8 @@
 //! so discarding the `Result` with `let _ =` is safe.
 
 pub mod ir;
+mod modal;
+pub mod program_builder;
 
 pub use ir::{Program, ProgramMetadata, Statement};
 
