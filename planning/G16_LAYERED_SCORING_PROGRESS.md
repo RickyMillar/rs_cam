@@ -14,7 +14,7 @@ Survives context compaction. **Update after every commit.**
 | Phase | Status | Hash | Date |
 |---|---|---|---|
 | 1. Tolerance bands | ✅ done (deflection wrap deferred — note §1) | `53cb252` | 2026-05-10 |
-| 2a. composite_score additive | ✅ done (callable, no call sites) | _pending_ | 2026-05-10 |
+| 2a. composite_score additive | ✅ done (callable, no call sites) | `f873440` | 2026-05-10 |
 | 2b. Rewire ranking to composite | ⏳ pending | — | — |
 | 2c. Calibrate α/β/γ vs wanaka + 3 fixtures | ⏳ pending | — | — |
 | 3. MarginalSafe outcome tier | ⏳ pending | — | — |
