@@ -13,7 +13,7 @@ Survives context compaction. **Update after every commit.**
 
 | Phase | Status | Hash | Date |
 |---|---|---|---|
-| 1. Tolerance bands | ✅ done (deflection wrap closed in follow-up) | `53cb252` + _pending_ | 2026-05-10 |
+| 1. Tolerance bands | ✅ done (deflection wrap closed in follow-up) | `53cb252` + `00e889b` | 2026-05-10 |
 | 2a. composite_score additive | ✅ done (callable, no call sites) | `f873440` | 2026-05-10 |
 | 2b. Rewire ranking to composite | ✅ done | `b4dc8df` | 2026-05-10 |
 | 2c. Calibrate α/β/γ vs wanaka + 3 fixtures | ⏳ pending | — | — |
