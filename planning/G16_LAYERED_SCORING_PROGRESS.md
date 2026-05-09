@@ -2,7 +2,7 @@
 
 **Plan:** `planning/OPTIMIZER_REFACTOR_G16.md` §11.
 **Started:** 2026-05-10.
-**Status:** Layer 2b landed. Phase 1 deflection gate now also wrapped (operator's WIP shipped). Next: 2c calibration on wanaka + 3 fixtures.
+**Status:** Phase 4 (Adaptive3d → Pocket LUT routing) landed. Remaining: 2c calibration (MCP-blocked), 3 MarginalSafe tier.
 
 This doc is the execution checklist for §11 of the G16 design doc.
 Survives context compaction. **Update after every commit.**
@@ -16,9 +16,9 @@ Survives context compaction. **Update after every commit.**
 | 1. Tolerance bands | ✅ done (deflection wrap closed in follow-up) | `53cb252` + `00e889b` | 2026-05-10 |
 | 2a. composite_score additive | ✅ done (callable, no call sites) | `f873440` | 2026-05-10 |
 | 2b. Rewire ranking to composite | ✅ done | `b4dc8df` | 2026-05-10 |
-| 2c. Calibrate α/β/γ vs wanaka + 3 fixtures | ⏳ pending | — | — |
+| 2c. Calibrate α/β/γ vs wanaka + 3 fixtures | 🚫 blocked (needs MCP) | — | — |
 | 3. MarginalSafe outcome tier | ⏳ pending | — | — |
-| 4. Adaptive3d LUT-family routing | ⏳ pending | — | — |
+| 4. Adaptive3d LUT-family routing | ✅ done | _pending_ | 2026-05-10 |
 
 Legend: ⏳ pending • 🟡 in-progress • ✅ done • 🚫 blocked • ⏭️ skipped
 
@@ -168,14 +168,39 @@ Legend: ⏳ pending • 🟡 in-progress • ✅ done • 🚫 blocked • ⏭�
 **Reference:** Doc §10 sign-off ("single-rule addition to bounds.rs's row-matching policy").
 **Effort:** ~½d. **Files:** 1 — likely `tool_load/chipload.rs::routed_lookup_family` or `bounds.rs`. **LOC:** small.
 
-- [ ] Investigate: where does Adaptive3d currently route? `routed_lookup_family`
-      in `tool_load/chipload.rs` is the prime suspect.
-- [ ] Identify the single rule needed. Probably "Adaptive3d → LutOperationFamily::Adaptive"
-      with a stricter clamp on radial engagement, or a fall-through to Parallel
-      when no Adaptive row matches the diameter.
-- [ ] Add the rule + test for the routing.
-- [ ] Wanaka MCP smoke: TP indices 1, 6 (Adaptive3d ops) should now match
-      better LUT rows.
+- [x] Located routing dispatcher: `routed_lookup_family` at
+      `tool_load/chipload.rs:462`. Tracker / design doc said "single-rule
+      addition to bounds.rs's row-matching policy", but bounds.rs only
+      consumes already-matched `MatchedRow`s — actual routing lives in
+      chipload.rs (which calls into vendor_lookup criteria). Doc text was
+      sloppy about location; the rule itself is one branch.
+- [x] Single rule: when `operation_kind == OperationType::Adaptive3d`
+      AND incoming `operation_family == LutOperationFamily::Adaptive`,
+      override to `LutOperationFamily::Pocket` (pass_role unchanged).
+      Confirmed against the embedded LUT data
+      (`data/vendor_lut/observations/amana_flat_end.json`): for a 6mm
+      flat in hardwood the Adaptive rows publish ae_max ≈ 0.95–1.2mm
+      while the Pocket rows publish ae_max ≈ 2.2–2.5mm, matching the
+      operator-wanted regime in design doc §1.3.
+- [x] 4 tests added in `chipload.rs` tests module:
+      `adaptive3d_reroutes_from_adaptive_to_pocket_family`,
+      `adaptive3d_reroute_preserves_pass_role`,
+      `adaptive3d_with_non_adaptive_family_passes_through` (defensive),
+      `pocket_op_with_adaptive_family_passes_through` (gate by op kind).
+- [x] Updated both doc-comments: `routed_lookup_family` now lists the
+      two rerouted ops (ProjectCurve + Adaptive3d); `evaluate`'s upstream
+      doc-block mirrors the same.
+- [x] 1308 lib tests pass (1304 baseline + 4 new). 54/54 param sweeps
+      green. Wanaka burn-risk regression green. Clippy clean.
+- [x] Param sweeps untouched: the routing change affects LUT row
+      selection in the chipload guardrail / F&S calculator, not toolpath
+      generation. Sweep fingerprints don't pass through the optimize
+      lookup path. **No re-baseline needed.**
+- [ ] **Pending:** Wanaka MCP smoke. MCP not connected during commit;
+      re-run `optimize_toolpath` on TP indices 1 + 6 next session and
+      append delta here. Expected: Adaptive3d candidates match Pocket
+      LUT rows with wider ae bands → Stage 2 surfaces 2–3mm stepover
+      candidates that were unreachable under Adaptive's 0.95mm cap.
 
 ---
 
@@ -313,4 +338,10 @@ with date and reasoning.)
   both `approach_to_min` and `approach_to_max` populated so the LUT
   bracket midpoint is genuine. The shared fixture wasn't changed —
   other tests rely on the no-min-bound behaviour.
+- **2026-05-10 — Phase 4.** Doc §10 says "single-rule addition to
+  bounds.rs's row-matching policy", but bounds.rs is the row-resolver
+  (consumes already-matched `MatchedRow`s) — the actual routing is in
+  `chipload.rs::routed_lookup_family`. Implemented the rule there. The
+  doc text in §10 should be updated when convenient; not done in this
+  commit to keep the patch minimal.
 

@@ -190,13 +190,12 @@ pub(crate) fn steady_state_samples_for_toolpath<'a>(
 ///
 /// `operation_kind` is the toolpath's `OperationType`. For most kinds
 /// the (operation_family, pass_role) tuple from the operation spec is
-/// what gets passed to the LUT lookup. `OperationType::ProjectCurve`
-/// is a special case: ProjectCurve isn't a vendor LUT family in its
-/// own right but is geometrically a 3D contour-trace operation, so
-/// for ball/tapered-ball tools we route it to (Parallel, Finish) and
-/// for flat tools to (Contour, Finish). V-bit and bull-nose
-/// project_curve toolpaths leave the lookup unrouted and return
-/// `Unmodeled(NoVendorData)` (Item D of the tool-load fidelity plan).
+/// what gets passed to the LUT lookup. Two kinds get rerouted by
+/// `routed_lookup_family`: `ProjectCurve` (ball/tapered-ball → Parallel,
+/// flat → Contour; v-bit / bull-nose return `Unmodeled(NoVendorData)`
+/// — Item D of the tool-load fidelity plan) and `Adaptive3d`
+/// (Adaptive → Pocket so the LUT envelope reflects pocket-style
+/// clearing instead of 2D adaptive HSM — design doc §1.3, §10).
 #[allow(clippy::too_many_arguments)]
 pub fn evaluate(
     toolpath_id: usize,
@@ -459,12 +458,33 @@ pub fn evaluate(
 /// Map a cutter geometry hint to a vendor-LUT tool family. Mirrors
 /// `feeds::vendor_normalize::to_lookup_query` so the same routing logic
 /// runs for the chipload guardrail as for the F&S calculator.
+///
+/// Two operation kinds get rerouted away from their declared
+/// `feeds_family`:
+///
+/// - `ProjectCurve` isn't a vendor LUT family in its own right; it's
+///   geometrically a 3D contour-trace, so ball/tapered-ball tools route
+///   to `(Parallel, Finish)` and flat tools to `(Contour, Finish)`.
+///   V-bit / bull-nose / facing-bit project_curve toolpaths leave the
+///   lookup unrouted (returns `None`).
+/// - `Adaptive3d` declares `feeds_family: Adaptive` to share F&S inputs
+///   with 2D adaptive HSM, but its path geometry is closer to pocket-
+///   style clearing in wood. The vendor's 2D adaptive rows narrow
+///   stepover by design (e.g. 0.95mm `ae_max` for a 6mm flat in
+///   hardwood), while operators want 2.5–3mm stepover on Adaptive3d.
+///   Route Adaptive3d to `Pocket` so the LUT envelope reflects the
+///   actual mechanical regime. (G16 §10 sign-off, design doc §1.3.)
 pub(crate) fn routed_lookup_family(
     operation_kind: OperationType,
     tool_family: ToolFamily,
     operation_family: LutOperationFamily,
     pass_role: LutPassRole,
 ) -> Option<(LutOperationFamily, LutPassRole)> {
+    if operation_kind == OperationType::Adaptive3d
+        && operation_family == LutOperationFamily::Adaptive
+    {
+        return Some((LutOperationFamily::Pocket, pass_role));
+    }
     if operation_kind != OperationType::ProjectCurve {
         return Some((operation_family, pass_role));
     }
@@ -633,6 +653,73 @@ mod tests {
                 reason: UnmodeledReason::NoVendorData
             }
         ));
+    }
+
+    #[test]
+    fn adaptive3d_reroutes_from_adaptive_to_pocket_family() {
+        // Adaptive3d's declared feeds_family is Adaptive, but its path
+        // geometry is closer to pocket-style clearing in wood. The router
+        // overrides Adaptive → Pocket so the LUT envelope reflects the
+        // correct mechanical regime (design doc §1.3, §10 sign-off).
+        let routed = routed_lookup_family(
+            OperationType::Adaptive3d,
+            ToolFamily::FlatEnd,
+            LutOperationFamily::Adaptive,
+            LutPassRole::Roughing,
+        );
+        assert_eq!(
+            routed,
+            Some((LutOperationFamily::Pocket, LutPassRole::Roughing))
+        );
+    }
+
+    #[test]
+    fn adaptive3d_reroute_preserves_pass_role() {
+        // SemiFinish pass-role passes through unchanged (we only swap
+        // the family axis, not the role axis).
+        let routed = routed_lookup_family(
+            OperationType::Adaptive3d,
+            ToolFamily::FlatEnd,
+            LutOperationFamily::Adaptive,
+            LutPassRole::SemiFinish,
+        );
+        assert_eq!(
+            routed,
+            Some((LutOperationFamily::Pocket, LutPassRole::SemiFinish))
+        );
+    }
+
+    #[test]
+    fn adaptive3d_with_non_adaptive_family_passes_through() {
+        // Defensive: the rule only fires when the incoming family is
+        // Adaptive (the catalog default). Any other incoming family is
+        // a custom override and must be respected.
+        let routed = routed_lookup_family(
+            OperationType::Adaptive3d,
+            ToolFamily::FlatEnd,
+            LutOperationFamily::Pocket,
+            LutPassRole::Roughing,
+        );
+        assert_eq!(
+            routed,
+            Some((LutOperationFamily::Pocket, LutPassRole::Roughing))
+        );
+    }
+
+    #[test]
+    fn pocket_op_with_adaptive_family_passes_through() {
+        // The Adaptive3d reroute is gated on operation_kind too — a
+        // Pocket op asking for the Adaptive family stays Adaptive.
+        let routed = routed_lookup_family(
+            OperationType::Pocket,
+            ToolFamily::FlatEnd,
+            LutOperationFamily::Adaptive,
+            LutPassRole::Roughing,
+        );
+        assert_eq!(
+            routed,
+            Some((LutOperationFamily::Adaptive, LutPassRole::Roughing))
+        );
     }
 
     #[test]
