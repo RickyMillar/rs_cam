@@ -2009,6 +2009,107 @@ mod tests {
             "TradeOff outcomes should not auto-recommend"
         );
     }
+
+    /// Build a `Within` chipload verdict whose `approach_to_max`
+    /// observed value exceeds the strict LUT max — i.e. a band-admitted
+    /// reading that `candidate_is_marginally_safe` should flag. Strict
+    /// LUT max stays at 0.07; observed comes in at `peak`. For the
+    /// classifier to fire, callers pass `peak > 0.07`.
+    fn band_admitted_chipload_verdict(peak: f64) -> ChiploadVerdict {
+        use super::super::verdict::{
+            ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, Confidence,
+            SampleEvidence,
+        };
+        ChiploadVerdict::Within {
+            approach_to_min: None,
+            approach_to_max: ChiploadMetric {
+                observed_mm_per_tooth: peak,
+                statistic: ChiploadStatistic::PeakInRange,
+                evidence: SampleEvidence::empty(),
+                bounds: ChipBounds {
+                    min_mm_per_tooth: Some(0.038),
+                    max_mm_per_tooth: 0.070,
+                    source: ChipBoundsSource::VendorLut,
+                },
+            },
+            confidence: Confidence::Validated,
+        }
+    }
+
+    fn band_admitted_verdict() -> ToolpathLoadVerdict {
+        // 0.072 > 0.07 strict max but inside 0.07 × (1 + 0.05) = 0.0735
+        // tolerance band → Within with strict-bound breach.
+        ToolpathLoadVerdict {
+            toolpath_id: 0,
+            chipload: band_admitted_chipload_verdict(0.072),
+            power: within_power_verdict(),
+            deflection: within_deflection_verdict(0.030),
+        }
+    }
+
+    #[test]
+    fn build_outcome_emits_marginal_safe_when_inside_tolerance_band() {
+        // G16 §11.4 Layer 3: a Within candidate whose chipload reading
+        // is over the strict LUT bound but inside the tolerance band
+        // should land in MarginalSafe, not Ranked.
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let band_admitted = synthetic_candidate(2100.0, 75.0, band_admitted_verdict());
+        let outcome = build_outcome(baseline, vec![band_admitted]);
+        let OptimizeOutcome::MarginalSafe {
+            candidates,
+            explanation,
+        } = outcome
+        else {
+            panic!("expected MarginalSafe, got {outcome:?}");
+        };
+        assert_eq!(candidates.len(), 2, "baseline + 1 band-admitted");
+        assert!(
+            explanation.contains("tolerance band") || explanation.contains("scrap"),
+            "explanation should mention tolerance band / scrap test: {explanation}"
+        );
+    }
+
+    #[test]
+    fn first_safe_returns_none_for_marginal_safe_outcome() {
+        // first_safe is the auto-Apply target — it must NOT include
+        // band-admitted candidates. The user picks them via the modal.
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let band_admitted = synthetic_candidate(2100.0, 75.0, band_admitted_verdict());
+        let outcome = build_outcome(baseline, vec![band_admitted]);
+        assert!(matches!(outcome, OptimizeOutcome::MarginalSafe { .. }));
+        assert!(
+            outcome.first_safe().is_none(),
+            "MarginalSafe outcomes should not auto-recommend via first_safe"
+        );
+    }
+
+    #[test]
+    fn first_marginal_safe_recommends_from_marginal_outcome() {
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let band_admitted = synthetic_candidate(2100.0, 75.0, band_admitted_verdict());
+        let outcome = build_outcome(baseline, vec![band_admitted]);
+        let recommended = outcome
+            .first_marginal_safe()
+            .expect("MarginalSafe outcome must surface a recommendation");
+        assert!((recommended.cycle_time_s - 75.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn build_outcome_prefers_strict_safe_over_marginal_safe() {
+        // Pure (strict-LUT) improvement must outrank a band-admitted
+        // candidate at comparable cycle time. Outcome lands in Ranked,
+        // and first_safe picks the strict candidate.
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let band_admitted = synthetic_candidate(2100.0, 70.0, band_admitted_verdict());
+        let strict = synthetic_candidate(2000.0, 75.0, within_verdict());
+        let outcome = build_outcome(baseline, vec![band_admitted, strict]);
+        assert!(
+            matches!(outcome, OptimizeOutcome::Ranked(_)),
+            "strict-safe pure improvement must win the tier dispatch, got {outcome:?}"
+        );
+        let recommended = outcome.first_safe().expect("strict candidate present");
+        assert!((recommended.cycle_time_s - 75.0).abs() < 1e-9);
+    }
 }
 
 #[cfg(test)]

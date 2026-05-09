@@ -212,6 +212,16 @@ fn optimize_toolpath_full_pipeline() {
                 "Index 0 must be baseline (no delta)"
             );
         }
+        OptimizeOutcome::MarginalSafe { candidates, .. } => {
+            assert!(
+                !candidates.is_empty(),
+                "MarginalSafe outcome must carry at least the baseline candidate"
+            );
+            assert!(
+                !candidates[0].delta.has_changes(),
+                "Index 0 must be baseline (no delta)"
+            );
+        }
     }
 }
 

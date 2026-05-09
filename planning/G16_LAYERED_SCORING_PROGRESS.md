@@ -2,7 +2,7 @@
 
 **Plan:** `planning/OPTIMIZER_REFACTOR_G16.md` §11.
 **Started:** 2026-05-10.
-**Status:** Phase 4 (Adaptive3d → Pocket LUT routing) landed. Remaining: 2c calibration (MCP-blocked), 3 MarginalSafe tier.
+**Status:** Phase 3 (MarginalSafe outcome tier) landed. Remaining: 2c calibration (MCP-blocked).
 
 This doc is the execution checklist for §11 of the G16 design doc.
 Survives context compaction. **Update after every commit.**
@@ -17,7 +17,7 @@ Survives context compaction. **Update after every commit.**
 | 2a. composite_score additive | ✅ done (callable, no call sites) | `f873440` | 2026-05-10 |
 | 2b. Rewire ranking to composite | ✅ done | `b4dc8df` | 2026-05-10 |
 | 2c. Calibrate α/β/γ vs wanaka + 3 fixtures | 🚫 blocked (needs MCP) | — | — |
-| 3. MarginalSafe outcome tier | ⏳ pending | — | — |
+| 3. MarginalSafe outcome tier | ✅ done | _pending_ | 2026-05-10 |
 | 4. Adaptive3d LUT-family routing | ✅ done | `3c937e5` | 2026-05-10 |
 
 Legend: ⏳ pending • 🟡 in-progress • ✅ done • 🚫 blocked • ⏭️ skipped
@@ -142,26 +142,64 @@ Legend: ⏳ pending • 🟡 in-progress • ✅ done • 🚫 blocked • ⏭�
 **Reference:** §11.4 "Layer 3", §11.7 "Layer 3".
 **Effort:** ~½d. **Files:** ~12. **LOC:** 1 enum variant + match arms.
 
-- [ ] Add `MarginalSafe { recommended: Vec<OptimizeCandidate>, explanation: String }`
-      to `optimize/outcome.rs::OptimizeOutcome`. Variant order: `Ranked` →
-      `MarginalSafe` → `TradeOff` → `NoSafeImprovement` → `Skipped`.
-- [ ] `first_safe` (outcome.rs:74-83): keep strict (Ranked-only). Add
-      `first_marginal_safe(&self) -> Option<&OptimizeCandidate>`.
-- [ ] `first_safe_index` (outcome.rs:110-121): same — strict, parallel `first_marginal_safe_index`.
-- [ ] `build_outcome` (outcome.rs:138): new tier-dispatch branch for
-      tolerance-band-admitted candidates that exceed strict LUT.
-- [ ] UI match arms in `crates/rs_cam_viz/src/ui/optimize_modal.rs:101-139`
-      (yellow caution stripe, "verify on a scrap" copy).
-- [ ] UI match arms at `optimize_project.rs` lines 198-212, 241, 273-330,
-      533-615 (six sites).
-- [ ] `controller/events/mod.rs:336, 485` and `events/compute.rs:712`:
-      decide auto-Apply per site (recommend: no, require explicit click).
-- [ ] `compute/worker.rs:838-841`: pass-through arm.
-- [ ] MCP descriptions: `rs_cam_mcp/src/server.rs:715`,
-      `rs_cam_viz/src/mcp_server.rs:493`, `rs_cam_viz/src/mcp_bridge.rs:41` —
-      add `MarginalSafe` to the documented variant list.
-- [ ] Tests: `build_outcome_emits_marginal_safe_when_inside_tolerance_band`,
-      `marginal_safe_does_not_auto_apply_in_first_safe`.
+- [x] Added `MarginalSafe { candidates: Vec<OptimizeCandidate>,
+      explanation: String }` to `OptimizeOutcome`. Variant order
+      Ranked → MarginalSafe → TradeOff → NoSafeImprovement → Skipped
+      as specified. Field name is `candidates` (not `recommended` per
+      tracker's old draft) for parity with Ranked / TradeOff.
+- [x] Added strict-LUT classifier predicates in `optimize/delta.rs`:
+      `candidate_is_strictly_safe` (no Exceeds, no band-admitted Within),
+      `candidate_is_marginally_safe` (Within on every gate, at least one
+      reading band-admitted). Three per-gate helpers
+      (`chipload_within_breaches_strict`,
+      `power_within_breaches_strict`,
+      `deflection_within_breaches_strict`) compare the verdict's
+      observed value to the verdict's own strict bound (no need to
+      re-look-up the LUT). Power and deflection branches are dormant
+      under default tolerances 0.0; chipload is the only producer until
+      §11 phase 2c calibration.
+- [x] `first_safe` tightened to use `candidate_is_strictly_safe`.
+      Returns `None` for `MarginalSafe` outcomes — only `Ranked`.
+- [x] `first_safe_index` tightened similarly.
+- [x] Added `OptimizeOutcome::first_marginal_safe` and
+      `ProjectOptimizeReport::first_marginal_safe_index` parallel to
+      the strict counterparts.
+- [x] `build_outcome` dispatch updated: pure-improvement check uses
+      `candidate_is_strictly_safe`; new `any_marginal_improvement`
+      branch fires when at least one Within candidate is band-admitted
+      AND faster AND no_regression. Tier order matches doc-comment.
+- [x] UI: `optimize_modal.rs` MarginalSafe arm renders the same table
+      as Ranked + a yellow caution header + "verify on a scrap" copy.
+      Calls `outcome.first_marginal_safe()` instead of `first_safe()`.
+- [x] UI: `optimize_project.rs` MarginalSafe arms in all four sites
+      (`compute_optimized_cycle`, `draw_bottleneck_callout`,
+      `draw_row`, `draw_row` with `show_reconciled`). All render
+      "verify on scrap" badge + "N candidate(s) inside tolerance band"
+      narrative. No checkbox — auto-Apply is gated to Ranked only.
+- [x] `compute/worker.rs:838`: cancel-path pass-through arm includes
+      MarginalSafe alongside Ranked / TradeOff.
+- [x] `controller/events/mod.rs:336`: modal Apply path accepts both
+      `Ranked` and `MarginalSafe` candidate sets so the user can
+      explicitly Apply a marginal candidate from the modal.
+- [x] `controller/events/mod.rs:485+` and `events/compute.rs:712`:
+      project rollup auto-Apply and reconciliation kept strict to
+      `Ranked` (MarginalSafe is not auto-applied from rollup; user
+      opens the modal). No code change required for the strict-only
+      filters.
+- [x] MCP descriptions: `rs_cam_mcp/src/server.rs:715` and
+      `rs_cam_viz/src/mcp_server.rs:493` both updated with the full
+      five-variant list (also fixed the stale viz description that was
+      missing TradeOff). `mcp_bridge.rs:41` doesn't enumerate variants
+      — no change.
+- [x] Tests added in `optimize/mod.rs`: `band_admitted_chipload_verdict`
+      / `band_admitted_verdict` fixtures (peak 0.072 vs strict max 0.07,
+      inside the 5% band); `build_outcome_emits_marginal_safe_when_inside_tolerance_band`,
+      `first_safe_returns_none_for_marginal_safe_outcome`,
+      `first_marginal_safe_recommends_from_marginal_outcome`,
+      `build_outcome_prefers_strict_safe_over_marginal_safe`.
+- [x] 1312 lib tests pass (1308 baseline + 4 new). 166 viz lib tests
+      pass. 54/54 param sweeps green. Wanaka burn-risk regression
+      green. Workspace clippy clean.
 
 ### 4. Adaptive3d LUT-family routing
 
@@ -344,4 +382,29 @@ with date and reasoning.)
   `chipload.rs::routed_lookup_family`. Implemented the rule there. The
   doc text in §10 should be updated when convenient; not done in this
   commit to keep the patch minimal.
+- **2026-05-10 — Phase 3.** Variant field renamed from `recommended`
+  (tracker's old draft) to `candidates` for parity with Ranked /
+  TradeOff. The "recommended" candidate is whatever
+  `first_marginal_safe()` returns, which is a method, not a field.
+- **2026-05-10 — Phase 3.** Tightened `first_safe` /
+  `first_safe_index` to use `candidate_is_strictly_safe` instead of
+  `candidate_is_safe`. Existing fixtures (`within_chipload_verdict`,
+  `within_power_verdict`, `within_deflection_verdict`) all build
+  strictly-safe Withins, so the tightening didn't break the existing
+  6 first_safe / first_safe_index test cases.
+- **2026-05-10 — Phase 3.** `mcp_bridge.rs:41` was on the tracker's
+  punch list but it's a one-line "OptimizeOutcome as JSON" comment
+  with no variant enumeration — no edit required.
+- **2026-05-10 — Phase 3.** `controller/events/compute.rs:712`
+  reconciliation already filters to `Ranked` (auto-applied tier);
+  MarginalSafe is not auto-applied from project rollup, so no
+  reconciliation change is needed. Tracker's punch-list entry was
+  over-anticipated impact.
+- **2026-05-10 — Phase 3.** `rustfmt --edition 2024 path/to/file.rs`
+  on a file inside `tool_load/optimize/` cascaded into reformatting
+  every sibling module (axes / bounds / patches / retarget/* /
+  strategy/retarget — the pre-existing fmt drift). Reverted those
+  with `git checkout --` per the per-file commit rule. Future:
+  consider invoking rustfmt with a single-file target list rather
+  than per-file shell loops.
 

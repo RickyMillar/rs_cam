@@ -136,6 +136,32 @@ fn draw_outcome(
         OptimizeOutcome::Ranked(candidates) => {
             draw_ranked(ui, candidates, outcome.first_safe(), toolpath_id, events);
         }
+        OptimizeOutcome::MarginalSafe {
+            candidates,
+            explanation,
+        } => {
+            // G16 §11.4 Layer 3: candidates passed every gate but at
+            // least one Within reading was admitted only by the
+            // tolerance band. Render the same table as Ranked but with
+            // a yellow caution stripe and a "verify on a scrap" header
+            // — no auto-recommendation, the user must explicitly
+            // confirm by clicking Apply.
+            ui.label(
+                egui::RichText::new("Verify on a scrap")
+                    .strong()
+                    .color(theme::WARNING),
+            );
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(explanation).small());
+            ui.add_space(8.0);
+            draw_ranked(
+                ui,
+                candidates,
+                outcome.first_marginal_safe(),
+                toolpath_id,
+                events,
+            );
+        }
         OptimizeOutcome::TradeOff(candidates) => {
             // Trade-off candidates: faster than baseline AND improve a
             // failing gate, but worsen another. Render the same table
