@@ -380,3 +380,94 @@ fn push_comp_start_if_needed(
         *comp_started = true;
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::geo::P3;
+    use crate::toolpath::Toolpath;
+
+    /// Same Toolpath input → same Program (Vec<Statement>) two runs in a
+    /// row. Guards against accidental nondeterminism (HashMap iteration,
+    /// timestamp insertion, etc.) creeping into the builder.
+    #[test]
+    fn program_builder_is_deterministic() {
+        let mut tp1 = Toolpath::new();
+        tp1.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp1.feed_to(P3::new(10.0, 0.0, 0.0), 1000.0);
+        tp1.feed_to(P3::new(20.0, 0.0, 0.0), 1000.0);
+        tp1.arc_cw_to(P3::new(20.0, 5.0, 0.0), 0.0, 5.0, 800.0);
+
+        let mut tp2 = Toolpath::new();
+        tp2.rapid_to(P3::new(30.0, 0.0, 10.0));
+        tp2.feed_to(P3::new(40.0, 0.0, -1.0), 600.0);
+
+        let make_phases = || {
+            vec![
+                GcodePhase {
+                    toolpath: &tp1,
+                    spindle_rpm: 18_000,
+                    label: "Op 0 — pocket",
+                    pre_gcode: Some("G55"),
+                    post_gcode: Some("M9"),
+                    tool_number: Some(1),
+                    coolant: CoolantMode::Mist,
+                    controller_compensation: Some(ControllerCompensation::Left),
+                },
+                GcodePhase {
+                    toolpath: &tp2,
+                    spindle_rpm: 24_000,
+                    label: "Op 1 — profile",
+                    pre_gcode: None,
+                    post_gcode: None,
+                    tool_number: Some(2),
+                    coolant: CoolantMode::Off,
+                    controller_compensation: None,
+                },
+            ]
+        };
+        let make_setups = || {
+            vec![
+                GcodeSetupPhase {
+                    setup_label: "Top",
+                    phases: vec![GcodePhase {
+                        toolpath: &tp1,
+                        spindle_rpm: 18_000,
+                        label: "Top pocket",
+                        pre_gcode: None,
+                        post_gcode: None,
+                        tool_number: Some(1),
+                        coolant: CoolantMode::Off,
+                        controller_compensation: None,
+                    }],
+                },
+                GcodeSetupPhase {
+                    setup_label: "Bottom",
+                    phases: vec![GcodePhase {
+                        toolpath: &tp2,
+                        spindle_rpm: 24_000,
+                        label: "Bottom profile",
+                        pre_gcode: None,
+                        post_gcode: None,
+                        tool_number: Some(2),
+                        coolant: CoolantMode::Flood,
+                        controller_compensation: None,
+                    }],
+                },
+            ]
+        };
+
+        let single_a = build_single(&tp1, 18_000);
+        let single_b = build_single(&tp1, 18_000);
+        assert_eq!(single_a, single_b, "build_single is nondeterministic");
+
+        let phased_a = build_phased(&make_phases());
+        let phased_b = build_phased(&make_phases());
+        assert_eq!(phased_a, phased_b, "build_phased is nondeterministic");
+
+        let multi_a = build_multi_setup(&make_setups(), 15.0);
+        let multi_b = build_multi_setup(&make_setups(), 15.0);
+        assert_eq!(multi_a, multi_b, "build_multi_setup is nondeterministic");
+    }
+}
