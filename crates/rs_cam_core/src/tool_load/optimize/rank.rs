@@ -120,7 +120,8 @@ pub(crate) fn deflection_overuse_penalty(v: &DeflectionVerdict) -> f64 {
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    clippy::print_stdout
 )]
 mod tests {
     use super::*;
@@ -304,5 +305,259 @@ mod tests {
         // route through the Exceeds arm with penalty 1.5 instead.
         let above = deflection_overuse_penalty(&deflection_within(0.250));
         assert!((above - 1.0).abs() < 1e-9);
+    }
+
+    // §11.6.1 calibration scenarios.
+    //
+    // These tests lock α/β/γ behaviour at the chosen literals (α=5, β=3,
+    // γ=2, power_warning_fraction=0.80 — see policy.rs:565-592 rationale).
+    // Each scenario captures a "cliff" the optimizer should make: a
+    // band-edge candidate carries a fixed penalty in seconds-equivalent;
+    // the cycle-time savings needed to outrank a clean sibling is exactly
+    // that penalty. Adjusting α/β/γ shifts the cliff; these tests force
+    // the change to be deliberate.
+
+    #[test]
+    fn power_at_ceiling_loses_to_clean_when_savings_below_beta() {
+        // β=3.0 → power-Within at 100% available_kw costs 3s of cycle-time
+        // savings. A candidate at 100% power saving 2s vs baseline (within
+        // the β cliff) should lose to a candidate at 70% power saving
+        // nothing.
+        let policy = SearchPolicy::default();
+        let baseline = candidate(
+            120.0,
+            chipload_within(0.054),
+            power_within(0.50, 1.00),
+            deflection_within(0.030),
+        );
+        let near_ceiling = candidate(
+            118.0, // 2s savings
+            chipload_within(0.054),
+            power_within(1.00, 1.00),
+            deflection_within(0.030),
+        );
+        let clean = candidate(
+            120.0, // 0s savings, but no penalty
+            chipload_within(0.054),
+            power_within(0.70, 1.00),
+            deflection_within(0.030),
+        );
+        let near_score = composite_score(&near_ceiling, &baseline, &policy);
+        let clean_score = composite_score(&clean, &baseline, &policy);
+        // near_ceiling: 2 - 3·1 = -1; clean: 0 - 3·0 = 0.
+        assert!((near_score - -1.0).abs() < 1e-9);
+        assert!((clean_score - 0.0).abs() < 1e-9);
+        assert!(
+            clean_score > near_score,
+            "clean candidate should outrank near-ceiling candidate at <β savings"
+        );
+    }
+
+    #[test]
+    fn power_at_ceiling_wins_when_savings_exceed_beta() {
+        // Same setup but candidate saves 5s (above the β=3 cliff). The
+        // power-pegged candidate should win.
+        let policy = SearchPolicy::default();
+        let baseline = candidate(
+            120.0,
+            chipload_within(0.054),
+            power_within(0.50, 1.00),
+            deflection_within(0.030),
+        );
+        let near_ceiling = candidate(
+            115.0, // 5s savings
+            chipload_within(0.054),
+            power_within(1.00, 1.00),
+            deflection_within(0.030),
+        );
+        let clean = candidate(
+            120.0,
+            chipload_within(0.054),
+            power_within(0.70, 1.00),
+            deflection_within(0.030),
+        );
+        let near_score = composite_score(&near_ceiling, &baseline, &policy);
+        let clean_score = composite_score(&clean, &baseline, &policy);
+        // near_ceiling: 5 - 3·1 = 2; clean: 0 - 0 = 0.
+        assert!((near_score - 2.0).abs() < 1e-9);
+        assert!(
+            near_score > clean_score,
+            "savings 5s > β=3 cliff should beat clean candidate"
+        );
+    }
+
+    #[test]
+    fn deflection_at_exceeds_loses_to_clean_when_savings_below_gamma() {
+        // γ=2.0 → deflection at the exceeds_mm threshold (200 µm) costs
+        // 2s. A candidate saving 1s vs baseline at 200 µm should lose to
+        // a clean 0-savings candidate at 30 µm.
+        let policy = SearchPolicy::default();
+        let baseline = candidate(
+            120.0,
+            chipload_within(0.054),
+            power_within(0.50, 1.00),
+            deflection_within(0.030),
+        );
+        let high_defl = candidate(
+            119.0, // 1s savings
+            chipload_within(0.054),
+            power_within(0.50, 1.00),
+            deflection_within(0.200), // at exceeds threshold
+        );
+        let clean = candidate(
+            120.0,
+            chipload_within(0.054),
+            power_within(0.50, 1.00),
+            deflection_within(0.030),
+        );
+        let defl_score = composite_score(&high_defl, &baseline, &policy);
+        let clean_score = composite_score(&clean, &baseline, &policy);
+        // high_defl: 1 - 2·1 = -1; clean: 0.
+        assert!((defl_score - -1.0).abs() < 1e-9);
+        assert!(
+            clean_score > defl_score,
+            "clean candidate should outrank high-deflection candidate at <γ savings"
+        );
+    }
+
+    #[test]
+    fn combined_penalties_sum_in_score() {
+        // All three gates at their band edge simultaneously: chipload at
+        // LUT max (α=5), power at 100% (β=3), deflection at exceeds (γ=2)
+        // → total 10s penalty. A candidate at this corner needs >10s of
+        // cycle savings vs a clean sibling to win on composite score.
+        let policy = SearchPolicy::default();
+        let baseline = candidate(
+            120.0,
+            chipload_within(0.054),
+            power_within(0.50, 1.00),
+            deflection_within(0.030),
+        );
+        let edge = candidate(
+            110.0, // 10s savings
+            chipload_within(0.070),     // pen 1.0 → α·1 = 5
+            power_within(1.00, 1.00),   // pen 1.0 → β·1 = 3
+            deflection_within(0.200),   // pen 1.0 → γ·1 = 2
+        );
+        let edge_score = composite_score(&edge, &baseline, &policy);
+        // 10 - 5 - 3 - 2 = 0. Exactly at the cliff.
+        assert!(
+            (edge_score - 0.0).abs() < 1e-9,
+            "expected score 0 at the combined-edge cliff, got {edge_score}"
+        );
+
+        // 1s more savings tips it positive.
+        let edge_plus_one = candidate(
+            109.0,
+            chipload_within(0.070),
+            power_within(1.00, 1.00),
+            deflection_within(0.200),
+        );
+        let plus_one_score = composite_score(&edge_plus_one, &baseline, &policy);
+        assert!((plus_one_score - 1.0).abs() < 1e-9);
+    }
+
+    /// Reference table for the §11.6.1 calibration commit. Run with
+    /// `cargo test -p rs_cam_core composite_score_breakdown_table -- --nocapture`
+    /// to capture the per-candidate score table that goes into the
+    /// commit message body. Values reflect the current α/β/γ literals;
+    /// retuning policy.rs::RankingPolicy::default updates this output.
+    #[test]
+    fn composite_score_breakdown_table() {
+        let policy = SearchPolicy::default();
+        let baseline = candidate(
+            120.0,
+            chipload_within(0.054),
+            power_within(0.50, 1.00),
+            deflection_within(0.030),
+        );
+        let scenarios: Vec<(&str, OptimizeCandidate)> = vec![
+            (
+                "midpoint, 20s faster",
+                candidate(
+                    100.0,
+                    chipload_within(0.054),
+                    power_within(0.50, 1.00),
+                    deflection_within(0.030),
+                ),
+            ),
+            (
+                "chipload-edge, 20s faster",
+                candidate(
+                    100.0,
+                    chipload_within(0.070),
+                    power_within(0.50, 1.00),
+                    deflection_within(0.030),
+                ),
+            ),
+            (
+                "power 90%, 20s faster",
+                candidate(
+                    100.0,
+                    chipload_within(0.054),
+                    power_within(0.90, 1.00),
+                    deflection_within(0.030),
+                ),
+            ),
+            (
+                "defl 125µm (mid-band), 20s faster",
+                candidate(
+                    100.0,
+                    chipload_within(0.054),
+                    power_within(0.50, 1.00),
+                    deflection_within(0.125),
+                ),
+            ),
+            (
+                "all-edges, 10s faster",
+                candidate(
+                    110.0,
+                    chipload_within(0.070),
+                    power_within(1.00, 1.00),
+                    deflection_within(0.200),
+                ),
+            ),
+        ];
+        let r = &policy.ranking;
+        println!(
+            "\n=== composite_score breakdown (α={}, β={}, γ={}, warn={}) ===",
+            r.alpha_chipload_distance.value,
+            r.beta_power_overuse.value,
+            r.gamma_deflection_overuse.value,
+            r.power_warning_fraction.value,
+        );
+        println!(
+            "{:38} {:>9} {:>9} {:>9} {:>9} {:>9}",
+            "scenario", "savings", "α·chip", "β·pow", "γ·defl", "score"
+        );
+        for (label, cand) in &scenarios {
+            let savings = baseline.cycle_time_s - cand.cycle_time_s;
+            let chip_pen = chipload_distance_penalty(&cand.verdict.chipload);
+            let pow_pen = power_overuse_penalty(
+                &cand.verdict.power,
+                r.power_warning_fraction.value,
+            );
+            let defl_pen = deflection_overuse_penalty(&cand.verdict.deflection);
+            let score = composite_score(cand, &baseline, &policy);
+            println!(
+                "{:38} {:9.2} {:9.2} {:9.2} {:9.2} {:9.2}",
+                label,
+                savings,
+                r.alpha_chipload_distance.value * chip_pen,
+                r.beta_power_overuse.value * pow_pen,
+                r.gamma_deflection_overuse.value * defl_pen,
+                score,
+            );
+        }
+        // Lock expected ordering: midpoint > chipload-edge ≈ defl-mid >
+        // power-90% > all-edges.
+        let mut scored: Vec<(&str, f64)> = scenarios
+            .iter()
+            .map(|(label, c)| (*label, composite_score(c, &baseline, &policy)))
+            .collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).expect("finite scores"));
+        let order: Vec<&str> = scored.iter().map(|(l, _)| *l).collect();
+        assert_eq!(order[0], "midpoint, 20s faster");
+        assert_eq!(order[4], "all-edges, 10s faster");
     }
 }
