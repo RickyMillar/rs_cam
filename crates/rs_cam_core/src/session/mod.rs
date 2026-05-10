@@ -15,6 +15,9 @@ mod compute;
 mod mutation;
 pub mod project_file;
 mod save;
+pub mod wizard;
+
+pub use wizard::{OutputLayout, WizardState};
 
 // Re-export all public project_file types so external crates see no path change.
 pub use project_file::{
@@ -494,6 +497,9 @@ pub struct ProjectSession {
     pub(crate) results: HashMap<usize, ToolpathComputeResult>,
     pub(crate) simulation: Option<SimulationResult>,
 
+    // Resumable export-wizard settings.
+    pub(crate) wizard: WizardState,
+
     // ID generators (max existing ID + 1)
     pub(crate) next_toolpath_id: usize,
     pub(crate) next_tool_id: usize,
@@ -525,6 +531,7 @@ impl ProjectSession {
             toolpath_configs: Vec::new(),
             results: HashMap::new(),
             simulation: None,
+            wizard: WizardState::default(),
             next_toolpath_id: 0,
             next_tool_id: 0,
             next_setup_id: 1,
@@ -708,6 +715,16 @@ impl ProjectSession {
     /// Mutable access to post-processor configuration.
     pub fn post_mut(&mut self) -> &mut ProjectPostConfig {
         &mut self.post
+    }
+
+    /// Resumable export-wizard settings.
+    pub fn wizard(&self) -> &WizardState {
+        &self.wizard
+    }
+
+    /// Mutable access to the export-wizard settings.
+    pub fn wizard_mut(&mut self) -> &mut WizardState {
+        &mut self.wizard
     }
 
     /// Replace the project name.
