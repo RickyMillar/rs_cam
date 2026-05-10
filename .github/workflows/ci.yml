@@ -46,3 +46,39 @@ jobs:
 
       - name: Compute Lanes
         run: cargo test -p rs_cam_viz compute::worker::tests::
+
+  gcode-emulator-gate:
+    # Phase 4a: pipe each shipped g-code dialect through an open-source
+    # controller emulator's parser. Any non-zero validator exit blocks
+    # merge. See planning/post_reference_notes.md "Validator install"
+    # for build details.
+    #
+    # Currently gates `gvalidate` only. `rs274ngc` (LinuxCNC parser) is
+    # not yet in the CI image — those tests skip in CI until Phase 4b
+    # adds the build step (LinuxCNC has no Ubuntu noble apt package).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Cache validator binaries
+        uses: actions/cache@v4
+        with:
+          path: reference/validators
+          key: validators-v1-${{ runner.os }}
+
+      - name: Build gvalidate (grbl-sim)
+        run: |
+          if [ ! -x reference/validators/grbl/grbl/sim/gvalidate.exe ]; then
+            mkdir -p reference/validators
+            cd reference/validators
+            git clone --depth 1 https://github.com/grbl/grbl-sim.git grbl
+            cd grbl/grbl/sim
+            make gvalidate
+          fi
+
+      - name: Run emulator-validation gate (gvalidate-only)
+        env:
+          CI_REQUIRE_VALIDATORS: gvalidate
+        run: cargo test -p rs_cam_core --test gcode_emulator_validation -- --ignored --nocapture
