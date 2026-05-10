@@ -253,6 +253,8 @@ pub struct ProjectSetupSection {
     pub face_up: String,
     #[serde(default = "default_setup_z_rotation")]
     pub z_rotation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pause_message: Option<String>,
     #[serde(default)]
     pub xy_datum: String,
     #[serde(default)]
@@ -554,6 +556,7 @@ impl ProjectSetupSection {
             name: setup.name.clone(),
             face_up: setup.face_up.to_key().to_owned(),
             z_rotation: setup.z_rotation.to_key().to_owned(),
+            pause_message: setup.pause_message.clone(),
             xy_datum: setup.datum.xy_method.to_key(),
             z_datum: setup.datum.z_method.to_key(),
             datum_notes: setup.datum.notes.clone(),
@@ -997,6 +1000,7 @@ fn restore_project_setup(
     let mut setup = Setup::new(id, section.name);
     setup.face_up = FaceUp::from_key(&section.face_up);
     setup.z_rotation = ZRotation::from_key(&section.z_rotation);
+    setup.pause_message = section.pause_message;
     if !section.xy_datum.is_empty() {
         setup.datum.xy_method = XYDatum::from_key(&section.xy_datum);
     }

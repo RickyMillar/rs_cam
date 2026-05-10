@@ -403,6 +403,7 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
                 })
                 .collect(),
             toolpath_indices: tp_indices,
+            pause_message: setup.pause_message.clone(),
         });
     }
 

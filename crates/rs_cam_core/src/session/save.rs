@@ -214,6 +214,7 @@ impl ProjectSession {
                     name: s.name.clone(),
                     face_up: s.face_up.to_key().to_owned(),
                     z_rotation: s.z_rotation.to_key().to_owned(),
+                    pause_message: s.pause_message.clone(),
                     fixtures,
                     keep_out_zones,
                     toolpaths,
@@ -443,6 +444,48 @@ mod tests {
         assert_eq!(loaded.list_setups()[1].toolpath_indices.len(), 1);
         assert!(matches!(loaded.list_setups()[1].face_up, FaceUp::Bottom));
         cleanup(&path);
+    }
+
+    /// `pause_message = None` (the default) MUST not appear in the serialized
+    /// TOML, so old project files round-trip byte-for-byte. A `Some(...)`
+    /// override appears under `[setups]` and loads back unchanged.
+    #[test]
+    fn setup_pause_message_round_trip() {
+        let mut s = ProjectSession::new_empty();
+        s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+        let tool_id = s.tools()[0].id.0;
+        s.add_setup("Bottom Setup".to_owned(), FaceUp::Bottom);
+        s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        s.add_toolpath(1, make_tc(tool_id, 0)).unwrap();
+
+        // Default: no pause_message — must not appear in serialized TOML.
+        let path_none = temp_path("pause_none");
+        s.save(&path_none).unwrap();
+        let serialized = std::fs::read_to_string(&path_none).unwrap();
+        assert!(
+            !serialized.contains("pause_message"),
+            "TOML for default pause_message=None must not include the key; got:\n{serialized}"
+        );
+        let loaded = ProjectSession::load(&path_none).unwrap();
+        assert!(loaded.list_setups().iter().all(|s| s.pause_message.is_none()));
+        cleanup(&path_none);
+
+        // Override: setup[1].pause_message = Some("Run Z Probe macro then Resume")
+        s.setups_mut()[1].pause_message = Some("Run Z Probe macro then Resume".to_owned());
+        let path_some = temp_path("pause_some");
+        s.save(&path_some).unwrap();
+        let serialized = std::fs::read_to_string(&path_some).unwrap();
+        assert!(
+            serialized.contains("pause_message"),
+            "TOML must include pause_message when override is set; got:\n{serialized}"
+        );
+        let loaded = ProjectSession::load(&path_some).unwrap();
+        assert_eq!(loaded.list_setups()[0].pause_message, None);
+        assert_eq!(
+            loaded.list_setups()[1].pause_message.as_deref(),
+            Some("Run Z Probe macro then Resume"),
+        );
+        cleanup(&path_some);
     }
 
     /// A toolpath without a spindle_rpm override saves WITHOUT the
