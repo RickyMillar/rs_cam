@@ -324,12 +324,6 @@ pub fn evaluate(
     // Per-sample chip thicknesses for the per-toolpath median used by
     // the burn-risk verdict. See `Burn-risk verdict semantics` above.
     let mut burn_samples: Vec<(f64, usize)> = Vec::new();
-    // G17 C2 — entry-sample spikes excluded from the trip decision.
-    // Track the worst overshoot per side; we surface them via the
-    // verdict's `entry_spikes` field so the operator still sees that
-    // a transient entry breached the bound.
-    let mut entry_spike_high: Option<(f64, usize)> = None; // (cl, idx) — highest cl above max
-    let mut entry_spike_low: Option<(f64, usize)> = None; // (cl, idx) — lowest cl below min
 
     for (i, s) in steady_samples {
         // Samples whose chip-thickness model didn't produce a value (e.g.
@@ -345,28 +339,7 @@ pub fn evaluate(
             }
             continue;
         };
-        // G17 C1 — entry samples (helix / plunge) are excluded from
-        // the trip decision and from the burn-risk median pool. They
-        // still get the chip-thickness counted (`valid_count`) so a
-        // toolpath whose only valid samples are entry transients
-        // doesn't flip to Unmodeled. Spikes are recorded separately
-        // for C2's advisory.
         valid_count += 1;
-        if !super::locality::is_steady_state_for_gate(s) {
-            // Track the worst breakage-side and burn-side spike for the
-            // entry advisory. Don't compare against tolerance bands —
-            // C2's whole point is to surface the raw entry overshoot.
-            if cl > max && entry_spike_high.is_none_or(|(prev, _)| cl > prev) {
-                entry_spike_high = Some((cl, i));
-            }
-            if let Some(min_value) = min
-                && cl < min_value
-                && entry_spike_low.is_none_or(|(prev, _)| cl < prev)
-            {
-                entry_spike_low = Some((cl, i));
-            }
-            continue;
-        }
         burn_samples.push((cl, i));
         // Layer 1 tolerance band: a single sample 1-2% over `max` (e.g.
         // wanaka TP4 5/2026 transient at 1.05% over) shouldn't flip the
@@ -460,32 +433,6 @@ pub fn evaluate(
         };
     }
 
-    // G17 C2 — collect entry spike advisories. Build now so they're
-    // available to the Within arm; we don't emit them on the Exceeds
-    // arms because a steady-state trip is the loud signal already.
-    let mut chipload_entry_spikes_collected: Vec<crate::tool_load::verdict::EntrySpike> =
-        Vec::new();
-    if let Some((cl, idx)) = entry_spike_high {
-        let locality = locality_for(idx).unwrap_or_else(|| "entry move".to_owned());
-        chipload_entry_spikes_collected.push(crate::tool_load::verdict::EntrySpike {
-            observed: cl,
-            bound: max,
-            locality,
-            side: Some(ChipSide::High),
-        });
-    }
-    if let Some((cl, idx)) = entry_spike_low
-        && let Some(min_value) = min
-    {
-        let locality = locality_for(idx).unwrap_or_else(|| "entry move".to_owned());
-        chipload_entry_spikes_collected.push(crate::tool_load::verdict::EntrySpike {
-            observed: cl,
-            bound: min_value,
-            locality,
-            side: Some(ChipSide::Low),
-        });
-    }
-
     // Within: report both bounds-approach metrics. `approach_to_min` is
     // None when the LUT row has no min; otherwise it carries the median
     // sample (same statistic the burn-risk arm uses).
@@ -515,7 +462,9 @@ pub fn evaluate(
         approach_to_min,
         approach_to_max,
         confidence: chipload_confidence,
-        entry_spikes: chipload_entry_spikes_collected,
+        // C1+C2 reverted 2026-05-10 (D3 Path A); D7 will repopulate
+        // from span-aware entry detection.
+        entry_spikes: Vec::new(),
     }
 }
 
@@ -1051,19 +1000,13 @@ mod tests {
         );
     }
 
-    /// Item C verify #3: pure-Helix steady-state samples on a sloped 3D
-    /// G17 C1 — Helix samples are filtered OUT of the gate-trip
-    /// decision (they're transient entry moves), so even a sample
-    /// nominally above LUT max produces `Within` rather than
-    /// `Exceeds`. Updated 2026-05-10 from the prior assertion (which
-    /// expected Exceeds for kept Helix samples). G17 C2 records the
-    /// excluded high-side reading on `entry_spikes` so the operator
-    /// still sees a transient breach.
+    /// G17 C1+C2 reverted 2026-05-10 (D3 Path A): Helix samples are no
+    /// longer routed to an entry-spike advisory — D0 confirmed Helix
+    /// kinematics is almost entirely terrain-following on adaptive3d,
+    /// not configured entry. So a Helix sample above LUT max trips
+    /// Exceeds again, the same as Linear.
     #[test]
-    fn helix_samples_route_to_entry_spike_not_trip() {
-        // All Helix at the commanded feed with chipload above max.
-        // Pre-C1 this would Exceeds(High); post-C1 it's Within with
-        // an entry-spike advisory.
+    fn helix_high_sample_trips_exceeds() {
         let mut s0 = sample(0, 0, 0.5, 0.5);
         s0.feed_rate_mm_min = 1500.0;
         s0.cut_kinematics = crate::simulation_cut::CutKinematics::Helix;
@@ -1084,19 +1027,16 @@ mod tests {
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
-        match v {
-            ChiploadVerdict::Within { entry_spikes, .. } => {
-                let high = entry_spikes
-                    .iter()
-                    .find(|s| matches!(s.side, Some(ChipSide::High)))
-                    .expect("helix high-side spike should be advisory");
-                assert!(high.observed > high.bound);
-                assert_eq!(high.locality, "helix entry");
-            }
-            other => panic!(
-                "expected Within with helix-entry advisory, got {other:?}"
+        assert!(
+            matches!(
+                v,
+                ChiploadVerdict::Exceeds {
+                    side: ChipSide::High,
+                    ..
+                }
             ),
-        }
+            "Helix high sample must trip Exceeds post-revert, got {v:?}"
+        );
     }
 
     /// Item C edge case: a sample at exactly 95% of the commanded feed
@@ -1500,10 +1440,9 @@ mod tests {
         );
     }
 
-    // ── G17 C1 + C2 — gate-trip filter + entry-spike advisory ────────────
+    // ── Gate-trip behavior across kinematics (G17 C1+C2 reverted) ────────
 
-    /// G17 C1: a Linear (steady-state) sample over LUT max trips
-    /// Exceeds; the entry-spike machinery doesn't fire.
+    /// A Linear (steady-state) sample over LUT max trips Exceeds.
     #[test]
     fn linear_steady_state_high_sample_trips_exceeds() {
         // Uses pocket-rough LUT max (0.058208…). 0.5 mm/tooth >> max.
@@ -1536,10 +1475,13 @@ mod tests {
         );
     }
 
-    /// G17 C1 + C2: a Plunge sample over LUT max routes to entry_spike,
-    /// not the trip. The verdict stays Within.
+    /// G17 C1+C2 reverted 2026-05-10 (D3 Path A): Plunge samples no
+    /// longer skip the trip. A Plunge sample over LUT max trips
+    /// Exceeds — the same as Linear/Helix. (Real adaptive3d Plunge
+    /// samples emit no chip-thickness, so this case mostly matters for
+    /// other op families that do model plunge chip thickness.)
     #[test]
-    fn plunge_high_sample_routes_to_entry_spike_not_trip() {
+    fn plunge_high_sample_trips_exceeds() {
         let mut s = sample(0, 0, 0.5, 0.5);
         s.feed_rate_mm_min = 1500.0;
         s.cut_kinematics = crate::simulation_cut::CutKinematics::Plunge;
@@ -1557,55 +1499,15 @@ mod tests {
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
-        match v {
-            ChiploadVerdict::Within { entry_spikes, .. } => {
-                let high = entry_spikes
-                    .iter()
-                    .find(|s| matches!(s.side, Some(ChipSide::High)))
-                    .expect("plunge high-side spike should be advisory");
-                assert!(high.observed > high.bound);
-                assert_eq!(high.locality, "plunge entry");
-            }
-            other => panic!("expected Within with plunge-entry advisory, got {other:?}"),
-        }
-    }
-
-    /// G17 C1: mixed trace (steady-state Linear sample over max +
-    /// Plunge sample also over max) trips on the steady-state reading;
-    /// the entry spike is still recorded for transparency.
-    #[test]
-    fn mixed_trip_uses_steady_state_advisory_kept() {
-        let mut steady = sample(0, 0, 0.45, 0.5);
-        steady.feed_rate_mm_min = 1500.0;
-        steady.cut_kinematics = crate::simulation_cut::CutKinematics::Linear;
-        let mut plunge = sample(0, 1, 0.6, 0.5);
-        plunge.feed_rate_mm_min = 1500.0;
-        plunge.cut_kinematics = crate::simulation_cut::CutKinematics::Plunge;
-        let t = trace(vec![steady, plunge]);
-        let v = evaluate(
-            0,
-            &tool(),
-            &Material::SolidWood {
-                species: WoodSpecies::HardMaple,
-            },
-            Some(&t),
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
-            1500.0,
-            OperationType::Pocket,
-            &crate::tool_load::ToleranceBands::default(),
+        assert!(
+            matches!(
+                v,
+                ChiploadVerdict::Exceeds {
+                    side: ChipSide::High,
+                    ..
+                }
+            ),
+            "Plunge high sample must trip Exceeds post-revert, got {v:?}"
         );
-        // Steady-state trip wins; the trip's `observed` is the steady-
-        // state reading (0.45-ish chip thickness), not the plunge 0.6.
-        match v {
-            ChiploadVerdict::Exceeds { triggering, .. } => {
-                assert!(
-                    triggering.observed_mm_per_tooth < 0.55,
-                    "trip should fire on steady-state sample (~0.45), not plunge (0.6); got {}",
-                    triggering.observed_mm_per_tooth,
-                );
-            }
-            other => panic!("expected Exceeds on steady-state sample, got {other:?}"),
-        }
     }
 }

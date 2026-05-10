@@ -17,8 +17,8 @@ criteria.
 | A. Explainability | A3. Sample locality classification (kinematics + arc engagement) | ✅ | `fc17798` | 2026-05-10 |
 | A. Explainability | A4. Operator-facing suggestion lever | ✅ | `2c7ffe5` | 2026-05-10 |
 | A. Explainability | A5. Search-frontier heatmap (feed × stepover) | ⏳ optional | — | — |
-| C. Gate semantics | C1. Steady-state gate trip (minimal) | ✅ | `1e31538` | 2026-05-10 |
-| C. Gate semantics | C2. C1 + entry-spike advisory | ✅ | `1e31538` | 2026-05-10 |
+| C. Gate semantics | C1. Steady-state gate trip (minimal) | 🚫 reverted | `1e31538` (landed) → reverted in D3 | 2026-05-10 |
+| C. Gate semantics | C2. C1 + entry-spike advisory | 🚫 reverted | `1e31538` (landed) → reverted in D3 | 2026-05-10 |
 | C. Gate semantics | C3. Locality-aware suggestions | ⏳ proposed | — | — |
 | C. Gate semantics | C4. Per-locality gate verdict breakdown | ⏭️ deferred | — | — |
 | B. Peak-finding | B0. Gating prerequisites re-evaluated | 🚫 blocked on C1 | — | — |
@@ -941,3 +941,20 @@ each phase using A1 as template.)
   copy stays out of advisory rendering — C3 will wire locality-aware
   suggestions; for now the advisory is purely informational so a
   legitimate entry failure isn't hidden by C1.
+- **2026-05-10 — C1+C2 reverted (D3 Path A).** D0 kinematics histogram
+  on the wanaka adaptive3d toolpaths
+  (`planning/STRUCTURAL_ENTRY_SPANS_AND_LOCALITY.md` deviations log)
+  showed `CutKinematics::Helix` is almost entirely terrain-following on
+  3D rough toolpaths (~38 % of in-cut samples on TP 6, p99 chip
+  thickness 52 % above Linear's), not configured entries. Filtering
+  Helix from the trip decision was hiding real steady-state cuts, not
+  transient entries. `Plunge` samples emit no chip-thickness data, so
+  C1's protection was already redundant on the only side it could have
+  helped. Action: removed the `is_steady_state_for_gate` filter from
+  `chipload.rs` / `power.rs` / `deflection.rs`. Kept the `EntrySpike`
+  struct shape on `verdict.rs::*Within` variants but always populate
+  with `Vec::new()` / `None` until D7 lands a span-ancestry-based
+  filter. Also removed the function from `locality.rs`. Wanaka TP 1
+  returns to `NoSafeImprovement` — that's the truthful verdict. Full
+  context + decision matrix in
+  `planning/STRUCTURAL_ENTRY_SPANS_AND_LOCALITY.md`.
