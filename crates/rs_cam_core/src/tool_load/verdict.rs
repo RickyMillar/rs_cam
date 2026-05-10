@@ -140,6 +140,36 @@ pub struct ToolLoadReport {
     pub per_toolpath: Vec<ToolpathLoadVerdict>,
 }
 
+/// F5 — first-look summary surfaced alongside the per-toolpath verdicts.
+/// Lets a caller answer "what's broken in this project?" from a single
+/// read instead of folding the per-toolpath array themselves.
+///
+/// Computed from `ToolLoadReport::summary()`; not serialized as part of
+/// `ToolLoadReport` itself so existing consumers stay byte-stable.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolLoadReportSummary {
+    pub total_toolpaths: usize,
+    /// Toolpaths with at least one criterion in `Within` and none in `Exceeds`.
+    pub within: usize,
+    /// Toolpaths with at least one criterion in `Exceeds`.
+    pub exceeds: usize,
+    /// Toolpaths whose every criterion is `Unmodeled` (drill cycles, etc).
+    pub fully_unmodeled: usize,
+    /// One entry per `Exceeds` criterion across the project, in toolpath
+    /// order.
+    pub exceeds_breakdown: Vec<ExceedsEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExceedsEntry {
+    pub toolpath_id: usize,
+    /// `"chipload"` / `"power"` / `"deflection"`.
+    pub gate: String,
+    /// `"low"` / `"high"` for chipload; `None` for power / deflection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<String>,
+}
+
 impl ToolLoadReport {
     pub fn any_exceeded(&self) -> bool {
         self.per_toolpath
@@ -170,6 +200,57 @@ impl ToolLoadReport {
             .collect()
     }
 
+    /// F5 — project-level rollup of per-toolpath verdicts. Cheap to call;
+    /// folds the `per_toolpath` array once.
+    pub fn summary(&self) -> ToolLoadReportSummary {
+        let mut within = 0usize;
+        let mut exceeds = 0usize;
+        let mut fully_unmodeled = 0usize;
+        let mut exceeds_breakdown: Vec<ExceedsEntry> = Vec::new();
+        for v in &self.per_toolpath {
+            if v.any_exceeded() {
+                exceeds += 1;
+            } else if v.modeled_count() == 0 {
+                fully_unmodeled += 1;
+            } else {
+                within += 1;
+            }
+            if let ChiploadVerdict::Exceeds { side, .. } = &v.chipload {
+                exceeds_breakdown.push(ExceedsEntry {
+                    toolpath_id: v.toolpath_id,
+                    gate: "chipload".to_owned(),
+                    side: Some(
+                        match side {
+                            ChipSide::Low => "low",
+                            ChipSide::High => "high",
+                        }
+                        .to_owned(),
+                    ),
+                });
+            }
+            if v.power.is_exceeded() {
+                exceeds_breakdown.push(ExceedsEntry {
+                    toolpath_id: v.toolpath_id,
+                    gate: "power".to_owned(),
+                    side: None,
+                });
+            }
+            if v.deflection.is_exceeded() {
+                exceeds_breakdown.push(ExceedsEntry {
+                    toolpath_id: v.toolpath_id,
+                    gate: "deflection".to_owned(),
+                    side: None,
+                });
+            }
+        }
+        ToolLoadReportSummary {
+            total_toolpaths: self.per_toolpath.len(),
+            within,
+            exceeds,
+            fully_unmodeled,
+            exceeds_breakdown,
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────
