@@ -12,10 +12,10 @@ place.
 
 | Phase | Status | Hash | Date |
 |---|---|---|---|
-| D0. Prevalence research — kinematics histogram on real fixtures | ✅ done | (test only) | 2026-05-10 |
+| D0. Prevalence research — kinematics histogram on real fixtures | ✅ done | `bb06611` | 2026-05-10 |
 | D1. Operation generator survey — who emits Entry spans, who doesn't | ⏳ proposed | — | — |
 | D2. LUT calibration audit — slot vs partial engagement bound | ⏳ proposed | — | — |
-| D3. Decision point — stopgap revert vs roll-forward | ✅ Path A (revert) | (pending commit) | 2026-05-10 |
+| D3. Decision point — stopgap revert vs roll-forward | ✅ Path A (revert) | `8e2a7fc` | 2026-05-10 |
 | D4. Adaptive3d entry-emitter Entry spans (plunge/helix/ramp) | 🚫 blocked on D3 | — | — |
 | D5. Other operation generators — Entry span coverage | 🚫 blocked on D4 | — | — |
 | D6. Span-aware locality classifier | 🚫 blocked on D4 | — | — |
