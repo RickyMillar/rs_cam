@@ -37,8 +37,8 @@ use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::error::VizError;
 use rs_cam_viz::io::export::{
-    export_gcode_from_session, export_setup_gcode_from_session,
-    export_single_toolpath_from_session,
+    export_combined_gcode_from_session, export_gcode_from_session,
+    export_setup_gcode_from_session, export_single_toolpath_from_session,
 };
 use rs_cam_viz::state::job::SetupId;
 use rs_cam_viz::state::runtime::{GuiState, ToolpathRuntime};
@@ -403,5 +403,94 @@ fn wizard_dry_run_clamps_cutting_moves_to_safe_z() {
         rapid_z5_count >= 1,
         "build_session emits at least one rapid at Z=5.0; dry-run must \
          leave it intact (got {rapid_z5_count} matching rapids)"
+    );
+}
+
+/// A custom `pause_message` on a setup must replace the default
+/// `(Setup change: <name>)` text in the inter-setup `M0` block of the
+/// emitted gcode. `None` (the default) keeps the existing wording.
+/// Mirrors how the Step 4.5 UI's `WizardSetSetupPauseMessage` handler
+/// mutates `setups_mut()[idx].pause_message`.
+#[test]
+fn wizard_setup_pause_message_lands_in_emitted_gcode() {
+    use rs_cam_core::compute::transform::FaceUp;
+
+    let (mut session, mut gui, sim) = build_session();
+
+    // build_session has 1 setup + 1 toolpath. Add a second setup with
+    // its own toolpath so the multi-setup emit path runs and emits the
+    // inter-setup M0.
+    let bottom_idx = session.add_setup("Bottom".to_owned(), FaceUp::Bottom);
+    let bottom_id = session.list_setups()[bottom_idx].id;
+
+    let tp_bottom = ToolpathConfig {
+        id: 99,
+        name: "Bottom Op".to_owned(),
+        enabled: true,
+        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: 1,
+        model_id: 0,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: Default::default(),
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        face_selection: None,
+        feeds_auto: Default::default(),
+        debug_options: Default::default(),
+    };
+    session.add_toolpath(bottom_idx, tp_bottom).expect("add bottom toolpath");
+    let bottom_tp_id = session
+        .list_setups()[bottom_idx]
+        .toolpath_indices
+        .first()
+        .map(|&i| session.toolpath_configs()[i].id)
+        .expect("bottom setup has a toolpath");
+
+    let mut path = Toolpath::new();
+    path.rapid_to(P3::new(0.0, 0.0, 5.0));
+    path.feed_to(P3::new(20.0, 0.0, -1.0), 600.0);
+    let mut rt = ToolpathRuntime::new(true);
+    rt.result = Some(ToolpathResult {
+        annotated: Arc::new(AnnotatedToolpath::new(path)),
+        stats: Default::default(),
+        debug_trace: None,
+        semantic_trace: None,
+        debug_trace_path: None,
+    });
+    gui.toolpath_rt.insert(bottom_tp_id, rt);
+
+    // The combined-gcode emit is what produces inter-setup M0s; the
+    // SingleFile path concatenates phases without setup boundaries.
+    // Default emit: pause text should mention the setup name.
+    let default_gcode =
+        export_combined_gcode_from_session(&session, &gui, &sim).expect("default export");
+    assert!(
+        default_gcode.contains("Setup change: Bottom"),
+        "default pause text must mention the setup name: {default_gcode}"
+    );
+    assert!(
+        !default_gcode.contains("Run Z Probe macro"),
+        "default emit must not contain the override text"
+    );
+
+    // Override the second setup's pause_message — same mutation the
+    // Step 4.5 AppEvent handler performs.
+    if let Some(setup) = session.setups_mut().iter_mut().find(|s| s.id == bottom_id) {
+        setup.pause_message = Some("Run Z Probe macro then Resume".to_owned());
+    }
+
+    let override_gcode =
+        export_combined_gcode_from_session(&session, &gui, &sim).expect("override export");
+    assert!(
+        override_gcode.contains("Run Z Probe macro then Resume"),
+        "override pause_message must replace the default text in the M0 block: {override_gcode}"
+    );
+    assert!(
+        !override_gcode.contains("Setup change: Bottom"),
+        "override must replace (not append to) the default text"
     );
 }

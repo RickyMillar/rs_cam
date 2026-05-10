@@ -22,13 +22,14 @@ use super::AppEvent;
 use crate::state::AppState;
 
 /// Total number of steps in the wizard.
-pub const STEP_COUNT: u8 = 6;
+pub const STEP_COUNT: u8 = 7;
 
 const STEP_TITLES: [&str; STEP_COUNT as usize] = [
     "Post",
     "Output layout",
     "Coordinate & units",
     "Tool change & spindle",
+    "Setup pauses",
     "Preview & validate",
     "Save",
 ];
@@ -54,8 +55,9 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                 1 => step_output_layout(ui, state, events),
                 2 => step_coord_units(ui, state, events),
                 3 => step_tool_change(ui, state, events),
-                4 => step_preview(ui, state, events),
-                5 => step_save(ui, state, events),
+                4 => step_setup_pauses(ui, state, events),
+                5 => step_preview(ui, state, events),
+                6 => step_save(ui, state, events),
                 _ => placeholder(ui, state.wizard_active_step),
             }
             ui.add_space(8.0);
@@ -566,7 +568,117 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
     );
 }
 
-// ── Step 5 — Preview & validate ──────────────────────────────────────
+// ── Step 5 — Setup pauses ────────────────────────────────────────────
+
+/// Preset pause messages for between-setup `M0` prompts. The actual
+/// re-zero / probe / home logic runs in the operator's sender macros
+/// (g-Sender / UGS / CNCjs) — this just instructs them what to do
+/// before pressing Resume.
+const PAUSE_PRESETS: &[(&str, &str)] = &[
+    ("Default", ""),
+    ("Re-zero (manual)", "Flip stock and re-zero, then Resume"),
+    ("Run Z Probe macro", "Run Z Probe macro, then Resume"),
+    (
+        "Run XYZ Corner Probe macro",
+        "Run XYZ Corner Probe macro, then Resume",
+    ),
+    ("Home then re-zero", "Home all axes, re-zero, then Resume"),
+];
+
+fn step_setup_pauses(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
+    ui.heading("Setup pauses");
+    ui.add_space(4.0);
+
+    let setups = state.session.list_setups();
+    if setups.len() <= 1 {
+        ui.label(
+            egui::RichText::new(
+                "Project has one setup — no inter-setup pauses to configure.",
+            )
+            .italics(),
+        );
+        ui.add_space(8.0);
+        ui.label(
+            egui::RichText::new(
+                "Add a second setup (e.g. for a flip operation) to expose this step.",
+            )
+            .small()
+            .weak(),
+        );
+        return;
+    }
+
+    ui.label(
+        egui::RichText::new(
+            "Each transition emits an `M0` pause. The message below appears as the \
+             prompt in your sender (g-Sender / UGS / CNCjs). Probe / home gcode is \
+             expected to live in the sender's macros — this just tells the operator \
+             what to run before pressing Resume.",
+        )
+        .small()
+        .italics(),
+    );
+    ui.add_space(8.0);
+
+    // The first setup has no preceding pause, so skip it.
+    for setup in setups.iter().skip(1) {
+        let setup_id = setup.id;
+        let header = format!("Before setup “{}”", setup.name);
+        ui.label(egui::RichText::new(header).strong());
+
+        // Preset picker — current preset is whichever PAUSE_PRESETS row
+        // matches the message text exactly. Custom messages select "Custom".
+        let current = setup.pause_message.as_deref().unwrap_or("");
+        let matched_preset = PAUSE_PRESETS.iter().position(|(_, msg)| *msg == current);
+
+        ui.horizontal(|ui| {
+            ui.label("Preset:");
+            let label = matched_preset
+                .map_or("Custom", |idx| {
+                    PAUSE_PRESETS.get(idx).map_or("Custom", |(name, _)| *name)
+                });
+            egui::ComboBox::from_id_salt(("pause_preset", setup_id))
+                .selected_text(label)
+                .show_ui(ui, |ui| {
+                    for (idx, (name, msg)) in PAUSE_PRESETS.iter().enumerate() {
+                        let selected = matched_preset == Some(idx);
+                        if ui.selectable_label(selected, *name).clicked() {
+                            let new_msg = if msg.is_empty() {
+                                None
+                            } else {
+                                Some((*msg).to_owned())
+                            };
+                            if new_msg.as_deref().unwrap_or("") != current {
+                                events.push(AppEvent::WizardSetSetupPauseMessage {
+                                    setup_id,
+                                    message: new_msg,
+                                });
+                            }
+                        }
+                    }
+                });
+        });
+
+        // Free-form override — typing here switches to "Custom" implicitly.
+        let mut text = current.to_owned();
+        let resp = ui.add(
+            egui::TextEdit::singleline(&mut text)
+                .desired_width(f32::INFINITY)
+                .hint_text("Custom message (or pick a preset above)"),
+        );
+        if resp.changed() && text != current {
+            let new_msg = if text.is_empty() { None } else { Some(text) };
+            events.push(AppEvent::WizardSetSetupPauseMessage {
+                setup_id,
+                message: new_msg,
+            });
+        }
+
+        ui.add_space(10.0);
+    }
+}
+
+// ── Step 6 — Preview & validate ──────────────────────────────────────
 
 const PREVIEW_LINE_LIMIT: usize = 200;
 
