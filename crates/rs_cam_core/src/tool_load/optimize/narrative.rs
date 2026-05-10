@@ -125,17 +125,20 @@ pub struct AxisExtent {
     pub max: f64,
 }
 
-/// Operator-actionable suggestion. A1 always emits `Vec::new()`; A4
-/// populates from per-gate heuristics. Units are implied by `KnobAxis`
-/// (Feed = mm/min, SpindleRpm = rpm, Stepover / DepthPerPass /
-/// ScallopHeight = mm).
+/// Operator-actionable suggestion. Built by [`suggest_levers`] from the
+/// limiting-gate readings + search envelope. Units are implied by
+/// `KnobAxis` (Feed = mm/min, SpindleRpm = rpm, Stepover /
+/// DepthPerPass / ScallopHeight = mm).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum OperatorSuggestion {
-    /// "Cap feed below ~3700 mm/min and re-optimize."
+    /// "Cap feed below ~2960 mm/min and re-optimize." Used when an
+    /// axis is too high (chipload over LUT max → cap feed; deflection
+    /// over threshold → cap DOC; power saturated → cap stepover).
     CapAxisAt { axis: KnobAxis, ceiling: f64 },
-    /// "Reduce stepover below ~1.6 mm to avoid full-slot engagement."
-    NarrowAxisBelow { axis: KnobAxis, ceiling: f64 },
+    /// "Raise feed above ~3950 mm/min and re-optimize." Used when an
+    /// axis is too low (chipload below LUT min → raise feed).
+    RaiseAxisAbove { axis: KnobAxis, floor: f64 },
     /// "No vendor LUT data above ~0.055 chipload — calibration would help."
     DataGapHere { reason: String },
 }
@@ -159,16 +162,19 @@ pub(crate) fn build_failure_narrative_no_safe(
     attempted: &[OptimizeCandidate],
 ) -> FailureNarrative {
     let envelope = envelope_across(baseline, attempted);
-    let limiting_gates = attempted
-        .get(1)
+    let closest = attempted.get(1);
+    let limiting_gates = closest
         .map(|c| limiting_gates_from_exceeds(&c.verdict))
         .unwrap_or_default();
     let headline = headline_no_safe(attempted.len().saturating_sub(1), &limiting_gates);
+    let suggestions = closest
+        .map(|c| suggest_levers(&limiting_gates, c))
+        .unwrap_or_default();
     FailureNarrative {
         headline,
         limiting_gates,
         envelope,
-        suggestions: Vec::new(),
+        suggestions,
     }
 }
 
@@ -181,18 +187,116 @@ pub(crate) fn build_failure_narrative_marginal(
     candidates: &[OptimizeCandidate],
 ) -> FailureNarrative {
     let envelope = envelope_across(baseline, candidates);
-    let limiting_gates = candidates
+    let recommended = candidates
         .iter()
         .skip(1)
-        .find(|c| !limiting_gates_from_band_admit(&c.verdict).is_empty())
+        .find(|c| !limiting_gates_from_band_admit(&c.verdict).is_empty());
+    let limiting_gates = recommended
         .map(|c| limiting_gates_from_band_admit(&c.verdict))
         .unwrap_or_default();
     let headline = headline_marginal(&limiting_gates);
+    // MarginalSafe candidates are already inside the tolerance band —
+    // no operator action needed unless the user wants to tighten further.
+    // Skip suggestions for now; the "verify on a scrap" header covers it.
     FailureNarrative {
         headline,
         limiting_gates,
         envelope,
         suggestions: Vec::new(),
+    }
+}
+
+/// G17 A4 — synthesize operator-actionable suggestions from the
+/// limiting-gate readings on the closest-to-safe candidate.
+///
+/// Heuristics:
+///
+/// - **Chipload Exceeds High** → invert `cl = feed / (RPM × teeth)`:
+///   the chipload-to-feed relationship is linear in feed at constant
+///   RPM, so `target_feed = current_feed × (bound / observed) × 0.95`.
+///   The 5% safety margin sits inside the breakage_tolerance band so
+///   the recommended feed is comfortably under the gate trigger.
+/// - **Chipload Exceeds Low (burn)** → same math, opposite direction:
+///   `target_feed = current_feed × (bound / observed) × 1.05`. Emit
+///   `RaiseAxisAbove`.
+/// - **Deflection Exceeds** → tip deflection scales roughly linearly
+///   with axial DOC (force ∝ DOC × engagement; tip deflection ∝ force).
+///   `target_doc = current_doc × (bound / observed) × 0.95`.
+/// - **Power Exceeds** → MRR ∝ feed × DOC × stepover; reducing
+///   stepover proportionally reduces engagement and so power.
+///   `target_stepover = current_stepover × (bound / observed) × 0.95`.
+///
+/// Returns at most one suggestion per limiting gate. Per-gate
+/// suggestions are independent — emitting all of them lets the
+/// operator pick the lever they prefer (e.g. cap feed *or* cap DOC,
+/// not both).
+pub fn suggest_levers(
+    limiting_gates: &[LimitingGate],
+    candidate: &OptimizeCandidate,
+) -> Vec<OperatorSuggestion> {
+    let mut out: Vec<OperatorSuggestion> = Vec::new();
+    for g in limiting_gates {
+        if let Some(s) = suggest_for_gate(g, candidate) {
+            out.push(s);
+        }
+    }
+    out
+}
+
+fn suggest_for_gate(
+    g: &LimitingGate,
+    candidate: &OptimizeCandidate,
+) -> Option<OperatorSuggestion> {
+    if g.observed.abs() < 1e-9 || g.bound.abs() < 1e-9 {
+        return None;
+    }
+    let ratio = g.bound / g.observed;
+    match (g.gate, g.side) {
+        (GateKind::Chipload, Some(ChipSide::High)) => {
+            let current_feed = candidate.params.feed_rate();
+            if current_feed < 1e-6 {
+                return None;
+            }
+            let ceiling = current_feed * ratio * 0.95;
+            Some(OperatorSuggestion::CapAxisAt {
+                axis: KnobAxis::Feed,
+                ceiling,
+            })
+        }
+        (GateKind::Chipload, Some(ChipSide::Low)) => {
+            let current_feed = candidate.params.feed_rate();
+            if current_feed < 1e-6 {
+                return None;
+            }
+            let floor = current_feed * ratio * 1.05;
+            Some(OperatorSuggestion::RaiseAxisAbove {
+                axis: KnobAxis::Feed,
+                floor,
+            })
+        }
+        (GateKind::Deflection, _) => {
+            let current_doc = candidate.params.depth_per_pass()?;
+            if current_doc < 1e-6 {
+                return None;
+            }
+            let ceiling = current_doc * ratio * 0.95;
+            Some(OperatorSuggestion::CapAxisAt {
+                axis: KnobAxis::DepthPerPass,
+                ceiling,
+            })
+        }
+        (GateKind::Power, _) => {
+            let current_stepover = candidate.params.stepover()?;
+            if current_stepover < 1e-6 {
+                return None;
+            }
+            let ceiling = current_stepover * ratio * 0.95;
+            Some(OperatorSuggestion::CapAxisAt {
+                axis: KnobAxis::Stepover,
+                ceiling,
+            })
+        }
+        (GateKind::Chipload, None) => None,
     }
 }
 
@@ -722,7 +826,12 @@ mod tests {
         let feed = n.envelope.feed_mm_min.expect("feed extent present");
         assert!((feed.min - 3150.0).abs() < 1e-9);
         assert!((feed.max - 4000.0).abs() < 1e-9);
-        assert!(n.suggestions.is_empty(), "A1 emits no suggestions");
+        // G17 A4: suggestions are now non-empty when the closest-to-safe
+        // candidate has limiting gates with knobs we know how to invert.
+        assert!(
+            !n.suggestions.is_empty(),
+            "A4 emits suggestions for chipload-high + deflection-exceeds"
+        );
     }
 
     #[test]
@@ -763,6 +872,112 @@ mod tests {
             "headline should mention scrap / tolerance band, got: {}",
             n.headline,
         );
+    }
+
+    #[test]
+    fn suggest_levers_caps_feed_when_chipload_high() {
+        // Wanaka TP 1 case shape: chipload observed 0.0707 vs the
+        // existing fixture's LUT max 0.07 → +1% over. At feed 4000:
+        //   target_feed = 4000 × (0.07 / 0.0707) × 0.95 ≈ 3762 mm/min.
+        let cand = candidate(
+            4000.0,
+            431.0,
+            vd(exceeds_chipload_high(0.0707), exceeds_deflection(0.237)),
+            None,
+        );
+        let limiting = limiting_gates_from_exceeds(&cand.verdict);
+        let suggestions = suggest_levers(&limiting, &cand);
+        let cap_feed = suggestions
+            .iter()
+            .find(|s| {
+                matches!(
+                    s,
+                    OperatorSuggestion::CapAxisAt {
+                        axis: KnobAxis::Feed,
+                        ..
+                    }
+                )
+            })
+            .expect("chipload-high should suggest capping feed");
+        let OperatorSuggestion::CapAxisAt { ceiling, .. } = cap_feed else {
+            unreachable!();
+        };
+        assert!(
+            (3700.0..3800.0).contains(ceiling),
+            "expected feed cap ~3762 mm/min for the fixture's +1% overshoot, got {ceiling}"
+        );
+        // Deflection exceedance also fires → expect a DOC cap too.
+        let cap_doc = suggestions.iter().find(|s| {
+            matches!(
+                s,
+                OperatorSuggestion::CapAxisAt {
+                    axis: KnobAxis::DepthPerPass,
+                    ..
+                }
+            )
+        });
+        assert!(
+            cap_doc.is_some(),
+            "deflection-exceeds should suggest capping DOC: {suggestions:?}"
+        );
+    }
+
+    #[test]
+    fn suggest_levers_raises_feed_when_chipload_low() {
+        // Burn-side: chipload median 0.025 vs LUT min 0.032 at feed
+        // 3000 mm/min → suggest raising feed above current_feed ×
+        // (0.032/0.025) × 1.05 = 4032 mm/min.
+        use crate::tool_load::verdict::{
+            ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, Confidence,
+            SampleEvidence,
+        };
+        let burn_chipload = ChiploadVerdict::Exceeds {
+            side: ChipSide::Low,
+            triggering: ChiploadMetric {
+                observed_mm_per_tooth: 0.025,
+                statistic: ChiploadStatistic::MedianLow,
+                evidence: SampleEvidence::empty(),
+                bounds: ChipBounds {
+                    min_mm_per_tooth: Some(0.032),
+                    max_mm_per_tooth: 0.055,
+                    source: ChipBoundsSource::VendorLut,
+                },
+            },
+            confidence: Confidence::Validated,
+        };
+        let cand = candidate(
+            3000.0,
+            500.0,
+            vd(burn_chipload, within_deflection(0.030)),
+            None,
+        );
+        let limiting = limiting_gates_from_exceeds(&cand.verdict);
+        let suggestions = suggest_levers(&limiting, &cand);
+        let raise = suggestions
+            .iter()
+            .find(|s| matches!(s, OperatorSuggestion::RaiseAxisAbove { .. }))
+            .expect("chipload-low should suggest raising feed");
+        let OperatorSuggestion::RaiseAxisAbove { axis, floor } = raise else {
+            unreachable!();
+        };
+        assert_eq!(*axis, KnobAxis::Feed);
+        // 3000 × (0.032/0.025) × 1.05 = 4032
+        assert!(
+            (4000.0..4100.0).contains(floor),
+            "expected feed floor ~4032, got {floor}"
+        );
+    }
+
+    #[test]
+    fn suggest_levers_skips_when_no_limiting_gates() {
+        let cand = candidate(
+            3000.0,
+            500.0,
+            vd(within_chipload(0.054), within_deflection(0.030)),
+            None,
+        );
+        let suggestions = suggest_levers(&[], &cand);
+        assert!(suggestions.is_empty());
     }
 
     #[test]

@@ -60,7 +60,7 @@ pub use delta::{GateDelta, GateDeltas, ParamDelta};
 pub(crate) use outcome::build_outcome;
 pub use narrative::{
     AxisExtent, FailureNarrative, GateKind, KnobAxis, LimitingGate, OperatorSuggestion,
-    SearchEnvelopeReached, TradeOffNarrative, limiting_gates_for_verdict,
+    SearchEnvelopeReached, TradeOffNarrative, limiting_gates_for_verdict, suggest_levers,
 };
 pub use outcome::{OptimizeOutcome, ProjectOptimizeReport};
 
