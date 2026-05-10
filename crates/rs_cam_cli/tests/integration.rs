@@ -14,7 +14,7 @@
 // Since rs_cam_cli is a binary crate, we test by importing rs_cam_core directly
 // and duplicating the minimal parsing logic that the CLI uses.
 
-use rs_cam_core::gcode::{emit_gcode, get_post_processor};
+use rs_cam_core::gcode::{emit_gcode, get_post_definition};
 use rs_cam_core::pocket::{PocketParams, pocket_toolpath};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tool::{
@@ -215,8 +215,8 @@ fn test_pocket_operation_produces_gcode() {
         "Pocket toolpath should have moves for a 40x30mm rectangle"
     );
 
-    let post = get_post_processor("grbl").expect("GRBL post should exist");
-    let gcode = emit_gcode(&tp, post.as_ref(), 18000);
+    let post = get_post_definition("grbl").expect("GRBL post should exist");
+    let gcode = emit_gcode(&tp, post, 18000);
 
     // G-code should be non-empty and contain expected patterns
     assert!(!gcode.is_empty(), "G-code should not be empty");

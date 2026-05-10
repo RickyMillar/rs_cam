@@ -66,7 +66,7 @@ pub fn export_gcode_from_session(
     gui: &GuiState,
     sim: &SimulationState,
 ) -> Result<String, crate::error::VizError> {
-    let post = gui.post.format.post_processor();
+    let post = gui.post.format.definition();
 
     let phases: Vec<GcodePhase<'_>> = session
         .toolpath_configs()
@@ -83,7 +83,7 @@ pub fn export_gcode_from_session(
 
     let mut gcode = export_gcode_phases_checked(
         &phases,
-        post.as_ref(),
+        post,
         viz_sim_trace(sim),
         gui.tool_load_overrides.as_policy(),
     )
@@ -102,7 +102,7 @@ pub fn export_combined_gcode_from_session(
     gui: &GuiState,
     sim: &SimulationState,
 ) -> Result<String, crate::error::VizError> {
-    let post = gui.post.format.post_processor();
+    let post = gui.post.format.definition();
 
     let setup_phases: Vec<GcodeSetupPhase<'_>> = session
         .list_setups()
@@ -134,7 +134,7 @@ pub fn export_combined_gcode_from_session(
 
     let mut gcode = export_gcode_multi_setup_checked(
         &setup_phases,
-        post.as_ref(),
+        post,
         gui.post.safe_z,
         viz_sim_trace(sim),
         gui.tool_load_overrides.as_policy(),
@@ -161,7 +161,7 @@ pub fn export_setup_gcode_from_session(
         .find(|s| s.id == setup_id.0)
         .ok_or_else(|| crate::error::VizError::Export(format!("Setup {setup_id:?} not found")))?;
 
-    let post = gui.post.format.post_processor();
+    let post = gui.post.format.definition();
 
     let phases: Vec<GcodePhase<'_>> = setup
         .toolpath_indices
@@ -180,7 +180,7 @@ pub fn export_setup_gcode_from_session(
 
     let mut gcode = export_gcode_phases_checked(
         &phases,
-        post.as_ref(),
+        post,
         viz_sim_trace(sim),
         gui.tool_load_overrides.as_policy(),
     )

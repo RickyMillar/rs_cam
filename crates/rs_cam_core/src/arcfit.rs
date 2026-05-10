@@ -839,13 +839,13 @@ mod tests {
 
     #[test]
     fn test_gcode_arc_output() {
-        use crate::gcode::{GrblPost, emit_gcode};
+        use crate::gcode::{emit_gcode, post};
 
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(10.0, 0.0, -3.0));
         tp.arc_ccw_to(P3::new(0.0, 10.0, -3.0), -10.0, 0.0, 1000.0);
 
-        let gcode = emit_gcode(&tp, &GrblPost, 18000);
+        let gcode = emit_gcode(&tp, post::grbl(), 18000);
         assert!(gcode.contains("G3"), "Should contain G3 for CCW arc");
         assert!(gcode.contains("I-10.000"), "Should contain I offset");
         assert!(gcode.contains("J0.000"), "Should contain J offset");
@@ -853,13 +853,13 @@ mod tests {
 
     #[test]
     fn test_gcode_cw_arc_output() {
-        use crate::gcode::{GrblPost, emit_gcode};
+        use crate::gcode::{emit_gcode, post};
 
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(10.0, 0.0, -3.0));
         tp.arc_cw_to(P3::new(0.0, -10.0, -3.0), -10.0, 0.0, 1000.0);
 
-        let gcode = emit_gcode(&tp, &GrblPost, 18000);
+        let gcode = emit_gcode(&tp, post::grbl(), 18000);
         assert!(gcode.contains("G2"), "Should contain G2 for CW arc");
     }
 }

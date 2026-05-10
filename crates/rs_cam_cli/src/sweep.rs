@@ -304,9 +304,9 @@ fn write_gcode(
     job: &job::JobFile,
     _result: &job::JobResult,
 ) -> Result<()> {
-    let post = rs_cam_core::gcode::get_post_processor(&job.job.post)
-        .unwrap_or_else(|| Box::new(rs_cam_core::gcode::GrblPost));
-    let gcode = rs_cam_core::gcode::emit_gcode(tp, post.as_ref(), job.job.spindle_speed);
+    let post = rs_cam_core::gcode::get_post_definition(&job.job.post)
+        .unwrap_or_else(|| rs_cam_core::gcode::PostFormat::Grbl.definition());
+    let gcode = rs_cam_core::gcode::emit_gcode(tp, post, job.job.spindle_speed);
     std::fs::write(path, gcode).context(format!("Writing G-code to {}", path.display()))
 }
 

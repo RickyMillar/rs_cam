@@ -20,7 +20,7 @@ use rs_cam_core::{
     dropcutter::batch_drop_cutter,
     gcode::{
         GcodePhase, ToolLoadExportPolicy, emit_gcode, export_gcode_phases_checked,
-        get_post_processor,
+        get_post_definition,
     },
     geo::BoundingBox3,
     inlay::{InlayParams, inlay_toolpaths},
@@ -1498,13 +1498,13 @@ fn emit_and_write(
     output: &PathBuf,
     svg_path: &Option<PathBuf>,
 ) -> Result<()> {
-    let post_proc = get_post_processor(post).context(format!(
-        "Unknown post-processor '{}'. Supported: grbl, linuxcnc",
+    let post_def = get_post_definition(post).context(format!(
+        "Unknown post-processor '{}'. Supported: grbl, linuxcnc, mach3",
         post
     ))?;
 
-    info!("Emitting G-code ({})...", post_proc.name());
-    let gcode = emit_gcode(toolpath, post_proc.as_ref(), spindle_speed);
+    info!("Emitting G-code ({})...", post_def.name);
+    let gcode = emit_gcode(toolpath, post_def, spindle_speed);
 
     std::fs::write(output, &gcode).context("Failed to write output file")?;
     info!(bytes = gcode.len(), path = %output.display(), "Wrote G-code");
@@ -1609,7 +1609,7 @@ fn main() -> Result<()> {
             });
 
             // Emit G-code with per-operation spindle speed support
-            let post_proc = get_post_processor(&job_file.job.post).context(format!(
+            let post_def = get_post_definition(&job_file.job.post).context(format!(
                 "Unknown post-processor '{}'. Supported: grbl, linuxcnc, mach3",
                 job_file.job.post
             ))?;
@@ -1655,7 +1655,7 @@ fn main() -> Result<()> {
 
                     let gcode = export_gcode_phases_checked(
                         &setup_phases,
-                        post_proc.as_ref(),
+                        post_def,
                         None,
                         ToolLoadExportPolicy::default(),
                     )?;
@@ -1683,10 +1683,10 @@ fn main() -> Result<()> {
                         controller_compensation: None,
                     })
                     .collect();
-                info!("Emitting G-code ({})...", post_proc.name());
+                info!("Emitting G-code ({})...", post_def.name);
                 let gcode = export_gcode_phases_checked(
                     &phases,
-                    post_proc.as_ref(),
+                    post_def,
                     None,
                     ToolLoadExportPolicy::default(),
                 )?;
