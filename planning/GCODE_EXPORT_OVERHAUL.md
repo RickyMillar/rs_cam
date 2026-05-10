@@ -1,6 +1,6 @@
 # G-Code Export Overhaul — Roadmap
 
-**Status:** Phase 0, 0.5, 1, 2, 3, 4a, 4b, and 5 complete. Phase 6 (power-user features) is the deferred backlog.
+**Status:** Phase 0, 0.5, 1, 2, 3, 4a, 4b, 5 complete. Phase 6: items #1 (wire wizard overrides into emitter) and #4 (dry-run mode) shipped; remaining items are open backlog.
 **Owner:** TBD
 **Last updated:** 2026-05-10
 **Worktree:** `/home/ricky/personal_repos/rs_cam-gcode-overhaul/` on branch `gcode-overhaul` (branched from `master` @ fe27805). All implementation work for this overhaul lives there; the main checkout stays on `master` for unrelated work and the other agent's optimizer changes.
@@ -331,16 +331,23 @@ Six-step Export Wizard modal in `crates/rs_cam_viz/src/ui/export_wizard.rs`, bac
 
 ---
 
-### Phase 6 — Power-user features (deferred)
+### Phase 6 — Power-user features (partial)
 
-Order by user demand, not speculation:
+Two items shipped; the rest stay on the backlog until demand pulls them in.
+
+**Shipped:**
+
+- **#1 Wire wizard overrides into the emitter — DONE.** `WizardOverlay` (in `gcode/wizard_overlay.rs`) packs WCS / units / safe-Z / spindle-warmup overrides; `emit_program_with_overlay` applies them to a per-export `Cow<PostDefinition>` (WCS+units) and a `Cow<Program>` (warmup-dwell injection after preamble). Viz `overlay_for(session, gui)` builds it from `session.wizard()` and routes through `export_*_with_overlay_checked`. Shipped TOMLs templated `G21` → `{units_word}` so the units override is non-cosmetic; substitution is byte-identical for default mm. Tests: 7 unit (overlay semantics) + 5 emitter golden-diff + 2 wizard_e2e round-trip. Captured-fixture baseline unchanged.
+- **#4 Dry-run mode — DONE.** `WizardState.dry_run: bool` resolves to `WizardOverlay.dry_run_safe_z = Some(safe_z_override.unwrap_or(gui.post.safe_z))`. `apply_to_program` clamps every `Linear`/`LinearModal`/`ArcCw`/`ArcCcw` Z to the safe-Z value; `Rapid` and `SafeZRetract` are left intact so entry/exit kinematics survive. Step 3 carries the toggle; Step 6 surfaces an amber "Dry-run: ON" row in the summary. Tests: 3 unit (clamp scope, no-op, composition with warmup) + 1 wizard_e2e (asserts every cutting line carries Z=safe-Z; rapids at Z=5.0 untouched).
+
+**Backlog (priority-ordered by perceived value):**
 
 - **Editable preamble/postamble templates.** Per-project override of the post's templates, with variable substitution.
 - **Per-tool pre/post g-code.** Move from `ToolpathConfig.pre_gcode/post_gcode` to `Tool.pre_gcode/post_gcode` (with per-toolpath override). Tool-change routines travel with the tool.
-- **Dry-run mode.** Substitute Z with safe-Z in `Emitter` post-pass. Toggle in wizard.
 - **Re-simulation gate.** Feed the emitted `Program` back through the simulator before saving — final modal/transition sanity check. The simulator already exists; this is wiring.
 - **Custom user posts.** Pick up `~/.config/rs_cam/posts/*.toml` alongside shipped ones.
 - **Post linter / authoring guide** if community contributions become a thing.
+- **MCP wizard tools.** Expose every wizard knob as an MCP tool plus `wizard_save`. Today MCP only has the legacy `export_gcode`.
 
 ## Open questions
 
@@ -373,6 +380,6 @@ Add as needed (Centroid, Masso, Buildbotics, Mach4, Smoothieware) on user reques
 | 4a | CI emulator gate (gvalidate + rs274ngc) | No | <1 day (done) |
 | 4b | Broaden corpus + grblHAL post + new PostDefinition fields | No (additive) | 1 day (done) |
 | 5 | Wizard UX | No (additive) | 1 day (done) |
-| 6 | Power features (incl. CAMotics motion-sim option) | Per-feature | Open-ended |
+| 6 | Power features (incl. CAMotics motion-sim option) | Per-feature | #1 + #4 done; rest open-ended |
 
-**All non-deferred phases shipped on `gcode-overhaul`.** Phase 6 items remain on the backlog (per-tool pre/post g-code, dry-run mode, re-simulation gate, custom user posts, post linter, MCP wizard tools).
+**Shipped on `gcode-overhaul`:** Phases 0 → 5 in full, plus Phase 6 items #1 (wizard overrides → emitter) and #4 (dry-run mode). Remaining Phase 6 backlog: editable preamble/postamble templates, per-tool pre/post g-code, re-simulation gate, custom user posts, post linter, MCP wizard tools.
