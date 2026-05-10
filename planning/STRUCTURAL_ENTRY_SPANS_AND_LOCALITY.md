@@ -17,7 +17,7 @@ place.
 | D2. LUT calibration audit — slot vs partial engagement bound | ✅ done — **mismatch found** | (research only) | 2026-05-10 |
 | D3. Decision point — stopgap revert vs roll-forward | ✅ Path A (revert) | `8e2a7fc` | 2026-05-10 |
 | D4. Adaptive3d entry-emitter Entry spans (plunge/helix/ramp) | ✅ done | `9182795` | 2026-05-10 |
-| D5. Other operation generators — Entry span coverage | 🚫 blocked on D4 | — | — |
+| D5. Other operation generators — Entry span coverage | ✅ done (audit + tests; no new emissions needed) | `4e462ca` | 2026-05-10 |
 | D6. Span-aware locality classifier | 🚫 blocked on D4 | — | — |
 | D7. Span-aware C1 filter (replaces kinematics filter) | 🚫 blocked on D6 | — | — |
 | D8. Cross-fixture re-validation | 🚫 blocked on D7 | — | — |
@@ -930,4 +930,48 @@ emission path. Existing 1 332-test lib suite still green.
   kinematics filter that was reverted in D3.
 - D8 (cross-fixture validation): still pending; should run after
   D6 + D7.
+
+### 2026-05-10 — D5 landed (no new generator-side emissions needed)
+
+D1's survey concluded only Adaptive3D had a generator-side emission
+gap — closed by D4. D5 is the audit-and-lock-in pass for the rest.
+
+**Audit conclusions:**
+- 13 ops with default `entry_style = Ramp` (Waterline, Scallop,
+  VCarve, Trace, Chamfer, Inlay, Pencil, RampFinish, SpiralFinish,
+  RadialFinish, HorizontalFinish, SteepShallow, plus most other
+  Finish-role ops) already emit `SpanKind::Entry` via the post-
+  generation `dressup::apply_entry` path. Confirmed by re-reading
+  `dressup.rs:34-141` and the existing `SpanKind::Entry` regression
+  in the dressup tests.
+- 6 ops with default Roughing role (Pocket, Adaptive 2D, Profile,
+  Face, Zigzag, Rest) emit no Entry span by default; users opt in
+  via the dressup panel. No code change — the absence of an Entry
+  span correctly reflects the absence of a configured entry move.
+- 2 ops strip the Entry style entirely (DropCutter, ProjectCurve)
+  via `normalize_for_op` — geometric incompatibility, no Entry
+  span needed.
+- Drill / PinDrill: every move is structurally an entry, with
+  no XY arc engagement. Carve-out is handled implicitly by the
+  chip-geometry path: plunge samples emit no
+  `effective_chip_thickness_mm`, so the gate routes to
+  `Unmodeled(ArcEngagementNotCaptured)` rather than spuriously
+  reading chipload from a Z-only move. **No new code; no Entry
+  spans added.** D7's span-aware filter stays a no-op for these
+  ops without needing `OperationType::Drill` recognition.
+
+**Code changes:**
+- `compute::execute::tests::all_operation_families_emit_expected_structural_span_kinds`:
+  Adaptive3d coverage case updated to assert `SpanKind::Entry` is
+  present (post-D4) and the label fragment `"plunge entry"` shows
+  up. All 23 op cases still pass.
+- `tool_load::chipload::tests::drill_like_no_arc_samples_route_to_unmodeled`:
+  new regression. Plunge-kinematics samples with `arc=None` and
+  `effective_chip_thickness=None` route to
+  `Unmodeled(ArcEngagementNotCaptured)`, locking in the implicit
+  drill carve-out so D7 doesn't need `OperationType` branching.
+
+D5 closes the structural-emission story. D6 + D7 (span-aware
+classifier + filter) can now consume the Entry spans this and D4
+laid down.
 
