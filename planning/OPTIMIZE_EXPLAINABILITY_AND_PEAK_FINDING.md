@@ -13,7 +13,7 @@ criteria.
 | Thread | Phase | Status | Hash | Date |
 |---|---|---|---|---|
 | A. Explainability | A1. Structured failure narrative in `OptimizeOutcome` | ✅ | `9b940ca` | 2026-05-10 |
-| A. Explainability | A2. Modal "what was tried, why each failed" view | ⏳ | — | — |
+| A. Explainability | A2. Modal "what was tried, why each failed" view | ✅ | _pending commit_ | 2026-05-10 |
 | A. Explainability | A3. Hot-spot localization (sample → span name) | ⏳ | — | — |
 | A. Explainability | A4. Operator-facing suggestion lever | ⏳ | — | — |
 | A. Explainability | A5. Search-frontier heatmap (feed × stepover) | ⏳ optional | — | — |
@@ -548,3 +548,26 @@ each phase using A1 as template.)
   Scallop) and falls through to `(None, …)` for everything else. The
   envelope stays empty for ops the optimizer doesn't move; A2 / future
   ops add their own arms when needed.
+- **2026-05-10 — A2.** Re-exported narrative types (`FailureNarrative`,
+  `TradeOffNarrative`, `LimitingGate`, `SearchEnvelopeReached`,
+  `GateKind`, `KnobAxis`, `OperatorSuggestion`, `AxisExtent`) from
+  `optimize/mod.rs` so the viz crate can read structured fields
+  without depending on the private `narrative` module.
+- **2026-05-10 — A2.** Added pub `limiting_gates_for_verdict(verdict)`
+  in `narrative.rs` so per-row UI rendering can compute the limiting
+  reading on each candidate (not just the recommended one). Surfaces
+  both Exceeds and band-admitted readings in one call.
+- **2026-05-10 — A2.** Modal arms for NoSafeImprovement / MarginalSafe
+  / TradeOff now read `narrative.headline` instead of the old free
+  `explanation` string. The `explanation` field is kept on
+  NoSafeImprovement / MarginalSafe for any consumer not yet migrated
+  (notably project rollup uses both at lines 314 / 608); it can be
+  retired once all consumers move to `narrative.headline`.
+- **2026-05-10 — A2.** Per-row "status" cell in the attempted table
+  swapped from generic "gate" / "slower" / "ok" to a specific
+  limiting-gate reading ("chipload 0.0707 (+29%)", "defl 237 µm
+  (+19%)"). Coloured red for hard Exceeds, yellow for band-admitted.
+- **2026-05-10 — A2.** Manual GUI smoke deferred. New format helpers
+  (`format_envelope_summary`, `format_limiting_gate`) covered by 4
+  unit tests with wanaka-realistic values; MCP-side JSON smoke pending
+  binary rebuild.
