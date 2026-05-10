@@ -315,3 +315,107 @@ The reference output we GENERATE in step 4 of Phase 0 should use a fixture job t
 3. Coolant on/off in fixture — recommend **flood on** for all three (forces the coolant table to differ visibly between dialects).
 4. WCS — Fusion defaults to G54. Keep that.
 5. Sequence numbers — leave off for all three (matches all three defaults; one less source of diff).
+
+---
+
+## Validator install — Phase 4a
+
+All three validators live under `reference/validators/` (gitignored). The
+emulator-validation test (`crates/rs_cam_core/tests/gcode_emulator_validation.rs`)
+skips gracefully when a binary is missing; CI sets
+`CI_REQUIRE_VALIDATORS=1` to flip skip → hard-fail.
+
+### gvalidate (`grbl/grbl-sim`) — primary Grbl 1.1 parser
+
+Status: **working**. Use as authoritative gate for the Grbl post and as
+auxiliary syntax-check for LinuxCNC/Mach3 captures.
+
+```bash
+cd reference/validators
+git clone https://github.com/grbl/grbl-sim.git grbl
+cd grbl/grbl/sim
+make gvalidate     # produces gvalidate.exe (Linux ELF despite the .exe)
+```
+
+Notes:
+- Built artifact is `gvalidate.exe`. The `.exe` suffix is a quirk of the
+  upstream Makefile; on Linux it is a normal ELF binary.
+- gvalidate accepts most LinuxCNC and Mach3 g-code (it is permissive on
+  G91.1 / G53 / M2). It rejects M6 — Grbl 1.1 has no ATC support — which
+  is the documented `f5_two_tool_changes` "expected reject" case.
+- The validator runs against EEPROM.DAT in its working dir; the test
+  copies inputs to /tmp before invoking, so no EEPROM state leaks
+  between runs.
+
+### rs274ngc (LinuxCNC) — primary LinuxCNC + Mach3 proxy
+
+Status: **build from source on Ubuntu 24.04** (no Ubuntu noble package
+available; LinuxCNC's official PPA was retired and the project ships
+Debian bookworm `.deb`s only).
+
+```bash
+# Build deps (Ubuntu 24.04):
+sudo apt install -y \
+    build-essential autoconf automake libtool intltool yapps2 \
+    python3-dev libgtk-3-dev tcl8.6-dev tk8.6-dev libreadline-dev \
+    libxmu-dev libusb-1.0-0-dev libudev-dev libboost-python-dev \
+    libglib2.0-dev libxinerama-dev
+
+cd reference/validators
+git clone --depth 1 --branch 2.9 https://github.com/LinuxCNC/linuxcnc.git
+cd linuxcnc/src
+./autogen.sh
+./configure --with-realtime=uspace --enable-build-documentation=no
+make -j$(nproc)
+# Resulting binary: ../bin/rs274 (or gcoder).
+```
+
+The test resolves the binary in this order:
+1. `RS274NGC_BIN` env var override
+2. `gcoder` / `rs274` / `rs274ngc` on `$PATH`
+3. `reference/validators/linuxcnc/bin/rs274` (symlink the build artifact
+   here for hermetic CI)
+
+Notes:
+- LinuxCNC 2.9 is the current stable. Master may also work but has had
+  parser regressions historically.
+- Mach3 has no open-source emulator; rs274ngc serves as proxy. Mach3
+  g-code is ≥90% LinuxCNC-compatible. Known divergences (integer
+  F-words, `G33.1` rigid tapping) are documented in `posts/mach3.toml`
+  and the test treats Mach3-via-rs274ngc as advisory until a true Mach3
+  emulator emerges.
+
+### grblHAL_validator (`grblHAL/Simulator`) — DEFERRED (upstream hang)
+
+Status: **builds, does not exit on EOF**. Tracked for Phase 4b once
+upstream lands a fix.
+
+```bash
+cd reference/validators
+git clone --recurse-submodules https://github.com/grblHAL/Simulator.git grblhal-sim
+cd grblhal-sim && mkdir -p build && cd build
+cmake .. && make
+# Resulting binary: ./grblHAL_validator
+```
+
+Why we don't gate on it yet: the validator's `main()` calls
+`protocol_main_loop()` after wiring stdin via a `serial_read()` shim. On
+EOF, `serial_read()` sets `sys.abort = 1` and returns `SERIAL_NO_DATA`,
+but the main loop never observes the abort and waits forever. A
+`// state_set(STATE_CHECK_MODE);` line in `validator.c` is commented
+out, suggesting the exit path was intended but unfinished.
+
+Workarounds explored:
+- Stripping M0/M1 — doesn't help; hang occurs on EOF, not on pause.
+- Running with `-s` (silent) — same hang.
+- Piping via stdin instead of a file path — same hang.
+- Launching from the `build/` cwd so EEPROM.DAT is accessible — same
+  hang.
+
+Until upstream resolves this, **gvalidate (Grbl 1.1) covers our
+grblHAL needs** because grblHAL is a strict superset — anything
+gvalidate accepts, grblHAL accepts. The remaining gap (grblHAL-only
+syntax such as `$TC`, M62/M63 digital output control) becomes relevant
+in Phase 4b when we ship `posts/grblhal.toml` and need fixtures that
+exercise those features.
+
