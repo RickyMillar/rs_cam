@@ -228,6 +228,10 @@ impl<B: ComputeBackend> AppController<B> {
             | AppEvent::SimVizModeChanged
             | AppEvent::ShowShortcuts
             | AppEvent::SetToolLoadOverride { .. }
+            | AppEvent::OpenExportWizard
+            | AppEvent::CloseExportWizard
+            | AppEvent::WizardSetStep(_)
+            | AppEvent::WizardSetPost(_)
             | AppEvent::Quit => {}
         }
     }
