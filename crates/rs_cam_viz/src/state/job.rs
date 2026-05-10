@@ -1287,10 +1287,10 @@ mod tests {
             5,
             "ToolType::ALL out of sync with enum"
         );
-        // PostFormat: 3 variants
+        // PostFormat: 4 variants (Grbl, GrblHal, LinuxCnc, Mach3)
         assert_eq!(
             PostFormat::ALL.len(),
-            3,
+            4,
             "PostFormat::ALL out of sync with enum"
         );
         // ToolMaterial: 2 variants

@@ -160,6 +160,43 @@ impl RsCamApp {
                 AppEvent::ExportGcodeConfirmed => {
                     self.export_gcode_with_summary();
                 }
+                AppEvent::OpenExportWizard => {
+                    let resume = self
+                        .controller
+                        .state()
+                        .session
+                        .wizard()
+                        .last_step_visited
+                        .min(crate::ui::export_wizard::STEP_COUNT - 1);
+                    let s = self.controller.state_mut();
+                    s.show_export_wizard = true;
+                    s.wizard_active_step = resume;
+                }
+                AppEvent::CloseExportWizard => {
+                    self.controller.state_mut().show_export_wizard = false;
+                }
+                AppEvent::WizardSetStep(step) => {
+                    let clamped = step.min(crate::ui::export_wizard::STEP_COUNT - 1);
+                    let s = self.controller.state_mut();
+                    s.wizard_active_step = clamped;
+                    if clamped > s.session.wizard().last_step_visited {
+                        s.session.wizard_mut().last_step_visited = clamped;
+                    }
+                }
+                AppEvent::WizardSetPost(format) => {
+                    let s = self.controller.state_mut();
+                    s.gui.post.format = format;
+                    s.gui.mark_edited();
+                    let mut session_post = s.session.post_config().clone();
+                    session_post.format = match format {
+                        crate::state::job::PostFormat::Grbl => "grbl",
+                        crate::state::job::PostFormat::GrblHal => "grblhal",
+                        crate::state::job::PostFormat::LinuxCnc => "linuxcnc",
+                        crate::state::job::PostFormat::Mach3 => "mach3",
+                    }
+                    .to_owned();
+                    s.session.set_post_config(session_post);
+                }
                 AppEvent::SetToolLoadOverride {
                     accept_unmodeled,
                     accept_exceeded,

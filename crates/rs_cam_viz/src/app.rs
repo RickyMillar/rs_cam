@@ -515,6 +515,12 @@ impl eframe::App for RsCamApp {
             }
         }
 
+        // Export wizard (Phase 5)
+        if self.controller.state().show_export_wizard {
+            let (state, events) = self.controller.state_ref_and_events_mut();
+            crate::ui::export_wizard::draw(ctx, state, events);
+        }
+
         // Optimize modal (per-toolpath)
         if self.controller.state().optimize_modal.is_some() {
             let (state, events) = self.controller.state_ref_and_events_mut();

@@ -1,6 +1,7 @@
 #![deny(clippy::indexing_slicing)]
 
 pub mod automation;
+pub mod export_wizard;
 pub mod menu_bar;
 pub mod optimize_modal;
 pub mod optimize_project;
@@ -111,6 +112,15 @@ pub enum AppEvent {
 
     // Pre-flight / Export
     ExportGcodeConfirmed,
+    /// Open the multi-step Export Wizard at the user's last-visited step.
+    OpenExportWizard,
+    /// Close the wizard. Persistent settings on `session.wizard()` are
+    /// preserved; only the transient modal state goes away.
+    CloseExportWizard,
+    /// Switch the visible wizard step. Bounds-checked in the handler.
+    WizardSetStep(u8),
+    /// Update the post-processor format from the wizard's Step 1 dropdown.
+    WizardSetPost(crate::state::job::PostFormat),
     /// Set the tool-load export-gate override flags. The two flags are
     /// independent — `accept_unmodeled` only bypasses `Unmodeled` verdicts,
     /// `accept_exceeded` only bypasses `Exceeds` verdicts.

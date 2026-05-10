@@ -76,6 +76,10 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                     events.push(AppEvent::SaveJob);
                 }
                 ui.separator();
+                if ui.button("Export Wizard...").clicked() {
+                    ui.close_menu();
+                    events.push(AppEvent::OpenExportWizard);
+                }
                 if ui
                     .add(egui::Button::new("Export G-code (all)...").shortcut_text("Ctrl+Shift+E"))
                     .clicked()

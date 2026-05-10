@@ -38,6 +38,14 @@ pub struct AppState {
     pub show_preflight: bool,
     /// Show keyboard shortcuts reference window.
     pub show_shortcuts: bool,
+    /// Show the multi-step Export Wizard. Persistent settings live on
+    /// `session.wizard()`; this flag and `wizard_active_step` are
+    /// transient UI state.
+    pub show_export_wizard: bool,
+    /// 0-indexed currently visible wizard step. Initialised from
+    /// `session.wizard().last_step_visited` when the wizard opens so
+    /// the user resumes where they left off.
+    pub wizard_active_step: u8,
     /// Cached state of the per-toolpath Optimize modal. `None` when
     /// closed. The optimizer is expensive (~1-2 min per toolpath at
     /// the Stage 0/1/2 settings), so unlike the suggest modal we
@@ -131,6 +139,8 @@ impl AppState {
             history: UndoHistory::new(),
             show_preflight: false,
             show_shortcuts: false,
+            show_export_wizard: false,
+            wizard_active_step: 0,
             optimize_modal: None,
             optimize_project: None,
             is_optimizing: false,
