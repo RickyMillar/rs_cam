@@ -17,10 +17,11 @@ criteria.
 | A. Explainability | A3. Sample locality classification (kinematics + arc engagement) | ✅ | `fc17798` | 2026-05-10 |
 | A. Explainability | A4. Operator-facing suggestion lever | ✅ | `2c7ffe5` | 2026-05-10 |
 | A. Explainability | A5. Search-frontier heatmap (feed × stepover) | ⏳ optional | — | — |
-| C. Gate semantics | C1. Steady-state gate trip (minimal) | 🚫 reverted | `1e31538` → `8e2a7fc` | 2026-05-10 |
-| C. Gate semantics | C2. C1 + entry-spike advisory | 🚫 reverted | `1e31538` → `8e2a7fc` | 2026-05-10 |
+| C. Gate semantics | C1. Steady-state gate trip (minimal) | 🚫 reverted; superseded by D7 | `1e31538` → `8e2a7fc` | 2026-05-10 |
+| C. Gate semantics | C2. C1 + entry-spike advisory | 🚫 reverted; superseded by D7 | `1e31538` → `8e2a7fc` | 2026-05-10 |
 | C. Gate semantics | C3. Locality-aware suggestions | ⏳ proposed | — | — |
 | C. Gate semantics | C4. Per-locality gate verdict breakdown | ⏭️ deferred | — | — |
+| D. Structural span fix | D0–D9 plan (`STRUCTURAL_ENTRY_SPANS_AND_LOCALITY.md`) | 🟡 in progress; D0/D1/D2/D3/D4/D9 ✅, D5/D6/D7/D8 pending | see `STRUCTURAL_ENTRY_SPANS_AND_LOCALITY.md` | 2026-05-10 |
 | B. Peak-finding | B0. Gating prerequisites re-evaluated | 🚫 blocked on C1 | — | — |
 | B. Peak-finding | B1. `OptimizationStrategy` trait contract | 🚫 blocked on B0 | — | — |
 | B. Peak-finding | B2. Closed-loop retarget composition (§3.5 deferred) | 🚫 blocked on B1 | — | — |
