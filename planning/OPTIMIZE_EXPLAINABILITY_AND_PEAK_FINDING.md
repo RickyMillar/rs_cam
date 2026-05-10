@@ -17,8 +17,8 @@ criteria.
 | A. Explainability | A3. Sample locality classification (kinematics + arc engagement) | ✅ | `fc17798` | 2026-05-10 |
 | A. Explainability | A4. Operator-facing suggestion lever | ✅ | `2c7ffe5` | 2026-05-10 |
 | A. Explainability | A5. Search-frontier heatmap (feed × stepover) | ⏳ optional | — | — |
-| C. Gate semantics | C1. Steady-state gate trip (minimal) | 🚫 reverted | `1e31538` (landed) → reverted in D3 | 2026-05-10 |
-| C. Gate semantics | C2. C1 + entry-spike advisory | 🚫 reverted | `1e31538` (landed) → reverted in D3 | 2026-05-10 |
+| C. Gate semantics | C1. Steady-state gate trip (minimal) | 🚫 reverted | `1e31538` → `8e2a7fc` | 2026-05-10 |
+| C. Gate semantics | C2. C1 + entry-spike advisory | 🚫 reverted | `1e31538` → `8e2a7fc` | 2026-05-10 |
 | C. Gate semantics | C3. Locality-aware suggestions | ⏳ proposed | — | — |
 | C. Gate semantics | C4. Per-locality gate verdict breakdown | ⏭️ deferred | — | — |
 | B. Peak-finding | B0. Gating prerequisites re-evaluated | 🚫 blocked on C1 | — | — |
