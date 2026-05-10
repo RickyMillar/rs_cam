@@ -12,7 +12,7 @@ criteria.
 
 | Thread | Phase | Status | Hash | Date |
 |---|---|---|---|---|
-| A. Explainability | A1. Structured failure narrative in `OptimizeOutcome` | ✅ | _pending commit_ | 2026-05-10 |
+| A. Explainability | A1. Structured failure narrative in `OptimizeOutcome` | ✅ | `9b940ca` | 2026-05-10 |
 | A. Explainability | A2. Modal "what was tried, why each failed" view | ⏳ | — | — |
 | A. Explainability | A3. Hot-spot localization (sample → span name) | ⏳ | — | — |
 | A. Explainability | A4. Operator-facing suggestion lever | ⏳ | — | — |
