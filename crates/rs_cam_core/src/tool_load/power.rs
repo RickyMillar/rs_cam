@@ -29,7 +29,7 @@ use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath_spans::Span;
 
 use super::locality::SpanLookup;
-use super::verdict::{Confidence, PowerVerdict, SampleEvidence, UnmodeledReason};
+use super::verdict::{Confidence, EntrySpike, PowerVerdict, SampleEvidence, UnmodeledReason};
 
 /// Worst-case anisotropy multiplier on Kc. See module-level doc.
 const ANISOTROPY_MULTIPLIER: f64 = 2.5;
@@ -77,6 +77,15 @@ pub fn evaluate(
     // (which often falls through with `peak_power == 0.0` on light cuts)
     // still has a usable headroom number to surface.
     let mut last_available_kw: f64 = 0.0;
+    // D7 — span-aware entry filter. Configured Entry transients
+    // (Adaptive3D plunge / helix / ramp, dressup lead-ins) bypass the
+    // trip decision and surface separately as `entry_spike` on the
+    // `Within` arm. The peak Entry-ancestry power sample (whether or
+    // not it exceeds available_kw) is recorded for the advisory.
+    let span_lookup = spans.map(SpanLookup::new);
+    let mut entry_peak_power: f64 = 0.0;
+    let mut entry_peak_idx: Option<usize> = None;
+    let mut entry_peak_available: f64 = 0.0;
 
     for (i, s) in trace.samples.iter().enumerate() {
         if s.toolpath_id != toolpath_id {
@@ -106,12 +115,24 @@ pub fn evaluate(
 
         // P_kW = Kc × DOC × WOC × feed / (60 * 1e6)
         let p_kw = kc_eff * s.axial_doc_mm * radial_width * s.feed_rate_mm_min / 60_000_000.0;
+        let avail = machine.power_at_rpm(s.spindle_rpm as f64) * machine.safety_factor;
+
+        // Route Entry-ancestry samples to the spike track; they don't
+        // drive the steady-state trip but `any_slot`/`last_available_kw`
+        // are bookkeeping that still applies.
+        if !super::locality::is_steady_state_for_gate(s, span_lookup.as_ref()) {
+            if p_kw > entry_peak_power {
+                entry_peak_power = p_kw;
+                entry_peak_idx = Some(i);
+                entry_peak_available = avail;
+            }
+            continue;
+        }
 
         if arc >= std::f64::consts::PI - 1e-3 {
             any_slot = true;
         }
 
-        let avail = machine.power_at_rpm(s.spindle_rpm as f64) * machine.safety_factor;
         last_available_kw = avail;
 
         if p_kw > peak_power {
@@ -139,7 +160,6 @@ pub fn evaluate(
         )
     };
 
-    let span_lookup = spans.map(SpanLookup::new);
     let evidence = match peak_idx {
         Some(idx) => SampleEvidence::at(idx).with_locality(
             trace
@@ -173,14 +193,31 @@ pub fn evaluate(
             confidence,
         };
     }
+    // D7 entry-spike advisory: surface a configured-entry sample whose
+    // power exceeded the (possibly tolerance-widened) machine ceiling,
+    // even though the steady-state trip didn't fire.
+    let entry_spike = match entry_peak_idx {
+        Some(idx) if entry_peak_available > 0.0 && entry_peak_power > entry_peak_available => {
+            let locality = trace
+                .samples
+                .get(idx)
+                .and_then(|s| super::locality::classify_sample_locality(s, span_lookup.as_ref()))
+                .unwrap_or_else(|| "entry".to_owned());
+            Some(EntrySpike {
+                observed: entry_peak_power,
+                bound: entry_peak_available,
+                locality,
+                side: None,
+            })
+        }
+        _ => None,
+    };
     PowerVerdict::Within {
         peak_kw: peak_power,
         available_kw,
         evidence,
         confidence,
-        // C1+C2 reverted 2026-05-10 (D3 Path A); D7 will repopulate
-        // from span-aware entry detection.
-        entry_spike: None,
+        entry_spike,
     }
 }
 

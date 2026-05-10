@@ -102,10 +102,32 @@ pub fn classify_sample_locality(
     }
 }
 
-// `is_steady_state_for_gate` (G17 D7) is reintroduced in a follow-on
-// commit. The D3 revert (commit `8e2a7fc`) deleted the kinematics-based
-// version; D7 will replace it with a span-ancestry predicate that rides
-// the same SpanLookup the locality classifier above already uses.
+/// Predicate the per-gate trip loops use to decide whether a sample is
+/// part of steady-state cutting (and therefore eligible to drive the
+/// gate trip) or part of a configured entry transient (kept out of the
+/// trip; surfaced separately as an `EntrySpike` advisory).
+///
+/// G17 D7 of `planning/STRUCTURAL_ENTRY_SPANS_AND_LOCALITY.md`. The
+/// pre-D3 kinematics-based heuristic
+/// (`CutKinematics::{Helix, Plunge}` → not steady-state) hid terrain-
+/// following Helix samples on adaptive3d 3D-rough cuts (D0 finding).
+/// The replacement reads structural span ancestry: a sample is
+/// steady-state iff none of its `span_path` ancestors is
+/// [`SpanKind::Entry`].
+///
+/// When `span_lookup` is `None` (no annotated toolpath plumbed), the
+/// predicate returns `true` — conservatively treating every sample as
+/// steady-state preserves the pre-D7 trip behaviour for legacy callers
+/// rather than silently dropping samples from the gate.
+pub fn is_steady_state_for_gate(
+    sample: &SimulationCutSample,
+    span_lookup: Option<&SpanLookup<'_>>,
+) -> bool {
+    match span_lookup {
+        Some(lookup) => !lookup.ancestors_contain_kind(&sample.span_path, SpanKind::Entry),
+        None => true,
+    }
+}
 
 #[cfg(test)]
 #[allow(
@@ -275,6 +297,43 @@ mod tests {
             classify_sample_locality(&s, None).as_deref(),
             Some("slot section"),
         );
+    }
+
+    #[test]
+    fn is_steady_state_for_gate_excludes_entry_ancestor() {
+        let spans = vec![
+            span(0, 10, SpanKind::Operation, "op"),
+            span(0, 3, SpanKind::Entry, "plunge entry"),
+        ];
+        let lookup = SpanLookup::new(&spans);
+        // Inside the Entry span — not steady-state.
+        let entry_sample = sample(Some(PI), vec![SpanId(0), SpanId(1)]);
+        assert!(!is_steady_state_for_gate(&entry_sample, Some(&lookup)));
+        // Past the Entry — steady-state.
+        let cut_sample = sample(Some(PI), vec![SpanId(0)]);
+        assert!(is_steady_state_for_gate(&cut_sample, Some(&lookup)));
+    }
+
+    #[test]
+    fn is_steady_state_for_gate_terrain_helix_is_steady_state() {
+        // The D7 regression: pre-D3, Helix-kinematics samples were
+        // dropped from the gate by `is_steady_state_for_gate`. With
+        // span ancestry as the signal, a terrain-following Helix sample
+        // *without* an Entry ancestor counts as steady-state and
+        // therefore drives the trip decision.
+        let spans = vec![span(0, 10, SpanKind::Operation, "op")];
+        let lookup = SpanLookup::new(&spans);
+        let mut s = sample(Some(PI), vec![SpanId(0)]);
+        s.cut_kinematics = CutKinematics::Helix;
+        assert!(is_steady_state_for_gate(&s, Some(&lookup)));
+    }
+
+    #[test]
+    fn is_steady_state_for_gate_no_lookup_assumes_steady_state() {
+        // No span data plumbed → conservatively trip on every sample
+        // rather than silently filter (matches pre-D3 behaviour).
+        let s = sample(Some(PI), vec![SpanId(0)]);
+        assert!(is_steady_state_for_gate(&s, None));
     }
 
     #[test]
