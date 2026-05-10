@@ -399,13 +399,20 @@ pub fn evaluate(
 
     // 6. Build verdict. Above-max takes priority over below-min: breakage is more
     // catastrophic than burn risk and we want it surfaced.
+    let locality_for = |idx: usize| -> Option<String> {
+        trace
+            .samples
+            .get(idx)
+            .and_then(super::locality::classify_sample_locality)
+    };
     if let Some((dev, idx)) = peak_above {
         return ChiploadVerdict::Exceeds {
             side: ChipSide::High,
             triggering: ChiploadMetric {
                 observed_mm_per_tooth: max + dev,
                 statistic: ChiploadStatistic::PeakHigh,
-                evidence: SampleEvidence::at_with_stat(idx, ChiploadStatistic::PeakHigh),
+                evidence: SampleEvidence::at_with_stat(idx, ChiploadStatistic::PeakHigh)
+                    .with_locality(locality_for(idx)),
                 bounds,
             },
             confidence: chipload_confidence,
@@ -418,7 +425,8 @@ pub fn evaluate(
             triggering: ChiploadMetric {
                 observed_mm_per_tooth: observed,
                 statistic: ChiploadStatistic::MedianLow,
-                evidence: SampleEvidence::at_with_stat(idx, ChiploadStatistic::MedianLow),
+                evidence: SampleEvidence::at_with_stat(idx, ChiploadStatistic::MedianLow)
+                    .with_locality(locality_for(idx)),
                 bounds,
             },
             confidence: chipload_confidence,
@@ -432,7 +440,8 @@ pub fn evaluate(
         (Some(_), Some((median_cl, median_idx))) => Some(ChiploadMetric {
             observed_mm_per_tooth: median_cl,
             statistic: ChiploadStatistic::MedianLow,
-            evidence: SampleEvidence::at_with_stat(median_idx, ChiploadStatistic::MedianLow),
+            evidence: SampleEvidence::at_with_stat(median_idx, ChiploadStatistic::MedianLow)
+                .with_locality(locality_for(median_idx)),
             bounds: bounds.clone(),
         }),
         _ => None,
@@ -443,6 +452,7 @@ pub fn evaluate(
         statistic: ChiploadStatistic::PeakInRange,
         evidence: if peak_value > 0.0 {
             SampleEvidence::at_with_stat(peak_idx, ChiploadStatistic::PeakInRange)
+                .with_locality(locality_for(peak_idx))
         } else {
             SampleEvidence::empty()
         },

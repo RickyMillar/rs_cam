@@ -241,6 +241,13 @@ pub struct SampleEvidence {
     pub sample_range: Range<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub statistic: Option<ChiploadStatistic>,
+    /// G17 A3 — short operator-facing label for *where* the triggering
+    /// sample sits in the cut: "slot section", "heavy engagement",
+    /// "plunge entry", "helix entry". `None` for plain steady-state
+    /// samples or when arc engagement was not captured. Set by the
+    /// per-gate evaluators via [`crate::tool_load::locality`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locality: Option<String>,
 }
 
 impl SampleEvidence {
@@ -249,6 +256,7 @@ impl SampleEvidence {
         Self {
             sample_range: 0..0,
             statistic: None,
+            locality: None,
         }
     }
 
@@ -257,6 +265,7 @@ impl SampleEvidence {
         Self {
             sample_range: idx..(idx + 1),
             statistic: None,
+            locality: None,
         }
     }
 
@@ -265,7 +274,17 @@ impl SampleEvidence {
         Self {
             sample_range: idx..(idx + 1),
             statistic: Some(statistic),
+            locality: None,
         }
+    }
+
+    /// Builder — attach a locality label after construction. Pass
+    /// `Some(label)` from a `classify_sample_locality` call; `None`
+    /// leaves the field unset.
+    #[must_use]
+    pub fn with_locality(mut self, locality: Option<String>) -> Self {
+        self.locality = locality;
+        self
     }
 }
 

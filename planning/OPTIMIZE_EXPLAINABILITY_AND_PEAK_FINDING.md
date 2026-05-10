@@ -14,7 +14,7 @@ criteria.
 |---|---|---|---|---|
 | A. Explainability | A1. Structured failure narrative in `OptimizeOutcome` | ✅ | `9b940ca` | 2026-05-10 |
 | A. Explainability | A2. Modal "what was tried, why each failed" view | ✅ | `4618023` | 2026-05-10 |
-| A. Explainability | A3. Hot-spot localization (sample → span name) | ⏳ | — | — |
+| A. Explainability | A3. Sample locality classification (kinematics + arc engagement) | ✅ | _pending commit_ | 2026-05-10 |
 | A. Explainability | A4. Operator-facing suggestion lever | ⏳ | — | — |
 | A. Explainability | A5. Search-frontier heatmap (feed × stepover) | ⏳ optional | — | — |
 | B. Peak-finding | B0. Gating prerequisites re-evaluated | 🚫 blocked on A2 | — | — |
@@ -571,6 +571,35 @@ each phase using A1 as template.)
   (`format_envelope_summary`, `format_limiting_gate`) covered by 4
   unit tests with wanaka-realistic values; MCP-side JSON smoke pending
   binary rebuild.
+- **2026-05-10 — A3 scope reduction.** Original plan called for
+  full sample → AnnotatedToolpath span-path lookup ("in slot section
+  near corner X"). That requires threading AnnotatedToolpath into all
+  three per-gate evaluators (chipload / power / deflection), which is
+  invasive. Switched to a lightweight classifier that reads only
+  fields already on `SimulationCutSample` (cut_kinematics + arc
+  engagement). Trade-off is precision — we get "slot section" but
+  not "near corner X". The sample-locality enum captures the
+  operator-actionable insight (the sample is in a slot region →
+  reduce stepover) without invasive plumbing. If the precision gap
+  matters later, span-path lookup can be added in a follow-up that
+  threads `&AnnotatedToolpath` through evaluator signatures.
+- **2026-05-10 — A3.** New module `tool_load/locality.rs` with
+  `classify_sample_locality(&SimulationCutSample) → Option<String>`.
+  Returns: "plunge entry" / "helix entry" (kinematics override),
+  "slot section" (arc ≥ π), "heavy engagement" (arc ≥ π/2), or
+  `None` (steady-state / no arc captured). Order matters —
+  kinematics dominates engagement classification.
+- **2026-05-10 — A3.** Added `locality: Option<String>` field +
+  `with_locality(self)` builder on `SampleEvidence`. All 3 evaluators
+  (chipload / power / deflection) attach locality at the moment they
+  pick a triggering sample — same `idx` they record into the evidence,
+  no extra lookups. `LimitingGate.locality` propagates from there.
+- **2026-05-10 — A3.** Modal `format_limiting_gate` appends locality
+  as " — <label>" suffix. Wanaka TP 1 case will read
+  "chipload 0.0707 (+29%) — slot section". Headline strings
+  untouched — locality only renders in the per-row badge. A future
+  polish could fold a shared locality into the headline if all rows
+  agree.
 - **2026-05-10 — A2 MCP smoke (post-rebuild).** Verified narrative
   serializes through MCP on `wanaka_full_tuned.toml`:
     - **TP 1 (NoSafeImprovement):** headline reads "Tried 3

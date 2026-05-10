@@ -136,7 +136,12 @@ pub fn evaluate(
     };
 
     let evidence = match peak_idx {
-        Some(idx) => SampleEvidence::at(idx),
+        Some(idx) => SampleEvidence::at(idx).with_locality(
+            trace
+                .samples
+                .get(idx)
+                .and_then(super::locality::classify_sample_locality),
+        ),
         None => SampleEvidence::empty(),
     };
 
