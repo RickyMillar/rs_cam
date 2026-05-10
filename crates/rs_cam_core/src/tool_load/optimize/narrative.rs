@@ -210,6 +210,16 @@ pub(crate) fn build_tradeoff_narrative(
     }
 }
 
+/// All non-clean readings for one candidate's verdict — both `Exceeds`
+/// gates and `Within`-but-band-admitted readings. UI uses this to
+/// render per-row "what stopped this candidate" badges in A2's modal
+/// rework. Returns an empty Vec for a strictly-safe verdict.
+pub fn limiting_gates_for_verdict(verdict: &ToolpathLoadVerdict) -> Vec<LimitingGate> {
+    let mut out = limiting_gates_from_exceeds(verdict);
+    out.extend(limiting_gates_from_band_admit(verdict));
+    out
+}
+
 fn limiting_gates_from_exceeds(verdict: &ToolpathLoadVerdict) -> Vec<LimitingGate> {
     let mut out = Vec::new();
     if let ChiploadVerdict::Exceeds {

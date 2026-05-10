@@ -58,6 +58,10 @@ pub(crate) use candidate::{
 pub(crate) use delta::delta_against_baseline;
 pub use delta::{GateDelta, GateDeltas, ParamDelta};
 pub(crate) use outcome::build_outcome;
+pub use narrative::{
+    AxisExtent, FailureNarrative, GateKind, KnobAxis, LimitingGate, OperatorSuggestion,
+    SearchEnvelopeReached, TradeOffNarrative, limiting_gates_for_verdict,
+};
 pub use outcome::{OptimizeOutcome, ProjectOptimizeReport};
 
 use context::{
