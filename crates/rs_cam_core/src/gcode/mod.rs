@@ -12,8 +12,8 @@ pub mod program_builder;
 
 pub use ir::{Program, ProgramMetadata, Statement};
 pub use post::{
-    CommentStyle, Decimals, Feedrate, LoadError as PostLoadError, PostDefinition, PostLimits, Rpm,
-    SafeZ,
+    ArcLinearize, CommentStyle, Decimals, Feedrate, LoadError as PostLoadError, PostDefinition,
+    PostLimits, Rpm, SafeZ, Units, WcsCode,
 };
 
 use crate::compute::catalog::effective_spindle_rpm;
