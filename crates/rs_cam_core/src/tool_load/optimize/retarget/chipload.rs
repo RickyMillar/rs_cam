@@ -144,6 +144,46 @@ impl Retargeter for ChiploadFeedRetargeter {
             });
         }
 
+        // F1 — RPM-down compensation when feed clamped on the burn
+        // side. The feed multiplier got clipped by the machine's
+        // max_feed envelope, so the *observed* chipload at the clamped
+        // feed falls short of the LUT-min target. Both observed peak
+        // and feed scale linearly together, so:
+        //   achieved_observed = peak × (clamped_target / baseline_feed)
+        // To make up the remaining shortfall via RPM (chipload ∝
+        // 1/rpm at fixed feed):
+        //   rpm_target = rpm_baseline × (achieved_observed / target_chipload)
+        // Emitted only on the burn side — raising RPM to fix breakage
+        // would be backwards (high-side trips reduce feed instead, no
+        // compensation needed). Apply path snaps RPM to a real dial
+        // position via `machine.clamp_rpm` downstream.
+        if was_clamped
+            && matches!(side, Side::Burn)
+            && let Some(rpm_baseline) = view.axis_value(SearchAxis::SpindleRpm, ctx)
+            && rpm_baseline > 0.0
+            && let Some(rpm_bounds) = space.axis(SearchAxis::SpindleRpm)
+        {
+            let achieved_observed = peak * (clamped_target / baseline_feed);
+            if achieved_observed > 0.0 && achieved_observed < target_chipload {
+                let rpm_target_raw = rpm_baseline * (achieved_observed / target_chipload);
+                let rpm_clamped = rpm_bounds.hard.clamp(rpm_target_raw);
+                // Only emit when the RPM target actually moves *down* —
+                // a no-op patch (or worse, an upward bump from a clamp
+                // hitting min_rpm) wouldn't help.
+                if rpm_clamped < rpm_baseline - 1.0 {
+                    patches.push(AxisPatch {
+                        axis: SearchAxis::SpindleRpm,
+                        value: rpm_clamped,
+                        clamped: (rpm_clamped - rpm_target_raw).abs() > 1e-6,
+                        source: PatchSource::Coupled {
+                            from_axis: SearchAxis::FeedRate,
+                            rule: "lower RPM to lift chipload when feed at machine cap",
+                        },
+                    });
+                }
+            }
+        }
+
         Some(RetargetSolution {
             patches,
             rationale: format!(
@@ -502,7 +542,105 @@ mod tests {
             primary.value
         );
         assert!(primary.clamped);
-        // Feed change is large enough to trigger the plunge-tracking marker.
-        assert_eq!(solution.patches.len(), 2);
+        // Patches: primary feed + plunge-tracking coupled marker +
+        // F1 RPM-down coupled patch (feed clamped at machine cap → RPM
+        // drops to lift chipload back into bounds).
+        assert_eq!(
+            solution.patches.len(),
+            3,
+            "expected 3 patches (primary feed, plunge marker, F1 RPM-down), got axes {:?}",
+            solution.patches.iter().map(|p| p.axis).collect::<Vec<_>>(),
+        );
+    }
+
+    /// F1 — burn-side trip with feed at machine cap should emit a
+    /// coupled SpindleRpm patch that lowers RPM to bring observed
+    /// chipload back to the LUT-min × headroom target. Wanaka TP 1
+    /// arithmetic: baseline feed=4000 (already at shapeoko_makita's
+    /// 5000 cap... actually the fixture's space caps closer to 5000).
+    /// Using the same 0.0253 / 0.038 / headroom 1.20 setup as
+    /// `wanaka_tp4_burnrisk_raises_feed`, the feed clamps at 5000 and
+    /// the RPM-down patch should fire.
+    #[test]
+    fn f1_burnrisk_emits_rpm_down_patch_when_feed_clamps() {
+        let fx = Fixture::new(3150.0);
+        let space = fx.space();
+        let view = fx.view();
+        let ctx = fx.ctx();
+        let r = ChiploadFeedRetargeter {
+            lut_chipload_min: 0.038,
+            lut_chipload_max: 0.07,
+            low_headroom: 1.20,
+            high_headroom: 1.20,
+            plunge_tracking_threshold: 0.10,
+        };
+        let solution = r
+            .target(&burn_verdict(0.0253), &space, &view, &ctx)
+            .expect("solution");
+        let rpm_patch = solution
+            .patches
+            .iter()
+            .find(|p| matches!(p.axis, SearchAxis::SpindleRpm))
+            .expect("F1 should emit a SpindleRpm patch when feed clamps");
+        // RPM target = 18000 × (achieved_observed / target_chipload)
+        // achieved_observed = 0.0253 × (5000/3150) = 0.04016
+        // target_chipload = 0.038 × 1.20 = 0.0456
+        // rpm_target = 18000 × (0.04016 / 0.0456) = 15850
+        // Then clamped against shapeoko_makita's RPM bounds (10000-30000).
+        assert!(
+            rpm_patch.value < 18_000.0 && rpm_patch.value > 10_000.0,
+            "expected RPM in (10000, 18000), got {}",
+            rpm_patch.value
+        );
+        assert!(
+            matches!(
+                rpm_patch.source,
+                PatchSource::Coupled {
+                    from_axis: SearchAxis::FeedRate,
+                    ..
+                }
+            ),
+            "RPM patch should be coupled to FeedRate, got {:?}",
+            rpm_patch.source
+        );
+    }
+
+    /// F1 — high-side (breakage) trips reduce feed instead of raising
+    /// it, so the RPM-down compensation must NOT fire. Raising RPM on a
+    /// breakage trip would be the wrong direction.
+    #[test]
+    fn f1_breakage_does_not_emit_rpm_patch() {
+        // baseline=4500, peak=0.20, lut_max=0.10, headroom=1.0:
+        // multiplier = (0.10/1.0)/0.20 = 0.5 → target_feed=2250 (no clamp).
+        let fx = Fixture::new(4500.0);
+        let space = fx.space();
+        let view = fx.view();
+        let ctx = fx.ctx();
+        let r = ChiploadFeedRetargeter {
+            lut_chipload_min: 0.05,
+            lut_chipload_max: 0.10,
+            low_headroom: 1.0,
+            high_headroom: 1.0,
+            plunge_tracking_threshold: 0.10,
+        };
+        let breakage = ChiploadVerdict::Exceeds {
+            side: ChipSide::High,
+            triggering: ChiploadMetric {
+                observed_mm_per_tooth: 0.20,
+                statistic: ChiploadStatistic::PeakHigh,
+                evidence: SampleEvidence::empty(),
+                bounds: chip_bounds(),
+            },
+            confidence: Confidence::Validated,
+        };
+        let solution = r.target(&breakage, &space, &view, &ctx).expect("solution");
+        assert!(
+            !solution
+                .patches
+                .iter()
+                .any(|p| matches!(p.axis, SearchAxis::SpindleRpm)),
+            "breakage retarget must not emit an RPM patch, got {:?}",
+            solution.patches.iter().map(|p| p.axis).collect::<Vec<_>>()
+        );
     }
 }
