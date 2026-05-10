@@ -270,6 +270,24 @@ fn assert_gvalidate_rejects(fixture: &str, dialect: &str, expected_exit: i32, re
     );
 }
 
+/// Variant of assert_gvalidate_rejects that accepts ANY non-zero exit
+/// code. Use when the same emitter bug surfaces with different codes
+/// across validators / dialects.
+fn assert_gvalidate_rejects_any(fixture: &str, dialect: &str, reason: &str) {
+    let capture = fixture_output(fixture, dialect);
+    let Some((exit, stdout, _)) = run_validator("gvalidate", &gvalidate_path(), &[], &capture)
+    else {
+        return;
+    };
+    println!("{fixture}_{dialect} (gvalidate): exit {exit} (EXPECTED FAILURE: {reason})");
+    assert!(
+        exit != 0,
+        "gvalidate ACCEPTED {fixture}_{dialect}, but we expected it to fail ({reason}).\n\
+         Either the emitter was fixed (good — flip this test to assert_gvalidate_accepts!) \
+         or gvalidate became more permissive.\nstdout:\n{stdout}"
+    );
+}
+
 // ── rs274ngc (LinuxCNC) ────────────────────────────────────────────────
 
 /// Locate the rs274ngc/gcoder binary. Order:
@@ -301,6 +319,32 @@ fn rs274ngc_path() -> Option<PathBuf> {
         .join("bin")
         .join("rs274");
     local.exists().then_some(local)
+}
+
+/// Variant of assert_rs274_accepts that asserts a non-zero exit
+/// (any code). Mirrors assert_gvalidate_rejects_any.
+fn assert_rs274_rejects_any(fixture: &str, dialect: &str, reason: &str) {
+    let Some(binary) = rs274ngc_path() else {
+        let msg = "rs274ngc not found";
+        if ci_required_for("rs274ngc") {
+            panic!("{CI_FLAG} requires `rs274ngc` but binary is missing.\n{msg}");
+        }
+        eprintln!("SKIP: {msg}");
+        return;
+    };
+    let tbl = ensure_tool_table();
+    let tbl_str = tbl.to_string_lossy().into_owned();
+    let capture = fixture_output(fixture, dialect);
+    let Some((exit, stdout, _)) =
+        run_validator("rs274ngc", &binary, &["-g", "-t", &tbl_str], &capture)
+    else {
+        return;
+    };
+    println!("{fixture}_{dialect} (rs274ngc): exit {exit} (EXPECTED FAILURE: {reason})");
+    assert!(
+        exit != 0,
+        "rs274ngc ACCEPTED {fixture}_{dialect}, expected fail ({reason}).\nstdout:\n{stdout}"
+    );
 }
 
 /// Run rs274ngc on a capture and assert clean parse.
@@ -593,6 +637,138 @@ fn validate_f5_mach3_gvalidate() {
 fn validate_f6_mach3_gvalidate() {
     assert_gvalidate_accepts("f6_two_setups", "mach3");
 }
+
+// ── Phase 4b broadened corpus (F7-F16) — exhaustive matrix ────────────
+//
+// Each fixture × dialect runs through gvalidate (Grbl-family) and (where
+// applicable) rs274ngc (LinuxCNC + Mach3-proxy). When a capture is
+// expected to fail validation we use assert_*_rejects with a documented
+// reason; otherwise assert_*_accepts.
+
+// F7 full_circle
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f7_grbl()              { assert_gvalidate_accepts("f7_full_circle", "grbl"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f7_grblhal()           { assert_gvalidate_accepts("f7_full_circle", "grblhal"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f7_linuxcnc_rs274()    { assert_rs274_accepts("f7_full_circle", "linuxcnc"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f7_linuxcnc_gvalidate() { assert_gvalidate_accepts("f7_full_circle", "linuxcnc"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f7_mach3_rs274()       { assert_rs274_accepts("f7_full_circle", "mach3"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f7_mach3_gvalidate()   { assert_gvalidate_accepts("f7_full_circle", "mach3"); }
+
+// F8 x_only_feed
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f8_grbl()              { assert_gvalidate_accepts("f8_x_only_feed", "grbl"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f8_grblhal()           { assert_gvalidate_accepts("f8_x_only_feed", "grblhal"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f8_linuxcnc_rs274()    { assert_rs274_accepts("f8_x_only_feed", "linuxcnc"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f8_linuxcnc_gvalidate() { assert_gvalidate_accepts("f8_x_only_feed", "linuxcnc"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f8_mach3_rs274()       { assert_rs274_accepts("f8_x_only_feed", "mach3"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f8_mach3_gvalidate()   { assert_gvalidate_accepts("f8_x_only_feed", "mach3"); }
+
+// F9 ramp_into_arc
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f9_grbl()              { assert_gvalidate_accepts("f9_ramp_into_arc", "grbl"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f9_grblhal()           { assert_gvalidate_accepts("f9_ramp_into_arc", "grblhal"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f9_linuxcnc_rs274()    { assert_rs274_accepts("f9_ramp_into_arc", "linuxcnc"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f9_linuxcnc_gvalidate() { assert_gvalidate_accepts("f9_ramp_into_arc", "linuxcnc"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f9_mach3_rs274()       { assert_rs274_accepts("f9_ramp_into_arc", "mach3"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f9_mach3_gvalidate()   { assert_gvalidate_accepts("f9_ramp_into_arc", "mach3"); }
+
+// F10 tiny_arcs (sub-0.05mm radius — REJECTED across the board).
+// gvalidate exit 33 / rs274ngc exit 1: "arc trajectory inconsistent".
+// This is the case the `arc_linearize` PostDefinition field exists for
+// — when wired into program_builder (deferred Phase 5+), arcs below
+// the threshold get emitted as straight-line chords and these tests
+// flip to assert_*_accepts. Tracked in the gap report.
+const F10_REASON: &str =
+    "sub-0.05mm arc rejected (real bug — fix when arc_linearize is wired into program_builder)";
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f10_grbl()              { assert_gvalidate_rejects_any("f10_tiny_arcs", "grbl", F10_REASON); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f10_grblhal()           { assert_gvalidate_rejects_any("f10_tiny_arcs", "grblhal", F10_REASON); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f10_linuxcnc_rs274()    { assert_rs274_rejects_any("f10_tiny_arcs", "linuxcnc", F10_REASON); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f10_linuxcnc_gvalidate() { assert_gvalidate_rejects_any("f10_tiny_arcs", "linuxcnc", F10_REASON); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f10_mach3_rs274()       { assert_rs274_rejects_any("f10_tiny_arcs", "mach3", F10_REASON); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f10_mach3_gvalidate()   { assert_gvalidate_rejects_any("f10_tiny_arcs", "mach3", F10_REASON); }
+
+// F11 depth_step_boundary
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f11_grbl()              { assert_gvalidate_accepts("f11_depth_step_boundary", "grbl"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f11_grblhal()           { assert_gvalidate_accepts("f11_depth_step_boundary", "grblhal"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f11_linuxcnc_rs274()    { assert_rs274_accepts("f11_depth_step_boundary", "linuxcnc"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f11_linuxcnc_gvalidate() { assert_gvalidate_accepts("f11_depth_step_boundary", "linuxcnc"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f11_mach3_rs274()       { assert_rs274_accepts("f11_depth_step_boundary", "mach3"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f11_mach3_gvalidate()   { assert_gvalidate_accepts("f11_depth_step_boundary", "mach3"); }
+
+// F12 tool_change_at_z_zero — multi-tool, M6 reject same as F5 on
+// gvalidate (Grbl 1.1 + grblHAL via proxy).
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f12_grbl() {
+    assert_gvalidate_rejects("f12_tool_change_at_z_zero", "grbl", 20,
+        "Grbl 1.1 does not support M6; same root-cause as F5 grbl");
+}
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f12_grblhal() {
+    assert_gvalidate_rejects("f12_tool_change_at_z_zero", "grblhal", 20,
+        "gvalidate proxy doesn't implement M6 (valid in grblHAL); same as F5 grblhal");
+}
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f12_linuxcnc_rs274()    { assert_rs274_accepts("f12_tool_change_at_z_zero", "linuxcnc"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f12_linuxcnc_gvalidate() {
+    assert_gvalidate_rejects("f12_tool_change_at_z_zero", "linuxcnc", 20,
+        "gvalidate proxy doesn't implement M6 (valid in LinuxCNC); rs274ngc above is authoritative");
+}
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f12_mach3_rs274()       { assert_rs274_accepts("f12_tool_change_at_z_zero", "mach3"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f12_mach3_gvalidate() {
+    assert_gvalidate_rejects("f12_tool_change_at_z_zero", "mach3", 20,
+        "gvalidate proxy doesn't implement M6 (valid in Mach3); rs274ngc above is authoritative");
+}
+
+// F13 climb_vs_conventional
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f13_grbl()              { assert_gvalidate_accepts("f13_climb_vs_conventional", "grbl"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f13_grblhal()           { assert_gvalidate_accepts("f13_climb_vs_conventional", "grblhal"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f13_linuxcnc_rs274()    { assert_rs274_accepts("f13_climb_vs_conventional", "linuxcnc"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f13_linuxcnc_gvalidate() { assert_gvalidate_accepts("f13_climb_vs_conventional", "linuxcnc"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f13_mach3_rs274()       { assert_rs274_accepts("f13_climb_vs_conventional", "mach3"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f13_mach3_gvalidate()   { assert_gvalidate_accepts("f13_climb_vs_conventional", "mach3"); }
+
+// F14 multi_line_pause_message — REAL emitter bug surfaced. The
+// renderer wraps the message in `(...)` but doesn't sanitize the
+// embedded `\n`, so the second line ends up as bare g-code that fails
+// the parser. Fix lands when render_comment grows a multi-line
+// strategy (escape, split into multiple comment lines, or reject at
+// the API boundary). All parsers reject.
+const F14_REASON: &str =
+    "embedded \\n in pause message breaks comment block (real bug — render_comment must sanitize multi-line text)";
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f14_grbl()              { assert_gvalidate_rejects_any("f14_multi_line_pause_message", "grbl", F14_REASON); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f14_grblhal()           { assert_gvalidate_rejects_any("f14_multi_line_pause_message", "grblhal", F14_REASON); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f14_linuxcnc_rs274()    { assert_rs274_rejects_any("f14_multi_line_pause_message", "linuxcnc", F14_REASON); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f14_linuxcnc_gvalidate() { assert_gvalidate_rejects_any("f14_multi_line_pause_message", "linuxcnc", F14_REASON); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f14_mach3_rs274()       { assert_rs274_rejects_any("f14_multi_line_pause_message", "mach3", F14_REASON); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f14_mach3_gvalidate()   { assert_gvalidate_rejects_any("f14_multi_line_pause_message", "mach3", F14_REASON); }
+
+// F15 embedded_newline_snippets — pre_gcode includes M7 (mist
+// coolant), unsupported on Grbl 1.1 (only M8 flood / M9 off). Grbl-
+// family parsers reject; rs274ngc accepts (LinuxCNC+Mach3 do support
+// M7). Real bug: emitter / wizard should refuse user pre/post
+// snippets containing post-incompatible M-codes (gate the snippet
+// content against PostDefinition's allowed-codes list — future field).
+const F15_GRBL_REASON: &str =
+    "user pre_gcode contains M7 (mist), unsupported on Grbl 1.1; emitter should validate snippet content against post";
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f15_grbl()              { assert_gvalidate_rejects_any("f15_embedded_newline_snippets", "grbl", F15_GRBL_REASON); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f15_grblhal()           { assert_gvalidate_rejects_any("f15_embedded_newline_snippets", "grblhal", "gvalidate (Grbl 1.1) rejects M7; grblHAL does support M7 — needs working grblHAL_validator"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f15_linuxcnc_rs274()    { assert_rs274_accepts("f15_embedded_newline_snippets", "linuxcnc"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f15_linuxcnc_gvalidate() { assert_gvalidate_rejects_any("f15_embedded_newline_snippets", "linuxcnc", "gvalidate proxy rejects M7; LinuxCNC supports it — rs274ngc above is authoritative"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f15_mach3_rs274()       { assert_rs274_accepts("f15_embedded_newline_snippets", "mach3"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f15_mach3_gvalidate()   { assert_gvalidate_rejects_any("f15_embedded_newline_snippets", "mach3", "gvalidate proxy rejects M7; Mach3 supports it — rs274ngc above is authoritative"); }
+
+// F16 comp_round_trip (G41 / G40) — REAL bug: rs_cam emits cutter
+// compensation unconditionally regardless of post support. Grbl 1.1
+// has no comp; LinuxCNC's rs274ngc rejects because the compensated
+// move geometry triggers a contour-direction error in offline parse
+// (rs274 needs more context than a single comp toggle to compute the
+// kerf-shifted path). Fix: emitter must consult a (future)
+// `supports_cutter_comp` PostDefinition field; user must own
+// supplying valid contour geometry when comp is requested.
+const F16_REASON_GRBL: &str =
+    "Grbl 1.1 has no cutter compensation (G40/G41/G42 unsupported); emitter should refuse comp when post doesn't support it";
+const F16_REASON_LINUX: &str =
+    "rs274ngc rejects compensated profile (offline parse can't validate kerf path geometry); the emitted g-code is technically valid but rs274 needs a runtime contour";
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f16_grbl()              { assert_gvalidate_rejects_any("f16_comp_round_trip", "grbl", F16_REASON_GRBL); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f16_grblhal()           { assert_gvalidate_rejects_any("f16_comp_round_trip", "grblhal", "gvalidate (Grbl 1.1) rejects G41; grblHAL also lacks comp on hobby builds — needs working grblHAL_validator"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f16_linuxcnc_rs274()    { assert_rs274_rejects_any("f16_comp_round_trip", "linuxcnc", F16_REASON_LINUX); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f16_linuxcnc_gvalidate() { assert_gvalidate_rejects_any("f16_comp_round_trip", "linuxcnc", "gvalidate (Grbl 1.1) rejects G41; LinuxCNC does support it but rs274ngc above is the authoritative gate"); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f16_mach3_rs274()       { assert_rs274_rejects_any("f16_comp_round_trip", "mach3", F16_REASON_LINUX); }
+#[test] #[ignore = "phase 4b emulator validation"] fn validate_f16_mach3_gvalidate()   { assert_gvalidate_rejects_any("f16_comp_round_trip", "mach3", "gvalidate (Grbl 1.1) rejects G41; Mach3 does support it but rs274ngc above is the authoritative gate"); }
 
 // ── Self-check: CI flag enforcement ────────────────────────────────────
 /// Smoke test: with CI_REQUIRE_VALIDATORS=1 set, missing validators
