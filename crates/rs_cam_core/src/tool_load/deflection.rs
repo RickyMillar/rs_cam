@@ -133,6 +133,9 @@ pub fn evaluate(
     let mut peak_idx: Option<usize> = None;
     let mut any_arc_captured = false;
     let mut any_slot = false;
+    // G17 C2 — track entry-sample deflection spikes that exceeded
+    // EXCEEDS_BOUND_MM but were excluded from the trip decision.
+    let mut entry_spike_track: Option<(f64, usize)> = None; // (delta_mm, idx)
 
     for (i, s) in trace.samples.iter().enumerate() {
         if s.toolpath_id != toolpath_id {
@@ -155,6 +158,16 @@ pub fn evaluate(
 
         if arc >= std::f64::consts::PI - 1e-3 {
             any_slot = true;
+        }
+        // G17 C1 — entry samples don't drive the trip. Record any
+        // spike past EXCEEDS_BOUND_MM for the C2 advisory.
+        if !super::locality::is_steady_state_for_gate(s) {
+            if delta_mm > EXCEEDS_BOUND_MM
+                && entry_spike_track.is_none_or(|(prev, _)| delta_mm > prev)
+            {
+                entry_spike_track = Some((delta_mm, i));
+            }
+            continue;
         }
         if delta_mm > peak_delta_mm {
             peak_delta_mm = delta_mm;
@@ -206,11 +219,25 @@ pub fn evaluate(
     } else {
         Confidence::Validated
     };
+    let deflection_entry_spike = entry_spike_track.map(|(delta_mm, idx)| {
+        let locality = trace
+            .samples
+            .get(idx)
+            .and_then(super::locality::classify_sample_locality)
+            .unwrap_or_else(|| "entry move".to_owned());
+        crate::tool_load::verdict::EntrySpike {
+            observed: delta_mm,
+            bound: bounds.exceeds_mm,
+            locality,
+            side: None,
+        }
+    });
     DeflectionVerdict::Within {
         peak_mm: peak_delta_mm,
         bounds,
         evidence,
         confidence,
+        entry_spike: deflection_entry_spike,
     }
 }
 

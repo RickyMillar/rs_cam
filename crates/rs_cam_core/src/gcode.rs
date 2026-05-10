@@ -1735,6 +1735,7 @@ mod tests {
                 bounds: chip_bounds(),
             },
             confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
         }
     }
 
@@ -1761,6 +1762,7 @@ mod tests {
             bounds: deflection_bounds_default(),
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
+            entry_spike: None,
         }
     }
 
@@ -1858,6 +1860,7 @@ mod tests {
                 available_kw: 0.71,
                 evidence: SampleEvidence::empty(),
                 confidence: Confidence::Approximate("isotropic Kc only".into()),
+            entry_spike: None,
             },
             deflection_within(3.5),
         );

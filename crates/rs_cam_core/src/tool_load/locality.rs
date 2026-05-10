@@ -42,6 +42,34 @@ pub fn classify_sample_locality(sample: &SimulationCutSample) -> Option<String> 
     }
 }
 
+/// G17 C1 — should this sample participate in the gate-trip decision?
+///
+/// Returns `false` for transient entry kinematics (Helix / Plunge).
+/// Returns `true` for everything else (Linear / Arc / Rapid). The
+/// per-gate evaluators use this to exclude entry-sample spikes from
+/// driving the trip decision — entry transients are surfaced as
+/// informational advisories via [`crate::tool_load::verdict::EntrySpike`]
+/// (G17 C2) instead of flipping the verdict to `Exceeds`.
+///
+/// **Why exclude entries:** the wanaka MCP smoke (2026-05-10) showed
+/// every gate violation across both TPs sat in a helical entry move,
+/// not steady-state cutting. Treating entry spikes as bulk-cut
+/// failures led the optimizer to reject candidates whose bulk cut
+/// was actually fine. The advisory carries the entry reading so
+/// genuinely-bad entries are still visible — just not blocking.
+///
+/// **What this does NOT exclude:** air-cut samples and rapids are
+/// already filtered upstream in `steady_state_samples_for_toolpath`.
+/// This predicate runs *after* that filter; it only narrows the
+/// surviving "in-cut, at op-feed" set down to cut-kinematics that
+/// represent steady-state material removal.
+pub fn is_steady_state_for_gate(sample: &SimulationCutSample) -> bool {
+    !matches!(
+        sample.cut_kinematics,
+        CutKinematics::Helix | CutKinematics::Plunge
+    )
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,

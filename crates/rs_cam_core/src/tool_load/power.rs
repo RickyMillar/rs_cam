@@ -74,6 +74,10 @@ pub fn evaluate(
     // (which often falls through with `peak_power == 0.0` on light cuts)
     // still has a usable headroom number to surface.
     let mut last_available_kw: f64 = 0.0;
+    // G17 C2 — track entry-sample power spikes that exceeded
+    // `available_kw` but were excluded from the trip decision. Worst
+    // single spike wins.
+    let mut entry_spike_track: Option<(f64, f64, usize)> = None; // (peak_kw, avail_kw, idx)
 
     for (i, s) in trace.samples.iter().enumerate() {
         if s.toolpath_id != toolpath_id {
@@ -110,6 +114,19 @@ pub fn evaluate(
 
         let avail = machine.power_at_rpm(s.spindle_rpm as f64) * machine.safety_factor;
         last_available_kw = avail;
+
+        // G17 C1 — entry samples (helix / plunge) don't drive the trip.
+        // Record any over-available spike for the C2 advisory.
+        if !super::locality::is_steady_state_for_gate(s) {
+            if avail > 0.0
+                && p_kw > avail
+                && entry_spike_track.is_none_or(|(prev, _, _)| p_kw > prev)
+            {
+                entry_spike_track = Some((p_kw, avail, i));
+            }
+            continue;
+        }
+
         if p_kw > peak_power {
             peak_power = p_kw;
             peak_idx = Some(i);
@@ -168,11 +185,25 @@ pub fn evaluate(
             confidence,
         };
     }
+    let power_entry_spike = entry_spike_track.map(|(peak_kw, avail, idx)| {
+        let locality = trace
+            .samples
+            .get(idx)
+            .and_then(super::locality::classify_sample_locality)
+            .unwrap_or_else(|| "entry move".to_owned());
+        crate::tool_load::verdict::EntrySpike {
+            observed: peak_kw,
+            bound: avail,
+            locality,
+            side: None,
+        }
+    });
     PowerVerdict::Within {
         peak_kw: peak_power,
         available_kw,
         evidence,
         confidence,
+        entry_spike: power_entry_spike,
     }
 }
 

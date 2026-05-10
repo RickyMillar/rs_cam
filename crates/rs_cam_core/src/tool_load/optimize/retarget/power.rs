@@ -349,6 +349,7 @@ mod tests {
             available_kw: 1.0,
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
+            entry_spike: None,
         };
         assert!(r.target(&within, &space, &view, &ctx).is_none());
 
