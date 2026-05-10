@@ -50,7 +50,7 @@ use crate::toolpath_spans::Span;
 
 use super::locality::SpanLookup;
 use super::verdict::{
-    Confidence, DeflectionBounds, DeflectionVerdict, SampleEvidence, UnmodeledReason,
+    Confidence, DeflectionBounds, DeflectionVerdict, EntrySpike, SampleEvidence, UnmodeledReason,
 };
 
 /// Below this peak tip deflection (mm), the cut is `Within(Validated)`.
@@ -136,6 +136,13 @@ pub fn evaluate(
     let mut peak_idx: Option<usize> = None;
     let mut any_arc_captured = false;
     let mut any_slot = false;
+    // D7 — span-aware entry filter. Configured Entry transients bypass
+    // the steady-state trip and surface separately as `entry_spike` on
+    // `Within`. The peak Entry-ancestry tip-deflection sample (above
+    // the EXCEEDS bound) is recorded for the advisory.
+    let span_lookup = spans.map(SpanLookup::new);
+    let mut entry_peak_delta_mm = 0.0_f64;
+    let mut entry_peak_idx: Option<usize> = None;
 
     for (i, s) in trace.samples.iter().enumerate() {
         if s.toolpath_id != toolpath_id {
@@ -155,6 +162,15 @@ pub fn evaluate(
         let Some(delta_mm) = sample_tip_deflection_mm(tool, material, s) else {
             continue;
         };
+
+        // Route Entry-ancestry samples to the spike track.
+        if !super::locality::is_steady_state_for_gate(s, span_lookup.as_ref()) {
+            if delta_mm > entry_peak_delta_mm {
+                entry_peak_delta_mm = delta_mm;
+                entry_peak_idx = Some(i);
+            }
+            continue;
+        }
 
         if arc >= std::f64::consts::PI - 1e-3 {
             any_slot = true;
@@ -180,7 +196,6 @@ pub fn evaluate(
         format!("peak tip deflection {peak_um:.0} µm (isotropic Kc, bending only)")
     };
 
-    let span_lookup = spans.map(SpanLookup::new);
     let evidence = match peak_idx {
         Some(idx) => SampleEvidence::at(idx).with_locality(
             trace
@@ -210,14 +225,31 @@ pub fn evaluate(
     } else {
         Confidence::Validated
     };
+    // D7 entry-spike advisory: an Entry-ancestry sample whose tip
+    // deflection landed past the EXCEEDS bound, even though the
+    // steady-state trip didn't fire.
+    let entry_spike = match entry_peak_idx {
+        Some(idx) if entry_peak_delta_mm > EXCEEDS_BOUND_MM => {
+            let locality = trace
+                .samples
+                .get(idx)
+                .and_then(|s| super::locality::classify_sample_locality(s, span_lookup.as_ref()))
+                .unwrap_or_else(|| "entry".to_owned());
+            Some(EntrySpike {
+                observed: entry_peak_delta_mm,
+                bound: EXCEEDS_BOUND_MM,
+                locality,
+                side: None,
+            })
+        }
+        _ => None,
+    };
     DeflectionVerdict::Within {
         peak_mm: peak_delta_mm,
         bounds,
         evidence,
         confidence,
-        // C1+C2 reverted 2026-05-10 (D3 Path A); D7 will repopulate
-        // from span-aware entry detection.
-        entry_spike: None,
+        entry_spike,
     }
 }
 
