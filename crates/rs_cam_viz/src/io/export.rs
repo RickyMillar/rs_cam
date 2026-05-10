@@ -1,8 +1,22 @@
 use rs_cam_core::gcode::{
-    ControllerCompensation, GcodePhase, GcodeSetupPhase, export_gcode_multi_setup_checked,
-    export_gcode_phases_checked, replace_rapids_with_feed,
+    ControllerCompensation, GcodePhase, GcodeSetupPhase, WizardOverlay,
+    export_gcode_multi_setup_with_overlay_checked, export_gcode_phases_with_overlay_checked,
+    replace_rapids_with_feed,
 };
 use rs_cam_core::session::ProjectSession;
+
+/// Pull the wizard's per-job overrides into a `WizardOverlay` for the
+/// emit step. The default overlay (no fields set) is byte-identical to
+/// the pre-overlay export path.
+fn overlay_for(session: &ProjectSession) -> WizardOverlay {
+    let w = session.wizard();
+    WizardOverlay {
+        wcs_override: w.wcs_override,
+        units_override: w.units_override,
+        safe_z_override: w.safe_z_override,
+        spindle_warmup_secs: w.spindle_warmup_secs,
+    }
+}
 
 use crate::state::job::ToolConfig;
 use crate::state::runtime::GuiState;
@@ -81,11 +95,12 @@ pub fn export_gcode_from_session(
         ));
     }
 
-    let mut gcode = export_gcode_phases_checked(
+    let mut gcode = export_gcode_phases_with_overlay_checked(
         &phases,
         post,
         viz_sim_trace(sim),
         gui.tool_load_overrides.as_policy(),
+        &overlay_for(session),
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
@@ -132,12 +147,13 @@ pub fn export_combined_gcode_from_session(
         ));
     }
 
-    let mut gcode = export_gcode_multi_setup_checked(
+    let mut gcode = export_gcode_multi_setup_with_overlay_checked(
         &setup_phases,
         post,
         gui.post.safe_z,
         viz_sim_trace(sim),
         gui.tool_load_overrides.as_policy(),
+        &overlay_for(session),
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
@@ -179,11 +195,12 @@ pub fn export_single_toolpath_from_session(
         ))
     })?;
 
-    let mut gcode = export_gcode_phases_checked(
+    let mut gcode = export_gcode_phases_with_overlay_checked(
         std::slice::from_ref(&phase),
         post,
         viz_sim_trace(sim),
         gui.tool_load_overrides.as_policy(),
+        &overlay_for(session),
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
@@ -224,11 +241,12 @@ pub fn export_setup_gcode_from_session(
         )));
     }
 
-    let mut gcode = export_gcode_phases_checked(
+    let mut gcode = export_gcode_phases_with_overlay_checked(
         &phases,
         post,
         viz_sim_trace(sim),
         gui.tool_load_overrides.as_policy(),
+        &overlay_for(session),
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
