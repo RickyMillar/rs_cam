@@ -156,6 +156,7 @@ mod tests {
                 bounds,
             },
             confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
         }
     }
 
@@ -165,6 +166,7 @@ mod tests {
             available_kw,
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
+            entry_spike: None,
         }
     }
 
@@ -177,6 +179,7 @@ mod tests {
             },
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
+            entry_spike: None,
         }
     }
 

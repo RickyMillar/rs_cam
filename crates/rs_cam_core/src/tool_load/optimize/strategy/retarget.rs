@@ -192,6 +192,7 @@ mod tests {
                 bounds: chip_bounds(),
             },
             confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
         }
     }
 
@@ -234,6 +235,7 @@ mod tests {
             available_kw: 1.0,
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
+            entry_spike: None,
         }
     }
 
@@ -257,6 +259,7 @@ mod tests {
             },
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
+            entry_spike: None,
         }
     }
 

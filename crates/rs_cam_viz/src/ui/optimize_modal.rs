@@ -9,8 +9,8 @@
 //! `optimize_toolpath` synchronously and stashes the outcome here.
 
 use rs_cam_core::tool_load::optimize::{
-    GateKind, KnobAxis, LimitingGate, OperatorSuggestion, OptimizeCandidate, OptimizeOutcome,
-    ParamDelta, SearchEnvelopeReached, limiting_gates_for_verdict,
+    EntryAdvisory, GateKind, KnobAxis, LimitingGate, OperatorSuggestion, OptimizeCandidate,
+    OptimizeOutcome, ParamDelta, SearchEnvelopeReached, limiting_gates_for_verdict,
 };
 use rs_cam_core::tool_load::verdict::{ChipSide, ToolpathLoadVerdict};
 
@@ -130,6 +130,16 @@ fn draw_outcome(
                         .color(theme::TEXT_MUTED),
                 );
             }
+            // G17 C2: entry-spike advisories on the closest-to-safe
+            // candidate. Informational; not blocking.
+            for advisory in &narrative.entry_advisories {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(format!("Note: {}", format_entry_advisory(advisory)))
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+            }
             // G17 A4: operator-actionable suggestions, if any.
             if !narrative.suggestions.is_empty() {
                 ui.add_space(6.0);
@@ -172,6 +182,16 @@ fn draw_outcome(
                 ui.add_space(4.0);
                 ui.label(
                     egui::RichText::new(envelope)
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+            }
+            // G17 C2: entry-spike advisories on the recommended
+            // marginal candidate.
+            for advisory in &narrative.entry_advisories {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(format!("Note: {}", format_entry_advisory(advisory)))
                         .small()
                         .color(theme::TEXT_MUTED),
                 );
@@ -640,6 +660,36 @@ fn format_envelope_summary(env: &SearchEnvelopeReached) -> Option<String> {
     }
 }
 
+/// G17 C2 — operator-friendly one-liner for an entry-sample advisory.
+/// "helix entry chipload reached 0.0707 (+29% over LUT max 0.055) —
+/// consider gentler entry."
+fn format_entry_advisory(a: &EntryAdvisory) -> String {
+    let pct = a.overshoot_fraction * 100.0;
+    let gate_phrase = match a.gate {
+        GateKind::Chipload => match a.side {
+            Some(rs_cam_core::tool_load::verdict::ChipSide::High) => format!(
+                "chipload reached {:.4} ({pct:+.0}% over LUT max {:.4})",
+                a.observed, a.bound,
+            ),
+            Some(rs_cam_core::tool_load::verdict::ChipSide::Low) => format!(
+                "chipload dropped to {:.4} ({pct:+.0}% under LUT min {:.4})",
+                a.observed, a.bound,
+            ),
+            None => format!("chipload {:.4}", a.observed),
+        },
+        GateKind::Power => format!(
+            "power reached {:.2} kW ({pct:+.0}% over available {:.2})",
+            a.observed, a.bound,
+        ),
+        GateKind::Deflection => format!(
+            "deflection reached {:.0} µm ({pct:+.0}% over the {:.0} µm threshold)",
+            a.observed * 1000.0,
+            a.bound * 1000.0,
+        ),
+    };
+    format!("{} {gate_phrase} — consider gentler entry.", a.locality)
+}
+
 /// G17 A2 + A3 — compact per-gate reading with optional locality
 /// suffix. "chipload 0.0707 (+29%) — slot section" for the wanaka
 /// TP 1 case. The locality suffix tells the operator *where* in the
@@ -811,6 +861,26 @@ mod tests {
             "DOC should render with 2 dp: {rendered}"
         );
         assert!(rendered.starts_with("Cap depth-per-pass"));
+    }
+
+    #[test]
+    fn format_entry_advisory_chipload_high_includes_locality_and_pct() {
+        let a = EntryAdvisory {
+            gate: GateKind::Chipload,
+            side: Some(rs_cam_core::tool_load::verdict::ChipSide::High),
+            observed: 0.0707,
+            bound: 0.055,
+            overshoot_fraction: (0.0707 - 0.055) / 0.055,
+            locality: "helix entry".to_owned(),
+        };
+        let s = format_entry_advisory(&a);
+        // Wanaka shape: helix entry sample reading + LUT max + pct +
+        // operator-friendly suggestion.
+        assert!(s.starts_with("helix entry"));
+        assert!(s.contains("0.0707"));
+        assert!(s.contains("LUT max"));
+        assert!(s.contains("+29") || s.contains("+28"));
+        assert!(s.ends_with("consider gentler entry."));
     }
 
     #[test]

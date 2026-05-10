@@ -59,8 +59,9 @@ pub(crate) use delta::delta_against_baseline;
 pub use delta::{GateDelta, GateDeltas, ParamDelta};
 pub(crate) use outcome::build_outcome;
 pub use narrative::{
-    AxisExtent, FailureNarrative, GateKind, KnobAxis, LimitingGate, OperatorSuggestion,
-    SearchEnvelopeReached, TradeOffNarrative, limiting_gates_for_verdict, suggest_levers,
+    AxisExtent, EntryAdvisory, FailureNarrative, GateKind, KnobAxis, LimitingGate,
+    OperatorSuggestion, SearchEnvelopeReached, TradeOffNarrative, entry_advisories_for_verdict,
+    limiting_gates_for_verdict, suggest_levers,
 };
 pub use outcome::{OptimizeOutcome, ProjectOptimizeReport};
 
@@ -1497,6 +1498,7 @@ mod tests {
             available_kw: 0.71,
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
+            entry_spike: None,
         }
     }
 
@@ -1510,6 +1512,7 @@ mod tests {
             },
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
+            entry_spike: None,
         }
     }
 
@@ -1531,6 +1534,7 @@ mod tests {
                 },
             },
             confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
         }
     }
 
@@ -1697,6 +1701,7 @@ mod tests {
                     bounds,
                 },
                 confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
             };
             ToolpathLoadVerdict {
                 toolpath_id: 0,
@@ -2048,6 +2053,7 @@ mod tests {
                 },
             },
             confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
         }
     }
 
