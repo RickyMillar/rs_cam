@@ -426,7 +426,7 @@ fn mirror_pin(pin: &AlignmentPin, axis: FlipAxis, stock_x: f64, stock_y: f64) ->
 fn auto_place_pins(stock: &mut StockConfig, count: usize) {
     // Place pins in the center of the padding margin so they hit excess
     // stock, not the model. Fall back to 10mm if padding is too small.
-    let margin = if stock.padding > 2.0 {
+    let raw_margin = if stock.padding > 2.0 {
         stock.padding / 2.0
     } else {
         10.0_f64.min(stock.x / 4.0).min(stock.y / 4.0)
@@ -436,6 +436,18 @@ fn auto_place_pins(stock: &mut StockConfig, count: usize) {
         .first()
         .map(|p| p.diameter)
         .unwrap_or(6.0);
+
+    // Pin position is its CENTER; the pin's physical edge sits one
+    // radius outside that. Ensure the centre is at least
+    // `radius + EDGE_CLEARANCE` inside the stock so the pin body
+    // doesn't clip the edge.
+    const EDGE_CLEARANCE: f64 = 2.0;
+    let radius = diameter * 0.5;
+    let min_margin = radius + EDGE_CLEARANCE;
+    // Don't push the margin past half the smaller stock dimension
+    // (would invert the placement on tiny stock).
+    let max_margin = (stock.x.min(stock.y) * 0.5).max(min_margin);
+    let margin = raw_margin.max(min_margin).min(max_margin);
 
     stock.alignment_pins.clear();
 
@@ -536,4 +548,73 @@ fn pins_are_symmetric(pins: &[AlignmentPin], axis: FlipAxis, stock_x: f64, stock
         }
     }
     true
+}
+
+#[cfg(test)]
+#[allow(clippy::indexing_slicing, clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn stock(x: f64, y: f64, padding: f64, pin_diameter: f64) -> StockConfig {
+        let mut s = StockConfig {
+            x,
+            y,
+            padding,
+            ..StockConfig::default()
+        };
+        // Seed an existing pin so auto_place_pins picks up the diameter.
+        s.alignment_pins.push(AlignmentPin::new(0.0, 0.0, pin_diameter));
+        s
+    }
+
+    /// Auto-placed pins must keep their physical edge inside the stock,
+    /// not just their centre. Pre-fix, padding=5 with a 6mm pin set
+    /// margin=2.5 → pin edge clipped 0.5mm OUTSIDE the stock.
+    #[test]
+    fn auto_place_pins_keeps_pin_edge_inside_stock() {
+        let mut s = stock(140.0, 150.0, 5.0, 6.0);
+        auto_place_pins(&mut s, 2);
+        for p in &s.alignment_pins {
+            let r = p.diameter * 0.5;
+            assert!(
+                p.x - r >= -1e-6 && p.x + r <= s.x + 1e-6,
+                "pin x={} r={} clips stock width {}",
+                p.x,
+                r,
+                s.x,
+            );
+            assert!(
+                p.y - r >= -1e-6 && p.y + r <= s.y + 1e-6,
+                "pin y={} r={} clips stock height {}",
+                p.y,
+                r,
+                s.y,
+            );
+        }
+    }
+
+    /// Edge-clearance: pin centre should sit at least
+    /// `radius + EDGE_CLEARANCE (2mm)` from each edge so the pin body
+    /// has 2mm of margin between the cutter side wall and the stock
+    /// boundary.
+    #[test]
+    fn auto_place_pins_respects_edge_clearance() {
+        let mut s = stock(140.0, 150.0, 5.0, 6.0);
+        auto_place_pins(&mut s, 2);
+        // Diameter 6 → radius 3; min centre offset from any edge = 5.0.
+        for p in &s.alignment_pins {
+            let edge_distance = p
+                .x
+                .min(s.x - p.x)
+                .min(p.y)
+                .min(s.y - p.y);
+            assert!(
+                edge_distance >= 5.0 - 1e-6,
+                "pin at ({}, {}) sits {} from nearest edge; expected >= 5.0",
+                p.x,
+                p.y,
+                edge_distance,
+            );
+        }
+    }
 }
