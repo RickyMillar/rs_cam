@@ -15,7 +15,7 @@ criteria.
 | A. Explainability | A1. Structured failure narrative in `OptimizeOutcome` | ✅ | `9b940ca` | 2026-05-10 |
 | A. Explainability | A2. Modal "what was tried, why each failed" view | ✅ | `4618023` | 2026-05-10 |
 | A. Explainability | A3. Sample locality classification (kinematics + arc engagement) | ✅ | `fc17798` | 2026-05-10 |
-| A. Explainability | A4. Operator-facing suggestion lever | ✅ | _pending commit_ | 2026-05-10 |
+| A. Explainability | A4. Operator-facing suggestion lever | ✅ | `2c7ffe5` | 2026-05-10 |
 | A. Explainability | A5. Search-frontier heatmap (feed × stepover) | ⏳ optional | — | — |
 | B. Peak-finding | B0. Gating prerequisites re-evaluated | 🚫 blocked on A2 | — | — |
 | B. Peak-finding | B1. `OptimizationStrategy` trait contract | 🚫 blocked on B0 | — | — |
