@@ -17,8 +17,8 @@ criteria.
 | A. Explainability | A3. Sample locality classification (kinematics + arc engagement) | ✅ | `fc17798` | 2026-05-10 |
 | A. Explainability | A4. Operator-facing suggestion lever | ✅ | `2c7ffe5` | 2026-05-10 |
 | A. Explainability | A5. Search-frontier heatmap (feed × stepover) | ⏳ optional | — | — |
-| C. Gate semantics | C1. Steady-state gate trip (minimal) | ⏳ proposed | — | — |
-| C. Gate semantics | C2. C1 + entry-spike advisory | ⏳ proposed | — | — |
+| C. Gate semantics | C1. Steady-state gate trip (minimal) | ✅ | `1e31538` | 2026-05-10 |
+| C. Gate semantics | C2. C1 + entry-spike advisory | ✅ | `1e31538` | 2026-05-10 |
 | C. Gate semantics | C3. Locality-aware suggestions | ⏳ proposed | — | — |
 | C. Gate semantics | C4. Per-locality gate verdict breakdown | ⏭️ deferred | — | — |
 | B. Peak-finding | B0. Gating prerequisites re-evaluated | 🚫 blocked on C1 | — | — |
@@ -914,3 +914,30 @@ each phase using A1 as template.)
       fire. `headline_marginal` only surfaces the first
       (`find(|g| g.band_admitted)` returns High side); could
       summarize both in a future polish pass.
+- **2026-05-10 — C1.** Added `is_steady_state_for_gate(sample)` in
+  `tool_load/locality.rs` returning `true` for everything except
+  `CutKinematics::{Helix, Plunge}`. Wired into chipload, power, and
+  deflection evaluators so only steady-state samples can drive the
+  `Exceeds` verdict. Pre-existing `steady_state_samples_for_toolpath`
+  filter (chipload-bound matching) was untouched — these are
+  complementary; the new predicate gates the *trip decision*, the old
+  filter affects *which row of the LUT* gets matched. Renamed
+  `helix_steady_state_samples_are_kept` →
+  `helix_samples_route_to_entry_spike_not_trip` to reflect inverted
+  semantics; added 3 new tests covering steady-state high trip, plunge
+  routing, and mixed steady+entry overshoot.
+- **2026-05-10 — C2.** Added `EntrySpike` to `verdict.rs` (observed,
+  bound, locality, optional `side: ChipSide`). ChiploadVerdict::Within
+  carries `entry_spikes: Vec<EntrySpike>` (high+low possible);
+  PowerVerdict::Within and DeflectionVerdict::Within carry
+  `entry_spike: Option<EntrySpike>` (single side). Each evaluator
+  tracks the worst entry-side overshoot in a separate scalar so the
+  steady-state peak picker is unaffected. Narrative side: added
+  `EntryAdvisory` + `entry_advisories_for_verdict(verdict)` →
+  `Vec<EntryAdvisory>`; populated in both `build_failure_narrative_no_safe`
+  and `build_failure_narrative_marginal`. Modal renders advisories as
+  muted "Note: helix entry chipload reached … (+N% over LUT max …)
+  — consider gentler entry." lines under the headline. Suggestion
+  copy stays out of advisory rendering — C3 will wire locality-aware
+  suggestions; for now the advisory is purely informational so a
+  legitimate entry failure isn't hidden by C1.
