@@ -203,7 +203,7 @@ fn compute_optimized_cycle(report: &ProjectOptimizeReport, row_selected: &[bool]
                     baseline
                 }
             }
-            OptimizeOutcome::TradeOff(candidates) => {
+            OptimizeOutcome::TradeOff { candidates, .. } => {
                 // Trade-off rows aren't auto-selectable from the
                 // project rollup — the user has to open the modal to
                 // accept the regression. Contribute baseline.
@@ -347,7 +347,7 @@ fn draw_row(
             );
             ui.label("");
         }
-        OptimizeOutcome::TradeOff(candidates) => {
+        OptimizeOutcome::TradeOff { candidates, .. } => {
             // Trade-off rows: faster candidate exists but has a gate
             // regression. Render with a "trade-off" badge and no
             // checkbox (open the modal to apply).
@@ -641,7 +641,7 @@ fn draw_readonly_row(
                 ui.label("");
             }
         }
-        OptimizeOutcome::TradeOff(candidates) => {
+        OptimizeOutcome::TradeOff { candidates, .. } => {
             ui.label(egui::RichText::new(name).small());
             ui.label(
                 egui::RichText::new("trade-off")
