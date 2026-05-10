@@ -9,12 +9,14 @@ pub mod ir;
 mod modal;
 pub mod post;
 pub mod program_builder;
+pub mod wizard_overlay;
 
 pub use ir::{Program, ProgramMetadata, Statement};
 pub use post::{
     ArcLinearize, CommentStyle, Decimals, Feedrate, LoadError as PostLoadError, PostDefinition,
     PostLimits, Rpm, SafeZ, Units, WcsCode,
 };
+pub use wizard_overlay::WizardOverlay;
 
 use crate::compute::catalog::effective_spindle_rpm;
 use crate::session::ProjectSession;
