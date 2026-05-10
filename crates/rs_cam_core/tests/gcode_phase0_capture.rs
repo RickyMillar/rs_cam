@@ -25,9 +25,8 @@
 )]
 
 use rs_cam_core::gcode::{
-    CoolantMode, GcodePhase, GcodeSetupPhase, GrblPost, LinuxCncPost, Mach3Post, PostProcessor,
-    ToolLoadExportPolicy, emit_gcode, export_gcode_multi_setup_checked,
-    export_gcode_phases_checked,
+    CoolantMode, GcodePhase, GcodeSetupPhase, PostDefinition, ToolLoadExportPolicy, emit_gcode,
+    export_gcode_multi_setup_checked, export_gcode_phases_checked, post,
 };
 use rs_cam_core::geo::P3;
 use rs_cam_core::toolpath::Toolpath;
@@ -50,34 +49,34 @@ fn write_capture(fixture: &str, dialect: &str, gcode: &str) {
     println!("wrote {}", path.display());
 }
 
+fn dialects() -> [(&'static str, &'static PostDefinition); 3] {
+    [
+        ("grbl", post::grbl()),
+        ("linuxcnc", post::linuxcnc()),
+        ("mach3", post::mach3()),
+    ]
+}
+
 fn capture_single(fixture: &str, tp: &Toolpath, rpm: u32) {
-    write_capture(fixture, "grbl", &emit_gcode(tp, &GrblPost, rpm));
-    write_capture(fixture, "linuxcnc", &emit_gcode(tp, &LinuxCncPost, rpm));
-    write_capture(fixture, "mach3", &emit_gcode(tp, &Mach3Post, rpm));
+    for (dialect, post) in dialects() {
+        write_capture(fixture, dialect, &emit_gcode(tp, post, rpm));
+    }
 }
 
 fn capture_phased(fixture: &str, phases: &[GcodePhase<'_>]) {
-    for (dialect, post) in &[
-        ("grbl", &GrblPost as &dyn PostProcessor),
-        ("linuxcnc", &LinuxCncPost as &dyn PostProcessor),
-        ("mach3", &Mach3Post as &dyn PostProcessor),
-    ] {
+    for (dialect, post) in dialects() {
         let gcode =
-            export_gcode_phases_checked(phases, *post, None, ToolLoadExportPolicy::default())
+            export_gcode_phases_checked(phases, post, None, ToolLoadExportPolicy::default())
                 .expect("phased emit");
         write_capture(fixture, dialect, &gcode);
     }
 }
 
 fn capture_multi_setup(fixture: &str, setups: &[GcodeSetupPhase<'_>], safe_z: f64) {
-    for (dialect, post) in &[
-        ("grbl", &GrblPost as &dyn PostProcessor),
-        ("linuxcnc", &LinuxCncPost as &dyn PostProcessor),
-        ("mach3", &Mach3Post as &dyn PostProcessor),
-    ] {
+    for (dialect, post) in dialects() {
         let gcode = export_gcode_multi_setup_checked(
             setups,
-            *post,
+            post,
             safe_z,
             None,
             ToolLoadExportPolicy::default(),

@@ -12,7 +12,7 @@
 use rs_cam_core::{
     dexel_stock::{StockCutDirection, TriDexelStock},
     dropcutter::batch_drop_cutter,
-    gcode::{GrblPost, emit_gcode},
+    gcode::{emit_gcode, post},
     geo::{BoundingBox3, P3},
     mesh::{SpatialIndex, TriangleMesh},
     pocket::{PocketParams, pocket_toolpath},
@@ -72,7 +72,7 @@ fn test_terrain_stl_to_gcode() {
     assert!(toolpath.total_cutting_distance() > 0.0);
 
     // Emit G-code
-    let gcode = emit_gcode(&toolpath, &GrblPost, 18000);
+    let gcode = emit_gcode(&toolpath, post::grbl(), 18000);
     assert!(gcode.contains("G17 G21 G90"));
     assert!(gcode.contains("M3 S18000"));
     assert!(gcode.contains("G0"));
@@ -102,7 +102,7 @@ fn test_programmatic_hemisphere_to_gcode() {
     );
 
     let toolpath = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 25.0, None);
-    let gcode = emit_gcode(&toolpath, &GrblPost, 18000);
+    let gcode = emit_gcode(&toolpath, post::grbl(), 18000);
     assert!(gcode.len() > 500);
 }
 
@@ -271,7 +271,7 @@ fn svg_import_pocket_gcode() {
     );
 
     // Emit G-code
-    let gcode = emit_gcode(&pocket_tp, &GrblPost, 18000);
+    let gcode = emit_gcode(&pocket_tp, post::grbl(), 18000);
 
     // Verify expected G-code patterns
     assert!(
@@ -333,7 +333,7 @@ fn svg_fixture_file_import_pocket_gcode() {
     let pocket_tp = pocket_toolpath(&polygons[0], &pocket_params);
     assert!(!pocket_tp.moves.is_empty());
 
-    let gcode = emit_gcode(&pocket_tp, &GrblPost, 18000);
+    let gcode = emit_gcode(&pocket_tp, post::grbl(), 18000);
     assert!(gcode.contains("G0"));
     assert!(gcode.contains("G1"));
     assert!(gcode.contains("M30"));
