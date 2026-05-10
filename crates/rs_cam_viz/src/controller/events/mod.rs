@@ -237,6 +237,7 @@ impl<B: ComputeBackend> AppController<B> {
             | AppEvent::WizardSetWcsOverride(_)
             | AppEvent::WizardSetUnitsOverride(_)
             | AppEvent::WizardSetSafeZOverride(_)
+            | AppEvent::WizardSetDryRun(_)
             | AppEvent::WizardSetSpindleWarmup(_)
             | AppEvent::WizardSetAllowValidatorErrors(_)
             | AppEvent::WizardSave

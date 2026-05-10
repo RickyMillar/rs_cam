@@ -134,6 +134,10 @@ pub enum AppEvent {
     /// Step 3: safe-Z override (mm). `None` = use the project default
     /// (`gui.post.safe_z`).
     WizardSetSafeZOverride(Option<f64>),
+    /// Step 3: dry-run mode. When true, the emit pass clamps every
+    /// cutting move's Z to the effective safe-Z so the spindle stays
+    /// in air for the whole program.
+    WizardSetDryRun(bool),
     /// Step 4: spindle warmup dwell in seconds. Zero disables.
     WizardSetSpindleWarmup(u32),
     /// Step 5: toggle the "I understand the risks, allow save with
