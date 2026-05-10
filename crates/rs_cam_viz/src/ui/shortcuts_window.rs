@@ -12,7 +12,8 @@ pub fn draw(ctx: &egui::Context, show: &mut bool) {
                 &[
                     ("Ctrl+O", "Open Job"),
                     ("Ctrl+S", "Save Job"),
-                    ("Ctrl+Shift+E", "Export G-code"),
+                    ("Ctrl+Shift+E", "Export G-code (wizard)"),
+                    ("Ctrl+Alt+E", "Direct export (skip wizard)"),
                     ("Ctrl+Z", "Undo"),
                     ("Ctrl+Shift+Z", "Redo"),
                     ("F12", "Screenshot"),
