@@ -282,6 +282,8 @@ pub struct ProjectSetupSection {
     pub face_up: String,
     #[serde(default)]
     pub z_rotation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pause_message: Option<String>,
     #[serde(default)]
     pub fixtures: Vec<ProjectFixtureSection>,
     #[serde(default)]
@@ -827,6 +829,7 @@ pub(super) fn build_session_from_project(
                 fixtures,
                 keep_out_zones,
                 toolpath_indices: tp_indices,
+                pause_message: setup_section.pause_message.clone(),
             });
         }
     } else {
@@ -859,6 +862,7 @@ pub(super) fn build_session_from_project(
                 fixtures: Vec::new(),
                 keep_out_zones: Vec::new(),
                 toolpath_indices: tp_indices,
+                pause_message: None,
             });
         }
     }

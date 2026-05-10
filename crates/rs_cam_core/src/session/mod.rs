@@ -352,6 +352,11 @@ pub struct SetupData {
     pub keep_out_zones: Vec<KeepOutZone>,
     /// Indices into the session's `toolpath_configs` vec.
     pub toolpath_indices: Vec<usize>,
+    /// Optional override for the M0 pause message emitted before this setup.
+    /// `None` falls back to the default `Setup change: <name>` text. Used to
+    /// instruct the operator (e.g. "Run Z Probe macro then Resume") between
+    /// setups; the actual probe / home gcode lives in the sender's macro.
+    pub pause_message: Option<String>,
 }
 
 /// Configuration for a single toolpath within the session.
@@ -527,6 +532,7 @@ impl ProjectSession {
                 fixtures: Vec::new(),
                 keep_out_zones: Vec::new(),
                 toolpath_indices: Vec::new(),
+                pause_message: None,
             }],
             toolpath_configs: Vec::new(),
             results: HashMap::new(),
@@ -1022,6 +1028,7 @@ mod tests {
                 name: "Setup 1".to_owned(),
                 face_up: "top".to_owned(),
                 z_rotation: String::new(),
+                pause_message: None,
                 fixtures: Vec::new(),
                 keep_out_zones: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {
@@ -1122,6 +1129,7 @@ mod tests {
                 name: "Setup 1".to_owned(),
                 face_up: "top".to_owned(),
                 z_rotation: String::new(),
+                pause_message: None,
                 fixtures: Vec::new(),
                 keep_out_zones: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {

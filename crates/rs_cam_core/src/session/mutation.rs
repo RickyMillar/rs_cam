@@ -392,6 +392,7 @@ impl ProjectSession {
             fixtures: Vec::new(),
             keep_out_zones: Vec::new(),
             toolpath_indices: Vec::new(),
+            pause_message: None,
         });
         idx
     }

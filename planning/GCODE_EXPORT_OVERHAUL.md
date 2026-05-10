@@ -342,18 +342,15 @@ Two items shipped; the rest stay on the backlog until demand pulls them in.
 
 **Backlog (priority-ordered by perceived value):**
 
-- **#9 Setup-pause actions (re-zero / probe / home).** Today the gcode between setups is `M5` → `(Setup change: Bottom)` → `M0` → `M3` and that's it — the operator is expected to re-zero manually in g-Sender (or whatever sender) before pressing Resume. Add a per-`SetupData` `pause_action: SetupPauseAction` field so each setup can declare what should happen on Resume:
+- **#9 Setup-pause messages (operator-runs-macro pattern).** Today the gcode between setups is `M5` → `(Setup change: Bottom)` → `M0` → `M3`. Operator must remember what to do on Resume (re-zero? probe? home?) and the comment carries no hint. Re-scoped 2026-05-10 from "emit raw probe gcode" to "let the sender own probe macros, we just provide the pause point and a clear message." g-Sender / UGS / CNCjs already have well-tuned Z-probe / XYZ-corner / home macros — duplicating them in our post would own probe params that already live in (and are better tuned in) the sender.
 
-  - `Manual { instruction: String }` — current behaviour; the string is appended to the M0 comment.
-  - `ProbeZ { plate_thickness_mm, probe_feed, max_distance_mm }` — emits `G91 / G38.2 Z-<max> F<feed> / G10 L20 P<n> Z<plate> / G0 Z<retract> / G90` after the M0. Operator places the touch plate, presses Resume; machine probes and sets WCS Z automatically.
-  - `ProbeXyz { ... }` — full corner probe (3-sided probe ball) for XY+Z re-zero.
-  - `Home { axes }` — emits `$H` (or `G28` for posts that prefer it) so the operator just presses Resume after refixturing.
+  - `SetupData.pause_message: Option<String>` — optional override for the M0 comment line. `None` keeps current `Setup change: <label>` text (byte-identical default).
+  - `build_multi_setup` consumes the override when emitting the `ProgramPause { message }` statement before `M0`.
+  - Wizard Step 4.5 ("Setup pauses") between tool-change and preview: per-setup picker with presets — "Flip and re-zero (manual)", "Run Z Probe macro", "Run XYZ Corner Probe macro", "Home then re-zero", "Custom…" — plus a free-form text field. Single-setup projects show a stub message and skip the picker. Choice persists on `SetupData` via TOML round-trip with serde default `None` for back-compat.
 
-  New wizard step (Step 4.5 — "Setup pauses") between tool-change and preview: lists each setup transition and lets the user pick the action + parameters per setup. Choice persists on `SetupData` (project file round-trip needed). Default `Manual { instruction: "" }` keeps current emit byte-identical.
+  Out of scope (deliberately): `ProbeConfig` on `MachineProfile`, `supports_homing` on `PostDefinition`, raw G38.2 / G10 L20 / $H emission. The sender owns those primitives.
 
-  Needs `ProbeConfig` fields on `MachineProfile` (`probe_feed_default`, `default_max_probe_distance`, `touch_plate_thickness`) so the wizard can pre-fill sane defaults for the user's machine. Posts also need to declare whether `$H` is supported (Grbl 1.1 yes, others verify) — add `supports_homing: bool` to `PostDefinition`.
-
-  Scope: ~6–8 commits (data model + project-file round-trip + emitter branch + machine probe config + wizard step + tests). Half-day estimate. Spec'd 2026-05-10.
+  Scope: ~3 commits (data + round-trip / emitter wire-through / wizard step + e2e). Re-spec'd 2026-05-10.
 
 - **Editable preamble/postamble templates.** Per-project override of the post's templates, with variable substitution.
 - **Per-tool pre/post g-code.** Move from `ToolpathConfig.pre_gcode/post_gcode` to `Tool.pre_gcode/post_gcode` (with per-toolpath override). Tool-change routines travel with the tool.

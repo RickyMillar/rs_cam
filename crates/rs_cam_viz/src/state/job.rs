@@ -332,6 +332,11 @@ pub struct Setup {
     pub toolpaths: Vec<super::toolpath::ToolpathEntry>,
     /// Models relevant to this setup. Empty means all models are available.
     pub model_ids: Vec<ModelId>,
+    /// Optional override for the M0 pause message emitted between this setup
+    /// and the next. `None` falls back to `Setup change: <name>`. The actual
+    /// re-zero / probe / home gcode is expected to live in the operator's
+    /// sender macros (g-Sender / UGS / CNCjs) — this just instructs them.
+    pub pause_message: Option<String>,
 }
 
 impl Setup {
@@ -349,6 +354,7 @@ impl Setup {
             keep_out_zones: Vec::new(),
             toolpaths: Vec::new(),
             model_ids: Vec::new(),
+            pause_message: None,
         }
     }
 
@@ -363,6 +369,7 @@ impl Setup {
             keep_out_zones: Vec::new(),
             toolpaths: Vec::new(),
             model_ids: Vec::new(),
+            pause_message: None,
         }
     }
 
