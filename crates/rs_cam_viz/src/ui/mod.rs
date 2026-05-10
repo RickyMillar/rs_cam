@@ -140,6 +140,15 @@ pub enum AppEvent {
     WizardSetDryRun(bool),
     /// Step 4: spindle warmup dwell in seconds. Zero disables.
     WizardSetSpindleWarmup(u32),
+    /// Step 4.5: per-setup pause-message override. `None` falls back to
+    /// the default `Setup change: <name>` text emitted before the
+    /// inter-setup `M0`. `Some("...")` replaces it verbatim — used to
+    /// instruct the operator to run a sender macro (Z probe, corner
+    /// probe, home) before pressing Resume.
+    WizardSetSetupPauseMessage {
+        setup_id: usize,
+        message: Option<String>,
+    },
     /// Step 5: toggle the "I understand the risks, allow save with
     /// validator errors" override.
     WizardSetAllowValidatorErrors(bool),

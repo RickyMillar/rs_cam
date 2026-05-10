@@ -208,6 +208,18 @@ impl RsCamApp {
                     s.session.wizard_mut().spindle_warmup_secs = secs;
                     s.gui.mark_edited();
                 }
+                AppEvent::WizardSetSetupPauseMessage { setup_id, message } => {
+                    let s = self.controller.state_mut();
+                    if let Some(setup) = s
+                        .session
+                        .setups_mut()
+                        .iter_mut()
+                        .find(|setup| setup.id == setup_id)
+                    {
+                        setup.pause_message = message;
+                        s.gui.mark_edited();
+                    }
+                }
                 AppEvent::WizardSetAllowValidatorErrors(allow) => {
                     let s = self.controller.state_mut();
                     s.session.wizard_mut().allow_validator_errors = allow;
