@@ -17,6 +17,11 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
             events.push(AppEvent::SaveJob);
         }
         if modifiers.ctrl && modifiers.shift && i.key_pressed(egui::Key::E) {
+            events.push(AppEvent::OpenExportWizard);
+        }
+        // Power-user escape hatch: Ctrl+Alt+E skips the wizard and jumps
+        // straight to the legacy direct-export pre-flight + file dialog.
+        if modifiers.ctrl && modifiers.alt && i.key_pressed(egui::Key::E) {
             events.push(AppEvent::ExportGcode);
         }
         if modifiers.ctrl && !modifiers.shift && i.key_pressed(egui::Key::O) {
@@ -76,31 +81,36 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                     events.push(AppEvent::SaveJob);
                 }
                 ui.separator();
-                if ui.button("Export Wizard...").clicked() {
-                    ui.close_menu();
-                    events.push(AppEvent::OpenExportWizard);
-                }
                 if ui
-                    .add(egui::Button::new("Export G-code (all)...").shortcut_text("Ctrl+Shift+E"))
+                    .add(egui::Button::new("Export G-code...").shortcut_text("Ctrl+Shift+E"))
                     .clicked()
                 {
                     ui.close_menu();
-                    events.push(AppEvent::ExportGcode);
+                    events.push(AppEvent::OpenExportWizard);
                 }
-                if state.session.list_setups().len() > 1 {
-                    if ui.button("Export Combined (M0 pauses)...").clicked() {
+                ui.menu_button("Direct export (skip wizard)", |ui| {
+                    if ui
+                        .add(egui::Button::new("All toolpaths").shortcut_text("Ctrl+Alt+E"))
+                        .clicked()
+                    {
                         ui.close_menu();
-                        events.push(AppEvent::ExportCombinedGcode);
+                        events.push(AppEvent::ExportGcode);
                     }
-                    ui.separator();
-                    for setup in state.session.list_setups() {
-                        let label = format!("Export '{}'...", setup.name);
-                        if ui.button(&label).clicked() {
+                    if state.session.list_setups().len() > 1 {
+                        if ui.button("Combined (M0 pauses)").clicked() {
                             ui.close_menu();
-                            events.push(AppEvent::ExportSetupGcode(SetupId(setup.id)));
+                            events.push(AppEvent::ExportCombinedGcode);
+                        }
+                        ui.separator();
+                        for setup in state.session.list_setups() {
+                            let label = format!("Setup: {}", setup.name);
+                            if ui.button(&label).clicked() {
+                                ui.close_menu();
+                                events.push(AppEvent::ExportSetupGcode(SetupId(setup.id)));
+                            }
                         }
                     }
-                }
+                });
                 if ui.button("Export Setup Sheet...").clicked() {
                     ui.close_menu();
                     events.push(AppEvent::ExportSetupSheet);
