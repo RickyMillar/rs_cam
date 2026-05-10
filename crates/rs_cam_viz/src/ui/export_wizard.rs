@@ -412,6 +412,29 @@ fn step_coord_units(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
     } else if toggle.changed() && prev_override.is_some() {
         events.push(AppEvent::WizardSetSafeZOverride(None));
     }
+
+    ui.add_space(12.0);
+
+    // ── Dry-run toggle ──
+    let mut dry_run = wiz.dry_run;
+    let dry_resp = ui.checkbox(
+        &mut dry_run,
+        "Dry-run (clamp every cutting move to safe-Z)",
+    );
+    if dry_resp.changed() {
+        events.push(AppEvent::WizardSetDryRun(dry_run));
+    }
+    if dry_run {
+        let effective_safe_z = wiz.safe_z_override.unwrap_or(project_safe_z);
+        ui.label(
+            egui::RichText::new(format!(
+                "Spindle stays in air at Z={effective_safe_z:.3} mm — verify XY paths and \
+                 feed rates without touching material."
+            ))
+            .small()
+            .italics(),
+        );
+    }
 }
 
 // ── Step 4 — Tool change & spindle ───────────────────────────────────
@@ -783,6 +806,15 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             ui.label("Tool changes:");
             ui.label(format!("{tool_changes}"));
             ui.end_row();
+
+            if wiz.dry_run {
+                ui.label("Dry-run:");
+                ui.colored_label(
+                    egui::Color32::from_rgb(220, 160, 60),
+                    "ON — cutting Z clamped to safe-Z",
+                );
+                ui.end_row();
+            }
 
             ui.label("Validator findings:");
             ui.label(format!(
