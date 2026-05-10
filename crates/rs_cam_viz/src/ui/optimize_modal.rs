@@ -9,8 +9,8 @@
 //! `optimize_toolpath` synchronously and stashes the outcome here.
 
 use rs_cam_core::tool_load::optimize::{
-    GateKind, LimitingGate, OptimizeCandidate, OptimizeOutcome, ParamDelta,
-    SearchEnvelopeReached, limiting_gates_for_verdict,
+    GateKind, KnobAxis, LimitingGate, OperatorSuggestion, OptimizeCandidate, OptimizeOutcome,
+    ParamDelta, SearchEnvelopeReached, limiting_gates_for_verdict,
 };
 use rs_cam_core::tool_load::verdict::{ChipSide, ToolpathLoadVerdict};
 
@@ -129,6 +129,11 @@ fn draw_outcome(
                         .small()
                         .color(theme::TEXT_MUTED),
                 );
+            }
+            // G17 A4: operator-actionable suggestions, if any.
+            if !narrative.suggestions.is_empty() {
+                ui.add_space(6.0);
+                draw_suggestions(ui, &narrative.suggestions);
             }
             ui.add_space(8.0);
             if attempted.len() <= 1 {
@@ -545,6 +550,59 @@ fn format_delta(delta: &ParamDelta) -> String {
     }
 }
 
+/// G17 A4 — render the suggestions as a small inline callout. Each
+/// suggestion is a one-liner with no button (operator must manually
+/// act; we never auto-apply a heuristic).
+fn draw_suggestions(ui: &mut egui::Ui, suggestions: &[OperatorSuggestion]) {
+    egui::Frame::none()
+        .fill(ui.visuals().faint_bg_color)
+        .inner_margin(egui::Margin::symmetric(8.0, 6.0))
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new("Try this")
+                    .small()
+                    .strong()
+                    .color(theme::TEXT_MUTED),
+            );
+            for s in suggestions {
+                ui.label(egui::RichText::new(format!("• {}", format_suggestion(s))).small());
+            }
+        });
+}
+
+/// G17 A4 — render an `OperatorSuggestion` as one operator-facing
+/// sentence. Avoids "Bayesian" / "closed-loop" / other engine
+/// vocabulary; uses bare imperative ("Cap feed at …", "Raise feed to …").
+fn format_suggestion(s: &OperatorSuggestion) -> String {
+    fn axis_label_units(axis: KnobAxis) -> (&'static str, &'static str, usize) {
+        // (display label, units, decimal places)
+        match axis {
+            KnobAxis::Feed => ("feed", "mm/min", 0),
+            KnobAxis::SpindleRpm => ("RPM", "rpm", 0),
+            KnobAxis::Stepover => ("stepover", "mm", 2),
+            KnobAxis::DepthPerPass => ("depth-per-pass", "mm", 2),
+            KnobAxis::ScallopHeight => ("scallop height", "mm", 3),
+        }
+    }
+    match s {
+        OperatorSuggestion::CapAxisAt { axis, ceiling } => {
+            let (label, units, dp) = axis_label_units(*axis);
+            format!(
+                "Cap {label} at ~{ceiling:.dp$} {units} and re-optimize.",
+                dp = dp
+            )
+        }
+        OperatorSuggestion::RaiseAxisAbove { axis, floor } => {
+            let (label, units, dp) = axis_label_units(*axis);
+            format!(
+                "Raise {label} above ~{floor:.dp$} {units} and re-optimize.",
+                dp = dp
+            )
+        }
+        OperatorSuggestion::DataGapHere { reason } => format!("Data gap: {reason}"),
+    }
+}
+
 /// G17 A2 — one-line summary of the search envelope reached, e.g.
 /// "tried feed 3150 → 4000 mm/min, stepover 2.0 → 2.2 mm". Returns
 /// `None` when no axis moved off baseline (all extents collapsed).
@@ -716,6 +774,43 @@ mod tests {
             s.contains("+29") || s.contains("+28"),
             "should mention overshoot % (~28-29%), got: {s}",
         );
+    }
+
+    #[test]
+    fn format_suggestion_cap_feed() {
+        let s = OperatorSuggestion::CapAxisAt {
+            axis: KnobAxis::Feed,
+            ceiling: 2960.7,
+        };
+        let rendered = format_suggestion(&s);
+        // No "Bayesian" / "closed-loop" in operator copy — just the
+        // imperative.
+        assert!(rendered.starts_with("Cap feed at ~2961 mm/min"));
+        assert!(rendered.ends_with("re-optimize."));
+    }
+
+    #[test]
+    fn format_suggestion_raise_feed_uses_raise_verb() {
+        let s = OperatorSuggestion::RaiseAxisAbove {
+            axis: KnobAxis::Feed,
+            floor: 4032.0,
+        };
+        let rendered = format_suggestion(&s);
+        assert!(rendered.starts_with("Raise feed above ~4032 mm/min"));
+    }
+
+    #[test]
+    fn format_suggestion_cap_doc_uses_two_decimals() {
+        let s = OperatorSuggestion::CapAxisAt {
+            axis: KnobAxis::DepthPerPass,
+            ceiling: 3.87,
+        };
+        let rendered = format_suggestion(&s);
+        assert!(
+            rendered.contains("3.87 mm"),
+            "DOC should render with 2 dp: {rendered}"
+        );
+        assert!(rendered.starts_with("Cap depth-per-pass"));
     }
 
     #[test]

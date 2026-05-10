@@ -15,7 +15,7 @@ criteria.
 | A. Explainability | A1. Structured failure narrative in `OptimizeOutcome` | ✅ | `9b940ca` | 2026-05-10 |
 | A. Explainability | A2. Modal "what was tried, why each failed" view | ✅ | `4618023` | 2026-05-10 |
 | A. Explainability | A3. Sample locality classification (kinematics + arc engagement) | ✅ | `fc17798` | 2026-05-10 |
-| A. Explainability | A4. Operator-facing suggestion lever | ⏳ | — | — |
+| A. Explainability | A4. Operator-facing suggestion lever | ✅ | _pending commit_ | 2026-05-10 |
 | A. Explainability | A5. Search-frontier heatmap (feed × stepover) | ⏳ optional | — | — |
 | B. Peak-finding | B0. Gating prerequisites re-evaluated | 🚫 blocked on A2 | — | — |
 | B. Peak-finding | B1. `OptimizationStrategy` trait contract | 🚫 blocked on B0 | — | — |
@@ -600,6 +600,30 @@ each phase using A1 as template.)
   untouched — locality only renders in the per-row badge. A future
   polish could fold a shared locality into the headline if all rows
   agree.
+- **2026-05-10 — A4.** Added `RaiseAxisAbove { axis, floor }` variant
+  to `OperatorSuggestion` to cover the burn-side chipload case
+  (operator needs to *raise* feed, not cap it). The plan's original
+  enum only had `CapAxisAt` and `NarrowAxisBelow`; merged
+  `NarrowAxisBelow` semantics into `CapAxisAt` since both are caps —
+  the only operator-meaningful distinction is the direction (cap vs
+  raise), not "narrow" vs "cap".
+- **2026-05-10 — A4.** `suggest_levers(limiting_gates, candidate)` in
+  `narrative.rs`. Heuristics per gate:
+    - chipload high → `CapAxisAt(Feed, current_feed × bound/observed × 0.95)`
+    - chipload low → `RaiseAxisAbove(Feed, current_feed × bound/observed × 1.05)`
+    - deflection exceeds → `CapAxisAt(DepthPerPass, current_doc × bound/observed × 0.95)`
+    - power exceeds → `CapAxisAt(Stepover, current_stepover × bound/observed × 0.95)`
+  Each emits at most one suggestion per limiting gate; the operator
+  picks which lever they prefer.
+- **2026-05-10 — A4.** Suggestions wired into `build_failure_narrative_no_safe`
+  (NoSafeImprovement). Skipped MarginalSafe — those candidates are
+  inside the band already, "verify on a scrap" is the entire action.
+- **2026-05-10 — A4.** Modal renders suggestions as a "Try this"
+  callout with bullet list (no buttons — operator must manually act,
+  per A4 plan). `format_suggestion(s)` produces operator copy: "Cap
+  feed at ~2961 mm/min and re-optimize." / "Raise feed above ~4032
+  mm/min and re-optimize." Avoids "Bayesian" / "closed-loop" /
+  engine vocabulary.
 - **2026-05-10 — A2 MCP smoke (post-rebuild).** Verified narrative
   serializes through MCP on `wanaka_full_tuned.toml`:
     - **TP 1 (NoSafeImprovement):** headline reads "Tried 3
