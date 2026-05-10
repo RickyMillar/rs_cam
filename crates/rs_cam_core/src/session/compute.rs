@@ -97,20 +97,33 @@ impl ProjectSession {
                 tc.operation.set_depth_per_pass(v);
             }
             "spindle_rpm" => {
+                // Accept Null, integer, integer-valued float, or numeric string.
+                // MCP / JSON-RPC clients vary in how they encode numerics —
+                // some always serialize as f64 (so 13500 arrives as 13500.0),
+                // others stringify when the schema's `value` is permissive.
+                // The router is the right place to absorb the friction; we
+                // reject only on actual loss of precision or out-of-range.
                 let rpm = match &value {
                     serde_json::Value::Null => None,
-                    serde_json::Value::Number(n) => {
-                        let u = n.as_u64().ok_or_else(|| {
+                    other => {
+                        let f = as_number(other).ok_or_else(|| {
                             SessionError::InvalidParam(
-                                "spindle_rpm must be a non-negative integer".to_owned(),
+                                "spindle_rpm must be a non-negative integer or null".to_owned(),
                             )
                         })?;
-                        Some(u as u32)
-                    }
-                    _ => {
-                        return Err(SessionError::InvalidParam(
-                            "spindle_rpm must be a u32 or null".to_owned(),
-                        ));
+                        if !f.is_finite() || f < 0.0 || f > f64::from(u32::MAX) {
+                            return Err(SessionError::InvalidParam(format!(
+                                "spindle_rpm out of range: {f}"
+                            )));
+                        }
+                        if f.fract() != 0.0 {
+                            return Err(SessionError::InvalidParam(format!(
+                                "spindle_rpm must be a whole number: {f}"
+                            )));
+                        }
+                        // SAFETY: bounds + finite + integer-valued checked above.
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                        Some(f as u32)
                     }
                 };
                 tc.operation.set_spindle_rpm(rpm);
@@ -1002,6 +1015,11 @@ impl ProjectSession {
                     .unwrap_or(self.post.spindle_speed),
             ),
             flute_count: Some(tool.flute_count),
+            is_drill_cycle: matches!(
+                tc.operation.op_type(),
+                crate::compute::catalog::OperationType::Drill
+                    | crate::compute::catalog::OperationType::AlignmentPinDrill
+            ),
         };
 
         Ok(crate::narrate::narrate_toolpath_with_context(
@@ -1399,6 +1417,32 @@ mod tests {
         assert!(matches!(result, Err(SessionError::InvalidParam(_))));
         // Negative numbers fail u64 conversion.
         let result = s.set_toolpath_param(0, "spindle_rpm", json!(-1));
+        assert!(matches!(result, Err(SessionError::InvalidParam(_))));
+    }
+
+    /// F2 — MCP / JSON-RPC clients sometimes serialize integer literals as
+    /// f64 (so 13500 arrives as 13500.0). The router accepts integer-valued
+    /// floats and parseable numeric strings as well as plain integers.
+    #[test]
+    fn set_toolpath_param_spindle_rpm_accepts_f64_and_string() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        // Integer-valued f64.
+        s.set_toolpath_param(0, "spindle_rpm", json!(13500.0))
+            .unwrap();
+        assert_eq!(
+            s.toolpath_configs()[0].operation.spindle_rpm(),
+            Some(13500)
+        );
+        // Numeric string.
+        s.set_toolpath_param(0, "spindle_rpm", json!("18000"))
+            .unwrap();
+        assert_eq!(
+            s.toolpath_configs()[0].operation.spindle_rpm(),
+            Some(18000)
+        );
+        // Non-integer float is rejected (would lose precision).
+        let result = s.set_toolpath_param(0, "spindle_rpm", json!(13500.5));
         assert!(matches!(result, Err(SessionError::InvalidParam(_))));
     }
 
