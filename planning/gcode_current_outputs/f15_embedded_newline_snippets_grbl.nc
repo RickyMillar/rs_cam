@@ -3,7 +3,7 @@ G17 G21 G90 G40 G49 G80
 M3 S18000
 (Op 0 — pocket with custom prep)
 (custom prep)
-M7
+(WARNING: M7 unsupported on GRBL; dropped: M7)
 G4 P0.5
 G0 X0.000 Y0.000 Z5.000
 G1 X10.000 Y0.000 Z-2.000 F600
