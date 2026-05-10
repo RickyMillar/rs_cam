@@ -44,6 +44,12 @@ pub struct WizardState {
     pub units_override: Option<Units>,
     pub safe_z_override: Option<f64>,
     pub spindle_warmup_secs: u32,
+    /// Dry-run mode — when true, every cutting move's Z is clamped to
+    /// the effective safe-Z so the spindle stays in air for the whole
+    /// program. Operators use this to verify XY paths and feed rates
+    /// without touching material. Resolved into the emit path via
+    /// `WizardOverlay::dry_run_safe_z`.
+    pub dry_run: bool,
     pub allow_validator_errors: bool,
     pub last_save_dir: Option<PathBuf>,
     /// Highest 0-indexed step the user has visited. The wizard opens at
@@ -60,6 +66,7 @@ impl Default for WizardState {
             units_override: None,
             safe_z_override: None,
             spindle_warmup_secs: 0,
+            dry_run: false,
             allow_validator_errors: false,
             last_save_dir: None,
             last_step_visited: 0,
@@ -81,6 +88,7 @@ mod tests {
         assert!(s.units_override.is_none());
         assert!(s.safe_z_override.is_none());
         assert_eq!(s.spindle_warmup_secs, 0);
+        assert!(!s.dry_run);
         assert!(!s.allow_validator_errors);
         assert!(s.last_save_dir.is_none());
         assert_eq!(s.last_step_visited, 0);
