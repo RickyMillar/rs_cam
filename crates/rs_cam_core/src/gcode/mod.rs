@@ -6,9 +6,14 @@
 
 pub mod ir;
 mod modal;
+pub mod post;
 pub mod program_builder;
 
 pub use ir::{Program, ProgramMetadata, Statement};
+pub use post::{
+    CommentStyle, Decimals, Feedrate, LoadError as PostLoadError, PostDefinition, PostLimits, Rpm,
+    SafeZ,
+};
 
 use crate::compute::catalog::effective_spindle_rpm;
 use crate::session::ProjectSession;
