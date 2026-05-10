@@ -1,6 +1,6 @@
 # G-Code Export Overhaul — Roadmap
 
-**Status:** Phase 0, 0.5, 1, and 2 complete. Phase 3 (data-driven `PostDefinition`) is next.
+**Status:** Phase 0, 0.5, 1, 2, and 3 complete. Phase 4 (broaden corpus + grblHAL + CI emulator gate) is next.
 **Owner:** TBD
 **Last updated:** 2026-05-10
 **Worktree:** `/home/ricky/personal_repos/rs_cam-gcode-overhaul/` on branch `gcode-overhaul` (branched from `master` @ fe27805). All implementation work for this overhaul lives there; the main checkout stays on `master` for unrelated work and the other agent's optimizer changes.
@@ -230,18 +230,31 @@ Net diff: ~370 lines of imperative emission collapsed into the two-pass builder 
 
 ---
 
-### Phase 3 — Data-driven `PostDefinition`
-**Replace the trait with TOML.**
+### Phase 3 — Data-driven `PostDefinition` — **DONE**
+**Replaced the trait with TOML.**
 
-- Define `PostDefinition` struct + `serde` impl.
-- Author `posts/grbl.toml`, `posts/linuxcnc.toml`, `posts/mach3.toml` mirroring current behavior.
-- Build new `Emitter` that consumes `Program` + `PostDefinition` → string.
-- Side-by-side test: for each shipped post, the new emitter output equals the old `PostProcessor` output, byte-identical.
-- Once green, delete the trait and the three impls. The `PostFormat` enum becomes a thin newtype around the post name (or a discoverable list of TOMLs in `posts/`).
+New module layout under `crates/rs_cam_core/src/gcode/`:
 
-**Exit:** `PostProcessor` trait deleted; all emission flows through `Emitter` + TOML; existing tests pass; clippy clean; CLI/GUI surface unchanged.
+- `post.rs` — `PostDefinition` (`name`, `Decimals`, `CommentStyle`, `PostLimits`, preamble/postamble/program-pause templates), `serde::Deserialize` loader, plus `Rpm`/`Feedrate`/`SafeZ` newtypes (boundary-only — Statement IR keeps primitive types). Three shipped posts (`grbl()`, `linuxcnc()`, `mach3()`) embedded via `include_str!` and lazily parsed into `OnceLock` statics.
+- `emitter.rs` — single `emit_program(&Program, &PostDefinition) -> String`. Move-line shape is hard-coded and parameterized by `decimals.{xyz,feed,ijk}`; preamble/postamble/program-pause come from TOML templates with `{spindle_rpm}` / `{message_comment}` substitution.
 
-**Architecture clean-up nice-to-have:** include the TOML files in the binary via `include_str!` or `rust-embed` so end users get the shipped posts without filesystem lookups. Custom user posts live alongside in a config dir.
+Three TOML posts live under `crates/rs_cam_core/posts/`:
+
+- `grbl.toml` — 3 dp xyz/ijk, 0 dp feed, no G54.
+- `linuxcnc.toml` — 4 dp xyz/ijk, 1 dp feed, G54 in preamble, `G53 G0 Z0` + M2 postamble.
+- `mach3.toml` — 4 dp xyz/ijk, 1 dp feed, no G49, G4 P2 spindle dwell, `G28 G91 Z0` + M30.
+
+Trait removal: `PostProcessor` trait, `GrblPost` / `LinuxCncPost` / `Mach3Post` impls, and `get_post_processor` helper deleted. `PostFormat::definition() -> &'static PostDefinition` and `get_post_definition(name) -> Option<&'static PostDefinition>` are the new public surface. CLI / viz / tests routed through `PostDefinition`.
+
+**Byte-identical verification:**
+- Side-by-side parity test (legacy trait vs new emitter, all 3 dialects × 6 fixtures + coolant/comp/raw edge case) green before deletion; removed once trait was gone (would be a tautology).
+- `gcode_phase0_capture --ignored` re-run: ZERO diff in `planning/gcode_current_outputs/` (18 files unchanged).
+- `gcode_validator_baseline`: still snapshots 37 findings unchanged.
+- `cargo test --workspace`: green; clippy clean.
+
+Net diff: ~325 lines of trait + impls deleted from `gcode/mod.rs`; ~470 lines added across `post.rs`, `emitter.rs`, and the three TOML files.
+
+**Exit met:** `PostProcessor` trait deleted; all emission flows through `Emitter` + TOML; existing tests byte-identical; clippy clean; CLI/GUI surface unchanged. Newtype wrappers (`Rpm`, `Feedrate`, `SafeZ`) live in `post.rs` ready for Phase 4 limit enforcement.
 
 ---
 
@@ -314,7 +327,7 @@ Add as needed (Centroid, Masso, Buildbotics, Mach4, Smoothieware) on user reques
 | 0.5 | Controller emulator install + baseline validation | No | 1 day (done) |
 | 1 | Validator (5 priority rules) | No | <1 day (done) |
 | 2 | `Program` IR refactor | No (byte-identical) | 2–3 days (done) |
-| 3 | Data-driven post (TOML) | No (byte-identical) | 3–4 days |
+| 3 | Data-driven post (TOML) | No (byte-identical) | 3–4 days (done) |
 | 4 | Broaden corpus + grblHAL + CI emulator gate | Maybe (intentional fixes) | 3–5 days |
 | 5 | Wizard UX | No (additive) | 3–4 days |
 | 6 | Power features (incl. CAMotics motion-sim option) | Per-feature | Open-ended |
