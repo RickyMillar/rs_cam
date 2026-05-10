@@ -51,22 +51,45 @@ These are issues we can identify *without* needing Fusion's actual output, by co
 
 ---
 
-## Per-fixture validation matrix — Phase 0.5 results
+## Per-fixture validation matrix — Phase 4a results
 
-Validator: `gvalidate` (from `grbl/grbl-sim`, built at `reference/validators/grbl/grbl/sim/gvalidate.exe`). Permissive enough to accept LinuxCNC's `G91.1`/`G53`/`M2` and Mach3's syntax — used as cross-dialect syntax check. Real LinuxCNC `rs274ngc` deferred to Phase 4 (Ubuntu 24.04 needs source build with heavy deps).
+Test harness: `crates/rs_cam_core/tests/gcode_emulator_validation.rs`. Run:
 
-Test harness: `crates/rs_cam_core/tests/gcode_emulator_validation.rs`. Run: `cargo test -p rs_cam_core --test gcode_emulator_validation -- --ignored`. M0/M1 pauses are stripped before validation (gvalidate emulates real Grbl which waits forever on M0 — there's no bypass flag).
+```bash
+cargo test -p rs_cam_core --test gcode_emulator_validation -- --ignored
+# CI mode (missing validators hard-fail instead of skipping):
+CI_REQUIRE_VALIDATORS=1 cargo test -p rs_cam_core --test gcode_emulator_validation -- --ignored
+```
 
-**18 tests, 18 pass: 15 outputs cleanly accepted by gvalidate, 3 outputs rejected with documented reasons.**
+Validators (see `planning/post_reference_notes.md` "Validator install" for build steps):
 
-| Fixture | Grbl | LinuxCNC | Mach3 |
-|---------|------|----------|-------|
-| F1 basic_lines | ✅ pass | ✅ pass | ✅ pass |
-| F2 arcs_xy | ✅ pass | ✅ pass | ✅ pass |
-| F3 helical_ramp | ✅ pass | ✅ pass | ✅ pass |
-| F4 profile_multipass | ✅ pass | ✅ pass | ✅ pass |
-| F5 two_tool_changes | 🔴 reject (real bug — see below) | 🟡 reject (proxy limitation — see below) | 🟡 reject (proxy limitation) |
-| F6 two_setups | ✅ pass (M0 stripped) | ✅ pass (M0 stripped) | ✅ pass (M0 stripped) |
+| Validator | Status | Role |
+|-----------|--------|------|
+| `gvalidate` (grbl-sim) | ✅ working | **Authoritative** for Grbl; auxiliary syntax-check for LinuxCNC/Mach3 |
+| `rs274ngc` (LinuxCNC) | ⏳ build-from-source on Ubuntu 24.04 (no apt package) | **Authoritative** for LinuxCNC + Mach3 (proxy) |
+| `grblHAL_validator` (grblHAL/Simulator) | 🔴 upstream hang on EOF | Deferred to Phase 4b once upstream fixes `protocol_main_loop()` exit |
+
+M0/M1 pauses are stripped before validation (Grbl-family parsers emulate real firmware which blocks on pause). The M0 emission itself is regression-tested by the in-source unit tests.
+
+**30 tests** (was 18 in Phase 0.5):
+- 6 Grbl × gvalidate
+- 6 LinuxCNC × rs274ngc + 6 LinuxCNC × gvalidate (auxiliary)
+- 6 Mach3 × rs274ngc + 6 Mach3 × gvalidate (auxiliary)
+
+When `rs274ngc` is missing, the 12 rs274ngc tests skip with a clear message (or hard-fail under `CI_REQUIRE_VALIDATORS=1`).
+
+### Per-fixture matrix
+
+| Fixture | Grbl (gvalidate) | LinuxCNC (rs274ngc) | LinuxCNC (gvalidate aux) | Mach3 (rs274ngc) | Mach3 (gvalidate aux) |
+|---------|------------------|---------------------|--------------------------|------------------|-----------------------|
+| F1 basic_lines       | ✅ pass | ⏳ pending build | ✅ pass | ⏳ pending build | ✅ pass |
+| F2 arcs_xy           | ✅ pass | ⏳ pending build | ✅ pass | ⏳ pending build | ✅ pass |
+| F3 helical_ramp      | ✅ pass | ⏳ pending build | ✅ pass | ⏳ pending build | ✅ pass |
+| F4 profile_multipass | ✅ pass | ⏳ pending build | ✅ pass | ⏳ pending build | ✅ pass |
+| F5 two_tool_changes  | 🔴 reject (M6 — real bug, see below) | ⏳ pending build | 🟡 reject (proxy limitation) | ⏳ pending build | 🟡 reject (proxy limitation) |
+| F6 two_setups        | ✅ pass | ⏳ pending build | ✅ pass | ⏳ pending build | ✅ pass |
+
+The "⏳ pending build" cells become ✅/🔴 once `rs274ngc` is built locally and the test re-runs. The gvalidate columns are the Phase 0.5 results, unchanged.
 
 ### 🔴 F5 Grbl — REAL BUG: rs_cam emits `M6` for Grbl tool changes
 
