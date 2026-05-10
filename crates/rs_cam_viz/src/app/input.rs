@@ -183,6 +183,16 @@ impl RsCamApp {
                         s.session.wizard_mut().last_step_visited = clamped;
                     }
                 }
+                AppEvent::WizardSetOutputLayout(layout) => {
+                    let s = self.controller.state_mut();
+                    s.session.wizard_mut().output_layout = layout;
+                    s.gui.mark_edited();
+                }
+                AppEvent::WizardSetFilenameTemplate(template) => {
+                    let s = self.controller.state_mut();
+                    s.session.wizard_mut().filename_template = template;
+                    s.gui.mark_edited();
+                }
                 AppEvent::WizardSetPost(format) => {
                     let s = self.controller.state_mut();
                     s.gui.post.format = format;

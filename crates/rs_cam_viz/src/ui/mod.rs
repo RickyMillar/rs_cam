@@ -121,6 +121,12 @@ pub enum AppEvent {
     WizardSetStep(u8),
     /// Update the post-processor format from the wizard's Step 1 dropdown.
     WizardSetPost(crate::state::job::PostFormat),
+    /// Step 2: pick how the emitted g-code is split across files.
+    WizardSetOutputLayout(rs_cam_core::session::OutputLayout),
+    /// Step 2: update the filename-template field. Substitutions like
+    /// `{job}` / `{setup}` / `{toolpath}` are applied at save time
+    /// based on the active layout.
+    WizardSetFilenameTemplate(String),
     /// Set the tool-load export-gate override flags. The two flags are
     /// independent — `accept_unmodeled` only bypasses `Unmodeled` verdicts,
     /// `accept_exceeded` only bypasses `Exceeds` verdicts.
