@@ -624,6 +624,30 @@ each phase using A1 as template.)
   feed at ~2961 mm/min and re-optimize." / "Raise feed above ~4032
   mm/min and re-optimize." Avoids "Bayesian" / "closed-loop" /
   engine vocabulary.
+- **2026-05-10 — A4 MCP smoke (post-rebuild).** TP 1 narrative
+  carries `suggestions: [cap_axis_at(feed, 2954.67), cap_axis_at(depth_per_pass, 3.88)]`
+  — both heuristic outputs match closed-form math. TP 6 (MarginalSafe)
+  carries `suggestions: []` as designed.
+- **2026-05-10 — A3+A4 finding worth filing for B / future polish.**
+  A3 locality across both wanaka TPs reveals that **every chipload /
+  deflection / power peak in this project sits in a helical entry
+  move, not steady-state cutting**. The real bottleneck on TP 1 is
+  the helix entry strategy (helix_pitch, helix_radius_factor, or
+  switching to ramp entry), not bulk roughing parameters. The current
+  `suggest_levers` doesn't read locality — it suggests capping bulk
+  feed when the actual fix is at the entry. Two enhancements worth
+  considering after thread B:
+    - `suggest_levers` reads `LimitingGate.locality` and prefers
+      entry-style suggestions ("Try ramp entry instead of plunge"
+      or "Increase helix_radius_factor above ~0.5") when the
+      limiting sample sits in an entry phase.
+    - Steady-state-only mode for the chipload evaluator that ignores
+      transient entry samples when computing the gate trigger,
+      similar to the `steady_state_samples_for_toolpath` filter
+      already present for chipload bounds matching but not for the
+      gate-trip decision itself.
+  These are out of scope for thread A; logging here so the insight
+  isn't lost.
 - **2026-05-10 — A2 MCP smoke (post-rebuild).** Verified narrative
   serializes through MCP on `wanaka_full_tuned.toml`:
     - **TP 1 (NoSafeImprovement):** headline reads "Tried 3
