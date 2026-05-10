@@ -16,12 +16,12 @@ place.
 | D1. Operation generator survey — who emits Entry spans, who doesn't | ✅ done | (research only) | 2026-05-10 |
 | D2. LUT calibration audit — slot vs partial engagement bound | ✅ done — **mismatch found** | (research only) | 2026-05-10 |
 | D3. Decision point — stopgap revert vs roll-forward | ✅ Path A (revert) | `8e2a7fc` | 2026-05-10 |
-| D4. Adaptive3d entry-emitter Entry spans (plunge/helix/ramp) | 🚫 blocked on D3 | — | — |
+| D4. Adaptive3d entry-emitter Entry spans (plunge/helix/ramp) | ✅ done | `9182795` | 2026-05-10 |
 | D5. Other operation generators — Entry span coverage | 🚫 blocked on D4 | — | — |
 | D6. Span-aware locality classifier | 🚫 blocked on D4 | — | — |
 | D7. Span-aware C1 filter (replaces kinematics filter) | 🚫 blocked on D6 | — | — |
 | D8. Cross-fixture re-validation | 🚫 blocked on D7 | — | — |
-| D9. **Engagement-aware LUT comparison** (was: stretch — terrain-aware) | ⏳ **promoted — see D2** | — | — |
+| D9. Engagement-aware LUT comparison | ✅ done | `693bbf5` | 2026-05-10 |
 
 Legend: ⏳ pending · 🟡 in-progress · ✅ done · 🚫 blocked · ⏭️ skipped
 
@@ -831,4 +831,103 @@ Worth a separate decision: do D9 first as its own commit-train, or
 bundle with D4? Recommend **D9 first** — it's the lever that
 materially changes user-visible verdicts, while D4–D7 are
 correctness-cleanup that doesn't move the needle on wanaka.
+
+### 2026-05-10 — D9 landed (engagement-aware LUT comparison)
+
+Added per-sample chip-thickness normalization to
+`tool_load/chipload.rs::evaluate`:
+
+- New helper `mean_chip_factor(arc_rad) = mean_chip / feed_per_tooth`
+  for a flat endmill at the given engagement arc, mirroring
+  `flat_chip_geometry_for_radius`.
+- New helper `lut_nominal_arc_rad(row)` derives the LUT row's
+  authored engagement arc as `acos(1 − 2·ae_mid/D)` from
+  `ae_min_mm`/`ae_max_mm`/`row_diameter_mm`.
+- Each sample's `effective_chip_thickness_mm` is renormalized to the
+  LUT nominal engagement at compare time:
+  `cl_normalized = cl_raw × M(arc_lut) / M(arc_sample)`.
+- Falls back to direct comparison when the LUT row lacks
+  `ae_min_mm`/`ae_max_mm` or the sample lacks `arc_engagement_radians`
+  (preserves prior behaviour for partial rows).
+
+**Wanaka TP 1 verdict shift (verified via wanaka_e2e_chipload_gate
+integration test):**
+- Pre-D9: `Exceeds(High)` at raw 0.0707 mm/tooth (slot terrain spike
+  vs LUT max 0.055).
+- Post-D9: high-side cleared. Trip moves to `Exceeds(Low)` (median
+  ~0.0205 < min 0.032). Reveals a separate, real finding —
+  wanaka's commanded feed (~0.0875 mm/tooth) is below Amana's
+  published per-flute minimum for HardMaple Pocket Roughing
+  (~0.137 mm/tooth at LUT-nominal arc, equivalent to feed > 4940
+  mm/min @ 18 000 RPM × 2 flutes). The optimizer's narrative now
+  surfaces this as the real over-bound situation.
+
+**Test fixture impact:**
+- `tool_load::chipload::tests::sample()` helper changed from
+  `arc = π/2` to `arc = LUT-nominal (~1.084 rad)` so all existing
+  chipload-tests preserve their semantics under D9 normalization.
+- One test (`project_curve_flat_routes_to_contour_finish`) inlines
+  its own arc override to match its target LUT row's nominal
+  engagement (`ae_rule: "2% to 8%D"` → arc ≈ 0.459 rad).
+- `chipload_formula_calibration` integration test gained two new
+  arms: one verifying a sample at LUT-nominal arc with a feed in
+  the published per-flute envelope passes, and one specifically
+  verifying the slot-engagement-on-terrain case D2 identified.
+
+**MCP smoke note:** the running MCP server uses a pre-D9 binary
+cached at startup; the live optimize call still shows the pre-D9
+verdict. Restart the MCP server to pick up D9.
+
+### 2026-05-10 — D4 landed (Adaptive3D Entry spans)
+
+Adaptive3D's `segments_to_toolpath` (`adaptive3d/path.rs`) now wraps
+each `Adaptive3dSegment::Rapid` and `RapidWithFloor` entry-emit
+sequence in a `PassEntry` runtime annotation carrying both
+`entry_start_move_idx` (= `move_index` of the annotation) and a new
+`entry_end_move_idx` field, plus an operator-facing `style_label`
+(`"plunge entry"` / `"helix entry"` / `"ramp entry"`).
+
+`compute::spans::push_adaptive3d_spans` grew a new pass that emits
+`SpanKind::Entry` spans from these `PassEntry` events, labeled with
+the configured style. Each Entry span covers the rapid-traverse +
+peck/helix/ramp-descent sequence; steady-state cuts in
+`Adaptive3dSegment::Cut(...)` are NOT inside Entry spans (the gate
+filter D7 will use this distinction).
+
+`compute::annotate::annotate_adaptive3d` updated to pass through
+the new `style_label` to the semantic Entry item; semantic scope's
+end now uses the explicit `entry_end_move_idx` rather than the
+heuristic next-event move-index.
+
+**Verification on wanaka:**
+- TP 1 (Back Rough, plunge entry): **166 Entry spans, 225 moves
+  total**, all labeled `"plunge entry"`. First entry: range
+  `0..5` — covers the rapid lift + traverse + peck-plunge.
+- TP 6 (3D Rough 6, plunge entry): **131 Entry spans, 197 moves
+  total**, same shape.
+
+Counts match expectation: each pass entry produces one structural
+Entry span. The TP 1 sample-level kinematics histogram (D0) showed
+~5 000 Plunge-kinematics samples and ~1 645 Helix-kinematics
+samples within the 4 603-move toolpath; 166 entries × ~30 sim
+samples per move ≈ 5 000 plunge-kinematics samples. Numbers
+consistent.
+
+**Tests:** new `compute::spans::tests::adaptive3d_emits_entry_spans_from_pass_entry_events`
+and `adaptive3d_entry_span_skips_empty_and_clamps_end` cover the
+emission path. Existing 1 332-test lib suite still green.
+
+**Status of remaining phases:**
+- D5 (other op generators): per D1 survey, only Drill / PinDrill
+  need attention (all moves are entries; needs separate gate
+  model). The 13 dressup-emitting ops already have Entry spans via
+  `dressup::apply_entry`. Effort: ~½d.
+- D6 (span-aware locality classifier): now unblocked. Should drop
+  the misleading `"helix entry"` label on terrain-following Helix
+  kinematics samples and read span ancestry instead.
+- D7 (span-aware C1 filter): now unblocked. Will re-introduce the
+  steady-state filter using span ancestry, replacing the C1
+  kinematics filter that was reverted in D3.
+- D8 (cross-fixture validation): still pending; should run after
+  D6 + D7.
 
