@@ -136,6 +136,9 @@ pub enum AppEvent {
     WizardSetSafeZOverride(Option<f64>),
     /// Step 4: spindle warmup dwell in seconds. Zero disables.
     WizardSetSpindleWarmup(u32),
+    /// Step 5: toggle the "I understand the risks, allow save with
+    /// validator errors" override.
+    WizardSetAllowValidatorErrors(bool),
     /// Set the tool-load export-gate override flags. The two flags are
     /// independent — `accept_unmodeled` only bypasses `Unmodeled` verdicts,
     /// `accept_exceeded` only bypasses `Exceeds` verdicts.
