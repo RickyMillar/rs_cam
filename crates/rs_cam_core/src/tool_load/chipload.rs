@@ -40,12 +40,50 @@ use std::sync::OnceLock;
 
 use crate::compute::catalog::OperationType;
 use crate::feeds::ToolGeometryHint;
-use crate::feeds::vendor_lookup::{LookupQuery, find_best_row};
+use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_row};
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily, VendorLut};
 use crate::feeds::vendor_normalize::material_to_lut;
 use crate::material::Material;
 use crate::simulation_cut::SimulationCutTrace;
 use crate::tool::{MillingCutter, ToolDefinition};
+
+/// D9 — `mean_chip / feed_per_tooth` for a flat endmill at the given
+/// engagement arc. Mirrors `flat_chip_geometry_for_radius`'s mean-chip
+/// formula in `crate::tool::flat_chip_geometry_for_radius`. Used to
+/// renormalize the per-sample chip-thickness reading to the LUT row's
+/// calibrated engagement before comparison.
+///
+/// At slot (`arc = π`): factor ≈ 0.637.
+/// At half engagement (`arc = π/2`): factor ≈ 0.373.
+/// At ~27 % radial (`arc ≈ 1.085`, the wanaka LUT row's nominal): ≈ 0.233.
+fn mean_chip_factor(arc_rad: f64) -> f64 {
+    let arc = arc_rad.clamp(1e-9, std::f64::consts::PI);
+    let h_max = if arc >= std::f64::consts::PI {
+        1.0
+    } else {
+        arc.sin().abs()
+    };
+    (2.0 * h_max / arc) * (1.0 - (arc * 0.5).cos())
+}
+
+/// D9 — derive the engagement arc (radians) the LUT row was authored
+/// against, from its calibrated radial-engagement window
+/// (`ae_min_mm`/`ae_max_mm`) and calibrated diameter. Returns `None`
+/// when either field is missing — caller falls back to direct
+/// (un-normalized) comparison.
+///
+/// For a flat endmill of diameter `D` with radial engagement `ae`,
+/// `engagement_arc = acos(1 − 2·ae/D)`, bounded by `[0, π]`.
+fn lut_nominal_arc_rad(row: &LookupResult) -> Option<f64> {
+    let ae_min = row.ae_min_mm?;
+    let ae_max = row.ae_max_mm?;
+    if row.row_diameter_mm <= 0.0 {
+        return None;
+    }
+    let ae_mid = (ae_min + ae_max) * 0.5;
+    let ratio = (1.0 - 2.0 * ae_mid / row.row_diameter_mm).clamp(-1.0, 1.0);
+    Some(ratio.acos())
+}
 
 /// Process-wide cache of the embedded Amana vendor LUT. The LUT is built
 /// from `include_str!` data, so building it parses 5 JSON files; we do
@@ -325,6 +363,21 @@ pub fn evaluate(
     // the burn-risk verdict. See `Burn-risk verdict semantics` above.
     let mut burn_samples: Vec<(f64, usize)> = Vec::new();
 
+    // D9 — engagement-aware normalization. Vendor LUT chip-load bounds
+    // are authored at a specific engagement arc (Amana flat-endmill
+    // roughing rows: ~17–37 % radial, arc ≈ 1.0–1.5 rad). Each sample's
+    // `effective_chip_thickness_mm` is the arc-average mean chip the
+    // dexel saw at *its* engagement arc, which can differ wildly (slot
+    // engagement on terrain produces mean ≈ 0.637 × feed; LUT-nominal
+    // ≈ 0.233 × feed). To compare on a common basis, scale each sample
+    // to the LUT-nominal-arc-equivalent mean before comparing the cap.
+    // When the LUT row lacks `ae_min_mm`/`ae_max_mm` (or a sample lacks
+    // arc data), the normalization is skipped — the comparison falls
+    // back to the raw mean. See planning/STRUCTURAL_ENTRY_SPANS_AND_LOCALITY.md
+    // D2 for the calibration audit that motivated this.
+    let arc_lut_nominal = lut_nominal_arc_rad(&result);
+    let lut_factor = arc_lut_nominal.map(mean_chip_factor);
+
     for (i, s) in steady_samples {
         // Samples whose chip-thickness model didn't produce a value (e.g.
         // axial_doc = 0 transients on a 3D toolpath, or arc not captured)
@@ -339,21 +392,35 @@ pub fn evaluate(
             }
             continue;
         };
+        // Normalize this sample to the LUT row's nominal engagement
+        // arc. If either side lacks the data, fall back to the raw
+        // mean (preserves prior behaviour for rows missing ae bounds).
+        let cl_normalized = match (s.arc_engagement_radians, lut_factor) {
+            (Some(arc_sample), Some(lut_f)) if lut_f > 0.0 => {
+                let sample_factor = mean_chip_factor(arc_sample);
+                if sample_factor > 0.0 {
+                    cl * (lut_f / sample_factor)
+                } else {
+                    cl
+                }
+            }
+            _ => cl,
+        };
         valid_count += 1;
-        burn_samples.push((cl, i));
+        burn_samples.push((cl_normalized, i));
         // Layer 1 tolerance band: a single sample 1-2% over `max` (e.g.
         // wanaka TP4 5/2026 transient at 1.05% over) shouldn't flip the
         // verdict to `Exceeds(High)`. The widened trigger is purely a
         // gate-trip decision; the underlying `peak_above` deviation is
         // still recorded so downstream displays surface the value.
         let max_trigger = max * (1.0 + tolerance.breakage);
-        if cl > max_trigger {
-            let dev = cl - max;
+        if cl_normalized > max_trigger {
+            let dev = cl_normalized - max;
             if peak_above.is_none_or(|(prev, _)| dev > prev) {
                 peak_above = Some((dev, i));
             }
-        } else if cl > peak_in_range.0 {
-            peak_in_range = (cl, i);
+        } else if cl_normalized > peak_in_range.0 {
+            peak_in_range = (cl_normalized, i);
         }
     }
 
@@ -557,6 +624,16 @@ mod tests {
         )
     }
 
+    /// Engagement arc the test LUT row (HardMaple Pocket Roughing 6 mm
+    /// flat) is calibrated against, so D9's per-sample normalization is
+    /// a no-op for these fixtures and tests preserve their pre-D9
+    /// semantics. Derived as `acos(1 − 2·ae_mid/D)` with `ae_min=1.0`,
+    /// `ae_max=2.2`, `D=6.0` from
+    /// `data/vendor_lut/observations/amana_flat_end.json` → ≈ 1.0844 rad.
+    /// Tests that want to exercise normalization itself live in the
+    /// dedicated `engagement_aware_normalization` module below.
+    const TEST_LUT_NOMINAL_ARC_RAD: f64 = 1.0843860798928202;
+
     fn sample(tp_id: usize, idx: usize, chipload: f64, engagement: f64) -> SimulationCutSample {
         SimulationCutSample {
             toolpath_id: tp_id,
@@ -572,7 +649,7 @@ mod tests {
             flute_count: 2,
             axial_doc_mm: 1.0,
             radial_engagement: engagement,
-            arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),
+            arc_engagement_radians: Some(TEST_LUT_NOMINAL_ARC_RAD),
             chipload_mm_per_tooth: chipload,
             effective_chip_thickness_mm: Some(chipload),
             removed_volume_est_mm3: 0.1,
@@ -618,7 +695,14 @@ mod tests {
         // chipload must be in the scaled band (raw 0.018–0.030 → scaled
         // ≈ 0.032–0.054). The verdict is `Approximate` because the
         // diameter scale crosses the ±40 % threshold.
-        let t = trace(vec![sample(0, 0, 0.04, 0.5)]);
+        // The contour-finish row's nominal arc is much narrower than the
+        // pocket-roughing row used by the default `sample()` fixture
+        // (`ae_rule: "2% to 8%D"` → arc ≈ 0.459 rad). Override here so
+        // D9's per-sample normalization is a no-op for this test — the
+        // assertion is about row selection, not engagement geometry.
+        let mut s = sample(0, 0, 0.04, 0.5);
+        s.arc_engagement_radians = Some(0.459);
+        let t = trace(vec![s]);
         let v = evaluate(
             0,
             &tool(),
