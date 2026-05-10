@@ -212,7 +212,7 @@ pub fn project_load_report(
 
     let material = &project.stock_config().material;
     let mut per_toolpath = Vec::new();
-    for tc in project.toolpath_configs() {
+    for (idx, tc) in project.toolpath_configs().iter().enumerate() {
         if !tc.enabled {
             continue;
         }
@@ -222,6 +222,12 @@ pub fn project_load_report(
             // than fabricate a verdict.
             continue;
         };
+        // Spans live on the AnnotatedToolpath in the cached compute
+        // result; absent if the toolpath hasn't been generated yet —
+        // classifiers fall back to engagement-only labels in that case.
+        let spans: Option<&[crate::toolpath_spans::Span]> = project
+            .get_result(idx)
+            .map(|r| r.annotated.spans.as_slice());
         let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
         let spec = tc.operation.spec();
         let lut_op = match spec.feeds_family {
@@ -253,6 +259,7 @@ pub fn project_load_report(
                 &tool_def,
                 material,
                 sim_trace,
+                spans,
                 lut_op,
                 lut_pass,
                 operation_feed_rate_mm_min,
@@ -265,6 +272,7 @@ pub fn project_load_report(
                 material,
                 machine,
                 sim_trace,
+                spans,
                 &strict_tolerance,
             ),
             deflection: crate::tool_load::deflection::evaluate(
@@ -272,6 +280,7 @@ pub fn project_load_report(
                 &tool_def,
                 material,
                 sim_trace,
+                spans,
                 &strict_tolerance,
             ),
         });
@@ -1245,6 +1254,7 @@ mod tests {
                 bounds: chip_bounds(),
             },
             confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
         }
     }
 
@@ -1271,6 +1281,7 @@ mod tests {
             bounds: deflection_bounds_default(),
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
+            entry_spike: None,
         }
     }
 
@@ -1368,6 +1379,7 @@ mod tests {
                 available_kw: 0.71,
                 evidence: SampleEvidence::empty(),
                 confidence: Confidence::Approximate("isotropic Kc only".into()),
+                entry_spike: None,
             },
             deflection_within(3.5),
         );

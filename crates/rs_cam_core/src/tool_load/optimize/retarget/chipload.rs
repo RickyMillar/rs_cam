@@ -422,6 +422,7 @@ mod tests {
                 bounds: chip_bounds(),
             },
             confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
         };
         assert!(r.target(&within, &space, &view, &ctx).is_none());
 

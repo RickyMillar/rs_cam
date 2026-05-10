@@ -21,6 +21,7 @@
 
 pub mod chipload;
 pub mod deflection;
+pub mod locality;
 pub mod optimize;
 pub mod power;
 pub mod verdict;
@@ -286,6 +287,14 @@ pub struct ToolpathLoadContext<'a> {
     /// `Unmodeled(NoVendorData)`. Currently unused; populated here so the
     /// `ToolpathLoadContext` and its construction sites are touched once.
     pub operation_kind: OperationType,
+    /// Structural spans on the (annotated) toolpath. Threaded into the
+    /// per-criterion evaluators so `tool_load::locality` can resolve
+    /// each sample's `span_path` ancestry — used by the span-aware
+    /// locality classifier (G17 D6) and the span-aware steady-state
+    /// gate filter (G17 D7). `None` when no annotated toolpath is
+    /// available; classifiers degrade to engagement-only labels.
+    #[allow(clippy::struct_field_names)]
+    pub spans: Option<&'a [crate::toolpath_spans::Span]>,
 }
 
 /// Evaluate every guardrail criterion for a single toolpath. All three
@@ -307,6 +316,7 @@ pub fn evaluate_toolpath(
             ctx.material,
             m,
             sim_trace,
+            ctx.spans,
             tolerance,
         ),
         None => PowerVerdict::Unmodeled {
@@ -322,6 +332,7 @@ pub fn evaluate_toolpath(
             ctx.tool,
             ctx.material,
             sim_trace,
+            ctx.spans,
             ctx.operation_family,
             ctx.pass_role,
             ctx.operation_feed_rate_mm_min,
@@ -334,6 +345,7 @@ pub fn evaluate_toolpath(
             ctx.tool,
             ctx.material,
             sim_trace,
+            ctx.spans,
             tolerance,
         ),
     }

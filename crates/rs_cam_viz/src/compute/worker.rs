@@ -836,12 +836,14 @@ fn spawn_optimize_lane(
                     let outcome = if lane.cancel.load(Ordering::SeqCst) {
                         match outcome {
                             OptimizeOutcome::Ranked(_)
-                            | OptimizeOutcome::TradeOff(_)
+                            | OptimizeOutcome::MarginalSafe { .. }
+                            | OptimizeOutcome::TradeOff { .. }
                             | OptimizeOutcome::NoSafeImprovement { .. } => outcome,
                             OptimizeOutcome::Skipped { .. } => OptimizeOutcome::NoSafeImprovement {
                                 reason: RefuseReason::NoImprovementFound,
                                 explanation: "cancelled before optimization could run".to_owned(),
                                 attempted: Vec::new(),
+                                narrative: Box::default(),
                             },
                         }
                     } else {

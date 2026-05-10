@@ -8,7 +8,7 @@ use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::ServerInfo;
 use rmcp::schemars;
-use rmcp::{tool, tool_router, ServerHandler};
+use rmcp::{ServerHandler, tool, tool_router};
 use serde::Deserialize;
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
@@ -712,7 +712,7 @@ impl CamServer {
 
     #[tool(
         name = "optimize_toolpath",
-        description = "Run the optimizer on one toolpath. Searches across feed/RPM (Stage F: analytical headroom-up for safe baselines, RCTF-compensated re-target for chipload-Exceeds baselines) and DOC × stepover variants (Stage 1/2 sims). Each candidate is sim-verified end-to-end. Returns OptimizeOutcome JSON, one of: Ranked(candidates) — at least one candidate is faster AND has no gate regression (auto-recommendation); TradeOff(candidates) — at least one candidate is faster AND improves the failing baseline gate but worsens another (user must explicitly accept); NoSafeImprovement(reason, explanation, attempted) — pre-flight refusal (BipolarEngagement, DeflectionSetupLocked) or no candidate improved over baseline; Skipped(reason) — toolpath is unmodelable (Drill, Custom material, etc.). Each non-baseline candidate carries gate_deltas (chipload/power/deflection: improved/same/worsened/unmodeled) so consumers can render trade-offs without recomputing. Long-running — the call blocks until the search completes (~1-2 min for a 3D op, faster for 2D). Run simulation first; the optimizer scores candidates against the existing baseline trace."
+        description = "Run the optimizer on one toolpath. Searches across feed/RPM (Stage F: analytical headroom-up for safe baselines, RCTF-compensated re-target for chipload-Exceeds baselines) and DOC × stepover variants (Stage 1/2 sims). Each candidate is sim-verified end-to-end. Returns OptimizeOutcome JSON, one of: Ranked(candidates) — at least one candidate is faster AND strictly safe (every reading inside the strict LUT bound) AND has no gate regression (auto-recommendation); MarginalSafe(candidates, explanation) — at least one candidate is faster AND every gate is Within, but at least one reading was admitted only by the layer-1 tolerance band (G16 §11.4); the user must verify on a scrap before applying; TradeOff(candidates) — at least one candidate is faster AND improves the failing baseline gate but worsens another (user must explicitly accept); NoSafeImprovement(reason, explanation, attempted) — pre-flight refusal (BipolarEngagement, DeflectionSetupLocked) or no candidate improved over baseline; Skipped(reason) — toolpath is unmodelable (Drill, Custom material, etc.). Each non-baseline candidate carries gate_deltas (chipload/power/deflection: improved/same/worsened/unmodeled) so consumers can render trade-offs without recomputing. Long-running — the call blocks until the search completes (~1-2 min for a 3D op, faster for 2D). Run simulation first; the optimizer scores candidates against the existing baseline trace."
     )]
     async fn optimize_toolpath(
         &self,
@@ -1239,7 +1239,7 @@ impl CamServer {
             None => {
                 return json_str(
                     serde_json::json!({"error": format!("Tool index {tool_index} not found")}),
-                )
+                );
             }
         };
 
@@ -1393,7 +1393,7 @@ impl CamServer {
             Some(other) => {
                 return json_str(serde_json::json!({
                     "error": format!("Unknown boundary source '{other}'. Use 'stock' or 'model_silhouette'.")
-                }))
+                }));
             }
         };
 
@@ -1404,7 +1404,7 @@ impl CamServer {
             Some(other) => {
                 return json_str(serde_json::json!({
                     "error": format!("Unknown containment '{other}'. Use 'center', 'inside', or 'outside'.")
-                }))
+                }));
             }
         };
 
@@ -1444,7 +1444,7 @@ impl CamServer {
             Err(e) => {
                 return json_str(serde_json::json!({
                     "error": format!("Invalid dressup config: {e}")
-                }))
+                }));
             }
         };
 

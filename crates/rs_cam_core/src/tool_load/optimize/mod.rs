@@ -40,6 +40,7 @@ pub mod bounds;
 mod candidate;
 mod context;
 mod delta;
+mod narrative;
 mod outcome;
 pub mod patches;
 mod policy;
@@ -56,6 +57,11 @@ pub(crate) use candidate::{
 };
 pub(crate) use delta::delta_against_baseline;
 pub use delta::{GateDelta, GateDeltas, ParamDelta};
+pub use narrative::{
+    AxisExtent, EntryAdvisory, FailureNarrative, GateKind, KnobAxis, LimitingGate,
+    OperatorSuggestion, SearchEnvelopeReached, TradeOffNarrative, entry_advisories_for_verdict,
+    limiting_gates_for_verdict, suggest_levers,
+};
 pub(crate) use outcome::build_outcome;
 pub use outcome::{OptimizeOutcome, ProjectOptimizeReport};
 
@@ -168,6 +174,12 @@ pub fn optimize_toolpath(
             };
         }
     };
+    // D6/D7: pull spans for the current toolpath out of the cached
+    // compute result. None when generation hasn't been run; locality
+    // classifier degrades to engagement-only labels in that case.
+    let baseline_spans: Option<&[crate::toolpath_spans::Span]> = session
+        .get_result(toolpath_index)
+        .map(|r| r.annotated.spans.as_slice());
     let baseline_load_ctx = ToolpathLoadContext {
         toolpath_id: ctx.toolpath_id,
         tool: &ctx.tool,
@@ -176,6 +188,7 @@ pub fn optimize_toolpath(
         pass_role: ctx.lut_pass_role,
         operation_feed_rate_mm_min: baseline_op.feed_rate(),
         operation_kind: ctx.operation_kind,
+        spans: baseline_spans,
     };
     let machine = session.machine().clone();
     let policy_tolerance = tolerance_bands_from_policy(search_policy());
@@ -229,6 +242,7 @@ pub fn optimize_toolpath(
             reason: refusal.reason,
             explanation: refusal.explanation,
             attempted: vec![baseline_candidate],
+            narrative: Box::default(),
         };
     }
 
@@ -238,6 +252,7 @@ pub fn optimize_toolpath(
             reason: RefuseReason::NoImprovementFound,
             explanation: "cancelled before any candidates were generated".to_owned(),
             attempted: vec![baseline_candidate],
+            narrative: Box::default(),
         };
     }
 
@@ -337,6 +352,7 @@ pub fn optimize_toolpath(
             explanation: "candidate evaluation failed at full resolution — partial result returned"
                 .to_owned(),
             attempted: vec![baseline_candidate],
+            narrative: Box::default(),
         };
     };
 
@@ -991,6 +1007,7 @@ mod orchestration_skip_tests {
                 reason,
                 explanation,
                 attempted,
+                ..
             } => {
                 assert_eq!(reason, RefuseReason::DeflectionSetupLocked);
                 assert!(
@@ -1452,6 +1469,7 @@ mod tests {
             reason: RefuseReason::NoFeasibleRow,
             explanation: "test".to_owned(),
             attempted: Vec::new(),
+            narrative: Box::default(),
         };
         assert!(nsi.first_safe().is_none());
     }
@@ -1487,6 +1505,7 @@ mod tests {
             available_kw: 0.71,
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
+            entry_spike: None,
         }
     }
 
@@ -1500,6 +1519,7 @@ mod tests {
             },
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
+            entry_spike: None,
         }
     }
 
@@ -1521,6 +1541,7 @@ mod tests {
                 },
             },
             confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
         }
     }
 
@@ -1687,6 +1708,7 @@ mod tests {
                     bounds,
                 },
                 confidence: Confidence::Validated,
+                entry_spikes: Vec::new(),
             };
             ToolpathLoadVerdict {
                 toolpath_id: 0,
@@ -1727,6 +1749,7 @@ mod tests {
                 reason,
                 explanation,
                 attempted,
+                ..
             } => {
                 assert!(matches!(reason, RefuseReason::NoImprovementFound));
                 assert!(
@@ -1969,7 +1992,11 @@ mod tests {
         tradeoff_verdict.power = exceeds_power_verdict().power;
         let candidate = synthetic_candidate(2200.0, 80.0, tradeoff_verdict);
         let outcome = build_outcome(baseline, vec![candidate]);
-        let OptimizeOutcome::TradeOff(tradeoffs) = outcome else {
+        let OptimizeOutcome::TradeOff {
+            candidates: tradeoffs,
+            ..
+        } = outcome
+        else {
             panic!("expected TradeOff, got {outcome:?}");
         };
         assert_eq!(tradeoffs.len(), 2, "baseline + 1 trade-off");
@@ -2003,11 +2030,114 @@ mod tests {
         tradeoff_verdict.power = exceeds_power_verdict().power;
         let candidate = synthetic_candidate(2200.0, 70.0, tradeoff_verdict);
         let outcome = build_outcome(baseline, vec![candidate]);
-        assert!(matches!(outcome, OptimizeOutcome::TradeOff(_)));
+        assert!(matches!(outcome, OptimizeOutcome::TradeOff { .. }));
         assert!(
             outcome.first_safe().is_none(),
             "TradeOff outcomes should not auto-recommend"
         );
+    }
+
+    /// Build a `Within` chipload verdict whose `approach_to_max`
+    /// observed value exceeds the strict LUT max — i.e. a band-admitted
+    /// reading that `candidate_is_marginally_safe` should flag. Strict
+    /// LUT max stays at 0.07; observed comes in at `peak`. For the
+    /// classifier to fire, callers pass `peak > 0.07`.
+    fn band_admitted_chipload_verdict(peak: f64) -> ChiploadVerdict {
+        use super::super::verdict::{
+            ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, Confidence,
+            SampleEvidence,
+        };
+        ChiploadVerdict::Within {
+            approach_to_min: None,
+            approach_to_max: ChiploadMetric {
+                observed_mm_per_tooth: peak,
+                statistic: ChiploadStatistic::PeakInRange,
+                evidence: SampleEvidence::empty(),
+                bounds: ChipBounds {
+                    min_mm_per_tooth: Some(0.038),
+                    max_mm_per_tooth: 0.070,
+                    source: ChipBoundsSource::VendorLut,
+                },
+            },
+            confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
+        }
+    }
+
+    fn band_admitted_verdict() -> ToolpathLoadVerdict {
+        // 0.072 > 0.07 strict max but inside 0.07 × (1 + 0.05) = 0.0735
+        // tolerance band → Within with strict-bound breach.
+        ToolpathLoadVerdict {
+            toolpath_id: 0,
+            chipload: band_admitted_chipload_verdict(0.072),
+            power: within_power_verdict(),
+            deflection: within_deflection_verdict(0.030),
+        }
+    }
+
+    #[test]
+    fn build_outcome_emits_marginal_safe_when_inside_tolerance_band() {
+        // G16 §11.4 Layer 3: a Within candidate whose chipload reading
+        // is over the strict LUT bound but inside the tolerance band
+        // should land in MarginalSafe, not Ranked.
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let band_admitted = synthetic_candidate(2100.0, 75.0, band_admitted_verdict());
+        let outcome = build_outcome(baseline, vec![band_admitted]);
+        let OptimizeOutcome::MarginalSafe {
+            candidates,
+            explanation,
+            ..
+        } = outcome
+        else {
+            panic!("expected MarginalSafe, got {outcome:?}");
+        };
+        assert_eq!(candidates.len(), 2, "baseline + 1 band-admitted");
+        assert!(
+            explanation.contains("tolerance band") || explanation.contains("scrap"),
+            "explanation should mention tolerance band / scrap test: {explanation}"
+        );
+    }
+
+    #[test]
+    fn first_safe_returns_none_for_marginal_safe_outcome() {
+        // first_safe is the auto-Apply target — it must NOT include
+        // band-admitted candidates. The user picks them via the modal.
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let band_admitted = synthetic_candidate(2100.0, 75.0, band_admitted_verdict());
+        let outcome = build_outcome(baseline, vec![band_admitted]);
+        assert!(matches!(outcome, OptimizeOutcome::MarginalSafe { .. }));
+        assert!(
+            outcome.first_safe().is_none(),
+            "MarginalSafe outcomes should not auto-recommend via first_safe"
+        );
+    }
+
+    #[test]
+    fn first_marginal_safe_recommends_from_marginal_outcome() {
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let band_admitted = synthetic_candidate(2100.0, 75.0, band_admitted_verdict());
+        let outcome = build_outcome(baseline, vec![band_admitted]);
+        let recommended = outcome
+            .first_marginal_safe()
+            .expect("MarginalSafe outcome must surface a recommendation");
+        assert!((recommended.cycle_time_s - 75.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn build_outcome_prefers_strict_safe_over_marginal_safe() {
+        // Pure (strict-LUT) improvement must outrank a band-admitted
+        // candidate at comparable cycle time. Outcome lands in Ranked,
+        // and first_safe picks the strict candidate.
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let band_admitted = synthetic_candidate(2100.0, 70.0, band_admitted_verdict());
+        let strict = synthetic_candidate(2000.0, 75.0, within_verdict());
+        let outcome = build_outcome(baseline, vec![band_admitted, strict]);
+        assert!(
+            matches!(outcome, OptimizeOutcome::Ranked(_)),
+            "strict-safe pure improvement must win the tier dispatch, got {outcome:?}"
+        );
+        let recommended = outcome.first_safe().expect("strict candidate present");
+        assert!((recommended.cycle_time_s - 75.0).abs() < 1e-9);
     }
 }
 

@@ -191,12 +191,14 @@ mod tests {
                     },
                 },
                 confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
             },
             power: PowerVerdict::Within {
                 peak_kw: 0.0,
                 available_kw: 0.71,
                 evidence: SampleEvidence::empty(),
                 confidence: Confidence::Validated,
+            entry_spike: None,
             },
             deflection: DeflectionVerdict::Within {
                 peak_mm: 0.0,
@@ -206,6 +208,7 @@ mod tests {
                 },
                 evidence: SampleEvidence::empty(),
                 confidence: Confidence::Validated,
+            entry_spike: None,
             },
         }
     }

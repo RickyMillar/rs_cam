@@ -112,10 +112,91 @@ impl GateDeltas {
 /// True if every criterion is non-`Exceeds`. `Within` and `Unmodeled`
 /// both pass; `Unmodeled` is the gate's honest "I don't know" and
 /// shouldn't block a recommendation by itself.
+///
+/// Note: a `Within` reading admitted only by the layer-1 tolerance band
+/// (G16 §11.4) still passes here. To distinguish strictly-safe from
+/// band-admitted candidates, see [`candidate_is_strictly_safe`] and
+/// [`candidate_is_marginally_safe`].
 pub(crate) fn candidate_is_safe(candidate: &OptimizeCandidate) -> bool {
     !candidate.verdict.chipload.is_exceeded()
         && !candidate.verdict.power.is_exceeded()
         && !candidate.verdict.deflection.is_exceeded()
+}
+
+/// True if the candidate is `Within` on every gate AND every reading is
+/// inside the strict (un-widened) LUT bound. These are the candidates
+/// safe to auto-recommend in the `Ranked` outcome.
+///
+/// G16 §11.4 Layer 3: separates "Within because the gate said so" from
+/// "Within because the tolerance band widened the gate".
+pub(crate) fn candidate_is_strictly_safe(candidate: &OptimizeCandidate) -> bool {
+    candidate_is_safe(candidate) && !candidate_is_marginally_safe(candidate)
+}
+
+/// True if the candidate is `Within` on every gate BUT at least one
+/// reading is outside the strict LUT bound — i.e. it was admitted only
+/// by the layer-1 tolerance band. These candidates are safe enough to
+/// attempt on a scrap but should not auto-recommend without operator
+/// review.
+///
+/// Today's defaults (`breakage_tolerance = 0.05`, `burn_tolerance = 0.05`,
+/// `power_breach_tolerance = 0`, `deflection_breach_tolerance = 0`) make
+/// chipload the only gate that can produce a band-admitted Within. The
+/// power and deflection branches are dormant pending §11 phase 2c
+/// calibration.
+pub(crate) fn candidate_is_marginally_safe(candidate: &OptimizeCandidate) -> bool {
+    if !candidate_is_safe(candidate) {
+        return false;
+    }
+    chipload_within_breaches_strict(&candidate.verdict.chipload)
+        || power_within_breaches_strict(&candidate.verdict.power)
+        || deflection_within_breaches_strict(&candidate.verdict.deflection)
+}
+
+fn chipload_within_breaches_strict(v: &ChiploadVerdict) -> bool {
+    let ChiploadVerdict::Within {
+        approach_to_min,
+        approach_to_max,
+        ..
+    } = v
+    else {
+        return false;
+    };
+    // High-side breach: per-sample peak above the strict LUT max.
+    if approach_to_max.observed_mm_per_tooth > approach_to_max.bounds.max_mm_per_tooth {
+        return true;
+    }
+    // Low-side breach: median observed below the strict LUT min, when
+    // the matched row publishes a min (some rows are upper-bound only).
+    if let Some(min_metric) = approach_to_min
+        && let Some(strict_min) = min_metric.bounds.min_mm_per_tooth
+        && min_metric.observed_mm_per_tooth < strict_min
+    {
+        return true;
+    }
+    false
+}
+
+fn power_within_breaches_strict(v: &PowerVerdict) -> bool {
+    let PowerVerdict::Within {
+        peak_kw,
+        available_kw,
+        ..
+    } = v
+    else {
+        return false;
+    };
+    *peak_kw > *available_kw
+}
+
+fn deflection_within_breaches_strict(v: &DeflectionVerdict) -> bool {
+    let DeflectionVerdict::Within {
+        peak_mm, bounds, ..
+    } = v
+    else {
+        return false;
+    };
+    *peak_mm > bounds.exceeds_mm
 }
 
 /// Compute the per-criterion delta for one candidate vs the baseline

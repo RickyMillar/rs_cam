@@ -490,7 +490,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "optimize_toolpath",
-        description = "Run the optimizer on one toolpath. Searches across feed/RPM (analytical Stage 0) and DOC variants (Stage 1/2 sims). Each candidate is sim-verified end-to-end. Returns OptimizeOutcome JSON: Ranked(candidates) with cycle time + verdict per row, NoSafeImprovement(narrative), or Skipped(reason). Long-running — the GUI thread blocks for the duration (~1-2 min for a 3D op). Run simulation first; the optimizer scores candidates against the existing baseline trace."
+        description = "Run the optimizer on one toolpath. Searches across feed/RPM (analytical Stage 0) and DOC variants (Stage 1/2 sims). Each candidate is sim-verified end-to-end. Returns OptimizeOutcome JSON, one of: Ranked(candidates) with cycle time + verdict per row (auto-recommendation surface); MarginalSafe(candidates, explanation) — every gate is Within but at least one reading was admitted only by the layer-1 tolerance band, verify on a scrap before applying; TradeOff(candidates) — faster candidate exists but improves a failing gate while worsening a non-failing one (user must accept regression); NoSafeImprovement(narrative); or Skipped(reason). Long-running — the GUI thread blocks for the duration (~1-2 min for a 3D op). Run simulation first; the optimizer scores candidates against the existing baseline trace."
     )]
     async fn optimize_toolpath(
         &self,

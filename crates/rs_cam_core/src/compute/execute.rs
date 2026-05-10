@@ -1827,9 +1827,14 @@ mod tests {
                 mesh: Some(MeshFixture::Hemisphere),
                 polygons: None,
                 prev_tool_radius: None,
-                expected_kinds: depth_expected.clone(),
+                // D4 — Adaptive3D now emits SpanKind::Entry per pass.
+                expected_kinds: {
+                    let mut k = depth_expected.clone();
+                    k.push(SpanKind::Entry);
+                    k
+                },
                 forbidden_kinds: Vec::new(),
-                expected_label_fragments: vec!["Z level", "Adaptive region"],
+                expected_label_fragments: vec!["Z level", "Adaptive region", "plunge entry"],
             },
             SpanCoverageCase {
                 name: "Waterline",
