@@ -17,6 +17,10 @@ use super::delta::{
     candidate_is_marginally_safe, candidate_is_safe, candidate_is_strictly_safe,
     classify_candidate_vs_baseline,
 };
+use super::narrative::{
+    FailureNarrative, TradeOffNarrative, build_failure_narrative_marginal,
+    build_failure_narrative_no_safe, build_tradeoff_narrative,
+};
 use super::rank::composite_score;
 use super::search_policy;
 
@@ -41,7 +45,15 @@ pub enum OptimizeOutcome {
     /// `explanation` is the modal subhead (Engineering Default 4).
     MarginalSafe {
         candidates: Vec<OptimizeCandidate>,
+        /// Free-form modal subhead. Kept alongside `narrative` until
+        /// A2 swaps the UI to read `narrative.headline` directly.
         explanation: String,
+        /// Structured narrative (G17 A1) — limiting gates,
+        /// search envelope, suggestions. UI in A2 will render this.
+        /// Boxed to keep the enum's variant size symmetric (the
+        /// narrative carries a String + Vecs and would otherwise
+        /// trip `clippy::large_enum_variant`).
+        narrative: Box<FailureNarrative>,
     },
     /// At least one candidate is faster than baseline AND improves a
     /// failing baseline gate, but also worsens a non-failing one.
@@ -50,8 +62,14 @@ pub enum OptimizeOutcome {
     /// trade-off.
     ///
     /// Index 0 is the baseline; subsequent entries are sorted ascending
-    /// by cycle time and carry populated `gate_deltas`.
-    TradeOff(Vec<OptimizeCandidate>),
+    /// by cycle time and carry populated `gate_deltas`. `narrative`
+    /// (G17 A1) lists improved / worsened gates plus the search
+    /// envelope.
+    TradeOff {
+        candidates: Vec<OptimizeCandidate>,
+        /// Boxed for the same variant-size reason as `MarginalSafe::narrative`.
+        narrative: Box<TradeOffNarrative>,
+    },
     /// Every non-baseline candidate either failed the gate (Exceeds on
     /// some criterion) or was slower than baseline. The rollup row
     /// surfaces this with the binding-limit narrative. The
@@ -59,9 +77,8 @@ pub enum OptimizeOutcome {
     /// — without it, "no improvement found" is opaque.
     NoSafeImprovement {
         reason: RefuseReason,
-        /// Narrative composed at outcome time via
-        /// `RefuseReason::explanation_for_optimize` (Engineering
-        /// Default 4). Free-form English for the modal.
+        /// Free-form modal subhead. Kept alongside `narrative` until
+        /// A2 swaps the UI to read `narrative.headline` directly.
         explanation: String,
         /// Every candidate that made it to Stage 2 evaluation,
         /// including the baseline at index 0. Stage-1 candidates that
@@ -69,6 +86,9 @@ pub enum OptimizeOutcome {
         /// intermediate). Empty when the search bailed before any
         /// candidate could be evaluated (e.g. cancel-up-front).
         attempted: Vec<OptimizeCandidate>,
+        /// Structured narrative (G17 A1). UI in A2 will render this.
+        /// Boxed for the same variant-size reason as `MarginalSafe::narrative`.
+        narrative: Box<FailureNarrative>,
     },
     /// The optimizer can't model this toolpath at all — drill cycles,
     /// project_curve with no steady-state samples, custom materials.
@@ -204,13 +224,19 @@ pub(crate) fn build_outcome(
     candidates: Vec<OptimizeCandidate>,
 ) -> OptimizeOutcome {
     if candidates.is_empty() {
+        let attempted = vec![baseline];
+        let narrative = attempted
+            .first()
+            .map(|b| Box::new(build_failure_narrative_no_safe(b, &attempted)))
+            .unwrap_or_default();
         return OptimizeOutcome::NoSafeImprovement {
             reason: RefuseReason::NoImprovementFound,
             explanation: format!(
                 "{}: no candidates were produced — operation has no geometry knobs and feed/RPM are at machine limits",
                 RefuseReason::NoImprovementFound.explanation_for_optimize()
             ),
-            attempted: vec![baseline],
+            attempted,
+            narrative,
         };
     }
 
@@ -280,12 +306,17 @@ pub(crate) fn build_outcome(
         let mut marginal = Vec::with_capacity(sorted.len() + 1);
         marginal.push(baseline);
         marginal.extend(sorted);
+        let narrative = marginal
+            .first()
+            .map(|b| Box::new(build_failure_narrative_marginal(b, &marginal)))
+            .unwrap_or_default();
         return OptimizeOutcome::MarginalSafe {
             candidates: marginal,
             explanation: "Best candidate is admitted only by the layer-1 tolerance band — \
                  verify on a scrap before applying. The strict LUT bound was \
                  exceeded by less than the configured breakage / burn tolerance."
                 .to_owned(),
+            narrative,
         };
     }
 
@@ -293,7 +324,14 @@ pub(crate) fn build_outcome(
         let mut tradeoffs = Vec::with_capacity(sorted.len() + 1);
         tradeoffs.push(baseline);
         tradeoffs.extend(sorted);
-        return OptimizeOutcome::TradeOff(tradeoffs);
+        let narrative = tradeoffs
+            .first()
+            .map(|b| Box::new(build_tradeoff_narrative(b, &tradeoffs)))
+            .unwrap_or_default();
+        return OptimizeOutcome::TradeOff {
+            candidates: tradeoffs,
+            narrative,
+        };
     }
 
     // Fall through: NoSafeImprovement, with the same attempted-list
@@ -314,9 +352,14 @@ pub(crate) fn build_outcome(
     let mut attempted = Vec::with_capacity(sorted.len() + 1);
     attempted.push(baseline);
     attempted.extend(sorted);
+    let narrative = attempted
+        .first()
+        .map(|b| Box::new(build_failure_narrative_no_safe(b, &attempted)))
+        .unwrap_or_default();
     OptimizeOutcome::NoSafeImprovement {
         reason: RefuseReason::NoImprovementFound,
         explanation,
         attempted,
+        narrative,
     }
 }

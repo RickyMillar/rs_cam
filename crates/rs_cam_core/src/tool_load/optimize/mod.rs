@@ -40,6 +40,7 @@ pub mod bounds;
 mod candidate;
 mod context;
 mod delta;
+mod narrative;
 mod outcome;
 pub mod patches;
 mod policy;
@@ -229,6 +230,7 @@ pub fn optimize_toolpath(
             reason: refusal.reason,
             explanation: refusal.explanation,
             attempted: vec![baseline_candidate],
+            narrative: Box::default(),
         };
     }
 
@@ -238,6 +240,7 @@ pub fn optimize_toolpath(
             reason: RefuseReason::NoImprovementFound,
             explanation: "cancelled before any candidates were generated".to_owned(),
             attempted: vec![baseline_candidate],
+            narrative: Box::default(),
         };
     }
 
@@ -337,6 +340,7 @@ pub fn optimize_toolpath(
             explanation: "candidate evaluation failed at full resolution — partial result returned"
                 .to_owned(),
             attempted: vec![baseline_candidate],
+            narrative: Box::default(),
         };
     };
 
@@ -991,6 +995,7 @@ mod orchestration_skip_tests {
                 reason,
                 explanation,
                 attempted,
+                ..
             } => {
                 assert_eq!(reason, RefuseReason::DeflectionSetupLocked);
                 assert!(
@@ -1452,6 +1457,7 @@ mod tests {
             reason: RefuseReason::NoFeasibleRow,
             explanation: "test".to_owned(),
             attempted: Vec::new(),
+            narrative: Box::default(),
         };
         assert!(nsi.first_safe().is_none());
     }
@@ -1727,6 +1733,7 @@ mod tests {
                 reason,
                 explanation,
                 attempted,
+                ..
             } => {
                 assert!(matches!(reason, RefuseReason::NoImprovementFound));
                 assert!(
@@ -1969,7 +1976,11 @@ mod tests {
         tradeoff_verdict.power = exceeds_power_verdict().power;
         let candidate = synthetic_candidate(2200.0, 80.0, tradeoff_verdict);
         let outcome = build_outcome(baseline, vec![candidate]);
-        let OptimizeOutcome::TradeOff(tradeoffs) = outcome else {
+        let OptimizeOutcome::TradeOff {
+            candidates: tradeoffs,
+            ..
+        } = outcome
+        else {
             panic!("expected TradeOff, got {outcome:?}");
         };
         assert_eq!(tradeoffs.len(), 2, "baseline + 1 trade-off");
@@ -2003,7 +2014,7 @@ mod tests {
         tradeoff_verdict.power = exceeds_power_verdict().power;
         let candidate = synthetic_candidate(2200.0, 70.0, tradeoff_verdict);
         let outcome = build_outcome(baseline, vec![candidate]);
-        assert!(matches!(outcome, OptimizeOutcome::TradeOff(_)));
+        assert!(matches!(outcome, OptimizeOutcome::TradeOff { .. }));
         assert!(
             outcome.first_safe().is_none(),
             "TradeOff outcomes should not auto-recommend"
@@ -2058,6 +2069,7 @@ mod tests {
         let OptimizeOutcome::MarginalSafe {
             candidates,
             explanation,
+            ..
         } = outcome
         else {
             panic!("expected MarginalSafe, got {outcome:?}");

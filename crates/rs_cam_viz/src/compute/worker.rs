@@ -837,12 +837,13 @@ fn spawn_optimize_lane(
                         match outcome {
                             OptimizeOutcome::Ranked(_)
                             | OptimizeOutcome::MarginalSafe { .. }
-                            | OptimizeOutcome::TradeOff(_)
+                            | OptimizeOutcome::TradeOff { .. }
                             | OptimizeOutcome::NoSafeImprovement { .. } => outcome,
                             OptimizeOutcome::Skipped { .. } => OptimizeOutcome::NoSafeImprovement {
                                 reason: RefuseReason::NoImprovementFound,
                                 explanation: "cancelled before optimization could run".to_owned(),
                                 attempted: Vec::new(),
+                                narrative: Box::default(),
                             },
                         }
                     } else {

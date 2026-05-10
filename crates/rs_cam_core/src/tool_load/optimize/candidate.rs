@@ -115,6 +115,7 @@ pub(crate) fn finalize_partial(
             reason: super::RefuseReason::NoImprovementFound,
             explanation: "cancelled before any candidates were evaluated".to_owned(),
             attempted: vec![baseline],
+            narrative: Box::default(),
         };
     }
     super::build_outcome(baseline, candidates)

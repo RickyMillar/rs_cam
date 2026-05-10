@@ -139,6 +139,7 @@ fn draw_outcome(
         OptimizeOutcome::MarginalSafe {
             candidates,
             explanation,
+            ..
         } => {
             // G16 §11.4 Layer 3: candidates passed every gate but at
             // least one Within reading was admitted only by the
@@ -162,7 +163,7 @@ fn draw_outcome(
                 events,
             );
         }
-        OptimizeOutcome::TradeOff(candidates) => {
+        OptimizeOutcome::TradeOff { candidates, .. } => {
             // Trade-off candidates: faster than baseline AND improve a
             // failing gate, but worsen another. Render the same table
             // as Ranked but with a "trade-off" header so the user
