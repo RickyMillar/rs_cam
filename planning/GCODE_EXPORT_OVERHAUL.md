@@ -293,12 +293,12 @@ PostDefinition extended with three new boundary fields surfaced as data for the 
 
 Fixture corpus broadened from 6 to 16 (added F7-F16): full-circle, X-only feed, ramp-into-arc, sub-mm arcs, depth-step boundary, tool-change-at-Z-zero, climb-vs-conventional, multi-line pause message, embedded-newline pre/post snippets, G41/G40 round-trip.
 
-**Bugs surfaced by the broadened corpus** (each documented as expected-rejects in `gcode_emulator_validation` until the fix lands):
+**Bugs surfaced by the broadened corpus — all four FIXED** in the same Phase 4b cycle (commits `c7682e0` + `03b38a4` + `fecd7cb`):
 
-1. **F10 sub-mm arcs**: rejected by every parser (gvalidate exit 33, rs274ngc exit 1). Fix: wire `arc_linearize` into `program_builder` so arcs below `threshold_mm` emit as straight-line chords. Trivial once a place to put the conversion is chosen.
-2. **F14 multi-line pause messages**: `render_comment` doesn't sanitize embedded `\n`; the second line emerges as bare g-code. Fix: split on `\n` and emit each line wrapped in the comment style, OR escape, OR refuse at the API boundary.
-3. **F15 user pre/post M7**: the Grbl post lets user snippets emit `M7` mist coolant, which Grbl 1.1 doesn't support. Fix: emitter must validate user snippet content against a (future) `PostDefinition.allowed_codes` list.
-4. **F16 cutter compensation**: rs_cam emits G41/G40 unconditionally regardless of post support. Grbl 1.1 has no comp; rs274ngc rejects compensated geometry without runtime contour context. Fix: emitter must consult a (future) `supports_cutter_comp` PostDefinition field; user owns supplying valid contour geometry.
+1. ✅ **F10 sub-mm arcs**: every shipped post enables `arc_linearize`; the emitter substitutes a `G1` chord when arc radius < 0.05mm. Every parser accepts the linearised output.
+2. ✅ **F14 multi-line pause messages**: `render_comment` and `render_program_pause` collapse `\n`/`\r`/`\t` into ` / ` / single-space so the comment stays on one parser-safe line.
+3. ✅ **F15 M7 in user pre_gcode on Grbl**: new `PostDefinition.unsupported_mcodes` denylist (Grbl: `[7]`); emitter drops denied lines with a warning comment.
+4. ✅ **F16 cutter compensation on Grbl/grblHAL**: new `PostDefinition.supports_cutter_comp` field; emitter drops G40/G41/G42 lines with a warning when the post doesn't support comp. LinuxCNC/Mach3 still emit comp natively (they support it); rs274ngc rejection is a documented validator-limitation, not an emitter bug.
 
 **Verification:**
 
