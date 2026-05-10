@@ -236,11 +236,17 @@ fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinit
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
     use crate::gcode::post;
     use crate::gcode::program_builder;
+    use crate::gcode::post::{Units, WcsCode};
     use crate::geo::P3;
     use crate::toolpath::Toolpath;
 
@@ -328,6 +334,152 @@ M3 S{spindle_rpm}
         assert!(gcode.contains("F800"), "feed not clamped: {gcode}");
         assert!(gcode.contains("F1500"), "warning should mention requested: {gcode}");
         assert!(gcode.contains("max_feed"));
+    }
+
+    // ----- WizardOverlay round-trip tests -----
+
+    fn simple_program() -> super::super::ir::Program {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 5.0));
+        tp.feed_to(P3::new(10.0, 0.0, -1.0), 600.0);
+        program_builder::build_single(&tp, 18_000)
+    }
+
+    #[test]
+    fn default_overlay_is_byte_identical_to_no_overlay() {
+        // The whole regression-anchor argument: a default overlay must
+        // not change a single byte of output for any shipped post.
+        for post_def in [post::grbl(), post::grblhal(), post::linuxcnc(), post::mach3()] {
+            let prog = simple_program();
+            let plain = emit_program(&prog, post_def);
+            let with_default =
+                emit_program_with_overlay(&prog, post_def, &WizardOverlay::default());
+            assert_eq!(
+                plain, with_default,
+                "default overlay must be byte-identical for {}",
+                post_def.name
+            );
+        }
+    }
+
+    #[test]
+    fn overlay_wcs_override_substitutes_in_preamble() {
+        // Grbl's preamble has no built-in WCS line; overriding it must
+        // make the chosen WCS show up. Use linuxcnc instead — its
+        // preamble template includes {wcs_line}, so overriding G54→G55
+        // should flip the rendered word.
+        let prog = simple_program();
+        let plain = emit_program(&prog, post::linuxcnc());
+        assert!(plain.contains("G54\n"), "baseline: {plain}");
+
+        let overlay = WizardOverlay {
+            wcs_override: Some(WcsCode::G55),
+            ..Default::default()
+        };
+        let with_overlay = emit_program_with_overlay(&prog, post::linuxcnc(), &overlay);
+        assert!(
+            with_overlay.contains("G55\n"),
+            "overlay should swap G54→G55: {with_overlay}"
+        );
+        assert!(
+            !with_overlay.contains("G54\n"),
+            "overlay should remove G54: {with_overlay}"
+        );
+    }
+
+    #[test]
+    fn overlay_units_override_substitutes_in_preamble() {
+        // Grbl ships units = mm (G21). Overriding to inch should flip
+        // the {units_word} substitution in the preamble.
+        let prog = simple_program();
+        let plain = emit_program(&prog, post::grbl());
+        assert!(plain.contains("G21"), "baseline grbl emits G21: {plain}");
+
+        let overlay = WizardOverlay {
+            units_override: Some(Units::Inch),
+            ..Default::default()
+        };
+        let with_overlay = emit_program_with_overlay(&prog, post::grbl(), &overlay);
+        assert!(
+            with_overlay.contains("G20"),
+            "inch override should emit G20: {with_overlay}"
+        );
+    }
+
+    #[test]
+    fn overlay_warmup_dwell_lands_after_preamble() {
+        let prog = simple_program();
+        let overlay = WizardOverlay {
+            spindle_warmup_secs: 7,
+            ..Default::default()
+        };
+        let with_overlay = emit_program_with_overlay(&prog, post::grbl(), &overlay);
+        // Preamble for grbl ends with "M3 S18000\n"; the dwell sits between
+        // it and the first move so the spindle is up to speed before cutting.
+        let m3_idx = with_overlay.find("M3 S18000").expect("preamble M3");
+        let dwell_idx = with_overlay.find("G4 P7\n").expect("warmup dwell");
+        let move_idx = with_overlay.find("G0 X").expect("first rapid");
+        assert!(m3_idx < dwell_idx, "dwell must follow M3");
+        assert!(dwell_idx < move_idx, "dwell must precede the first move");
+    }
+
+    #[test]
+    fn overlay_safe_z_override_replaces_multi_setup_retract() {
+        // Multi-setup is the only emitter path that writes a Z retract
+        // between phases. Building two trivial setups and overlaying a
+        // safe-Z must change the retract value emitted between them.
+        use crate::gcode::{
+            CoolantMode, GcodePhase, GcodeSetupPhase, emit_gcode_multi_setup_with_overlay,
+        };
+
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 5.0));
+        tp.feed_to(P3::new(10.0, 0.0, -1.0), 600.0);
+
+        let setups = vec![
+            GcodeSetupPhase {
+                setup_label: "S1",
+                phases: vec![GcodePhase {
+                    toolpath: &tp,
+                    spindle_rpm: 18_000,
+                    label: "S1 op",
+                    pre_gcode: None,
+                    post_gcode: None,
+                    tool_number: Some(1),
+                    coolant: CoolantMode::Off,
+                    controller_compensation: None,
+                }],
+            },
+            GcodeSetupPhase {
+                setup_label: "S2",
+                phases: vec![GcodePhase {
+                    toolpath: &tp,
+                    spindle_rpm: 18_000,
+                    label: "S2 op",
+                    pre_gcode: None,
+                    post_gcode: None,
+                    tool_number: Some(1),
+                    coolant: CoolantMode::Off,
+                    controller_compensation: None,
+                }],
+            },
+        ];
+
+        let overlay = WizardOverlay {
+            safe_z_override: Some(42.5),
+            ..Default::default()
+        };
+        let gcode = emit_gcode_multi_setup_with_overlay(&setups, post::grbl(), 15.0, &overlay);
+
+        // Override 42.5 should win over the 15.0 baseline arg.
+        assert!(
+            gcode.contains("G0 Z42.500"),
+            "safe-Z override should emit Z42.500: {gcode}"
+        );
+        assert!(
+            !gcode.contains("G0 Z15.000"),
+            "baseline 15.0 should be replaced: {gcode}"
+        );
     }
 
     /// Limits unset (shipped TOMLs): emitter must NOT alter or annotate
