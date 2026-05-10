@@ -208,6 +208,9 @@ impl RsCamApp {
                     s.session.wizard_mut().allow_validator_errors = allow;
                     s.gui.mark_edited();
                 }
+                AppEvent::WizardSave => {
+                    self.handle_wizard_save();
+                }
                 AppEvent::WizardSetOutputLayout(layout) => {
                     let s = self.controller.state_mut();
                     s.session.wizard_mut().output_layout = layout;

@@ -148,6 +148,52 @@ pub fn export_combined_gcode_from_session(
     Ok(gcode)
 }
 
+/// Export a single toolpath (by semantic id) as G-code (session-based).
+pub fn export_single_toolpath_from_session(
+    session: &ProjectSession,
+    gui: &GuiState,
+    sim: &SimulationState,
+    toolpath_id: usize,
+) -> Result<String, crate::error::VizError> {
+    let post = gui.post.format.definition();
+
+    let tc = session
+        .toolpath_configs()
+        .iter()
+        .find(|tc| tc.id == toolpath_id)
+        .ok_or_else(|| {
+            crate::error::VizError::Export(format!("Toolpath id {toolpath_id} not found"))
+        })?;
+
+    if !tc.enabled {
+        return Err(crate::error::VizError::Export(format!(
+            "Toolpath '{}' is disabled",
+            tc.name
+        )));
+    }
+
+    let phase = gcode_phase_for_session_toolpath(session, gui, tc).ok_or_else(|| {
+        crate::error::VizError::Export(format!(
+            "Toolpath '{}' has no computed result — generate it first",
+            tc.name
+        ))
+    })?;
+
+    let mut gcode = export_gcode_phases_checked(
+        std::slice::from_ref(&phase),
+        post,
+        viz_sim_trace(sim),
+        gui.tool_load_overrides.as_policy(),
+    )
+    .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
+
+    if gui.post.high_feedrate_mode {
+        gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate);
+    }
+
+    Ok(gcode)
+}
+
 /// Export only the toolpaths from a single setup as G-code (session-based).
 pub fn export_setup_gcode_from_session(
     session: &ProjectSession,

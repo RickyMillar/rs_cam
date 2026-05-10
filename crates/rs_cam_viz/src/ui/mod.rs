@@ -139,6 +139,10 @@ pub enum AppEvent {
     /// Step 5: toggle the "I understand the risks, allow save with
     /// validator errors" override.
     WizardSetAllowValidatorErrors(bool),
+    /// Step 6: commit the export to disk using the wizard's settings.
+    /// Pops a file/directory picker, writes the file(s), pushes a
+    /// notification, and closes the wizard on success.
+    WizardSave,
     /// Set the tool-load export-gate override flags. The two flags are
     /// independent — `accept_unmodeled` only bypasses `Unmodeled` verdicts,
     /// `accept_exceeded` only bypasses `Exceeds` verdicts.
